@@ -15,6 +15,14 @@ set -eu
 WEBROOT="/var/www/certbot"
 LIVE="/etc/letsencrypt/live"
 
+# Extra arguments passed straight to certbot. Empty in every normal deployment.
+# It exists so the ACME DIRECTORY can be redirected without editing this script:
+#   --server https://acme.internal/dir   an internal CA (step-ca, smallstep, Boulder)
+#   --server https://pebble:14000/dir    the local issuance test, deploy/acme-test/
+# The test injects this rather than shipping its own copy of the file, so what the
+# test exercises is the script that actually ships.
+CERTBOT_EXTRA_ARGS="${CERTBOT_EXTRA_ARGS:-}"
+
 log() { echo "[cred-vault/certbot] $*"; }
 
 if [ "${TLS_MODE}" = "custom" ] || [ "${TLS_MODE}" = "none" ]; then
@@ -73,7 +81,7 @@ else
   if certbot certonly \
       --webroot --webroot-path "${WEBROOT}" \
       --non-interactive --agree-tos --keep-until-expiring \
-      ${EMAIL_ARG} ${STAGING_ARG} ${PROFILE_ARG} ${IDENTIFIER_ARG}; then
+      ${EMAIL_ARG} ${STAGING_ARG} ${PROFILE_ARG} ${IDENTIFIER_ARG} ${CERTBOT_EXTRA_ARGS}; then
     log "issued — nginx picks it up within a minute and opens port 443"
   else
     log "ISSUANCE FAILED. nginx keeps answering 503 on :80 until this succeeds."
@@ -91,7 +99,8 @@ log "entering renewal loop (every ${RENEW_INTERVAL_SECONDS}s)"
 while true; do
   sleep "${RENEW_INTERVAL_SECONDS}"
   # One failed attempt must never end the loop — the next window is the retry.
-  if certbot renew --webroot --webroot-path "${WEBROOT}" --non-interactive; then
+  # shellcheck disable=SC2086  # CERTBOT_EXTRA_ARGS is deliberately word-split
+  if certbot renew --webroot --webroot-path "${WEBROOT}" --non-interactive ${CERTBOT_EXTRA_ARGS}; then
     log "renewal check completed"
   else
     log "renewal check FAILED; retrying in ${RENEW_INTERVAL_SECONDS}s"

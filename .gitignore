@@ -117,6 +117,8 @@ deploy/.env
 # ignoring that directory would silently drop it from the repository.
 deploy/certbot-data/
 deploy/data/
+# Throwaway state of the local ACME issuance harness
+deploy/acme-test/state/
 deploy/logs/
 deploy/backups/
 deploy/.update-state

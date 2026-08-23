@@ -1,0 +1,106 @@
+# Proves the certificate pipeline ACTUALLY issues, without touching Let's Encrypt.
+#
+#   cd deploy/acme-test && ./run.sh
+#
+# Why this exists: everything else about the stack can be verified locally, but
+# "certbot obtains a certificate and nginx starts serving it" cannot — real ACME
+# needs a public domain and inbound port 80, and burning Let's Encrypt's rate
+# limits to find out that a flag is wrong is a bad trade.
+#
+# Pebble is Let's Encrypt's own test ACME server. It speaks the same protocol and
+# performs a REAL HTTP-01 validation, so what this exercises is the thing that
+# actually breaks: certbot's arguments, the shared webroot between certbot and
+# nginx, the path the certificate lands in, and nginx noticing it and opening 443.
+#
+# What it deliberately does NOT prove: that a PUBLIC name resolves to your host and
+# that port 80 is reachable from the internet. Those are properties of your network,
+# and no local harness can assert them.
+
+name: cred-vault-acme-test
+
+services:
+  # The test CA. `httpPort: 80` makes it validate against the ordinary port, so the
+  # nginx config under test is the one that answers — not a special-cased one.
+  pebble:
+    image: ghcr.io/letsencrypt/pebble:latest
+    command: -config /pebble-config.json
+    volumes:
+      - ./pebble-config.json:/pebble-config.json:ro
+    environment:
+      # Pebble randomly rejects ~5% of validations by default to catch clients that
+      # do not retry. Off here so a green run means "it works", not "it was lucky".
+      PEBBLE_VA_NOSLEEP: "1"
+    networks:
+      edge:
+
+  vault:
+    image: ${VAULT_IMAGE}
+    restart: unless-stopped
+    expose: ["8080"]
+    environment:
+      Vault__DataDir: /data
+      Vault__AllowedDomains: example.com
+      Vault__RequireForwardedHttps: "true"
+      Auth__Local__SigningKey: acme-test-key-acme-test-key-32ch
+      Logging__Directory: /logs
+    volumes:
+      - ./state/data:/data
+      - ./state/logs:/logs
+    networks:
+      edge:
+
+  nginx:
+    image: nginx:1.27-alpine
+    depends_on: [vault]
+    ports:
+      - "18081:80"
+      - "18444:443"
+    environment:
+      TLS_MODE: domain
+      SERVER_NAME: vaulthost
+      MAX_BODY_MB: "16"
+      HSTS_MAX_AGE: "31536000"
+      # Re-read every 5s so the test does not wait out the production 6h cadence.
+      RELOAD_INTERVAL_SECONDS: "5"
+    volumes:
+      - ../nginx/entrypoint.sh:/docker-entrypoint.d/40-cred-vault.sh:ro
+      - ../nginx/vault.conf.template:/etc/cred-vault/vault.conf.template:ro
+      - ./state/certs/conf:/etc/letsencrypt:ro
+      - ./state/certs/www:/var/www/certbot:ro
+    networks:
+      edge:
+        # This is what makes pebble's HTTP-01 validation reach nginx by NAME,
+        # exactly as a public CA would reach a real host by its public name.
+        #
+        # Single-label on purpose: Docker's embedded DNS does not reliably register
+        # a DOTTED network alias (a query with dots is treated as external and
+        # forwarded upstream), so `vault.local.test` resolved to nothing and the
+        # challenge failed with "no such host". The name is a stand-in for a public
+        # FQDN; nothing in the issuance path cares how many labels it has.
+        aliases: [vaulthost]
+
+  certbot:
+    image: certbot/certbot:latest
+    depends_on: [nginx, pebble]
+    environment:
+      TLS_MODE: domain
+      DOMAIN: vaulthost
+      PUBLIC_IP: ""
+      ACME_EMAIL: ""
+      ACME_STAGING: "false"
+      RENEW_INTERVAL_SECONDS: "3600"
+      # The production entrypoint is used UNCHANGED. Only the ACME directory and
+      # the CA-trust flag are injected, which is the whole point: the script under
+      # test is the one that ships.
+      CERTBOT_EXTRA_ARGS: "--server https://pebble:14000/dir --no-verify-ssl"
+    volumes:
+      - ./state/certs/conf:/etc/letsencrypt
+      - ./state/certs/www:/var/www/certbot
+      - ../certbot/entrypoint.sh:/entrypoint.sh:ro
+    entrypoint: ["/bin/sh", "/entrypoint.sh"]
+    networks:
+      edge:
+
+networks:
+  edge:
+    driver: bridge

@@ -131,6 +131,29 @@ section for exactly that:
 docker compose build vault && docker compose up -d
 ```
 
+## Proving the certificate pipeline before you point DNS at it
+
+`deploy/acme-test/` runs the whole issuance flow against **Pebble** — Let's Encrypt's own test
+ACME server — in about a minute, on your machine, without a public domain and without spending
+Let's Encrypt's rate limits to discover that a flag is wrong.
+
+```bash
+cd deploy/acme-test && ./run.sh
+```
+
+It uses the **production** `certbot` and `nginx` entrypoints unchanged, and asserts the four things
+that actually break:
+
+1. before issuance, port 443 is closed and port 80 answers 503 — no deadlock, no confusing
+   "untrusted certificate";
+2. certbot obtains a certificate through a **real HTTP-01 challenge** served from the shared
+   webroot by the nginx config that ships;
+3. nginx notices the new certificate on its own and opens 443 with it;
+4. the API is then reachable over TLS and the forwarded-proto guard is satisfied.
+
+What it cannot prove is the half that belongs to your network: that a public name resolves to your
+host and that port 80 is reachable from the internet. Nothing local can assert those.
+
 ## Updating
 
 ```bash

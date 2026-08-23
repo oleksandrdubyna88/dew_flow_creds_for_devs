@@ -35,7 +35,20 @@ function jwt(email, name) {
 const alice = { accountId: 'a-1', email: 'alice@example.com', provider: 'microsoft' };
 const bob   = { accountId: 'b-1', email: 'bob@example.com',   provider: 'microsoft' };
 const tokens = { 'a-1': jwt(alice.email, 'Alice'), 'b-1': jwt(bob.email, 'Bob') };
-const t = new ServerTransport('http://127.0.0.1:5113', (acc) => Promise.resolve(tokens[acc.accountId]));
+
+// Point this at whatever is running: a bare `dotnet run`, or the real deployment
+// stack over HTTPS. Testing the deployed stack is the whole point — a transport
+// that works against plain HTTP on loopback has not been shown to work through
+// nginx, TLS termination and the forwarded-proto guard.
+//
+//   node scripts/server-transport-itest.cjs https://vault.example.com
+//
+// Against a certificate signed by a CA Node does not know, set NODE_EXTRA_CA_CERTS
+// to the CA file. The transport uses global fetch with no certificate override —
+// deliberately — so this is exactly the constraint a real user faces.
+const BASE_URL = process.argv[2] || process.env.VAULT_URL || 'http://127.0.0.1:5113';
+console.log(`target: ${BASE_URL}\n`);
+const t = new ServerTransport(BASE_URL, (acc) => Promise.resolve(tokens[acc.accountId]));
 
 let fails = 0;
 const check = (what, ok) => { console.log(`${ok ? '  ok' : 'FAIL'}  ${what}`); if (!ok) fails++; };
