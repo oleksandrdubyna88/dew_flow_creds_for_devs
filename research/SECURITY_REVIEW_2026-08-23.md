@@ -211,11 +211,17 @@ Measured against `.claude/rules/shared/common/reliability.md`.
 | Graceful shutdown | Yes — ASP.NET's SIGTERM handling; the run is wrapped so a startup or shutdown fault reaches the log |
 | Failures diagnosable after the fact | **Now yes** — this was the biggest gap. Per-run log files, UTC throughout |
 
-The **single largest remaining reliability risk is not in the code**: this is a one-instance,
-one-filesystem service. There is no HA story, and there is no automated restore test. `backup.sh`
-verifies its own archive, but nobody has restored one into a fresh deployment and confirmed the
-extension syncs against it. That is `todo/PLAN_server_ops.md`'s first item and it is worth doing
-before anyone depends on this.
+**Update, same day.** What was written here as the single largest remaining risk — "nobody has
+restored a backup" — has since been closed. The cycle was rehearsed against the published image:
+data written, data directory destroyed, `deploy/restore.sh` run, vault read back with its exact
+contents. The rehearsal immediately found two defects that no amount of reading the script would
+have shown: the scheduled backup archived the empty directory after the outage and shadowed the
+good restore point, and the restore script failed after moving the data aside and left the stack
+down. Both are fixed, and scheduled backups to an operator-chosen path now ship.
+
+The remaining reliability limit is structural rather than a defect: this is a one-instance,
+one-filesystem service with no HA story. For the threat it defends against — a lost laptop, a
+shared folder everyone can read — that is a reasonable trade, but it should be a chosen one.
 
 ## Architecture notes
 

@@ -171,6 +171,47 @@ services:
     networks:
       - edge
 
+  # ---------------------------------------------------------------------------
+  # Scheduled backups to ONE path you choose.
+  #
+  # The path is all this service knows. Whether it is a NAS mount, an rclone
+  # mount, a Google Drive or OneDrive sync folder, or just another disk is the
+  # host's business — which is why this works with all of them and needs no
+  # cloud credentials, no API tokens and no provider-specific code.
+  #
+  # Reads the data read-only. The only thing it may write to is the destination.
+  # ---------------------------------------------------------------------------
+  backup:
+    image: alpine:3.20
+    restart: unless-stopped
+    depends_on:
+      init:
+        condition: service_completed_successfully
+    environment:
+      BACKUP_DEST: /backup
+      BACKUP_INTERVAL_HOURS: ${BACKUP_INTERVAL_HOURS:-24}
+      BACKUP_ON_START: ${BACKUP_ON_START:-true}
+      RETAIN_DAYS: ${BACKUP_RETAIN_DAYS:-30}
+      LABEL: cred-vault
+      SKIP_IF_UNCHANGED: ${BACKUP_SKIP_IF_UNCHANGED:-true}
+    volumes:
+      - ${DATA_DIR:-./data}:/data:ro
+      - ${CERT_DIR:-./certbot-data}:/certs:ro
+      - ${BACKUP_DIR:-./backups}:/backup
+      - ./backup/backup-once.sh:/backup-once.sh:ro
+      - ./backup/loop.sh:/loop.sh:ro
+    entrypoint: ["/bin/sh", "/loop.sh"]
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+    network_mode: none
+
 networks:
   edge:
     driver: bridge

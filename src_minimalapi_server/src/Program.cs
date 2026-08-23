@@ -170,6 +170,21 @@ if (allowedDomains.Count == 0 && !allowAnyDomain)
         "Vault:AllowedDomains is empty. Set it to your company domain(s), or set "
         + "Vault:AllowAnyDomain=true to explicitly run without a domain boundary.");
 }
+if (localEnabled)
+{
+    // HMAC-SHA256 needs a 256-bit key. A shorter one is the nastiest kind of
+    // misconfiguration: the scheme registers without complaint, the host starts,
+    // /api/health reports OK — and every single request is rejected with 401 with
+    // nothing in the log to connect the two. Same reasoning as the guard above.
+    var keyBytes = System.Text.Encoding.UTF8.GetByteCount(localKey!);
+    if (keyBytes < 32)
+    {
+        throw new InvalidOperationException(
+            $"Auth:Local:SigningKey is {keyBytes} bytes; HMAC-SHA256 requires at least 32. "
+            + "A shorter key would start a server that answers 401 to everything. "
+            + "Generate one with: openssl rand -base64 48");
+    }
+}
 store.SweepStaleTempFiles();
 if ((msAudiences.Count == 0 && !string.IsNullOrWhiteSpace(msTenant))
     || (googleEnabled && googleAudiences.Count == 0))

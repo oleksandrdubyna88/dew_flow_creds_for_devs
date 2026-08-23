@@ -1,21 +1,16 @@
 #!/usr/bin/env bash
-# Snapshot everything that cannot be rebuilt: the vault blobs, the share inboxes, the
-# ACME account + certificates, and the .env that describes the deployment.
+# Take a backup right now, by hand.
 #
-#   ./backup.sh                  # writes ./backups/cred-vault-<UTC timestamp>.tar.gz
-#   ./backup.sh /mnt/nas/vault   # writes it somewhere that survives this host dying
+#   ./backup.sh                    # into BACKUP_DIR from .env
+#   ./backup.sh /mnt/nas/vault     # into somewhere else, just this once
 #
-# The archive contains CIPHERTEXT ONLY — the server never holds a key that opens a vault
-# — but it also contains .env, which may hold LOCAL_SIGNING_KEY. Treat it as a secret.
+# The scheduled `backup` service in docker-compose.yml does the same thing on a
+# timer. Both call backup/backup-once.sh, so "what a backup is" — atomic write,
+# verification, retention that never empties the destination — is defined once.
 #
-# Run it from cron:
-#   0 3 * * *  /opt/cred-vault/deploy/backup.sh /mnt/nas/vault >> /var/log/vault-backup.log 2>&1
+# Restore with ./restore.sh.
 set -euo pipefail
-
 cd "$(dirname "$0")"
-
-DEST="${1:-./backups}"
-RETAIN_DAYS="${BACKUP_RETAIN_DAYS:-30}"
 
 log() { printf '\033[1;34m[backup]\033[0m %s\n' "$*"; }
 die() { printf '\033[1;31m[backup]\033[0m %s\n' "$*" >&2; exit 1; }
@@ -29,40 +24,33 @@ set +a
 
 DATA_DIR="${DATA_DIR:-./data}"
 CERT_DIR="${CERT_DIR:-./certbot-data}"
+DEST="${1:-${BACKUP_DIR:-./backups}}"
 
 [[ -d "$DATA_DIR" ]] || die "DATA_DIR '$DATA_DIR' does not exist — is the stack up?"
 
+SOURCES=("$DATA_DIR")
+[[ -d "$CERT_DIR" ]] && SOURCES+=("$CERT_DIR")
+
+# Run it in a container rather than on the host: the archive is then produced by
+# exactly the same busybox tar as the scheduled service, so an archive taken by
+# hand and one taken on the timer are byte-for-byte the same shape.
 mkdir -p "$DEST"
-STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
-ARCHIVE="${DEST}/cred-vault-${STAMP}.tar.gz"
+log "archiving ${SOURCES[*]} -> ${DEST}"
 
-# Vault writes are atomic (write temp, rename), so a running server cannot leave a
-# half-written blob in the archive. Stopping the stack is therefore not required —
-# which matters, because a backup that needs downtime is a backup nobody runs.
-log "archiving ${DATA_DIR}, ${CERT_DIR} and .env ..."
-tar -czf "$ARCHIVE" \
-    --exclude='*.tmp' \
-    .env \
-    "$DATA_DIR" \
-    "$CERT_DIR" 2>/dev/null || die "tar failed — nothing written."
+MOUNTS=()
+for i in "${!SOURCES[@]}"; do
+  MOUNTS+=(-v "$(realpath "${SOURCES[$i]}")":"/src${i}":ro)
+done
+CONTAINER_SOURCES=()
+for i in "${!SOURCES[@]}"; do CONTAINER_SOURCES+=("/src${i}"); done
 
-chmod 600 "$ARCHIVE"
+docker run --rm \
+  "${MOUNTS[@]}" \
+  -v "$(realpath "$DEST")":/backup \
+  -v "$(realpath ./backup/backup-once.sh)":/backup-once.sh:ro \
+  -e RETAIN_DAYS="${BACKUP_RETAIN_DAYS:-30}" \
+  -e LABEL=cred-vault \
+  -e SKIP_IF_UNCHANGED=false \
+  alpine:3.20 sh /backup-once.sh /backup "${CONTAINER_SOURCES[@]}"
 
-SIZE="$(du -h "$ARCHIVE" | cut -f1)"
-VAULTS="$(find "$DATA_DIR/vaults" -name '*.bin' 2>/dev/null | wc -l | tr -d ' ')"
-SHARES="$(find "$DATA_DIR/shares" -name '*.json' 2>/dev/null | wc -l | tr -d ' ')"
-log "wrote ${ARCHIVE} (${SIZE}; ${VAULTS} vaults, ${SHARES} pending shares)"
-
-# Verify the archive is readable before trusting it. An unverified backup is a rumour.
-if ! tar -tzf "$ARCHIVE" >/dev/null 2>&1; then
-  die "the archive did not verify — ${ARCHIVE} is NOT a usable backup."
-fi
-log "archive verified"
-
-if [[ "$RETAIN_DAYS" -gt 0 ]]; then
-  removed="$(find "$DEST" -name 'cred-vault-*.tar.gz' -mtime "+${RETAIN_DAYS}" -print -delete | wc -l | tr -d ' ')"
-  [[ "$removed" -gt 0 ]] && log "pruned ${removed} archive(s) older than ${RETAIN_DAYS} days"
-fi
-
-log "restore with: tar -xzf ${ARCHIVE} -C /path/to/deploy && docker compose up -d"
-exit 0
+log "done. Restore with: ./restore.sh <archive>"

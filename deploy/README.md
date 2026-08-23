@@ -171,26 +171,58 @@ which is root on the host, and a credential server that pulls and runs new image
 turned a registry compromise into a full compromise. Pin a version tag in `.env` and run `update.sh`
 when you mean to.
 
-## Backups
+## Backups — pick a path, pick how often
+
+The stack backs itself up on a schedule. You choose **one directory**; that is the entire
+configuration:
+
+```ini
+BACKUP_DIR=./backups          # or /mnt/nas/vault, or ~/OneDrive/vault, or an rclone mount
+BACKUP_INTERVAL_HOURS=24      # 24 daily, 168 weekly, 1 hourly
+BACKUP_RETAIN_DAYS=30         # 0 keeps everything
+BACKUP_ON_START=true          # take one immediately, so a wrong path is found now
+BACKUP_SKIP_IF_UNCHANGED=true # do not re-upload identical bytes to a metered folder
+```
+
+The destination is all the backup service knows, which is why it works with a NAS mount, a
+Google Drive or OneDrive sync folder, an rclone mount or a second disk **without any cloud
+credentials or provider-specific code**. Whatever puts that path on the filesystem is the host's
+job; the server just writes a file into it.
+
+Each run writes one verified `cred-vault-<UTC>.tar.gz` containing the vault data and the
+certificates. Four properties are worth knowing because each exists for a reason:
+
+| Property | Why |
+|---|---|
+| Written to a `.tmp` name and renamed only after it verifies | A sync client uploads whatever appears the moment it appears. A half-written file under the real name would be replicated as a "backup" |
+| Skips when nothing changed | A daily backup of a quiet vault would otherwise re-upload the same bytes forever |
+| **Refuses to archive an empty source when archives already exist** | Found by rehearsing a restore: after data loss + a restart, the scheduled run archived the *empty* directory, and since archives sort by timestamp that empty one became "newest" — shadowing the good restore point at the worst possible moment |
+| Retention never deletes the last remaining archive | A clock skew or a destination that was unreachable for a month must not turn "prune old backups" into "delete every backup" |
+
+It does **not** include `.env`. That file holds `LOCAL_SIGNING_KEY`, and this destination is often
+a cloud folder — copying a signing key there should be your decision, not a side effect of turning
+backups on. Keep `.env` wherever you keep secrets. The vault blobs themselves are ciphertext the
+server cannot read.
+
+Take one by hand at any time with `./backup.sh` (same code, same guarantees).
+
+## Restoring
 
 ```bash
-./backup.sh                    # ./backups/cred-vault-<UTC>.tar.gz
-./backup.sh /mnt/nas/vault     # somewhere that survives this host
+./restore.sh --list                    # what is available
+./restore.sh                           # the newest archive
+./restore.sh /mnt/nas/cred-vault-….tar.gz
 ```
 
-No downtime needed: vault writes are atomic (write to a temp file, rename), so a running server
-cannot leave a half-written blob in the archive. The script verifies the tarball before reporting
-success — an unverified backup is a rumour — and prunes archives older than `BACKUP_RETAIN_DAYS`
-(30).
+It verifies the archive **before** touching anything, refuses an archive containing no vault
+blobs, stops the stack, moves the current data aside as `data.before-restore-<ts>` rather than
+deleting it, unpacks, fixes ownership, starts up, and waits for the healthcheck. If anything fails
+after the point of no return it **rolls back** — the original data goes back and the stack is
+started again.
 
-From cron:
-
-```cron
-0 3 * * * /opt/cred-vault/deploy/backup.sh /mnt/nas/vault >> /var/log/vault-backup.log 2>&1
-```
-
-The archive holds ciphertext only — but it also holds `.env`, which may hold `LOCAL_SIGNING_KEY`.
-Treat it as a secret.
+This path has been rehearsed end to end, not just written: data directory destroyed, server
+returning 404, restore run, vault readable again with its exact contents. An unrehearsed restore
+is a rumour.
 
 ## Security posture of the stack
 

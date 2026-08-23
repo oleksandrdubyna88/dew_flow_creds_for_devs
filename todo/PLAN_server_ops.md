@@ -1,6 +1,6 @@
 # PLAN — cred-vault-server operational hardening
 
-> Status: **item 1 shipped 2026-08-23; items 2-5 remain, and three more were added below.**
+> Status: **items 1 and 8 shipped 2026-08-23; items 2-7 remain.**
 > Scope: deployment/runtime of the `cred-vault-server` .NET service — not code changes to the
 > extension. This plan stays in `todo/` because most of its value is still ahead of it.
 >
@@ -62,7 +62,15 @@ between a user's two machines.
    header the client sends and the server checks, and what the server should do on a mismatch
    (serve, warn, or refuse). Cheap now; expensive after the first breaking change.
 
-8. **Nobody has restored a backup.** `deploy/backup.sh` verifies its own archive, but no one has
+8. ~~**Nobody has restored a backup.**~~ **DONE 2026-08-23.** Rehearsed end to end against the
+   published image: a vault was written, the data directory destroyed, and `deploy/restore.sh` used
+   to bring it back — verified by reading the exact blob out of the API afterwards. The rehearsal
+   paid for itself immediately by finding two defects that only appear in a real recovery: the
+   scheduled backup archived the EMPTY directory after the outage and shadowed the good restore
+   point, and `restore.sh` failed after moving the data aside, leaving the stack down. Both fixed
+   and covered in `deploy/README.md`. The original text follows.
+
+   **Nobody has restored a backup.** `deploy/backup.sh` verifies its own archive, but no one has
    untarred one into a fresh deployment and confirmed the extension syncs against it. An unrehearsed
    restore is a hope, and this is the **largest single reliability risk in the product** — ahead of
    anything in the code. *Work:* restore into a clean stack, point a real extension at it, confirm a

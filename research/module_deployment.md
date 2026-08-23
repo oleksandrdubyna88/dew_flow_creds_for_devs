@@ -38,6 +38,7 @@ Four services, one of which exits immediately.
 | `vault` | uid 10001 | **none** | The API |
 | `nginx` | nginx | 80, 443 | TLS, headers, per-IP limiting, ACME webroot |
 | `certbot` | root | none | Issues, then renews forever |
+| `backup` | root | none, `network_mode: none` | Verified archives to one chosen path, on a timer. Reads the data **read-only** |
 
 ## Decisions worth recording
 
@@ -168,8 +169,40 @@ touches them; `docker compose down -v` is never used in any script here.
 socket — root on the host — and a credential server that pulls and runs new images unattended turns
 a registry compromise into a full compromise. Pin a tag; run `update.sh` when you mean to.
 
-`backup.sh` archives `DATA_DIR`, `CERT_DIR` and `.env`, needs no downtime (vault writes are atomic),
-**verifies the tarball before reporting success**, and prunes past `BACKUP_RETAIN_DAYS`.
+### Backups: one path, and four rules that came from rehearsing a restore
+
+The `backup` service writes a verified archive to `BACKUP_DIR` every `BACKUP_INTERVAL_HOURS`. That
+path is the *entire* interface — a NAS mount, an rclone mount, a Google Drive or OneDrive sync
+folder, another disk. Nothing in the server knows about any cloud provider, which is exactly why it
+works with all of them.
+
+`backup/backup-once.sh` is shared by the scheduled service and the manual `backup.sh`, so "what a
+backup is" has one definition. Its four non-obvious rules each exist because of a specific failure:
+
+1. **Write to `.tmp`, rename after verifying.** A sync client uploads whatever appears the moment
+   it appears; a half-written file under the real name would be replicated as a backup.
+2. **Skip when nothing changed.** A daily backup of a quiet vault would otherwise re-upload
+   identical bytes to a metered folder forever.
+3. **Refuse to archive an empty source when archives already exist.** Found by rehearsing: after
+   the data directory was destroyed and the stack restarted, the scheduled run archived the *empty*
+   directory. Archives sort by timestamp, so the empty one became "newest" and would have been what
+   a restore picked — destroying the restore point at the moment it was needed.
+4. **Retention never deletes the last archive.** A clock skew, or a destination unreachable for a
+   month, must not turn "prune old backups" into "delete every backup".
+
+`.env` is deliberately **not** in the archive: it holds `LOCAL_SIGNING_KEY`, and the destination is
+frequently a cloud folder.
+
+### Restore, rehearsed
+
+`restore.sh` verifies the archive before touching anything, refuses one with no vault blobs, moves
+the current data aside instead of deleting it, and **rolls back** on any failure past the point of
+no return — restoring the displaced data and restarting the stack. That rollback exists because the
+first rehearsal died on a bad archive and left the stack stopped with the data under another name,
+which is worse than where the operator started.
+
+The whole cycle has been exercised: vault written, data directory destroyed (server returning 404),
+`restore.sh` run, vault readable again with its exact contents.
 
 ## Hardening summary
 
