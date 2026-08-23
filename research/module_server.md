@@ -25,6 +25,7 @@ whole server is ~470 lines.
 | `src/TokenIdentity.cs` | Reads the verified caller identity out of JWT claims |
 | `src/Models.cs` | `ShareItem`, `ShareRequest`, `TeamMemberDto`, `WhoAmIDto` |
 | `src/Logging.cs` | Serilog: console + a file per run |
+| `src/InstanceFile.cs` | Publishes where this instance is listening, for the DewFlow editor panel |
 
 ## The request pipeline
 
@@ -199,6 +200,31 @@ Configuration reaches the app through **process environment variables**, not
 `WebApplicationFactory` adds during `ConfigureWebHost` lands too late to be seen. Because process
 environment is global, the suite runs in one non-parallel collection (`ServerCollection`).
 
+## Telling the editor panel where it is
+
+On startup the host writes `<LocalAppData>/dew-flow/services/cred-vault-server.json` — name, url,
+pid, start time, and the addresses it serves — and deletes it on a graceful stop. The DewFlow VS Code
+panel reads that directory and lists a locally running server under **Services**.
+
+The convention is copied from `dew_flow_rag_qln · src/ServiceDefaults/DaemonEndpointFile.cs` rather
+than reinvented: same directory, same JSON shape, same best-effort semantics. The one deliberate
+difference is the **filename** — that daemon owns `dew-flow/daemon.json`, and a second product
+writing there would overwrite it, so everything else publishes under `services/`.
+
+Three properties worth knowing:
+
+- **A file, not a fixed port.** The port is assigned per run, so a reader that hardcodes one is wrong
+  the first time anyone looks.
+- **Staleness is the reader's problem, deliberately.** A killed process cannot delete its own file,
+  so the contents are a hint confirmed by asking — which is why the file carries a pid and no status
+  field. A status written by a process that has since died is worse than none.
+- **Best-effort in every direction.** An unwritable profile, a container with no home, a read-only
+  filesystem: discovery degrades, the server does not. It is skipped entirely when there is no bound
+  address, which is what keeps an in-process test run from writing to a developer's real profile.
+
+`Vault:PublishInstanceFile=false` turns it off; the compose stack sets that, because a per-user
+profile file inside a container reaches nobody.
+
 ## Configuration
 
 | Key | Default | Meaning |
@@ -217,6 +243,7 @@ environment is global, the suite runs in one non-parallel collection (`ServerCol
 | `Auth:Google:Enabled` | `false` | Enables the Google scheme |
 | `Auth:Google:Audiences` | *(empty = not validated)* | Accepted Google client ids |
 | `Auth:Local:SigningKey` | *(empty = disabled)* | HMAC key for the offline scheme |
+| `Vault:PublishInstanceFile` | `true` | Publish this instance for the DewFlow editor panel |
 | `Logging:Directory` | `<app>/logs` | Root of the per-run log files |
 | `Serilog:MinimumLevel:Default` | `Information` | Verbosity |
 

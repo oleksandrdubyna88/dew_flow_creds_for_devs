@@ -1,0 +1,61 @@
+{
+  // The DewFlow editor panel reads these from every `dew_flow_*` checkout open in the window
+  // and offers them under "Start", so a server this repository can run is startable from the
+  // same place as the rest of the family rather than from a remembered command line.
+  //
+  // Once it is up it publishes where it landed, and the panel shows it under "Services" —
+  // see src_minimalapi_server/src/InstanceFile.cs.
+  "version": "0.2.0",
+  "configurations": [
+    {
+      // The everyday one: no cloud identity provider, a throwaway data directory, and the
+      // Local HMAC scheme so tokens can be minted without an IdP. Never a production shape —
+      // anyone holding that key can mint a token for any allowed email.
+      "name": "Cred Vault Server (local auth)",
+      "type": "coreclr",
+      "request": "launch",
+      "preLaunchTask": "build cred-vault-server",
+      "program": "${workspaceFolder}/src_minimalapi_server/src/bin/Debug/net10.0/CredVaultServer.dll",
+      "cwd": "${workspaceFolder}/src_minimalapi_server/src",
+      "console": "internalConsole",
+      "stopAtEntry": false,
+      "env": {
+        "ASPNETCORE_URLS": "http://127.0.0.1:5199",
+        "Vault__DataDir": "${workspaceFolder}/src_minimalapi_server/src/data",
+        "Vault__AllowedDomains": "example.com",
+        // 32 bytes minimum — HMAC-SHA256 refuses anything shorter, and the server now
+        // refuses to start rather than answer 401 to everything.
+        "Auth__Local__SigningKey": "dev-only-signing-key-dev-only-32b",
+        "Vault__RequireForwardedHttps": "false"
+      }
+    },
+    {
+      // Points at a real Entra tenant. Set the tenant id before using it; with none set the
+      // server refuses to start rather than 401 every request, which is the intended nudge.
+      "name": "Cred Vault Server (Entra)",
+      "type": "coreclr",
+      "request": "launch",
+      "preLaunchTask": "build cred-vault-server",
+      "program": "${workspaceFolder}/src_minimalapi_server/src/bin/Debug/net10.0/CredVaultServer.dll",
+      "cwd": "${workspaceFolder}/src_minimalapi_server/src",
+      "console": "internalConsole",
+      "env": {
+        "ASPNETCORE_URLS": "http://127.0.0.1:5199",
+        "Vault__DataDir": "${workspaceFolder}/src_minimalapi_server/src/data",
+        "Vault__AllowedDomains": "example.com",
+        "Auth__Microsoft__Tenant": "",
+        "Vault__RequireForwardedHttps": "false"
+      }
+    },
+    {
+      // Attaches to the extension host with the extension loaded from source, which is the
+      // only way to exercise the parts that need a real `vscode` API.
+      "name": "Cred SSH extension (dev host)",
+      "type": "extensionHost",
+      "request": "launch",
+      "args": ["--extensionDevelopmentPath=${workspaceFolder}/src_vs_code"],
+      "outFiles": ["${workspaceFolder}/src_vs_code/out/**/*.js"],
+      "preLaunchTask": "compile extension"
+    }
+  ]
+}

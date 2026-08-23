@@ -79,6 +79,9 @@ services:
       Auth__Google__Audiences: ${GOOGLE_AUDIENCES:-}
       Auth__Local__SigningKey: ${LOCAL_SIGNING_KEY:-}
       Serilog__MinimumLevel__Default: ${LOG_LEVEL:-Information}
+      # The DewFlow editor panel discovers LOCAL dev servers through a per-user profile
+      # file. Inside a container that file reaches nobody.
+      Vault__PublishInstanceFile: "false"
     volumes:
       - ${DATA_DIR:-./data}:/data
       - ${LOG_DIR:-./logs}:/logs

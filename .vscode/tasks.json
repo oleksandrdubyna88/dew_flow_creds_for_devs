@@ -1,0 +1,46 @@
+{
+  // Referenced by .vscode/launch.json as preLaunchTask. Without these a launch would run
+  // whatever binary happened to be on disk from the last build, which is the quietest way
+  // to spend an hour debugging a fix that was never compiled.
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "build cred-vault-server",
+      "type": "shell",
+      "command": "dotnet",
+      "args": ["build", "${workspaceFolder}/dew_flow_creds_for_devs.slnx"],
+      "group": "build",
+      "problemMatcher": "$msCompile",
+      "presentation": { "reveal": "silent", "clear": true }
+    },
+    {
+      "label": "compile extension",
+      "type": "shell",
+      "command": "npm",
+      "args": ["run", "compile"],
+      "options": { "cwd": "${workspaceFolder}/src_vs_code" },
+      "group": "build",
+      "problemMatcher": "$tsc",
+      "presentation": { "reveal": "silent", "clear": true }
+    },
+    {
+      "label": "test server",
+      "type": "shell",
+      // The test project builds into a self-contained runner executable; `dotnet test`
+      // has no VSTest host here and would abort.
+      "command": "${workspaceFolder}/src_minimalapi_server/tests/bin/Debug/net10.0/CredVaultServer.Tests.exe",
+      "dependsOn": "build cred-vault-server",
+      "group": "test",
+      "problemMatcher": []
+    },
+    {
+      "label": "test extension",
+      "type": "shell",
+      "command": "npm",
+      "args": ["test"],
+      "options": { "cwd": "${workspaceFolder}/src_vs_code" },
+      "group": "test",
+      "problemMatcher": []
+    }
+  ]
+}

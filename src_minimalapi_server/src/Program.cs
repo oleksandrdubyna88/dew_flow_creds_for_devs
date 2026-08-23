@@ -456,6 +456,26 @@ app.MapDelete("/api/shares/{id}", async (HttpContext ctx, string id) =>
         : StatusCodes.Status404NotFound;
 });
 
+// Tell the DewFlow editor panel where this instance ended up, so a locally running
+// server shows up beside the family's other hosts instead of being invisible. Opt-out
+// for a container, where a per-user profile file helps nobody.
+if (config.GetValue("Vault:PublishInstanceFile", true))
+{
+    app.Lifetime.ApplicationStarted.Register(() =>
+    {
+        // Read AFTER the server has bound: before that the address is a wish, and with
+        // an in-process test server there is no address at all.
+        var bound = app.Urls.FirstOrDefault(u => !u.Contains('*') && !u.Contains('+'))
+            ?? app.Urls.FirstOrDefault()?.Replace("*", "localhost").Replace("+", "localhost");
+        InstanceFile.Publish(bound ?? "");
+        if (!string.IsNullOrWhiteSpace(bound))
+        {
+            log.LogInformation("published this instance to {Path}", InstanceFile.Path);
+        }
+    });
+    app.Lifetime.ApplicationStopping.Register(InstanceFile.Withdraw);
+}
+
 try
 {
     app.Run();
