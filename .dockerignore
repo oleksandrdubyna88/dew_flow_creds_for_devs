@@ -1,0 +1,27 @@
+# Keep the build context small and free of anything that must never reach an image layer.
+
+.git/
+.github/
+.vs/
+.claude/
+
+# Build output — the image builds its own.
+**/bin/
+**/obj/
+**/out/
+**/node_modules/
+**/*.vsix
+
+# The extension is not part of the server image.
+src_vs_code/
+
+# Operator state and secrets.
+deploy/.env
+deploy/data/
+deploy/certbot/
+logs/
+
+# Docs.
+research/
+todo/
+*.md

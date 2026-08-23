@@ -1,0 +1,363 @@
+import * as crypto from 'node:crypto';
+import { StoredAccount, isStoredAccount } from './types';
+
+/**
+ * AES-256-GCM on top of a scrypt-derived key. Pure Node.js `crypto`.
+ *
+ * Two layers:
+ *  - {@link sealBlob} / {@link openBlob}: one encrypted JSON blob
+ *    (salt/iv/tag/data, all base64) — used by the vault payload AND by
+ *    individual share items.
+ *  - {@link encryptJson} / {@link decryptJson}: the vault file envelope —
+ *    plaintext format/version/kdf/account (+ optional plaintext `shares`
+ *    array of individually-encrypted share items) around one sealed blob.
+ *
+ * `account` and `shares` are intentionally unencrypted: restore needs the
+ * account BEFORE decryption, and shares are addressed to the file's owner
+ * but encrypted with a different (per-share) passphrase.
+ */
+
+const FORMAT = 'cred-ssh-manager-backup';
+/** v1: payload sealed directly with scrypt(accountId+PIN).
+ *  v2: payload sealed with a random master key, which is itself wrapped
+ *      once per unlock method (PIN, each security key) — see keyWrap.ts. */
+const VERSION_PIN_ONLY = 1;
+const VERSION_WRAPPED = 2;
+const SUPPORTED_VERSIONS = [VERSION_PIN_ONLY, VERSION_WRAPPED];
+const KEY_LENGTH = 32; // AES-256
+const SALT_LENGTH = 16;
+const IV_LENGTH = 12; // recommended for GCM
+const TAG_LENGTH = 16;
+
+// scrypt cost. New blobs record the params they used (kdfN/kdfR/kdfP) so the
+// cost can be raised without breaking old data: a blob WITHOUT those fields
+// predates the change and is read at the original N=2^15; new blobs are
+// written at the OWASP-leaning N=2^17 and carry their params for the future.
+const LEGACY_SCRYPT_N = 1 << 15;
+const DEFAULT_SCRYPT_N = 1 << 17;
+const SCRYPT_R = 8;
+const SCRYPT_P = 1;
+// maxmem must cover 128*N*r bytes (~128 MiB at N=2^17) plus headroom.
+const SCRYPT_MAXMEM = 300 * 1024 * 1024;
+
+interface ScryptParams {
+  N: number;
+  r: number;
+  p: number;
+}
+
+export type BackupErrorKind = 'corrupted' | 'wrong-password' | 'unsupported-version';
+
+/** Typed failure so callers can show a precise, human message. */
+export class BackupError extends Error {
+  readonly kind: BackupErrorKind;
+
+  constructor(kind: BackupErrorKind, message: string) {
+    super(message);
+    this.name = 'BackupError';
+    this.kind = kind;
+  }
+}
+
+/** One encrypted JSON value: scrypt(passphrase, salt) + AES-256-GCM. */
+export interface SealedBlob {
+  salt: string;
+  iv: string;
+  tag: string;
+  data: string;
+  /** scrypt cost used for THIS blob; absent = legacy N=2^15. */
+  kdfN?: number;
+  kdfR?: number;
+  kdfP?: number;
+}
+
+interface BackupEnvelope extends SealedBlob {
+  format: string;
+  version: number;
+  kdf: string;
+  account?: StoredAccount;
+  shares?: unknown[];
+  /** v2 only: the master-key wraps (plaintext envelope metadata). */
+  wraps?: unknown[];
+}
+
+function deriveKey(passphrase: string, salt: Buffer, params: ScryptParams): Buffer {
+  return crypto.scryptSync(passphrase, salt, KEY_LENGTH, {
+    N: params.N,
+    r: params.r,
+    p: params.p,
+    maxmem: SCRYPT_MAXMEM,
+  });
+}
+
+/** The scrypt params a blob was sealed with (legacy defaults when absent). */
+function paramsOf(blob: SealedBlob): ScryptParams {
+  return {
+    N: typeof blob.kdfN === 'number' ? blob.kdfN : LEGACY_SCRYPT_N,
+    r: typeof blob.kdfR === 'number' ? blob.kdfR : SCRYPT_R,
+    p: typeof blob.kdfP === 'number' ? blob.kdfP : SCRYPT_P,
+  };
+}
+
+export function sealBlob(payload: unknown, passphrase: string): SealedBlob {
+  const salt = crypto.randomBytes(SALT_LENGTH);
+  const iv = crypto.randomBytes(IV_LENGTH);
+  const params: ScryptParams = { N: DEFAULT_SCRYPT_N, r: SCRYPT_R, p: SCRYPT_P };
+  const key = deriveKey(passphrase, salt, params);
+  const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
+  const plaintext = Buffer.from(JSON.stringify(payload), 'utf8');
+  const ciphertext = Buffer.concat([cipher.update(plaintext), cipher.final()]);
+  return {
+    salt: salt.toString('base64'),
+    iv: iv.toString('base64'),
+    tag: cipher.getAuthTag().toString('base64'),
+    data: ciphertext.toString('base64'),
+    kdfN: params.N,
+    kdfR: params.r,
+    kdfP: params.p,
+  };
+}
+
+/**
+ * Decrypt a sealed blob. Throws {@link BackupError}: 'wrong-password' when
+ * GCM authentication fails, 'corrupted' for malformed pieces.
+ */
+export function openBlob(blob: SealedBlob, passphrase: string): unknown {
+  for (const field of ['salt', 'iv', 'tag', 'data'] as const) {
+    if (typeof blob[field] !== 'string' || blob[field].length === 0) {
+      throw new BackupError('corrupted', `Encrypted data is missing the "${field}" field.`);
+    }
+  }
+  const salt = Buffer.from(blob.salt, 'base64');
+  const iv = Buffer.from(blob.iv, 'base64');
+  const tag = Buffer.from(blob.tag, 'base64');
+  const data = Buffer.from(blob.data, 'base64');
+  if (salt.length !== SALT_LENGTH || iv.length !== IV_LENGTH || tag.length !== TAG_LENGTH) {
+    throw new BackupError('corrupted', 'Encrypted data has a malformed salt, IV, or auth tag.');
+  }
+
+  const key = deriveKey(passphrase, salt, paramsOf(blob));
+  let plaintext: Buffer;
+  try {
+    const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv);
+    decipher.setAuthTag(tag);
+    plaintext = Buffer.concat([decipher.update(data), decipher.final()]);
+  } catch {
+    throw new BackupError(
+      'wrong-password',
+      'Decryption failed: wrong master PIN/password or the data was modified.',
+    );
+  }
+
+  try {
+    return JSON.parse(plaintext.toString('utf8'));
+  } catch {
+    throw new BackupError('corrupted', 'Decrypted payload is not valid JSON.');
+  }
+}
+
+/**
+ * Encrypt a vault payload into the .enc file content. `account` and
+ * `shares` (individually-encrypted items addressed to this file's owner)
+ * stay plaintext in the envelope.
+ */
+export function encryptJson(
+  payload: unknown,
+  passphrase: string,
+  account?: StoredAccount,
+  shares?: unknown[],
+): string {
+  const blob = sealBlob(payload, passphrase);
+  const envelope: BackupEnvelope = {
+    format: FORMAT,
+    version: VERSION_PIN_ONLY,
+    kdf: 'scrypt',
+    ...(account !== undefined ? { account } : {}),
+    ...(shares !== undefined && shares.length > 0 ? { shares } : {}),
+    ...blob,
+  };
+  return JSON.stringify(envelope, null, 2);
+}
+
+/**
+ * v2 vault: the payload is sealed with `masterKeyBase64`, and `wraps` hold
+ * that master key encrypted once per unlock method. Adding or removing a
+ * security key only rewrites `wraps` — never the payload.
+ */
+export function encryptJsonWrapped(
+  payload: unknown,
+  masterKeyBase64: string,
+  wraps: readonly unknown[],
+  account?: StoredAccount,
+  shares?: unknown[],
+): string {
+  const blob = sealBlob(payload, masterKeyBase64);
+  const envelope: BackupEnvelope & { mac?: string } = {
+    format: FORMAT,
+    version: VERSION_WRAPPED,
+    kdf: 'scrypt',
+    ...(account !== undefined ? { account } : {}),
+    ...(shares !== undefined && shares.length > 0 ? { shares } : {}),
+    wraps: [...wraps],
+    ...blob,
+  };
+  envelope.mac = computeEnvelopeMac(envelope as unknown as Record<string, unknown>, masterKeyBase64);
+  return JSON.stringify(envelope, null, 2);
+}
+
+/** Envelope format version (1 = PIN-only, 2 = wrapped master key). */
+export function readVaultVersion(fileContent: string): number {
+  return parseEnvelope(fileContent).version;
+}
+
+/** The plaintext wraps of a v2 vault (empty for v1). */
+export function readVaultWraps(fileContent: string): unknown[] {
+  const wraps = parseEnvelope(fileContent).wraps;
+  return Array.isArray(wraps) ? wraps : [];
+}
+
+/** Rewrite ONLY the wraps of a v2 vault, carrying everything else verbatim. */
+export function envelopeWithWraps(fileContent: string, wraps: readonly unknown[]): string {
+  const env = JSON.parse(fileContent) as Record<string, unknown>;
+  if (typeof env?.format !== 'string') {
+    throw new BackupError('corrupted', 'Not a vault file.');
+  }
+  return JSON.stringify({ ...env, wraps: [...wraps] }, null, 2);
+}
+
+/** Decrypt a v2 payload once the master key has been unwrapped. */
+export function decryptJsonWithMasterKey(fileContent: string, masterKeyBase64: string): unknown {
+  return openBlob(parseEnvelope(fileContent), masterKeyBase64);
+}
+
+// ---- envelope MAC ----------------------------------------------------------
+// The AES-GCM tag authenticates only the sealed payload. The envelope's
+// PLAINTEXT metadata (`account`, `wraps`) is not — so on a shared-folder
+// transport a write-capable attacker could forge the owner account or delete
+// unlock wraps to lock the owner out. A MAC keyed by HKDF(master key) over
+// that metadata lets the OWNER detect such tampering on their own file.
+// `shares` are deliberately excluded: other users legitimately append them.
+
+function envelopeMacKey(masterKeyBase64: string): Buffer {
+  return Buffer.from(
+    crypto.hkdfSync(
+      'sha256',
+      Buffer.from(masterKeyBase64, 'base64'),
+      Buffer.alloc(0),
+      Buffer.from('cred-ssh-manager/envelope-mac'),
+      32,
+    ),
+  );
+}
+
+/** Stable serialization of the MAC-protected metadata fields. */
+function macCanonical(env: Record<string, unknown>): string {
+  return JSON.stringify({
+    format: env.format ?? null,
+    version: env.version ?? null,
+    account: env.account ?? null,
+    wraps: env.wraps ?? null,
+  });
+}
+
+function computeEnvelopeMac(env: Record<string, unknown>, masterKeyBase64: string): string {
+  return crypto
+    .createHmac('sha256', envelopeMacKey(masterKeyBase64))
+    .update(macCanonical(env))
+    .digest('base64');
+}
+
+export type EnvelopeMacStatus = 'ok' | 'missing' | 'bad';
+
+/** Verify the envelope MAC with the (already unwrapped) master key. */
+export function verifyEnvelopeMac(
+  fileContent: string,
+  masterKeyBase64: string,
+): EnvelopeMacStatus {
+  let env: Record<string, unknown>;
+  try {
+    env = JSON.parse(fileContent) as Record<string, unknown>;
+  } catch {
+    return 'bad';
+  }
+  const mac = env.mac;
+  if (typeof mac !== 'string') {
+    return 'missing'; // legacy/unsigned envelope
+  }
+  const expected = computeEnvelopeMac(env, masterKeyBase64);
+  const a = Buffer.from(mac, 'base64');
+  const b = Buffer.from(expected, 'base64');
+  return a.length === b.length && crypto.timingSafeEqual(a, b) ? 'ok' : 'bad';
+}
+
+/**
+ * Rewrite a v2 envelope's `wraps` and (re)sign the metadata MAC with the
+ * master key. Replaces the older unsigned wrap-rewrite for v2 vaults.
+ */
+export function resignEnvelopeWraps(
+  fileContent: string,
+  wraps: readonly unknown[],
+  masterKeyBase64: string,
+): string {
+  const env = JSON.parse(fileContent) as Record<string, unknown>;
+  if (typeof env?.format !== 'string') {
+    throw new BackupError('corrupted', 'Not a vault file.');
+  }
+  env.wraps = [...wraps];
+  env.mac = computeEnvelopeMac(env, masterKeyBase64);
+  return JSON.stringify(env, null, 2);
+}
+
+function parseEnvelope(fileContent: string): BackupEnvelope {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(fileContent);
+  } catch {
+    throw new BackupError('corrupted', 'The file is not a valid backup (not JSON).');
+  }
+  if (typeof raw !== 'object' || raw === null) {
+    throw new BackupError('corrupted', 'The file is not a valid backup.');
+  }
+  const v = raw as Record<string, unknown>;
+  if (v.format !== FORMAT) {
+    throw new BackupError('corrupted', 'The file is not a Cred SSH Manager backup.');
+  }
+  if (typeof v.version !== 'number' || !SUPPORTED_VERSIONS.includes(v.version)) {
+    throw new BackupError(
+      'unsupported-version',
+      `Unsupported backup version: ${String(v.version)}.`,
+    );
+  }
+  if (v.kdf !== 'scrypt') {
+    throw new BackupError('corrupted', `Unsupported key derivation: ${String(v.kdf)}.`);
+  }
+  if (v.account !== undefined && !isStoredAccount(v.account)) {
+    throw new BackupError('corrupted', 'Backup file has malformed account metadata.');
+  }
+  for (const field of ['salt', 'iv', 'tag', 'data'] as const) {
+    if (typeof v[field] !== 'string' || (v[field] as string).length === 0) {
+      throw new BackupError('corrupted', `Backup file is missing the "${field}" field.`);
+    }
+  }
+  return v as unknown as BackupEnvelope;
+}
+
+/**
+ * Read the plaintext account metadata of a backup without decrypting it.
+ * Returns undefined for account-less (legacy) backups.
+ */
+export function readBackupAccount(fileContent: string): StoredAccount | undefined {
+  return parseEnvelope(fileContent).account;
+}
+
+/** Read the plaintext shares array (unvalidated) without decrypting. */
+export function readBackupShares(fileContent: string): unknown[] {
+  const shares = parseEnvelope(fileContent).shares;
+  return Array.isArray(shares) ? shares : [];
+}
+
+/** Decrypt an .enc vault file produced by {@link encryptJson}. */
+export function decryptJson(fileContent: string, passphrase: string): unknown {
+  const envelope = parseEnvelope(fileContent);
+  return openBlob(envelope, passphrase);
+}

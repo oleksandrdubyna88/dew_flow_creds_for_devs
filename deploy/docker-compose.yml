@@ -1,0 +1,176 @@
+# Cred Vault Server — one-command deployment.
+#
+#   cp .env.example .env      # edit it: this is the only file you configure
+#   docker compose up -d
+#
+# Everything that must survive an update lives OUTSIDE the containers, under the paths
+# named by DATA_DIR / CERT_DIR (bind mounts, default ./data and ./certbot-data). Updating is
+# `./update.sh`, which pulls a new image and recreates the containers; the bind mounts
+# are untouched by that, which is the whole point of not using anonymous volumes.
+#
+# TLS_MODE in .env decides how certificates are obtained:
+#   domain  — Let's Encrypt HTTP-01 for DOMAIN (public DNS + reachable :80 required)
+#   ip      — Let's Encrypt for a public IP; forced onto the ~6-day `shortlived` profile
+#   custom  — you supply fullchain.pem/privkey.pem yourself (internal CA, wildcard, …)
+#   none    — plain HTTP. ONLY legitimate when something else already terminates TLS.
+
+name: cred-vault
+
+services:
+  # ---------------------------------------------------------------------------
+  # One-shot: give the bind-mounted host directories to the unprivileged uid the app
+  # runs as, then exit.
+  #
+  # Without this, `docker compose up -d` fails on first boot on any normal Linux host:
+  # a freshly created ./data belongs to root, the app runs as uid 10001, and it cannot
+  # create its own subdirectories. (This is invisible on Docker Desktop for Windows and
+  # macOS, whose bind mounts are permissive — which is exactly how such a bug ships.)
+  #
+  # It is the only container here that runs as root, it holds no port and no network,
+  # and it does one chown.
+  # ---------------------------------------------------------------------------
+  init:
+    image: alpine:3.20
+    # List form on purpose: a folded string here is re-split by the shell and the `&&`
+    # arrived as a bare argument ("sh: syntax error: unexpected &&").
+    command:
+      - /bin/sh
+      - -c
+      - |
+        set -e
+        mkdir -p /data /logs
+        chown -R 10001:10001 /data /logs
+        echo "cred-vault: data and log directories prepared"
+    volumes:
+      - ${DATA_DIR:-./data}:/data
+      - ${LOG_DIR:-./logs}:/logs
+    network_mode: none
+    restart: "no"
+
+  # ---------------------------------------------------------------------------
+  # The application. Deliberately publishes NO port: the only way in is nginx.
+  # ---------------------------------------------------------------------------
+  vault:
+    image: ${VAULT_IMAGE:-ghcr.io/oleksandrdubyna88/cred-vault-server:latest}
+    build:
+      context: ..
+      dockerfile: src_minimalapi_server/Dockerfile
+    depends_on:
+      init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    expose:
+      - "8080"
+    environment:
+      Vault__DataDir: /data
+      Vault__AllowedDomains: ${ALLOWED_DOMAINS:?set ALLOWED_DOMAINS in .env}
+      Vault__AllowAnyDomain: ${ALLOW_ANY_DOMAIN:-false}
+      Vault__MaxVaultBytes: ${MAX_VAULT_BYTES:-8388608}
+      Vault__MaxShareBytes: ${MAX_SHARE_BYTES:-1048576}
+      Vault__MaxInboxItems: ${MAX_INBOX_ITEMS:-500}
+      Vault__RateLimit__PermitLimit: ${RATE_LIMIT_PERMITS:-120}
+      Vault__RateLimit__WindowSeconds: ${RATE_LIMIT_WINDOW_SECONDS:-10}
+      # nginx always sets X-Forwarded-Proto, and the app port is unreachable except
+      # through nginx — the two conditions that make trusting the header correct.
+      Vault__RequireForwardedHttps: ${REQUIRE_HTTPS:-true}
+      Auth__Microsoft__Tenant: ${MS_TENANT:-}
+      Auth__Microsoft__Audiences: ${MS_AUDIENCES:-}
+      Auth__Google__Enabled: ${GOOGLE_ENABLED:-false}
+      Auth__Google__Audiences: ${GOOGLE_AUDIENCES:-}
+      Auth__Local__SigningKey: ${LOCAL_SIGNING_KEY:-}
+      Serilog__MinimumLevel__Default: ${LOG_LEVEL:-Information}
+    volumes:
+      - ${DATA_DIR:-./data}:/data
+      - ${LOG_DIR:-./logs}:/logs
+    # Hardening: the app writes only to /data and /logs, so everything else is read-only
+    # and it may never gain a privilege it did not start with.
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+    deploy:
+      resources:
+        limits:
+          memory: ${VAULT_MEMORY_LIMIT:-512m}
+    networks:
+      - edge
+
+  # ---------------------------------------------------------------------------
+  # TLS termination, security headers, and the ACME challenge webroot.
+  # ---------------------------------------------------------------------------
+  nginx:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    depends_on:
+      vault:
+        condition: service_healthy
+    ports:
+      - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
+    environment:
+      TLS_MODE: ${TLS_MODE:?set TLS_MODE in .env (domain | ip | custom | none)}
+      SERVER_NAME: ${DOMAIN:-${PUBLIC_IP:-_}}
+      MAX_BODY_MB: ${MAX_BODY_MB:-16}
+      HSTS_MAX_AGE: ${HSTS_MAX_AGE:-31536000}
+    volumes:
+      - ./nginx/entrypoint.sh:/docker-entrypoint.d/40-cred-vault.sh:ro
+      # NOT /etc/nginx/templates: the stock image renders everything there before our
+      # hook runs, producing a config with empty certificate paths.
+      - ./nginx/vault.conf.template:/etc/cred-vault/vault.conf.template:ro
+      - ${CERT_DIR:-./certbot-data}/conf:/etc/letsencrypt:ro
+      - ${CERT_DIR:-./certbot-data}/www:/var/www/certbot:ro
+    healthcheck:
+      test: ["CMD", "nginx", "-t"]
+      interval: 60s
+      timeout: 5s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+    networks:
+      - edge
+
+  # ---------------------------------------------------------------------------
+  # Certificate issuance + renewal. Exits immediately when TLS_MODE is custom/none.
+  #
+  # An IP certificate is capped at ~6 days by Let's Encrypt policy, so this is not a
+  # convenience — an unattended renewal loop is the only way such a deployment stays up.
+  # ---------------------------------------------------------------------------
+  certbot:
+    image: certbot/certbot:latest
+    restart: unless-stopped
+    depends_on:
+      - nginx
+    environment:
+      TLS_MODE: ${TLS_MODE:?set TLS_MODE in .env}
+      DOMAIN: ${DOMAIN:-}
+      PUBLIC_IP: ${PUBLIC_IP:-}
+      ACME_EMAIL: ${ACME_EMAIL:-}
+      ACME_STAGING: ${ACME_STAGING:-false}
+      RENEW_INTERVAL_SECONDS: ${RENEW_INTERVAL_SECONDS:-21600}
+    volumes:
+      - ${CERT_DIR:-./certbot-data}/conf:/etc/letsencrypt
+      - ${CERT_DIR:-./certbot-data}/www:/var/www/certbot
+      - ./certbot/entrypoint.sh:/entrypoint.sh:ro
+    entrypoint: ["/bin/sh", "/entrypoint.sh"]
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+    networks:
+      - edge
+
+networks:
+  edge:
+    driver: bridge

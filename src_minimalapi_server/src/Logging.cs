@@ -1,0 +1,99 @@
+using Serilog;
+using Serilog.Events;
+
+namespace CredVaultServer;
+
+/// <summary>
+/// The one place logging is configured, per
+/// <c>.claude/rules/shared/common/logging-serilog.md</c>: the console, and a file on disk
+/// with a NEW FILE PER RUN under a folder named for the UTC day.
+///
+/// <para>
+/// A file per run rather than a rolling file per day is the part people get wrong by
+/// reaching for a rolling sink: rolling by day appends every run into one file, and the
+/// question actually being asked is almost always "what did <em>that</em> run do". The
+/// timestamp is taken once at startup and the process id disambiguates two hosts started
+/// in the same second.
+/// </para>
+///
+/// <para>
+/// Everything is UTC — the folder, the file name, and the timestamp on every line — so
+/// that correlating this service's log with anything else never turns into timezone
+/// arithmetic during an incident.
+/// </para>
+///
+/// <para>
+/// DEVIATION from the family rule, recorded deliberately: the rule mandates the family's
+/// hand-written <c>AnsiConsoleSink</c>, because Serilog's console themes emit nothing once
+/// stdout is redirected and an Aspire dashboard redirects it by definition. This service
+/// has no Aspire host — it runs under Docker, where <c>docker compose logs</c> colours by
+/// stream and the file sink is what anyone actually reads. Porting that sink is
+/// <c>todo/PLAN_logging_convention.md</c>.
+/// </para>
+/// </summary>
+public static class CredVaultLogging
+{
+    private const string ConsoleTemplate =
+        "[{Timestamp:HH:mm:ss} {Level:u3}] {SourceContext}: {Message:lj}{NewLine}{Exception}";
+
+    private const string FileTemplate =
+        "[{Timestamp:yyyy-MM-dd HH:mm:ss.fff} {Level:u3}] {SourceContext}: {Message:lj} {Properties:j}{NewLine}{Exception}";
+
+    /// <summary>
+    /// Configures Serilog and installs it as the host's logger. Call it as the first
+    /// statement after creating the builder — a host that crashes while wiring itself up
+    /// is precisely when the log matters, and a logger configured after
+    /// <c>Build()</c> has nothing to say about it.
+    /// </summary>
+    public static void AddCredVaultLogging(this IHostApplicationBuilder builder, string appName)
+    {
+        var startedUtc = DateTime.UtcNow;
+        // Empty is the appsettings default and means "unset" — `??` alone would take it
+        // and put the log root at the process working directory.
+        var configured = builder.Configuration["Logging:Directory"];
+        var logRoot = string.IsNullOrWhiteSpace(configured)
+            ? Path.Combine(AppContext.BaseDirectory, "logs")
+            : configured;
+        var runFile = Path.Combine(
+            logRoot,
+            startedUtc.ToString("yyyy-MM-dd"),
+            $"{appName}-{startedUtc:HH-mm-ss}-{Environment.ProcessId}.log");
+
+        var configuration = new LoggerConfiguration()
+            // Levels come from configuration, never from call sites: changing verbosity is
+            // a config edit and a restart, not an edited binary.
+            .ReadFrom.Configuration(builder.Configuration)
+            .MinimumLevel.Override("Microsoft.AspNetCore", LogEventLevel.Warning)
+            .MinimumLevel.Override("System.Net.Http.HttpClient", LogEventLevel.Warning)
+            // This service issues no cookies and no antiforgery tokens, so the key-ring
+            // warnings it emits on every start are three lines of noise per run.
+            .MinimumLevel.Override("Microsoft.AspNetCore.DataProtection", LogEventLevel.Error)
+            .Enrich.FromLogContext()
+            .Enrich.WithProperty("Application", appName)
+            .Enrich.WithProperty("ProcessId", Environment.ProcessId)
+            .WriteTo.Console(outputTemplate: ConsoleTemplate);
+
+        // A container with no writable log mount must still start and still serve. Losing
+        // the file sink is a degraded log, not an outage — so this failure is reported on
+        // the console and swallowed, which is the one place swallowing is correct.
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(runFile)!);
+            configuration = configuration.WriteTo.File(
+                runFile,
+                outputTemplate: FileTemplate,
+                shared: false,
+                flushToDiskInterval: TimeSpan.FromSeconds(2));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            Console.Error.WriteLine(
+                $"[{appName}] log directory '{logRoot}' is not writable ({ex.Message}); "
+                + "continuing with console logging only.");
+        }
+
+        Log.Logger = configuration.CreateLogger();
+        builder.Logging.ClearProviders();
+        builder.Logging.AddSerilog(Log.Logger, dispose: true);
+    }
+}

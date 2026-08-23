@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "defaultMode": "acceptEdits",
+    "allow": [
+      "Edit",
+      "Write",
+      "NotebookEdit",
+      "Bash",
+      "PowerShell"
+    ]
+  }
+}

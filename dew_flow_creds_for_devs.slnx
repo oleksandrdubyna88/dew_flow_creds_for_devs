@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src_minimalapi_server/src/CredVaultServer.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="src_minimalapi_server/tests/CredVaultServer.Tests.csproj" />
+  </Folder>
+</Solution>

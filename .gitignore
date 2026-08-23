@@ -7,6 +7,9 @@
 ##
 ## Get latest from https://github.com/github/gitignore/blob/main/Dotnet.gitignore
 
+# Visual Studio working folder
+.vs/
+
 # Build results
 [Dd]ebug/
 [Dd]ebugPublic/
@@ -55,3 +58,71 @@ CodeCoverage/
 *.VisualState.xml
 TestResult.xml
 nunit-*.xml
+
+# ---------------------------------------------------------------------------
+# Node / TypeScript / VS Code extension (src_vs_code)
+#
+# The .NET section above already ignores [Bb]in/ and [Oo]bj/ everywhere, which
+# is why this section only has to name what the TypeScript toolchain adds.
+# ---------------------------------------------------------------------------
+
+# Dependencies — restored by `npm ci` from package-lock.json, never committed
+node_modules/
+jspm_packages/
+.pnp
+.pnp.js
+
+# TypeScript build output (tsconfig.json outDir) and incremental state
+out/
+dist/
+build/
+*.tsbuildinfo
+
+# Packaged extension — a build artifact, rebuilt by `npm run package`.
+# 41 of these were committed in the pre-monorepo checkout; never again.
+*.vsix
+
+# npm / yarn / pnpm diagnostics
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.npm/
+.eslintcache
+
+# Test + coverage output
+coverage/
+.nyc_output/
+junit.xml
+
+# Editor / OS noise that follows a Node checkout around
+.vscode-test/
+.DS_Store
+Thumbs.db
+
+# Local environment overrides (the .NET section ignores bare `.env`)
+.env.local
+.env.*.local
+
+# ---------------------------------------------------------------------------
+# Deployment secrets — NEVER commit these (see deploy/README.md)
+# ---------------------------------------------------------------------------
+
+# Operator-authored compose environment: contains the tenant id, the allowed
+# domains, and (for the Local scheme) an HMAC signing key.
+deploy/.env
+
+# Certificates and ACME account material fetched by certbot at runtime.
+# NOTE the -data suffix: deploy/certbot/ holds the committed entrypoint script, and
+# ignoring that directory would silently drop it from the repository.
+deploy/certbot-data/
+deploy/data/
+deploy/logs/
+deploy/backups/
+deploy/.update-state
+
+# Vault blobs written by a server run outside Docker (Vault__DataDir=./data)
+src_minimalapi_server/**/data/
+
+# Host logs: a folder per day, a file per run (.claude/rules/shared/common/logging-serilog.md)
+logs/

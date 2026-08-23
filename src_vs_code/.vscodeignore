@@ -1,0 +1,24 @@
+# Everything here is excluded from the published .vsix.
+# What ships: out/*.js (minus tests), media/, package.json, README.md, CHANGELOG.md, LICENSE.
+
+.vscode/**
+.vscode-test/**
+
+# TypeScript sources and their maps — the compiled out/ is what runs.
+src/**
+**/*.map
+tsconfig.json
+
+# Tests never ship.
+out/test/**
+
+# Build + repo tooling.
+scripts/**
+node_modules/**
+package-lock.json
+.gitignore
+.eslintcache
+*.vsix
+
+# The generated icon's source script lives in scripts/ (excluded above); media/icon.png
+# itself must ship, so media/ is deliberately NOT ignored.

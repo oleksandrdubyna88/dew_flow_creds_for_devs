@@ -1,0 +1,86 @@
+# The TLS server block. Rendered by entrypoint.sh (envsubst) ONLY once a real
+# certificate exists at ${SSL_CERT}/${SSL_KEY}; until then port 443 does not listen at
+# all and port 80 answers 503. There is deliberately no self-signed placeholder: the
+# extension uses fetch() with no certificate override and would reject one anyway, so a
+# placeholder buys nothing and costs a confusing "untrusted certificate" error.
+#
+# NOTE: this file lives outside /etc/nginx/templates on purpose — the stock image's
+# 20-envsubst-on-templates.sh renders everything in that directory before our hook runs,
+# which would emit a half-substituted config with empty certificate paths.
+
+server {
+    listen 443 ssl default_server;
+    listen [::]:443 ssl default_server;
+    http2 on;
+    server_name ${SERVER_NAME};
+
+    ssl_certificate     ${SSL_CERT};
+    ssl_certificate_key ${SSL_KEY};
+
+    # TLS 1.2 is kept only because some corporate middleboxes still terminate at it;
+    # drop it to go 1.3-only once you know your fleet.
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_prefer_server_ciphers off;
+    ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305;
+    ssl_session_timeout 1d;
+    ssl_session_cache shared:VaultSSL:10m;
+    ssl_session_tickets off;
+
+    # Vault blobs are ciphertext and incompressible; compressing them would only add a
+    # BREACH-style side channel for no gain.
+    gzip off;
+    server_tokens off;
+
+    add_header Strict-Transport-Security "max-age=${HSTS_MAX_AGE}; includeSubDomains" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-Frame-Options "DENY" always;
+    add_header Referrer-Policy "no-referrer" always;
+    add_header Content-Security-Policy "default-src 'none'; frame-ancestors 'none'" always;
+
+    client_max_body_size ${MAX_BODY_MB}m;
+    client_body_timeout 60s;
+    client_header_timeout 20s;
+
+    location /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+        default_type "text/plain";
+    }
+
+    # The container's own probe: not rate-limited, and not logged, so a 30-second
+    # healthcheck does not drown the access log it shares with real traffic.
+    location = /api/health {
+        access_log off;
+        proxy_pass http://vault:8080;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    }
+
+    location /api/ {
+        limit_req zone=vault_api burst=40 nodelay;
+        limit_conn vault_conn 20;
+
+        proxy_pass http://vault:8080;
+        proxy_http_version 1.1;
+
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        # Always SET, never forwarded from the client: the app trusts this header, and
+        # $scheme is what nginx actually terminated rather than what a caller claimed.
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        proxy_connect_timeout 5s;
+        proxy_send_timeout 120s;
+        proxy_read_timeout 120s;
+
+        # An 8 MiB vault is one body; buffering it to disk on the way through buys
+        # nothing and doubles write amplification.
+        proxy_request_buffering off;
+    }
+
+    # Anything that is not the API does not exist here.
+    location / {
+        return 404;
+    }
+}

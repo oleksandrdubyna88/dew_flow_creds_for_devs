@@ -1,0 +1,37 @@
+<Project>
+
+  <!--
+    Package policy: bump to the latest STABLE release monthly, all at once, across the
+    dew_flow_* repositories (.claude/rules/shared/csharp/nuget-packages.md). Exceptions
+    are pinned below with the reason, because an exception without a reason gets bumped
+    by the next person who runs the sweep.
+  -->
+  <ItemGroup>
+    <!-- Server: Entra / Google id-token validation. -->
+    <PackageVersion Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.11" />
+
+    <!-- Serilog: the one logging stack, per .claude/rules/shared/common/logging-serilog.md. Apache-2.0. -->
+    <PackageVersion Include="Serilog.AspNetCore" Version="10.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- xUnit v3 on the native Microsoft Testing Platform: the test project builds into a
+         self-contained runner executable. There is no VSTest testhost here, so `dotnet test`
+         aborts — run the executable (.claude/rules/shared/common/testing.md). -->
+    <PackageVersion Include="xunit.v3" Version="4.0.0" />
+
+    <!-- Hosts the API in-process (TestServer) so the suite needs no free port and no
+         background `dotnet run`. -->
+    <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.11" />
+
+    <!-- Mints Local-scheme tokens, including the forged ones the auth tests require.
+         Must not trail the version JwtBearer 10.0.11 pulls in transitively (8.19.2) —
+         the original repo pinned 8.14.0 and NU1605 was only a warning there. -->
+    <PackageVersion Include="System.IdentityModel.Tokens.Jwt" Version="8.19.2" />
+
+    <!-- 7.2.2 = the last Apache-2.0 release; 8.x moved to the Xceed Community License
+         (non-commercial only). Do NOT bump. -->
+    <PackageVersion Include="FluentAssertions" Version="7.2.2" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,111 @@
+name: release
+
+# Two products, two tag shapes, so releasing one never ships the other:
+#   server-v1.2.3     -> builds and pushes the container image
+#   extension-v0.24.0 -> packages and publishes to the VS Code Marketplace
+on:
+  push:
+    tags:
+      - 'server-v*'
+      - 'extension-v*'
+  workflow_dispatch:
+    inputs:
+      target:
+        description: 'What to release'
+        required: true
+        type: choice
+        options: [server, extension]
+
+permissions:
+  contents: read
+
+jobs:
+  server:
+    name: publish server image
+    if: startsWith(github.ref, 'refs/tags/server-v') || inputs.target == 'server'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/cred-vault-server
+          # `latest` moves only on a real tag, so an operator who pinned :latest
+          # never picks up a workflow_dispatch trial build.
+          tags: |
+            type=match,pattern=server-v(.*),group=1
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/server-v') }}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: src_minimalapi_server/Dockerfile
+          push: true
+          # linux/arm64 covers the small ARM VPS this is likely to live on.
+          platforms: linux/amd64,linux/arm64
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  extension:
+    name: publish extension
+    if: startsWith(github.ref, 'refs/tags/extension-v') || inputs.target == 'extension'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: src_vs_code
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.x
+          cache: npm
+          cache-dependency-path: src_vs_code/package-lock.json
+
+      - run: npm ci
+
+      # Never publish something that has not passed its own tests.
+      - run: npm run typecheck
+      - run: npm test
+
+      - name: Refuse to publish with a placeholder publisher
+        run: |
+          publisher=$(node -p "require('./package.json').publisher")
+          if [ "$publisher" = "set-your-publisher-id" ]; then
+            echo "package.json still carries the placeholder publisher id."
+            echo "Create a publisher at https://marketplace.visualstudio.com/manage,"
+            echo "put its id in package.json, and see docs/PUBLISHING.md."
+            exit 1
+          fi
+
+      - name: Publish to the Marketplace
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+        run: |
+          if [ -z "${VSCE_PAT}" ]; then
+            echo "VSCE_PAT secret is not set — see docs/PUBLISHING.md."
+            exit 1
+          fi
+          npx vsce publish --pat "${VSCE_PAT}"
+
+      - name: Package for the GitHub release too
+        run: npx vsce package --out cred-ssh-manager.vsix
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: extension-vsix
+          path: src_vs_code/cred-ssh-manager.vsix

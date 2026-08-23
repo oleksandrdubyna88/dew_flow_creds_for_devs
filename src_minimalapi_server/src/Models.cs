@@ -1,0 +1,66 @@
+using System.Text.Json.Serialization;
+
+namespace CredVaultServer;
+
+/// <summary>
+/// One encrypted share sitting in a recipient's inbox. Everything except
+/// `Data` (plus salt/iv/tag) is plaintext metadata so the recipient can see
+/// who sent what BEFORE decrypting; the payload itself is AES-256-GCM
+/// ciphertext produced on the sender's machine.
+/// `From*` fields are stamped by the SERVER from the verified token, so the
+/// sender identity cannot be forged (unlike the file-share transport).
+/// </summary>
+public sealed record ShareItem
+{
+    [JsonPropertyName("id")] public string Id { get; init; } = Guid.NewGuid().ToString();
+    [JsonPropertyName("fromEmail")] public string FromEmail { get; init; } = "";
+    [JsonPropertyName("fromName")] public string? FromName { get; init; }
+    [JsonPropertyName("toEmail")] public string ToEmail { get; init; } = "";
+    [JsonPropertyName("entityName")] public string EntityName { get; init; } = "";
+    [JsonPropertyName("entityKind")] public string EntityKind { get; init; } = "credential";
+    [JsonPropertyName("createdAt")] public long CreatedAt { get; init; }
+    [JsonPropertyName("salt")] public string Salt { get; init; } = "";
+    [JsonPropertyName("iv")] public string Iv { get; init; } = "";
+    [JsonPropertyName("tag")] public string Tag { get; init; } = "";
+    [JsonPropertyName("data")] public string Data { get; init; } = "";
+    // scrypt params of the client-sealed payload (opaque to the server).
+    [JsonPropertyName("kdfN")] public int? KdfN { get; init; }
+    [JsonPropertyName("kdfR")] public int? KdfR { get; init; }
+    [JsonPropertyName("kdfP")] public int? KdfP { get; init; }
+}
+
+/// <summary>What a client POSTs to share one entity with one person.</summary>
+public sealed record ShareRequest
+{
+    public string ToEmail { get; init; } = "";
+    public string EntityName { get; init; } = "";
+    public string EntityKind { get; init; } = "credential";
+    public string Salt { get; init; } = "";
+    public string Iv { get; init; } = "";
+    public string Tag { get; init; } = "";
+    public string Data { get; init; } = "";
+    public int? KdfN { get; init; }
+    public int? KdfR { get; init; }
+    public int? KdfP { get; init; }
+
+    public bool IsValid() =>
+        !string.IsNullOrWhiteSpace(ToEmail)
+        && ToEmail.Contains('@')
+        && !string.IsNullOrWhiteSpace(EntityName)
+        && IsBase64(Salt)
+        && IsBase64(Iv)
+        && IsBase64(Tag)
+        && IsBase64(Data);
+
+    private static bool IsBase64(string value) =>
+        !string.IsNullOrWhiteSpace(value) && Convert.TryFromBase64String(value, new byte[value.Length], out _);
+
+    /// <summary>Rough encoded size of the encrypted fields, for the size cap.</summary>
+    public long PayloadBytes() =>
+        (long)Salt.Length + Iv.Length + Tag.Length + Data.Length + EntityName.Length;
+}
+
+/// <summary>A person discoverable in this deployment.</summary>
+public sealed record TeamMemberDto(string Email);
+
+public sealed record WhoAmIDto(string Email, string? Name, bool HasVault);
