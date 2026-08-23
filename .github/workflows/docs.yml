@@ -1,0 +1,44 @@
+name: docs · plans
+
+# The plan lifecycle, enforced from the shared rules repository rather than once per
+# consumer — the check reads markdown, not code, so one implementation serves every
+# repository in the family.
+#
+# Separate from both product pipelines because it gates neither: a documentation
+# error should not read as "the server is broken", and it runs in seconds.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: docs-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  lifecycle:
+    name: plan lifecycle · submodule pin
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Only that ONE submodule: `submodules: true` would drag in every other one
+      # for what is a walk over markdown.
+      - name: Fetch the shared rules
+        run: git submodule update --init --depth 1 .claude/rules/shared
+
+      # Fails on a plan filed in the wrong folder, a missing status line, a link
+      # between todo/ and research/ that does not resolve, or a todo/README.md index
+      # that has drifted from the folder.
+      - name: Plan lifecycle
+        run: node .claude/rules/shared/tools/plan-lifecycle.mjs
+
+      # Every submodule pin must equal its remote's tip — "a rule change and the pin
+      # bumps are one task" is a check, not a habit.
+      - name: Pin check
+        run: node .claude/rules/shared/tools/pin-check.mjs

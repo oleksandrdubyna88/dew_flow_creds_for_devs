@@ -1,0 +1,84 @@
+name: ci · server
+
+# Pipeline 2 of 3. The .NET minimal API, on its own.
+#
+# `deploy/**` is in the path filter deliberately: the compose stack is how this
+# server is delivered, so a change to it must re-run this pipeline — and therefore
+# the image pipeline that `docker.yml` chains off a green run here.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src_minimalapi_server/**'
+      - 'deploy/**'
+      - 'Directory.Build.props'
+      - 'Directory.Packages.props'
+      - 'global.json'
+      - 'nuget.config'
+      - 'dew_flow_creds_for_devs.slnx'
+      - '.github/workflows/ci-server.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src_minimalapi_server/**'
+      - 'deploy/**'
+      - 'Directory.Build.props'
+      - 'Directory.Packages.props'
+      - 'global.json'
+      - 'nuget.config'
+      - 'dew_flow_creds_for_devs.slnx'
+      - '.github/workflows/ci-server.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: ci-server-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build-test:
+    name: build · test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Build
+        run: dotnet build dew_flow_creds_for_devs.slnx -c Release
+
+      # xUnit v3 on Microsoft Testing Platform: the test project builds into a
+      # self-contained runner executable. `dotnet test` has no VSTest host here and
+      # would abort — never use it (.claude/rules/shared/common/testing.md).
+      # No `.exe` suffix on Linux; the same binary is CredVaultServer.Tests.exe locally.
+      - name: Test
+        run: ./src_minimalapi_server/tests/bin/Release/net10.0/CredVaultServer.Tests
+
+  # The deployment stack ships with the server, so it is verified in the same
+  # pipeline — a broken compose file or entrypoint is a server release defect.
+  deployment:
+    name: compose · scripts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate the compose stack in every TLS mode
+        working-directory: deploy
+        run: |
+          cp .env.example .env
+          for mode in domain ip custom none; do
+            sed -i "s/^TLS_MODE=.*/TLS_MODE=$mode/" .env
+            docker compose config >/dev/null || { echo "compose invalid for TLS_MODE=$mode"; exit 1; }
+          done
+          rm .env
+
+      - name: Shell-check the operator scripts
+        run: |
+          sudo apt-get update && sudo apt-get install -y --no-install-recommends shellcheck
+          shellcheck deploy/update.sh deploy/backup.sh
+          # The container entrypoints are POSIX sh, not bash.
+          shellcheck --shell=sh deploy/nginx/entrypoint.sh deploy/certbot/entrypoint.sh

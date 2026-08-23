@@ -88,7 +88,8 @@ dotnet build dew_flow_creds_for_devs.slnx
 cd src_vs_code && npm ci && npm run typecheck && npm test
 ```
 
-Both halves build and test independently in CI ([.github/workflows/ci.yml](.github/workflows/ci.yml)),
+Each half has its own CI workflow — [ci · extension](.github/workflows/ci-extension.yml) and
+[ci · server](.github/workflows/ci-server.yml) —
 because a change to one should never be blocked by the other's toolchain.
 
 ## Licence

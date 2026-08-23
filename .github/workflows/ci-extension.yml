@@ -1,0 +1,64 @@
+name: ci · extension
+
+# Pipeline 1 of 3. The VS Code extension, on its own, so a change to the .NET
+# server never blocks it and its failures are never mixed into someone else's log.
+#
+# Path-filtered: a commit that touches only the server or the docs does not run
+# this at all, rather than running it to say nothing changed.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src_vs_code/**'
+      - '.github/workflows/ci-extension.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src_vs_code/**'
+      - '.github/workflows/ci-extension.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: ci-extension-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build-test:
+    name: typecheck · test · package
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: src_vs_code
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.x
+          cache: npm
+          cache-dependency-path: src_vs_code/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      # node:test over the compiled out/. Every module that needs a unit test is
+      # written free of `vscode`, which is why no VS Code test harness is needed.
+      - name: Test
+        run: npm test
+
+      # Packaging proves the manifest is publishable: a missing icon, licence or
+      # repository field fails here rather than at `vsce publish` time.
+      - name: Package
+        run: npx vsce package --out creds-for-devs-ci.vsix
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: extension-vsix
+          path: src_vs_code/creds-for-devs-ci.vsix
+          retention-days: 14

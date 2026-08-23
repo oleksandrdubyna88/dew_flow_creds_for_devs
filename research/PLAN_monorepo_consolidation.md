@@ -58,8 +58,9 @@ tests in 1.5 s with no port and no process management. `run-api-tests.sh` was re
 
 ### 5. CI
 
-One `ci.yml`, four independent jobs — `server`, `extension`, `docker`, `plans` — so a change to one
-product is never blocked by the other's toolchain. The `docker` job does not merely build the image:
+Four separate workflows — `ci · extension`, `ci · server`, `docker image`, `docs · plans` — each
+under its own name in the Actions tab and its own path filter, so a change to one
+product is never blocked by the other's toolchain. The `docker image` workflow is chained off a green `ci · server` run and does not merely build:
 it runs it, waits for the healthcheck, asserts an unauthenticated request gets 401, validates
 `compose config` in all four TLS modes, and shellchecks the operator scripts.
 

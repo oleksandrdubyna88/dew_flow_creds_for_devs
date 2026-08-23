@@ -205,21 +205,39 @@ tag failing, never by a heuristic, so there is exactly one way to be wrong.
 
 ### Build, test and release
 
-Four independent CI jobs, so a change to one product is never blocked by the other's toolchain.
+**Separate workflows, not jobs in one file.** Each product owns a pipeline that appears under its
+own name in the Actions tab, runs only when its own paths change, and fails on its own terms.
 
 ```
-push / PR to main
-├── server (.NET)      dotnet build -c Release, then the xUnit v3 runner EXECUTABLE
-│                      (never `dotnet test` — no VSTest host exists here)
-├── extension          npm ci, typecheck, node:test, then `vsce package`
-│                      (packaging proves the manifest is publishable)
-├── server image       build → RUN it → wait for healthy → assert 401 on /api/vault
-│                      → validate compose in all four TLS modes → shellcheck
-│                      → on main only: push :edge and :sha-<commit> to ghcr.io
-└── plans              plan-lifecycle.mjs + pin-check.mjs from the shared submodule
+ci · extension      src_vs_code/**
+                    npm ci -> typecheck -> node:test -> vsce package
+                    (packaging proves the manifest is publishable)
+
+ci · server         src_minimalapi_server/**, deploy/**, the MSBuild baseline
+                    dotnet build -c Release -> the xUnit v3 runner EXECUTABLE
+                    (never `dotnet test` — no VSTest host exists here)
+                    + compose validated in all four TLS modes, + shellcheck
+                         │
+                         │ workflow_run, only on success
+                         ▼
+docker image        build -> RUN it -> wait for healthy -> assert 401 on /api/vault
+                    -> on main: push :edge and :sha-<commit> to ghcr.io, multi-arch
+
+docs · plans        plan-lifecycle.mjs + pin-check.mjs from the shared submodule
+
+release             tag-driven: server-v* -> image, extension-v* -> Marketplace
 ```
 
-Two properties worth naming:
+`deploy/**` sits in the server's path filter deliberately: the compose stack is how this server is
+delivered, so a change to it re-runs the server pipeline and therefore the image pipeline.
+
+The image pipeline is **chained rather than parallel** — an image is not worth building from code
+whose tests have not passed. `workflow_run` has two traps and both are handled: it fires on
+completion regardless of outcome (so the job checks `conclusion == 'success'` itself), and it runs
+in the context of the default branch (so the checkout names `head_sha`, or it would build main's
+tip while claiming to build the commit that passed).
+
+Two further properties worth naming:
 
 - **The image is tested before it is published, and the publish reuses that build's cache**, so
   what reaches the registry is what passed. The push steps are gated on
