@@ -26,7 +26,7 @@ C4Container
         Container(nginx, "nginx", "TLS termination", "Certificates, security headers, per-IP rate limiting, ACME webroot")
         Container(api, "Cred Vault Server", ".NET 10 minimal API", "Zero-knowledge blob store + share relay. Cannot decrypt anything it holds")
         Container(certbot, "certbot", "ACME client", "Issues and renews; ~6-day certs in IP mode")
-        ContainerDb(disk, "Host directories", "Filesystem", "vaults/<hash>.bin, shares/<hash>/<id>.json — ciphertext only")
+        ContainerDb(disk, "Host directories", "Filesystem", "vaults/{hash}.bin, shares/{hash}/{id}.json — ciphertext only")
     }
 
     Rel(dev, ext, "Uses")
@@ -92,16 +92,16 @@ sequenceDiagram
         K-->>E: key
     end
 
-    E->>N: GET /api/vault (Bearer <id token>)
+    E->>N: GET /api/vault (Bearer id token)
     N->>S: proxied, X-Forwarded-Proto: https
     S->>S: validate token, resolve email, check domain
-    S->>D: read vaults/<sha256(email)[..32]>.bin
+    S->>D: read vaults/{sha256(email) first 32}.bin
     D-->>S: ciphertext
     S-->>E: 200 ciphertext (or 404 — nothing stored yet)
 
     E->>E: AES-256-GCM open, verify envelope MAC
     E->>E: mergeProfiles(local, remote) — causal, per node
-    Note over E: version vectors decide; ties break on updatedAt then deviceId
+    Note over E: version vectors decide — ties break on updatedAt, then deviceId
 
     E->>N: PUT /api/vault (ciphertext)
     N->>S: proxied
@@ -174,6 +174,64 @@ Serilog, console plus **a new file per run** under `logs/{UTC date}/{app}-{HH-mm
 A file per run rather than a rolling daily file, because the question during an incident is almost
 always "what did *that* run do". Levels come from configuration; changing verbosity is a config
 edit and a restart, never an edited call site.
+
+Container logs are separately capped by Docker's json-file driver at 10 MB × 5 per service, so a
+log loop cannot fill the disk that holds the vaults.
+
+### Error handling
+
+The two halves answer failure differently, because they fail differently.
+
+**Server.** One `UseExceptionHandler` at the edge logs the exception with its method and path and
+returns a bare `{"error":"internal error"}` — the client is told nothing about internals. Below
+that, expected failures are *values*, not exceptions: a missing vault is a 404, an oversize body is
+a 400, a foreign domain is a 403. `catch` appears in exactly three places, and each one is a
+boundary where continuing is correct rather than optimistic:
+
+| Where | Catches | Why continuing is right |
+|---|---|---|
+| `VaultStore.ListVaultOwners` | `IOException`, `UnauthorizedAccessException` | One locked sidecar must not break team discovery for everyone |
+| `VaultStore.ReadShareOrNullAsync` | `JsonException`, `FileNotFoundException` | One corrupted inbox item must not fail the whole listing |
+| `CredVaultLogging` | `IOException`, `UnauthorizedAccessException` | An unwritable log mount is a degraded log, not an outage |
+
+Startup is the opposite: misconfiguration **throws and stops the host**, because a credential
+server that silently accepts everyone is worse than one that does not start.
+
+**Extension.** Failures reach the user as a sentence, not a stack trace, and the sentences
+distinguish causes that need different actions — "did not answer within 60s" is a different problem
+from "unreachable", and a 401 ("sign in again") is different from a 403 ("outside the allowed
+domain"). Decryption is the exception to all of this: a wrong PIN is detected *only* by the AEAD
+tag failing, never by a heuristic, so there is exactly one way to be wrong.
+
+### Build, test and release
+
+Four independent CI jobs, so a change to one product is never blocked by the other's toolchain.
+
+```
+push / PR to main
+├── server (.NET)      dotnet build -c Release, then the xUnit v3 runner EXECUTABLE
+│                      (never `dotnet test` — no VSTest host exists here)
+├── extension          npm ci, typecheck, node:test, then `vsce package`
+│                      (packaging proves the manifest is publishable)
+├── server image       build → RUN it → wait for healthy → assert 401 on /api/vault
+│                      → validate compose in all four TLS modes → shellcheck
+│                      → on main only: push :edge and :sha-<commit> to ghcr.io
+└── plans              plan-lifecycle.mjs + pin-check.mjs from the shared submodule
+```
+
+Two properties worth naming:
+
+- **The image is tested before it is published, and the publish reuses that build's cache**, so
+  what reaches the registry is what passed. The push steps are gated on
+  `github.ref == refs/heads/main`, so a pull request can never move a tag an operator pulls.
+- **The docs are checked like code.** `plan-lifecycle.mjs` fails the build on a plan filed in the
+  wrong folder, a missing status line, a link that does not resolve, or a `todo/README.md` index
+  that has drifted from the folder. `pin-check.mjs` fails when the conventions submodule pin trails
+  its remote.
+
+Releases are tag-driven and per product — `server-v*` publishes a multi-arch image and moves
+`:latest`; `extension-v*` publishes to the Marketplace and **refuses while the publisher id is
+still a placeholder**. A tag never ships both.
 
 ## Module map
 

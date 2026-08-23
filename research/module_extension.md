@@ -20,7 +20,7 @@ flowchart TD
         DLG[dialogs.ts<br/>quick picks and prompts]
     end
 
-    EXT[extension.ts<br/>activation, ~45 commands]
+    EXT[extension.ts<br/>activation, 38 commands]
 
     subgraph Domain
         SYNC[syncManager.ts]
@@ -80,10 +80,35 @@ erDiagram
     TreeNode ||--o{ SecretStorage : "secrets, keyed accountId_entityId[:field]"
     StoredAccount ||--o{ ShareItem : "inbox"
 
-    StoredAccount { string accountId string email string provider }
-    TreeNode { string id string name string type string parentId object v number updatedAt }
-    EntityMetadata { string host string user number port string publicKey bool isSshKey }
-    ShareItem { string id string fromEmail string entityName string salt string iv string tag string data }
+    StoredAccount {
+        string accountId
+        string email
+        string provider
+    }
+    TreeNode {
+        string id
+        string name
+        string type
+        string parentId
+        object v
+        number updatedAt
+    }
+    EntityMetadata {
+        string host
+        string user
+        number port
+        string publicKey
+        boolean isSshKey
+    }
+    ShareItem {
+        string id
+        string fromEmail
+        string entityName
+        string salt
+        string iv
+        string tag
+        string data
+    }
 ```
 
 | Data | Where | Encrypted by |

@@ -130,6 +130,26 @@ on a private network:
   IP, dropped in as `TLS_MODE=custom`, **does** — this is the recommended internal setup;
 - an **internal CA already in every workstation's OS trust store** also works.
 
+## Where the image comes from
+
+CI publishes to **ghcr.io**, GitHub's own container registry — no second account, no second
+credential, and `GITHUB_TOKEN` already carries `packages: write`.
+
+| Tag | Published by | Moves |
+|---|---|---|
+| `:edge` | every push to `main` | constantly |
+| `:sha-<commit>` | every push to `main` | never |
+| `:1.4.0` | a `server-v1.4.0` tag | never |
+| `:latest` | a `server-v*` tag only | on releases only |
+
+`:latest` deliberately does not follow `main`, so an operator who pinned it never picks up an
+untagged commit. Images are built for `linux/amd64` and `linux/arm64`, and the publish step reuses
+the cache from the build that just passed the smoke test — what ships is what was tested.
+
+A ghcr package is **private until its owner makes it public**, which surfaces as `denied` or
+`manifest unknown` on an operator's first `docker compose up -d`. That is documented in
+`deploy/README.md` with both fixes (change the package visibility, or `docker login ghcr.io`).
+
 ## Persistence and updates
 
 Three bind mounts, no anonymous volumes: `DATA_DIR`, `CERT_DIR`, `LOG_DIR`. Nothing in `update.sh`
