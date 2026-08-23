@@ -84,11 +84,16 @@ jobs:
   docker:
     name: server image
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
     steps:
       - uses: actions/checkout@v4
 
       - uses: docker/setup-buildx-action@v3
 
+      # Build once, locally, and smoke-test THAT image. Publishing below re-uses the
+      # same build cache, so what gets pushed is what was tested.
       - name: Build image
         uses: docker/build-push-action@v6
         with:
@@ -135,6 +140,37 @@ jobs:
           shellcheck deploy/update.sh deploy/backup.sh
           # The container entrypoints are POSIX sh, not bash.
           shellcheck --shell=sh deploy/nginx/entrypoint.sh deploy/certbot/entrypoint.sh
+
+      # ---------------------------------------------------------------------
+      # Publish the tested image, but only from main — a pull request must never
+      # be able to move a tag an operator might be pulling.
+      #
+      # ghcr.io is GitHub's own container registry: no second account, no second
+      # credential, and GITHUB_TOKEN already has the rights. `:edge` tracks main;
+      # a real version tag comes from release.yml, and `:latest` moves only there,
+      # so pinning `:latest` never picks up an untagged commit.
+      # ---------------------------------------------------------------------
+      - name: Log in to ghcr.io
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish edge image
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: src_minimalapi_server/Dockerfile
+          push: true
+          platforms: linux/amd64,linux/arm64
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/cred-vault-server:edge
+            ghcr.io/${{ github.repository_owner }}/cred-vault-server:sha-${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
   # ---------------------------------------------------------------------------
   # The plan lifecycle, enforced from the shared rules repository rather than once

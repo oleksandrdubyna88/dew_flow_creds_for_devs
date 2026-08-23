@@ -15,15 +15,30 @@ afterEach(() => {
   globalThis.fetch = realFetch;
 });
 
-/** A server that accepts the connection and then never answers. */
+/**
+ * A server that accepts the connection and then never answers.
+ *
+ * The keep-alive timer is load-bearing, and its absence is a real trap: a genuine `fetch`
+ * holds an open socket, which keeps the event loop alive while the request is in flight,
+ * whereas `AbortSignal.timeout()`'s own timer is deliberately **unref'd** and does not.
+ * Without a ref'd handle here the loop drains before the timeout can fire and node:test
+ * reports `Promise resolution is still pending but the event loop has already resolved` —
+ * which passed on one machine and failed in CI.
+ */
 function installSilentServer(): void {
   globalThis.fetch = ((_input: unknown, init?: RequestInit) =>
     new Promise<Response>((_resolve, reject) => {
+      const socketStandIn = setInterval(() => {}, 1_000);
       const signal = init?.signal;
       if (signal === undefined || signal === null) {
-        return; // no signal: hangs forever, which is the bug this test exists for
+        // No ceiling: this hangs forever, which is exactly the bug under test. The
+        // interval is left running on purpose so the hang is observable.
+        return;
       }
-      signal.addEventListener('abort', () => reject(signal.reason));
+      signal.addEventListener('abort', () => {
+        clearInterval(socketStandIn);
+        reject(signal.reason);
+      });
     })) as typeof fetch;
 }
 

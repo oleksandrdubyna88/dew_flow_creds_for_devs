@@ -98,6 +98,39 @@ Three host directories, all bind mounts, all outside every container:
 Nothing in `update.sh` touches them, and the stack uses no anonymous volumes. Point them at storage
 you actually back up.
 
+## Where the image comes from
+
+CI publishes to the **GitHub Container Registry** (`ghcr.io`) — GitHub's own registry, so there is
+no second account and no second credential to manage.
+
+| Tag | Published by | Moves |
+|---|---|---|
+| `:edge` | every push to `main` | constantly |
+| `:sha-<commit>` | every push to `main` | never — immutable |
+| `:1.4.0` | a `server-v1.4.0` tag | never |
+| `:latest` | a `server-v*` tag only | on releases only |
+
+`:latest` deliberately does **not** follow `main`, so pinning it never picks up an untagged commit.
+For production, pin an explicit version anyway.
+
+Images are built for `linux/amd64` and `linux/arm64`, and what is published is the same build that
+passed the smoke test in CI.
+
+> **A ghcr package is private until its owner makes it public.** If `docker compose up -d` fails
+> with `denied` or `manifest unknown`, either change the package visibility on GitHub
+> (*Packages → cred-vault-server → Package settings → Change visibility*), or authenticate:
+>
+> ```bash
+> echo <PAT with read:packages> | docker login ghcr.io -u <username> --password-stdin
+> ```
+
+You can also skip the registry entirely and build locally — the compose file carries a `build:`
+section for exactly that:
+
+```bash
+docker compose build vault && docker compose up -d
+```
+
 ## Updating
 
 ```bash
