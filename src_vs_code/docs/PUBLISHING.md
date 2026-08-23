@@ -1,4 +1,4 @@
-# Publishing Cred SSH Manager to the VS Code Marketplace
+# Publishing CredsForDevs to the VS Code Marketplace
 
 Everything that can be prepared in advance is prepared. What remains needs an account only you can
 create, so this document is the handover.
@@ -34,7 +34,7 @@ accident.
 
 1. Sign in at <https://marketplace.visualstudio.com/manage> with a Microsoft account.
 2. *Create publisher*. The **ID** is permanent and appears in the extension's URL and in
-   `code --install-extension <publisher>.cred-ssh-manager`. Lowercase letters, digits and hyphens.
+   `code --install-extension <publisher>.creds-for-devs`. Lowercase letters, digits and hyphens.
 3. Put that id in `package.json`, replacing the placeholder, and delete the `"//publisher"` note.
 
 ### 2. Get a Personal Access Token
@@ -101,7 +101,7 @@ repository, which is the right audience — but check that:
 ```bash
 npx vsce ls --tree      # exactly which files go into the .vsix
 npm run package         # build it without publishing
-code --install-extension cred-ssh-manager-<version>.vsix   # install it as a user would
+code --install-extension creds-for-devs-<version>.vsix   # install it as a user would
 ```
 
 Install the built `.vsix` into a clean VS Code profile (`code --profile clean`) before publishing.

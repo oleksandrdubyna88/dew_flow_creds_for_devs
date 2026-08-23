@@ -1,7 +1,7 @@
 {
-  "name": "cred-ssh-manager",
-  "displayName": "Cred SSH Manager",
-  "description": "Multi-account credential manager with quick SSH connectivity. Passwords live in VS Code SecretStorage; per-profile AES-256-GCM encrypted NAS backups.",
+  "name": "creds-for-devs",
+  "displayName": "CredsForDevs",
+  "description": "Credential manager for developers: SSH hosts, keys, VPN configs and database connections in VS Code. Secrets live in the OS keychain; optional end-to-end encrypted sync and team sharing through a self-hosted vault server.",
   "version": "0.23.0",
   "//publisher": "PLACEHOLDER — create a publisher at https://marketplace.visualstudio.com/manage and put its id here before `vsce publish`. See docs/PUBLISHING.md.",
   "publisher": "set-your-publisher-id",
@@ -52,7 +52,7 @@
   },
   "contributes": {
     "configuration": {
-      "title": "Cred SSH Manager",
+      "title": "CredsForDevs",
       "properties": {
         "credSshManager.nasBackupPath": {
           "type": "string",
@@ -62,7 +62,9 @@
         "credSshManager.accountNasPaths": {
           "type": "object",
           "default": {},
-          "additionalProperties": { "type": "string" },
+          "additionalProperties": {
+            "type": "string"
+          },
           "markdownDescription": "Per-account vault location: maps an account **email** to a folder **or** a Cred Vault Server URL, e.g. `{ \"work@corp.com\": \"https://vault.corp.com\", \"me@gmail.com\": \"/mnt/home-nas/vault\" }`. Accounts without a mapping use `#credSshManager.nasBackupPath#`. Easiest way to set: right-click the account → *Set Sync Location…*"
         },
         "credSshManager.autoSync": {
@@ -79,7 +81,9 @@
         "credSshManager.dbExtensions": {
           "type": "object",
           "default": {},
-          "additionalProperties": { "type": "string" },
+          "additionalProperties": {
+            "type": "string"
+          },
           "markdownDescription": "Per-DB-type extension override for the Connect action, e.g. `{ \"mysql\": \"cweijan.vscode-mysql-client2\" }`. When empty, the first installed candidate is used (Database Client, the Microsoft SQL/PostgreSQL extensions, MongoDB for VS Code, …)."
         },
         "credSshManager.googleClientId": {
@@ -115,7 +119,7 @@
       "activitybar": [
         {
           "id": "credSshManager",
-          "title": "Cred SSH",
+          "title": "CredsForDevs",
           "icon": "media/icon.svg"
         }
       ]
@@ -133,48 +137,48 @@
       {
         "command": "credSshManager.addAccount",
         "title": "Add Account",
-        "category": "Cred SSH",
+        "category": "CredsForDevs",
         "icon": "$(person-add)"
       },
       {
         "command": "credSshManager.removeAccount",
         "title": "Sign Out / Remove Account",
-        "category": "Cred SSH",
+        "category": "CredsForDevs",
         "icon": "$(sign-out)"
       },
       {
         "command": "credSshManager.setAccountNasPath",
         "title": "Set Sync Location…",
-        "category": "Cred SSH",
+        "category": "CredsForDevs",
         "icon": "$(folder-opened)"
       },
       {
         "command": "credSshManager.toggleSsh",
         "title": "Toggle SSH (on/off)",
-        "category": "Cred SSH",
+        "category": "CredsForDevs",
         "icon": "$(plug)"
       },
       {
         "command": "credSshManager.resetGoogleOAuth",
         "title": "Reset Google OAuth",
-        "category": "Cred SSH"
+        "category": "CredsForDevs"
       },
       {
         "command": "credSshManager.installSshKey",
         "title": "Install SSH Key to System (~/.ssh)",
-        "category": "Cred SSH",
+        "category": "CredsForDevs",
         "icon": "$(desktop-download)"
       },
       {
         "command": "credSshManager.saveVpnConfig",
         "title": "Save VPN Config As…",
-        "category": "Cred SSH",
+        "category": "CredsForDevs",
         "icon": "$(save-as)"
       },
       {
         "command": "credSshManager.connectDb",
         "title": "Open in DB Extension",
-        "category": "Cred SSH",
+        "category": "CredsForDevs",
         "icon": {
           "light": "media/db-green-light.svg",
           "dark": "media/db-green.svg"
@@ -183,105 +187,105 @@
       {
         "command": "credSshManager.copyDbConnection",
         "title": "Copy Connection String",
-        "category": "Cred SSH"
+        "category": "CredsForDevs"
       },
       {
         "command": "credSshManager.addFolder",
         "title": "Add Folder",
-        "category": "Cred SSH",
+        "category": "CredsForDevs",
         "icon": "$(new-folder)"
       },
       {
         "command": "credSshManager.addEntity",
         "title": "Add Entity",
-        "category": "Cred SSH",
+        "category": "CredsForDevs",
         "icon": "$(add)"
       },
       {
         "command": "credSshManager.editNode",
         "title": "Edit",
-        "category": "Cred SSH",
+        "category": "CredsForDevs",
         "icon": "$(edit)"
       },
       {
         "command": "credSshManager.deleteNode",
         "title": "Delete",
-        "category": "Cred SSH",
+        "category": "CredsForDevs",
         "icon": "$(trash)"
       },
       {
         "command": "credSshManager.moveNode",
         "title": "Move to Folder…",
-        "category": "Cred SSH"
+        "category": "CredsForDevs"
       },
       {
         "command": "credSshManager.changeFolderType",
         "title": "Change Folder Type…",
-        "category": "Cred SSH"
+        "category": "CredsForDevs"
       },
       {
         "command": "credSshManager.folderUp",
         "title": "Move Up",
-        "category": "Cred SSH",
+        "category": "CredsForDevs",
         "icon": "$(arrow-up)"
       },
       {
         "command": "credSshManager.folderDown",
         "title": "Move Down",
-        "category": "Cred SSH",
+        "category": "CredsForDevs",
         "icon": "$(arrow-down)"
       },
       {
         "command": "credSshManager.shareEntity",
         "title": "Share with…",
-        "category": "Cred SSH",
+        "category": "CredsForDevs",
         "icon": "$(live-share)"
       },
       {
         "command": "credSshManager.createForUser",
         "title": "Create Entity for…",
-        "category": "Cred SSH",
+        "category": "CredsForDevs",
         "icon": "$(add)"
       },
       {
         "command": "credSshManager.acceptShare",
         "title": "Accept…",
-        "category": "Cred SSH",
+        "category": "CredsForDevs",
         "icon": "$(check)"
       },
       {
         "command": "credSshManager.declineShare",
         "title": "Decline",
-        "category": "Cred SSH",
+        "category": "CredsForDevs",
         "icon": "$(close)"
       },
       {
         "command": "credSshManager.acceptAllFromSender",
         "title": "Accept All from Sender…",
-        "category": "Cred SSH",
+        "category": "CredsForDevs",
         "icon": "$(check-all)"
       },
       {
         "command": "credSshManager.acceptAllShares",
         "title": "Accept All Shared…",
-        "category": "Cred SSH",
+        "category": "CredsForDevs",
         "icon": "$(check-all)"
       },
       {
         "command": "credSshManager.viewDetails",
         "title": "View Details",
-        "category": "Cred SSH",
+        "category": "CredsForDevs",
         "icon": "$(info)"
       },
       {
         "command": "credSshManager.copyPassword",
         "title": "Copy Password",
-        "category": "Cred SSH"
+        "category": "CredsForDevs"
       },
       {
         "command": "credSshManager.connectSsh",
         "title": "Connect SSH",
-        "category": "Cred SSH",
+        "category": "CredsForDevs",
         "icon": {
           "light": "media/play-green-light.svg",
           "dark": "media/play-green.svg"
@@ -290,64 +294,64 @@
       {
         "command": "credSshManager.refresh",
         "title": "Refresh",
-        "category": "Cred SSH",
+        "category": "CredsForDevs",
         "icon": "$(refresh)"
       },
       {
         "command": "credSshManager.syncNow",
         "title": "Sync Now (NAS)",
-        "category": "Cred SSH",
+        "category": "CredsForDevs",
         "icon": "$(sync)"
       },
       {
         "command": "credSshManager.setSyncPin",
         "title": "Set Sync PIN",
-        "category": "Cred SSH"
+        "category": "CredsForDevs"
       },
       {
         "command": "credSshManager.addSecurityKey",
         "title": "Add Security Key (YubiKey)…",
-        "category": "Cred SSH",
+        "category": "CredsForDevs",
         "icon": "$(shield)"
       },
       {
         "command": "credSshManager.removeSecurityKey",
         "title": "Remove Security Key…",
-        "category": "Cred SSH"
+        "category": "CredsForDevs"
       },
       {
         "command": "credSshManager.unlockWithSecurityKey",
         "title": "Unlock Vault (Security Key)…",
-        "category": "Cred SSH",
+        "category": "CredsForDevs",
         "icon": "$(unlock)"
       },
       {
         "command": "credSshManager.lockVaults",
         "title": "Lock Vaults (clear cached keys)",
-        "category": "Cred SSH",
+        "category": "CredsForDevs",
         "icon": "$(lock)"
       },
       {
         "command": "credSshManager.backupToNas",
         "title": "Backup to NAS",
-        "category": "Cred SSH",
+        "category": "CredsForDevs",
         "icon": "$(cloud-upload)"
       },
       {
         "command": "credSshManager.restoreBackup",
         "title": "Import / Restore",
-        "category": "Cred SSH",
+        "category": "CredsForDevs",
         "icon": "$(cloud-download)"
       },
       {
         "command": "extension.exportSecrets",
         "title": "Export Secrets (backup to NAS)",
-        "category": "Cred SSH"
+        "category": "CredsForDevs"
       },
       {
         "command": "extension.importSecrets",
         "title": "Import Secrets (restore backup)",
-        "category": "Cred SSH"
+        "category": "CredsForDevs"
       }
     ],
     "menus": {

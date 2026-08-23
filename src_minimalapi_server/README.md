@@ -1,6 +1,6 @@
 # Cred Vault Server
 
-A zero-knowledge vault + share relay for the **Cred SSH Manager** VS Code
+A zero-knowledge vault + share relay for the **CredsForDevs** VS Code
 extension — C# minimal API on **.NET 10**. It replaces the shared NAS folder
 with an authenticated HTTPS endpoint, so a whole company can use the
 extension without giving everyone read access to everyone's files.

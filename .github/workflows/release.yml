@@ -103,9 +103,9 @@ jobs:
           npx vsce publish --pat "${VSCE_PAT}"
 
       - name: Package for the GitHub release too
-        run: npx vsce package --out cred-ssh-manager.vsix
+        run: npx vsce package --out creds-for-devs.vsix
 
       - uses: actions/upload-artifact@v4
         with:
           name: extension-vsix
-          path: src_vs_code/cred-ssh-manager.vsix
+          path: src_vs_code/creds-for-devs.vsix

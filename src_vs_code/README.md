@@ -1,4 +1,4 @@
-# Cred SSH Manager
+# CredsForDevs
 
 A local VS Code extension for managing credentials, SSH keys, VPN configs,
 and database connections — with quick SSH connectivity — across multiple
@@ -313,7 +313,7 @@ shared PIN, and sign into the same account profile.
 | `credSshManager.dbExtensions` | Per-DB-type extension override for Connect (`{"mysql": "…"}`) |
 | `credSshManager.googleClientId` | Desktop-app OAuth client id for Google sign-in |
 
-Commands (`Cred SSH:` category): Add Account, Sign Out / Remove Account,
+Commands (`CredsForDevs:` category): Add Account, Sign Out / Remove Account,
 Set Sync Location…, Add/Remove Security Key…, Unlock Vault (Security Key)…,
 Lock Vaults, Add Folder/Entity, Edit, Delete, Move to Folder…,
 Change Folder Type…, Move Up/Down, View Details, Copy Password, Connect
@@ -327,8 +327,8 @@ Accept… / Decline / Accept All…, Backup to NAS, Import / Restore, Sync Now
 ```bash
 npm install
 npm test                 # tsc + node:test unit suite (57 tests)
-npm run package          # produces cred-ssh-manager-<version>.vsix
-code --install-extension cred-ssh-manager-*.vsix   # then reload the window
+npm run package          # produces creds-for-devs-<version>.vsix
+code --install-extension creds-for-devs-*.vsix   # then reload the window
 ```
 
 ## Module map

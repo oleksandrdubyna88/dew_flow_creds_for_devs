@@ -8,7 +8,7 @@ Two products, one repository:
 
 | | What it is | Ships as |
 |---|---|---|
-| [`src_vs_code`](src_vs_code) | **Cred SSH Manager**, a VS Code extension | a `.vsix` on the Marketplace |
+| [`src_vs_code`](src_vs_code) | **CredsForDevs**, a VS Code extension | a `.vsix` on the Marketplace |
 | [`src_minimalapi_server`](src_minimalapi_server) | **Cred Vault Server**, a .NET 10 minimal API | a container image |
 
 The extension works on its own. The server is optional, and only becomes interesting when more than
@@ -40,8 +40,8 @@ publishing it yourself), or build it:
 
 ```bash
 cd src_vs_code
-npm ci && npm run package        # produces cred-ssh-manager-<version>.vsix
-code --install-extension cred-ssh-manager-*.vsix
+npm ci && npm run package        # produces creds-for-devs-<version>.vsix
+code --install-extension creds-for-devs-*.vsix
 ```
 
 Add an account, add a credential, press Connect. Nothing else is required — no server, no account

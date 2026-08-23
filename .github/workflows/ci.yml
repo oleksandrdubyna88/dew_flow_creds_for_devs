@@ -69,12 +69,12 @@ jobs:
       # Proves the manifest is publishable — a missing icon, license or repository
       # field fails here rather than at `vsce publish` time.
       - name: Package
-        run: npx vsce package --out cred-ssh-manager-ci.vsix
+        run: npx vsce package --out creds-for-devs-ci.vsix
 
       - uses: actions/upload-artifact@v4
         with:
           name: extension-vsix
-          path: src_vs_code/cred-ssh-manager-ci.vsix
+          path: src_vs_code/creds-for-devs-ci.vsix
           retention-days: 14
 
   # ---------------------------------------------------------------------------

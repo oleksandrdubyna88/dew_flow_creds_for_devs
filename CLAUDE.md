@@ -10,7 +10,7 @@ a copied rule is a mirror that drifts.
 `dew_flow_creds_for_devs` is a **credential manager for developers**, in two halves that ship
 independently and are versioned independently:
 
-- `src_vs_code` — the **Cred SSH Manager** VS Code extension. Holds the secrets, does all the
+- `src_vs_code` — the **CredsForDevs** VS Code extension. Holds the secrets, does all the
   cryptography, and is the only thing that ever sees plaintext.
 - `src_minimalapi_server` — the **Cred Vault Server**, a .NET 10 minimal API. A zero-knowledge blob
   store and share relay: it stores ciphertext it cannot read, and stamps share sender identity from

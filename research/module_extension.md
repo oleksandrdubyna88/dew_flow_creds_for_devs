@@ -1,4 +1,4 @@
-# Module: Cred SSH Manager (VS Code extension)
+# Module: CredsForDevs (VS Code extension)
 
 `src_vs_code/` — TypeScript, compiled with `tsc`, **zero runtime dependencies**: Node built-ins and
 the `vscode` API only.
@@ -126,7 +126,7 @@ users legitimately append to it; that exclusion is the root of finding 3 in
 
 `VaultKeys.unlock()` tries, in order: the in-memory cache → a PIN wrap → a security-key touch
 (interactive only) → an explicit PIN prompt. The master key then stays cached for the window's
-lifetime; `Cred SSH: Lock Vaults` is the only eviction, which is finding 5 in the review.
+lifetime; `CredsForDevs: Lock Vaults` is the only eviction, which is finding 5 in the review.
 
 ## Sync
 

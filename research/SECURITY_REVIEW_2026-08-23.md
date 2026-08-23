@@ -178,7 +178,7 @@ unwrap the master key.
 It is not remote and not silent: it needs a local page the user's browser will load, plus a physical
 touch, and the browser prompt does disclose the requesting origin. But the "hardware second factor"
 is not actually scoped to this extension. The fix is small — bind the loopback listener to
-`cred-ssh-manager.localhost` (which browsers resolve to loopback per RFC 6761, no DNS needed) and use
+`creds-for-devs.localhost` (which browsers resolve to loopback per RFC 6761, no DNS needed) and use
 that as the RP ID — but it **invalidates existing registrations**, which is why it is a plan with a
 migration step rather than an edit.
 

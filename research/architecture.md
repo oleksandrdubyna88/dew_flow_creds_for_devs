@@ -10,12 +10,12 @@ everything else follows from.
 
 ```mermaid
 C4Container
-    title Cred SSH Manager + Cred Vault Server
+    title CredsForDevs + Cred Vault Server
 
     Person(dev, "Developer", "Has SSH hosts, keys, VPN configs, DB connections")
 
     Container_Boundary(workstation, "The developer's machine") {
-        Container(ext, "Cred SSH Manager", "VS Code extension, TypeScript", "Holds every secret. Does ALL cryptography. The only component that ever sees plaintext")
+        Container(ext, "CredsForDevs", "VS Code extension, TypeScript", "Holds every secret. Does ALL cryptography. The only component that ever sees plaintext")
         ContainerDb(secretstore, "VS Code SecretStorage", "OS keychain", "Passwords, private keys, VPN configs, notes, DB connection strings")
         ContainerDb(globalstate, "VS Code globalState", "JSON", "The node tree, tombstones, version vectors — metadata only")
     }

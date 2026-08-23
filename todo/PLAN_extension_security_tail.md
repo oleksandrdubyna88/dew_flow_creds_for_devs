@@ -42,7 +42,7 @@ and the prompt does disclose the requesting origin. But the hardware second fact
 scoped to this extension, which is what it is sold as.
 
 **Fix.** Bind the loopback listener to a distinguishing host under the `.localhost` TLD —
-`cred-ssh-manager.localhost`, which browsers resolve to loopback per RFC 6761 with no DNS setup — and
+`creds-for-devs.localhost`, which browsers resolve to loopback per RFC 6761 with no DNS setup — and
 use that as the RP ID. Also raise `userVerification` from `'preferred'` to `'required'`
 (`webauthnPrf.ts:282,300`) so the key demands a PIN or biometric rather than a bare touch.
 
@@ -126,7 +126,7 @@ the existing 8-character floor still holds for mixed-class input.
 ## 4. No idle auto-lock (LOW)
 
 **Symptom.** `vaultKeys.ts:43` caches the master key for the window's lifetime. The only eviction is
-the manual `Cred SSH: Lock Vaults` command (`extension.ts:766-771`). A laptop left open with VS Code
+the manual `CredsForDevs: Lock Vaults` command (`extension.ts:766-771`). A laptop left open with VS Code
 running holds an unwrapped master key in the extension host's heap indefinitely.
 
 JS offers no reliable secure-wipe, so this is a soft limit — but the exposure *window* is entirely
