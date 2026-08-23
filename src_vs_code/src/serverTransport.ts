@@ -25,6 +25,18 @@ export class ServerTransport implements VaultTransport {
   readonly kind = 'server' as const;
   readonly embedsShares = false;
 
+  /**
+   * The version of each account's vault as this client last saw it, so a write can
+   * say "only if nobody else changed it since". Kept per transport instance, which
+   * TransportFactory caches per location — so a sync cycle that reads and then writes
+   * uses the version from its own read.
+   *
+   * Absent means "we have not read this account's vault yet", and the write then
+   * carries no precondition: an unconditional write is what every client did before
+   * the server understood them, and it stays correct.
+   */
+  private readonly versions = new Map<string, string>();
+
   constructor(
     readonly location: string,
     /** Resolves the bearer token for one of MY accounts. */
@@ -91,21 +103,45 @@ export class ServerTransport implements VaultTransport {
   async readVault(account: StoredAccount): Promise<string | undefined> {
     const response = await this.request(account, '/api/vault');
     if (response.status === 404) {
-      return undefined; // nothing stored yet
+      this.versions.delete(account.accountId); // nothing stored yet
+      return undefined;
     }
     if (!response.ok) {
       throw new Error(`Vault download failed: HTTP ${response.status}.`);
     }
+    this.rememberVersion(account, response);
     return response.text();
   }
 
   async writeVault(account: StoredAccount, content: string): Promise<void> {
+    const known = this.versions.get(account.accountId);
     const response = await this.request(account, '/api/vault', {
       method: 'PUT',
       rawBody: content,
+      headers: known === undefined ? undefined : { 'If-Match': known },
     });
+
+    if (response.status === 412) {
+      // Somebody else — another machine of yours — wrote between our read and this
+      // write. Forget the version we were holding so the next attempt re-reads and
+      // merges; keeping it would make every retry fail the same way.
+      this.versions.delete(account.accountId);
+      throw new Error(
+        `The vault changed on the server while this sync was running (${this.location}). ` +
+          'Re-reading and merging on the next cycle; nothing was overwritten.',
+      );
+    }
     if (!response.ok) {
       throw new Error(`Vault upload failed: HTTP ${response.status}.`);
+    }
+    this.rememberVersion(account, response);
+  }
+
+  /** Adopt the version the server reports, so a second write needs no extra read. */
+  private rememberVersion(account: StoredAccount, response: Response): void {
+    const etag = response.headers.get('ETag');
+    if (etag !== null && etag.length > 0) {
+      this.versions.set(account.accountId, etag);
     }
   }
 
@@ -201,6 +237,7 @@ export class ServerTransport implements VaultTransport {
   }
 
   async deleteVault(account: StoredAccount): Promise<void> {
+    this.versions.delete(account.accountId);
     const response = await this.request(account, '/api/vault', { method: 'DELETE' });
     if (!response.ok && response.status !== 404) {
       throw new Error(`Remote vault delete failed: HTTP ${response.status}.`);

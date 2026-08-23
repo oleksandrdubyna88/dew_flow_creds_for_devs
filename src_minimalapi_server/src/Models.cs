@@ -64,3 +64,28 @@ public sealed record ShareRequest
 public sealed record TeamMemberDto(string Email);
 
 public sealed record WhoAmIDto(string Email, string? Name, bool HasVault);
+
+/// <summary>
+/// What a client requires to be true before its vault write is accepted.
+///
+/// <para>
+/// Both forms come straight from HTTP so no vocabulary is invented: <c>If-Match</c>
+/// with a version means "only if the vault is still what I read", and
+/// <c>If-None-Match: *</c> means "only if I am the first to write one".
+/// </para>
+/// </summary>
+public readonly record struct VaultPrecondition(string? IfMatch, bool RequireAbsent)
+{
+    /// <summary>No precondition — the older clients that predate conditional writes.</summary>
+    public static readonly VaultPrecondition None = new(null, false);
+
+    public bool IsUnconditional => IfMatch is null && !RequireAbsent;
+
+    /// <summary>Reads the two conditional headers off a request.</summary>
+    public static VaultPrecondition FromHeaders(string? ifMatch, string? ifNoneMatch)
+    {
+        var requireAbsent = string.Equals(ifNoneMatch?.Trim(), "*", StringComparison.Ordinal);
+        var match = string.IsNullOrWhiteSpace(ifMatch) ? null : ifMatch.Trim();
+        return new VaultPrecondition(match, requireAbsent);
+    }
+}

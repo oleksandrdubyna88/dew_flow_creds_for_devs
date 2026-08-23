@@ -41,11 +41,80 @@ public sealed class VaultStore
         return File.Exists(path) ? await File.ReadAllBytesAsync(path, ct) : null;
     }
 
-    public async Task WriteVaultAsync(string email, byte[] content, CancellationToken ct)
+    /// <summary>
+    /// The version identifier a client echoes back to write conditionally. Derived from
+    /// the content, so it is stable across reads, changes on every write, and needs no
+    /// stored counter that could disagree with the bytes on disk.
+    /// </summary>
+    public static string ETagFor(byte[] content) =>
+        '"' + Convert.ToHexString(SHA256.HashData(content))[..32].ToLowerInvariant() + '"';
+
+    /// <summary>
+    /// Compare-and-write. Returns false when the caller's precondition does not hold —
+    /// which means somebody else wrote in between and this caller's copy is stale.
+    ///
+    /// <para>
+    /// The check and the write happen under the same lock. Doing them separately is the
+    /// classic way to build a race that only appears under the load nobody tests with:
+    /// two callers both read "matches", both write, and the second still wins.
+    /// </para>
+    /// </summary>
+    public async Task<bool> TryWriteVaultAsync(
+        string email,
+        byte[] content,
+        VaultPrecondition precondition,
+        CancellationToken ct)
     {
-        var path = Path.Combine(_vaultsDir, KeyFor(email) + ".bin");
-        await AtomicWriteAsync(path, content, ct);
+        var key = KeyFor(email);
+        var path = Path.Combine(_vaultsDir, key + ".bin");
+        var gate = GateFor(key);
+
+        await gate.WaitAsync(ct);
+        try
+        {
+            if (!precondition.IsUnconditional)
+            {
+                var current = File.Exists(path) ? await File.ReadAllBytesAsync(path, ct) : null;
+
+                if (precondition.RequireAbsent && current is not null)
+                {
+                    return false;
+                }
+                if (precondition.IfMatch is { } expected)
+                {
+                    // A precondition against a vault that does not exist can never hold:
+                    // there is no version to match.
+                    if (current is null || !ETagsEqual(expected, ETagFor(current)))
+                    {
+                        return false;
+                    }
+                }
+            }
+
+            await AtomicWriteAsync(path, content, ct);
+            return true;
+        }
+        finally
+        {
+            gate.Release();
+        }
     }
+
+    /// <summary>An If-Match may carry several candidates, and `*` means "any existing version".</summary>
+    private static bool ETagsEqual(string header, string actual) =>
+        header.Split(',')
+            .Select(candidate => candidate.Trim())
+            .Any(candidate => candidate == "*" || candidate == actual);
+
+    // A fixed stripe of locks rather than one per email. Per-email locks would be a
+    // dictionary that grows with every account and is never pruned — the "everything that
+    // grows has an owner" rule. 64 stripes means two accounts occasionally wait on each
+    // other for the length of one file write, which costs nothing and cannot leak.
+    private static readonly SemaphoreSlim[] Gates =
+        [.. Enumerable.Range(0, 64).Select(_ => new SemaphoreSlim(1, 1))];
+
+    private static SemaphoreSlim GateFor(string key) =>
+        Gates[(int)(uint.Parse(key[..8], System.Globalization.NumberStyles.HexNumber) % Gates.Length)];
 
     /// <summary>Emails of everyone with a stored vault (for team discovery).</summary>
     public IReadOnlyList<string> ListVaultOwners()

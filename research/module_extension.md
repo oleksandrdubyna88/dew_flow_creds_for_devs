@@ -192,6 +192,14 @@ awaits it under a one-at-a-time guard, nothing synced again. Every request now c
 `AbortSignal.timeout(60_000)`, and a timeout is reported differently from a refused connection
 because they are different operational problems.
 
+### Conditional writes
+
+`ServerTransport` remembers the `ETag` of each account's last read and sends it as `If-Match` on the
+next write. A `412` means another machine wrote in between: the stored version is dropped (so the
+retry re-reads rather than failing identically forever) and the error says plainly that nothing was
+overwritten. A write with no prior read carries no precondition, which is exactly what every client
+did before the server understood them.
+
 ### Tokens
 
 `transportFactory.tokenFor` resolves per provider: Microsoft gives `session.accessToken` from the

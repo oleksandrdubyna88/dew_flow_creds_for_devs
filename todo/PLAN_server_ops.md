@@ -1,6 +1,6 @@
 # PLAN — cred-vault-server operational hardening
 
-> Status: **items 1 and 8 shipped 2026-08-23; items 2-7 remain.**
+> Status: **items 1, 4 and 8 shipped 2026-08-23; items 2, 3, 5, 6 and 7 remain.**
 > Scope: deployment/runtime of the `cred-vault-server` .NET service — not code changes to the
 > extension. This plan stays in `todo/` because most of its value is still ahead of it.
 >
@@ -38,7 +38,12 @@ between a user's two machines.
    recipient never accepted. *Decision needed:* max age before a pending share
    is swept.
 
-4. **Optimistic concurrency on `PUT /api/vault`.** Two of a user's machines
+4. ~~**Optimistic concurrency on `PUT /api/vault`.**~~ **DONE 2026-08-23.** `ETag` on read,
+   `If-Match`/`If-None-Match` on write, `412` on a stale copy, compare-and-write under one striped
+   lock. The extension sends the precondition automatically and drops its stale version on a 412 so
+   the retry re-reads. Original text follows.
+
+   **Optimistic concurrency on `PUT /api/vault`.** Two of a user's machines
    writing concurrently is last-writer-wins at the blob level today. An
    ETag/version precondition (reject on stale version, client re-pulls and
    re-merges) would remove the lost-update window. Note the causal

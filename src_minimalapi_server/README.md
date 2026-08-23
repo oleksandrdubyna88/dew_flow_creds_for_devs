@@ -123,9 +123,9 @@ environment is global, the suite runs in one non-parallel collection.
   second, per-source-address layer in front.
 - **Inbox quotas** are enforced by count (`Vault:MaxInboxItems`), but there is **no TTL** — a share
   nobody accepts sits until the recipient deletes it. See `todo/PLAN_server_ops.md`.
-- **No optimistic concurrency** on `PUT /api/vault`: two machines writing at once is
-  last-write-wins at the blob level. The extension's causal merge prevents *content* loss on the
-  next sync, but the raw write race is real. Same plan.
+- **Optimistic concurrency** is available and opt-in: `GET /api/vault` returns an `ETag`, `PUT`
+  honours `If-Match` / `If-None-Match: *` and answers `412` when the caller's copy is stale. The
+  extension sends it automatically. A client that sends neither header keeps last-write-wins.
 - **No audit log** beyond the application log.
 - **No HTTP contract versioning** — neither side negotiates, so an old extension talking to a new
   server goes undetected. Same plan.

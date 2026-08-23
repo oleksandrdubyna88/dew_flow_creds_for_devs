@@ -81,3 +81,99 @@ test('a missing token is refused before any request is attempted', async () => {
   await assert.rejects(() => transport.readVault(account), /No usable microsoft token/);
   assert.equal(called, false);
 });
+
+// --- conditional writes -----------------------------------------------------
+//
+// Two of one person's machines syncing at once is ordinary. The server refuses a
+// write whose precondition no longer holds; the transport's job is to SEND that
+// precondition, and to report a refusal as something the sync cycle can act on
+// rather than as a generic HTTP failure.
+
+/** Records what the transport actually put on the wire. */
+function recordingServer(responses: Array<{ status: number; body?: string; etag?: string }>) {
+  const seen: Array<{ method: string; ifMatch: string | null }> = [];
+  let i = 0;
+  globalThis.fetch = ((_input: unknown, init?: RequestInit) => {
+    const headers = new Headers(init?.headers);
+    seen.push({ method: init?.method ?? 'GET', ifMatch: headers.get('If-Match') });
+    const r = responses[Math.min(i++, responses.length - 1)];
+    const out = new Headers();
+    if (r.etag !== undefined) {
+      out.set('ETag', r.etag);
+    }
+    // 204 and 304 are defined as bodiless; the Response constructor rejects a body
+    // with either, even an empty string.
+    const bodiless = r.status === 204 || r.status === 304;
+    return Promise.resolve(
+      new Response(bodiless ? null : (r.body ?? ''), { status: r.status, headers: out }),
+    );
+  }) as typeof fetch;
+  return seen;
+}
+
+test('a write after a read carries the version that was read', async () => {
+  const seen = recordingServer([
+    { status: 200, body: 'ciphertext', etag: '"v1"' },
+    { status: 204, etag: '"v2"' },
+  ]);
+  const transport = new ServerTransport('https://vault.example.com', async () => 'token');
+
+  await transport.readVault(account);
+  await transport.writeVault(account, 'new-ciphertext');
+
+  assert.equal(seen[1].method, 'PUT');
+  assert.equal(seen[1].ifMatch, '"v1"', 'without this the server cannot detect a stale write');
+});
+
+test('a first write, with nothing read, carries no precondition', async () => {
+  const seen = recordingServer([{ status: 204 }]);
+  const transport = new ServerTransport('https://vault.example.com', async () => 'token');
+
+  await transport.writeVault(account, 'ciphertext');
+
+  assert.equal(seen[0].ifMatch, null, 'a client with no version must not invent one');
+});
+
+test('a refused write is reported as a conflict the sync cycle can recognise', async () => {
+  recordingServer([
+    { status: 200, body: 'ciphertext', etag: '"v1"' },
+    { status: 412 },
+  ]);
+  const transport = new ServerTransport('https://vault.example.com', async () => 'token');
+
+  await transport.readVault(account);
+  await assert.rejects(() => transport.writeVault(account, 'new'), (error: Error) => {
+    assert.match(error.message, /changed on the server/i);
+    return true;
+  });
+});
+
+test('after a conflict the stale version is dropped, so the retry re-reads', async () => {
+  const seen = recordingServer([
+    { status: 200, body: 'ciphertext', etag: '"v1"' },
+    { status: 412 },
+    { status: 204 },
+  ]);
+  const transport = new ServerTransport('https://vault.example.com', async () => 'token');
+
+  await transport.readVault(account);
+  await assert.rejects(() => transport.writeVault(account, 'a'));
+  await transport.writeVault(account, 'b');
+
+  assert.equal(seen[2].ifMatch, null, 'holding on to a version the server rejected would deadlock the client');
+});
+
+test('a successful write adopts the version the server returned', async () => {
+  const seen = recordingServer([
+    { status: 200, body: 'ciphertext', etag: '"v1"' },
+    { status: 204, etag: '"v2"' },
+    { status: 204, etag: '"v3"' },
+  ]);
+  const transport = new ServerTransport('https://vault.example.com', async () => 'token');
+
+  await transport.readVault(account);
+  await transport.writeVault(account, 'a');
+  await transport.writeVault(account, 'b');
+
+  assert.equal(seen[2].ifMatch, '"v2"', 'the second write must build on the first, without re-reading');
+});

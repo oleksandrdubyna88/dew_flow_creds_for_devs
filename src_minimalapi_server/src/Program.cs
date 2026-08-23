@@ -311,6 +311,9 @@ app.MapGet("/api/vault", async (HttpContext ctx, CancellationToken ct) =>
         ctx.Response.StatusCode = StatusCodes.Status404NotFound;
         return;
     }
+    // The version to echo back on the next write. Without it a client has no way to
+    // say "only if nobody else changed this since I read it".
+    ctx.Response.Headers.ETag = VaultStore.ETagFor(bytes);
     ctx.Response.ContentType = "application/octet-stream";
     await ctx.Response.Body.WriteAsync(bytes, ct);
 });
@@ -333,10 +336,29 @@ app.MapPut("/api/vault", async (HttpContext ctx, CancellationToken ct) =>
         await ctx.Response.WriteAsync($"Vault must be 1..{maxVaultBytes} bytes.", ct);
         return;
     }
-    log.LogInformation("vault write by {Email} ({Bytes} bytes)", caller.Value.Email, ms.Length);
+    // Optimistic concurrency. Two of one person's machines syncing at once is ordinary,
+    // and without this the second write silently discards the first at the blob level.
+    // Opt-in by design: a client that sends neither header keeps the old behaviour.
+    var precondition = VaultPrecondition.FromHeaders(
+        ctx.Request.Headers.IfMatch.ToString(),
+        ctx.Request.Headers.IfNoneMatch.ToString());
+
+    var content = ms.ToArray();
     // A caller may write ONLY their own vault (email is taken from the token).
-    await store.WriteVaultAsync(caller.Value.Email, ms.ToArray(), ct);
+    if (!await store.TryWriteVaultAsync(caller.Value.Email, content, precondition, ct))
+    {
+        log.LogInformation(
+            "stale vault write refused for {Email} — the caller's copy is out of date",
+            caller.Value.Email);
+        ctx.Response.StatusCode = StatusCodes.Status412PreconditionFailed;
+        await ctx.Response.WriteAsync(
+            "The vault changed since you read it. Re-read, merge, and write again.", ct);
+        return;
+    }
+
+    log.LogInformation("vault write by {Email} ({Bytes} bytes)", caller.Value.Email, ms.Length);
     await store.RecordOwnerAsync(caller.Value.Email, ct);
+    ctx.Response.Headers.ETag = VaultStore.ETagFor(content);
     ctx.Response.StatusCode = StatusCodes.Status204NoContent;
 });
 

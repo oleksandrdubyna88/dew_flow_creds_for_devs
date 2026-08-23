@@ -65,8 +65,8 @@ identifier**, so there is nothing to tamper with.
 |---|---|---|---|---|
 | `GET` | `/api/health` | none | `200` | Probes that `DataDir` is writable; `503` when it is not |
 | `GET` | `/api/whoami` | any allowed caller | `200` | `{email, name, hasVault}` |
-| `GET` | `/api/vault` | token email | `200` bytes / `404` | `application/octet-stream`; 404 means nothing stored yet |
-| `PUT` | `/api/vault` | token email | `204` | 1..`MaxVaultBytes`; `400` outside that |
+| `GET` | `/api/vault` | token email | `200` bytes / `404` | `application/octet-stream` + an `ETag`; 404 means nothing stored yet |
+| `PUT` | `/api/vault` | token email | `204` | 1..`MaxVaultBytes`; `400` outside that. Honours `If-Match` / `If-None-Match`, `412` when the precondition fails |
 | `DELETE` | `/api/vault` | token email | `204` | Deletes the vault, its `.email` sidecar, and the whole inbox |
 | `GET` | `/api/team` | any allowed caller | `200` | `[{email}]` — vault owners in the caller's own domain |
 | `POST` | `/api/shares` | sender = token email | `201` | Body below |
@@ -160,9 +160,12 @@ therefore never sees a partial blob, which is what lets `deploy/backup.sh` archi
 
 ### Known limits
 
-- **No optimistic concurrency on `PUT /api/vault`.** Two machines writing simultaneously is
-  last-write-wins at the blob level. In practice the extension's causal merge makes this survivable,
-  but a genuine lost update is possible — `todo/PLAN_server_ops.md` carries the ETag/`If-Match` fix.
+- **Optimistic concurrency is opt-in.** `GET` returns an `ETag` derived from the content; `PUT`
+  honours `If-Match` (and `If-None-Match: *` for "only if I am the first"), answering `412` when the
+  caller's copy is stale. The check and the write happen under the same lock — a fixed stripe of 64,
+  rather than a per-email dictionary that would grow with every account and never be pruned. A client
+  that sends neither header keeps the old last-write-wins behaviour, so an extension predating this
+  still works.
 - **No inbox TTL.** A share nobody accepts sits there until the recipient deletes it or deletes
   their account. Bounded by `MaxInboxItems`, not by time.
 - **`/api/team` enumerates.** Any authenticated caller can list every colleague's email. That is the
