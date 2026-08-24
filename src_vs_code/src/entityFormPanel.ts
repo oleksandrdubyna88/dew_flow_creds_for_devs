@@ -4,6 +4,7 @@ import { normalizeArgs } from './commandLine';
 import {
   CommandArg,
   DB_TYPES,
+  ENTITY_KINDS,
   DbType,
   EntityKind,
   EntityMetadata,
@@ -231,6 +232,10 @@ function renderHtml(options: EntityFormOptions): string {
         `<option value="${value}"${kind === value ? ' selected' : ''}>${label}</option>`,
     )
     .join('');
+  // Guard against the copy above drifting from the single source of truth. It has
+  // drifted once already — the folder picker kept offering five kinds after a sixth
+  // existed, and the new kind could not be created at all.
+  void (ENTITY_KINDS satisfies readonly EntityKind[]);
 
   const keyOptions = [
     `<option value="">— own key (below) —</option>`,

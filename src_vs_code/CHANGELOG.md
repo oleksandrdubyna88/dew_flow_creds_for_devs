@@ -4,6 +4,27 @@ All notable changes to **CredsForDevs** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.27.0] — 2026-08-24
+
+### Fixed
+
+- **The `Terminal` folder type could not be chosen.** The folder-type picker was a second,
+  hand-written copy of the kind list and it was never extended, so the type shipped in
+  0.26.0 was reachable only by brand-new accounts — which seed the default folders once,
+  at creation. Every existing account was offered five types and could not create the
+  sixth. The picker now derives from the kind list itself, and a test fails if the two
+  ever drift apart again.
+
+### Changed
+
+- **`Run in Terminal` runs it.** 0.26.0 put the line on the prompt and left Enter to you;
+  the operator asked for the button to do the whole job, which is theirs to decide — these
+  are commands you wrote and saved yourself, not something arriving from elsewhere.
+  *Copy Command* is still there for the times you want to edit before running.
+- The run button is the same **green triangle** as *Connect via SSH*, in the row and in the
+  context menu. Two buttons that both mean "start this" should not look like two different
+  ideas.
+
 ## [0.26.0] — 2026-08-23
 
 ### Added

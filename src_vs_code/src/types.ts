@@ -78,6 +78,24 @@ export const ENTITY_KINDS: readonly EntityKind[] = [
   'terminal',
 ];
 
+/**
+ * How each kind is named and iconed in the UI.
+ *
+ * One table, because there were three: the entity form's type selector, the folder-type
+ * picker, and the tree's icon chooser each carried their own copy. Adding `terminal`
+ * reached two of them and the folder picker kept offering five types — so a folder of the
+ * new kind could not be created at all, and the feature was unreachable for anyone whose
+ * account already existed and therefore never got the new default folder.
+ */
+export const ENTITY_KIND_LABELS: Readonly<Record<EntityKind, { label: string; icon: string }>> = {
+  credential: { label: 'Credential', icon: 'lock' },
+  ssh: { label: 'SSH connection', icon: 'remote' },
+  sshkey: { label: 'SSH key', icon: 'key' },
+  vpn: { label: 'VPN', icon: 'shield' },
+  db: { label: 'Database', icon: 'database' },
+  terminal: { label: 'Terminal command', icon: 'terminal' },
+};
+
 /** A folder's declared content type; 'any' = unrestricted. */
 export type FolderType = EntityKind | 'any';
 

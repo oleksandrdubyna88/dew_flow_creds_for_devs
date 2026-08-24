@@ -307,10 +307,11 @@ ${detail}
     const existing = vscode.window.terminals.find((t) => t.name === name);
     const terminal = existing ?? vscode.window.createTerminal({ name });
     terminal.show();
-    // sendText WITHOUT a newline: the command is put on the prompt for the user to read
-    // and press Enter. A credential-adjacent command that runs itself the instant you
-    // click a tree item is a way to lose an afternoon.
-    terminal.sendText(line, false);
+    // Runs it. The first version put the line on the prompt and left Enter to the user;
+    // the operator asked for the button to do the whole job, which is theirs to decide —
+    // these are commands they wrote and saved themselves, not something arriving from
+    // elsewhere. `Copy Command` remains for the times you want to edit before running.
+    terminal.sendText(line, true);
   });
 
   register('credSshManager.copyCommand', async (target) => {

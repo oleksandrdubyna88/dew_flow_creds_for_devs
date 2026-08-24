@@ -3,7 +3,14 @@ import { DB_DEFAULT_PORTS, parseDbConnectionString } from './dbConnString';
 import { copiedMessage, copySecret } from './secretClipboard';
 import { StorageManager } from './storageManager';
 import { buildSshCommand } from './terminalManager';
-import { EntityMetadata, FolderType, StoredAccount, TreeNode } from './types';
+import {
+  ENTITY_KINDS,
+  ENTITY_KIND_LABELS,
+  EntityMetadata,
+  FolderType,
+  StoredAccount,
+  TreeNode,
+} from './types';
 
 export async function promptFolderName(initial?: string): Promise<string | undefined> {
   const name = await vscode.window.showInputBox({
@@ -92,13 +99,15 @@ export function formatEntityBlock(
 export async function pickFolderType(
   current?: FolderType,
 ): Promise<FolderType | undefined> {
+  // Derived from ENTITY_KINDS rather than restated: this list used to be a hand-written
+  // copy, and adding a kind left it offering the old five — so a folder of the new kind
+  // could not be created at all.
   const items: Array<vscode.QuickPickItem & { value: FolderType }> = [
-    { label: '$(lock) Credential', value: 'credential' },
-    { label: '$(remote) SSH connection', value: 'ssh' },
-    { label: '$(key) SSH key', value: 'sshkey' },
-    { label: '$(shield) VPN', value: 'vpn' },
-    { label: '$(database) Database', value: 'db' },
-    { label: '$(folder) Any type', description: 'no restriction', value: 'any' },
+    ...ENTITY_KINDS.map((kind) => ({
+      label: `$(${ENTITY_KIND_LABELS[kind].icon}) ${ENTITY_KIND_LABELS[kind].label}`,
+      value: kind as FolderType,
+    })),
+    { label: '$(folder) Any type', description: 'no restriction', value: 'any' as FolderType },
   ];
   for (const item of items) {
     if (item.value === (current ?? 'credential')) {

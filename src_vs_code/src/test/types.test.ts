@@ -1,6 +1,8 @@
 import * as assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
+  ENTITY_KINDS,
+  ENTITY_KIND_LABELS,
   StoredAccount,
   TeamMember,
   isBackupBundle,
@@ -100,3 +102,20 @@ test('an empty team stays empty', () => {
 function member(account: StoredAccount, isSelf: boolean): TeamMember {
   return { account, location: '/nas', shareKeyId: account.accountId, isSelf };
 }
+
+test('every entity kind has a label and an icon, so no picker can omit one', () => {
+  // The folder-type picker and the form both build their lists from this table. When it
+  // was three hand-written copies, adding `terminal` reached two of them and the folder
+  // picker kept offering five — making the new kind uncreatable.
+  for (const kind of ENTITY_KINDS) {
+    const entry = ENTITY_KIND_LABELS[kind];
+    assert.ok(entry, `no label for kind "${kind}"`);
+    assert.ok(entry.label.length > 0, `empty label for "${kind}"`);
+    assert.ok(entry.icon.length > 0, `empty icon for "${kind}"`);
+  }
+  assert.equal(
+    Object.keys(ENTITY_KIND_LABELS).length,
+    ENTITY_KINDS.length,
+    'the table and the kind list must not drift',
+  );
+});
