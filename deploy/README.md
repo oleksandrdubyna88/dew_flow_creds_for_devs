@@ -116,6 +116,30 @@ For production, pin an explicit version anyway.
 Images are built for `linux/amd64` and `linux/arm64`, and what is published is the same build that
 passed the smoke test in CI.
 
+Since `0.2.1` the image is **Native AOT on a chiseled base — ~50 MB**, and three things follow:
+
+- **There is no shell inside.** `docker compose exec vault sh` does not work — there is no `sh`, no
+  `apt`, no tools for an attacker either. Diagnose with `docker compose logs vault`, the per-run
+  files in `LOG_DIR`, and `docker cp` when you need a file out.
+- **The health check is the binary itself** (`CredVaultServer --healthcheck`), so `service_healthy`
+  works exactly as before without curl existing anywhere in the image.
+- **There is no .NET runtime in the image** — the entrypoint is one static binary. Base-image CVE
+  patches arrive by rebuilding on a newer tag, same as always.
+
+### Running without Docker at all
+
+Every `server-v*` release also attaches **standalone binaries** — no .NET install, no dependencies:
+`linux-x64`, `linux-arm64`, `win-x64`, `win-arm64`, each an archive with the binary and
+`appsettings.json`. For a machine where Docker is unwelcome:
+
+```bash
+tar xf cred-vault-server-<version>-linux-x64.tar.gz && cd cred-vault-server-*
+Vault__DataDir=/var/lib/cred-vault Vault__AllowedDomains=example.com Auth__Microsoft__Tenant=<tenant> ASPNETCORE_URLS=http://127.0.0.1:8080 ./CredVaultServer
+```
+
+Same configuration keys as the container (environment variables win over `appsettings.json`), same
+`/api/health`. TLS is still yours to terminate in front — the binary speaks plain HTTP by design.
+
 > **A ghcr package is private until its owner makes it public.** If `docker compose up -d` fails
 > with `denied` or `manifest unknown`, either change the package visibility on GitHub
 > (*Packages → cred-vault-server → Package settings → Change visibility*), or authenticate:
@@ -244,12 +268,19 @@ is a rumour.
 reporting a constant, so it fails when the volume is gone or full, which is the failure that actually
 strands this service.
 
+The container's own healthcheck is the binary probing itself (`CredVaultServer --healthcheck`), so
+`docker compose ps` shows `healthy`/`unhealthy` with no curl involved — `unhealthy` almost always
+means the data mount is gone, read-only, or full.
+
 ```bash
 docker compose ps                    # all three should be Up, vault healthy
 docker compose logs -f vault
 docker compose logs -f certbot       # where a TLS problem announces itself
 curl -sf https://vault.example.com/api/health
 ```
+
+The vault's own logs are also on the host, one file per run: `LOG_DIR/<utc-date>/cred-vault-server-<time>-<pid>.log` —
+`docker compose logs` disappearing with a recreated container is exactly what these survive.
 
 ## Troubleshooting
 

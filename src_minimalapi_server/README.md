@@ -81,12 +81,18 @@ ASPNETCORE_URLS=http://0.0.0.0:5080 \
 dotnet run
 ```
 
+Development runs JIT as usual. The RELEASE artifact is **Native AOT** — `dotnet publish -r <rid>`
+emits one ~20 MB static binary with no .NET beside it (`PublishAot` in the csproj; the trim/AOT
+analyzers run on every build, so an incompatible pattern fails here, not on a release runner).
+Every `server-v*` release attaches the four platform binaries (linux/win × x64/arm64) and the
+~50 MB chiseled container image — see `deploy/README.md`.
+
 Put it behind a TLS-terminating reverse proxy (nginx/Caddy/ALB) — the app
 speaks plain HTTP and expects the proxy to add HTTPS.
 
 ## Tests
 
-`tests/` is 36 xUnit v3 tests on Microsoft Testing Platform, hosted **in-process** through
+`tests/` is 57 xUnit v3 tests on Microsoft Testing Platform, hosted **in-process** through
 `WebApplicationFactory` — no free port, no background `dotnet run`, ~1.5 seconds. They cover the
 auth gates (including forged `alg=none`, wrong-key, missing-claim and expired tokens), domain
 enforcement, vault isolation and size caps, team listing, share delivery with sender stamping,

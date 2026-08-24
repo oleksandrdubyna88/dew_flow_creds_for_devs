@@ -4,6 +4,15 @@ All notable changes to **CredsForDevs** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.42.1] — 2026-08-24
+
+### Changed
+
+- **The listing's server section reflects what actually ships now**: a ~50 MB Native-AOT
+  image for amd64 and arm64 with no shell and no .NET inside; data, logs and certificates
+  in host folders the operator chooses; and standalone binaries for Linux and Windows,
+  x64 and ARM64, for machines where Docker is unwelcome. No extension code changed.
+
 ## [0.42.0] — 2026-08-24
 
 ### Added

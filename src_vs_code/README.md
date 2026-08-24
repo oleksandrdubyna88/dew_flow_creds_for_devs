@@ -386,7 +386,12 @@ That starts the API, an nginx in front of it, and a certbot that obtains a Let's
 certificate and then renews it forever — **by domain or by bare IP**, whichever you have.
 Then point the extension at `https://your-host` with *Set Sync Location…* and sign in.
 
-The image is prebuilt and published, so nothing is compiled on your server. `deploy/README.md`
+The image is prebuilt and published for **amd64 and arm64** — a ~50 MB Native-AOT build with no
+shell and no .NET inside, so nothing is compiled on your server and there is very little in the
+container to attack. Vault data, logs and certificates live in **host folders you choose**, so
+updating the image never touches them. Prefer no Docker at all? Every release also ships
+**standalone binaries** for Linux and Windows, x64 and ARM64 — one file, no runtime to install.
+`deploy/README.md`
 covers the rest: sign-in providers, TLS by IP against by domain, scheduled backups to a NAS,
 restore rehearsal, and one-command updates.
 
