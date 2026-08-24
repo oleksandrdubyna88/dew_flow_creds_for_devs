@@ -240,6 +240,35 @@ only for a vault that does not exist yet or a genuine v1 one, and the prompt is 
 content returns `wrapped`**: guessing "no wraps" from a parse failure is exactly how they would be
 overwritten, so the unsafe answer is never the default.
 
+### Security keys: the user handle must be stable
+
+A discoverable ("resident") credential is keyed by `(RP ID, user.id)`. `RP_ID` is fixed, so `user.id`
+carries the whole identity — and it was 16 random bytes minted at each registration, which meant
+re-registering an account never replaced its own credential. It added another. A YubiKey 5 holds
+about 25, cannot be told to drop one from here, and a full authenticator **refuses `create()`**,
+which presents as the dialog reappearing.
+
+`webauthnUserHandle(email)` in `cryptoUtils.ts` is now that identity: SHA-256 of the lowercased
+email, so the same account replaces its own slot from any machine. Hashed because `user.name`
+already carries the readable address; the identifier need not be reversible too.
+
+### Seeding defaults needs evidence, not silence
+
+Sign-in pulls the remote vault, quietly, before deciding whether to create the default folders — and
+swallows failures, which on a fresh machine is the *normal* outcome because no sync PIN is stored
+yet. An empty local tree then looks exactly like a brand-new account, so the defaults were created;
+the next successful sync brought the account's real folders, whose ids differ, and the merge kept
+both. Two `db`, two `vpn`, two of everything.
+
+`RemoteState` (`no-location` | `empty` | `unknown`) is the missing third input to
+`shouldSeedDefaults`. `probeRemote` answers it **without decrypting**: a vault file that exists is
+proof the account has a structure, and that is the entire question — being unable to open it yet is
+the ordinary state of a machine that has just signed in. Unreachable counts as `unknown`, never as
+`empty`.
+
+The seeded flag is also claimed before the first `await`, so two concurrent sign-in flows cannot
+both pass the guard.
+
 ### Clone
 
 `cloneNode` copies a folder or entity's settings and deliberately **not** its secrets. Duplicating

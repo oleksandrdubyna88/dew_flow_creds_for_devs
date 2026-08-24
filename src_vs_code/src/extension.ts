@@ -71,7 +71,7 @@ import {
 import { registerSecurityKey } from './webauthnPrf';
 import { validatePin } from './pinPolicy';
 import { CredTreeDataProvider, VIEW_ID } from './treeDataProvider';
-import { inheritedFolderType } from './defaultFolders';
+import { RemoteState, inheritedFolderType } from './defaultFolders';
 import {
   AuthProvider,
   EntityKind,
@@ -274,9 +274,12 @@ ${detail}
         } catch {
           // Best-effort: a brand-new user usually has no sync location yet.
         }
-        // Seed the default folder set only into a still-empty, never-seeded
-        // account — an existing/renamed structure is left untouched.
-        if (await storage.seedDefaultFolders(account.accountId)) {
+        // Seed the default folder set only into a still-empty, never-seeded account
+        // that we can SEE has nothing waiting for it remotely. The existence of a vault
+        // file is enough to refuse — whether we can decrypt it yet is a different
+        // question, and on a fresh machine the answer is usually "not until the PIN is
+        // set". Seeding on that ignorance is what produced two of every folder.
+        if (await storage.seedDefaultFolders(account.accountId, await probeRemote(account, transports))) {
           mutated();
         }
       }
@@ -1534,6 +1537,29 @@ function folderKindOf(
     return undefined;
   }
   return inheritedFolderType(storage.getNode(accountId, parentId)?.folderType);
+}
+
+/**
+ * What is waiting for this account at its sync location, as far as we can tell.
+ *
+ * <p>Deliberately does NOT try to decrypt: a vault file that exists is proof the account
+ * has a structure somewhere, and that is the whole question. Being unable to open it yet
+ * is the normal state of a machine that has just signed in.</p>
+ */
+async function probeRemote(
+  account: StoredAccount,
+  transports: TransportFactory,
+): Promise<RemoteState> {
+  const transport = transports.forAccount(account);
+  if (transport === undefined) {
+    return 'no-location';
+  }
+  try {
+    return (await transport.readVault(account)) === undefined ? 'empty' : 'unknown';
+  } catch {
+    // Unreachable is not empty. Treating it as empty is exactly the mistake.
+    return 'unknown';
+  }
 }
 
 /** Where a new node goes, based on what the command was invoked on. */

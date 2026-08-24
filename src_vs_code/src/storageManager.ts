@@ -1,7 +1,7 @@
 import * as crypto from 'node:crypto';
 import * as vscode from 'vscode';
 import { ProfileSnapshot } from './syncMerge';
-import { buildDefaultFolders, shouldSeedDefaults } from './defaultFolders';
+import { RemoteState, buildDefaultFolders, shouldSeedDefaults } from './defaultFolders';
 import { Tombstone, VersionVector, bumpVector, mergeVectors, normalizeTombstone } from './versionVector';
 import {
   BackupBundle,
@@ -108,14 +108,19 @@ export class StorageManager {
    * touched, and the folders never come back once seeded. Returns true iff
    * folders were created.
    */
-  async seedDefaultFolders(accountId: string): Promise<boolean> {
-    if (!shouldSeedDefaults(this.getNodes(accountId).length, this.hasSeededDefaults(accountId))) {
+  async seedDefaultFolders(accountId: string, remote: RemoteState): Promise<boolean> {
+    if (
+      !shouldSeedDefaults(this.getNodes(accountId).length, this.hasSeededDefaults(accountId), remote)
+    ) {
       return false;
     }
+    // Claim the flag BEFORE the first await. addNode yields, and two sign-in flows that
+    // both got past the guard would each write a full set — the same duplication by a
+    // different route.
+    await this.globalState.update(SEEDED_KEY, [...this.seededAccountIds(), accountId]);
     for (const node of buildDefaultFolders(() => StorageManager.newId())) {
       await this.addNode(accountId, node);
     }
-    await this.globalState.update(SEEDED_KEY, [...this.seededAccountIds(), accountId]);
     return true;
   }
 

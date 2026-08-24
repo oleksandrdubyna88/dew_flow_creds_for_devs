@@ -2,6 +2,7 @@ import * as crypto from 'node:crypto';
 import * as http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import * as vscode from 'vscode';
+import { webauthnUserHandle } from './cryptoUtils';
 
 /**
  * Security-key unlock via WebAuthn + the **PRF** extension.
@@ -83,6 +84,7 @@ async function runFlow(
     challenge,
     prfSalt: Buffer.from(prfSalt, 'base64').toString('base64url'),
     userLabel,
+    userHandle: webauthnUserHandle(userLabel).toString('base64url'),
     credentialIds: [...credentialIds],
   });
 
@@ -192,6 +194,8 @@ interface PageOptions {
   challenge: string;
   prfSalt: string;
   userLabel: string;
+  /** Stable per account, so re-registering REPLACES this key's slot — see webauthnUserHandle. */
+  userHandle: string;
   credentialIds: string[];
 }
 
@@ -270,7 +274,10 @@ function renderPage(options: PageOptions): string {
             challenge: challenge,
             rp: { id: ${JSON.stringify(RP_ID)}, name: ${JSON.stringify(RP_NAME)} },
             user: {
-              id: crypto.getRandomValues(new Uint8Array(16)),
+              // Stable, NOT random. A resident credential is keyed by (rp.id, user.id),
+              // so a fresh id every time claimed another of the key's ~25 slots instead
+              // of replacing this account's own — and a full key refuses create().
+              id: b64urlToBytes(CONFIG.userHandle),
               name: CONFIG.userLabel,
               displayName: CONFIG.userLabel,
             },

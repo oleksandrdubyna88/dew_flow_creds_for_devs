@@ -44,8 +44,40 @@ export function buildDefaultFolders(newId: () => string): TreeNode[] {
  * was never seeded before. Any existing node (including a renamed default)
  * means the user already has structure — leave it untouched.
  */
-export function shouldSeedDefaults(nodeCount: number, alreadySeeded: boolean): boolean {
-  return nodeCount === 0 && !alreadySeeded;
+/**
+ * What we know about the account's remote vault at the moment of deciding.
+ *
+ * <p>`unknown` is the case that matters and the one that was missing: a pull that could
+ * not read the vault — no sync PIN on this machine yet, a locked vault, an unreachable
+ * folder. It looks exactly like "brand new" from the local tree, and it is not.</p>
+ */
+export type RemoteState =
+  /** No sync location configured — there is nothing to wait for. */
+  | 'no-location'
+  /** Read successfully, and it holds nothing. */
+  | 'empty'
+  /** Not read. May hold this account's entire structure. */
+  | 'unknown';
+
+/**
+ * Whether to create the default folder set.
+ *
+ * <p>The third argument exists because of a real duplication. Sign-in pulls the remote
+ * vault first, quietly, and swallows failures — which on a fresh machine is the NORMAL
+ * outcome, since the sync PIN is not stored yet. The local tree was then empty, the
+ * defaults were created, and the next successful sync pulled the account's actual
+ * folders. Their ids differ from the freshly minted ones, so the merge kept both sets:
+ * two `db`, two `vpn`, two of everything.</p>
+ *
+ * <p>Seeding therefore needs POSITIVE evidence that there is nothing to inherit. Absence
+ * of evidence is not it.</p>
+ */
+export function shouldSeedDefaults(
+  nodeCount: number,
+  alreadySeeded: boolean,
+  remote: RemoteState,
+): boolean {
+  return nodeCount === 0 && !alreadySeeded && remote !== 'unknown';
 }
 
 /**

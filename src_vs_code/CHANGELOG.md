@@ -4,6 +4,42 @@ All notable changes to **CredsForDevs** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.34.0] — 2026-08-24
+
+### Fixed
+
+- **Registering a security key claimed a NEW slot on it every time.** A discoverable
+  credential is keyed by `(RP ID, user.id)`, and `user.id` was 16 fresh random bytes at
+  each registration — so re-registering the same account never replaced its own
+  credential, it added another. A YubiKey 5 holds roughly 25 of them, cannot be told to
+  drop one from here, and a **full authenticator refuses `create()` outright**, which is
+  what "it just keeps asking" was.
+
+  The handle is now derived from the account's email, so registering the same account
+  again — from this machine or another — overwrites its own slot.
+
+  **Slots already spent are not reclaimed by this release.** List them with
+  `ykman fido credentials list` and delete the extras with
+  `ykman fido credentials delete <id>`.
+
+- **A second account came up with two of every default folder.** Sign-in pulls the remote
+  vault first and swallows failures — which on a fresh machine is the *normal* outcome,
+  because the sync PIN is not stored yet. The local tree was then empty, which is
+  indistinguishable from "brand new", so the defaults were created. The next successful
+  sync pulled the account's real folders, whose ids differ, and the merge kept both sets.
+
+  Seeding now needs positive evidence that nothing is waiting: no sync location at all,
+  or a location that demonstrably holds no vault. **The existence of a vault file is
+  enough to refuse** — whether it can be decrypted yet is a different question, and on a
+  machine that has just signed in the answer is usually "not yet".
+
+  Duplicates already created are ordinary folders: delete the empty one of each pair and
+  the deletion syncs like any other.
+
+- Closed a re-entrancy window in the same place: the seeded flag is now claimed **before**
+  the first `await`, so two sign-in flows cannot both get past the guard and each write a
+  full set — the same duplication by a different route.
+
 ## [0.33.0] — 2026-08-24
 
 ### Changed

@@ -361,3 +361,24 @@ export function decryptJson(fileContent: string, passphrase: string): unknown {
   const envelope = parseEnvelope(fileContent);
   return openBlob(envelope, passphrase);
 }
+
+/**
+ * The WebAuthn user handle for an account — stable, so registering the same account
+ * twice REPLACES its credential on the key instead of claiming another slot.
+ *
+ * <p>A discoverable ("resident") credential is keyed by (RP ID, user.id). The RP ID is
+ * fixed here, so user.id carries the whole identity — and it was 16 random bytes made
+ * fresh at every registration. Each attempt therefore filed a new credential rather than
+ * overwriting its own. A YubiKey 5 holds roughly 25 of them and cannot be told to drop
+ * one from here, so a handful of retries is a measurable part of the key spent, and a
+ * full authenticator refuses `create()` outright — which is what "it keeps asking"
+ * looked like.</p>
+ *
+ * <p>Derived from the email rather than the local account id so that the SAME account
+ * registered from a second machine also replaces, instead of leaving a credential behind
+ * that nothing will ever delete. Hashed because the readable name is already on the key
+ * as `user.name`; the identifier does not need to be reversible as well.</p>
+ */
+export function webauthnUserHandle(email: string): Buffer {
+  return crypto.createHash('sha256').update('creds-for-devs/user:' + email.trim().toLowerCase()).digest();
+}

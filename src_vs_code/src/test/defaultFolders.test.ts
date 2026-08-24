@@ -38,15 +38,15 @@ test('buildDefaultFolders produces root folders in display order with unique ids
 });
 
 test('seed only a brand-new, never-seeded account', () => {
-  // fresh + never seeded -> seed
-  assert.equal(shouldSeedDefaults(0, false), true);
+  // fresh + never seeded + nothing remote to inherit -> seed
+  assert.equal(shouldSeedDefaults(0, false, 'empty'), true);
   // has data already (e.g. a returning user pulled from NAS, or renamed a
   // default) -> never touch
-  assert.equal(shouldSeedDefaults(3, false), false);
-  assert.equal(shouldSeedDefaults(1, false), false);
+  assert.equal(shouldSeedDefaults(3, false, 'empty'), false);
+  assert.equal(shouldSeedDefaults(1, false, 'empty'), false);
   // already seeded once -> don't respawn after the user deletes them
-  assert.equal(shouldSeedDefaults(0, true), false);
-  assert.equal(shouldSeedDefaults(3, true), false);
+  assert.equal(shouldSeedDefaults(0, true, 'empty'), false);
+  assert.equal(shouldSeedDefaults(3, true, 'empty'), false);
 });
 
 test('a subfolder of a typed folder is of that type — it is not asked about', () => {
@@ -62,4 +62,27 @@ test('a subfolder of a typed folder is of that type — it is not asked about', 
 test('an untyped parent dictates nothing, so the question is a real one', () => {
   assert.equal(inheritedFolderType('any'), undefined);
   assert.equal(inheritedFolderType(undefined), undefined);
+});
+
+test('an account whose remote vault could not be read is NOT seeded', () => {
+  // The duplicate-folder bug. Sign-in pulls first, quietly, and a fresh machine has no
+  // sync PIN yet — so the pull cannot open the vault and reports nothing. The local tree
+  // is empty, which is indistinguishable from "brand new", so the defaults were created.
+  // The next real sync then pulled the account's ACTUAL folders, whose ids differ, and
+  // the merge kept both: two `db`, two `vpn`, two of everything.
+  assert.equal(shouldSeedDefaults(0, false, 'unknown'), false);
+});
+
+test('an account confirmed to have nothing remote is seeded', () => {
+  assert.equal(shouldSeedDefaults(0, false, 'empty'), true);
+});
+
+test('an account with no sync location at all is seeded — there is nothing to wait for', () => {
+  assert.equal(shouldSeedDefaults(0, false, 'no-location'), true);
+});
+
+test('the old guards still hold whatever the remote says', () => {
+  assert.equal(shouldSeedDefaults(3, false, 'empty'), false, 'already has nodes');
+  assert.equal(shouldSeedDefaults(0, true, 'empty'), false, 'seeded once already');
+  assert.equal(shouldSeedDefaults(0, true, 'no-location'), false);
 });
