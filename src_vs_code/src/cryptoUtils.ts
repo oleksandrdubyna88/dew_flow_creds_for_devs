@@ -320,7 +320,7 @@ function parseEnvelope(fileContent: string): BackupEnvelope {
   }
   const v = raw as Record<string, unknown>;
   if (v.format !== FORMAT) {
-    throw new BackupError('corrupted', 'The file is not a Cred SSH Manager backup.');
+    throw new BackupError('corrupted', 'The file is not a CredsForDevs backup.');
   }
   if (typeof v.version !== 'number' || !SUPPORTED_VERSIONS.includes(v.version)) {
     throw new BackupError(

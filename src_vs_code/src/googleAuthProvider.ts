@@ -272,7 +272,7 @@ export class GoogleAuthProvider implements vscode.AuthenticationProvider, vscode
       title: 'Google sign-in — one-time setup (2/2)',
       prompt:
         'Paste the client secret of the same Desktop-app OAuth client (kept in VS Code SecretStorage). ' +
-        'Run "Cred SSH: Reset Google OAuth" to change it later.',
+        'Run "CredsForDevs: Reset Google OAuth" to change it later.',
       password: true,
       ignoreFocusOut: true,
       validateInput: (v) => (v.trim().length === 0 ? 'Client secret must not be empty.' : undefined),

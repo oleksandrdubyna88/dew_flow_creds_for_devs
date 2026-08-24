@@ -18,7 +18,7 @@ import * as vscode from 'vscode';
  */
 
 const RP_ID = 'localhost';
-const RP_NAME = 'Cred SSH Manager';
+const RP_NAME = 'CredsForDevs';
 const TIMEOUT_MS = 2 * 60_000;
 
 export interface PrfResult {
@@ -206,7 +206,7 @@ function renderPage(options: PageOptions): string {
 <html>
 <head>
 <meta charset="UTF-8">
-<title>Cred SSH Manager — security key</title>
+<title>CredsForDevs — security key</title>
 <style>
   body { font-family: system-ui, sans-serif; margin: 12vh auto; max-width: 34rem;
          padding: 0 1.5rem; color: #ddd; background: #1e1e1e; }
@@ -219,7 +219,7 @@ function renderPage(options: PageOptions): string {
 </style>
 </head>
 <body>
-  <h1>Cred SSH Manager</h1>
+  <h1>CredsForDevs</h1>
   <div class="box">
     <p id="status">Starting…</p>
     <p><button id="retry" style="display:none">Try again</button></p>
@@ -264,7 +264,7 @@ function renderPage(options: PageOptions): string {
       let credentialId = CONFIG.credentialIds[0];
 
       if (CONFIG.op === 'register') {
-        status.textContent = 'Touch your security key to register it…';
+        status.textContent = 'Touch your security key (1 of 2) — registering it…';
         const created = await navigator.credentials.create({
           publicKey: {
             challenge: challenge,
@@ -288,7 +288,14 @@ function renderPage(options: PageOptions): string {
         credentialId = created.id;
       }
 
-      status.textContent = 'Touch your security key…';
+      // Two touches when registering, and it cannot be one: create() with the PRF
+      // extension only reports whether PRF is AVAILABLE - it does not return a PRF
+      // result. The 32 bytes that wrap the master key come from an assertion, so a
+      // registration is necessarily create-then-get. Saying so stops the second
+      // prompt reading as 'that did not work, try again'.
+      status.textContent = CONFIG.op === 'register'
+        ? 'Touch your security key (2 of 2) — this one derives the encryption key…'
+        : 'Touch your security key…';
       const allow = (CONFIG.op === 'register' ? [credentialId] : CONFIG.credentialIds)
         .filter(Boolean)
         .map((id) => ({ type: 'public-key', id: b64urlToBytes(id) }));

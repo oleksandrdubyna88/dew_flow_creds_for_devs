@@ -380,7 +380,7 @@ export class SyncManager implements vscode.Disposable {
     this.warnedAccounts.add(account.accountId);
     const message =
       error instanceof BackupError && error.kind === 'wrong-password'
-        ? `Sync for ${account.email}: the NAS file does not decrypt with this machine's PIN — run "Cred SSH: Set Sync PIN" with the same PIN as the other machine.`
+        ? `Sync for ${account.email}: the NAS file does not decrypt with this machine's PIN — run "CredsForDevs: Set Sync PIN" with the same PIN as the other machine.`
         : `Sync for ${account.email} failed: ${error instanceof Error ? error.message : String(error)}`;
     void vscode.window.showWarningMessage(message);
   }

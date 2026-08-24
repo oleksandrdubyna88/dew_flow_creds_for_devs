@@ -254,7 +254,7 @@ export async function pickAccount(
   const accounts = storage.getAccounts();
   if (accounts.length === 0) {
     void vscode.window.showInformationMessage(
-      'No account profiles yet — run "Cred SSH: Add Account" first.',
+      'No account profiles yet — run "CredsForDevs: Add Account" first.',
     );
     return undefined;
   }
