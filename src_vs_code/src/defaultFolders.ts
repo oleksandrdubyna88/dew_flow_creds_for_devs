@@ -1,4 +1,4 @@
-import { FolderType, TreeNode } from './types';
+import { EntityKind, FolderType, TreeNode } from './types';
 
 /**
  * Default folder set created for a brand-NEW, empty account so a first-time
@@ -46,4 +46,17 @@ export function buildDefaultFolders(newId: () => string): TreeNode[] {
  */
 export function shouldSeedDefaults(nodeCount: number, alreadySeeded: boolean): boolean {
   return nodeCount === 0 && !alreadySeeded;
+}
+
+/**
+ * The type a child inherits from the folder it is created in, or `undefined` when the
+ * parent dictates nothing and the question is a real one.
+ *
+ * <p>One rule for both kinds of child. An entity in a typed folder already had its type
+ * fixed here; a SUBFOLDER did not, and was asked — which offers an answer that cannot be
+ * right, because an `ssh` folder inside `passwords` is a folder whose contents its own
+ * parent refuses.</p>
+ */
+export function inheritedFolderType(parentType: FolderType | undefined): EntityKind | undefined {
+  return parentType !== undefined && parentType !== 'any' ? parentType : undefined;
 }

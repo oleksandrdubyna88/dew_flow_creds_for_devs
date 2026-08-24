@@ -4,6 +4,21 @@ All notable changes to **CredsForDevs** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.32.0] — 2026-08-24
+
+### Changed
+
+- **A subfolder of a typed folder is of that type, and is no longer asked about.** Adding
+  a folder inside `passwords` opened the type picker with every kind offered — including
+  the ones that folder already refuses. An entity created there has its type fixed by the
+  parent; a subfolder is where some of those entities live, so it was the one child the
+  rule did not reach.
+
+  One rule now serves both: `inheritedFolderType` in `defaultFolders.ts`, with the
+  entity-side lookup delegating to it rather than repeating it. An untyped (`Any type`)
+  parent still asks, because there the question is a real one — and *Change Folder Type…*
+  remains in the folder's own menu when you want something the parent did not dictate.
+
 ## [0.31.1] — 2026-08-24
 
 ### Fixed

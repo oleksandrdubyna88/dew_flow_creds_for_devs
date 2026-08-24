@@ -71,6 +71,7 @@ import {
 import { registerSecurityKey } from './webauthnPrf';
 import { validatePin } from './pinPolicy';
 import { CredTreeDataProvider, VIEW_ID } from './treeDataProvider';
+import { inheritedFolderType } from './defaultFolders';
 import {
   AuthProvider,
   EntityKind,
@@ -648,7 +649,10 @@ ${detail}
     if (name === undefined) {
       return;
     }
-    const folderType = await pickFolderType();
+    // A subfolder of a typed folder is of that type. Asking would offer answers the
+    // parent already refuses.
+    const inherited = folderKindOf(storage, location.accountId, location.parentId);
+    const folderType = inherited ?? (await pickFolderType());
     if (folderType === undefined) {
       return;
     }
@@ -1529,9 +1533,7 @@ function folderKindOf(
   if (parentId == null) {
     return undefined;
   }
-  const folder = storage.getNode(accountId, parentId);
-  const t = folder?.folderType;
-  return t !== undefined && t !== 'any' ? t : undefined;
+  return inheritedFolderType(storage.getNode(accountId, parentId)?.folderType);
 }
 
 /** Where a new node goes, based on what the command was invoked on. */
