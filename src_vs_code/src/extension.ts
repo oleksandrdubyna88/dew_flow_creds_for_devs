@@ -76,6 +76,7 @@ import * as childProcess from 'node:child_process';
 import * as fs from 'node:fs';
 import { resolveVpnLauncher } from './vpnExec';
 import { applyEnvBindings, bindableFieldValue } from './envApply';
+import { envProbeCommand } from './envProbe';
 import {
   AuthProvider,
   EntityKind,
@@ -1947,6 +1948,13 @@ async function openEntityViewer(
     // The manual half of env bindings: the automatic write happens on save, but the
     // collection can be lost with the extension's storage — this button re-sets one
     // variable from the CURRENT stored value, on this machine, right now.
+    // A FRESH terminal every time: the collection applies to terminals created after
+    // the write, so probing in an old one would "prove" the variable is missing.
+    checkEnv: (name) => {
+      const terminal = vscode.window.createTerminal({ name: `env check: ${name}` });
+      terminal.show();
+      terminal.sendText(envProbeCommand(vscode.env.shell, name), true);
+    },
     setEnv: async (field, name) => {
       const value = await bindableFieldValue(storage, accountId, details, field);
       if (value === undefined || value.length === 0) {

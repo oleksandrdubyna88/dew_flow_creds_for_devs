@@ -37,10 +37,12 @@ export interface EntityViewOptions {
   saveVpnConfig: () => Promise<void>;
   /** Write one bindable field into the terminal env collection under `name`. */
   setEnv: (field: BindableField, name: string) => Promise<boolean>;
+  /** Open a fresh terminal and echo `name`, so the variable is SEEN rather than trusted. */
+  checkEnv: (name: string) => void;
 }
 
 interface CopyMessage {
-  type: 'copy' | 'download' | 'env';
+  type: 'copy' | 'download' | 'env' | 'envcheck';
   field: string;
 }
 
@@ -55,7 +57,7 @@ export function showEntityView(options: EntityViewOptions): void {
 
   panel.webview.onDidReceiveMessage(async (message: CopyMessage) => {
     const d = options.details;
-    if (message.type === 'env') {
+    if (message.type === 'env' || message.type === 'envcheck') {
       const field = message.field as BindableField;
       if (!(BINDABLE_FIELDS as readonly string[]).includes(field)) {
         return;
@@ -64,7 +66,11 @@ export function showEntityView(options: EntityViewOptions): void {
       if (bound === undefined) {
         return;
       }
-      await options.setEnv(field, bound);
+      if (message.type === 'env') {
+        await options.setEnv(field, bound);
+      } else {
+        options.checkEnv(bound);
+      }
       return;
     }
     if (message.type === 'download' && message.field === 'vpnConfig') {
@@ -184,6 +190,7 @@ function renderHtml(options: EntityViewOptions): string {
         ? `<div class="line envLine"><span class="envTag">$${escapeHtml(envName)}</span>
         <button data-field="envname_${field}" data-action="copy" class="icon" title="Copy variable name" aria-label="Copy variable name">${COPY_ICON}</button>
         <button data-field="${field}" data-action="env" class="icon env" title="Write the current value into $${escapeHtml(envName)} for new terminals" aria-label="Set ${escapeHtml(envName)}">ENV</button>
+        <button data-field="${field}" data-action="envcheck" class="icon env" title="Open a terminal and echo $${escapeHtml(envName)} — see it is really there" aria-label="Check ${escapeHtml(envName)} in a terminal">✓?</button>
       </div>`
         : '';
     return `<div class="row">

@@ -4,6 +4,20 @@ All notable changes to **CredsForDevs** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.39.0] — 2026-08-24
+
+### Added
+
+- **A `✓?` button next to each env variable opens a terminal and echoes it** — so the
+  variable is *seen*, not trusted from a notification. The probe's spelling follows the
+  actual default shell, not the OS: PowerShell gets `$env:NAME`, cmd gets `%NAME%`, and
+  bash — git-bash on Windows included — gets `$NAME`; the wrong guess would print a
+  literal `$env:NAME`, which reads as "not set" about a variable that is there. The
+  terminal is always a fresh one, because the collection applies only to terminals
+  created after the write — probing in an old one would "prove" the variable missing.
+
+  Fair warning it carries: echoing prints the secret into the terminal scrollback.
+
 ## [0.38.0] — 2026-08-24
 
 ### Added
