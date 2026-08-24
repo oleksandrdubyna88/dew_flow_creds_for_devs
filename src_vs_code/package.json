@@ -2,7 +2,7 @@
   "name": "creds-for-devs",
   "displayName": "CredsForDevs",
   "description": "Credential manager for developers: SSH hosts, keys, VPN configs and database connections in VS Code. Secrets live in the OS keychain; optional end-to-end encrypted sync and team sharing through a self-hosted vault server.",
-  "version": "0.27.0",
+  "version": "0.28.0",
   "//publisher": "PLACEHOLDER — create a publisher at https://marketplace.visualstudio.com/manage and put its id here before `vsce publish`. See docs/PUBLISHING.md.",
   "publisher": "set-your-publisher-id",
   "license": "MIT",
@@ -121,6 +121,11 @@
           "default": 60,
           "minimum": 0,
           "markdownDescription": "Lock the vaults after this many minutes **without you using them**. **`0` disables auto-lock.**\n\n\"Using them\" means an action of yours that touches a stored secret — opening or copying a credential, connecting, installing a key, editing an entry, or unlocking. It is **not** mouse movement, and it is **not** background sync: a sync cycle running on a timer is not you being present, so it does not postpone the lock. (It used to, which made this setting do nothing at all once `#credSshManager.autoSync#` was switched on.)\n\nLocking forgets the cached master key *and* refuses the saved Sync PIN until you unlock deliberately. Background sync pauses and says so; your credentials keep working locally, because they live in the OS keychain and are not protected by the vault key."
+        },
+        "credSshManager.readCliHelp": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "When you paste a whole command into a terminal entry, read what each flag means by running `<tool> --help` and filling the empty notes.\n\nIt runs the tool **you just typed**, with no shell and no arguments of ours, and only when every word of the command is a plain tool name — anything containing a shell metacharacter is never run. Empty notes only: what you wrote is never overwritten.\n\nTurn it off if you would rather nothing was executed while you edit an entry; the command is still split into rows, and you write the notes yourself."
         }
       }
     },
@@ -431,6 +436,19 @@
         "title": "Clone…",
         "category": "CredsForDevs",
         "icon": "$(files)"
+      },
+      {
+        "command": "credSshManager.startVpn",
+        "title": "CredsForDevs: Start VPN",
+        "icon": {
+          "light": "media/play-green-light.svg",
+          "dark": "media/play-green.svg"
+        }
+      },
+      {
+        "command": "credSshManager.stopVpn",
+        "title": "CredsForDevs: Stop VPN",
+        "icon": "$(debug-stop)"
       }
     ],
     "menus": {
@@ -691,8 +709,31 @@
           "command": "credSshManager.cloneNode",
           "when": "view == credSshManagerView && viewItem =~ /^(folder|entity)/",
           "group": "3_manage@2"
+        },
+        {
+          "command": "credSshManager.startVpn",
+          "when": "view == credSshManagerView && viewItem =~ /:vpnrun/",
+          "group": "inline@0"
+        },
+        {
+          "command": "credSshManager.stopVpn",
+          "when": "view == credSshManagerView && viewItem =~ /:vpnrun/",
+          "group": "inline@1"
+        },
+        {
+          "command": "credSshManager.startVpn",
+          "when": "view == credSshManagerView && viewItem =~ /:vpnrun/",
+          "group": "2_actions@0"
+        },
+        {
+          "command": "credSshManager.stopVpn",
+          "when": "view == credSshManagerView && viewItem =~ /:vpnrun/",
+          "group": "2_actions@1"
         }
       ]
     }
+  },
+  "dependencies": {
+    "help": "^3.0.2"
   }
 }

@@ -25,8 +25,17 @@ import {
   forgetMaterializedKey,
   installKeyToSystem,
   materializePrivateKey,
+  materializeVpnConfig,
   purgeMaterializedKeys,
 } from './keyInstaller';
+import {
+  VpnPlatform,
+  isVpnStartable,
+  vpnConfigFileName,
+  vpnStartCommand,
+  vpnStopCommand,
+  vpnTunnelName,
+} from './vpnCommand';
 import { StorageManager } from './storageManager';
 import { SyncManager } from './syncManager';
 import { buildSshCommand, openSshTerminal } from './terminalManager';
@@ -809,6 +818,13 @@ ${detail}
     }
     await saveVpnConfigToFile(element.accountId, element.node.details, storage);
   });
+
+  register('credSshManager.startVpn', (target) =>
+    runVpn(target, 'start', storage, storageDir, vaultKeys),
+  );
+  register('credSshManager.stopVpn', (target) =>
+    runVpn(target, 'stop', storage, storageDir, vaultKeys),
+  );
 
   // Open a database entity in the matching DB extension.
   register('credSshManager.connectDb', async (target) => {
@@ -1613,6 +1629,71 @@ async function connectEntity(
       });
     }
   }
+}
+
+/**
+ * Bring a VPN tunnel up or down.
+ *
+ * <p>The config is materialized into the extension's private storage under the file name
+ * the tool expects, and the command is shown in a terminal so the elevation prompt — UAC
+ * on Windows, sudo on POSIX — is the operating system's own. Nothing is elevated
+ * silently, and the line that will run is on screen before it runs.</p>
+ */
+async function runVpn(
+  target: unknown,
+  action: 'start' | 'stop',
+  storage: StorageManager,
+  storageDir: string,
+  vaultKeys: VaultKeys,
+): Promise<void> {
+  vaultKeys.noteUserActivity(); // the user is here: postpone auto-lock
+  const element = asElement(target);
+  if (element?.kind !== 'node' || !element.node.details) {
+    return;
+  }
+  const details = element.node.details;
+  const type = details.vpnType;
+  if (!isVpnStartable(type) || type === undefined) {
+    void vscode.window.showWarningMessage(
+      `"${details.name}" is a ${details.vpnType ?? 'VPN'} entry. Only WireGuard and OpenVPN can be started from here — use Save Config and import it where your OS expects it.`,
+    );
+    return;
+  }
+
+  const platform = process.platform === 'win32' ? 'win32' : process.platform === 'darwin' ? 'darwin' : 'linux';
+  const tunnel = vpnTunnelName(details.name);
+  const fileName = vpnConfigFileName(type, details.name);
+  const configPath = path.join(storageDir, 'keys', fileName);
+
+  // Stop does not need the config re-written; start does. Asking for the vault on a Stop
+  // would mean a locked vault could leave a tunnel up with no way to bring it down.
+  if (action === 'start') {
+    const config = await storage.getVpnConfig(element.accountId, details.id);
+    if (config === undefined || config.trim().length === 0) {
+      void vscode.window.showWarningMessage(
+        `"${details.name}" has no stored VPN config — open Edit and upload the file first.`,
+      );
+      return;
+    }
+    materializeVpnConfig(storageDir, fileName, config);
+  }
+
+  const launch =
+    action === 'start'
+      ? vpnStartCommand(type, platform as VpnPlatform, configPath)
+      : vpnStopCommand(type, platform as VpnPlatform, tunnel, configPath);
+
+  if (launch.kind === 'unsupported') {
+    void vscode.window.showInformationMessage(launch.reason);
+    return;
+  }
+
+  const name = `CredsForDevs VPN: ${details.name}`;
+  const existing = vscode.window.terminals.find((t) => t.name === name);
+  const terminal = existing ?? vscode.window.createTerminal({ name });
+  terminal.show();
+  terminal.sendText(launch.command, true);
+  void vscode.window.showInformationMessage(launch.note);
 }
 
 /** Save-As flow for a stored VPN config (context menu + viewer download). */

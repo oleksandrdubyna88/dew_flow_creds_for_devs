@@ -3,6 +3,7 @@ import { StorageManager } from './storageManager';
 import type { SharingManager } from './sharingManager';
 import { EntityKind, FolderType, TreeElement, TreeNode, kindOf } from './types';
 import { SyncReadiness } from './syncReadiness';
+import { isVpnStartable } from './vpnCommand';
 
 export const VIEW_ID = 'credSshManagerView';
 const DND_MIME = `application/vnd.code.tree.${VIEW_ID.toLowerCase()}`;
@@ -195,6 +196,9 @@ export class CredTreeDataProvider
     }
     if (details?.isVpn) {
       contextValue += ':vpn';
+      if (isVpnStartable(details.vpnType)) {
+        contextValue += ':vpnrun';
+      }
     }
     if (details?.isDb) {
       contextValue += ':db';

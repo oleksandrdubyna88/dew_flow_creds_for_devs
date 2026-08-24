@@ -4,6 +4,62 @@ All notable changes to **CredsForDevs** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.28.0] — 2026-08-24
+
+### Added
+
+- **Start / Stop on WireGuard and OpenVPN entries** — a green triangle in the row, same as
+  SSH and terminal commands. The stored config is written into the extension's private
+  storage under the file name the tool insists on (`wg-quick` takes the interface name
+  from the *file* name, so `a1b2c3.key` would simply not come up), and the command runs in
+  a terminal.
+
+  **Elevation is the operating system's, never ours.** Both tools create a network
+  interface, which no editor extension can be granted. So Windows gets a UAC prompt via
+  `Start-Process -Verb RunAs` and POSIX gets `sudo` in the terminal you are looking at —
+  the line that will run is on screen before it runs, and nothing is elevated quietly.
+
+  IKEv2 and L2TP entries deliberately get **no** button: they are profiles in the OS
+  network settings, not a file a binary can be pointed at, and a button that could only
+  ever explain itself is worse than none. Use *Save Config* and import it where your OS
+  expects it.
+
+  Stop exists because start without it is half a feature — on Windows `/installtunnelservice`
+  makes the tunnel a *service* that outlives VS Code, deliberately, and there has to be a
+  way back. OpenVPN has no Stop and says why: it runs in the foreground, and killing every
+  `openvpn` on the machine is not a Stop button.
+
+- **Paste a whole command and it splits itself into rows.** `aws sso login --sso-session
+  OD-org` becomes a verb and one argument row, quotes and all — what was pasted is exactly
+  what will run, which is asserted by a round-trip test, because a parse that silently
+  changes a command is worse than no parse.
+
+- **The notes are read from the tool's own `--help`.** The alternative was a table of flags
+  for the tools we happened to think of, which would be wrong for every private tool and
+  stale for every public one. Empty notes only — what you wrote is never overwritten by a
+  guess — and a private tool with no help still gets its rows split, with the notes yours
+  to write, which is what you were doing anyway.
+
+  Only a plain tool name is ever run: every word must be letters, digits and the few marks
+  that appear in real tool names, so nothing containing a shell metacharacter is executed
+  at all. That matters because a *shared* entry is exactly where such a string would come
+  from. Turn the lookup off entirely with `credSshManager.readCliHelp`.
+
+### Fixed
+
+Both of these were found by running the lookup against real tools on a real machine after
+the invented test cases had all passed:
+
+- **A usage synopsis was being served as a description.** `git commit -m` came back as
+  `[--allow-empty-message] [--no-verify] [-e] [--author=<author>]` — confident, attached to
+  the row, and nonsense. A flag inside a `[...]` group is a synopsis mention, not a
+  definition, and the search now keeps looking for the real one.
+- **Wrapped descriptions were truncated at the first line break.** `docker run --rm` read
+  "Automatically remove the", which is not a shortened meaning but a different one.
+- `-it` and other bundled short flags are explained letter by letter — and only when
+  *every* letter is found, because half an answer presented as the answer is the same
+  failure as the first item.
+
 ## [0.27.0] — 2026-08-24
 
 ### Fixed

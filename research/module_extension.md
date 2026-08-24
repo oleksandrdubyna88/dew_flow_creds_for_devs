@@ -140,7 +140,7 @@ looked present in testing and absent in use.
 | `credential` | nothing more specific matches | copy password |
 | `ssh` | `host` | Connect via SSH (green triangle) |
 | `sshkey` | `isSshKey` | install to `~/.ssh`, materialise for `ssh -i` |
-| `vpn` | `isVpn` | copy config |
+| `vpn` | `isVpn` | Start / Stop (WireGuard, OpenVPN — green triangle), copy config |
 | `db` | `isDb` | open in a DB extension |
 | `terminal` | `isTerminal` | Run in Terminal (green triangle), Copy Command |
 
@@ -159,6 +159,52 @@ without it reaching the command line — deleting it means retyping it from memo
 at the prompt and left Enter to the user; the operator overruled that, and it is theirs to
 overrule — these are commands the user wrote and saved, not commands arriving from elsewhere.
 `Copy Command` covers "let me edit it before it runs".
+
+### VPN start and stop
+
+`vpnCommand.ts` (pure, `vscode`-free) composes the line; `runVpn` in `extension.ts` writes the config
+out and shows it in a terminal.
+
+**Elevation is deliberately the OS's.** Both tools create a network interface, which an editor
+extension cannot be granted, so the command is *shown* and the prompt is UAC (`Start-Process -Verb
+RunAs`) or `sudo`. Nothing is elevated silently and the line is on screen before it runs.
+
+Three constraints that are encoded rather than remembered:
+
+- `wg-quick` derives the interface name from the **file** name, and the kernel's `IFNAMSIZ` caps it
+  at 15 characters — so `vpnTunnelName` sanitizes and truncates, and `materializeVpnConfig` takes a
+  file name instead of using the entity id.
+- The config lands in the same `keys/` directory as materialized SSH keys, so the existing purge on
+  activate and deactivate covers it. On Windows the `0600` mode is advisory; the NTFS ACL of the
+  extension's storage under the user profile is what actually protects it.
+- **Stop never needs the vault.** A locked vault must not be able to strand a tunnel that is up,
+  which is why only start re-materializes the config and stop works from the tunnel name.
+
+Only WireGuard and OpenVPN get a button — the tree adds `:vpnrun` to `contextValue` for those. IKEv2
+and L2TP are OS-level profiles; a button for them could only ever explain itself.
+
+### Pasting a command
+
+`commandParse.ts` splits a pasted line into a verb and argument rows; `helpText.ts` reads what each
+flag means out of the tool's own `--help`; `helpLookup.ts` runs it. The split is the inverse of
+`buildCommandLine` and a round-trip test asserts it: a parse that silently changes a command would be
+worse than no parse.
+
+Where the verb ends is a guess with no signal to settle it — `aws sso login` and `docker run nginx`
+are indistinguishable — so the rule is "subcommand-shaped tokens, at most three", and the answer
+lands in an editable field rather than being applied invisibly.
+
+**What may be executed.** Reading a description means running a binary named in a text field, and a
+*shared* entry is exactly where a hostile one would come from. `isProbeSafe` therefore whitelists:
+every word must be letters, digits, and the few marks real tool names contain. Anything with a shell
+metacharacter is never run — which also sidesteps the Windows problem that `aws`, `npm` and
+`terraform` are `.cmd` shims Node refuses to spawn without a shell. `credSshManager.readCliHelp`
+turns the whole lookup off; rows still split.
+
+Two defects here were found only by running it against real tools after every invented case passed:
+a usage synopsis served as a description (`git commit -m` → `[--allow-empty-message] …`), and a
+wrapped description truncated at the first line break (`docker run --rm` → "Automatically remove
+the"). Both now have tests built from the real output.
 
 ### Clone
 

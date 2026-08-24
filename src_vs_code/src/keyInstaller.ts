@@ -101,6 +101,30 @@ export function materializePrivateKey(
   return keyPath;
 }
 
+/**
+ * Write a stored VPN config into the same private storage, under the file name the tool
+ * expects. `wg-quick` takes the interface name from the FILE name, which is why the
+ * caller passes one instead of us using the entity id: a tunnel called `a1b2c3.key`
+ * would not come up.
+ *
+ * <p>It lands in the same `keys/` directory on purpose, so the existing purge on
+ * activate and deactivate covers it too. One thing to be honest about: on Windows the
+ * 0600 mode is advisory at best — NTFS ACLs are what matter there, and the directory is
+ * inside the extension's own storage under the user profile.</p>
+ */
+export function materializeVpnConfig(
+  storageDir: string,
+  fileName: string,
+  content: string,
+): string {
+  const keysDir = path.join(storageDir, 'keys');
+  fs.mkdirSync(keysDir, { recursive: true, mode: 0o700 });
+  const configPath = path.join(keysDir, fileName);
+  fs.writeFileSync(configPath, ensureTrailingNewline(content), { mode: 0o600 });
+  fs.chmodSync(configPath, 0o600);
+  return configPath;
+}
+
 /** Best-effort delete of one materialized key (after the SSH session ends). */
 export function forgetMaterializedKey(keyPath: string): void {
   try {

@@ -1,6 +1,9 @@
 import * as crypto from 'node:crypto';
 import * as vscode from 'vscode';
 import { normalizeArgs } from './commandLine';
+import { flagOf, parseCommandLine } from './commandParse';
+import { describeFlag } from './helpText';
+import { readHelpText } from './helpLookup';
 import {
   CommandArg,
   DB_TYPES,
@@ -91,8 +94,46 @@ function readArgRows(data: Record<string, unknown>): CommandArg[] {
 }
 
 interface FormMessage {
-  type: 'save' | 'cancel';
+  type: 'save' | 'cancel' | 'splitCommand';
   data?: Record<string, unknown>;
+  text?: string;
+}
+
+
+/**
+ * Split a pasted command into rows, then fill in what each flag means.
+ *
+ * <p>Two replies rather than one, deliberately: the rows appear immediately, because
+ * splitting is arithmetic, and the notes arrive a moment later, because reading them
+ * means running `<tool> --help` and that can take a second. A form that froze while a
+ * subprocess started would be a worse form than one that never offered this.</p>
+ *
+ * <p>Only EMPTY notes are ever filled. Something the user wrote is never overwritten by
+ * a guess.</p>
+ */
+async function splitAndDescribe(panel: vscode.WebviewPanel, text: string): Promise<void> {
+  const parsed = parseCommandLine(text);
+  if (parsed.command.length === 0) {
+    return;
+  }
+  void panel.webview.postMessage({ type: 'splitResult', command: parsed.command, args: parsed.args });
+
+  const enabled = vscode.workspace
+    .getConfiguration('credSshManager')
+    .get<boolean>('readCliHelp', true);
+  if (!enabled || parsed.args.length === 0) {
+    return;
+  }
+
+  const help = await readHelpText(parsed.command);
+  if (help.length === 0) {
+    return;
+  }
+  const notes = parsed.args.map((arg) => describeFlag(help, flagOf(arg.value)) ?? '');
+  if (notes.every((n) => n.length === 0)) {
+    return;
+  }
+  void panel.webview.postMessage({ type: 'argNotes', notes, source: parsed.command });
 }
 
 export function showEntityForm(options: EntityFormOptions): Promise<EntityFormValues | undefined> {
@@ -107,6 +148,10 @@ export function showEntityForm(options: EntityFormOptions): Promise<EntityFormVa
   return new Promise((resolve) => {
     let settled = false;
     panel.webview.onDidReceiveMessage((message: FormMessage) => {
+      if (message.type === 'splitCommand') {
+        void splitAndDescribe(panel, message.text ?? '');
+        return;
+      }
       if (message.type === 'cancel') {
         panel.dispose();
         return;
@@ -392,6 +437,8 @@ function renderHtml(options: EntityFormOptions): string {
     <p class="hint">One per row. The note is what you will actually have forgotten in a week — which value belongs to which environment, and why. Untick a row to keep an argument without using it.</p>
     <div id="argRows"></div>
     <button type="button" id="addArg" class="secondary">+ Add argument</button>
+    <button type="button" id="splitCmd" class="secondary">Split pasted command into rows</button>
+    <p class="hint" id="splitHint">Paste a whole command into <b>Command</b> and it is split here automatically. Descriptions are read by running <code>--help</code> on the tool itself, so they are right for your version — and for a private tool that has no help, the rows are still split and the notes are yours to write. Turn the help lookup off with <code>credSshManager.readCliHelp</code>.</p>
 
     <label for="commandPreview">Full command</label>
     <input id="commandPreview" type="text" readonly tabindex="-1">
@@ -580,7 +627,57 @@ function renderHtml(options: EntityFormOptions): string {
       });
     }
     var command = document.getElementById('command');
-    if (command) { command.addEventListener('input', updatePreview); }
+    if (command) {
+      command.addEventListener('input', updatePreview);
+
+      function askSplit() {
+        var text = (command.value || '').trim();
+        // Nothing to split out of a bare verb, and re-splitting on every keystroke would
+        // fight the person typing.
+        if (text.indexOf(' ') === -1) { return; }
+        vscode.postMessage({ type: 'splitCommand', text: text });
+      }
+
+      // A paste is unambiguous — that is the whole gesture this feature is for. Blur
+      // covers typing the line out by hand. Rows the user already filled in are never
+      // replaced without asking.
+      command.addEventListener('paste', function () { setTimeout(askSplit, 0); });
+      command.addEventListener('change', function () {
+        if (argRows.some(function (r) { return (r.value || '').trim().length > 0; })) { return; }
+        askSplit();
+      });
+    }
+    var split = document.getElementById('splitCmd');
+    if (split) {
+      split.addEventListener('click', function () {
+        var text = ((document.getElementById('command') || {}).value || '').trim();
+        if (text.length > 0) { vscode.postMessage({ type: 'splitCommand', text: text }); }
+      });
+    }
+
+    window.addEventListener('message', function (event) {
+      var msg = event.data || {};
+      if (msg.type === 'splitResult') {
+        var filled = argRows.filter(function (r) { return (r.value || '').trim().length > 0; });
+        if (filled.length > 0 && !confirm('Replace the ' + filled.length + ' argument row(s) below with the pasted command?')) {
+          return;
+        }
+        document.getElementById('command').value = msg.command;
+        argRows = (msg.args || []).map(function (a) {
+          return { value: a.value, note: a.note || '', disabled: false };
+        });
+        renderArgs();
+      }
+      if (msg.type === 'argNotes') {
+        // Fill EMPTY notes only. Something the user wrote is never overwritten by a guess.
+        (msg.notes || []).forEach(function (note, i) {
+          if (argRows[i] && !(argRows[i].note || '').trim() && note) { argRows[i].note = note; }
+        });
+        renderArgs();
+        var hint = document.getElementById('splitHint');
+        if (hint) { hint.textContent = 'Descriptions above came from ' + msg.source + ' --help. Edit anything that is not what you meant.'; }
+      }
+    });
     renderArgs();
   })();
 
