@@ -458,17 +458,17 @@
         {
           "command": "credSshManager.setAccountNasPath",
           "when": "view == credSshManagerView && viewItem == account",
-          "group": "3_manage@0"
+          "group": "3_manage@1"
         },
         {
           "command": "credSshManager.setBackupLocation",
           "when": "view == credSshManagerView && viewItem == account",
-          "group": "3_manage@0b"
+          "group": "3_manage@2"
         },
         {
           "command": "credSshManager.setSyncPin",
           "when": "view == credSshManagerView && viewItem == account",
-          "group": "3_manage@1"
+          "group": "3_manage@3"
         },
         {
           "command": "credSshManager.addSecurityKey",
@@ -486,9 +486,14 @@
           "group": "2_keys@3"
         },
         {
+          "command": "credSshManager.lockVaults",
+          "when": "view == credSshManagerView && viewItem == account",
+          "group": "2_keys@4"
+        },
+        {
           "command": "credSshManager.removeAccount",
           "when": "view == credSshManagerView && viewItem == account",
-          "group": "3_manage@2"
+          "group": "3_manage@4"
         },
         {
           "command": "credSshManager.toggleSsh",

@@ -30,6 +30,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`Set Backup Location…` did not appear in the menu at all.** It was contributed with the
+  group `3_manage@0b`; VS Code expects an integer after the `@`, so the item was silently
+  dropped. Nothing errored — the feature was simply invisible.
+- **`Lock Vaults` was reachable only from the command palette**, while `Unlock Vault` sat in
+  the account menu. They are a pair: testing a security key means locking and then
+  unlocking, and half of that could not be found. Lock now sits directly under Unlock.
 - **You no longer appear in your own Team list.** Neither the server's `/api/team` nor the
   folder scan excludes the caller — they cannot, since neither knows which of your
   accounts is being looked at — so the account you were viewing offered to share a
