@@ -1,0 +1,93 @@
+name: rsd server deploy
+
+# Manual-only deployment of the vault stack to the RSD server.
+#
+# Safety model for a PUBLIC repository, stated where the next reader looks:
+#   - Only people with WRITE access to this repo can press Run. A fork never can,
+#     and workflows from fork PRs never receive secrets — that is GitHub's rule,
+#     not ours.
+#   - Everything identifying the server (host, user, path, key, host key) lives in
+#     Actions SECRETS: encrypted at rest, never in the repo, and MASKED in the run
+#     logs — which matters because on a public repo the logs are public too.
+#   - The SSH host key is pinned from a secret, not accept-new: a hijacked DNS
+#     record gets a refusal, not our deploy credentials.
+#   - The remote command is fixed here. The one thing an operator chooses is the
+#     version, and that is handed to update.sh, which pulls first, waits for
+#     healthy, and prints the rollback command if the new container is not.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Server version to deploy (e.g. 0.2.1), or "rollback"'
+        required: true
+        type: string
+      pull_deploy_folder:
+        description: 'git pull the deploy/ folder first (compose/nginx changes)'
+        type: boolean
+        default: true
+
+# Two deploys racing would interleave update.sh's state file. One at a time, no queue-jumping.
+concurrency:
+  group: rsd-server-deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: rsd-server
+    steps:
+      - name: Refuse to run without the secrets
+        env:
+          HOST: ${{ secrets.RSD_SSH_HOST }}
+          KEY: ${{ secrets.RSD_SSH_KEY }}
+          KNOWN: ${{ secrets.RSD_KNOWN_HOSTS }}
+        run: |
+          for pair in "RSD_SSH_HOST:$HOST" "RSD_SSH_KEY:$KEY" "RSD_KNOWN_HOSTS:$KNOWN"; do
+            if [ -z "${pair#*:}" ]; then
+              echo "Secret ${pair%%:*} is not set — see the header of this workflow file."
+              exit 1
+            fi
+          done
+
+      - name: SSH key and pinned host key
+        env:
+          KEY: ${{ secrets.RSD_SSH_KEY }}
+          KNOWN: ${{ secrets.RSD_KNOWN_HOSTS }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/deploy_key && chmod 600 ~/.ssh/deploy_key
+          printf '%s\n' "$KNOWN" > ~/.ssh/known_hosts && chmod 644 ~/.ssh/known_hosts
+
+      - name: Deploy
+        env:
+          HOST: ${{ secrets.RSD_SSH_HOST }}
+          SSH_USER: ${{ secrets.RSD_SSH_USER }}
+          DEPLOY_PATH: ${{ secrets.RSD_DEPLOY_PATH }}
+          VERSION: ${{ inputs.version }}
+          PULL: ${{ inputs.pull_deploy_folder }}
+        run: |
+          ARG="$VERSION"
+          [ "$VERSION" = "rollback" ] && ARG="--rollback"
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes \
+              "${SSH_USER:-root}@$HOST" \
+              "set -e; cd '${DEPLOY_PATH:-/opt/creds-for-devs/deploy}'; \
+               if [ '$PULL' = 'true' ]; then git pull --ff-only; fi; \
+               ./update.sh $ARG"
+
+      - name: Verify from the outside
+        env:
+          URL: ${{ secrets.RSD_PUBLIC_URL }}
+        run: |
+          if [ -z "$URL" ]; then
+            echo "RSD_PUBLIC_URL not set — skipping the external probe."
+            exit 0
+          fi
+          for i in $(seq 1 10); do
+            code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 8 "$URL/api/health" || true)
+            [ "$code" = "200" ] && { echo "healthy from the internet"; exit 0; }
+            sleep 5
+          done
+          echo "the server did not answer 200 on /api/health from outside"; exit 1
