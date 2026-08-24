@@ -21,7 +21,14 @@
     "zero trust",
     "end-to-end encryption",
     "yubikey",
-    "self-hosted"
+    "self-hosted",
+    "vpn",
+    "wireguard",
+    "openvpn",
+    "database",
+    "ssh keys",
+    "claude code",
+    "ai agent"
   ],
   "repository": {
     "type": "git",
@@ -771,5 +778,6 @@
   },
   "dependencies": {
     "help": "^3.0.2"
-  }
+  },
+  "qna": "https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/issues"
 }

@@ -6,6 +6,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **The listing describes the whole extension again.** It had drifted: terminal-command entries,
+  environment-variable bindings, dated snapshots, starting and stopping a VPN, attachments,
+  auto-lock and `Clone…` had all shipped without ever reaching the README, and the settings table
+  listed 6 of 13 settings while the command list named 29 of 47. The first screen is now a table of
+  everything the extension does — a Marketplace visitor has about two sentences of patience and one
+  question — with the design rationale kept below it rather than in front of it. `qna` points at
+  GitHub issues instead of the Marketplace's own channel, which nobody watches; `keywords` gained
+  the features people actually search for. `categories` stays `["Other"]` deliberately: VS Code
+  has no security or productivity category, and filing a credential manager under "Snippets" or
+  "AI" to appear in a browsable list is mis-filing.
+
 ### Added
 
 - **Share with Claude Code…** — an AI coding agent can now use an SSH credential without ever

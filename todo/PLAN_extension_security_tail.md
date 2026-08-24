@@ -1,7 +1,16 @@
 # PLAN — the extension's security tail
 
-> Status: **plan only, nothing implemented yet.** Scope: `src_vs_code/src/` — the medium and low
-> findings from the 2026-08-23 review that were not fixed in that task.
+> Status: **item 4 shipped; items 1, 2, 3 and 5 remain.** Scope: `src_vs_code/src/` — the medium
+> and low findings from the 2026-08-23 review that were not fixed in that task.
+>
+> **Item 4 (idle auto-lock) is done and this line lagged it.** Noticed 2026-08-24 while documenting
+> the listing, not by anyone re-reading this plan — `credSshManager.autoLockMinutes` (default 60,
+> `0` disables) has shipped, and it went further than the fix described below: `lockState.ts` is the
+> pure decision the plan asked for (`lockState.test.ts`), and a lock is not merely "forget the cached
+> key" but "refuse the stored PIN until a person says otherwise" — the weaker version would have let
+> the next background sync silently re-open the vault five minutes later. The plan's own instruction
+> to reset the timer on vault access rather than editor activity survived contact: a sync cycle
+> deliberately records nothing, because counting it as presence meant the window never elapsed.
 >
 > Source: [../research/SECURITY_REVIEW_2026-08-23.md](../research/SECURITY_REVIEW_2026-08-23.md),
 > findings 6, 7, 8, 10 and 14. The five HIGH findings are already fixed; nothing here is urgent, and

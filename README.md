@@ -14,6 +14,13 @@ Two products, one repository:
 The extension works on its own. The server is optional, and only becomes interesting when more than
 one person is involved.
 
+There is also a third party in the room now: an **AI coding agent**. *Share with Claude Code…* gives
+one the use of an SSH credential — it can run commands on the host and ask for your terminal — while
+the plaintext stays where it was. The extension runs `ssh` on the agent's behalf, the token dies with
+the VS Code window that minted it, and the first use needs a click from you. See the
+[extension's listing](src_vs_code/README.md#share-with-claude-code--an-agent-that-uses-a-credential-it-never-receives)
+and [research/PLAN_agent_ssh_broker.md](research/PLAN_agent_ssh_broker.md).
+
 ## The one idea worth knowing
 
 **The server cannot read anything it stores.**

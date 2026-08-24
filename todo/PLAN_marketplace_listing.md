@@ -1,9 +1,29 @@
 # PLAN — make the Marketplace listing worth finding
 
-> Status: **plan only, nothing implemented yet.** Scope: `src_vs_code/README.md`, `media/`, and the
-> `package.json` listing metadata. Everything *mechanically* required to publish is already done —
-> see [../research/PLAN_monorepo_consolidation.md](../research/PLAN_monorepo_consolidation.md) §6 and
+> Status: **items 2 and 3 done 2026-08-24; item 1 — the screenshots — is what remains,** and the
+> plan's own verdict on it stands: it is the item that matters. Scope: `src_vs_code/README.md`,
+> `media/`, and the `package.json` listing metadata. Everything *mechanically* required to publish
+> is already done — see
+> [../research/PLAN_monorepo_consolidation.md](../research/PLAN_monorepo_consolidation.md) §6 and
 > `src_vs_code/docs/PUBLISHING.md`. This plan is about the listing being persuasive, not valid.
+>
+> **Done:** the README's first screen is now *Everything it does* — a table of every feature, before
+> any rationale — and a second problem surfaced while writing it that this plan had not predicted:
+> the listing was not merely badly *ordered*, it was **incomplete**. Terminal-command entries,
+> environment-variable bindings, dated snapshots, VPN start/stop, attachments, auto-lock and
+> `Clone…` had shipped without ever reaching it; the settings table held 6 of 13 settings and the
+> command list 29 of 47. All of it is documented now. `qna` points at GitHub issues; `keywords`
+> gained the features people search for.
+>
+> **Deliberately not done:** `categories` stays `["Other"]`. The plan floated `"Snippets"` as a
+> second entry; it is wrong, and so is `"AI"` for a credential manager with one agent-facing
+> feature. This plan's own rule — *pick a category a human actually browses, or leave it at "Other"
+> rather than mis-filing* — decides it. No `badges` either: a CI badge on a listing whose reader
+> cannot act on a red build is decoration.
+>
+> **Still owed:** the four screenshots and the GIF (§1), all with fabricated data, and the
+> verification pass in a clean profile (§4). Neither can be produced without a person driving the
+> UI, which is why they are still here.
 
 ## The problem
 
