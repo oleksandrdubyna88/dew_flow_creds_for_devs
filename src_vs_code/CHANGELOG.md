@@ -4,6 +4,32 @@ All notable changes to **CredsForDevs** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.36.0] — 2026-08-24
+
+### Fixed
+
+- **Unlocking with a security key looped forever on a vault holding several key wraps.**
+  Each registration mints its own PRF salt, but the unlock ceremony sent the FIRST wrap's
+  salt for every credential. Whichever key the authenticator picked, unless it happened
+  to be the first wrap's, the PRF came back computed over a foreign salt, the unwrap
+  failed, and the dialog said "try again" — forever. A vault with exactly one wrap never
+  shows it, which is why one account worked and the other did not: the second account's
+  vault had collected several wraps from the repeated registration attempts of the
+  pre-0.34.0 slot bug.
+
+  Authentication now uses WebAuthn's `evalByCredential`, so every credential is offered
+  its **own** salt and any registered key unlocks the vault regardless of which wrap is
+  its.
+
+- **An unknown credential now fails with an explanation instead of a wrong guess.** When
+  the key answered with a credential the vault does not hold, the code silently fell back
+  to the first wrap — which can only fail to decrypt. It now says what is wrong and how
+  to clean the key up (`ykman fido credentials list` / `delete`).
+
+  Housekeeping for the affected account: open *Remove Security Key…* — if it lists
+  several entries for one physical key, the extras are the stale registrations; remove
+  them, keep the newest.
+
 ## [0.35.0] — 2026-08-24
 
 ### Changed

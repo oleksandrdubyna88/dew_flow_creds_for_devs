@@ -22,6 +22,8 @@ import {
   webauthnWraps,
   wrapWithPin,
   wrapWithPrf,
+  prfSaltsByCredential,
+  wrapForCredential,
 } from '../keyWrap';
 
 const NOW = 1_800_000_000_000;
@@ -220,4 +222,41 @@ test('envelope MAC detects wrap tampering and passes when untouched', () => {
   // A legacy vault (no mac field) reports 'missing', not 'bad'.
   const v1 = encryptJson(payload, ACCOUNT + 'pin-longenough', undefined, []);
   assert.equal(verifyEnvelopeMac(v1, mk), 'missing');
+});
+
+test('every credential is offered ITS OWN salt, never the first wrap’s', () => {
+  // The endless-prompt bug. Each registration mints its own prfSalt, but the unlock
+  // ceremony sent wrap[0]’s salt for every credential — so whichever key the
+  // authenticator picked, unless it happened to be wrap[0]’s, the PRF was computed
+  // over a foreign salt and the unwrap failed as "try again", forever. One wrap per
+  // vault masks it; the account with several is the one that loops.
+  const master = newMasterKey();
+  const a = wrapWithPrf(master, 'cred-A', newPrfSalt(), Buffer.alloc(32, 1), 'key A', 1);
+  const b = wrapWithPrf(master, 'cred-B', newPrfSalt(), Buffer.alloc(32, 2), 'key B', 2);
+
+  const salts = prfSaltsByCredential([a, b]);
+
+  assert.deepEqual(Object.keys(salts).sort(), ['cred-A', 'cred-B']);
+  assert.equal(salts['cred-A'], a.prfSalt);
+  assert.equal(salts['cred-B'], b.prfSalt);
+  assert.notEqual(salts['cred-A'], salts['cred-B']);
+});
+
+test('a wrap without a salt is left out rather than offered as undefined', () => {
+  const master = newMasterKey();
+  const pin = wrapWithPin(master, 'acct', '123456', 1);
+
+  assert.deepEqual(prfSaltsByCredential([pin]), {});
+});
+
+test('the assertion’s credential picks its OWN wrap — no fallback to the first', () => {
+  // The second half of the same bug: `keys.find(...) ?? keys[0]` quietly unwrapped the
+  // WRONG wrap when the id was unknown. A wrong wrap can never decrypt; failing to find
+  // the wrap must be an answer, not a guess.
+  const master = newMasterKey();
+  const a = wrapWithPrf(master, 'cred-A', newPrfSalt(), Buffer.alloc(32, 1), 'key A', 1);
+  const b = wrapWithPrf(master, 'cred-B', newPrfSalt(), Buffer.alloc(32, 2), 'key B', 2);
+
+  assert.equal(wrapForCredential([a, b], 'cred-B'), b);
+  assert.equal(wrapForCredential([a, b], 'cred-C'), undefined);
 });

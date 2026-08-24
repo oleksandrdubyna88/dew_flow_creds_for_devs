@@ -54,10 +54,9 @@ export function registerSecurityKey(
  */
 export function authenticateSecurityKey(
   userLabel: string,
-  prfSalt: string,
-  credentialIds: readonly string[],
+  saltsByCredential: Readonly<Record<string, string>>,
 ): Promise<PrfResult> {
-  return runFlow('authenticate', userLabel, prfSalt, credentialIds);
+  return runFlow('authenticate', userLabel, '', Object.keys(saltsByCredential), saltsByCredential);
 }
 
 interface FlowPayload {
@@ -71,6 +70,7 @@ async function runFlow(
   userLabel: string,
   prfSalt: string,
   credentialIds: readonly string[],
+  saltsByCredential?: Readonly<Record<string, string>>,
 ): Promise<PrfResult> {
   const nonce = crypto.randomBytes(16).toString('hex');
   // Unguessable path segment: another local process cannot even fetch the
@@ -82,10 +82,16 @@ async function runFlow(
     nonce,
     pathToken,
     challenge,
-    prfSalt: Buffer.from(prfSalt, 'base64').toString('base64url'),
+    prfSalt: prfSalt.length > 0 ? Buffer.from(prfSalt, 'base64').toString('base64url') : '',
     userLabel,
     userHandle: webauthnUserHandle(userLabel).toString('base64url'),
     credentialIds: [...credentialIds],
+    saltsByCredential: Object.fromEntries(
+      Object.entries(saltsByCredential ?? {}).map(([id, salt]) => [
+        id,
+        Buffer.from(salt, 'base64').toString('base64url'),
+      ]),
+    ),
   });
 
   const server = http.createServer();
@@ -193,6 +199,8 @@ interface PageOptions {
   pathToken: string;
   challenge: string;
   prfSalt: string;
+  /** authenticate only: each credential's OWN salt (base64url), keyed by credential id. */
+  saltsByCredential: Record<string, string>;
   userLabel: string;
   /** Stable per account, so re-registering REPLACES this key's slot — see webauthnUserHandle. */
   userHandle: string;
@@ -306,6 +314,13 @@ function renderPage(options: PageOptions): string {
       const allow = (CONFIG.op === 'register' ? [credentialId] : CONFIG.credentialIds)
         .filter(Boolean)
         .map((id) => ({ type: 'public-key', id: b64urlToBytes(id) }));
+      // Registration evaluates over the one salt just minted. Authentication names
+      // each credential's OWN salt - sending one salt for all is the bug where every
+      // touch of the 'wrong' key failed forever on a vault with several wraps.
+      const prfExt = CONFIG.op === 'register'
+        ? { eval: { first: salt } }
+        : { evalByCredential: Object.fromEntries(Object.entries(CONFIG.saltsByCredential)
+            .map(function (e) { return [e[0], { first: b64urlToBytes(e[1]) }]; })) };
       const assertion = await navigator.credentials.get({
         publicKey: {
           challenge: challenge,
@@ -313,7 +328,7 @@ function renderPage(options: PageOptions): string {
           allowCredentials: allow,
           userVerification: 'preferred',
           timeout: 90000,
-          extensions: { prf: { eval: { first: salt } } },
+          extensions: { prf: prfExt },
         },
       });
       if (!assertion) { throw new Error('No assertion returned.'); }

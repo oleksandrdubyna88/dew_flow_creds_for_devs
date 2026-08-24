@@ -165,3 +165,34 @@ export function removeWrap(wraps: readonly KeyWrap[], kind: KeyWrapKind, id: str
 export function webauthnWraps(wraps: readonly KeyWrap[]): KeyWrap[] {
   return wraps.filter((w) => w.kind === 'webauthn').sort((a, b) => a.createdAt - b.createdAt);
 }
+
+/**
+ * Each credential's OWN prf salt, keyed by credential id — the input WebAuthn's
+ * `evalByCredential` wants.
+ *
+ * <p>Exists because the unlock ceremony used to send wrap[0]'s salt for every
+ * credential. Salts are minted per registration, so whichever key the authenticator
+ * picked, unless it was wrap[0]'s, the PRF came back computed over a foreign salt and
+ * the unwrap failed as "try again" — forever, on any vault holding more than one wrap.</p>
+ */
+export function prfSaltsByCredential(wraps: readonly KeyWrap[]): Record<string, string> {
+  const salts: Record<string, string> = {};
+  for (const wrap of webauthnWraps(wraps)) {
+    if (wrap.prfSalt !== undefined) {
+      salts[wrap.id] = wrap.prfSalt;
+    }
+  }
+  return salts;
+}
+
+/**
+ * The wrap belonging to the credential the assertion actually used — or `undefined`,
+ * never a guess. The old `?? wraps[0]` fallback unwrapped the WRONG wrap when the id
+ * was unknown, and a wrong wrap can never decrypt.
+ */
+export function wrapForCredential(
+  wraps: readonly KeyWrap[],
+  credentialId: string,
+): KeyWrap | undefined {
+  return webauthnWraps(wraps).find((w) => w.id === credentialId);
+}

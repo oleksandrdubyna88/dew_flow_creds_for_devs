@@ -11,10 +11,11 @@ import {
 } from './cryptoUtils';
 import {
   KeyWrap,
+  prfSaltsByCredential,
+  wrapForCredential,
   isKeyWrap,
   unwrapWithPin,
   unwrapWithPrf,
-  webauthnWraps,
 } from './keyWrap';
 import { authenticateSecurityKey } from './webauthnPrf';
 import { validatePin } from './pinPolicy';
@@ -193,20 +194,25 @@ export class VaultKeys {
       }
     }
 
-    // 2) a security key (native "touch your key" prompt)
-    const keys = webauthnWraps(wraps);
-    if (keys.length > 0 && options.interactive) {
-      const prfSalt = keys[0].prfSalt;
-      if (prfSalt !== undefined) {
-        const result = await authenticateSecurityKey(
-          account.email,
-          prfSalt,
-          keys.map((k) => k.id),
+    // 2) a security key (native "touch your key" prompt). Every credential is offered
+    // its OWN salt — a vault holding several wraps is exactly the case where one salt
+    // for all made every touch of the "wrong" key fail as "try again", forever.
+    const salts = prfSaltsByCredential(wraps);
+    if (Object.keys(salts).length > 0 && options.interactive) {
+      const result = await authenticateSecurityKey(account.email, salts);
+      const used = wrapForCredential(wraps, result.credentialId);
+      if (used === undefined) {
+        // The key answered with a credential this vault does not know — a leftover
+        // registration that never reached the vault. Unwrapping any OTHER wrap with its
+        // secret can only fail; say what is wrong instead.
+        throw new BackupError(
+          'corrupted',
+          'The security key answered with a credential this vault does not hold. ' +
+            'Remove unused resident credentials from the key (ykman fido credentials list / delete) or re-register it.',
         );
-        const used = keys.find((k) => k.id === result.credentialId) ?? keys[0];
-        const master = unwrapWithPrf(used, result.secret);
-        return this.remember(account, master.toString('base64'), wraps);
       }
+      const master = unwrapWithPrf(used, result.secret);
+      return this.remember(account, master.toString('base64'), wraps);
     }
 
     // 3) last resort: ask for the PIN explicitly
