@@ -4,6 +4,16 @@ All notable changes to **CredsForDevs** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.40.1] — 2026-08-24
+
+### Fixed
+
+- **The env-variable toggle floated between fields, belonging to neither.** Between
+  *Private key* and *Public key* sat an "Expose in terminals…" row that could plausibly
+  belong to either. Each row is now visually attached to ITS field — indented under it
+  with an accent rule on the left — and a divider closes the group before the next field
+  begins.
+
 ## [0.40.0] — 2026-08-24
 
 ### Added

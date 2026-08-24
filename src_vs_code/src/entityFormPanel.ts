@@ -332,7 +332,8 @@ function envRow(field: BindableField, d: EntityMetadata | undefined): string {
     <input id="envName_${field}" type="text" spellcheck="false" autocomplete="off"
            style="margin-left:8px; ${bound === undefined ? 'display:none;' : ''}"
            value="${escapeHtml(value)}" placeholder="ENV_NAME">
-  </div>`;
+  </div>
+  <hr class="fieldDivider">`;
 }
 
 function renderHtml(options: EntityFormOptions): string {
@@ -408,6 +409,11 @@ function renderHtml(options: EntityFormOptions): string {
   label { display: block; margin: 8px 0 3px; }
   .check { display: flex; align-items: center; gap: 6px; margin: 6px 0; }
   .check label { margin: 0; }
+  .envRow { margin: 4px 0 0 2px; padding: 4px 8px;
+            border-left: 2px solid var(--vscode-focusBorder, #007fd4); opacity: .95; }
+  .envRow label { opacity: .85; }
+  .fieldDivider { border: 0; border-top: 1px solid var(--vscode-widget-border, #4444);
+                  margin: 12px 0; }
   input[type=text], input[type=password], input[type=number], textarea, select {
     width: 100%; box-sizing: border-box; padding: 5px 7px;
     background: var(--vscode-input-background); color: var(--vscode-input-foreground);
