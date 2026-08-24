@@ -22,6 +22,7 @@ exists today?*
 
 | Document | Landed |
 |---|---|
+| [SECURITY_REVIEW_2026-08-24.md](SECURITY_REVIEW_2026-08-24.md) | 2026-08-24 — the pre-launch review of the whole product, public server included. Three CRITICAL findings, each reproduced before it was fixed: two shell/argv injections through an entity’s `host` field, and a share size cap that could be walked around into a repeatable server OOM. Git history scanned for secrets across every commit: clean |
 | [SECURITY_REVIEW_2026-08-23.md](SECURITY_REVIEW_2026-08-23.md) | 2026-08-23 — security, reliability and architecture. Five high findings fixed with a red-first test each; the rest are plans |
 
 ## Implemented plans

