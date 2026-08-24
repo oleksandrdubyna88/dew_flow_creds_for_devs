@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { LockState } from './lockState';
 import {
   BackupError,
   decryptJson,
@@ -42,6 +43,10 @@ export type VaultKey =
 export class VaultKeys {
   private readonly cache = new Map<string, VaultKey>();
 
+  /** Locked-ness and the idle clock. Kept out of this class so its rules are testable
+   *  without a `vscode` runtime — see lockState.ts. */
+  private readonly lockState = new LockState();
+
   constructor(private readonly secrets: vscode.SecretStorage) {}
 
   clearCache(accountId?: string): void {
@@ -50,6 +55,28 @@ export class VaultKeys {
     } else {
       this.cache.delete(accountId);
     }
+  }
+
+  /**
+   * Lock the vaults: forget the cached keys AND refuse the stored PIN until somebody
+   * unlocks deliberately.
+   *
+   * <p>The second half is the part that was missing. Clearing the cache alone left the
+   * Sync PIN sitting in the OS keychain, and the next automatic sync — five minutes
+   * later by default — opened the vault again without asking anyone.</p>
+   */
+  lock(): void {
+    this.cache.clear();
+    this.lockState.lock();
+  }
+
+  isLocked(): boolean {
+    return this.lockState.isLocked();
+  }
+
+  /** Whether the idle window has elapsed. The caller owns the timer; this owns the rule. */
+  dueForAutoLock(nowMs: number, idleMinutes: number): boolean {
+    return this.lockState.dueForAutoLock(nowMs, idleMinutes);
   }
 
   // ---------- PIN storage ----------
@@ -94,15 +121,28 @@ export class VaultKeys {
     vaultContent: string | undefined,
     options: { interactive: boolean },
   ): Promise<VaultKey | undefined> {
+    // While locked, only a caller that can ASK is allowed through. Background sync
+    // cannot ask, so it is refused rather than quietly reopening what the user just shut.
+    if (!options.interactive && !this.lockState.allowsSilentUnlock()) {
+      return undefined;
+    }
+
     const version = vaultContent === undefined ? 1 : safeVersion(vaultContent);
 
     if (version === 1) {
       const pin = await this.resolvePin(account, options.interactive);
-      return pin === undefined ? undefined : { version: 1, passphrase: account.accountId + pin };
+      if (pin === undefined) {
+        return undefined;
+      }
+      this.lockState.noteUnlocked(Date.now());
+      return { version: 1, passphrase: account.accountId + pin };
     }
 
     const cached = this.cache.get(account.accountId);
     if (cached?.version === 2) {
+      // A cache hit is still use: it postpones the idle window rather than letting a
+      // busy session lock itself out mid-sync.
+      this.lockState.noteUnlocked(Date.now());
       return cached;
     }
     const wraps = readVaultWraps(vaultContent!).filter(isKeyWrap);
@@ -172,6 +212,10 @@ export class VaultKeys {
   }
 
   private remember(account: StoredAccount, masterKeyBase64: string, wraps: KeyWrap[]): VaultKey {
+    // Every v2 unlock funnels through here, so this is the one place that has to
+    // record 'a person got in' — recording it at the three call sites instead is how
+    // one of them ends up forgotten.
+    this.lockState.noteUnlocked(Date.now());
     const key: VaultKey = { version: 2, masterKeyBase64, wraps };
     this.cache.set(account.accountId, key);
     return key;

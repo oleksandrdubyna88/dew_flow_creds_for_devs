@@ -114,6 +114,22 @@ export function activate(context: vscode.ExtensionContext): void {
   );
   context.subscriptions.push(backups);
 
+  // Auto-lock. Checked on a coarse timer: the window is measured in tens of minutes, so
+  // a minute of drift costs nothing and a tighter tick would only wake the machine more.
+  const autoLock = setInterval(() => {
+    const minutes = vscode.workspace
+      .getConfiguration('credSshManager')
+      .get<number>('autoLockMinutes', 60);
+    if (vaultKeys.dueForAutoLock(Date.now(), minutes)) {
+      vaultKeys.lock();
+      provider.refresh();
+      void vscode.window.showInformationMessage(
+        `Vaults locked after ${minutes} minutes idle. Local credentials still work; sync resumes when you unlock.`,
+      );
+    }
+  }, 60_000);
+  context.subscriptions.push({ dispose: () => clearInterval(autoLock) });
+
   provider.onMutate = () => sync.notifyChange();
   const mutated = () => {
     provider.refresh();
@@ -833,9 +849,10 @@ export function activate(context: vscode.ExtensionContext): void {
   });
 
   register('credSshManager.lockVaults', () => {
-    vaultKeys.clearCache();
+    vaultKeys.lock();
+    provider.refresh();
     void vscode.window.showInformationMessage(
-      'Cached vault keys cleared — the next sync will ask for the PIN or a key touch.',
+      'Vaults locked. Background sync is paused until you unlock; your saved credentials still work locally.',
     );
   });
 

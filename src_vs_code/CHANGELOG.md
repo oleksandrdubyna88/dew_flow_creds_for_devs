@@ -4,6 +4,29 @@ All notable changes to **CredsForDevs** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.25.0] — 2026-08-23
+
+### Security
+
+- **`Lock Vaults` now actually locks.** It used to clear the cached master key and nothing
+  else — so the next automatic sync, five minutes later by default, silently reopened the
+  vault using the Sync PIN saved in the OS keychain. The command told you the next sync
+  "will ask for the PIN or a key touch". It did not ask; it just used the saved one.
+
+  Locking now also **refuses that stored PIN** until somebody unlocks deliberately.
+  Background sync cannot prompt, so while locked it pauses and says so instead of quietly
+  undoing what you just did. Anything you trigger yourself — *Sync Now*, *Unlock Vault* —
+  counts as unlocking.
+
+- **Auto-lock after idle** (`autoLockMinutes`, 60 by default, `0` disables). The master key
+  previously stayed in the extension host's memory for the whole window's life, with the
+  manual command as its only eviction.
+
+  What locking does **not** do, stated plainly because the previous message implied
+  otherwise: your credentials keep working locally. Passwords, SSH keys, VPN configs and
+  DB connection strings live in the OS keychain and are not protected by the vault key —
+  the vault key only opens the encrypted copy that leaves the machine.
+
 ## [0.24.0] — 2026-08-23
 
 Renamed to **CredsForDevs**, and the first release that talks to a Cred Vault Server

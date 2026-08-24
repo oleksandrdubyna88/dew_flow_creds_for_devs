@@ -2,7 +2,7 @@
   "name": "creds-for-devs",
   "displayName": "CredsForDevs",
   "description": "Credential manager for developers: SSH hosts, keys, VPN configs and database connections in VS Code. Secrets live in the OS keychain; optional end-to-end encrypted sync and team sharing through a self-hosted vault server.",
-  "version": "0.24.0",
+  "version": "0.25.0",
   "//publisher": "PLACEHOLDER — create a publisher at https://marketplace.visualstudio.com/manage and put its id here before `vsce publish`. See docs/PUBLISHING.md.",
   "publisher": "set-your-publisher-id",
   "license": "MIT",
@@ -115,6 +115,12 @@
           "default": 30,
           "minimum": 0,
           "markdownDescription": "Delete snapshots older than this. `0` keeps them forever. The **newest snapshot is never deleted**, whatever its age — a laptop closed for a year must not come back to an empty backup folder."
+        },
+        "credSshManager.autoLockMinutes": {
+          "type": "number",
+          "default": 60,
+          "minimum": 0,
+          "markdownDescription": "Lock the vaults automatically after this many minutes without using them. **`0` disables auto-lock.**\n\nLocking forgets the cached master key *and* refuses the saved Sync PIN until you unlock deliberately — otherwise the next automatic sync would simply reopen the vault with the saved PIN and the lock would mean nothing. While locked, background sync pauses and says so; local credentials keep working, because those live in the OS keychain and are not protected by the vault key."
         }
       }
     },
