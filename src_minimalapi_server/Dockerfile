@@ -39,7 +39,7 @@ RUN apt-get update     && apt-get install -y --no-install-recommends curl     &&
 RUN groupadd --system --gid 10001 vault     && useradd --system --uid 10001 --gid vault --no-create-home vault     && mkdir -p /data     && chown -R vault:vault /data
 
 WORKDIR /app
-COPY --from=build --chown=root:root /app ./
+COPY --from=build --chown=root:root /app/CredVaultServer /app/appsettings.json ./
 
 ENV ASPNETCORE_URLS=http://+:8080     ASPNETCORE_ENVIRONMENT=Production     Vault__DataDir=/data     Logging__Directory=/logs
 
