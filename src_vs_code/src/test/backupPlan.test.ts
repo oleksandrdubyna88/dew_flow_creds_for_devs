@@ -1,7 +1,14 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { backupWriteMode } from '../backupPlan';
-import { encryptJson, encryptJsonWrapped, readVaultWraps } from '../cryptoUtils';
+import {
+  decryptJson,
+  decryptJsonWithMasterKey,
+  encryptJson,
+  encryptJsonWrapped,
+  readVaultWraps,
+  readVaultVersion,
+} from '../cryptoUtils';
 import { newMasterKey, wrapWithPin } from '../keyWrap';
 
 const account = { accountId: 'a1', email: 'me@x.dev', provider: 'microsoft' as const };
@@ -43,4 +50,25 @@ test('unreadable content is treated as a vault to protect, not as a blank slate'
   // cannot be read, the safe answer is the one that refuses to downgrade it.
   assert.deepEqual(backupWriteMode('{ not json'), { kind: 'wrapped' });
   assert.deepEqual(backupWriteMode('garbage'), { kind: 'wrapped' });
+});
+
+test('a PIN passphrase can NEVER open a v2 file — restore must go through the wraps', () => {
+  // The reported failure: sign in to Google, enter the PIN, restore still dies. The
+  // import decrypted every file with scrypt(accountId + PIN) — the v1 recipe. A vault
+  // with a security key is v2: its payload is sealed with the master key, and the PIN
+  // opens only the WRAP holding that key. Whatever PIN is typed, the v1 recipe fails.
+  const master = newMasterKey();
+  const wrap = wrapWithPin(master, account.accountId, '123456', 1);
+  const file = encryptJsonWrapped({ nodes: [] }, master.toString('base64'), [wrap], account, undefined);
+
+  assert.equal(readVaultVersion(file), 2);
+  assert.throws(() => decryptJson(file, account.accountId + '123456'));
+  assert.deepEqual(decryptJsonWithMasterKey(file, master.toString('base64')), { nodes: [] });
+});
+
+test('a v1 file still opens with the PIN recipe', () => {
+  const file = encryptJson({ nodes: [] }, account.accountId + '123456', account, undefined);
+
+  assert.equal(readVaultVersion(file), 1);
+  assert.deepEqual(decryptJson(file, account.accountId + '123456'), { nodes: [] });
 });

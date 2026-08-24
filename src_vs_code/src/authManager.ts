@@ -53,9 +53,18 @@ export async function signIn(provider: AuthProvider): Promise<StoredAccount> {
 export async function verifyAccountSession(account: StoredAccount): Promise<boolean> {
   const scopes = [...SCOPES[account.provider]];
   try {
-    const silent = await vscode.authentication.getSession(account.provider, scopes, {
-      createIfNone: false,
-    });
+    // The silent probe gets its own try: the Google provider THROWS here when its
+    // client id is not configured on this machine, and letting that reach the outer
+    // catch skipped the "Sign in now?" offer entirely — the user was told to sign in
+    // and retry, by a command that could have signed them in.
+    let silent;
+    try {
+      silent = await vscode.authentication.getSession(account.provider, scopes, {
+        createIfNone: false,
+      });
+    } catch {
+      silent = undefined;
+    }
     if (silent?.account.id === account.accountId) {
       return true;
     }

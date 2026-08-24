@@ -72,6 +72,9 @@ import { registerSecurityKey } from './webauthnPrf';
 import { validatePin } from './pinPolicy';
 import { CredTreeDataProvider, VIEW_ID } from './treeDataProvider';
 import { RemoteState, inheritedFolderType } from './defaultFolders';
+import * as childProcess from 'node:child_process';
+import * as fs from 'node:fs';
+import { resolveVpnLauncher } from './vpnExec';
 import {
   AuthProvider,
   EntityKind,
@@ -1506,7 +1509,7 @@ ${detail}
   // ---------- backup ----------
 
   const runBackup = () => backupToNas(storage, vaultKeys);
-  const runRestore = () => restoreFromBackup(storage, mutated);
+  const runRestore = () => restoreFromBackup(storage, vaultKeys, mutated);
   register('credSshManager.backupToNas', runBackup);
   register('credSshManager.restoreBackup', runRestore);
   // Aliases kept for the original spec's command ids.
@@ -1777,9 +1780,40 @@ async function runVpn(
     materializeVpnConfig(storageDir, fileName, config);
   }
 
+  // Find the binary BEFORE composing a command around it. `openvpn.exe` is not on
+  // PATH on a default install, and "OpenVPN on this machine" is often OpenVPN Connect —
+  // a GUI that neither takes --config nor belongs on a command line.
+  const launcher = resolveVpnLauncher(type, process.platform, process.env, onPath, fs.existsSync);
+  if (launcher.kind === 'missing') {
+    void vscode.window.showErrorMessage(
+      `Could not find ${type} on this machine. Looked for: ${launcher.looked.join(', ')}. Install it, or connect with the client you normally use.`,
+    );
+    return;
+  }
+  if (launcher.kind === 'openvpn-connect') {
+    if (action === 'stop') {
+      void vscode.window.showInformationMessage(
+        'This machine uses OpenVPN Connect — disconnect from its own window.',
+      );
+      return;
+    }
+    // The GUI can IMPORT a profile; it cannot be driven like the CLI. Importing is the
+    // honest half we can do — connecting stays in its window, where the tunnel may in
+    // fact already be up.
+    const open = await vscode.window.showInformationMessage(
+      'This machine has OpenVPN Connect (the GUI), not the OpenVPN command line. Import this profile into it? If this VPN is already connected there, there is nothing to start.',
+      'Import profile',
+    );
+    if (open === 'Import profile') {
+      const terminal = vpnTerminal(details.name);
+      terminal.sendText(`& "${launcher.exe}" --import-profile="${configPath}"`, true);
+    }
+    return;
+  }
+
   const launch =
     action === 'start'
-      ? vpnStartCommand(type, platform as VpnPlatform, configPath)
+      ? vpnStartCommand(type, platform as VpnPlatform, configPath, launcher.exe)
       : vpnStopCommand(type, platform as VpnPlatform, tunnel, configPath);
 
   if (launch.kind === 'unsupported') {
@@ -1787,12 +1821,31 @@ async function runVpn(
     return;
   }
 
-  const name = `CredsForDevs VPN: ${details.name}`;
+  const terminal = vpnTerminal(details.name);
+  terminal.sendText(launch.command, true);
+  void vscode.window.showInformationMessage(launch.note);
+}
+
+function vpnTerminal(entryName: string): vscode.Terminal {
+  const name = `CredsForDevs VPN: ${entryName}`;
   const existing = vscode.window.terminals.find((t) => t.name === name);
   const terminal = existing ?? vscode.window.createTerminal({ name });
   terminal.show();
-  terminal.sendText(launch.command, true);
-  void vscode.window.showInformationMessage(launch.note);
+  return terminal;
+}
+
+/** Whether `name` resolves on PATH — `where` on Windows, `command -v` elsewhere. */
+function onPath(name: string): boolean {
+  try {
+    childProcess.execFileSync(
+      process.platform === 'win32' ? 'where' : 'which',
+      [name],
+      { stdio: 'ignore', timeout: 3_000 },
+    );
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /** Save-As flow for a stored VPN config (context menu + viewer download). */

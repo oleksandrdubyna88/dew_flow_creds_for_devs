@@ -85,25 +85,26 @@ export function vpnStartCommand(
   type: VpnType,
   platform: VpnPlatform,
   configPath: string,
+  exe?: string,
 ): VpnLaunch {
   if (type === 'wireguard') {
     return platform === 'win32'
       ? {
           kind: 'run',
-          command: elevatedWindows('wireguard.exe', '/installtunnelservice "' + configPath + '"'),
+          command: elevatedWindows(exe ?? 'wireguard.exe', '/installtunnelservice "' + configPath + '"'),
           note: WG_WINDOWS_NOTE,
         }
-      : { kind: 'run', command: 'sudo wg-quick up "' + configPath + '"', note: WG_POSIX_NOTE };
+      : { kind: 'run', command: 'sudo ' + (exe ?? 'wg-quick') + ' up "' + configPath + '"', note: WG_POSIX_NOTE };
   }
 
   if (type === 'openvpn') {
     return platform === 'win32'
       ? {
           kind: 'run',
-          command: elevatedWindows('openvpn.exe', '--config "' + configPath + '"'),
+          command: elevatedWindows(exe ?? 'openvpn.exe', '--config "' + configPath + '"'),
           note: OVPN_WINDOWS_NOTE,
         }
-      : { kind: 'run', command: 'sudo openvpn --config "' + configPath + '"', note: OVPN_POSIX_NOTE };
+      : { kind: 'run', command: 'sudo ' + (exe ?? 'openvpn') + ' --config "' + configPath + '"', note: OVPN_POSIX_NOTE };
   }
 
   return {

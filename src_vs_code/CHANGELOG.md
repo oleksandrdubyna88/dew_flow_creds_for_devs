@@ -4,6 +4,34 @@ All notable changes to **CredsForDevs** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.37.0] — 2026-08-24
+
+### Fixed
+
+- **Import / Restore could not open any backup taken since a security key was
+  registered.** It decrypted every file with the v1 recipe — scrypt of account + PIN.
+  A vault with a key is a v2 envelope: its payload is sealed with the master key, and
+  the PIN opens only the wrap holding that key, so the v1 recipe fails whatever PIN is
+  typed. Signing in first was never the problem; it was just the gate before the real
+  failure. Restore now reads the file's own version and opens v2 through the vault's key
+  slots — stored PIN, a security-key touch, or the PIN typed — the same door sync uses.
+  Old v1 backups keep restoring exactly as before.
+
+- **`Start VPN` assumed `openvpn.exe` is on PATH. On Windows it never is.** The
+  community edition installs into `Program Files\OpenVPNin` without touching PATH —
+  so the composed command died with *"cannot find the file"*. The binary is now resolved
+  first: PATH, then the known install folders, with the full path quoted into the
+  command. When nothing is found, the message names every location that was tried.
+
+- **OpenVPN Connect is recognised as what it is** — a different product, not a missing
+  CLI. It does not take `--config`, and it may already be holding the tunnel up (which is
+  exactly the machine this was reported from). Start now offers to *import the profile*
+  into it and says plainly that connecting — and disconnecting — happens in its window.
+
+- **Restore's sign-in offer no longer vanishes on machines without a Google client id.**
+  The silent session probe throws there, and the exception skipped the "Sign in now?"
+  dialog — the command told you to sign in and retry when it could have signed you in.
+
 ## [0.36.0] — 2026-08-24
 
 ### Fixed

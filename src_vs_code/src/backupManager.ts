@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { verifyAccountSession } from './authManager';
 import { planBackupFileNames } from './backupNaming';
-import { BackupError, decryptJson, encryptJson, readBackupAccount } from './cryptoUtils';
+import { BackupError, decryptJson, encryptJson, readBackupAccount, readVaultVersion } from './cryptoUtils';
 import { nasDirFor } from './nasPaths';
 import { validatePin } from './pinPolicy';
 import { sharesFromEnvelope } from './shareFormat';
@@ -193,6 +193,7 @@ export async function backupToNas(
  */
 export async function restoreFromBackup(
   storage: StorageManager,
+  vaultKeys: VaultKeys,
   onRestored: () => void,
 ): Promise<void> {
   const uris = await vscode.window.showOpenDialog({
@@ -229,14 +230,29 @@ export async function restoreFromBackup(
     return;
   }
 
-  const pin = await promptMasterPin(`Restore ${account.email}`, false);
-  if (pin === undefined) {
-    return;
-  }
-
+  // Which recipe opens this file is a property OF THE FILE, not of the command. A
+  // vault with a security key is a v2 envelope: its payload is sealed with the master
+  // key, and the PIN opens only the wrap holding that key — so decrypting v2 with the
+  // v1 scrypt(accountId + PIN) recipe fails whatever PIN is typed. That was "signed in,
+  // entered the PIN, restore still errors".
   let payload: unknown;
   try {
-    payload = decryptJson(content, profilePassphrase(account.accountId, pin));
+    if (readVaultVersion(content) === 2) {
+      // Through the vault's own key slots: the stored PIN, a security-key touch, or the
+      // PIN typed — the same door sync uses, on the same file format.
+      const key = await vaultKeys.unlock(account, content, { interactive: true });
+      if (key === undefined) {
+        void vscode.window.showErrorMessage('Restore cancelled — the backup stayed locked.');
+        return;
+      }
+      payload = vaultKeys.decrypt(content, key);
+    } else {
+      const pin = await promptMasterPin(`Restore ${account.email}`, false);
+      if (pin === undefined) {
+        return;
+      }
+      payload = decryptJson(content, profilePassphrase(account.accountId, pin));
+    }
   } catch (error) {
     void vscode.window.showErrorMessage(`Restore failed: ${describeUnknown(error)}`);
     return;
