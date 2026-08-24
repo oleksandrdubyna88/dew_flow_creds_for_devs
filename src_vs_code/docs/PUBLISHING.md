@@ -3,6 +3,50 @@
 Everything that can be prepared in advance is prepared. What remains needs an account only you can
 create, so this document is the handover.
 
+## Releasing, from here on
+
+Publishing is a **git tag**. Everything else is `.github/workflows/release.yml`.
+
+```bash
+# 1. bump the version and write its CHANGELOG section
+#    (src_vs_code/package.json + src_vs_code/CHANGELOG.md)
+git commit -am "chore(extension): 0.34.0"
+
+# 2. tag it and push — this is the whole release
+git tag extension-v0.34.0
+git push origin main --tags
+```
+
+The workflow then: installs, typechecks, runs the tests, **refuses if the tag and
+`package.json` disagree**, packages the `.vsix` once, publishes THAT file to the
+Marketplace, uploads it as a build artifact, and opens a GitHub release with the `.vsix`
+attached and the notes taken from this version's CHANGELOG section.
+
+Three things worth knowing:
+
+- **The tag prefix picks the product.** `extension-v*` releases the extension,
+  `server-v*` builds and pushes the container image. Tagging one never ships the other.
+- **The version lives in `package.json`, not in the tag.** The tag is what a human typed;
+  the Marketplace takes the manifest's version. They are checked against each other
+  because otherwise `extension-v0.34.0` can quietly publish `0.33.0`.
+- **A version can be published only once.** Re-tagging the same version fails at
+  `vsce publish`; bump instead.
+
+`workflow_dispatch` → *release* → `extension` publishes from `main` without a tag, for a
+re-run after a transient failure. It skips the version check and the GitHub release,
+because there is no tag to check against or to attach to.
+
+### The one secret
+
+`VSCE_PAT` — a Personal Access Token from **dev.azure.com** (not GitHub), scoped
+*Marketplace → Manage*, on the organisation that owns the `remsoftdev` publisher.
+
+```bash
+gh secret set VSCE_PAT --repo <owner>/<repo>
+```
+
+Tokens expire (a year at most). When a release fails with a 401, that is what happened.
+
 ## What is already done
 
 | Requirement | State |

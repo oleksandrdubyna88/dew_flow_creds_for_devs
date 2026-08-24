@@ -64,6 +64,8 @@ jobs:
     name: publish extension
     if: startsWith(github.ref, 'refs/tags/extension-v') || inputs.target == 'extension'
     runs-on: ubuntu-latest
+    permissions:
+      contents: write   # attach the .vsix to a GitHub release
     defaults:
       run:
         working-directory: src_vs_code
@@ -92,6 +94,27 @@ jobs:
             exit 1
           fi
 
+      # The tag is what a human typed; package.json is what actually gets published.
+      # When they disagree the Marketplace quietly takes the manifest's version, so
+      # `extension-v0.34.0` can publish 0.33.0 and the tag becomes a lie nobody sees.
+      - name: Tag must match the manifest version
+        if: startsWith(github.ref, 'refs/tags/extension-v')
+        run: |
+          tagged="${GITHUB_REF_NAME#extension-v}"
+          manifest=$(node -p "require('./package.json').version")
+          if [ "$tagged" != "$manifest" ]; then
+            echo "Tag says $tagged, package.json says $manifest."
+            echo "Bump the manifest and move the tag, or tag the version that is in it."
+            exit 1
+          fi
+          echo "version=$manifest" >> "$GITHUB_OUTPUT"
+        id: version
+
+      # Package ONCE and publish that exact file. Publishing and packaging separately
+      # builds the archive twice, and only one of the two was ever the one released.
+      - name: Package
+        run: npx vsce package --out creds-for-devs.vsix
+
       - name: Publish to the Marketplace
         env:
           VSCE_PAT: ${{ secrets.VSCE_PAT }}
@@ -100,12 +123,34 @@ jobs:
             echo "VSCE_PAT secret is not set — see docs/PUBLISHING.md."
             exit 1
           fi
-          npx vsce publish --pat "${VSCE_PAT}"
-
-      - name: Package for the GitHub release too
-        run: npx vsce package --out creds-for-devs.vsix
+          npx vsce publish --packagePath creds-for-devs.vsix --pat "${VSCE_PAT}"
 
       - uses: actions/upload-artifact@v4
         with:
           name: extension-vsix
           path: src_vs_code/creds-for-devs.vsix
+
+      # Its own CHANGELOG section, so the release page says what changed instead of
+      # repeating the tag. Falls back to a link rather than failing the release.
+      - name: Release notes from the CHANGELOG
+        if: startsWith(github.ref, 'refs/tags/extension-v')
+        run: |
+          node -e "
+            const fs = require('node:fs');
+            const v = require('./package.json').version;
+            const text = fs.readFileSync('CHANGELOG.md', 'utf8');
+            const start = text.indexOf('## [' + v + ']');
+            const body = start === -1
+              ? 'See CHANGELOG.md.'
+              : text.slice(start, (text.indexOf(String.fromCharCode(10) + '## [', start + 1) + 1) || text.length).trim();
+            fs.writeFileSync('RELEASE_NOTES.md', body);
+          "
+
+      - name: GitHub release with the .vsix attached
+        if: startsWith(github.ref, 'refs/tags/extension-v')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" creds-for-devs.vsix \
+            --title "CredsForDevs ${{ steps.version.outputs.version }}" \
+            --notes-file RELEASE_NOTES.md
