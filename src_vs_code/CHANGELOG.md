@@ -4,6 +4,17 @@ All notable changes to **CredsForDevs** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.31.1] — 2026-08-24
+
+### Fixed
+
+- **Three commands shouted the product name inside the context menu.** *Set Backup
+  Schedule…*, *Start VPN* and *Stop VPN* carried `CredsForDevs:` in their `title` instead
+  of using `category`. VS Code shows `category: title` in the palette and only the *title*
+  in a menu — so the palette looked identical either way, and the menu grew one item
+  introducing itself to somebody already inside it. Now tested, both directions: no title
+  may contain the product name, and every command must carry the category.
+
 ## [0.31.0] — 2026-08-24
 
 ### Security

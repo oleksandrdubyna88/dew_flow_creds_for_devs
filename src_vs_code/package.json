@@ -2,7 +2,7 @@
   "name": "creds-for-devs",
   "displayName": "CredsForDevs",
   "description": "Credential manager for developers: SSH hosts, keys, VPN configs and database connections in VS Code. Secrets live in the OS keychain; optional end-to-end encrypted sync and team sharing through a self-hosted vault server.",
-  "version": "0.31.0",
+  "version": "0.31.1",
   "//publisher": "PLACEHOLDER — create a publisher at https://marketplace.visualstudio.com/manage and put its id here before `vsce publish`. See docs/PUBLISHING.md.",
   "publisher": "set-your-publisher-id",
   "license": "MIT",
@@ -215,7 +215,8 @@
       },
       {
         "command": "credSshManager.setBackupSchedule",
-        "title": "CredsForDevs: Set Backup Schedule…"
+        "title": "Set Backup Schedule…",
+        "category": "CredsForDevs"
       },
       {
         "command": "credSshManager.toggleSsh",
@@ -452,7 +453,8 @@
       },
       {
         "command": "credSshManager.startVpn",
-        "title": "CredsForDevs: Start VPN",
+        "title": "Start VPN",
+        "category": "CredsForDevs",
         "icon": {
           "light": "media/play-green-light.svg",
           "dark": "media/play-green.svg"
@@ -460,7 +462,8 @@
       },
       {
         "command": "credSshManager.stopVpn",
-        "title": "CredsForDevs: Stop VPN",
+        "title": "Stop VPN",
+        "category": "CredsForDevs",
         "icon": "$(debug-stop)"
       }
     ],

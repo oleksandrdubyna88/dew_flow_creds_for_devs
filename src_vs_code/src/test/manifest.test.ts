@@ -138,3 +138,22 @@ test('no two menu items compete for the same slot', () => {
 
   assert.deepEqual(clashes, []);
 });
+
+test('the product name lives in `category`, never inside a title', () => {
+  // VS Code shows "category: title" in the palette and only the TITLE in a context menu.
+  // Bake the prefix into the title instead and the palette is unchanged while the menu
+  // grows one item shouting its own product name at somebody already inside it.
+  const offenders = manifest.contributes.commands
+    .filter((c) => /CredsForDevs/i.test(c.title))
+    .map((c) => `${c.command}: ${c.title}`);
+
+  assert.deepEqual(offenders, []);
+});
+
+test('every command is filed under the one category, so the palette groups them', () => {
+  const missing = manifest.contributes.commands
+    .filter((c) => c.category !== 'CredsForDevs')
+    .map((c) => `${c.command} (category: ${String(c.category)})`);
+
+  assert.deepEqual(missing, []);
+});
