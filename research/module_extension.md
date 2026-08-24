@@ -120,6 +120,65 @@ erDiagram
 The extension's own crypto wraps only what *leaves* the machine. Local storage is protected by the
 OS keychain, which is the platform's job.
 
+### Entity kinds — one list, three consumers
+
+A node's kind is not a stored field. It is **derived** by `kindOf()` from the flags in
+`EntityMetadata` (`isSshKey`, `isVpn`, `isDb`, `isTerminal`, host present, …), which is why an
+older vault syncs into a newer extension without a migration: an entry written before `terminal`
+existed simply has no `isTerminal`, and reads back as a credential.
+
+Three surfaces need that list — the folder-type picker, the entity form, and the tree's icon and
+`contextValue`. `ENTITY_KINDS` and `ENTITY_KIND_LABELS` in `types.ts` are the single source, and
+`types.test.ts` fails when a kind has no label. This is written down because the alternative was
+tried: the picker held its own hand-written copy of the five kinds it knew, so `terminal` shipped
+in 0.26.0 as a type **nobody could select**. Default folders seed once, at account creation, so a
+brand-new profile had the folder and every existing account had no way to make one — the feature
+looked present in testing and absent in use.
+
+| Kind | Recognised by | Action it adds |
+|---|---|---|
+| `credential` | nothing more specific matches | copy password |
+| `ssh` | `host` | Connect via SSH (green triangle) |
+| `sshkey` | `isSshKey` | install to `~/.ssh`, materialise for `ssh -i` |
+| `vpn` | `isVpn` | copy config |
+| `db` | `isDb` | open in a DB extension |
+| `terminal` | `isTerminal` | Run in Terminal (green triangle), Copy Command |
+
+### Terminal commands
+
+A CLI invocation is stored as a verb plus **rows**, never as one string: `args: CommandArg[]`,
+each with its own value, its own note, and an enabled flag. `commandLine.ts` is `vscode`-free and
+holds the whole of the logic — `normalizeArgs`, `buildCommandLine`, `describeCommand`.
+
+The row shape is the feature. What is forgotten about `aws sso login --sso-session OD-org` a week
+later is never the verb; it is which value belongs to which environment and why, so every argument
+carries its explanation next to it. A disabled row keeps a flag you are not using now (`--debug`)
+without it reaching the command line — deleting it means retyping it from memory later.
+
+`Run in Terminal` sends the line **with** a newline: it executes. The first implementation stopped
+at the prompt and left Enter to the user; the operator overruled that, and it is theirs to
+overrule — these are commands the user wrote and saved, not commands arriving from elsewhere.
+`Copy Command` covers "let me edit it before it runs".
+
+### Clone
+
+`cloneNode` copies a folder or entity's settings and deliberately **not** its secrets. Duplicating
+a password would double it on disk and in every backup and snapshot, and the reason to clone is
+almost always a near-identical entry that needs its own credential anyway.
+
+### Sync readiness
+
+`syncReadiness.ts` answers, per account, "can this actually sync, and if not what is missing" —
+once, `vscode`-free, for two surfaces that must never disagree: the colour of the account icon and
+the report `Sync Now` prints. Locked is reported ahead of every "you are missing something"
+verdict, because telling somebody to set a PIN they already set, seconds after they pressed Lock,
+is how a status line stops being believed. A registered security key with no stored PIN is
+**not** green: a timer cannot touch a key, so unattended sync would keep stopping to ask.
+
+Readiness needs `SecretStorage`, which a `getTreeItem` call cannot await — so it is cached on the
+provider and recomputed at the moments it can change: startup, a sync cycle, a PIN being set, a
+lock.
+
 ## Cryptography
 
 ### The envelope
