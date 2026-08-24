@@ -1,4 +1,4 @@
-import { ShareItem, OwnedShare, StoredAccount, TeamMember } from './types';
+import { ShareItem, OwnedShare, StoredAccount, TeamMember, teamOthers } from './types';
 import { TransportFactory } from './transportFactory';
 import { StorageManager } from './storageManager';
 
@@ -30,9 +30,13 @@ export class SharingManager {
     return [...seen.values()];
   }
 
-  /** The team of ONE own account: the people sharing its location. */
+  /**
+   * The team of ONE own account: the people sharing its location, minus that account
+   * itself. Filtered here rather than in each transport, because only this layer knows
+   * WHOSE team is being asked for — a transport returns every owner it can see.
+   */
   teamFor(account: StoredAccount): TeamMember[] {
-    return this.teamByAccount.get(account.accountId) ?? [];
+    return teamOthers(account, this.teamByAccount.get(account.accountId) ?? []);
   }
 
   /** Rescan every account's location: team + what is shared with me. */
@@ -92,8 +96,4 @@ export class SharingManager {
     await transport.removeShare(account, share);
   }
 
-  /** Addressable recipients across all locations. */
-  recipients(includeSelf: boolean): TeamMember[] {
-    return this.team.filter((m) => includeSelf || !m.isSelf);
-  }
 }

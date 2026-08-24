@@ -110,6 +110,35 @@ export interface TreeNode {
 }
 
 /** A person discovered on a vault location (folder or server). */
+/**
+ * Everyone in a team list except the account whose team is being shown.
+ *
+ * The list a transport returns is every vault owner it can see, INCLUDING the caller —
+ * neither the server's `/api/team` nor the folder scan excludes you, because neither of
+ * them knows which of your accounts is being looked at. So the account you are looking
+ * at appeared under its own Team, offering to share a credential with itself.
+ *
+ * Your OTHER accounts deliberately stay. Sending a credential from a work vault to a
+ * personal one is a real thing people do, and it is the only way to move one between
+ * them; they keep `isSelf`, so the UI still marks them "(you)".
+ *
+ * Matched on the account id OR on email+provider, and both are needed: the folder
+ * transport reports the real local account id, while the server transport keys members
+ * by email and reports THAT as the id, so the ids never line up for it. Email alone
+ * would be wrong in the other direction — the same address signed in through two
+ * providers is two vaults, not one.
+ */
+export function teamOthers(account: StoredAccount, members: TeamMember[]): TeamMember[] {
+  const sameEmail = (other: StoredAccount) =>
+    other.email.toLowerCase() === account.email.toLowerCase();
+
+  return members.filter(
+    (m) =>
+      m.account.accountId !== account.accountId &&
+      !(sameEmail(m.account) && m.account.provider === account.provider),
+  );
+}
+
 export interface TeamMember {
   account: StoredAccount;
   /** Vault file name — folder transport only. */

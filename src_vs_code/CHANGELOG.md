@@ -6,6 +6,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Scheduled vault snapshots.** Right-click an account → *Set Backup Location…*, and the
+  extension writes a dated, encrypted snapshot into that folder on a timer
+  (`backupIntervalHours`, 24 by default). Any folder works — a NAS mount, an rclone
+  mount, a Google Drive or OneDrive sync folder — because the folder is all it knows.
+
+  A snapshot is a **copy of ciphertext**: the same encrypted envelope the sync location
+  already holds, so no PIN is needed to take one and it runs unattended. Restore one with
+  the existing *Import / Restore*.
+
+  This is deliberately separate from the sync location, and the difference is the point:
+  **sync merges, so a deletion travels to every machine.** Snapshots are what you go back
+  to when the deletion was the mistake. Choosing a folder inside the sync location asks
+  for confirmation, because on one disk they die together.
+
+  Four rules it inherits from the server's backup, each of which came from an actual
+  failure rather than from taste: identical bytes are not re-written; retention never
+  deletes the newest snapshot whatever its age; an empty vault is never snapshotted over
+  a good history; and each file is written under a temporary name and renamed only once
+  complete, because a sync client uploads whatever appears the moment it appears.
+
+### Fixed
+
+- **You no longer appear in your own Team list.** Neither the server's `/api/team` nor the
+  folder scan excludes the caller — they cannot, since neither knows which of your
+  accounts is being looked at — so the account you were viewing offered to share a
+  credential with itself. Your *other* accounts stay, because moving a credential from a
+  work vault to a personal one is a real thing people do.
+
 ### Security
 
 - **Copied secrets now expire.** Every clipboard copy of a password, private key, DB

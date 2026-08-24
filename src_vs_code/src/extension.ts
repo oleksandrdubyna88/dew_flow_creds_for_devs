@@ -16,6 +16,8 @@ import { EntityFormValues, KeyCandidate, showEntityForm } from './entityFormPane
 import { showEntityView } from './entityViewPanel';
 import { GoogleAuthProvider } from './googleAuthProvider';
 import { nasPathFor, setAccountNasPath } from './nasPaths';
+import { backupPathFor, setAccountBackupPath } from './backupPaths';
+import { BackupScheduler } from './backupScheduler';
 import { isServerLocation } from './vaultTransport';
 import {
   forgetMaterializedKey,
@@ -103,6 +105,15 @@ export function activate(context: vscode.ExtensionContext): void {
     () => void sharing.reload(),
   );
   context.subscriptions.push(sync);
+
+  // Dated snapshots, separately from sync. Constructed AFTER the sync manager because a
+  // snapshot is a copy of what sync maintains — with no sync location there is nothing to
+  // copy, and the scheduler says so rather than inventing an export of its own.
+  const backups = new BackupScheduler(storage, transports, context.globalState, (message) =>
+    console.log(`[creds-for-devs/backup] ${message}`),
+  );
+  context.subscriptions.push(backups);
+
   provider.onMutate = () => sync.notifyChange();
   const mutated = () => {
     provider.refresh();
@@ -172,6 +183,61 @@ export function activate(context: vscode.ExtensionContext): void {
   });
 
   // Per-account vault location: a folder (NAS/SMB) or a vault server URL.
+  register('credSshManager.setBackupLocation', async (target) => {
+    const element = asElement(target);
+    if (element?.kind !== 'account') {
+      return;
+    }
+    const current = backupPathFor(element.account);
+    const syncLocation = nasPathFor(element.account);
+    const picked = await vscode.window.showOpenDialog({
+      title: `Snapshot folder for ${element.account.email}`,
+      canSelectFiles: false,
+      canSelectFolders: true,
+      canSelectMany: false,
+      openLabel: 'Keep snapshots here',
+      defaultUri: current !== undefined ? vscode.Uri.file(current) : undefined,
+    });
+    const folder = picked?.[0]?.fsPath;
+    if (folder === undefined) {
+      return;
+    }
+
+    // Snapshots exist to survive the sync location. Putting both on one disk means one
+    // ransomware run, one dying drive or one bad merge takes the vault and its history
+    // together — which is the failure the snapshots were for.
+    if (syncLocation !== undefined && !isServerLocation(syncLocation)) {
+      const trim = (p: string) => p.toLowerCase().replace(/[\\/]+$/, '');
+      const child = trim(folder);
+      const parent = trim(syncLocation);
+      const sameDisk =
+        child === parent ||
+        child.startsWith(parent + '/') ||
+        child.startsWith(parent + '\\');
+      if (sameDisk) {
+        const proceed = await vscode.window.showWarningMessage(
+          'That is inside the sync location. A snapshot is meant to survive whatever happens to the live vault — on the same disk it will not.',
+          { modal: true },
+          'Use it anyway',
+        );
+        if (proceed !== 'Use it anyway') {
+          return;
+        }
+      }
+    }
+
+    await setAccountBackupPath(element.account.email, folder);
+    void vscode.window.showInformationMessage(
+      `${element.account.email}: snapshots will be written to ${folder}.`,
+    );
+    void backups.runDue(true);
+  });
+
+  register('credSshManager.backupNow', async () => {
+    await backups.runDue(true);
+    void vscode.window.showInformationMessage('Vault snapshot taken.');
+  });
+
   register('credSshManager.setAccountNasPath', async (target) => {
     const element = asElement(target);
     if (element?.kind !== 'account') {

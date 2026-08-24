@@ -70,7 +70,7 @@
         "credSshManager.autoSync": {
           "type": "boolean",
           "default": false,
-          "markdownDescription": "Automatically sync all profiles with the NAS (`#credSshManager.nasBackupPath#`): after every change, on startup, and on an interval. Changes from several machines are MERGED per node (newest edit wins; deletions propagate). Requires the same sync PIN on every machine (`Cred SSH: Set Sync PIN`)."
+          "markdownDescription": "Automatically sync all profiles with the NAS (`#credSshManager.nasBackupPath#`): after every change, on startup, and on an interval. Changes from several machines are MERGED per node (newest edit wins; deletions propagate). Requires the same sync PIN on every machine (`CredsForDevs: Set Sync PIN`)."
         },
         "credSshManager.autoSyncIntervalMinutes": {
           "type": "number",
@@ -90,6 +90,31 @@
           "type": "string",
           "default": "",
           "markdownDescription": "OAuth 2.0 client id of your **Desktop app** credential (Google Cloud Console → APIs & Services → Credentials). Required for \"Sign in with Google\". The client secret is prompted on first sign-in and kept in SecretStorage."
+        },
+        "credSshManager.backupLocation": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Where **dated snapshots** of the vault are written, e.g. `/mnt/nas/vault-history`, `Z:\\Backups`, or a Google Drive / OneDrive sync folder. Leave empty to disable.\n\nThis is deliberately **separate from `#credSshManager.nasBackupPath#`**. That one is the *live* vault and it MERGES — delete a credential and the deletion travels to every machine. Snapshots are the safety net you restore from when the deletion was the mistake, so pointing both at the same disk defeats the point.\n\nSnapshots are the same encrypted bytes the sync location holds; no PIN is needed to take one, and one is restored with *Import / Restore*."
+        },
+        "credSshManager.accountBackupPaths": {
+          "type": "object",
+          "default": {},
+          "additionalProperties": {
+            "type": "string"
+          },
+          "markdownDescription": "Per-account snapshot folder: maps an account **email** to a folder. Accounts without a mapping use `#credSshManager.backupLocation#`. Easiest way to set: right-click the account → *Set Backup Location…*"
+        },
+        "credSshManager.backupIntervalHours": {
+          "type": "number",
+          "default": 24,
+          "minimum": 0,
+          "markdownDescription": "How often a snapshot is taken, in hours. `24` daily, `168` weekly, `1` hourly. **`0` disables snapshots.**\n\nA snapshot whose bytes are identical to the previous one is not written, so a quiet vault does not fill a metered folder with copies of itself."
+        },
+        "credSshManager.backupRetainDays": {
+          "type": "number",
+          "default": 30,
+          "minimum": 0,
+          "markdownDescription": "Delete snapshots older than this. `0` keeps them forever. The **newest snapshot is never deleted**, whatever its age — a laptop closed for a year must not come back to an empty backup folder."
         }
       }
     },
@@ -151,6 +176,12 @@
         "title": "Set Sync Location…",
         "category": "CredsForDevs",
         "icon": "$(folder-opened)"
+      },
+      {
+        "command": "credSshManager.setBackupLocation",
+        "title": "Set Backup Location…",
+        "category": "CredsForDevs",
+        "icon": "$(archive)"
       },
       {
         "command": "credSshManager.toggleSsh",
@@ -352,6 +383,12 @@
         "command": "extension.importSecrets",
         "title": "Import Secrets (restore backup)",
         "category": "CredsForDevs"
+      },
+      {
+        "command": "credSshManager.backupNow",
+        "title": "Snapshot Vault Now",
+        "category": "CredsForDevs",
+        "icon": "$(save)"
       }
     ],
     "menus": {
@@ -390,6 +427,11 @@
           "command": "credSshManager.restoreBackup",
           "when": "view == credSshManagerView",
           "group": "backup@2"
+        },
+        {
+          "command": "credSshManager.backupNow",
+          "when": "view == credSshManagerView",
+          "group": "backup@3"
         }
       ],
       "view/item/context": [
@@ -417,6 +459,11 @@
           "command": "credSshManager.setAccountNasPath",
           "when": "view == credSshManagerView && viewItem == account",
           "group": "3_manage@0"
+        },
+        {
+          "command": "credSshManager.setBackupLocation",
+          "when": "view == credSshManagerView && viewItem == account",
+          "group": "3_manage@0b"
         },
         {
           "command": "credSshManager.setSyncPin",
