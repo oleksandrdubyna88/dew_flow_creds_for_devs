@@ -438,6 +438,7 @@ export function activate(context: vscode.ExtensionContext): void {
   });
 
   register('credSshManager.addEntity', async (target) => {
+    vaultKeys.noteUserActivity(); // the user is here: postpone auto-lock
     const location = await resolveLocation(asElement(target), storage, 'Add entity to which profile?');
     if (location === undefined) {
       return;
@@ -468,6 +469,7 @@ export function activate(context: vscode.ExtensionContext): void {
   });
 
   register('credSshManager.editNode', async (target) => {
+    vaultKeys.noteUserActivity(); // the user is here: postpone auto-lock
     const element = asElement(target);
     if (element?.kind !== 'node') {
       return;
@@ -547,6 +549,7 @@ export function activate(context: vscode.ExtensionContext): void {
   });
 
   register('credSshManager.viewDetails', async (target) => {
+    vaultKeys.noteUserActivity(); // the user is here: postpone auto-lock
     const element = asElement(target);
     if (element?.kind !== 'node' || !element.node.details) {
       return;
@@ -555,6 +558,7 @@ export function activate(context: vscode.ExtensionContext): void {
   });
 
   register('credSshManager.copyPassword', async (target) => {
+    vaultKeys.noteUserActivity(); // the user is here: postpone auto-lock
     const element = asElement(target);
     if (element?.kind !== 'node' || !element.node.details) {
       return;
@@ -587,6 +591,7 @@ export function activate(context: vscode.ExtensionContext): void {
   });
 
   register('credSshManager.connectSsh', async (target) => {
+    vaultKeys.noteUserActivity(); // the user is here: postpone auto-lock
     const element = asElement(target);
     if (element?.kind === 'node' && element.node.details) {
       await connectEntity(element.accountId, element.node.details, storage, storageDir);
@@ -594,6 +599,7 @@ export function activate(context: vscode.ExtensionContext): void {
   });
 
   register('credSshManager.installSshKey', async (target) => {
+    vaultKeys.noteUserActivity(); // the user is here: postpone auto-lock
     const element = asElement(target);
     if (element?.kind !== 'node' || !element.node.details) {
       return;
@@ -604,6 +610,7 @@ export function activate(context: vscode.ExtensionContext): void {
 
   // Write the stored VPN config back out as a file.
   register('credSshManager.saveVpnConfig', async (target) => {
+    vaultKeys.noteUserActivity(); // the user is here: postpone auto-lock
     const element = asElement(target);
     if (element?.kind !== 'node' || !element.node.details) {
       return;
@@ -613,6 +620,7 @@ export function activate(context: vscode.ExtensionContext): void {
 
   // Open a database entity in the matching DB extension.
   register('credSshManager.connectDb', async (target) => {
+    vaultKeys.noteUserActivity(); // the user is here: postpone auto-lock
     const element = asElement(target);
     if (element?.kind !== 'node' || !element.node.details) {
       return;
@@ -625,6 +633,7 @@ export function activate(context: vscode.ExtensionContext): void {
   });
 
   register('credSshManager.copyDbConnection', async (target) => {
+    vaultKeys.noteUserActivity(); // the user is here: postpone auto-lock
     const element = asElement(target);
     if (element?.kind !== 'node' || !element.node.details) {
       return;

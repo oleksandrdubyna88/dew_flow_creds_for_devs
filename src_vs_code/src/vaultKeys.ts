@@ -121,6 +121,30 @@ export class VaultKeys {
     vaultContent: string | undefined,
     options: { interactive: boolean },
   ): Promise<VaultKey | undefined> {
+    const key = await this.unlockInner(account, vaultContent, options);
+    if (key !== undefined) {
+      // Only a caller that CAN prompt is the user being present. A background cycle
+      // opening the vault must not postpone auto-lock — that is what made the setting
+      // inert as soon as auto-sync was switched on.
+      if (options.interactive) {
+        this.lockState.noteUnlocked(Date.now());
+      } else {
+        this.lockState.noteBackgroundUnlock(Date.now());
+      }
+    }
+    return key;
+  }
+
+  /** The user touched a stored secret. Postpones auto-lock; does not unlock anything. */
+  noteUserActivity(): void {
+    this.lockState.noteUserActivity(Date.now());
+  }
+
+  private async unlockInner(
+    account: StoredAccount,
+    vaultContent: string | undefined,
+    options: { interactive: boolean },
+  ): Promise<VaultKey | undefined> {
     // While locked, only a caller that can ASK is allowed through. Background sync
     // cannot ask, so it is refused rather than quietly reopening what the user just shut.
     if (!options.interactive && !this.lockState.allowsSilentUnlock()) {
@@ -134,15 +158,11 @@ export class VaultKeys {
       if (pin === undefined) {
         return undefined;
       }
-      this.lockState.noteUnlocked(Date.now());
       return { version: 1, passphrase: account.accountId + pin };
     }
 
     const cached = this.cache.get(account.accountId);
     if (cached?.version === 2) {
-      // A cache hit is still use: it postpones the idle window rather than letting a
-      // busy session lock itself out mid-sync.
-      this.lockState.noteUnlocked(Date.now());
       return cached;
     }
     const wraps = readVaultWraps(vaultContent!).filter(isKeyWrap);
@@ -212,10 +232,6 @@ export class VaultKeys {
   }
 
   private remember(account: StoredAccount, masterKeyBase64: string, wraps: KeyWrap[]): VaultKey {
-    // Every v2 unlock funnels through here, so this is the one place that has to
-    // record 'a person got in' — recording it at the three call sites instead is how
-    // one of them ends up forgotten.
-    this.lockState.noteUnlocked(Date.now());
     const key: VaultKey = { version: 2, masterKeyBase64, wraps };
     this.cache.set(account.accountId, key);
     return key;

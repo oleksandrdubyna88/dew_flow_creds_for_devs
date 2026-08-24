@@ -22,6 +22,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   previously stayed in the extension host's memory for the whole window's life, with the
   manual command as its only eviction.
 
+  **Idle means *you* have been idle** — an action of yours that touches a stored secret:
+  opening or copying a credential, connecting, installing a key, editing an entry,
+  unlocking. Not mouse movement, and explicitly **not background sync**: a cycle running
+  on a timer is not you being present. That distinction is the whole feature — measuring
+  "time since the key was last used" made the setting do nothing at all once `autoSync`
+  was on, because sync touches the key every five minutes.
+
   What locking does **not** do, stated plainly because the previous message implied
   otherwise: your credentials keep working locally. Passwords, SSH keys, VPN configs and
   DB connection strings live in the OS keychain and are not protected by the vault key —

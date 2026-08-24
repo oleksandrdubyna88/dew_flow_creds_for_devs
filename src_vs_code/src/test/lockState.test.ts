@@ -61,14 +61,32 @@ test('auto-lock waits for the idle window and then fires', () => {
   assert.equal(state.dueForAutoLock(60 * MINUTE, 60), true);
 });
 
-test('using the vault postpones auto-lock', () => {
+test('the person using the vault postpones auto-lock', () => {
   const state = new LockState();
   state.noteUnlocked(0);
 
-  state.noteUnlocked(50 * MINUTE);
+  state.noteUserActivity(50 * MINUTE);
 
   assert.equal(state.dueForAutoLock(100 * MINUTE, 60), false, 'the window restarts on use');
   assert.equal(state.dueForAutoLock(110 * MINUTE, 60), true);
+});
+
+test('BACKGROUND sync does not postpone auto-lock', () => {
+  // The defect this pins: auto-lock measured "time since the vault key was last used",
+  // and auto-sync uses it every five minutes. With auto-sync on, the window never
+  // elapsed and auto-lock silently never fired — two features cancelling each other.
+  const state = new LockState();
+  state.noteUnlocked(0);
+
+  for (let t = 5 * MINUTE; t <= 90 * MINUTE; t += 5 * MINUTE) {
+    state.noteBackgroundUnlock(t);
+  }
+
+  assert.equal(
+    state.dueForAutoLock(61 * MINUTE, 60),
+    true,
+    'idle means the PERSON has been idle, not that nothing has run',
+  );
 });
 
 test('a vault that was never unlocked has nothing to auto-lock', () => {

@@ -13,8 +13,15 @@
 export class LockState {
   private locked = false;
 
-  /** When the vault was last opened, in epoch ms. Undefined = never opened here. */
-  private lastUnlocked: number | undefined;
+  /**
+   * When the PERSON last used the vault, in epoch ms. Undefined = never used here.
+   *
+   * <p>Deliberately not "when the key was last used". Auto-lock first measured that, and
+   * auto-sync touches the key every five minutes — so with auto-sync on the window never
+   * elapsed and auto-lock never fired. Two features quietly cancelling each other is
+   * worse than either being absent, because the setting still says 60.</p>
+   */
+  private lastActivity: number | undefined;
 
   /** Lock now. Idempotent — the auto-lock timer and the command both call it. */
   lock(): void {
@@ -36,10 +43,30 @@ export class LockState {
     return !this.locked;
   }
 
-  /** Record that the vault was opened. Clears the lock: a person got in, so it is open. */
+  /**
+   * A person opened the vault. Clears the lock — somebody got in deliberately — and
+   * restarts the idle window.
+   */
   noteUnlocked(nowMs: number): void {
     this.locked = false;
-    this.lastUnlocked = nowMs;
+    this.lastActivity = nowMs;
+  }
+
+  /**
+   * A person used the vault without unlocking it: read a password, opened an entry,
+   * connected somewhere. Postpones auto-lock without touching locked-ness.
+   */
+  noteUserActivity(nowMs: number): void {
+    this.lastActivity = nowMs;
+  }
+
+  /**
+   * Background work opened the vault. Deliberately records NOTHING: a sync cycle running
+   * on a timer is not the user being present, and treating it as presence is exactly
+   * what stopped auto-lock from ever firing.
+   */
+  noteBackgroundUnlock(_nowMs: number): void {
+    // Intentionally empty. Named rather than omitted so the caller reads as a decision.
   }
 
   /**
@@ -54,10 +81,10 @@ export class LockState {
    * the moment a machine resyncs its clock.</p>
    */
   dueForAutoLock(nowMs: number, idleMinutes: number): boolean {
-    if (idleMinutes <= 0 || this.locked || this.lastUnlocked === undefined) {
+    if (idleMinutes <= 0 || this.locked || this.lastActivity === undefined) {
       return false;
     }
-    const elapsed = nowMs - this.lastUnlocked;
+    const elapsed = nowMs - this.lastActivity;
     return elapsed >= idleMinutes * 60_000;
   }
 }
