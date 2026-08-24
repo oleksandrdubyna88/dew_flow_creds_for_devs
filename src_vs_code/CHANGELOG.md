@@ -4,6 +4,30 @@ All notable changes to **CredsForDevs** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Share with Claude Code…** — an AI coding agent can now use an SSH credential without ever
+  receiving it. Right-click an SSH entity, and the clipboard gets a paste-ready snippet: a grant
+  token and the two commands an agent runs. It can execute a remote command (stdout, stderr and the
+  exit code come back) or ask VS Code to open the interactive terminal for you.
+
+  The agent never sees the password or the key. It has a token, and the token buys one thing: this
+  window, which already holds the credential, runs `ssh` on its behalf — the password riding that
+  child's environment through the same askpass mechanism Connect has used since 0.42.0. There is no
+  endpoint that returns a secret, and no response shape with a field one could travel in.
+
+  The token carries the broker's own loopback port, so the CLI reaches the exact window that minted
+  it — no discovery file to go stale, no confusion with a second window. It lives in memory only:
+  closing or reloading the window ends it. The first call asks you to Allow or Deny and shows the
+  command about to run; after that calls are silent, but every one of them — allowed, refused or
+  failed — is a line in the new **CredsForDevs: Agent Access** output panel. Only your Allow counts
+  as you being present, so a long agent run never postpones auto-lock.
+
+  Bounded on purpose: 256 KB of output per stream, 30 s per command (raisable to 120 s), 8 at a
+  time, and every child killed when the window goes.
+
 ## [0.42.1] — 2026-08-24
 
 ### Changed

@@ -20,13 +20,21 @@ flowchart TD
         DLG[dialogs.ts<br/>quick picks and prompts]
     end
 
-    EXT[extension.ts<br/>activation, 38 commands]
+    EXT[extension.ts<br/>activation, 47 commands]
 
     subgraph Domain
         SYNC[syncManager.ts]
         MERGE[syncMerge.ts + versionVector.ts<br/>pure, causal]
         SHARE[sharingManager.ts + shareFormat.ts]
         BACKUP[backupManager.ts]
+    end
+
+    subgraph Agent["Agent broker (loopback)"]
+        BROKER[credsAgentServer.ts<br/>consent + audit]
+        UA[useActions.ts<br/>kind,action registry]
+        SSHUSE[sshUseActions.ts<br/>exec + terminal]
+        RUN[sshExecRunner.ts<br/>spawn, ceilings]
+        CLI[agentCli.ts<br/>plain node, no vscode]
     end
 
     subgraph Crypto
@@ -53,6 +61,10 @@ flowchart TD
 
     EXT --> TREE & FORM & VIEW & DLG
     EXT --> SYNC & SHARE & BACKUP
+    EXT --> BROKER
+    CLI -.->|HTTP 127.0.0.1| BROKER
+    BROKER --> UA --> SSHUSE --> RUN
+    SSHUSE --> SM
     SYNC --> MERGE & VK & TF
     SHARE --> TF
     TF --> ST & FT
@@ -68,6 +80,20 @@ flowchart TD
 `googleOauth`, `backupNaming`, `defaultFolders`, `secretClipboard` and `serverTransport` import **no
 `vscode`**. That is why their edge cases are real unit tests under `node:test` rather than hopeful
 comments — no VS Code test harness is needed anywhere. Keep new pure logic on that side of the line.
+
+`sshCredential` belongs on that list too, and for the reason the rule exists: it decides which secret
+an SSH connection authenticates with — referenced key entity, stored key, key path, password, in that
+order — for **both** the human Connect path and the agent broker. A regression there changes two
+surfaces at once, so the order is asserted in `sshCredential.test.ts` rather than re-derived by
+whoever reads it next. (The empty-string `sshKeyPath` case has its own test: historic entities use it
+to mean "no `-i` flag", and reading it as falsy would start sending stored passwords to hosts only
+ever reached with a key.)
+
+The agent broker added a second reason to stay on that side: `grantToken`, `grantRegistry`,
+`useActions`, `brokerProtocol`, `sshExecCommand`, `agentCliArgs`, `agentShareSnippet` and
+`agentAuditLog` are `vscode`-free because **`agentCli.ts` runs under plain `node`** and imports them.
+A `vscode` import anywhere in that graph is not a testing inconvenience there; it is a CLI that
+cannot start.
 
 ## Data model
 
@@ -436,6 +462,100 @@ The payload is authenticated by GCM. The surrounding metadata — `fromEmail`, `
 `entityKind`, `createdAt` — is **not**, which is a spoofing surface on the folder transport and
 finding 3 of the security review.
 
+## The agent broker — using a credential without handing it over
+
+An AI coding agent needs to reach a host whose password lives here. The two ways it could get one
+before this existed were typing the password into a chat and exporting it to a file; both put the
+plaintext in a transcript. The vault already knew how to *use* a password without showing it — the
+askpass mechanism above — so what was missing was a way for something other than a click to trigger
+that use.
+
+**Share with Claude Code…** (`credSshManager.shareWithAgent`, on any `:ssh` entity) mints a grant and
+copies a paste-ready snippet. The agent runs the CLI in the snippet; the CLI asks this window to do
+the work.
+
+```mermaid
+sequenceDiagram
+    participant H as Human (VS Code)
+    participant B as credsAgentServer<br/>(extension host)
+    participant C as agentCli.js<br/>(plain node)
+    participant A as Coding agent
+    participant S as ssh child
+
+    H->>B: Share with Claude Code…
+    B->>B: listen(0,'127.0.0.1'), mint grant
+    B-->>H: clipboard: instructions + <port>.<secret>
+    H-->>A: pastes the snippet
+    A->>C: node agentCli.js ssh <token> -- uname -a
+    C->>B: GET /v1/health (no token yet)
+    B-->>C: {service}
+    C->>B: POST /v1/use/exec  Bearer <secret>
+    B->>H: modal: Allow / Deny (first use, shows the command)
+    H-->>B: Allow
+    B->>S: spawn ssh (password in ITS env, argv array)
+    S-->>B: stdout / stderr / exit
+    B-->>C: {exitCode, stdout, stderr, …}
+    C-->>A: prints them, exits with the remote code
+```
+
+**The token is `<port>.<secret>`.** The port is the broker's own loopback port, so the CLI dials the
+exact window that minted the token — there is no discovery file to go stale and no ambiguity when two
+windows are open, which is the whole reason the family's `services/<name>.json` convention is *not*
+used here (it names one file per service, and this service is legitimately one per window). The
+secret half is a 256-bit bearer credential; the port half never authorizes anything.
+
+**Health is unauthenticated on purpose.** A closed window frees its port and the OS hands the number
+out again, so the CLI confirms the port still answers as `creds-for-devs-agent` *before* it sends the
+token anywhere.
+
+**The HTTP contract** (loopback only, 64 KB body cap, `Authorization: Bearer <secret>`):
+
+| Route | Body | 200 |
+|---|---|---|
+| `GET /v1/health` | — | `{ok, service}` |
+| `POST /v1/use/exec` | `{command, timeoutMs?}` | `{exitCode, stdout, stderr, stdoutTruncated, stderrTruncated, timedOut, durationMs}` |
+| `POST /v1/use/terminal` | `{}` | `{opened}` |
+
+Errors are `{error:{code,message}}`: `invalid_request` 400 · `unauthorized` 401 · `denied` 403 ·
+`not_found`/`not_supported` 404 · `no_credential` 409 · `payload_too_large` 413 ·
+`too_many_requests` 429 · `internal` 500 · `consent_timeout` 504. The CLI maps them onto a reserved
+exit band (90–98) and passes a **remote** exit code through untouched, so `&&` and `$?` behave as
+they would around a real `ssh`.
+
+**No response type has a field a secret could travel in.** That is the structural half of the
+promise, and it is why `brokerProtocol.ts` holds the shapes: an agent cannot obtain plaintext by
+asking cleverly, because there is nothing for it to arrive in.
+
+**Consent.** The first call on a token opens a modal showing the command about to run. Allow covers
+every later call on that token; Deny is sticky for its life. A *dismissed* dialog refuses only that
+call and is deliberately not recorded — a mis-click must not lock an agent out until the window
+closes. Every call, allowed or refused, writes one line to the **CredsForDevs: Agent Access** output
+channel; an unknown token is answered but never logged, since the CLI legitimately probes.
+
+**Auto-lock sees the human, not the agent.** Only the Allow click calls `noteUserActivity()`. A long
+unattended run of agent calls is exactly what the idle window exists to catch, so agent traffic must
+not postpone it — the same reasoning that stopped background sync from counting as presence.
+
+**`BatchMode` is conditional, and the reason is a claim that did not survive checking.** An
+unattended exec must not hang, and `BatchMode=yes` is the usual way to say so — but BatchMode has
+historically also meant "never ask for a password", by zeroing `NumberOfPasswordPrompts`, which is
+precisely the prompt askpass answers. The evidence is ambiguous (`ssh -G -o BatchMode=yes` on
+OpenSSH 10.3 still reports `numberofpasswordprompts 3`, and that dump is not the authentication
+code), and it cannot be settled without a live SSH server. So the password branch takes the options
+the human path already proves in production and adds `NumberOfPasswordPrompts=1` — a wrong stored
+password then fails once instead of asking our script for the same wrong password three times. The
+key branch keeps `BatchMode=yes`, where nothing supplies a passphrase and failing fast is right.
+
+**Ceilings**, all enforced rather than hoped for: 256 KB per stream, capped while streaming and the
+child killed once past it; 30 s default wall-clock, caller-raisable to 120 s, SIGTERM then SIGKILL;
+8 concurrent execs, refused with 429 rather than queued. `dispose()` aborts every child, so no `ssh`
+outlives the window.
+
+**Growth seam.** `useActions.ts` is a `(kind, action) → {validate, summarize, run}` registry; the
+broker resolves the pair from the *grant*, never from the URL. A `db` or `vpn` capability registers
+two functions and needs no change to the HTTP layer. Duplicate registration throws at startup — a
+shadowed capability is one that quietly stops being the one that was audited.
+
 ## Secrets at rest and in flight
 
 | Path | Handling |
@@ -463,6 +583,12 @@ nothing before 2026-08-23.
 `scripts/server-transport-itest.cjs` is a separate integration test that drives the compiled
 transport against a live server; it stubs `vscode` with a `Module._resolveFilename` patch and is not
 part of `npm test`.
+
+`scripts/agent-broker-itest.cjs` does the same for the agent broker, and needs nothing running: it
+stubs `vscode` (with a modal whose answer the test chooses), starts the real broker, drives it with
+the **real** `out/agentCli.js`, and spawns a real `ssh` at an address that refuses or blackholes — so
+the surface, the consent gate, the CLI exit codes, the byte and time ceilings and the dispose path
+are all exercised without an SSH server. `npm run itest:agent`.
 
 ## Marketplace packaging
 

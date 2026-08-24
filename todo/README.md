@@ -15,7 +15,6 @@ order, a test plan, and a Definition of Done.
 
 | plan | status | scope |
 |---|---|---|
-| [PLAN_agent_ssh_broker.md](PLAN_agent_ssh_broker.md) | plan only | "Share with Claude Code" on an SSH entity: an in-window loopback broker + a paste-ready CLI, so a coding agent can run remote commands and open the SSH terminal without ever receiving the plaintext secret |
 | [PLAN_server_ops.md](PLAN_server_ops.md) | **item 1 shipped 2026-08-23**; 2–5 remain and 6–8 were added | Operational hardening of the server. Restart policy, log rotation and backups shipped with the Docker stack. What remains: the atomic-rename filesystem requirement, inbox TTL, optimistic concurrency on `PUT /api/vault`, a metrics surface, the per-call health probe write, contract versioning between the two halves, and — the largest reliability risk in the product — **actually rehearsing a restore**, which nobody has done |
 | [PLAN_extension_security_tail.md](PLAN_extension_security_tail.md) | plan only | The medium/low findings from the 2026-08-23 review that each need a migration or a product decision: the WebAuthn RP ID scoped to bare `localhost` (and the re-registration migration that fixing it forces), unauthenticated share metadata on the folder transport, a length-only PIN policy, no idle auto-lock, and a comment that claims a POSIX guarantee Windows does not make |
 | [PLAN_logging_convention.md](PLAN_logging_convention.md) | plan only | Serilog with a file per run shipped; the family's `AnsiConsoleSink` did not, and the deviation is recorded in `Logging.cs`. Port that sink, add a retention sweep for run files, and register this repository in the shared logging rule's mirror list |
@@ -28,6 +27,7 @@ Implemented plans live in [`../research/`](../research/), newest first.
 
 | plan | landed | what it delivered |
 |---|---|---|
+| [PLAN_agent_ssh_broker.md](../research/PLAN_agent_ssh_broker.md) | 2026-08-24 | *Share with Claude Code…* — an AI agent can run commands on an SSH host and open its terminal without ever receiving the password or key: the window that holds the credential runs `ssh` on the agent's behalf, gated by a first-use consent modal and written down in an audit channel |
 | [PLAN_monorepo_consolidation.md](../research/PLAN_monorepo_consolidation.md) | 2026-08-23 | Both products into one conventions-compliant repository, with CI, MIT licensing, Marketplace preparation, a one-command Docker deployment, and a security/reliability review whose five high-severity fixes each carry a test watched failing first |
 | [PLAN_sharing.md](../research/PLAN_sharing.md) | 2026-08-21 | Sharing one sealed entity with a colleague |
 | [PLAN_audit_followups.md](../research/PLAN_audit_followups.md) | 2026-08-21 | KDF versioning, causal merge, envelope MAC, PIN re-key, remote vault deletion, notes into SecretStorage |

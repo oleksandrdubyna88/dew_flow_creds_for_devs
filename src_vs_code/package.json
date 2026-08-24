@@ -43,6 +43,7 @@
     "typecheck": "tsc -p ./ --noEmit",
     "test": "npm run compile && node --test \"out/test/*.test.js\"",
     "itest:server": "npm run compile && node scripts/server-transport-itest.cjs",
+    "itest:agent": "npm run compile && node scripts/agent-broker-itest.cjs",
     "icon": "node scripts/generate-icon.mjs",
     "package": "vsce package",
     "publish": "vsce publish"

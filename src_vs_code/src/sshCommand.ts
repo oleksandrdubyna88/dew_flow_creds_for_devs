@@ -6,7 +6,7 @@
 
 import { EntityMetadata } from './types';
 
-const DEFAULT_SSH_PORT = 22;
+export const DEFAULT_SSH_PORT = 22;
 
 /**
  * Quote a value for the integrated terminal's shell. On Windows shells

@@ -50,6 +50,13 @@ downstream of that sentence.
 | The extension | yes — it is the only one | yes, derived from a PIN or a security key | n/a |
 | The server | **no** | **no** | **no** — it stamps identity from a verified token |
 | Anyone with disk access to the server | no | no | no |
+| An AI agent granted access | **no** — it holds a capability token; the extension runs `ssh` on its behalf | no | n/a — its first use of a token needs a human's click |
+
+The last row is the same sentence in a second setting: something is given the *use* of a credential
+without being given the credential. The extension is still the only thing that sees plaintext; what
+the agent has is a token that buys one entity's worth of work in the window that minted it, gated by
+a modal and written down in an audit channel. See
+[module_extension.md](module_extension.md#the-agent-broker--using-a-credential-without-handing-it-over).
 
 What the server contributes is the thing a shared folder cannot: **authenticated identity**. It
 knows who is calling, because the caller presents a token their identity provider signed, and it

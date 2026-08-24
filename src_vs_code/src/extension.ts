@@ -28,9 +28,7 @@ import { SyncReadiness, syncReadiness } from './syncReadiness';
 import { BackupScheduler } from './backupScheduler';
 import { isServerLocation } from './vaultTransport';
 import {
-  forgetMaterializedKey,
   installKeyToSystem,
-  materializePrivateKey,
   materializeVpnConfig,
   purgeMaterializedKeys,
 } from './keyInstaller';
@@ -44,7 +42,12 @@ import {
 } from './vpnCommand';
 import { StorageManager } from './storageManager';
 import { SyncManager } from './syncManager';
-import { buildSshCommand, describeSshTarget, openSshTerminal } from './terminalManager';
+import { buildSshCommand, describeSshTarget } from './terminalManager';
+import { connectEntity } from './sshConnect';
+import { CredsAgentServer } from './credsAgentServer';
+import { UseActionRegistry } from './useActions';
+import { sshExecAction, sshTerminalAction } from './sshUseActions';
+import { buildAgentSnippet } from './agentShareSnippet';
 import { DB_DEFAULT_PORTS, parseDbConnectionString } from './dbConnString';
 import { openInDbExtension } from './dbLauncher';
 import { openShare, resolveShares, sealShare, sharesFromEnvelope } from './shareFormat';
@@ -77,7 +80,6 @@ import * as fs from 'node:fs';
 import { resolveVpnLauncher } from './vpnExec';
 import { applyEnvBindings, bindableFieldValue } from './envApply';
 import { envProbeCommand } from './envProbe';
-import { askpassEnv, askpassScript } from './sshAskpass';
 import { imageMime } from './attachment';
 import {
   AuthProvider,
@@ -193,6 +195,22 @@ export function activate(context: vscode.ExtensionContext): void {
     provider.refresh();
     sync.notifyChange();
   };
+
+  // The agent broker: a loopback surface through which a coding agent can USE
+  // a credential (run a command, open the terminal) without ever receiving it.
+  // Constructed cheaply here; it opens no socket until the first share.
+  const useActions = new UseActionRegistry();
+  const agentServer = new CredsAgentServer(useActions, () => vaultKeys.noteUserActivity());
+  const sshDeps = {
+    storage,
+    storageDir,
+    signal: agentServer.signal,
+    acquireExecSlot: agentServer.acquireExecSlot,
+    note: agentServer.note,
+  };
+  useActions.register(sshExecAction(sshDeps));
+  useActions.register(sshTerminalAction(sshDeps));
+  context.subscriptions.push(agentServer);
 
   const register = (command: string, handler: (...args: unknown[]) => unknown) =>
     context.subscriptions.push(vscode.commands.registerCommand(command, handler));
@@ -884,6 +902,41 @@ ${detail}
     if (element?.kind === 'node' && element.node.details) {
       await connectEntity(element.accountId, element.node.details, storage, storageDir);
     }
+  });
+
+  // Hand a coding agent the ABILITY to use this entity, never the credential.
+  register('credSshManager.shareWithAgent', async (target) => {
+    vaultKeys.noteUserActivity(); // the user is here: postpone auto-lock
+    const element = asElement(target);
+    if (element?.kind !== 'node' || !element.node.details) {
+      return;
+    }
+    const details = element.node.details;
+    const targetLabel = describeSshTarget(details);
+    if (targetLabel === undefined) {
+      void vscode.window.showWarningMessage(
+        `"${element.node.name}" has no host configured — there is nothing an agent could connect to.`,
+      );
+      return;
+    }
+    const token = await agentServer.share(
+      element.accountId,
+      details.id,
+      element.node.name,
+      'ssh',
+    );
+    const snippet = buildAgentSnippet({
+      entityName: element.node.name,
+      target: targetLabel,
+      token,
+      cliPath: path.join(context.extensionUri.fsPath, 'out', 'agentCli.js'),
+    });
+    // The token is a bearer capability for as long as this window lives, so it
+    // gets the same expiring clipboard every secret here does.
+    await copySecret(vscode.env.clipboard, snippet);
+    void vscode.window.showInformationMessage(
+      copiedMessage(`Claude Code instructions for "${element.node.name}"`),
+    );
   });
 
   register('credSshManager.installSshKey', async (target) => {
@@ -1716,83 +1769,6 @@ async function editNode(
  * then this entity's stored private key (materialized to a 0600 file),
  * then its plain key path.
  */
-async function connectEntity(
-  accountId: string,
-  entity: EntityMetadata,
-  storage: StorageManager,
-  storageDir: string,
-): Promise<void> {
-  let keySource: EntityMetadata = entity;
-  if (entity.sshKeyEntityId !== undefined) {
-    const ref = storage.getNode(accountId, entity.sshKeyEntityId);
-    if (ref?.details) {
-      keySource = ref.details;
-    } else {
-      void vscode.window.showWarningMessage(
-        `The key entity referenced by "${entity.name}" no longer exists — using its own key settings.`,
-      );
-    }
-  }
-
-  let keyPath = keySource.sshKeyPath;
-  let materialized: string | undefined;
-  const storedKey = await storage.getPrivateKey(accountId, keySource.id);
-  if (storedKey !== undefined) {
-    try {
-      keyPath = materializePrivateKey(storageDir, keySource.id, storedKey);
-      materialized = keyPath;
-    } catch (error) {
-      void vscode.window.showErrorMessage(
-        `Could not write the stored key to disk: ${error instanceof Error ? error.message : String(error)}`,
-      );
-      return;
-    }
-  }
-  // No key anywhere, but a password stored: supply it through SSH_ASKPASS in a
-  // dedicated terminal, so nobody retypes what the vault already knows. The password
-  // rides the terminal's ENVIRONMENT — not a file, not the command line.
-  const password = await storage.getPassword(accountId, keySource.id) ?? await storage.getPassword(accountId, entity.id);
-  if (keyPath === undefined && password !== undefined) {
-    const command = buildSshCommand(entity);
-    const target = describeSshTarget(entity);
-    if (command === undefined || target === undefined) {
-      void vscode.window.showWarningMessage(`"${entity.name}" has no host configured — cannot start SSH.`);
-      return;
-    }
-    const script = askpassScript(process.platform);
-    const scriptPath = path.join(storageDir, 'keys', script.name);
-    fs.mkdirSync(path.dirname(scriptPath), { recursive: true, mode: 0o700 });
-    fs.writeFileSync(scriptPath, script.content, { mode: 0o700 });
-    // A FRESH terminal every time: the env carries this entity's password, and reusing
-    // one would run the new session with the previous entity's credentials.
-    const name = `SSH: ${target}`;
-    vscode.window.terminals.find((t) => t.name === name && t.exitStatus === undefined)?.dispose();
-    const passTerminal = vscode.window.createTerminal({
-      name,
-      env: askpassEnv(scriptPath, password, process.platform),
-    });
-    passTerminal.show();
-    // accept-new: with SSH_ASKPASS_REQUIRE=force even the host-key yes/no question
-    // would be answered by the askpass program — with the password.
-    passTerminal.sendText(`${command.replace(/^ssh /, 'ssh -o StrictHostKeyChecking=accept-new ')}`, true);
-    return;
-  }
-
-  const terminal = openSshTerminal({ ...entity, sshKeyPath: keyPath });
-  // Wipe the decrypted key from disk as soon as the session ends.
-  if (materialized !== undefined) {
-    if (terminal === undefined) {
-      forgetMaterializedKey(materialized);
-    } else {
-      const sub = vscode.window.onDidCloseTerminal((closed) => {
-        if (closed === terminal) {
-          forgetMaterializedKey(materialized as string);
-          sub.dispose();
-        }
-      });
-    }
-  }
-}
 
 /**
  * Bring a VPN tunnel up or down.

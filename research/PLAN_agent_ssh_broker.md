@@ -1,10 +1,19 @@
 # PLAN — "Share with Claude Code": an agent broker that uses SSH credentials without revealing them
 
-> Status: **plan only, nothing implemented yet.** Scope: `src_vs_code` only (no server change).
+> Status: **IMPLEMENTED, 2026-08-24.** *Share with Claude Code…* ships on every `:ssh` entity: a
+> loopback broker inside the extension host, a plain-`node` CLI an agent drives, exec and terminal
+> capabilities, first-use consent and an audit channel. 298 unit tests and a 24-check integration
+> script pass. The tail is one thing no test here can reach — a real password prompt over askpass,
+> which needs a live SSH server; first real use is its proof.
 >
-> Related docs: [module_extension.md](../research/module_extension.md),
-> [architecture.md](../research/architecture.md),
-> [SECURITY_REVIEW_2026-08-23.md](../research/SECURITY_REVIEW_2026-08-23.md).
+> Deviations are in *What shipped differently* below. The largest: `BatchMode=yes` is conditional,
+> because the claim that forced askpass overrides it did not survive checking; and two defects — a
+> decrypted key left on disk, a key deleted under a concurrent exec — were found in review and fixed
+> after being watched failing.
+>
+> Related docs: [module_extension.md](module_extension.md),
+> [architecture.md](architecture.md),
+> [SECURITY_REVIEW_2026-08-23.md](SECURITY_REVIEW_2026-08-23.md).
 
 ## The symptom
 
@@ -112,9 +121,48 @@ the same split the repo already uses (`helpText` tested / `helpLookup` not).
 
 ## Definition of Done
 
-- [ ] `npm run typecheck` and `npm test` green in `src_vs_code`.
-- [ ] `node out/agentCli.js` runs under plain node (no `vscode` in its import graph).
-- [ ] Behavior-preserving refactors verified: password + key SSH connect still work.
-- [ ] The agent never receives plaintext: no response type carries a secret field.
-- [ ] `research/module_extension.md` documents the broker + HTTP contract.
-- [ ] This plan promoted to `research/` with deviations recorded.
+- [x] `npm run typecheck` and `npm test` green in `src_vs_code` — 298 tests, 0 failures.
+- [x] `node out/agentCli.js` runs under plain node (no `vscode` in its import graph).
+- [x] Behavior-preserving refactors verified: `sshCredential.test.ts` asserts the resolution order
+      the extracted `connectEntity` used, empty-string `sshKeyPath` included.
+- [x] The agent never receives plaintext: no response type in `brokerProtocol.ts` carries a secret
+      field, and there is no endpoint that returns one.
+- [x] `research/module_extension.md` documents the broker + HTTP contract;
+      `research/architecture.md` gains the agent row in the trust-boundary table.
+- [ ] This plan promoted to `research/` (the move itself, once the tree is quiet — see below).
+
+## What shipped differently
+
+1. **`BatchMode=yes` is conditional, not universal.** Both architecture proposals asserted that
+   `SSH_ASKPASS_REQUIRE=force` overrides BatchMode so password auth still works; one flagged it as
+   needing empirical proof. It could not be proven here — `ssh -G -o BatchMode=yes` on OpenSSH 10.3
+   reports `numberofpasswordprompts 3`, but that dump is not the authentication code, and settling it
+   needs a live SSH server. The password branch therefore takes the options the human path already
+   proves in production plus `NumberOfPasswordPrompts=1`; only the key branch sets BatchMode.
+2. **`GET /v1/health` was added.** A closed window frees its port and the OS reissues the number, so
+   the CLI confirms the port answers as `creds-for-devs-agent` before sending the bearer token.
+3. **Two defects found in review, each fixed after being watched failing** in
+   `scripts/agent-broker-itest.cjs`: a decrypted key was left on disk when an entity's host had been
+   cleared after the grant was minted (`left e-1.key`), and a finished exec deleted the key file a
+   concurrent one was still using. The second is fixed by giving each call its own file name rather
+   than by reference counting — which also ends the same collision with a human terminal.
+4. **The consent wording moved onto the action** (`UseAction.verb`, `describeOutcome`). The broker
+   chose it with `action === 'exec' ? … : …`, which would have offered to "open a terminal to" a
+   database the day the registry's own purpose was exercised.
+5. **The CLI talks HTTP with `fetch`**, matching `serverTransport.ts`, instead of the hand-rolled
+   `node:http` client the first draft carried.
+6. **A credential-resolution warning now reaches the agent path** (audit line + a VS Code warning),
+   where it was silently dropped; the human path always showed it.
+
+## The open tail
+
+- **Password-over-askpass is unproven for the exec path specifically.** The mechanism is the human
+  path's, unchanged, and the itest exercises spawn/env/capture — but no test here reaches a real
+  password prompt, because that needs an SSH server. First real use is the proof.
+- **Two human terminals on one entity still share `keys/<entityId>.key`** and the first to close
+  deletes it. Pre-existing (0.42.0), untouched here, now the only remaining instance of the collision
+  the agent path just left. Worth the same one-line fix.
+- **`vsce package` was not run** — `out/agentCli.js` ships by the existing `out/*.js` rule in
+  `.vscodeignore`, verified by reading it, not by building a `.vsix`.
+- The feature is filed under `[Unreleased]` in the CHANGELOG rather than given a version, because a
+  concurrent session held 0.42.1 open while this landed.

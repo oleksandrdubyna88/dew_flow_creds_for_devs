@@ -1,0 +1,219 @@
+import * as crypto from 'node:crypto';
+import * as fs from 'node:fs';
+import * as vscode from 'vscode';
+import {
+  ErrorCode,
+  ExecResponseBody,
+  TerminalResponseBody,
+  clampExecTimeout,
+  errorBody,
+  statusForErrorCode,
+} from './brokerProtocol';
+import { StorageManager } from './storageManager';
+import { UseAction, UseActionContext, UseActionResult } from './useActions';
+import { SshExecAuth, buildSshExecArgv, validateRemoteCommand } from './sshExecCommand';
+import { runSshExec } from './sshExecRunner';
+import { resolveSshCredential } from './sshCredential';
+import { askpassEnv } from './sshAskpass';
+import { materializePrivateKey, writeAskpassScriptFile } from './keyInstaller';
+import { describeSshTarget } from './terminalManager';
+import { connectEntity } from './sshConnect';
+import { EntityMetadata } from './types';
+
+/**
+ * The two things an agent may do with an SSH grant: run a command, or open the
+ * interactive terminal for the human. Registered into the use-action registry,
+ * which is what a `db` or `vpn` kind will plug into later without the broker
+ * learning anything new.
+ *
+ * <p>The secret never leaves this file's stack frame. A password reaches the
+ * spawned `ssh` through its own environment (the askpass mechanism the human
+ * Connect path has used since 0.42.0), a stored key through a 0600 file the
+ * purge on activate/deactivate already covers — and neither ever appears in
+ * anything this module returns. The result types in `brokerProtocol.ts` have
+ * no field it could travel in.</p>
+ */
+
+export interface SshUseDeps {
+  storage: StorageManager;
+  storageDir: string;
+  /** Aborted on dispose, so no ssh outlives the window that started it. */
+  signal: AbortSignal;
+  /** Guard against a runaway agent loop; returns a release function. */
+  acquireExecSlot(): (() => void) | undefined;
+  /** Write one line to the agent audit channel. */
+  note(message: string): void;
+}
+
+function fail(code: ErrorCode, message: string): UseActionResult {
+  return { status: statusForErrorCode(code), body: errorBody(code, message) };
+}
+
+/** The live entity behind a grant, re-read on every call — never a snapshot. */
+function entityFor(deps: SshUseDeps, ctx: UseActionContext): EntityMetadata | undefined {
+  return deps.storage.getNode(ctx.accountId, ctx.entityId)?.details;
+}
+
+/**
+ * Resolve the credential into what `ssh` needs: an optional key path and an
+ * environment. The key is materialized per call and deleted in the caller's
+ * `finally`; the human terminal path deletes the same file when its terminal
+ * closes, so nothing here may assume a cached path still exists.
+ */
+async function prepareAuth(
+  deps: SshUseDeps,
+  ctx: UseActionContext,
+  entity: EntityMetadata,
+): Promise<
+  | { ok: true; keyPath?: string; env: NodeJS.ProcessEnv; auth: SshExecAuth; materialized?: string }
+  | { ok: false; result: UseActionResult }
+> {
+  const source = await resolveSshCredential(deps.storage, ctx.accountId, entity);
+  if (source.warning !== undefined) {
+    // The human Connect path shows this; the agent path used to drop it, which
+    // is the one case where an entity authenticates with different key material
+    // than its configuration names and nobody is told.
+    deps.note(`${ctx.entityName}: ${source.warning}`);
+    void vscode.window.showWarningMessage(source.warning);
+  }
+  if (source.kind === 'none') {
+    return {
+      ok: false,
+      result: fail('no_credential', `"${ctx.entityName}" has no stored password or key any more.`),
+    };
+  }
+  if (source.kind === 'password') {
+    const scriptPath = writeAskpassScriptFile(deps.storageDir, process.platform);
+    return {
+      ok: true,
+      auth: 'askpass',
+      // spawn REPLACES the environment rather than merging it (unlike
+      // createTerminal), so the parent's PATH and HOME must be carried in
+      // explicitly — without them ssh is unresolvable and known_hosts is not
+      // found.
+      env: { ...process.env, ...askpassEnv(scriptPath, source.password, process.platform) },
+    };
+  }
+  if (source.kind === 'keyPath') {
+    return { ok: true, keyPath: source.path, env: { ...process.env }, auth: 'key' };
+  }
+  try {
+    // A name of this call's own, not the entity's: the file name decides who
+    // may delete it, and a shared one meant the first call to finish pulled the
+    // key out from under every other that was still authenticating with it —
+    // including a human terminal open on the same entity.
+    const keyPath = materializePrivateKey(
+      deps.storageDir,
+      `${source.keyEntityId}-${crypto.randomUUID()}`,
+      source.content,
+    );
+    return { ok: true, keyPath, env: { ...process.env }, auth: 'key', materialized: keyPath };
+  } catch (error) {
+    return {
+      ok: false,
+      result: fail(
+        'internal',
+        `Could not write the stored key to disk: ${error instanceof Error ? error.message : String(error)}`,
+      ),
+    };
+  }
+}
+
+export function sshExecAction(deps: SshUseDeps): UseAction {
+  return {
+    kind: 'ssh',
+    action: 'exec',
+    verb: 'run a command on',
+    describeOutcome(result) {
+      const body = result.body as ExecResponseBody;
+      if (body.timedOut) {
+        return 'timed out';
+      }
+      return `exit ${body.exitCode ?? 'killed'}`;
+    },
+    validate(body) {
+      const command = (body as { command?: unknown }).command;
+      const checked = validateRemoteCommand(command);
+      return checked.ok ? { ok: true } : { ok: false, message: checked.message };
+    },
+    summarize(body) {
+      return String((body as { command?: unknown }).command ?? '');
+    },
+    async run(ctx, body): Promise<UseActionResult> {
+      const entity = entityFor(deps, ctx);
+      if (entity === undefined) {
+        return fail('not_found', `"${ctx.entityName}" no longer exists in the vault.`);
+      }
+      // Before anything decrypts a key to disk: an entity whose host was
+      // cleared after the grant was minted cannot be connected to, and writing
+      // key material only to refuse the call left it lying there until the next
+      // activate.
+      if (!entity.host) {
+        return fail('no_credential', `"${ctx.entityName}" has no host configured.`);
+      }
+      const release = deps.acquireExecSlot();
+      if (release === undefined) {
+        return fail('too_many_requests', 'Too many SSH commands are already running.');
+      }
+      const prepared = await prepareAuth(deps, ctx, entity);
+      if (!prepared.ok) {
+        release();
+        return prepared.result;
+      }
+      try {
+        const argv = buildSshExecArgv(
+          entity,
+          prepared.keyPath,
+          String((body as { command: string }).command),
+          prepared.auth,
+        ) as string[]; // the host was checked above
+        const outcome = await runSshExec(argv, {
+          env: prepared.env,
+          timeoutMs: clampExecTimeout((body as { timeoutMs?: unknown }).timeoutMs),
+          signal: deps.signal,
+        });
+        const response: ExecResponseBody = outcome;
+        return { status: 200, body: response };
+      } catch (error) {
+        return fail(
+          'internal',
+          `Could not run ssh: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      } finally {
+        if (prepared.materialized !== undefined) {
+          fs.rmSync(prepared.materialized, { force: true });
+        }
+        release();
+      }
+    },
+  };
+}
+
+export function sshTerminalAction(deps: SshUseDeps): UseAction {
+  return {
+    kind: 'ssh',
+    action: 'terminal',
+    verb: 'open an interactive terminal to',
+    describeOutcome: () => 'opened',
+    validate: () => ({ ok: true }),
+    summarize(_body) {
+      return 'open an interactive SSH terminal in VS Code';
+    },
+    async run(ctx): Promise<UseActionResult> {
+      const entity = entityFor(deps, ctx);
+      if (entity === undefined) {
+        return fail('not_found', `"${ctx.entityName}" no longer exists in the vault.`);
+      }
+      // The human's own Connect path, verbatim: same terminal name, same
+      // askpass env, same key cleanup on close.
+      await connectEntity(ctx.accountId, entity, deps.storage, deps.storageDir);
+      void vscode.window.showInformationMessage(
+        `Claude Code opened an SSH terminal for "${ctx.entityName}"${
+          describeSshTarget(entity) === undefined ? '' : ` (${describeSshTarget(entity)})`
+        }.`,
+      );
+      const response: TerminalResponseBody = { opened: true };
+      return { status: 200, body: response };
+    },
+  };
+}
