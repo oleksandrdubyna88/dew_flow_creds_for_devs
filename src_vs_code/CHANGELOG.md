@@ -18,7 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Old v1 backups keep restoring exactly as before.
 
 - **`Start VPN` assumed `openvpn.exe` is on PATH. On Windows it never is.** The
-  community edition installs into `Program Files\OpenVPNin` without touching PATH —
+  community edition installs into `Program Files\OpenVPN\bin` without touching PATH —
   so the composed command died with *"cannot find the file"*. The binary is now resolved
   first: PATH, then the known install folders, with the full path quoted into the
   command. When nothing is found, the message names every location that was tried.
