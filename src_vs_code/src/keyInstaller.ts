@@ -3,6 +3,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { EntityMetadata } from './types';
+import { askpassScript } from './sshAskpass';
 
 /**
  * Writing SSH key material to disk:
@@ -123,6 +124,20 @@ export function materializeVpnConfig(
   fs.writeFileSync(configPath, ensureTrailingNewline(content), { mode: 0o600 });
   fs.chmodSync(configPath, 0o600);
   return configPath;
+}
+
+/**
+ * Write the static askpass helper script (it names an env variable, it holds
+ * no secret) into the same purged `keys/` directory and return its path.
+ * Idempotent — the content never varies, so every caller shares one file.
+ */
+export function writeAskpassScriptFile(storageDir: string, platform: NodeJS.Platform): string {
+  const script = askpassScript(platform);
+  const keysDir = path.join(storageDir, 'keys');
+  fs.mkdirSync(keysDir, { recursive: true, mode: 0o700 });
+  const scriptPath = path.join(keysDir, script.name);
+  fs.writeFileSync(scriptPath, script.content, { mode: 0o700 });
+  return scriptPath;
 }
 
 /** Best-effort delete of one materialized key (after the SSH session ends). */

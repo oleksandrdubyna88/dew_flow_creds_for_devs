@@ -1,7 +1,7 @@
 import * as http from 'node:http';
 import * as crypto from 'node:crypto';
-import type { AddressInfo } from 'node:net';
 import * as vscode from 'vscode';
+import { startLoopbackServer } from './loopbackServer';
 import {
   GOOGLE_TOKEN_ENDPOINT,
   buildGoogleAuthUrl,
@@ -332,17 +332,6 @@ async function refreshIdToken(
 
 function normalizeScopes(scopes: readonly string[]): string {
   return [...scopes].sort().join(' ');
-}
-
-function startLoopbackServer(): Promise<{ server: http.Server; port: number }> {
-  return new Promise((resolve, reject) => {
-    const server = http.createServer();
-    server.on('error', reject);
-    server.listen(0, '127.0.0.1', () => {
-      const address = server.address() as AddressInfo;
-      resolve({ server, port: address.port });
-    });
-  });
 }
 
 /** Resolve with the auth code from Google's loopback redirect. */

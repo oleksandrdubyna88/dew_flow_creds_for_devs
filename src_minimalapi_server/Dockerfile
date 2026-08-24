@@ -24,33 +24,35 @@ COPY src_minimalapi_server/src/CredVaultServer.csproj src_minimalapi_server/src/
 RUN dotnet restore src_minimalapi_server/src/CredVaultServer.csproj -a $TARGETARCH
 
 COPY src_minimalapi_server/src/ src_minimalapi_server/src/
+RUN mkdir /empty
 RUN dotnet publish src_minimalapi_server/src/CredVaultServer.csproj         -c Release         -a $TARGETARCH         -o /app         --no-restore
 
 # ---------------------------------------------------------------------------
-# runtime — no .NET runtime: the binary IS the app
+# runtime — chiseled: no shell, no package manager, no .NET, ~13 MB of Ubuntu.
+# The binary IS the app, and the health probe is the binary itself (--healthcheck),
+# because there is no curl in here and nothing to run one with.
 # ---------------------------------------------------------------------------
-FROM mcr.microsoft.com/dotnet/runtime-deps:10.0 AS runtime
-
-# curl is here only so HEALTHCHECK below can be a real request rather than a guess.
-RUN apt-get update     && apt-get install -y --no-install-recommends curl     && rm -rf /var/lib/apt/lists/*
-
-# A dedicated unprivileged account. The data directory is the ONLY path the app may
-# write, which is what lets the container run with a read-only root filesystem.
-RUN groupadd --system --gid 10001 vault     && useradd --system --uid 10001 --gid vault --no-create-home vault     && mkdir -p /data     && chown -R vault:vault /data
+FROM mcr.microsoft.com/dotnet/runtime-deps:10.0-noble-chiseled AS runtime
 
 WORKDIR /app
 COPY --from=build --chown=root:root /app/CredVaultServer /app/appsettings.json ./
+# A chiseled image has no mkdir; the writable directories arrive as COPIED empty dirs,
+# owned by the same uid 10001 the compose init service chowns bind mounts to.
+COPY --from=build --chown=10001:10001 /empty /data
+COPY --from=build --chown=10001:10001 /empty /logs
 
 ENV ASPNETCORE_URLS=http://+:8080     ASPNETCORE_ENVIRONMENT=Production     Vault__DataDir=/data     Logging__Directory=/logs
 
 EXPOSE 8080
 VOLUME ["/data", "/logs"]
 
-USER vault
+# Numeric, because there is no /etc/passwd to name an account in — and numeric is what
+# the compose file and the init chown already speak.
+USER 10001:10001
 
 # The app answers /api/health by probing that the data directory is writable, so this
 # check fails when the volume is gone or full — the failure modes that actually strand
 # a 24/7 deployment — and not merely when the process is alive.
-HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3     CMD curl --fail --silent --show-error http://127.0.0.1:8080/api/health || exit 1
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3     CMD ["/app/CredVaultServer", "--healthcheck"]
 
 ENTRYPOINT ["./CredVaultServer"]

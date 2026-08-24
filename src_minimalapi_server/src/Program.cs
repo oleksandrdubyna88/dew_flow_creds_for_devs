@@ -7,6 +7,13 @@ using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.IdentityModel.Tokens;
 using Serilog;
 
+// `--healthcheck` is the container HEALTHCHECK exec'ing this same binary: the chiseled
+// image has no shell and no curl to ask with. Handled before any host is built.
+if (args is ["--healthcheck"])
+{
+    return await HealthProbe.RunAsync();
+}
+
 var builder = WebApplication.CreateBuilder(args);
 
 // First statement after the builder: a host that crashes while wiring itself up is
@@ -492,6 +499,8 @@ if (config.GetValue("Vault:PublishInstanceFile", true))
 try
 {
     app.Run();
+
+return 0;
 }
 catch (Exception ex)
 {

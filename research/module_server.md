@@ -287,5 +287,13 @@ startup-guard and log-file checks, the Linux AOT image built and running — and
 
 Release (`server-v*` tag): per-architecture image builds on native runners (amd64 + arm64 — AOT does
 not cross-compile under qemu) stitched into one `ghcr.io` manifest, plus four standalone binaries
-(linux-x64, linux-arm64, win-x64, win-arm64) attached to the GitHub release. The runtime image is
-`runtime-deps` — no .NET in it at all; the entrypoint is the binary itself.
+(linux-x64, linux-arm64, win-x64, win-arm64) attached to the GitHub release.
+
+The runtime image is `runtime-deps:10.0-noble-chiseled` — **50 MB**, no shell, no package manager, no
+.NET; the entrypoint is the binary. That killed curl, so the container HEALTHCHECK execs the binary
+itself: `CredVaultServer --healthcheck` (`HealthProbe`) asks the running instance for `/api/health`
+over the same `ASPNETCORE_URLS` Kestrel binds on, wildcard binds probed via loopback, and maps the
+answer to an exit code. A chiseled image also has no `mkdir` and no `/etc/passwd`: the writable
+directories arrive as COPIED empty dirs owned by uid 10001, and `USER` is numeric — the same number
+the compose init service chowns bind mounts to. The first cut of the image was 275 MB (Debian +
+curl + 42 MB of `.dbg` symbols the COPY dragged along); the path down was measured, not guessed.

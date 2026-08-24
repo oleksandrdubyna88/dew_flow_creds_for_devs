@@ -1,8 +1,8 @@
 import * as crypto from 'node:crypto';
 import * as http from 'node:http';
-import type { AddressInfo } from 'node:net';
 import * as vscode from 'vscode';
 import { webauthnUserHandle } from './cryptoUtils';
+import { startLoopbackServer } from './loopbackServer';
 
 /**
  * Security-key unlock via WebAuthn + the **PRF** extension.
@@ -94,8 +94,8 @@ async function runFlow(
     ),
   });
 
-  const server = http.createServer();
-  const port = await listen(server);
+  // Bound to loopback only; the browser reaches it through `localhost`.
+  const { server, port } = await startLoopbackServer();
   const url = `http://${RP_ID}:${port}/${pathToken}`;
 
   try {
@@ -129,16 +129,6 @@ async function runFlow(
   } finally {
     server.close();
   }
-}
-
-function listen(server: http.Server): Promise<number> {
-  return new Promise((resolve, reject) => {
-    server.on('error', reject);
-    // Bind loopback only; the browser reaches it through `localhost`.
-    server.listen(0, '127.0.0.1', () => {
-      resolve((server.address() as AddressInfo).port);
-    });
-  });
 }
 
 function waitForResult(
