@@ -4,6 +4,44 @@ All notable changes to **CredsForDevs** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.31.0] — 2026-08-24
+
+### Security
+
+- **`Backup to NAS` destroyed a registered security key.** It asked for a master PIN and
+  wrote the old PIN-only envelope — over **the same file the sync location uses**, since
+  both sides get the name from `planBackupFileNames`. A vault with a YubiKey registered
+  therefore came back as one without: the key wraps were not migrated, they were
+  overwritten. Nothing failed and nothing warned; the key simply stopped opening the
+  vault, and the only way back was a snapshot from before the backup.
+
+  The command now looks at what is already in that file. A wrapped vault is unlocked
+  through its own key slots — the security key is touched, or a stored PIN is used — and
+  written back with its wraps intact. The PIN is asked for only when there is genuinely
+  no other key: a vault that does not exist yet, or an old PIN-only one. Content that
+  cannot be parsed counts as a vault to protect, not as a blank slate.
+
+  If you took a backup between registering a key and this release, re-register the key.
+
+### Added
+
+- **`Set Backup Schedule…` on the account menu** — hourly, every 6 hours, daily, weekly,
+  off, or a custom number of hours. The interval was only ever reachable by editing
+  `settings.json`, which is not "choose a folder and how often", and the menu offered the
+  folder while quietly keeping the other half to itself.
+
+  Per account, like the folder, because the menu item sits on an account: a schedule set
+  there that silently changed every other account would be a worse surprise than no menu
+  item at all. Accounts without one keep using `backupIntervalHours`.
+
+### Fixed
+
+- **Two menu items shared one slot and neither could say which came first.** The account
+  menu had the new schedule item colliding with *Set Sync PIN*, and *Clone…* had been
+  sitting on *Move to Folder*'s slot since 0.26.0. VS Code picks an order and renders
+  something — which is why this went unnoticed. There is now a test for it, next to the
+  one for `3_manage@0b`; it was written first and failed on both.
+
 ## [0.30.0] — 2026-08-24
 
 ### Fixed

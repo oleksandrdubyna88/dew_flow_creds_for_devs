@@ -7,6 +7,8 @@ import { validatePin } from './pinPolicy';
 import { sharesFromEnvelope } from './shareFormat';
 import { StorageManager } from './storageManager';
 import { StoredAccount, isBackupBundle } from './types';
+import { backupWriteMode } from './backupPlan';
+import { VaultKeys } from './vaultKeys';
 
 const CONFIG_SECTION = 'credSshManager';
 const NAS_PATH_SETTING = 'nasBackupPath';
@@ -83,7 +85,10 @@ async function resolveNasDirectory(): Promise<vscode.Uri | undefined> {
 }
 
 /** "Backup to NAS": one encrypted file per logged-in account profile. */
-export async function backupToNas(storage: StorageManager): Promise<void> {
+export async function backupToNas(
+  storage: StorageManager,
+  vaultKeys: VaultKeys,
+): Promise<void> {
   const accounts = storage.getAccounts();
   if (accounts.length === 0) {
     void vscode.window.showInformationMessage(
@@ -99,10 +104,19 @@ export async function backupToNas(storage: StorageManager): Promise<void> {
       return;
     }
   }
-  const pin = await promptMasterPin('Backup to NAS', true);
-  if (pin === undefined) {
-    return;
-  }
+  // The PIN is asked for LAZILY, and only for a vault that has no other key. Asking up
+  // front is what made this command look like it did not know about the security key —
+  // and it did not: it wrote the PIN-only envelope over the same file sync uses, so a
+  // vault with a key registered came back as one without. See backupPlan.ts.
+  let pin: string | undefined;
+  let pinAsked = false;
+  const askPin = async (): Promise<string | undefined> => {
+    if (!pinAsked) {
+      pinAsked = true;
+      pin = await promptMasterPin('Backup to NAS', true);
+    }
+    return pin;
+  };
 
   // Unique name per account — same email under two providers must not
   // silently overwrite each other's backup file.
@@ -121,21 +135,40 @@ export async function backupToNas(storage: StorageManager): Promise<void> {
         throw new Error('no sync folder configured for this account');
       }
       const fileUri = vscode.Uri.joinPath(dirUri, fileName);
-      // Preserve pending shares living in the existing file's envelope.
+      // Preserve pending shares living in the existing file's envelope — and read the
+      // envelope itself, because what is already in that file decides how it may be
+      // written.
+      let existing: string | undefined;
       let pendingShares: unknown[] = [];
       try {
-        pendingShares = sharesFromEnvelope(
-          Buffer.from(await vscode.workspace.fs.readFile(fileUri)).toString('utf8'),
-        );
+        existing = Buffer.from(await vscode.workspace.fs.readFile(fileUri)).toString('utf8');
+        pendingShares = sharesFromEnvelope(existing);
       } catch {
         // no existing file — nothing to preserve
       }
-      const content = encryptJson(
-        bundle,
-        profilePassphrase(account.accountId, pin),
-        account,
-        pendingShares,
-      );
+
+      let content: string;
+      if (backupWriteMode(existing).kind === 'wrapped') {
+        // Unlock through the vault's own key slots: a registered security key is touched,
+        // a stored PIN is used, and the wraps are carried into what we write. Anything
+        // else here silently removes the ability to open this vault with that key.
+        const key = await vaultKeys.unlock(account, existing, { interactive: true });
+        if (key === undefined) {
+          throw new Error('vault stayed locked — nothing was written, so its keys are intact');
+        }
+        content = vaultKeys.encrypt(bundle, key, account, pendingShares);
+      } else {
+        const entered = await askPin();
+        if (entered === undefined) {
+          throw new Error('no PIN given');
+        }
+        content = encryptJson(
+          bundle,
+          profilePassphrase(account.accountId, entered),
+          account,
+          pendingShares,
+        );
+      }
       await vscode.workspace.fs.writeFile(fileUri, Buffer.from(content, 'utf8'));
       written.push(fileUri.fsPath);
     } catch (error) {

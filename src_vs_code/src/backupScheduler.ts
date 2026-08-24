@@ -1,6 +1,11 @@
 import * as crypto from 'node:crypto';
 import * as vscode from 'vscode';
-import { backupDirFor, backupIntervalHours, backupRetainDays } from './backupPaths';
+import {
+  backupDirFor,
+  backupIntervalHours,
+  backupIntervalHoursFor,
+  backupRetainDays,
+} from './backupPaths';
 import { dueForSnapshot, isSnapshotOf, snapshotFileName, snapshotsToPrune } from './backupSchedule';
 import { StorageManager } from './storageManager';
 import { TransportFactory } from './transportFactory';
@@ -67,8 +72,12 @@ export class BackupScheduler implements vscode.Disposable {
       clearInterval(this.timer);
       this.timer = undefined;
     }
-    if (backupIntervalHours() <= 0) {
-      return; // explicitly disabled
+    // The timer runs whenever ANY account wants snapshots. A global 0 used to stop the
+    // whole scheduler, which would now also silence an account that had asked for a
+    // schedule of its own.
+    const wanted = this.storage.getAccounts().some((a) => backupIntervalHoursFor(a) > 0);
+    if (!wanted && backupIntervalHours() <= 0) {
+      return; // nothing is scheduled anywhere
     }
     this.timer = setInterval(() => void this.runDue(), TICK_MS);
     // One pass now, so a wrong path is discovered immediately rather than in a day.
@@ -104,7 +113,11 @@ export class BackupScheduler implements vscode.Disposable {
 
     const state = this.stateFor(account);
     const last = state.lastRunIso === undefined ? undefined : new Date(state.lastRunIso);
-    if (!force && !dueForSnapshot(last, new Date(), backupIntervalHours())) {
+    const hours = backupIntervalHoursFor(account);
+    if (!force && hours <= 0) {
+      return; // snapshots switched off for this account
+    }
+    if (!force && !dueForSnapshot(last, new Date(), hours)) {
       return;
     }
 

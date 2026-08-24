@@ -2,7 +2,7 @@
   "name": "creds-for-devs",
   "displayName": "CredsForDevs",
   "description": "Credential manager for developers: SSH hosts, keys, VPN configs and database connections in VS Code. Secrets live in the OS keychain; optional end-to-end encrypted sync and team sharing through a self-hosted vault server.",
-  "version": "0.30.0",
+  "version": "0.31.0",
   "//publisher": "PLACEHOLDER — create a publisher at https://marketplace.visualstudio.com/manage and put its id here before `vsce publish`. See docs/PUBLISHING.md.",
   "publisher": "set-your-publisher-id",
   "license": "MIT",
@@ -126,6 +126,15 @@
           "type": "boolean",
           "default": true,
           "markdownDescription": "When you paste a whole command into a terminal entry, read what each flag means by running `<tool> --help` and filling the empty notes.\n\nIt runs the tool **you just typed**, with no shell and no arguments of ours, and only when every word of the command is a plain tool name — anything containing a shell metacharacter is never run. Empty notes only: what you wrote is never overwritten.\n\nTurn it off if you would rather nothing was executed while you edit an entry; the command is still split into rows, and you write the notes yourself."
+        },
+        "credSshManager.accountBackupIntervals": {
+          "type": "object",
+          "default": {},
+          "additionalProperties": {
+            "type": "number",
+            "minimum": 0
+          },
+          "markdownDescription": "Per-account snapshot schedule, in **hours**: maps an account **email** to an interval, e.g. `{ \"work@corp.com\": 24, \"me@gmail.com\": 168 }`. `0` switches snapshots off for that account. Accounts without a mapping use `#credSshManager.backupIntervalHours#`.\n\nEasiest way to set: right-click the account -> *Set Backup Schedule…* — it offers hourly, every 6 hours, daily, weekly, off, or a custom number."
         }
       }
     },
@@ -203,6 +212,10 @@
         "title": "Set Backup Location…",
         "category": "CredsForDevs",
         "icon": "$(archive)"
+      },
+      {
+        "command": "credSshManager.setBackupSchedule",
+        "title": "CredsForDevs: Set Backup Schedule…"
       },
       {
         "command": "credSshManager.toggleSsh",
@@ -526,9 +539,14 @@
           "group": "3_manage@2"
         },
         {
-          "command": "credSshManager.setSyncPin",
+          "command": "credSshManager.setBackupSchedule",
           "when": "view == credSshManagerView && viewItem == account",
           "group": "3_manage@3"
+        },
+        {
+          "command": "credSshManager.setSyncPin",
+          "when": "view == credSshManagerView && viewItem == account",
+          "group": "3_manage@4"
         },
         {
           "command": "credSshManager.addSecurityKey",
@@ -553,7 +571,7 @@
         {
           "command": "credSshManager.removeAccount",
           "when": "view == credSshManagerView && viewItem == account",
-          "group": "3_manage@4"
+          "group": "3_manage@5"
         },
         {
           "command": "credSshManager.toggleSsh",
@@ -683,7 +701,7 @@
         {
           "command": "credSshManager.deleteNode",
           "when": "view == credSshManagerView && viewItem =~ /^(folder|entity)/",
-          "group": "3_manage@3"
+          "group": "3_manage@4"
         },
         {
           "command": "credSshManager.runCommand",
@@ -708,7 +726,7 @@
         {
           "command": "credSshManager.cloneNode",
           "when": "view == credSshManagerView && viewItem =~ /^(folder|entity)/",
-          "group": "3_manage@2"
+          "group": "3_manage@3"
         },
         {
           "command": "credSshManager.startVpn",

@@ -109,3 +109,32 @@ test('the product name is consistent across every command category', () => {
 
   assert.deepEqual([...categories], ['CredsForDevs']);
 });
+
+test('no two menu items compete for the same slot', () => {
+  // The sibling of the `3_manage@0b` bug: a valid number that another item already uses.
+  // Nothing errors, VS Code picks an order, and the menu you get is not the menu you
+  // wrote — which is invisible until somebody notices an item moved.
+  const menus = manifest.contributes.menus;
+  const clashes: string[] = [];
+
+  for (const menu of Object.keys(menus)) {
+    const items = menus[menu];
+    const seen = new Map<string, string[]>();
+    for (const item of items) {
+      if (item.group === undefined) {
+        continue;
+      }
+      const slot = `${item.when ?? ''}::${item.group}`;
+      const at = seen.get(slot) ?? [];
+      at.push(item.command);
+      seen.set(slot, at);
+    }
+    for (const [slot, commands] of seen) {
+      if (commands.length > 1) {
+        clashes.push(`${menu} ${slot} -> ${commands.join(', ')}`);
+      }
+    }
+  }
+
+  assert.deepEqual(clashes, []);
+});

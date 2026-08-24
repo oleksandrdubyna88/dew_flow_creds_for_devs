@@ -16,7 +16,13 @@ import { EntityFormValues, KeyCandidate, showEntityForm } from './entityFormPane
 import { showEntityView } from './entityViewPanel';
 import { GoogleAuthProvider } from './googleAuthProvider';
 import { nasPathFor, setAccountNasPath } from './nasPaths';
-import { backupPathFor, setAccountBackupPath } from './backupPaths';
+import {
+  backupIntervalHoursFor,
+  backupPathFor,
+  setAccountBackupInterval,
+  setAccountBackupPath,
+} from './backupPaths';
+import { INTERVAL_CHOICES, describeInterval } from './backupSchedule';
 import { buildCommandLine, describeCommand } from './commandLine';
 import { SyncReadiness, syncReadiness } from './syncReadiness';
 import { BackupScheduler } from './backupScheduler';
@@ -448,6 +454,65 @@ ${detail}
       `${element.account.email}: snapshots will be written to ${folder}.`,
     );
     void backups.runDue(true);
+  });
+
+  register('credSshManager.setBackupSchedule', async (target) => {
+    const element = asElement(target);
+    if (element?.kind !== 'account') {
+      return;
+    }
+    const current = backupIntervalHoursFor(element.account);
+    const items: (vscode.QuickPickItem & { hours?: number; custom?: boolean })[] = [
+      ...INTERVAL_CHOICES.map((c) => ({
+        label: c.label,
+        detail: c.detail,
+        description: c.hours === current ? '$(check) current' : undefined,
+        hours: c.hours,
+      })),
+      { label: 'Custom…', detail: 'Any number of hours', custom: true },
+    ];
+    const picked = await vscode.window.showQuickPick(items, {
+      title: `How often to snapshot ${element.account.email}`,
+      placeHolder: `Currently: ${describeInterval(current)}`,
+      ignoreFocusOut: true,
+    });
+    if (picked === undefined) {
+      return;
+    }
+
+    let hours = picked.hours;
+    if (picked.custom === true) {
+      const entered = await vscode.window.showInputBox({
+        title: 'Snapshot interval',
+        prompt: 'Hours between snapshots. 0 switches them off.',
+        value: String(current),
+        ignoreFocusOut: true,
+        validateInput: (v) => {
+          const n = Number(v);
+          return Number.isFinite(n) && n >= 0 && Number.isInteger(n)
+            ? undefined
+            : 'A whole number of hours, 0 or more.';
+        },
+      });
+      if (entered === undefined) {
+        return;
+      }
+      hours = Number(entered);
+    }
+    if (hours === undefined) {
+      return;
+    }
+
+    // No reschedule() call: the scheduler's own configuration listener restarts it.
+    await setAccountBackupInterval(element.account.email, hours);
+    const where = backupPathFor(element.account);
+    void vscode.window.showInformationMessage(
+      hours <= 0
+        ? `${element.account.email}: snapshots switched off. The sync location is unaffected.`
+        : where === undefined
+          ? `${element.account.email}: ${describeInterval(hours).toLowerCase()} — but no snapshot folder is set yet. Use "Set Backup Location…".`
+          : `${element.account.email}: ${describeInterval(hours).toLowerCase()} snapshots into ${where}.`,
+    );
   });
 
   register('credSshManager.backupNow', async () => {
@@ -1433,7 +1498,7 @@ ${detail}
 
   // ---------- backup ----------
 
-  const runBackup = () => backupToNas(storage);
+  const runBackup = () => backupToNas(storage, vaultKeys);
   const runRestore = () => restoreFromBackup(storage, mutated);
   register('credSshManager.backupToNas', runBackup);
   register('credSshManager.restoreBackup', runRestore);

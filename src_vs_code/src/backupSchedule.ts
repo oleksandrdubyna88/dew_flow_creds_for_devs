@@ -111,3 +111,46 @@ export function dueForSnapshot(
   const elapsed = now.getTime() - lastRun.getTime();
   return elapsed < 0 || elapsed >= intervalHours * 60 * 60 * 1000;
 }
+
+/**
+ * A schedule as a person would say it. The setting is in hours because a timer needs
+ * hours; nobody chooses a backup schedule by thinking "168", so the menu must not make
+ * them. Anything that divides evenly into days is said in days.
+ */
+export function describeInterval(hours: number): string {
+  if (hours <= 0) {
+    return 'Off';
+  }
+  if (hours === 1) {
+    return 'Hourly';
+  }
+  if (hours === 24) {
+    return 'Daily';
+  }
+  if (hours === 168) {
+    return 'Weekly';
+  }
+  if (hours % 24 === 0) {
+    return `Every ${hours / 24} days`;
+  }
+  return `Every ${hours} hours`;
+}
+
+export interface IntervalChoice {
+  hours: number;
+  label: string;
+  detail: string;
+}
+
+/** What the menu offers. A custom number is still available behind "Custom…". */
+export const INTERVAL_CHOICES: readonly IntervalChoice[] = [
+  { hours: 1, label: describeInterval(1), detail: 'For a vault that changes all day' },
+  { hours: 6, label: describeInterval(6), detail: 'Four snapshots a day' },
+  { hours: 24, label: describeInterval(24), detail: 'The default — one a day' },
+  { hours: 168, label: describeInterval(168), detail: 'One a week' },
+  {
+    hours: 0,
+    label: describeInterval(0),
+    detail: 'No snapshots for this account. The sync location is unaffected.',
+  },
+];

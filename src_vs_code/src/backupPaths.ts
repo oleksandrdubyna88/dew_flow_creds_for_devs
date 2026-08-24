@@ -65,6 +65,36 @@ export function backupIntervalHours(): number {
   return config().get<number>('backupIntervalHours', 24);
 }
 
+const ACCOUNT_INTERVALS_SETTING = 'accountBackupIntervals';
+
+/**
+ * How often THIS account snapshots. Per-account for the same reason the folder is:
+ * the menu item sits on an account, and a schedule set there that silently changed
+ * every other account would be a worse surprise than no menu item at all.
+ */
+export function backupIntervalHoursFor(account: StoredAccount): number {
+  const raw = config().get<Record<string, number>>(ACCOUNT_INTERVALS_SETTING, {});
+  const key = Object.keys(raw).find((k) => k.toLowerCase() === account.email.toLowerCase());
+  const own = key === undefined ? undefined : raw[key];
+  return typeof own === 'number' && own >= 0 ? own : backupIntervalHours();
+}
+
+/** Persist a per-account schedule (undefined clears it back to the global default). */
+export async function setAccountBackupInterval(
+  email: string,
+  hours: number | undefined,
+): Promise<void> {
+  const raw = { ...config().get<Record<string, number>>(ACCOUNT_INTERVALS_SETTING, {}) };
+  const key =
+    Object.keys(raw).find((k) => k.toLowerCase() === email.toLowerCase()) ?? email.toLowerCase();
+  if (hours === undefined) {
+    delete raw[key];
+  } else {
+    raw[key] = hours;
+  }
+  await config().update(ACCOUNT_INTERVALS_SETTING, raw, vscode.ConfigurationTarget.Global);
+}
+
 export function backupRetainDays(): number {
   return config().get<number>('backupRetainDays', 30);
 }

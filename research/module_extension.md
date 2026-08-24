@@ -214,6 +214,32 @@ rendered its name and nothing else in the viewer and in `Copy All`, and neither 
 where it lived. An entire entity kind was missing from both and no suite could notice. The
 regression test exists because of the move — which is the argument for the rule generally.
 
+### Snapshots: two settings, both per-account
+
+The folder (`accountBackupPaths` → `backupLocation`) and the schedule (`accountBackupIntervals` →
+`backupIntervalHours`) are shaped identically and set from the same account menu — *Set Backup
+Location…* and *Set Backup Schedule…*. Per-account because the menu item sits on an account, and a
+schedule set there that silently changed every other account is a worse surprise than no menu item.
+
+`describeInterval` / `INTERVAL_CHOICES` live in `backupSchedule.ts` (pure): the setting is in hours
+because a timer needs hours, and nobody picks a schedule by thinking "168". The scheduler's own
+`onDidChangeConfiguration` listener restarts it, so writing the setting is the whole of applying it —
+there is deliberately no second `reschedule()` path.
+
+### `Backup to NAS` and the key wraps
+
+`backupPlan.ts` decides how a vault file may be written, and it exists because the answer was wrong.
+`backupToNas` asked for a master PIN and wrote the PIN-only v1 envelope — over **the same file the
+sync transport uses**, since both take the name from `planBackupFileNames`. A vault with a security
+key registered came back as one without: the wraps were overwritten, silently, and the key stopped
+opening it.
+
+`backupWriteMode(existingRaw)` now reads what is in that file. `wrapped` → unlock through the vault's
+own key slots (`VaultKeys.unlock` + `VaultKeys.encrypt`, so the wraps are carried across); `pin` →
+only for a vault that does not exist yet or a genuine v1 one, and the prompt is lazy. **Unparseable
+content returns `wrapped`**: guessing "no wraps" from a parse failure is exactly how they would be
+overwritten, so the unsafe answer is never the default.
+
 ### Clone
 
 `cloneNode` copies a folder or entity's settings and deliberately **not** its secrets. Duplicating

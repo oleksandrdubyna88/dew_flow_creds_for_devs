@@ -5,6 +5,8 @@ import {
   isSnapshotOf,
   snapshotFileName,
   snapshotsToPrune,
+  describeInterval,
+  INTERVAL_CHOICES,
 } from '../backupSchedule';
 
 /**
@@ -121,4 +123,36 @@ test('a clock that jumped backwards does not disable snapshots forever', () => {
   const last = new Date('2027-01-01T00:00:00Z');
 
   assert.equal(dueForSnapshot(last, AUGUST, 24), true);
+});
+
+test('an interval reads as a schedule, not as a number of hours', () => {
+  // The setting is hours because a timer needs hours. Nobody picks a backup schedule by
+  // thinking "168", so the menu must not ask them to.
+  assert.equal(describeInterval(0), 'Off');
+  assert.equal(describeInterval(1), 'Hourly');
+  assert.equal(describeInterval(6), 'Every 6 hours');
+  assert.equal(describeInterval(24), 'Daily');
+  assert.equal(describeInterval(168), 'Weekly');
+  assert.equal(describeInterval(72), 'Every 3 days');
+  assert.equal(describeInterval(2), 'Every 2 hours');
+});
+
+test('a half-day and other odd values still describe themselves', () => {
+  assert.equal(describeInterval(12), 'Every 12 hours');
+  assert.equal(describeInterval(336), 'Every 14 days');
+});
+
+test('a negative interval is Off, not a schedule running backwards', () => {
+  assert.equal(describeInterval(-5), 'Off');
+});
+
+test('the offered choices cover the schedules people actually ask for', () => {
+  const hours = INTERVAL_CHOICES.map((c) => c.hours);
+
+  assert.deepEqual(hours, [1, 6, 24, 168, 0]);
+  // Every choice must be able to say what it is, or the menu shows a bare number.
+  for (const choice of INTERVAL_CHOICES) {
+    assert.equal(choice.label, describeInterval(choice.hours));
+    assert.ok(choice.detail.length > 0, `no detail for ${choice.hours}`);
+  }
 });
