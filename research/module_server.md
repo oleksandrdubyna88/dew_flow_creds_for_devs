@@ -258,3 +258,34 @@ Environment form uses `__` as the section separator: `Vault__AllowedDomains`.
 
 Test-only: `xunit.v3`, `FluentAssertions` (pinned at 7.2.2 — 8.x is not Apache-2.0),
 `Microsoft.AspNetCore.Mvc.Testing`, `System.IdentityModel.Tokens.Jwt`.
+
+
+## Native AOT (2026-08-24)
+
+The server publishes **Native AOT**: `PublishAot` in the csproj, so `dotnet publish -r <rid>` produces
+one static binary (~21 MB) with no .NET runtime beside it. Ordinary builds and the
+WebApplicationFactory tests stay JIT; the trim/AOT analyzers run on every build, so an incompatible
+pattern fails at compile time.
+
+What it took, each a real blocker found by building:
+
+- **One source-generated JSON contract** (`AppJsonContext` / `InstanceJsonContext`): the reflection
+  serializer is the biggest AOT blocker in a minimal API. Every HTTP call site passes its
+  `JsonTypeInfo` explicitly; anonymous response types became `ErrorDto` / `HealthDto`; the shares
+  stream is materialized (the inbox is capped anyway).
+- **`(HttpContext) => Task` lambdas** match `RequestDelegate` itself and the request-delegate
+  generator mis-intercepts them (CS9144) — each takes a `CancellationToken` now.
+- **`Serilog.Settings.Configuration` is reflection by design** (finds sinks by scanning assemblies).
+  Replaced with explicit reads of the same `Serilog:MinimumLevel:*` keys, so the "levels from
+  config" contract survives without the scanning. Core Serilog's residual IL2104 (internal `@`
+  destructuring, unused here) is suppressed in the server csproj alone, with the behaviour verified
+  by running the AOT binary: console and per-run file logs both checked.
+
+Verified locally before CI ever saw it: 53/53 JIT tests, the win-x64 binary booting with health,
+startup-guard and log-file checks, the Linux AOT image built and running — and the extension's
+13-check transport itest green against BOTH.
+
+Release (`server-v*` tag): per-architecture image builds on native runners (amd64 + arm64 — AOT does
+not cross-compile under qemu) stitched into one `ghcr.io` manifest, plus four standalone binaries
+(linux-x64, linux-arm64, win-x64, win-arm64) attached to the GitHub release. The runtime image is
+`runtime-deps` — no .NET in it at all; the entrypoint is the binary itself.

@@ -5,6 +5,17 @@
     <!-- The test project drives the app in-process through WebApplicationFactory,
          which needs the generated entry point to be visible to it. -->
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <!-- Native AOT. Affects `dotnet publish -r <rid>`; ordinary builds and the
+         WebApplicationFactory tests stay JIT. The trim/AOT analyzers run on every
+         build though, so an incompatible pattern fails at compile time, not on a
+         release runner. -->
+    <PublishAot>true</PublishAot>
+    <StripSymbols>true</StripSymbols>
+    <!-- IL2104 comes from Serilog CORE's internals (reflection inside `@` destructuring,
+         which no call site here uses — templates render scalars only). A library-internal
+         warning we cannot fix and have verified does not bite: the AOT binary's console
+         and file logs are checked by running it. Scoped here, never solution-wide. -->
+    <NoWarn>$(NoWarn);IL2104</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>

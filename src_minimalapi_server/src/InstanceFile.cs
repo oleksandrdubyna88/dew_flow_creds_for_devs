@@ -45,7 +45,6 @@ public static class InstanceFile
 {
     private const string ServiceName = "cred-vault-server";
 
-    private static readonly JsonSerializerOptions Json = new() { WriteIndented = true };
 
     /// <summary>Per-user, not per-checkout: an editor window opened anywhere has to find it.</summary>
     public static string Path { get; } = System.IO.Path.Combine(
@@ -79,7 +78,7 @@ public static class InstanceFile
                 [new PublishedApp("Health", $"{url.TrimEnd('/')}/api/health")]);
 
             Directory.CreateDirectory(System.IO.Path.GetDirectoryName(Path)!);
-            File.WriteAllText(Path, JsonSerializer.Serialize(instance, Json));
+            File.WriteAllText(Path, JsonSerializer.Serialize(instance, InstanceJsonContext.Default.PublishedInstance));
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or NotSupportedException)
         {

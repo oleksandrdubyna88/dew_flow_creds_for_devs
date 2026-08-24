@@ -14,7 +14,7 @@ public sealed class VaultStore
 {
     private readonly string _vaultsDir;
     private readonly string _sharesDir;
-    private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
+
 
     public VaultStore(string dataDir)
     {
@@ -174,7 +174,7 @@ public sealed class VaultStore
         var dir = Path.Combine(_sharesDir, KeyFor(recipientEmail));
         Directory.CreateDirectory(dir);
         var path = Path.Combine(dir, item.Id + ".json");
-        await AtomicWriteAsync(path, JsonSerializer.SerializeToUtf8Bytes(item, Json), ct);
+        await AtomicWriteAsync(path, JsonSerializer.SerializeToUtf8Bytes(item, AppJsonContext.Default.ShareItem), ct);
     }
 
     /// <summary>Number of pending shares for a recipient (for quota checks).</summary>
@@ -245,7 +245,7 @@ public sealed class VaultStore
     {
         try
         {
-            return JsonSerializer.Deserialize<ShareItem>(await File.ReadAllBytesAsync(path, ct), Json);
+            return JsonSerializer.Deserialize(await File.ReadAllBytesAsync(path, ct), AppJsonContext.Default.ShareItem);
         }
         catch (JsonException)
         {

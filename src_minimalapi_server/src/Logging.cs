@@ -45,6 +45,13 @@ public static class CredVaultLogging
     /// is precisely when the log matters, and a logger configured after
     /// <c>Build()</c> has nothing to say about it.
     /// </summary>
+    private static LogEventLevel ParseLevel(string? value, LogEventLevel fallback) =>
+        Enum.TryParse<LogEventLevel>(value, ignoreCase: true, out var level) ? level : fallback;
+
+    private static LoggerConfiguration Apply(
+        this LoggerConfiguration configuration,
+        Func<LoggerConfiguration, LoggerConfiguration> configure) => configure(configuration);
+
     public static void AddCredVaultLogging(this IHostApplicationBuilder builder, string appName)
     {
         var startedUtc = DateTime.UtcNow;
@@ -61,13 +68,29 @@ public static class CredVaultLogging
 
         var configuration = new LoggerConfiguration()
             // Levels come from configuration, never from call sites: changing verbosity is
-            // a config edit and a restart, not an edited binary.
-            .ReadFrom.Configuration(builder.Configuration)
+            // a config edit and a restart, not an edited binary. Read EXPLICITLY rather
+            // than via Serilog.Settings.Configuration — that package discovers sinks by
+            // scanning assemblies, which is reflection a Native AOT binary does not have.
+            // This keeps the same `Serilog:MinimumLevel:*` keys and drops the scanning.
+            .MinimumLevel.Is(ParseLevel(
+                builder.Configuration["Serilog:MinimumLevel:Default"], LogEventLevel.Information))
             .MinimumLevel.Override("Microsoft.AspNetCore", LogEventLevel.Warning)
             .MinimumLevel.Override("System.Net.Http.HttpClient", LogEventLevel.Warning)
             // This service issues no cookies and no antiforgery tokens, so the key-ring
             // warnings it emits on every start are three lines of noise per run.
             .MinimumLevel.Override("Microsoft.AspNetCore.DataProtection", LogEventLevel.Error)
+            .Apply(c =>
+            {
+                foreach (var over in builder.Configuration
+                             .GetSection("Serilog:MinimumLevel:Override").GetChildren())
+                {
+                    if (over.Value is { Length: > 0 })
+                    {
+                        c.MinimumLevel.Override(over.Key, ParseLevel(over.Value, LogEventLevel.Information));
+                    }
+                }
+                return c;
+            })
             .Enrich.FromLogContext()
             .Enrich.WithProperty("Application", appName)
             .Enrich.WithProperty("ProcessId", Environment.ProcessId)

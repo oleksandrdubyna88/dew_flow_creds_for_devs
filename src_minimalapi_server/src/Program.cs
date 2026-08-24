@@ -56,6 +56,11 @@ catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         ex);
 }
 
+// One JSON contract, generated at compile time — the AOT requirement that also makes
+// every JIT build faster. See AppJsonContext.
+builder.Services.ConfigureHttpJsonOptions(o =>
+    o.SerializerOptions.TypeInfoResolverChain.Insert(0, AppJsonContext.Default));
+
 var store = new VaultStore(dataDir);
 builder.Services.AddSingleton(store);
 
@@ -203,7 +208,7 @@ app.UseExceptionHandler(new ExceptionHandlerOptions
         var ex = ctx.Features.Get<IExceptionHandlerFeature>()?.Error;
         log.LogError(ex, "Unhandled error on {Method} {Path}", ctx.Request.Method, ctx.Request.Path);
         ctx.Response.StatusCode = StatusCodes.Status500InternalServerError;
-        await ctx.Response.WriteAsJsonAsync(new { error = "internal error" });
+        await ctx.Response.WriteAsJsonAsync(new ErrorDto("internal error"), AppJsonContext.Default.ErrorDto);
     },
 });
 if (requireHttps)
@@ -280,13 +285,14 @@ app.MapGet("/api/health", () =>
         var probe = Path.Combine(dataDir, ".health-probe");
         File.WriteAllText(probe, "ok");
         File.Delete(probe);
-        return Results.Ok(new { status = "ok", service = "cred-vault-server", storage = "writable" });
+        return Results.Json(new HealthDto("ok", "cred-vault-server", "writable"), AppJsonContext.Default.HealthDto);
     }
     catch (Exception ex)
     {
         log.LogError(ex, "Health probe failed writing to DataDir");
         return Results.Json(
-            new { status = "unhealthy", service = "cred-vault-server", storage = "unwritable" },
+            new HealthDto("unhealthy", "cred-vault-server", "unwritable"),
+            AppJsonContext.Default.HealthDto,
             statusCode: StatusCodes.Status503ServiceUnavailable);
     }
 });
@@ -297,7 +303,9 @@ app.MapGet("/api/whoami", async (HttpContext ctx, CancellationToken ct) =>
     if (caller is null) return;
     var hasVault = await store.ReadVaultAsync(caller.Value.Email, ct) is not null;
     await ctx.Response.WriteAsJsonAsync(
-        new WhoAmIDto(caller.Value.Email, caller.Value.Name, hasVault), ct);
+        new WhoAmIDto(caller.Value.Email, caller.Value.Name, hasVault),
+        AppJsonContext.Default.WhoAmIDto,
+        cancellationToken: ct);
 });
 
 // ----- own vault -----
@@ -363,7 +371,7 @@ app.MapPut("/api/vault", async (HttpContext ctx, CancellationToken ct) =>
 });
 
 // ----- delete my own vault + inbox (account removal) -----
-app.MapDelete("/api/vault", async (HttpContext ctx) =>
+app.MapDelete("/api/vault", async (HttpContext ctx, CancellationToken ct) =>
 {
     var caller = RequireCaller(ctx);
     if (caller is null) return;
@@ -373,7 +381,7 @@ app.MapDelete("/api/vault", async (HttpContext ctx) =>
 });
 
 // ----- team discovery (emails only, same-domain) -----
-app.MapGet("/api/team", async (HttpContext ctx) =>
+app.MapGet("/api/team", async (HttpContext ctx, CancellationToken ct) =>
 {
     var caller = RequireCaller(ctx);
     if (caller is null) return;
@@ -382,7 +390,7 @@ app.MapGet("/api/team", async (HttpContext ctx) =>
         .Where(e => DomainOf(e) == callerDomain)
         .Select(e => new TeamMemberDto(e))
         .ToList();
-    await ctx.Response.WriteAsJsonAsync(members);
+    await ctx.Response.WriteAsJsonAsync(members, AppJsonContext.Default.ListTeamMemberDto);
 });
 
 // ----- shares -----
@@ -390,7 +398,7 @@ app.MapPost("/api/shares", async (HttpContext ctx, CancellationToken ct) =>
 {
     var caller = RequireCaller(ctx);
     if (caller is null) return;
-    var req = await ctx.Request.ReadFromJsonAsync<ShareRequest>(ct);
+    var req = await ctx.Request.ReadFromJsonAsync(AppJsonContext.Default.ShareRequest, ct);
     if (req is null || !req.IsValid())
     {
         ctx.Response.StatusCode = StatusCodes.Status400BadRequest;
@@ -444,7 +452,12 @@ app.MapGet("/api/shares", async (HttpContext ctx, CancellationToken ct) =>
     if (caller is null) return;
     // You can read ONLY your own inbox. Streamed item-by-item — see ListSharesAsync.
     ctx.Response.ContentType = "application/json";
-    await ctx.Response.WriteAsJsonAsync(store.ListSharesAsync(caller.Value.Email, ct), ct);
+    var shares = new List<ShareItem>();
+    await foreach (var item in store.ListSharesAsync(caller.Value.Email, ct))
+    {
+        shares.Add(item);
+    }
+    await ctx.Response.WriteAsJsonAsync(shares, AppJsonContext.Default.ListShareItem, cancellationToken: ct);
 });
 
 app.MapDelete("/api/shares/{id}", async (HttpContext ctx, string id) =>

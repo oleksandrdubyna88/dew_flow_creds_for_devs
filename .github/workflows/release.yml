@@ -20,13 +20,25 @@ permissions:
   contents: read
 
 jobs:
-  server:
-    name: publish server image
+  # Native AOT does not cross-compile under qemu, so each architecture builds on a
+  # runner of that architecture and a manifest job stitches the two digests together.
+  server-image:
+    name: server image (${{ matrix.arch }})
     if: startsWith(github.ref, 'refs/tags/server-v') || inputs.target == 'server'
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-latest
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
       packages: write
+    outputs:
+      digest-amd64: ${{ steps.export.outputs.digest-amd64 }}
+      digest-arm64: ${{ steps.export.outputs.digest-arm64 }}
     steps:
       - uses: actions/checkout@v4
 
@@ -38,27 +50,107 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ghcr.io/${{ github.repository_owner }}/cred-vault-server
-          # `latest` moves only on a real tag, so an operator who pinned :latest
-          # never picks up a workflow_dispatch trial build.
-          tags: |
-            type=match,pattern=server-v(.*),group=1
-            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/server-v') }}
-
-      - uses: docker/build-push-action@v6
+      - id: build
+        uses: docker/build-push-action@v6
         with:
           context: .
           file: src_minimalapi_server/Dockerfile
           push: true
-          # linux/arm64 covers the small ARM VPS this is likely to live on.
-          platforms: linux/amd64,linux/arm64
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          tags: ghcr.io/${{ github.repository_owner }}/cred-vault-server
+          outputs: type=image,push-by-digest=true,name-canonical=true
+          cache-from: type=gha,scope=server-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=server-${{ matrix.arch }}
+
+      - id: export
+        run: echo "digest-${{ matrix.arch }}=${{ steps.build.outputs.digest }}" >> "$GITHUB_OUTPUT"
+
+  server-manifest:
+    name: publish server manifest
+    needs: server-image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Stitch and tag
+        run: |
+          IMAGE=ghcr.io/${{ github.repository_owner }}/cred-vault-server
+          VERSION="${GITHUB_REF_NAME#server-v}"
+          TAGS="-t $IMAGE:$VERSION"
+          # `latest` moves only on a real tag, so an operator who pinned :latest never
+          # picks up a workflow_dispatch trial build.
+          if [[ "$GITHUB_REF" == refs/tags/server-v* ]]; then
+            TAGS="$TAGS -t $IMAGE:latest"
+          else
+            TAGS="-t $IMAGE:manual-$(date +%Y%m%d%H%M 2>/dev/null || echo run)"
+          fi
+          docker buildx imagetools create $TAGS             "$IMAGE@${{ needs.server-image.outputs.digest-amd64 }}"             "$IMAGE@${{ needs.server-image.outputs.digest-arm64 }}"
+
+  # Standalone Native AOT binaries, one per OS/architecture, attached to the release.
+  # Each builds on a machine of its own kind — AOT links with the host toolchain.
+  server-binaries:
+    name: server binary (${{ matrix.rid }})
+    if: startsWith(github.ref, 'refs/tags/server-v')
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - rid: linux-x64
+            runner: ubuntu-latest
+          - rid: linux-arm64
+            runner: ubuntu-24.04-arm
+          - rid: win-x64
+            runner: windows-latest
+          - rid: win-arm64
+            runner: windows-11-arm
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: write   # attach binaries to the release
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Toolchain (linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends clang zlib1g-dev
+
+      - name: Publish
+        run: dotnet publish src_minimalapi_server/src/CredVaultServer.csproj -c Release -r ${{ matrix.rid }} -o out
+
+      - name: Package
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#server-v}"
+          NAME="cred-vault-server-$VERSION-${{ matrix.rid }}"
+          mkdir "$NAME"
+          if [[ "${{ matrix.rid }}" == win-* ]]; then
+            cp out/CredVaultServer.exe "$NAME/"
+            cp src_minimalapi_server/src/appsettings.json "$NAME/"
+            7z a "$NAME.zip" "$NAME" > /dev/null
+            echo "ASSET=$NAME.zip" >> "$GITHUB_ENV"
+          else
+            cp out/CredVaultServer "$NAME/"
+            cp src_minimalapi_server/src/appsettings.json "$NAME/"
+            tar czf "$NAME.tar.gz" "$NAME"
+            echo "ASSET=$NAME.tar.gz" >> "$GITHUB_ENV"
+          fi
+
+      - name: Attach to the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          gh release create "$GITHUB_REF_NAME" --title "cred-vault-server ${GITHUB_REF_NAME#server-v}"             --notes "Native AOT builds. Docker: ghcr.io/${{ github.repository_owner }}/cred-vault-server:${GITHUB_REF_NAME#server-v}"             2>/dev/null || true
+          gh release upload "$GITHUB_REF_NAME" "$ASSET" --clobber
 
   extension:
     name: publish extension
