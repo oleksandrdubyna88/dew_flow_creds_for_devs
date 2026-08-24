@@ -154,15 +154,24 @@ export class VaultKeys {
     const version = vaultContent === undefined ? 1 : safeVersion(vaultContent);
 
     if (version === 1) {
-      const pin = await this.resolvePin(account, options.interactive);
+      // A v1 vault has no security-key wrap to touch, so presence means typing the PIN.
+      const pin = this.lockState.requiresPresence()
+        ? await this.promptPin(account, 'Unlock vault')
+        : await this.resolvePin(account, options.interactive);
       if (pin === undefined) {
         return undefined;
       }
       return { version: 1, passphrase: account.accountId + pin };
     }
 
+    // Unlocking a LOCKED vault has to cost a gesture. Everything below that opens it
+    // from a secret already on this machine — the cache, the stored PIN — is skipped
+    // while the lock stands, or Lock protects nothing on the unattended machine it is
+    // for. See LockState.requiresPresence().
+    const needsGesture = this.lockState.requiresPresence();
+
     const cached = this.cache.get(account.accountId);
-    if (cached?.version === 2) {
+    if (cached?.version === 2 && !needsGesture) {
       return cached;
     }
     const wraps = readVaultWraps(vaultContent!).filter(isKeyWrap);
@@ -170,9 +179,9 @@ export class VaultKeys {
       throw new BackupError('corrupted', 'This vault has no unlock wraps.');
     }
 
-    // 1) the PIN wrap, if a PIN is known/enterable
+    // 1) the PIN wrap, from a PIN already stored — the unattended path
     const pinWrap = wraps.find((w) => w.kind === 'pin');
-    if (pinWrap !== undefined) {
+    if (pinWrap !== undefined && !needsGesture) {
       const pin = await this.resolvePin(account, false);
       if (pin !== undefined) {
         try {

@@ -44,6 +44,24 @@ export class LockState {
   }
 
   /**
+   * Whether opening the vault must involve a GESTURE — a key touch, or the PIN typed —
+   * rather than a secret already sitting on this machine.
+   *
+   * <p>`allowsSilentUnlock` covers the caller that cannot ask. This covers the one that
+   * can, and it is a separate question: *Unlock Vault* could ask, so it counted as
+   * deliberate, but it never actually did — the stored Sync PIN opened the vault before
+   * the security-key branch was reached. The vault then announced itself unlocked with
+   * nobody having proved anything, which makes Lock decorative on exactly the unattended
+   * machine it exists for.</p>
+   *
+   * <p>Only the LOCK demands this. Reading a password from an unlocked vault must not
+   * turn into a key touch.</p>
+   */
+  requiresPresence(): boolean {
+    return this.locked;
+  }
+
+  /**
    * A person opened the vault. Clears the lock — somebody got in deliberately — and
    * restarts the idle window.
    */

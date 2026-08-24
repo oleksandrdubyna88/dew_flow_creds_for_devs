@@ -254,9 +254,26 @@ users legitimately append to it; that exclusion is the root of finding 3 in
 
 ### Unlocking
 
-`VaultKeys.unlock()` tries, in order: the in-memory cache → a PIN wrap → a security-key touch
-(interactive only) → an explicit PIN prompt. The master key then stays cached for the window's
-lifetime; `CredsForDevs: Lock Vaults` is the only eviction, which is finding 5 in the review.
+`VaultKeys.unlock()` tries, in order: the in-memory cache → a stored PIN wrap → a security-key
+touch (interactive only) → an explicit PIN prompt. The master key is then cached until an eviction:
+`Lock Vaults`, or the idle auto-lock.
+
+**Two gates, and they answer different questions.** `LockState.allowsSilentUnlock()` decides whether
+a caller that *cannot* ask — the sync timer, the post-edit debounce — may open the vault from a
+secret already on the machine. `LockState.requiresPresence()` decides the same for a caller that
+*can*.
+
+The second gate exists because the first was not enough, and the gap was visible in use: *Unlock
+Vault* announced `Vault of … unlocked.` without asking for anything. It could have asked, so it
+counted as deliberate — but the stored Sync PIN opened the vault at step 2, long before the
+security-key branch at step 3 was reached. Anyone at an unattended machine clicked Unlock and was
+in, which is the one situation Lock exists for. While the lock stands, the cache and the stored PIN
+are both skipped, on v1 vaults as well as v2, so opening it costs a key touch or the PIN typed.
+
+Only the LOCK demands a gesture. Reading a password from an unlocked vault does not — and no
+credential-read path calls `unlock()` at all, because credentials live in the OS keychain and are
+not protected by the vault key. Every caller of `unlock()` is a vault-management act: sync, register
+or remove a security key, re-key.
 
 ## Sync
 

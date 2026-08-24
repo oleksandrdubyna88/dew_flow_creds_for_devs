@@ -1057,7 +1057,13 @@ ${detail}
         return;
       }
       void vscode.window.showInformationMessage(`Vault of ${account.email} unlocked.`);
-      void sync.syncNow(account.accountId);
+      // Repaint straight away: the icon is grey BECAUSE the vault was locked, and leaving
+      // it grey after unlocking makes the colour say the opposite of what happened.
+      await refreshReadiness();
+      await sync.syncNow(account.accountId);
+      // Again after the sync, because whether a security key is registered is something
+      // only a completed cycle knows.
+      await refreshReadiness();
     } catch (error) {
       void vscode.window.showErrorMessage(
         `Unlock failed: ${error instanceof Error ? error.message : String(error)}`,

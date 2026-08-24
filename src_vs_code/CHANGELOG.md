@@ -4,6 +4,32 @@ All notable changes to **CredsForDevs** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.29.0] — 2026-08-24
+
+### Security
+
+- **Unlock asked for nothing.** It announced `Vault of … unlocked.` without a key touch or a
+  PIN — because the Sync PIN stored in the OS keychain opened the vault two steps before
+  the security-key branch was ever reached. *Unlock Vault* could have asked, so it counted
+  as deliberate; it simply never did. Anyone at an unattended machine clicked Unlock and
+  was in, which is the single situation Lock exists for.
+
+  While the lock stands, the cached master key and the stored PIN are both skipped — on
+  old v1 vaults as well as v2 — so opening the vault costs a touch, or the PIN typed.
+  Locking is unchanged and was already correct.
+
+  Only the **lock** demands this. Reading a password from an unlocked vault does not, and
+  no credential-read path is affected at all: credentials live in the OS keychain and are
+  not protected by the vault key.
+
+### Fixed
+
+- **The account icon stayed grey after unlocking.** Readiness is recomputed when it can
+  change — and unlocking was missing from that list, so the colour went on saying "locked"
+  after the vault was open. It now repaints immediately, and again once the sync that
+  follows has finished, because whether a security key is registered is something only a
+  completed cycle knows.
+
 ## [0.28.0] — 2026-08-24
 
 ### Added

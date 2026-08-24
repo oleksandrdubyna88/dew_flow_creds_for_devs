@@ -118,3 +118,38 @@ test('locking twice is harmless', () => {
 
   assert.equal(state.isLocked(), true);
 });
+
+test('a LOCKED vault refuses the secret already on this machine, even to a person', () => {
+  // The hole this closes: Lock is for an unattended machine, and Unlock asked for
+  // nothing. The stored Sync PIN opened the vault before the security-key branch was
+  // ever reached, so anyone who walked up and clicked Unlock was in — and the vault
+  // reported itself "unlocked" without a single gesture.
+  const state = new LockState();
+
+  assert.equal(state.requiresPresence(), false);
+
+  state.lock();
+  assert.equal(state.requiresPresence(), true);
+  // The silent rule still holds too: neither kind of caller gets a free pass.
+  assert.equal(state.allowsSilentUnlock(), false);
+});
+
+test('proving presence clears the requirement, and the idle window restarts', () => {
+  const state = new LockState();
+  state.lock();
+  state.noteUnlocked(1_000);
+
+  assert.equal(state.requiresPresence(), false);
+  assert.equal(state.isLocked(), false);
+  assert.equal(state.dueForAutoLock(1_000 + 59 * 60_000, 60), false);
+  assert.equal(state.dueForAutoLock(1_000 + 60 * 60_000, 60), true);
+});
+
+test('ordinary use of an unlocked vault never demands presence', () => {
+  // Opening a credential must not turn into a key touch. Presence is demanded by the
+  // LOCK, not by the fact that a secret is being read.
+  const state = new LockState();
+  state.noteUserActivity(5_000);
+
+  assert.equal(state.requiresPresence(), false);
+});
