@@ -47,3 +47,16 @@ test('it names the entity and the target so a human can check what was shared', 
   assert.match(snippet, /prod-db/);
   assert.match(snippet, /deploy@example\.com/);
 });
+
+test('it states the quoting rule that keeps one example working in every shell', () => {
+  // Measured, not assumed: git-bash, Windows PowerShell 5.1 and cmd.exe all
+  // deliver `-- "docker ps --format '{{.Names}}'"` as ONE argv element with the
+  // single quotes intact. The divergence is inner DOUBLE quotes — PowerShell
+  // drops them and splits the argument, so `grep "server name" f` arrives as
+  // `grep server name f`: a different command that runs successfully, which is
+  // exactly the kind of failure nobody notices.
+  const snippet = buildAgentSnippet(input);
+
+  assert.match(snippet, /PowerShell, cmd and bash alike/);
+  assert.match(snippet, /single quotes inside/);
+});

@@ -7,6 +7,19 @@
  * once, both command forms present, the CLI path quoted for a path with
  * spaces, and no secret material anywhere (there is none to leak: the token is
  * a capability, not the credential).
+ *
+ * <p><b>One line for every shell, and it was measured rather than assumed.</b>
+ * The same invocation was run through git-bash, Windows PowerShell 5.1 and
+ * cmd.exe: all three deliver `-- "docker ps --format '{{.Names}}'"` as ONE
+ * argv element with the inner single quotes intact, which is what the remote
+ * shell needs. So the snippet does not branch per platform, and an agent has
+ * one form to learn.</p>
+ *
+ * <p>The one real divergence is worth the line it costs: given inner DOUBLE
+ * quotes, PowerShell 5.1 drops them and splits the argument — `'grep "server
+ * name" f'` arrives as `grep server name f`. That is not a failure anyone
+ * sees; it is a different command that runs successfully. Hence the rule in
+ * the text: double quotes outside, single quotes inside.</p>
  */
 
 export interface SnippetInput {
@@ -30,6 +43,11 @@ export function buildAgentSnippet(input: SnippetInput): string {
     'Examples:',
     `  ${cli} ssh ${input.token} -- uname -a`,
     `  ${cli} ssh ${input.token} -- "docker ps --format '{{.Names}}'"`,
+    '',
+    'These work as written in PowerShell, cmd and bash alike. When the remote command needs',
+    'quoting, put double quotes around the whole of it and single quotes inside: inner DOUBLE',
+    'quotes are dropped by Windows PowerShell, which silently changes what runs rather than',
+    'failing — "grep \\"server name\\" f" arrives as: grep server name f.',
     '',
     'Open an interactive terminal for the human (not for you to type into):',
     `  ${cli} terminal ${input.token}`,
