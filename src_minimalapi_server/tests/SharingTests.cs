@@ -153,4 +153,54 @@ public sealed class SharingTests
 
         inbox.Should().NotContain("prod db");
     }
+
+    /// <summary>
+    /// The size cap counted the sealed fields and the entity NAME, and nothing else.
+    /// `entityKind` is a free string that is never routed on, never hashed into a path,
+    /// and never bounded — so a same-domain colleague could keep `toEmail` pointing at a
+    /// real victim, pad `entityKind` to megabytes, and slip past `maxShareBytes` entirely.
+    /// The ceiling was then Kestrel's global body limit, ~8 MB a request, against an inbox
+    /// documented as holding 500 items.
+    /// </summary>
+    [Fact]
+    public async Task AShareThatHidesItsBulkInAnUncountedFieldIsRefused()
+    {
+        using var server = new VaultServer();
+        using var alice = server.ClientFor(Alice, "Alice");
+        var ct = TestContext.Current.CancellationToken;
+
+        var smuggled = new
+        {
+            toEmail = Bob,
+            entityName = "prod db",
+            entityKind = new string('k', 2 * 1024 * 1024),
+            salt = Convert.ToBase64String(new byte[16]),
+            iv = Convert.ToBase64String(new byte[12]),
+            tag = Convert.ToBase64String(new byte[16]),
+            data = Convert.ToBase64String(Encoding.UTF8.GetBytes("tiny")),
+        };
+
+        var posted = await alice.PostAsJsonAsync("/api/shares", smuggled, ct);
+
+        posted.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    /// <summary>
+    /// Every field a client controls counts toward the cap, not merely the ones that
+    /// happen to be encrypted — a cap that can be walked around is not a cap.
+    /// </summary>
+    [Fact]
+    public async Task TheSizeCapCountsEveryClientControlledField()
+    {
+        using var server = new VaultServer();
+        using var alice = server.ClientFor(Alice, "Alice");
+        var ct = TestContext.Current.CancellationToken;
+
+        var longName = await alice.PostAsJsonAsync(
+            "/api/shares",
+            Envelope(Bob, entityName: new string('n', 600)),
+            ct);
+
+        longName.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
 }

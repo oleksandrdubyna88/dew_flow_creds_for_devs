@@ -1,3 +1,5 @@
+import { isValidEnvName } from './envBinding';
+
 /**
  * The probe line typed into a fresh terminal after a variable is written, so the person
  * SEES it is really there instead of trusting a notification.
@@ -11,6 +13,15 @@ export function envProbeCommand(
   name: string,
   platform: NodeJS.Platform = process.platform,
 ): string {
+  // The name is UNTRUSTED. `envBindings` is plaintext metadata that syncs, and the
+  // entity shape guard only asked whether it was a string — so an entity arriving from
+  // a shared vault location or an accepted share could carry a name that is not a name.
+  // This line is typed into a terminal with Enter pressed, so an unchecked name is a
+  // command. `isValidEnvName` was enforced on the form's own input and nowhere else,
+  // which is exactly backwards: the form is the one path that was never the threat.
+  if (!isValidEnvName(name)) {
+    return '';
+  }
   const shell = (shellPath ?? '').toLowerCase().replace(/\\/g, '/');
   const base = shell.split('/').pop() ?? '';
 

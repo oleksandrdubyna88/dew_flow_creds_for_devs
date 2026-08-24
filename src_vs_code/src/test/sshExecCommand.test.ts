@@ -88,3 +88,22 @@ test('command validation refuses what must never reach spawn', () => {
   assert.equal(validateRemoteCommand('x'.repeat(MAX_REMOTE_COMMAND_CHARS + 1)).ok, false);
   assert.equal(validateRemoteCommand('x'.repeat(MAX_REMOTE_COMMAND_CHARS)).ok, true);
 });
+
+test('the destination is preceded by -- so a dashed host cannot become an ssh option', () => {
+  // Proven, not assumed: with the host as a bare positional, OpenSSH 10.3 ran
+  // `-oProxyCommand=…` as a local command and it wrote its marker file.
+  const argv = buildSshExecArgv(entity(), undefined, 'uname -a', 'askpass') ?? [];
+  const dashDash = argv.indexOf('--');
+
+  assert.notEqual(dashDash, -1, 'no -- means ssh parses the destination as options');
+  assert.equal(argv[dashDash + 1], 'deploy@example.com');
+  assert.equal(argv[dashDash + 2], 'uname -a');
+});
+
+test('a host that reads as an option is refused outright, whatever -- would do', () => {
+  // Belt and braces: -- is honoured by current OpenSSH, but the entity carrying
+  // such a host arrived from sync or a share and has no legitimate use.
+  assert.equal(buildSshExecArgv(entity({ host: '-oProxyCommand=sh -c id' }), undefined, 'true', 'askpass'), undefined);
+  assert.equal(buildSshExecArgv(entity({ host: 'a.com; id' }), undefined, 'true', 'askpass'), undefined);
+  assert.equal(buildSshExecArgv(entity({ user: 'root; id' }), undefined, 'true', 'askpass'), undefined);
+});

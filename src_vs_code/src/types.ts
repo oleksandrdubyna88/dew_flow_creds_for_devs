@@ -378,6 +378,21 @@ function isCommandArgArray(value: unknown): value is CommandArg[] {
   );
 }
 
+/**
+ * Binding NAMES are refused at the door when they are not variable names. The value
+ * side is a name too (the variable), never a secret — secrets never travel here.
+ * Rejecting the whole entity is deliberate: a binding name that cannot be a variable
+ * has no honest origin, and the import is the last place it can be judged cheaply.
+ */
+function isEnvBindings(value: unknown): value is Record<string, string> {
+  if (!allStringRecord(value)) {
+    return false;
+  }
+  return Object.values(value as Record<string, string>).every(
+    (name) => /^[A-Za-z_][A-Za-z0-9_]*$/.test(name),
+  );
+}
+
 function allStringRecord(value: unknown): boolean {
   return (
     typeof value === 'object' &&
@@ -413,7 +428,7 @@ export function isEntityMetadata(value: unknown): value is EntityMetadata {
     (v.command === undefined || typeof v.command === 'string') &&
     (v.commandNote === undefined || typeof v.commandNote === 'string') &&
     (v.commandArgs === undefined || isCommandArgArray(v.commandArgs)) &&
-    (v.envBindings === undefined || allStringRecord(v.envBindings)) &&
+    (v.envBindings === undefined || isEnvBindings(v.envBindings)) &&
     (v.attachmentFileName === undefined || typeof v.attachmentFileName === 'string') &&
     (v.imageFileName === undefined || typeof v.imageFileName === 'string') &&
     (v.notes === undefined || typeof v.notes === 'string')

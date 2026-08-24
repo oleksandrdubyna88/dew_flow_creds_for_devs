@@ -47,6 +47,7 @@ public sealed record ShareRequest
         !string.IsNullOrWhiteSpace(ToEmail)
         && ToEmail.Contains('@')
         && !string.IsNullOrWhiteSpace(EntityName)
+        && EntityKind.Length <= 64
         && IsBase64(Salt)
         && IsBase64(Iv)
         && IsBase64(Tag)
@@ -55,9 +56,18 @@ public sealed record ShareRequest
     private static bool IsBase64(string value) =>
         !string.IsNullOrWhiteSpace(value) && Convert.TryFromBase64String(value, new byte[value.Length], out _);
 
-    /// <summary>Rough encoded size of the encrypted fields, for the size cap.</summary>
+    /// <summary>
+    /// Every field the client controls, for the size cap.
+    ///
+    /// <para>It used to count the sealed fields and the entity name. <c>EntityKind</c> was
+    /// left out because it is never routed on and never hashed into a path — but a field
+    /// nobody counts is a field an attacker fills. Padding it kept <c>ToEmail</c> pointing
+    /// at a real colleague while slipping past <c>MaxShareBytes</c> entirely, bounded only
+    /// by Kestrel's global body limit, into an inbox that holds 500 of them.</para>
+    /// </summary>
     public long PayloadBytes() =>
-        (long)Salt.Length + Iv.Length + Tag.Length + Data.Length + EntityName.Length;
+        (long)Salt.Length + Iv.Length + Tag.Length + Data.Length
+        + EntityName.Length + EntityKind.Length + ToEmail.Length;
 }
 
 /// <summary>A person discoverable in this deployment.</summary>

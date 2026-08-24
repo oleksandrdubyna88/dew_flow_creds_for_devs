@@ -1,5 +1,5 @@
 import { EntityMetadata } from './types';
-import { DEFAULT_SSH_PORT } from './sshCommand';
+import { DEFAULT_SSH_PORT, isSafeSshTarget } from './sshCommand';
 
 /**
  * Assemble the argv for a non-interactive agent `ssh` exec — an ARRAY, never
@@ -69,7 +69,7 @@ export function buildSshExecArgv(
   remoteCommand: string,
   auth: SshExecAuth = 'key',
 ): string[] | undefined {
-  if (!entity.host) {
+  if (!isSafeSshTarget(entity)) {
     return undefined;
   }
   const argv: string[] =
@@ -86,7 +86,13 @@ export function buildSshExecArgv(
   if (entity.port !== undefined && entity.port !== DEFAULT_SSH_PORT) {
     argv.push('-p', String(entity.port));
   }
-  argv.push(entity.user ? `${entity.user}@${entity.host}` : entity.host);
+  // `--` ends option parsing. Without it a host beginning with a dash is a FLAG to
+  // ssh's own getopt, and `-oProxyCommand=…` runs a LOCAL command before any
+  // authentication — proven against OpenSSH 10.3, which executed it. `shell: false`
+  // does not help: the injection is in ssh's parser, not a shell's.
+  argv.push('--');
+  const host = entity.host as string; // isSafeSshTarget above proved it non-empty
+  argv.push(entity.user ? `${entity.user}@${host}` : host);
   argv.push(remoteCommand);
   return argv;
 }

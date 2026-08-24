@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Security.Claims;
 using System.Threading.RateLimiting;
 using CredVaultServer;
@@ -457,14 +458,26 @@ app.MapGet("/api/shares", async (HttpContext ctx, CancellationToken ct) =>
 {
     var caller = RequireCaller(ctx);
     if (caller is null) return;
-    // You can read ONLY your own inbox. Streamed item-by-item — see ListSharesAsync.
+    // You can read ONLY your own inbox, and one item is live at a time: the array
+    // is written to the response as it is read, never assembled in memory first.
+    // A List<ShareItem> here is the whole inbox resident at once, which a 512 MiB
+    // container does not survive — and the items are on disk, so the next read
+    // repeats it. Written by hand rather than through IAsyncEnumerable because the
+    // AOT source generator has no converter for one.
     ctx.Response.ContentType = "application/json";
-    var shares = new List<ShareItem>();
+    var body = ctx.Response.Body;
+    await body.WriteAsync("["u8.ToArray(), ct);
+    var first = true;
     await foreach (var item in store.ListSharesAsync(caller.Value.Email, ct))
     {
-        shares.Add(item);
+        if (!first)
+        {
+            await body.WriteAsync(","u8.ToArray(), ct);
+        }
+        first = false;
+        await JsonSerializer.SerializeAsync(body, item, AppJsonContext.Default.ShareItem, ct);
     }
-    await ctx.Response.WriteAsJsonAsync(shares, AppJsonContext.Default.ListShareItem, cancellationToken: ct);
+    await body.WriteAsync("]"u8.ToArray(), ct);
 });
 
 app.MapDelete("/api/shares/{id}", async (HttpContext ctx, string id) =>
