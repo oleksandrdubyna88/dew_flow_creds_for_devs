@@ -4,6 +4,41 @@ All notable changes to **CredsForDevs** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.26.0] — 2026-08-23
+
+### Added
+
+- **Terminal commands as entries**, with a `terminal` folder in the default set. The case:
+  `aws sso login --sso-session OD-org` is unfindable in shell history a week later, and the
+  part you have forgotten is never the verb — it is which value belongs to which
+  environment, and why.
+
+  So an argument is a **row**, not a word inside a string: each has its own value, its own
+  explanation underneath it, and a tick to keep a flag without using it (`--debug` is what
+  you want back next week; deleting it means retyping it from memory). Rows can be added,
+  removed and reordered, and a live preview shows exactly what will run.
+
+  *Run in Terminal* puts the command on the prompt **without pressing Enter** — a
+  credential-adjacent command that executes the instant you click a tree item is a way to
+  lose an afternoon. Also *Copy Command* and *Show Command and Notes*.
+
+- **Clone…** on every folder and entity. Copies the settings, deliberately **not** the
+  secrets: duplicating passwords would double them on disk and in every backup, and the
+  usual reason to clone is a near-identical entry that needs its own credential anyway.
+
+- **The account icon is green when that account can actually sync**, grey otherwise — and
+  the row says why. A security key with no Sync PIN is deliberately *not* green: a timer
+  cannot touch a key, so background sync would keep stopping to ask, and calling that
+  "ready" would make the colour mean "you configured something" rather than "this works".
+
+- **Sync now reports what it could not do.** If nothing can sync it says which account and
+  what is missing, and offers the fix. If some can, it syncs those and names the rest
+  instead of reporting success and quietly leaving accounts behind.
+
+  Worth knowing: the setup is **per account**, not per location. The Sync PIN is stored
+  under the account id and the security-key wraps live inside that account's own vault, so
+  two accounts pointing at the same folder still have two vaults and two separate ways in.
+
 ## [0.25.0] — 2026-08-23
 
 ### Security

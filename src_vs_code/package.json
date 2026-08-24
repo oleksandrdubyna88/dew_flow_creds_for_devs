@@ -2,7 +2,7 @@
   "name": "creds-for-devs",
   "displayName": "CredsForDevs",
   "description": "Credential manager for developers: SSH hosts, keys, VPN configs and database connections in VS Code. Secrets live in the OS keychain; optional end-to-end encrypted sync and team sharing through a self-hosted vault server.",
-  "version": "0.25.0",
+  "version": "0.26.0",
   "//publisher": "PLACEHOLDER — create a publisher at https://marketplace.visualstudio.com/manage and put its id here before `vsce publish`. See docs/PUBLISHING.md.",
   "publisher": "set-your-publisher-id",
   "license": "MIT",
@@ -143,6 +143,16 @@
           "light": "#B4551A",
           "highContrast": "#E8824A",
           "highContrastLight": "#B4551A"
+        }
+      },
+      {
+        "id": "credSshManager.readyIcon",
+        "description": "An account that can sync unattended",
+        "defaults": {
+          "dark": "#3FB950",
+          "light": "#1A7F37",
+          "highContrast": "#56D364",
+          "highContrastLight": "#1A7F37"
         }
       }
     ],
@@ -395,6 +405,29 @@
         "title": "Snapshot Vault Now",
         "category": "CredsForDevs",
         "icon": "$(save)"
+      },
+      {
+        "command": "credSshManager.runCommand",
+        "title": "Run in Terminal",
+        "category": "CredsForDevs",
+        "icon": "$(play)"
+      },
+      {
+        "command": "credSshManager.copyCommand",
+        "title": "Copy Command",
+        "category": "CredsForDevs"
+      },
+      {
+        "command": "credSshManager.showCommand",
+        "title": "Show Command and Notes",
+        "category": "CredsForDevs",
+        "icon": "$(book)"
+      },
+      {
+        "command": "credSshManager.cloneNode",
+        "title": "Clone…",
+        "category": "CredsForDevs",
+        "icon": "$(files)"
       }
     ],
     "menus": {
@@ -630,6 +663,31 @@
           "command": "credSshManager.deleteNode",
           "when": "view == credSshManagerView && viewItem =~ /^(folder|entity)/",
           "group": "3_manage@3"
+        },
+        {
+          "command": "credSshManager.runCommand",
+          "when": "view == credSshManagerView && viewItem =~ /:cmd/",
+          "group": "inline@0"
+        },
+        {
+          "command": "credSshManager.runCommand",
+          "when": "view == credSshManagerView && viewItem =~ /:cmd/",
+          "group": "2_actions@0"
+        },
+        {
+          "command": "credSshManager.copyCommand",
+          "when": "view == credSshManagerView && viewItem =~ /:cmd/",
+          "group": "2_actions@1"
+        },
+        {
+          "command": "credSshManager.showCommand",
+          "when": "view == credSshManagerView && viewItem =~ /:cmd/",
+          "group": "2_actions@2"
+        },
+        {
+          "command": "credSshManager.cloneNode",
+          "when": "view == credSshManagerView && viewItem =~ /^(folder|entity)/",
+          "group": "3_manage@2"
         }
       ]
     }

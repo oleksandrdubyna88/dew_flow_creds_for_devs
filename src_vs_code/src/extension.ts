@@ -17,6 +17,8 @@ import { showEntityView } from './entityViewPanel';
 import { GoogleAuthProvider } from './googleAuthProvider';
 import { nasPathFor, setAccountNasPath } from './nasPaths';
 import { backupPathFor, setAccountBackupPath } from './backupPaths';
+import { buildCommandLine, describeCommand } from './commandLine';
+import { SyncReadiness, syncReadiness } from './syncReadiness';
 import { BackupScheduler } from './backupScheduler';
 import { isServerLocation } from './vaultTransport';
 import {
@@ -122,13 +124,41 @@ export function activate(context: vscode.ExtensionContext): void {
       .get<number>('autoLockMinutes', 60);
     if (vaultKeys.dueForAutoLock(Date.now(), minutes)) {
       vaultKeys.lock();
-      provider.refresh();
+      void refreshReadiness();
       void vscode.window.showInformationMessage(
         `Vaults locked after ${minutes} minutes idle. Local credentials still work; sync resumes when you unlock.`,
       );
     }
   }, 60_000);
   context.subscriptions.push({ dispose: () => clearInterval(autoLock) });
+
+  /**
+   * Recompute what each account can and cannot do, and repaint.
+   *
+   * Answering needs SecretStorage, so it cannot happen while a tree item is being built —
+   * the result is cached on the provider instead and refreshed at the moments it can
+   * actually change: startup, a sync cycle, a PIN being set, a lock.
+   */
+  const refreshReadiness = async (): Promise<Map<string, SyncReadiness>> => {
+    const locked = vaultKeys.isLocked();
+    for (const account of storage.getAccounts()) {
+      const pin = await vaultKeys.storedPin(account);
+      provider.readiness.set(
+        account.accountId,
+        syncReadiness({
+          hasLocation: nasPathFor(account) !== undefined,
+          hasStoredPin: pin !== undefined && pin.length > 0,
+          // Registered keys live inside the vault envelope, which is a network read; the
+          // sync cycle records what it saw. Absent means "not seen yet", never "none".
+          hasSecurityKey: sync.hasSecurityKey(account.accountId),
+          isLocked: locked,
+        }),
+      );
+    }
+    provider.refresh();
+    return provider.readiness;
+  };
+  void refreshReadiness();
 
   provider.onMutate = () => sync.notifyChange();
   const mutated = () => {
@@ -143,7 +173,62 @@ export function activate(context: vscode.ExtensionContext): void {
     provider.refresh();
     void sharing.reload();
   });
-  register('credSshManager.syncNow', () => sync.syncNow());
+  register('credSshManager.syncNow', async () => {
+    vaultKeys.noteUserActivity(); // the user is here: postpone auto-lock
+
+    // Say what WILL happen before doing it. Pressing Sync and getting silence, because
+    // two of three accounts were never set up, is the complaint this answers — the
+    // per-account state was knowable all along and simply never shown.
+    const readiness = await refreshReadiness();
+    const accounts = storage.getAccounts();
+    const blocked = accounts.filter((a) => readiness.get(a.accountId)?.ready !== true);
+
+    if (accounts.length === 0) {
+      void vscode.window.showInformationMessage('No accounts yet — add one first.');
+      return;
+    }
+
+    if (blocked.length === accounts.length) {
+      // Nothing can sync. Offer the fix for the FIRST one rather than a list nobody can
+      // act on from a notification.
+      const first = readiness.get(blocked[0].accountId);
+      const choice = await vscode.window.showWarningMessage(
+        `Nothing can sync yet. ${blocked[0].email}: ${first?.reason ?? ''}` +
+          (blocked.length > 1 ? `  (and ${blocked.length - 1} more)` : ''),
+        ...(first?.fixLabel !== undefined ? [first.fixLabel] : []),
+      );
+      if (choice !== undefined && first?.fixCommand !== undefined) {
+        await vscode.commands.executeCommand(first.fixCommand, { kind: 'account', account: blocked[0] });
+      }
+      return;
+    }
+
+    await sync.syncNow();
+    await refreshReadiness();
+
+    if (blocked.length > 0) {
+      // Synced what it could, and named what it could not — rather than reporting
+      // success and quietly leaving accounts behind.
+      const detail = blocked
+        .map((a) => `• ${a.email} — ${readiness.get(a.accountId)?.reason ?? 'not ready'}`)
+        .join('\n');
+      void vscode.window.showWarningMessage(
+        `Synced ${accounts.length - blocked.length} of ${accounts.length} accounts.`,
+        { modal: false, detail } as vscode.MessageOptions,
+        'Show details',
+      ).then(async (choice) => {
+        if (choice === 'Show details') {
+          const document = await vscode.workspace.openTextDocument({
+            content: `Not synced:
+
+${detail}
+`,
+          });
+          await vscode.window.showTextDocument(document, { preview: true });
+        }
+      });
+    }
+  });
   register('credSshManager.setSyncPin', () => sync.setPin());
 
   // ---------- account profiles ----------
@@ -199,6 +284,112 @@ export function activate(context: vscode.ExtensionContext): void {
   });
 
   // Per-account vault location: a folder (NAS/SMB) or a vault server URL.
+  // ---------- terminal commands ----------
+
+  register('credSshManager.runCommand', async (target) => {
+    vaultKeys.noteUserActivity(); // the user is here: postpone auto-lock
+    const element = asElement(target);
+    if (element?.kind !== 'node') {
+      return;
+    }
+    const d = element.node.details;
+    const line = buildCommandLine(d?.command ?? '', d?.commandArgs);
+    if (line.length === 0) {
+      void vscode.window.showWarningMessage(
+        `"${element.node.name}" has no command yet — edit it and fill in the command.`,
+      );
+      return;
+    }
+    // A dedicated terminal per entry, reused: running the same command twice should not
+    // leave two panels behind, and mixing it into whatever terminal happened to be open
+    // loses the association between the entry and its output.
+    const name = `CredsForDevs: ${element.node.name}`;
+    const existing = vscode.window.terminals.find((t) => t.name === name);
+    const terminal = existing ?? vscode.window.createTerminal({ name });
+    terminal.show();
+    // sendText WITHOUT a newline: the command is put on the prompt for the user to read
+    // and press Enter. A credential-adjacent command that runs itself the instant you
+    // click a tree item is a way to lose an afternoon.
+    terminal.sendText(line, false);
+  });
+
+  register('credSshManager.copyCommand', async (target) => {
+    vaultKeys.noteUserActivity(); // the user is here: postpone auto-lock
+    const element = asElement(target);
+    if (element?.kind !== 'node') {
+      return;
+    }
+    const d = element.node.details;
+    const line = buildCommandLine(d?.command ?? '', d?.commandArgs);
+    if (line.length === 0) {
+      void vscode.window.showWarningMessage(`"${element.node.name}" has no command yet.`);
+      return;
+    }
+    // Not a secret, so it does not expire the way a password copy does.
+    await vscode.env.clipboard.writeText(line);
+    void vscode.window.showInformationMessage(`Copied: ${line}`);
+  });
+
+  register('credSshManager.showCommand', async (target) => {
+    vaultKeys.noteUserActivity(); // the user is here: postpone auto-lock
+    const element = asElement(target);
+    if (element?.kind !== 'node') {
+      return;
+    }
+    const d = element.node.details;
+    const text = describeCommand(d?.command ?? '', d?.commandArgs, d?.commandNote);
+    const document = await vscode.workspace.openTextDocument({
+      content: text.length > 0 ? text : 'This entry has no command yet.',
+      language: 'shellscript',
+    });
+    await vscode.window.showTextDocument(document, { preview: true });
+  });
+
+  // ---------- clone ----------
+
+  register('credSshManager.cloneNode', async (target) => {
+    vaultKeys.noteUserActivity(); // the user is here: postpone auto-lock
+    const element = asElement(target);
+    if (element?.kind !== 'node') {
+      return;
+    }
+    const source = element.node;
+    const accountId = element.accountId;
+
+    const name = await vscode.window.showInputBox({
+      title: `Clone "${source.name}"`,
+      prompt: 'Name for the copy',
+      value: `${source.name} (copy)`,
+      validateInput: (v) => (v.trim().length === 0 ? 'Name must not be empty.' : undefined),
+    });
+    if (name === undefined) {
+      return;
+    }
+
+    const clonedId = StorageManager.newId();
+    await storage.addNode(accountId, {
+      id: clonedId,
+      name: name.trim(),
+      type: source.type,
+      parentId: source.parentId,
+      folderType: source.folderType,
+      // A clone is metadata only by design. Copying the SECRETS would double every
+      // password on disk and in every backup, and the usual reason to clone is to make
+      // a near-identical entry that needs its OWN credential anyway.
+      details:
+        source.details === undefined
+          ? undefined
+          : { ...source.details, id: clonedId, name: name.trim() },
+    });
+    mutated();
+
+    const hint =
+      source.type === 'folder'
+        ? 'The folder was copied; its contents were not.'
+        : 'Settings were copied; passwords and keys were not — set them on the copy.';
+    void vscode.window.showInformationMessage(`Cloned as "${name.trim()}". ${hint}`);
+  });
+
   register('credSshManager.setBackupLocation', async (target) => {
     const element = asElement(target);
     if (element?.kind !== 'account') {
@@ -859,7 +1050,7 @@ export function activate(context: vscode.ExtensionContext): void {
 
   register('credSshManager.lockVaults', () => {
     vaultKeys.lock();
-    provider.refresh();
+    void refreshReadiness();
     void vscode.window.showInformationMessage(
       'Vaults locked. Background sync is paused until you unlock; your saved credentials still work locally.',
     );

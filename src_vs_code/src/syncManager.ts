@@ -4,7 +4,7 @@ import { StorageManager } from './storageManager';
 import { sharesFromEnvelope } from './shareFormat';
 import { emptySnapshot, mergeProfiles, ProfileSnapshot } from './syncMerge';
 import { encryptJson, encryptJsonWrapped, readVaultWraps, verifyEnvelopeMac } from './cryptoUtils';
-import { isKeyWrap, upsertWrap, wrapWithPin } from './keyWrap';
+import { isKeyWrap, webauthnWraps, upsertWrap, wrapWithPin } from './keyWrap';
 import { TransportFactory } from './transportFactory';
 import { VaultKeys } from './vaultKeys';
 import { validatePin } from './pinPolicy';
@@ -30,6 +30,17 @@ export class SyncManager implements vscode.Disposable {
   private running = false;
   private rerunWanted = false;
   private readonly warnedAccounts = new Set<string>();
+
+  /**
+   * Accounts whose vault envelope was seen to carry a security-key wrap.
+   *
+   * Recorded opportunistically during a cycle rather than probed on demand: the wraps
+   * live inside the envelope, so finding out costs a network read, and the readiness
+   * indicator must not make one every time the tree repaints. Absent therefore means
+   * "not seen yet", never "none" — which is why a missing entry is reported as
+   * not-configured only in combination with a missing PIN.
+   */
+  private readonly securityKeyAccounts = new Set<string>();
   private readonly configListener: vscode.Disposable;
 
   constructor(
@@ -50,6 +61,11 @@ export class SyncManager implements vscode.Disposable {
   dispose(): void {
     this.configListener.dispose();
     this.stopTimers();
+  }
+
+  /** Whether this account's vault was seen to carry a security-key wrap. */
+  hasSecurityKey(accountId: string): boolean {
+    return this.securityKeyAccounts.has(accountId);
   }
 
   /** Debounced trigger, called after every local mutation. */
@@ -282,6 +298,16 @@ export class SyncManager implements vscode.Disposable {
     // carry them through every rewrite. The server keeps its own inbox.
     let pendingShares: unknown[] = [];
     const raw = await transport.readVault(account);
+    if (raw !== undefined) {
+      // The envelope is already here; noting what it carries costs nothing, and makes
+      // the readiness indicator answerable without a read of its own.
+      const seen = webauthnWraps(readVaultWraps(raw).filter(isKeyWrap));
+      if (seen.length > 0) {
+        this.securityKeyAccounts.add(account.accountId);
+      } else {
+        this.securityKeyAccounts.delete(account.accountId);
+      }
+    }
     // PIN, cached master key, or a security-key touch — VaultKeys decides.
     const key = await this.keys.unlock(account, raw, { interactive });
     if (key === undefined) {

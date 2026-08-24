@@ -14,6 +14,20 @@ export interface AccountProfile extends StoredAccount {
   folders: TreeNode[];
 }
 
+/**
+ * One argument of a CLI command, on its own row.
+ *
+ * <p>A row rather than a word in a string, because the thing people forget is not the
+ * command — it is which value belongs to which environment and why. `note` is that
+ * explanation; `disabled` keeps a flag you are not using now but will want back, instead
+ * of making you retype it from memory.</p>
+ */
+export interface CommandArg {
+  value: string;
+  note?: string;
+  disabled?: boolean;
+}
+
 export interface EntityMetadata {
   id: string;
   name: string;
@@ -39,13 +53,21 @@ export interface EntityMetadata {
   dbType?: DbType;
   /** Original filename of the uploaded VPN config (content is a secret). */
   vpnConfigFileName?: string;
+  /** Marks this entity as a CLI command (the `terminal` kind). */
+  isTerminal?: boolean;
+  /** The base command, e.g. `aws sso login`. Arguments live in `commandArgs`. */
+  command?: string;
+  /** Arguments, one per row, each with an optional explanation. */
+  commandArgs?: CommandArg[];
+  /** What the command is for, shown under the input. */
+  commandNote?: string;
   notes?: string;
 }
 
 export type VpnType = 'openvpn' | 'wireguard' | 'ikev2' | 'l2tp' | 'other';
 
 /** The five entity kinds the form's Type selector offers. */
-export type EntityKind = 'credential' | 'ssh' | 'sshkey' | 'vpn' | 'db';
+export type EntityKind = 'credential' | 'ssh' | 'sshkey' | 'vpn' | 'db' | 'terminal';
 
 export const ENTITY_KINDS: readonly EntityKind[] = [
   'credential',
@@ -53,13 +75,19 @@ export const ENTITY_KINDS: readonly EntityKind[] = [
   'sshkey',
   'vpn',
   'db',
+  'terminal',
 ];
 
 /** A folder's declared content type; 'any' = unrestricted. */
 export type FolderType = EntityKind | 'any';
 
-/** The kind an entity's flags map to (priority: db > vpn > key > ssh). */
+/** The kind an entity's flags map to (priority: terminal > db > vpn > key > ssh). */
 export function kindOf(d: EntityMetadata | undefined): EntityKind {
+  // First, because a command entry has none of the other flags and every other kind
+  // would otherwise fall through to 'credential' and lose its identity in the tree.
+  if (d?.isTerminal) {
+    return 'terminal';
+  }
   if (d?.isDb) {
     return 'db';
   }
@@ -305,6 +333,23 @@ export function isStoredAccount(value: unknown): value is StoredAccount {
   );
 }
 
+function isCommandArgArray(value: unknown): value is CommandArg[] {
+  return (
+    Array.isArray(value) &&
+    value.every((row) => {
+      if (typeof row !== 'object' || row === null) {
+        return false;
+      }
+      const r = row as Record<string, unknown>;
+      return (
+        typeof r.value === 'string' &&
+        (r.note === undefined || typeof r.note === 'string') &&
+        (r.disabled === undefined || typeof r.disabled === 'boolean')
+      );
+    })
+  );
+}
+
 export function isEntityMetadata(value: unknown): value is EntityMetadata {
   if (typeof value !== 'object' || value === null) {
     return false;
@@ -328,6 +373,10 @@ export function isEntityMetadata(value: unknown): value is EntityMetadata {
     (v.vpnType === undefined ||
       (typeof v.vpnType === 'string' && (VPN_TYPES as readonly string[]).includes(v.vpnType))) &&
     (v.vpnConfigFileName === undefined || typeof v.vpnConfigFileName === 'string') &&
+    (v.isTerminal === undefined || typeof v.isTerminal === 'boolean') &&
+    (v.command === undefined || typeof v.command === 'string') &&
+    (v.commandNote === undefined || typeof v.commandNote === 'string') &&
+    (v.commandArgs === undefined || isCommandArgArray(v.commandArgs)) &&
     (v.notes === undefined || typeof v.notes === 'string')
   );
 }

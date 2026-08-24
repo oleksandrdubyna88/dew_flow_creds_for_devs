@@ -1,6 +1,16 @@
 import * as crypto from 'node:crypto';
 import * as vscode from 'vscode';
-import { DB_TYPES, DbType, EntityKind, EntityMetadata, VPN_TYPES, VpnType, kindOf } from './types';
+import { normalizeArgs } from './commandLine';
+import {
+  CommandArg,
+  DB_TYPES,
+  DbType,
+  EntityKind,
+  EntityMetadata,
+  VPN_TYPES,
+  VpnType,
+  kindOf,
+} from './types';
 
 /**
  * A single-window entity form (Webview panel). The entity KIND is chosen
@@ -47,6 +57,36 @@ export interface EntityFormValues {
   newDbConnection?: string;
   clearDbConnection: boolean;
   newNotes?: string;
+}
+
+/**
+ * The argument rows, as the webview posts them.
+ *
+ * Read defensively: the payload crosses a webview boundary, so a malformed row is
+ * dropped rather than trusted — the same reason every other value here goes through a
+ * typed reader instead of being cast.
+ */
+function readArgRows(data: Record<string, unknown>): CommandArg[] {
+  const raw = data.commandArgs;
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+  const rows: CommandArg[] = [];
+  for (const row of raw) {
+    if (typeof row !== 'object' || row === null) {
+      continue;
+    }
+    const r = row as Record<string, unknown>;
+    if (typeof r.value !== 'string') {
+      continue;
+    }
+    rows.push({
+      value: r.value,
+      note: typeof r.note === 'string' ? r.note : undefined,
+      disabled: r.disabled === true,
+    });
+  }
+  return rows;
 }
 
 interface FormMessage {
@@ -109,6 +149,7 @@ function toValues(data: Record<string, unknown>, options: EntityFormOptions): En
   const isKey = kind === 'sshkey';
   const isVpn = kind === 'vpn';
   const isDb = kind === 'db';
+  const isTerminal = kind === 'terminal';
 
   const portText = str(data, 'port').trim();
   const password = str(data, 'password');
@@ -120,6 +161,7 @@ function toValues(data: Record<string, unknown>, options: EntityFormOptions): En
   const vpnFileName = str(data, 'vpnConfigFileName').trim();
   const dbType = str(data, 'dbType');
   const dbConnection = str(data, 'dbConnection');
+  const commandArgs = isTerminal ? normalizeArgs(readArgRows(data)) : undefined;
 
   return {
     details: {
@@ -139,6 +181,10 @@ function toValues(data: Record<string, unknown>, options: EntityFormOptions): En
         isVpn && !clearVpnConfig && vpnFileName.length > 0 ? vpnFileName : undefined,
       isDb: isDb || undefined,
       dbType: isDb && isDbType(dbType) ? dbType : undefined,
+      isTerminal: isTerminal || undefined,
+      command: isTerminal ? str(data, 'command').trim() || undefined : undefined,
+      commandArgs: isTerminal && commandArgs !== undefined && commandArgs.length > 0 ? commandArgs : undefined,
+      commandNote: isTerminal ? str(data, 'commandNote').trim() || undefined : undefined,
       notes: undefined, // notes now live in SecretStorage, never in metadata
     },
     newPassword: !isDb && password.length > 0 ? password : undefined,
@@ -177,6 +223,7 @@ function renderHtml(options: EntityFormOptions): string {
       ['sshkey', 'SSH key'],
       ['vpn', 'VPN'],
       ['db', 'Database'],
+      ['terminal', 'Terminal command'],
     ] as const
   )
     .map(
@@ -238,7 +285,13 @@ function renderHtml(options: EntityFormOptions): string {
     border: 1px solid var(--vscode-input-border, transparent); border-radius: 3px;
     font-family: var(--vscode-editor-font-family, monospace); }
   textarea { resize: vertical; }
-  .hint { font-size: .85em; opacity: .7; margin: 3px 0 0; }
+  .argRow { border: 1px solid var(--vscode-widget-border, #3c3c3c); border-radius: 4px; padding: 6px; margin-bottom: 6px; }
+.argTop { display: flex; gap: 6px; align-items: center; }
+.argTop input[type=text] { flex: 1; }
+.argTop button { flex: 0 0 auto; min-width: 28px; }
+.argNote { width: 100%; margin-top: 4px; font-size: 0.9em; opacity: 0.85; }
+#commandPreview { font-family: var(--vscode-editor-font-family, monospace); opacity: 0.9; }
+.hint { font-size: .85em; opacity: .7; margin: 3px 0 0; }
   .error { color: var(--vscode-errorForeground); margin: 10px 0; min-height: 1.2em; white-space: pre-wrap; }
   .buttons { display: flex; gap: 10px; margin-top: 8px; }
   button { padding: 6px 18px; border: none; border-radius: 3px; cursor: pointer;
@@ -318,6 +371,28 @@ function renderHtml(options: EntityFormOptions): string {
     }
   </fieldset>
 
+  <fieldset id="terminalSection">
+    <legend>Terminal command</legend>
+
+    <label for="command">Command</label>
+    <input id="command" type="text" autocomplete="off" spellcheck="false"
+           placeholder="aws sso login" value="${escapeHtml(d?.command ?? '')}">
+    <p class="hint">The verb only. Arguments go in their own rows below, so each one can carry its own explanation.</p>
+
+    <label for="commandNote">What this command is for</label>
+    <textarea id="commandNote" rows="2" spellcheck="false"
+              placeholder="Refresh the AWS session before running terraform.">${escapeHtml(d?.commandNote ?? '')}</textarea>
+
+    <label>Arguments</label>
+    <p class="hint">One per row. The note is what you will actually have forgotten in a week — which value belongs to which environment, and why. Untick a row to keep an argument without using it.</p>
+    <div id="argRows"></div>
+    <button type="button" id="addArg" class="secondary">+ Add argument</button>
+
+    <label for="commandPreview">Full command</label>
+    <input id="commandPreview" type="text" readonly tabindex="-1">
+    <p class="hint">This is exactly what runs.</p>
+  </fieldset>
+
   <fieldset id="dbSection">
     <legend>Database</legend>
     <label for="dbType">Database type</label>
@@ -372,6 +447,7 @@ function renderHtml(options: EntityFormOptions): string {
 
 <script nonce="${nonce}">
   const vscode = acquireVsCodeApi();
+  const INITIAL_ARGS = ${JSON.stringify(d?.commandArgs ?? [])};
   const val = (id) => document.getElementById(id)?.value ?? '';
   const chk = (id) => document.getElementById(id)?.checked === true;
   const setError = (text) => { document.getElementById('error').textContent = text; };
@@ -391,8 +467,118 @@ function renderHtml(options: EntityFormOptions): string {
     show('keySection', kind === 'sshkey' || (kind === 'ssh' && val('sshKeyEntityId') === ''));
     show('vpnSection', kind === 'vpn');
     show('dbSection', kind === 'db');
-    show('passwordSection', kind !== 'db');
+    show('terminalSection', kind === 'terminal');
+    show('passwordSection', kind !== 'db' && kind !== 'terminal');
   }
+
+  // ---- argument rows -------------------------------------------------------
+  // Built from data rather than from markup: add, remove and reorder then have ONE
+  // implementation, and the saved payload is read from the same array the UI edits
+  // instead of from a DOM scrape that drifts the first time the markup changes.
+  var argRows = INITIAL_ARGS.slice();
+
+  function renderArgs() {
+    var host = document.getElementById('argRows');
+    host.textContent = '';
+    argRows.forEach(function (row, index) {
+      var wrap = document.createElement('div');
+      wrap.className = 'argRow';
+
+      var top = document.createElement('div');
+      top.className = 'argTop';
+
+      var on = document.createElement('input');
+      on.type = 'checkbox';
+      on.checked = row.disabled !== true;
+      on.title = 'Include this argument in the command';
+      on.addEventListener('change', function () {
+        argRows[index].disabled = !on.checked;
+        renderArgs();
+      });
+
+      var value = document.createElement('input');
+      value.type = 'text';
+      value.value = row.value;
+      value.placeholder = '--sso-session OD-org';
+      value.spellcheck = false;
+      value.addEventListener('input', function () {
+        argRows[index].value = value.value;
+        updatePreview();
+      });
+
+      var up = document.createElement('button');
+      up.type = 'button';
+      up.className = 'secondary';
+      up.textContent = '↑';
+      up.title = 'Move up';
+      up.disabled = index === 0;
+      up.addEventListener('click', function () {
+        var moved = argRows.splice(index, 1)[0];
+        argRows.splice(index - 1, 0, moved);
+        renderArgs();
+      });
+
+      var remove = document.createElement('button');
+      remove.type = 'button';
+      remove.className = 'secondary';
+      remove.textContent = '✕';
+      remove.title = 'Remove this argument';
+      remove.addEventListener('click', function () {
+        argRows.splice(index, 1);
+        renderArgs();
+      });
+
+      top.appendChild(on);
+      top.appendChild(value);
+      top.appendChild(up);
+      top.appendChild(remove);
+
+      // The explanation sits UNDER its own argument, which is the whole point: the
+      // thing worth writing down is what this value means, not what the command does.
+      var note = document.createElement('input');
+      note.type = 'text';
+      note.className = 'argNote';
+      note.value = row.note || '';
+      note.placeholder = 'what it means — e.g. the SSO profile in ~/.aws/config';
+      note.spellcheck = false;
+      note.addEventListener('input', function () {
+        argRows[index].note = note.value;
+      });
+
+      wrap.appendChild(top);
+      wrap.appendChild(note);
+      host.appendChild(wrap);
+    });
+    updatePreview();
+  }
+
+  function updatePreview() {
+    var base = (val('command') || '').trim();
+    var parts = argRows
+      .filter(function (r) { return r.disabled !== true; })
+      .map(function (r) { return (r.value || '').trim(); })
+      .filter(function (r) { return r.length > 0; });
+    var preview = document.getElementById('commandPreview');
+    if (preview) {
+      preview.value = base.length > 0 ? [base].concat(parts).join(' ') : '';
+    }
+  }
+
+  (function wireArgs() {
+    var add = document.getElementById('addArg');
+    if (add) {
+      add.addEventListener('click', function () {
+        argRows.push({ value: '', note: '', disabled: false });
+        renderArgs();
+        var inputs = document.querySelectorAll('#argRows .argTop input[type=text]');
+        if (inputs.length > 0) { inputs[inputs.length - 1].focus(); }
+      });
+    }
+    var command = document.getElementById('command');
+    if (command) { command.addEventListener('input', updatePreview); }
+    renderArgs();
+  })();
+
   document.getElementById('entityType').addEventListener('change', updateVisibility);
   document.getElementById('sshKeyEntityId').addEventListener('change', updateVisibility);
   updateVisibility();
@@ -569,6 +755,7 @@ function renderHtml(options: EntityFormOptions): string {
       vpnType: val('vpnType'), vpnConfigContent, vpnConfigFileName: val('vpnConfigFileName'),
       clearVpnConfig: chk('clearVpnConfig'),
       dbType: val('dbType'), dbConnection: val('dbConnection'),
+      command: val('command'), commandNote: val('commandNote'), commandArgs: argRows,
       clearPassword: chk('clearPassword'), clearPrivateKey: chk('clearPrivateKey'),
     }});
   });

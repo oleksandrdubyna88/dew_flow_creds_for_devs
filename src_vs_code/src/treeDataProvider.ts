@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { StorageManager } from './storageManager';
 import type { SharingManager } from './sharingManager';
 import { EntityKind, FolderType, TreeElement, TreeNode, kindOf } from './types';
+import { SyncReadiness } from './syncReadiness';
 
 export const VIEW_ID = 'credSshManagerView';
 const DND_MIME = `application/vnd.code.tree.${VIEW_ID.toLowerCase()}`;
@@ -29,6 +30,15 @@ export class CredTreeDataProvider
 
   /** Set by the extension: notified after drag-and-drop mutations. */
   onMutate: (() => void) | undefined;
+
+  /**
+   * Per-account sync readiness, refreshed by the extension.
+   *
+   * Cached rather than computed here because answering needs SecretStorage, and a tree
+   * item is built synchronously — an icon that had to await would either block the tree
+   * or flicker.
+   */
+  readonly readiness = new Map<string, SyncReadiness>();
 
   /** Set by the extension: Team / Shared-with-me data source. */
   sharing: SharingManager | undefined;
@@ -146,7 +156,13 @@ export class CredTreeDataProvider
       );
       item.id = `account:${element.account.accountId}`;
       item.contextValue = 'account';
-      item.iconPath = new vscode.ThemeIcon('account');
+      const ready = this.readiness.get(element.account.accountId);
+      item.iconPath = new vscode.ThemeIcon('account', ready?.ready === true ? READY_COLOR : undefined);
+      if (ready !== undefined && !ready.ready) {
+        // The reason belongs on the row itself: a grey icon that does not say why is a
+        // riddle, and this is the row somebody stares at when sync is not happening.
+        item.description = [item.description, ready.reason].filter(Boolean).join('  ·  ');
+      }
       item.description = element.account.provider;
       return item;
     }
@@ -183,12 +199,17 @@ export class CredTreeDataProvider
     if (details?.isDb) {
       contextValue += ':db';
     }
+    if (details?.isTerminal) {
+      contextValue += ':cmd';
+    }
     if (hasPassword) {
       contextValue += ':pwd';
     }
     item.contextValue = contextValue;
     item.iconPath = new vscode.ThemeIcon(
-      details?.isDb
+      details?.isTerminal
+        ? 'terminal'
+        : details?.isDb
         ? 'database'
         : details?.isVpn
           ? 'shield'
@@ -295,6 +316,8 @@ export class CredTreeDataProvider
 
 function kindIcon(kind: EntityKind): string {
   switch (kind) {
+    case 'terminal':
+      return 'terminal';
     case 'db':
       return 'database';
     case 'vpn':
@@ -310,6 +333,9 @@ function kindIcon(kind: EntityKind): string {
 
 /** Folders are painted dark orange so they never blend in with items. */
 const FOLDER_COLOR = new vscode.ThemeColor('credSshManager.folderIcon');
+
+/** Green: this account can sync on its own. Anything else stays the default grey. */
+const READY_COLOR = new vscode.ThemeColor('credSshManager.readyIcon');
 /** Team/people rows are dark blue so they read as "other people", not data. */
 const TEAM_COLOR = new vscode.ThemeColor('credSshManager.teamIcon');
 
@@ -325,6 +351,8 @@ function folderIcon(folderType: FolderType | undefined): vscode.ThemeIcon {
       return new vscode.ThemeIcon('remote', FOLDER_COLOR);
     case 'credential':
       return new vscode.ThemeIcon('lock', FOLDER_COLOR);
+    case 'terminal':
+      return new vscode.ThemeIcon('terminal', FOLDER_COLOR);
     default:
       return new vscode.ThemeIcon('folder', FOLDER_COLOR);
   }

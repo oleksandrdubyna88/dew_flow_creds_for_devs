@@ -6,7 +6,7 @@ import {
   shouldSeedDefaults,
 } from '../defaultFolders';
 
-test('the default set is the five requested folders, each with its own type', () => {
+test('the default set is the six requested folders, each with its own type', () => {
   assert.deepEqual(
     DEFAULT_FOLDERS.map((f) => [f.name, f.folderType]),
     [
@@ -15,6 +15,7 @@ test('the default set is the five requested folders, each with its own type', ()
       ['ssh keys', 'sshkey'],
       ['ssh connections', 'ssh'],
       ['passwords', 'credential'],
+      ['terminal', 'terminal'],
     ],
   );
 });
@@ -23,7 +24,7 @@ test('buildDefaultFolders produces root folders in display order with unique ids
   let n = 0;
   const nodes = buildDefaultFolders(() => `id-${n++}`);
 
-  assert.equal(nodes.length, 5);
+  assert.equal(nodes.length, DEFAULT_FOLDERS.length);
   for (const [index, node] of nodes.entries()) {
     assert.equal(node.type, 'folder');
     assert.equal(node.parentId, null);
@@ -32,7 +33,7 @@ test('buildDefaultFolders produces root folders in display order with unique ids
     assert.equal(node.name, DEFAULT_FOLDERS[index].name);
   }
   const ids = new Set(nodes.map((node) => node.id));
-  assert.equal(ids.size, 5, 'ids are unique');
+  assert.equal(ids.size, nodes.length, 'ids are unique');
 });
 
 test('seed only a brand-new, never-seeded account', () => {

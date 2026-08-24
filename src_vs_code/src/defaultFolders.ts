@@ -20,6 +20,7 @@ export const DEFAULT_FOLDERS: readonly DefaultFolderSpec[] = [
   { name: 'ssh keys', folderType: 'sshkey' },
   { name: 'ssh connections', folderType: 'ssh' },
   { name: 'passwords', folderType: 'credential' },
+  { name: 'terminal', folderType: 'terminal' },
 ];
 
 /**
