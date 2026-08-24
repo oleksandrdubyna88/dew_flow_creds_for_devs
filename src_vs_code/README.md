@@ -1,8 +1,13 @@
 # CredsForDevs
 
-A local VS Code extension for managing credentials, SSH keys, VPN configs,
-and database connections — with quick SSH connectivity — across multiple
-account profiles and multiple machines.
+A **zero-trust** credential manager for VS Code: SSH hosts and keys, VPN configs,
+database connections and CLI commands, across several accounts and several machines.
+
+Zero-trust here is a property of the design, not a promise. Secrets live in the **OS
+keychain**. What leaves your machine is encrypted **in the editor**, under a PIN or a
+security key that never leaves it — so the folder, the NAS or the server holding your
+vault holds ciphertext and nothing else. Whoever runs that storage, **including you**,
+cannot read what is in it.
 
 ## The tree
 
@@ -191,7 +196,7 @@ server enforces) — the transport handles this transparently.
   **self-asserted claim** written into the file: anyone who can write to the
   shared folder can forge a share that appears to come from someone else (the
   envelope MAC covers the owner's own metadata but deliberately **not** the
-  cross-user `shares` array — [cryptoUtils.ts:239](src/cryptoUtils.ts#L239)).
+  cross-user `shares` array).
   So the folder transport gives **no cryptographic sender authenticity** for
   team sharing.
 - **Server transport → the recommended standard for teams.** The Cred Vault
@@ -199,18 +204,6 @@ server enforces) — the transport handles this transparently.
   **stamps the share sender from the verified token**, so `fromEmail` is
   unforgeable. Any deployment where people share credentials with each other
   should use the server, not a shared NAS.
-
-A future, optional hardening (Ed25519 signatures + key pinning + a fingerprint
-check) could give the NAS transport forgery resistance for organizations that
-are strictly forbidden from running a server — it is **backlog only**, designed
-in [todo/PLAN_nas_sender_pki.md](todo/PLAN_nas_sender_pki.md) and not built.
-Even then it is TOFU-based (see that plan); the server remains the stronger,
-recommended answer.
-
-Verify a server deployment end-to-end (13 checks: vault round-trip,
-isolation, team, share delivery, sender stamping, PIN accept/reject,
-removal): `npm run itest:server` against a running server — see
-`scripts/server-transport-itest.cjs` for the exact invocation.
 
 ## Unlocking with a security key (YubiKey / FIDO2)
 
@@ -322,49 +315,6 @@ DB Extension, Copy Connection String, Share with…, Create Entity for…,
 Accept… / Decline / Accept All…, Backup to NAS, Import / Restore, Sync Now
 (NAS), Set Sync PIN (per account), Reset Google OAuth, Refresh.
 
-## Build, test, package, install
-
-```bash
-npm install
-npm test                 # tsc + node:test unit suite (57 tests)
-npm run package          # produces creds-for-devs-<version>.vsix
-code --install-extension creds-for-devs-*.vsix   # then reload the window
-```
-
-## Module map
-
-| File | Role |
-|------|------|
-| `src/extension.ts` | Activation, command registration and wiring |
-| `src/treeDataProvider.ts` | Tree (accounts → folders → entities), capability contextValues, drag & drop |
-| `src/entityFormPanel.ts` | Create/edit webview form (dynamic field visibility) |
-| `src/entityViewPanel.ts` | Read-only double-click viewer with per-field copy |
-| `src/dialogs.ts` | QuickPick details view, folder/account/move pickers |
-| `src/storageManager.ts` | Tenant-scoped `globalState` + SecretStorage, tombstones, snapshots |
-| `src/syncManager.ts` | Auto-sync scheduling, NAS I/O, PIN cache |
-| `src/syncMerge.ts` | Pure two-way merge (unit-tested) |
-| `src/backupManager.ts` | Manual NAS export/import flows |
-| `src/backupNaming.ts` | Collision-safe vault filenames (unit-tested) |
-| `src/cryptoUtils.ts` | AES-256-GCM + scrypt envelope (unit-tested) |
-| `src/authManager.ts` | getSession wrappers, session verification |
-| `src/googleAuthProvider.ts` | The registered `google` auth provider (PKCE + loopback) |
-| `src/googleOauth.ts` | Pure OAuth helpers (unit-tested) |
-| `src/terminalManager.ts` | SSH command builder, terminal reuse by `user@host:port` |
-| `src/keyInstaller.ts` | `~/.ssh` install + key materialization |
-| `src/dbLauncher.ts` | Opens DB entities in the matching DB extension |
-| `src/dbConnString.ts` | Connection-string parse/build, default ports (unit-tested) |
-| `src/shareFormat.ts` | Share sealing/opening, envelope shares, multi-PIN resolver (unit-tested) |
-| `src/sharingManager.ts` | Team discovery across NAS folders, share delivery/removal |
-| `src/nasPaths.ts` | Global + per-account location resolution |
-| `src/keyWrap.ts` | Master-key wrapping for PIN + security keys (unit-tested) |
-| `src/vaultKeys.ts` | Unlock coordinator: PIN, security keys, in-memory master-key cache |
-| `src/webauthnPrf.ts` | WebAuthn PRF flow over a loopback page (native key prompt) |
-| `src/vaultTransport.ts` | Transport interface (folder vs server) |
-| `src/folderTransport.ts` | Shared-folder transport (`vault_*.enc` + envelope shares) |
-| `src/serverTransport.ts` | Cred Vault Server transport (token-authenticated HTTPS) |
-| `src/transportFactory.ts` | Location → transport, incl. per-provider token resolution |
-| `src/types.ts` | Shared schema + runtime guards (unit-tested) |
-
 ## Security notes
 
 - Passwords, private keys, VPN configs, and DB connection strings live
@@ -394,20 +344,55 @@ code --install-extension creds-for-devs-*.vsix   # then reload the window
 - **Cross-machine merge is causal** (version vectors + a per-profile horizon),
   so a stale/rolled-back backup can't resurrect a deleted entry even after its
   tombstone is GC'd — see the sync section above.
-- The six audit-follow-up code items (#1–#6: versioned KDF, version-vector
-  merge, envelope MAC, PIN re-key, remote-vault deletion, notes →
-  SecretStorage) have all shipped — the record is in
-  `research/PLAN_audit_followups.md`. One residual is called out there: the
-  folder transport's envelope MAC covers `account`/`wraps` but **not** `shares`
-  (cross-user appends), so team share-metadata forgery on a shared NAS is
-  **by design** addressed by the transport boundary above — teams use the
-  **server** transport, which stamps the sender from the OAuth token. A NAS-only
-  cryptographic hardening (Ed25519 + key pinning + fingerprint check) is backlog
-  only in `todo/PLAN_nas_sender_pki.md`. Remaining open items are server
-  operational/infra decisions (`todo/PLAN_server_ops.md`), not code.
+- On a **shared folder**, the envelope's integrity check covers your own
+  metadata but not the cross-user share list, because any member has to be able
+  to append to it. Share metadata on a NAS is therefore not forgery-proof by
+  cryptography — it is by deployment: **teams use the server transport**, which
+  stamps the sender from the verified sign-in token. The folder transport is for
+  one person on several machines.
 - Backups decrypt only with the exact account + PIN pair; there is no
   recovery for a lost PIN.
 - "Copy" actions put plaintext on the system clipboard — clear it after
   use on shared machines.
 - A Google "Desktop app" client secret is not confidential by Google's
   definition, but it is still kept in SecretStorage, not in settings.
+
+---
+
+## The server, and raising it in Docker
+
+Everything above works with **no server at all** — a folder is enough for one person on
+several machines. The server is what makes a **team** work: it authenticates every request
+against Microsoft Entra or Google, and stamps the sender of a shared credential from that
+verified identity, so a share cannot be forged by anyone with write access to a folder.
+
+**It is zero-trust by construction: the server stores ciphertext and never holds a key.**
+Encryption and decryption happen in your editor, under your PIN or your security key.
+Whoever runs the box — including you — cannot read what is in the vault. That is a property
+of the design, not a policy anyone has to keep.
+
+Raising it is three commands on any machine with Docker:
+
+```bash
+git clone https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs
+cd dew_flow_creds_for_devs/deploy
+
+cp .env.example .env
+$EDITOR .env            # who may sign in, and your domain or public IP
+docker compose up -d
+```
+
+That starts the API, an nginx in front of it, and a certbot that obtains a Let's Encrypt
+certificate and then renews it forever — **by domain or by bare IP**, whichever you have.
+Then point the extension at `https://your-host` with *Set Sync Location…* and sign in.
+
+The image is prebuilt and published, so nothing is compiled on your server. `deploy/README.md`
+covers the rest: sign-in providers, TLS by IP against by domain, scheduled backups to a NAS,
+restore rehearsal, and one-command updates.
+
+## Source, issues, licence
+
+- **Repository:** [github.com/oleksandrdubyna88/dew_flow_creds_for_devs](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs)
+- **Issues and feature requests:** [github.com/oleksandrdubyna88/dew_flow_creds_for_devs/issues](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/issues)
+- **Deploying the server:** [deploy/README.md](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/blob/main/deploy/README.md)
+- **Licence:** MIT — use it, fork it, run it wherever you like.

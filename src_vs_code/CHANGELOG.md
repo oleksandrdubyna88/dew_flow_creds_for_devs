@@ -4,6 +4,28 @@ All notable changes to **CredsForDevs** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.35.0] — 2026-08-24
+
+### Changed
+
+- **The listing says what this is: a zero-trust credential manager.** Not a slogan — the
+  page now states the property and why it holds. Secrets live in the OS keychain, anything
+  that leaves the machine is encrypted in the editor under a PIN or a security key, and
+  the folder or server holding the vault holds ciphertext. Whoever runs that storage,
+  including its owner, cannot read it.
+- **The README no longer recites internal planning documents.** It named `todo/PLAN_*.md`
+  files that are not in the package and that a reader cannot open, to describe work that
+  does not exist. The one thing worth keeping from that passage — that share metadata on a
+  shared folder is protected by *using the server*, not by cryptography — is now said in
+  its own right.
+- Dropped the module map and the build instructions from the extension page: they describe
+  the source tree to somebody reading a product description. The repository link at the
+  bottom is how to reach them.
+- **Added the part that was missing entirely: the server, and how to raise it.** Three
+  commands with Docker, TLS by domain or by bare IP, and a prebuilt image so nothing is
+  compiled on the box — plus links to the repository, the issue tracker and the deployment
+  guide.
+
 ## [0.34.0] — 2026-08-24
 
 ### Fixed

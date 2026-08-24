@@ -1,8 +1,8 @@
 {
   "name": "creds-for-devs",
   "displayName": "CredsForDevs",
-  "description": "Credential manager for developers: SSH hosts, keys, VPN configs and database connections in VS Code. Secrets live in the OS keychain; optional end-to-end encrypted sync and team sharing through a self-hosted vault server.",
-  "version": "0.34.0",
+  "description": "Zero-trust credential manager for developers: SSH hosts, keys, VPN configs and database connections in VS Code. Secrets live in the OS keychain; optional end-to-end encrypted sync and team sharing through a self-hosted vault server that never sees a plaintext secret.",
+  "version": "0.35.0",
   "publisher": "remsoftdev",
   "license": "MIT",
   "icon": "media/icon.png",
@@ -17,7 +17,11 @@
     "credentials",
     "password manager",
     "secrets",
-    "vault"
+    "vault",
+    "zero trust",
+    "end-to-end encryption",
+    "yubikey",
+    "self-hosted"
   ],
   "repository": {
     "type": "git",
