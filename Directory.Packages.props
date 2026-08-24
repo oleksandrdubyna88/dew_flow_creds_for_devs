@@ -27,7 +27,7 @@
     <!-- Mints Local-scheme tokens, including the forged ones the auth tests require.
          Must not trail the version JwtBearer 10.0.11 pulls in transitively (8.19.2) —
          the original repo pinned 8.14.0 and NU1605 was only a warning there. -->
-    <PackageVersion Include="System.IdentityModel.Tokens.Jwt" Version="8.19.2" />
+    <PackageVersion Include="System.IdentityModel.Tokens.Jwt" Version="8.22.0" />
 
     <!-- 7.2.2 = the last Apache-2.0 release; 8.x moved to the Xceed Community License
          (non-commercial only). Do NOT bump. -->
