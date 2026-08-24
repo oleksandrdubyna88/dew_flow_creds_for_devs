@@ -1,12 +1,9 @@
 import * as vscode from 'vscode';
-import { DB_DEFAULT_PORTS, parseDbConnectionString } from './dbConnString';
 import { copiedMessage, copySecret } from './secretClipboard';
 import { StorageManager } from './storageManager';
-import { buildSshCommand } from './terminalManager';
 import {
   ENTITY_KINDS,
   ENTITY_KIND_LABELS,
-  EntityMetadata,
   FolderType,
   StoredAccount,
   TreeNode,
@@ -26,74 +23,9 @@ export async function promptFolderName(initial?: string): Promise<string | undef
  * Format an entity into one key-value block for "Copy All" — kind-aware
  * and listing only fields that actually hold a value.
  */
-export function formatEntityBlock(
-  details: EntityMetadata,
-  password: string | undefined,
-  dbConnection?: string,
-  notes?: string,
-): string {
-  const lines = [`Name: ${details.name}`];
+import { formatEntityBlock } from './entityText';
 
-  if (details.isDb) {
-    lines.push(`DB type: ${details.dbType ?? 'unknown'}`);
-    if (dbConnection !== undefined && dbConnection.length > 0) {
-      lines.push(`Connection string: ${dbConnection}`);
-      const p = parseDbConnectionString(dbConnection);
-      const port =
-        p.port ?? (details.dbType !== undefined ? DB_DEFAULT_PORTS[details.dbType] : undefined);
-      if (p.host) {
-        lines.push(`Host: ${p.host}`);
-      }
-      if (port) {
-        lines.push(`Port: ${port}`);
-      }
-      if (p.database) {
-        lines.push(`Database: ${p.database}`);
-      }
-      if (p.user) {
-        lines.push(`User: ${p.user}`);
-      }
-      if (p.password) {
-        lines.push(`Password: ${p.password}`);
-      }
-    }
-  } else {
-    if (details.isVpn) {
-      lines.push(`VPN type: ${details.vpnType ?? 'unknown'}`);
-      if (details.vpnConfigFileName) {
-        lines.push(`VPN config file: ${details.vpnConfigFileName}`);
-      }
-    }
-    if (details.host) {
-      lines.push(`Host: ${details.host}`);
-    }
-    if (details.user) {
-      lines.push(`User: ${details.user}`);
-    }
-    if (details.port !== undefined) {
-      lines.push(`Port: ${details.port}`);
-    }
-    if (password !== undefined) {
-      lines.push(`Password: ${password}`);
-    }
-    const ssh = buildSshCommand(details);
-    if (ssh !== undefined) {
-      lines.push(`SSH: ${ssh}`);
-    }
-    if (details.publicKey) {
-      lines.push(`Public key: ${details.publicKey}`);
-    }
-    if (details.sshKeyPath) {
-      lines.push(`Key path: ${details.sshKeyPath}`);
-    }
-  }
-
-  const noteText = notes ?? details.notes;
-  if (noteText) {
-    lines.push(`Notes: ${noteText}`);
-  }
-  return lines.join('\n');
-}
+export { formatEntityBlock };
 
 /** QuickPick of a folder's content type (Credential first = default). */
 export async function pickFolderType(

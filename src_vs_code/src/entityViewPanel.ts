@@ -2,7 +2,8 @@ import * as crypto from 'node:crypto';
 import * as vscode from 'vscode';
 import { copySecret } from './secretClipboard';
 import { DbConnParts } from './dbConnString';
-import { EntityMetadata } from './types';
+import { CommandArg, EntityMetadata } from './types';
+import { buildCommandLine, normalizeArgs } from './commandLine';
 
 /**
  * Read-only entity viewer (opened by double-click): the edit form's layout
@@ -84,7 +85,18 @@ export function showEntityView(options: EntityViewOptions): void {
       case 'dbName': value = options.dbParts?.database; break;
       case 'dbUser': value = options.dbParts?.user; break;
       case 'ssh': value = options.sshCommand; break;
-      default: return;
+      case 'command': value = d.command; break;
+      case 'commandNote': value = d.commandNote; break;
+      case 'fullCommand': value = buildCommandLine(d.command ?? '', d.commandArgs); break;
+      default: {
+        // Argument rows are numbered rather than named — there can be any number of them.
+        const arg = /^arg(\d+)$/.exec(message.field);
+        if (arg === null) {
+          return;
+        }
+        value = normalizeArgs(d.commandArgs)[Number(arg[1])]?.value;
+        break;
+      }
     }
     if (value === undefined || value.length === 0) {
       void vscode.window.showWarningMessage('Nothing to copy — the field is empty.');
@@ -148,6 +160,24 @@ function renderHtml(options: EntityViewOptions): string {
     </div>`;
   };
 
+  /**
+   * One argument, with its note underneath rather than beside it — the same shape as the
+   * form, because a value and its explanation read as a pair or not at all. A disabled
+   * row is shown and labelled: it is kept deliberately, and hiding it would make the
+   * entry look like it lost an argument.
+   */
+  const argRow = (arg: CommandArg, index: number): string => {
+    const note = arg.note !== undefined && arg.note.length > 0 ? arg.note : '';
+    const off = arg.disabled === true ? ' (off — not part of the command)' : '';
+    return `<div class="row">
+      <label>${escapeHtml(`Argument ${index + 1}${off}`)}</label>
+      <div class="line"><input readonly value="${escapeHtml(arg.value)}">
+        <button data-field="arg${index}" data-action="copy" class="icon" title="Copy argument" aria-label="Copy argument">${COPY_ICON}</button>
+      </div>
+      ${note.length > 0 ? `<div class="line"><input readonly class="note" value="${escapeHtml(note)}"></div>` : ''}
+    </div>`;
+  };
+
   const rows = [
     row('Name', 'name', d.name),
     row('Host', 'host', d.host),
@@ -162,6 +192,17 @@ function renderHtml(options: EntityViewOptions): string {
           <div class="line"><input readonly value="entity: ${escapeHtml(options.keySourceName)}"></div></div>`]
       : []),
     row('SSH command', 'ssh', options.sshCommand),
+    // A command entry: the verb, what it is for, every argument with its own note, and
+    // the line that actually runs. The viewer previously knew nothing about this kind,
+    // so it rendered a Name and stopped.
+    row('Command', 'command', d.isTerminal ? d.command : undefined),
+    row('What it is for', 'commandNote', d.isTerminal ? d.commandNote : undefined),
+    ...(d.isTerminal ? normalizeArgs(d.commandArgs).map(argRow) : []),
+    row(
+      'Full command',
+      'fullCommand',
+      d.isTerminal ? buildCommandLine(d.command ?? '', d.commandArgs) : undefined,
+    ),
     row('VPN type', 'vpnType', d.isVpn ? (d.vpnType ?? 'other') : undefined),
     row(
       `VPN config${d.vpnConfigFileName ? ` (${d.vpnConfigFileName})` : ''}`,
@@ -195,6 +236,7 @@ function renderHtml(options: EntityViewOptions): string {
          background: var(--vscode-editor-background); padding: 16px 24px; max-width: 640px; }
   h2 { margin: 0 0 14px; font-size: 1.2em; }
   .row { margin-bottom: 10px; }
+  .note { opacity: .75; font-style: italic; }
   label { display: block; margin-bottom: 3px; opacity: .8; }
   .line { display: flex; gap: 8px; align-items: flex-start; }
   input, textarea { flex: 1; box-sizing: border-box; padding: 5px 7px;

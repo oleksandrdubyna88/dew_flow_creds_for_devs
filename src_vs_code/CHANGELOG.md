@@ -4,6 +4,35 @@ All notable changes to **CredsForDevs** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.30.0] — 2026-08-24
+
+### Fixed
+
+- **A terminal entry showed its name and nothing else.** Double-clicking one gave a Name
+  field and a *Copy All* that copied exactly that — no command, no argument notes, no
+  assembled line. Both the details viewer and the text block simply had no branch for the
+  kind; `describeCommand` had produced all three for the tooltip all along and was never
+  reached from either.
+
+  The viewer now shows the command, what it is for, **every argument on its own row with
+  its explanation underneath** — the same shape as the form, because a value and its note
+  read as a pair or not at all — and the full line that runs. A disabled argument is shown
+  and labelled `(off)` rather than hidden: it was kept deliberately, and hiding it makes
+  the entry look like it lost one.
+
+- **The help lookup failed in silence.** With the tool not installed, the notes simply
+  stayed empty and nothing said why — which reads as a broken feature rather than a fact
+  about the machine. It now says which of the four things happened: the lookup is switched
+  off, the command was not a plain tool name so nothing was run, the tool could not be
+  found on PATH, or its help documents none of these arguments.
+
+### Changed
+
+- `formatEntityBlock` and the `ssh` command builder moved into `entityText.ts` and
+  `sshCommand.ts`, free of `vscode`. Not tidying: the details block could not be tested
+  where it was, which is why a whole entity kind could go missing from it unnoticed. The
+  regression test for the bug above now exists because of the move.
+
 ## [0.29.0] — 2026-08-24
 
 ### Security

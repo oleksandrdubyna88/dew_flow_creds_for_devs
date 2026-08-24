@@ -206,6 +206,14 @@ a usage synopsis served as a description (`git commit -m` → `[--allow-empty-me
 wrapped description truncated at the first line break (`docker run --rm` → "Automatically remove
 the"). Both now have tests built from the real output.
 
+### The `vscode`-free rule, applied late
+
+`entityText.ts` (the details block / `Copy All`) and `sshCommand.ts` (the `ssh` line) were carved out
+of `dialogs.ts` and `terminalManager.ts` because of a bug, not for tidiness: a terminal entry
+rendered its name and nothing else in the viewer and in `Copy All`, and neither could be tested
+where it lived. An entire entity kind was missing from both and no suite could notice. The
+regression test exists because of the move — which is the argument for the rule generally.
+
 ### Clone
 
 `cloneNode` copies a folder or entity's settings and deliberately **not** its secrets. Duplicating

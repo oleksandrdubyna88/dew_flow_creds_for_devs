@@ -2,7 +2,7 @@ import * as crypto from 'node:crypto';
 import * as vscode from 'vscode';
 import { normalizeArgs } from './commandLine';
 import { flagOf, parseCommandLine } from './commandParse';
-import { describeFlag } from './helpText';
+import { describeFlag, isProbeSafe } from './helpText';
 import { readHelpText } from './helpLookup';
 import {
   CommandArg,
@@ -121,19 +121,38 @@ async function splitAndDescribe(panel: vscode.WebviewPanel, text: string): Promi
   const enabled = vscode.workspace
     .getConfiguration('credSshManager')
     .get<boolean>('readCliHelp', true);
-  if (!enabled || parsed.args.length === 0) {
+  if (parsed.args.length === 0) {
+    return;
+  }
+
+  // Say WHY when nothing arrives. Empty notes and no explanation read as a broken
+  // feature; "aws is not on PATH" reads as a fact about this machine, which it is.
+  const say = (status: string, notes: string[] = []): void => {
+    void panel.webview.postMessage({ type: 'argNotes', notes, status });
+  };
+
+  if (!enabled) {
+    say('Help lookup is off (credSshManager.readCliHelp) — write the notes yourself.');
+    return;
+  }
+  if (!isProbeSafe(parsed.command)) {
+    say(
+      `Nothing was run: "${parsed.command}" is not a plain tool name, and anything that could mean something to a shell is never executed. Write the notes yourself.`,
+    );
     return;
   }
 
   const help = await readHelpText(parsed.command);
   if (help.length === 0) {
+    say(`Could not read help from ${parsed.command} — is it installed and on PATH? Write the notes yourself.`);
     return;
   }
   const notes = parsed.args.map((arg) => describeFlag(help, flagOf(arg.value)) ?? '');
   if (notes.every((n) => n.length === 0)) {
+    say(`Read ${parsed.command} --help, but it documents none of these arguments.`);
     return;
   }
-  void panel.webview.postMessage({ type: 'argNotes', notes, source: parsed.command });
+  say(`Descriptions came from ${parsed.command} --help. Edit anything that is not what you meant.`, notes);
 }
 
 export function showEntityForm(options: EntityFormOptions): Promise<EntityFormValues | undefined> {
@@ -673,9 +692,9 @@ function renderHtml(options: EntityFormOptions): string {
         (msg.notes || []).forEach(function (note, i) {
           if (argRows[i] && !(argRows[i].note || '').trim() && note) { argRows[i].note = note; }
         });
-        renderArgs();
+        if ((msg.notes || []).length > 0) { renderArgs(); }
         var hint = document.getElementById('splitHint');
-        if (hint) { hint.textContent = 'Descriptions above came from ' + msg.source + ' --help. Edit anything that is not what you meant.'; }
+        if (hint && msg.status) { hint.textContent = msg.status; }
       }
     });
     renderArgs();
