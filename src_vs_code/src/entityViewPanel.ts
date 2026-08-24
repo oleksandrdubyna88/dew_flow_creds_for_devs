@@ -4,6 +4,7 @@ import { copySecret } from './secretClipboard';
 import { DbConnParts } from './dbConnString';
 import { CommandArg, EntityMetadata } from './types';
 import { buildCommandLine, normalizeArgs } from './commandLine';
+import { BINDABLE_FIELDS, BindableField } from './envBinding';
 
 /**
  * Read-only entity viewer (opened by double-click): the edit form's layout
@@ -34,10 +35,12 @@ export interface EntityViewOptions {
   copyAllText: () => Promise<string>;
   /** Save-As flow for the VPN config (the row's button is a download). */
   saveVpnConfig: () => Promise<void>;
+  /** Write one bindable field into the terminal env collection under `name`. */
+  setEnv: (field: BindableField, name: string) => Promise<boolean>;
 }
 
 interface CopyMessage {
-  type: 'copy' | 'download';
+  type: 'copy' | 'download' | 'env';
   field: string;
 }
 
@@ -51,6 +54,19 @@ export function showEntityView(options: EntityViewOptions): void {
   panel.webview.html = renderHtml(options);
 
   panel.webview.onDidReceiveMessage(async (message: CopyMessage) => {
+    const d = options.details;
+    if (message.type === 'env') {
+      const field = message.field as BindableField;
+      if (!(BINDABLE_FIELDS as readonly string[]).includes(field)) {
+        return;
+      }
+      const bound = d.envBindings?.[field];
+      if (bound === undefined) {
+        return;
+      }
+      await options.setEnv(field, bound);
+      return;
+    }
     if (message.type === 'download' && message.field === 'vpnConfig') {
       await options.saveVpnConfig();
       return;
@@ -58,7 +74,6 @@ export function showEntityView(options: EntityViewOptions): void {
     if (message.type !== 'copy') {
       return;
     }
-    const d = options.details;
     let value: string | undefined;
     switch (message.field) {
       case 'password':
@@ -89,6 +104,11 @@ export function showEntityView(options: EntityViewOptions): void {
       case 'commandNote': value = d.commandNote; break;
       case 'fullCommand': value = buildCommandLine(d.command ?? '', d.commandArgs); break;
       default: {
+        const env = /^envname_(.+)$/.exec(message.field);
+        if (env !== null) {
+          value = d.envBindings?.[env[1]];
+          break;
+        }
         // Argument rows are numbered rather than named — there can be any number of them.
         const arg = /^arg(\d+)$/.exec(message.field);
         if (arg === null) {
@@ -152,11 +172,25 @@ function renderHtml(options: EntityViewOptions): string {
       : `<input readonly value="${escapeHtml(shown)}">`;
     const verb = action === 'download' ? 'Save' : 'Copy';
     const icon = action === 'download' ? DOWNLOAD_ICON : COPY_ICON;
+    // Env-binding UI appears ONLY when the binding is switched on in Edit. When it is:
+    // the variable's name (what your scripts reference), a copy button for that name,
+    // and the Set button — the manual recovery for a lost collection. Switched off,
+    // the row shows nothing about env at all.
+    const envName = (BINDABLE_FIELDS as readonly string[]).includes(field)
+      ? d.envBindings?.[field]
+      : undefined;
+    const envLine =
+      envName !== undefined
+        ? `<div class="line envLine"><span class="envTag">$${escapeHtml(envName)}</span>
+        <button data-field="envname_${field}" data-action="copy" class="icon" title="Copy variable name" aria-label="Copy variable name">${COPY_ICON}</button>
+        <button data-field="${field}" data-action="env" class="icon env" title="Write the current value into $${escapeHtml(envName)} for new terminals" aria-label="Set ${escapeHtml(envName)}">ENV</button>
+      </div>`
+        : '';
     return `<div class="row">
       <label>${escapeHtml(label)}</label>
       <div class="line">${control}
         <button data-field="${field}" data-action="${action}" class="icon" title="${verb} ${escapeHtml(label)}" aria-label="${verb} ${escapeHtml(label)}">${icon}</button>
-      </div>
+      </div>${envLine}
     </div>`;
   };
 
@@ -237,6 +271,9 @@ function renderHtml(options: EntityViewOptions): string {
   h2 { margin: 0 0 14px; font-size: 1.2em; }
   .row { margin-bottom: 10px; }
   .note { opacity: .75; font-style: italic; }
+  .env { font-size: .72em; letter-spacing: .5px; }
+  .envTag { opacity: .8; font-family: var(--vscode-editor-font-family); font-size: .9em; }
+  .envLine { margin-top: 3px; align-items: center; }
   label { display: block; margin-bottom: 3px; opacity: .8; }
   .line { display: flex; gap: 8px; align-items: flex-start; }
   input, textarea { flex: 1; box-sizing: border-box; padding: 5px 7px;
@@ -266,7 +303,7 @@ function renderHtml(options: EntityViewOptions): string {
   for (const button of document.querySelectorAll('button[data-field]')) {
     button.addEventListener('click', () => {
       vscode.postMessage({
-        type: button.dataset.action === 'download' ? 'download' : 'copy',
+        type: button.dataset.action || 'copy',
         field: button.dataset.field,
       });
     });

@@ -61,6 +61,8 @@ export interface EntityMetadata {
   commandArgs?: CommandArg[];
   /** What the command is for, shown under the input. */
   commandNote?: string;
+  /** Secret field -> terminal env variable NAME (values never travel; see envBinding.ts). */
+  envBindings?: Record<string, string>;
   notes?: string;
 }
 
@@ -368,6 +370,14 @@ function isCommandArgArray(value: unknown): value is CommandArg[] {
   );
 }
 
+function allStringRecord(value: unknown): boolean {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    Object.values(value).every((v) => typeof v === 'string')
+  );
+}
+
 export function isEntityMetadata(value: unknown): value is EntityMetadata {
   if (typeof value !== 'object' || value === null) {
     return false;
@@ -395,6 +405,7 @@ export function isEntityMetadata(value: unknown): value is EntityMetadata {
     (v.command === undefined || typeof v.command === 'string') &&
     (v.commandNote === undefined || typeof v.commandNote === 'string') &&
     (v.commandArgs === undefined || isCommandArgArray(v.commandArgs)) &&
+    (v.envBindings === undefined || allStringRecord(v.envBindings)) &&
     (v.notes === undefined || typeof v.notes === 'string')
   );
 }

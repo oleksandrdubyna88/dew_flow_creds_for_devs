@@ -75,6 +75,7 @@ import { RemoteState, inheritedFolderType } from './defaultFolders';
 import * as childProcess from 'node:child_process';
 import * as fs from 'node:fs';
 import { resolveVpnLauncher } from './vpnExec';
+import { applyEnvBindings, bindableFieldValue } from './envApply';
 import {
   AuthProvider,
   EntityKind,
@@ -88,7 +89,12 @@ import {
   kindOf,
 } from './types';
 
+
+/** Set in activate(); the module-level slot keeps editNode's signature unchanged. */
+let envCollection: vscode.GlobalEnvironmentVariableCollection;
+
 export function activate(context: vscode.ExtensionContext): void {
+  envCollection = context.environmentVariableCollection;
   const storage = new StorageManager(context.globalState, context.secrets);
   const provider = new CredTreeDataProvider(storage);
   const storageDir = context.globalStorageUri.fsPath;
@@ -741,6 +747,7 @@ ${detail}
       details: result.details,
     });
     await applySecrets(storage, location.accountId, id, result);
+    await applyEnvBindings(envCollection, storage, location.accountId, result.details);
     mutated();
   });
 
@@ -1677,6 +1684,9 @@ async function editNode(
     details: result.details,
   });
   await applySecrets(storage, accountId, node.id, result);
+  // AFTER the secrets land, so the values written are the ones just saved. The old
+  // bindings are passed so a renamed or switched-off variable is deleted, not orphaned.
+  await applyEnvBindings(envCollection, storage, accountId, result.details, node.details.envBindings);
   onMutated();
 }
 
@@ -1934,6 +1944,22 @@ async function openEntityViewer(
         notes,
       ),
     saveVpnConfig: () => saveVpnConfigToFile(accountId, details, storage),
+    // The manual half of env bindings: the automatic write happens on save, but the
+    // collection can be lost with the extension's storage — this button re-sets one
+    // variable from the CURRENT stored value, on this machine, right now.
+    setEnv: async (field, name) => {
+      const value = await bindableFieldValue(storage, accountId, details, field);
+      if (value === undefined || value.length === 0) {
+        void vscode.window.showWarningMessage('Nothing stored in that field — nothing was set.');
+        return false;
+      }
+      envCollection.replace(name, value);
+      envCollection.description = 'CredsForDevs: secrets exposed as terminal variables';
+      void vscode.window.showInformationMessage(
+        `$${name} is set for NEW integrated terminals. Already-open terminals keep their old environment.`,
+      );
+      return true;
+    },
   });
 }
 

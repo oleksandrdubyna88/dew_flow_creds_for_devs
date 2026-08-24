@@ -4,6 +4,33 @@ All notable changes to **CredsForDevs** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.38.0] — 2026-08-24
+
+### Added
+
+- **Secret fields can be exposed as terminal environment variables.** In Edit, each
+  secret field — password, private key, public key, connection string, DB password —
+  gains a toggle (off by default). Switching it on mints a name from the entity:
+  entity *git key*, private key → `ENV_GITKEY_PRIVATEKEY`; edit it if you want another.
+  Saving writes the value into every **new** integrated terminal, persistently.
+
+  The viewer shows the variable's **name** with a copy button — only for fields whose
+  binding is on; a field with the toggle off shows nothing about env at all — plus a
+  **Set** button that re-writes the value on demand. That button is the recovery the
+  feature was asked with: the collection can be lost, and re-setting by hand must not
+  require re-saving the entity.
+
+  What syncs is the **name** — it is not a secret. The value is written only on the
+  machine pressing the button or saving, from that machine's own OS keychain, so a
+  binding arriving via sync is a name waiting for a value, never a secret in transit.
+  Renaming or disabling a binding deletes the old variable on save rather than leaving
+  it set forever.
+
+- **VPN entities now carry host / gateway, login, port, and a key or certificate.** The
+  key goes to the OS keychain like an SSH private key; host, login and port live in the
+  entity and travel only inside the encrypted vault. The viewer shows exactly the fields
+  that are filled — an empty one adds no row.
+
 ## [0.37.0] — 2026-08-24
 
 ### Fixed

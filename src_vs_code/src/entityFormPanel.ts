@@ -4,6 +4,7 @@ import { normalizeArgs } from './commandLine';
 import { flagOf, parseCommandLine } from './commandParse';
 import { describeFlag, isProbeSafe } from './helpText';
 import { readHelpText } from './helpLookup';
+import { BINDABLE_FIELDS, BindableField, isValidEnvName } from './envBinding';
 import {
   CommandArg,
   DB_TYPES,
@@ -208,8 +209,25 @@ function isDbType(value: string): value is DbType {
   return (DB_TYPES as readonly string[]).includes(value);
 }
 
+/** Bindings as posted by the webview — unknown fields and invalid names are dropped. */
+function readEnvBindings(data: Record<string, unknown>): Record<string, string> | undefined {
+  const raw = data.envBindings;
+  if (typeof raw !== 'object' || raw === null) {
+    return undefined;
+  }
+  const out: Record<string, string> = {};
+  for (const field of BINDABLE_FIELDS) {
+    const name = (raw as Record<string, unknown>)[field];
+    if (typeof name === 'string' && isValidEnvName(name.trim())) {
+      out[field] = name.trim();
+    }
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
 function toValues(data: Record<string, unknown>, options: EntityFormOptions): EntityFormValues {
   const kind = (options.lockedKind ?? str(data, 'entityType')) as EntityKind;
+  const envBindings = readEnvBindings(data);
   const isSsh = kind === 'ssh';
   const isKey = kind === 'sshkey';
   const isVpn = kind === 'vpn';
@@ -232,9 +250,10 @@ function toValues(data: Record<string, unknown>, options: EntityFormOptions): En
     details: {
       id: options.entityId,
       name: str(data, 'name').trim(),
-      host: isSsh ? str(data, 'host').trim() || undefined : undefined,
-      user: isSsh ? str(data, 'user').trim() || undefined : undefined,
-      port: isSsh && portText !== '' ? Number(portText) : undefined,
+      envBindings,
+      host: isSsh || isVpn ? str(data, 'host').trim() || undefined : undefined,
+      user: isSsh || isVpn ? str(data, 'user').trim() || undefined : undefined,
+      port: (isSsh || isVpn) && portText !== '' ? Number(portText) : undefined,
       sshKeyPath: isSsh || isKey ? str(data, 'sshKeyPath').trim() || undefined : undefined,
       publicKey: isSsh || isKey ? str(data, 'publicKey').trim() || undefined : undefined,
       sshKeyEntityId: isSsh && keyEntity !== '' ? keyEntity : undefined,
@@ -254,8 +273,8 @@ function toValues(data: Record<string, unknown>, options: EntityFormOptions): En
     },
     newPassword: !isDb && password.length > 0 ? password : undefined,
     clearPassword: bool(data, 'clearPassword'),
-    newPrivateKey: (isSsh || isKey) && privateKey.length > 0 ? privateKey : undefined,
-    clearPrivateKey: bool(data, 'clearPrivateKey'),
+    newPrivateKey: (isSsh || isKey || isVpn) && privateKey.length > 0 ? privateKey : undefined,
+    clearPrivateKey: bool(data, 'clearPrivateKey') || bool(data, 'clearVpnKey'),
     newVpnConfig: isVpn && vpnConfig.length > 0 ? vpnConfig : undefined,
     clearVpnConfig,
     newDbConnection: isDb && dbConnection.length > 0 ? dbConnection : undefined,
@@ -273,6 +292,24 @@ function escapeHtml(value: string): string {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
+}
+
+/**
+ * The export-to-terminal row under a secret input: a toggle (off by default), and the
+ * variable name, pre-filled from the entity name the way the operator asked for it —
+ * `git key` -> `ENV_GITKEY_PRIVATEKEY` — and editable after.
+ */
+function envRow(field: BindableField, d: EntityMetadata | undefined): string {
+  const bound = d?.envBindings?.[field];
+  const checked = bound !== undefined ? 'checked' : '';
+  const value = bound ?? '';
+  return `<div class="check envRow" data-env-field="${field}">
+    <input id="envOn_${field}" type="checkbox" ${checked}>
+    <label for="envOn_${field}">Expose in terminals as env variable</label>
+    <input id="envName_${field}" type="text" spellcheck="false" autocomplete="off"
+           style="margin-left:8px; ${bound === undefined ? 'display:none;' : ''}"
+           value="${escapeHtml(value)}" placeholder="ENV_NAME">
+  </div>`;
 }
 
 function renderHtml(options: EntityFormOptions): string {
@@ -417,8 +454,10 @@ function renderHtml(options: EntityFormOptions): string {
            <label for="clearPrivateKey">Clear the stored private key</label></div>`
         : ''
     }
+    ${envRow('privateKey', d)}
     <label for="publicKey">Public key (content)</label>
     <textarea id="publicKey" rows="3" spellcheck="false">${escapeHtml(d?.publicKey ?? '')}</textarea>
+    ${envRow('publicKey', d)}
     <label for="sshKeyPath">Key path (alternative to key content)</label>
     <input id="sshKeyPath" type="text" placeholder="~/.ssh/id_ed25519"
            value="${escapeHtml(d?.sshKeyPath ?? '')}">
@@ -436,6 +475,33 @@ function renderHtml(options: EntityFormOptions): string {
       options.hasStoredVpnConfig
         ? `<div class="check"><input id="clearVpnConfig" type="checkbox">
            <label for="clearVpnConfig">Clear the stored config</label></div>`
+        : ''
+    }
+    <div class="row">
+      <div>
+        <label for="vpnHost">Host / gateway</label>
+        <input id="vpnHost" type="text" placeholder="vpn.company.com"
+               value="${escapeHtml(d?.host ?? '')}">
+      </div>
+      <div>
+        <label for="vpnPort">Port</label>
+        <input id="vpnPort" type="number" min="1" max="65535" placeholder="1194"
+               value="${d?.port !== undefined ? String(d.port) : ''}">
+      </div>
+    </div>
+    <label for="vpnUser">Login</label>
+    <input id="vpnUser" type="text" autocomplete="off" value="${escapeHtml(d?.user ?? '')}">
+    <label for="vpnKey">Key / certificate (content)</label>
+    <textarea id="vpnKey" rows="4" spellcheck="false" autocomplete="off"></textarea>
+    <p class="hint">${
+      options.hasStoredPrivateKey
+        ? 'A key is stored. Leave empty to keep it.'
+        : 'Private key or certificate for this VPN. Stored in the OS keychain, synced only inside the encrypted vault.'
+    }</p>
+    ${
+      options.hasStoredPrivateKey
+        ? `<div class="check"><input id="clearVpnKey" type="checkbox">
+           <label for="clearVpnKey">Clear the stored key</label></div>`
         : ''
     }
   </fieldset>
@@ -472,6 +538,8 @@ function renderHtml(options: EntityFormOptions): string {
     <input id="dbConnection" type="text" autocomplete="off" spellcheck="false"
            placeholder="postgresql://user:pass@host:5432/db"
            value="${escapeHtml(options.initialDbConnection ?? '')}">
+    ${envRow('dbConnection', d)}
+    ${envRow('dbPassword', d)}
     <p class="hint">${dbConnHint}</p>
     <div class="row">
       <div>
@@ -497,6 +565,7 @@ function renderHtml(options: EntityFormOptions): string {
     <label for="password">Password / secret value</label>
     <input id="password" type="password" autocomplete="off">
     <p class="hint">${passwordHint}</p>
+    ${envRow('password', d)}
     ${
       options.hasStoredPassword
         ? `<div class="check"><input id="clearPassword" type="checkbox">
@@ -700,6 +769,38 @@ function renderHtml(options: EntityFormOptions): string {
     renderArgs();
   })();
 
+  // Env-binding rows: toggling on mints the default name from the CURRENT entity name;
+  // a name the user edited is kept. Toggling off hides the input, and the save's diff
+  // deletes the variable from the collection.
+  function envDefaultName(field) {
+    var flat = (val('name') || '').toUpperCase().replace(/[^A-Z0-9]+/g, '');
+    return 'ENV_' + (flat.length > 0 ? flat : 'ENTITY') + '_' + field.toUpperCase();
+  }
+  function collectEnvBindings() {
+    var out = {};
+    document.querySelectorAll('.envRow').forEach(function (row) {
+      var field = row.getAttribute('data-env-field');
+      var on = document.getElementById('envOn_' + field);
+      var name = document.getElementById('envName_' + field);
+      if (on && on.checked && name && name.value.trim().length > 0) {
+        out[field] = name.value.trim();
+      }
+    });
+    return out;
+  }
+  document.querySelectorAll('.envRow').forEach(function (row) {
+    var field = row.getAttribute('data-env-field');
+    var on = document.getElementById('envOn_' + field);
+    var name = document.getElementById('envName_' + field);
+    if (!on || !name) { return; }
+    on.addEventListener('change', function () {
+      name.style.display = on.checked ? '' : 'none';
+      if (on.checked && name.value.trim().length === 0) {
+        name.value = envDefaultName(field);
+      }
+    });
+  });
+
   document.getElementById('entityType').addEventListener('change', updateVisibility);
   document.getElementById('sshKeyEntityId').addEventListener('change', updateVisibility);
   updateVisibility();
@@ -869,14 +970,20 @@ function renderHtml(options: EntityFormOptions): string {
     }
     vscode.postMessage({ type: 'save', data: {
       entityType: kind,
-      name: val('name'), host: val('host'), user: val('user'), port: val('port'),
+      name: val('name'),
+      host: currentKind() === 'vpn' ? val('vpnHost') : val('host'),
+      user: currentKind() === 'vpn' ? val('vpnUser') : val('user'),
+      port: currentKind() === 'vpn' ? val('vpnPort') : val('port'),
       sshKeyPath: val('sshKeyPath'), publicKey: val('publicKey'),
       sshKeyEntityId: val('sshKeyEntityId'), notes: val('notes'),
-      password: val('password'), privateKey: val('privateKey'),
+      password: val('password'),
+      privateKey: currentKind() === 'vpn' ? val('vpnKey') : val('privateKey'),
+      clearVpnKey: chk('clearVpnKey'),
       vpnType: val('vpnType'), vpnConfigContent, vpnConfigFileName: val('vpnConfigFileName'),
       clearVpnConfig: chk('clearVpnConfig'),
       dbType: val('dbType'), dbConnection: val('dbConnection'),
       command: val('command'), commandNote: val('commandNote'), commandArgs: argRows,
+      envBindings: collectEnvBindings(),
       clearPassword: chk('clearPassword'), clearPrivateKey: chk('clearPrivateKey'),
     }});
   });

@@ -269,6 +269,21 @@ the ordinary state of a machine that has just signed in. Unreachable counts as `
 The seeded flag is also claimed before the first `await`, so two concurrent sign-in flows cannot
 both pass the guard.
 
+### Env bindings: names travel, values never do
+
+`envBinding.ts` (pure) + `envApply.ts` (the collection writer). A secret field can be exported into
+VS Code's environment variable collection — injected into every integrated terminal opened
+afterwards, persisted across reloads. The binding's NAME lives in `EntityMetadata.envBindings` and
+syncs (it is not a secret); the VALUE is written only locally, from this machine's SecretStorage, on
+save or via the viewer's `Set` button. That button exists because the collection can be lost with
+the extension's storage — recovery must not require re-saving the entity. `staleEnvNames` is why a
+renamed or disabled binding is deleted from the collection on save instead of surviving forever —
+with the guard that a name another field still binds is not deleted.
+
+The viewer shows env UI **only for fields whose binding is on**: the name, a copy-name button, and
+`Set`. Default name shape: `ENV_<ENTITYNAME>_<FIELD>` (`defaultEnvName`), minted in the form when
+the toggle is switched on and editable after.
+
 ### Clone
 
 `cloneNode` copies a folder or entity's settings and deliberately **not** its secrets. Duplicating
