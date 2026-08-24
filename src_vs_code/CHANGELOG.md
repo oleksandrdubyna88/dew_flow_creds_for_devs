@@ -4,6 +4,20 @@ All notable changes to **CredsForDevs** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.33.0] — 2026-08-24
+
+### Changed
+
+- **Publisher id is `remsoftdev`.** The manifest carried a placeholder and every local
+  build had one swapped in by hand; the extension now identifies as
+  `remsoftdev.creds-for-devs`, which is what `vsce publish` and the Marketplace URL use.
+
+  **This changes the extension ID, and VS Code keys `SecretStorage` and `globalState` by
+  it.** Installing this build does not upgrade the local one — it installs a *different*
+  extension that starts empty, and the previous one keeps its secrets until it is removed.
+  Before switching: sync or take a snapshot from the old build, install this one, sign in,
+  set the sync location and PIN, and let it pull. Then remove the old extension.
+
 ## [0.32.0] — 2026-08-24
 
 ### Changed

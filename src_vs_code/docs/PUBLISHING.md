@@ -17,14 +17,14 @@ create, so this document is the handover.
 | `.vscodeignore` | trimmed so the `.vsix` carries only `out/`, `media/`, and the three docs |
 | CI | `npm run typecheck`, `npm test`, and `vsce package` run on every push |
 
-`vsce package` currently succeeds with no warnings. The only blocker left is the publisher id.
+`vsce package` succeeds with no warnings, and the publisher id is set: **`remsoftdev`**.
 
-## The one thing left: a publisher
+## The publisher
 
 `package.json` carries a deliberate placeholder:
 
 ```json
-"publisher": "set-your-publisher-id"
+"publisher": "remsoftdev"
 ```
 
 The release workflow **refuses to publish while that value is there**, so this cannot be shipped by
@@ -35,7 +35,7 @@ accident.
 1. Sign in at <https://marketplace.visualstudio.com/manage> with a Microsoft account.
 2. *Create publisher*. The **ID** is permanent and appears in the extension's URL and in
    `code --install-extension <publisher>.creds-for-devs`. Lowercase letters, digits and hyphens.
-3. Put that id in `package.json`, replacing the placeholder, and delete the `"//publisher"` note.
+3. Put that id in `package.json`. **Done — it is `remsoftdev`.**
 
 ### 2. Get a Personal Access Token
 
@@ -54,7 +54,7 @@ Either from your machine:
 
 ```bash
 cd src_vs_code
-npx vsce login <your-publisher-id>    # paste the PAT
+npx vsce login remsoftdev             # paste the PAT
 npm run publish
 ```
 
