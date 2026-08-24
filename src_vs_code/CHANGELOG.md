@@ -4,6 +4,27 @@ All notable changes to **CredsForDevs** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.42.0] — 2026-08-24
+
+### Added
+
+- **Password SSH logins no longer make you retype the stored password.** ssh refuses a
+  password on stdin — it asks the TTY, or, pointed at a program via `SSH_ASKPASS`, it
+  asks the program. Connect now supplies ours: a static two-line script that echoes an
+  environment variable, running in a terminal dedicated to that connection. The password
+  itself is **never in a file, never on a command line, never in scrollback** — it
+  travels only in that terminal's environment.
+
+  Two details that took deliberate care: `SSH_ASKPASS_REQUIRE=force`, because inside a
+  terminal ssh has a TTY and would silently ignore askpass without it (needs OpenSSH
+  8.4+ — Windows 11 ships 10.x); and `-o StrictHostKeyChecking=accept-new`, because
+  under `force` even the host-key *yes/no* question would be answered by the askpass
+  program — with the password. A changed host key still refuses loudly, as it should.
+
+  The terminal is fresh per connect: its environment carries *this* entity's password,
+  and reusing one would start the new session with the previous entity's credentials.
+  Key-based connections are untouched and still win when a key exists.
+
 ## [0.41.0] — 2026-08-24
 
 ### Fixed

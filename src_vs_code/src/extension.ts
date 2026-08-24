@@ -44,7 +44,7 @@ import {
 } from './vpnCommand';
 import { StorageManager } from './storageManager';
 import { SyncManager } from './syncManager';
-import { buildSshCommand, openSshTerminal } from './terminalManager';
+import { buildSshCommand, describeSshTarget, openSshTerminal } from './terminalManager';
 import { DB_DEFAULT_PORTS, parseDbConnectionString } from './dbConnString';
 import { openInDbExtension } from './dbLauncher';
 import { openShare, resolveShares, sealShare, sharesFromEnvelope } from './shareFormat';
@@ -77,6 +77,7 @@ import * as fs from 'node:fs';
 import { resolveVpnLauncher } from './vpnExec';
 import { applyEnvBindings, bindableFieldValue } from './envApply';
 import { envProbeCommand } from './envProbe';
+import { askpassEnv, askpassScript } from './sshAskpass';
 import { imageMime } from './attachment';
 import {
   AuthProvider,
@@ -1747,6 +1748,36 @@ async function connectEntity(
       return;
     }
   }
+  // No key anywhere, but a password stored: supply it through SSH_ASKPASS in a
+  // dedicated terminal, so nobody retypes what the vault already knows. The password
+  // rides the terminal's ENVIRONMENT — not a file, not the command line.
+  const password = await storage.getPassword(accountId, keySource.id) ?? await storage.getPassword(accountId, entity.id);
+  if (keyPath === undefined && password !== undefined) {
+    const command = buildSshCommand(entity);
+    const target = describeSshTarget(entity);
+    if (command === undefined || target === undefined) {
+      void vscode.window.showWarningMessage(`"${entity.name}" has no host configured — cannot start SSH.`);
+      return;
+    }
+    const script = askpassScript(process.platform);
+    const scriptPath = path.join(storageDir, 'keys', script.name);
+    fs.mkdirSync(path.dirname(scriptPath), { recursive: true, mode: 0o700 });
+    fs.writeFileSync(scriptPath, script.content, { mode: 0o700 });
+    // A FRESH terminal every time: the env carries this entity's password, and reusing
+    // one would run the new session with the previous entity's credentials.
+    const name = `SSH: ${target}`;
+    vscode.window.terminals.find((t) => t.name === name && t.exitStatus === undefined)?.dispose();
+    const passTerminal = vscode.window.createTerminal({
+      name,
+      env: askpassEnv(scriptPath, password, process.platform),
+    });
+    passTerminal.show();
+    // accept-new: with SSH_ASKPASS_REQUIRE=force even the host-key yes/no question
+    // would be answered by the askpass program — with the password.
+    passTerminal.sendText(`${command.replace(/^ssh /, 'ssh -o StrictHostKeyChecking=accept-new ')}`, true);
+    return;
+  }
+
   const terminal = openSshTerminal({ ...entity, sshKeyPath: keyPath });
   // Wipe the decrypted key from disk as soon as the session ends.
   if (materialized !== undefined) {
