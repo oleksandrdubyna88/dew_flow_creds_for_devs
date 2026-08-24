@@ -1426,7 +1426,9 @@ ${detail}
     }
     const share = element.share;
     const pin = await vscode.window.showInputBox({
-      title: `Accept "${share.item.entityName}" from ${share.item.fromEmail}`,
+      title: `Accept "${share.item.entityName}" from ${share.item.fromEmail} — into ${
+        storage.getAccount(share.accountId)?.email ?? 'this account'
+      }`,
       prompt: 'Enter the share PIN',
       password: true,
       ignoreFocusOut: true,

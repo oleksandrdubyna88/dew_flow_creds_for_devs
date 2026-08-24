@@ -4,6 +4,16 @@ All notable changes to **CredsForDevs** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.41.0] — 2026-08-24
+
+### Fixed
+
+- **A shared item said who sent it but not which of YOUR accounts received it.** With
+  several accounts that is the half that matters: it decides which vault — and which
+  sync PIN — accepting will involve. The row now reads `kind → your@account`, the
+  tooltip names both directions, and the accept dialog says *from sender — into
+  account* before asking for the PIN.
+
 ## [0.40.1] — 2026-08-24
 
 ### Fixed

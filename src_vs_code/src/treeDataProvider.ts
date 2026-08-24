@@ -146,8 +146,15 @@ export class CredTreeDataProvider
       item.id = `share:${share.id}`;
       item.contextValue = 'sharedItem';
       item.iconPath = new vscode.ThemeIcon(kindIcon(share.entityKind));
-      item.description = share.entityKind;
-      item.tooltip = `Shared by ${share.fromEmail} · ${new Date(share.createdAt).toLocaleString()}`;
+      // WHERE it arrived matters as much as who sent it: with several accounts, the
+      // sender alone leaves you guessing which vault (and which sync PIN) accepting
+      // will involve.
+      const toEmail = this.storage.getAccount(element.share.accountId)?.email;
+      item.description = toEmail !== undefined ? `${share.entityKind} → ${toEmail}` : share.entityKind;
+      item.tooltip =
+        `Shared by ${share.fromEmail}` +
+        (toEmail !== undefined ? ` → to your account ${toEmail}` : '') +
+        ` · ${new Date(share.createdAt).toLocaleString()}`;
       return item;
     }
     if (element.kind === 'account') {
