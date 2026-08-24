@@ -63,6 +63,10 @@ export interface EntityMetadata {
   commandNote?: string;
   /** Secret field -> terminal env variable NAME (values never travel; see envBinding.ts). */
   envBindings?: Record<string, string>;
+  /** Display name of the encrypted attachment (content in SecretStorage). */
+  attachmentFileName?: string;
+  /** Display name of the encrypted image (content in SecretStorage). */
+  imageFileName?: string;
   notes?: string;
 }
 
@@ -324,6 +328,10 @@ export interface BackupBundle {
   vpnConfigs?: Record<string, string>;
   /** entityId -> DB connection string. Absent in pre-0.9 backups. */
   dbConnections?: Record<string, string>;
+  /** entityId -> attachment content, base64. Absent in older backups. */
+  attachments?: Record<string, string>;
+  /** entityId -> image content, base64. Absent in older backups. */
+  images?: Record<string, string>;
   /** entityId -> notes. Moved out of plaintext metadata in 0.20. */
   notes?: Record<string, string>;
   /**
@@ -406,6 +414,8 @@ export function isEntityMetadata(value: unknown): value is EntityMetadata {
     (v.commandNote === undefined || typeof v.commandNote === 'string') &&
     (v.commandArgs === undefined || isCommandArgArray(v.commandArgs)) &&
     (v.envBindings === undefined || allStringRecord(v.envBindings)) &&
+    (v.attachmentFileName === undefined || typeof v.attachmentFileName === 'string') &&
+    (v.imageFileName === undefined || typeof v.imageFileName === 'string') &&
     (v.notes === undefined || typeof v.notes === 'string')
   );
 }
@@ -473,6 +483,12 @@ export function isBackupBundle(value: unknown): value is BackupBundle {
     return false;
   }
   if (v.dbConnections !== undefined && !allStrings(v.dbConnections)) {
+    return false;
+  }
+  if (v.attachments !== undefined && !allStrings(v.attachments)) {
+    return false;
+  }
+  if (v.images !== undefined && !allStrings(v.images)) {
     return false;
   }
   if (v.exportedAt !== undefined && typeof v.exportedAt !== 'number') {

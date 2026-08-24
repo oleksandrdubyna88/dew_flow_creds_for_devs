@@ -35,6 +35,12 @@ export interface EntityViewOptions {
   copyAllText: () => Promise<string>;
   /** Save-As flow for the VPN config (the row's button is a download). */
   saveVpnConfig: () => Promise<void>;
+  hasAttachment: boolean;
+  /** data: URI for the stored image — the one secret deliberately SENT to the webview,
+   * because a preview cannot round-trip through the host. */
+  imageDataUri?: string;
+  /** Save-As for the stored attachment / image. */
+  saveAttachment: (which: 'attachment' | 'image') => Promise<void>;
   /** Write one bindable field into the terminal env collection under `name`. */
   setEnv: (field: BindableField, name: string) => Promise<boolean>;
   /** Open a fresh terminal and echo `name`, so the variable is SEEN rather than trusted. */
@@ -75,6 +81,10 @@ export function showEntityView(options: EntityViewOptions): void {
     }
     if (message.type === 'download' && message.field === 'vpnConfig') {
       await options.saveVpnConfig();
+      return;
+    }
+    if (message.type === 'download' && (message.field === 'attachment' || message.field === 'image')) {
+      await options.saveAttachment(message.field);
       return;
     }
     if (message.type !== 'copy') {
@@ -264,6 +274,23 @@ function renderHtml(options: EntityViewOptions): string {
     row('DB user', 'dbUser', options.dbParts?.user),
     row('DB password', 'dbPassword', options.dbHasPassword ? '•' : undefined, true),
     row('Notes', 'notes', options.notes),
+    row(
+      `Additional file${d.attachmentFileName ? ` (${d.attachmentFileName})` : ''}`,
+      'attachment',
+      options.hasAttachment ? '•' : undefined,
+      true,
+      'download',
+    ),
+    ...(options.imageDataUri !== undefined
+      ? [
+          `<div class="row"><label>Additional image${d.imageFileName ? ` (${escapeHtml(d.imageFileName)})` : ''}</label>
+      <div class="line">
+        <img id="imgPreview" class="preview" src="${options.imageDataUri}"
+             title="Click to zoom (×2, twice; a third click resets)" alt="Stored image">
+        <button data-field="image" data-action="download" class="icon" title="Save image" aria-label="Save image">${DOWNLOAD_ICON}</button>
+      </div></div>`,
+        ]
+      : []),
   ].join('\n');
 
   return `<!DOCTYPE html>
@@ -271,7 +298,7 @@ function renderHtml(options: EntityViewOptions): string {
 <head>
 <meta charset="UTF-8">
 <meta http-equiv="Content-Security-Policy"
-      content="default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${nonce}';">
+      content="default-src 'none'; img-src data:; style-src 'unsafe-inline'; script-src 'nonce-${nonce}';">
 <style>
   body { font-family: var(--vscode-font-family); color: var(--vscode-foreground);
          background: var(--vscode-editor-background); padding: 16px 24px; max-width: 640px; }
@@ -281,6 +308,9 @@ function renderHtml(options: EntityViewOptions): string {
   .env { font-size: .72em; letter-spacing: .5px; }
   .envTag { opacity: .8; font-family: var(--vscode-editor-font-family); font-size: .9em; }
   .envLine { margin-top: 3px; align-items: center; }
+  .preview { width: 200px; height: 200px; object-fit: contain; cursor: zoom-in;
+             border: 1px solid var(--vscode-widget-border, #3c3c3c); border-radius: 4px;
+             background: var(--vscode-editor-background); }
   label { display: block; margin-bottom: 3px; opacity: .8; }
   .line { display: flex; gap: 8px; align-items: flex-start; }
   input, textarea { flex: 1; box-sizing: border-box; padding: 5px 7px;
@@ -313,6 +343,18 @@ function renderHtml(options: EntityViewOptions): string {
         type: button.dataset.action || 'copy',
         field: button.dataset.field,
       });
+    });
+  }
+  // The preview starts at 200x200; each click doubles it, twice, then a click resets.
+  const preview = document.getElementById('imgPreview');
+  if (preview) {
+    let zoom = 0;
+    preview.addEventListener('click', () => {
+      zoom = (zoom + 1) % 3;
+      const size = 200 * Math.pow(2, zoom);
+      preview.style.width = size + 'px';
+      preview.style.height = size + 'px';
+      preview.style.cursor = zoom === 2 ? 'zoom-out' : 'zoom-in';
     });
   }
   window.addEventListener('message', (event) => {

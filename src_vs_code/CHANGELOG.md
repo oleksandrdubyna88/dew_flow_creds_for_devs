@@ -4,6 +4,24 @@ All notable changes to **CredsForDevs** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.40.0] — 2026-08-24
+
+### Added
+
+- **Every entity, whatever its kind, can carry one encrypted file and one encrypted
+  image.** *Additional file* takes the formats people actually attach — PDF, Office,
+  text, data, archives — and refuses the executable family outright, including as the
+  tail of a double extension (`invoice.pdf.exe`). *Additional image* takes the popular
+  image formats. Both are capped at 4 MB, checked before anything is stored, and both
+  live where every other secret lives: the OS keychain locally, the sealed vault in
+  transit — sync, backups and snapshots carry them like passwords.
+
+  In the viewer, only what is set appears: a stored file shows as a row with a save
+  button; a stored image shows as a **200×200 preview** — click to zoom ×2, twice, a
+  third click resets — with its own save button. The file name travels in plaintext
+  metadata (like the VPN config's name already did) so the row can be labelled without
+  opening the vault; the content never does.
+
 ## [0.39.0] — 2026-08-24
 
 ### Added

@@ -50,6 +50,14 @@ function notesSecretKey(accountId: string, entityId: string): string {
   return `${accountId}_${entityId}:notes`;
 }
 
+function attachmentSecretKey(accountId: string, entityId: string): string {
+  return `${accountId}_${entityId}:attachment`;
+}
+
+function imageSecretKey(accountId: string, entityId: string): string {
+  return `${accountId}_${entityId}:image`;
+}
+
 /** SecretStorage key for an entity's DB connection string. */
 function dbConnSecretKey(accountId: string, entityId: string): string {
   return `${accountId}_${entityId}:dbConn`;
@@ -133,6 +141,8 @@ export class StorageManager {
         await this.secrets.delete(vpnConfigSecretKey(accountId, node.id));
         await this.secrets.delete(dbConnSecretKey(accountId, node.id));
         await this.secrets.delete(notesSecretKey(accountId, node.id));
+        await this.secrets.delete(attachmentSecretKey(accountId, node.id));
+        await this.secrets.delete(imageSecretKey(accountId, node.id));
       }
     }
     await this.globalState.update(nodesKey(accountId), undefined);
@@ -288,6 +298,8 @@ export class StorageManager {
         await this.secrets.delete(vpnConfigSecretKey(accountId, n.id));
         await this.secrets.delete(dbConnSecretKey(accountId, n.id));
         await this.secrets.delete(notesSecretKey(accountId, n.id));
+        await this.secrets.delete(attachmentSecretKey(accountId, n.id));
+        await this.secrets.delete(imageSecretKey(accountId, n.id));
       }
     }
     await this.setTombstones(accountId, tombstones);
@@ -389,6 +401,32 @@ export class StorageManager {
     await this.secrets.delete(vpnConfigSecretKey(accountId, entityId));
   }
 
+  // ---------- attachments (SecretStorage, base64 content) ----------
+
+  getAttachment(accountId: string, entityId: string): Thenable<string | undefined> {
+    return this.secrets.get(attachmentSecretKey(accountId, entityId));
+  }
+
+  async setAttachment(accountId: string, entityId: string, base64: string | undefined): Promise<void> {
+    if (base64 === undefined || base64.length === 0) {
+      await this.secrets.delete(attachmentSecretKey(accountId, entityId));
+      return;
+    }
+    await this.secrets.store(attachmentSecretKey(accountId, entityId), base64);
+  }
+
+  getImage(accountId: string, entityId: string): Thenable<string | undefined> {
+    return this.secrets.get(imageSecretKey(accountId, entityId));
+  }
+
+  async setImage(accountId: string, entityId: string, base64: string | undefined): Promise<void> {
+    if (base64 === undefined || base64.length === 0) {
+      await this.secrets.delete(imageSecretKey(accountId, entityId));
+      return;
+    }
+    await this.secrets.store(imageSecretKey(accountId, entityId), base64);
+  }
+
   // ---------- notes (SecretStorage, tenant-scoped) ----------
 
   getNotes(accountId: string, entityId: string): Thenable<string | undefined> {
@@ -427,6 +465,8 @@ export class StorageManager {
     const vpnConfigs: Record<string, string> = {};
     const dbConnections: Record<string, string> = {};
     const notes: Record<string, string> = {};
+    const attachments: Record<string, string> = {};
+    const images: Record<string, string> = {};
     for (const node of nodes) {
       if (node.type !== 'entity') {
         continue;
@@ -447,6 +487,14 @@ export class StorageManager {
       if (dbConn !== undefined) {
         dbConnections[node.id] = dbConn;
       }
+      const attachment = await this.secrets.get(attachmentSecretKey(accountId, node.id));
+      if (attachment !== undefined) {
+        attachments[node.id] = attachment;
+      }
+      const image = await this.secrets.get(imageSecretKey(accountId, node.id));
+      if (image !== undefined) {
+        images[node.id] = image;
+      }
       // Migrate any legacy plaintext note (globalState) into the secret map.
       const note =
         (await this.secrets.get(notesSecretKey(accountId, node.id))) ?? node.details?.notes;
@@ -461,6 +509,8 @@ export class StorageManager {
       vpnConfigs,
       dbConnections,
       notes,
+      attachments,
+      images,
       tombstones: this.getTombstones(accountId),
       horizon: this.getHorizon(accountId),
       exportedAt: Date.now(),
@@ -477,6 +527,8 @@ export class StorageManager {
       vpnConfigs: bundle.vpnConfigs ?? {},
       dbConnections: bundle.dbConnections ?? {},
       notes: bundle.notes ?? {},
+      attachments: bundle.attachments ?? {},
+      images: bundle.images ?? {},
       tombstones: bundle.tombstones ?? {},
       horizon: bundle.horizon ?? {},
     };
@@ -491,6 +543,8 @@ export class StorageManager {
       vpnConfigs: snapshot.vpnConfigs,
       dbConnections: snapshot.dbConnections,
       notes: snapshot.notes,
+      attachments: snapshot.attachments,
+      images: snapshot.images,
       tombstones: snapshot.tombstones,
       horizon: snapshot.horizon,
     });
@@ -502,6 +556,8 @@ export class StorageManager {
     const vpnConfigs = bundle.vpnConfigs ?? {};
     const dbConnections = bundle.dbConnections ?? {};
     const notes = bundle.notes ?? {};
+    const attachments = bundle.attachments ?? {};
+    const images = bundle.images ?? {};
     // Drop secrets of entities that will disappear with the replaced tree.
     for (const node of this.getNodes(accountId)) {
       if (node.type !== 'entity') {
@@ -522,6 +578,12 @@ export class StorageManager {
       if (notes[node.id] === undefined) {
         await this.secrets.delete(notesSecretKey(accountId, node.id));
       }
+      if (attachments[node.id] === undefined) {
+        await this.secrets.delete(attachmentSecretKey(accountId, node.id));
+      }
+      if (images[node.id] === undefined) {
+        await this.secrets.delete(imageSecretKey(accountId, node.id));
+      }
     }
     await this.saveNodes(
       accountId,
@@ -541,6 +603,12 @@ export class StorageManager {
     }
     for (const [entityId, content] of Object.entries(notes)) {
       await this.secrets.store(notesSecretKey(accountId, entityId), content);
+    }
+    for (const [entityId, content] of Object.entries(attachments)) {
+      await this.secrets.store(attachmentSecretKey(accountId, entityId), content);
+    }
+    for (const [entityId, content] of Object.entries(images)) {
+      await this.secrets.store(imageSecretKey(accountId, entityId), content);
     }
     // Stored notes are authoritative; drop any legacy plaintext copy.
     await this.saveNodes(

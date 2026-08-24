@@ -284,6 +284,25 @@ The viewer shows env UI **only for fields whose binding is on**: the name, a cop
 `Set`. Default name shape: `ENV_<ENTITYNAME>_<FIELD>` (`defaultEnvName`), minted in the form when
 the toggle is switched on and editable after.
 
+### Attachments: one file, one image, per entity
+
+`attachment.ts` (pure) owns the rules: an allowlist of document formats (PDF, Office, text, data,
+archives) with the executable family refused even as the tail of a double extension; the popular
+image formats; a 4 MB cap; and the mime map the preview needs. The `accept` lists and the webview's
+inline regexes are derived from the same arrays — two lists that drift is a picker offering what the
+save refuses.
+
+Content is base64 in SecretStorage (`:attachment` / `:image` keys) and rides the same records as
+every secret: `exportBundle` → sync merge (`copySecret`, winner's value) → `importBundle`, backups
+and snapshots included. The display NAME sits in plaintext metadata (`attachmentFileName` /
+`imageFileName`), the same trade `vpnConfigFileName` already made, so the viewer can label a row
+without opening the vault.
+
+One deliberate exception to "secrets never enter the webview": the image preview. A preview cannot
+round-trip through the host, so the viewer receives a `data:` URI for exactly this one secret, under
+a CSP whose `img-src` allows only `data:`. Preview starts at 200×200; each click doubles it, twice;
+a third click resets.
+
 ### Clone
 
 `cloneNode` copies a folder or entity's settings and deliberately **not** its secrets. Duplicating

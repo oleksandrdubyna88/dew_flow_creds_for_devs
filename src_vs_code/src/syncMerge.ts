@@ -43,6 +43,8 @@ export interface ProfileSnapshot {
   vpnConfigs: Record<string, string>;
   dbConnections: Record<string, string>;
   notes: Record<string, string>;
+  attachments: Record<string, string>;
+  images: Record<string, string>;
   /** id -> soft-delete record (object form; legacy number is normalized in). */
   tombstones: Record<string, Tombstone | number>;
   /** Element-wise max of every vector ever observed for this profile. */
@@ -65,6 +67,8 @@ export function emptySnapshot(): ProfileSnapshot {
     vpnConfigs: {},
     dbConnections: {},
     notes: {},
+    attachments: {},
+    images: {},
     tombstones: {},
     horizon: {},
   };
@@ -118,6 +122,8 @@ function fingerprint(snapshot: ProfileSnapshot): string {
     vpnConfigs: sortRecord(snapshot.vpnConfigs),
     dbConnections: sortRecord(snapshot.dbConnections),
     notes: sortRecord(snapshot.notes),
+    attachments: sortRecord(snapshot.attachments),
+    images: sortRecord(snapshot.images),
     tombstones: sortRecord(
       Object.fromEntries(
         Object.entries(normalizeTombstones(snapshot.tombstones)).map(([id, t]) => [
@@ -162,6 +168,8 @@ export function mergeProfiles(
   const vpnConfigs: Record<string, string> = {};
   const dbConnections: Record<string, string> = {};
   const notes: Record<string, string> = {};
+  const attachments: Record<string, string> = {};
+  const images: Record<string, string> = {};
   const nodes: TreeNode[] = [];
   const allIds = new Set([...localById.keys(), ...remoteById.keys()]);
 
@@ -211,6 +219,8 @@ export function mergeProfiles(
     copySecret(vpnConfigs, id, primary.vpnConfigs, fallback.vpnConfigs);
     copySecret(dbConnections, id, primary.dbConnections, fallback.dbConnections);
     copySecret(notes, id, primary.notes, fallback.notes);
+    copySecret(attachments, id, primary.attachments, fallback.attachments);
+    copySecret(images, id, primary.images, fallback.images);
   }
 
   // Re-parent children whose parent did not survive the merge.
@@ -243,6 +253,8 @@ export function mergeProfiles(
     vpnConfigs,
     dbConnections,
     notes,
+    attachments,
+    images,
     tombstones,
     horizon,
   };

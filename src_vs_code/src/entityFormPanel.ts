@@ -6,6 +6,13 @@ import { describeFlag, isProbeSafe } from './helpText';
 import { readHelpText } from './helpLookup';
 import { BINDABLE_FIELDS, BindableField, isValidEnvName } from './envBinding';
 import {
+  MAX_ATTACHMENT_BYTES,
+  fileAccept,
+  fileNameRegex,
+  imageAccept,
+  imageNameRegex,
+} from './attachment';
+import {
   CommandArg,
   DB_TYPES,
   ENTITY_KINDS,
@@ -40,6 +47,8 @@ export interface EntityFormOptions {
   initial?: EntityMetadata;
   hasStoredPassword: boolean;
   hasStoredPrivateKey: boolean;
+  hasStoredAttachment: boolean;
+  hasStoredImage: boolean;
   hasStoredVpnConfig: boolean;
   hasStoredDbConnection: boolean;
   initialDbConnection?: string;
@@ -62,6 +71,10 @@ export interface EntityFormValues {
   newDbConnection?: string;
   clearDbConnection: boolean;
   newNotes?: string;
+  newAttachment?: string;
+  clearAttachment: boolean;
+  newImage?: string;
+  clearImage: boolean;
 }
 
 /**
@@ -251,6 +264,12 @@ function toValues(data: Record<string, unknown>, options: EntityFormOptions): En
       id: options.entityId,
       name: str(data, 'name').trim(),
       envBindings,
+      attachmentFileName: bool(data, 'clearAttachment')
+        ? undefined
+        : str(data, 'attachmentName').trim() || options.initial?.attachmentFileName,
+      imageFileName: bool(data, 'clearImage')
+        ? undefined
+        : str(data, 'imageName').trim() || options.initial?.imageFileName,
       host: isSsh || isVpn ? str(data, 'host').trim() || undefined : undefined,
       user: isSsh || isVpn ? str(data, 'user').trim() || undefined : undefined,
       port: (isSsh || isVpn) && portText !== '' ? Number(portText) : undefined,
@@ -280,6 +299,10 @@ function toValues(data: Record<string, unknown>, options: EntityFormOptions): En
     newDbConnection: isDb && dbConnection.length > 0 ? dbConnection : undefined,
     clearDbConnection:
       isDb && options.initialDbConnection !== undefined && dbConnection.length === 0,
+    newAttachment: str(data, 'attachmentContent') || undefined,
+    clearAttachment: bool(data, 'clearAttachment'),
+    newImage: str(data, 'imageContent') || undefined,
+    clearImage: bool(data, 'clearImage'),
     newNotes: str(data, 'notes'),
   };
 }
@@ -570,6 +593,36 @@ function renderHtml(options: EntityFormOptions): string {
       options.hasStoredPassword
         ? `<div class="check"><input id="clearPassword" type="checkbox">
            <label for="clearPassword">Clear the stored password</label></div>`
+        : ''
+    }
+  </fieldset>
+
+  <fieldset>
+    <legend>Attachments</legend>
+    <label for="attachFile">Additional file (pdf, office, text, archives — never executables)</label>
+    <input id="attachFile" type="file" accept="${fileAccept}">
+    <p class="hint">${
+      options.hasStoredAttachment
+        ? `A file is stored${d?.attachmentFileName ? ` (${escapeHtml(d.attachmentFileName)})` : ''}. Pick a new one to replace it.`
+        : 'Stored encrypted, synced only inside the vault. Up to 4 MB.'
+    }</p>
+    ${
+      options.hasStoredAttachment
+        ? `<div class="check"><input id="clearAttachment" type="checkbox">
+           <label for="clearAttachment">Remove the stored file</label></div>`
+        : ''
+    }
+    <label for="attachImage">Additional image</label>
+    <input id="attachImage" type="file" accept="${imageAccept}">
+    <p class="hint">${
+      options.hasStoredImage
+        ? `An image is stored${d?.imageFileName ? ` (${escapeHtml(d.imageFileName)})` : ''}. Pick a new one to replace it.`
+        : 'Shown as a preview in the viewer. Stored encrypted, up to 4 MB.'
+    }</p>
+    ${
+      options.hasStoredImage
+        ? `<div class="check"><input id="clearImage" type="checkbox">
+           <label for="clearImage">Remove the stored image</label></div>`
         : ''
     }
   </fieldset>
@@ -951,6 +1004,43 @@ function renderHtml(options: EntityFormOptions): string {
     reader.readAsText(file);
   });
 
+  // Attachments: read as base64 so binary survives the JSON post. The name rules and
+  // the size cap are enforced HERE, before anything is stored — and the file input is
+  // cleared on refusal so what is shown never disagrees with what will be saved.
+  var attachmentContent = '';
+  var attachmentName = '';
+  var imageContent = '';
+  var imageName = '';
+  function wireBinary(inputId, allowed, assign) {
+    document.getElementById(inputId).addEventListener('change', function (event) {
+      var file = event.target.files && event.target.files[0];
+      if (!file) { return; }
+      if (!allowed(file.name)) {
+        setError('"' + file.name + '" is not an allowed type for this field.');
+        event.target.value = '';
+        return;
+      }
+      if (file.size > ${MAX_ATTACHMENT_BYTES}) {
+        setError('"' + file.name + '" is larger than 4 MB.');
+        event.target.value = '';
+        return;
+      }
+      setError('');
+      var reader = new FileReader();
+      reader.onload = function () {
+        var url = String(reader.result || '');
+        assign(url.slice(url.indexOf(',') + 1), file.name);
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+  wireBinary('attachFile', ${fileNameRegex}.test.bind(${fileNameRegex}), function (b64, name) {
+    attachmentContent = b64; attachmentName = name;
+  });
+  wireBinary('attachImage', ${imageNameRegex}.test.bind(${imageNameRegex}), function (b64, name) {
+    imageContent = b64; imageName = name;
+  });
+
   // ---- save / cancel ----
   document.getElementById('save').addEventListener('click', () => {
     setError('');
@@ -984,6 +1074,9 @@ function renderHtml(options: EntityFormOptions): string {
       dbType: val('dbType'), dbConnection: val('dbConnection'),
       command: val('command'), commandNote: val('commandNote'), commandArgs: argRows,
       envBindings: collectEnvBindings(),
+      attachmentContent: attachmentContent, attachmentName: attachmentName,
+      imageContent: imageContent, imageName: imageName,
+      clearAttachment: chk('clearAttachment'), clearImage: chk('clearImage'),
       clearPassword: chk('clearPassword'), clearPrivateKey: chk('clearPrivateKey'),
     }});
   });

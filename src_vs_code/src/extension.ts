@@ -77,6 +77,7 @@ import * as fs from 'node:fs';
 import { resolveVpnLauncher } from './vpnExec';
 import { applyEnvBindings, bindableFieldValue } from './envApply';
 import { envProbeCommand } from './envProbe';
+import { imageMime } from './attachment';
 import {
   AuthProvider,
   EntityKind,
@@ -732,6 +733,8 @@ ${detail}
       entityId: id,
       hasStoredPassword: false,
       hasStoredPrivateKey: false,
+      hasStoredAttachment: false,
+      hasStoredImage: false,
       hasStoredVpnConfig: false,
       hasStoredDbConnection: false,
       lockedKind: folderKindOf(storage, location.accountId, location.parentId),
@@ -1336,6 +1339,8 @@ ${detail}
       entityId: id,
       hasStoredPassword: false,
       hasStoredPrivateKey: false,
+      hasStoredAttachment: false,
+      hasStoredImage: false,
       hasStoredVpnConfig: false,
       hasStoredDbConnection: false,
       keyCandidates: [],
@@ -1642,6 +1647,16 @@ async function applySecrets(
     await storage.setDbConnection(accountId, entityId, result.newDbConnection);
   }
   await storage.setNotes(accountId, entityId, result.newNotes);
+  if (result.clearAttachment) {
+    await storage.setAttachment(accountId, entityId, undefined);
+  } else if (result.newAttachment !== undefined) {
+    await storage.setAttachment(accountId, entityId, result.newAttachment);
+  }
+  if (result.clearImage) {
+    await storage.setImage(accountId, entityId, undefined);
+  } else if (result.newImage !== undefined) {
+    await storage.setImage(accountId, entityId, result.newImage);
+  }
 }
 
 async function editNode(
@@ -1670,6 +1685,8 @@ async function editNode(
     lockedKind: folderKindOf(storage, accountId, node.parentId ?? null),
     hasStoredPassword: (await storage.getPassword(accountId, node.id)) !== undefined,
     hasStoredPrivateKey: (await storage.getPrivateKey(accountId, node.id)) !== undefined,
+    hasStoredAttachment: (await storage.getAttachment(accountId, node.id)) !== undefined,
+    hasStoredImage: (await storage.getImage(accountId, node.id)) !== undefined,
     hasStoredVpnConfig: (await storage.getVpnConfig(accountId, node.id)) !== undefined,
     hasStoredDbConnection: (await storage.getDbConnection(accountId, node.id)) !== undefined,
     initialDbConnection: await storage.getDbConnection(accountId, node.id),
@@ -1911,6 +1928,8 @@ async function openEntityViewer(
     details.sshKeyEntityId !== undefined
       ? (storage.getNode(accountId, details.sshKeyEntityId)?.name ?? '(missing entity)')
       : undefined;
+  const imageB64 = await storage.getImage(accountId, details.id);
+  const imageMimeType = details.imageFileName !== undefined ? imageMime(details.imageFileName) : undefined;
   showEntityView({
     details,
     keySourceName,
@@ -1945,6 +1964,33 @@ async function openEntityViewer(
         notes,
       ),
     saveVpnConfig: () => saveVpnConfigToFile(accountId, details, storage),
+    hasAttachment: (await storage.getAttachment(accountId, details.id)) !== undefined,
+    imageDataUri:
+      imageB64 !== undefined && imageMimeType !== undefined
+        ? `data:${imageMimeType};base64,${imageB64}`
+        : undefined,
+    saveAttachment: async (which) => {
+      const base64 =
+        which === 'image'
+          ? await storage.getImage(accountId, details.id)
+          : await storage.getAttachment(accountId, details.id);
+      if (base64 === undefined) {
+        return;
+      }
+      const suggested =
+        which === 'image'
+          ? (details.imageFileName ?? `${details.name}.png`)
+          : (details.attachmentFileName ?? `${details.name}.bin`);
+      const target = await vscode.window.showSaveDialog({
+        title: which === 'image' ? 'Save image' : 'Save file',
+        defaultUri: vscode.Uri.file(path.join(os.homedir(), suggested)),
+      });
+      if (target === undefined) {
+        return;
+      }
+      await vscode.workspace.fs.writeFile(target, Buffer.from(base64, 'base64'));
+      void vscode.window.showInformationMessage(`Saved to ${target.fsPath}.`);
+    },
     // The manual half of env bindings: the automatic write happens on save, but the
     // collection can be lost with the extension's storage — this button re-sets one
     // variable from the CURRENT stored value, on this machine, right now.
