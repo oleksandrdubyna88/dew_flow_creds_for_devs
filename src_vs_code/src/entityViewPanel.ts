@@ -4,7 +4,7 @@ import { copySecret } from './secretClipboard';
 import { DbConnParts } from './dbConnString';
 import { CommandArg, EntityMetadata } from './types';
 import { buildCommandLine, normalizeArgs } from './commandLine';
-import { highlightScript, substituteScript } from './scriptRender';
+import { highlightScript, resolveScriptEnv } from './scriptRender';
 import { BINDABLE_FIELDS, BindableField } from './envBinding';
 
 /**
@@ -123,7 +123,10 @@ export function showEntityView(options: EntityViewOptions): void {
       case 'scriptLanguage': value = d.scriptLanguage; break;
       case 'script': value = d.script; break;
       case 'scriptFull':
-        value = d.script !== undefined ? substituteScript(d.script, d.scriptVars) : undefined;
+        value =
+          d.script !== undefined
+            ? resolveScriptEnv(d.script, d.scriptVars, d.scriptLanguage ?? 'other').body
+            : undefined;
         break;
       default: {
         const env = /^envname_(.+)$/.exec(message.field);
@@ -306,11 +309,14 @@ function renderHtml(options: EntityViewOptions): string {
         ]
       : []),
     ...(d.isScript ? normalizeArgs(d.scriptVars).map((v, i) => argRow(v, i, true)) : []),
+    // Visible again, and safe to be: the body reads its variables from the environment
+    // now, so it carries names rather than values (see resolveScriptEnv).
     row(
-      'Script with variables filled in',
+      'Script as it runs (variables read from the environment)',
       'scriptFull',
-      d.isScript && d.script !== undefined && d.script.length > 0 ? '•' : undefined,
-      true,
+      d.isScript && d.script !== undefined && d.script.length > 0
+        ? resolveScriptEnv(d.script, d.scriptVars, d.scriptLanguage ?? 'other').body
+        : undefined,
     ),
     row('Notes', 'notes', options.notes),
     row(

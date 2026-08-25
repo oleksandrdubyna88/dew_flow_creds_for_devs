@@ -1,7 +1,7 @@
 import * as os from 'node:os';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
-import { copiedMessage, copySecret } from './secretClipboard';
+import { copiedMessage, copySecret, setSecretClipboardTtl } from './secretClipboard';
 import { AuthError, signIn } from './authManager';
 import { backupToNas, restoreFromBackup } from './backupManager';
 import {
@@ -35,6 +35,8 @@ import { BackupScheduler } from './backupScheduler';
 import { isServerLocation } from './vaultTransport';
 import {
   installKeyToSystem,
+  lockToOwner,
+  removeInstalledKey,
   materializeVpnConfig,
   purgeMaterializedKeys,
 } from './keyInstaller';
@@ -89,9 +91,10 @@ import { applyEnvBindings, bindableFieldValue } from './envApply';
 import { envProbeCommand } from './envProbe';
 import { imageMime } from './attachment';
 import { syncReminderDue } from './syncReminder';
-import { substituteScript } from './scriptRender';
+import { detectSecretPrints, resolveScriptEnv } from './scriptRender';
 import { scriptRunPlan } from './scriptRun';
 import { buildExternalBundle, isExternalBundle, remapExternalIds } from './externalBundle';
+import { withoutPassword } from './dbConnString';
 import {
   AuthProvider,
   EntityKind,
@@ -111,6 +114,21 @@ let envCollection: vscode.GlobalEnvironmentVariableCollection;
 
 export function activate(context: vscode.ExtensionContext): void {
   envCollection = context.environmentVariableCollection;
+
+  // One place decides how long a copied secret lingers; see secretClipboard.ts for why
+  // it is a settable default rather than an argument at every copy site.
+  const applyClipboardTtl = (): void =>
+    setSecretClipboardTtl(
+      vscode.workspace.getConfiguration('credSshManager').get<number>('secretClipboardTtlSeconds', 45) * 1000,
+    );
+  applyClipboardTtl();
+  context.subscriptions.push(
+    vscode.workspace.onDidChangeConfiguration((e) => {
+      if (e.affectsConfiguration('credSshManager.secretClipboardTtlSeconds')) {
+        applyClipboardTtl();
+      }
+    }),
+  );
   const storage = new StorageManager(context.globalState, context.secrets);
   const provider = new CredTreeDataProvider(storage, context.extensionUri);
   const storageDir = context.globalStorageUri.fsPath;
@@ -1047,6 +1065,15 @@ ${detail}
   });
 
   // Write the stored VPN config back out as a file.
+  register('credSshManager.removeInstalledKey', async (target) => {
+    vaultKeys.noteUserActivity(); // the user is here: postpone auto-lock
+    const element = asElement(target);
+    if (element?.kind !== 'node' || !element.node.details) {
+      return;
+    }
+    await removeInstalledKey(element.node.details);
+  });
+
   register('credSshManager.saveVpnConfig', async (target) => {
     vaultKeys.noteUserActivity(); // the user is here: postpone auto-lock
     const element = asElement(target);
@@ -1235,7 +1262,7 @@ ${detail}
     );
   });
 
-  register('credSshManager.runScript', (target) => {
+  register('credSshManager.runScript', async (target) => {
     vaultKeys.noteUserActivity(); // the user is here: postpone auto-lock
     const element = asElement(target);
     if (element?.kind !== 'node' || element.node.details === undefined) {
@@ -1251,17 +1278,64 @@ ${detail}
       void vscode.window.showInformationMessage(plan.reason);
       return;
     }
-    // Variables substituted, THEN written to the extension's private storage — the same
-    // keys/ directory materialized SSH keys use, purged on activate/deactivate, so a
-    // script whose variables held anything sensitive does not outlive the session.
-    const body = substituteScript(details.script, details.scriptVars);
+    // Same content-trust gate the saved terminal commands have had since sync and
+    // Accept Share made "you wrote this yourself" untrue. A script arriving from
+    // elsewhere is one click from running; the fingerprint is of the exact body, so an
+    // edit asks again and a re-run of the approved one does not.
+    if (!isCommandTrusted(context.globalState, element.node.id, details.script)) {
+      const approved = await vscode.window.showWarningMessage(
+        confirmCommandMessage(element.node.name, details.script),
+        { modal: true },
+        'Run',
+      );
+      if (approved !== 'Run') {
+        return;
+      }
+      await trustCommand(context.globalState, element.node.id, details.script);
+    }
+
+    // Values live in the environment now, but the script is the user's own code and can
+    // print them itself. Notice, say so once per exact body, never block.
+    const printed = detectSecretPrints(
+      details.script,
+      Object.keys(resolveScriptEnv(details.script, details.scriptVars, details.scriptLanguage ?? 'other').env),
+      details.scriptLanguage ?? 'other',
+    );
+    if (printed.length > 0) {
+      const key = `scriptPrint:${element.node.id}`;
+      if (!isCommandTrusted(context.globalState, key, details.script)) {
+        const go = await vscode.window.showWarningMessage(
+          `This script prints ${printed.map((n) => '${' + n + '}').join(', ')} — the value will be visible in the terminal and its history. Run anyway?`,
+          { modal: true },
+          'Run',
+        );
+        if (go !== 'Run') {
+          return;
+        }
+        await trustCommand(context.globalState, key, details.script);
+      }
+    }
+
+    // The values go into the terminal's ENVIRONMENT; the file gets a body that reads
+    // them by name. Before this, the substituted body — values and all — was written to
+    // disk and left there until the next purge.
+    const resolved = resolveScriptEnv(details.script, details.scriptVars, details.scriptLanguage ?? 'other');
     const fileName = `script-${details.id}${plan.extension}`;
     const scriptPath = path.join(storageDir, 'keys', fileName);
     fs.mkdirSync(path.dirname(scriptPath), { recursive: true, mode: 0o700 });
-    fs.writeFileSync(scriptPath, body.endsWith('\n') ? body : body + '\n', { mode: 0o700 });
+    fs.writeFileSync(
+      scriptPath,
+      resolved.body.endsWith('\n') ? resolved.body : resolved.body + '\n',
+      { mode: 0o700 },
+    );
+    lockToOwner(scriptPath);
+
+    // A FRESH terminal every run: VS Code can only set a terminal's environment when it
+    // is created, so a reused one would run this script with the PREVIOUS entry's values
+    // — the same reasoning the SSH password path already follows.
     const name = `CredsForDevs: ${element.node.name}`;
-    const existing = vscode.window.terminals.find((t) => t.name === name && t.exitStatus === undefined);
-    const terminal = existing ?? vscode.window.createTerminal({ name });
+    vscode.window.terminals.find((t) => t.name === name && t.exitStatus === undefined)?.dispose();
+    const terminal = vscode.window.createTerminal({ name, env: resolved.env });
     terminal.show();
     terminal.sendText([plan.command, ...plan.args, `"${scriptPath}"`].join(' '), true);
   });
@@ -1274,6 +1348,23 @@ ${detail}
   );
 
   // Open a database entity in the matching DB extension.
+  register('credSshManager.copyDbConnectionNoPassword', async (target) => {
+    vaultKeys.noteUserActivity(); // the user is here: postpone auto-lock
+    const element = asElement(target);
+    if (element?.kind !== 'node' || !element.node.details) {
+      return;
+    }
+    const conn = await storage.getDbConnection(element.accountId, element.node.details.id);
+    if (conn === undefined) {
+      void vscode.window.showWarningMessage('No connection string stored for this entry.');
+      return;
+    }
+    await copySecret(vscode.env.clipboard, withoutPassword(conn));
+    void vscode.window.showInformationMessage(
+      'Connection string copied WITHOUT the password. It clears from the clipboard shortly.',
+    );
+  });
+
   register('credSshManager.connectDb', async (target) => {
     vaultKeys.noteUserActivity(); // the user is here: postpone auto-lock
     const element = asElement(target);

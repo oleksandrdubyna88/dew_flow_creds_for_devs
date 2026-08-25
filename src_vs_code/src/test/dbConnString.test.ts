@@ -1,6 +1,6 @@
 import * as assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { buildDbConnectionString, parseDbConnectionString } from '../dbConnString';
+import { buildDbConnectionString, parseDbConnectionString, withoutPassword } from '../dbConnString';
 
 test('parses a postgres URI into parts', () => {
   assert.deepEqual(parseDbConnectionString('postgresql://alice:s3cr%40t@db.host:5432/main'), {
@@ -54,4 +54,26 @@ test('a host pasted with a scheme is cleaned, not misparsed', () => {
 test('empty and garbage input parse to no parts', () => {
   assert.deepEqual(parseDbConnectionString(''), {});
   assert.deepEqual(parseDbConnectionString('   '), {});
+});
+
+test('a connection string can be handed over without its password', () => {
+  // The common ask is "which host/port/db is this" — the password rides along only
+  // because it happens to live in the same string.
+  const full = 'postgresql://alice:hunter2@db.corp:5432/orders';
+  const safe = withoutPassword(full);
+
+  assert.equal(safe.includes('hunter2'), false);
+  assert.equal(safe.includes('alice'), true);
+  assert.equal(safe.includes('db.corp'), true);
+  assert.equal(safe.includes('5432'), true);
+  assert.equal(safe.includes('orders'), true);
+});
+
+test('a string with no password comes back unchanged', () => {
+  const s = 'postgresql://alice@db.corp:5432/orders';
+  assert.equal(withoutPassword(s), s);
+});
+
+test('something unparseable is returned as-is rather than mangled', () => {
+  assert.equal(withoutPassword('not a connection string'), 'not a connection string');
 });

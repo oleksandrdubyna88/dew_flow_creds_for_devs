@@ -23,6 +23,24 @@ export interface Clipboard {
 export const SECRET_CLIPBOARD_TTL_MS = 45_000;
 
 /**
+ * The TTL every copy uses unless one is passed explicitly.
+ *
+ * <p>A single settable default rather than a parameter threaded through all eight copy
+ * sites: threading it means one site eventually gets missed, and a missed site keeps the
+ * old timeout silently — the failure mode nobody notices. `activate()` sets this once and
+ * again whenever the setting changes.</p>
+ */
+let configuredTtlMs = SECRET_CLIPBOARD_TTL_MS;
+
+export function setSecretClipboardTtl(ms: number): void {
+  configuredTtlMs = Number.isFinite(ms) && ms >= 5_000 ? ms : SECRET_CLIPBOARD_TTL_MS;
+}
+
+export function secretClipboardTtl(): number {
+  return configuredTtlMs;
+}
+
+/**
  * Clear only what we wrote, and only if it is still there.
  *
  * An empty `written` is never cleared: it would mean "wipe whatever is on the clipboard
@@ -52,7 +70,7 @@ export async function clearIfUnchanged(clipboard: Clipboard, written: string): P
 export async function copySecret(
   clipboard: Clipboard,
   value: string,
-  ttlMs: number = SECRET_CLIPBOARD_TTL_MS,
+  ttlMs: number = configuredTtlMs,
 ): Promise<void> {
   await clipboard.writeText(value);
   if (value.length === 0) {
@@ -65,6 +83,6 @@ export async function copySecret(
 }
 
 /** "…copied." plus the promise we just made the user, so the UI never has to spell it out twice. */
-export function copiedMessage(what: string, ttlMs: number = SECRET_CLIPBOARD_TTL_MS): string {
+export function copiedMessage(what: string, ttlMs: number = configuredTtlMs): string {
   return `${what} copied — the clipboard clears in ${Math.round(ttlMs / 1000)}s.`;
 }

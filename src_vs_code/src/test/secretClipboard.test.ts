@@ -7,6 +7,9 @@ import {
   copiedMessage,
   copySecret,
   shouldClear,
+  SECRET_CLIPBOARD_TTL_MS,
+  secretClipboardTtl,
+  setSecretClipboardTtl,
 } from '../secretClipboard';
 
 class FakeClipboard implements Clipboard {
@@ -81,4 +84,17 @@ test('the decision is exact-match, not a prefix or a trim', () => {
 
 test('the user is told the clipboard will clear, and when', () => {
   assert.equal(copiedMessage('Password', 45_000), 'Password copied — the clipboard clears in 45s.');
+});
+
+test('the configured clipboard TTL is used, and nonsense falls back to the default', () => {
+  // One settable default instead of a parameter at eight call sites: a missed site would
+  // keep the old timeout silently, which is the bug nobody reports.
+  setSecretClipboardTtl(10_000);
+  assert.equal(secretClipboardTtl(), 10_000);
+
+  for (const bad of [0, -1, 100, Number.NaN, Number.POSITIVE_INFINITY]) {
+    setSecretClipboardTtl(bad);
+    assert.equal(secretClipboardTtl(), SECRET_CLIPBOARD_TTL_MS, String(bad));
+  }
+  setSecretClipboardTtl(SECRET_CLIPBOARD_TTL_MS);
 });

@@ -129,3 +129,23 @@ function clean(parts: DbConnParts): DbConnParts {
     Object.entries(parts).filter(([, v]) => typeof v === 'string' && v.length > 0),
   ) as DbConnParts;
 }
+
+/**
+ * The same connection string with its password removed.
+ *
+ * <p>Copying a connection string is usually about "which host, which database" — the
+ * password rides along only because it happens to live in the same URI. This is the
+ * companion for that case; the full copy stays, because pasting into a client's own
+ * connection form is a real workflow this extension cannot replace.</p>
+ *
+ * <p>Textual on purpose: `parseDbConnectionString` drops the query string, and a
+ * round-trip through it would quietly discard `sslmode`, `replicaSet` and every other
+ * option someone put there. Anything that does not parse as a URI comes back untouched
+ * rather than mangled.</p>
+ */
+export function withoutPassword(connectionString: string): string {
+  return connectionString.replace(
+    /^([a-zA-Z][a-zA-Z0-9+.-]*:\/\/)([^:@\/]+):([^@\/]*)@/,
+    (_whole, scheme: string, user: string) => scheme + user + '@',
+  );
+}

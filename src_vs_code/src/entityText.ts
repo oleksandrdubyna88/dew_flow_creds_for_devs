@@ -9,7 +9,7 @@
 import { DB_DEFAULT_PORTS, parseDbConnectionString } from './dbConnString';
 import { buildSshCommand } from './sshCommand';
 import { describeCommand } from './commandLine';
-import { substituteScript } from './scriptRender';
+import { resolveScriptEnv } from './scriptRender';
 import { EntityMetadata } from './types';
 
 export function formatEntityBlock(
@@ -32,7 +32,7 @@ export function formatEntityBlock(
   } else if (details.isScript) {
     lines.push(`Language: ${details.scriptLanguage ?? 'bash'}`);
     if (details.script !== undefined && details.script.length > 0) {
-      lines.push('', substituteScript(details.script, details.scriptVars));
+      lines.push('', resolveScriptEnv(details.script, details.scriptVars, details.scriptLanguage ?? 'other').body);
       const annotated = (details.scriptVars ?? []).filter((v) => v.note !== undefined);
       if (annotated.length > 0) {
         lines.push('');

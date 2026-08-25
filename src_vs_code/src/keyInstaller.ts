@@ -4,6 +4,8 @@ import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { EntityMetadata } from './types';
 import { askpassScript } from './sshAskpass';
+import * as childProcess from 'node:child_process';
+import { currentOwner, restrictToOwnerArgv } from './fileAcl';
 
 /**
  * Writing SSH key material to disk:
@@ -12,6 +14,30 @@ import { askpassScript } from './sshAskpass';
  *  - materializePrivateKey() writes a stored key into the extension's
  *    private storage so `ssh -i` can use it for a connection.
  */
+
+
+/**
+ * Apply the tightest access this OS can express to a file we just wrote a secret into.
+ *
+ * <p>POSIX `chmod` is already applied by the callers and is real there. On Windows it is
+ * not: the inherited NTFS ACL still grants SYSTEM and the local Administrators group full
+ * control. Where the operator is not the administrator that is precisely the wrong
+ * audience, so the inheritance is broken and the owner alone is granted.</p>
+ *
+ * <p>Best-effort by design: a failure here must not stop a key from being usable — it is
+ * a hardening step over an already-restricted profile directory, not the only lock.</p>
+ */
+export function lockToOwner(filePath: string): void {
+  const argv = restrictToOwnerArgv(filePath, process.platform, currentOwner(process.env));
+  if (argv === undefined) {
+    return;
+  }
+  try {
+    childProcess.execFileSync(argv[0], argv.slice(1), { stdio: 'ignore', timeout: 5_000 });
+  } catch {
+    // An unwritable ACL is a weaker file, not a broken feature.
+  }
+}
 
 function ensureTrailingNewline(content: string): string {
   return content.endsWith('\n') ? content : `${content}\n`;
@@ -52,10 +78,15 @@ export async function installKeyToSystem(
     ...(publicKey ? [publicPath] : []),
   ];
   const existing = willWrite.filter((p) => fs.existsSync(p));
+  // Say what makes this different from every other place the extension writes key
+  // material: this copy is permanent and outside the extension's own housekeeping.
+  const permanence =
+    ' Unlike everywhere else CredsForDevs writes key material, this copy is PERMANENT:' +
+    ' it is not tracked and never purged — remove it with "Remove Installed Key…".';
   const confirmed = await vscode.window.showWarningMessage(
-    existing.length > 0
+    (existing.length > 0
       ? `Install key "${entity.name}" to ~/.ssh? This OVERWRITES: ${existing.map((p) => path.basename(p)).join(', ')}.`
-      : `Install key "${entity.name}" to ~/.ssh as "${base}"${publicKey ? ` + "${base}.pub"` : ''}?`,
+      : `Install key "${entity.name}" to ~/.ssh as "${base}"${publicKey ? ` + "${base}.pub"` : ''}?`) + permanence,
     { modal: true },
     'Install',
   );
@@ -68,6 +99,7 @@ export async function installKeyToSystem(
     if (privateKey !== undefined) {
       fs.writeFileSync(privatePath, ensureTrailingNewline(privateKey), { mode: 0o600 });
       fs.chmodSync(privatePath, 0o600);
+  lockToOwner(privatePath);
     }
     if (publicKey) {
       fs.writeFileSync(publicPath, ensureTrailingNewline(publicKey), { mode: 0o644 });
@@ -99,6 +131,7 @@ export function materializePrivateKey(
   const keyPath = path.join(keysDir, `${entityId}.key`);
   fs.writeFileSync(keyPath, ensureTrailingNewline(content), { mode: 0o600 });
   fs.chmodSync(keyPath, 0o600);
+  lockToOwner(keyPath);
   return keyPath;
 }
 
@@ -109,9 +142,11 @@ export function materializePrivateKey(
  * would not come up.
  *
  * <p>It lands in the same `keys/` directory on purpose, so the existing purge on
- * activate and deactivate covers it too. One thing to be honest about: on Windows the
- * 0600 mode is advisory at best — NTFS ACLs are what matter there, and the directory is
- * inside the extension's own storage under the user profile.</p>
+ * activate and deactivate covers it too. On Windows the 0600 mode alone would be nearly
+ * meaningless — NTFS ACLs are what decide access there, and the inherited ones grant
+ * SYSTEM and the local Administrators group full control. `lockToOwner` breaks that
+ * inheritance so the file belongs to its owner alone, which matters exactly on the
+ * machines where the operator is not the administrator.</p>
  */
 export function materializeVpnConfig(
   storageDir: string,
@@ -123,6 +158,7 @@ export function materializeVpnConfig(
   const configPath = path.join(keysDir, fileName);
   fs.writeFileSync(configPath, ensureTrailingNewline(content), { mode: 0o600 });
   fs.chmodSync(configPath, 0o600);
+  lockToOwner(configPath);
   return configPath;
 }
 
@@ -138,6 +174,46 @@ export function writeAskpassScriptFile(storageDir: string, platform: NodeJS.Plat
   const scriptPath = path.join(keysDir, script.name);
   fs.writeFileSync(scriptPath, script.content, { mode: 0o700 });
   return scriptPath;
+}
+
+/**
+ * Take an installed key back out of `~/.ssh` — the inverse of `installKeyToSystem`,
+ * deleting exactly the files that function would have written.
+ *
+ * <p>It exists because the install is deliberately permanent: without a way back, the
+ * only honest thing the install dialog could say was "this is forever".</p>
+ */
+export async function removeInstalledKey(entity: EntityMetadata): Promise<void> {
+  const base = sanitizeKeyFileName(entity.name);
+  const sshDir = path.join(os.homedir(), '.ssh');
+  const candidates = [path.join(sshDir, base), path.join(sshDir, `${base}.pub`)].filter((p) =>
+    fs.existsSync(p),
+  );
+  if (candidates.length === 0) {
+    void vscode.window.showInformationMessage(
+      `Nothing to remove — no "${base}" in ~/.ssh. (Only files this extension would have written are considered.)`,
+    );
+    return;
+  }
+  const confirmed = await vscode.window.showWarningMessage(
+    `Delete from ~/.ssh: ${candidates.map((p) => path.basename(p)).join(', ')}? The key stays in the vault.`,
+    { modal: true },
+    'Delete',
+  );
+  if (confirmed !== 'Delete') {
+    return;
+  }
+  for (const file of candidates) {
+    try {
+      fs.rmSync(file, { force: true });
+    } catch (error) {
+      void vscode.window.showErrorMessage(
+        `Could not delete ${file}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return;
+    }
+  }
+  void vscode.window.showInformationMessage(`Removed ${candidates.length} file(s) from ~/.ssh.`);
 }
 
 /** Best-effort delete of one materialized key (after the SSH session ends). */

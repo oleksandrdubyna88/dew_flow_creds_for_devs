@@ -147,7 +147,7 @@ export async function openInDbExtension(
   const command = discoverConnectCommand(installed);
   if (command === undefined) {
     void vscode.window.showInformationMessage(
-      `Connection string copied to the clipboard. "${target.label}" exposes no add-connection command — open it and paste manually.`,
+      `Connection string — INCLUDING THE PASSWORD — copied to the clipboard. "${target.label}" exposes no add-connection command — open it and paste manually.`,
     );
     return;
   }

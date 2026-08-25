@@ -68,6 +68,58 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Bounded on purpose: 256 KB of output per stream, 30 s per command (raisable to 120 s), 8 at a
   time, and every child killed when the window goes.
 
+## [0.50.0] — 2026-08-25
+
+### Security
+
+Every plaintext-leak point found in a full audit, closed or honestly bounded.
+
+- **Script variables never enter the script text again.** They were substituted into the
+  body, and that body was written to disk and rendered in the viewer — so a script whose
+  variable held a token put the token in both places on every run. The values now travel
+  in the **process environment** and the body reads them by name in its own language's
+  syntax: bash needs no change at all (`${NAME}` already is that), PowerShell gets
+  `$env:NAME`, Python `os.environ.get(...)` with its import added only when something was
+  actually translated, JavaScript `process.env.NAME`. The file, the viewer row and
+  *Copy All* now carry names where they used to carry values.
+
+  A consequence, deliberate: a script runs in a **fresh terminal** each time, because
+  VS Code can only set a terminal's environment when it is created — a reused one would
+  run with the previous entry's values. Same reasoning the SSH password path already had.
+
+- **A script can still print its own variables — so it says so.** Env injection cannot
+  stop `echo "$TOKEN"`; that is your code. A narrow heuristic notices a direct print of a
+  variable that carries a value and asks once per exact script body. Passing a variable to
+  a tool — the normal case — is not flagged.
+
+- **Scripts got the same content-trust gate saved commands have had.** A script arriving
+  through sync or a shared item is one click from running; the first run of an exact body
+  now shows it and asks. Editing it asks again; re-running the approved one does not.
+
+- **The env-variable check button no longer prints the value.** It echoed `NAME=value`
+  into the terminal — a bound private key went into scrollback in full, visible on a
+  shared screen. It now reports `NAME: SET (len=1876)` or `NOT SET`, which answers the
+  question it was built for. A name that is not a valid environment name is refused
+  outright rather than interpolated into a shell line.
+
+- **Windows file permissions are now real.** `chmod 0600` is nearly a no-op there — the
+  inherited NTFS ACL still grants SYSTEM and the local Administrators group full control
+  of everything written under the user profile. On a machine where you are not the
+  administrator that is exactly the wrong audience. Every file the extension writes a
+  secret into — installed keys, materialized keys, VPN configs, scripts — now has its
+  inheritance broken and is granted to its owner alone. The code comments claiming `0600`
+  protected these files were describing a protection that was not there.
+
+- **Installing a key to `~/.ssh` says what it really does** — that this copy is permanent
+  and outside the extension's housekeeping — and **`Remove Installed Key…`** now exists to
+  take it back out.
+
+- **Copy Connection String (no password)** joins the DB menu, and the full copy now says
+  plainly that the password is included. The clipboard TTL is configurable
+  (`credSshManager.secretClipboardTtlSeconds`), and its description states the part this
+  extension cannot control: Windows Clipboard History and cross-device sync can capture a
+  value the moment it is copied, and clearing the clipboard afterwards does not reach it.
+
 ## [0.49.1] — 2026-08-25
 
 ### Security
