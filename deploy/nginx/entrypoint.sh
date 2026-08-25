@@ -52,8 +52,27 @@ write_config() {
   # Defence in depth: the app rate-limits per authenticated caller, this limits per
   # source address, so a flood of UNAUTHENTICATED requests never reaches the app.
   cat >"${CONF}" <<'ZONES'
+# WHO THE CLIENT IS. Behind an outer terminator (TLS_MODE=none or custom) $remote_addr
+# is that proxy's address for every caller alive — so the zones below, which key on it,
+# become ONE bucket for the whole internet, and so does the application's own anonymous
+# partition. A live deployment was found in exactly that state on 2026-08-25.
+#
+# Private ranges only, deliberately: this container publishes no port, so a private
+# address is the only way a request can arrive, and a public one appearing here would
+# mean the topology is not what this file assumes.
+set_real_ip_from 10.0.0.0/8;
+set_real_ip_from 172.16.0.0/12;
+set_real_ip_from 192.168.0.0/16;
+set_real_ip_from 127.0.0.0/8;
+real_ip_header X-Forwarded-For;
+real_ip_recursive on;
+
 limit_req_zone $binary_remote_addr zone=vault_api:10m rate=20r/s;
 limit_conn_zone $binary_remote_addr zone=vault_conn:10m;
+# 503 reads as "the server broke"; 429 says what happened, and matches what the
+# application answers when its own limiter refuses a caller.
+limit_req_status 429;
+limit_conn_status 429;
 ZONES
 
   if [ "${TLS_MODE}" = "none" ]; then
@@ -79,7 +98,10 @@ server {
         proxy_http_version 1.1;
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        # SET, never appended: after the real_ip block above this is the true client in
+        # either topology, so the app reads one entry it can trust rather than a list
+        # whose left half a caller wrote.
+        proxy_set_header X-Forwarded-For \$remote_addr;
         proxy_set_header X-Forwarded-Proto \$scheme;
         proxy_connect_timeout 5s;
         proxy_read_timeout 120s;
