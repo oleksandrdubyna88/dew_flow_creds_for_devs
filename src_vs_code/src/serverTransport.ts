@@ -22,6 +22,16 @@ import { VaultTransport } from './vaultTransport';
 export const DEFAULT_REQUEST_TIMEOUT_MS = 60_000;
 
 export class ServerTransport implements VaultTransport {
+  /**
+   * The status behind the last empty team, if any.
+   *
+   * <p>A refusal and "nobody has synced yet" both produce an empty list, and only
+   * one of them is somebody's fault. Developers spent a day on that ambiguity:
+   * signed in, URL set, Sync pressed, no error, never appeared in each other's
+   * team — the server had been answering 401 throughout.</p>
+   */
+  lastTeamStatus: number | undefined;
+
   readonly kind = 'server' as const;
   readonly embedsShares = false;
 
@@ -148,16 +158,20 @@ export class ServerTransport implements VaultTransport {
   async listTeam(ownAccounts: readonly StoredAccount[]): Promise<TeamMember[]> {
     // Any of my accounts pointing here can enumerate the team.
     const mine = ownAccounts.filter((a) => a.email.length > 0);
+    // Why it failed, kept so an empty team can say which kind of empty it is.
+    this.lastTeamStatus = undefined;
     for (const account of mine) {
       try {
         const response = await this.request(account, '/api/team');
         if (!response.ok) {
+          this.lastTeamStatus = response.status;
           continue;
         }
         const payload: unknown = await response.json();
         if (!Array.isArray(payload)) {
           continue;
         }
+        this.lastTeamStatus = undefined; // somebody answered; nothing to report
         const ownEmails = new Set(ownAccounts.map((a) => a.email.toLowerCase()));
         return payload
           .map((entry) =>

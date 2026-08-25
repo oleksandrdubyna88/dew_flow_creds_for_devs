@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { StorageManager } from './storageManager';
 import { nasPathFor } from './nasPaths';
 import { senderIsVerified } from './shareSender';
+import { diagnoseTeamFailure } from './teamDiagnosis';
 import type { SharingManager } from './sharingManager';
 import { EntityKind, FolderType, TreeElement, TreeNode, kindOf } from './types';
 import { SyncReadiness } from './syncReadiness';
@@ -122,8 +123,20 @@ export class CredTreeDataProvider
       const item = new vscode.TreeItem('Team', vscode.TreeItemCollapsibleState.Collapsed);
       item.id = `teamScope:${element.account.accountId}`;
       item.contextValue = 'teamScope';
-      item.iconPath = new vscode.ThemeIcon('organization', TEAM_COLOR);
-      item.description = `${this.sharing?.teamFor(element.account).length ?? 0}`;
+      // An empty team and a refused one used to look identical. Only one of them
+      // is somebody's fault, and it is the one nobody could see.
+      const failure = this.sharing?.teamFailures.get(element.account.accountId);
+      if (failure === undefined) {
+        item.iconPath = new vscode.ThemeIcon('organization', TEAM_COLOR);
+        item.description = `${this.sharing?.teamFor(element.account).length ?? 0}`;
+      } else {
+        item.iconPath = new vscode.ThemeIcon(
+          'warning',
+          new vscode.ThemeColor('problemsWarningIcon.foreground'),
+        );
+        item.description = failure.status === undefined ? 'unreachable' : `refused (${failure.status})`;
+        item.tooltip = diagnoseTeamFailure(failure);
+      }
       return item;
     }
     if (element.kind === 'teamMember') {

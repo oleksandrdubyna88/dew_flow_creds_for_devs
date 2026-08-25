@@ -21,6 +21,7 @@ import { keyringMayBeUnprotected, keyringWarningMessage } from './keyringWarning
 import { confirmCommandMessage, isCommandTrusted, trustCommand } from './commandTrust';
 import { judgeSender, pinSenderKey, pinnedKey, verdictBlocksAccept } from './senderPinning';
 import { keyFingerprint } from './shareSignature';
+import { diagnoseTeamFailure, teamFailureIsActionable } from './teamDiagnosis';
 import {
   backupIntervalHoursFor,
   backupPathFor,
@@ -270,6 +271,23 @@ export function activate(context: vscode.ExtensionContext): void {
     provider.refresh();
     void sharing.reload();
   });
+  /**
+   * Say a refusal out loud after a sync somebody asked for.
+   *
+   * <p>Only on the manual command, and only for a refusal: the tree carries the
+   * rest. The background timer stays silent — a modal every five minutes is how
+   * people learn to dismiss modals, and this is the modal that matters.</p>
+   */
+  const reportTeamRefusals = (): void => {
+    for (const [accountId, failure] of sharing.teamFailures) {
+      if (!teamFailureIsActionable(failure)) {
+        continue;
+      }
+      const email = storage.getAccount(accountId)?.email ?? accountId;
+      void vscode.window.showWarningMessage(`${email}: ${diagnoseTeamFailure(failure)}`);
+    }
+  };
+
   register('credSshManager.syncNow', async () => {
     vaultKeys.noteUserActivity(); // the user is here: postpone auto-lock
 
@@ -302,6 +320,9 @@ export function activate(context: vscode.ExtensionContext): void {
 
     await sync.syncNow();
     await refreshReadiness();
+    // The team is rescanned as part of that; if the server refused, say so here
+    // rather than leaving an empty list to be read as "nobody has joined yet".
+    reportTeamRefusals();
 
     if (blocked.length > 0) {
       // Synced what it could, and named what it could not — rather than reporting
