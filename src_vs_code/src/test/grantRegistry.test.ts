@@ -69,3 +69,39 @@ test('the log label never contains the whole secret', () => {
 
   assert.equal(GrantRegistry.describe(grant).includes(grant.secret), false);
 });
+
+test('denied grants do not accumulate — the next mint reclaims them', () => {
+  // Every share adds a grant; without this, a long-lived window grows the map forever.
+  const registry = new GrantRegistry();
+  const a = mint(registry);
+  registry.deny(a.secret);
+  const b = mint(registry);
+  registry.deny(b.secret);
+
+  mint(registry); // triggers the sweep
+
+  // A refused token being unknown afterwards is the same refusal to any agent holding it.
+  assert.equal(registry.get(a.secret), undefined);
+  assert.equal(registry.get(b.secret), undefined);
+});
+
+test('an allowed grant is a live capability and survives later mints', () => {
+  const registry = new GrantRegistry();
+  const allowed = mint(registry);
+  registry.allow(allowed.secret);
+
+  for (let i = 0; i < 20; i += 1) {
+    mint(registry);
+  }
+
+  assert.equal(registry.get(allowed.secret)?.status, 'allowed');
+});
+
+test('a pending grant mid-consent is not swept by a concurrent mint', () => {
+  const registry = new GrantRegistry();
+  const pending = mint(registry); // never settled — its modal is still open
+
+  mint(registry);
+
+  assert.equal(registry.get(pending.secret)?.status, 'pending');
+});

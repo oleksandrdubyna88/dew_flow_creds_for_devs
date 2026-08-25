@@ -29,8 +29,16 @@ export interface Grant {
 export class GrantRegistry {
   private readonly grants = new Map<string, Grant>();
 
+  /**
+   * A ceiling so a long-lived window that shares credential after credential cannot grow
+   * this map without bound. Far above any real session's share count, so in practice only
+   * the denied-grant sweep below ever fires; the cap is the backstop.
+   */
+  private static readonly MAX_GRANTS = 256;
+
   /** Mint a fresh pending grant and return it (its `secret` is the key). */
   mint(accountId: string, entityId: string, entityName: string, kind: string): Grant {
+    this.prune();
     const grant: Grant = {
       secret: newSecret(),
       accountId,
@@ -58,6 +66,30 @@ export class GrantRegistry {
   /** Record the human's refusal. Terminal for this token's life. */
   deny(secret: string): Grant | undefined {
     return this.settle(secret, 'denied');
+  }
+
+  /**
+   * Reclaim dead grants before minting another.
+   *
+   * <p>A <b>denied</b> grant is terminal — it exists only to refuse, and an unknown token is
+   * refused just the same, so deleting it changes nothing observable. An <b>allowed</b> grant
+   * is a live capability the person deliberately handed an agent and is never dropped by the
+   * sweep. Only if a window somehow crosses the cap without a single denial does the last
+   * resort fire: drop the oldest, insertion order, to keep the map bounded.</p>
+   */
+  private prune(): void {
+    for (const [secret, grant] of this.grants) {
+      if (grant.status === 'denied') {
+        this.grants.delete(secret);
+      }
+    }
+    while (this.grants.size >= GrantRegistry.MAX_GRANTS) {
+      const oldest = this.grants.keys().next().value;
+      if (oldest === undefined) {
+        break;
+      }
+      this.grants.delete(oldest);
+    }
   }
 
   /** Only a pending grant settles; a settled one is never revisited. */

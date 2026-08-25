@@ -65,6 +65,8 @@ export class CredsAgentServer implements vscode.Disposable {
    * this reason; the broker simply had not followed it.</p>
    */
   private auditPath: string | undefined;
+  // Audit appends run off the UI thread but in order — each awaits the previous. See appendToFile.
+  private auditQueue: Promise<void> = Promise.resolve();
   private calls = 0;
 
   constructor(
@@ -361,17 +363,20 @@ export class CredsAgentServer implements vscode.Disposable {
    * The durable half. Best-effort in every direction: an unwritable storage
    * directory must not stop the broker from serving, because a missing audit line
    * is a smaller harm than a credential feature that refuses to work.
+   *
+   * <p>Appends are asynchronous and chained: they no longer block the extension-host
+   * thread on every broker call (a busy agent loop was a steady drip of synchronous disk
+   * I/O on the UI thread), and chaining onto the previous write preserves line order — a
+   * fire-and-forget append could interleave two lines.</p>
    */
   private appendToFile(line: string): void {
-    if (this.auditPath === undefined) {
+    const target = this.auditPath;
+    if (target === undefined) {
       return;
     }
-    try {
-      fs.appendFileSync(this.auditPath, `${line}
-`, 'utf8');
-    } catch {
-      // See above.
-    }
+    this.auditQueue = this.auditQueue.then(() =>
+      fs.promises.appendFile(target, `${line}\n`, 'utf8').then(undefined, () => undefined),
+    );
   }
 
   /** Open this run's file and sweep whatever has aged out. */
