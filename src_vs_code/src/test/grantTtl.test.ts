@@ -87,3 +87,46 @@ test('a fresh grant is minted with its clock started and no uses', () => {
   assert.equal(grant.lastUsedAt, T0);
   assert.equal(grant.uses, 0);
 });
+
+test('a denial outranks the idle clock — a refusal never decays into "unknown"', () => {
+  // Found by an adversarial review, and it is the collision of two of this file's own
+  // features: 0.57.0 gave tokens an idle life, 0.57.2 made a refusal keep answering. A denied
+  // grant is never touch()ed — nothing uses it — so its idle clock ran from mint, and an hour
+  // after the person pressed Deny the tombstone was swept and the broker answered 401 "ask for
+  // a fresh Share with Claude Code". That is precisely the re-prompt loop the refusal
+  // tombstone exists to prevent, restored by the clock.
+  const registry = new GrantRegistry();
+  const refused = mint(registry);
+  registry.deny(refused.secret);
+
+  const muchLater = T0 + 100 * HOUR;
+  const found = registry.lookup(refused.secret, muchLater, IDLE_HOUR);
+
+  assert.equal(found.kind, 'live', 'still addressable, so it can still refuse');
+  assert.equal(found.kind === 'live' && found.grant.status, 'denied');
+  // And it stays that way — the second call must not find it swept either.
+  assert.equal(registry.lookup(refused.secret, muchLater + HOUR, IDLE_HOUR).kind, 'live');
+});
+
+test('a call cap does not spend a denial either', () => {
+  const registry = new GrantRegistry();
+  const refused = mint(registry);
+  registry.deny(refused.secret);
+
+  const spent = { idleMs: 0, maxUses: 1 };
+  registry.touch(refused.secret);
+  registry.touch(refused.secret);
+
+  assert.equal(registry.lookup(refused.secret, T0, spent).kind, 'live', 'denied outranks the cap');
+});
+
+test('an ALLOWED grant still expires — precedence is about refusals, not about immunity', () => {
+  const registry = new GrantRegistry();
+  const allowed = mint(registry);
+  registry.allow(allowed.secret);
+
+  assert.deepEqual(registry.lookup(allowed.secret, T0 + 2 * HOUR, IDLE_HOUR), {
+    kind: 'expired',
+    reason: 'idle',
+  });
+});

@@ -424,6 +424,24 @@ export class SyncManager implements vscode.Disposable {
     }
 
     const local = await this.storage.getSnapshot(account.accountId);
+
+    // FAIL CLOSED when the local tree could not be read.
+    //
+    // A sealed metadata slot that will not open yields an EMPTY node list while the tombstone
+    // and horizon slots — which are not sealed — survive intact. Merging that is not a no-op:
+    // the phantom-rollback guard drops every remote node as "already deleted and collected"
+    // (syncMerge: no local node, no local tombstone, covered by the local horizon), so the
+    // merge result is empty, `remoteChanged` is true, and the next line would push the emptied
+    // vault over the good one — then the pushed horizon would empty every other machine on its
+    // own next cycle. A keychain reset would destroy the vault everywhere.
+    //
+    // So an unreadable local tree stops the cycle before the merge. The remote is left exactly
+    // as it is, which is also the copy the data can be restored from.
+    if (this.storage.metadataFault !== undefined) {
+      this.warnMetadataFault(account);
+      return { applied: false, pushed: false };
+    }
+
     const { merged, localChanged, remoteChanged } = mergeProfiles(local, remote, Date.now());
 
     if (localChanged) {
@@ -468,6 +486,24 @@ export class SyncManager implements vscode.Disposable {
    * <p>Per-account popups were the original behaviour and three of them stacked in the
    * corner, each covering the previous one's buttons.</p>
    */
+  /**
+   * Say, once, that sync is paused because the local vault cache cannot be read.
+   *
+   * <p>Once per account per session: this repeats every cycle by nature, and a modal every five
+   * minutes is how people learn to dismiss modals.</p>
+   */
+  private warnMetadataFault(account: StoredAccount): void {
+    if (this.warnedAccounts.has(`meta:${account.accountId}`)) {
+      return;
+    }
+    this.warnedAccounts.add(`meta:${account.accountId}`);
+    void vscode.window.showWarningMessage(
+      `Sync is paused for ${account.email}: this machine cannot read its local copy of the vault. ` +
+        `${this.storage.metadataFault ?? ''} Nothing was written to the sync location — the copy there is intact ` +
+        'and is what this machine will restore from once it can be read again.',
+    );
+  }
+
   private noteLocked(account: StoredAccount): void {
     if (this.warnedAccounts.has(`locked:${account.accountId}`)) {
       return;

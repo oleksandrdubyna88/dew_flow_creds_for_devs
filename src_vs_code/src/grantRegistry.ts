@@ -65,16 +65,33 @@ export type GrantLookup =
   | { kind: 'expired'; reason: GrantExpiry }
   | { kind: 'unknown' };
 
-/** Why a grant would be refused now — or `undefined` while it is still good. */
-// eslint-disable-next-line complexity
+/**
+ * Why a grant would be refused now — or `undefined` while it is still good.
+ *
+ * <p><b>A refusal outranks every clock.</b> A denied grant is terminal: it exists only to keep
+ * answering "a person said no". Nothing ever uses it, so nothing ever `touch`es it, and an idle
+ * clock measured from minting would sweep it about an hour after the Deny — at which point the
+ * broker answers "unknown token" and a reasonable agent asks for a fresh one, reopening the very
+ * dialog that was just refused. That is the loop the refusal tombstone exists to prevent, and a
+ * clock must not restore it. Status is therefore checked ahead of expiry here, in the one
+ * function every call site goes through, rather than at each caller.</p>
+ *
+ * <p>An <b>allowed</b> grant is not immune: it is a live capability, and bounding how long an
+ * unattended one stays live is the whole point of the limits.</p>
+ */
 export function grantExpiry(grant: Grant, now: number, limits: GrantLimits): GrantExpiry | undefined {
-  if (limits.maxUses > 0 && grant.uses >= limits.maxUses) {
-    return 'uses';
+  if (grant.status === 'denied') {
+    return undefined;
   }
-  if (limits.idleMs > 0 && now - grant.lastUsedAt > limits.idleMs) {
-    return 'idle';
-  }
-  return undefined;
+  return spentIts(grant, limits) ?? wentIdle(grant, now, limits);
+}
+
+function spentIts(grant: Grant, limits: GrantLimits): GrantExpiry | undefined {
+  return limits.maxUses > 0 && grant.uses >= limits.maxUses ? 'uses' : undefined;
+}
+
+function wentIdle(grant: Grant, now: number, limits: GrantLimits): GrantExpiry | undefined {
+  return limits.idleMs > 0 && now - grant.lastUsedAt > limits.idleMs ? 'idle' : undefined;
 }
 
 export class GrantRegistry {

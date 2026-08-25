@@ -82,6 +82,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Bounded on purpose: 256 KB of output per stream, 30 s per command (raisable to 120 s), 8 at a
   time, and every child killed when the window goes.
 
+## [0.58.1] — 2026-08-25
+
+### Security
+
+- **Sync now refuses to run when this machine cannot read its own vault cache** — the most
+  serious defect this release fixes, and one introduced by 0.57.0's own metadata sealing. If the
+  device key stopped opening the sealed slot (a reset or restored OS keychain), the tree read
+  back as empty while the tombstone and horizon records — which are not sealed — survived. The
+  merge then did exactly what it is designed to do with that input: treated every entry on the
+  sync location as an old deletion already collected, produced an empty result, and pushed it.
+  That would have destroyed the copy at the sync location, and the pushed horizon would then
+  have emptied every other machine on its next cycle. A keychain reset would have taken the
+  whole vault with it, everywhere.
+
+  A cycle now stops before the merge when the local cache is unreadable, says so once, and
+  leaves the remote untouched — which is also the copy the data comes back from. The sealed
+  slots are probed at activation rather than on first read, so the warning fires when it is
+  true instead of never.
+
+- **A refusal no longer expires into "unknown".** 0.57.0 gave tokens an idle lifetime and 0.57.2
+  made a denial keep answering; together they undid each other. Nothing ever uses a denied
+  token, so nothing resets its idle clock, and about an hour after someone pressed **Deny** the
+  refusal was swept — after which the broker answered "unknown token" and any reasonable agent
+  asked for a fresh one, reopening the dialog that was just refused. Status now outranks the
+  clock in the single function every lookup goes through: a denial is terminal, an allowed grant
+  still expires as intended.
+
 ## [0.58.0] — 2026-08-25
 
 ### Added

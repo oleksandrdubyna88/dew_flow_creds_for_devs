@@ -1,3 +1,4 @@
+import { BurnPolicy, isBurnPolicy } from './entityExpiry';
 export type AuthProvider = 'microsoft' | 'google';
 
 export type NodeType = 'folder' | 'entity';
@@ -71,6 +72,15 @@ export interface EntityMetadata {
   commandArgs?: CommandArg[];
   /** What the command is for, shown under the input. */
   commandNote?: string;
+  /**
+   * When this entry stops existing (ms epoch). Absent means it lives until deleted.
+   *
+   * <p>Expiry is a real delete when it comes — tombstone, every SecretStorage key, the
+   * revision history — never a flag that leaves the secret in place. See entityExpiry.ts.</p>
+   */
+  expiresAt?: number;
+  /** What ends this entry's life: a clock, one agent use, or this window closing. */
+  burnPolicy?: BurnPolicy;
   /** Secret field -> terminal env variable NAME (values never travel; see envBinding.ts). */
   envBindings?: Record<string, string>;
   /** Display name of the encrypted attachment (content in SecretStorage). */
@@ -477,6 +487,8 @@ export function isEntityMetadata(value: unknown): value is EntityMetadata {
     (v.command === undefined || typeof v.command === 'string') &&
     (v.commandNote === undefined || typeof v.commandNote === 'string') &&
     (v.commandArgs === undefined || isCommandArgArray(v.commandArgs)) &&
+    (v.expiresAt === undefined || typeof v.expiresAt === 'number') &&
+    (v.burnPolicy === undefined || isBurnPolicy(v.burnPolicy)) &&
     (v.envBindings === undefined || isEnvBindings(v.envBindings)) &&
     (v.attachmentFileName === undefined || typeof v.attachmentFileName === 'string') &&
     (v.imageFileName === undefined || typeof v.imageFileName === 'string') &&

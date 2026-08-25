@@ -200,6 +200,13 @@ export class StorageManager implements vscode.Disposable {
     for (const account of this.getAccounts()) {
       const slot = nodesKey(account.accountId);
       const raw = this.globalState.get<unknown>(slot);
+      // Probe every sealed slot now rather than on the first read. `metadataFault` used to be
+      // set lazily by openNodesSlot, so activation read it before anything had opened a slot
+      // and the warning could never fire — and sync would learn of the fault only by producing
+      // an empty tree.
+      if (isSealedMetadata(raw)) {
+        this.openNodesSlot(account.accountId, raw);
+      }
       if (Array.isArray(raw)) {
         // Legacy plaintext: seal in place. A sealed or absent slot is left exactly as it is —
         // migration must never be the thing that overwrites a slot it could not read.
