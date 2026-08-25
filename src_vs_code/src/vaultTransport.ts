@@ -6,13 +6,17 @@ import { OwnedShare, ShareItem, StoredAccount, TeamMember } from './types';
  *    pending shares carried in each file's plaintext envelope array.
  *  - {@link ServerTransport}: the Cred Vault Server (authenticated HTTPS),
  *    which keeps vault blobs and per-recipient share inboxes separately.
+ *  - {@link GitTransport}: a private git repository holding the same
+ *    `vault_*.enc` files, with the clone as a cache and a rejected push
+ *    standing in for the server's `412`.
  *
- * A location string decides which one: `http(s)://…` → server, else folder.
+ * A location string decides which one, and git is recognised FIRST because a
+ * `https://…/vault.git` URL is otherwise indistinguishable from a server.
  */
 export interface VaultTransport {
   /** Human-readable location (folder path or server URL). */
   readonly location: string;
-  readonly kind: 'folder' | 'server';
+  readonly kind: 'folder' | 'server' | 'git';
   /**
    * True when pending shares travel INSIDE the vault envelope (folder
    * transport), so every rewrite must carry them along. False when the

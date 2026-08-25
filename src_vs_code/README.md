@@ -42,6 +42,7 @@ machines; add the optional self-hosted server when a team needs to share.
 | **Share with an AI agent** | *Share with Claude Code…* lets a coding agent run commands on an SSH host **without ever receiving the password or key** — see below |
 | **Team sharing** | Send one entity, or a whole folder, sealed to a colleague with a one-time PIN. *Create Entity for…* authors one directly for someone else |
 | **Multi-machine sync** | One AES-256-GCM file per profile, merged causally (version vectors) rather than overwritten, so two machines editing at once converge on the same answer |
+| **Git sync** | Point an account at a private git repo (`git@github.com:me/vault.git`) and the encrypted vault is committed and pushed on change, pulled on every cycle — the same causal merge as every other transport. Needs `git` on PATH. Commit messages carry only an account hash and a time, never anything about what is inside; a reader of the repo can infer *when* a vault changed, never *what* |
 | **Dated snapshots** | Separate from sync and deliberately so: sync merges, and a merge propagates a deletion. A snapshot is the copy that still has the thing you deleted |
 | **Security keys** | Open the vault by touching a YubiKey (WebAuthn PRF) — several keys plus the PIN, any of them opens it, adding or removing one never re-encrypts your data |
 | **Auto-lock** | Locks after an idle window measured in *your* actions, not mouse movement and not background sync |

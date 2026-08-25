@@ -26,6 +26,12 @@ export interface SshExecOptions {
   timeoutMs: number;
   /** Aborted when the window goes away, so no ssh outlives its broker. */
   signal?: AbortSignal;
+  /**
+   * Working directory for the child. Absent means this process's own, which is what every
+   * ssh caller wants; the git transport needs its clone, and `git -C` would have to be
+   * threaded through every argv builder to say the same thing.
+   */
+  cwd?: string;
 }
 
 export interface SshExecOutcome {
@@ -97,6 +103,7 @@ export function runBounded(
       child = spawn(command, args, {
         shell,
         env: options.env,
+        cwd: options.cwd,
         windowsHide: true,
         stdio: ['ignore', 'pipe', 'pipe'],
       });

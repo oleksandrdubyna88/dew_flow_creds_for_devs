@@ -1,5 +1,10 @@
+import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { FolderTransport } from './folderTransport';
+import { GitTransport } from './gitTransport';
+import { GitAuth, parseGitRemote } from './gitRemote';
+import { materializePrivateKey } from './keyInstaller';
+import { runBounded } from './sshExecRunner';
 import { GoogleAuthProvider } from './googleAuthProvider';
 import { nasPathFor } from './nasPaths';
 import { ServerTransport } from './serverTransport';
@@ -8,6 +13,9 @@ import { StoredAccount } from './types';
 import { VaultTransport, isServerLocation } from './vaultTransport';
 import { microsoftServerScopes } from './msScopes';
 import { ClientConfigCache, defaultConfigFetcher, resolveMicrosoftScope } from './clientConfig';
+
+/** A git operation that has not finished in two minutes is not going to. */
+const GIT_TIMEOUT_MS = 120_000;
 
 /**
  * Resolves the transport for an account's configured location: a folder
@@ -30,6 +38,12 @@ export class TransportFactory {
   constructor(
     private readonly storage: StorageManager,
     private readonly googleAuth: GoogleAuthProvider,
+    /**
+     * Where a git clone may live. Absent means git sync is not wired in this build — a git
+     * location is then refused with a sentence saying so, rather than silently treated as a
+     * folder path, which would create a directory named after a URL and sync nowhere.
+     */
+    private readonly storageDir?: string,
   ) {
     // Locations come from settings; drop the cache when they change.
     vscode.workspace.onDidChangeConfiguration((e) => {
@@ -50,11 +64,78 @@ export class TransportFactory {
     if (existing !== undefined) {
       return existing;
     }
-    const transport: VaultTransport = isServerLocation(location)
-      ? new ServerTransport(location, (a) => this.tokenFor(a))
-      : new FolderTransport(location, () => this.storage.getAccounts());
+    const transport = this.build(location);
     this.cache.set(location, transport);
     return transport;
+  }
+
+  /**
+   * Which transport a location names.
+   *
+   * <p>Git is asked FIRST, and only about shapes that cannot be anything else — an
+   * `ssh://`/`git@host:` address, a `git+` prefix, or a `.git` suffix. `https://host/path`
+   * stays a server URL, because guessing wrong there would point an account at the wrong
+   * backend and sync it nowhere without saying so.</p>
+   */
+  private build(location: string): VaultTransport {
+    const remote = parseGitRemote(location);
+    if (remote !== undefined) {
+      const storageDir = this.storageDir;
+      if (storageDir === undefined) {
+        throw new Error(
+          `${location} looks like a git remote, but git sync is not available in this build.`,
+        );
+      }
+      return new GitTransport(
+        location,
+        remote,
+        path.join(storageDir, 'git'),
+        (args, options) =>
+          runBounded('git', [...args], false, {
+            env: options.env,
+            cwd: options.cwd,
+            timeoutMs: GIT_TIMEOUT_MS,
+          }).then((outcome) => ({
+            exitCode: outcome.exitCode,
+            stdout: outcome.stdout,
+            stderr: outcome.stderr,
+          })),
+        () => this.gitAuth(location, storageDir),
+        () => this.storage.getAccounts(),
+      );
+    }
+    return isServerLocation(location)
+      ? new ServerTransport(location, (a) => this.tokenFor(a))
+      : new FolderTransport(location, () => this.storage.getAccounts());
+  }
+
+  /**
+   * How git authenticates for this remote.
+   *
+   * <p>A deploy key stored as an ordinary `sshkey` entry is the preferred path: it is
+   * materialized into the same `keys/` directory the SSH paths already use and purge, so no
+   * new storage axis is needed. Everything else falls back to whatever the machine's own git
+   * is already configured to do — which is what most people already have working.</p>
+   */
+  private async gitAuth(location: string, storageDir: string): Promise<GitAuth> {
+    const keyEntityId = vscode.workspace
+      .getConfiguration('credSshManager')
+      .get<Record<string, string>>('gitDeployKeys', {})[location];
+    const key = keyEntityId === undefined ? undefined : await this.findPrivateKey(keyEntityId);
+    return key === undefined
+      ? { kind: 'inherit' }
+      : { kind: 'ssh', keyPath: materializePrivateKey(storageDir, `git-${keyEntityId}`, key) };
+  }
+
+  /** The stored private key with this entity id, under whichever account holds it. */
+  private async findPrivateKey(entityId: string): Promise<string | undefined> {
+    for (const account of this.storage.getAccounts()) {
+      const key = await this.storage.getPrivateKey(account.accountId, entityId);
+      if (key !== undefined && key.length > 0) {
+        return key;
+      }
+    }
+    return undefined;
   }
 
   /** Distinct locations across all account profiles. */

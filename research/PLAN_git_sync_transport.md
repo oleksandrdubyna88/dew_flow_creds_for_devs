@@ -1,13 +1,20 @@
 # PLAN — Синхронизация через приватный git-репозиторий
 
-> Status: **plan only, nothing implemented yet.** Scope: новый `GitTransport` в семье
+> Status: **IMPLEMENTED 2026-08-25 (0.58.0).** Отклонения: (1) распознавание git — только по
+> однозначной форме (`ssh://`, `git@host:`, `git+`, `.git`), а не по отдельной настройке
+> `accountGitRemotes` — существующий `nasBackupPath`/`accountNasPaths` уже несёт локацию, и второй
+> ключ был бы лишним; (2) ретенция истории (`gitHistoryDepth`) НЕ реализована — вынесена, потому
+> что это перезапись чужой истории и заслуживает отдельного решения владельца; (3) PAT-путь не
+> реализован, только SSH-ключ из хранилища плюс наследование настроек машины. **Найдено при
+> реализации:** git на Windows переписывает переводы строк при checkout и портил байты хранилища —
+> см. §CHANGELOG 0.58.0. Scope: новый `GitTransport` в семье
 > `VaultTransport`, трёхсторонний роутинг локации, хранение credential для remote, вызов системного
 > `git`. **Решение владельца 2026-08-25: делать полноценно, с историей коммитов бандла** —
 > операционная цена принята сознательно (см. §7).
 >
-> Related docs: [module_extension.md](../research/module_extension.md#sync),
-> [architecture.md](../research/architecture.md),
-> [PLAN_audit_roadmap_2026_08_25.md](PLAN_audit_roadmap_2026_08_25.md).
+> Related docs: [module_extension.md](module_extension.md#sync),
+> [architecture.md](architecture.md),
+> [PLAN_audit_roadmap_2026_08_25.md](../todo/PLAN_audit_roadmap_2026_08_25.md).
 
 ---
 

@@ -811,6 +811,31 @@ not PIN-derived: the tree stays visible while the OS session is unlocked (the sa
 other secret already relies on), and a lost keychain loses only a cache the next sync rebuilds.
 Tombstones/horizon stay plaintext — ids and version vectors, no topology.
 
+### The git transport (0.58.0)
+
+`gitRemote.ts` is the pure half — argv builders, remote recognition, and the classification of
+git's stderr into `rejected` / `empty` / `auth` / `unreachable` / `other`, which is what decides
+whether the caller retries or tells the person their network is down. `gitTransport.ts` is the
+`VaultTransport` over it: a clone under `<globalStorage>/git/<remote-hash>/` treated strictly as
+a cache (fetch + `reset --hard FETCH_HEAD` on every read), `vault_*.enc` files exactly as the
+folder transport lays them out, and `embedsShares = true` so shares ride inside the envelope with
+no inbox to keep.
+
+Recognition is deliberately narrow and comes FIRST in `TransportFactory.build`: only `ssh://`,
+`git@host:path`, a `git+` prefix or a `.git` suffix. `https://host/path` stays a server URL,
+because guessing wrong would point an account at the wrong backend and sync it nowhere quietly.
+
+`GIT_BASE_ARGS` forces `core.autocrlf=false` and `core.eol=lf` on every invocation, and
+`initLocally` commits a `.gitattributes` marking `*.enc` binary. Both exist because of a real
+failure the integration test caught on the first run against a real repository: git rewrote line
+endings on checkout, so a vault written on one machine read back as different bytes on another.
+Our own `-c` options bind only us; the attributes file binds every other client.
+
+`scripts/git-transport-itest.cjs` drives all of it against `git init --bare` in a temp directory
+— no network, no account, genuinely git — and runs in CI. The rejected-push path is covered by
+unit tests instead: forcing a non-fast-forward through the public API would mean racing two
+pushes inside a millisecond, which is a flaky test for a path already pinned exactly.
+
 ### Masking the broker's output (0.57.3)
 
 `secretMasker.ts` (pure) prepares a table of exact needles — the value, its percent-encoded and

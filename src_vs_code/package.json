@@ -2,7 +2,7 @@
   "name": "creds-for-devs",
   "displayName": "CredsForDevs",
   "description": "Zero-trust credential manager for developers: SSH hosts and keys, VPN configs, databases, scripts and the CLI commands nobody remembers — in VS Code. Secrets live in the OS keychain; sync and team sharing are end-to-end encrypted, so the self-hosted vault server never sees plaintext. An AI coding agent can use an SSH credential without ever receiving it.",
-  "version": "0.57.3",
+  "version": "0.58.0",
   "publisher": "remsoftdev",
   "license": "MIT",
   "icon": "media/icon.png",
@@ -59,7 +59,8 @@
     "bundle": "npm run compile && esbuild out/extension.js out/agentCli.js --bundle --platform=node --target=node18 --format=cjs --external:vscode --outdir=dist --sourcemap",
     "vscode:prepublish": "npm run bundle",
     "package": "vsce package",
-    "publish": "vsce publish"
+    "publish": "vsce publish",
+    "itest:git": "npm run compile && node scripts/git-transport-itest.cjs"
   },
   "devDependencies": {
     "@types/node": "^20.11.0",
@@ -183,6 +184,14 @@
           "type": "boolean",
           "default": true,
           "markdownDescription": "Replace this entity's own stored secrets with `<CREDS_MASKED:NAME>` in the output the agent broker returns.\n\n**What this does and does not cover.** It covers output of commands the agent runs *through CredsForDevs* — that is the one channel this extension owns. It cannot cover a file the agent reads with its own tools, anything you paste yourself, or a secret that was already in the model's context. Masking is exact: only values actually stored in this entry, never a guess about what looks like a secret."
+        },
+        "credSshManager.gitDeployKeys": {
+          "type": "object",
+          "default": {},
+          "additionalProperties": {
+            "type": "string"
+          },
+          "markdownDescription": "Which stored SSH key each git remote authenticates with: `{ \"git@github.com:me/vault.git\": \"<entity id>\" }`.\n\nThe key is an ordinary **SSH key** entry in your vault — it is written to the same private `keys/` folder the SSH features already use and purge, so no copy of it is left behind. Leave a remote out and git uses whatever your machine is already configured to do (an agent, a credential helper, an existing deploy key), which is usually what you want."
         }
       }
     },

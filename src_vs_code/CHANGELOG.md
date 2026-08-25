@@ -82,6 +82,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Bounded on purpose: 256 KB of output per stream, 30 s per command (raisable to 120 s), 8 at a
   time, and every child killed when the window goes.
 
+## [0.58.0] — 2026-08-25
+
+### Added
+
+- **Sync through a private git repository.** A third place a vault can live, beside a shared
+  folder and the Cred Vault Server: point an account at `git@github.com:me/vault.git` (GitHub,
+  GitLab, Gitea, anything git speaks) and the encrypted file is committed and pushed on every
+  change, pulled on every cycle. For a developer who already has a private repo and two
+  machines, that is the whole setup — no service to run, no folder to share.
+
+  The merge engine is untouched. Version vectors, tombstones and the causal merge already knew
+  nothing about where bytes come from, so a git remote reuses all of it: the clone is a **cache**,
+  every read fetches and hard-resets onto the remote, and a stale local copy can never win. A
+  rejected push is this transport's `412` — reported, never forced, never retried in place; the
+  next cycle re-reads, merges causally and writes then.
+
+  Deliberate choices worth knowing before you turn it on:
+  - **`git` must be on PATH.** The extension has no runtime dependencies, so there is no
+    embedded git library — the system binary is the only option, and its absence is reported as
+    itself rather than as a mysterious sync failure.
+  - **Commit messages say nothing about your vault.** Only an account-hash prefix and a
+    timestamp. A repository's log is readable by anyone who can read the repository, and
+    "renamed prod-db" in a subject line is metadata the encryption was supposed to cover. What a
+    reader can still infer is *activity*: when a vault changed, and how often.
+  - **Deleting a vault removes the file, not the history.** Git keeps every commit; a deletion
+    means "no longer current", not "never existed".
+  - Authentication uses an SSH key you already store in the vault
+    (`credSshManager.gitDeployKeys`), materialized into the same private `keys/` folder the SSH
+    features already purge — or, if you configure nothing, whatever your machine's git is
+    already set up to do. A token is never placed in a URL or in a child's environment.
+
+### Fixed
+
+- **Git would have corrupted every vault it stored on Windows.** Found the first time the new
+  transport ran against a real repository rather than a mock: git's default is to rewrite line
+  endings on checkout, so a vault written on one machine came back with different bytes on
+  another — the file plainly present, the comparison plainly failing. Every invocation now
+  forces `core.autocrlf=false`, and a `.gitattributes` marking `*.enc` binary is committed with
+  the branch so *other* clients — a colleague's clone, a web UI, a CI job — cannot reintroduce
+  it. This is the defect that justifies the integration test existing at all.
+
 ## [0.57.3] — 2026-08-25
 
 ### Security

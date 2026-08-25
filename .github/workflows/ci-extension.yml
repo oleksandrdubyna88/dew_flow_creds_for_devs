@@ -73,6 +73,13 @@ jobs:
       - name: Integration test (agent broker)
         run: npm run itest:agent
 
+      # Drives the real GitTransport against a real `git init --bare` in a temp directory —
+      # no network, no hosting account, but genuinely git. It caught the one defect the unit
+      # tests structurally could not: on Windows git rewrites line endings on checkout, so a
+      # vault written on one machine came back with different bytes on another.
+      - name: Integration test (git transport)
+        run: npm run itest:git
+
       # Packaging proves the manifest is publishable: a missing icon, licence or
       # repository field fails here rather than at `vsce publish` time.
       - name: Package
