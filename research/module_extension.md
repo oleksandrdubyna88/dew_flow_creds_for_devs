@@ -889,6 +889,29 @@ empty list, which made one assertion impossible to pass and the two around it im
 - `addSecurityKey`/`removeSecurityKey` call `refreshReadiness()`; `handleDrag` warns about rows
   it dropped from another profile.
 
+### The per-entity flag caches, and the three rules that keep them honest
+
+`entityFlags.ts` (pure) owns the walk that fills the tree's two per-entity caches — does this
+entry keep previous versions, does it have a stored password — and `entityKey(accountId,
+entityId)` is the key for BOTH. Three rules, each a test in `entityFlags.test.ts`, each written
+after a review found the code without it:
+
+- **Keyed by account as well as entity.** The keychain key is, so the caches must be: a restore
+  puts the same ids into two profiles, and an id-only key let one profile's revisions render
+  under the other's row — with its dates and a twisty that resolved to nothing.
+- **Runs are serialized and coalesced.** A walk is hundreds of sequential keychain reads and
+  every mutation starts one; two in flight raced to swap their results, and the winner was
+  whichever finished LAST — so a slow walk begun before an edit could republish pre-edit flags,
+  and the entry that had just been given a password lost its *Copy Password*. A request during a
+  walk now sets a rerun flag instead of starting a second walk, which also collapses a burst of
+  mutations into one extra pass.
+- **Another window's write reaches this one.** Both caches mirror the keychain, so `activate()`
+  subscribes to `secrets.onDidChange` (debounced) — before that, a password saved in a second
+  window of the same profile left this window's menu wrong until an unrelated local mutation.
+
+The provider disposes as well as the view: `CredTreeDataProvider` owns the filter debounce timer
+and its emitter, and disposing a `TreeView` does not dispose its provider.
+
 ### Performance: caches instead of per-row and per-cycle work (0.57.0–0.57.1, audit §3.C)
 
 Four costs the 2026-08-25 audit measured and removed. All numbers are from
@@ -979,8 +1002,13 @@ enforces exactly four rules — `max-lines: 800`, `max-lines-per-function: 50` (
 where a body narrates one scenario), `complexity: 4`, `no-console` — deliberately not a style
 linter. Pre-existing debt carries explicit `eslint-disable` markers at each site (178 inline +
 3 documented file-level for `extension.ts`/`entityFormPanel.ts`/`storageManager.ts`), so a lint
-failure always means a NEW violation. Remove a marker when the code under it shrinks below the
-limit. Note the glob in the test script: `node --test
+failure always means a NEW violation. Two rules make that claim checkable rather than hopeful:
+`reportUnusedDisableDirectives: 'error'` fails the build on a marker that has stopped being
+needed (a stale file-level disable would otherwise keep exempting a file that a refactor brought
+back under the limit), and a `no-restricted-syntax` ban on the inline
+`x instanceof Error ? x.message : String(x)` keeps `describeError` load-bearing — the sweep that
+created it had already missed two call sites by the time it landed. The ban is scoped to the
+MESSAGE form; normalizing an unknown into an `Error` object is a different job and stays allowed. Note the glob in the test script: `node --test
 out/test/` resolves the directory as a module on Node 22+ and exits `MODULE_NOT_FOUND` — the suite
 silently ran nothing before 2026-08-23.
 

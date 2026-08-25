@@ -15,6 +15,7 @@ import {
   nodeHaystack,
   searchTerms,
 } from './treeSearch';
+import { entityKey } from './entityFlags';
 import { SyncReadiness } from './syncReadiness';
 import { isVpnStartable } from './vpnCommand';
 
@@ -27,11 +28,6 @@ const DND_MIME = `application/vnd.code.tree.${VIEW_ID.toLowerCase()}`;
  */
 const SEARCH_DEBOUNCE_MS = 50;
 
-/** Key of the `passwordIds` cache — account AND entity, like the keychain key it mirrors. */
-export function passwordKey(accountId: string, entityId: string): string {
-  return `${accountId}:${entityId}`;
-}
-
 interface DragPayload {
   accountId: string;
   ids: string[];
@@ -43,7 +39,10 @@ interface DragPayload {
  * moves nodes between folders within the same account profile.
  */
 export class CredTreeDataProvider
-  implements vscode.TreeDataProvider<TreeElement>, vscode.TreeDragAndDropController<TreeElement>
+  implements
+    vscode.TreeDataProvider<TreeElement>,
+    vscode.TreeDragAndDropController<TreeElement>,
+    vscode.Disposable
 {
   readonly dragMimeTypes = [DND_MIME];
   readonly dropMimeTypes = [DND_MIME];
@@ -76,12 +75,17 @@ export class CredTreeDataProvider
    */
   readonly historyById = new Map<string, RevisionHead[]>();
 
-  hasHistory(entityId: string): boolean {
-    return (this.historyById.get(entityId)?.length ?? 0) > 0;
+  /** The kept versions of one entity, or none — keyed by `entityKey`, as the passwords are. */
+  historyOf(accountId: string, entityId: string): readonly RevisionHead[] {
+    return this.historyById.get(entityKey(accountId, entityId)) ?? [];
+  }
+
+  hasHistory(accountId: string, entityId: string): boolean {
+    return this.historyOf(accountId, entityId).length > 0;
   }
 
   /**
-   * Entities that have a stored password, as `passwordKey(accountId, entityId)`.
+   * Entities that have a stored password, as `entityKey(accountId, entityId)`.
    *
    * <p>Whether "Copy Password" belongs in an entity's menu used to be answered by reading the
    * keychain in `getTreeItem` — one cross-process read per row, so opening a folder of 300
@@ -94,7 +98,7 @@ export class CredTreeDataProvider
   readonly passwordIds = new Set<string>();
 
   hasPassword(accountId: string, entityId: string): boolean {
-    return this.passwordIds.has(passwordKey(accountId, entityId));
+    return this.passwordIds.has(entityKey(accountId, entityId));
   }
 
   /** Set by the extension: Team / Shared-with-me data source. */
@@ -104,6 +108,22 @@ export class CredTreeDataProvider
     private readonly storage: StorageManager,
     private readonly extensionUri: vscode.Uri,
   ) {}
+
+  /**
+   * Give up the debounce timer and the emitter.
+   *
+   * <p>Disposing a `TreeView` does NOT dispose its provider, so without this a filter keystroke
+   * within the debounce window of a teardown fires a repaint into a view that is going away, and
+   * every activation cycle (an extension update, a profile switch) leaves the previous provider's
+   * emitter behind with its listeners still attached.</p>
+   */
+  dispose(): void {
+    if (this.pendingRefresh !== undefined) {
+      clearTimeout(this.pendingRefresh);
+      this.pendingRefresh = undefined;
+    }
+    this.onDidChangeTreeDataEmitter.dispose();
+  }
 
   /**
    * Whether ANY share under this sender arrived somewhere its sender could be
@@ -220,7 +240,7 @@ export class CredTreeDataProvider
    */
   // eslint-disable-next-line complexity
   private revisionItem(element: Extract<TreeElement, { kind: 'revision' }>): vscode.TreeItem {
-    const head = this.historyById.get(element.node.id)?.[element.index];
+    const head = this.historyOf(element.accountId, element.node.id)[element.index];
     const label = head === undefined ? 'version no longer kept' : summarizeRevision(head);
     const item = new vscode.TreeItem(label, vscode.TreeItemCollapsibleState.None);
     item.id = `${element.accountId}:${element.node.id}:rev${element.index}`;
@@ -330,7 +350,7 @@ export class CredTreeDataProvider
     // history tint; what the tint promised was that the versions are one twisty away.
     if (element.kind === 'node' && element.node.type === 'entity') {
       const { accountId, node } = element;
-      return (this.historyById.get(node.id) ?? []).map((_head, index) => ({
+      return this.historyOf(accountId, node.id).map((_head, index) => ({
         kind: 'revision' as const,
         accountId,
         node,
@@ -504,7 +524,7 @@ export class CredTreeDataProvider
     const details = node.details;
     const item = new vscode.TreeItem(
       node.name,
-      this.hasHistory(node.id)
+      this.hasHistory(accountId, node.id)
         ? vscode.TreeItemCollapsibleState.Collapsed
         : vscode.TreeItemCollapsibleState.None,
     );
@@ -571,7 +591,7 @@ export class CredTreeDataProvider
       // the tree rather than only after opening the entry. A theme colour rather than a
       // second set of SVG files: seven kinds times two states is fourteen files to keep
       // in step, and the tint says the same thing.
-      this.hasHistory(node.id) ? HISTORY_COLOR : undefined,
+      this.hasHistory(accountId, node.id) ? HISTORY_COLOR : undefined,
     );
     item.description = describeTarget(node);
     item.tooltip = buildTooltip(node);

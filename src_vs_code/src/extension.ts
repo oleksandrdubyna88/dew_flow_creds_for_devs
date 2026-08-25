@@ -52,7 +52,7 @@ import {
   vpnTunnelName,
 } from './vpnCommand';
 import { StorageManager } from './storageManager';
-import { Revision, RevisionHead, revisionHead } from './revisionHistory';
+import { Revision } from './revisionHistory';
 import { SyncManager } from './syncManager';
 import { buildSshCommand, describeSshTarget } from './terminalManager';
 import { connectEntity } from './sshConnect';
@@ -83,7 +83,9 @@ import {
   removalWouldRekey,
 } from './securityKeyOps';
 import { validatePin } from './pinPolicy';
-import { CredTreeDataProvider, VIEW_ID, passwordKey } from './treeDataProvider';
+import { CredTreeDataProvider, VIEW_ID } from './treeDataProvider';
+import { EntityFlagsRefresher, entityFlagSource } from './entityFlags';
+import { maskEntriesFor } from './maskEntries';
 import { RemoteState, buildDefaultFolders, inheritedFolderType } from './defaultFolders';
 import * as childProcess from 'node:child_process';
 import * as fs from 'node:fs';
@@ -118,6 +120,12 @@ import {
 
 /** Set in activate(); the module-level slot keeps editNode's signature unchanged. */
 let envCollection: vscode.GlobalEnvironmentVariableCollection;
+
+/**
+ * How long the keychain must be quiet before a foreign write triggers a flag refresh.
+ * One edit writes several secret kinds in a row; this coalesces them into one walk.
+ */
+const SECRETS_SETTLE_MS = 400;
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
   envCollection = context.environmentVariableCollection;
@@ -269,38 +277,32 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
    * caches are swapped at the end rather than cleared at the start, so a repaint that lands
    * mid-walk never shows a tree with every flag briefly off.
    */
-  const refreshEntityFlags = async (): Promise<void> => {
-    const history = new Map<string, RevisionHead[]>();
-    const withPassword = new Set<string>();
-    for (const account of storage.getAccounts()) {
-      for (const node of storage.getNodes(account.accountId)) {
-        if (node.type !== 'entity') {
-          continue;
-        }
-        const [revisions, password] = await Promise.all([
-          storage.getHistory(account.accountId, node.id),
-          storage.getPassword(account.accountId, node.id),
-        ]);
-        if (revisions.length > 0) {
-          // Heads only: the tree needs dates and names, never the old secrets.
-          history.set(node.id, revisions.map(revisionHead));
-        }
-        if (password !== undefined) {
-          withPassword.add(passwordKey(account.accountId, node.id));
-        }
-      }
-    }
-    provider.historyById.clear();
-    for (const [id, heads] of history) {
-      provider.historyById.set(id, heads);
-    }
-    provider.passwordIds.clear();
-    for (const key of withPassword) {
-      provider.passwordIds.add(key);
-    }
-    provider.refresh();
-  };
+  const entityFlags = new EntityFlagsRefresher(entityFlagSource(storage), provider);
+  const refreshEntityFlags = (): Promise<void> => entityFlags.refresh();
   void refreshEntityFlags();
+
+  /**
+   * Another window of this profile wrote a secret.
+   *
+   * <p>Both flag caches mirror the keychain, and a second window's write reaches this one only
+   * as this event — before it, the row kept the menu it had when this window last walked, which
+   * is how a password saved next door left "Copy Password" missing here until an unrelated
+   * mutation. Debounced because a single edit writes several kinds in a row, and the refresher
+   * itself coalesces anything that still overlaps.</p>
+   */
+  let secretsSettle: ReturnType<typeof setTimeout> | undefined;
+  context.subscriptions.push(
+    context.secrets.onDidChange(() => {
+      if (secretsSettle !== undefined) {
+        clearTimeout(secretsSettle);
+      }
+      secretsSettle = setTimeout(() => {
+        secretsSettle = undefined;
+        void refreshEntityFlags();
+      }, SECRETS_SETTLE_MS);
+    }),
+    { dispose: () => clearTimeout(secretsSettle) },
+  );
 
   const refreshReadiness = async (): Promise<Map<string, SyncReadiness>> => {
     const locked = vaultKeys.isLocked();
@@ -337,7 +339,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // a credential (run a command, open the terminal) without ever receiving it.
   // Constructed cheaply here; it opens no socket until the first share.
   const useActions = new UseActionRegistry();
-  const agentServer = new CredsAgentServer(useActions, () => vaultKeys.noteUserActivity(), storageDir);
+  // The fourth argument is what makes masking live: the broker asks for the grant entity's own
+  // secret values and redacts them out of whatever the agent is about to read.
+  const agentServer = new CredsAgentServer(
+    useActions,
+    () => vaultKeys.noteUserActivity(),
+    storageDir,
+    (accountId, entityId) => maskEntriesFor(storage, accountId, entityId),
+  );
   const sshDeps = {
     storage,
     storageDir,
@@ -1951,7 +1960,9 @@ Read this to whoever is accepting your first share. It only matters on a shared 
   register('extension.exportSecrets', runBackup);
   register('extension.importSecrets', runRestore);
 
-  context.subscriptions.push(treeView);
+  // The provider as well as the view: disposing a TreeView does not dispose its provider, and
+  // the provider owns a debounce timer and an emitter of its own.
+  context.subscriptions.push(treeView, provider);
 }
 
 export function deactivate(): void {

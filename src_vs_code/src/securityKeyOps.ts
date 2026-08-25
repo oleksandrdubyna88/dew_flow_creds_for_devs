@@ -128,9 +128,11 @@ export async function envelopeWithRemovedKey(
   wrapId: string,
 ): Promise<NextEnvelope | SecurityKeyRefusal> {
   const { raw, key, account, storedPin, now } = args;
+  // One parse, one removal, one verdict — the same one `removalWouldRekey` answers for the
+  // caller's wording, so the message and the branch can never disagree about what happened.
   const remaining = removeWrap(vaultKeyWraps(raw), 'webauthn', wrapId);
 
-  if (removalWouldRekey(vaultKeyWraps(raw), wrapId, storedPin) && storedPin !== undefined) {
+  if (webauthnWraps(remaining).length === 0 && storedPin !== undefined) {
     const payload = await args.decrypt(raw, key);
     const master = newMasterKey();
     return {

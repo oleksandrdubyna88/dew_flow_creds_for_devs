@@ -6,6 +6,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **The context menu keeps up with the keychain.** Three ways the tree's cached per-entity
+  flags could go stale, all found by an adversarial review of the 0.57 work and each now a
+  test. A password saved in a **second window** of the same profile left this window's
+  *Copy Password* missing until an unrelated edit — the extension now listens for the
+  keychain change. Two flag refreshes running at once **raced**, and the walk that finished
+  last won, so a slow one begun before an edit could put pre-edit flags back; refreshes are
+  serialized and coalesced. And the revision cache was keyed by entity id alone while the
+  password cache was keyed by account and id, so **two profiles holding the same entity id**
+  (what a restore produces) showed one profile's versions under the other's row.
+- **A share that fails to save no longer blames your PIN.** A storage failure part-way through
+  importing an accepted share was reported as *"does not decrypt with that PIN"*, sending the
+  reader back to retype a PIN that was correct while the real error was never shown.
+- **A folder whose own name matches is never hidden** by the guard that stops the filter from
+  recursing forever through corrupt parent links.
+
 ### Internal
 
 - **The size and complexity rules are now a linter, and the 3,100-line `activate()` began

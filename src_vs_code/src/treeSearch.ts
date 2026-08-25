@@ -140,14 +140,15 @@ function subtreeMatches(
   visited: Set<string>,
   memo: FilterMemo | undefined,
 ): boolean {
-  if (node.type === 'folder' && visited.has(node.id)) {
-    return false; // a cycle: stop here, and remember nothing about a path-dependent verdict
-  }
   const compute = (): boolean => {
+    // The node's OWN text is checked before the cycle guard, always: a folder re-reached
+    // through a corrupt parent cycle still matches on its own name, and a row whose visible
+    // name contains the typed term must never be hidden by the guard that only exists to
+    // stop the walk from recursing forever.
     if (matchesTerms(nodeHaystack(node), terms)) {
       return true;
     }
-    if (node.type !== 'folder') {
+    if (node.type !== 'folder' || visited.has(node.id)) {
       return false;
     }
     visited.add(node.id);

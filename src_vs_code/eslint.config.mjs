@@ -11,6 +11,13 @@ import tseslint from 'typescript-eslint';
 
 export default [
   {
+    // A disable that has stopped being needed is an exemption nobody granted: once a refactor
+    // brings a function under the limit, or a file under 800 lines, the stale marker would keep
+    // exempting it silently and the code could grow back with no signal. Making that an error
+    // is what turns "remove the disable when it is no longer needed" from prose into a check.
+    linterOptions: { reportUnusedDisableDirectives: 'error' },
+  },
+  {
     files: ['src/**/*.ts'],
     languageOptions: {
       parser: tseslint.parser,
@@ -22,7 +29,25 @@ export default [
       'max-lines-per-function': ['error', { max: 50, skipBlankLines: true, skipComments: true }],
       complexity: ['error', 4],
       'no-console': 'error',
+      // `describeError` exists so the next refinement to how an error reads happens
+      // everywhere at once. That is only true while nothing spells the ternary inline —
+      // the sweep that created it had already missed two call sites by the time it landed.
+      'no-restricted-syntax': [
+        'error',
+        {
+          // Only the MESSAGE form. `x instanceof Error ? x : new Error(String(x))` normalizes
+          // an unknown into an Error object, which is a different job and stays allowed.
+          selector:
+            "ConditionalExpression[test.operator='instanceof'][test.right.name='Error'][consequent.property.name='message']",
+          message: "Use describeError(error) from './describeError' instead of spelling this inline.",
+        },
+      ],
     },
+  },
+  {
+    // The one place the ternary belongs — it IS the rule the others must call.
+    files: ['src/describeError.ts'],
+    rules: { 'no-restricted-syntax': 'off' },
   },
   {
     // Tests narrate: a test body reads top to bottom as one scenario, and slicing it into

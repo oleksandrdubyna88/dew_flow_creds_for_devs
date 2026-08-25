@@ -244,17 +244,30 @@ export class ShareInbox {
     if (pin === undefined) {
       return;
     }
+    // Two try blocks, not one: only the DECRYPT can fail because of the PIN. A storage write
+    // failing halfway through the import used to be reported as "does not decrypt with that
+    // PIN", sending the reader back to retype a PIN that was right, against a tree the failed
+    // import had already half-changed — with the real error never shown anywhere.
+    let payload: SharePayload;
     try {
-      const payload = openShare(share.item, share.shareKeyId, pin);
-      await this.importShared(share, payload);
-      this.deps.onMutated();
-      void this.deps.sharing.reload();
-      void vscode.window.showInformationMessage(`Accepted "${share.item.entityName}".`);
+      payload = openShare(share.item, share.shareKeyId, pin);
     } catch {
       void vscode.window.showErrorMessage(
         `"${share.item.entityName}" does not decrypt with that PIN.`,
       );
+      return;
     }
+    try {
+      await this.importShared(share, payload);
+    } catch (error) {
+      void vscode.window.showErrorMessage(
+        `"${share.item.entityName}" opened, but saving it failed: ${describeError(error)}`,
+      );
+      return;
+    }
+    this.deps.onMutated();
+    void this.deps.sharing.reload();
+    void vscode.window.showInformationMessage(`Accepted "${share.item.entityName}".`);
   }
 
   /**

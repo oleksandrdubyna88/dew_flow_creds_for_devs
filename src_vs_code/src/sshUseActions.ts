@@ -1,3 +1,4 @@
+import { describeError } from './describeError';
 import * as crypto from 'node:crypto';
 import * as fs from 'node:fs';
 import * as vscode from 'vscode';
@@ -114,7 +115,7 @@ async function prepareAuth(
       ok: false,
       result: fail(
         'internal',
-        `Could not write the stored key to disk: ${error instanceof Error ? error.message : String(error)}`,
+        `Could not write the stored key to disk: ${describeError(error)}`,
       ),
     };
   }
@@ -180,7 +181,7 @@ export function sshExecAction(deps: SshUseDeps): UseAction {
       } catch (error) {
         return fail(
           'internal',
-          `Could not run ssh: ${error instanceof Error ? error.message : String(error)}`,
+          `Could not run ssh: ${describeError(error)}`,
         );
       } finally {
         if (prepared.materialized !== undefined) {

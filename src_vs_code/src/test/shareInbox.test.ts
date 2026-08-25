@@ -254,6 +254,27 @@ test('the wrong PIN reports, imports nothing, and the share survives', async () 
   assert.ok(ui.errors.some((e) => e.includes('does not decrypt')), ui.errors.join('; '));
 });
 
+test('a save that fails after a CORRECT PIN says so, instead of blaming the PIN', async () => {
+  // The reader retyping a PIN that was right, against a tree the failed import already
+  // half-changed, is the outcome a single catch around both steps produced.
+  const w = world();
+  ui.inputs = [PIN];
+  const boom = new Error('the keychain refused the write');
+  w.storage.addNode = () => Promise.reject(boom);
+
+  await w.inbox.acceptOne(sealedShare(payloadFor('prod api', 's1'), PIN));
+
+  assert.equal(ui.errors.length, 1, ui.errors.join(' | '));
+  assert.ok(ui.errors[0].includes('the keychain refused the write'), ui.errors[0]);
+  assert.equal(
+    ui.errors[0].includes('does not decrypt'),
+    false,
+    'the PIN was right — saying otherwise sends the reader to retype it',
+  );
+  assert.equal(w.mutations(), 0, 'nothing is reported as accepted');
+  assert.equal(w.removed.length, 0, 'the share stays in the inbox');
+});
+
 test('acceptMany asks per resisting item and stops on Esc, importing what opened', async () => {
   const w = world();
   const a = sealedShare(payloadFor('alpha', 'sa'), 'pin-one-111');

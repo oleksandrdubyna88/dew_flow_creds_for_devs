@@ -3,6 +3,7 @@ import Module from 'node:module';
 import { test } from 'node:test';
 import { TreeElement, TreeNode } from '../types';
 import { RevisionHead } from '../revisionHistory';
+import { entityKey } from '../entityFlags';
 
 /**
  * History as rows under the entity.
@@ -27,7 +28,7 @@ class FakeTreeItem {
 
 interface Provider {
   historyById: Map<string, RevisionHead[]>;
-  hasHistory(id: string): boolean;
+  hasHistory(accountId: string, entityId: string): boolean;
   getChildren(element?: TreeElement): TreeElement[];
   getTreeItem(element: TreeElement): Promise<FakeTreeItem>;
 }
@@ -107,7 +108,7 @@ test('an entity without history is a leaf, and has no children', async () => {
 test('an entity with history opens, and its children are its versions newest first', async () => {
   const node = entity('e1', 'cmd', { isTerminal: true, command: 'aws sso login --profile x' });
   const tree = build([node]);
-  tree.historyById.set('e1', HEADS);
+  tree.historyById.set(entityKey('a1', 'e1'), HEADS);
   const element: TreeElement = { kind: 'node', accountId: 'a1', node };
 
   const item = await tree.getTreeItem(element);
@@ -129,7 +130,7 @@ test('an entity with history opens, and its children are its versions newest fir
 test('a version row is labelled by when and what, and opens on a single click', async () => {
   const node = entity('e1', 'cmd', { isTerminal: true });
   const tree = build([node]);
-  tree.historyById.set('e1', HEADS);
+  tree.historyById.set(entityKey('a1', 'e1'), HEADS);
 
   const first = await tree.getTreeItem({ kind: 'revision', accountId: 'a1', node, index: 0 });
   assert.ok(first.label.includes('"newer name"'), `label names the version: ${first.label}`);
@@ -147,7 +148,7 @@ test('a version row carries the Run/Copy suffixes of its OWN kind — and nothin
   // the rest: it is something to look at, run, or clone from, never something to change.
   const node = entity('e1', 'cmd', { isTerminal: true });
   const tree = build([node]);
-  tree.historyById.set('e1', HEADS);
+  tree.historyById.set(entityKey('a1', 'e1'), HEADS);
 
   const item = await tree.getTreeItem({ kind: 'revision', accountId: 'a1', node, index: 0 });
   assert.equal(item.contextValue, 'revision:cmd');
@@ -161,7 +162,7 @@ test('a version that is no longer kept renders as such instead of throwing', asy
   // point past the end after the next edit.
   const node = entity('e1', 'cmd');
   const tree = build([node]);
-  tree.historyById.set('e1', HEADS);
+  tree.historyById.set(entityKey('a1', 'e1'), HEADS);
 
   const item = await tree.getTreeItem({ kind: 'revision', accountId: 'a1', node, index: 7 });
   assert.equal(item.label, 'version no longer kept');
@@ -173,7 +174,7 @@ test('the cache holds heads: no secret field can be reached through the tree', (
   // of the cache so a future "just cache the whole revision" cannot compile.
   const tree = build([]);
   const head: RevisionHead = HEADS[0];
-  tree.historyById.set('x', [head]);
-  const stored = tree.historyById.get('x')?.[0] as unknown as Record<string, unknown>;
+  tree.historyById.set(entityKey('a1', 'x'), [head]);
+  const stored = tree.historyById.get(entityKey('a1', 'x'))?.[0] as unknown as Record<string, unknown>;
   assert.equal('secrets' in stored, false);
 });
