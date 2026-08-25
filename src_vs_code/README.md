@@ -694,7 +694,7 @@ error, and nobody in each other's Team. Three things now stand between you and i
 
 ## Commands
 
-All **52** commands live under the **`CredsForDevs:`** category in the palette, and each one is
+All **56** commands live under the **`CredsForDevs:`** category in the palette, and each one is
 also on the right-click menu where it applies.
 
 - **Accounts** — Add Account · Sign Out / Remove Account · Set Sync Location… · Set Backup
