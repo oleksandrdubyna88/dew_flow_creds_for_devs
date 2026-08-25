@@ -15,8 +15,10 @@ import {
  * window runs `ssh`; this process only relays the request and prints what
  * comes back.
  *
- * <p>Imports nothing that imports `vscode` — it runs under plain `node`, and
- * `npm run compile` puts it at `out/agentCli.js`.</p>
+ * <p>Imports nothing that imports `vscode` — it runs under plain `node`. `npm run compile`
+ * puts it at `out/agentCli.js`, and `npm run bundle` (which `vsce package` runs) bundles that
+ * into `dist/agentCli.js`, which is the copy an installed extension ships. The snippet handed
+ * to an agent resolves the path from `__dirname`, so it names whichever of the two is running.</p>
  *
  * <p>Exit codes: a remote command's own code passes through untouched, so
  * `&&`, `||` and `$?` behave exactly as they would around a real `ssh`.

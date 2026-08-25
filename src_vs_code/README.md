@@ -335,13 +335,13 @@ SSH hosts, scripts, terminal commands, databases, VPN tunnels, and bare credenti
 paste-ready snippet lands on your clipboard. Give it to the agent, and it can:
 
 ```bash
-node "<extension>/out/agentCli.js" ssh <token> -- systemctl status nginx   # runs it, returns stdout/stderr/exit code
-node "<extension>/out/agentCli.js" terminal <token>                        # asks for the interactive terminal, for you
-node "<extension>/out/agentCli.js" db <token> -- "select count(*) from orders"
-node "<extension>/out/agentCli.js" script <token>     # runs your stored script, exactly as saved
-node "<extension>/out/agentCli.js" run <token>        # runs your stored command, exactly as saved
-node "<extension>/out/agentCli.js" env <token>        # exports the secret into new terminals; returns NAMES
-node "<extension>/out/agentCli.js" vpn-up <token>     # opens the tunnel; you answer the elevation prompt
+node "<extension>/dist/agentCli.js" ssh <token> -- systemctl status nginx   # runs it, returns stdout/stderr/exit code
+node "<extension>/dist/agentCli.js" terminal <token>                        # asks for the interactive terminal, for you
+node "<extension>/dist/agentCli.js" db <token> -- "select count(*) from orders"
+node "<extension>/dist/agentCli.js" script <token>     # runs your stored script, exactly as saved
+node "<extension>/dist/agentCli.js" run <token>        # runs your stored command, exactly as saved
+node "<extension>/dist/agentCli.js" env <token>        # exports the secret into new terminals; returns NAMES
+node "<extension>/dist/agentCli.js" vpn-up <token>     # opens the tunnel; you answer the elevation prompt
 ```
 
 Two of these deliberately **ignore whatever the agent sends**: `script` and `run` execute exactly
