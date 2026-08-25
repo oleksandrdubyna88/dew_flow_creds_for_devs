@@ -36,9 +36,12 @@ backups. 502 extension tests pass (+40 new).
 
 ## Deferred — recommended, not yet done
 
-- **The deeper fix for finding 4** remains: migrate PIN-only (v1) vaults to the wrapped/HKDF
-  envelope so scrypt runs once at unlock rather than per cycle. A data-format change, left as
-  its own task — the content-hash cache removes the user-visible freeze in the meantime.
+- **The deeper fix for finding 4 is now done** (`PLAN_v1_vault_migration.md`): the v1 envelope is
+  retired — every vault is written as v3 (wrapped/HKDF), so scrypt runs once at unlock rather than
+  on every read and write. A legacy PIN-only vault migrates on its next sync (same PIN, data
+  preserved) and a new PIN-only vault is v3 from the first write. The one remaining tail is the
+  standalone **backup** file format (`backupManager`/`backupScheduler`), left in v1 deliberately —
+  a separate backup-PIN lifecycle, written on demand, no freeze.
 
 ## Verification
 

@@ -26,6 +26,7 @@ Implemented plans live in [`../research/`](../research/), newest first.
 
 | plan | landed | what it delivered |
 |---|---|---|
+| [PLAN_v1_vault_migration.md](../research/PLAN_v1_vault_migration.md) | 2026-08-25 | Retired the v1 vault envelope: every vault is now v3 (wrapped/HKDF, scrypt once at unlock), PIN-only included. A legacy v1 vault migrates on its next sync (same PIN, data preserved); a new PIN-only vault is v3 from the first write. Closes the deferred tail of the 2026-08-25 review's finding 4 |
 | [PLAN_nas_sender_pki.md](../research/PLAN_nas_sender_pki.md) | 2026-08-25 | Ed25519 signatures on folder shares with trust-on-first-use pinning and a fingerprint to read aloud — forgery-resistant, deliberately not described as forgery-proof. Teams should still use the server, where the sender is stamped from a verified sign-in |
 | [PLAN_agent_ssh_broker.md](../research/PLAN_agent_ssh_broker.md) | 2026-08-24 | *Share with Claude Code…* — an AI agent can run commands on an SSH host and open its terminal without ever receiving the password or key: the window that holds the credential runs `ssh` on the agent's behalf, gated by a first-use consent modal and written down in an audit channel |
 | [PLAN_monorepo_consolidation.md](../research/PLAN_monorepo_consolidation.md) | 2026-08-23 | Both products into one conventions-compliant repository, with CI, MIT licensing, Marketplace preparation, a one-command Docker deployment, and a security/reliability review whose five high-severity fixes each carry a test watched failing first |

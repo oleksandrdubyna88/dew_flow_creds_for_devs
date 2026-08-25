@@ -434,12 +434,24 @@ lock.
 
 ### The envelope
 
-Two versions, both AES-256-GCM with a fresh 16-byte salt and 12-byte IV per encryption:
+Three versions, all AES-256-GCM with a fresh 16-byte salt and 12-byte IV per encryption:
 
-- **v1** — payload sealed directly under `scrypt(accountId + PIN)`.
-- **v2** — payload sealed under a random 256-bit **master key**; the master key is itself wrapped
+- **v1** — payload sealed directly under `scrypt(accountId + PIN)`. The salt is fresh per write, so
+  the derived key cannot be cached and scrypt (~1 s) runs on every read AND write. **Read-only now:**
+  nothing writes v1 any more (see *No v1 is written* below); a v1 file still decrypts forever.
+- **v2 / v3** — payload sealed under a random 256-bit **master key**; the master key is itself wrapped
   once per unlock method (`KeyWrap[]`). A LUKS-style key-slot design: adding or removing a YubiKey
-  rewrites one small wrap record, never the payload.
+  rewrites one small wrap record, never the payload. v3 moved the payload key to **HKDF** (so a cached
+  master key makes reads/writes cheap — scrypt runs once, at unlock, to unwrap) and grew the MAC to
+  cover the sealed blob; a wrapped write is always v3.
+
+**No v1 is written (every vault is v3, PIN-only included).** `VaultKeys.encrypt` upgrades a v1 key on
+the spot — `keyWrap.wrapPinVault` mints a master key, seals it in a **pin-wrap**, and writes v3 — so a
+legacy PIN-only vault migrates on its next write and a brand-new PIN-only vault is v3 from the first.
+`SyncManager.syncProfile` forces that write once for a v1 file it just decrypted (never before a good
+decrypt, so a wrong PIN can't overwrite an unreadable file); `rekeyToNewPin` migrates on a PIN change
+too. See [PLAN_v1_vault_migration.md](PLAN_v1_vault_migration.md). The unlock path already opens a
+pin-only v3 file (a `pin`-wrap with no key-wrap → `silentPin` → `unwrapWithPin`).
 
 | Parameter | Value |
 |---|---|
