@@ -65,17 +65,18 @@ jobs:
         env:
           HOST: ${{ secrets.RSD_SSH_HOST }}
           SSH_USER: ${{ secrets.RSD_SSH_USER }}
-          DEPLOY_PATH: ${{ secrets.RSD_DEPLOY_PATH }}
           VERSION: ${{ inputs.version }}
           PULL: ${{ inputs.pull_deploy_folder }}
+        # The key on the server carries restrict,command=: whatever is sent here lands in
+        # SSH_ORIGINAL_COMMAND of a validating wrapper that accepts exactly
+        # `deploy <version>` / `deploy --rollback` (+ optional `nopull`) and nothing else.
+        # A leaked key is an update button, not root. The path lives server-side now.
         run: |
           ARG="$VERSION"
           [ "$VERSION" = "rollback" ] && ARG="--rollback"
-          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes \
-              "${SSH_USER:-root}@$HOST" \
-              "set -e; cd '${DEPLOY_PATH:-/opt/creds-for-devs/deploy}'; \
-               if [ '$PULL' = 'true' ]; then git pull --ff-only; fi; \
-               ./update.sh $ARG"
+          CMD="deploy $ARG"
+          [ "$PULL" = "true" ] || CMD="$CMD nopull"
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes               "${SSH_USER:-root}@$HOST" "$CMD"
 
       - name: Verify from the outside
         env:
