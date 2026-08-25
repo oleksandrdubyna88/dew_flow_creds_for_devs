@@ -68,6 +68,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Bounded on purpose: 256 KB of output per stream, 30 s per command (raisable to 120 s), 8 at a
   time, and every child killed when the window goes.
 
+## [0.53.1] — 2026-08-25
+
+### Changed
+
+- Documentation caught up with four releases of work: the listing now describes
+  multi-select, dates and history, what happens when somebody re-shares the same item, the
+  broker's five new kinds (and why MongoDB is refused), and the clipboard TTL setting. The
+  security notes section states each finding of the plaintext audit and what closed it —
+  including the one that had been introduced two releases earlier by the same hand that
+  found it. No code changed.
+
 ## [0.53.0] — 2026-08-25
 
 ### Added

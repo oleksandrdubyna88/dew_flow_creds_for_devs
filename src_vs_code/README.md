@@ -326,13 +326,32 @@ a client, a colleague who has not installed anything yet.
 An AI coding agent needs your server. Pasting the password into its chat puts the plaintext in
 a transcript and in every log downstream of it; exporting it to a file is no better.
 
-Right-click an SSH entity → **Share with Claude Code…**. A capability token is minted and a
+Right-click **any entity an agent can do something with** → **Share with Claude Code…** —
+SSH hosts, scripts, terminal commands, databases, VPN tunnels, and bare credentials. A capability token is minted and a
 paste-ready snippet lands on your clipboard. Give it to the agent, and it can:
 
 ```bash
 node "<extension>/out/agentCli.js" ssh <token> -- systemctl status nginx   # runs it, returns stdout/stderr/exit code
 node "<extension>/out/agentCli.js" terminal <token>                        # asks for the interactive terminal, for you
+node "<extension>/out/agentCli.js" db <token> -- "select count(*) from orders"
+node "<extension>/out/agentCli.js" script <token>     # runs your stored script, exactly as saved
+node "<extension>/out/agentCli.js" run <token>        # runs your stored command, exactly as saved
+node "<extension>/out/agentCli.js" env <token>        # exports the secret into new terminals; returns NAMES
+node "<extension>/out/agentCli.js" vpn-up <token>     # opens the tunnel; you answer the elevation prompt
 ```
+
+Two of these deliberately **ignore whatever the agent sends**: `script` and `run` execute exactly
+what you saved, so no agent-authored text ever reaches an interpreter or a shell. They also require
+that you have run the entry yourself once on this machine — the broker's Allow covers a *token*, not
+a body, and a body can be replaced by a sync after you clicked it.
+
+**MongoDB is refused, on purpose.** `mongosh` has no password environment variable and its `--eval`
+runs in the same JavaScript interpreter that can read `process.env` — so a "query" could print the
+password straight back. No SQL client has that channel. A capability that leaks by design is worse
+than one that is absent, so this one says no.
+
+**SSH keys are excluded** for a duller reason: a key means nothing except attached to a host, and the
+host entry already has `exec`.
 
 **What the agent never gets is the secret.** `ssh` is spawned by the extension — the half that
 already holds the credential — and the password rides that child process's environment through
@@ -359,6 +378,52 @@ protocol has a field a secret could ride in.
 Honest about the boundary: an agent that can run commands on a host can do anything that host
 lets it do. What this removes is the plaintext credential, not the access — the access is the
 point.
+
+## Selecting several at once
+
+Ctrl-click or Shift-click in the tree, then **Delete**, **Export / Share Externally…** or
+**Share with…** — one confirmation, one recipient pick, one PIN, one file, however many rows are
+selected. Everything else still acts on the row you clicked.
+
+Rows that cannot take part are left out and named: an account row, a team member, an inbox item.
+Rows from a *different* profile are left out too — ctrl-clicking across two account roots is an
+ordinary gesture, so it is reported rather than refused. And a folder quietly swallows anything of
+its own you also selected, at any depth, because deleting or exporting the folder already covers it.
+
+## Dates and history
+
+Every entry carries **when it was created** and **when it last changed**, shown in both the viewer
+and the edit form. The creation date is stamped once and never moves again, so it survives every
+later edit; entries made before this feature existed say the date is unknown rather than inventing
+one.
+
+The **last 3 versions** of an entry are kept. An entry with history wears a **blue-tinted icon**, so
+"this has been changed" is visible in the tree rather than only after opening it, and the viewer
+lists each kept version — when it was replaced, what it was called then, and a button to copy that
+version's secret.
+
+Two limits, so they are not discovered the hard way: a kept version does **not** include attachments
+(three copies of a 4 MB file per entry would cost more than the history is worth), and history is
+**local to the machine** — it is not part of the encrypted vault that syncs, so another machine keeps
+its own. And one fact worth knowing before you rely on it: history means a replaced password stays
+retrievable. That is the point of it, and it is why the kept versions live in the same encrypted
+store as the current ones.
+
+## When somebody re-shares the same thing
+
+A colleague sends you the password for an account. Six months later they change it and send it
+again. Rather than a second copy appearing beside the first with nothing saying which is current,
+the second one asks: **Update it** — in place, keeping its folder, its identity and its history — or
+**Keep both**.
+
+**Dismissing that question leaves the item in "Shared with me."** Deciding usually needs a look at
+what you already have, and consuming the share to ask you would destroy the only copy of the
+decision. Come back to it when you know.
+
+How it knows, and why a sender cannot abuse it: the record is **local to your machine** and keyed by
+*who sent it* together with *what they called it*. A sender can never address an entry they never
+sent you, whatever identity they claim — which is exactly the protection that made every accepted
+share a new entry in the first place.
 
 ## Accounts
 
@@ -600,6 +665,7 @@ Two rules govern how they combine:
 | Setting | Default | What it does |
 |---|---|---|
 | `dbExtensions` | `{}` | Which extension *Open in DB Extension* hands a connection to, per DB type: `{ "mysql": "cweijan.vscode-mysql-client2" }`. Empty = the first installed candidate wins |
+| `secretClipboardTtlSeconds` | `45` | How long a copied secret stays on the clipboard before it is cleared — and only if the clipboard still holds exactly what was copied, so a later copy of your own is never destroyed. **What no extension can control:** Windows Clipboard History (Win+V) and cross-device sync capture the value the moment it is copied, and clearing the clipboard afterwards does not reach them. Turn those off if you copy secrets on a machine you do not control |
 | `readCliHelp` | `true` | When you paste a whole command into a terminal entry, fill the **empty** notes by running `<tool> --help`. It runs the tool **you just typed**, with no shell and no arguments of ours, and only when every word of the command is a plain tool name — anything containing a shell metacharacter is never run. It never overwrites a note you wrote. Turn it off if you would rather nothing were executed while you edit |
 
 ### When the Team is empty
@@ -642,6 +708,26 @@ also on the right-click menu where it applies.
 
 ## Security notes
 
+A full audit of every place a secret could be read without opening the vault ran in 0.50, and
+each finding is closed or bounded below. One of them had been introduced two releases earlier
+by the same hand that found it; it is listed rather than quietly patched, because the
+invariant it broke is written down and a broken invariant that leaves no trace breaks again.
+
+- **A script's variables never enter the script text.** They travel in the process
+  environment, and the body reads them by name in its own language. So the file on disk, the
+  viewer, and *Copy All* carry names where they used to carry values. A script that prints its
+  own variable is still your code — that is noticed and mentioned once, not blocked.
+- **The env-variable check button reports presence and length, never the value.** It used to
+  echo `NAME=value`, which put a bound private key into terminal scrollback in full.
+- **File permissions on Windows are real now.** `chmod 0600` is nearly a no-op there, and the
+  inherited NTFS list gives SYSTEM and the local Administrators group full control of
+  everything under your profile — the wrong audience precisely on a machine where you are not
+  the administrator. Every file this extension writes a secret into now breaks that
+  inheritance and grants its owner alone.
+- **Installing a key into `~/.ssh` says that the copy is permanent**, and *Remove Installed
+  Key…* is the way back.
+- **Copying a DB connection string says the password is in it**, and *Copy Connection String
+  (no password)* is the companion for when it should not be.
 - Passwords, private keys, VPN configs, and DB connection strings live
   only in SecretStorage and inside the encrypted `.enc` files; they are
   never written to `globalState`, settings, or logs, and never sent into

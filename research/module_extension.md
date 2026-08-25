@@ -329,6 +329,88 @@ round-trip through the host, so the viewer receives a `data:` URI for exactly th
 a CSP whose `img-src` allows only `data:`. Preview starts at 200×200; each click doubles it, twice;
 a third click resets.
 
+### The plaintext-leak audit (0.50.0)
+
+Every place a secret could be read without opening the vault, and what closed it.
+
+| Was | Now |
+|---|---|
+| `substituteScript` baked variable VALUES into the body, and the body went to disk and into the viewer | `resolveScriptEnv` translates `${NAME}` into the language's own env read (`$NAME`, `$env:NAME`, `os.environ.get`, `process.env.NAME`) and returns the values separately, for the child's environment only. Consequence: a **fresh terminal per run**, because VS Code sets a terminal's env only at creation — the SSH password path already made that trade |
+| a script could still print its own variables | `detectSecretPrints` — a narrow heuristic over the ORIGINAL body, asked once per exact content, ignoring the normal case of passing a variable to a tool. Advisory, never blocking: this is the user's own code |
+| `runScript` had no trust gate while `runCommand` did | scripts now share `commandTrust`. Sync and Accept Share are first-class features, so "you wrote this yourself" is not true of a stored script either |
+| `envProbe` echoed `NAME=value` — a bound private key went to scrollback in full | `NAME: SET (len=N)` / `NOT SET`, per shell dialect; an invalid env name is refused rather than interpolated into a shell line |
+| `chmod 0600` on Windows, described in comments as protection | `fileAcl.restrictToOwnerArgv` + `lockToOwner` at all four secret-write sites: `icacls /inheritance:r /grant:r <owner>:F`. The inherited ACL grants SYSTEM and local Administrators full control of everything under the user profile — the wrong audience exactly where the operator is not the administrator. Measured on the operator's own machine before deciding |
+| `installKeyToSystem` was silently permanent | says so, and `removeInstalledKey` is the way back |
+| DB Connect put the connection string INCLUDING the password on the clipboard, silently | the message says it, and `Copy Connection String (no password)` (`withoutPassword`, textual so query-string options survive) is the companion |
+| the 45 s clipboard TTL implied completeness | `secretClipboardTtlSeconds`, and the description states what no extension can control: Windows Clipboard History captures the value at copy time, and clearing the clipboard never reaches it |
+
+One leak was **introduced and fixed in the same day** (0.48.0 → 0.49.1): the script viewer
+rendered variable values unmasked into the webview. Recorded here rather than quietly
+patched, because the invariant it broke — "the read-only viewer never receives secret
+values" — is stated in this file, and a broken invariant that leaves no trace is one that
+breaks again.
+
+### Multi-select (0.51.0)
+
+`canSelectMany` plus `selectionResolver.ts`, and the resolver exists for one constraint:
+**VS Code evaluates a menu's `when` clause against the anchor row only**, never the
+selection. So a folder can sit in a selection whose anchor was an entity, and a foreign
+profile's node in one whose anchor was yours — the menu offers the command regardless.
+Three rules, all tested: non-node rows out (counted), the anchor decides the profile
+(others counted), and a folder swallows its own selected descendants at any depth
+(silent — an ordinary shift-click, not a mistake).
+
+Delete is **sequential and must be**: every storage mutator is an unlocked
+read-modify-write of one array per account, so concurrency would drop deletions silently.
+Export unions subtrees with no second dedup — the resolver guarantees no overlap, and a
+defensive pass would mask a resolver bug instead of surfacing it. Share unions payloads
+into the delivery batch that was already N-safe.
+
+### The broker beyond SSH (0.52.0)
+
+Five kinds joined the `(kind, action)` registry; `useActions.ts` and `credsAgentServer.ts`
+needed **no change** — the seam worked as designed. `runBounded` was extracted from
+`sshExecRunner` because none of its ceilings were ever ssh-specific.
+
+| Kind | Action | Where the secret goes | Note |
+|---|---|---|---|
+| `script` | `run` | child env (`resolveScriptEnv`) | body ignored; content-trust required |
+| `terminal` | `run` | none — no secret field | body ignored; the ONE `shell: true` caller, safe because no agent text is in the line |
+| `db` | `query` | `PGPASSWORD` / `MYSQL_PWD` / `SQLCMDPASSWORD` | only host/port/db on the command line — argv is world-readable in the process list |
+| `credential` | `exportEnv` | the env collection | answers with NAMES; narrow, and the consent text says so |
+| `vpn` | `up`/`down` | materialized config | opens the human's terminal — no headless child can answer a UAC prompt |
+
+**MongoDB is refused, deliberately.** `mongosh` has no password environment variable and
+its `--eval` runs in the same JavaScript interpreter that can read `process.env` — an
+agent's "query" could print the password straight back. No SQL tool has that channel
+because SQL cannot read an environment. A capability that leaks by design is worse than an
+absent one.
+
+`sshkey` is excluded: a key means nothing except attached to a host, and that host entity
+already has `exec`.
+
+### Re-shares, dates and history (0.53.0)
+
+`shareOrigin.ts` — a **local** map keyed by *(sender address, sender's own entity id)* —
+answers "is this an update of something I already accepted from them". The keying is the
+whole design: letting the sender name a local id is precisely the attack the original
+always-fresh-id rule was written against, so the map is ours and a sender can never
+address an entry they never sent. Dismissing the Update/Keep-both dialog **leaves the
+share in the inbox** — the decision needs a look at what is already there, and consuming
+the item to ask would destroy the only copy of it.
+
+`createdAt` is stamped in `addNode` and never moved by `updateNode`; both dates show in the
+viewer and the edit form, and pre-0.53 nodes say the creation date is unknown rather than
+inventing one.
+
+`revisionHistory.ts` keeps **3** versions in SecretStorage — a replaced password is still a
+password — recorded before an edit or an accepted update overwrites anything. Two limits
+are documented rather than left to be found: **no attachments** in a revision (three copies
+of a 4 MB file per entry costs more than the history is worth) and **history is
+per-machine**, not in the sync bundle. Entries with history wear a theme-coloured icon; the
+flag is cached on the provider because reading history means reading SecretStorage, which
+`getTreeItem` cannot await.
+
 ### Clone
 
 `cloneNode` copies a folder or entity's settings and deliberately **not** its secrets. Duplicating

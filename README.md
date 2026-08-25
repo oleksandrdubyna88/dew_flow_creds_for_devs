@@ -38,6 +38,31 @@ What it does add is the thing a shared folder cannot:
 | Sender of a shared secret | claimed by the sender, unverifiable | **stamped by the server** from a verified token |
 | Joining and leaving | someone edits ACLs, eventually | whatever your identity provider already does |
 
+## What the extension holds
+
+Seven kinds of entry, each with the action it exists for: **credentials**, **SSH connections**
+and **SSH keys** (connect, install), **VPN configs** (start/stop the tunnel), **database
+connections** (open in your client, or a query), **terminal commands** (arguments as rows, each
+with its own note, run with one click) and **scripts** (a highlighted editor, variables pulled
+out as `${NAME}` rows and delivered through the environment rather than pasted into the body).
+Any entry can also carry one encrypted file and one encrypted image.
+
+Around them: folders with types, **project** folders that create the whole set at once, Ctrl/Shift
+multi-select for bulk delete/export/share, per-entry created and changed dates, the **last 3
+versions** of each entry, and an export for people outside your organisation — password-sealed, or
+plain JSON if you deliberately ask for it.
+
+And two things that exist because pasting a secret into a chat window should not be the only
+option:
+
+- **Share with Claude Code** — an AI agent gets a capability token, not a credential. It can ask
+  the extension to run an SSH command, a stored script, a saved command, a SQL query, or bring a
+  VPN up; the extension performs it and returns only the output. The broker has no endpoint that
+  returns plaintext, and that is structural: no response shape in the protocol has a field a
+  secret could travel in.
+- **Terminal environment variables** — bind a secret to a name, and it appears in new integrated
+  terminals without ever being echoed or copied.
+
 ## Quickstart
 
 ### Use the extension
