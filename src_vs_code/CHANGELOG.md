@@ -68,6 +68,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Bounded on purpose: 256 KB of output per stream, 30 s per command (raisable to 120 s), 8 at a
   time, and every child killed when the window goes.
 
+## [0.51.0] — 2026-08-25
+
+### Added
+
+- **Ctrl / Shift multi-select in the tree**, with three actions that work on the whole
+  selection: **Delete**, **Export / Share Externally…** and **Share with…**. One
+  confirmation, one recipient pick, one PIN, one file — for however many rows are
+  selected. Everything else still acts on the row you clicked.
+
+  Three rules the selection goes through first, none of which a menu could enforce —
+  VS Code evaluates a `when` clause against the clicked row only, never the selection:
+
+  - rows that are not folders or entries (an account, a team member, an inbox item) are
+    left out and counted;
+  - the clicked row decides the profile; rows from another profile are left out and
+    counted, because ctrl-clicking across two account roots is an ordinary gesture rather
+    than an error;
+  - a folder swallows anything of its own you also selected, at any depth. That one is
+    silent: selecting a folder together with something inside it is a normal shift-click,
+    and a warning about it would fire on every second use.
+
+  Deletion runs sequentially, deliberately: every storage write is an unlocked
+  read-modify-write of one array per profile, so two in flight would race and the later
+  write would silently drop the earlier deletion.
+
 ## [0.50.0] — 2026-08-25
 
 ### Added

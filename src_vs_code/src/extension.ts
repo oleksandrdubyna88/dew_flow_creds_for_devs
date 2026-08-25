@@ -95,6 +95,7 @@ import { detectSecretPrints, resolveScriptEnv } from './scriptRender';
 import { scriptRunPlan } from './scriptRun';
 import { buildExternalBundle, isExternalBundle, remapExternalIds } from './externalBundle';
 import { withoutPassword } from './dbConnString';
+import { SelectedNode, describeSkips, resolveSelection } from './selectionResolver';
 import {
   AuthProvider,
   EntityKind,
@@ -146,6 +147,10 @@ export function activate(context: vscode.ExtensionContext): void {
     treeDataProvider: provider,
     dragAndDropController: provider,
     showCollapseAll: true,
+    // Ctrl/Shift selection. Only Delete, Export and Share read the selection; every
+    // other command still acts on the row that was clicked, which is what makes turning
+    // this on safe for the other forty-odd of them.
+    canSelectMany: true,
   });
 
   // Unlock coordinator (PIN / security keys / cached master keys).
@@ -897,25 +902,32 @@ ${detail}
     await editNode(element.accountId, element.node, storage, mutated);
   });
 
-  register('credSshManager.deleteNode', async (target) => {
-    const element = asElement(target);
-    if (element?.kind !== 'node') {
+  register('credSshManager.deleteNode', async (target, selected) => {
+    const { targets, skippedNote } = resolveBulkTargets(storage, target, selected);
+    if (targets.length === 0) {
       return;
     }
-    const { accountId, node } = element;
     const what =
-      node.type === 'folder'
-        ? `folder "${node.name}" and everything inside it`
-        : `entity "${node.name}" and its stored secrets`;
+      targets.length === 1
+        ? targets[0].node.type === 'folder'
+          ? `folder "${targets[0].node.name}" and everything inside it`
+          : `entity "${targets[0].node.name}" and its stored secrets`
+        : `${targets.length} selected items, folders with everything inside them`;
     const confirmed = await vscode.window.showWarningMessage(
-      `Delete ${what}? This cannot be undone.`,
+      `Delete ${what}? This cannot be undone.${skippedNote === '' ? '' : ` ${skippedNote}`}`,
       { modal: true },
       'Delete',
     );
     if (confirmed !== 'Delete') {
       return;
     }
-    const removed = await storage.deleteNodeRecursive(accountId, node.id);
+    // Sequential, and not as a matter of style: every storage mutator is an unlocked
+    // read-modify-write of one flat array per account, so two of these in flight would
+    // race and the later write would silently drop the earlier deletion.
+    const removed: string[] = [];
+    for (const t of targets) {
+      removed.push(...(await storage.deleteNodeRecursive(t.accountId, t.node.id)));
+    }
     mutated();
     void vscode.window.showInformationMessage(
       removed.length === 1 ? `Deleted "${removed[0]}".` : `Deleted ${removed.length} items.`,
@@ -1083,15 +1095,21 @@ ${detail}
     await saveVpnConfigToFile(element.accountId, element.node.details, storage);
   });
 
-  register('credSshManager.exportExternal', async (target) => {
+  register('credSshManager.exportExternal', async (target, selected) => {
     vaultKeys.noteUserActivity(); // the user is here: postpone auto-lock
-    const element = asElement(target);
-    if (element?.kind !== 'node') {
+    const { targets, skippedNote } = resolveBulkTargets(storage, target, selected);
+    if (targets.length === 0) {
       return;
     }
-    const { accountId, node } = element;
+    if (skippedNote !== '') {
+      void vscode.window.showWarningMessage(skippedNote);
+    }
+    const accountId = targets[0].accountId;
+    const exportName =
+      targets.length === 1 ? targets[0].node.name : `${targets.length}-items`;
 
-    // A folder exports its whole subtree; an entity exports itself.
+    // A folder exports its whole subtree; an entity exports itself. The resolver already
+    // dropped any target contained by another, so the union cannot repeat a node.
     const all = storage.getNodes(accountId);
     const picked: TreeNode[] = [];
     const collect = (n: TreeNode): void => {
@@ -1102,7 +1120,9 @@ ${detail}
         }
       }
     };
-    collect(node);
+    for (const t of targets) {
+      collect(t.node);
+    }
 
     const secrets: Record<string, import('./externalBundle').ExternalSecrets> = {};
     for (const n of picked) {
@@ -1139,7 +1159,7 @@ ${detail}
           plain: true,
         },
       ],
-      { title: `Export "${node.name}" for someone outside the organisation`, ignoreFocusOut: true },
+      { title: `Export "${exportName}" for someone outside the organisation`, ignoreFocusOut: true },
     );
     if (mode === undefined) {
       return;
@@ -1174,7 +1194,7 @@ ${detail}
     }
     const targetUri = await vscode.window.showSaveDialog({
       title: 'Export to file',
-      defaultUri: vscode.Uri.file(path.join(os.homedir(), `${node.name}.${ext}`)),
+      defaultUri: vscode.Uri.file(path.join(os.homedir(), `${exportName}.${ext}`)),
       filters: mode.plain ? { JSON: ['json'] } : { 'Encrypted export': ['enc'] },
     });
     if (targetUri === undefined) {
@@ -1799,22 +1819,34 @@ ${detail}
     return payloads;
   };
 
-  register('credSshManager.shareEntity', async (target) => {
-    const element = asElement(target);
-    if (element?.kind !== 'node') {
+  register('credSshManager.shareEntity', async (target, selected) => {
+    const { targets, skippedNote } = resolveBulkTargets(storage, target, selected);
+    if (targets.length === 0) {
       return;
     }
-    const payloads =
-      element.node.type === 'entity'
-        ? [await buildSharePayload(storage, element.accountId, element.node)]
-        : await collectFolderPayloads(element.accountId, element.node);
+    if (skippedNote !== '') {
+      void vscode.window.showWarningMessage(skippedNote);
+    }
+    const accountId = targets[0].accountId;
+    // One list of payloads across everything selected — delivery already batched, so
+    // recipients and the share PIN are asked for once whatever the selection size.
+    const payloads: SharePayload[] = [];
+    for (const t of targets) {
+      payloads.push(
+        ...(t.node.type === 'entity'
+          ? [await buildSharePayload(storage, accountId, t.node)]
+          : await collectFolderPayloads(accountId, t.node)),
+      );
+    }
     if (payloads.length === 0) {
       void vscode.window.showInformationMessage(
-        `Folder "${element.node.name}" holds no entities — nothing to share.`,
+        targets.length === 1
+          ? `Folder "${targets[0].node.name}" holds no entities — nothing to share.`
+          : 'Nothing to share — the selected folders hold no entities.',
       );
       return;
     }
-    const recipients = await pickRecipients(element.accountId);
+    const recipients = await pickRecipients(accountId);
     if (recipients === undefined) {
       return;
     }
@@ -1822,7 +1854,7 @@ ${detail}
     if (pin === undefined) {
       return;
     }
-    await deliverSharesBatch(element.accountId, payloads, recipients, pin);
+    await deliverSharesBatch(accountId, payloads, recipients, pin);
   });
 
   // Author an entity directly FOR someone else — nothing stays local.
@@ -2183,6 +2215,26 @@ async function probeRemote(
     // Unreachable is not empty. Treating it as empty is exactly the mistake.
     return 'unknown';
   }
+}
+
+/**
+ * The nodes a bulk command should act on, and one sentence about what was left out.
+ *
+ * <p>Thin on purpose: every rule worth testing lives in `resolveSelection`, and this only
+ * fetches the anchor account's nodes so the ancestor walk has a tree to walk.</p>
+ */
+function resolveBulkTargets(
+  storage: StorageManager,
+  clicked: unknown,
+  selected: unknown,
+): { targets: SelectedNode[]; skippedNote: string } {
+  const anchor = asElement(clicked);
+  if (anchor?.kind !== 'node') {
+    return { targets: [], skippedNote: '' };
+  }
+  const rows = Array.isArray(selected) ? selected.map(asElement) : undefined;
+  const resolved = resolveSelection(anchor, rows, storage.getNodes(anchor.accountId));
+  return { targets: resolved.targets, skippedNote: describeSkips(resolved) };
 }
 
 /** Where a new node goes, based on what the command was invoked on. */

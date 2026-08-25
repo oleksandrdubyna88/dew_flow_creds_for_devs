@@ -4,6 +4,7 @@ import { ProfileSnapshot } from './syncMerge';
 import { SigningKeypair, generateSigningKeypair } from './shareSignature';
 import { RemoteState, buildDefaultFolders, shouldSeedDefaults } from './defaultFolders';
 import { Tombstone, VersionVector, bumpVector, mergeVectors, normalizeTombstone } from './versionVector';
+import { isSelfOrDescendantIn } from './selectionResolver';
 import {
   BackupBundle,
   StoredAccount,
@@ -254,20 +255,9 @@ export class StorageManager {
 
   /** True when `nodeId` is `ancestorId` itself or sits anywhere below it. */
   isSelfOrDescendant(accountId: string, ancestorId: string, nodeId: string): boolean {
-    if (ancestorId === nodeId) {
-      return true;
-    }
-    const nodes = this.getNodes(accountId);
-    let current = nodes.find((n) => n.id === nodeId);
-    const seen = new Set<string>();
-    while (current?.parentId != null && !seen.has(current.id)) {
-      seen.add(current.id);
-      if (current.parentId === ancestorId) {
-        return true;
-      }
-      current = nodes.find((n) => n.id === current?.parentId);
-    }
-    return false;
+    // One ancestor walk for the whole extension — the selection resolver needs the same
+    // one, and two copies would drift the first time a tree shape surprised either.
+    return isSelfOrDescendantIn(this.getNodes(accountId), ancestorId, nodeId);
   }
 
   /**
