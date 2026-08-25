@@ -22,6 +22,7 @@ exists today?*
 
 | Document | Landed |
 |---|---|
+| [SECURITY_REVIEW_2026-08-25.md](SECURITY_REVIEW_2026-08-25.md) | 2026-08-25 — post-merge review of the agent-broker/v3/signatures/scripts/scope merge across security, performance and resilience. Seven findings confirmed in code and fixed red-first: a psql option-injection on the agent DB path, an auto-lock/sync key-wipe race and a non-atomic backup that could each brick a vault, a scrypt-storm freeze, an unvalidated server-advertised OAuth scope, a cross-window key-purge race, and a one-shot broker-start failure. Three MEDIUMs deferred with recommendations |
 | [SECURITY_REVIEW_2026-08-24.md](SECURITY_REVIEW_2026-08-24.md) | 2026-08-24 — the pre-launch review of the whole product, public server included. Three CRITICAL findings, each reproduced before it was fixed: two shell/argv injections through an entity’s `host` field, and a share size cap that could be walked around into a repeatable server OOM. Git history scanned for secrets across every commit: clean |
 | [SECURITY_REVIEW_2026-08-23.md](SECURITY_REVIEW_2026-08-23.md) | 2026-08-23 — security, reliability and architecture. Five high findings fixed with a red-first test each; the rest are plans |
 
