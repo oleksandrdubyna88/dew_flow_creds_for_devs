@@ -24,10 +24,14 @@ function profilePassphrase(accountId: string, masterPin: string): string {
   return accountId + masterPin;
 }
 
-async function promptMasterPin(purpose: string, confirm: boolean): Promise<string | undefined> {
+async function promptMasterPin(
+  purpose: string,
+  confirm: boolean,
+  detail?: string,
+): Promise<string | undefined> {
   const pin = await vscode.window.showInputBox({
     title: purpose,
-    prompt: 'Master PIN/password for the encrypted backup',
+    prompt: detail ?? 'Master PIN/password for the encrypted backup',
     password: true,
     validateInput: validatePin,
   });
@@ -247,7 +251,14 @@ export async function restoreFromBackup(
       }
       payload = vaultKeys.decrypt(content, key);
     } else {
-      const pin = await promptMasterPin(`Restore ${account.email}`, false);
+      // Say WHY it is a PIN and not a key touch: the question every owner of a security
+      // key asks here, and silence reads as the key being ignored.
+      const pin = await promptMasterPin(
+        `Restore ${account.email}`,
+        false,
+        'This backup is the old PIN-only format — it predates security keys and has no key slots, ' +
+          'so a key touch cannot open it. Enter the PIN that was set when this backup was made.',
+      );
       if (pin === undefined) {
         return;
       }

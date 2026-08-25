@@ -68,6 +68,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Bounded on purpose: 256 KB of output per stream, 30 s per command (raisable to 120 s), 8 at a
   time, and every child killed when the window goes.
 
+## [0.46.1] — 2026-08-25
+
+### Fixed
+
+- **Restoring an old backup explained nothing about why it asks for a PIN.** Restore of a
+  v1 (pre-security-key) file asked for a "Master PIN/password" with no context — which
+  reads as the YubiKey being ignored. The key slots live inside v2 files; a v1 file has
+  none, so a touch cannot open it. The prompt now says exactly that, and that the PIN it
+  wants is the one that was set when the backup was made. v2 backups keep asking through
+  the vault's own slots — stored PIN, key touch, or typed PIN — as since 0.37.0.
+
 ## [0.46.0] — 2026-08-25
 
 ### Added
