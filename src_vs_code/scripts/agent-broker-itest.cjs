@@ -99,6 +99,9 @@ const keyFiles = () => {
 // Only ever written to disk and pointed at with `-i`; ssh never gets far enough
 // to parse it in these cases, so its contents are irrelevant to what is asserted.
 const STORED_KEY = '-----BEGIN OPENSSH PRIVATE KEY-----\nitest\n-----END OPENSSH PRIVATE KEY-----\n';
+// Long enough to be masked (short values are deliberately left alone), and distinctive enough
+// that finding it in a response body means the masker did not run.
+const MASKABLE_SECRET = 'itest-password-Tr0ub4dor';
 
 let fails = 0;
 const check = (what, ok, extra) => {
@@ -145,7 +148,12 @@ function runCli(args) {
 
 (async () => {
   const actions = new UseActionRegistry();
-  const server = new CredsAgentServer(actions, () => {}, storageDir);
+  // The masking provider the extension supplies in real life. Here it is one known value, so
+  // the check below proves the whole path — action output, through respond(), out to the
+  // caller — not just the pure masker's unit tests.
+  const server = new CredsAgentServer(actions, () => {}, storageDir, async () => [
+    { value: MASKABLE_SECRET, label: 'DB_PASSWORD' },
+  ]);
   const deps = {
     storage,
     storageDir,
@@ -155,6 +163,19 @@ function runCli(args) {
   };
   actions.register(sshExecAction(deps));
   actions.register(sshTerminalAction(deps));
+  // Test-only: an action whose output contains the secret, so masking has something to mask.
+  actions.register({
+    kind: 'ssh',
+    action: 'leak',
+    verb: 'print a secret from',
+    validate: () => ({ ok: true }),
+    summarize: () => 'a deliberate leak, for the masking check',
+    describeOutcome: () => 'leaked',
+    run: async () => ({
+      status: 200,
+      body: { exitCode: 0, stdout: `secret=${MASKABLE_SECRET}`, stderr: '', timedOut: false },
+    }),
+  });
 
   const token = await server.share('acct-1', ENTITY.id, ENTITY.name, 'ssh');
   const { port, secret } = parseToken(token);
@@ -185,6 +206,23 @@ function runCli(args) {
   check('an allowed exec returns 200 with a real ssh result', first.status === 200 && typeof first.body.exitCode === 'number', JSON.stringify(first.body).slice(0, 120));
   check('a refused connection is reported as ssh exit 255, not a broker error', first.body.exitCode === 255, `exit ${first.body.exitCode}`);
   check('ssh stderr is captured', /connect|refused|closed/i.test(first.body.stderr), first.body.stderr.trim().slice(0, 80));
+
+  // --- masking: an agent must not read a secret out of its own output ------------------
+  // A purpose-built action that DOES print the secret, because the real exec cases here
+  // target a host that refuses — their stdout is empty, so asserting "no secret in the
+  // output" against them would pass without the masker existing at all. This one proves the
+  // respond() layer masks whatever an action returns, over real HTTP.
+  const leaked = await call(port, '/v1/use/leak', secret, {});
+  check(
+    'a secret in action output is masked before it leaves the broker',
+    leaked.status === 200 && !JSON.stringify(leaked.body).includes(MASKABLE_SECRET),
+    `body: ${JSON.stringify(leaked.body).slice(0, 120)}`,
+  );
+  check(
+    '…and the placeholder names it, so the agent sees a value was withheld',
+    JSON.stringify(leaked.body).includes('<CREDS_MASKED:DB_PASSWORD>'),
+    `body: ${JSON.stringify(leaked.body).slice(0, 120)}`,
+  );
 
   const askedAfterAllow = answers.asked;
   await call(port, '/v1/use/exec', secret, { command: 'true' });

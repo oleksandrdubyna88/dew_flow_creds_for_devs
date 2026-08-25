@@ -2,7 +2,7 @@
   "name": "creds-for-devs",
   "displayName": "CredsForDevs",
   "description": "Zero-trust credential manager for developers: SSH hosts and keys, VPN configs, databases, scripts and the CLI commands nobody remembers — in VS Code. Secrets live in the OS keychain; sync and team sharing are end-to-end encrypted, so the self-hosted vault server never sees plaintext. An AI coding agent can use an SSH credential without ever receiving it.",
-  "version": "0.57.2",
+  "version": "0.57.3",
   "publisher": "remsoftdev",
   "license": "MIT",
   "icon": "media/icon.png",
@@ -178,6 +178,11 @@
           "default": 0,
           "minimum": 0,
           "markdownDescription": "The most calls one **Share with Claude Code** token may make before it expires. `0` means no cap. Useful for a one-off task: share, let the agent make its handful of calls, and know the token is spent."
+        },
+        "credSshManager.maskAgentOutput": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Replace this entity's own stored secrets with `<CREDS_MASKED:NAME>` in the output the agent broker returns.\n\n**What this does and does not cover.** It covers output of commands the agent runs *through CredsForDevs* — that is the one channel this extension owns. It cannot cover a file the agent reads with its own tools, anything you paste yourself, or a secret that was already in the model's context. Masking is exact: only values actually stored in this entry, never a guess about what looks like a secret."
         }
       }
     },

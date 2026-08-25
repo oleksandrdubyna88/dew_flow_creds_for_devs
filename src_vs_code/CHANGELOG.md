@@ -82,6 +82,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Bounded on purpose: 256 KB of output per stream, 30 s per command (raisable to 120 s), 8 at a
   time, and every child killed when the window goes.
 
+## [0.57.3] — 2026-08-25
+
+### Security
+
+- **Secrets are masked out of the output the agent broker returns.** The broker's promise is
+  that an agent can *use* a credential without receiving it, and no response shape has a field
+  a secret could travel in — true of the shapes, and not of what `stdout` carries. An agent
+  that composes a command can make it print the very value the broker supplied to run it, and
+  the bytes went back verbatim. Every response now passes through one masking point on its way
+  out, so the value is replaced by `<CREDS_MASKED:DB_PASSWORD>` — the name from the entry's own
+  environment binding where it has one. It covers every action, including any added later,
+  because it sits below all of them.
+
+  Exact, never a guess: only values actually stored in the entry the grant points at, in the
+  forms output really carries them (plain, percent-encoded inside a URL, base64, and a private
+  key by its body so reformatting cannot hide it). No entropy heuristics and no
+  "looks like a token" patterns — a false positive would corrupt a diff or a JSON payload the
+  agent then acts on, which is worse than the leak, because it is silent and wrong rather than
+  absent. Values shorter than eight characters are left alone; masking `1234` would replace
+  every line number in the output.
+
+  Scoped to that one entry rather than the whole vault, deliberately: a table over every
+  unlocked secret would mean a keychain read per secret on every agent call, the cost class
+  removed from the tree and the sync cycle in 0.57.0. Turn it off with
+  `credSshManager.maskAgentOutput`. The audit line records how many values were masked, never
+  which.
+
+  **What it does not cover, stated plainly:** a file the agent reads with its own tools,
+  anything you paste yourself, or a secret already in the model's context. It owns one channel
+  — commands run through CredsForDevs — and claims no more.
+
+### Added
+
+- A test that fails when a command is contributed in the manifest with no handler behind it.
+  VS Code does not check this: such a command appears in the palette like any other and fails
+  with "command not found" when someone runs it. It scans the whole source tree rather than one
+  file, so it keeps working while handlers move out of `extension.ts` into their own modules.
+
 ## [0.57.2] — 2026-08-25
 
 ### Fixed

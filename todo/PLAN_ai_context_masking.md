@@ -1,7 +1,13 @@
 # PLAN — Маскирование секретов в контексте AI
 
-> Status: **plan only, nothing implemented yet.** Scope: маскирование вывода Exec Broker в одной
-> точке (`credsAgentServer.ts`), плюс честный разбор того, что с буфером обмена сделать **нельзя**.
+> Status: **движок реализован 2026-08-25 (0.57.3); осталась проводка UI.** Сделано: `secretMasker.ts`,
+> `maskEntries.ts`, `secretScan.ts`, точка перехвата в `credsAgentServer.respond`, настройка
+> `credSshManager.maskAgentOutput`, 24 юнит-теста + e2e в itest (проверен красным при отключённом
+> маскере). **Не сделано:** одна строка в `extension.ts`, передающая провайдер в конструктор
+> брокера, и регистрация двух команд сканирования — файл занят параллельной сессией (рефакторинг
+> A1). До этой строки маскирование инертно, а не сломано; команды сознательно НЕ объявлены в
+> манифесте, чтобы в палитре не появилась команда без обработчика (это теперь ловит тест
+> `commandsRegistered.test.ts`).
 >
 > Related docs: [module_extension.md](../research/module_extension.md),
 > [PLAN_audit_roadmap_2026_08_25.md](PLAN_audit_roadmap_2026_08_25.md) (D3 — ссылки на секреты и

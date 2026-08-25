@@ -811,6 +811,25 @@ not PIN-derived: the tree stays visible while the OS session is unlocked (the sa
 other secret already relies on), and a lost keychain loses only a cache the next sync rebuilds.
 Tombstones/horizon stay plaintext — ids and version vectors, no topology.
 
+### Masking the broker's output (0.57.3)
+
+`secretMasker.ts` (pure) prepares a table of exact needles — the value, its percent-encoded and
+base64 forms, and a PEM key's body lines — longest first, so a short secret cannot cut a longer
+one in half. `maskEntries.ts` builds that table from ONE entity: the one the grant points at,
+five keychain reads at most, only when a grant is used. `CredsAgentServer.masked()` applies it
+in `handle()` immediately before `respond()` — the single action-agnostic choke point, so
+`ssh:exec`, `db:query`, `script:run` and anything added later are covered without touching an
+action. It fails OPEN: an unbuildable table means the call still answers, because masking is a
+second line behind the structural guarantee, and trading a possible leak for a certain outage is
+the wrong way round. The audit line carries a count, never a value.
+
+`secretScan.ts` is the same matching used the other way: which vault secrets appear in a text,
+by label and line, never printing the value. It exists because the clipboard *watcher* that was
+originally asked for cannot be built — VS Code exposes no clipboard-change event, and Windows
+Clipboard History captures at copy time, which `secretClipboard.ts` already documents for its
+own TTL clearing. On-demand scanning is the honest version; its commands are not contributed
+yet, pending handler registration.
+
 ### Refusals are remembered (0.57.2)
 
 `GrantRegistry.prune()` used to delete every `denied` grant before minting the next one, on the

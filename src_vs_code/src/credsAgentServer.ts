@@ -27,6 +27,7 @@ import {
 } from './agentAuditFile';
 import { startLoopbackServer } from './loopbackServer';
 import { startOnce } from './idempotentStart';
+import { MaskEntry, buildMaskTable, maskResponseBody } from './secretMasker';
 
 /**
  * The broker: a loopback HTTP surface through which an agent asks this window
@@ -106,6 +107,20 @@ export class CredsAgentServer implements vscode.Disposable {
     private readonly actions: UseActionRegistry,
     private readonly onUserPresent: () => void,
     private readonly storageDir?: string,
+    /**
+     * The secrets of the entity a grant points at, for masking that entity's own values out
+     * of the output it produces. Optional so the integration test and any future caller can
+     * construct a server without one; absent means no masking, never a crash.
+     *
+     * <p>Scoped to the GRANT's entity on purpose. Building a table from every secret of every
+     * unlocked account would put N keychain reads on a per-call path — exactly the cost class
+     * 0.57.0 removed from the tree and the sync cycle. For the common case the values are
+     * already in memory by the time output exists.</p>
+     */
+    private readonly maskEntriesFor?: (
+      accountId: string,
+      entityId: string,
+    ) => Promise<readonly MaskEntry[]>,
   ) {}
 
   /** The signal every spawned child watches, so none outlives this window. */
@@ -250,15 +265,21 @@ export class CredsAgentServer implements vscode.Disposable {
         { accountId: grant.accountId, entityId: grant.entityId, entityName: grant.entityName },
         body,
       );
+      // The last thing before the bytes leave the extension. The broker's promise — no
+      // response field a secret can travel in — is true of the SHAPES and false of what
+      // stdout carries: an agent that composes a command can make it print the very password
+      // the broker supplied to run it. One place, so every action is covered and any future
+      // one is covered by default.
+      const { body: sent, hits } = await this.masked(grant, result.body);
       this.log({
         grant: GrantRegistry.describe(grant),
         entityName: grant.entityName,
         action,
         outcome:
           result.status === 200 ? useAction.describeOutcome(result) : String(result.status),
-        detail: summary,
+        detail: hits > 0 ? `${summary} · masked ${hits} secret value(s)` : summary,
       });
-      this.respond(res, result.status, result.body);
+      this.respond(res, result.status, sent);
     } catch (error) {
       this.respondError(
         res,
@@ -373,6 +394,27 @@ export class CredsAgentServer implements vscode.Disposable {
     }
     // Dismissed or timed out: refuse this call, leave the grant re-promptable.
     return false;
+  }
+
+  /**
+   * The response body with this grant's own secrets replaced by placeholders.
+   *
+   * <p>Fails OPEN by design: if the table cannot be built, the call still answers. Masking is
+   * a second line — the first is that no response field carries a secret by construction —
+   * and turning a working exec into an error because a keychain read failed would trade a
+   * possible leak for a certain outage. The audit line records how many values were masked,
+   * never which.</p>
+   */
+  private async masked(grant: Grant, body: unknown): Promise<{ body: unknown; hits: number }> {
+    if (this.maskEntriesFor === undefined) {
+      return { body, hits: 0 };
+    }
+    try {
+      const entries = await this.maskEntriesFor(grant.accountId, grant.entityId);
+      return maskResponseBody(body, buildMaskTable(entries));
+    } catch {
+      return { body, hits: 0 };
+    }
   }
 
   private respond(res: http.ServerResponse, status: number, body: unknown): void {
