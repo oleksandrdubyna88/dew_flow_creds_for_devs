@@ -81,3 +81,15 @@ test('the clock is UTC, so a line lines up with a server log written elsewhere',
 
   assert.match(line, /^\[11:40:07Z\]/);
 });
+
+test('a call number renders as a #N prefix; its absence omits it (legacy channel lines)', () => {
+  const at = new Date(Date.UTC(2026, 0, 2, 9, 8, 7));
+  const base = { at, grant: 'g#ab', entityName: 'prod', action: 'exec', outcome: 'exit 0' };
+
+  const numbered = formatAuditLine({ ...base, seq: 7 });
+  assert.match(numbered, /^\[09:08:07Z\] #7 exec prod/);
+
+  const legacy = formatAuditLine(base);
+  assert.doesNotMatch(legacy, /#\d/);
+  assert.match(legacy, /^\[09:08:07Z\] exec prod/);
+});

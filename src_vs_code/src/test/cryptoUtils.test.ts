@@ -12,6 +12,7 @@ import {
   sealBlob,
   verifyEnvelopeMac,
   macStatusBlocksSync,
+  webauthnUserHandle,
 } from '../cryptoUtils';
 import { StoredAccount } from '../types';
 
@@ -255,4 +256,14 @@ test('a bad MAC blocks the sync cycle, but ok and legacy-missing proceed', () =>
   assert.equal(macStatusBlocksSync('bad'), true);
   assert.equal(macStatusBlocksSync('ok'), false);
   assert.equal(macStatusBlocksSync('missing'), false);
+});
+
+test('webauthnUserHandle is stable per email, case- and space-insensitive, and unique', () => {
+  // Registering the same account twice must REPLACE its resident credential, not claim a
+  // second slot — which only works if the user handle is identical for the same email.
+  const a = webauthnUserHandle('Bob@X.com');
+  const b = webauthnUserHandle('  bob@x.com  ');
+  assert.equal(a.length, 32);
+  assert.deepEqual(a, b, 'same email (any case/whitespace) yields the same handle');
+  assert.notDeepEqual(a, webauthnUserHandle('alice@x.com'), 'different emails differ');
 });
