@@ -451,6 +451,23 @@ did before the server understood them.
 built-in provider; Google gives the **id token**, because a Google access token is opaque and the
 server could not validate it.
 
+**Which scope Microsoft is asked for** decides whether the token is usable at all. Ask for
+`user.read` and Entra mints a **Graph** token, which Microsoft deliberately makes unverifiable by
+third parties — no server can accept one. So the extension asks for the operator's own API scope,
+resolved by `resolveMicrosoftScope(configured, advertised)`:
+
+1. `credSshManager.microsoftApiScope`, when the user set it — a person who typed a value is never
+   silently overridden by a machine, and it is the escape hatch for a server advertising the wrong
+   one.
+2. otherwise whatever the server publishes on `GET /api/client-config`, fetched and cached per
+   location by `ClientConfigCache` (`clientConfig.ts`) — including the **negative** answer, since a
+   server that does not publish it will not start mid-session and a round trip on every sync would
+   land on the path that is already the slow one.
+
+Discovery is best-effort with a 5 s deadline: an older server, an unreachable one or a malformed
+answer leaves the caller exactly where it was, on the configured setting. Breaking sign-in over a
+discovery step would be a worse failure than the one it exists to fix.
+
 ## Sharing
 
 `sealShare()` encrypts a `SharePayload` under `scrypt(recipientKeyId + PIN)`, where `recipientKeyId`
@@ -459,8 +476,17 @@ recipient tries every PIN they know against every pending item (`resolveShares`)
 makes "Accept all" work without a key exchange.
 
 The payload is authenticated by GCM. The surrounding metadata — `fromEmail`, `entityName`,
-`entityKind`, `createdAt` — is **not**, which is a spoofing surface on the folder transport and
-finding 3 of the security review.
+`entityKind`, `createdAt` — is not covered by that GCM tag, which was finding 3 of the security
+review and a real spoofing surface on the folder transport, where nobody stamps the sender.
+
+It is now covered by an **Ed25519 signature** over a length-prefixed transcript binding the share id,
+both emails, the timestamp, the sender's public key, the KDF parameters, the ciphertext and the tag
+(`shareSignature.ts`; see [PLAN_nas_sender_pki.md](PLAN_nas_sender_pki.md)). `judgeSender` pins the
+key on first contact and returns `verified` · `firstContact` · `mismatch` · `downgraded` ·
+`unsigned` · `badSignature`; the last three are refused rather than shown, because a signature that
+disappeared from a sender who had one is what stripping a signature looks like. A share from an
+older build is `unsigned` and shown as such — the gap that only a fingerprint comparison closes, so
+*Show Signing Fingerprint…* exists on the account row.
 
 ## The agent broker — using a credential without handing it over
 

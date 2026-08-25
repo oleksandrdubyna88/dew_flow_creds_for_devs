@@ -131,6 +131,16 @@ PKCE dance against a loopback listener. The server accepts **Microsoft access to
 id tokens** — the asymmetry is real and load-bearing: a Google access token is opaque and cannot be
 validated by a third party, so the id token is what travels.
 
+**The scope is a cross-module contract, and the server owns it.** A Microsoft token is only
+usable if the extension asked Entra for the *operator's own* API scope; ask for `user.read` and
+what comes back is a Graph token, which Microsoft makes unverifiable by third parties. That value
+therefore has to travel from the deployment to every client, and having each developer paste it
+into their own `settings.json` was the arrangement that produced this system's worst failure mode —
+an empty Team, no error, nobody at fault. Since server 0.2.3 the server publishes it on the
+anonymous `GET /api/client-config` and the extension configures itself; the local setting remains
+as an override and still wins. Anonymous is not a concession here: the caller has no token yet by
+definition, and a client id is public by construction.
+
 A third scheme, `Local`, is an HMAC-signed token with no cloud dependency. It exists for air-gapped
 deployments and for the test suite. Anyone holding its signing key can impersonate any allowed
 email, which is why the deployment guide says to leave it empty wherever a real IdP exists.

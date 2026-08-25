@@ -27,6 +27,7 @@ keys). PINs, passwords, keys, and VPN configs never leave the machines.
 | Method | Path | Purpose | Authorization |
 |---|---|---|---|
 | GET | `/api/health` | liveness | public |
+| GET | `/api/client-config` | what a client must know before it can sign in — currently the Microsoft scope to request | public |
 | GET | `/api/whoami` | resolved caller + whether a vault exists | any allowed caller |
 | GET | `/api/vault` | download **your** vault blob | token email only |
 | PUT | `/api/vault` | upload **your** vault blob (`application/octet-stream`) | token email only |
@@ -52,6 +53,7 @@ Environment variables (double underscore = section separator) or
 | `Vault__MaxVaultBytes` | per-vault upload cap (default 8 MiB) |
 | `Auth__Microsoft__Tenant` | Entra tenant id/domain — enables Microsoft tokens |
 | `Auth__Microsoft__Audiences` | csv of accepted audiences (empty = audience not validated) |
+| `Auth__Microsoft__ClientScope` | the scope clients should ask Entra for (`api://<client-id>/vault.access`). Served on `/api/client-config` so no developer has to configure it by hand; empty = advertise nothing |
 | `Auth__Google__Enabled` | `true` to also accept Google id tokens |
 | `Auth__Google__Audiences` | csv of accepted Google client ids |
 | `Auth__Local__SigningKey` | HMAC secret enabling a symmetric **Local** token scheme — tests / offline deployments only. **Leave empty in production.** |

@@ -96,7 +96,8 @@ entities.
 ## Entities
 
 **Add Entity / Edit** opens a single webview form with a **Type selector**
-— Credential (default) / SSH connection / SSH key / VPN / Database — and
+— Credential (default) / SSH connection / SSH key / VPN / Database /
+Terminal command / Script — and
 only the chosen kind's section is shown. Saving scrubs the other kinds'
 fields, so switching type leaves no stale data. Inside a typed folder the
 selector is preset and locked. Validation errors render inline, and any
@@ -226,6 +227,70 @@ the variable — so it is seen rather than trusted from a notification. The prob
 follows the actual default shell, not the OS: PowerShell gets `$env:NAME`, cmd `%NAME%`, bash
 `$NAME`. Fair warning it carries: echoing prints the secret into that terminal's scrollback.
 
+## Script entities
+
+A script is the sibling of a terminal command: the same "I will never remember this
+next month" problem, one size larger.
+
+> **Know where the body lives.** A script and its variables are stored as entity
+> **metadata**, not in the OS keychain — like a terminal command's arguments and unlike
+> a password. Locally that means `globalState`, in plaintext; in transit and at rest on
+> your NAS or vault server it is inside the same AES-256-GCM envelope as everything else.
+> So a script is safe to sync and safe to share, and it is **not** the place to paste a
+> token: put the token in a credential entity and let the script read it from an
+> environment binding.
+
+- **Language** decides both the highlighting in the form and whether *Run Script* is
+  offered at all. Only a language with an unambiguous interpreter can run:
+
+  | Language | Runs with | File |
+  |---|---|---|
+  | Bash | `bash` (on Windows: the one git-bash ships) | `.sh` |
+  | PowerShell | `powershell -ExecutionPolicy Bypass -File` on Windows, `pwsh -File` elsewhere | `.ps1` |
+  | Python | `python` | `.py` |
+  | JavaScript | `node` | `.js` |
+
+  SQL, YAML, JSON, Dockerfile and *other* are stored, highlighted and copyable, but
+  **not runnable** — SQL needs a database and a data format is not a program. *Run
+  Script* refuses those with the reason rather than piping them into a shell.
+- **Variables** are rows, exactly like a terminal command's arguments: a name, a value
+  and a tick to keep one without using it. **The values never enter the script text.**
+  They are handed to the run through the **process environment**, and the body reads them
+  by name in its own language's syntax — bash needs no change at all (`${NAME}` already
+  *is* that), PowerShell gets `$env:NAME`, Python `os.environ.get('NAME', '')` with the
+  `import os` added only when something was actually translated, JavaScript
+  `process.env.NAME`. The file on disk, the viewer and *Copy All* carry names where they
+  used to carry values.
+
+  Two consequences worth knowing. A script runs in a **fresh terminal** every time, because
+  VS Code can only set a terminal's environment when it is created — reusing one would run
+  the script with the previous entry's values. And a script can still *print* its own
+  variables: env injection stops the value leaking into the file, not into anything the
+  script chooses to echo, so an entry whose body does that is flagged rather than silently
+  trusted.
+- **Where it runs from.** The file is written into the extension's own private storage
+  (`keys/`, dir `0700`, file `0600`, owner-only ACL on Windows) — the same directory
+  materialized SSH keys use, and purged on both activate and deactivate. Nothing of it
+  outlives the session.
+
+## Export / Import externally
+
+*Share with…* is for people on your team — it needs them to have the extension, an
+account and a vault. **Export / Share Externally…** is for everyone else: a contractor,
+a client, a colleague who has not installed anything yet.
+
+- Right-click an **entity** to export it, or a **folder** to export its whole subtree.
+  Secrets travel with it — password, private key, VPN config, connection string, notes,
+  the attachment and the image.
+- You are asked for a **password**. The file is then sealed with the same envelope the
+  vault itself uses (scrypt + AES-256-GCM), so what lands on disk is ciphertext and the
+  password is what opens it. Choosing to export **plain JSON** is offered and is exactly
+  what it says — nothing protects it; send that over nothing you would not shout across
+  a room.
+- **Import from External…** takes such a file, asks for the password if it is sealed,
+  and gives every imported node a **new id**. The sender's ids belong to the sender's
+  tree; colliding with your own would corrupt the next sync merge.
+
 ## Sharing (Team / Shared with me / Create for…)
 
 - **Team is account-scoped**: every account row carries its own **Team**
@@ -251,9 +316,10 @@ follows the actual default shell, not the OS: PowerShell gets `$env:NAME`, cmd `
 - **Create Entity for…** (Team context menu): author an entity in the normal
   form directly for someone else, sent from the account whose Team you
   clicked — after a successful share nothing remains in your own storage.
-- Honest notes: sender identity is claimed, not cryptographically proven
-  (fine on a private NAS; signatures are a future upgrade), and a share is a
-  copy — there is no remote revoke.
+- **Sender identity is signed** (Ed25519, since 0.45) — see *Sender
+  signatures* below for what that proves and what it does not.
+- Honest note: a share is a **copy**. There is no remote revoke; a
+  recipient who has accepted it holds it.
 
 ## Share with Claude Code — an agent that uses a credential it never receives
 
@@ -481,39 +547,96 @@ live vault and useless as a safety net, so snapshots are a second, independent p
 Snapshots are the same encrypted format as everything else: they open with the account and the
 PIN, and carry attachments, images and VPN configs like passwords.
 
-## Settings & commands
+## Settings
 
-| Setting | Purpose |
-|---|---|
-| `credSshManager.nasBackupPath` | Default vault **location**: a folder **or** a vault-server URL |
-| `credSshManager.accountNasPaths` | Per-account location override (email → folder or URL); account right-click → *Set Sync Location…* |
-| `credSshManager.autoSync` | Enable automatic merge-sync (default off) |
-| `credSshManager.autoSyncIntervalMinutes` | Pull interval, default 5 |
-| `credSshManager.backupLocation` | Where **dated snapshots** are written; empty disables them |
-| `credSshManager.accountBackupPaths` | Per-account snapshot folder; account right-click → *Set Backup Location…* |
-| `credSshManager.backupIntervalHours` | Snapshot interval — `24` daily, `168` weekly, `0` off |
-| `credSshManager.accountBackupIntervals` | Per-account snapshot interval, in hours; *Set Backup Schedule…* |
-| `credSshManager.backupRetainDays` | Delete snapshots older than this; `0` keeps them all, and the newest is never deleted |
-| `credSshManager.autoLockMinutes` | Idle minutes before the vaults lock, default 60; `0` disables |
-| `credSshManager.dbExtensions` | Per-DB-type extension override for Connect (`{"mysql": "…"}`) |
-| `credSshManager.readCliHelp` | Fill a terminal entry's notes from `<tool> --help` (default on) |
-| `credSshManager.googleClientId` | Desktop-app OAuth client id for Google sign-in |
+**Almost nothing here needs editing by hand.** Every setting that belongs to one account has a
+right-click command on the account row, and that is the intended way in — the entries below say
+which one. The raw keys are documented because a settings.json is what an admin pushes to a
+fleet, and because a value you cannot find is a value you cannot trust.
 
-All 47 commands live under the **`CredsForDevs:`** category:
+Two rules govern how they combine:
+
+- **Per-account beats global.** `accountNasPaths` / `accountBackupPaths` /
+  `accountBackupIntervals` map an **email** to a value; an account with no mapping falls back to
+  the global `nasBackupPath` / `backupLocation` / `backupIntervalHours`. That is what lets a
+  work profile on a company server and a personal profile on a home NAS live in one window.
+- **Nothing here holds a secret.** Locations, intervals, client ids and scopes — all of it is
+  safe in a synced settings.json or a fleet policy. Every actual secret is in the OS keychain.
+
+### Where the vault lives
+
+| Setting | Default | What it does |
+|---|---|---|
+| `nasBackupPath` | *(empty)* | The **default vault location** for accounts with no mapping of their own: either a **folder** for the encrypted `vault_<email>.enc` files (`/mnt/z/Backups`, `Z:\Backups`, `\\NAS\Vault`) **or** a **Cred Vault Server URL** (`https://vault.company.com`). A URL switches that account to authenticated server sync — the two transports differ in more than spelling, see *Which transport for what* above |
+| `accountNasPaths` | `{}` | Per-account override: `{ "work@corp.com": "https://vault.corp.com", "me@gmail.com": "/mnt/home-nas/vault" }`. **From the UI:** account right-click → *Set Sync Location…* |
+| `autoSync` | `false` | Sync every profile automatically — after each change, at startup, and on the interval below. Edits from several machines are **merged** per node, not overwritten. Needs the **same Sync PIN** on every machine (*Set Sync PIN*) |
+| `autoSyncIntervalMinutes` | `5` | How often auto-sync pulls. Lower it on a fast LAN, raise it on a metered link |
+
+### Snapshots — the safety net, deliberately not the same thing as sync
+
+| Setting | Default | What it does |
+|---|---|---|
+| `backupLocation` | *(empty — off)* | Where **dated snapshots** are written. **Point it at different storage from `nasBackupPath`**: the sync location *merges*, so a deletion travels to every machine; the snapshot is the copy that still has what you deleted. Same encrypted bytes, no PIN needed to take one, restored with *Import / Restore* |
+| `accountBackupPaths` | `{}` | Per-account snapshot folder. **From the UI:** account right-click → *Set Backup Location…* |
+| `backupIntervalHours` | `24` | `1` hourly · `24` daily · `168` weekly · **`0` off**. A snapshot identical to the previous one is not written, so a quiet vault does not fill a metered folder with copies of itself |
+| `accountBackupIntervals` | `{}` | Per-account schedule, in hours. **From the UI:** account right-click → *Set Backup Schedule…* (hourly / 6h / daily / weekly / off / custom) |
+| `backupRetainDays` | `30` | Delete snapshots older than this; `0` keeps them forever. The **newest is never deleted** whatever its age — a laptop closed for a year must not come back to an empty backup folder |
+
+### Locking
+
+| Setting | Default | What it does |
+|---|---|---|
+| `autoLockMinutes` | `60` | Lock after this many minutes **without you using the vault**; `0` disables. "Using" means an action of yours that touches a secret — open, copy, connect, install a key, edit, unlock. It is **not** mouse movement and **not** background sync: a timer firing is not you being present. Locking forgets the cached master key and refuses the saved Sync PIN until you unlock deliberately; your credentials keep working locally, because they live in the OS keychain and are not protected by the vault key. **From the UI:** *Set Auto-Lock…* |
+
+### Sign-in
+
+| Setting | Default | What it does |
+|---|---|---|
+| `microsoftApiScope` | *(empty)* | The API scope of **your own Entra app registration**, e.g. `api://<client-id>/vault.access`. **Against server 0.2.3 and newer, leave this empty** — the server publishes the value on `/api/client-config` and the extension asks for the right scope by itself. Set it only to override a server advertising the wrong value, or to work against an older server. *Why it exists:* with no scope the extension receives a Microsoft **Graph** token, and Graph tokens are deliberately unverifiable by third parties, so every server refuses them with 401 — see *When the Team is empty* below |
+| `googleClientId` | *(empty)* | OAuth 2.0 client id of your **Desktop app** credential (Google Cloud Console → APIs & Services → Credentials). Required for *Sign in with Google*. The client **secret** is prompted once and kept in SecretStorage, never in settings |
+
+### Behaviour
+
+| Setting | Default | What it does |
+|---|---|---|
+| `dbExtensions` | `{}` | Which extension *Open in DB Extension* hands a connection to, per DB type: `{ "mysql": "cweijan.vscode-mysql-client2" }`. Empty = the first installed candidate wins |
+| `readCliHelp` | `true` | When you paste a whole command into a terminal entry, fill the **empty** notes by running `<tool> --help`. It runs the tool **you just typed**, with no shell and no arguments of ours, and only when every word of the command is a plain tool name — anything containing a shell metacharacter is never run. It never overwrites a note you wrote. Turn it off if you would rather nothing were executed while you edit |
+
+### When the Team is empty
+
+The one failure this product used to produce on its own — everyone signed in, sync green, no
+error, and nobody in each other's Team. Three things now stand between you and it:
+
+1. **0.46** stopped swallowing the server's refusal. A 401/403 when listing the team is shown
+   with the reason and what to do about it, instead of returning an empty list that looks
+   exactly like a team nobody has joined yet.
+2. **Server 0.2.3** makes it not happen: the server advertises its scope, the extension
+   configures itself, and a developer signs in and is done.
+3. On an **older server**, set `microsoftApiScope` to match that server's `MS_AUDIENCES`.
+   Any other cause — a domain missing from the server's allow-list, a token for a different
+   audience — the message names as such.
+
+## Commands
+
+All **52** commands live under the **`CredsForDevs:`** category in the palette, and each one is
+also on the right-click menu where it applies.
 
 - **Accounts** — Add Account · Sign Out / Remove Account · Set Sync Location… · Set Backup
-  Location… · Set Backup Schedule… · Reset Google OAuth
+  Location… · Set Backup Schedule… · Show Signing Fingerprint… · Reset Google OAuth
 - **Vault** — Set Sync PIN · Add Security Key (YubiKey)… · Remove Security Key… · Unlock Vault
-  (Security Key)… · Lock Vaults (clear cached keys)
+  (Security Key)… · Lock Vaults (clear cached keys) · Set Auto-Lock…
 - **Tree** — Add Folder · Add Entity · Edit · Clone… · Delete · Move to Folder… · Change Folder
   Type… · Move Up · Move Down · View Details · Refresh
-- **SSH** — Connect SSH · Toggle SSH (on/off) · Copy Password · Install SSH Key to System (~/.ssh)
+- **SSH** — Connect SSH · Toggle SSH (on/off) · Copy Password · Install SSH Key to System
+  (~/.ssh)
 - **VPN** — Start VPN · Stop VPN · Save VPN Config As…
 - **Databases** — Open in DB Extension · Copy Connection String
 - **Terminal commands** — Run in Terminal · Copy Command · Show Command and Notes
+- **Scripts** — Run Script
 - **Agents** — Share with Claude Code…
 - **Sharing** — Share with… · Create Entity for… · Accept… · Decline · Accept All from Sender… ·
   Accept All Shared…
+- **Outside the team** — Export / Share Externally… · Import from External…
 - **Sync & backup** — Sync Now (NAS) · Backup to NAS · Import / Restore · Snapshot Vault Now
   (the original spec's `extension.exportSecrets` / `extension.importSecrets` still work)
 

@@ -20,7 +20,7 @@ whole server is ~470 lines.
 
 | File | Role |
 |---|---|
-| `src/Program.cs` | Configuration, startup guards, the pipeline, and all eight endpoints |
+| `src/Program.cs` | Configuration, startup guards, the pipeline, and all ten endpoints |
 | `src/VaultStore.cs` | Filesystem storage: atomic writes, hashed paths, the crash sweep |
 | `src/TokenIdentity.cs` | Reads the verified caller identity out of JWT claims |
 | `src/Models.cs` | `ShareItem`, `ShareRequest`, `TeamMemberDto`, `WhoAmIDto` |
@@ -65,6 +65,7 @@ identifier**, so there is nothing to tamper with.
 | Method | Path | Auth | Success | Notes |
 |---|---|---|---|---|
 | `GET` | `/api/health` | none | `200` | Probes that `DataDir` is writable; `503` when it is not |
+| `GET` | `/api/client-config` | none | `200` | `{microsoftScope}` from `Auth__Microsoft__ClientScope`, `""` when unset. See below |
 | `GET` | `/api/whoami` | any allowed caller | `200` | `{email, name, hasVault}` |
 | `GET` | `/api/vault` | token email | `200` bytes / `404` | `application/octet-stream` + an `ETag`; 404 means nothing stored yet |
 | `PUT` | `/api/vault` | token email | `204` | 1..`MaxVaultBytes`; `400` outside that. Honours `If-Match` / `If-None-Match`, `412` when the precondition fails |
@@ -103,6 +104,24 @@ The handler returns an `IAsyncEnumerable<ShareItem>` rather than a list. With
 `MaxInboxItems=500` and `MaxShareBytes=1 MiB`, materialising the inbox first put roughly 700 MiB
 live — before JSON encoding doubled it — on a request any same-domain account could provoke by
 filling someone's inbox. Streaming keeps one item live at a time.
+
+### `/api/client-config` — why an anonymous endpoint is the right shape
+
+A client cannot authenticate until it knows **which scope to ask the identity provider for**, so
+this one cannot require a token: the caller has none yet, by definition.
+
+It gives away nothing. The value is an Entra **Application ID URI plus a permission name**, and a
+client id is public by construction — it appears in every authorization URL the extension opens and
+in the audience of every token this server accepts. Knowing it lets you *request* a token for this
+app; it does not let you *get* one, which still requires being a member of the tenant and passing
+sign-in.
+
+What it buys is the failure it removes. Before it, every developer had to paste
+`credSshManager.microsoftApiScope` into their own `settings.json`, and the symptom when one did not
+was an **empty Team with no error** — the server answered 401, the extension swallowed it, and an
+empty list is indistinguishable from a team nobody has joined. The extension now reads this
+endpoint and configures itself; an explicitly configured setting still wins, as the escape hatch for
+a server advertising the wrong value.
 
 ## Authorization
 
@@ -240,6 +259,7 @@ profile file inside a container reaches nobody.
 | `Vault:RequireForwardedHttps` | `false` | Refuse anything not forwarded as https |
 | `Auth:Microsoft:Tenant` | — | Enables the Microsoft scheme |
 | `Auth:Microsoft:Audiences` | *(empty = not validated)* | See the audience note above |
+| `Auth:Microsoft:ClientScope` | *(empty = advertise nothing)* | The scope clients should request; served on `/api/client-config` |
 | `Auth:Google:Enabled` | `false` | Enables the Google scheme |
 | `Auth:Google:Audiences` | *(empty = not validated)* | Accepted Google client ids |
 | `Auth:Local:SigningKey` | *(empty = disabled)* | HMAC key for the offline scheme |

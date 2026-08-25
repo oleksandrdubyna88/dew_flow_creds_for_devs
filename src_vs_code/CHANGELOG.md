@@ -70,6 +70,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.50.0] — 2026-08-25
 
+### Added
+
+- **The server tells the extension which scope to ask for, so a developer configures
+  nothing.** Microsoft sign-in only works against a vault server if the extension asks
+  Entra for that organisation's own API scope; ask for `user.read` and what comes back is
+  a **Graph** token, which Microsoft deliberately makes unverifiable by third parties, so
+  every server refuses it with 401. Until now the value had to be pasted into each
+  developer's `settings.json` by hand, and the symptom when somebody did not was an empty
+  Team with no error at all.
+
+  A server running **0.2.3 or newer** now publishes the value on `GET /api/client-config`,
+  and the extension reads it and configures itself. Sign in, point at the server, done.
+  `credSshManager.microsoftApiScope` still exists and still **wins** when set — the escape
+  hatch for a server advertising the wrong value, and the rule that a person who typed
+  something is never silently overridden by a machine. Discovery is best-effort with a 5 s
+  deadline and its answer is cached per location, negative answers included: an older or
+  unreachable server leaves sign-in exactly where it was.
+
 ### Security
 
 Every plaintext-leak point found in a full audit, closed or honestly bounded.

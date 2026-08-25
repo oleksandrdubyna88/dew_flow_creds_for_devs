@@ -35,12 +35,27 @@ exactly like a network fault.
 >    `vault.access` (admins and users).
 > 3. *Add a client application*: `aebc6443-996d-45c2-90f0-388ff96faa56` (Visual Studio Code),
 >    authorised for that scope.
-> 4. Here: `MS_AUDIENCES=<client-id>,api://<client-id>`. In VS Code:
->    `credSshManager.microsoftApiScope = api://<client-id>/vault.access`.
+> 4. Here, **both keys**:
+>    ```
+>    MS_AUDIENCES=<client-id>,api://<client-id>
+>    MS_CLIENT_SCOPE=api://<client-id>/vault.access
+>    ```
 >
 > This is not optional hardening if you use Microsoft sign-in: without a registration the
 > extension can only send a **Graph** token (`user.read`), which Microsoft makes unverifiable
 > by third parties — the server rejects it with 401 whatever you configure.
+>
+> **Why `MS_CLIENT_SCOPE` matters operationally.** It is the same value the extension needs,
+> and setting it here is what stops you from having to send it to every developer. The server
+> publishes it on `GET /api/client-config` (anonymous — the caller has no token yet, and a
+> client id is public by construction: it appears in every authorization URL and in the
+> audience of every token this server accepts). The extension reads it and asks Entra for the
+> right scope by itself. A developer signs in, points at this server, and is done.
+>
+> Leave it empty and each of them must paste `credSshManager.microsoftApiScope` into their own
+> `settings.json` — and the failure when somebody does not is an **empty Team with no error**,
+> which is exactly how this was found. That setting still exists and still wins over what the
+> server advertises, so it stays available as an override.
 
 > **On `LOCAL_SIGNING_KEY`:** anyone holding that string can mint a token for any email in
 > `ALLOWED_DOMAINS`. It exists for offline and air-gapped deployments and for the test suite. If you
