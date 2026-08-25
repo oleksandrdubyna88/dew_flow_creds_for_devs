@@ -260,11 +260,17 @@ sync transport uses**, since both take the name from `planBackupFileNames`. A va
 key registered came back as one without: the wraps were overwritten, silently, and the key stopped
 opening it.
 
-`backupWriteMode(existingRaw)` now reads what is in that file. `wrapped` → unlock through the vault's
-own key slots (`VaultKeys.unlock` + `VaultKeys.encrypt`, so the wraps are carried across); `pin` →
-only for a vault that does not exist yet or a genuine v1 one, and the prompt is lazy. **Unparseable
-content returns `wrapped`**: guessing "no wraps" from a parse failure is exactly how they would be
-overwritten, so the unsafe answer is never the default.
+`backupWriteMode(existingRaw)` reads what is in that file, keyed off a **security-key** wrap (not "any
+wrap"). `wrapped` → a webauthn slot is present, so the backup is opened through the vault's own key
+slots (`VaultKeys.unlock` + `VaultKeys.encrypt`) and its master IS the sync vault's master — safe to
+share the per-account key cache. `pin` → no vault yet, a legacy v1 file, or a v3 backup with only a
+pin-wrap: opened by its **standalone backup PIN** through a self-contained `wrapPinVault` /
+`unwrapWithPin`, never through the cache (which is keyed per account and would otherwise shadow the sync
+master with the backup's freshly-minted one). **Unparseable content returns `wrapped`** — the
+non-downgrading answer. Since the v1 retirement, the `pin` path writes **v3** (a pin-wrap under the
+backup PIN), so backups upgrade on their next run; a legacy v1 backup still restores with its PIN.
+Dated snapshots copy the sync ciphertext and never touch a key, so they are v3 whenever the sync vault
+is.
 
 ### Security keys: the user handle must be stable
 

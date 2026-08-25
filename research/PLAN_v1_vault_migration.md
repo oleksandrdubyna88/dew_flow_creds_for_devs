@@ -6,10 +6,14 @@
 > Related docs: [module_extension.md](module_extension.md),
 > [SECURITY_REVIEW_2026-08-25.md](SECURITY_REVIEW_2026-08-25.md) (finding 4's deferred tail, now closed).
 >
-> **Deviations from plan:** implemented as designed. Added one extra safety test beyond the round-trip
-> — an end-to-end "migrate a v1 file → the SAME PIN opens the v3, data preserved" in `keyWrap.test.ts`,
-> the guarantee that nobody is locked out. Backups (`backupManager`/`backupScheduler`) left in v1 as
-> planned (separate PIN lifecycle, on demand, no freeze). 504 extension tests green.
+> **Deviations from plan:** implemented as designed, then extended. (1) Added an end-to-end "migrate a
+> v1 file → the SAME PIN opens the v3, data preserved" safety test. (2) **Backups were brought in
+> scope** on a follow-up request: the NAS backup (`backupManager`) now writes v3 too. Its standalone
+> backup PIN is kept — a v3 backup is a self-contained pin-wrap under that PIN, opened without touching
+> the per-account key cache. `backupWriteMode` was re-keyed off a **security-key** wrap (not "any wrap")
+> so a pin-only backup routes to the standalone-PIN path and cannot collide with the sync master. Dated
+> snapshots (`backupScheduler`) already copy the sync-vault ciphertext, so they are v3 for free. 506
+> tests green.
 
 ## The goal
 
@@ -61,11 +65,16 @@ reload (which clears the cache and re-reads the master from the file's wrap). No
 this: a cycle reads before it writes, so the second machine reads the first's v3 and adopts its
 master before ever generating one. Documented rather than engineered around, per the operator's call.
 
-## Out of scope
+## Backups (added on follow-up — now in scope)
 
-The standalone **backup** file format (`backupManager` / `backupScheduler`), opened by its own master
-backup PIN and written on demand, keeps its current behaviour — it does not cause the freeze and its
-key lifecycle is separate. A follow-up can move it to v3 if wanted.
+The NAS backup (`backupManager`) also writes v3 on the next backup, keeping its **standalone backup
+PIN**: a v3 backup is a self-contained pin-wrap under that PIN (`wrapPinVault`), opened on restore with
+the same PIN (`unwrapWithPin`) — never through `vaultKeys`, whose per-account cache would shadow the
+sync master with the backup's freshly-minted one. `backupWriteMode` now routes off a **security-key**
+wrap: a backup with a webauthn slot is vault-keyed (its master IS the sync master, safe to share the
+cache); a pin-only or v1 backup goes to the standalone-PIN path. A legacy v1 backup still restores with
+its PIN. Dated snapshots (`backupScheduler`) copy the sync-vault ciphertext and never touch a key, so
+they became v3 the moment the sync vault did — no change needed.
 
 ## Build order
 

@@ -36,12 +36,12 @@ backups. 502 extension tests pass (+40 new).
 
 ## Deferred — recommended, not yet done
 
-- **The deeper fix for finding 4 is now done** (`PLAN_v1_vault_migration.md`): the v1 envelope is
-  retired — every vault is written as v3 (wrapped/HKDF), so scrypt runs once at unlock rather than
-  on every read and write. A legacy PIN-only vault migrates on its next sync (same PIN, data
-  preserved) and a new PIN-only vault is v3 from the first write. The one remaining tail is the
-  standalone **backup** file format (`backupManager`/`backupScheduler`), left in v1 deliberately —
-  a separate backup-PIN lifecycle, written on demand, no freeze.
+- **The deeper fix for finding 4 is done** (`PLAN_v1_vault_migration.md`): the v1 envelope is retired —
+  every vault is written as v3 (wrapped/HKDF), so scrypt runs once at unlock rather than on every read
+  and write. A legacy PIN-only vault migrates on its next sync (same PIN, data preserved) and a new
+  PIN-only vault is v3 from the first write. **Backups too**: the NAS backup writes v3 on its next run,
+  keeping its standalone backup PIN as a self-contained pin-wrap (never through the per-account cache);
+  dated snapshots copy the sync ciphertext so they were already v3. Nothing writes v1 any more.
 
 ## Verification
 
