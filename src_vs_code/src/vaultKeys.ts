@@ -21,6 +21,7 @@ import { authenticateSecurityKey } from './webauthnPrf';
 import { validatePin } from './pinPolicy';
 import { StoredAccount } from './types';
 import { unlockPlan } from './unlockPlan';
+import { detachVaultKey, wipeVaultKey } from './vaultKeyLifetime';
 
 /**
  * Owns "how do we open this account's vault": the per-account PIN, the
@@ -42,19 +43,9 @@ export type VaultKey =
   | { version: 1; passphrase: string }
   | { version: 2; masterKey: Buffer; wraps: KeyWrap[] };
 
-/**
- * Overwrite a cached key's bytes before letting go of it.
- *
- * <p>A v1 entry carries the PIN as a string and cannot be wiped — V8 strings are
- * immutable and there is no API for it. That is the reason the v2 key is a
- * `Buffer` of the RAW 32 bytes rather than its base64 text: a Buffer can be
- * zeroed, a string can only be abandoned.</p>
- */
-function wipe(key: VaultKey): void {
-  if (key.version === 2) {
-    key.masterKey.fill(0);
-  }
-}
+// Wiping a key, and handing one out without aliasing the cached Buffer, live in a pure
+// vscode-free module so the anti-aliasing rule is a unit test — see vaultKeyLifetime.ts.
+const wipe = wipeVaultKey;
 
 export class VaultKeys {
   private readonly cache = new Map<string, VaultKey>();
@@ -201,7 +192,9 @@ export class VaultKeys {
 
     const cached = this.cache.get(account.accountId);
     if (cached?.version === 2 && !needsGesture) {
-      return cached;
+      // A detached copy: a caller holding this across awaits must not have its bytes
+      // zeroed by an auto-lock tick wiping the cache mid-operation. See detachVaultKey.
+      return detachVaultKey(cached);
     }
     const wraps = readVaultWraps(vaultContent!).filter(isKeyWrap);
     if (wraps.length === 0) {
@@ -320,7 +313,9 @@ export class VaultKeys {
   private remember(account: StoredAccount, masterKey: Buffer, wraps: KeyWrap[]): VaultKey {
     const key: VaultKey = { version: 2, masterKey, wraps };
     this.cache.set(account.accountId, key);
-    return key;
+    // Cache the original; hand back a detached copy, so a later lock() wiping the cached
+    // Buffer cannot zero the key a caller is still using. See detachVaultKey.
+    return detachVaultKey(key);
   }
 
   private async resolvePin(
