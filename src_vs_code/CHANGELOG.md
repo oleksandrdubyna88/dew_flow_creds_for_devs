@@ -68,6 +68,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Bounded on purpose: 256 KB of output per stream, 30 s per command (raisable to 120 s), 8 at a
   time, and every child killed when the window goes.
 
+## [0.49.1] — 2026-08-25
+
+### Security
+
+- **A script's secret variable values were rendered into the viewer, unmasked.** Shipped
+  in 0.48.0 and fixed here. The "Script with variables filled in" row and every variable
+  row wrote the real values into the webview's HTML on open, with no click — breaking the
+  viewer's own documented invariant that secret values never enter it and that copy
+  actions round-trip through the extension host. Every sibling row (password, connection
+  string, DB password, VPN config) had always done it correctly; these two did not.
+
+  Both are masked now and copy on demand through the host, like the rest.
+
+### Fixed
+
+- **The copy button on a script variable never worked.** It resolved against the terminal
+  arguments array, which is empty for a script, so it reported "nothing to copy" on a
+  variable that plainly had a value.
+
 ## [0.49.0] — 2026-08-25
 
 ### Added

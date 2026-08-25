@@ -131,6 +131,11 @@ export function showEntityView(options: EntityViewOptions): void {
           value = d.envBindings?.[env[1]];
           break;
         }
+        const svar = /^svar(\d+)$/.exec(message.field);
+        if (svar !== null) {
+          value = normalizeArgs(d.scriptVars)[Number(svar[1])]?.value;
+          break;
+        }
         // Argument rows are numbered rather than named — there can be any number of them.
         const arg = /^arg(\d+)$/.exec(message.field);
         if (arg === null) {
@@ -223,13 +228,25 @@ function renderHtml(options: EntityViewOptions): string {
    * row is shown and labelled: it is kept deliberately, and hiding it would make the
    * entry look like it lost an argument.
    */
-  const argRow = (arg: CommandArg, index: number): string => {
+  /**
+   * One argument or script variable.
+   *
+   * <p>A script VARIABLE is masked like every other secret in this viewer: variables are
+   * the mechanism for pulling secret values out of a script body, so their values are
+   * exactly the thing this panel must not render — the copy button round-trips through
+   * the extension host instead, as Password and Connection string already do. A terminal
+   * ARGUMENT is not a secret (the whole line is shown in "Full command" anyway) and
+   * stays visible.</p>
+   */
+  const argRow = (arg: CommandArg, index: number, secret = false): string => {
     const note = arg.note !== undefined && arg.note.length > 0 ? arg.note : '';
     const off = arg.disabled === true ? ' (off — not part of the command)' : '';
+    const field = secret ? `svar${index}` : `arg${index}`;
+    const shown = secret ? '••••••••' : arg.value;
     return `<div class="row">
       <label>${escapeHtml(arg.name !== undefined && arg.name.length > 0 ? `Variable \${${arg.name}}${off}` : `Argument ${index + 1}${off}`)}</label>
-      <div class="line"><input readonly value="${escapeHtml(arg.value)}">
-        <button data-field="arg${index}" data-action="copy" class="icon" title="Copy argument" aria-label="Copy argument">${COPY_ICON}</button>
+      <div class="line"><input readonly value="${escapeHtml(shown)}">
+        <button data-field="${field}" data-action="copy" class="icon" title="Copy value" aria-label="Copy value">${COPY_ICON}</button>
       </div>
       ${note.length > 0 ? `<div class="line"><input readonly class="note" value="${escapeHtml(note)}"></div>` : ''}
     </div>`;
@@ -254,7 +271,7 @@ function renderHtml(options: EntityViewOptions): string {
     // so it rendered a Name and stopped.
     row('Command', 'command', d.isTerminal ? d.command : undefined),
     row('What it is for', 'commandNote', d.isTerminal ? d.commandNote : undefined),
-    ...(d.isTerminal ? normalizeArgs(d.commandArgs).map(argRow) : []),
+    ...(d.isTerminal ? normalizeArgs(d.commandArgs).map((a, i) => argRow(a, i)) : []),
     row(
       'Full command',
       'fullCommand',
@@ -288,13 +305,12 @@ function renderHtml(options: EntityViewOptions): string {
       </div></div>`,
         ]
       : []),
-    ...(d.isScript ? normalizeArgs(d.scriptVars).map(argRow) : []),
+    ...(d.isScript ? normalizeArgs(d.scriptVars).map((v, i) => argRow(v, i, true)) : []),
     row(
       'Script with variables filled in',
       'scriptFull',
-      d.isScript && d.script !== undefined
-        ? substituteScript(d.script, d.scriptVars)
-        : undefined,
+      d.isScript && d.script !== undefined && d.script.length > 0 ? '•' : undefined,
+      true,
     ),
     row('Notes', 'notes', options.notes),
     row(
