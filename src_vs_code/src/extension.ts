@@ -16,6 +16,7 @@ import { EntityFormValues, KeyCandidate, showEntityForm } from './entityFormPane
 import { showEntityView } from './entityViewPanel';
 import { GoogleAuthProvider } from './googleAuthProvider';
 import { nasPathFor, setAccountNasPath } from './nasPaths';
+import { describeSender } from './shareSender';
 import {
   backupIntervalHoursFor,
   backupPathFor,
@@ -1568,9 +1569,10 @@ ${detail}
     }
     const share = element.share;
     const pin = await vscode.window.showInputBox({
-      title: `Accept "${share.item.entityName}" from ${share.item.fromEmail} — into ${
-        storage.getAccount(share.accountId)?.email ?? 'this account'
-      }`,
+      title: `Accept "${share.item.entityName}" from ${describeSender(
+        share.item.fromEmail,
+        senderLocation(storage, share.accountId),
+      )} — into ${storage.getAccount(share.accountId)?.email ?? 'this account'}`,
       prompt: 'Enter the share PIN',
       password: true,
       ignoreFocusOut: true,
@@ -2133,6 +2135,15 @@ async function openDetails(
 }
 
 // ---------- helpers ----------
+
+/**
+ * Where the account holding this share syncs — which is what decides whether the
+ * share's claimed sender was stamped by a server or merely written into a file.
+ */
+function senderLocation(storage: StorageManager, accountId: string): string | undefined {
+  const account = storage.getAccount(accountId);
+  return account === undefined ? undefined : nasPathFor(account);
+}
 
 function asElement(value: unknown): TreeElement | undefined {
   if (typeof value !== 'object' || value === null) {

@@ -1,5 +1,7 @@
 import * as vscode from 'vscode';
 import { StorageManager } from './storageManager';
+import { nasPathFor } from './nasPaths';
+import { senderIsVerified } from './shareSender';
 import type { SharingManager } from './sharingManager';
 import { EntityKind, FolderType, TreeElement, TreeNode, kindOf } from './types';
 import { SyncReadiness } from './syncReadiness';
@@ -48,6 +50,20 @@ export class CredTreeDataProvider
     private readonly storage: StorageManager,
     private readonly extensionUri: vscode.Uri,
   ) {}
+
+  /**
+   * Whether ANY share under this sender arrived somewhere its sender could be
+   * written by hand. One unverifiable share is enough to make the name a claim,
+   * so the group is marked on "any", never on "most".
+   */
+  private unverifiedSender(email: string): boolean {
+    return (this.sharing?.ownShares ?? [])
+      .filter((share) => share.item.fromEmail === email)
+      .some((share) => {
+        const account = this.storage.getAccount(share.accountId);
+        return !senderIsVerified(account === undefined ? undefined : nasPathFor(account));
+      });
+  }
 
   refresh(): void {
     this.onDidChangeTreeDataEmitter.fire(undefined);
@@ -140,7 +156,18 @@ export class CredTreeDataProvider
       );
       item.id = `sender:${element.email}`;
       item.contextValue = 'sharedSender';
-      item.iconPath = new vscode.ThemeIcon('account', TEAM_COLOR);
+      // A name is the first thing the eye lands on, and on a shared folder it is a
+      // string the writer chose rather than an identity anyone checked. The accept
+      // dialog says so too, but by then the reader has already decided who this is
+      // from.
+      const unverified = this.unverifiedSender(element.email);
+      item.iconPath = unverified
+        ? new vscode.ThemeIcon('unverified', new vscode.ThemeColor('problemsWarningIcon.foreground'))
+        : new vscode.ThemeIcon('account', TEAM_COLOR);
+      item.description = unverified ? 'unverified sender' : undefined;
+      item.tooltip = unverified
+        ? `${element.email} — claimed, not verified. This share came through a shared folder, where anyone with write access can put any name here. A share through the vault server carries a sender stamped from a verified sign-in.`
+        : `${element.email} — stamped by the vault server from a verified sign-in.`;
       return item;
     }
     if (element.kind === 'sharedItem') {

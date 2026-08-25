@@ -3,6 +3,7 @@ import * as http from 'node:http';
 import * as vscode from 'vscode';
 import { webauthnUserHandle } from './cryptoUtils';
 import { startLoopbackServer } from './loopbackServer';
+import { browserErrorHint } from './webauthnHint';
 
 /**
  * Security-key unlock via WebAuthn + the **PRF** extension.
@@ -176,12 +177,6 @@ function waitForResult(
   });
 }
 
-function browserErrorHint(error: string): string {
-  if (/prf/i.test(error) || /not supported/i.test(error)) {
-    return `${error} — the PRF extension needs Chrome/Edge and a FIDO2 key with hmac-secret (YubiKey 5 and newer).`;
-  }
-  return error;
-}
 
 interface PageOptions {
   op: 'register' | 'authenticate';
@@ -283,7 +278,8 @@ function renderPage(options: PageOptions): string {
             authenticatorSelection: {
               authenticatorAttachment: 'cross-platform',
               residentKey: 'required',
-              userVerification: 'preferred',
+              // 'required', not 'preferred': see the note on browserErrorHint below.
+              userVerification: 'required',
             },
             timeout: 90000,
             extensions: { prf: {} },
@@ -316,7 +312,8 @@ function renderPage(options: PageOptions): string {
           challenge: challenge,
           rpId: ${JSON.stringify(RP_ID)},
           allowCredentials: allow,
-          userVerification: 'preferred',
+          // 'required' — a touch alone is not enough; see browserErrorHint.
+          userVerification: 'required',
           timeout: 90000,
           extensions: { prf: prfExt },
         },
