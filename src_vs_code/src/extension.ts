@@ -2,6 +2,7 @@
    The 3,000-line activate() is audit item A1's subject: this file is being dismantled into
    modules, each of which lints clean; a marker per violation here would be deleted within
    days. Remove this header as the LAST step of A1, when the file is a thin composition. */
+import { describeError } from './describeError';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
@@ -890,7 +891,7 @@ ${detail}
           await transport.deleteVault(element.account);
         } catch (error) {
           void vscode.window.showWarningMessage(
-            `Local profile removed, but the remote vault could not be deleted: ${error instanceof Error ? error.message : String(error)}`,
+            `Local profile removed, but the remote vault could not be deleted: ${describeError(error)}`,
           );
         }
       }
@@ -1273,26 +1274,10 @@ ${detail}
       collect(t.node);
     }
 
-    const secrets: Record<string, import('./externalBundle').ExternalSecrets> = {};
-    for (const n of picked) {
-      if (n.type !== 'entity') {
-        continue;
-      }
-      const s: import('./externalBundle').ExternalSecrets = {};
-      s.password = await storage.getPassword(accountId, n.id);
-      s.privateKey = await storage.getPrivateKey(accountId, n.id);
-      s.vpnConfig = await storage.getVpnConfig(accountId, n.id);
-      s.dbConnection = await storage.getDbConnection(accountId, n.id);
-      s.notes = await storage.getNotes(accountId, n.id);
-      s.attachment = await storage.getAttachment(accountId, n.id);
-      s.image = await storage.getImage(accountId, n.id);
-      for (const key of Object.keys(s) as (keyof typeof s)[]) {
-        if (s[key] === undefined) {
-          delete s[key];
-        }
-      }
-      secrets[n.id] = s;
-    }
+    const secrets = await storage.exportSecretsFor(
+      accountId,
+      picked.filter((n) => n.type === 'entity').map((n) => n.id),
+    );
     const bundle = buildExternalBundle(picked, secrets);
 
     const mode = await vscode.window.showQuickPick(
@@ -1392,7 +1377,7 @@ ${detail}
       }
     } catch (error) {
       void vscode.window.showErrorMessage(
-        `Import failed: ${error instanceof Error ? error.message : String(error)}`,
+        `Import failed: ${describeError(error)}`,
       );
       return;
     }
@@ -1643,7 +1628,7 @@ ${detail}
       await refreshReadiness();
     } catch (error) {
       void vscode.window.showErrorMessage(
-        `Adding the security key failed: ${error instanceof Error ? error.message : String(error)}`,
+        `Adding the security key failed: ${describeError(error)}`,
       );
     }
   });
@@ -1761,7 +1746,7 @@ ${detail}
       await refreshReadiness();
     } catch (error) {
       void vscode.window.showErrorMessage(
-        `Unlock failed: ${error instanceof Error ? error.message : String(error)}`,
+        `Unlock failed: ${describeError(error)}`,
       );
     }
   });

@@ -1,3 +1,4 @@
+import { describeError } from './describeError';
 import * as http from 'node:http';
 import * as crypto from 'node:crypto';
 import * as vscode from 'vscode';
@@ -424,7 +425,7 @@ async function exchangeCode(input: ExchangeInput): Promise<ExchangeResult> {
     });
   } catch (error) {
     throw new Error(
-      `Could not reach Google's token endpoint: ${error instanceof Error ? error.message : String(error)}`,
+      `Could not reach Google's token endpoint: ${describeError(error)}`,
     );
   }
 

@@ -1,3 +1,4 @@
+import { describeError } from './describeError';
 import { parseAgentCliArgs } from './agentCliArgs';
 import { parseToken } from './grantToken';
 import {
@@ -177,7 +178,7 @@ async function main(): Promise<number> {
     });
   } catch (error) {
     note(
-      `lost the connection to VS Code (${error instanceof Error ? error.message : String(error)}) — ` +
+      `lost the connection to VS Code (${describeError(error)}) — ` +
         'the action may or may not have run.',
     );
     return EXIT.brokerFailure;
@@ -217,7 +218,7 @@ void main().then(
     process.exitCode = code;
   },
   (error: unknown) => {
-    note(error instanceof Error ? error.message : String(error));
+    note(describeError(error));
     process.exitCode = EXIT.brokerFailure;
   },
 );

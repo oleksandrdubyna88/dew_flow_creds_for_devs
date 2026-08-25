@@ -1,3 +1,4 @@
+import { describeError } from './describeError';
 import { OwnedShare, ShareItem, StoredAccount, TeamMember, isShareItem } from './types';
 import { VaultTransport } from './vaultTransport';
 
@@ -95,7 +96,7 @@ export class ServerTransport implements VaultTransport {
         );
       }
       throw new Error(
-        `Vault server unreachable (${this.location}): ${error instanceof Error ? error.message : String(error)}`,
+        `Vault server unreachable (${this.location}): ${describeError(error)}`,
       );
     }
     if (response.status === 401) {

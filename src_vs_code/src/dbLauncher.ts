@@ -1,3 +1,4 @@
+import { describeError } from './describeError';
 import * as vscode from 'vscode';
 import { copySecret } from './secretClipboard';
 import { DbType, EntityMetadata } from './types';
@@ -166,7 +167,7 @@ export async function openInDbExtension(
     );
   } catch (error) {
     void vscode.window.showWarningMessage(
-      `Could not invoke ${command} in "${target.label}": ${error instanceof Error ? error.message : String(error)}. The connection string is on your clipboard.`,
+      `Could not invoke ${command} in "${target.label}": ${describeError(error)}. The connection string is on your clipboard.`,
     );
   }
 }

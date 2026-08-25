@@ -1,3 +1,4 @@
+import { describeError } from './describeError';
 import * as vscode from 'vscode';
 import { StorageManager } from './storageManager';
 import type { SharingManager } from './sharingManager';
@@ -134,7 +135,7 @@ export class ShareInbox {
         delivered.push(recipient.account.email);
       } catch (error) {
         failed.push(
-          `${recipient.account.email}: ${error instanceof Error ? error.message : String(error)}`,
+          `${recipient.account.email}: ${describeError(error)}`,
         );
       }
     }

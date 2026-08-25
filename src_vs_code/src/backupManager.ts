@@ -1,8 +1,8 @@
+import { describeError } from './describeError';
 import * as vscode from 'vscode';
 import { verifyAccountSession } from './authManager';
 import { planBackupFileNames } from './backupNaming';
 import {
-  BackupError,
   decryptJsonAsync,
   decryptJsonWithMasterKey,
   readBackupAccount,
@@ -195,7 +195,7 @@ export async function backupToNas(
       await writeVaultFileAtomically(dirUri, fileName, content);
       written.push(fileUri.fsPath);
     } catch (error) {
-      failed.push(`${account.email}: ${describeUnknown(error)}`);
+      failed.push(`${account.email}: ${describeError(error)}`);
     }
   }
 
@@ -236,7 +236,7 @@ export async function restoreFromBackup(
     content = Buffer.from(await vscode.workspace.fs.readFile(uri)).toString('utf8');
     account = readBackupAccount(content);
   } catch (error) {
-    void vscode.window.showErrorMessage(`Restore failed: ${describeUnknown(error)}`);
+    void vscode.window.showErrorMessage(`Restore failed: ${describeError(error)}`);
     return;
   }
   if (account === undefined) {
@@ -298,7 +298,7 @@ export async function restoreFromBackup(
           : decryptJsonWithMasterKey(content, await unwrapWithPinAsync(pinWrap, account.accountId, pin));
     }
   } catch (error) {
-    void vscode.window.showErrorMessage(`Restore failed: ${describeUnknown(error)}`);
+    void vscode.window.showErrorMessage(`Restore failed: ${describeError(error)}`);
     return;
   }
   if (!isBackupBundle(payload)) {
@@ -328,9 +328,3 @@ export async function restoreFromBackup(
   );
 }
 
-function describeUnknown(error: unknown): string {
-  if (error instanceof BackupError) {
-    return error.message;
-  }
-  return error instanceof Error ? error.message : String(error);
-}

@@ -1,3 +1,4 @@
+import { describeError } from './describeError';
 import * as vscode from 'vscode';
 import { AuthProvider, StoredAccount } from './types';
 
@@ -34,7 +35,7 @@ export async function signIn(provider: AuthProvider): Promise<StoredAccount> {
     });
   } catch (error) {
     throw new AuthError(
-      `Sign-in with ${provider} failed: ${error instanceof Error ? error.message : String(error)}`,
+      `Sign-in with ${provider} failed: ${describeError(error)}`,
     );
   }
   return {

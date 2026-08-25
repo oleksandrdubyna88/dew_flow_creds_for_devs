@@ -1,3 +1,4 @@
+import { describeError } from './describeError';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -89,7 +90,7 @@ export async function installKeyToSystem(
     }
   } catch (error) {
     void vscode.window.showErrorMessage(
-      `Installing the key failed: ${error instanceof Error ? error.message : String(error)}`,
+      `Installing the key failed: ${describeError(error)}`,
     );
     return;
   }
@@ -201,7 +202,7 @@ export async function removeInstalledKey(entity: EntityMetadata): Promise<void> 
       fs.rmSync(file, { force: true });
     } catch (error) {
       void vscode.window.showErrorMessage(
-        `Could not delete ${file}: ${error instanceof Error ? error.message : String(error)}`,
+        `Could not delete ${file}: ${describeError(error)}`,
       );
       return;
     }

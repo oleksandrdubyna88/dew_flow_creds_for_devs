@@ -1,3 +1,4 @@
+import { describeError } from './describeError';
 import * as crypto from 'node:crypto';
 import * as vscode from 'vscode';
 import {
@@ -98,7 +99,7 @@ export class BackupScheduler implements vscode.Disposable {
         try {
           await this.snapshot(account, force);
         } catch (error) {
-          this.warnOnce(account, describe(error));
+          this.warnOnce(account, describeError(error));
         }
       }
     } finally {
@@ -203,6 +204,3 @@ export class BackupScheduler implements vscode.Disposable {
   }
 }
 
-function describe(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}

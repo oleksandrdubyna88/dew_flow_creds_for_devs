@@ -234,6 +234,16 @@ a usage synopsis served as a description (`git commit -m` → `[--allow-empty-me
 wrapped description truncated at the first line break (`docker run --rm` → "Automatically remove
 the"). Both now have tests built from the real output.
 
+### Small shared utilities (audit A1)
+
+`describeError.ts`: the error-to-sentence rule (`Error` → its message, anything else →
+`String(...)`) that 21 call sites carried inline and two files had grown named copies of —
+`backupManager.describeUnknown` even special-cased `BackupError`, which extends `Error`, so
+the case changed nothing. `StorageManager.exportSecretsFor(accountId, ids)`: the seven-kind
+secret walk the external export used to hand-roll beside `exportBundle`'s own walk; absent
+kinds are absent keys, entities without secrets keep their slot. (`sshUseActions.ts` still
+carries two inline ladders — owned by a parallel work stream at extraction time.)
+
 ### The `vscode`-free rule, applied late
 
 `entityText.ts` (the details block / `Copy All`) and `sshCommand.ts` (the `ssh` line) were carved out

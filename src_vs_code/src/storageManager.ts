@@ -11,6 +11,7 @@ import { Tombstone, VersionVector, bumpVector, mergeVectors, normalizeTombstone 
 import { isSelfOrDescendantIn } from './selectionResolver';
 import { Revision, isRevisionList, pushRevision } from './revisionHistory';
 import { MetadataError, isSealedMetadata, newMetadataKey, openMetadata, sealMetadata } from './metadataCipher';
+import { ExternalSecrets } from './externalBundle';
 import {
   BackupBundle,
   StoredAccount,
@@ -726,6 +727,36 @@ export class StorageManager implements vscode.Disposable {
   }
 
   // ---------- backup ----------
+
+  /**
+   * Every stored secret of the given entities, keyed by entity id — a kind an entity does
+   * not have is simply absent. The external-export path used to walk the seven kinds by
+   * hand right beside `exportBundle`'s own walk (audit 2026-08-25, A1); a kind added to
+   * one loop and not the other would have exported silently incomplete files.
+   */
+  async exportSecretsFor(
+    accountId: string,
+    entityIds: readonly string[],
+  ): Promise<Record<string, ExternalSecrets>> {
+    const out: Record<string, ExternalSecrets> = {};
+    for (const id of entityIds) {
+      const s: ExternalSecrets = {};
+      const put = <K extends keyof ExternalSecrets>(key: K, value: string | undefined): void => {
+        if (value !== undefined) {
+          s[key] = value;
+        }
+      };
+      put('password', await this.getPassword(accountId, id));
+      put('privateKey', await this.getPrivateKey(accountId, id));
+      put('vpnConfig', await this.getVpnConfig(accountId, id));
+      put('dbConnection', await this.getDbConnection(accountId, id));
+      put('notes', await this.getNotes(accountId, id));
+      put('attachment', await this.getAttachment(accountId, id));
+      put('image', await this.getImage(accountId, id));
+      out[id] = s;
+    }
+    return out;
+  }
 
   /** Pair every entity of one profile with its stored secrets. */
   // eslint-disable-next-line complexity, max-lines-per-function

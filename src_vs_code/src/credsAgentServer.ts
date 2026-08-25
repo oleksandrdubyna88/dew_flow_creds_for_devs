@@ -1,3 +1,4 @@
+import { describeError } from './describeError';
 import * as fs from 'node:fs';
 import * as http from 'node:http';
 import * as path from 'node:path';
@@ -262,7 +263,7 @@ export class CredsAgentServer implements vscode.Disposable {
       this.respondError(
         res,
         'internal',
-        error instanceof Error ? error.message : String(error),
+        describeError(error),
         grant,
         action,
         summary,

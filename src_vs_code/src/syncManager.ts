@@ -1,3 +1,4 @@
+import { describeError } from './describeError';
 import * as vscode from 'vscode';
 import * as crypto from 'node:crypto';
 import { BackupError } from './cryptoUtils';
@@ -526,7 +527,6 @@ export class SyncManager implements vscode.Disposable {
     }
   }
 
-  // eslint-disable-next-line complexity
   private warnOnce(account: StoredAccount, error: unknown): void {
     if (this.warnedAccounts.has(account.accountId)) {
       return;
@@ -535,7 +535,7 @@ export class SyncManager implements vscode.Disposable {
     const message =
       error instanceof BackupError && error.kind === 'wrong-password'
         ? `Sync for ${account.email}: the NAS file does not decrypt with this machine's PIN — run "CredsForDevs: Set Sync PIN" with the same PIN as the other machine.`
-        : `Sync for ${account.email} failed: ${error instanceof Error ? error.message : String(error)}`;
+        : `Sync for ${account.email} failed: ${describeError(error)}`;
     void vscode.window.showWarningMessage(message);
   }
 }

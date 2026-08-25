@@ -1,3 +1,4 @@
+import { describeError } from './describeError';
 import * as vscode from 'vscode';
 import { EntityMetadata } from './types';
 import { StorageManager } from './storageManager';
@@ -35,7 +36,7 @@ export async function connectEntity(
       materialized = keyPath;
     } catch (error) {
       void vscode.window.showErrorMessage(
-        `Could not write the stored key to disk: ${error instanceof Error ? error.message : String(error)}`,
+        `Could not write the stored key to disk: ${describeError(error)}`,
       );
       return;
     }
