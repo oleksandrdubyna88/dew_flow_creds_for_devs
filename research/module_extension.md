@@ -274,6 +274,17 @@ backup PIN), so backups upgrade on their next run; a legacy v1 backup still rest
 Dated snapshots copy the sync ciphertext and never touch a key, so they are v3 whenever the sync vault
 is.
 
+### Security keys: the envelope arithmetic is its own module (audit A1)
+
+`securityKeyOps.ts` (pure, `vscode`-free) computes the NEXT envelope for Add/Remove Security
+Key; the two handlers hold only the ceremony and the conversation. Four regimes, each a unit
+test against the real crypto (`securityKeyOps.test.ts`): add-to-wrapped adds a slot around the
+SAME master (the PIN keeps opening it); add-to-legacy refuses without a PIN, else upgrades to a
+fresh master under PIN + key; remove-last-key re-keys so the removed key and every stale backup
+holding its wrap stop opening future versions; remove-one-of-many drops the slot, re-signs
+around the same master, and reports `rekeyed: false` so the caller says out loud that existing
+copies stay openable.
+
 ### Security keys: the user handle must be stable
 
 A discoverable ("resident") credential is keyed by `(RP ID, user.id)`. `RP_ID` is fixed, so `user.id`

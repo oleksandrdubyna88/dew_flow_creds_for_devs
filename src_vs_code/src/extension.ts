@@ -66,25 +66,15 @@ import { ShareInbox } from './shareInbox';
 import { SharingManager } from './sharingManager';
 import { TransportFactory } from './transportFactory';
 import { VaultKeys } from './vaultKeys';
-import {
-  KeyWrap,
-  isKeyWrap,
-  newMasterKey,
-  newPrfSalt,
-  removeWrap,
-  upsertWrap,
-  webauthnWraps,
-  wrapWithPinAsync,
-  wrapWithPrf,
-} from './keyWrap';
-import {
-  decryptJson,
-  encryptJson,
-  encryptJsonWrapped,
-  readVaultWraps,
-  resignEnvelopeWraps,
-} from './cryptoUtils';
+import { isKeyWrap, newPrfSalt, webauthnWraps } from './keyWrap';
+import { decryptJson, encryptJson, readVaultWraps } from './cryptoUtils';
 import { registerSecurityKey } from './webauthnPrf';
+import {
+  envelopeWithAddedKey,
+  envelopeWithRemovedKey,
+  isSecurityKeyRefusal,
+  removalWouldRekey,
+} from './securityKeyOps';
 import { validatePin } from './pinPolicy';
 import { CredTreeDataProvider, VIEW_ID, passwordKey } from './treeDataProvider';
 import { RemoteState, buildDefaultFolders, inheritedFolderType } from './defaultFolders';
@@ -1616,39 +1606,27 @@ ${detail}
     try {
       const prfSalt = newPrfSalt();
       const prf = await registerSecurityKey(account.email, prfSalt);
-
-      let wraps: KeyWrap[];
-      let content: string;
-      if (key.version === 2) {
-        // Already wrapped: add one more wrap around the SAME master key.
-        const master = key.masterKey;
-        wraps = upsertWrap(
-          readVaultWraps(raw).filter(isKeyWrap),
-          wrapWithPrf(master, prf.credentialId, prfSalt, prf.secret, label.trim(), Date.now()),
-        );
-        content = resignEnvelopeWraps(raw, wraps, key.masterKey);
-      } else {
-        // Upgrade v1 → v2: new master key, payload re-encrypted, two wraps.
-        const pin = await vaultKeys.storedPin(account);
-        if (pin === undefined) {
-          void vscode.window.showErrorMessage('A vault PIN is required before adding a key.');
-          return;
-        }
-        const payload = await vaultKeys.decrypt(raw, key);
-        const master = newMasterKey();
-        wraps = [
-          await wrapWithPinAsync(master, account.accountId, pin, Date.now()),
-          wrapWithPrf(master, prf.credentialId, prfSalt, prf.secret, label.trim(), Date.now()),
-        ];
-        content = encryptJsonWrapped(
-          payload,
-          master.toString('base64'),
-          wraps,
+      // The re-wrap/re-key arithmetic lives in securityKeyOps (audit A1); this handler
+      // holds only the ceremony and the conversation.
+      const next = await envelopeWithAddedKey(
+        {
+          raw,
+          key,
           account,
-          transport.embedsShares ? sharesFromEnvelope(raw) : undefined,
-        );
+          storedPin: await vaultKeys.storedPin(account),
+          now: Date.now(),
+          pendingShares: transport.embedsShares ? sharesFromEnvelope(raw) : undefined,
+          decrypt: (r, k) => vaultKeys.decrypt(r, k),
+        },
+        { credentialId: prf.credentialId, prfSalt, secret: prf.secret },
+        label,
+      );
+      if (isSecurityKeyRefusal(next)) {
+        // The add path can only refuse for a missing PIN (the v1 upgrade needs it).
+        void vscode.window.showErrorMessage('A vault PIN is required before adding a key.');
+        return;
       }
-      await transport.writeVault(account, content, []);
+      await transport.writeVault(account, next.content, []);
       vaultKeys.clearCache(account.accountId);
       void vscode.window.showInformationMessage(
         `"${label.trim()}" can now unlock ${account.email}. The PIN keeps working as a fallback.`,
@@ -1710,56 +1688,44 @@ ${detail}
     if (confirmed !== 'Remove') {
       return;
     }
-    const remaining = removeWrap(wraps, 'webauthn', picked.wrap.id);
-    const keysLeft = webauthnWraps(remaining);
-    const pin = await vaultKeys.storedPin(account);
-
-    if (keysLeft.length === 0 && pin !== undefined) {
-      // Last security key gone: RE-KEY the vault so the removed key (and any
-      // stale backup that still holds its wrap) can no longer decrypt future
-      // versions. Requires unlocking once to read the current payload.
-      const key = await vaultKeys.unlock(account, raw, { interactive: true });
-      if (key === undefined) {
-        void vscode.window.showErrorMessage('Could not unlock to re-key — nothing removed.');
-        return;
-      }
-      const payload = await vaultKeys.decrypt(raw, key);
-      const master = newMasterKey();
-      const content = encryptJsonWrapped(
-        payload,
-        master.toString('base64'),
-        [await wrapWithPinAsync(master, account.accountId, pin, Date.now())],
-        account,
-        transport.embedsShares ? sharesFromEnvelope(raw) : undefined,
+    // Whether this removal RE-KEYS (last key gone, PIN present) decides the wording of the
+    // failure message; the arithmetic itself lives in securityKeyOps (audit A1).
+    const storedPin = await vaultKeys.storedPin(account);
+    const wouldRekey = removalWouldRekey(wraps, picked.wrap.id, storedPin);
+    const key = await vaultKeys.unlock(account, raw, { interactive: true });
+    if (key === undefined) {
+      void vscode.window.showErrorMessage(
+        wouldRekey
+          ? 'Could not unlock to re-key — nothing removed.'
+          : 'Could not unlock to update wraps — nothing removed.',
       );
-      await transport.writeVault(account, content, []);
-      vaultKeys.clearCache(account.accountId);
-      void vscode.window.showInformationMessage(
-        `Removed "${picked.label}" and re-keyed the vault under your PIN — the removed key can no longer open it.`,
-      );
-      sync.notifyChange();
-      await refreshReadiness();
-    } else {
-      // Other keys remain (re-keying would need each of them present to
-      // re-wrap): drop this wrap, re-sign the envelope, and be honest that
-      // copies already made stay openable by the removed key until a re-key.
-      const key = await vaultKeys.unlock(account, raw, { interactive: true });
-      if (key === undefined || key.version !== 2) {
-        void vscode.window.showErrorMessage('Could not unlock to update wraps — nothing removed.');
-        return;
-      }
-      await transport.writeVault(
-        account,
-        resignEnvelopeWraps(raw, remaining, key.masterKey),
-        [],
-      );
-      vaultKeys.clearCache(account.accountId);
-      void vscode.window.showInformationMessage(
-        `Removed "${picked.label}". Note: existing backups/snapshots remain openable by that key until the vault is re-keyed (remove all security keys to force a re-key under the PIN).`,
-      );
-      sync.notifyChange();
-      await refreshReadiness();
+      return;
     }
+    const next = await envelopeWithRemovedKey(
+      {
+        raw,
+        key,
+        account,
+        storedPin,
+        now: Date.now(),
+        pendingShares: transport.embedsShares ? sharesFromEnvelope(raw) : undefined,
+        decrypt: (r, k) => vaultKeys.decrypt(r, k),
+      },
+      picked.wrap.id,
+    );
+    if (isSecurityKeyRefusal(next)) {
+      void vscode.window.showErrorMessage('Could not unlock to update wraps — nothing removed.');
+      return;
+    }
+    await transport.writeVault(account, next.content, []);
+    vaultKeys.clearCache(account.accountId);
+    void vscode.window.showInformationMessage(
+      next.rekeyed
+        ? `Removed "${picked.label}" and re-keyed the vault under your PIN — the removed key can no longer open it.`
+        : `Removed "${picked.label}". Note: existing backups/snapshots remain openable by that key until the vault is re-keyed (remove all security keys to force a re-key under the PIN).`,
+    );
+    sync.notifyChange();
+    await refreshReadiness();
   });
 
   register('credSshManager.unlockWithSecurityKey', async (target) => {
