@@ -151,10 +151,7 @@ services:
       # Drop the workers to the `nginx` user after the master has bound.
       - SETUID
       - SETGID
-      # The stock entrypoint chowns its cache and run directories on start.
-      - CHOWN
-      # ...and writes into directories it does not own while doing so.
-      - DAC_OVERRIDE
+      # CHOWN and DAC_OVERRIDE were tried and proved unnecessary — see below.
     deploy:
       resources:
         limits:
