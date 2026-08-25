@@ -15,12 +15,13 @@ keychain; everything that leaves the machine is encrypted first.
 flowchart TD
     subgraph UI
         TREE[treeDataProvider.ts<br/>the sidebar tree + drag/drop]
+        SEARCH[treeSearch.ts<br/>the filter — never over secrets]
         FORM[entityFormPanel.ts<br/>webview: create/edit]
         VIEW[entityViewPanel.ts<br/>webview: read-only]
         DLG[dialogs.ts<br/>quick picks and prompts]
     end
 
-    EXT[extension.ts<br/>activation, 47 commands]
+    EXT[extension.ts<br/>activation, 56 commands]
 
     subgraph Domain
         SYNC[syncManager.ts]
@@ -60,6 +61,7 @@ flowchart TD
     AUTH[authManager.ts<br/>googleAuthProvider.ts]
 
     EXT --> TREE & FORM & VIEW & DLG
+    TREE --> SEARCH
     EXT --> SYNC & SHARE & BACKUP
     EXT --> BROKER
     CLI -.->|HTTP 127.0.0.1| BROKER
@@ -416,6 +418,55 @@ of a 4 MB file per entry costs more than the history is worth) and **history is
 per-machine**, not in the sync bundle. Entries with history wear a theme-coloured icon; the
 flag is cached on the provider because reading history means reading SecretStorage, which
 `getTreeItem` cannot await.
+
+### The tree filter (0.55.0)
+
+`treeSearch.ts` is `vscode`-free and holds the whole semantics; the provider only routes.
+The first root the provider returns is always `{ kind: 'search' }` — the filter row, above
+the first account — and it is returned **unconditionally**, including when the filter hides
+every other row. A clear button that vanishes with the rows it filtered out leaves no way
+back but reloading the window.
+
+What a term is matched against is the one decision with a security argument behind it. It is
+the text the row already shows: name, folder type, user, host, port, db/VPN type, `command`,
+`commandNote`, `sshKeyPath`, `scriptLanguage`. It is **never** a secret — not `password`,
+`privateKey`, `vpnConfig`, `dbConnection`, `notes`, the script body or a script variable's
+value. A filter over secrets is an oracle: it answers "does this password contain `Tr0ub4`?"
+to anyone at an unlocked window, one keystroke at a time, without opening an entry and
+without a line in any of the places a revealed secret is recorded. The rule is therefore
+stated as: if the row does not say it out loud, typing it will not find it — and it is a
+test, not a convention (`treeSearch.test.ts` asserts that no secret field is reachable by
+any term).
+
+Three behaviours that are decisions rather than side effects:
+
+- **A folder is kept when a descendant matches**, and while filtering it renders `Expanded`
+  with the term appended to its `item.id`. VS Code remembers expansion per id, so a stable
+  id would honour the collapsed state you left behind and hide the hit behind a twisty.
+- **A folder matched by its own NAME shows all of its contents** (`parentMatched`). Asking
+  for "Passwords" and receiving an empty Passwords folder answers a different question.
+- **The walk is cycle-bounded.** Nodes arrive by sync and by external import, so `parentId`
+  is data, not an invariant; an unguarded recursion would hang the extension host rather
+  than render a bad row.
+
+The row is the field because the API has no alternative: a `TreeView` renders rows, not
+widgets, so clicking it opens an `InputBox` whose `onDidChangeValue` sets the term live.
+Escape restores the previous term (a cancelled search is not a lost one); the inline **×**
+is contributed against `contextValue === 'credSearchActive'`, which is why the row carries
+two different context values. `credSshManager.search` is listed as palette-only in
+`manifest.test.ts`: it is reached by the row's own `TreeItem.command`, which a manifest check
+cannot see.
+
+### One notification for locked vaults (0.55.0)
+
+`lockedNotice.ts` builds the text; `SyncManager` collects locked accounts during a cycle
+(`noteLocked`) and reports once at the end (`reportLocked`). Per-account popups were the
+original behaviour and the failure was structural, not cosmetic: three stack in the corner,
+each covering the previous one's buttons, and a fourth is off-screen. The message **names**
+every locked vault rather than counting them away, because the reason for interrupting
+someone is that they cannot see which. One vault keeps its own two buttons; several get one
+`Unlock…` that picks an account and then offers that vault exactly the choice a single one
+would have had. `warnedAccounts` still dedupes per account per session, so nothing nags.
 
 ### Clone
 

@@ -45,6 +45,7 @@ machines; add the optional self-hosted server when a team needs to share.
 | **Dated snapshots** | Separate from sync and deliberately so: sync merges, and a merge propagates a deletion. A snapshot is the copy that still has the thing you deleted |
 | **Security keys** | Open the vault by touching a YubiKey (WebAuthn PRF) — several keys plus the PIN, any of them opens it, adding or removing one never re-encrypts your data |
 | **Auto-lock** | Locks after an idle window measured in *your* actions, not mouse movement and not background sync |
+| **Filter the tree** | The first row of the sidebar is a search box: type and the tree narrows live, folders holding a hit open themselves, accounts with nothing matching drop out, and the row says how many entries survived. It matches what a row already shows you — name, user, host, port, command — and **never a secret**: a filter over passwords would confirm one a keystroke at a time to anyone at an unlocked window |
 | **Several accounts** | Microsoft and Google profiles side by side, each with its own tree, its own vault location, and its own team |
 
 Screenshots: see the tree, the entity form and the share flow on the
