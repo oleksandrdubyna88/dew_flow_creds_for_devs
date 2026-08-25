@@ -17,7 +17,7 @@ import { scriptRunPlan } from './scriptRun';
 import { buildCommandLine } from './commandLine';
 import { isCommandTrusted } from './commandTrust';
 import { lockToOwner, materializedKeysDir } from './materializedKeys';
-import { buildDbQueryLaunch, isSafePostgresUri, resolveDbCli } from './dbCliLauncher';
+import { buildDbQueryLaunch, isSafePostgresUri, refuseQuery, resolveDbCli } from './dbCliLauncher';
 
 /**
  * The broker's non-SSH capabilities: a stored script, a stored terminal command, and a
@@ -281,7 +281,15 @@ export function dbQueryAction(
             'postgresql://user:pass@host:port/db URL, or query it yourself.',
         );
       }
-      const launch = buildDbQueryLaunch(dbType, connection, String((body as { query: string }).query));
+      const query = String((body as { query: string }).query);
+      // Client meta-commands (`\!`, `system`, `:!!`) are a shell escape, and that shell
+      // inherits the password. Said back to the agent as the reason, so it learns the rule
+      // instead of retrying variants.
+      const refusal = refuseQuery(dbType, query);
+      if (refusal !== undefined) {
+        return fail('not_supported', refusal);
+      }
+      const launch = buildDbQueryLaunch(dbType, connection, query);
       if (launch === undefined) {
         return fail(
           'not_supported',

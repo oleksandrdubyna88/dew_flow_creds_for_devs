@@ -68,6 +68,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Bounded on purpose: 256 KB of output per stream, 30 s per command (raisable to 120 s), 8 at a
   time, and every child killed when the window goes.
 
+## [0.56.1] — 2026-08-25
+
+### Security
+
+- **The agent broker refuses database client meta-commands.** The broker's promise is that an
+  agent can *use* a database credential without ever receiving it: the password rides the child
+  process's environment (`PGPASSWORD`, `MYSQL_PWD`, `SQLCMDPASSWORD`), never the response. But
+  every SQL client has a client-side command language that runs *local* programs — psql's `\!`,
+  mysql's `\!` / `system`, sqlcmd's `:!!` — and a shell started that way inherits that
+  environment. So `\! echo $PGPASSWORD` was a syntactically valid "query" whose stdout *was* the
+  password, returned to the agent verbatim, with no further consent after the first Allow.
+  MongoDB had been refused outright for exactly this reason (`mongosh --eval` can read
+  `process.env`); the other three were not checked against it.
+
+  Now: postgres refuses any line starting with a backslash; mysql refuses any backslash at all
+  (its client executes `\!` wherever it appears outside quotes) and the long-form client words
+  (`system`, `source`, `tee`, `pager`, `edit`…) at a statement start; sqlcmd refuses lines
+  starting with `:` or `!!` and is run with `-x`, because it resolves `$(NAME)` from its
+  scripting variables *and then from the environment* — `select '$(SQLCMDPASSWORD)'` would have
+  printed the password as plain SQL. Each refusal tells the agent the rule, so it sends SQL
+  instead of retrying variants. Shape rules, not sanitizing, as with `isSafePostgresUri`.
+
+  Found by the security pass that compared the broker against its own stated invariant.
+
 ## [0.56.0] — 2026-08-25
 
 ### Added

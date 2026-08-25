@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { buildDbQueryLaunch, isSafePostgresUri, resolveDbCli } from '../dbCliLauncher';
+import { buildDbQueryLaunch, isSafePostgresUri, refuseQuery, resolveDbCli } from '../dbCliLauncher';
 
 /**
  * Handing a query to a database CLI with the password never on the command line.
@@ -100,4 +100,95 @@ test('a postgres connection string that could carry psql options is refused, not
   // psql's own `-o |command` opens a pipe through a shell; a leading-dash bare argument
   // reaches that parser. The launcher must refuse it rather than build a psql invocation.
   assert.equal(buildDbQueryLaunch('postgres', '-o|touch /tmp/pwned', 'select 1'), undefined);
+});
+
+/**
+ * Client meta-commands are a shell escape, and the shell inherits the password.
+ *
+ * The broker's promise is that an agent can USE a database credential without ever
+ * receiving it. Every SQL client here has a client-side command language that runs local
+ * programs — psql's `\!`, mysql's `\!` / `system`, sqlcmd's `:!!` — and the child process
+ * carries the password in its environment by design (PGPASSWORD, MYSQL_PWD,
+ * SQLCMDPASSWORD). So `\! echo $PGPASSWORD` is a syntactically valid "query" whose stdout
+ * IS the password, returned to the agent verbatim, with no further consent after the first
+ * Allow. mongodb was refused for exactly this reason; these three were not checked against
+ * it. Prove the shape, never sanitize.
+ */
+
+const PG = 'postgresql://alice:hunter2@db:5432/orders';
+const MY = 'mysql://alice:hunter2@db:3306/orders';
+const MS = 'mssql://alice:hunter2@db:1433/orders';
+// Spelled out rather than escaped: a backslash literal is exactly the character that gets
+// mangled by every layer between an editor and a test file, and this test is ABOUT it.
+const BS = String.fromCharCode(92);
+const NL = String.fromCharCode(10);
+
+test('psql: a backslash meta-command is refused, whatever it is', () => {
+  for (const q of [
+    BS + '! echo $PGPASSWORD',
+    '  ' + BS + '! id',
+    BS + "copy t to program 'cat'",
+    'select 1;' + NL + BS + '! id',
+  ]) {
+    assert.notEqual(refuseQuery('postgres', q), undefined, `should refuse: ${q}`);
+    assert.equal(buildDbQueryLaunch('postgres', PG, q), undefined, `should not launch: ${q}`);
+  }
+});
+
+test('psql: ordinary SQL, including a backslash inside a string, still runs', () => {
+  for (const q of ['select 1', "select E'" + BS + "n'", 'select * from t where x = 1;']) {
+    assert.equal(refuseQuery('postgres', q), undefined, `should allow: ${q}`);
+    assert.notEqual(buildDbQueryLaunch('postgres', PG, q), undefined);
+  }
+});
+
+test('mysql: any backslash is refused — the client executes \\! wherever it sees it outside quotes', () => {
+  for (const q of [BS + '! id', 'select 1 ' + BS + '! id', 'select 1; ' + BS + '. /etc/passwd']) {
+    assert.notEqual(refuseQuery('mysql', q), undefined, `should refuse: ${q}`);
+    assert.equal(buildDbQueryLaunch('mysql', MY, q), undefined);
+  }
+});
+
+test('mysql: long-form client commands at a statement start are refused', () => {
+  for (const q of [
+    'system id',
+    'SYSTEM id',
+    'select 1; system id',
+    'select 1;' + NL + 'source /etc/passwd',
+    'tee /tmp/out',
+    'pager cat',
+  ]) {
+    assert.notEqual(refuseQuery('mysql', q), undefined, `should refuse: ${q}`);
+  }
+  // A word that merely begins with the same letters is SQL, not a command.
+  assert.equal(refuseQuery('mysql', 'select system_user()'), undefined);
+  assert.equal(refuseQuery('mysql', 'select * from pager_log'), undefined);
+});
+
+test('sqlcmd: a line starting with ":" or "!!" is a client command and is refused', () => {
+  for (const q of [
+    ':!! echo %SQLCMDPASSWORD%',
+    '!! whoami',
+    ':r c:' + BS + 'x.sql',
+    'select 1' + NL + 'GO' + NL + ':!! id',
+    '  :out c:' + BS + 'dump.txt',
+  ]) {
+    assert.notEqual(refuseQuery('mssql', q), undefined, `should refuse: ${q}`);
+    assert.equal(buildDbQueryLaunch('mssql', MS, q), undefined);
+  }
+  assert.equal(refuseQuery('mssql', 'select 1'), undefined);
+});
+
+test('sqlcmd: scripting-variable substitution is switched off, so $(SQLCMDPASSWORD) is text', () => {
+  // sqlcmd resolves $(NAME) from its scripting variables and then from the environment —
+  // SQLCMDPASSWORD included. -x makes the sequence literal.
+  const launch = buildDbQueryLaunch('mssql', MS, "select '$(SQLCMDPASSWORD)'");
+  assert.notEqual(launch, undefined);
+  assert.ok(launch!.args.includes('-x'), `args: ${launch!.args.join(' ')}`);
+});
+
+test('the refusal names the escape, so the agent learns what not to do', () => {
+  const reason = refuseQuery('postgres', BS + '! id') ?? '';
+  assert.ok(/meta-command|backslash/i.test(reason), reason);
+  assert.ok(reason.includes('password'), 'says what the refusal protects');
 });

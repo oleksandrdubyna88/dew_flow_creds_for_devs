@@ -759,6 +759,18 @@ broker resolves the pair from the *grant*, never from the URL. A `db` or `vpn` c
 two functions and needs no change to the HTTP layer. Duplicate registration throws at startup — a
 shadowed capability is one that quietly stops being the one that was audited.
 
+### Client meta-commands are a shell escape (0.56.1)
+
+`refuseQuery(dbType, query)` in `dbCliLauncher.ts` is the gate between the agent's text and a
+process holding the password. The invariant "no response field a secret could travel in" is true
+of the wire shapes and was false of `stdout`: psql's `\!`, mysql's `\!`/`system`, sqlcmd's `:!!`
+spawn a shell that inherits `PGPASSWORD`/`MYSQL_PWD`/`SQLCMDPASSWORD`, and consent is per grant,
+so after one Allow the query `\! echo $PGPASSWORD` ran silently. The rules are shape rules —
+postgres: no line starts with `\`; mysql: no backslash anywhere (the client executes `\!`
+mid-line) and no client word at a statement start; mssql: no line starts with `:`/`!!`, and the
+launch passes `-x` because sqlcmd resolves `$(NAME)` from the environment. `buildDbQueryLaunch`
+re-checks, so nothing that builds a launch can bypass the action's refusal.
+
 ## Secrets at rest and in flight
 
 | Path | Handling |

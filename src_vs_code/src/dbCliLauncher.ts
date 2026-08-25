@@ -47,6 +47,74 @@ export function isSafePostgresUri(value: string): boolean {
   }
 }
 
+/** A backslash, spelled so no editor, shell or heredoc between here and the test can eat it. */
+const BACKSLASH = String.fromCharCode(92);
+
+/**
+ * mysql's long-form client commands. They run in the CLIENT — `system` spawns a shell that
+ * inherits MYSQL_PWD — and are recognised at the start of a statement whenever named commands
+ * are on (a `my.cnf` the agent never sees can turn them on). Short forms are all backslash
+ * commands and are covered by the blanket backslash rule.
+ */
+const MYSQL_CLIENT_WORDS = ['system', 'source', 'tee', 'notee', 'pager', 'nopager', 'edit'];
+
+/**
+ * Why a query is refused — or `undefined` when it may run.
+ *
+ * <p>The broker's promise is that an agent USES a database credential without receiving it.
+ * The child process holds the password in its environment by that tool's own contract
+ * (PGPASSWORD, MYSQL_PWD, SQLCMDPASSWORD) — and every one of these clients has a client-side
+ * command language that runs LOCAL programs: psql's `\!` (and `\copy … to program`, `\o |cmd`),
+ * mysql's `\!` / `system`, sqlcmd's `:!!`. A shell started that way inherits the environment,
+ * so `\! echo $PGPASSWORD` is a syntactically valid "query" whose stdout IS the password —
+ * handed back to the agent verbatim, with no further consent after the first Allow. mongodb is
+ * refused outright for the same reason (`--eval` can read `process.env`); these three can be
+ * served safely only if the client language is kept out, and this is where it is kept out.</p>
+ *
+ * <p>Shape rules, not sanitizing — the same stance as `isSafePostgresUri` and `isSafeSshHost`:</p>
+ * <ul>
+ *   <li><b>postgres</b>: no line may begin with a backslash. psql treats a `-c` string as a
+ *       meta-command when its first character is `\`; refusing it at any line start is one
+ *       rule with margin instead of a rule matched to one version's parser.</li>
+ *   <li><b>mysql</b>: no backslash anywhere. The mysql client executes `\!` wherever it appears
+ *       outside a quoted string — `select 1 \! id` runs `id` — so the position rule psql allows
+ *       is not enough here; and the long-form words are refused at a statement start.</li>
+ *   <li><b>mssql</b>: no line may begin with `:` or `!!`; and `buildDbQueryLaunch` passes `-x`,
+ *       because sqlcmd resolves `$(NAME)` from its scripting variables and then from the
+ *       ENVIRONMENT — `select '$(SQLCMDPASSWORD)'` would print the password as plain SQL.</li>
+ * </ul>
+ */
+export function refuseQuery(dbType: DbType, query: string): string | undefined {
+  const lines = query.split(/\r?\n/).map((line) => line.trimStart());
+  switch (dbType) {
+    case 'postgres':
+      return lines.some((line) => line.startsWith(BACKSLASH))
+        ? 'Refused: a line starting with a backslash is a psql meta-command. Meta-commands run in the client, where the password lives in the environment, so they are never accepted from an agent — send plain SQL.'
+        : undefined;
+    case 'mysql': {
+      if (query.includes(BACKSLASH)) {
+        return 'Refused: a backslash is a mysql client command wherever it appears (\\! runs a shell that holds the password). Send plain SQL without backslashes — use CHAR() for escapes.';
+      }
+      const statements = query
+        .split(/;|\r?\n/)
+        .map((s) => s.trimStart().toLowerCase())
+        .filter((s) => s.length > 0);
+      const word = statements
+        .map((s) => /^([a-z]+)(?:\s|$)/.exec(s)?.[1])
+        .find((w) => w !== undefined && MYSQL_CLIENT_WORDS.includes(w));
+      return word !== undefined
+        ? `Refused: "${word}" is a mysql client command, not SQL. Client commands run local programs with the password in their environment, so they are never accepted from an agent.`
+        : undefined;
+    }
+    case 'mssql':
+      return lines.some((line) => line.startsWith(':') || line.startsWith('!!'))
+        ? 'Refused: a line starting with ":" or "!!" is a sqlcmd command, not SQL. Client commands run local programs with the password in their environment, so they are never accepted from an agent.'
+        : undefined;
+    default:
+      return undefined;
+  }
+}
+
 export function resolveDbCli(dbType: DbType, onPath: (exe: string) => boolean): DbCli | undefined {
   const cli = CLIS[dbType];
   if (cli === undefined) {
@@ -80,6 +148,11 @@ export function buildDbQueryLaunch(
 ): DbQueryLaunch | undefined {
   const cli = CLIS[dbType];
   if (cli === undefined || cli.passwordEnv === undefined) {
+    return undefined;
+  }
+  // Defence in depth: the action refuses with a reason first, but nothing that builds a
+  // launch may hand a client command to a process holding the password.
+  if (refuseQuery(dbType, query) !== undefined) {
     return undefined;
   }
   const parts = parseDbConnectionString(connectionString);
@@ -125,7 +198,9 @@ export function buildDbQueryLaunch(
         args.push('-d', parts.database);
       }
       // -b makes a SQL error an exit code, so the agent sees failure as failure.
-      args.push('-Q', query, '-b');
+      // -x switches scripting-variable substitution off: sqlcmd resolves `$(NAME)` from its
+      // variables and then from the ENVIRONMENT, and SQLCMDPASSWORD is one of them.
+      args.push('-Q', query, '-b', '-x');
       return { exe: cli.exe, args, env };
     }
     default:
