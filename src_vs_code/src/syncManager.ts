@@ -49,6 +49,8 @@ export class SyncManager implements vscode.Disposable {
     private readonly transports: TransportFactory,
     private readonly onApplied: () => void,
     private readonly onCycleEnd?: () => void,
+    /** Called with the accountId after each account's cycle SUCCEEDS — feeds the stale-sync reminder. */
+    private readonly onAccountSynced?: (accountId: string) => void,
   ) {
     this.configListener = vscode.workspace.onDidChangeConfiguration((e) => {
       if (e.affectsConfiguration(CONFIG_SECTION)) {
@@ -272,6 +274,7 @@ export class SyncManager implements vscode.Disposable {
         applied += result.applied ? 1 : 0;
         pushed += result.pushed ? 1 : 0;
         this.warnedAccounts.delete(account.accountId);
+        this.onAccountSynced?.(account.accountId);
       } catch (error) {
         this.warnOnce(account, error);
       }

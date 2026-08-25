@@ -41,6 +41,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Bounded on purpose: 256 KB of output per stream, 30 s per command (raisable to 120 s), 8 at a
   time, and every child killed when the window goes.
 
+## [0.45.0] — 2026-08-25
+
+### Added
+
+- **A reminder when a vault has quietly stopped syncing.** An account with a sync
+  location that has not had a successful sync for **3 days** gets a warning with a
+  *Sync Now* button, repeated every **4 hours** until a sync goes through. The point is
+  the quiet failure — a lock left on, a cleared PIN, an unmounted NAS, a server that
+  stopped answering — where the off-machine copy stops moving and nothing else says so.
+
+  The details that keep it honest: a successful sync silences it immediately (the repeat
+  gate cannot outlive the thing it nags about); an account that never synced is measured
+  from when this machine first saw it, so a just-added account is not nagged at minute
+  one; accounts with no sync location are never nagged — nothing was supposed to move;
+  and when the row knows *why* sync is failing, the reminder says the reason too.
+
 ## [0.44.0] — 2026-08-25
 
 ### Fixed

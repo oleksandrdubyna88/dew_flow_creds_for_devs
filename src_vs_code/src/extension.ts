@@ -81,6 +81,7 @@ import { resolveVpnLauncher } from './vpnExec';
 import { applyEnvBindings, bindableFieldValue } from './envApply';
 import { envProbeCommand } from './envProbe';
 import { imageMime } from './attachment';
+import { syncReminderDue } from './syncReminder';
 import {
   AuthProvider,
   EntityKind,
@@ -135,6 +136,7 @@ export function activate(context: vscode.ExtensionContext): void {
     transports,
     () => provider.refresh(),
     () => void sharing.reload(),
+    (accountId) => void context.globalState.update(`syncReminder.lastOk.${accountId}`, Date.now()),
   );
   context.subscriptions.push(sync);
 
@@ -145,6 +147,44 @@ export function activate(context: vscode.ExtensionContext): void {
     console.log(`[creds-for-devs/backup] ${message}`),
   );
   context.subscriptions.push(backups);
+
+  // Stale-sync reminder: an account with a sync location that has not synced for three
+  // days gets a warning, repeated every four hours until a sync succeeds. The point is
+  // the quiet failure — a lock left on, a cleared PIN, an unmounted NAS — where the
+  // off-machine copy stops moving and nothing else says so.
+  const syncReminderTick = async (): Promise<void> => {
+    for (const account of storage.getAccounts()) {
+      if (nasPathFor(account) === undefined) {
+        continue; // nothing was ever supposed to sync
+      }
+      const keyOf = (kind: string) => `syncReminder.${kind}.${account.accountId}`;
+      if (context.globalState.get<number>(keyOf('firstSeen')) === undefined) {
+        await context.globalState.update(keyOf('firstSeen'), Date.now());
+      }
+      const verdict = syncReminderDue({
+        lastSyncMs: context.globalState.get<number>(keyOf('lastOk')),
+        firstSeenMs: context.globalState.get<number>(keyOf('firstSeen')),
+        lastRemindedMs: context.globalState.get<number>(keyOf('lastReminded')),
+        nowMs: Date.now(),
+      });
+      if (!verdict.due) {
+        continue;
+      }
+      await context.globalState.update(keyOf('lastReminded'), Date.now());
+      const reason = provider.readiness.get(account.accountId)?.reason;
+      const picked = await vscode.window.showWarningMessage(
+        `${account.email} has not synced for ${verdict.staleDays} days.` +
+          (reason !== undefined ? ` ${reason}` : ''),
+        'Sync Now',
+      );
+      if (picked === 'Sync Now') {
+        await vscode.commands.executeCommand('credSshManager.syncNow');
+      }
+    }
+  };
+  const reminderTimer = setInterval(() => void syncReminderTick(), 15 * 60_000);
+  context.subscriptions.push({ dispose: () => clearInterval(reminderTimer) });
+  void syncReminderTick();
 
   // Auto-lock. Checked on a coarse timer: the window is measured in tens of minutes, so
   // a minute of drift costs nothing and a tighter tick would only wake the machine more.
