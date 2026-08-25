@@ -9,6 +9,7 @@ import { StorageManager } from './storageManager';
 import { StoredAccount, isBackupBundle } from './types';
 import { backupWriteMode } from './backupPlan';
 import { VaultKeys } from './vaultKeys';
+import { writeVaultFileAtomically } from './nasFileWrite';
 
 const CONFIG_SECTION = 'credSshManager';
 const NAS_PATH_SETTING = 'nasBackupPath';
@@ -173,7 +174,10 @@ export async function backupToNas(
           pendingShares,
         );
       }
-      await vscode.workspace.fs.writeFile(fileUri, Buffer.from(content, 'utf8'));
+      // Atomic, like FolderTransport: this writes the SAME file automatic sync reads, so a
+      // dropped NAS connection mid-write must leave the previous good file, not a truncated
+      // one under the name other machines treat as authoritative.
+      await writeVaultFileAtomically(dirUri, fileName, content);
       written.push(fileUri.fsPath);
     } catch (error) {
       failed.push(`${account.email}: ${describeUnknown(error)}`);

@@ -1,10 +1,10 @@
-import * as crypto from 'node:crypto';
 import * as vscode from 'vscode';
 import { planBackupFileNames } from './backupNaming';
 import { readBackupAccount } from './cryptoUtils';
 import { envelopeWithShares, sharesFromEnvelope } from './shareFormat';
 import { OwnedShare, ShareItem, StoredAccount, TeamMember } from './types';
 import { VaultTransport } from './vaultTransport';
+import { writeVaultFileAtomically } from './nasFileWrite';
 
 /**
  * The original transport: a shared folder of `vault_<email>.enc` files.
@@ -169,18 +169,7 @@ export class FolderTransport implements VaultTransport {
       .then(undefined, () => undefined);
   }
 
-  private async writeAtomically(fileName: string, content: string): Promise<void> {
-    const tempUri = vscode.Uri.joinPath(
-      this.dir,
-      `.${fileName}.tmp-${crypto.randomBytes(4).toString('hex')}`,
-    );
-    const finalUri = vscode.Uri.joinPath(this.dir, fileName);
-    await vscode.workspace.fs.writeFile(tempUri, Buffer.from(content, 'utf8'));
-    try {
-      await vscode.workspace.fs.rename(tempUri, finalUri, { overwrite: true });
-    } catch (error) {
-      await vscode.workspace.fs.delete(tempUri).then(undefined, () => undefined);
-      throw error;
-    }
+  private writeAtomically(fileName: string, content: string): Promise<void> {
+    return writeVaultFileAtomically(this.dir, fileName, content);
   }
 }
