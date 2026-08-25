@@ -99,6 +99,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Bounded on purpose: 256 KB of output per stream, 30 s per command (raisable to 120 s), 8 at a
   time, and every child killed when the window goes.
 
+## [0.58.3] — 2026-08-25
+
+### Fixed
+
+- **A git-synced vault could lose a write with no error at all.** One `GitTransport` is cached
+  per location and a dozen places use it independently — the sync cycle, *Share with team*,
+  accepting a share, *Add/Remove Security Key*, the backup scheduler — while only the sync
+  cycle guarded against itself. Every read hard-resets the shared clone onto the remote, so a
+  read that began while a write sat between writing its file and committing it **discarded that
+  write**; the write then found a clean `git status`, concluded there was nothing to commit and
+  **reported success**. Two first-time syncs could likewise both start a `git clone` into the
+  same directory. Every operation that touches the clone now runs through a per-instance serial
+  queue. The rejected-push contract was never wrong — it sees collisions *between* clones and
+  was blind to collisions *inside* one.
+- **An MSSQL password is masked out of agent output.** The masker extracted the password
+  embedded in a connection string only when the string was a URL, so for MSSQL — stored as
+  `Server=…;Password=…`, which is what the entity form builds and what people paste from Azure
+  and SSMS — the bare password never entered the mask table. The whole connection string was
+  still masked, which hid the gap until the password appeared on its own: a client error
+  message, or `SQLCMDPASSWORD`, which is exactly what the query launcher puts in the
+  environment of the process whose output is being masked. Both dialects now go through the
+  one parser the launcher already uses, so the two cannot disagree about what the credential
+  is.
+
 ## [0.58.2] — 2026-08-25
 
 ### Security

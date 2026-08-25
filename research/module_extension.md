@@ -860,6 +860,21 @@ failure the integration test caught on the first run against a real repository: 
 endings on checkout, so a vault written on one machine read back as different bytes on another.
 Our own `-c` options bind only us; the attributes file binds every other client.
 
+Two kinds of collision, and only one of them was covered. A **rejected push** is this
+transport’s `412` — someone else’s clone wrote in between; it is reported, never forced, and
+the next cycle re-reads and lets `syncMerge.ts` reconcile. That contract sees collisions
+*between* clones and is blind to collisions *inside* one: `TransportFactory` caches ONE
+`GitTransport` per location, a dozen call sites use it independently (the sync cycle, *Share
+with team*, accepting a share, *Add/Remove Security Key*, the backup scheduler), and only the
+sync cycle guarded against itself. Since every read hard-resets the shared working directory, a
+read that began while a write sat between its `writeFileSync` and its `commit` **discarded that
+write** — and the write then saw a clean `git status`, concluded there was nothing to commit,
+and reported success. Silent data loss, found by review in 0.58.3. Every operation that touches
+the clone now runs through one `SerialQueue` (`serialQueue.ts`): public methods queue, and the
+private `*Inner` forms they share do not, because a queued operation awaiting a queued
+operation is a deadlock. This serializes within one instance only — other windows and other
+people remain the rejected-push contract’s job.
+
 `scripts/git-transport-itest.cjs` drives all of it against `git init --bare` in a temp directory
 — no network, no account, genuinely git — and runs in CI. The rejected-push path is covered by
 unit tests instead: forcing a non-fast-forward through the public API would mean racing two
@@ -876,6 +891,15 @@ in `handle()` immediately before `respond()` — the single action-agnostic chok
 action. It fails OPEN: an unbuildable table means the call still answers, because masking is a
 second line behind the structural guarantee, and trading a possible leak for a certain outage is
 the wrong way round. The audit line carries a count, never a value.
+
+A connection string is also mined for the password *inside* it, because the bare value is what a
+client actually prints. Both dialects, since 0.58.3: URL form and MSSQL’s
+`Server=…;Password=…` key-value form, which is what the entity form builds and what people paste
+out of Azure and SSMS. Parsing only URLs meant the MSSQL password never entered the table at all
+— masked as part of the whole string, never on its own, which is the form `SQLCMDPASSWORD` puts
+in the environment of the very process being masked. Both now go through the one
+`parseDbConnectionString` the launcher uses, so the two cannot disagree about what the
+credential is.
 
 `secretScan.ts` is the same matching used the other way: which vault secrets appear in a text,
 by label and line, never printing the value. It exists because the clipboard *watcher* that was

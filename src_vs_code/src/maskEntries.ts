@@ -1,3 +1,4 @@
+import { parseDbConnectionString } from './dbConnString';
 import type { MaskEntry } from './secretMasker';
 import { EntityMetadata } from './types';
 
@@ -61,7 +62,7 @@ export async function maskEntriesFor(
 
   // A DB connection string carries the password inside it; the password on its own is what a
   // tool actually prints (PGPASSWORD, a client's own error message), so it is masked as its
-  // own value rather than only as part of the URL it came from.
+  // own value rather than only as part of the connection string it came from.
   const embedded = present(values[3]).flatMap((c) => present(passwordFromConnection(c)));
   return [
     ...entries,
@@ -75,18 +76,23 @@ function present(value: string | undefined): string[] {
 }
 
 /**
- * The password inside a connection URL, decoded.
+ * The password inside a connection string, in whichever dialect it is written.
  *
- * <p>Decoded because that is the form a client prints it in: the URL carries it
- * percent-encoded, the process holds it raw. Deliberately not reusing the fuller
- * `parseDbConnectionString` — this must never throw on a value that is not a URL at all, and
- * a malformed string here simply means nothing extra to mask.</p>
+ * <p>Both dialects, because both are stored: `postgresql://user:pw@host/db` for postgres,
+ * MySQL and MongoDB, and `Server=host,1433;…;Password=pw` for MSSQL — which is what
+ * `buildDbConnectionString` and the entity form's own builder produce, and what people paste
+ * out of Azure and SSMS. An earlier version parsed only URLs, so for MSSQL the bare password
+ * was never masked at all; the whole string still was, which hid it until the password
+ * appeared on its own — a client error, or `SQLCMDPASSWORD`, which is precisely the value
+ * `buildDbQueryLaunch` puts into the environment of the process whose output is being masked.
+ *
+ * <p>Decoded, because that is the form a client prints it in: a URL carries it
+ * percent-encoded, the process holds it raw. `parseDbConnectionString` is the one parser both
+ * this and the launcher use, so they cannot disagree about what the credential is — and it
+ * never throws, returning `{}` for anything it does not understand, which is the property
+ * this path needs.</p>
  */
 function passwordFromConnection(connection: string): string | undefined {
-  try {
-    const url = new URL(connection.trim());
-    return url.password.length > 0 ? decodeURIComponent(url.password) : undefined;
-  } catch {
-    return undefined;
-  }
+  const password = parseDbConnectionString(connection).password;
+  return password !== undefined && password.length > 0 ? password : undefined;
 }

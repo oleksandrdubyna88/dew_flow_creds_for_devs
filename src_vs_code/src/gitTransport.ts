@@ -3,6 +3,7 @@ import * as path from 'node:path';
 import { planBackupFileNames } from './backupNaming';
 import { readBackupAccount } from './cryptoUtils';
 import { envelopeWithShares, sharesFromEnvelope } from './shareFormat';
+import { SerialQueue } from './serialQueue';
 import { OwnedShare, ShareItem, StoredAccount, TeamMember } from './types';
 import { VaultTransport } from './vaultTransport';
 import {
@@ -32,11 +33,22 @@ import {
  * hard-resets onto the remote, so a local edit that never got pushed cannot masquerade as
  * remote state.</p>
  *
- * <p><b>Concurrency.</b> A rejected push is this transport's `412`: someone else wrote in
- * between. It is reported, never forced, and never retried in place — the next cycle re-reads,
- * the causal merge in `syncMerge.ts` reconciles, and the write goes out then. That is the same
- * contract `ServerTransport` has with `If-Match`, and it is why nothing here needs to
+ * <p><b>Concurrency, remote.</b> A rejected push is this transport's `412`: someone else wrote
+ * in between. It is reported, never forced, and never retried in place — the next cycle
+ * re-reads, the causal merge in `syncMerge.ts` reconciles, and the write goes out then. That is
+ * the same contract `ServerTransport` has with `If-Match`, and it is why nothing here needs to
  * understand git's own merge.</p>
+ *
+ * <p><b>Concurrency, local.</b> That contract sees collisions between clones and is blind to
+ * collisions inside one. `TransportFactory` caches ONE instance per location and a dozen call
+ * sites use it independently — the sync cycle, Share with team, accept-share, Add/Remove
+ * Security Key, the backup scheduler — while only the sync cycle guards against itself. Since
+ * every read hard-resets the shared working directory, a read starting while a write sat
+ * between its `writeFileSync` and its `commit` discarded that write, and the write then saw a
+ * clean `git status`, concluded there was nothing to commit and reported success. So every
+ * operation that touches the directory goes through one {@link SerialQueue}: the public methods
+ * queue, and the private `*Inner` forms they share do not, because a queued operation calling a
+ * queued operation is a deadlock.</p>
  *
  * <p><b>What the repository reveals.</b> File contents are ciphertext, but a git log is not:
  * commit times and counts show when and how often a vault changed. Commit messages carry only
@@ -67,6 +79,9 @@ export class GitTransport implements VaultTransport {
   readonly embedsShares = true;
 
   private cloned = false;
+
+  /** One operation at a time against {@link dir} — see the local-concurrency note above. */
+  private readonly queue = new SerialQueue();
 
   constructor(
     readonly location: string,
@@ -171,7 +186,11 @@ export class GitTransport implements VaultTransport {
     await this.git(['add', '--', '.gitattributes'], this.dir);
   }
 
-  async readVault(account: StoredAccount): Promise<string | undefined> {
+  readVault(account: StoredAccount): Promise<string | undefined> {
+    return this.queue.run(() => this.readVaultInner(account));
+  }
+
+  private async readVaultInner(account: StoredAccount): Promise<string | undefined> {
     const fileName = this.fileNameFor(account);
     if (fileName === undefined) {
       return undefined;
@@ -184,7 +203,11 @@ export class GitTransport implements VaultTransport {
     }
   }
 
-  async writeVault(account: StoredAccount, content: string): Promise<void> {
+  writeVault(account: StoredAccount, content: string): Promise<void> {
+    return this.queue.run(() => this.writeVaultInner(account, content));
+  }
+
+  private async writeVaultInner(account: StoredAccount, content: string): Promise<void> {
     const fileName = this.fileNameFor(account);
     if (fileName === undefined) {
       throw new Error('internal: no vault file name planned for this account');
@@ -205,7 +228,11 @@ export class GitTransport implements VaultTransport {
   }
 
   /** Everyone with a vault file in the repository — the same discovery the folder does. */
-  async listTeam(ownAccounts: readonly StoredAccount[]): Promise<TeamMember[]> {
+  listTeam(ownAccounts: readonly StoredAccount[]): Promise<TeamMember[]> {
+    return this.queue.run(() => this.listTeamInner(ownAccounts));
+  }
+
+  private async listTeamInner(ownAccounts: readonly StoredAccount[]): Promise<TeamMember[]> {
     await this.sync();
     const ownIds = new Set(ownAccounts.map((a) => a.accountId));
     return this.vaultFiles().flatMap((fileName) => {
@@ -242,8 +269,12 @@ export class GitTransport implements VaultTransport {
     }
   }
 
-  async listShares(account: StoredAccount): Promise<OwnedShare[]> {
-    const raw = await this.readVault(account);
+  listShares(account: StoredAccount): Promise<OwnedShare[]> {
+    return this.queue.run(() => this.listSharesInner(account));
+  }
+
+  private async listSharesInner(account: StoredAccount): Promise<OwnedShare[]> {
+    const raw = await this.readVaultInner(account);
     if (raw === undefined) {
       return [];
     }
@@ -261,16 +292,20 @@ export class GitTransport implements VaultTransport {
    * means they did: re-sync and try again, a bounded number of times, then give up and let the
    * person retry — exactly the shape `FolderTransport` uses for the same race.</p>
    */
-  async appendShares(
+  appendShares(
     _actingAs: StoredAccount,
     recipient: TeamMember,
     items: ShareItem[],
   ): Promise<void> {
-    await this.rewriteShares(recipient.account, (existing) => [...existing, ...items]);
+    return this.queue.run(() =>
+      this.rewriteShares(recipient.account, (existing) => [...existing, ...items]),
+    );
   }
 
-  async removeShare(actingAs: StoredAccount, share: OwnedShare): Promise<void> {
-    await this.rewriteShares(actingAs, (existing) => existing.filter((s) => s.id !== share.item.id));
+  removeShare(actingAs: StoredAccount, share: OwnedShare): Promise<void> {
+    return this.queue.run(() =>
+      this.rewriteShares(actingAs, (existing) => existing.filter((s) => s.id !== share.item.id)),
+    );
   }
 
   private async rewriteShares(
@@ -299,7 +334,7 @@ export class GitTransport implements VaultTransport {
     fileName: string,
     change: (existing: ShareItem[]) => ShareItem[],
   ): Promise<boolean> {
-    const raw = await this.readVault(account);
+    const raw = await this.readVaultInner(account);
     if (raw === undefined) {
       throw new Error(`${account.email} has no vault at ${this.location} yet.`);
     }
@@ -329,7 +364,11 @@ export class GitTransport implements VaultTransport {
    * deletion here is "no longer current", not "never existed" — which the caller must say to
    * the person rather than implying the secrets are gone from the remote.</p>
    */
-  async deleteVault(account: StoredAccount): Promise<void> {
+  deleteVault(account: StoredAccount): Promise<void> {
+    return this.queue.run(() => this.deleteVaultInner(account));
+  }
+
+  private async deleteVaultInner(account: StoredAccount): Promise<void> {
     const fileName = this.fileNameFor(account);
     if (fileName === undefined) {
       return;

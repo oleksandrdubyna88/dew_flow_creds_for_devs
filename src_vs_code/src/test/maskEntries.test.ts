@@ -70,12 +70,16 @@ test('the password inside a connection string is masked on its own too', async (
   assert.equal(maskText('DSN=postgres://u:p%40ssw0rd-long@host:5432/db', table).hits >= 1, true);
 });
 
-test('a connection string that is not a URL yields no extra entry and does not throw', async () => {
+test('a key-value connection string yields its password as well as itself', async () => {
+  // This test previously asserted the opposite — that a non-URL string contributed nothing
+  // beyond itself — which pinned a defect as if it were the design: every MSSQL entity is
+  // stored in exactly this dialect, so the one thing the extraction exists for was skipped
+  // for the whole dialect.
   const stub = source({ dbConnection: 'Server=tcp:host,1433;User Id=sa;Password=verysecret1' });
   const entries = await maskEntriesFor(stub, 'a1', 'e1');
 
-  assert.equal(entries.length, 1, 'the string itself, and nothing derived from a failed parse');
-  assert.equal(entries[0].label, 'DB_CONNECTION');
+  assert.deepEqual(entries.map((e) => e.label), ['DB_CONNECTION', 'DB_PASSWORD']);
+  assert.equal(entries[1].value, 'verysecret1');
 });
 
 test('absent and empty secrets contribute nothing', async () => {
@@ -90,4 +94,52 @@ test('exactly one entity is read — never the vault', async () => {
 
   assert.equal(stub.reads.length, 5);
   assert.equal(stub.reads.every((r) => r.endsWith(':a1:e1')), true, stub.reads.join(', '));
+});
+
+/**
+ * The password inside an MSSQL connection string.
+ *
+ * <p>MSSQL entities are stored in ADO key-value form — `buildDbConnectionString('mssql', …)`
+ * and the form's own builder both produce `Server=…;Database=…;User Id=…;Password=…`, which is
+ * also the shape people paste straight out of Azure or SSMS. It is not a URL, so the extraction
+ * that finds the embedded password in `postgresql://user:pw@host/db` found nothing here and the
+ * bare password was never masked — for the one dialect whose connection strings are never URLs.
+ * The whole connection string was still masked, so this only showed when the password appeared
+ * on its own: a client's error message, or a launcher that puts it in the environment, which is
+ * exactly what `buildDbQueryLaunch` does with `SQLCMDPASSWORD`.</p>
+ */
+test('an MSSQL key-value connection string yields its embedded password too', async () => {
+  const stub = source({
+    dbConnection: 'Server=sql.example.com,1433;Database=orders;User Id=svc_app;Password=S3cret-Pa55word',
+  });
+
+  const entries = await maskEntriesFor(stub, 'a1', 'e1');
+
+  assert.equal(
+    entries.some((e) => e.value === 'S3cret-Pa55word' && e.label === 'DB_PASSWORD'),
+    true,
+    `the bare password must be maskable on its own: ${JSON.stringify(entries)}`,
+  );
+});
+
+test('the MSSQL password is actually masked out of text that only contains the password', async () => {
+  const stub = source({
+    dbConnection: 'Server=sql.example.com,1433;Database=orders;User Id=svc_app;Password=S3cret-Pa55word',
+  });
+  const table = buildMaskTable(await maskEntriesFor(stub, 'a1', 'e1'));
+
+  const masked = maskText('Login failed for user with password S3cret-Pa55word.', table);
+
+  assert.equal(masked.text.includes('S3cret-Pa55word'), false, masked.text);
+  assert.equal(masked.text.includes(placeholderFor('DB_PASSWORD')), true, masked.text);
+});
+
+test('a value that is neither a URL nor key-value simply adds nothing', async () => {
+  // The extraction must never throw on a connection string it does not understand — a
+  // malformed value means nothing extra to mask, not a broken agent call.
+  const stub = source({ dbConnection: 'this is not a connection string at all' });
+
+  const entries = await maskEntriesFor(stub, 'a1', 'e1');
+
+  assert.deepEqual(entries.map((e) => e.label), ['DB_CONNECTION']);
 });
