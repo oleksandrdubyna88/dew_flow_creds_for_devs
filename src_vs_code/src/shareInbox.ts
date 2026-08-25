@@ -8,6 +8,7 @@ import { judgeSender, pinSenderKey, pinnedKey, verdictBlocksAccept } from './sen
 import { keyFingerprint } from './shareSignature';
 import { openShare, resolveShares, sealShare, shareTranscript } from './shareFormat';
 import { recordOrigin, resolveOrigin } from './shareOrigin';
+import { snapshotForRevision } from './revisionSnapshot';
 import { validatePin } from './pinPolicy';
 import { OwnedShare, SharePayload, TeamMember, TreeNode } from './types';
 
@@ -427,18 +428,15 @@ After this, a share signed by any other key is refused.`,
       }
       if (choice === 'Update it') {
         // Keep its place in the tree and its own id; record what it was first.
-        await this.deps.storage.recordRevision(share.accountId, previousId, {
-          at: Date.now(),
-          name: existing?.name ?? payload.node.name,
-          details: existing?.details ?? payload.node.details!,
-          secrets: {
-            password: await this.deps.storage.getPassword(share.accountId, previousId),
-            privateKey: await this.deps.storage.getPrivateKey(share.accountId, previousId),
-            vpnConfig: await this.deps.storage.getVpnConfig(share.accountId, previousId),
-            dbConnection: await this.deps.storage.getDbConnection(share.accountId, previousId),
-            notes: await this.deps.storage.getNotes(share.accountId, previousId),
-          },
-        });
+        await this.deps.storage.recordRevision(
+          share.accountId,
+          previousId,
+          await snapshotForRevision(this.deps.storage, share.accountId, {
+            id: previousId,
+            name: existing?.name ?? payload.node.name,
+            details: existing?.details ?? payload.node.details!,
+          }),
+        );
         node = {
           ...payload.node,
           id: previousId,

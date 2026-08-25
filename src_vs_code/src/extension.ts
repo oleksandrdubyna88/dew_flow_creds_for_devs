@@ -59,7 +59,6 @@ import { CredsAgentServer } from './credsAgentServer';
 import { UseActionRegistry } from './useActions';
 import { sshExecAction, sshTerminalAction } from './sshUseActions';
 import { buildAgentSnippet, buildKindSnippet } from './agentShareSnippet';
-import { DB_DEFAULT_PORTS, parseDbConnectionString } from './dbConnString';
 import { openInDbExtension } from './dbLauncher';
 import { sharesFromEnvelope } from './shareFormat';
 import { ShareInbox } from './shareInbox';
@@ -69,6 +68,13 @@ import { VaultKeys } from './vaultKeys';
 import { isKeyWrap, newPrfSalt, webauthnWraps } from './keyWrap';
 import { decryptJson, encryptJson, readVaultWraps } from './cryptoUtils';
 import { registerSecurityKey } from './webauthnPrf';
+import {
+  dbDisplay,
+  revisionSecretReader,
+  secretResolver,
+  storageSecretReader,
+} from './viewerOptions';
+import { snapshotForRevision } from './revisionSnapshot';
 import {
   envelopeWithAddedKey,
   envelopeWithRemovedKey,
@@ -2151,18 +2157,15 @@ async function editNode(
   }
   // Snapshot what is there before it is replaced — the whole point of history is being
   // able to see what a change changed, which is only knowable from the old state.
-  await storage.recordRevision(accountId, node.id, {
-    at: Date.now(),
-    name: node.name,
-    details: node.details,
-    secrets: {
-      password: await storage.getPassword(accountId, node.id),
-      privateKey: await storage.getPrivateKey(accountId, node.id),
-      vpnConfig: await storage.getVpnConfig(accountId, node.id),
-      dbConnection: await storage.getDbConnection(accountId, node.id),
-      notes: await storage.getNotes(accountId, node.id),
-    },
-  });
+  await storage.recordRevision(
+    accountId,
+    node.id,
+    await snapshotForRevision(storage, accountId, {
+      id: node.id,
+      name: node.name,
+      details: node.details,
+    }),
+  );
   await storage.updateNode(accountId, {
     ...node,
     name: result.details.name,
@@ -2337,12 +2340,7 @@ async function saveTextAs(title: string, suggestedName: string, content: string)
 function openRevisionViewer(node: TreeNode, revision: Revision): void {
   const details = revision.details;
   const { password, privateKey, vpnConfig, dbConnection, notes } = revision.secrets;
-  const dbParts = dbConnection !== undefined ? parseDbConnectionString(dbConnection) : undefined;
-  let dbPortIsDefault = false;
-  if (dbParts !== undefined && dbParts.port === undefined && details.dbType !== undefined) {
-    dbParts.port = DB_DEFAULT_PORTS[details.dbType];
-    dbPortIsDefault = true;
-  }
+  const db = dbDisplay(dbConnection, details.dbType);
   const refuseEnv = (): Promise<boolean> => {
     void vscode.window.showWarningMessage(
       'This is a previous version. Set terminal variables from the current entry, not from history.',
@@ -2359,22 +2357,9 @@ function openRevisionViewer(node: TreeNode, revision: Revision): void {
     hasVpnConfig: vpnConfig !== undefined,
     hasDbConnection: dbConnection !== undefined,
     notes,
-    dbParts: dbParts !== undefined ? { ...dbParts, password: undefined } : undefined,
-    dbPortIsDefault,
-    dbHasPassword: dbParts?.password !== undefined,
+    ...db,
     sshCommand: buildSshCommand(details),
-    resolveSecret: (field) =>
-      Promise.resolve(
-        field === 'password'
-          ? password
-          : field === 'privateKey'
-            ? privateKey
-            : field === 'vpnConfig'
-              ? vpnConfig
-              : field === 'dbPassword'
-                ? dbParts?.password
-                : dbConnection,
-      ),
+    resolveSecret: secretResolver(revisionSecretReader(revision)),
     copyAllText: () => Promise.resolve(formatEntityBlock(details, password, dbConnection, notes)),
     saveVpnConfig: () =>
       vpnConfig === undefined
@@ -2408,14 +2393,9 @@ async function openEntityViewer(
   const hasPrivateKey = (await storage.getPrivateKey(accountId, details.id)) !== undefined;
   const hasVpnConfig = (await storage.getVpnConfig(accountId, details.id)) !== undefined;
   const dbConnection = await storage.getDbConnection(accountId, details.id);
-  const dbParts = dbConnection !== undefined ? parseDbConnectionString(dbConnection) : undefined;
   const notes = (await storage.getNotes(accountId, details.id)) ?? details.notes;
   // Always show a port for DB entities — the type's default when not explicit.
-  let dbPortIsDefault = false;
-  if (dbParts !== undefined && dbParts.port === undefined && details.dbType !== undefined) {
-    dbParts.port = DB_DEFAULT_PORTS[details.dbType];
-    dbPortIsDefault = true;
-  }
+  const db = dbDisplay(dbConnection, details.dbType);
   const keySourceName =
     details.sshKeyEntityId !== undefined
       ? (storage.getNode(accountId, details.sshKeyEntityId)?.name ?? '(missing entity)')
@@ -2430,24 +2410,9 @@ async function openEntityViewer(
     hasVpnConfig,
     hasDbConnection: dbConnection !== undefined,
     notes,
-    dbParts: dbParts !== undefined ? { ...dbParts, password: undefined } : undefined,
-    dbPortIsDefault,
-    dbHasPassword: dbParts?.password !== undefined,
+    ...db,
     sshCommand: buildSshCommand(details),
-    resolveSecret: (field) =>
-      field === 'password'
-        ? storage.getPassword(accountId, details.id)
-        : field === 'privateKey'
-          ? storage.getPrivateKey(accountId, details.id)
-          : field === 'vpnConfig'
-            ? storage.getVpnConfig(accountId, details.id)
-            : field === 'dbPassword'
-              ? storage
-                  .getDbConnection(accountId, details.id)
-                  .then((v) =>
-                    v === undefined ? undefined : parseDbConnectionString(v).password,
-                  )
-              : storage.getDbConnection(accountId, details.id),
+    resolveSecret: secretResolver(storageSecretReader(storage, accountId, details.id)),
     copyAllText: async () =>
       formatEntityBlock(
         details,

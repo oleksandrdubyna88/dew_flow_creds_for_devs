@@ -479,6 +479,16 @@ someone is that they cannot see which. One vault keeps its own two buttons; seve
 `Unlock…` that picks an account and then offers that vault exactly the choice a single one
 would have had. `warnedAccounts` still dedupes per account per session, so nothing nags.
 
+### The two viewers share their arithmetic (audit A1)
+
+`viewerOptions.ts` (pure): the field-to-secret ladder both viewers used to carry twice is one
+`secretResolver` over a `SecretReader` — the live viewer reads the keychain at Copy time
+(`storageSecretReader`), the revision viewer answers from the record (`revisionSecretReader`) —
+and `dbDisplay` owns the always-show-a-port / never-inline-the-password arithmetic.
+`revisionSnapshot.ts` (pure): the five-secret capture recorded before an entity is overwritten,
+shared by an edit and by an accepted same-sender share update — previously two copies, where a
+secret added to one would silently fall out of the other's history.
+
 ### History as tree rows (0.56.0)
 
 An entity with kept versions is `Collapsed` rather than `None`, and its children are
