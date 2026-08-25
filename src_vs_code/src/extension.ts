@@ -67,7 +67,6 @@ import {
 } from './keyWrap';
 import {
   encryptJsonWrapped,
-  readVaultVersion,
   readVaultWraps,
   resignEnvelopeWraps,
 } from './cryptoUtils';
@@ -1146,7 +1145,12 @@ ${detail}
     }
     const transport = transports.forAccount(account);
     const raw = transport === undefined ? undefined : await transport.readVault(account);
-    if (transport === undefined || raw === undefined || readVaultVersion(raw) !== 2) {
+    // Judged by the KEY SLOTS in the file, not by a version number — the number moved
+    // to 3 and `!== 2` would tell an owner of a key-wrapped vault they have no keys.
+    // Same rule as restore and backup (0.46.2).
+    const hasKeyWraps =
+      raw !== undefined && webauthnWraps(readVaultWraps(raw).filter(isKeyWrap)).length > 0;
+    if (transport === undefined || raw === undefined || !hasKeyWraps) {
       void vscode.window.showInformationMessage(
         `${account.email} has no security keys registered.`,
       );

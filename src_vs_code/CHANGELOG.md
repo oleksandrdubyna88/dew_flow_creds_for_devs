@@ -68,6 +68,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Bounded on purpose: 256 KB of output per stream, 30 s per command (raisable to 120 s), 8 at a
   time, and every child killed when the window goes.
 
+## [0.47.0] — 2026-08-25
+
+### Added
+
+- **Unlocking asks HOW, when there is a real choice.** A vault holding both a security
+  key and a PIN, at the moment a person is about to be prompted anyway, now asks:
+  *Touch the security key* or *Enter the PIN*. One way in goes straight there — a picker
+  with one option is noise — and background sync is untouched: the stored PIN still
+  opens silently, and a locked vault still refuses it.
+
+  The whole unlock cascade moved into a pure, tested module (`unlockPlan`) — it had
+  broken three times while it lived inline, and the question "who decides" turned out to
+  be the part worth testing.
+
+### Fixed
+
+- **The v3 audit** (after 0.46.2's restore fix): *Remove Security Key…* judged the vault
+  by `version !== 2` and would tell the owner of a current key-wrapped vault that no
+  keys are registered. Now judged by the key slots in the file, same rule as restore and
+  backup. Every other version comparison in the codebase was audited: the remaining ones
+  are the in-memory key shape and the deliberate v1 branch, both correct for v3.
+
 ## [0.46.2] — 2026-08-25
 
 ### Fixed

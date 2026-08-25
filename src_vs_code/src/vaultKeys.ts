@@ -20,6 +20,7 @@ import {
 import { authenticateSecurityKey } from './webauthnPrf';
 import { validatePin } from './pinPolicy';
 import { StoredAccount } from './types';
+import { unlockPlan } from './unlockPlan';
 
 /**
  * Owns "how do we open this account's vault": the per-account PIN, the
@@ -207,31 +208,77 @@ export class VaultKeys {
       throw new BackupError('corrupted', 'This vault has no unlock wraps.');
     }
 
-    // 1) the PIN wrap, from a PIN already stored — the unattended path
     const pinWrap = wraps.find((w) => w.kind === 'pin');
-    if (pinWrap !== undefined && !needsGesture) {
-      const pin = await this.resolvePin(account, false);
-      if (pin !== undefined) {
-        try {
-          const master = unwrapWithPin(pinWrap, account.accountId, pin);
-          return this.remember(account, master, wraps);
-        } catch {
-          // stored PIN does not fit this vault — fall through
+    const salts = prfSaltsByCredential(wraps);
+    const storedPin = pinWrap !== undefined ? await this.resolvePin(account, false) : undefined;
+
+    // The cascade broke three times while it lived inline here; the decision is
+    // unlockPlan now, tested on its own — including the one question the old cascade
+    // never asked: both ways in and a person present means the PERSON picks.
+    const plan = unlockPlan({
+      interactive: options.interactive,
+      needsGesture,
+      hasStoredPin: storedPin !== undefined,
+      hasPinWrap: pinWrap !== undefined,
+      hasKeyWrap: Object.keys(salts).length > 0,
+    });
+
+    if (plan.kind === 'refuse') {
+      return undefined;
+    }
+
+    if (plan.kind === 'silentPin') {
+      try {
+        const master = unwrapWithPin(pinWrap!, account.accountId, storedPin!);
+        return this.remember(account, master, wraps);
+      } catch {
+        // The stored PIN does not fit this vault. A person present falls through to a
+        // gesture; a background caller has nothing else and stops here.
+        if (!options.interactive) {
+          return undefined;
         }
       }
     }
 
-    // 2) a security key (native "touch your key" prompt). Every credential is offered
-    // its OWN salt — a vault holding several wraps is exactly the case where one salt
-    // for all made every touch of the "wrong" key fail as "try again", forever.
-    const salts = prfSaltsByCredential(wraps);
-    if (Object.keys(salts).length > 0 && options.interactive) {
+    // Only the ways that actually exist in THIS vault are offered — a picker with a
+    // dead option is how the wrong-PIN fallthrough would advertise a key the vault
+    // does not hold.
+    const offered: Array<{ label: string; detail: string; way: 'key' | 'pin' }> = [];
+    if (Object.keys(salts).length > 0) {
+      offered.push({
+        label: '$(key) Touch the security key',
+        detail: 'Uses the key registered on this vault.',
+        way: 'key',
+      });
+    }
+    if (pinWrap !== undefined) {
+      offered.push({
+        label: '$(lock) Enter the PIN',
+        detail: 'The vault PIN — the same on every machine for this account.',
+        way: 'pin',
+      });
+    }
+    if (offered.length === 0) {
+      return undefined;
+    }
+    let way = offered[0].way;
+    if (offered.length > 1) {
+      const picked = await vscode.window.showQuickPick(offered, {
+        title: `Unlock ${account.email} — how?`,
+        ignoreFocusOut: true,
+      });
+      if (picked === undefined) {
+        return undefined;
+      }
+      way = picked.way;
+    }
+
+    if (way === 'key') {
       const result = await authenticateSecurityKey(account.email, salts);
       const used = wrapForCredential(wraps, result.credentialId);
       if (used === undefined) {
-        // The key answered with a credential this vault does not know — a leftover
-        // registration that never reached the vault. Unwrapping any OTHER wrap with its
-        // secret can only fail; say what is wrong instead.
+        // A leftover registration that never reached the vault. Unwrapping any OTHER
+        // wrap with its secret can only fail; say what is wrong instead.
         throw new BackupError(
           'corrupted',
           'The security key answered with a credential this vault does not hold. ' +
@@ -242,14 +289,11 @@ export class VaultKeys {
       return this.remember(account, master, wraps);
     }
 
-    // 3) last resort: ask for the PIN explicitly
-    if (pinWrap !== undefined && options.interactive) {
-      const pin = await this.promptPin(account, 'Unlock vault');
-      if (pin !== undefined) {
-        const master = unwrapWithPin(pinWrap, account.accountId, pin);
-        await this.savePin(account, pin);
-        return this.remember(account, master, wraps);
-      }
+    const pin = await this.promptPin(account, 'Unlock vault');
+    if (pin !== undefined && pinWrap !== undefined) {
+      const master = unwrapWithPin(pinWrap, account.accountId, pin);
+      await this.savePin(account, pin);
+      return this.remember(account, master, wraps);
     }
     return undefined;
   }
