@@ -132,7 +132,7 @@ function runCli(args) {
 
 (async () => {
   const actions = new UseActionRegistry();
-  const server = new CredsAgentServer(actions, () => {});
+  const server = new CredsAgentServer(actions, () => {}, storageDir);
   const deps = {
     storage,
     storageDir,
@@ -257,6 +257,27 @@ function runCli(args) {
   check('once both are done, no key material is left', keyFiles().length === 0, `left ${keyFiles().join(', ')}`);
   storage.privateKey = undefined;
   storage.entity = ENTITY;
+
+  // --- the audit survives the window ------------------------------------------
+  // The output channel is a buffer that dies with the window — and closing the
+  // window is ALSO how a grant is revoked, so the record used to be destroyed at
+  // the moment it became history.
+  const logRoot = path.join(storageDir, 'logs');
+  const logFiles = () => {
+    try {
+      return fs.readdirSync(logRoot, { withFileTypes: true })
+        .filter((d) => d.isDirectory())
+        .flatMap((d) => fs.readdirSync(path.join(logRoot, d.name)).map((n) => path.join(logRoot, d.name, n)));
+    } catch { return []; }
+  };
+  const written = logFiles();
+  check('the audit is written to a file, not only to the window', written.length === 1, `found ${written.length} files`);
+  const body = written.length === 1 ? fs.readFileSync(written[0], 'utf8') : '';
+  check('…it records the grant being handed out', /share .*granted/.test(body), 'no share line');
+  check('…and every call the agent made', /#\d+ exec/.test(body), 'no numbered exec line');
+  check('…numbered, so a runaway loop is visible after the fact', /#1 /.test(body) && /#[2-9]/.test(body), 'calls are not numbered');
+  check('…and never the grant secret in full', !body.includes(parseToken(token).secret), 'THE SECRET IS IN THE LOG FILE');
+  check('the file is named for the run and the pid', /agent-\d{2}-\d{2}-\d{2}-\d+\.log$/.test(written[0] ?? ''), written[0] ?? '');
 
   // --- dispose ---------------------------------------------------------------
   server.dispose();

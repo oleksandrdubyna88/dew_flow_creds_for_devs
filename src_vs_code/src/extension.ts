@@ -239,7 +239,7 @@ export function activate(context: vscode.ExtensionContext): void {
   // a credential (run a command, open the terminal) without ever receiving it.
   // Constructed cheaply here; it opens no socket until the first share.
   const useActions = new UseActionRegistry();
-  const agentServer = new CredsAgentServer(useActions, () => vaultKeys.noteUserActivity());
+  const agentServer = new CredsAgentServer(useActions, () => vaultKeys.noteUserActivity(), storageDir);
   const sshDeps = {
     storage,
     storageDir,

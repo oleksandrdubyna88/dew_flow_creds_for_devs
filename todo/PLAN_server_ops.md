@@ -26,7 +26,10 @@ between a user's two machines.
    directory that updates never touch. `deploy/backup.sh` archives data + certificates + `.env`,
    needs no downtime, and verifies the tarball before reporting success. Serilog now writes a file
    per run under `logs/{UTC date}/`. Cadence is documented as a cron line rather than enforced —
-   **nobody has yet rehearsed a restore**, which is item 8.
+   the restore rehearsal — item 8 — which has since been **done (2026-08-23, re-checked
+   2026-08-25)**. This line said "nobody has yet rehearsed a restore" for two days after it stopped
+   being true, and a security review copied it. A summary that contradicts its own body is worse
+   than no summary.
 
 2. **`DataDir` must be a local / atomic-rename-capable FS.** `VaultStore`'s
    durability relies on `File.Move` being atomic; on SMB/old NFS it is not.

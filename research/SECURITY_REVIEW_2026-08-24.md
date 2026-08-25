@@ -300,8 +300,12 @@ afterwards: mtime and size unchanged, envelope intact, both key wraps present.
 
 - **No live penetration test** against the running deployment. This is a code and configuration
   review; the first real traffic is the first test of the whole assembly.
-- **The restore rehearsal still has not happened.** [../todo/PLAN_server_ops.md](../todo/PLAN_server_ops.md)
-  has said so since 2026-08-23 and it remains the largest reliability risk in the product. A script
-  that verifies its own archive is not a restore somebody has watched succeed.
+- **The restore rehearsal — corrected 2026-08-25.** This review first said it had never happened.
+  That was wrong: [../todo/PLAN_server_ops.md](../todo/PLAN_server_ops.md) records it as done on
+  2026-08-23, end to end against the published image, and the operator re-checked it on 2026-08-25
+  and reports it working. The error came from reading that plan's opening summary, which still says
+  "nobody has yet rehearsed a restore", instead of item 8 four dozen lines below it, which says the
+  opposite. A stale sentence at the top of a document outranks a correct one in the middle, because
+  the top is what gets quoted.
 - **Password auth over askpass in the agent exec path** has no automated coverage — it needs a live
   SSH server. First real use is its proof.

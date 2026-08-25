@@ -1,4 +1,6 @@
+import * as fs from 'node:fs';
 import * as http from 'node:http';
+import * as path from 'node:path';
 import * as vscode from 'vscode';
 import {
   ErrorCode,
@@ -16,6 +18,12 @@ import { Grant, GrantRegistry } from './grantRegistry';
 import { UseActionRegistry } from './useActions';
 import { formatToken } from './grantToken';
 import { formatAuditLine } from './agentAuditLog';
+import {
+  AUDIT_RETAIN_DAYS,
+  auditDayFolder,
+  auditFileName,
+  auditLogsToPrune,
+} from './agentAuditFile';
 import { startLoopbackServer } from './loopbackServer';
 
 /**
@@ -45,9 +53,21 @@ export class CredsAgentServer implements vscode.Disposable {
   private port = 0;
   private running = 0;
 
+  /**
+   * Where this window's audit is written, and how many calls it has recorded.
+   *
+   * <p>The output channel alone was a buffer in the window — and since closing the
+   * window is ALSO how a grant is revoked, the record died at the moment it became
+   * history. The shared logging rule had already required a file per run for exactly
+   * this reason; the broker simply had not followed it.</p>
+   */
+  private auditPath: string | undefined;
+  private calls = 0;
+
   constructor(
     private readonly actions: UseActionRegistry,
     private readonly onUserPresent: () => void,
+    private readonly storageDir?: string,
   ) {}
 
   /** The signal every spawned child watches, so none outlives this window. */
@@ -61,9 +81,7 @@ export class CredsAgentServer implements vscode.Disposable {
    * itself succeeded (a stale key reference, say).
    */
   note = (message: string): void => {
-    this.output?.appendLine(
-      formatAuditLine({ at: new Date(), grant: '—', entityName: '', action: 'note', outcome: message }),
-    );
+    this.log({ grant: '—', entityName: '', action: 'note', outcome: message });
   };
 
   /** Bounded concurrency; `undefined` means "at the ceiling, refuse". */
@@ -112,6 +130,7 @@ export class CredsAgentServer implements vscode.Disposable {
   private ensureStarted(): Promise<void> {
     this.starting ??= (async () => {
       this.output ??= vscode.window.createOutputChannel('CredsForDevs: Agent Access');
+      this.openAuditFile();
       const { server, port } = await startLoopbackServer();
       this.server = server;
       this.port = port;
@@ -327,7 +346,63 @@ export class CredsAgentServer implements vscode.Disposable {
   }
 
   private log(entry: Omit<Parameters<typeof formatAuditLine>[0], 'at'>): void {
-    this.output?.appendLine(formatAuditLine({ ...entry, at: new Date() }));
+    // Numbered because nothing caps how many calls one grant may make. A ceiling
+    // would have to guess a number; a running count costs nothing and shows a
+    // runaway agent loop to whoever reads the file afterwards.
+    this.calls += 1;
+    const line = formatAuditLine({ ...entry, at: new Date(), seq: this.calls });
+    this.output?.appendLine(line);
+    this.appendToFile(line);
+  }
+
+  /**
+   * The durable half. Best-effort in every direction: an unwritable storage
+   * directory must not stop the broker from serving, because a missing audit line
+   * is a smaller harm than a credential feature that refuses to work.
+   */
+  private appendToFile(line: string): void {
+    if (this.auditPath === undefined) {
+      return;
+    }
+    try {
+      fs.appendFileSync(this.auditPath, `${line}
+`, 'utf8');
+    } catch {
+      // See above.
+    }
+  }
+
+  /** Open this run's file and sweep whatever has aged out. */
+  private openAuditFile(): void {
+    if (this.storageDir === undefined) {
+      return;
+    }
+    const startedAt = new Date();
+    const root = path.join(this.storageDir, 'logs');
+    const day = auditDayFolder(startedAt);
+    try {
+      fs.mkdirSync(path.join(root, day), { recursive: true });
+      this.auditPath = path.join(root, day, auditFileName(startedAt, process.pid));
+      this.sweepOldAudits(root, startedAt);
+    } catch {
+      this.auditPath = undefined;
+    }
+  }
+
+  private sweepOldAudits(root: string, now: Date): void {
+    try {
+      const found = fs
+        .readdirSync(root, { withFileTypes: true })
+        .filter((entry) => entry.isDirectory())
+        .flatMap((dir) =>
+          fs.readdirSync(path.join(root, dir.name)).map((fileName) => ({ day: dir.name, fileName })),
+        );
+      for (const stale of auditLogsToPrune(found, AUDIT_RETAIN_DAYS, now)) {
+        fs.rmSync(path.join(root, stale.day, stale.fileName), { force: true });
+      }
+    } catch {
+      // A folder we cannot read is a folder we do not prune.
+    }
   }
 
   dispose(): void {

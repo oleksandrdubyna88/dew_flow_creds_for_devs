@@ -7,7 +7,9 @@ import { formatAuditLine } from '../agentAuditLog';
  * what happened — and must never be the place the secret finally leaks.
  */
 
-const at = new Date(2026, 7, 24, 9, 5, 3);
+// Explicitly UTC: the formatter renders UTC, so a local-time fixture would make
+// these assertions pass in one timezone and fail in another.
+const at = new Date('2026-08-24T09:05:03Z');
 
 test('a line names the action, the entity, the grant and the outcome', () => {
   const line = formatAuditLine({
@@ -19,12 +21,12 @@ test('a line names the action, the entity, the grant and the outcome', () => {
     detail: 'uname -a',
   });
 
-  assert.equal(line, '[09:05:03] exec prod-db (A1b2C3…) → exit 0  uname -a');
+  assert.equal(line, '[09:05:03Z] exec prod-db (A1b2C3…) → exit 0  uname -a');
 });
 
 test('the detail is optional', () => {
   const line = formatAuditLine({ at, grant: 'g…', entityName: 'x', action: 'terminal', outcome: 'opened' });
-  assert.equal(line, '[09:05:03] terminal x (g…) → opened');
+  assert.equal(line, '[09:05:03Z] terminal x (g…) → opened');
 });
 
 test('one call is always one line, however the detail is shaped', () => {
@@ -64,4 +66,18 @@ test('the formatter is only ever handed a grant LABEL — a full secret would be
   const line = formatAuditLine({ at, grant: 'S3cr3t…', entityName: 'x', action: 'exec', outcome: 'exit 0' });
 
   assert.equal(line.includes(secret), false);
+});
+
+test('the clock is UTC, so a line lines up with a server log written elsewhere', () => {
+  // The file NAME is UTC; a local-time line inside it would put two timezones in
+  // one file, and correlating an incident is the only time anyone reads it.
+  const line = formatAuditLine({
+    at: new Date('2026-08-25T11:40:07Z'),
+    grant: 'abc123…',
+    entityName: 'prod',
+    action: 'exec',
+    outcome: 'exit 0',
+  });
+
+  assert.match(line, /^\[11:40:07Z\]/);
 });

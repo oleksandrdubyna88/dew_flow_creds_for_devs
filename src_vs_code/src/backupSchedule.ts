@@ -75,19 +75,36 @@ function takenAt(fileName: string): Date | undefined {
  * backups matter. Anything this cannot parse belongs to somebody else and is left
  * alone.</p>
  */
-export function snapshotsToPrune(fileNames: string[], retainDays: number, now: Date): string[] {
+/** One named thing with a time on it — a snapshot, a log file, anything dated. */
+export interface DatedFile {
+  name: string;
+  when: Date;
+}
+
+/**
+ * Which of a dated set have aged out. Extracted from `snapshotsToPrune` when the
+ * agent audit log needed the same two rules, and they are rules rather than
+ * arithmetic: `retainDays <= 0` keeps everything forever, and the newest is never
+ * a candidate whatever its age — a machine nobody opened for a year must not come
+ * back to an empty folder on the one day somebody needs it.
+ */
+export function agedOut(dated: readonly DatedFile[], retainDays: number, now: Date): string[] {
   if (retainDays <= 0) {
     return [];
   }
+  const cutoff = now.getTime() - retainDays * 24 * 60 * 60 * 1000;
+  return [...dated]
+    .sort((a, b) => b.when.getTime() - a.when.getTime())
+    .slice(1)
+    .filter((entry) => entry.when.getTime() < cutoff)
+    .map((entry) => entry.name);
+}
 
+export function snapshotsToPrune(fileNames: string[], retainDays: number, now: Date): string[] {
   const dated = fileNames
     .map((name) => ({ name, when: takenAt(name) }))
-    .filter((entry): entry is { name: string; when: Date } => entry.when !== undefined)
-    .sort((a, b) => b.when.getTime() - a.when.getTime());
-
-  const cutoff = now.getTime() - retainDays * 24 * 60 * 60 * 1000;
-  // `slice(1)` is the whole guarantee: the newest is never a candidate.
-  return dated.slice(1).filter((entry) => entry.when.getTime() < cutoff).map((entry) => entry.name);
+    .filter((entry): entry is DatedFile => entry.when !== undefined);
+  return agedOut(dated, retainDays, now);
 }
 
 /**
