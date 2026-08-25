@@ -26,7 +26,7 @@ flowchart TD
     subgraph Domain
         SYNC[syncManager.ts]
         MERGE[syncMerge.ts + versionVector.ts + syncIdle.ts<br/>pure, causal]
-        SHARE[sharingManager.ts + shareFormat.ts]
+        SHARE[shareInbox.ts<br/>sharingManager.ts + shareFormat.ts]
         BACKUP[backupManager.ts]
     end
 
@@ -646,6 +646,14 @@ answer leaves the caller exactly where it was, on the configured setting. Breaki
 discovery step would be a worse failure than the one it exists to fix.
 
 ## Sharing
+
+The moving parts split three ways (audit A1): `shareFormat.ts` is the pure crypto,
+`sharingManager.ts` is the data source (team lists, the inbox files), and `ShareInbox`
+(`shareInbox.ts`, explicit-deps constructor after the `SyncManager` pattern) is the whole
+CONVERSATION — recipient picking, the one-time PIN, delivery and its error report, the sender
+check, the accept round-robin, and the import into the tree (fresh local id; same-sender update
+recorded as a revision first). The `activate()` handlers only resolve what was clicked.
+`shareInbox.test.ts` drives the accept paths through the REAL seal/open crypto.
 
 `sealShare()` encrypts a `SharePayload` under `scrypt(recipientKeyId + PIN)`, where `recipientKeyId`
 is the recipient's `accountId` for folder transport and their **email** for the server. The

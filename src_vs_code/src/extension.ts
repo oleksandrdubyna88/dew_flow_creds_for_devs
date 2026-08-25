@@ -19,10 +19,8 @@ import { EntityFormValues, KeyCandidate, showEntityForm } from './entityFormPane
 import { showEntityView } from './entityViewPanel';
 import { GoogleAuthProvider } from './googleAuthProvider';
 import { nasPathFor, setAccountNasPath } from './nasPaths';
-import { describeSender } from './shareSender';
 import { keyringMayBeUnprotected, keyringWarningMessage } from './keyringWarning';
 import { confirmCommandMessage, isCommandTrusted, trustCommand } from './commandTrust';
-import { judgeSender, pinSenderKey, pinnedKey, verdictBlocksAccept } from './senderPinning';
 import { keyFingerprint } from './shareSignature';
 import { diagnoseTeamFailure, teamFailureIsActionable } from './teamDiagnosis';
 import {
@@ -63,7 +61,8 @@ import { sshExecAction, sshTerminalAction } from './sshUseActions';
 import { buildAgentSnippet, buildKindSnippet } from './agentShareSnippet';
 import { DB_DEFAULT_PORTS, parseDbConnectionString } from './dbConnString';
 import { openInDbExtension } from './dbLauncher';
-import { openShare, resolveShares, sealShare, shareTranscript, sharesFromEnvelope } from './shareFormat';
+import { sharesFromEnvelope } from './shareFormat';
+import { ShareInbox } from './shareInbox';
 import { SharingManager } from './sharingManager';
 import { TransportFactory } from './transportFactory';
 import { VaultKeys } from './vaultKeys';
@@ -101,7 +100,6 @@ import { scriptRunPlan } from './scriptRun';
 import { buildExternalBundle, isExternalBundle, remapExternalIds } from './externalBundle';
 import { withoutPassword } from './dbConnString';
 import { SelectedNode, describeSkips, resolveSelection } from './selectionResolver';
-import { recordOrigin, resolveOrigin } from './shareOrigin';
 import {
   credentialExportEnvAction,
   dbQueryAction,
@@ -114,9 +112,7 @@ import {
   EntityKind,
   StoredAccount,
   EntityMetadata,
-  OwnedShare,
   SharePayload,
-  TeamMember,
   TreeElement,
   TreeNode,
   kindOf,
@@ -125,8 +121,6 @@ import {
 
 /** Set in activate(); the module-level slot keeps editNode's signature unchanged. */
 let envCollection: vscode.GlobalEnvironmentVariableCollection;
-
-const ORIGINS_KEY = 'credSshManager.shareOrigins';
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
   envCollection = context.environmentVariableCollection;
@@ -1845,145 +1839,15 @@ ${detail}
 
   // ---------- sharing ----------
 
-  const promptSharePin = async (confirm: boolean): Promise<string | undefined> => {
-    const pin = await vscode.window.showInputBox({
-      title: 'One-time share PIN',
-      prompt: 'Encrypts the shared item. Tell it to the recipient out-of-band.',
-      password: true,
-      ignoreFocusOut: true,
-      validateInput: validatePin,
-    });
-    if (pin === undefined || !confirm) {
-      return pin;
-    }
-    const repeat = await vscode.window.showInputBox({
-      title: 'One-time share PIN',
-      prompt: 'Repeat the PIN',
-      password: true,
-      ignoreFocusOut: true,
-    });
-    if (repeat !== pin) {
-      void vscode.window.showErrorMessage('PINs do not match — cancelled.');
-      return undefined;
-    }
-    return pin;
-  };
-
-  const pickRecipients = async (
-    senderAccountId: string,
-    preselected?: TeamMember,
-  ): Promise<TeamMember[] | undefined> => {
-    if (preselected !== undefined) {
-      return [preselected];
-    }
-    // Teams are account-scoped: offer only the sender account's NAS folder.
-    const sender = storage.getAccount(senderAccountId);
-    const candidates = sender !== undefined ? sharing.teamFor(sender) : [];
-    if (candidates.length === 0) {
-      void vscode.window.showInformationMessage(
-        'No team found on this account\'s NAS folder — people appear after their first sync there.',
-      );
-      return undefined;
-    }
-    const picked = await vscode.window.showQuickPick(
-      candidates.map((m) => ({
-        label: m.isSelf ? `${m.account.email} (you)` : m.account.email,
-        description: m.account.provider,
-        member: m,
-      })),
-      { title: 'Share with…', canPickMany: true, placeHolder: 'Type to filter by email' },
-    );
-    return picked === undefined || picked.length === 0
-      ? undefined
-      : picked.map((p) => p.member);
-  };
-
-  const deliverSharesBatch = async (
-    senderAccountId: string,
-    payloads: SharePayload[],
-    recipients: TeamMember[],
-    pin: string,
-  ): Promise<void> => {
-    const sender = storage.getAccount(senderAccountId);
-    if (sender === undefined) {
-      return;
-    }
-    const delivered: string[] = [];
-    const failed: string[] = [];
-    // Sign only where a signature means anything. The server stamps the sender
-    // from a verified token, which is stronger than anything a client can sign and
-    // needs no key distribution; on a folder there is nothing else to go on.
-    const location = nasPathFor(sender);
-    const signing =
-      location !== undefined && !isServerLocation(location)
-        ? await storage.ensureSigningKeypair(sender.accountId)
-        : undefined;
-    for (const recipient of recipients) {
-      try {
-        const items = payloads.map((p) =>
-          sealShare(
-            p,
-            recipient.shareKeyId,
-            sender,
-            pin,
-            Date.now(),
-            signing,
-            recipient.account.email,
-          ),
-        );
-        await sharing.appendShares(sender, recipient, items);
-        delivered.push(recipient.account.email);
-      } catch (error) {
-        failed.push(
-          `${recipient.account.email}: ${error instanceof Error ? error.message : String(error)}`,
-        );
-      }
-    }
-    const what =
-      payloads.length === 1 ? `"${payloads[0].node.name}"` : `${payloads.length} entities`;
-    if (failed.length > 0) {
-      void vscode.window.showErrorMessage(
-        `Share finished with errors — delivered: ${delivered.length}, failed: ${failed.join('; ')}`,
-      );
-    } else {
-      void vscode.window.showInformationMessage(
-        `Shared ${what} with ${delivered.join(', ')}. Tell them the PIN out-of-band.`,
-      );
-    }
-    void sharing.reload();
-  };
-  const deliverShares = (
-    senderAccountId: string,
-    payload: SharePayload,
-    recipients: TeamMember[],
-    pin: string,
-  ): Promise<void> => deliverSharesBatch(senderAccountId, [payload], recipients, pin);
-
-  // Collect every entity in a folder subtree, with its folder chain.
-  const collectFolderPayloads = async (
-    accountId: string,
-    folder: TreeNode,
-  ): Promise<SharePayload[]> => {
-    const payloads: SharePayload[] = [];
-    const walk = async (
-      node: TreeNode,
-      path: Array<{ name: string; folderType?: TreeNode['folderType'] }>,
-    ): Promise<void> => {
-      if (node.type === 'entity') {
-        payloads.push({
-          ...(await buildSharePayload(storage, accountId, node)),
-          folderPath: path,
-        });
-        return;
-      }
-      const childPath = [...path, { name: node.name, folderType: node.folderType }];
-      for (const child of storage.getChildren(accountId, node.id)) {
-        await walk(child, childPath);
-      }
-    };
-    await walk(folder, []);
-    return payloads;
-  };
+  // The whole sharing conversation — sealing, delivery, sender checks, the accept
+  // round-robin, the import — lives in ShareInbox (audit A1); the handlers below only
+  // resolve what was clicked.
+  const shareInbox = new ShareInbox({
+    storage,
+    sharing,
+    state: context.globalState,
+    onMutated: mutated,
+  });
 
   register('credSshManager.shareEntity', async (target, selected) => {
     const { targets, skippedNote } = resolveBulkTargets(storage, target, selected);
@@ -1993,34 +1857,10 @@ ${detail}
     if (skippedNote !== '') {
       void vscode.window.showWarningMessage(skippedNote);
     }
-    const accountId = targets[0].accountId;
-    // One list of payloads across everything selected — delivery already batched, so
-    // recipients and the share PIN are asked for once whatever the selection size.
-    const payloads: SharePayload[] = [];
-    for (const t of targets) {
-      payloads.push(
-        ...(t.node.type === 'entity'
-          ? [await buildSharePayload(storage, accountId, t.node)]
-          : await collectFolderPayloads(accountId, t.node)),
-      );
-    }
-    if (payloads.length === 0) {
-      void vscode.window.showInformationMessage(
-        targets.length === 1
-          ? `Folder "${targets[0].node.name}" holds no entities — nothing to share.`
-          : 'Nothing to share — the selected folders hold no entities.',
-      );
-      return;
-    }
-    const recipients = await pickRecipients(accountId);
-    if (recipients === undefined) {
-      return;
-    }
-    const pin = await promptSharePin(true);
-    if (pin === undefined) {
-      return;
-    }
-    await deliverSharesBatch(accountId, payloads, recipients, pin);
+    await shareInbox.shareNodes(
+      targets[0].accountId,
+      targets.map((t) => t.node),
+    );
   });
 
   // Author an entity directly FOR someone else — nothing stays local.
@@ -2035,7 +1875,7 @@ ${detail}
       return;
     }
     const preselected = element?.kind === 'teamMember' ? element.member : undefined;
-    const recipients = await pickRecipients(sender.accountId, preselected);
+    const recipients = await shareInbox.pickRecipients(sender.accountId, preselected);
     if (recipients === undefined) {
       return;
     }
@@ -2054,7 +1894,7 @@ ${detail}
     if (result === undefined) {
       return;
     }
-    const pin = await promptSharePin(true);
+    const pin = await shareInbox.promptSharePin(true);
     if (pin === undefined) {
       return;
     }
@@ -2075,174 +1915,8 @@ ${detail}
         notes: result.newNotes,
       },
     };
-    await deliverShares(sender.accountId, payload, recipients, pin);
+    await shareInbox.deliver(sender.accountId, payload, recipients, pin);
   });
-
-  const importShared = async (share: OwnedShare, payload: SharePayload): Promise<void> => {
-    // Recreate (or reuse by name) the sender's folder chain, if any.
-    let parentId: string | null = null;
-    for (const seg of payload.folderPath ?? []) {
-      const existing: TreeNode | undefined = storage
-        .getChildren(share.accountId, parentId)
-        .find((n) => n.type === 'folder' && n.name === seg.name);
-      if (existing !== undefined) {
-        parentId = existing.id;
-      } else {
-        const folderId = StorageManager.newId();
-        await storage.addNode(share.accountId, {
-          id: folderId,
-          name: seg.name,
-          type: 'folder',
-          parentId,
-          folderType: seg.folderType,
-        });
-        parentId = folderId;
-      }
-    }
-    // Is this an update of something the SAME sender sent before? The map is ours,
-    // keyed by (their address, their id) — a sender can never address an entry they
-    // never sent, which is what the fresh-id rule was protecting.
-    const origins = context.globalState.get<Record<string, string>>(ORIGINS_KEY, {});
-    const previousId = resolveOrigin(
-      origins,
-      share.item.fromEmail,
-      payload.node.id,
-      (id) => storage.getNode(share.accountId, id) !== undefined,
-    );
-
-    let node: TreeNode;
-    if (previousId !== undefined) {
-      const existing = storage.getNode(share.accountId, previousId);
-      const choice = await vscode.window.showWarningMessage(
-        `"${existing?.name}" already came from ${share.item.fromEmail}. Update it in place, or keep both?`,
-        { modal: true },
-        'Update it',
-        'Keep both',
-      );
-      if (choice === undefined) {
-        // Dismissed on purpose: the human wants to look before deciding. The share must
-        // survive that — consuming it here would destroy the only copy of the decision.
-        void vscode.window.showInformationMessage(
-          'Left in "Shared with me" — accept it again when you have decided.',
-        );
-        return;
-      }
-      if (choice === 'Update it') {
-        // Keep its place in the tree and its own id; record what it was first.
-        await storage.recordRevision(share.accountId, previousId, {
-          at: Date.now(),
-          name: existing?.name ?? payload.node.name,
-          details: existing?.details ?? payload.node.details!,
-          secrets: {
-            password: await storage.getPassword(share.accountId, previousId),
-            privateKey: await storage.getPrivateKey(share.accountId, previousId),
-            vpnConfig: await storage.getVpnConfig(share.accountId, previousId),
-            dbConnection: await storage.getDbConnection(share.accountId, previousId),
-            notes: await storage.getNotes(share.accountId, previousId),
-          },
-        });
-        node = {
-          ...payload.node,
-          id: previousId,
-          parentId: existing?.parentId ?? parentId,
-          createdAt: existing?.createdAt,
-          children: undefined,
-        };
-        await storage.updateNode(share.accountId, node);
-      } else {
-        node = { ...payload.node, id: StorageManager.newId(), parentId, children: undefined };
-        await storage.addNode(share.accountId, node);
-      }
-    } else {
-      // A fresh local id: a peer must never address (and thus silently overwrite) an
-      // entity that already exists in our vault.
-      node = { ...payload.node, id: StorageManager.newId(), parentId, children: undefined };
-      await storage.addNode(share.accountId, node);
-    }
-    await context.globalState.update(
-      ORIGINS_KEY,
-      recordOrigin(origins, share.item.fromEmail, payload.node.id, node.id),
-    );
-    const { password, privateKey, vpnConfig, dbConnection } = payload.secrets;
-    await storage.setPassword(share.accountId, node.id, password);
-    if (privateKey !== undefined) {
-      await storage.setPrivateKey(share.accountId, node.id, privateKey);
-    }
-    if (vpnConfig !== undefined) {
-      await storage.setVpnConfig(share.accountId, node.id, vpnConfig);
-    }
-    if (dbConnection !== undefined) {
-      await storage.setDbConnection(share.accountId, node.id, dbConnection);
-    }
-    if (payload.secrets.notes !== undefined) {
-      await storage.setNotes(share.accountId, node.id, payload.secrets.notes);
-    }
-    await sharing.removeOwnShare(share);
-  };
-
-  /**
-   * What the recipient is allowed to conclude about who sent this, and whether to
-   * go on. Runs BEFORE the PIN prompt: a share whose sender cannot be trusted
-   * should never reach the point where somebody is typing a secret for it.
-   */
-  const senderCheck = async (share: OwnedShare): Promise<boolean> => {
-    const account = storage.getAccount(share.accountId);
-    if (account === undefined) {
-      return false;
-    }
-    const location = nasPathFor(account);
-    if (location !== undefined && isServerLocation(location)) {
-      return true; // the server stamped it; nothing here can add to that
-    }
-
-    const verdict = judgeSender(context.globalState, share.accountId, {
-      transcript: shareTranscript(share.item, account.email),
-      signature: share.item.signature,
-    });
-
-    if (verdictBlocksAccept(verdict)) {
-      const known = pinnedKey(context.globalState, share.accountId, share.item.fromEmail);
-      const detail =
-        verdict === 'mismatch'
-          ? `This is signed by a DIFFERENT key than the one pinned for ${share.item.fromEmail}.
-
-Pinned:  ${known === undefined ? '—' : keyFingerprint(known)}
-This one: ${keyFingerprint(share.item.senderPublicKey ?? '')}
-
-Either they rotated their key, or somebody else is using their name. Compare the fingerprint with them directly before trusting it.`
-          : verdict === 'downgraded'
-            ? `${share.item.fromEmail} has signed shares before, and this one is not signed at all. That is what stripping a signature looks like.`
-            : 'The signature on this share does not verify.';
-      const choice = await vscode.window.showWarningMessage(detail, { modal: true }, 'Trust this key anyway');
-      if (choice !== 'Trust this key anyway') {
-        return false;
-      }
-      if (share.item.senderPublicKey !== undefined) {
-        await pinSenderKey(context.globalState, share.accountId, share.item.fromEmail, share.item.senderPublicKey);
-      }
-      return true;
-    }
-
-    if (verdict === 'firstContact' && share.item.senderPublicKey !== undefined) {
-      // Not "verified" — nobody has checked this key belongs to them yet. The
-      // fingerprint is the only thing that can, and it is shown here rather than
-      // buried in a command nobody runs.
-      const choice = await vscode.window.showInformationMessage(
-        `First share from ${share.item.fromEmail}. Read this fingerprint back to them before you trust it:
-
-${keyFingerprint(share.item.senderPublicKey)}
-
-After this, a share signed by any other key is refused.`,
-        { modal: true },
-        'Pin this key',
-      );
-      if (choice !== 'Pin this key') {
-        return false;
-      }
-      await pinSenderKey(context.globalState, share.accountId, share.item.fromEmail, share.item.senderPublicKey);
-    }
-    return true;
-  };
 
   /**
    * Show this account's own fingerprint, so the comparison can be two-sided.
@@ -2278,33 +1952,7 @@ Read this to whoever is accepting your first share. It only matters on a shared 
     if (element?.kind !== 'sharedItem') {
       return;
     }
-    const share = element.share;
-    if (!(await senderCheck(share))) {
-      return;
-    }
-    const pin = await vscode.window.showInputBox({
-      title: `Accept "${share.item.entityName}" from ${describeSender(
-        share.item.fromEmail,
-        senderLocation(storage, share.accountId),
-      )} — into ${storage.getAccount(share.accountId)?.email ?? 'this account'}`,
-      prompt: 'Enter the share PIN',
-      password: true,
-      ignoreFocusOut: true,
-    });
-    if (pin === undefined) {
-      return;
-    }
-    try {
-      const payload = openShare(share.item, share.shareKeyId, pin);
-      await importShared(share, payload);
-      mutated();
-      void sharing.reload();
-      void vscode.window.showInformationMessage(`Accepted "${share.item.entityName}".`);
-    } catch {
-      void vscode.window.showErrorMessage(
-        `"${share.item.entityName}" does not decrypt with that PIN.`,
-      );
-    }
+    await shareInbox.acceptOne(element.share);
   });
 
   register('credSshManager.declineShare', async (target) => {
@@ -2324,64 +1972,16 @@ Read this to whoever is accepting your first share. It only matters on a shared 
     void sharing.reload();
   });
 
-  // Round-robin accept: try known PINs on everything, ask a new PIN for the
-  // first item that resists, repeat until done or Esc.
-  const acceptMany = async (items: OwnedShare[]): Promise<void> => {
-    let remaining = items;
-    const pins: string[] = [];
-    let imported = 0;
-    while (remaining.length > 0) {
-      const next = remaining[0];
-      const pin = await vscode.window.showInputBox({
-        title:
-          pins.length === 0
-            ? 'Accept shared items'
-            : `"${next.item.entityName}" from ${next.item.fromEmail} does not decrypt`,
-        prompt:
-          pins.length === 0
-            ? 'Share PIN (tried on all items; Esc cancels)'
-            : 'Enter its PIN (Esc skips everything still locked)',
-        password: true,
-        ignoreFocusOut: true,
-      });
-      if (pin === undefined) {
-        break;
-      }
-      pins.push(pin);
-      // Only the PIN just entered — never the whole accumulated list. An item is still in
-      // `remaining` precisely because every earlier PIN already failed to open it, so
-      // re-trying them is pure waste: each retry is a full scrypt (~1s), and the old
-      // O(items × PINs-so-far) cost froze the editor for tens of seconds on a handful of
-      // shares. openShare is deterministic, so a PIN that did not open an item never will.
-      const { opened, remaining: rest } = resolveShares(remaining, [pin]);
-      for (const o of opened) {
-        await importShared(o, o.payload);
-        imported++;
-      }
-      if (opened.length === 0) {
-        void vscode.window.showWarningMessage('That PIN did not open any of the items.');
-      }
-      remaining = rest;
-    }
-    if (imported > 0) {
-      mutated();
-    }
-    void sharing.reload();
-    void vscode.window.showInformationMessage(
-      `Accepted ${imported} item(s)${remaining.length > 0 ? `, ${remaining.length} still pending` : ''}.`,
-    );
-  };
-
   register('credSshManager.acceptAllFromSender', async (target) => {
     const element = asElement(target);
     if (element?.kind !== 'sharedSender') {
       return;
     }
-    await acceptMany(sharing.ownShares.filter((s) => s.item.fromEmail === element.email));
+    await shareInbox.acceptMany(sharing.ownShares.filter((s) => s.item.fromEmail === element.email));
   });
 
   register('credSshManager.acceptAllShares', async () => {
-    await acceptMany([...sharing.ownShares]);
+    await shareInbox.acceptMany([...sharing.ownShares]);
   });
 
   // ---------- backup ----------
@@ -2949,15 +2549,6 @@ async function openEntityViewer(
 // ---------- helpers ----------
 
 /**
- * Where the account holding this share syncs — which is what decides whether the
- * share's claimed sender was stamped by a server or merely written into a file.
- */
-function senderLocation(storage: StorageManager, accountId: string): string | undefined {
-  const account = storage.getAccount(accountId);
-  return account === undefined ? undefined : nasPathFor(account);
-}
-
-/**
  * Say so, once, when this machine may have no keychain behind SecretStorage.
  *
  * <p>Once per machine, not once per window: VS Code says nothing about the
@@ -3085,22 +2676,3 @@ async function accountFromTargetOrPick(
   return pickAccount(storage, placeHolder);
 }
 
-/** Everything an entity carries, packaged for a share. */
-async function buildSharePayload(
-  storage: StorageManager,
-  accountId: string,
-  node: TreeNode,
-): Promise<SharePayload> {
-  const note = (await storage.getNotes(accountId, node.id)) ?? node.details?.notes;
-  const sharedDetails = node.details ? { ...node.details, notes: undefined } : node.details;
-  return {
-    node: { ...node, details: sharedDetails, parentId: null, children: undefined },
-    secrets: {
-      password: await storage.getPassword(accountId, node.id),
-      privateKey: await storage.getPrivateKey(accountId, node.id),
-      vpnConfig: await storage.getVpnConfig(accountId, node.id),
-      dbConnection: await storage.getDbConnection(accountId, node.id),
-      notes: note,
-    },
-  };
-}
