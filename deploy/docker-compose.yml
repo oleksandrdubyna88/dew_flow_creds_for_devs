@@ -151,7 +151,14 @@ services:
       # Drop the workers to the `nginx` user after the master has bound.
       - SETUID
       - SETGID
-      # CHOWN and DAC_OVERRIDE were tried and proved unnecessary — see below.
+      # Measured, not assumed: dropping these two was tried on 2026-08-25 and nginx
+      # refused to start — chown("/var/cache/nginx/client_temp", 101) failed
+      # (Operation not permitted) — and the edge answered 502 until they came back.
+      # The stock entrypoint chowns its cache directories to the nginx user before
+      # the workers drop privileges, and root without CAP_CHOWN cannot.
+      - CHOWN
+      # ...and writes into directories it does not own while doing so.
+      - DAC_OVERRIDE
     deploy:
       resources:
         limits:
