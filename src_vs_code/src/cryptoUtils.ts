@@ -408,9 +408,18 @@ function macCanonical(env: Record<string, unknown>): string {
  * concatenation collides: `salt="AB", iv="C"` and `salt="A", iv="BC"` would hash
  * identically and the boundary between two fields would stop meaning anything.</p>
  */
-function macMaterialV3(env: Record<string, unknown>): Buffer {
+/**
+ * Bytes that cannot be re-cut: every field length-prefixed before its content.
+ *
+ * <p>Plain concatenation collides — `salt="AB", iv="C"` hashes identically to
+ * `salt="A", iv="BC"`, so the boundary between two fields stops meaning anything
+ * and an attacker can move value from one into the next. Shared with the share
+ * transcript in `shareSignature.ts`, because a signature over an ambiguous
+ * encoding has the same defect a MAC does.</p>
+ */
+export function canonicalBytes(values: readonly unknown[]): Buffer {
   const chunks: Buffer[] = [];
-  const part = (value: unknown): void => {
+  for (const value of values) {
     const bytes = Buffer.from(
       value === undefined || value === null
         ? ''
@@ -422,11 +431,15 @@ function macMaterialV3(env: Record<string, unknown>): Buffer {
     const length = Buffer.alloc(4);
     length.writeUInt32BE(bytes.length);
     chunks.push(length, bytes);
-  };
-  for (const field of ['format', 'version', 'account', 'wraps', 'kdf', 'salt', 'iv', 'tag', 'data', 'kdfN', 'kdfR', 'kdfP'] as const) {
-    part(env[field]);
   }
   return Buffer.concat(chunks);
+}
+
+function macMaterialV3(env: Record<string, unknown>): Buffer {
+  return canonicalBytes(
+    (['format', 'version', 'account', 'wraps', 'kdf', 'salt', 'iv', 'tag', 'data', 'kdfN', 'kdfR', 'kdfP'] as const)
+      .map((field) => env[field]),
+  );
 }
 
 function computeEnvelopeMac(env: Record<string, unknown>, masterKeyBase64: Passphrase): string {
