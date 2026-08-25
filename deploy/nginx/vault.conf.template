@@ -7,6 +7,22 @@
 # NOTE: this file lives outside /etc/nginx/templates on purpose — the stock image's
 # 20-envsubst-on-templates.sh renders everything in that directory before our hook runs,
 # which would emit a half-substituted config with empty certificate paths.
+#
+# WHO THE CLIENT IS, when TLS_MODE is `none` or `custom`. Something else then terminates
+# TLS in front of this container, and `$remote_addr` is THAT proxy's address for every
+# caller alive. Found live on 2026-08-25: both rate limiters — this one and the
+# application's own anonymous partition — had collapsed into a single bucket for the whole
+# internet, because every request looked like it came from the same address.
+#
+# `set_real_ip_from` is restricted to private ranges, which is not a formality: this
+# container publishes no port, so a private address is the only way a request can arrive,
+# and a public one appearing here would mean the topology is not what this file assumes.
+set_real_ip_from 10.0.0.0/8;
+set_real_ip_from 172.16.0.0/12;
+set_real_ip_from 192.168.0.0/16;
+set_real_ip_from 127.0.0.0/8;
+real_ip_header X-Forwarded-For;
+real_ip_recursive on;
 
 server {
     listen 443 ssl default_server;
@@ -53,7 +69,12 @@ server {
         proxy_pass http://vault:8080;
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-Proto https;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        # SET from `$remote_addr`, never appended. After the real_ip block above that
+        # value is the true client in both topologies — the one this container observed
+        # when it terminates TLS itself, the one the outer proxy reported when it does
+        # not — so the app reads one entry it can trust rather than a list whose left
+        # half a caller wrote.
+        proxy_set_header X-Forwarded-For $remote_addr;
     }
 
     location /api/ {
@@ -65,7 +86,12 @@ server {
 
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        # SET from `$remote_addr`, never appended. After the real_ip block above that
+        # value is the true client in both topologies — the one this container observed
+        # when it terminates TLS itself, the one the outer proxy reported when it does
+        # not — so the app reads one entry it can trust rather than a list whose left
+        # half a caller wrote.
+        proxy_set_header X-Forwarded-For $remote_addr;
         # Always SET, never forwarded from the client: the app trusts this header, and
         # $scheme is what nginx actually terminated rather than what a caller claimed.
         proxy_set_header X-Forwarded-Proto $scheme;

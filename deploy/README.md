@@ -81,7 +81,44 @@ The two arrangements that *do* work:
   every machine's OS trust store, issue from it and use `TLS_MODE=custom`.
 
 `TLS_MODE=none` is the third option, and only honest behind another TLS terminator. Set
-`REQUIRE_HTTPS=false` with it or the app rejects every request.
+`REQUIRE_HTTPS=false` with it, or keep it `true` and have the outer proxy send
+`X-Forwarded-Proto: https` — otherwise the app rejects every request.
+
+> ### ⚠️ `none` and `custom` switch off more than TLS — read this before using either
+>
+> The hardening in `nginx/vault.conf.template` lives in the **TLS server block**. Under
+> `TLS_MODE=none` that block is never rendered, so **none of it applies**: no HSTS, no CSP,
+> no `X-Frame-Options`, no `X-Content-Type-Options`, no cipher list, no protocol floor, and
+> no `gzip off` — the last of which exists because every response body here is ciphertext
+> and compressing it beside caller-influenced data is the shape BREACH exploits.
+>
+> This is not theoretical. On 2026-08-25 a live deployment was found running `none` behind a
+> host nginx that carried **none** of it: TLS 1.0 and 1.1 still offered, no security header of
+> any kind, `gzip on`, the nginx version advertised, and no rate limiting at the edge. The
+> stack looked hardened because the template is; the template was not in the path.
+>
+> **When something else terminates TLS, that something else owns all of it.** Your outer
+> proxy must carry, at minimum:
+>
+> ```nginx
+> ssl_protocols TLSv1.2 TLSv1.3;          # 1.0 and 1.1 are deprecated (RFC 8996)
+> server_tokens off;
+> gzip off;                                # the bodies are ciphertext
+> add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+> add_header X-Content-Type-Options "nosniff" always;
+> add_header X-Frame-Options "DENY" always;
+> add_header Content-Security-Policy "default-src 'none'" always;
+>
+> proxy_set_header X-Forwarded-Proto https;
+> proxy_set_header X-Forwarded-For $remote_addr;   # SET, not appended: see below
+> limit_req zone=<your_zone> burst=40 nodelay;     # the container's own limiter cannot
+> limit_req_status 429;                            #   see past your proxy on its own
+> ```
+>
+> `X-Forwarded-For` matters more than it looks. Without it the container sees only your
+> proxy's address, and **both** rate limiters — nginx's here and the application's anonymous
+> partition — degrade to one bucket for every unauthenticated caller on the internet. Set it
+> rather than appending, so a caller cannot prepend an address of their own.
 
 ### What "not ready yet" looks like
 

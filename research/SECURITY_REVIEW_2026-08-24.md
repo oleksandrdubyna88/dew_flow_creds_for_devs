@@ -232,9 +232,14 @@ reaches any log. Errors return a fixed string, never a stack trace.
 
 **Container and edge.** The app runs as uid 10001, read-only rootfs, all capabilities dropped,
 `no-new-privileges`, and **publishes no port at all** — reachable only through nginx. No Docker
-socket is mounted anywhere. TLS 1.2/1.3 only with a modern cipher list, HSTS with
-`includeSubDomains`, CSP, `X-Content-Type-Options`, `X-Frame-Options`, and `gzip off` — the last
-deliberate, to deny a BREACH-style side channel against ciphertext.
+socket is mounted anywhere. The stack's nginx template carries TLS 1.2/1.3 only with a modern
+cipher list, HSTS with `includeSubDomains`, CSP, `X-Content-Type-Options`, `X-Frame-Options`, and
+`gzip off` — the last deliberate, to deny a BREACH-style side channel against ciphertext.
+
+> **Correction, 2026-08-25.** The sentence above is true of the template and was **false of the
+> running deployment**, which is the distinction this review failed to make. See L-1 below: the
+> live server runs `TLS_MODE=none` behind a host nginx, so that template is not in the path of a
+> single real request. Reviewing a configuration file is not reviewing a deployment.
 
 **Extension.** Webviews use `default-src 'none'` with nonce-scoped scripts and empty
 `localResourceRoots`; every interpolated field is escaped. Secrets never enter a webview, with one
@@ -246,6 +251,50 @@ wall-clock and concurrency are enforced in code rather than described in a comme
 
 **Backup and restore.** Verified archives, atomic writes, a refusal to let an empty source shadow
 a good backup, and a rollback trap that restores state on any failure.
+
+## Found on the live server, 2026-08-25 — and fixed there
+
+The review above was a code and configuration review. The next morning the deployment itself was
+inspected, and the most important finding of the whole exercise came from that, not from the code:
+**the file being reviewed was not the file serving traffic.**
+
+### L-1 · The stack's hardening was not in the path of any real request (HIGH, fixed)
+
+The server runs `TLS_MODE=none` behind a **host** nginx that terminates TLS and proxies to the
+container over loopback. That is a supported mode — and it means the hardened TLS server block in
+`nginx/vault.conf.template` is never rendered. Everything in it was therefore inert.
+
+What the public edge actually offered, measured:
+
+| | before | after |
+|---|---|---|
+| TLS versions | **TLSv1, TLSv1.1**, 1.2, 1.3 | 1.2 / 1.3 — 1.0 and 1.1 verified refused |
+| security headers | none at all | HSTS, CSP, `nosniff`, `DENY`, `no-referrer` |
+| `Server:` | `nginx/1.24.0 (Ubuntu)` | `nginx` |
+| compression of ciphertext | `gzip on` | `gzip off` |
+| edge rate limiting | none | 20 r/s + connection cap, answering **429** |
+| `X-Forwarded-For` | not set | set from `$remote_addr`, never appended |
+
+Verified by measurement rather than by reading: TLS 1.0 and 1.1 refused by `openssl s_client`; 26
+of 120 parallel requests answered 429. The two neighbouring sites on the same nginx were checked
+still serving, and both original configs were backed up beside themselves.
+
+### L-2 · Both rate limiters had collapsed into one bucket (HIGH, fixed)
+
+The extra proxy hop meant `$remote_addr` was the host nginx for every caller alive — so nginx's own
+`limit_req` in the container, and the application's anonymous partition (M-2 above), were each one
+bucket for the entire internet. The edge limiter now partitions on the real client, and
+`vault.conf.template` gained a `real_ip` block so the container resolves the true client the moment
+the new image ships. `deploy/README.md` now states plainly that `none` and `custom` hand the
+outer proxy responsibility for all of it, with the minimum configuration written out.
+
+### L-3 · An editor was holding the live vault open (fixed by the operator)
+
+`nano`, running as root since 08:45, had `…​.bin` open — the encrypted vault of a real account. The
+application rewrote that file at 08:48. One Ctrl+O would have written the 08:45 buffer over it: a
+silent rollback of the vault, losing whatever had synced in between. No plaintext was exposed (the
+file is a JSON envelope around ciphertext) and the session was closed without saving — verified
+afterwards: mtime and size unchanged, envelope intact, both key wraps present.
 
 ## What this review did not cover
 
