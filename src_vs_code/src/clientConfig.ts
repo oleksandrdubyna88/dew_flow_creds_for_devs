@@ -58,6 +58,12 @@ export class ClientConfigCache {
   }
 
   private async load(location: string): Promise<ClientConfig | undefined> {
+    // A scope fetched over plaintext http from a remote host is a scope an on-path attacker
+    // could choose — and the extension would mint a token for it and hand it back. Discover
+    // only over https, or over http to loopback where there is no network to sit on.
+    if (!isDiscoverableLocation(location)) {
+      return undefined;
+    }
     try {
       const response = await this.fetcher(`${location.replace(/\/+$/, '')}/api/client-config`);
       if (!response.ok) {
@@ -77,6 +83,44 @@ export function defaultConfigFetcher(url: string): Promise<Response> {
   return fetch(url, { signal: AbortSignal.timeout(TIMEOUT_MS) });
 }
 
+function isLoopbackHost(hostname: string): boolean {
+  return (
+    hostname === 'localhost' ||
+    hostname === '127.0.0.1' ||
+    hostname === '::1' ||
+    hostname === '[::1]'
+  );
+}
+
+/**
+ * Whether a scope may be discovered from this location at all. https is trusted; plain
+ * http only for loopback, where there is no network path for a man in the middle. Anything
+ * else falls back to the operator's own setting rather than a value an attacker could pick.
+ */
+export function isDiscoverableLocation(location: string): boolean {
+  try {
+    const url = new URL(location);
+    return url.protocol === 'https:' || (url.protocol === 'http:' && isLoopbackHost(url.hostname));
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Whether a server-advertised scope is safe to request a token for.
+ *
+ * <p>The confused-deputy this closes: the extension asks Entra for whatever scope the
+ * server (an anonymous endpoint) names, then hands the resulting token back to that same
+ * server. If the server could name a <b>first-party</b> Microsoft scope — a Graph
+ * permission, a `.default` — it could make the extension mint a Graph token for the user
+ * and deliver it. Only an application-specific `api://…/scope` is allowed: a token for that
+ * audience is useless anywhere but the app registration that named it.</p>
+ */
+export function isSafeAdvertisedScope(scope: string): boolean {
+  const s = scope.trim();
+  return s.length > 0 && s.length <= 512 && /^api:\/\/\S+\/[A-Za-z0-9._-]+$/.test(s);
+}
+
 /**
  * Which scope to ask for, given what the server said and what the user configured.
  *
@@ -89,5 +133,10 @@ export function resolveMicrosoftScope(
   advertised: string | undefined,
 ): string {
   const explicit = (configured ?? '').trim();
-  return explicit.length > 0 ? explicit : (advertised ?? '').trim();
+  if (explicit.length > 0) {
+    return explicit; // a person typed it — trusted, and never overridden by a machine
+  }
+  const fromServer = (advertised ?? '').trim();
+  // The server's value is unauthenticated data: use it only if it is an app-specific scope.
+  return isSafeAdvertisedScope(fromServer) ? fromServer : '';
 }

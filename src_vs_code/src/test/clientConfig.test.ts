@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { ClientConfigCache, resolveMicrosoftScope } from '../clientConfig';
+import {
+  ClientConfigCache,
+  isDiscoverableLocation,
+  isSafeAdvertisedScope,
+  resolveMicrosoftScope,
+} from '../clientConfig';
 
 /**
  * The goal this serves, in the operator's words: a developer signs in, points at
@@ -100,4 +105,44 @@ test('an explicit setting beats what the server advertises', () => {
   assert.equal(resolveMicrosoftScope('  ', 'api://theirs/y'), 'api://theirs/y');
   assert.equal(resolveMicrosoftScope(undefined, 'api://theirs/y'), 'api://theirs/y');
   assert.equal(resolveMicrosoftScope(undefined, undefined), '');
+});
+
+test('a server-advertised first-party scope is refused — the confused-deputy guard', () => {
+  // The server names the scope, the extension mints a token for it and hands it BACK to
+  // that server. If the server could name a Graph scope, it would get a Graph token for
+  // the user. Only an app-specific api://…/scope is honoured.
+  assert.equal(isSafeAdvertisedScope('api://d0757763-25f7/vault.access'), true);
+  assert.equal(isSafeAdvertisedScope('api://contoso.com/api/vault.access'), true);
+  assert.equal(isSafeAdvertisedScope('https://graph.microsoft.com/User.Read'), false);
+  assert.equal(isSafeAdvertisedScope('User.Read'), false);
+  assert.equal(isSafeAdvertisedScope('.default'), false);
+  assert.equal(isSafeAdvertisedScope('api://x/scope with space'), false);
+  assert.equal(isSafeAdvertisedScope(''), false);
+});
+
+test('an advertised Graph scope is dropped, and the explicit setting still wins', () => {
+  assert.equal(resolveMicrosoftScope(undefined, 'https://graph.microsoft.com/.default'), '');
+  assert.equal(resolveMicrosoftScope(undefined, 'User.Read'), '');
+  // A typed value is trusted even when the server tries to advertise a Graph scope.
+  assert.equal(
+    resolveMicrosoftScope('api://mine/vault.access', 'https://graph.microsoft.com/.default'),
+    'api://mine/vault.access',
+  );
+});
+
+test('discovery runs over https, or http only to loopback — never plaintext to a remote host', () => {
+  assert.equal(isDiscoverableLocation('https://vault.corp.com'), true);
+  assert.equal(isDiscoverableLocation('http://localhost:5173'), true);
+  assert.equal(isDiscoverableLocation('http://127.0.0.1:8080'), true);
+  assert.equal(isDiscoverableLocation('http://vault.corp.com'), false); // MITM could pick the scope
+  assert.equal(isDiscoverableLocation('not a url'), false);
+});
+
+test('the cache does not even fetch a scope over plaintext http to a remote host', async () => {
+  // If load() short-circuits, the fetcher is never called — proven by it throwing if it is.
+  const f = fetcher({});
+  const cache = new ClientConfigCache(f.fetch);
+
+  assert.equal(await cache.forLocation('http://vault.corp.com'), undefined);
+  assert.deepEqual(f.calls, []); // no request left the machine
 });
