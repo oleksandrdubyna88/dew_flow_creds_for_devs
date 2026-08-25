@@ -8,13 +8,15 @@ $EDITOR .env
 docker compose up -d
 ```
 
-That brings up three containers:
+That brings up five services:
 
 | Container | Job |
 |---|---|
+| `init` | one-shot: hands the bind mounts to the vault's uid, then exits |
 | `vault` | the API. Publishes no port — the only way in is nginx |
 | `nginx` | TLS termination, security headers, per-IP rate limiting, the ACME challenge webroot |
 | `certbot` | obtains the certificate, then renews it forever |
+| `backup` | idles on a timer, writing verified archives of the data (read-only) to a path you choose — see *Backups* below |
 
 ## Decision 1 — who may sign in
 

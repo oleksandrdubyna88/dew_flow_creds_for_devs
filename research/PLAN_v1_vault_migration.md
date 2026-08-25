@@ -92,8 +92,8 @@ they became v3 the moment the sync vault did — no change needed.
 
 ## Definition of Done
 
-- [ ] No code path writes a v1 envelope; `encryptJson` (v1) is used only where it still must read old files.
-- [ ] `wrapPinVault` is tested red-first; the migrated envelope round-trips and rejects a wrong PIN.
-- [ ] A v1 vault migrates on its next sync; a new PIN-only vault is v3 on first write.
-- [ ] `module_extension.md` updated (v1 is now read-only/legacy; every write is v3).
-- [ ] Plan promoted to `research/` with deviations recorded.
+- [x] No code path writes a v1 envelope; `encryptJson` (v1) is used only where it still must read old files.
+- [x] `wrapPinVault` is tested red-first; the migrated envelope round-trips and rejects a wrong PIN.
+- [x] A v1 vault migrates on its next sync; a new PIN-only vault is v3 on first write.
+- [x] `module_extension.md` updated (v1 is now read-only/legacy; every write is v3).
+- [x] Plan promoted to `research/` with deviations recorded.

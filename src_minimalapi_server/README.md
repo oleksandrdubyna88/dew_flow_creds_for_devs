@@ -31,6 +31,7 @@ keys). PINs, passwords, keys, and VPN configs never leave the machines.
 | GET | `/api/whoami` | resolved caller + whether a vault exists | any allowed caller |
 | GET | `/api/vault` | download **your** vault blob | token email only |
 | PUT | `/api/vault` | upload **your** vault blob (`application/octet-stream`) | token email only |
+| DELETE | `/api/vault` | delete **your** vault and inbox (account removal) | token email only |
 | GET | `/api/team` | emails of everyone with a vault (same allowed domains) | any allowed caller |
 | POST | `/api/shares` | share one sealed entity with someone | sender = token email |
 | GET | `/api/shares` | **your** pending shares | recipient = token email |
@@ -61,6 +62,7 @@ Environment variables (double underscore = section separator) or
 | `Vault__MaxInboxItems` | pending shares per recipient (default 500) |
 | `Vault__AllowAnyDomain` | `true` to run with no domain boundary (the server refuses to start if `AllowedDomains` is empty and this is false) |
 | `Vault__RequireForwardedHttps` | refuse any request not forwarded as https. Enable ONLY when the app's port is unreachable except through your TLS proxy |
+| `Vault__PublishInstanceFile` | publish this instance for the DewFlow editor panel (default `true`; the container sets `false`) |
 | `Vault__RateLimit__PermitLimit` | requests per window, per caller (default 120) |
 | `Vault__RateLimit__WindowSeconds` | the window (default 10) |
 | `Logging__Directory` | root of the per-run log files (default `<app>/logs`) |
@@ -94,7 +96,7 @@ speaks plain HTTP and expects the proxy to add HTTPS.
 
 ## Tests
 
-`tests/` is 57 xUnit v3 tests on Microsoft Testing Platform, hosted **in-process** through
+`tests/` is 64 xUnit v3 tests on Microsoft Testing Platform, hosted **in-process** through
 `WebApplicationFactory` — no free port, no background `dotnet run`, ~1.5 seconds. They cover the
 auth gates (including forged `alg=none`, wrong-key, missing-claim and expired tokens), domain
 enforcement, vault isolation and size caps, team listing, share delivery with sender stamping,

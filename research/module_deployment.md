@@ -18,6 +18,7 @@ flowchart LR
         V["vault<br/>uid 10001, read-only rootfs<br/>NO published port"]
         N["nginx<br/>:80 :443"]
         B["certbot<br/>issue + renew loop"]
+        BK["backup (root)<br/>verified archives, on a timer"]
     end
 
     W["Workstations<br/>(the extension)"] -->|HTTPS| N
@@ -28,9 +29,10 @@ flowchart LR
     B -->|writes| C
     N -->|reads| C
     B -.->|"HTTP-01 via shared webroot"| N
+    BK -.->|"reads read-only"| D
 ```
 
-Four services, one of which exits immediately.
+Five services, one of which exits immediately.
 
 | Service | Runs as | Ports | Why it exists |
 |---|---|---|---|

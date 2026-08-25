@@ -1,6 +1,6 @@
 # Module: Cred Vault Server
 
-`src_minimalapi_server/` — a .NET 10 minimal API, four source files, that stores ciphertext it
+`src_minimalapi_server/` — a .NET 10 minimal API, eight source files, that stores ciphertext it
 cannot read.
 
 > This document is the **single statement of the HTTP contract**. It is implemented twice: in
@@ -14,7 +14,7 @@ without giving everyone read access to everyone's encrypted files — and so tha
 shared secret is a fact rather than a claim.
 
 It is deliberately small. There is no database, no ORM, no background service, no admin UI. The
-whole server is ~470 lines.
+whole server is ~1,450 lines.
 
 ## Files
 
@@ -26,6 +26,8 @@ whole server is ~470 lines.
 | `src/Models.cs` | `ShareItem`, `ShareRequest`, `TeamMemberDto`, `WhoAmIDto` |
 | `src/Logging.cs` | Serilog: console + a file per run |
 | `src/InstanceFile.cs` | Publishes where this instance is listening, for the DewFlow editor panel |
+| `src/HealthProbe.cs` | The container healthcheck the binary runs against itself (no curl in the image) |
+| `src/AppJsonContext.cs` | The `JsonSerializerContext` source-gen contract that makes Native AOT possible |
 
 ## The request pipeline
 
@@ -193,7 +195,7 @@ therefore never sees a partial blob, which is what lets `deploy/backup.sh` archi
 
 ## Tests
 
-`src_minimalapi_server/tests/` — xUnit v3 on Microsoft Testing Platform, 36 tests, ~1.5 s, entirely
+`src_minimalapi_server/tests/` — xUnit v3 on Microsoft Testing Platform, 64 tests, ~1.5 s, entirely
 in-process through `WebApplicationFactory`. No free port, no background `dotnet run`.
 
 ```bash
@@ -213,6 +215,10 @@ Never `dotnet test` — there is no VSTest host here and it aborts.
 | `RateLimitTests` | One caller cannot lock out another; a caller who overruns is still throttled |
 | `ForwardedHttpsTests` | A missing header is refused; health stays exempt |
 | `InboxScaleTests` | A large inbox lists completely; a corrupted item is skipped |
+| `StartupGuardTests` | The four fail-fast startup guards each refuse to boot with the wrong config |
+| `ConcurrencyTests` | `If-Match`/`If-None-Match` optimistic-concurrency semantics on `PUT /api/vault` |
+| `InstanceFileTests` | The instance-file publish/withdraw lifecycle |
+| `ClientConfigTests`, `HealthProbeUrlTests` | (nested in `HealthTests.cs`) the advertised scope, and the probe URL |
 
 Configuration reaches the app through **process environment variables**, not
 `WithWebHostBuilder` — `Program.cs` reads `builder.Configuration` before `Build()`, so anything a
