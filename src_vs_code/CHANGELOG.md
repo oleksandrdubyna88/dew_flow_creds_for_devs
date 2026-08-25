@@ -68,6 +68,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Bounded on purpose: 256 KB of output per stream, 30 s per command (raisable to 120 s), 8 at a
   time, and every child killed when the window goes.
 
+## [0.53.2] — 2026-08-25
+
+### Fixed
+
+- **The entity form showed every kind's fields at once, and the Type it opened with was
+  wrong.** One broken string literal in the form's page script — an escaped newline that
+  collapsed to a real one while the file was being edited — stopped the whole script from
+  parsing. Nothing in the UI said so: what you saw was General, Connection, SSH key, VPN,
+  Database, Terminal, Script and Secret all stacked in one window, because the code that
+  hides the irrelevant ones never ran. The same dead script is why the folder's type was
+  not applied, why the script editor had no highlighting, and why pasting into the script
+  box left text you could only see by selecting it.
+
+- **`Script` was missing from the Type selector entirely.** The list of kinds was written
+  out by hand next to the table that already holds them, and it stopped at six. With no
+  option carrying the `script` value, the browser fell back to showing the first one — so
+  `+` inside a script folder opened a form calling itself *Credential — name + secret
+  value*, and a script entity could not be created from the selector at all. The selector
+  is now generated from the kind table, so an absent kind is impossible and an absent
+  label is a compile error.
+
+- **The script editor no longer hides your text when highlighting is unavailable.** The
+  editor draws highlighted code on a layer under a transparent textarea; the textarea now
+  only turns transparent once that layer has actually painted, and reverts if it stops
+  answering. Highlighting also refreshes a frame after a keystroke instead of an eighth of
+  a second, so what you type is never briefly invisible.
+
+- **A database entity offered two identical rows reading "Expose in terminals as env
+  variable".** Each row now names what it exports — the connection string, or the database
+  password — and the password's row sits beside the password field instead of twenty lines
+  above it, where it also split the connection string from its own hint.
+
+### Added
+
+- Tests that render both webviews for real and parse their page scripts, for every entity
+  kind. A webview script has no compiler between the template string and the browser, so a
+  syntax error in one has always been able to reach a user silently; that is now a red
+  test. They also assert that the Type selector offers every kind and pre-selects a locked
+  one, and that no two binding rows carry the same label.
+
 ## [0.53.1] — 2026-08-25
 
 ### Changed

@@ -17,6 +17,7 @@ import {
   CommandArg,
   DB_TYPES,
   ENTITY_KINDS,
+  ENTITY_KIND_LABELS,
   DbType,
   EntityKind,
   EntityMetadata,
@@ -375,13 +376,44 @@ function scriptLanguageOptions(current: string | undefined): string {
   ).join('');
 }
 
+/**
+ * The extra words the Type selector adds to a kind's own label.
+ *
+ * <p>"Credential" alone does not say what a credential is here, and the selector is where
+ * that has to be answered. Everything else is self-describing.</p>
+ */
+const KIND_HINT: Record<EntityKind, string> = {
+  credential: ' — name + secret value',
+  ssh: '',
+  sshkey: '',
+  vpn: '',
+  db: '',
+  terminal: '',
+  script: '',
+};
+
+/**
+ * What each binding row calls the thing it exports.
+ *
+ * <p>Named per field rather than once, because a database entity offers two of these rows
+ * and the generic wording made them read as the same control printed twice — the row for
+ * the connection string and the row for the password were indistinguishable.</p>
+ */
+const ENV_ROW_LABEL: Record<BindableField, string> = {
+  password: 'Expose this secret in terminals as env variable',
+  privateKey: 'Expose the private key in terminals as env variable',
+  publicKey: 'Expose the public key in terminals as env variable',
+  dbConnection: 'Expose the connection string in terminals as env variable',
+  dbPassword: 'Expose the database password in terminals as env variable',
+};
+
 function envRow(field: BindableField, d: EntityMetadata | undefined): string {
   const bound = d?.envBindings?.[field];
   const checked = bound !== undefined ? 'checked' : '';
   const value = bound ?? '';
   return `<div class="check envRow" data-env-field="${field}">
     <input id="envOn_${field}" type="checkbox" ${checked}>
-    <label for="envOn_${field}">Expose in terminals as env variable</label>
+    <label for="envOn_${field}">${ENV_ROW_LABEL[field]}</label>
     <input id="envName_${field}" type="text" spellcheck="false" autocomplete="off"
            style="margin-left:8px; ${bound === undefined ? 'display:none;' : ''}"
            value="${escapeHtml(value)}" placeholder="ENV_NAME">
@@ -395,25 +427,19 @@ function renderHtml(options: EntityFormOptions): string {
   const isEdit = options.mode === 'edit';
   const kind = options.lockedKind ?? kindOf(d);
 
-  const kindOptions = (
-    [
-      ['credential', 'Credential — name + secret value'],
-      ['ssh', 'SSH connection'],
-      ['sshkey', 'SSH key'],
-      ['vpn', 'VPN'],
-      ['db', 'Database'],
-      ['terminal', 'Terminal command'],
-    ] as const
-  )
-    .map(
-      ([value, label]) =>
-        `<option value="${value}"${kind === value ? ' selected' : ''}>${label}</option>`,
-    )
-    .join('');
-  // Guard against the copy above drifting from the single source of truth. It has
-  // drifted once already — the folder picker kept offering five kinds after a sixth
-  // existed, and the new kind could not be created at all.
-  void (ENTITY_KINDS satisfies readonly EntityKind[]);
+  // Built from the kind table, never a copy of it. The copy is exactly how `script` came
+  // to be missing from this selector: the seventh kind was added to ENTITY_KINDS and the
+  // hand-written list here kept offering six. With no option matching, a browser shows the
+  // FIRST one — so creating an entity inside a script folder announced itself as a
+  // Credential, and no `satisfies` on the neighbouring line noticed. Driving the loop from
+  // ENTITY_KINDS makes an absent kind impossible; the Record makes an absent hint a
+  // compile error.
+  const kindOptions = ENTITY_KINDS.map(
+    (value) =>
+      `<option value="${value}"${kind === value ? ' selected' : ''}>${
+        ENTITY_KIND_LABELS[value].label
+      }${KIND_HINT[value]}</option>`,
+  ).join('');
 
   const keyOptions = [
     `<option value="">— own key (below) —</option>`,
@@ -470,10 +496,16 @@ function renderHtml(options: EntityFormOptions): string {
     font-family: var(--vscode-editor-font-family, monospace); font-size: 13px; line-height: 1.45;
     white-space: pre-wrap; word-break: break-all; pointer-events: none;
     color: var(--vscode-editor-foreground); }
-  .codeWrap textarea { position: relative; background: transparent; color: transparent;
+  .codeWrap textarea { position: relative; background: transparent;
+    color: var(--vscode-editor-foreground);
     caret-color: var(--vscode-editor-foreground);
     font-family: var(--vscode-editor-font-family, monospace); font-size: 13px; line-height: 1.45;
     white-space: pre-wrap; word-break: break-all; }
+  /* The textarea's own glyphs disappear ONLY once the overlay has actually painted the
+     same text underneath — the class is added by the page script when a highlight
+     response arrives. Unconditional transparency is how a dead or slow highlighter turns
+     into an editor whose contents are invisible except where they are selected. */
+  .codeWrap.lit textarea { color: transparent; }
   .tok-comment { color: var(--vscode-descriptionForeground); font-style: italic; }
   .tok-string { color: var(--vscode-charts-orange, #ce9178); }
   .tok-kw { color: var(--vscode-charts-blue, #569cd6); font-weight: 600; }
@@ -634,9 +666,8 @@ function renderHtml(options: EntityFormOptions): string {
     <input id="dbConnection" type="text" autocomplete="off" spellcheck="false"
            placeholder="postgresql://user:pass@host:5432/db"
            value="${escapeHtml(options.initialDbConnection ?? '')}">
-    ${envRow('dbConnection', d)}
-    ${envRow('dbPassword', d)}
     <p class="hint">${dbConnHint}</p>
+    ${envRow('dbConnection', d)}
     <div class="row">
       <div>
         <label for="dbHost">Host</label>
@@ -654,6 +685,7 @@ function renderHtml(options: EntityFormOptions): string {
     <label for="dbPassword">Password</label>
     <input id="dbPassword" type="password" autocomplete="off">
     <p class="hint">The string and the fields are two-way linked — fill either.</p>
+    ${envRow('dbPassword', d)}
   </fieldset>
 
   <fieldset id="passwordSection">
@@ -1158,12 +1190,25 @@ function renderHtml(options: EntityFormOptions): string {
     var hl = document.getElementById('scriptHl');
     var langSel = document.getElementById('scriptLanguage');
     if (!body || !hl || !langSel) { return; }
+    var wrap = body.parentElement;
     var timer;
+    var watchdog;
+    // The highlighter runs in the extension host, so the overlay is always one round trip
+    // behind what was just typed. One frame of debounce keeps that imperceptible; the old
+    // 120 ms was long enough to see, because the textarea's own text is hidden while the
+    // overlay is the thing being read.
     function ask() {
       clearTimeout(timer);
       timer = setTimeout(function () {
         vscode.postMessage({ type: 'highlight', text: body.value, lang: langSel.value });
-      }, 120);
+        // If nothing answers — a handler that threw, a host that went away — stop hiding
+        // the textarea's glyphs. An editor showing nothing is worse than an unhighlighted
+        // one, and this is the state the user actually hit.
+        clearTimeout(watchdog);
+        watchdog = setTimeout(function () {
+          if (wrap) { wrap.classList.remove('lit'); }
+        }, 400);
+      }, 16);
     }
     body.addEventListener('input', ask);
     langSel.addEventListener('change', ask);
@@ -1173,9 +1218,12 @@ function renderHtml(options: EntityFormOptions): string {
     window.addEventListener('message', function (event) {
       var msg = event.data || {};
       if (msg.type === 'highlighted') {
-        hl.innerHTML = msg.html + '
-';
+        clearTimeout(watchdog);
+        hl.innerHTML = msg.html + String.fromCharCode(10);
         hl.scrollTop = body.scrollTop;
+        // Only now is it safe for the textarea to stop painting its own text: the overlay
+        // demonstrably holds the same content.
+        if (wrap) { wrap.classList.add('lit'); }
       }
     });
     ask();
