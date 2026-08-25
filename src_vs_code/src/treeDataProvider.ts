@@ -4,7 +4,7 @@ import { nasPathFor } from './nasPaths';
 import { senderIsVerified } from './shareSender';
 import { diagnoseTeamFailure } from './teamDiagnosis';
 import type { SharingManager } from './sharingManager';
-import { EntityKind, FolderType, OwnedShare, TreeElement, TreeNode, kindOf } from './types';
+import { EntityKind, FolderType, OwnedShare, TreeElement, TreeNode } from './types';
 import { RevisionHead, summarizeRevision } from './revisionHistory';
 import {
   FilterMemo,
@@ -16,6 +16,7 @@ import {
   searchTerms,
 } from './treeSearch';
 import { entityKey } from './entityFlags';
+import { assertNever, canConnectSsh, resolveKind } from './entityKind';
 import { SyncReadiness } from './syncReadiness';
 import { isVpnStartable } from './vpnCommand';
 
@@ -533,7 +534,9 @@ export class CredTreeDataProvider
     // actually possible for THIS entity are offered.
     const hasPassword = this.hasPassword(accountId, node.id);
     let contextValue = 'entity';
-    if (details?.host) {
+    // One named predicate instead of two spellings of "is this SSH?" — the tree used to ask
+    // `details.host` here while `kindOf` asked `isSshEnabled` (audit S5).
+    if (canConnectSsh(details)) {
       contextValue += ':ssh';
     }
     if (details?.isSshKey) {
@@ -574,19 +577,9 @@ export class CredTreeDataProvider
     }
     item.contextValue = contextValue;
     item.iconPath = new vscode.ThemeIcon(
-      details?.isScript
-        ? 'file-code'
-        : details?.isTerminal
-        ? 'terminal'
-        : details?.isDb
-        ? 'database'
-        : details?.isVpn
-          ? 'shield'
-          : details?.isSshKey
-            ? 'key'
-            : details?.isSshEnabled
-              ? 'remote'
-              : 'lock',
+      // The same kind→icon table the "Shared with me" rows use. It was a flag ladder here and
+      // a switch there, which is two places to teach about a new kind (audit A4).
+      kindIcon(resolveKind(details)),
       // Tinted when previous versions are kept, so "this has been changed" is visible in
       // the tree rather than only after opening the entry. A theme colour rather than a
       // second set of SVG files: seven kinds times two states is fourteen files to keep
@@ -686,10 +679,10 @@ export class CredTreeDataProvider
         targetFolder?.folderType !== undefined &&
         targetFolder.folderType !== 'any' &&
         targetFolder.folderType !== 'project' &&
-        kindOf(moving.details) !== targetFolder.folderType
+        resolveKind(moving.details) !== targetFolder.folderType
       ) {
         void vscode.window.showWarningMessage(
-          `Folder "${targetFolder.name}" holds only ${targetFolder.folderType} entities — "${moving.name}" is ${kindOf(moving.details)}.`,
+          `Folder "${targetFolder.name}" holds only ${targetFolder.folderType} entities — "${moving.name}" is ${resolveKind(moving.details)}.`,
         );
         continue;
       }
@@ -700,6 +693,8 @@ export class CredTreeDataProvider
   }
 }
 
+// No `default` on purpose: every kind is named, so adding one to ENTITY_KINDS without giving
+// it an icon is a type error here rather than a silent padlock in the tree (audit A4).
 // eslint-disable-next-line complexity
 function kindIcon(kind: EntityKind): string {
   switch (kind) {
@@ -715,8 +710,10 @@ function kindIcon(kind: EntityKind): string {
       return 'key';
     case 'ssh':
       return 'remote';
-    default:
+    case 'credential':
       return 'lock';
+    default:
+      return assertNever(kind, 'kindIcon');
   }
 }
 

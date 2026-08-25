@@ -12,6 +12,7 @@ import { isSelfOrDescendantIn } from './selectionResolver';
 import { Revision, isRevisionList, pushRevision } from './revisionHistory';
 import { MetadataError, isSealedMetadata, newMetadataKey, openMetadata, sealMetadata } from './metadataCipher';
 import { ExternalSecrets } from './externalBundle';
+import { stampKind } from './entityKind';
 import {
   BackupBundle,
   StoredAccount,
@@ -410,7 +411,12 @@ export class StorageManager implements vscode.Disposable {
   /** Stamp a node with a fresh version-vector component + updatedAt. */
   private stampVector(node: TreeNode): TreeNode {
     const v = bumpVector(node.v ?? {}, this.deviceId(), this.nextSeq());
-    return { ...node, updatedAt: Date.now(), v };
+    // The kind is stamped HERE, with the version, because this is the one line every local
+    // write already passes through (audit A4) — a per-call-site stamp is a stamp the next
+    // call site forgets. `stampKind` also keeps the legacy flags in step for older machines
+    // and refuses a burn policy that could never fire for the kind.
+    const details = node.details === undefined ? undefined : stampKind(node.details);
+    return { ...node, details, updatedAt: Date.now(), v };
   }
 
   async addNode(accountId: string, node: TreeNode): Promise<void> {

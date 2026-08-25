@@ -34,6 +34,13 @@ export interface CommandArg {
 export interface EntityMetadata {
   id: string;
   name: string;
+  /**
+   * What this entity IS — the discriminant (audit A4). Optional in the type only because
+   * records written before it existed do not carry it; every write stamps it, and
+   * `resolveKind` in `entityKind.ts` is the one place allowed to fall back to the flags
+   * below. Read it through `resolveKind`, never directly.
+   */
+  kind?: EntityKind;
   host?: string;
   user?: string;
   port?: number;
@@ -92,7 +99,8 @@ export interface EntityMetadata {
 
 export type VpnType = 'openvpn' | 'wireguard' | 'ikev2' | 'l2tp' | 'other';
 
-/** The five entity kinds the form's Type selector offers. */
+/** The entity kinds the form's Type selector offers. Adding one is a compile error in every
+ * switch that must handle it — see `assertNever` in entityKind.ts. */
 export type EntityKind = 'credential' | 'ssh' | 'sshkey' | 'vpn' | 'db' | 'terminal' | 'script';
 
 export const ENTITY_KINDS: readonly EntityKind[] = [
@@ -465,6 +473,10 @@ export function isEntityMetadata(value: unknown): value is EntityMetadata {
     typeof v.id === 'string' &&
     typeof v.name === 'string' &&
     typeof v.isSshEnabled === 'boolean' &&
+    // An unknown kind is not a reason to reject the record — a vault written by a NEWER
+    // build may carry one, and dropping the whole entity would lose data this build can
+    // still show. `resolveKind` falls back to the flags for anything it does not know.
+    (v.kind === undefined || typeof v.kind === 'string') &&
     (v.host === undefined || typeof v.host === 'string') &&
     (v.user === undefined || typeof v.user === 'string') &&
     (v.port === undefined || typeof v.port === 'number') &&

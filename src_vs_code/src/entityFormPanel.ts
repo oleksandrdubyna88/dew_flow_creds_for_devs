@@ -4,6 +4,7 @@
    plumbing is welcome; do not grow this file further. */
 import * as crypto from 'node:crypto';
 import * as vscode from 'vscode';
+import { resolveKind } from './entityKind';
 import { normalizeArgs } from './commandLine';
 import { flagOf, parseCommandLine } from './commandParse';
 import { SCRIPT_LANGUAGES, highlightScript } from './scriptRender';
@@ -27,7 +28,6 @@ import {
   EntityMetadata,
   VPN_TYPES,
   VpnType,
-  kindOf,
 } from './types';
 
 /**
@@ -437,7 +437,7 @@ function renderHtml(options: EntityFormOptions): string {
   const nonce = crypto.randomBytes(16).toString('base64url');
   const d = options.initial;
   const isEdit = options.mode === 'edit';
-  const kind = options.lockedKind ?? kindOf(d);
+  const kind = options.lockedKind ?? resolveKind(d);
 
   // Built from the kind table, never a copy of it. The copy is exactly how `script` came
   // to be missing from this selector: the seventh kind was added to ENTITY_KINDS and the

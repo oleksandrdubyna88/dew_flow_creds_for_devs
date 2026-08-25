@@ -148,6 +148,41 @@ erDiagram
 The extension's own crypto wraps only what *leaves* the machine. Local storage is protected by the
 OS keychain, which is the platform's job.
 
+### The kind is carried, not re-derived (0.58.x, audit A4)
+
+An entity now states what it is: `EntityMetadata.kind`, read through **`resolveKind`** in
+`entityKind.ts` — the only code allowed to fall back to the old flags. `kindOf` still exists
+but is reachable only from there; nothing else in `src/` calls it any more.
+
+- **Migration is the fallback, not a rewrite.** A record written before the field existed has
+  no `kind`, so `resolveKind` derives it from the flags exactly as before. No vault is
+  converted, no version is bumped, and a record from a NEWER build carrying a kind this one
+  does not know falls back rather than being thrown away.
+- **A write states the kind AND keeps the flags in step.** `stampKind` runs inside
+  `StorageManager.stampVector` — the one line every local write already passes through, so no
+  call site can forget it. The flags are rewritten *from* the kind (a stale flag would win on
+  an older machine and make the entity two things at once), and they are still written at all
+  because a vault syncs to builds that predate the field: dropping them would make every
+  synced entity read as a plain credential over there and silently lose its Connect, Start
+  and Run. They are a compatibility shim with a defined end, not a second source of truth.
+- **A new kind is a build error.** `kindIcon` ends in `assertNever`, and the two label tables
+  are `Record<EntityKind, …>`. Verified by adding a hypothetical `totp` kind: three compile
+  errors, one of them *"Argument of type `'totp'` is not assignable to parameter of type
+  `never`"*. That is the guarantee S5 asked for — `terminal` in 0.26.0 and the missing
+  `script` selector entry were both this defect.
+- **`oneUse` cannot be set on a kind the broker never serves.** A burn fires only through the
+  broker and the broker does not serve `sshkey`, so `{kind: 'sshkey', burnPolicy: 'oneUse'}`
+  would be a promise nothing could keep — the entry living forever while the UI said it would
+  vanish after first use. `stampKind` drops it on write, so the impossible state cannot reach
+  the vault even if a form offers it. Temporary SSH keys for a customer's instance are the
+  first thing anyone reaches for here, which is why this is refused rather than documented.
+- **"Can I connect over SSH" is one predicate, and deliberately broader than the kind.**
+  `canConnectSsh` — the tree keyed its `:ssh` menu on a host being present while `kindOf` keys
+  the kind on `isSshEnabled` (the S5 divergence). They are one named function now, and the
+  breadth is kept: narrowing it would remove Connect from host-bearing entries that have it
+  today, which is a product decision rather than a refactor. Stated and tested, not left to be
+  re-discovered.
+
 ### Entity kinds — one list, three consumers
 
 A node's kind is not a stored field. It is **derived** by `kindOf()` from the flags in

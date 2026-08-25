@@ -20,8 +20,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **A share that fails to save no longer blames your PIN.** A storage failure part-way through
   importing an accepted share was reported as *"does not decrypt with that PIN"*, sending the
   reader back to retype a PIN that was correct while the real error was never shown.
-- **A folder whose own name matches is never hidden** by the guard that stops the filter from
-  recursing forever through corrupt parent links.
 
 ### Internal
 

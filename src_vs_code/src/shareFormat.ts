@@ -1,3 +1,4 @@
+import { resolveKind } from './entityKind';
 import * as crypto from 'node:crypto';
 import { BackupError, openBlob, readBackupShares, sealBlob } from './cryptoUtils';
 import { ShareTranscript, SigningKeypair, signShare } from './shareSignature';
@@ -8,7 +9,6 @@ import {
   StoredAccount,
   isShareItem,
   isSharePayload,
-  kindOf,
 } from './types';
 
 /**
@@ -62,7 +62,7 @@ export function sealShare(
     fromEmail: from.email,
     from: { accountId: from.accountId, email: from.email, provider: from.provider },
     entityName: payload.node.name,
-    entityKind: kindOf(payload.node.details),
+    entityKind: resolveKind(payload.node.details),
     createdAt,
     ...blob,
   };

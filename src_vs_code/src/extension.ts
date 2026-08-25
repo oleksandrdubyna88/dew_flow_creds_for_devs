@@ -85,6 +85,7 @@ import {
 import { validatePin } from './pinPolicy';
 import { CredTreeDataProvider, VIEW_ID } from './treeDataProvider';
 import { EntityFlagsRefresher, entityFlagSource } from './entityFlags';
+import { resolveKind } from './entityKind';
 import { maskEntriesFor } from './maskEntries';
 import { MaskEntry, buildMaskTable } from './secretMasker';
 import { describeScan, scanForSecrets } from './secretScan';
@@ -116,7 +117,6 @@ import {
   SharePayload,
   TreeElement,
   TreeNode,
-  kindOf,
 } from './types';
 
 
@@ -1133,10 +1133,10 @@ ${detail}
         required !== undefined &&
         required !== 'any' &&
         required !== 'project' &&
-        kindOf(element.node.details) !== required
+        resolveKind(element.node.details) !== required
       ) {
         void vscode.window.showWarningMessage(
-          `Folder "${targetFolder?.name}" holds only ${required} entities — "${element.node.name}" is ${kindOf(element.node.details)}.`,
+          `Folder "${targetFolder?.name}" holds only ${required} entities — "${element.node.name}" is ${resolveKind(element.node.details)}.`,
         );
         return;
       }
@@ -1233,7 +1233,7 @@ ${detail}
       return;
     }
     const details = element.node.details;
-    const kind = kindOf(details);
+    const kind = resolveKind(details);
     // Next to the RUNNING entry — out/ under tsc, dist/ in the packaged bundle — so the
     // snippet always names a CLI built the same way as the extension that minted the grant.
     const cliPath = path.join(__dirname, 'agentCli.js');
