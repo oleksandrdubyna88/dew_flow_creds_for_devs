@@ -68,6 +68,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Bounded on purpose: 256 KB of output per stream, 30 s per command (raisable to 120 s), 8 at a
   time, and every child killed when the window goes.
 
+## [0.53.0] — 2026-08-25
+
+### Added
+
+- **A re-shared credential offers to UPDATE the one you already have.** Accepting a share
+  always minted a fresh local entry, so a colleague who re-sent the same credential six
+  months later handed you a second copy beside the first with nothing saying which was
+  current. Now the second one asks: **Update it** — in place, keeping its folder, its id
+  and its history — or **Keep both**.
+
+  **Dismissing that dialog leaves the share in "Shared with me."** Deciding needs a look
+  at what you already have, and consuming the item to ask the question would destroy the
+  only copy of the decision.
+
+  How it knows, and why a sender cannot abuse it: the map is **local to this machine** and
+  keyed by *(who sent it, what they called it)*. A sender can never address an entry they
+  never sent you, which is exactly what the original always-a-fresh-id rule protected
+  against — that protection is intact.
+
+- **Created and last-changed dates on every entry**, shown in both the viewer and the edit
+  form. `createdAt` is stamped once and never moved again, so "when was this made" survives
+  every later edit. Entries that predate this release honestly say the creation date is
+  unknown rather than inventing one.
+
+- **The last 3 versions of an entry are kept**, and the tree says so: an entry with history
+  wears a **blue-tinted icon**. The viewer lists each kept version with when it was
+  replaced, what it was called then, and a button to copy that version's secret — through
+  the extension host, like every other secret.
+
+  Two limits, stated rather than discovered: a revision does **not** include attachments
+  (three copies of a 4 MB file per entry would cost more than the history is worth), and
+  history is **local to this machine** — it is not in the sync bundle, so another machine
+  keeps its own. And one fact worth knowing before relying on it: history means a replaced
+  password stays retrievable. That is the point, and it is why revisions live in the same
+  encrypted store as the current secrets and nowhere looser.
+
 ## [0.52.0] — 2026-08-25
 
 ### Added

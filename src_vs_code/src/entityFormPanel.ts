@@ -50,6 +50,9 @@ export interface EntityFormOptions {
   hasStoredPrivateKey: boolean;
   hasStoredAttachment: boolean;
   hasStoredImage: boolean;
+  /** Shown read-only, so an editor can see how old the thing they are changing is. */
+  createdAt?: number;
+  updatedAt?: number;
   hasStoredVpnConfig: boolean;
   hasStoredDbConnection: boolean;
   initialDbConnection?: string;
@@ -712,6 +715,24 @@ function renderHtml(options: EntityFormOptions): string {
         : ''
     }
   </fieldset>
+
+  ${
+    options.createdAt === undefined && options.updatedAt === undefined
+      ? ''
+      : `<fieldset>
+    <legend>Dates</legend>
+    <div class="row">
+      <div>
+        <label>Created</label>
+        <input readonly value="${options.createdAt === undefined ? 'unknown (created before this was recorded)' : new Date(options.createdAt).toLocaleString()}">
+      </div>
+      <div>
+        <label>Last changed</label>
+        <input readonly value="${options.updatedAt === undefined ? '—' : new Date(options.updatedAt).toLocaleString()}">
+      </div>
+    </div>
+  </fieldset>`
+  }
 
   <fieldset>
     <legend>Notes</legend>

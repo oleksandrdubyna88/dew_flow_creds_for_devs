@@ -167,8 +167,10 @@ export interface TreeNode {
   parentId?: string | null;
   details?: EntityMetadata;
   children?: TreeNode[];
-  /** Last modification time (ms epoch) — tiebreak for concurrent edits. */
+  /** Last modification time (ms epoch) — tiebreak for concurrent edits, and shown to the user. */
   updatedAt?: number;
+  /** When this node was first created here (ms epoch). Absent on nodes older than 0.53. */
+  createdAt?: number;
   /** Version vector (deviceId -> seq) — causal conflict resolution. */
   v?: Record<string, number>;
   /** Folders only: the entity kind this folder holds ('any' = unrestricted). */
@@ -481,6 +483,9 @@ export function isTreeNode(value: unknown): value is TreeNode {
     return false;
   }
   if (v.parentId !== undefined && v.parentId !== null && typeof v.parentId !== 'string') {
+    return false;
+  }
+  if (v.createdAt !== undefined && typeof v.createdAt !== 'number') {
     return false;
   }
   if (v.updatedAt !== undefined && typeof v.updatedAt !== 'number') {

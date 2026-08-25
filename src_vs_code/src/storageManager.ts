@@ -5,6 +5,7 @@ import { SigningKeypair, generateSigningKeypair } from './shareSignature';
 import { RemoteState, buildDefaultFolders, shouldSeedDefaults } from './defaultFolders';
 import { Tombstone, VersionVector, bumpVector, mergeVectors, normalizeTombstone } from './versionVector';
 import { isSelfOrDescendantIn } from './selectionResolver';
+import { Revision, isRevisionList, pushRevision } from './revisionHistory';
 import {
   BackupBundle,
   StoredAccount,
@@ -58,6 +59,10 @@ function vpnConfigSecretKey(accountId: string, entityId: string): string {
 /** SecretStorage key for an entity's notes (kept out of plaintext globalState). */
 function notesSecretKey(accountId: string, entityId: string): string {
   return `${accountId}_${entityId}:notes`;
+}
+
+function historySecretKey(accountId: string, entityId: string): string {
+  return `${accountId}_${entityId}:history`;
 }
 
 function attachmentSecretKey(accountId: string, entityId: string): string {
@@ -152,6 +157,7 @@ export class StorageManager {
         await this.secrets.delete(dbConnSecretKey(accountId, node.id));
         await this.secrets.delete(notesSecretKey(accountId, node.id));
         await this.secrets.delete(attachmentSecretKey(accountId, node.id));
+        await this.secrets.delete(historySecretKey(accountId, node.id));
         await this.secrets.delete(imageSecretKey(accountId, node.id));
       }
     }
@@ -223,7 +229,11 @@ export class StorageManager {
   }
 
   async addNode(accountId: string, node: TreeNode): Promise<void> {
-    await this.saveNodes(accountId, [...this.getNodes(accountId), this.stampVector(node)]);
+    // createdAt is set here and never again — updateNode's stamp only moves updatedAt,
+    // so "when was this made" survives every later edit. A node arriving with one
+    // already set (an import, an accepted share) keeps the origin date it came with.
+    const created = { ...node, createdAt: node.createdAt ?? Date.now() };
+    await this.saveNodes(accountId, [...this.getNodes(accountId), this.stampVector(created)]);
     await this.bumpHorizonToSeq(accountId);
   }
 
@@ -298,6 +308,7 @@ export class StorageManager {
         await this.secrets.delete(dbConnSecretKey(accountId, n.id));
         await this.secrets.delete(notesSecretKey(accountId, n.id));
         await this.secrets.delete(attachmentSecretKey(accountId, n.id));
+        await this.secrets.delete(historySecretKey(accountId, n.id));
         await this.secrets.delete(imageSecretKey(accountId, n.id));
       }
     }
@@ -436,6 +447,35 @@ export class StorageManager {
 
   async deleteVpnConfig(accountId: string, entityId: string): Promise<void> {
     await this.secrets.delete(vpnConfigSecretKey(accountId, entityId));
+  }
+
+  // ---------- revision history (SecretStorage: old secrets are still secrets) ----------
+
+  /**
+   * The kept previous versions of an entity, newest first.
+   *
+   * <p>In SecretStorage rather than plaintext metadata because a revision holds the old
+   * password — replaced is not the same as harmless. Local to this machine: it is not in
+   * the sync bundle, so a second machine has its own history and one that never saw the
+   * change has none, which is honest rather than invented.</p>
+   */
+  async getHistory(accountId: string, entityId: string): Promise<Revision[]> {
+    const raw = await this.secrets.get(historySecretKey(accountId, entityId));
+    if (raw === undefined) {
+      return [];
+    }
+    try {
+      const parsed: unknown = JSON.parse(raw);
+      return isRevisionList(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+
+  /** Record the CURRENT state as a revision, before it is overwritten. */
+  async recordRevision(accountId: string, entityId: string, revision: Revision): Promise<void> {
+    const next = pushRevision(await this.getHistory(accountId, entityId), revision);
+    await this.secrets.store(historySecretKey(accountId, entityId), JSON.stringify(next));
   }
 
   // ---------- attachments (SecretStorage, base64 content) ----------
@@ -617,6 +657,7 @@ export class StorageManager {
       }
       if (attachments[node.id] === undefined) {
         await this.secrets.delete(attachmentSecretKey(accountId, node.id));
+        await this.secrets.delete(historySecretKey(accountId, node.id));
       }
       if (images[node.id] === undefined) {
         await this.secrets.delete(imageSecretKey(accountId, node.id));

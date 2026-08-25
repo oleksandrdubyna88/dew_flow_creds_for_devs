@@ -96,6 +96,7 @@ import { scriptRunPlan } from './scriptRun';
 import { buildExternalBundle, isExternalBundle, remapExternalIds } from './externalBundle';
 import { withoutPassword } from './dbConnString';
 import { SelectedNode, describeSkips, resolveSelection } from './selectionResolver';
+import { recordOrigin, resolveOrigin } from './shareOrigin';
 import {
   credentialExportEnvAction,
   dbQueryAction,
@@ -119,6 +120,8 @@ import {
 
 /** Set in activate(); the module-level slot keeps editNode's signature unchanged. */
 let envCollection: vscode.GlobalEnvironmentVariableCollection;
+
+const ORIGINS_KEY = 'credSshManager.shareOrigins';
 
 export function activate(context: vscode.ExtensionContext): void {
   envCollection = context.environmentVariableCollection;
@@ -249,6 +252,27 @@ export function activate(context: vscode.ExtensionContext): void {
    * the result is cached on the provider instead and refreshed at the moments it can
    * actually change: startup, a sync cycle, a PIN being set, a lock.
    */
+  /**
+   * Which entries keep previous versions. Reading that means reading SecretStorage, which
+   * `getTreeItem` cannot await — so it is cached on the provider and refreshed at the
+   * moments it can change: startup, an edit, an accepted update.
+   */
+  const refreshHistoryFlags = async (): Promise<void> => {
+    provider.withHistory.clear();
+    for (const account of storage.getAccounts()) {
+      for (const node of storage.getNodes(account.accountId)) {
+        if (node.type !== 'entity') {
+          continue;
+        }
+        if ((await storage.getHistory(account.accountId, node.id)).length > 0) {
+          provider.withHistory.add(node.id);
+        }
+      }
+    }
+    provider.refresh();
+  };
+  void refreshHistoryFlags();
+
   const refreshReadiness = async (): Promise<Map<string, SyncReadiness>> => {
     const locked = vaultKeys.isLocked();
     for (const account of storage.getAccounts()) {
@@ -274,6 +298,9 @@ export function activate(context: vscode.ExtensionContext): void {
   const mutated = () => {
     provider.refresh();
     sync.notifyChange();
+    // An edit or an accepted update may have created the first revision of something —
+    // one refresher here rather than a call at every mutation site that could forget.
+    void refreshHistoryFlags();
   };
 
   // The agent broker: a loopback surface through which a coding agent can USE
@@ -1978,15 +2005,70 @@ ${detail}
         parentId = folderId;
       }
     }
-    // Always mint a FRESH local id: a peer must never address (and thus
-    // silently overwrite) an entity that already exists in our vault.
-    const node: TreeNode = {
-      ...payload.node,
-      id: StorageManager.newId(),
-      parentId,
-      children: undefined,
-    };
-    await storage.addNode(share.accountId, node);
+    // Is this an update of something the SAME sender sent before? The map is ours,
+    // keyed by (their address, their id) — a sender can never address an entry they
+    // never sent, which is what the fresh-id rule was protecting.
+    const origins = context.globalState.get<Record<string, string>>(ORIGINS_KEY, {});
+    const previousId = resolveOrigin(
+      origins,
+      share.item.fromEmail,
+      payload.node.id,
+      (id) => storage.getNode(share.accountId, id) !== undefined,
+    );
+
+    let node: TreeNode;
+    if (previousId !== undefined) {
+      const existing = storage.getNode(share.accountId, previousId);
+      const choice = await vscode.window.showWarningMessage(
+        `"${existing?.name}" already came from ${share.item.fromEmail}. Update it in place, or keep both?`,
+        { modal: true },
+        'Update it',
+        'Keep both',
+      );
+      if (choice === undefined) {
+        // Dismissed on purpose: the human wants to look before deciding. The share must
+        // survive that — consuming it here would destroy the only copy of the decision.
+        void vscode.window.showInformationMessage(
+          'Left in "Shared with me" — accept it again when you have decided.',
+        );
+        return;
+      }
+      if (choice === 'Update it') {
+        // Keep its place in the tree and its own id; record what it was first.
+        await storage.recordRevision(share.accountId, previousId, {
+          at: Date.now(),
+          name: existing?.name ?? payload.node.name,
+          details: existing?.details ?? payload.node.details!,
+          secrets: {
+            password: await storage.getPassword(share.accountId, previousId),
+            privateKey: await storage.getPrivateKey(share.accountId, previousId),
+            vpnConfig: await storage.getVpnConfig(share.accountId, previousId),
+            dbConnection: await storage.getDbConnection(share.accountId, previousId),
+            notes: await storage.getNotes(share.accountId, previousId),
+          },
+        });
+        node = {
+          ...payload.node,
+          id: previousId,
+          parentId: existing?.parentId ?? parentId,
+          createdAt: existing?.createdAt,
+          children: undefined,
+        };
+        await storage.updateNode(share.accountId, node);
+      } else {
+        node = { ...payload.node, id: StorageManager.newId(), parentId, children: undefined };
+        await storage.addNode(share.accountId, node);
+      }
+    } else {
+      // A fresh local id: a peer must never address (and thus silently overwrite) an
+      // entity that already exists in our vault.
+      node = { ...payload.node, id: StorageManager.newId(), parentId, children: undefined };
+      await storage.addNode(share.accountId, node);
+    }
+    await context.globalState.update(
+      ORIGINS_KEY,
+      recordOrigin(origins, share.item.fromEmail, payload.node.id, node.id),
+    );
     const { password, privateKey, vpnConfig, dbConnection } = payload.secrets;
     await storage.setPassword(share.accountId, node.id, password);
     if (privateKey !== undefined) {
@@ -2390,6 +2472,8 @@ async function editNode(
     hasStoredPassword: (await storage.getPassword(accountId, node.id)) !== undefined,
     hasStoredPrivateKey: (await storage.getPrivateKey(accountId, node.id)) !== undefined,
     hasStoredAttachment: (await storage.getAttachment(accountId, node.id)) !== undefined,
+    createdAt: node.createdAt,
+    updatedAt: node.updatedAt,
     hasStoredImage: (await storage.getImage(accountId, node.id)) !== undefined,
     hasStoredVpnConfig: (await storage.getVpnConfig(accountId, node.id)) !== undefined,
     hasStoredDbConnection: (await storage.getDbConnection(accountId, node.id)) !== undefined,
@@ -2400,6 +2484,20 @@ async function editNode(
   if (result === undefined) {
     return;
   }
+  // Snapshot what is there before it is replaced — the whole point of history is being
+  // able to see what a change changed, which is only knowable from the old state.
+  await storage.recordRevision(accountId, node.id, {
+    at: Date.now(),
+    name: node.name,
+    details: node.details,
+    secrets: {
+      password: await storage.getPassword(accountId, node.id),
+      privateKey: await storage.getPrivateKey(accountId, node.id),
+      vpnConfig: await storage.getVpnConfig(accountId, node.id),
+      dbConnection: await storage.getDbConnection(accountId, node.id),
+      notes: await storage.getNotes(accountId, node.id),
+    },
+  });
   await storage.updateNode(accountId, {
     ...node,
     name: result.details.name,
@@ -2622,6 +2720,9 @@ async function openEntityViewer(
       ),
     saveVpnConfig: () => saveVpnConfigToFile(accountId, details, storage),
     hasAttachment: (await storage.getAttachment(accountId, details.id)) !== undefined,
+    createdAt: node?.createdAt,
+    updatedAt: node?.updatedAt,
+    history: await storage.getHistory(accountId, details.id),
     imageDataUri:
       imageB64 !== undefined && imageMimeType !== undefined
         ? `data:${imageMimeType};base64,${imageB64}`

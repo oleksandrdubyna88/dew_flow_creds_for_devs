@@ -44,6 +44,15 @@ export class CredTreeDataProvider
    */
   readonly readiness = new Map<string, SyncReadiness>();
 
+  /**
+   * Entity ids known to have kept revisions.
+   *
+   * <p>Reading history means reading SecretStorage, which `getTreeItem` cannot await — so
+   * the answer is cached here and refreshed at the moments it changes (an edit, an
+   * accepted update, a load), exactly as `readiness` is.</p>
+   */
+  readonly withHistory = new Set<string>();
+
   /** Set by the extension: Team / Shared-with-me data source. */
   sharing: SharingManager | undefined;
 
@@ -301,6 +310,11 @@ export class CredTreeDataProvider
             : details?.isSshEnabled
               ? 'remote'
               : 'lock',
+      // Tinted when previous versions are kept, so "this has been changed" is visible in
+      // the tree rather than only after opening the entry. A theme colour rather than a
+      // second set of SVG files: seven kinds times two states is fourteen files to keep
+      // in step, and the tint says the same thing.
+      this.withHistory.has(node.id) ? HISTORY_COLOR : undefined,
     );
     item.description = describeTarget(node);
     item.tooltip = buildTooltip(node);
@@ -422,6 +436,8 @@ const FOLDER_COLOR = new vscode.ThemeColor('credSshManager.folderIcon');
 
 /** Green: this account can sync on its own. Anything else stays the default grey. */
 /** Team/people rows are dark blue so they read as "other people", not data. */
+const HISTORY_COLOR = new vscode.ThemeColor('credSshManager.historyIcon');
+
 const TEAM_COLOR = new vscode.ThemeColor('credSshManager.teamIcon');
 
 function folderIcon(folderType: FolderType | undefined): vscode.ThemeIcon {

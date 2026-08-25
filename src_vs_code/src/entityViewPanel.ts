@@ -5,6 +5,7 @@ import { DbConnParts } from './dbConnString';
 import { CommandArg, EntityMetadata } from './types';
 import { buildCommandLine, normalizeArgs } from './commandLine';
 import { highlightScript, resolveScriptEnv } from './scriptRender';
+import { Revision, summarizeRevision } from './revisionHistory';
 import { BINDABLE_FIELDS, BindableField } from './envBinding';
 
 /**
@@ -37,6 +38,11 @@ export interface EntityViewOptions {
   /** Save-As flow for the VPN config (the row's button is a download). */
   saveVpnConfig: () => Promise<void>;
   hasAttachment: boolean;
+  /** Creation / last-change times of the node, shown as dates rather than raw numbers. */
+  createdAt?: number;
+  updatedAt?: number;
+  /** Previous versions, newest first. Empty when nothing has been changed yet. */
+  history: Revision[];
   /** data: URI for the stored image — the one secret deliberately SENT to the webview,
    * because a preview cannot round-trip through the host. */
   imageDataUri?: string;
@@ -120,6 +126,12 @@ export function showEntityView(options: EntityViewOptions): void {
       case 'command': value = d.command; break;
       case 'commandNote': value = d.commandNote; break;
       case 'fullCommand': value = buildCommandLine(d.command ?? '', d.commandArgs); break;
+      case 'createdAt':
+        value = options.createdAt === undefined ? undefined : new Date(options.createdAt).toISOString();
+        break;
+      case 'updatedAt':
+        value = options.updatedAt === undefined ? undefined : new Date(options.updatedAt).toISOString();
+        break;
       case 'scriptLanguage': value = d.scriptLanguage; break;
       case 'script': value = d.script; break;
       case 'scriptFull':
@@ -132,6 +144,21 @@ export function showEntityView(options: EntityViewOptions): void {
         const env = /^envname_(.+)$/.exec(message.field);
         if (env !== null) {
           value = d.envBindings?.[env[1]];
+          break;
+        }
+        const revision = /^rev(\d+)$/.exec(message.field);
+        if (revision !== null) {
+          // The old secret, on demand and through the host — a previous password is
+          // still a password.
+          const r = options.history[Number(revision[1])];
+          value =
+            r === undefined
+              ? undefined
+              : (r.secrets.password ??
+                r.secrets.privateKey ??
+                r.secrets.dbConnection ??
+                r.secrets.vpnConfig ??
+                r.secrets.notes);
           break;
         }
         const svar = /^svar(\d+)$/.exec(message.field);
@@ -319,6 +346,20 @@ function renderHtml(options: EntityViewOptions): string {
         : undefined,
     ),
     row('Notes', 'notes', options.notes),
+    row('Created', 'createdAt', options.createdAt === undefined ? undefined : new Date(options.createdAt).toLocaleString()),
+    row('Last changed', 'updatedAt', options.updatedAt === undefined ? undefined : new Date(options.updatedAt).toLocaleString()),
+    ...(options.history.length > 0
+      ? [
+          `<div class="row"><label>History (${options.history.length} kept, newest first)</label>${options.history
+            .map(
+              (r, i) =>
+                `<div class="line"><input readonly value="${escapeHtml(summarizeRevision(r))}">
+        <button data-field="rev${i}" data-action="copy" class="icon" title="Copy that version's secret" aria-label="Copy previous secret">${COPY_ICON}</button>
+      </div>`,
+            )
+            .join('')}</div>`,
+        ]
+      : []),
     row(
       `Additional file${d.attachmentFileName ? ` (${d.attachmentFileName})` : ''}`,
       'attachment',
