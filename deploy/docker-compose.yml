@@ -135,6 +135,16 @@ services:
       interval: 60s
       timeout: 5s
       retries: 3
+    # The only service with ports on 0.0.0.0, and the only one that had no ceiling.
+    # An unbounded edge does not fall over alone: it takes the host, and with it the
+    # container renewing the certificate and the one writing the backups.
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          memory: ${NGINX_MEMORY_LIMIT:-128m}
+          cpus: "${NGINX_CPU_LIMIT:-1.0}"
     logging:
       driver: json-file
       options:
@@ -150,7 +160,11 @@ services:
   # convenience — an unattended renewal loop is the only way such a deployment stays up.
   # ---------------------------------------------------------------------------
   certbot:
-    image: certbot/certbot:latest
+    # Pinned, like VAULT_IMAGE and unlike its own history: this container holds the
+    # ACME account key and the certificate private keys, and :latest re-pulls whatever
+    # upstream published on every recreate. The floor is 5.4 — `--ip-address` with
+    # `--webroot`, which entrypoint.sh depends on for an IP deployment.
+    image: ${CERTBOT_IMAGE:-certbot/certbot:v5.7.0}
     restart: unless-stopped
     depends_on:
       - nginx
@@ -166,6 +180,12 @@ services:
       - ${CERT_DIR:-./certbot-data}/www:/var/www/certbot
       - ./certbot/entrypoint.sh:/entrypoint.sh:ro
     entrypoint: ["/bin/sh", "/entrypoint.sh"]
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          memory: ${CERTBOT_MEMORY_LIMIT:-128m}
     logging:
       driver: json-file
       options:

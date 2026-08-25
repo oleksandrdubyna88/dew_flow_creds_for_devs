@@ -32,6 +32,8 @@ policy in front of them**, which is now fixed.
 | **C-2** | The same field made `ssh` run a local command with **no shell involved** | `sshExecCommand.ts` |
 | **C-3** | One colleague could **OOM the server for everyone**, repeatedly | `Models.cs`, `Program.cs` |
 | **H-1** | A synced entity ran a command through the **env-variable probe** | `envProbe.ts`, `types.ts` |
+| **H-2** | **nginx**, the only container facing the internet, had no ceiling | `docker-compose.yml` |
+| **H-3** | **certbot** — which holds the certificate private keys — ran on `:latest` | `docker-compose.yml` |
 | **M-1** | The **PIN floor** accepted `12345678` on a blob attacked offline | `pinPolicy.ts` |
 
 ### C-1 · A shared entity ran local commands on Connect (CRITICAL, fixed)
@@ -111,24 +113,27 @@ Everything else is accepted with a live estimate of offline guessing time, which
 a word rather than as random characters — pessimistic on purpose, because the number is advice
 about a secret.
 
+### H-2 and H-3 · The edge had no ceiling, and the key-holding container floated (fixed)
+
+`vault` carried `deploy.resources.limits.memory`; **nginx did not**, and it is the only service
+with ports on `0.0.0.0`. An unbounded edge does not fall over alone — it takes the host, and with
+it the container renewing the certificate and the one writing the backups. It now has a memory and
+a CPU ceiling, both configurable, defaulting to 128m and one core.
+
+`certbot/certbot:latest` held the ACME account key and the certificate private keys on a mutable
+tag, re-pulled on every recreate — the one container where `VAULT_IMAGE`'s pinning discipline was
+missing. Pinned to `v5.7.0`, above the 5.4 floor that `--ip-address` with `--webroot` needs.
+`restore.sh`'s bare `alpine` is pinned to `alpine:3.20` to match the rest of the stack.
+
+**Deliberately not done in the same pass:** `cap_drop: [ALL]` on nginx and certbot. It is the
+right end state, but nginx's master process binds 80 and 443 as root and the correct
+`cap_add: [NET_BIND_SERVICE]` combination needs to be watched actually starting. The Docker
+daemon was not running on this machine, so it could not be — and an unverified hardening change
+the night before a launch is a worse trade than the hardening is a gain. Do it with the stack up.
+
 ## Open — not fixed, with a recommendation for each
 
-Ordered by what I would do first. None is a reason to hold tomorrow's launch; the first two are
-worth doing this week.
-
-### O-1 · nginx, the one container facing the internet, has no memory or CPU limit (HIGH)
-
-`vault` has `deploy.resources.limits.memory`. **nginx does not**, and it is the only service with
-ports on `0.0.0.0`. A flood or an nginx-level leak has no ceiling and takes the host with it —
-including the containers doing backups and certificate renewal. Add the same block `vault`
-already has. One line, no behavioural risk, do it before the first busy day.
-
-### O-2 · certbot runs on a mutable `:latest` tag (HIGH)
-
-`certbot/certbot:latest`. That container holds the ACME account key and the certificate private
-keys, and it is re-pulled on every recreate. `VAULT_IMAGE` is pinned and documented as pinned;
-this is the same discipline missing on the container with the most sensitive material.
-`restore.sh` has the same slip with a bare `alpine`.
+Ordered by what I would do first. None is a reason to hold tomorrow's launch.
 
 ### O-3 · The anonymous rate-limit bucket is one bucket for the whole internet (MEDIUM)
 

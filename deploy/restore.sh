@@ -117,7 +117,7 @@ fi
 rm -rf "$STAGE"
 
 # The app runs unprivileged; restored files must belong to it.
-docker run --rm -v "$(realpath "$DATA_DIR")":/d alpine chown -R 10001:10001 /d >/dev/null
+docker run --rm -v "$(realpath "$DATA_DIR")":/d alpine:3.20 chown -R 10001:10001 /d >/dev/null
 
 log "starting the stack"
 docker compose up -d >/dev/null 2>&1
