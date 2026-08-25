@@ -6,6 +6,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Internal
+
+- **The size and complexity rules are now a linter, and the 3,100-line `activate()` began
+  its diet** (audit A2 + A1). `npm run lint` enforces max-lines 800 / max-lines-per-function
+  50 / complexity 4 / no-console in CI — pre-existing debt carries explicit
+  `eslint-disable` markers, so a lint failure always means a NEW violation. Four subsystems
+  moved out of `extension.ts` (3,106 → 2,594 lines), each with its own tests: the sharing
+  conversation (`shareInbox.ts`), the security-key re-wrap/re-key arithmetic
+  (`securityKeyOps.ts`), the viewers' shared secret ladder and db display
+  (`viewerOptions.ts`) with the before-overwrite snapshot (`revisionSnapshot.ts`), and the
+  error-to-sentence rule (`describeError.ts`) plus `StorageManager.exportSecretsFor`.
+  No behaviour change intended anywhere; the suite grew from 635 to 659 tests and runs
+  green on Windows and WSL.
+
 ### Changed
 
 - **Vault format v3 — and every machine must be updated before any of them syncs.**
