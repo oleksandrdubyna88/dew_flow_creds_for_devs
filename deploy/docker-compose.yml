@@ -75,6 +75,7 @@ services:
       Vault__RequireForwardedHttps: ${REQUIRE_HTTPS:-true}
       Auth__Microsoft__Tenant: ${MS_TENANT:-}
       Auth__Microsoft__Audiences: ${MS_AUDIENCES:-}
+      Auth__Microsoft__ClientScope: ${MS_CLIENT_SCOPE:-}
       Auth__Google__Enabled: ${GOOGLE_ENABLED:-false}
       Auth__Google__Audiences: ${GOOGLE_AUDIENCES:-}
       Auth__Local__SigningKey: ${LOCAL_SIGNING_KEY:-}

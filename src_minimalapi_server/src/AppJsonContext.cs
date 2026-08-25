@@ -9,6 +9,18 @@ public sealed record ErrorDto(string Error);
 public sealed record HealthDto(string Status, string Service, string Storage);
 
 /// <summary>
+/// What a client has to know BEFORE it can authenticate, and nothing else.
+///
+/// <para>Exactly one field, deliberately. The Microsoft scope is not a secret — a
+/// client id appears in every authorization URL and in the audience claim of every
+/// token this server accepts — but the temptation on an endpoint like this is to add
+/// "just one more" useful value, and the next one would be the allowed email domains.
+/// That IS a secret in the only sense that matters: it tells an attacker whose
+/// addresses this server entertains. One field, and the reason it is one field.</para>
+/// </summary>
+public sealed record ClientConfigDto(string MicrosoftScope);
+
+/// <summary>
 /// The one <see cref="System.Text.Json"/> contract for the whole server.
 ///
 /// <para>Source-generated so the binary can be published Native AOT: the reflection
@@ -21,6 +33,7 @@ public sealed record HealthDto(string Status, string Service, string Storage);
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
 [JsonSerializable(typeof(ErrorDto))]
 [JsonSerializable(typeof(HealthDto))]
+[JsonSerializable(typeof(ClientConfigDto))]
 [JsonSerializable(typeof(WhoAmIDto))]
 [JsonSerializable(typeof(List<TeamMemberDto>))]
 [JsonSerializable(typeof(ShareRequest))]

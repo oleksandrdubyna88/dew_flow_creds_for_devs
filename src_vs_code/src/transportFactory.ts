@@ -7,6 +7,7 @@ import { StorageManager } from './storageManager';
 import { StoredAccount } from './types';
 import { VaultTransport, isServerLocation } from './vaultTransport';
 import { microsoftServerScopes } from './msScopes';
+import { ClientConfigCache, defaultConfigFetcher, resolveMicrosoftScope } from './clientConfig';
 
 /**
  * Resolves the transport for an account's configured location: a folder
@@ -15,6 +16,15 @@ import { microsoftServerScopes } from './msScopes';
  * cycle reuses one client.
  */
 export class TransportFactory {
+  /**
+   * What each server says a client needs before it can sign in.
+   *
+   * <p>Asked once per location. Before this, the Microsoft API scope had to be
+   * pasted into every developer's settings.json by hand, and the failure when
+   * nobody did was an empty Team with no error at all.</p>
+   */
+  private readonly clientConfigs = new ClientConfigCache(defaultConfigFetcher);
+
   private readonly cache = new Map<string, VaultTransport>();
 
   constructor(
@@ -64,6 +74,14 @@ export class TransportFactory {
    * existing session. Google: the id_token kept by our own provider (the
    * server validates Google **id** tokens; Google access tokens are opaque).
    */
+  /** The server this account talks to, if it talks to one at all. */
+  private async locationConfig(account: StoredAccount) {
+    const location = nasPathFor(account);
+    return location === undefined || !isServerLocation(location)
+      ? undefined
+      : this.clientConfigs.forLocation(location);
+  }
+
   private async tokenFor(account: StoredAccount): Promise<string | undefined> {
     if (account.provider === 'google') {
       return this.googleAuth.getIdToken(account.accountId);
@@ -71,9 +89,14 @@ export class TransportFactory {
     try {
       // The API scope of the operator's Entra app registration, when configured — the
       // only kind of Microsoft token a server can validate (see msScopes.ts).
-      const apiScope = vscode.workspace
-        .getConfiguration('credSshManager')
-        .get<string>('microsoftApiScope', '');
+      // The server's answer, with the local setting as an override rather than a
+      // requirement: an operator who typed a value keeps it, everyone else needs
+      // to have configured nothing.
+      const advertised = await this.locationConfig(account);
+      const apiScope = resolveMicrosoftScope(
+        vscode.workspace.getConfiguration('credSshManager').get<string>('microsoftApiScope', ''),
+        advertised?.microsoftScope,
+      );
       const session = await vscode.authentication.getSession(
         account.provider,
         microsoftServerScopes(apiScope),

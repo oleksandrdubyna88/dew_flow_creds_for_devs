@@ -147,6 +147,12 @@ builder.Services.AddRateLimiter(options =>
 // ---------- authentication: Microsoft Entra + (optional) Google ----------
 var msTenant = config["Auth:Microsoft:Tenant"];
 var msAudiences = SplitCsv(config["Auth:Microsoft:Audiences"]);
+// The scope a client must ASK Entra for, which is not the same string as the
+// audience this server accepts: the audience is the app registration, the scope
+// names a permission inside it. It cannot be derived — the scope name is whatever
+// the operator called it — so it is configured, once, here rather than by hand in
+// every developer's settings.json.
+var msClientScope = (config["Auth:Microsoft:ClientScope"] ?? string.Empty).Trim();
 var googleEnabled = config.GetValue("Auth:Google:Enabled", false);
 var googleAudiences = SplitCsv(config["Auth:Google:Audiences"]);
 var localKey = config["Auth:Local:SigningKey"];
@@ -352,6 +358,14 @@ app.MapGet("/api/health", () =>
             statusCode: StatusCodes.Status503ServiceUnavailable);
     }
 });
+
+// What a client needs before it can authenticate. Anonymous by necessity — the
+// caller has no token yet, which is the whole point — and rate-limited like
+// everything else. Deliberately NOT folded into /api/health: nginx exempts that
+// path from its limiter so monitoring cannot exhaust the budget, and an anonymous
+// endpoint outside the limiter is one somebody will eventually poll in a loop.
+app.MapGet("/api/client-config", () =>
+    Results.Json(new ClientConfigDto(msClientScope), AppJsonContext.Default.ClientConfigDto));
 
 app.MapGet("/api/whoami", async (HttpContext ctx, CancellationToken ct) =>
 {
