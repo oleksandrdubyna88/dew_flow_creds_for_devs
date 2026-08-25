@@ -25,6 +25,7 @@ import {
   auditLogsToPrune,
 } from './agentAuditFile';
 import { startLoopbackServer } from './loopbackServer';
+import { startOnce } from './idempotentStart';
 
 /**
  * The broker: a loopback HTTP surface through which an agent asks this window
@@ -48,7 +49,9 @@ export class CredsAgentServer implements vscode.Disposable {
   private readonly consenting = new Map<string, Promise<boolean>>();
   private readonly abort = new AbortController();
   private output: vscode.OutputChannel | undefined;
-  private starting: Promise<void> | undefined;
+  // Shares one in-flight start, but forgets a FAILED one so a transient bind error does not
+  // disable the feature for the window's life. See startOnce.
+  private readonly beginStart = startOnce<void>();
   private server: http.Server | undefined;
   private port = 0;
   private running = 0;
@@ -128,15 +131,14 @@ export class CredsAgentServer implements vscode.Disposable {
    * already handed out naming its port.
    */
   private ensureStarted(): Promise<void> {
-    this.starting ??= (async () => {
+    return this.beginStart(async () => {
       this.output ??= vscode.window.createOutputChannel('CredsForDevs: Agent Access');
       this.openAuditFile();
       const { server, port } = await startLoopbackServer();
       this.server = server;
       this.port = port;
       server.on('request', (req, res) => void this.handle(req, res));
-    })();
-    return this.starting;
+    });
   }
 
   private async handle(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
