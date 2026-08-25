@@ -68,6 +68,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Bounded on purpose: 256 KB of output per stream, 30 s per command (raisable to 120 s), 8 at a
   time, and every child killed when the window goes.
 
+## [0.48.0] — 2026-08-25
+
+### Added
+
+- **Scripts.** A new entity kind and a `scripts` folder in the default set (new accounts
+  and Project folders pick it up automatically). The body is a **big editor with syntax
+  highlighting** — language picked from a list (Bash, PowerShell, Python,
+  JavaScript/TypeScript, SQL, YAML, JSON, Dockerfile), highlighted live while you type,
+  by a small dependency-free highlighter whose one hard rule is that it escapes before
+  it marks: a script containing markup can never become markup in the webview.
+
+  **The changeable parts live in variables**: write `${NAME}` in the body and define the
+  rows below — name, value, an explanation, and a tick to keep one without using it.
+  The body stays generic; the viewer shows the raw script, every variable with its note,
+  and the script **with variables filled in**, each with its own copy button.
+
+  **Run Script** — the green triangle — substitutes the variables, writes the result
+  into the extension's private storage (the same purged-on-exit directory materialized
+  SSH keys use) and executes it in a terminal with the right interpreter for the OS:
+  bash, powershell/pwsh, python, node. SQL and the data formats are refused with a
+  reason — piping YAML into a shell is not a Run button.
+
 ## [0.47.0] — 2026-08-25
 
 ### Added

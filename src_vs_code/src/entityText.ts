@@ -9,6 +9,7 @@
 import { DB_DEFAULT_PORTS, parseDbConnectionString } from './dbConnString';
 import { buildSshCommand } from './sshCommand';
 import { describeCommand } from './commandLine';
+import { substituteScript } from './scriptRender';
 import { EntityMetadata } from './types';
 
 export function formatEntityBlock(
@@ -27,6 +28,18 @@ export function formatEntityBlock(
     const described = describeCommand(details.command ?? '', details.commandArgs, details.commandNote);
     if (described.length > 0) {
       lines.push('', described);
+    }
+  } else if (details.isScript) {
+    lines.push(`Language: ${details.scriptLanguage ?? 'bash'}`);
+    if (details.script !== undefined && details.script.length > 0) {
+      lines.push('', substituteScript(details.script, details.scriptVars));
+      const annotated = (details.scriptVars ?? []).filter((v) => v.note !== undefined);
+      if (annotated.length > 0) {
+        lines.push('');
+        for (const v of annotated) {
+          lines.push('${' + v.name + '}  — ' + v.note + (v.disabled === true ? '  (off)' : ''));
+        }
+      }
     }
   } else if (details.isDb) {
     lines.push(`DB type: ${details.dbType ?? 'unknown'}`);

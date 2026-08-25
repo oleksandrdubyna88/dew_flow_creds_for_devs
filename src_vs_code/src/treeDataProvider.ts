@@ -252,12 +252,17 @@ export class CredTreeDataProvider
     if (details?.isTerminal) {
       contextValue += ':cmd';
     }
+    if (details?.isScript) {
+      contextValue += ':script';
+    }
     if (hasPassword) {
       contextValue += ':pwd';
     }
     item.contextValue = contextValue;
     item.iconPath = new vscode.ThemeIcon(
-      details?.isTerminal
+      details?.isScript
+        ? 'file-code'
+        : details?.isTerminal
         ? 'terminal'
         : details?.isDb
         ? 'database'
@@ -369,6 +374,8 @@ function kindIcon(kind: EntityKind): string {
   switch (kind) {
     case 'terminal':
       return 'terminal';
+    case 'script':
+      return 'file-code';
     case 'db':
       return 'database';
     case 'vpn':

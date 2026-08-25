@@ -4,6 +4,7 @@ import { copySecret } from './secretClipboard';
 import { DbConnParts } from './dbConnString';
 import { CommandArg, EntityMetadata } from './types';
 import { buildCommandLine, normalizeArgs } from './commandLine';
+import { highlightScript, substituteScript } from './scriptRender';
 import { BINDABLE_FIELDS, BindableField } from './envBinding';
 
 /**
@@ -119,6 +120,11 @@ export function showEntityView(options: EntityViewOptions): void {
       case 'command': value = d.command; break;
       case 'commandNote': value = d.commandNote; break;
       case 'fullCommand': value = buildCommandLine(d.command ?? '', d.commandArgs); break;
+      case 'scriptLanguage': value = d.scriptLanguage; break;
+      case 'script': value = d.script; break;
+      case 'scriptFull':
+        value = d.script !== undefined ? substituteScript(d.script, d.scriptVars) : undefined;
+        break;
       default: {
         const env = /^envname_(.+)$/.exec(message.field);
         if (env !== null) {
@@ -221,7 +227,7 @@ function renderHtml(options: EntityViewOptions): string {
     const note = arg.note !== undefined && arg.note.length > 0 ? arg.note : '';
     const off = arg.disabled === true ? ' (off — not part of the command)' : '';
     return `<div class="row">
-      <label>${escapeHtml(`Argument ${index + 1}${off}`)}</label>
+      <label>${escapeHtml(arg.name !== undefined && arg.name.length > 0 ? `Variable \${${arg.name}}${off}` : `Argument ${index + 1}${off}`)}</label>
       <div class="line"><input readonly value="${escapeHtml(arg.value)}">
         <button data-field="arg${index}" data-action="copy" class="icon" title="Copy argument" aria-label="Copy argument">${COPY_ICON}</button>
       </div>
@@ -273,6 +279,23 @@ function renderHtml(options: EntityViewOptions): string {
     row('DB name', 'dbName', options.dbParts?.database),
     row('DB user', 'dbUser', options.dbParts?.user),
     row('DB password', 'dbPassword', options.dbHasPassword ? '•' : undefined, true),
+    row('Script language', 'scriptLanguage', d.isScript ? (d.scriptLanguage ?? 'bash') : undefined),
+    ...(d.isScript && d.script !== undefined && d.script.length > 0
+      ? [
+          `<div class="row"><label>Script</label>
+      <div class="line"><pre class="code">${highlightScript(d.script, d.scriptLanguage ?? 'other')}</pre>
+        <button data-field="script" data-action="copy" class="icon" title="Copy script (raw)" aria-label="Copy script">${COPY_ICON}</button>
+      </div></div>`,
+        ]
+      : []),
+    ...(d.isScript ? normalizeArgs(d.scriptVars).map(argRow) : []),
+    row(
+      'Script with variables filled in',
+      'scriptFull',
+      d.isScript && d.script !== undefined
+        ? substituteScript(d.script, d.scriptVars)
+        : undefined,
+    ),
     row('Notes', 'notes', options.notes),
     row(
       `Additional file${d.attachmentFileName ? ` (${d.attachmentFileName})` : ''}`,
@@ -308,6 +331,15 @@ function renderHtml(options: EntityViewOptions): string {
   .env { font-size: .72em; letter-spacing: .5px; }
   .envTag { opacity: .8; font-family: var(--vscode-editor-font-family); font-size: .9em; }
   .envLine { margin-top: 3px; align-items: center; }
+  .code { flex: 1; margin: 0; padding: 6px 8px; max-height: 320px; overflow: auto;
+    font-family: var(--vscode-editor-font-family, monospace); font-size: 13px; line-height: 1.45;
+    white-space: pre-wrap; word-break: break-all;
+    border: 1px solid var(--vscode-widget-border, #3c3c3c); border-radius: 4px; }
+  .tok-comment { color: var(--vscode-descriptionForeground); font-style: italic; }
+  .tok-string { color: var(--vscode-charts-orange, #ce9178); }
+  .tok-kw { color: var(--vscode-charts-blue, #569cd6); font-weight: 600; }
+  .tok-num { color: var(--vscode-charts-green, #b5cea8); }
+  .tok-var { color: var(--vscode-charts-purple, #c586c0); font-weight: 600; }
   .preview { width: 200px; height: 200px; object-fit: contain; cursor: zoom-in;
              border: 1px solid var(--vscode-widget-border, #3c3c3c); border-radius: 4px;
              background: var(--vscode-editor-background); }

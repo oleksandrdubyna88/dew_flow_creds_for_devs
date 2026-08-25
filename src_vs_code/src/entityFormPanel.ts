@@ -2,6 +2,7 @@ import * as crypto from 'node:crypto';
 import * as vscode from 'vscode';
 import { normalizeArgs } from './commandLine';
 import { flagOf, parseCommandLine } from './commandParse';
+import { SCRIPT_LANGUAGES, highlightScript } from './scriptRender';
 import { describeFlag, isProbeSafe } from './helpText';
 import { readHelpText } from './helpLookup';
 import { BINDABLE_FIELDS, BindableField, isValidEnvName } from './envBinding';
@@ -108,9 +109,10 @@ function readArgRows(data: Record<string, unknown>): CommandArg[] {
 }
 
 interface FormMessage {
-  type: 'save' | 'cancel' | 'splitCommand';
+  type: 'save' | 'cancel' | 'splitCommand' | 'highlight';
   data?: Record<string, unknown>;
   text?: string;
+  lang?: string;
 }
 
 
@@ -181,6 +183,14 @@ export function showEntityForm(options: EntityFormOptions): Promise<EntityFormVa
   return new Promise((resolve) => {
     let settled = false;
     panel.webview.onDidReceiveMessage((message: FormMessage) => {
+      if (message.type === 'highlight') {
+        // One highlighter, host-side; the page round-trips instead of duplicating it.
+        void panel.webview.postMessage({
+          type: 'highlighted',
+          html: highlightScript(message.text ?? '', message.lang ?? 'other'),
+        });
+        return;
+      }
       if (message.type === 'splitCommand') {
         void splitAndDescribe(panel, message.text ?? '');
         return;
@@ -223,6 +233,35 @@ function isDbType(value: string): value is DbType {
 }
 
 /** Bindings as posted by the webview — unknown fields and invalid names are dropped. */
+/** Variable rows as posted — same defensive read as the terminal args. */
+function readScriptVars(data: Record<string, unknown>): CommandArg[] | undefined {
+  const raw = data.scriptVars;
+  if (!Array.isArray(raw)) {
+    return undefined;
+  }
+  const rows: CommandArg[] = [];
+  for (const item of raw) {
+    if (typeof item !== 'object' || item === null) {
+      continue;
+    }
+    const r = item as Record<string, unknown>;
+    const name = typeof r.name === 'string' ? r.name.trim() : '';
+    const value = typeof r.value === 'string' ? r.value : '';
+    if (name.length === 0) {
+      continue;
+    }
+    const row: CommandArg = { name, value };
+    if (typeof r.note === 'string' && r.note.trim().length > 0) {
+      row.note = r.note.trim();
+    }
+    if (r.disabled === true) {
+      row.disabled = true;
+    }
+    rows.push(row);
+  }
+  return rows.length > 0 ? rows : undefined;
+}
+
 function readEnvBindings(data: Record<string, unknown>): Record<string, string> | undefined {
   const raw = data.envBindings;
   if (typeof raw !== 'object' || raw === null) {
@@ -241,6 +280,7 @@ function readEnvBindings(data: Record<string, unknown>): Record<string, string> 
 function toValues(data: Record<string, unknown>, options: EntityFormOptions): EntityFormValues {
   const kind = (options.lockedKind ?? str(data, 'entityType')) as EntityKind;
   const envBindings = readEnvBindings(data);
+  const isScript = kind === 'script';
   const isSsh = kind === 'ssh';
   const isKey = kind === 'sshkey';
   const isVpn = kind === 'vpn';
@@ -264,6 +304,10 @@ function toValues(data: Record<string, unknown>, options: EntityFormOptions): En
       id: options.entityId,
       name: str(data, 'name').trim(),
       envBindings,
+      isScript: isScript || undefined,
+      scriptLanguage: isScript ? str(data, 'scriptLanguage').trim() || 'bash' : undefined,
+      script: isScript ? str(data, 'scriptBody') || undefined : undefined,
+      scriptVars: isScript ? readScriptVars(data) : undefined,
       attachmentFileName: bool(data, 'clearAttachment')
         ? undefined
         : str(data, 'attachmentName').trim() || options.initial?.attachmentFileName,
@@ -322,6 +366,12 @@ function escapeHtml(value: string): string {
  * variable name, pre-filled from the entity name the way the operator asked for it —
  * `git key` -> `ENV_GITKEY_PRIVATEKEY` — and editable after.
  */
+function scriptLanguageOptions(current: string | undefined): string {
+  return SCRIPT_LANGUAGES.map(
+    (l) => `<option value="${l.id}" ${l.id === (current ?? 'bash') ? 'selected' : ''}>${l.label}</option>`,
+  ).join('');
+}
+
 function envRow(field: BindableField, d: EntityMetadata | undefined): string {
   const bound = d?.envBindings?.[field];
   const checked = bound !== undefined ? 'checked' : '';
@@ -412,6 +462,20 @@ function renderHtml(options: EntityFormOptions): string {
   .envRow { margin: 4px 0 0 2px; padding: 4px 8px;
             border-left: 2px solid var(--vscode-focusBorder, #007fd4); opacity: .95; }
   .envRow label { opacity: .85; }
+  .codeWrap { position: relative; }
+  .codeWrap pre { position: absolute; inset: 0; margin: 0; padding: 5px 7px; overflow: auto;
+    font-family: var(--vscode-editor-font-family, monospace); font-size: 13px; line-height: 1.45;
+    white-space: pre-wrap; word-break: break-all; pointer-events: none;
+    color: var(--vscode-editor-foreground); }
+  .codeWrap textarea { position: relative; background: transparent; color: transparent;
+    caret-color: var(--vscode-editor-foreground);
+    font-family: var(--vscode-editor-font-family, monospace); font-size: 13px; line-height: 1.45;
+    white-space: pre-wrap; word-break: break-all; }
+  .tok-comment { color: var(--vscode-descriptionForeground); font-style: italic; }
+  .tok-string { color: var(--vscode-charts-orange, #ce9178); }
+  .tok-kw { color: var(--vscode-charts-blue, #569cd6); font-weight: 600; }
+  .tok-num { color: var(--vscode-charts-green, #b5cea8); }
+  .tok-var { color: var(--vscode-charts-purple, #c586c0); font-weight: 600; }
   .fieldDivider { border: 0; border-top: 1px solid var(--vscode-widget-border, #4444);
                   margin: 12px 0; }
   input[type=text], input[type=password], input[type=number], textarea, select {
@@ -603,6 +667,22 @@ function renderHtml(options: EntityFormOptions): string {
     }
   </fieldset>
 
+  <fieldset id="scriptSection">
+    <legend>Script</legend>
+    <label for="scriptLanguage">Language</label>
+    <select id="scriptLanguage">${scriptLanguageOptions(d?.scriptLanguage)}</select>
+    <label for="scriptBody">Script</label>
+    <div class="codeWrap">
+      <pre id="scriptHl" aria-hidden="true"></pre>
+      <textarea id="scriptBody" rows="16" spellcheck="false" autocomplete="off"
+                placeholder="aws s3 sync ${'${SRC}'} s3://${'${BUCKET}'}/">${escapeHtml(d?.script ?? '')}</textarea>
+    </div>
+    <p class="hint">Pull the changeable parts out as <code>${'${NAME}'}</code> and define them below — the body stays generic, the values live in rows you can edit one by one.</p>
+    <label>Variables</label>
+    <div id="scriptVarRows"></div>
+    <button type="button" id="addScriptVar" class="secondary">+ Add variable</button>
+  </fieldset>
+
   <fieldset>
     <legend>Attachments</legend>
     <label for="attachFile">Additional file (pdf, office, text, archives — never executables)</label>
@@ -647,6 +727,7 @@ function renderHtml(options: EntityFormOptions): string {
 <script nonce="${nonce}">
   const vscode = acquireVsCodeApi();
   const INITIAL_ARGS = ${JSON.stringify(d?.commandArgs ?? [])};
+  const INITIAL_SCRIPT_VARS = ${JSON.stringify(d?.scriptVars ?? [])};
   const val = (id) => document.getElementById(id)?.value ?? '';
   const chk = (id) => document.getElementById(id)?.checked === true;
   const setError = (text) => { document.getElementById('error').textContent = text; };
@@ -667,7 +748,8 @@ function renderHtml(options: EntityFormOptions): string {
     show('vpnSection', kind === 'vpn');
     show('dbSection', kind === 'db');
     show('terminalSection', kind === 'terminal');
-    show('passwordSection', kind !== 'db' && kind !== 'terminal');
+    show('scriptSection', kind === 'script');
+    show('passwordSection', kind !== 'db' && kind !== 'terminal' && kind !== 'script');
   }
 
   // ---- argument rows -------------------------------------------------------
@@ -675,6 +757,7 @@ function renderHtml(options: EntityFormOptions): string {
   // implementation, and the saved payload is read from the same array the UI edits
   // instead of from a DOM scrape that drifts the first time the markup changes.
   var argRows = INITIAL_ARGS.slice();
+  
 
   function renderArgs() {
     var host = document.getElementById('argRows');
@@ -1047,6 +1130,85 @@ function renderHtml(options: EntityFormOptions): string {
     imageContent = b64; imageName = name;
   });
 
+  // ---- script editor: overlay highlighting + variable rows ----
+  var scriptVarRows = INITIAL_SCRIPT_VARS.slice();
+  (function wireScript() {
+    var body = document.getElementById('scriptBody');
+    var hl = document.getElementById('scriptHl');
+    var langSel = document.getElementById('scriptLanguage');
+    if (!body || !hl || !langSel) { return; }
+    var timer;
+    function ask() {
+      clearTimeout(timer);
+      timer = setTimeout(function () {
+        vscode.postMessage({ type: 'highlight', text: body.value, lang: langSel.value });
+      }, 120);
+    }
+    body.addEventListener('input', ask);
+    langSel.addEventListener('change', ask);
+    body.addEventListener('scroll', function () {
+      hl.scrollTop = body.scrollTop; hl.scrollLeft = body.scrollLeft;
+    });
+    window.addEventListener('message', function (event) {
+      var msg = event.data || {};
+      if (msg.type === 'highlighted') {
+        hl.innerHTML = msg.html + '
+';
+        hl.scrollTop = body.scrollTop;
+      }
+    });
+    ask();
+  })();
+
+  function renderScriptVars() {
+    var host = document.getElementById('scriptVarRows');
+    if (!host) { return; }
+    host.textContent = '';
+    scriptVarRows.forEach(function (row, index) {
+      var wrap = document.createElement('div');
+      wrap.className = 'argRow';
+      var top = document.createElement('div');
+      top.className = 'argTop';
+      var on = document.createElement('input');
+      on.type = 'checkbox';
+      on.checked = row.disabled !== true;
+      on.title = 'Substitute this variable';
+      on.addEventListener('change', function () { scriptVarRows[index].disabled = !on.checked; });
+      var name = document.createElement('input');
+      name.type = 'text';
+      name.placeholder = 'NAME';
+      name.style.maxWidth = '160px';
+      name.value = row.name || '';
+      name.addEventListener('input', function () { scriptVarRows[index].name = name.value; });
+      var value = document.createElement('input');
+      value.type = 'text';
+      value.placeholder = 'value';
+      value.value = row.value || '';
+      value.addEventListener('input', function () { scriptVarRows[index].value = value.value; });
+      var del = document.createElement('button');
+      del.type = 'button'; del.className = 'secondary'; del.textContent = '×';
+      del.addEventListener('click', function () { scriptVarRows.splice(index, 1); renderScriptVars(); });
+      top.appendChild(on); top.appendChild(name); top.appendChild(value); top.appendChild(del);
+      var note = document.createElement('input');
+      note.type = 'text';
+      note.placeholder = 'what it means';
+      note.value = row.note || '';
+      note.addEventListener('input', function () { scriptVarRows[index].note = note.value; });
+      wrap.appendChild(top); wrap.appendChild(note);
+      host.appendChild(wrap);
+    });
+  }
+  (function () {
+    var add = document.getElementById('addScriptVar');
+    if (add) {
+      add.addEventListener('click', function () {
+        scriptVarRows.push({ name: '', value: '', note: '', disabled: false });
+        renderScriptVars();
+      });
+    }
+    renderScriptVars();
+  })();
+
   // ---- save / cancel ----
   document.getElementById('save').addEventListener('click', () => {
     setError('');
@@ -1080,6 +1242,7 @@ function renderHtml(options: EntityFormOptions): string {
       dbType: val('dbType'), dbConnection: val('dbConnection'),
       command: val('command'), commandNote: val('commandNote'), commandArgs: argRows,
       envBindings: collectEnvBindings(),
+      scriptLanguage: val('scriptLanguage'), scriptBody: val('scriptBody'), scriptVars: scriptVarRows,
       attachmentContent: attachmentContent, attachmentName: attachmentName,
       imageContent: imageContent, imageName: imageName,
       clearAttachment: chk('clearAttachment'), clearImage: chk('clearImage'),

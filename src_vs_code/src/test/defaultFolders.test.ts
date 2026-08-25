@@ -7,7 +7,7 @@ import {
   inheritedFolderType,
 } from '../defaultFolders';
 
-test('the default set is the six requested folders, each with its own type', () => {
+test('the default set is the seven requested folders, each with its own type', () => {
   assert.deepEqual(
     DEFAULT_FOLDERS.map((f) => [f.name, f.folderType]),
     [
@@ -17,6 +17,7 @@ test('the default set is the six requested folders, each with its own type', () 
       ['ssh connections', 'ssh'],
       ['passwords', 'credential'],
       ['terminal', 'terminal'],
+      ['scripts', 'script'],
     ],
   );
 });
