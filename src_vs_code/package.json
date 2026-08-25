@@ -2,7 +2,7 @@
   "name": "creds-for-devs",
   "displayName": "CredsForDevs",
   "description": "Zero-trust credential manager for developers: SSH hosts, keys, VPN configs and database connections in VS Code. Secrets live in the OS keychain; optional end-to-end encrypted sync and team sharing through a self-hosted vault server that never sees a plaintext secret.",
-  "version": "0.43.0",
+  "version": "0.44.0",
   "publisher": "remsoftdev",
   "license": "MIT",
   "icon": "media/icon.png",
@@ -420,6 +420,11 @@
         "icon": "$(lock)"
       },
       {
+        "command": "credSshManager.setAutoLock",
+        "title": "Set Auto-Lock…",
+        "category": "CredsForDevs"
+      },
+      {
         "command": "credSshManager.backupToNas",
         "title": "Backup to NAS",
         "category": "CredsForDevs",
@@ -549,11 +554,6 @@
           "group": "1_create@2"
         },
         {
-          "command": "credSshManager.removeAccount",
-          "when": "view == credSshManagerView && viewItem == account",
-          "group": "inline@2"
-        },
-        {
           "command": "credSshManager.setAccountNasPath",
           "when": "view == credSshManagerView && viewItem == account",
           "group": "3_manage@1"
@@ -592,6 +592,11 @@
           "command": "credSshManager.lockVaults",
           "when": "view == credSshManagerView && viewItem == account",
           "group": "2_keys@4"
+        },
+        {
+          "command": "credSshManager.setAutoLock",
+          "when": "view == credSshManagerView && viewItem == account",
+          "group": "2_keys@5"
         },
         {
           "command": "credSshManager.removeAccount",

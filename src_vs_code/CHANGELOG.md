@@ -41,6 +41,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Bounded on purpose: 256 KB of output per stream, 30 s per command (raisable to 120 s), 8 at a
   time, and every child killed when the window goes.
 
+## [0.44.0] — 2026-08-25
+
+### Fixed
+
+- **Selecting an account made it look signed out.** The green came from a themed icon,
+  and VS Code repaints themed icons in the selection colour the moment the row is
+  selected — so the state indicator vanished exactly while you were looking at it. The
+  icon is an SVG file now (green signed-in / grey not), which selection does not touch.
+- **The grey icon's reason never showed.** It was composed onto the row and then
+  overwritten by the provider name one line later; the row now shows both.
+
+### Changed
+
+- **Sign Out / Remove Account left the row.** Two inline buttons sat a few pixels apart
+  and one of them deletes the account — it now lives only in the right-click menu, under
+  its own divider. The `+` stays.
+- **Set Auto-Lock… in the account menu**: 1 / 3 / 5 / 8 / 12 / 24 hours, or *Only when
+  the window closes* — with the honest note that the cached key is memory-only, so
+  closing VS Code always locks regardless; the choice governs only the idle timer.
+
 ## [0.43.0] — 2026-08-25
 
 ### Fixed

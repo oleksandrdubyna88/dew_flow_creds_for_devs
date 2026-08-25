@@ -101,7 +101,7 @@ let envCollection: vscode.GlobalEnvironmentVariableCollection;
 export function activate(context: vscode.ExtensionContext): void {
   envCollection = context.environmentVariableCollection;
   const storage = new StorageManager(context.globalState, context.secrets);
-  const provider = new CredTreeDataProvider(storage);
+  const provider = new CredTreeDataProvider(storage, context.extensionUri);
   const storageDir = context.globalStorageUri.fsPath;
   // Never let decrypted SSH key material outlive a session: clear any that a
   // crash left behind, and clear again on shutdown (see deactivate()).
@@ -1209,6 +1209,41 @@ ${detail}
         `Unlock failed: ${error instanceof Error ? error.message : String(error)}`,
       );
     }
+  });
+
+  register('credSshManager.setAutoLock', async () => {
+    const config = vscode.workspace.getConfiguration('credSshManager');
+    const current = config.get<number>('autoLockMinutes', 60);
+    const hours = [1, 3, 5, 8, 12, 24];
+    const items: (vscode.QuickPickItem & { minutes: number })[] = [
+      ...hours.map((h) => ({
+        label: h === 1 ? '1 hour' : `${h} hours`,
+        description: current === h * 60 ? '$(check) current' : undefined,
+        minutes: h * 60,
+      })),
+      {
+        label: 'Only when the window closes',
+        detail:
+          'No idle timer. The cached key lives only in memory, so closing VS Code always locks — this switches off just the idle lock.',
+        description: current === 0 ? '$(check) current' : undefined,
+        minutes: 0,
+      },
+    ];
+    const picked = await vscode.window.showQuickPick(items, {
+      title: 'Lock the vaults after how long without you using them?',
+      placeHolder:
+        '“Using them” is your own action on a stored secret — background sync never counts.',
+      ignoreFocusOut: true,
+    });
+    if (picked === undefined) {
+      return;
+    }
+    await config.update('autoLockMinutes', picked.minutes, vscode.ConfigurationTarget.Global);
+    void vscode.window.showInformationMessage(
+      picked.minutes === 0
+        ? 'Idle auto-lock is off. The vaults still lock whenever the window closes.'
+        : `Vaults will lock after ${picked.label} idle.`,
+    );
   });
 
   register('credSshManager.lockVaults', () => {

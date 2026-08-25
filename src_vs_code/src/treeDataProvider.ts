@@ -44,7 +44,10 @@ export class CredTreeDataProvider
   /** Set by the extension: Team / Shared-with-me data source. */
   sharing: SharingManager | undefined;
 
-  constructor(private readonly storage: StorageManager) {}
+  constructor(
+    private readonly storage: StorageManager,
+    private readonly extensionUri: vscode.Uri,
+  ) {}
 
   refresh(): void {
     this.onDidChangeTreeDataEmitter.fire(undefined);
@@ -165,13 +168,22 @@ export class CredTreeDataProvider
       item.id = `account:${element.account.accountId}`;
       item.contextValue = 'account';
       const ready = this.readiness.get(element.account.accountId);
-      item.iconPath = new vscode.ThemeIcon('account', ready?.ready === true ? READY_COLOR : undefined);
-      if (ready !== undefined && !ready.ready) {
-        // The reason belongs on the row itself: a grey icon that does not say why is a
-        // riddle, and this is the row somebody stares at when sync is not happening.
-        item.description = [item.description, ready.reason].filter(Boolean).join('  ·  ');
-      }
-      item.description = element.account.provider;
+      // An SVG file, not a ThemeIcon with a colour: VS Code repaints themed icons in the
+      // selection colour the moment the row is selected, which made a signed-in account
+      // look signed-out exactly while you were looking at it.
+      item.iconPath = vscode.Uri.joinPath(
+        this.extensionUri,
+        'media',
+        ready?.ready === true ? 'account-green.svg' : 'account-grey.svg',
+      );
+      // The reason belongs on the row itself: a grey icon that does not say why is a
+      // riddle — and it used to be overwritten by the provider name one line later.
+      item.description = [
+        element.account.provider,
+        ready !== undefined && !ready.ready ? ready.reason : undefined,
+      ]
+        .filter(Boolean)
+        .join('  ·  ');
       return item;
     }
 
@@ -346,7 +358,6 @@ function kindIcon(kind: EntityKind): string {
 const FOLDER_COLOR = new vscode.ThemeColor('credSshManager.folderIcon');
 
 /** Green: this account can sync on its own. Anything else stays the default grey. */
-const READY_COLOR = new vscode.ThemeColor('credSshManager.readyIcon');
 /** Team/people rows are dark blue so they read as "other people", not data. */
 const TEAM_COLOR = new vscode.ThemeColor('credSshManager.teamIcon');
 
