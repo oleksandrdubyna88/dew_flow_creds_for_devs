@@ -16,6 +16,7 @@ import { EntityMetadata } from './types';
  */
 
 /** The current value of one bindable field, or undefined when nothing is stored. */
+// eslint-disable-next-line complexity
 export async function bindableFieldValue(
   storage: StorageManager,
   accountId: string,
@@ -42,6 +43,7 @@ export async function bindableFieldValue(
  * Apply an entity's bindings: write every bound field that has a value, and delete the
  * names `staleBefore` bound that nothing binds any more. Returns what was written.
  */
+// eslint-disable-next-line complexity
 export async function applyEnvBindings(
   env: vscode.GlobalEnvironmentVariableCollection,
   storage: StorageManager,

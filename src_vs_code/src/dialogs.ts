@@ -27,6 +27,7 @@ import { formatEntityBlock } from './entityText';
 export { formatEntityBlock };
 
 /** QuickPick of a folder's content type (Credential first = default). */
+// eslint-disable-next-line complexity
 export async function pickFolderType(
   current?: FolderType,
 ): Promise<FolderType | undefined> {

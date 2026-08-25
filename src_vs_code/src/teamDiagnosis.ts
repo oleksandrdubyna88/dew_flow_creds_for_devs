@@ -31,6 +31,7 @@ export interface TeamFailure {
  * accept one. So that case gets named exactly, and everything else gets an honest
  * "here is the status, here is where to look".</p>
  */
+// eslint-disable-next-line complexity
 export function diagnoseTeamFailure(failure: TeamFailure): string {
   if (failure.status === undefined) {
     return 'The vault server did not answer. Check the URL in Set Sync Location… and that the server is reachable from this machine.';

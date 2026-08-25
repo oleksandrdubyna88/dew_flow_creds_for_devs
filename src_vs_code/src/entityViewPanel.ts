@@ -59,6 +59,7 @@ interface CopyMessage {
   field: string;
 }
 
+// eslint-disable-next-line max-lines-per-function
 export function showEntityView(options: EntityViewOptions): void {
   const panel = vscode.window.createWebviewPanel(
     'credSshEntityView',
@@ -68,6 +69,7 @@ export function showEntityView(options: EntityViewOptions): void {
   );
   panel.webview.html = renderHtml(options);
 
+  // eslint-disable-next-line complexity, max-lines-per-function
   panel.webview.onDidReceiveMessage(async (message: CopyMessage) => {
     const d = options.details;
     if (message.type === 'close') {
@@ -210,6 +212,7 @@ const CHECK_ICON =
   '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8">' +
   '<path d="M3 8.5 6.5 12 13 4.5"/></svg>';
 
+// eslint-disable-next-line complexity, max-lines-per-function
 function renderHtml(options: EntityViewOptions): string {
   const nonce = crypto.randomBytes(16).toString('base64url');
   const d = options.details;
@@ -222,6 +225,7 @@ function renderHtml(options: EntityViewOptions): string {
     value: string | undefined,
     masked = false,
     action: 'copy' | 'download' = 'copy',
+  // eslint-disable-next-line complexity
   ) => {
     if (value === undefined || value.length === 0) {
       return '';
@@ -272,6 +276,7 @@ function renderHtml(options: EntityViewOptions): string {
    * ARGUMENT is not a secret (the whole line is shown in "Full command" anyway) and
    * stays visible.</p>
    */
+  // eslint-disable-next-line complexity
   const argRow = (arg: CommandArg, index: number, secret = false): string => {
     const note = arg.note !== undefined && arg.note.length > 0 ? arg.note : '';
     const off = arg.disabled === true ? ' (off — not part of the command)' : '';

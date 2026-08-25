@@ -101,6 +101,7 @@ export function parseBearer(header: string | undefined): string | undefined {
 }
 
 /** Parse a JSON object body. A non-object (array, string, null) is invalid. */
+// eslint-disable-next-line complexity
 export function parseJsonObject(text: string): Record<string, unknown> | undefined {
   if (text.trim().length === 0) {
     return {};

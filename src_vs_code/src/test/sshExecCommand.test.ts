@@ -52,6 +52,7 @@ test('the default is the safe one: no password in play means BatchMode', () => {
   assert.equal(argv.includes('BatchMode=yes'), true);
 });
 
+// eslint-disable-next-line complexity
 test('-i appears only with a key path, -p only for a non-default port', () => {
   const plain = buildSshExecArgv(entity(), undefined, 'true') ?? [];
   assert.equal(plain.includes('-i'), false);

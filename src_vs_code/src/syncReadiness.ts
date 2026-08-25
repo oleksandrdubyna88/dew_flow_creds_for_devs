@@ -44,6 +44,7 @@ export interface SyncReadiness {
   fixLabel?: string;
 }
 
+// eslint-disable-next-line complexity
 export function syncReadiness(facts: SyncFacts): SyncReadiness {
   // Order matters. A locked vault is a DELIBERATE state, so it is reported before any
   // "you are missing something" verdict — telling somebody to set a PIN they already set,

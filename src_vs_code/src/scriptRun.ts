@@ -12,6 +12,7 @@ export type ScriptRunPlan =
   | { kind: 'run'; command: string; args: string[]; extension: string }
   | { kind: 'unsupported'; reason: string };
 
+// eslint-disable-next-line complexity
 export function scriptRunPlan(language: string, platform: NodeJS.Platform): ScriptRunPlan {
   switch (language) {
     case 'bash':

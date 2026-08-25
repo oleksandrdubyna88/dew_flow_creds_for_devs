@@ -30,6 +30,7 @@ export function searchTerms(query: string): string[] {
 }
 
 /** The non-secret text of one row, lowercased, as one string to look in. */
+// eslint-disable-next-line complexity
 export function nodeHaystack(node: TreeNode): string {
   const d = node.details;
   return [
@@ -164,6 +165,7 @@ function subtreeMatches(
  * name" — and then everything inside it is shown. Searching for a folder and being handed an
  * empty folder would be the wrong answer to the question that was asked.</p>
  */
+// eslint-disable-next-line complexity
 export function filterChildren(
   source: TreeSource,
   accountId: string,
@@ -205,6 +207,7 @@ export function countMatches(
     parentId: string | null,
     inMatched: boolean,
     visited: Set<string>,
+  // eslint-disable-next-line complexity
   ): number => {
     let total = 0;
     for (const node of source.getChildren(accountId, parentId)) {

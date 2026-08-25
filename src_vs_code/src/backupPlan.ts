@@ -22,6 +22,7 @@ export type BackupWriteMode =
    *  its own standalone backup PIN, never through the vault-key cache (which would collide). */
   | { kind: 'pin' };
 
+// eslint-disable-next-line complexity
 export function backupWriteMode(existingRaw: string | undefined): BackupWriteMode {
   if (existingRaw === undefined || existingRaw.trim().length === 0) {
     return { kind: 'pin' };

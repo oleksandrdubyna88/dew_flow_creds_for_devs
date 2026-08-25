@@ -84,6 +84,7 @@ export function isRevisionList(value: unknown): value is Revision[] {
   return (
     Array.isArray(value) &&
     value.every(
+      // eslint-disable-next-line complexity
       (r) =>
         typeof r === 'object' &&
         r !== null &&

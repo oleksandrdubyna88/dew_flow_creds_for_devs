@@ -57,6 +57,7 @@ export class ClientConfigCache {
     }
   }
 
+  // eslint-disable-next-line complexity
   private async load(location: string): Promise<ClientConfig | undefined> {
     // A scope fetched over plaintext http from a remote host is a scope an on-path attacker
     // could choose — and the extension would mint a token for it and hand it back. Discover
@@ -128,6 +129,7 @@ export function isSafeAdvertisedScope(scope: string): boolean {
  * the wrong thing, and an operator who has typed a value should not be silently
  * overridden by a machine — that is the kind of surprise nobody can debug.</p>
  */
+// eslint-disable-next-line complexity
 export function resolveMicrosoftScope(
   configured: string | undefined,
   advertised: string | undefined,

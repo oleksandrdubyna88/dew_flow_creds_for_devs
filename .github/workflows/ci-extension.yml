@@ -47,6 +47,12 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      # The size/complexity boundaries (max-lines 800, max-lines-per-function 50,
+      # complexity 4, no-console) — pre-existing debt carries explicit eslint-disable
+      # markers, so THIS step failing means a NEW violation.
+      - name: Lint
+        run: npm run lint
+
       # node:test over the compiled out/. Every module that needs a unit test is
       # written free of `vscode`, which is why no VS Code test harness is needed.
       - name: Test

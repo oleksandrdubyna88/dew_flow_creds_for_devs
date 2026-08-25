@@ -37,6 +37,7 @@ function sanitizeKeyFileName(name: string): string {
  * Install a key entity into ~/.ssh: `<name>` (private, 0600) and
  * `<name>.pub` (public, 0644). Asks before overwriting existing files.
  */
+// eslint-disable-next-line complexity, max-lines-per-function
 export async function installKeyToSystem(
   entity: EntityMetadata,
   privateKey: string | undefined,
@@ -174,6 +175,7 @@ export function writeAskpassScriptFile(storageDir: string, platform: NodeJS.Plat
  * <p>It exists because the install is deliberately permanent: without a way back, the
  * only honest thing the install dialog could say was "this is forever".</p>
  */
+// eslint-disable-next-line complexity
 export async function removeInstalledKey(entity: EntityMetadata): Promise<void> {
   const base = sanitizeKeyFileName(entity.name);
   const sshDir = path.join(os.homedir(), '.ssh');
@@ -225,6 +227,7 @@ export function forgetMaterializedKey(keyPath: string): void {
  * only `keys/<own-pid>/`, then removes sibling `keys/<pid>/` directories whose process is
  * gone; a live window's subdir is left untouched, which is the whole point of the split.</p>
  */
+// eslint-disable-next-line complexity
 export function purgeMaterializedKeys(storageDir: string): void {
   try {
     fs.rmSync(materializedKeysDir(storageDir), { recursive: true, force: true });

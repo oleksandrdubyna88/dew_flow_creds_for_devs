@@ -35,6 +35,7 @@ export function buildExternalBundle(
   return { format: 'creds-for-devs-external', version: 1, nodes: [...nodes], secrets };
 }
 
+// eslint-disable-next-line complexity
 export function isExternalBundle(value: unknown): value is ExternalBundle {
   if (typeof value !== 'object' || value === null) {
     return false;

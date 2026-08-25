@@ -86,6 +86,7 @@ function untrusted(entityName: string, what: string): UseActionResult {
  * <p>Variables travel in the child's environment, so the file written to disk holds names
  * rather than values (see `resolveScriptEnv`), and it is deleted in `finally`.</p>
  */
+// eslint-disable-next-line max-lines-per-function
 export function scriptRunAction(deps: AgentUseDeps): UseAction {
   return {
     kind: 'script',
@@ -94,6 +95,7 @@ export function scriptRunAction(deps: AgentUseDeps): UseAction {
     describeOutcome: execOutcome,
     validate: () => ({ ok: true }),
     summarize: () => 'the stored script, exactly as saved',
+    // eslint-disable-next-line complexity
     async run(ctx): Promise<UseActionResult> {
       const entity = entityFor(deps, ctx);
       if (entity === undefined) {
@@ -158,6 +160,7 @@ export function terminalRunAction(deps: AgentUseDeps): UseAction {
     describeOutcome: execOutcome,
     validate: () => ({ ok: true }),
     summarize: () => 'the stored command, exactly as saved',
+    // eslint-disable-next-line complexity
     async run(ctx): Promise<UseActionResult> {
       const entity = entityFor(deps, ctx);
       if (entity === undefined) {
@@ -238,6 +241,7 @@ export function credentialExportEnvAction(deps: AgentUseDeps): UseAction {
  * `buildDbQueryLaunch` for why a JavaScript shell cannot be handed an agent's query and a
  * password at the same time.</p>
  */
+// eslint-disable-next-line max-lines-per-function
 export function dbQueryAction(
   deps: AgentUseDeps & { onPath: (exe: string) => boolean },
 ): UseAction {
@@ -259,6 +263,7 @@ export function dbQueryAction(
     summarize(body) {
       return String((body as { query?: unknown }).query ?? '');
     },
+    // eslint-disable-next-line complexity, max-lines-per-function
     async run(ctx, body): Promise<UseActionResult> {
       const entity = entityFor(deps, ctx);
       if (entity === undefined) {

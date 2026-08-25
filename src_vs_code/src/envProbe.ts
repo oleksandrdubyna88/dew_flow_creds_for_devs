@@ -8,6 +8,7 @@ import { isValidEnvName } from './envBinding';
  * whose default terminal is git-bash needs the POSIX form, and the wrong guess prints a
  * literal `$env:NAME`, which reads as "it did not work" about a variable that is set.</p>
  */
+// eslint-disable-next-line complexity
 export function envProbeCommand(
   shellPath: string | undefined,
   name: string,

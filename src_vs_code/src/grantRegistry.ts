@@ -56,6 +56,7 @@ export type GrantLookup =
   | { kind: 'unknown' };
 
 /** Why a grant would be refused now — or `undefined` while it is still good. */
+// eslint-disable-next-line complexity
 export function grantExpiry(grant: Grant, now: number, limits: GrantLimits): GrantExpiry | undefined {
   if (limits.maxUses > 0 && grant.uses >= limits.maxUses) {
     return 'uses';
@@ -110,6 +111,7 @@ export class GrantRegistry {
    * unknown. An expired grant is deleted on the way out — it can never come back, and a
    * second call must read as unknown rather than expired-again.
    */
+  // eslint-disable-next-line complexity
   lookup(secret: string, now: number = Date.now(), limits: GrantLimits = NO_LIMITS): GrantLookup {
     const grant = this.grants.get(secret);
     if (grant === undefined) {
@@ -156,6 +158,7 @@ export class GrantRegistry {
    * oldest NON-allowed grant first (see oldestEvictable) and only drops an allowed one if the
    * whole map is allowed grants — the bounded last resort.</p>
    */
+  // eslint-disable-next-line complexity
   private prune(): void {
     for (const [secret, grant] of this.grants) {
       if (grant.status === 'denied') {

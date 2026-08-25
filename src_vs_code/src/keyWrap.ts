@@ -40,6 +40,7 @@ export interface KeyWrap extends SealedBlob {
   createdAt: number;
 }
 
+// eslint-disable-next-line complexity
 export function isKeyWrap(value: unknown): value is KeyWrap {
   if (typeof value !== 'object' || value === null) {
     return false;
@@ -209,6 +210,7 @@ export async function wrapPinVaultAsync(
 }
 
 /** Recover the master key from a security-key wrap. */
+// eslint-disable-next-line complexity
 export function unwrapWithPrf(wrap: KeyWrap, prfSecret: Buffer): Buffer {
   const salt = Buffer.from(wrap.salt, 'base64');
   const iv = Buffer.from(wrap.iv, 'base64');

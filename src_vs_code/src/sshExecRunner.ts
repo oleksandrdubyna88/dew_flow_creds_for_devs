@@ -82,12 +82,14 @@ export function runSshExec(argv: string[], options: SshExecOptions): Promise<Ssh
  * caller — a saved terminal command, which is human-authored shell syntax and contains
  * no agent input at all.</p>
  */
+// eslint-disable-next-line max-lines-per-function
 export function runBounded(
   command: string,
   args: string[],
   shell: boolean,
   options: SshExecOptions,
 ): Promise<SshExecOutcome> {
+  // eslint-disable-next-line complexity, max-lines-per-function
   return new Promise((resolve, reject) => {
     const startedAt = Date.now();
     let child;

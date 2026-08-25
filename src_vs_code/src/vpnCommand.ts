@@ -81,6 +81,7 @@ const OVPN_POSIX_NOTE =
   'sudo will ask for your password: OpenVPN needs root for the TUN device. It runs in the FOREGROUND of this ' +
   'terminal — press Ctrl+C here to disconnect.';
 
+// eslint-disable-next-line complexity
 export function vpnStartCommand(
   type: VpnType,
   platform: VpnPlatform,
@@ -118,6 +119,7 @@ export function vpnStartCommand(
   };
 }
 
+// eslint-disable-next-line complexity
 export function vpnStopCommand(
   type: VpnType,
   platform: VpnPlatform,

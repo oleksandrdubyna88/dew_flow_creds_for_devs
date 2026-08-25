@@ -30,6 +30,7 @@ const QUOTE_DOUBLE = '"';
 const ESCAPE = '\\';
 
 /** POSIX-ish tokenizer: quotes group, a backslash escapes the next character. */
+// eslint-disable-next-line complexity
 export function splitTokens(input: string): Token[] {
   const tokens: Token[] = [];
   let text = '';
@@ -100,6 +101,7 @@ function isSubcommandish(token: Token): boolean {
 /** How many words the verb may swallow before it is certainly eating arguments. */
 const MAX_VERB_WORDS = 3;
 
+// eslint-disable-next-line complexity
 export function parseCommandLine(input: string): ParsedCommand {
   // Half the commands in the world are copied out of a README with the prompt attached.
   const cleaned = input.trim().replace(/^[$>#]\s+/, '');

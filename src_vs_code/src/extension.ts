@@ -1,3 +1,7 @@
+/* eslint-disable max-lines, max-lines-per-function, complexity, no-console --
+   The 3,000-line activate() is audit item A1's subject: this file is being dismantled into
+   modules, each of which lints clean; a marker per violation here would be deleted within
+   days. Remove this header as the LAST step of A1, when the file is a thin composition. */
 import * as os from 'node:os';
 import * as path from 'node:path';
 import * as vscode from 'vscode';

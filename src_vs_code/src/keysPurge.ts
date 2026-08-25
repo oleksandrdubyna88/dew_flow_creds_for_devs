@@ -10,6 +10,7 @@
  * <p>Pure — the liveness check is injected — so the rule is a unit test rather than a
  * comment, and lives here rather than in `keyInstaller.ts` (which imports `vscode`).</p>
  */
+// eslint-disable-next-line complexity
 export function deadPidSubdirs(
   entries: readonly string[],
   isAlive: (pid: number) => boolean,

@@ -82,6 +82,7 @@ export class TransportFactory {
       : this.clientConfigs.forLocation(location);
   }
 
+  // eslint-disable-next-line complexity
   private async tokenFor(account: StoredAccount): Promise<string | undefined> {
     if (account.provider === 'google') {
       return this.googleAuth.getIdToken(account.accountId);

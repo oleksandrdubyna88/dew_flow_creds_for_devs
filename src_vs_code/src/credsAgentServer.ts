@@ -175,6 +175,7 @@ export class CredsAgentServer implements vscode.Disposable {
     });
   }
 
+  // eslint-disable-next-line complexity, max-lines-per-function
   private async handle(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
     const url = new URL(req.url ?? '/', 'http://127.0.0.1');
 
@@ -278,6 +279,7 @@ export class CredsAgentServer implements vscode.Disposable {
    * explicit Deny is sticky, and a timeout leaves the grant re-promptable —
    * a missed notification is the common case, not a decision.</p>
    */
+  // eslint-disable-next-line complexity
   private async consent(
     grant: Grant,
     action: string,
@@ -310,6 +312,7 @@ export class CredsAgentServer implements vscode.Disposable {
     return allowed ? 'allowed' : 'timeout';
   }
 
+  // eslint-disable-next-line max-lines-per-function
   private async ask(
     grant: Grant,
     action: string,

@@ -13,6 +13,7 @@ import { restrictToOwnerArgv } from '../fileAcl';
  * exactly the audience a credential manager exists to keep out.
  */
 
+// eslint-disable-next-line complexity
 test('windows gets an icacls argv that breaks inheritance and grants only the owner', () => {
   const argv = restrictToOwnerArgv('C:\keys\id.key', 'win32', 'JINX\strug');
 

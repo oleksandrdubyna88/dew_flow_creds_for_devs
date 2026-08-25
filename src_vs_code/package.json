@@ -51,6 +51,7 @@
     "compile": "tsc -p ./",
     "watch": "tsc -w -p ./",
     "typecheck": "tsc -p ./ --noEmit",
+    "lint": "eslint src",
     "test": "npm run compile && node --test \"out/test/*.test.js\"",
     "itest:server": "npm run compile && node scripts/server-transport-itest.cjs",
     "itest:agent": "npm run compile && node scripts/agent-broker-itest.cjs",
@@ -65,7 +66,9 @@
     "@types/vscode": "^1.85.0",
     "@vscode/vsce": "^3.0.0",
     "esbuild": "^0.28.2",
-    "typescript": "^5.4.0"
+    "eslint": "^10.9.1",
+    "typescript": "^5.4.0",
+    "typescript-eslint": "^8.68.0"
   },
   "contributes": {
     "configuration": {

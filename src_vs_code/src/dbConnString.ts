@@ -34,6 +34,7 @@ function collapseDoubleScheme(value: string): string {
   return value.replace(/^([a-z][a-z0-9+.-]*:\/\/)[a-z][a-z0-9+.-]*:\/\//i, '$1');
 }
 
+// eslint-disable-next-line complexity
 export function parseDbConnectionString(value: string): DbConnParts {
   const trimmed = collapseDoubleScheme(value.trim());
   if (trimmed.length === 0) {
@@ -79,6 +80,7 @@ export function parseDbConnectionString(value: string): DbConnParts {
   });
 }
 
+// eslint-disable-next-line complexity
 export function buildDbConnectionString(dbType: DbType, parts: DbConnParts): string {
   parts = { ...parts, host: parts.host !== undefined ? cleanHost(parts.host) : undefined };
   if (dbType === 'mssql') {

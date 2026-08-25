@@ -101,6 +101,7 @@ export function sharesFromEnvelope(fileContent: string): ShareItem[] {
  * Rewrite a vault file's plaintext `shares` array WITHOUT touching any
  * other envelope field (the owner's encrypted payload is carried verbatim).
  */
+// eslint-disable-next-line complexity
 export function envelopeWithShares(
   fileContent: string,
   mutate: (current: ShareItem[]) => ShareItem[],
@@ -130,6 +131,7 @@ export interface ResolveResult {
  * Items that open move to `opened`; the caller prompts for another PIN for
  * `remaining[0]` and calls again, until done or the user gives up.
  */
+// eslint-disable-next-line complexity
 export function resolveShares(items: OwnedShare[], pins: readonly string[]): ResolveResult {
   const opened: ResolveResult['opened'] = [];
   const remaining: OwnedShare[] = [];

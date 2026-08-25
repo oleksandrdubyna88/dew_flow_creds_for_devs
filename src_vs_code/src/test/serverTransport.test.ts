@@ -93,6 +93,7 @@ test('a missing token is refused before any request is attempted', async () => {
 function recordingServer(responses: Array<{ status: number; body?: string; etag?: string }>) {
   const seen: Array<{ method: string; ifMatch: string | null }> = [];
   let i = 0;
+  // eslint-disable-next-line complexity
   globalThis.fetch = ((_input: unknown, init?: RequestInit) => {
     const headers = new Headers(init?.headers);
     seen.push({ method: init?.method ?? 'GET', ifMatch: headers.get('If-Match') });

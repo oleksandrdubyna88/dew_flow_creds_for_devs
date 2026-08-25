@@ -27,6 +27,7 @@ function programDirs(env: Readonly<Record<string, string | undefined>>): string[
   return [...new Set(dirs.filter((d): d is string => d !== undefined && d.length > 0))];
 }
 
+// eslint-disable-next-line complexity
 export function resolveVpnLauncher(
   type: VpnType,
   platform: NodeJS.Platform,

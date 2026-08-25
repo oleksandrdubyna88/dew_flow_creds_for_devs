@@ -32,6 +32,7 @@ function profilePassphrase(accountId: string, masterPin: string): string {
   return accountId + masterPin;
 }
 
+// eslint-disable-next-line complexity
 async function promptMasterPin(
   purpose: string,
   confirm: boolean,
@@ -61,6 +62,7 @@ async function promptMasterPin(
   return pin;
 }
 
+// eslint-disable-next-line complexity
 async function resolveNasDirectory(): Promise<vscode.Uri | undefined> {
   const nasPath = vscode.workspace
     .getConfiguration(CONFIG_SECTION)
@@ -97,6 +99,7 @@ async function resolveNasDirectory(): Promise<vscode.Uri | undefined> {
 }
 
 /** "Backup to NAS": one encrypted file per logged-in account profile. */
+// eslint-disable-next-line complexity, max-lines-per-function
 export async function backupToNas(
   storage: StorageManager,
   vaultKeys: VaultKeys,
@@ -211,6 +214,7 @@ export async function backupToNas(
  * "Import / Restore": pick an .enc file, verify the auth session for the
  * account it belongs to, then decrypt with accountId+PIN and restore.
  */
+// eslint-disable-next-line complexity, max-lines-per-function
 export async function restoreFromBackup(
   storage: StorageManager,
   vaultKeys: VaultKeys,

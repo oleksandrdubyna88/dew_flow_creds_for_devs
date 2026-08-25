@@ -20,6 +20,7 @@ test('bash runs with bash everywhere — on Windows that means git-bash/WSL bash
   assert.equal(win.command, 'bash');
 });
 
+// eslint-disable-next-line complexity
 test('powershell prefers pwsh on posix and powershell.exe on windows', () => {
   const win = scriptRunPlan('powershell', 'win32');
   const linux = scriptRunPlan('powershell', 'linux');

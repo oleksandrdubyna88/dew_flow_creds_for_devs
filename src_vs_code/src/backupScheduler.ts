@@ -85,6 +85,7 @@ export class BackupScheduler implements vscode.Disposable {
   }
 
   /** Snapshot every account whose window has elapsed. Called by the timer and by the command. */
+  // eslint-disable-next-line complexity
   async runDue(force = false): Promise<void> {
     if (this.running) {
       return; // a slow network folder must not start a second pass on top of the first
@@ -105,6 +106,7 @@ export class BackupScheduler implements vscode.Disposable {
     }
   }
 
+  // eslint-disable-next-line complexity
   private async snapshot(account: StoredAccount, force: boolean): Promise<void> {
     const dir = backupDirFor(account);
     if (dir === undefined) {

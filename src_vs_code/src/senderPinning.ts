@@ -72,6 +72,7 @@ export interface SignedShare {
   signature?: string;
 }
 
+// eslint-disable-next-line complexity
 export function judgeSender(
   store: PinStore,
   accountId: string,

@@ -123,6 +123,7 @@ export class SyncManager implements vscode.Disposable {
   }
 
   /** Set the sync PIN for ONE account (asks which one when not given). */
+  // eslint-disable-next-line complexity
   async setPin(account?: StoredAccount): Promise<void> {
     let target = account;
     if (target === undefined) {
@@ -180,6 +181,7 @@ export class SyncManager implements vscode.Disposable {
    * nothing stored yet (first-time set), or 'cancelled' if the current
    * credentials could not be supplied.
    */
+  // eslint-disable-next-line complexity
   private async rekeyToNewPin(
     account: StoredAccount,
     newPin: string,
@@ -273,6 +275,7 @@ export class SyncManager implements vscode.Disposable {
     }
   }
 
+  // eslint-disable-next-line complexity
   private async syncAllOnce(verbose: boolean, onlyAccountId?: string): Promise<void> {
     const all = this.storage.getAccounts();
     const accounts =
@@ -321,6 +324,7 @@ export class SyncManager implements vscode.Disposable {
     }
   }
 
+  // eslint-disable-next-line complexity, max-lines-per-function
   private async syncProfile(
     account: StoredAccount,
     transport: VaultTransport,
@@ -522,6 +526,7 @@ export class SyncManager implements vscode.Disposable {
     }
   }
 
+  // eslint-disable-next-line complexity
   private warnOnce(account: StoredAccount, error: unknown): void {
     if (this.warnedAccounts.has(account.accountId)) {
       return;

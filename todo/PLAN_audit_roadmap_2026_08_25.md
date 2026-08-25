@@ -4,8 +4,11 @@
 > «с этим согласен. делай все» получено в сессии; B10 остаётся, связан с D7); C — C1–C4 в 0.57.0,
 > C5 (esbuild-бандл) в 0.57.1.** Замеры до/после — в CHANGELOG и `scripts/tree-perf-bench.cjs`
 > (300→0 обращений к keychain на раскрытии, 5→1 перерисовок, 13.9→0.08 мс на 100 чтений,
-> idle-цикл 7000→0, холодная загрузка модулей 49→23 мс). Блоки A, D, E ждут
-> исполнителя. Scope: расширение `src_vs_code` и, в трёх пунктах, сервер `src_minimalapi_server`.
+> idle-цикл 7000→0, холодная загрузка модулей 49→23 мс). Из блока A выполнен **A2** (ESLint:
+> четыре правила-границы в CI, 178 явных eslint-disable на существующем долге). Решения
+> владельца 2026-08-25: **A4 — да** (вместе с A5, после A1); **D1 и D8 — пропустить**;
+> **D6 — да, HIBP по k-анонимности допустим строго по opt-in**. D10 поглощается
+> PLAN_ephemeral_secrets. Остальное из A, D, E ждёт исполнителя. Scope: расширение `src_vs_code` и, в трёх пунктах, сервер `src_minimalapi_server`.
 >
 > Related docs: [module_extension.md](../research/module_extension.md),
 > [module_server.md](../research/module_server.md), [architecture.md](../research/architecture.md),

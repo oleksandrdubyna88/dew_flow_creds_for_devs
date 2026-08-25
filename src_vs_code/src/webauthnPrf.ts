@@ -66,6 +66,7 @@ interface FlowPayload {
   error?: string;
 }
 
+// eslint-disable-next-line complexity, max-lines-per-function
 async function runFlow(
   op: 'register' | 'authenticate',
   userLabel: string,
@@ -146,6 +147,7 @@ function waitForResult(
       clearTimeout(timeout);
       reject(new WebAuthnError('Security-key flow cancelled.'));
     });
+    // eslint-disable-next-line complexity
     server.on('request', (req, res) => {
       const url = new URL(req.url ?? '/', `http://${RP_ID}`);
       // Everything is gated behind the secret path token.
@@ -197,6 +199,7 @@ interface PageOptions {
  * is embedded in a TypeScript template literal, where `\\` collapses and
  * would silently break the script (a lesson learned the hard way).
  */
+// eslint-disable-next-line max-lines-per-function
 function renderPage(options: PageOptions): string {
   const data = JSON.stringify(options).replace(/</g, '\\u003c');
   return `<!DOCTYPE html>

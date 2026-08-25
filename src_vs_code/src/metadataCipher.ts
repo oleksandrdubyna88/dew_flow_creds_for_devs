@@ -49,6 +49,7 @@ export function newMetadataKey(): Buffer {
   return crypto.randomBytes(METADATA_KEY_BYTES);
 }
 
+// eslint-disable-next-line complexity
 export function isSealedMetadata(value: unknown): value is SealedMetadata {
   if (typeof value !== 'object' || value === null) {
     return false;
@@ -80,6 +81,7 @@ export function sealMetadata(value: unknown, key: Buffer, aad: string): SealedMe
  * Open a sealed value. `wrong-key` covers a changed key AND a blob moved to another slot —
  * GCM cannot tell them apart, and neither may be read.
  */
+// eslint-disable-next-line complexity
 export function openMetadata(sealed: SealedMetadata, key: Buffer, aad: string): unknown {
   const iv = Buffer.from(sealed.iv, 'base64');
   const tag = Buffer.from(sealed.tag, 'base64');

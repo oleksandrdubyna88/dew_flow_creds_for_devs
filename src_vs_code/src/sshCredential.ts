@@ -19,6 +19,7 @@ export type SshCredentialSource =
   | { kind: 'password'; password: string; warning?: string }
   | { kind: 'none'; warning?: string };
 
+// eslint-disable-next-line complexity
 export async function resolveSshCredential(
   storage: StorageManager,
   accountId: string,

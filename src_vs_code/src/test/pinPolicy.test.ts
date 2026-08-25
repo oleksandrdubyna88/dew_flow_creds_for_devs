@@ -38,6 +38,7 @@ test('one character repeated is rejected however long it is', () => {
   assert.match(validatePin('aaaaaaaaaaaaaaaa') ?? '', /more than one/);
 });
 
+// eslint-disable-next-line complexity
 test('the obvious passwords are rejected by name, case and leetspeak included', () => {
   assert.match(validatePin('password') ?? '', /too common/);
   assert.match(validatePin('PASSWORD') ?? '', /too common/);

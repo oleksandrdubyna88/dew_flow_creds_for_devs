@@ -41,6 +41,7 @@ interface StoredSession {
   scopes: string[];
 }
 
+// eslint-disable-next-line complexity
 function isStoredSession(value: unknown): value is StoredSession {
   if (typeof value !== 'object' || value === null) {
     return false;
@@ -93,6 +94,7 @@ export class GoogleAuthProvider implements vscode.AuthenticationProvider, vscode
     return sessions.filter((s) => normalizeScopes(s.scopes) === wanted);
   }
 
+  // eslint-disable-next-line max-lines-per-function
   async createSession(scopes: readonly string[]): Promise<vscode.AuthenticationSession> {
     const clientId = await this.resolveClientId();
     const clientSecret = await this.resolveClientSecret();
@@ -173,6 +175,7 @@ export class GoogleAuthProvider implements vscode.AuthenticationProvider, vscode
    * one (no session, or the refresh failed) — callers then ask the user to
    * sign in again.
    */
+  // eslint-disable-next-line complexity
   async getIdToken(accountId: string): Promise<string | undefined> {
     const sessions = await this.readSessions();
     const session = sessions.find((s) => s.account.id === accountId);
@@ -352,6 +355,7 @@ function waitForCallback(
       finish(() => reject(new Error('Google sign-in cancelled.'))),
     );
 
+    // eslint-disable-next-line complexity
     server.on('request', (req, res) => {
       const url = new URL(req.url ?? '/', 'http://127.0.0.1');
       const respond = (message: string) => {
@@ -401,6 +405,7 @@ interface ExchangeResult {
   idToken: string;
 }
 
+// eslint-disable-next-line complexity
 async function exchangeCode(input: ExchangeInput): Promise<ExchangeResult> {
   const body = new URLSearchParams({
     code: input.code,

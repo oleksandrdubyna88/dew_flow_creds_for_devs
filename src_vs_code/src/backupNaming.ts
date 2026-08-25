@@ -34,6 +34,7 @@ export function backupFileName(email: string, discriminator?: string): string {
  * resort a slice of the account id — so one profile's backup can never
  * silently overwrite another's.
  */
+// eslint-disable-next-line complexity
 export function planBackupFileNames(accounts: readonly NamedAccount[]): Map<string, string> {
   const names = new Map<string, string>();
   const used = new Set<string>();

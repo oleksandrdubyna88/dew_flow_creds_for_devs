@@ -79,6 +79,7 @@ function footer(token: string): string[] {
  * snippet, since the agent will try it, get a 404, and have nothing to correct itself
  * with.</p>
  */
+// eslint-disable-next-line complexity, max-lines-per-function
 export function buildKindSnippet(
   kind: string,
   input: { entityName: string; token: string; cliPath: string },

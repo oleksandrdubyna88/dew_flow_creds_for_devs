@@ -70,6 +70,7 @@ export function bumpVector(v: VersionVector, deviceId: string, seq: number): Ver
  * by the lexicographically-largest deviceId. Used as the final deterministic
  * tiebreak for truly concurrent edits.
  */
+// eslint-disable-next-line complexity
 export function lastWriter(v: VersionVector): string {
   let best = '';
   let bestSeq = -1;

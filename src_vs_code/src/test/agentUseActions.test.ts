@@ -37,8 +37,7 @@ function fakeDeps(over: Record<string, unknown> = {}) {
     applyEnv: async () => [] as string[],
     onPath: () => false,
   };
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return { ...base, ...over } as any;
+  return { ...base, ...over } as never;
 }
 
 test('dbQueryAction refuses a postgres connection string that is not a plain URL', async () => {

@@ -44,6 +44,7 @@ const PALETTE_ONLY = new Set([
   'credSshManager.search',
 ]);
 
+// eslint-disable-next-line complexity
 test('every menu group order is a number, or the item silently does not render', () => {
   const offenders: string[] = [];
 
@@ -114,6 +115,7 @@ test('the product name is consistent across every command category', () => {
   assert.deepEqual([...categories], ['CredsForDevs']);
 });
 
+// eslint-disable-next-line complexity
 test('no two menu items compete for the same slot', () => {
   // The sibling of the `3_manage@0b` bug: a valid number that another item already uses.
   // Nothing errors, VS Code picks an order, and the menu you get is not the menu you

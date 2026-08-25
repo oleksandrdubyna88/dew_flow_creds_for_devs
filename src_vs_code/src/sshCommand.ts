@@ -45,6 +45,7 @@ export function isSafeSshUser(user: string): boolean {
 }
 
 /** Both halves of a destination, checked together. */
+// eslint-disable-next-line complexity
 export function isSafeSshTarget(entity: EntityMetadata): boolean {
   if (!entity.host || !isSafeSshHost(entity.host)) {
     return false;
@@ -66,6 +67,7 @@ function shellQuote(value: string, platform: NodeJS.Platform = process.platform)
 }
 
 /** `user@host:port` (port omitted when default) â€” the connection identity. */
+// eslint-disable-next-line complexity
 export function describeSshTarget(entity: EntityMetadata): string | undefined {
   if (!isSafeSshTarget(entity)) {
     // Refused here too, so no dialog, terminal title or clipboard text ever
@@ -84,6 +86,7 @@ export function describeSshTarget(entity: EntityMetadata): string | undefined {
  * `-i` is omitted when no key path is set, `-p` when the port is empty or 22.
  * Returns undefined when the entity has no host.
  */
+// eslint-disable-next-line complexity
 export function buildSshCommand(
   entity: EntityMetadata,
   platform: NodeJS.Platform = process.platform,

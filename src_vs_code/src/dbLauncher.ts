@@ -96,6 +96,7 @@ function resolveCandidates(dbType: DbType): DbTarget[] {
 }
 
 /** Find an add-connection-ish command in the target's own manifest. */
+// eslint-disable-next-line complexity
 function discoverConnectCommand(extension: vscode.Extension<unknown>): string | undefined {
   const known = KNOWN_CONNECT_COMMANDS[extension.id.toLowerCase()] ?? KNOWN_CONNECT_COMMANDS[extension.id];
   if (known !== undefined) {
@@ -114,6 +115,7 @@ function discoverConnectCommand(extension: vscode.Extension<unknown>): string | 
   );
 }
 
+// eslint-disable-next-line complexity
 export async function openInDbExtension(
   entity: EntityMetadata,
   connectionString: string | undefined,

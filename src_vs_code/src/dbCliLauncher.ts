@@ -84,6 +84,7 @@ const MYSQL_CLIENT_WORDS = ['system', 'source', 'tee', 'notee', 'pager', 'nopage
  *       ENVIRONMENT — `select '$(SQLCMDPASSWORD)'` would print the password as plain SQL.</li>
  * </ul>
  */
+// eslint-disable-next-line complexity
 export function refuseQuery(dbType: DbType, query: string): string | undefined {
   const lines = query.split(/\r?\n/).map((line) => line.trimStart());
   switch (dbType) {
@@ -141,6 +142,7 @@ export interface DbQueryLaunch {
  * environment. A capability that leaks by design is worse than an absent one, so this
  * says no and the human keeps using their own client.</p>
  */
+// eslint-disable-next-line complexity, max-lines-per-function
 export function buildDbQueryLaunch(
   dbType: DbType,
   connectionString: string,

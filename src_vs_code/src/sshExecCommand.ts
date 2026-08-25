@@ -17,6 +17,7 @@ import { DEFAULT_SSH_PORT, isSafeSshTarget } from './sshCommand';
 /** Caller-supplied command guard: non-empty, no NUL, within a sane length. */
 export const MAX_REMOTE_COMMAND_CHARS = 8000;
 
+// eslint-disable-next-line complexity
 export function validateRemoteCommand(command: unknown): { ok: true } | { ok: false; message: string } {
   if (typeof command !== 'string') {
     return { ok: false, message: 'command must be a string' };
@@ -63,6 +64,7 @@ export type SshExecAuth = 'askpass' | 'key';
  * <p>The key branch keeps `BatchMode=yes`: there, nothing supplies a
  * passphrase, so failing fast is exactly right.</p>
  */
+// eslint-disable-next-line complexity
 export function buildSshExecArgv(
   entity: EntityMetadata,
   keyPath: string | undefined,

@@ -50,6 +50,7 @@ export async function signIn(provider: AuthProvider): Promise<StoredAccount> {
  * different account (or none exists), offers an interactive sign-in and
  * re-checks the account id.
  */
+// eslint-disable-next-line complexity
 export async function verifyAccountSession(account: StoredAccount): Promise<boolean> {
   const scopes = [...SCOPES[account.provider]];
   try {

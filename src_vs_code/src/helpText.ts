@@ -66,6 +66,7 @@ function flagsOnLine(line: string): string[] {
 }
 
 /** True when the flag at this position sits inside a `[...]` group — a usage synopsis. */
+// eslint-disable-next-line complexity
 function insideBrackets(line: string, at: number): boolean {
   let depth = 0;
   for (let i = 0; i < at; i += 1) {
@@ -95,6 +96,7 @@ function isFlagLine(line: string): boolean {
  * `[--allow-empty-message] [--no-verify] [-e] [--author=<author>]`: confident, attached
  * to the row, and nonsense. A wrong note is the one outcome this file must not produce.</p>
  */
+// eslint-disable-next-line complexity
 function descriptionAt(lines: string[], index: number, flag: string): string | undefined {
   const line = lines[index];
   const at = line.indexOf(flag);
@@ -140,6 +142,7 @@ function descriptionAt(lines: string[], index: number, flag: string): string | u
   return parts.join(' ');
 }
 
+// eslint-disable-next-line complexity
 export function describeFlag(helpText: string, flag: string): string | undefined {
   if (flag.length === 0 || !flag.startsWith('-') || helpText.length === 0) {
     return undefined;

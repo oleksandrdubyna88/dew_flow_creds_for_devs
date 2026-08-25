@@ -134,6 +134,7 @@ export function dueForSnapshot(
  * hours; nobody chooses a backup schedule by thinking "168", so the menu must not make
  * them. Anything that divides evenly into days is said in days.
  */
+// eslint-disable-next-line complexity
 export function describeInterval(hours: number): string {
   if (hours <= 0) {
     return 'Off';

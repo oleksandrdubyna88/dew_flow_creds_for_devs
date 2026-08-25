@@ -12,6 +12,7 @@ import { describeCommand } from './commandLine';
 import { resolveScriptEnv } from './scriptRender';
 import { EntityMetadata } from './types';
 
+// eslint-disable-next-line complexity, max-lines-per-function
 export function formatEntityBlock(
   details: EntityMetadata,
   password: string | undefined,

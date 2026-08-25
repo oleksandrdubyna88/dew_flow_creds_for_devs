@@ -13,6 +13,7 @@ import { buildDbQueryLaunch, isSafePostgresUri, refuseQuery, resolveDbCli } from
 const found = () => true;
 const missing = () => false;
 
+// eslint-disable-next-line complexity
 test('each supported type names its own CLI', () => {
   assert.equal(resolveDbCli('postgres', found)?.exe, 'psql');
   assert.equal(resolveDbCli('mysql', found)?.exe, 'mysql');
@@ -25,6 +26,7 @@ test('a CLI that is not on PATH is reported as missing, with what was looked for
   assert.equal(r, undefined);
 });
 
+// eslint-disable-next-line complexity
 test('postgres carries the password in the environment, never in argv', () => {
   const launch = buildDbQueryLaunch(
     'postgres',
@@ -40,6 +42,7 @@ test('postgres carries the password in the environment, never in argv', () => {
   assert.equal(launch?.args.includes('select 1'), true);
 });
 
+// eslint-disable-next-line complexity
 test('mysql passes host, port and database as flags and the password by environment', () => {
   const launch = buildDbQueryLaunch('mysql', 'mysql://bob:s3cret@h:3307/shop', 'select 2');
 

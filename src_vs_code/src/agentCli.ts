@@ -52,6 +52,7 @@ function note(message: string): void {
 }
 
 /** `fetch` with a deadline, the way `serverTransport.ts` already talks HTTP. */
+// eslint-disable-next-line complexity
 async function request(
   port: number,
   options: { method: string; path: string; token?: string; body?: unknown; timeoutMs: number },
@@ -97,6 +98,7 @@ async function isOurBroker(port: number): Promise<boolean> {
   }
 }
 
+// eslint-disable-next-line complexity
 function exitForError(code: unknown): number {
   switch (code) {
     case 'unauthorized':
@@ -124,6 +126,7 @@ function reportError(body: Record<string, unknown>): number {
   return exitForError(error?.code);
 }
 
+// eslint-disable-next-line complexity, max-lines-per-function
 async function main(): Promise<number> {
   const parsed = parseAgentCliArgs(process.argv.slice(2));
   if (parsed.kind === 'error') {

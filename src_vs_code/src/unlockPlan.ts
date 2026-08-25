@@ -31,6 +31,7 @@ export type UnlockPlan =
   /** No path for this caller. Background with nothing stored, or no wraps at all. */
   | { kind: 'refuse' };
 
+// eslint-disable-next-line complexity
 export function unlockPlan(facts: UnlockFacts): UnlockPlan {
   if (facts.hasStoredPin && facts.hasPinWrap && !facts.needsGesture) {
     return { kind: 'silentPin' };

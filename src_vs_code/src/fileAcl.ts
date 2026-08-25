@@ -32,6 +32,7 @@ export function restrictToOwnerArgv(
 }
 
 /** The principal to grant — the logged-on user, as Windows itself names them. */
+// eslint-disable-next-line complexity
 export function currentOwner(env: Readonly<Record<string, string | undefined>>): string | undefined {
   const domain = (env.USERDOMAIN ?? '').trim();
   const user = (env.USERNAME ?? '').trim();

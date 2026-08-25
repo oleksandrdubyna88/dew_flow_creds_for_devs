@@ -35,6 +35,7 @@ export function formatToken(port: number, secret: string): string {
  * a decimal port in `[1, 65535]`, a `.`, and a non-empty base64url secret.
  * Deliberately strict — a malformed token is a client error, never a guess.
  */
+// eslint-disable-next-line complexity
 export function parseToken(token: string): ParsedToken | undefined {
   const dot = token.indexOf('.');
   if (dot <= 0 || dot === token.length - 1) {

@@ -54,6 +54,7 @@ export class FolderTransport implements VaultTransport {
     await this.writeAtomically(fileName, content);
   }
 
+  // eslint-disable-next-line complexity
   async listTeam(ownAccounts: readonly StoredAccount[]): Promise<TeamMember[]> {
     const ownIds = new Set(ownAccounts.map((a) => a.accountId));
     const members: TeamMember[] = [];
@@ -102,6 +103,7 @@ export class FolderTransport implements VaultTransport {
     }));
   }
 
+  // eslint-disable-next-line complexity
   async appendShares(
     _actingAs: StoredAccount,
     recipient: TeamMember,
@@ -136,6 +138,7 @@ export class FolderTransport implements VaultTransport {
     );
   }
 
+  // eslint-disable-next-line complexity
   async removeShare(_actingAs: StoredAccount, share: OwnedShare): Promise<void> {
     const account = this.allAccounts().find((a) => a.accountId === share.accountId);
     const fileName = account !== undefined ? this.fileNameFor(account) : undefined;

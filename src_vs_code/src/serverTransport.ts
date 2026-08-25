@@ -58,6 +58,7 @@ export class ServerTransport implements VaultTransport {
     return `${this.location.replace(/\/+$/, '')}${path}`;
   }
 
+  // eslint-disable-next-line complexity
   private async request(
     account: StoredAccount,
     path: string,
@@ -155,6 +156,7 @@ export class ServerTransport implements VaultTransport {
     }
   }
 
+  // eslint-disable-next-line complexity
   async listTeam(ownAccounts: readonly StoredAccount[]): Promise<TeamMember[]> {
     // Any of my accounts pointing here can enumerate the team.
     const mine = ownAccounts.filter((a) => a.email.length > 0);

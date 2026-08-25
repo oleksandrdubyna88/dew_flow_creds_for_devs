@@ -26,6 +26,7 @@ export interface SyncReminderVerdict {
   staleDays?: number;
 }
 
+// eslint-disable-next-line complexity
 export function syncReminderDue(facts: SyncReminderFacts): SyncReminderVerdict {
   // A fresh sync ends the conversation whatever the repeat gate says — checked FIRST,
   // so the gate cannot outlive the thing it nags about.

@@ -52,6 +52,7 @@ export class SharingManager {
   }
 
   /** Rescan every account's location: team + what is shared with me. */
+  // eslint-disable-next-line complexity
   async reload(): Promise<void> {
     const accounts = this.storage.getAccounts();
     const teamByAccount = new Map<string, TeamMember[]>();

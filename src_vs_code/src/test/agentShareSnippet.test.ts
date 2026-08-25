@@ -63,6 +63,7 @@ test('it states the quoting rule that keeps one example working in every shell',
 
 /* --- one snippet per kind: the agent must be told the verb that exists --- */
 
+// eslint-disable-next-line complexity
 test('each kind gets its own verb and no other', () => {
   const base = { entityName: 'x', token: 'p.s', cliPath: 'C:/cli.js' };
 

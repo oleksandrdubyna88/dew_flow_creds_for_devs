@@ -60,6 +60,7 @@ export function buildCommandLine(command: string, args: readonly CommandArg[] | 
  * <p>An argument with no note contributes no line, so nothing ever renders as a value
  * followed by a dangling dash.</p>
  */
+// eslint-disable-next-line complexity
 export function describeCommand(
   command: string,
   args: readonly CommandArg[] | undefined,

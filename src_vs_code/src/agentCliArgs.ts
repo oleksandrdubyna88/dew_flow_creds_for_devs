@@ -35,6 +35,7 @@ const USAGE = [
   '       agentCli.js terminal|run|script|env|vpn-up|vpn-down <token>',
 ].join(String.fromCharCode(10));
 
+// eslint-disable-next-line complexity
 export function parseAgentCliArgs(argv: readonly string[]): AgentCliRequest {
   const [verb, token, ...rest] = argv;
   if (verb === undefined || token === undefined) {

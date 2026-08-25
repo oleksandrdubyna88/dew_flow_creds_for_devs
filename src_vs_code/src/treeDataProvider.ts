@@ -179,6 +179,7 @@ export class CredTreeDataProvider
    * matters when nothing matches, because an empty tree and a broken tree look identical
    * otherwise.</p>
    */
+  // eslint-disable-next-line complexity
   private searchItem(): vscode.TreeItem {
     const terms = this.terms();
     const active = terms.length > 0;
@@ -217,6 +218,7 @@ export class CredTreeDataProvider
    * the current one — and nothing else does: no Edit, no Share, no Copy Password. A previous
    * version is something to look at, run, or clone from; it is not something to change.</p>
    */
+  // eslint-disable-next-line complexity
   private revisionItem(element: Extract<TreeElement, { kind: 'revision' }>): vscode.TreeItem {
     const head = this.historyById.get(element.node.id)?.[element.index];
     const label = head === undefined ? 'version no longer kept' : summarizeRevision(head);
@@ -276,6 +278,7 @@ export class CredTreeDataProvider
     this.onDidChangeTreeDataEmitter.fire(undefined);
   }
 
+  // eslint-disable-next-line complexity, max-lines-per-function
   getChildren(element?: TreeElement): TreeElement[] {
     if (element === undefined) {
       const terms = this.terms();
@@ -360,6 +363,7 @@ export class CredTreeDataProvider
 
   // Synchronous on purpose: everything a row needs is in memory. The one answer that used
   // to be awaited here — has this entity a password — is the `passwordIds` cache above.
+  // eslint-disable-next-line complexity, max-lines-per-function
   getTreeItem(element: TreeElement): vscode.TreeItem {
     if (element.kind === 'search') {
       return this.searchItem();
@@ -583,6 +587,7 @@ export class CredTreeDataProvider
 
   // ---------- drag & drop ----------
 
+  // eslint-disable-next-line complexity
   handleDrag(source: readonly TreeElement[], dataTransfer: vscode.DataTransfer): void {
     const nodes = source.filter(
       (e): e is Extract<TreeElement, { kind: 'node' }> => e.kind === 'node',
@@ -608,6 +613,7 @@ export class CredTreeDataProvider
     dataTransfer.set(DND_MIME, new vscode.DataTransferItem(payload));
   }
 
+  // eslint-disable-next-line complexity, max-lines-per-function
   async handleDrop(
     target: TreeElement | undefined,
     dataTransfer: vscode.DataTransfer,
@@ -674,6 +680,7 @@ export class CredTreeDataProvider
   }
 }
 
+// eslint-disable-next-line complexity
 function kindIcon(kind: EntityKind): string {
   switch (kind) {
     case 'terminal':
@@ -702,6 +709,7 @@ const HISTORY_COLOR = new vscode.ThemeColor('credSshManager.historyIcon');
 
 const TEAM_COLOR = new vscode.ThemeColor('credSshManager.teamIcon');
 
+// eslint-disable-next-line complexity
 function folderIcon(folderType: FolderType | undefined): vscode.ThemeIcon {
   switch (folderType) {
     case 'project':
@@ -723,6 +731,7 @@ function folderIcon(folderType: FolderType | undefined): vscode.ThemeIcon {
   }
 }
 
+// eslint-disable-next-line complexity
 function describeTarget(node: TreeNode): string {
   const d = node.details;
   if (d?.isDb && !d.host) {
@@ -738,6 +747,7 @@ function describeTarget(node: TreeNode): string {
   return d.port !== undefined && d.port !== 22 ? `${target}:${d.port}` : target;
 }
 
+// eslint-disable-next-line complexity
 function buildTooltip(node: TreeNode): vscode.MarkdownString {
   // Entity fields can originate from another user (accepted shares), so the
   // tooltip must not render sender-controlled markdown/images. appendText

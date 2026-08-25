@@ -58,6 +58,7 @@ export interface GoogleIdentity {
  * endpoint over TLS. Signature verification is not required in that trust
  * model (the token was not relayed by a third party).
  */
+// eslint-disable-next-line complexity
 export function decodeIdToken(idToken: string): GoogleIdentity {
   const parts = idToken.split('.');
   if (parts.length !== 3) {

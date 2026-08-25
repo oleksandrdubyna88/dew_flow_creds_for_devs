@@ -60,6 +60,7 @@ function entityFor(deps: SshUseDeps, ctx: UseActionContext): EntityMetadata | un
  * `finally`; the human terminal path deletes the same file when its terminal
  * closes, so nothing here may assume a cached path still exists.
  */
+// eslint-disable-next-line complexity
 async function prepareAuth(
   deps: SshUseDeps,
   ctx: UseActionContext,
@@ -119,6 +120,7 @@ async function prepareAuth(
   }
 }
 
+// eslint-disable-next-line max-lines-per-function
 export function sshExecAction(deps: SshUseDeps): UseAction {
   return {
     kind: 'ssh',
@@ -139,6 +141,7 @@ export function sshExecAction(deps: SshUseDeps): UseAction {
     summarize(body) {
       return String((body as { command?: unknown }).command ?? '');
     },
+    // eslint-disable-next-line complexity
     async run(ctx, body): Promise<UseActionResult> {
       const entity = entityFor(deps, ctx);
       if (entity === undefined) {

@@ -46,6 +46,7 @@ export function isAllowedImageName(name: string): boolean {
 }
 
 /** What the preview's data: URI needs. Undefined = extension the viewer cannot render. */
+// eslint-disable-next-line complexity
 export function imageMime(name: string): string | undefined {
   switch (extensionOf(name)) {
     case '.png': return 'image/png';

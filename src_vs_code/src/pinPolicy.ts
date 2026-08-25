@@ -72,6 +72,7 @@ function normalizeForBlocklist(value: string): string {
 }
 
 /** Returns an error message for a too-weak PIN, or undefined when acceptable. */
+// eslint-disable-next-line complexity
 export function validatePin(value: string): string | undefined {
   if (value.length === 0) {
     return 'PIN must not be empty.';
@@ -98,6 +99,7 @@ export function validatePin(value: string): string | undefined {
  * string is therefore under-rated — which is the safe direction to be wrong in
  * when the number is advice about a secret.
  */
+// eslint-disable-next-line complexity
 function estimateBits(value: string): number {
   const tokens = value.match(/[a-z]+|[A-Z]+|\d+|[^a-zA-Z\d]+/g) ?? [];
   let bits = 0;
@@ -120,6 +122,7 @@ function estimateBits(value: string): number {
   return bits;
 }
 
+// eslint-disable-next-line complexity
 function humanDuration(seconds: number): string {
   const MINUTE = 60, HOUR = 3600, DAY = 86_400, YEAR = 31_557_600;
   if (seconds < MINUTE) return 'seconds';

@@ -31,6 +31,7 @@ export interface ResolvedSelection {
 }
 
 /** Whether `nodeId` is `ancestorId` or lives under it, walking the real tree. */
+// eslint-disable-next-line complexity
 export function isSelfOrDescendantIn(
   nodes: readonly TreeNode[],
   ancestorId: string,
@@ -51,6 +52,7 @@ export function isSelfOrDescendantIn(
   return false;
 }
 
+// eslint-disable-next-line complexity
 export function resolveSelection(
   clicked: TreeElement | undefined,
   selected: readonly (TreeElement | undefined)[] | undefined,

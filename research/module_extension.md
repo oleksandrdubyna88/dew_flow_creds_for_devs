@@ -869,6 +869,7 @@ re-checks, so nothing that builds a launch can bypass the action's refusal.
 cd src_vs_code
 npm ci
 npm run typecheck          # tsc --noEmit
+npm run lint               # the four boundary rules (eslint.config.mjs); CI-enforced
 npm test                   # tsc && node --test "out/test/*.test.js"
 npm run bundle             # tsc + esbuild out/{extension,agentCli}.js -> dist/ (what ships; F5 needs it)
 npm run package            # vsce package (runs vscode:prepublish = bundle)
@@ -876,7 +877,13 @@ npm run icon               # regenerate media/icon.png
 node scripts/tree-perf-bench.cjs   # tree/storage/sync perf counters; BENCH_OUT=<dir> for another build
 ```
 
-**635 tests** (2026-08-25), all `node:test`, ~13 s. Note the glob in the test script: `node --test
+**635 tests** (2026-08-25), all `node:test`, ~13 s. Linting (audit A2): `eslint.config.mjs`
+enforces exactly four rules — `max-lines: 800`, `max-lines-per-function: 50` (120 in tests,
+where a body narrates one scenario), `complexity: 4`, `no-console` — deliberately not a style
+linter. Pre-existing debt carries explicit `eslint-disable` markers at each site (178 inline +
+3 documented file-level for `extension.ts`/`entityFormPanel.ts`/`storageManager.ts`), so a lint
+failure always means a NEW violation. Remove a marker when the code under it shrinks below the
+limit. Note the glob in the test script: `node --test
 out/test/` resolves the directory as a module on Node 22+ and exits `MODULE_NOT_FOUND` — the suite
 silently ran nothing before 2026-08-23.
 

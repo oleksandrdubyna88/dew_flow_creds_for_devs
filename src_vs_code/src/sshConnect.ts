@@ -15,6 +15,7 @@ import { resolveSshCredential } from './sshCredential';
  * terminal. Moved out of `extension.ts` so the agent broker's terminal action
  * can call the exact same code the tree's Connect button runs.
  */
+// eslint-disable-next-line complexity, max-lines-per-function
 export async function connectEntity(
   accountId: string,
   entity: EntityMetadata,

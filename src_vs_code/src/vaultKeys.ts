@@ -104,6 +104,7 @@ export class VaultKeys {
   // ---------- PIN storage ----------
 
   /** This account's PIN, falling back to the legacy machine-wide one. */
+  // eslint-disable-next-line complexity
   async storedPin(account: StoredAccount): Promise<string | undefined> {
     const own = await this.secrets.get(pinKey(account.accountId));
     if (own !== undefined && own.length > 0) {
@@ -162,6 +163,7 @@ export class VaultKeys {
     this.lockState.noteUserActivity(Date.now());
   }
 
+  // eslint-disable-next-line complexity, max-lines-per-function
   private async unlockInner(
     account: StoredAccount,
     vaultContent: string | undefined,
