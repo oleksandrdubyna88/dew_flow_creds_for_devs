@@ -2254,7 +2254,12 @@ Read this to whoever is accepting your first share. It only matters on a shared 
         break;
       }
       pins.push(pin);
-      const { opened, remaining: rest } = resolveShares(remaining, pins);
+      // Only the PIN just entered — never the whole accumulated list. An item is still in
+      // `remaining` precisely because every earlier PIN already failed to open it, so
+      // re-trying them is pure waste: each retry is a full scrypt (~1s), and the old
+      // O(items × PINs-so-far) cost froze the editor for tens of seconds on a handful of
+      // shares. openShare is deterministic, so a PIN that did not open an item never will.
+      const { opened, remaining: rest } = resolveShares(remaining, [pin]);
       for (const o of opened) {
         await importShared(o, o.payload);
         imported++;

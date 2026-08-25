@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import * as crypto from 'node:crypto';
 import { BackupError } from './cryptoUtils';
 import { StorageManager } from './storageManager';
 import { sharesFromEnvelope } from './shareFormat';
@@ -30,6 +31,16 @@ export class SyncManager implements vscode.Disposable {
   private running = false;
   private rerunWanted = false;
   private readonly warnedAccounts = new Set<string>();
+
+  /**
+   * The last remote envelope we decrypted, per account, keyed by a hash of its exact
+   * bytes. Identical ciphertext means identical plaintext, so an idle cycle whose remote
+   * file has not changed reuses this instead of decrypting again — which for a PIN-only
+   * (v1) vault is a full scrypt (~1s) on the extension-host thread, run on every timer
+   * tick. Keyed on the content, never on the account alone: any real change misses and
+   * decrypts. Dropped after we push, so a stale plaintext can never be served.
+   */
+  private readonly decryptedByHash = new Map<string, { rawHash: string; snapshot: ProfileSnapshot }>();
 
   /**
    * Accounts whose vault envelope was seen to carry a security-key wrap.
@@ -332,22 +343,30 @@ export class SyncManager implements vscode.Disposable {
       if (transport.embedsShares) {
         pendingShares = sharesFromEnvelope(raw);
       }
-      const payload = this.keys.decrypt(raw, key);
-      if (!isBackupBundle(payload)) {
-        throw new BackupError('corrupted', 'Stored vault content does not match the schema.');
+      const rawHash = crypto.createHash('sha256').update(raw).digest('base64');
+      const cached = this.decryptedByHash.get(account.accountId);
+      if (cached !== undefined && cached.rawHash === rawHash) {
+        // Byte-identical to what we last decrypted — skip the scrypt, reuse the plaintext.
+        remote = cached.snapshot;
+      } else {
+        const payload = this.keys.decrypt(raw, key);
+        if (!isBackupBundle(payload)) {
+          throw new BackupError('corrupted', 'Stored vault content does not match the schema.');
+        }
+        remote = {
+          nodes: payload.nodes,
+          passwords: payload.passwords,
+          privateKeys: payload.privateKeys ?? {},
+          vpnConfigs: payload.vpnConfigs ?? {},
+          dbConnections: payload.dbConnections ?? {},
+          notes: payload.notes ?? {},
+          attachments: payload.attachments ?? {},
+          images: payload.images ?? {},
+          tombstones: payload.tombstones ?? {},
+          horizon: payload.horizon ?? {},
+        };
+        this.decryptedByHash.set(account.accountId, { rawHash, snapshot: remote });
       }
-      remote = {
-        nodes: payload.nodes,
-        passwords: payload.passwords,
-        privateKeys: payload.privateKeys ?? {},
-        vpnConfigs: payload.vpnConfigs ?? {},
-        dbConnections: payload.dbConnections ?? {},
-        notes: payload.notes ?? {},
-        attachments: payload.attachments ?? {},
-        images: payload.images ?? {},
-        tombstones: payload.tombstones ?? {},
-        horizon: payload.horizon ?? {},
-      };
       remoteExists = true;
     } catch (error) {
       if (error instanceof BackupError) {
@@ -370,6 +389,10 @@ export class SyncManager implements vscode.Disposable {
         transport.embedsShares ? pendingShares : undefined,
       );
       await transport.writeVault(account, content, []);
+      // We just replaced the remote; its next read will not match the cached hash anyway,
+      // and caching what we wrote would duplicate the encrypt. Drop it so the next cycle
+      // re-decrypts once and re-caches — the idle-cycle case is what this optimizes.
+      this.decryptedByHash.delete(account.accountId);
     }
     return { applied: localChanged, pushed: remoteChanged || !remoteExists };
   }
