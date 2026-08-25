@@ -356,6 +356,41 @@ export function activate(context: vscode.ExtensionContext): void {
     provider.refresh();
     void sharing.reload();
   });
+
+  /**
+   * The filter row's field.
+   *
+   * <p>An input box rather than a QuickPick: a QuickPick would put the results in a floating
+   * list, and the request was to filter the tree you are looking at. `onDidChangeValue` is
+   * what makes it filter as you type; Escape puts back whatever was filtered before, so a
+   * cancelled search is not a lost one.</p>
+   */
+  register('credSshManager.search', () => {
+    vaultKeys.noteUserActivity(); // the user is here: postpone auto-lock
+    const box = vscode.window.createInputBox();
+    const before = provider.searchQuery;
+    let accepted = false;
+    box.title = 'Filter credentials';
+    box.value = before;
+    box.placeholder = 'name, host, user, command…';
+    box.prompt = 'Filters as you type. Secrets are never searched.';
+    box.onDidChangeValue((value) => provider.setSearchQuery(value));
+    box.onDidAccept(() => {
+      accepted = true;
+      box.hide();
+    });
+    box.onDidHide(() => {
+      if (!accepted) {
+        provider.setSearchQuery(before);
+      }
+      box.dispose();
+    });
+    box.show();
+  });
+
+  register('credSshManager.clearSearch', () => {
+    provider.setSearchQuery('');
+  });
   /**
    * Say a refusal out loud after a sync somebody asked for.
    *

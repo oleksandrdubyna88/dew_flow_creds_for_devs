@@ -234,6 +234,9 @@ export interface OwnedShare {
 
 /** Element type of the sidebar tree. */
 export type TreeElement =
+  /** The filter row, pinned above the first account. Carries no data — the term lives on
+   *  the provider, so typing does not rebuild the element identity. */
+  | { kind: 'search' }
   | { kind: 'account'; account: StoredAccount }
   | { kind: 'node'; accountId: string; node: TreeNode }
   | { kind: 'teamScope'; account: StoredAccount }

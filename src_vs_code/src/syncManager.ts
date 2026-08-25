@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import * as crypto from 'node:crypto';
 import { BackupError } from './cryptoUtils';
 import { StorageManager } from './storageManager';
+import { lockedNotice } from './lockedNotice';
 import { sharesFromEnvelope } from './shareFormat';
 import { emptySnapshot, mergeProfiles, ProfileSnapshot } from './syncMerge';
 import {
@@ -36,6 +37,8 @@ export class SyncManager implements vscode.Disposable {
   private running = false;
   private rerunWanted = false;
   private readonly warnedAccounts = new Set<string>();
+  /** Locked vaults found by the cycle currently running, reported together when it ends. */
+  private lockedThisCycle: StoredAccount[] = [];
 
   /**
    * The last remote envelope we decrypted, per account, keyed by a hash of its exact
@@ -275,6 +278,8 @@ export class SyncManager implements vscode.Disposable {
 
     let applied = 0;
     let pushed = 0;
+    // A cycle that threw mid-loop must not carry its findings into the next one.
+    this.lockedThisCycle = [];
     for (const account of accounts) {
       // Per-account transport: NAS folder or vault server.
       const transport = this.transports.forAccount(account);
@@ -296,6 +301,7 @@ export class SyncManager implements vscode.Disposable {
         this.warnOnce(account, error);
       }
     }
+    this.reportLocked();
     if (applied > 0) {
       this.onApplied();
     }
@@ -331,7 +337,7 @@ export class SyncManager implements vscode.Disposable {
     // PIN, cached master key, or a security-key touch — VaultKeys decides.
     const key = await this.keys.unlock(account, raw, { interactive });
     if (key === undefined) {
-      this.warnLocked(account);
+      this.noteLocked(account);
       return { applied: false, pushed: false };
     }
     // Detect tampering of the envelope's signed fields (account / unlock wraps / the
@@ -425,14 +431,45 @@ export class SyncManager implements vscode.Disposable {
     );
   }
 
-  private warnLocked(account: StoredAccount): void {
+  /**
+   * Note that this vault is locked. Says nothing yet — the cycle reports once, at the end.
+   *
+   * <p>Per-account popups were the original behaviour and three of them stacked in the
+   * corner, each covering the previous one's buttons.</p>
+   */
+  private noteLocked(account: StoredAccount): void {
     if (this.warnedAccounts.has(`locked:${account.accountId}`)) {
       return;
     }
     this.warnedAccounts.add(`locked:${account.accountId}`);
+    this.lockedThisCycle.push(account);
+  }
+
+  /** One message for everything this cycle found locked. */
+  private reportLocked(): void {
+    const locked = this.lockedThisCycle;
+    this.lockedThisCycle = [];
+    if (locked.length === 0) {
+      return;
+    }
+    const notice = lockedNotice(locked.map((account) => account.email));
+    if (notice.single) {
+      this.offerUnlock(locked[0]);
+      return;
+    }
+    // With several vaults the buttons cannot act on "the" account, so the one button asks
+    // which — and then offers that vault exactly the choice a single one would have had.
+    void vscode.window.showWarningMessage(notice.message, 'Unlock…').then((choice) => {
+      if (choice === 'Unlock…') {
+        void this.pickAndUnlock(locked);
+      }
+    });
+  }
+
+  private offerUnlock(account: StoredAccount): void {
     void vscode.window
       .showWarningMessage(
-        `Auto-sync: the vault of ${account.email} is locked on this machine.`,
+        lockedNotice([account.email]).message,
         'Set Sync PIN',
         'Unlock with Security Key',
       )
@@ -443,6 +480,20 @@ export class SyncManager implements vscode.Disposable {
           void vscode.commands.executeCommand('credSshManager.unlockWithSecurityKey', account);
         }
       });
+  }
+
+  private async pickAndUnlock(locked: readonly StoredAccount[]): Promise<void> {
+    const picked = await vscode.window.showQuickPick(
+      locked.map((account) => ({
+        label: account.email,
+        description: account.provider,
+        account,
+      })),
+      { title: 'Unlock a vault', placeHolder: 'All of these are locked on this machine' },
+    );
+    if (picked !== undefined) {
+      this.offerUnlock(picked.account);
+    }
   }
 
   private warnOnce(account: StoredAccount, error: unknown): void {

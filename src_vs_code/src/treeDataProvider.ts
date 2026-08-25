@@ -4,7 +4,15 @@ import { nasPathFor } from './nasPaths';
 import { senderIsVerified } from './shareSender';
 import { diagnoseTeamFailure } from './teamDiagnosis';
 import type { SharingManager } from './sharingManager';
-import { EntityKind, FolderType, TreeElement, TreeNode, kindOf } from './types';
+import { EntityKind, FolderType, OwnedShare, TreeElement, TreeNode, kindOf } from './types';
+import {
+  accountMatches,
+  countMatches,
+  filterChildren,
+  matchesTerms,
+  nodeHaystack,
+  searchTerms,
+} from './treeSearch';
 import { SyncReadiness } from './syncReadiness';
 import { isVpnStartable } from './vpnCommand';
 
@@ -75,35 +83,127 @@ export class CredTreeDataProvider
       });
   }
 
+  /**
+   * The live filter term. Empty means no filtering at all.
+   *
+   * <p>Held here rather than in the elements so that typing changes what the tree SHOWS
+   * without changing what any row IS — the account and node elements keep their identity,
+   * and only the folder rows take the term into their id, to be re-expanded (see
+   * `getTreeItem`).</p>
+   */
+  private query = '';
+
+  get searchQuery(): string {
+    return this.query;
+  }
+
+  setSearchQuery(value: string): void {
+    if (value === this.query) {
+      return;
+    }
+    this.query = value;
+    this.refresh();
+  }
+
+  private terms(): string[] {
+    return searchTerms(this.query);
+  }
+
+  /**
+   * The filter row.
+   *
+   * <p>A tree cannot hold a real text field — the API takes rows, not widgets — so the row
+   * IS the field: clicking it opens an input that filters as you type, and it then shows the
+   * term it is filtering by, with how many entries survived. The count is the part that
+   * matters when nothing matches, because an empty tree and a broken tree look identical
+   * otherwise.</p>
+   */
+  private searchItem(): vscode.TreeItem {
+    const terms = this.terms();
+    const active = terms.length > 0;
+    const item = new vscode.TreeItem(
+      active ? `Search: ${this.query}` : 'Search',
+      vscode.TreeItemCollapsibleState.None,
+    );
+    item.id = 'search';
+    // Two context values, because the × is contributed as an inline action and an inline
+    // action cannot be conditional on anything but this string.
+    item.contextValue = active ? 'credSearchActive' : 'credSearch';
+    item.iconPath = new vscode.ThemeIcon(active ? 'filter-filled' : 'search');
+    if (active) {
+      const found = countMatches(
+        this.storage,
+        this.storage.getAccounts().map((a) => a.accountId),
+        terms,
+      );
+      item.description = found === 0 ? 'nothing matches' : `${found} found`;
+    } else {
+      item.description = 'filter by name, host, command…';
+    }
+    item.tooltip = active
+      ? `Filtering by "${this.query}" — click to change it, × to clear. Secrets are never searched.`
+      : 'Click to filter the tree as you type. Names, hosts, users, commands — never secrets.';
+    item.command = { command: 'credSshManager.search', title: 'Search' };
+    return item;
+  }
+
+  /**
+   * Shares the filter keeps — matched on what their row shows: the entity's name, its kind,
+   * and who sent it. Never on the payload, which is still encrypted anyway.
+   */
+  private sharedMatches(terms: readonly string[]): OwnedShare[] {
+    const shares = this.sharing?.ownShares ?? [];
+    if (terms.length === 0) {
+      return [...shares];
+    }
+    return shares.filter((share) =>
+      matchesTerms(
+        `${share.item.entityName} ${share.item.entityKind} ${share.item.fromEmail}`.toLowerCase(),
+        terms,
+      ),
+    );
+  }
+
   refresh(): void {
     this.onDidChangeTreeDataEmitter.fire(undefined);
   }
 
   getChildren(element?: TreeElement): TreeElement[] {
     if (element === undefined) {
-      const roots: TreeElement[] = this.storage
-        .getAccounts()
-        .map((account) => ({ kind: 'account' as const, account }));
-      if ((this.sharing?.ownShares.length ?? 0) > 0) {
+      const terms = this.terms();
+      // The filter row is FIRST, above everything, because that is where a filter has to
+      // be to be found — and it stays visible when the filter hides every account, which
+      // is the one moment an invisible clear button would be unrecoverable.
+      const roots: TreeElement[] = [{ kind: 'search' }];
+      for (const account of this.storage.getAccounts()) {
+        if (accountMatches(this.storage, account.accountId, terms)) {
+          roots.push({ kind: 'account', account });
+        }
+      }
+      if ((this.sharing?.ownShares.length ?? 0) > 0 && this.sharedMatches(terms).length > 0) {
         roots.push({ kind: 'sharedRoot' });
       }
       return roots;
     }
+    if (element.kind === 'search') {
+      return [];
+    }
+    const terms = this.terms();
     switch (element.kind) {
       case 'teamScope':
-        return (this.sharing?.teamFor(element.account) ?? []).map((member) => ({
-          kind: 'teamMember' as const,
-          member,
-          viaAccountId: element.account.accountId,
-        }));
+        return (this.sharing?.teamFor(element.account) ?? [])
+          .filter((member) => matchesTerms(member.account.email.toLowerCase(), terms))
+          .map((member) => ({
+            kind: 'teamMember' as const,
+            member,
+            viaAccountId: element.account.accountId,
+          }));
       case 'sharedRoot': {
-        const emails = [
-          ...new Set((this.sharing?.ownShares ?? []).map((s) => s.item.fromEmail)),
-        ].sort();
+        const emails = [...new Set(this.sharedMatches(terms).map((s) => s.item.fromEmail))].sort();
         return emails.map((email) => ({ kind: 'sharedSender' as const, email }));
       }
       case 'sharedSender':
-        return (this.sharing?.ownShares ?? [])
+        return this.sharedMatches(terms)
           .filter((s) => s.item.fromEmail === element.email)
           .map((share) => ({ kind: 'sharedItem' as const, share }));
       case 'teamMember':
@@ -114,9 +214,17 @@ export class CredTreeDataProvider
     }
     const accountId = element.kind === 'account' ? element.account.accountId : element.accountId;
     const parentId = element.kind === 'account' ? null : element.node.id;
-    const children: TreeElement[] = this.storage
-      .getChildren(accountId, parentId)
-      .map((node) => ({ kind: 'node' as const, accountId, node }));
+    // A folder that matched by its own NAME opens in full: the answer to "show me
+    // Passwords" is its contents, not an empty folder.
+    const parentMatched =
+      element.kind === 'node' && matchesTerms(nodeHaystack(element.node), terms);
+    const children: TreeElement[] = filterChildren(
+      this.storage,
+      accountId,
+      parentId,
+      terms,
+      parentMatched,
+    ).map((node) => ({ kind: 'node' as const, accountId, node }));
     // Each account carries ITS OWN team (the people on its NAS folder).
     if (
       element.kind === 'account' &&
@@ -128,6 +236,9 @@ export class CredTreeDataProvider
   }
 
   async getTreeItem(element: TreeElement): Promise<vscode.TreeItem> {
+    if (element.kind === 'search') {
+      return this.searchItem();
+    }
     if (element.kind === 'teamScope') {
       const item = new vscode.TreeItem('Team', vscode.TreeItemCollapsibleState.Collapsed);
       item.id = `teamScope:${element.account.accountId}`;
@@ -238,8 +349,18 @@ export class CredTreeDataProvider
 
     const { accountId, node } = element;
     if (node.type === 'folder') {
-      const item = new vscode.TreeItem(node.name, vscode.TreeItemCollapsibleState.Collapsed);
-      item.id = `${accountId}:${node.id}`;
+      const filtering = this.query.length > 0;
+      // Filtering opens the folders it kept, otherwise the hit is behind a twisty and the
+      // filter looks like it found nothing. The term rides the id because VS Code remembers
+      // expansion per id: with a stable id it would honour the collapsed state you left
+      // behind and refuse to open.
+      const item = new vscode.TreeItem(
+        node.name,
+        filtering
+          ? vscode.TreeItemCollapsibleState.Expanded
+          : vscode.TreeItemCollapsibleState.Collapsed,
+      );
+      item.id = filtering ? `${accountId}:${node.id}:q${this.query}` : `${accountId}:${node.id}`;
       item.contextValue = 'folder';
       item.iconPath = folderIcon(node.folderType);
       if (node.folderType !== undefined && node.folderType !== 'any') {

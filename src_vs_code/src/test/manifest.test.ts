@@ -38,6 +38,10 @@ const PALETTE_ONLY = new Set([
   // keybindings people already have keep working.
   'extension.exportSecrets',
   'extension.importSecrets',
+  // Reached by clicking the filter row itself (the row's own `command`), which is a
+  // TreeItem property and therefore invisible to a manifest check. A menu entry for it
+  // would be a second door to the thing the row already is.
+  'credSshManager.search',
 ]);
 
 test('every menu group order is a number, or the item silently does not render', () => {

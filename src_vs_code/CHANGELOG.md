@@ -68,6 +68,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Bounded on purpose: 256 KB of output per stream, 30 s per command (raisable to 120 s), 8 at a
   time, and every child killed when the window goes.
 
+## [0.55.0] — 2026-08-25
+
+### Added
+
+- **A filter at the top of the tree.** The first row of the sidebar, above your first
+  account, is a search row: click it and type, and the tree narrows as you type. Folders
+  that contain a hit stay (and open themselves, so the hit is visible rather than behind a
+  twisty); a folder matched by its own name shows everything inside it; accounts with
+  nothing matching drop out entirely. The row itself says what it is filtering by and how
+  many entries survived — `nothing matches` instead of an empty panel that looks broken.
+  The **×** on the right clears it, and the row never disappears, even when the filter hides
+  everything else: a clear button you cannot reach is worse than no filter at all.
+
+  Several words are an AND, in any order: `prod api` finds the row that is both. Matching is
+  against what the row already shows you — name, user, host, port, database or VPN type, the
+  saved command and its note, a key path. **Never against a secret.** Not the password, the
+  private key, the connection string, the VPN config, the notes or a script variable's
+  value: a filter that matched those would confirm a password's contents one keystroke at a
+  time to anyone sitting at an unlocked window, without opening an entry and without leaving
+  a trace anywhere a revealed secret is recorded. If the row does not say it out loud,
+  typing it will not find it.
+
+  A tree in VS Code cannot hold a real text field — the API takes rows, not widgets — so the
+  row *is* the field: clicking it opens an input that filters live, Enter keeps the filter,
+  Escape puts back whatever was filtered before.
+
+### Changed
+
+- **One notification for locked vaults instead of one per account.** With three accounts
+  auto-sync raised three popups, stacked in the corner, each covering the previous one's
+  buttons — and with four the last was off-screen. It is now a single message that *names*
+  every locked vault rather than counting them away, with one **Unlock…** button that asks
+  which one and then offers that vault the same choice as before (Set Sync PIN / Unlock with
+  Security Key). A single locked vault reads and behaves exactly as it always did.
+
 ## [0.54.0] — 2026-08-25
 
 ### Changed
