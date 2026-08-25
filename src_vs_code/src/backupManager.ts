@@ -1,7 +1,14 @@
 import * as vscode from 'vscode';
 import { verifyAccountSession } from './authManager';
 import { planBackupFileNames } from './backupNaming';
-import { BackupError, decryptJson, encryptJson, readBackupAccount } from './cryptoUtils';
+import {
+  BackupError,
+  decryptJson,
+  decryptJsonWithMasterKey,
+  readBackupAccount,
+  readVaultWraps,
+} from './cryptoUtils';
+import { isKeyWrap, unwrapWithPin, wrapPinVault } from './keyWrap';
 import { nasDirFor } from './nasPaths';
 import { validatePin } from './pinPolicy';
 import { sharesFromEnvelope } from './shareFormat';
@@ -167,12 +174,17 @@ export async function backupToNas(
         if (entered === undefined) {
           throw new Error('no PIN given');
         }
-        content = encryptJson(
+        // v3, self-contained: a fresh master sealed in a pin-wrap under the standalone
+        // backup PIN — so scrypt runs once on restore, not per read, and no v1 is written.
+        // Keyed by the backup PIN alone, never the vault-key cache (see backupWriteMode).
+        content = wrapPinVault(
           bundle,
-          profilePassphrase(account.accountId, entered),
+          account.accountId,
+          entered,
+          Date.now(),
           account,
           pendingShares,
-        );
+        ).content;
       }
       // Atomic, like FolderTransport: this writes the SAME file automatic sync reads, so a
       // dropped NAS connection mid-write must leave the previous good file, not a truncated
@@ -264,13 +276,22 @@ export async function restoreFromBackup(
       const pin = await promptMasterPin(
         `Restore ${account.email}`,
         false,
-        'This backup is the old PIN-only format — it predates security keys and has no key slots, ' +
-          'so a key touch cannot open it. Enter the PIN that was set when this backup was made.',
+        'This backup is opened by its own backup PIN — it has no security-key slot, so a ' +
+          'key touch cannot open it. Enter the PIN that was set when this backup was made.',
       );
       if (pin === undefined) {
         return;
       }
-      payload = decryptJson(content, profilePassphrase(account.accountId, pin));
+      // A v3 self-contained backup carries a pin-wrap: unwrap the master with the backup PIN,
+      // one scrypt, then read the payload. A legacy v1 backup has no wrap and decrypts
+      // directly. Both are keyed by the standalone backup PIN, never the vault-key cache.
+      const pinWrap = readVaultWraps(content)
+        .filter(isKeyWrap)
+        .find((w) => w.kind === 'pin');
+      payload =
+        pinWrap === undefined
+          ? decryptJson(content, profilePassphrase(account.accountId, pin))
+          : decryptJsonWithMasterKey(content, unwrapWithPin(pinWrap, account.accountId, pin));
     }
   } catch (error) {
     void vscode.window.showErrorMessage(`Restore failed: ${describeUnknown(error)}`);
