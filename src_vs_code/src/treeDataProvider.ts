@@ -7,6 +7,7 @@ import type { SharingManager } from './sharingManager';
 import { EntityKind, FolderType, OwnedShare, TreeElement, TreeNode, kindOf } from './types';
 import { RevisionHead, summarizeRevision } from './revisionHistory';
 import {
+  FilterMemo,
   accountMatches,
   countMatches,
   filterChildren,
@@ -19,6 +20,17 @@ import { isVpnStartable } from './vpnCommand';
 
 export const VIEW_ID = 'credSshManagerView';
 const DND_MIME = `application/vnd.code.tree.${VIEW_ID.toLowerCase()}`;
+
+/**
+ * How long after the last keystroke the tree is repainted. Long enough to swallow a burst of
+ * typing, short enough that a single keystroke still feels immediate.
+ */
+const SEARCH_DEBOUNCE_MS = 50;
+
+/** Key of the `passwordIds` cache — account AND entity, like the keychain key it mirrors. */
+export function passwordKey(accountId: string, entityId: string): string {
+  return `${accountId}:${entityId}`;
+}
 
 interface DragPayload {
   accountId: string;
@@ -68,6 +80,23 @@ export class CredTreeDataProvider
     return (this.historyById.get(entityId)?.length ?? 0) > 0;
   }
 
+  /**
+   * Entities that have a stored password, as `passwordKey(accountId, entityId)`.
+   *
+   * <p>Whether "Copy Password" belongs in an entity's menu used to be answered by reading the
+   * keychain in `getTreeItem` — one cross-process read per row, so opening a folder of 300
+   * entries made 300 of them, to decide the contents of menus nobody had opened. Cached here
+   * and refreshed at the moments it changes (an edit, an accepted share, a restore, a pulled
+   * sync), exactly as `readiness` and `historyById` are. Keyed by account as well as entity
+   * because a restore can put the same ids into two profiles, and the keychain key carries
+   * both.</p>
+   */
+  readonly passwordIds = new Set<string>();
+
+  hasPassword(accountId: string, entityId: string): boolean {
+    return this.passwordIds.has(passwordKey(accountId, entityId));
+  }
+
   /** Set by the extension: Team / Shared-with-me data source. */
   sharing: SharingManager | undefined;
 
@@ -100,16 +129,41 @@ export class CredTreeDataProvider
    */
   private query = '';
 
+  /**
+   * Answers the current term has already produced for the current tree (see `FilterMemo`).
+   * Cleared by `refresh()`, which is where every mutation arrives; the term itself is handled
+   * by the memo's tuning.
+   */
+  private readonly filterMemo = new FilterMemo();
+
+  /** The repaint a burst of keystrokes is waiting on, if any. */
+  private pendingRefresh: ReturnType<typeof setTimeout> | undefined;
+
   get searchQuery(): string {
     return this.query;
   }
 
+  /**
+   * Set the live filter term.
+   *
+   * <p>The term takes effect at once — `getChildren` answers with it from this line on — but
+   * the repaint is coalesced: a burst of keystrokes fires `onDidChangeTreeData` once, after the
+   * last one, instead of making VS Code re-ask for the whole tree per character. Only the repaint
+   * is deferred, never the value, which is what lets Escape put the previous term back without
+   * a late keystroke overtaking it.</p>
+   */
   setSearchQuery(value: string): void {
     if (value === this.query) {
       return;
     }
     this.query = value;
-    this.refresh();
+    if (this.pendingRefresh !== undefined) {
+      clearTimeout(this.pendingRefresh);
+    }
+    this.pendingRefresh = setTimeout(() => {
+      this.pendingRefresh = undefined;
+      this.refresh();
+    }, SEARCH_DEBOUNCE_MS);
   }
 
   private terms(): string[] {
@@ -142,6 +196,7 @@ export class CredTreeDataProvider
         this.storage,
         this.storage.getAccounts().map((a) => a.accountId),
         terms,
+        this.filterMemo,
       );
       item.description = found === 0 ? 'nothing matches' : `${found} found`;
     } else {
@@ -207,7 +262,17 @@ export class CredTreeDataProvider
     );
   }
 
+  /**
+   * Repaint now. Every mutation arrives here, so this is also where the filter's memoized
+   * answers become void — and a repaint a keystroke was still waiting on is absorbed, since
+   * this one carries the current term already.
+   */
   refresh(): void {
+    this.filterMemo.clear();
+    if (this.pendingRefresh !== undefined) {
+      clearTimeout(this.pendingRefresh);
+      this.pendingRefresh = undefined;
+    }
     this.onDidChangeTreeDataEmitter.fire(undefined);
   }
 
@@ -219,7 +284,7 @@ export class CredTreeDataProvider
       // is the one moment an invisible clear button would be unrecoverable.
       const roots: TreeElement[] = [{ kind: 'search' }];
       for (const account of this.storage.getAccounts()) {
-        if (accountMatches(this.storage, account.accountId, terms)) {
+        if (accountMatches(this.storage, account.accountId, terms, this.filterMemo)) {
           roots.push({ kind: 'account', account });
         }
       }
@@ -281,6 +346,7 @@ export class CredTreeDataProvider
       parentId,
       terms,
       parentMatched,
+      this.filterMemo,
     ).map((node) => ({ kind: 'node' as const, accountId, node }));
     // Each account carries ITS OWN team (the people on its NAS folder).
     if (
@@ -292,7 +358,9 @@ export class CredTreeDataProvider
     return children;
   }
 
-  async getTreeItem(element: TreeElement): Promise<vscode.TreeItem> {
+  // Synchronous on purpose: everything a row needs is in memory. The one answer that used
+  // to be awaited here — has this entity a password — is the `passwordIds` cache above.
+  getTreeItem(element: TreeElement): vscode.TreeItem {
     if (element.kind === 'search') {
       return this.searchItem();
     }
@@ -439,8 +507,7 @@ export class CredTreeDataProvider
     item.id = `${accountId}:${node.id}`;
     // Capability flags drive the context menu: only actions that are
     // actually possible for THIS entity are offered.
-    const hasPassword =
-      (await this.storage.getPassword(accountId, node.id)) !== undefined;
+    const hasPassword = this.hasPassword(accountId, node.id);
     let contextValue = 'entity';
     if (details?.host) {
       contextValue += ':ssh';
@@ -529,6 +596,15 @@ export class CredTreeDataProvider
       accountId,
       ids: nodes.filter((n) => n.accountId === accountId).map((n) => n.node.id),
     };
+    // Say what was left out. The bulk actions report their skips through describeSkips;
+    // a drag that silently narrowed a two-profile selection to one was the odd one out.
+    const skipped = nodes.length - payload.ids.length;
+    if (skipped > 0) {
+      const email = this.storage.getAccount(accountId)?.email ?? accountId;
+      void vscode.window.showWarningMessage(
+        `Dragging ${payload.ids.length} item(s) from ${email}. Skipped: ${skipped} belong to another profile — a move stays inside one profile.`,
+      );
+    }
     dataTransfer.set(DND_MIME, new vscode.DataTransferItem(payload));
   }
 

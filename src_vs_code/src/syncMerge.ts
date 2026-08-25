@@ -258,10 +258,13 @@ export function mergeProfiles(
     tombstones,
     horizon,
   };
+  // Three canonical serializations, not four: the merged side is printed once and compared to
+  // both. (An idle cycle never reaches this line at all — see `syncIdle.ts`.)
+  const mergedPrint = fingerprint(merged);
   return {
     merged,
-    localChanged: fingerprint(merged) !== fingerprint(local),
-    remoteChanged: fingerprint(merged) !== fingerprint(remote),
+    localChanged: mergedPrint !== fingerprint(local),
+    remoteChanged: mergedPrint !== fingerprint(remote),
   };
 }
 

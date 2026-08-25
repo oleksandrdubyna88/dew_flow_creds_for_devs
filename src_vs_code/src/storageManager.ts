@@ -79,19 +79,113 @@ function dbConnSecretKey(accountId: string, entityId: string): string {
 }
 
 /**
+ * One account's validated tree, remembered against the memento value it was read from.
+ * `children` memoizes `getChildren` per parent for that same value.
+ */
+interface NodeCacheEntry {
+  raw: unknown;
+  nodes: readonly TreeNode[];
+  /** Keyed by parent id; `null` is the root, as `getChildren` spells it. */
+  children: Map<string | null, readonly TreeNode[]>;
+}
+
+/** Folders first (manual order, then name), entities alphabetical. */
+function siblingOrder(a: TreeNode, b: TreeNode): number {
+  if (a.type !== b.type) {
+    return a.type === 'folder' ? -1 : 1;
+  }
+  if (a.type === 'folder') {
+    const ao = a.sortOrder ?? Number.MAX_SAFE_INTEGER;
+    const bo = b.sortOrder ?? Number.MAX_SAFE_INTEGER;
+    if (ao !== bo) {
+      return ao - bo;
+    }
+  }
+  return a.name.localeCompare(b.name);
+}
+
+/**
  * Multi-tenant two-tier storage:
  *  - `globalState`  → account profiles + one flat node list per account
  *  - `SecretStorage` → `${accountId}_${entityId}` -> password
  *                      (passwords are never written to globalState)
  *
  * All mutating methods return new arrays/objects; stored data is never
- * mutated in place.
+ * mutated in place — and what `getNodes`/`getChildren` hand out is frozen,
+ * because it is shared with every other caller until the next write.
  */
-export class StorageManager {
+export class StorageManager implements vscode.Disposable {
+  /**
+   * Per-account read cache (audit 2026-08-25, C3).
+   *
+   * <p>`getNodes` used to validate every stored node on every call, and `getChildren` to filter
+   * and sort the whole account per call — the tree filter makes ~43 such calls per keystroke over
+   * a thousand entities. The cache is validated by the IDENTITY of the memento's stored value
+   * rather than by invalidation hooks: `ExtHostMemento` hands back the same object until
+   * something writes the key — this window through `update` (which stores a JSON clone) or
+   * another window of the same profile through the change broadcast — so a different reference
+   * means a different tree and an equal one means the cache is exact. No mutator has to remember
+   * to clear it, and a second window's edit is seen on the very next read.</p>
+   */
+  private readonly nodeCache = new Map<string, NodeCacheEntry>();
+
+  /**
+   * How many times each profile's local state was written through this instance — one half of
+   * `changeToken`. Bumped AFTER the write lands, so a token read that raced ahead of a write is
+   * older than the write and the next cycle sees the difference.
+   */
+  private readonly mutations = new Map<string, number>();
+  /** Bumped on every SecretStorage change event — including another window's writes. */
+  private secretsEpoch = 0;
+  /** The memento values `changeToken` last saw for each profile, to notice a foreign write. */
+  private readonly seenRefs = new Map<string, readonly unknown[]>();
+  private readonly secretsListener: vscode.Disposable;
+
   constructor(
     private readonly globalState: vscode.Memento,
     private readonly secrets: vscode.SecretStorage,
-  ) {}
+  ) {
+    // A password written by another window of this profile lands in the keychain without
+    // passing through this instance; the change event is the only way to learn of it.
+    this.secretsListener = secrets.onDidChange(() => {
+      this.secretsEpoch += 1;
+    });
+  }
+
+  dispose(): void {
+    this.secretsListener.dispose();
+  }
+
+  // ---------- change detection (for the sync cycle) ----------
+
+  /**
+   * A token that is equal across two calls only when this profile's LOCAL snapshot cannot have
+   * changed in between (audit 2026-08-25, C4).
+   *
+   * <p>Three sources, because three things can move without the others: writes through this
+   * instance (the counter), writes to the memento by another window (the reference check on the
+   * nodes, tombstones and horizon values), and writes to the keychain by another window (the
+   * SecretStorage change event). The sync cycle reads it BEFORE it reads the snapshot and, when
+   * neither this token nor the remote bytes have moved since the last cycle that found both sides
+   * identical, skips the seven-keychain-reads-per-entity snapshot and the merge entirely. The
+   * history secret is deliberately not counted: it is local to this machine and never part of
+   * the snapshot.</p>
+   */
+  changeToken(accountId: string): string {
+    const refs = [nodesKey, tombstonesKey, horizonKey].map((key) =>
+      this.globalState.get<unknown>(key(accountId)),
+    );
+    const seen = this.seenRefs.get(accountId);
+    if (seen === undefined || refs.some((ref, i) => ref !== seen[i])) {
+      this.seenRefs.set(accountId, refs);
+      this.touch(accountId);
+    }
+    return `${this.mutations.get(accountId) ?? 0}.${this.secretsEpoch}`;
+  }
+
+  private touch(accountId: string): void {
+    this.mutations.set(accountId, (this.mutations.get(accountId) ?? 0) + 1);
+  }
 
   // ---------- account profiles ----------
 
@@ -172,37 +266,45 @@ export class StorageManager {
       ACCOUNTS_KEY,
       this.getAccounts().filter((a) => a.accountId !== accountId),
     );
+    this.touch(accountId);
   }
 
   // ---------- structure (globalState, per account) ----------
 
-  getNodes(accountId: string): TreeNode[] {
-    const raw = this.globalState.get<unknown>(nodesKey(accountId), []);
-    return Array.isArray(raw) ? raw.filter(isTreeNode) : [];
+  /** The cache entry for this account's CURRENT memento value, built when the value is new. */
+  private nodeEntry(accountId: string): NodeCacheEntry {
+    const raw = this.globalState.get<unknown>(nodesKey(accountId));
+    const cached = this.nodeCache.get(accountId);
+    if (cached !== undefined && cached.raw === raw) {
+      return cached;
+    }
+    const nodes = Object.freeze(Array.isArray(raw) ? raw.filter(isTreeNode) : []);
+    const entry: NodeCacheEntry = { raw, nodes, children: new Map() };
+    this.nodeCache.set(accountId, entry);
+    return entry;
+  }
+
+  /** Every node of one profile, validated — frozen, shared until the next write. */
+  getNodes(accountId: string): readonly TreeNode[] {
+    return this.nodeEntry(accountId).nodes;
   }
 
   getNode(accountId: string, id: string): TreeNode | undefined {
     return this.getNodes(accountId).find((n) => n.id === id);
   }
 
-  getChildren(accountId: string, parentId: string | null): TreeNode[] {
-    const children = this.getNodes(accountId).filter(
-      (n) => (n.parentId ?? null) === parentId,
+  /** The sorted children of one position (`null` = root) — frozen, shared until the next write. */
+  getChildren(accountId: string, parentId: string | null): readonly TreeNode[] {
+    const entry = this.nodeEntry(accountId);
+    const hit = entry.children.get(parentId);
+    if (hit !== undefined) {
+      return hit;
+    }
+    const sorted = Object.freeze(
+      entry.nodes.filter((n) => (n.parentId ?? null) === parentId).sort(siblingOrder),
     );
-    // Folders first (manual order, then name), entities alphabetical.
-    return [...children].sort((a, b) => {
-      if (a.type !== b.type) {
-        return a.type === 'folder' ? -1 : 1;
-      }
-      if (a.type === 'folder') {
-        const ao = a.sortOrder ?? Number.MAX_SAFE_INTEGER;
-        const bo = b.sortOrder ?? Number.MAX_SAFE_INTEGER;
-        if (ao !== bo) {
-          return ao - bo;
-        }
-      }
-      return a.name.localeCompare(b.name);
-    });
+    entry.children.set(parentId, sorted);
+    return sorted;
   }
 
   /** Persistent per-install device id (created once). */
@@ -335,15 +437,16 @@ export class StorageManager {
     return out;
   }
 
-  setTombstones(
+  async setTombstones(
     accountId: string,
     tombstones: Record<string, Tombstone | number>,
-  ): Thenable<void> {
+  ): Promise<void> {
     const normalized: Record<string, Tombstone> = {};
     for (const [id, value] of Object.entries(tombstones)) {
       normalized[id] = normalizeTombstone(value);
     }
-    return this.globalState.update(tombstonesKey(accountId), normalized);
+    await this.globalState.update(tombstonesKey(accountId), normalized);
+    this.touch(accountId);
   }
 
   getHorizon(accountId: string): VersionVector {
@@ -358,8 +461,9 @@ export class StorageManager {
     );
   }
 
-  setHorizon(accountId: string, horizon: VersionVector): Thenable<void> {
-    return this.globalState.update(horizonKey(accountId), horizon);
+  async setHorizon(accountId: string, horizon: VersionVector): Promise<void> {
+    await this.globalState.update(horizonKey(accountId), horizon);
+    this.touch(accountId);
   }
 
   // ---------- secrets (SecretStorage, tenant-scoped) ----------
@@ -377,10 +481,12 @@ export class StorageManager {
       return; // empty input means "keep whatever is stored"
     }
     await this.secrets.store(secretKey(accountId, entityId), password);
+    this.touch(accountId);
   }
 
   async deletePassword(accountId: string, entityId: string): Promise<void> {
     await this.secrets.delete(secretKey(accountId, entityId));
+    this.touch(accountId);
   }
 
   // ---------- share signing identity (SecretStorage, per account) ----------
@@ -429,10 +535,12 @@ export class StorageManager {
 
   async setPrivateKey(accountId: string, entityId: string, content: string): Promise<void> {
     await this.secrets.store(privateKeySecretKey(accountId, entityId), content);
+    this.touch(accountId);
   }
 
   async deletePrivateKey(accountId: string, entityId: string): Promise<void> {
     await this.secrets.delete(privateKeySecretKey(accountId, entityId));
+    this.touch(accountId);
   }
 
   // ---------- VPN configs (SecretStorage, tenant-scoped) ----------
@@ -443,10 +551,12 @@ export class StorageManager {
 
   async setVpnConfig(accountId: string, entityId: string, content: string): Promise<void> {
     await this.secrets.store(vpnConfigSecretKey(accountId, entityId), content);
+    this.touch(accountId);
   }
 
   async deleteVpnConfig(accountId: string, entityId: string): Promise<void> {
     await this.secrets.delete(vpnConfigSecretKey(accountId, entityId));
+    this.touch(accountId);
   }
 
   // ---------- revision history (SecretStorage: old secrets are still secrets) ----------
@@ -487,9 +597,10 @@ export class StorageManager {
   async setAttachment(accountId: string, entityId: string, base64: string | undefined): Promise<void> {
     if (base64 === undefined || base64.length === 0) {
       await this.secrets.delete(attachmentSecretKey(accountId, entityId));
-      return;
+    } else {
+      await this.secrets.store(attachmentSecretKey(accountId, entityId), base64);
     }
-    await this.secrets.store(attachmentSecretKey(accountId, entityId), base64);
+    this.touch(accountId);
   }
 
   getImage(accountId: string, entityId: string): Thenable<string | undefined> {
@@ -499,9 +610,10 @@ export class StorageManager {
   async setImage(accountId: string, entityId: string, base64: string | undefined): Promise<void> {
     if (base64 === undefined || base64.length === 0) {
       await this.secrets.delete(imageSecretKey(accountId, entityId));
-      return;
+    } else {
+      await this.secrets.store(imageSecretKey(accountId, entityId), base64);
     }
-    await this.secrets.store(imageSecretKey(accountId, entityId), base64);
+    this.touch(accountId);
   }
 
   // ---------- notes (SecretStorage, tenant-scoped) ----------
@@ -513,9 +625,10 @@ export class StorageManager {
   async setNotes(accountId: string, entityId: string, value: string | undefined): Promise<void> {
     if (value === undefined || value.length === 0) {
       await this.secrets.delete(notesSecretKey(accountId, entityId));
-      return;
+    } else {
+      await this.secrets.store(notesSecretKey(accountId, entityId), value);
     }
-    await this.secrets.store(notesSecretKey(accountId, entityId), value);
+    this.touch(accountId);
   }
 
   // ---------- DB connection strings (SecretStorage, tenant-scoped) ----------
@@ -526,10 +639,12 @@ export class StorageManager {
 
   async setDbConnection(accountId: string, entityId: string, value: string): Promise<void> {
     await this.secrets.store(dbConnSecretKey(accountId, entityId), value);
+    this.touch(accountId);
   }
 
   async deleteDbConnection(accountId: string, entityId: string): Promise<void> {
     await this.secrets.delete(dbConnSecretKey(accountId, entityId));
+    this.touch(accountId);
   }
 
   // ---------- backup ----------
@@ -580,7 +695,8 @@ export class StorageManager {
       }
     }
     return {
-      nodes,
+      // A copy: the cached array is frozen and shared, and a bundle is the caller's to shape.
+      nodes: [...nodes],
       passwords,
       privateKeys,
       vpnConfigs,
@@ -707,7 +823,8 @@ export class StorageManager {
     return crypto.randomUUID();
   }
 
-  private saveNodes(accountId: string, nodes: TreeNode[]): Thenable<void> {
-    return this.globalState.update(nodesKey(accountId), nodes);
+  private async saveNodes(accountId: string, nodes: readonly TreeNode[]): Promise<void> {
+    await this.globalState.update(nodesKey(accountId), nodes);
+    this.touch(accountId);
   }
 }

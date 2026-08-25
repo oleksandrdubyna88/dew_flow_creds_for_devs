@@ -50,7 +50,7 @@ import {
   vpnTunnelName,
 } from './vpnCommand';
 import { StorageManager } from './storageManager';
-import { Revision, revisionHead } from './revisionHistory';
+import { Revision, RevisionHead, revisionHead } from './revisionHistory';
 import { SyncManager } from './syncManager';
 import { buildSshCommand, describeSshTarget } from './terminalManager';
 import { connectEntity } from './sshConnect';
@@ -84,7 +84,7 @@ import {
 } from './cryptoUtils';
 import { registerSecurityKey } from './webauthnPrf';
 import { validatePin } from './pinPolicy';
-import { CredTreeDataProvider, VIEW_ID } from './treeDataProvider';
+import { CredTreeDataProvider, VIEW_ID, passwordKey } from './treeDataProvider';
 import { RemoteState, buildDefaultFolders, inheritedFolderType } from './defaultFolders';
 import * as childProcess from 'node:child_process';
 import * as fs from 'node:fs';
@@ -143,6 +143,7 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
   );
   const storage = new StorageManager(context.globalState, context.secrets);
+  context.subscriptions.push(storage); // it listens to SecretStorage changes
   const provider = new CredTreeDataProvider(storage, context.extensionUri);
   const storageDir = context.globalStorageUri.fsPath;
   // Never let decrypted SSH key material outlive a session: clear any that a
@@ -174,12 +175,16 @@ export function activate(context: vscode.ExtensionContext): void {
   provider.sharing = sharing;
   void sharing.reload();
 
-  // NAS auto-sync (two-way merge); it re-renders the tree after pulling.
+  // NAS auto-sync (two-way merge); it re-renders the tree after pulling — and re-reads the
+  // per-entity flags, because a pulled merge can add or remove a password.
   const sync = new SyncManager(
     storage,
     vaultKeys,
     transports,
-    () => provider.refresh(),
+    () => {
+      provider.refresh();
+      void refreshEntityFlags();
+    },
     () => void sharing.reload(),
     (accountId) => void context.globalState.update(`syncReminder.lastOk.${accountId}`, Date.now()),
   );
@@ -255,27 +260,45 @@ export function activate(context: vscode.ExtensionContext): void {
    * actually change: startup, a sync cycle, a PIN being set, a lock.
    */
   /**
-   * Which entries keep previous versions. Reading that means reading SecretStorage, which
-   * `getTreeItem` cannot await — so it is cached on the provider and refreshed at the
-   * moments it can change: startup, an edit, an accepted update.
+   * Which entries keep previous versions, and which have a stored password. Both answers live
+   * in SecretStorage, which `getTreeItem` cannot await — so they are cached on the provider and
+   * refreshed at the moments they can change: startup, an edit, an accepted update, a restore,
+   * a pulled sync. One walk for both, because it is the same walk over the same entities; the
+   * caches are swapped at the end rather than cleared at the start, so a repaint that lands
+   * mid-walk never shows a tree with every flag briefly off.
    */
-  const refreshHistoryFlags = async (): Promise<void> => {
-    provider.historyById.clear();
+  const refreshEntityFlags = async (): Promise<void> => {
+    const history = new Map<string, RevisionHead[]>();
+    const withPassword = new Set<string>();
     for (const account of storage.getAccounts()) {
       for (const node of storage.getNodes(account.accountId)) {
         if (node.type !== 'entity') {
           continue;
         }
-        const history = await storage.getHistory(account.accountId, node.id);
-        if (history.length > 0) {
+        const [revisions, password] = await Promise.all([
+          storage.getHistory(account.accountId, node.id),
+          storage.getPassword(account.accountId, node.id),
+        ]);
+        if (revisions.length > 0) {
           // Heads only: the tree needs dates and names, never the old secrets.
-          provider.historyById.set(node.id, history.map(revisionHead));
+          history.set(node.id, revisions.map(revisionHead));
+        }
+        if (password !== undefined) {
+          withPassword.add(passwordKey(account.accountId, node.id));
         }
       }
     }
+    provider.historyById.clear();
+    for (const [id, heads] of history) {
+      provider.historyById.set(id, heads);
+    }
+    provider.passwordIds.clear();
+    for (const key of withPassword) {
+      provider.passwordIds.add(key);
+    }
     provider.refresh();
   };
-  void refreshHistoryFlags();
+  void refreshEntityFlags();
 
   const refreshReadiness = async (): Promise<Map<string, SyncReadiness>> => {
     const locked = vaultKeys.isLocked();
@@ -302,9 +325,10 @@ export function activate(context: vscode.ExtensionContext): void {
   const mutated = () => {
     provider.refresh();
     sync.notifyChange();
-    // An edit or an accepted update may have created the first revision of something —
-    // one refresher here rather than a call at every mutation site that could forget.
-    void refreshHistoryFlags();
+    // An edit or an accepted update may have created the first revision of something, or
+    // stored its first password — one refresher here rather than a call at every mutation
+    // site that could forget.
+    void refreshEntityFlags();
   };
 
   // The agent broker: a loopback surface through which a coding agent can USE

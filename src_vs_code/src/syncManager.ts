@@ -5,6 +5,7 @@ import { StorageManager } from './storageManager';
 import { lockedNotice } from './lockedNotice';
 import { sharesFromEnvelope } from './shareFormat';
 import { emptySnapshot, mergeProfiles, ProfileSnapshot } from './syncMerge';
+import { ConvergedMark, isIdleCycle, markAfterCycle } from './syncIdle';
 import {
   encryptJsonWrapped,
   macStatusBlocksSync,
@@ -49,6 +50,13 @@ export class SyncManager implements vscode.Disposable {
    * decrypts. Dropped after we push, so a stale plaintext can never be served.
    */
   private readonly decryptedByHash = new Map<string, { rawHash: string; snapshot: ProfileSnapshot }>();
+
+  /**
+   * Per account, what the last cycle that found local and remote identical saw as its two
+   * inputs — so the next cycle can skip the snapshot (seven keychain reads per entity) and the
+   * merge when neither input has moved. See `syncIdle.ts`.
+   */
+  private readonly converged = new Map<string, ConvergedMark>();
 
   /**
    * Accounts whose vault envelope was seen to carry a security-key wrap.
@@ -354,6 +362,7 @@ export class SyncManager implements vscode.Disposable {
       // Clean again — let a future recurrence warn instead of being silently deduped.
       this.warnedAccounts.delete(`mac:${account.accountId}`);
     }
+    let rawHash: string | undefined;
     try {
       if (raw === undefined) {
         throw new Error('no vault stored yet');
@@ -361,7 +370,7 @@ export class SyncManager implements vscode.Disposable {
       if (transport.embedsShares) {
         pendingShares = sharesFromEnvelope(raw);
       }
-      const rawHash = crypto.createHash('sha256').update(raw).digest('base64');
+      rawHash = crypto.createHash('sha256').update(raw).digest('base64');
       const cached = this.decryptedByHash.get(account.accountId);
       if (cached !== undefined && cached.rawHash === rawHash) {
         // Byte-identical to what we last decrypted — skip the scrypt, reuse the plaintext.
@@ -393,17 +402,28 @@ export class SyncManager implements vscode.Disposable {
       // Nothing stored yet: first sync for this profile at this location.
     }
 
+    // A legacy PIN-only (v1) file we just decrypted is rewritten even with nothing to sync,
+    // so it migrates to v3 promptly — `encrypt` produces v3 for a v1 key. This is only
+    // reached after a SUCCESSFUL decrypt (a wrong PIN threw above), so it can never overwrite
+    // an unreadable file with local-only data.
+    const migrateV1 = raw !== undefined && key.version === 1;
+
+    // The token is read BEFORE the snapshot, on purpose: a write that lands while the snapshot
+    // is being read leaves a mark with the older token, and the next cycle sees the difference.
+    // Read after, the same write could be marked as synced without ever having been merged.
+    const token = this.storage.changeToken(account.accountId);
+    if (!migrateV1 && isIdleCycle(this.converged.get(account.accountId), token, rawHash)) {
+      // Nothing moved on either side since the cycle that last found them identical: the
+      // snapshot would cost seven keychain reads per entity to rebuild what that cycle proved.
+      return { applied: false, pushed: false };
+    }
+
     const local = await this.storage.getSnapshot(account.accountId);
     const { merged, localChanged, remoteChanged } = mergeProfiles(local, remote, Date.now());
 
     if (localChanged) {
       await this.storage.applySnapshot(account.accountId, merged);
     }
-    // A legacy PIN-only (v1) file we just decrypted is rewritten even with nothing to sync,
-    // so it migrates to v3 promptly — `encrypt` produces v3 for a v1 key. This is only
-    // reached after a SUCCESSFUL decrypt (a wrong PIN threw above), so it can never overwrite
-    // an unreadable file with local-only data.
-    const migrateV1 = raw !== undefined && key.version === 1;
     const willWrite = remoteChanged || !remoteExists || migrateV1;
     if (willWrite) {
       const content = this.keys.encrypt(
@@ -417,6 +437,12 @@ export class SyncManager implements vscode.Disposable {
       // and caching what we wrote would duplicate the encrypt. Drop it so the next cycle
       // re-decrypts once and re-caches — the idle-cycle case is what this optimizes.
       this.decryptedByHash.delete(account.accountId);
+    }
+    const mark = markAfterCycle(localChanged, willWrite, token, rawHash);
+    if (mark === undefined) {
+      this.converged.delete(account.accountId);
+    } else {
+      this.converged.set(account.accountId, mark);
     }
     return { applied: localChanged, pushed: willWrite };
   }
