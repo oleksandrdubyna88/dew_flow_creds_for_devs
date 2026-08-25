@@ -105,8 +105,16 @@ export function sealBlob(payload: unknown, passphrase: string): SealedBlob {
   const params: ScryptParams = { N: DEFAULT_SCRYPT_N, r: SCRYPT_R, p: SCRYPT_P };
   const key = deriveKey(passphrase, salt, params);
   const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
+  // The cipher has copied the key material into its own context by now — verified
+  // against Node: encryption still succeeds after the source buffer is wiped. So
+  // this copy has no further reader and there is no reason to leave it in the heap
+  // for the GC to move around at its leisure.
+  key.fill(0);
   const plaintext = Buffer.from(JSON.stringify(payload), 'utf8');
   const ciphertext = Buffer.concat([cipher.update(plaintext), cipher.final()]);
+  // The decrypted payload is ours too: it was serialised into the ciphertext above
+  // and nothing downstream reads this buffer again.
+  plaintext.fill(0);
   return {
     salt: salt.toString('base64'),
     iv: iv.toString('base64'),
@@ -140,9 +148,11 @@ export function openBlob(blob: SealedBlob, passphrase: string): unknown {
   let plaintext: Buffer;
   try {
     const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv);
+    key.fill(0); // copied into the decipher context; see sealBlob
     decipher.setAuthTag(tag);
     plaintext = Buffer.concat([decipher.update(data), decipher.final()]);
   } catch {
+    key.fill(0);
     throw new BackupError(
       'wrong-password',
       'Decryption failed: wrong master PIN/password or the data was modified.',
@@ -153,6 +163,10 @@ export function openBlob(blob: SealedBlob, passphrase: string): unknown {
     return JSON.parse(plaintext.toString('utf8'));
   } catch {
     throw new BackupError('corrupted', 'Decrypted payload is not valid JSON.');
+  } finally {
+    // The parsed object is what the caller wanted; these bytes are a second copy
+    // of every secret in the vault and nothing reads them again.
+    plaintext.fill(0);
   }
 }
 

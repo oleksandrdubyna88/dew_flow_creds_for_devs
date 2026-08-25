@@ -12,6 +12,21 @@ what is in it.
 It works with **no account, no server and no network**. Point it at a folder to sync your own
 machines; add the optional self-hosted server when a team needs to share.
 
+> **Where it runs, and two honest caveats.**
+>
+> The extension is pinned to your **local machine** (`"extensionKind": ["ui"]`). Under Remote-SSH,
+> WSL or a Dev Container it therefore keeps running on your own computer, which is the only place
+> `~/.ssh`, your keychain and your VPN client actually are. The cost is that *Share with Claude
+> Code* reaches an agent running on that same machine — an agent running **inside** a container
+> cannot see the broker's loopback port. Run Claude Code on the client for that feature.
+>
+> Secrets go to `vscode.SecretStorage`, which is the OS keychain **when there is one**. On a Linux
+> box with no reachable Secret Service — headless, a minimal container, WSL used as a plain shell,
+> SSH with no D-Bus — VS Code silently falls back to a basic store that is obfuscated rather than
+> encrypted, and says nothing about it
+> ([microsoft/vscode#204552](https://github.com/microsoft/vscode/issues/204552)). Install
+> `gnome-keyring` or `kwallet` on those machines, or treat that vault as unprotected at rest.
+
 ## Everything it does
 
 | | |

@@ -44,6 +44,9 @@
     "theme": "dark"
   },
   "main": "./out/extension.js",
+  "extensionKind": [
+    "ui"
+  ],
   "scripts": {
     "compile": "tsc -p ./",
     "watch": "tsc -w -p ./",
