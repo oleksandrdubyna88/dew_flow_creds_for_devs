@@ -101,6 +101,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.58.1] — 2026-08-25
 
+### Added
+
+- The engine for **short-lived entries** — a lifetime of one hour, one day, this window, or one
+  agent use. Not reachable from the UI in this build: the form, the sweep and the burn hook come
+  next. What is settled here is the part that has to be right first — an expiry is a real delete,
+  through the one path that also removes the entry's stored secrets and its version history, so it
+  travels to your other machines like any deletion you make by hand.
+
 ### Security
 
 - **Sync now refuses to run when this machine cannot read its own vault cache** — the most

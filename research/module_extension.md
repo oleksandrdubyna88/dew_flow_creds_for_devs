@@ -811,6 +811,35 @@ not PIN-derived: the tree stays visible while the OS session is unlocked (the sa
 other secret already relies on), and a lost keychain loses only a cache the next sync rebuilds.
 Tombstones/horizon stay plaintext — ids and version vectors, no topology.
 
+### Fail closed on an unreadable cache (0.58.1)
+
+`SyncManager.syncProfile` stops before the merge when `storage.metadataFault` is set. The reason is
+specific: a sealed slot that will not open yields an EMPTY node list while the tombstone and horizon
+slots — unsealed — survive, and `mergeProfiles` then drops every remote node through the
+phantom-rollback guard (no local node, no local tombstone, covered by the local horizon). The merge
+result is empty, `remoteChanged` is true, and the cycle would push that over the good copy; the
+pushed horizon would then empty every other machine. `syncFailClosed.test.ts` pins all three shapes,
+including that an honestly-new machine (empty tree, EMPTY horizon) must still adopt the remote —
+which is why "the tree is empty" cannot itself be the signal. `StorageManager.init` probes each
+sealed slot so the fault is known at activation instead of on first read.
+
+`grantExpiry` checks status before the clock: a denied grant is terminal and never expires. Nothing
+uses a refused token, so nothing touches it, and an idle clock measured from minting swept the
+refusal about an hour after Deny — after which the broker answered "unknown" and an agent would
+reasonably ask for a fresh token, reopening the dialog just refused. An allowed grant still expires;
+the precedence lives in the one function every lookup passes through.
+
+### Short-lived entries — the engine (0.58.1)
+
+`entityExpiry.ts` is pure and answer-only: `isExpired`, `burnsOnAgentUse`, `burnsOnClose`,
+`expiredNodes`, `describeRemaining`. It deliberately cannot delete anything, because expiry MUST go
+through `deleteNodeRecursive` — the only path that writes a causal tombstone and removes all eight
+SecretStorage keys including the revision history. A "burned" flag would leave the old password in
+history, in the next backup, and — with no tombstone and no version bump — would be restored by the
+next machine that synced. `expiresAt`/`burnPolicy` are on `EntityMetadata` and in
+`isEntityMetadata`; without the validator line they are stripped on every sync, import and sealed
+read. The sweep, the broker burn hook and the form are not built yet (they need `extension.ts`).
+
 ### The git transport (0.58.0)
 
 `gitRemote.ts` is the pure half — argv builders, remote recognition, and the classification of
