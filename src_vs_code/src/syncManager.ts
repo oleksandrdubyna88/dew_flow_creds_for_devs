@@ -12,7 +12,7 @@ import {
   readVaultWraps,
   verifyEnvelopeMac,
 } from './cryptoUtils';
-import { isKeyWrap, webauthnWraps, upsertWrap, wrapWithPin, wrapPinVault } from './keyWrap';
+import { isKeyWrap, webauthnWraps, upsertWrap, wrapWithPinAsync, wrapPinVaultAsync } from './keyWrap';
 import { TransportFactory } from './transportFactory';
 import { VaultKeys } from './vaultKeys';
 import { validatePin } from './pinPolicy';
@@ -204,7 +204,7 @@ export class SyncManager implements vscode.Disposable {
       );
       return 'cancelled';
     }
-    const payload = this.keys.decrypt(raw, key);
+    const payload = await this.keys.decrypt(raw, key);
     const shares = transport.embedsShares ? sharesFromEnvelope(raw) : undefined;
     let content: string;
     if (key.version === 2) {
@@ -212,13 +212,13 @@ export class SyncManager implements vscode.Disposable {
       const master = key.masterKey;
       const wraps = upsertWrap(
         readVaultWraps(raw).filter(isKeyWrap),
-        wrapWithPin(master, account.accountId, newPin, Date.now()),
+        await wrapWithPinAsync(master, account.accountId, newPin, Date.now()),
       );
       content = encryptJsonWrapped(payload, key.masterKey, wraps, account, shares);
     } else {
       // v1: a PIN change is also the moment to leave v1 behind — write v3 with the new
       // PIN's wrap instead of another scrypt-per-op envelope.
-      content = wrapPinVault(payload, account.accountId, newPin, Date.now(), account, shares).content;
+      content = (await wrapPinVaultAsync(payload, account.accountId, newPin, Date.now(), account, shares)).content;
     }
     await transport.writeVault(account, content, []);
     this.keys.clearCache(account.accountId);
@@ -376,7 +376,7 @@ export class SyncManager implements vscode.Disposable {
         // Byte-identical to what we last decrypted — skip the scrypt, reuse the plaintext.
         remote = cached.snapshot;
       } else {
-        const payload = this.keys.decrypt(raw, key);
+        const payload = await this.keys.decrypt(raw, key);
         if (!isBackupBundle(payload)) {
           throw new BackupError('corrupted', 'Stored vault content does not match the schema.');
         }
@@ -426,7 +426,7 @@ export class SyncManager implements vscode.Disposable {
     }
     const willWrite = remoteChanged || !remoteExists || migrateV1;
     if (willWrite) {
-      const content = this.keys.encrypt(
+      const content = await this.keys.encrypt(
         { ...merged, exportedAt: Date.now() },
         key,
         account,

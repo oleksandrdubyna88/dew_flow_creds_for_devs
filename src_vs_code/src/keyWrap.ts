@@ -1,6 +1,14 @@
 import * as crypto from 'node:crypto';
 import type { StoredAccount } from './types';
-import { BackupError, SealedBlob, encryptJsonWrapped, openBlob, sealBlob } from './cryptoUtils';
+import {
+  BackupError,
+  SealedBlob,
+  encryptJsonWrapped,
+  openBlob,
+  openBlobAsync,
+  sealBlob,
+  sealBlobAsync,
+} from './cryptoUtils';
 
 /**
  * Multi-unlock key wrapping.
@@ -143,9 +151,8 @@ export function wrapWithPrf(
   };
 }
 
-/** Recover the master key from a PIN wrap. Throws BackupError on a bad PIN. */
-export function unwrapWithPin(wrap: KeyWrap, accountId: string, pin: string): Buffer {
-  const payload = openBlob(wrap, accountId + pin);
+/** The master key a pin-wrap's decrypted payload carries — or a 'corrupted' error, never a guess. */
+function masterFromPinPayload(payload: unknown): Buffer {
   if (typeof payload !== 'string') {
     throw new BackupError('corrupted', 'PIN wrap does not hold a master key.');
   }
@@ -154,6 +161,51 @@ export function unwrapWithPin(wrap: KeyWrap, accountId: string, pin: string): Bu
     throw new BackupError('corrupted', 'PIN wrap holds a malformed master key.');
   }
   return key;
+}
+
+/** Recover the master key from a PIN wrap. Throws BackupError on a bad PIN. */
+export function unwrapWithPin(wrap: KeyWrap, accountId: string, pin: string): Buffer {
+  return masterFromPinPayload(openBlob(wrap, accountId + pin));
+}
+
+/**
+ * The async twins of the three PIN-wrap operations.
+ *
+ * <p>Same format, same errors, one difference: scrypt runs off the extension-host thread.
+ * These are what the unlock and set-PIN paths call, because a person is waiting on them and
+ * a frozen editor is what they would otherwise see. The sync forms stay for the pure callers
+ * and the tests, which have no event loop to protect.</p>
+ */
+export async function unwrapWithPinAsync(wrap: KeyWrap, accountId: string, pin: string): Promise<Buffer> {
+  return masterFromPinPayload(await openBlobAsync(wrap, accountId + pin));
+}
+
+export async function wrapWithPinAsync(
+  masterKey: Buffer,
+  accountId: string,
+  pin: string,
+  createdAt: number,
+): Promise<KeyWrap> {
+  return {
+    kind: 'pin',
+    id: 'pin',
+    createdAt,
+    ...(await sealBlobAsync(masterKey.toString('base64'), accountId + pin)),
+  };
+}
+
+export async function wrapPinVaultAsync(
+  payload: unknown,
+  accountId: string,
+  pin: string,
+  createdAt: number,
+  account?: StoredAccount,
+  shares?: unknown[],
+): Promise<WrappedVaultInit> {
+  const masterKey = crypto.randomBytes(32);
+  const wraps = [await wrapWithPinAsync(masterKey, accountId, pin, createdAt)];
+  const content = encryptJsonWrapped(payload, masterKey, wraps, account, shares);
+  return { content, masterKey, wraps };
 }
 
 /** Recover the master key from a security-key wrap. */

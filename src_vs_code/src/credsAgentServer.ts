@@ -14,7 +14,7 @@ import {
   parseUseRoute,
   statusForErrorCode,
 } from './brokerProtocol';
-import { Grant, GrantRegistry } from './grantRegistry';
+import { Grant, GrantExpiry, GrantLimits, GrantLookup, GrantRegistry } from './grantRegistry';
 import { UseActionRegistry } from './useActions';
 import { formatToken } from './grantToken';
 import { formatAuditLine } from './agentAuditLog';
@@ -43,6 +43,38 @@ import { startOnce } from './idempotentStart';
  */
 
 const CONSENT_TIMEOUT_MS = 5 * 60_000;
+
+/**
+ * The token lifetime the person configured: idle minutes and a call cap, zero meaning off.
+ *
+ * <p>Read per request rather than once, so changing the setting takes effect on the next
+ * call instead of the next window. Defaults: an hour idle, no cap — a token an agent is
+ * using stays live; one it forgot about dies on its own.</p>
+ */
+function grantLimits(): GrantLimits {
+  const config = vscode.workspace.getConfiguration('credSshManager');
+  const idleMinutes = Math.max(0, config.get<number>('agentGrantIdleMinutes', 60));
+  const maxUses = Math.max(0, Math.floor(config.get<number>('agentGrantMaxCalls', 0)));
+  return { idleMs: idleMinutes * 60_000, maxUses };
+}
+
+function describeLimits(limits: GrantLimits): string {
+  const parts: string[] = [];
+  if (limits.idleMs > 0) {
+    parts.push(`until it goes unused for ${Math.round(limits.idleMs / 60_000)} minutes`);
+  }
+  if (limits.maxUses > 0) {
+    parts.push(`for at most ${limits.maxUses} calls`);
+  }
+  parts.push('and never past this window closing');
+  return parts.join(', ');
+}
+
+function expiredMessage(reason: GrantExpiry, limits: GrantLimits): string {
+  return reason === 'idle'
+    ? `This grant expired: it went unused for more than ${Math.round(limits.idleMs / 60_000)} minutes. Ask the person for a fresh Share with Claude Code.`
+    : `This grant expired: it reached its limit of ${limits.maxUses} calls. Ask the person for a fresh Share with Claude Code.`;
+}
 
 export class CredsAgentServer implements vscode.Disposable {
   private readonly grants = new GrantRegistry();
@@ -161,11 +193,20 @@ export class CredsAgentServer implements vscode.Disposable {
     }
 
     const secret = parseBearer(req.headers.authorization);
-    const grant = secret === undefined ? undefined : this.grants.get(secret);
-    if (grant === undefined) {
-      this.respondError(res, 'unauthorized', 'Unknown or missing grant token.');
+    const limits = grantLimits();
+    const found: GrantLookup =
+      secret === undefined ? { kind: 'unknown' } : this.grants.lookup(secret, Date.now(), limits);
+    if (found.kind !== 'live') {
+      // An expired token says so. "Unknown" would send the agent hunting for a typo in a
+      // token that was correct an hour ago.
+      this.respondError(
+        res,
+        'unauthorized',
+        found.kind === 'expired' ? expiredMessage(found.reason, limits) : 'Unknown or missing grant token.',
+      );
       return;
     }
+    const grant = found.grant;
 
     let raw: string;
     try {
@@ -199,6 +240,9 @@ export class CredsAgentServer implements vscode.Disposable {
       return;
     }
 
+    // Counted and clocked only once consent is in hand: a refused or still-pending call must
+    // not extend a token's idle life or spend one of its uses.
+    this.grants.touch(grant.secret);
     try {
       const result = await useAction.run(
         { accountId: grant.accountId, entityId: grant.entityId, entityName: grant.entityName },
@@ -272,13 +316,22 @@ export class CredsAgentServer implements vscode.Disposable {
     verb: string,
     summary: string,
   ): Promise<boolean> {
+    // Consent is per GRANT, so one Allow authorises every action of this kind — not only the
+    // one that triggered the dialog. The dialog has to say so in those actions' own words,
+    // or "open a terminal" is what the person reads while "run any command" is what they grant.
+    const everything = this.actions
+      .actionsFor(grant.kind)
+      .map((a) => a.verb)
+      .join(', or ');
+    const limits = grantLimits();
     const choice = await withTimeout(
       Promise.resolve(
         vscode.window.showWarningMessage(
           `Claude Code wants to ${verb} ` +
             `"${grant.entityName}" using its stored credential.\n\n${summary}\n\n` +
-            'Allowing covers every later call on this token, for as long as this window stays open. ' +
-            'Each one is logged in the "CredsForDevs: Agent Access" output panel.',
+            `Allowing covers every later call on this token, not just this one: with it the agent can ${everything} "${grant.entityName}" ` +
+            `${describeLimits(limits)}. ` +
+            'Each call is logged in the "CredsForDevs: Agent Access" output panel.',
           { modal: true },
           'Allow',
           'Deny',

@@ -1,5 +1,4 @@
 import * as vscode from 'vscode';
-import { copiedMessage, copySecret } from './secretClipboard';
 import { StorageManager } from './storageManager';
 import {
   ENTITY_KINDS,
@@ -58,113 +57,10 @@ export async function pickFolderType(
   return picked?.value;
 }
 
-export type DetailsAction = 'edit' | 'connect' | 'install' | undefined;
-
-/**
- * Details view as a QuickPick: read-only field rows on top, action rows
- * below. Secrets are masked in the list; only the copy actions read the
- * real values from SecretStorage. Actions that need wiring outside this
- * dialog ('edit', 'connect', 'install') are returned to the caller.
- */
-export async function showEntityDetails(
-  accountId: string,
-  node: TreeNode,
-  storage: StorageManager,
-): Promise<DetailsAction> {
-  const details = node.details;
-  if (!details) {
-    return undefined;
-  }
-  const password = await storage.getPassword(accountId, details.id);
-  const privateKey = await storage.getPrivateKey(accountId, details.id);
-  const dbConnection = details.isDb
-    ? await storage.getDbConnection(accountId, details.id)
-    : undefined;
-  const notes = (await storage.getNotes(accountId, details.id)) ?? details.notes;
-  const keySourceName =
-    details.sshKeyEntityId !== undefined
-      ? (storage.getNode(accountId, details.sshKeyEntityId)?.name ?? '(missing entity)')
-      : undefined;
-
-  const fieldItems: vscode.QuickPickItem[] = [
-    { label: 'Details', kind: vscode.QuickPickItemKind.Separator },
-    { label: `$(server) Host: ${details.host ?? '—'}` },
-    { label: `$(account) User: ${details.user ?? '—'}` },
-    { label: `$(plug) Port: ${details.port ?? '22 (default)'}` },
-    { label: `$(lock) Password: ${password !== undefined ? '••••••••' : '— (not set)'}` },
-    {
-      label: `$(shield) Private key: ${privateKey !== undefined ? 'stored' : details.sshKeyPath ? `path (${details.sshKeyPath})` : '— (not set)'}`,
-    },
-    { label: `$(broadcast) Public key: ${details.publicKey ? 'stored' : '— (not set)'}` },
-    ...(keySourceName !== undefined
-      ? [{ label: `$(references) Key source: entity "${keySourceName}"` }]
-      : []),
-    { label: `$(note) Notes: ${notes ?? '—'}` },
-    { label: 'Actions', kind: vscode.QuickPickItemKind.Separator },
-  ];
-
-  const copyAll = { label: '$(copy) Copy All' };
-  const copyPassword = { label: '$(key) Copy Password' };
-  const copyPublicKey = { label: '$(broadcast) Copy Public Key' };
-  const copyPrivateKey = { label: '$(shield) Copy Private Key' };
-  const connectSsh = { label: '$(terminal) Connect SSH' };
-  const install = { label: '$(desktop-download) Install key to system (~/.ssh)' };
-  const edit = { label: '$(edit) Edit…' };
-
-  // Offer only actions this entity can actually perform.
-  const actions = [
-    copyAll,
-    ...(password !== undefined ? [copyPassword] : []),
-    ...(details.publicKey ? [copyPublicKey] : []),
-    ...(privateKey !== undefined ? [copyPrivateKey] : []),
-    ...(details.host ? [connectSsh] : []),
-    ...(details.isSshKey ? [install] : []),
-    edit,
-  ];
-
-  const picked = await vscode.window.showQuickPick([...fieldItems, ...actions], {
-    title: node.name,
-    placeHolder: 'Choose an action',
-  });
-  if (picked === undefined) {
-    return undefined;
-  }
-
-  switch (picked) {
-    case copyAll:
-      await copySecret(
-        vscode.env.clipboard,
-        formatEntityBlock(details, password, dbConnection, notes),
-      );
-      void vscode.window.showInformationMessage(copiedMessage(`All fields of "${node.name}"`));
-      return undefined;
-    case copyPassword:
-      if (password === undefined) {
-        void vscode.window.showWarningMessage(`"${node.name}" has no stored password.`);
-        return undefined;
-      }
-      await copySecret(vscode.env.clipboard, password);
-      void vscode.window.showInformationMessage(copiedMessage(`Password of "${node.name}"`));
-      return undefined;
-    case copyPublicKey:
-      await vscode.env.clipboard.writeText(details.publicKey ?? '');
-      void vscode.window.showInformationMessage(`Public key of "${node.name}" copied.`);
-      return undefined;
-    case copyPrivateKey:
-      await copySecret(vscode.env.clipboard, privateKey ?? '');
-      void vscode.window.showInformationMessage(copiedMessage(`Private key of "${node.name}"`));
-      return undefined;
-    case connectSsh:
-      return 'connect';
-    case install:
-      return 'install';
-    case edit:
-      return 'edit';
-    default:
-      // A field row was picked — reopen so the dialog feels read-only.
-      return showEntityDetails(accountId, node, storage);
-  }
-}
+// `showEntityDetails` — the QuickPick "details view" — used to live here. It knew only the SSH
+// fields, so a VPN, database, script or command entity opened as `Host —` / `Password — (not
+// set)` and read as broken, while the double-click viewer showed everything correctly. View
+// Details now opens that viewer; one surface, no second copy of what an entity looks like.
 
 /** QuickPick of one account's folders (plus root) for "Move to Folder…". */
 export async function pickTargetFolder(

@@ -121,6 +121,26 @@ function deriveKey(passphrase: Passphrase, salt: Buffer, params: ScryptParams): 
   });
 }
 
+/**
+ * The same derivation, off the extension-host thread.
+ *
+ * <p>`scryptSync` at N=2^17 holds the event loop for about a second on this hardware — no
+ * typing, no IntelliSense, no other extension's callbacks — each time a vault is unlocked or
+ * a PIN wrap is written. Node's async `scrypt` runs on the libuv pool and yields the same
+ * bytes, so the unlock and PIN-set paths take this one and the format never notices.</p>
+ */
+function deriveKeyAsync(passphrase: Passphrase, salt: Buffer, params: ScryptParams): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    crypto.scrypt(
+      passphrase,
+      salt,
+      KEY_LENGTH,
+      { N: params.N, r: params.r, p: params.p, maxmem: SCRYPT_MAXMEM },
+      (error, key) => (error !== null ? reject(error) : resolve(key)),
+    );
+  });
+}
+
 /** The scrypt params a blob was sealed with (legacy defaults when absent). */
 function paramsOf(blob: SealedBlob): ScryptParams {
   return {
@@ -209,38 +229,30 @@ function payloadKey(master: Passphrase, salt: Buffer): Buffer {
 
 const PAYLOAD_INFO = Buffer.from('cred-ssh-manager/vault-payload');
 
+const DEFAULT_PARAMS: ScryptParams = { N: DEFAULT_SCRYPT_N, r: SCRYPT_R, p: SCRYPT_P };
+
+/** A sealed blob that records the KDF cost it was made with, so a later raise never orphans it. */
+function withKdf(blob: SealedBlob, params: ScryptParams): SealedBlob {
+  return { ...blob, kdfN: params.N, kdfR: params.r, kdfP: params.p };
+}
+
 export function sealBlob(payload: unknown, passphrase: Passphrase): SealedBlob {
   const salt = crypto.randomBytes(SALT_LENGTH);
-  const iv = crypto.randomBytes(IV_LENGTH);
-  const params: ScryptParams = { N: DEFAULT_SCRYPT_N, r: SCRYPT_R, p: SCRYPT_P };
-  const key = deriveKey(passphrase, salt, params);
-  const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
-  // The cipher has copied the key material into its own context by now — verified
-  // against Node: encryption still succeeds after the source buffer is wiped. So
-  // this copy has no further reader and there is no reason to leave it in the heap
-  // for the GC to move around at its leisure.
-  key.fill(0);
-  const plaintext = Buffer.from(JSON.stringify(payload), 'utf8');
-  const ciphertext = Buffer.concat([cipher.update(plaintext), cipher.final()]);
-  // The decrypted payload is ours too: it was serialised into the ciphertext above
-  // and nothing downstream reads this buffer again.
-  plaintext.fill(0);
-  return {
-    salt: salt.toString('base64'),
-    iv: iv.toString('base64'),
-    tag: cipher.getAuthTag().toString('base64'),
-    data: ciphertext.toString('base64'),
-    kdfN: params.N,
-    kdfR: params.r,
-    kdfP: params.p,
-  };
+  return withKdf(sealWithKey(payload, deriveKey(passphrase, salt, DEFAULT_PARAMS), salt), DEFAULT_PARAMS);
 }
 
 /**
- * Decrypt a sealed blob. Throws {@link BackupError}: 'wrong-password' when
- * GCM authentication fails, 'corrupted' for malformed pieces.
+ * `sealBlob` with the KDF off the extension-host thread. Byte-for-byte the same format:
+ * `openBlob` and `openBlobAsync` each read what either one wrote.
  */
-export function openBlob(blob: SealedBlob, passphrase: Passphrase): unknown {
+export async function sealBlobAsync(payload: unknown, passphrase: Passphrase): Promise<SealedBlob> {
+  const salt = crypto.randomBytes(SALT_LENGTH);
+  const key = await deriveKeyAsync(passphrase, salt, DEFAULT_PARAMS);
+  return withKdf(sealWithKey(payload, key, salt), DEFAULT_PARAMS);
+}
+
+/** The shape checks both open paths share. Throws 'corrupted' on a malformed piece; returns the salt. */
+function checkedSalt(blob: SealedBlob): Buffer {
   for (const field of ['salt', 'iv', 'tag', 'data'] as const) {
     if (typeof blob[field] !== 'string' || blob[field].length === 0) {
       throw new BackupError('corrupted', `Encrypted data is missing the "${field}" field.`);
@@ -249,35 +261,28 @@ export function openBlob(blob: SealedBlob, passphrase: Passphrase): unknown {
   const salt = Buffer.from(blob.salt, 'base64');
   const iv = Buffer.from(blob.iv, 'base64');
   const tag = Buffer.from(blob.tag, 'base64');
-  const data = Buffer.from(blob.data, 'base64');
   if (salt.length !== SALT_LENGTH || iv.length !== IV_LENGTH || tag.length !== TAG_LENGTH) {
     throw new BackupError('corrupted', 'Encrypted data has a malformed salt, IV, or auth tag.');
   }
+  return salt;
+}
 
-  const key = deriveKey(passphrase, salt, paramsOf(blob));
-  let plaintext: Buffer;
-  try {
-    const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv);
-    key.fill(0); // copied into the decipher context; see sealBlob
-    decipher.setAuthTag(tag);
-    plaintext = Buffer.concat([decipher.update(data), decipher.final()]);
-  } catch {
-    key.fill(0);
-    throw new BackupError(
-      'wrong-password',
-      'Decryption failed: wrong master PIN/password or the data was modified.',
-    );
-  }
+/**
+ * Decrypt a sealed blob. Throws {@link BackupError}: 'wrong-password' when
+ * GCM authentication fails, 'corrupted' for malformed pieces.
+ */
+export function openBlob(blob: SealedBlob, passphrase: Passphrase): unknown {
+  const salt = checkedSalt(blob);
+  return openWithKey(blob, deriveKey(passphrase, salt, paramsOf(blob)));
+}
 
-  try {
-    return JSON.parse(plaintext.toString('utf8'));
-  } catch {
-    throw new BackupError('corrupted', 'Decrypted payload is not valid JSON.');
-  } finally {
-    // The parsed object is what the caller wanted; these bytes are a second copy
-    // of every secret in the vault and nothing reads them again.
-    plaintext.fill(0);
-  }
+/**
+ * `openBlob` with the KDF off the extension-host thread — the unlock path uses this, so
+ * typing a PIN no longer freezes the editor for the length of one scrypt.
+ */
+export async function openBlobAsync(blob: SealedBlob, passphrase: Passphrase): Promise<unknown> {
+  const salt = checkedSalt(blob);
+  return openWithKey(blob, await deriveKeyAsync(passphrase, salt, paramsOf(blob)));
 }
 
 /**
@@ -562,6 +567,12 @@ export function readBackupShares(fileContent: string): unknown[] {
 export function decryptJson(fileContent: string, passphrase: string): unknown {
   const envelope = parseEnvelope(fileContent);
   return openBlob(envelope, passphrase);
+}
+
+/** {@link decryptJson} with scrypt off the extension-host thread — the legacy-v1 unlock path. */
+export function decryptJsonAsync(fileContent: string, passphrase: string): Promise<unknown> {
+  const envelope = parseEnvelope(fileContent);
+  return openBlobAsync(envelope, passphrase);
 }
 
 /**

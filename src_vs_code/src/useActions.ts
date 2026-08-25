@@ -63,4 +63,15 @@ export class UseActionRegistry {
   resolve(kind: string, action: string): UseAction | undefined {
     return this.actions.get(key(kind, action));
   }
+
+  /**
+   * Every capability a grant of this kind buys — in registration order.
+   *
+   * <p>Exists for the consent dialog: consent is per GRANT, so an Allow given for "open a
+   * terminal" also authorises every other action of the kind. The dialog must say so in
+   * the words of those actions, and only the registry knows what they are.</p>
+   */
+  actionsFor(kind: string): UseAction[] {
+    return [...this.actions.values()].filter((action) => action.kind === kind);
+  }
 }

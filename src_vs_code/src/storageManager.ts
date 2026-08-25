@@ -6,6 +6,7 @@ import { RemoteState, buildDefaultFolders, shouldSeedDefaults } from './defaultF
 import { Tombstone, VersionVector, bumpVector, mergeVectors, normalizeTombstone } from './versionVector';
 import { isSelfOrDescendantIn } from './selectionResolver';
 import { Revision, isRevisionList, pushRevision } from './revisionHistory';
+import { MetadataError, isSealedMetadata, newMetadataKey, openMetadata, sealMetadata } from './metadataCipher';
 import {
   BackupBundle,
   StoredAccount,
@@ -29,6 +30,9 @@ function tombstonesKey(accountId: string): string {
 function horizonKey(accountId: string): string {
   return `credSshManager.horizon.${accountId}`;
 }
+
+/** SecretStorage slot of the device key that seals the local metadata cache (audit B8). */
+const METADATA_KEY_SLOT = 'credSshManager.metadataKey';
 
 const DEVICE_ID_KEY = 'credSshManager.deviceId';
 const DEVICE_SEQ_KEY = 'credSshManager.deviceSeq';
@@ -156,6 +160,69 @@ export class StorageManager implements vscode.Disposable {
     this.secretsListener.dispose();
   }
 
+  // ---------- metadata sealing (audit 2026-08-25, B8) ----------
+
+  /**
+   * The device key that seals the node slots in `globalState`. Held in memory after `init`;
+   * kept in `SecretStorage`, never derived from a PIN and never synced — so the tree stays
+   * readable while the OS session is, and a lost keychain loses only a cache the next sync
+   * rebuilds from the encrypted remote.
+   */
+  private metadataKey: Buffer | undefined;
+
+  /**
+   * Why sealed metadata could not be opened, when that has happened — one sentence for the
+   * activation path to surface. Reading a faulted slot yields an empty tree, never a throw:
+   * an unreadable cache must not take the whole extension down.
+   */
+  metadataFault: string | undefined;
+
+  /**
+   * Load or mint the device key, then seal any plaintext node slots left by earlier versions.
+   * Runs once, awaited by `activate` before anything reads a tree — reads that raced a
+   * migration would see a slot flip identity mid-render.
+   */
+  async init(): Promise<void> {
+    const stored = await this.secrets.get(METADATA_KEY_SLOT);
+    if (stored !== undefined && Buffer.from(stored, 'base64').length === 32) {
+      this.metadataKey = Buffer.from(stored, 'base64');
+    } else {
+      this.metadataKey = newMetadataKey();
+      await this.secrets.store(METADATA_KEY_SLOT, this.metadataKey.toString('base64'));
+    }
+    for (const account of this.getAccounts()) {
+      const slot = nodesKey(account.accountId);
+      const raw = this.globalState.get<unknown>(slot);
+      if (Array.isArray(raw)) {
+        // Legacy plaintext: seal in place. A sealed or absent slot is left exactly as it is —
+        // migration must never be the thing that overwrites a slot it could not read.
+        await this.globalState.update(slot, sealMetadata(raw, this.metadataKey, slot));
+        this.touch(account.accountId);
+      }
+    }
+  }
+
+  /** The node array a slot holds — opening the seal when there is one. */
+  private openNodesSlot(accountId: string, raw: unknown): unknown {
+    if (!isSealedMetadata(raw)) {
+      return raw; // legacy plaintext, or nothing stored yet
+    }
+    if (this.metadataKey === undefined) {
+      this.metadataFault =
+        'The credential tree is sealed and init() has not run — this is a wiring bug, not data loss.';
+      return [];
+    }
+    try {
+      return openMetadata(raw, this.metadataKey, nodesKey(accountId));
+    } catch (error) {
+      this.metadataFault =
+        error instanceof MetadataError && error.kind === 'wrong-key'
+          ? 'The local credential cache could not be opened with this machine’s device key (the OS keychain was reset or restored). The tree will repopulate from the next sync; secrets in the keychain are unaffected.'
+          : 'The local credential cache is corrupted and was ignored. The tree will repopulate from the next sync.';
+      return [];
+    }
+  }
+
   // ---------- change detection (for the sync cycle) ----------
 
   /**
@@ -278,7 +345,8 @@ export class StorageManager implements vscode.Disposable {
     if (cached !== undefined && cached.raw === raw) {
       return cached;
     }
-    const nodes = Object.freeze(Array.isArray(raw) ? raw.filter(isTreeNode) : []);
+    const plain = this.openNodesSlot(accountId, raw);
+    const nodes = Object.freeze(Array.isArray(plain) ? plain.filter(isTreeNode) : []);
     const entry: NodeCacheEntry = { raw, nodes, children: new Map() };
     this.nodeCache.set(accountId, entry);
     return entry;
@@ -824,7 +892,13 @@ export class StorageManager implements vscode.Disposable {
   }
 
   private async saveNodes(accountId: string, nodes: readonly TreeNode[]): Promise<void> {
-    await this.globalState.update(nodesKey(accountId), nodes);
+    // Sealed when the device key is loaded (init ran — always, in the real extension). The
+    // plaintext branch keeps pure unit tests honest without making them mint keychains.
+    const value =
+      this.metadataKey === undefined
+        ? nodes
+        : sealMetadata(nodes, this.metadataKey, nodesKey(accountId));
+    await this.globalState.update(nodesKey(accountId), value);
     this.touch(accountId);
   }
 }

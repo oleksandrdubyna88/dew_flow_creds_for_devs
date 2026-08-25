@@ -1,3 +1,5 @@
+import { generateSigningKeypair, verifyShare } from '../shareSignature';
+import { judgeSender } from '../senderPinning';
 import * as assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { BackupError, encryptJson } from '../cryptoUtils';
@@ -6,6 +8,7 @@ import {
   openShare,
   resolveShares,
   sealShare,
+  shareTranscript,
   sharesFromEnvelope,
 } from '../shareFormat';
 import { SharePayload, StoredAccount } from '../types';
@@ -91,4 +94,67 @@ test('resolveShares opens what the known PINs unlock and keeps the rest', () => 
   const round2 = resolveShares(round1.remaining, ['pin1', 'pin2']);
   assert.equal(round2.opened.length, 1);
   assert.equal(round2.remaining.length, 0);
+});
+
+/**
+ * A signed share, end to end through the real seal path. The unit tests on
+ * shareSignature prove the primitive; these prove the wiring carries the right
+ * fields into it — which is the part that actually goes wrong.
+ */
+const signer = generateSigningKeypair();
+const bob = { accountId: 'a-bob', email: 'bob@corp.com', provider: 'google' as const };
+
+function sealed(toEmail: string) {
+  return sealShare(
+    { node: { id: 'n1', name: 'prod', type: 'entity' as const }, secrets: {} },
+    'recipient-key-id',
+    bob,
+    'a-good-share-pin',
+    1_756_000_000_000,
+    signer,
+    toEmail,
+  );
+}
+
+test('a signed share verifies where it was addressed', () => {
+  const item = sealed('carol@corp.com');
+
+  assert.equal(item.senderPublicKey, signer.publicKey);
+  assert.equal(verifyShare(signer.publicKey, shareTranscript(item, 'carol@corp.com'), item.signature ?? ''), true);
+});
+
+test(`the same item found in somebody ELSE's file does not verify`, () => {
+  // toEmail is where the item was found, not a field it carries — which is what
+  // makes copying it into another inbox detectable.
+  const item = sealed('carol@corp.com');
+
+  assert.equal(verifyShare(signer.publicKey, shareTranscript(item, 'dave@corp.com'), item.signature ?? ''), false);
+});
+
+test('sealing without a keypair stays unsigned rather than failing', () => {
+  // The server transport passes neither, and stamps the sender itself.
+  const item = sealShare(
+    { node: { id: 'n1', name: 'prod', type: 'entity' as const }, secrets: {} },
+    'rk', bob, 'a-good-share-pin', 1,
+  );
+
+  assert.equal(item.signature, undefined);
+  assert.equal(item.senderPublicKey, undefined);
+});
+
+test('a fresh signed share reads as first contact, and as verified once pinned', async () => {
+  const item = sealed('carol@corp.com');
+  const share = { transcript: shareTranscript(item, 'carol@corp.com'), signature: item.signature };
+  const pins: Record<string, Record<string, string>> = {};
+  const store = {
+    get: (k: string) => pins[k],
+    update: (k: string, v: Record<string, string>) => {
+      pins[k] = v;
+      return Promise.resolve();
+    },
+  };
+
+  assert.equal(judgeSender(store, 'acct', share), 'firstContact');
+  await store.update('credSshManager.pinnedSenderKeys.acct', { 'bob@corp.com': signer.publicKey });
+  assert.equal(judgeSender(store, 'acct', share), 'verified');
 });

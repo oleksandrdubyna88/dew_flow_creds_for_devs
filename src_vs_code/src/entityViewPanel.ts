@@ -55,7 +55,7 @@ export interface EntityViewOptions {
 }
 
 interface CopyMessage {
-  type: 'copy' | 'download' | 'env' | 'envcheck';
+  type: 'copy' | 'download' | 'env' | 'envcheck' | 'close';
   field: string;
 }
 
@@ -70,6 +70,10 @@ export function showEntityView(options: EntityViewOptions): void {
 
   panel.webview.onDidReceiveMessage(async (message: CopyMessage) => {
     const d = options.details;
+    if (message.type === 'close') {
+      panel.dispose();
+      return;
+    }
     if (message.type === 'env' || message.type === 'envcheck') {
       const field = message.field as BindableField;
       if (!(BINDABLE_FIELDS as readonly string[]).includes(field)) {
@@ -440,6 +444,13 @@ function renderHtml(options: EntityViewOptions): string {
       });
     });
   }
+  // Esc closes the viewer, as it closes every other read-only surface in the editor.
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      vscode.postMessage({ type: 'close', field: '' });
+    }
+  });
   // The preview starts at 200x200; each click doubles it, twice, then a click resets.
   const preview = document.getElementById('imgPreview');
   if (preview) {

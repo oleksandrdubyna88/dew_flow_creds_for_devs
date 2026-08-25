@@ -205,3 +205,28 @@ test('an env-binding row names the field it belongs to', () => {
   assert.ok(labels.length >= 2, 'the db form should offer both bindings');
   assert.equal(new Set(labels).size, labels.length, `identical labels: ${labels.join(' | ')}`);
 });
+
+test('the keyboard reaches the form: Name is focused, Esc cancels, Ctrl+S saves, errors are announced', () => {
+  const html = renderForm('credential');
+  assert.ok(html.includes('id="name" type="text" autofocus'), 'Name carries autofocus');
+  assert.ok(html.includes('role="alert" aria-live="assertive"'), 'the error line is announced to a screen reader');
+  const script = pageScript(html);
+  assert.ok(script.includes("e.key === 'Escape'"), 'Esc is handled');
+  assert.ok(script.includes("e.key === 's' || e.key === 'S'"), 'Ctrl/Cmd+S is handled');
+  assert.ok(script.includes("getElementById('name')") && script.includes('.focus()'), 'focus is moved to Name on load');
+});
+
+test('the viewer closes on Esc', () => {
+  currentPanel = newPanel();
+  viewer.showEntityView({
+    details: { name: 'probe', isSshEnabled: false },
+    hasPassword: false, hasPrivateKey: false, hasVpnConfig: false, hasDbConnection: false,
+    dbPortIsDefault: false, dbHasPassword: false, hasAttachment: false, history: [],
+    resolveSecret: () => Promise.resolve(undefined), copyAllText: () => Promise.resolve(''),
+    saveVpnConfig: () => Promise.resolve(), saveAttachment: () => Promise.resolve(),
+    setEnv: () => Promise.resolve(true), checkEnv: () => {},
+  });
+  const script = pageScript(currentPanel.webview.html);
+  assert.ok(script.includes("e.key === 'Escape'"), 'Esc is handled in the viewer');
+  assert.ok(script.includes("type: 'close'"), 'and posts close to the host');
+});

@@ -24,6 +24,46 @@ export interface Grant {
   readonly entityName: string;
   readonly kind: string;
   readonly status: GrantStatus;
+  /** When it was minted (ms epoch). */
+  readonly mintedAt: number;
+  /** The last call that used it — minting counts as the first (ms epoch). */
+  readonly lastUsedAt: number;
+  /** Calls that reached an action through this grant. */
+  readonly uses: number;
+}
+
+/**
+ * How long a token stays good without being used, and how many calls it buys. Zero means
+ * "no limit" for either — the window closing is then the only expiry.
+ *
+ * <p>Both exist because "as long as the window stays open" was the whole lifetime, and a
+ * token pasted into an agent transcript that survives for days buys correspondingly
+ * long-lived, unattended access. An idle window is the natural fit: a token an agent is
+ * actively using stays live, one it forgot about goes dead on its own.</p>
+ */
+export interface GrantLimits {
+  readonly idleMs: number;
+  readonly maxUses: number;
+}
+
+export const NO_LIMITS: GrantLimits = { idleMs: 0, maxUses: 0 };
+
+export type GrantExpiry = 'idle' | 'uses';
+
+export type GrantLookup =
+  | { kind: 'live'; grant: Grant }
+  | { kind: 'expired'; reason: GrantExpiry }
+  | { kind: 'unknown' };
+
+/** Why a grant would be refused now — or `undefined` while it is still good. */
+export function grantExpiry(grant: Grant, now: number, limits: GrantLimits): GrantExpiry | undefined {
+  if (limits.maxUses > 0 && grant.uses >= limits.maxUses) {
+    return 'uses';
+  }
+  if (limits.idleMs > 0 && now - grant.lastUsedAt > limits.idleMs) {
+    return 'idle';
+  }
+  return undefined;
 }
 
 export class GrantRegistry {
@@ -37,7 +77,13 @@ export class GrantRegistry {
   private static readonly MAX_GRANTS = 256;
 
   /** Mint a fresh pending grant and return it (its `secret` is the key). */
-  mint(accountId: string, entityId: string, entityName: string, kind: string): Grant {
+  mint(
+    accountId: string,
+    entityId: string,
+    entityName: string,
+    kind: string,
+    now: number = Date.now(),
+  ): Grant {
     this.prune();
     const grant: Grant = {
       secret: newSecret(),
@@ -46,13 +92,46 @@ export class GrantRegistry {
       entityName,
       kind,
       status: 'pending',
+      mintedAt: now,
+      lastUsedAt: now,
+      uses: 0,
     };
     this.grants.set(grant.secret, grant);
     return grant;
   }
 
+  /** The stored grant, expiry not applied. The broker's request path uses `lookup`. */
   get(secret: string): Grant | undefined {
     return this.grants.get(secret);
+  }
+
+  /**
+   * The grant behind a token as the request path needs it: live, expired (and why), or
+   * unknown. An expired grant is deleted on the way out — it can never come back, and a
+   * second call must read as unknown rather than expired-again.
+   */
+  lookup(secret: string, now: number = Date.now(), limits: GrantLimits = NO_LIMITS): GrantLookup {
+    const grant = this.grants.get(secret);
+    if (grant === undefined) {
+      return { kind: 'unknown' };
+    }
+    const reason = grantExpiry(grant, now, limits);
+    if (reason !== undefined) {
+      this.grants.delete(secret);
+      return { kind: 'expired', reason };
+    }
+    return { kind: 'live', grant };
+  }
+
+  /** Record one use: bumps the count and resets the idle clock. No-op for an unknown secret. */
+  touch(secret: string, now: number = Date.now()): Grant | undefined {
+    const current = this.grants.get(secret);
+    if (current === undefined) {
+      return undefined;
+    }
+    const next: Grant = { ...current, lastUsedAt: now, uses: current.uses + 1 };
+    this.grants.set(secret, next);
+    return next;
   }
 
   /**

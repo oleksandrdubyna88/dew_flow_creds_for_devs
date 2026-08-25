@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import { LockState } from './lockState';
 import {
   BackupError,
-  decryptJson,
+  decryptJsonAsync,
   decryptJsonWithMasterKey,
   encryptJsonWrapped,
   readVaultVersion,
@@ -13,9 +13,9 @@ import {
   prfSaltsByCredential,
   wrapForCredential,
   isKeyWrap,
-  unwrapWithPin,
+  unwrapWithPinAsync,
   unwrapWithPrf,
-  wrapPinVault,
+  wrapPinVaultAsync,
 } from './keyWrap';
 import { authenticateSecurityKey } from './webauthnPrf';
 import { validatePin } from './pinPolicy';
@@ -224,7 +224,7 @@ export class VaultKeys {
 
     if (plan.kind === 'silentPin') {
       try {
-        const master = unwrapWithPin(pinWrap!, account.accountId, storedPin!);
+        const master = await unwrapWithPinAsync(pinWrap!, account.accountId, storedPin!);
         return this.remember(account, master, wraps);
       } catch {
         // The stored PIN does not fit this vault. A person present falls through to a
@@ -286,18 +286,24 @@ export class VaultKeys {
 
     const pin = await this.promptPin(account, 'Unlock vault');
     if (pin !== undefined && pinWrap !== undefined) {
-      const master = unwrapWithPin(pinWrap, account.accountId, pin);
+      const master = await unwrapWithPinAsync(pinWrap, account.accountId, pin);
       await this.savePin(account, pin);
       return this.remember(account, master, wraps);
     }
     return undefined;
   }
 
-  /** Decrypt a stored vault with a previously obtained key. */
-  decrypt(vaultContent: string, key: VaultKey): unknown {
+  /**
+   * Decrypt a stored vault with a previously obtained key.
+   *
+   * <p>Async for the v1 leg only: a legacy PIN-only file still needs a full scrypt to open,
+   * and that used to run on the extension-host thread. A v3 key is HKDF — sub-millisecond —
+   * and stays synchronous underneath.</p>
+   */
+  decrypt(vaultContent: string, key: VaultKey): Promise<unknown> {
     return key.version === 1
-      ? decryptJson(vaultContent, key.passphrase)
-      : decryptJsonWithMasterKey(vaultContent, key.masterKey);
+      ? decryptJsonAsync(vaultContent, key.passphrase)
+      : Promise.resolve(decryptJsonWithMasterKey(vaultContent, key.masterKey));
   }
 
   /**
@@ -309,12 +315,12 @@ export class VaultKeys {
    * its very first write. The new master is cached for the account, so this session's later
    * unlocks take the fast path; the next unlock from disk reads it back out of the pin-wrap.</p>
    */
-  encrypt(
+  async encrypt(
     payload: unknown,
     key: VaultKey,
     account: StoredAccount,
     shares: unknown[] | undefined,
-  ): string {
+  ): Promise<string> {
     if (key.version === 2) {
       return encryptJsonWrapped(payload, key.masterKey, key.wraps, account, shares);
     }
@@ -323,7 +329,8 @@ export class VaultKeys {
       // Already upgraded this session — reuse that master rather than mint a second one.
       return encryptJsonWrapped(payload, cached.masterKey, cached.wraps, account, shares);
     }
-    const init = wrapPinVault(payload, account.accountId, key.pin, Date.now(), account, shares);
+    // The one scrypt a v1→v3 upgrade costs, off the thread the editor types on.
+    const init = await wrapPinVaultAsync(payload, account.accountId, key.pin, Date.now(), account, shares);
     this.cache.set(account.accountId, {
       version: 2,
       masterKey: init.masterKey,

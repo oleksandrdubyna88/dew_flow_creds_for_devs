@@ -3,12 +3,12 @@ import { verifyAccountSession } from './authManager';
 import { planBackupFileNames } from './backupNaming';
 import {
   BackupError,
-  decryptJson,
+  decryptJsonAsync,
   decryptJsonWithMasterKey,
   readBackupAccount,
   readVaultWraps,
 } from './cryptoUtils';
-import { isKeyWrap, unwrapWithPin, wrapPinVault } from './keyWrap';
+import { isKeyWrap, unwrapWithPinAsync, wrapPinVaultAsync } from './keyWrap';
 import { nasDirFor } from './nasPaths';
 import { validatePin } from './pinPolicy';
 import { sharesFromEnvelope } from './shareFormat';
@@ -168,7 +168,7 @@ export async function backupToNas(
         if (key === undefined) {
           throw new Error('vault stayed locked — nothing was written, so its keys are intact');
         }
-        content = vaultKeys.encrypt(bundle, key, account, pendingShares);
+        content = await vaultKeys.encrypt(bundle, key, account, pendingShares);
       } else {
         const entered = await askPin();
         if (entered === undefined) {
@@ -177,14 +177,14 @@ export async function backupToNas(
         // v3, self-contained: a fresh master sealed in a pin-wrap under the standalone
         // backup PIN — so scrypt runs once on restore, not per read, and no v1 is written.
         // Keyed by the backup PIN alone, never the vault-key cache (see backupWriteMode).
-        content = wrapPinVault(
+        content = (await wrapPinVaultAsync(
           bundle,
           account.accountId,
           entered,
           Date.now(),
           account,
           pendingShares,
-        ).content;
+        )).content;
       }
       // Atomic, like FolderTransport: this writes the SAME file automatic sync reads, so a
       // dropped NAS connection mid-write must leave the previous good file, not a truncated
@@ -269,7 +269,7 @@ export async function restoreFromBackup(
         void vscode.window.showErrorMessage('Restore cancelled — the backup stayed locked.');
         return;
       }
-      payload = vaultKeys.decrypt(content, key);
+      payload = await vaultKeys.decrypt(content, key);
     } else {
       // Say WHY it is a PIN and not a key touch: the question every owner of a security
       // key asks here, and silence reads as the key being ignored.
@@ -290,8 +290,8 @@ export async function restoreFromBackup(
         .find((w) => w.kind === 'pin');
       payload =
         pinWrap === undefined
-          ? decryptJson(content, profilePassphrase(account.accountId, pin))
-          : decryptJsonWithMasterKey(content, unwrapWithPin(pinWrap, account.accountId, pin));
+          ? await decryptJsonAsync(content, profilePassphrase(account.accountId, pin))
+          : decryptJsonWithMasterKey(content, await unwrapWithPinAsync(pinWrap, account.accountId, pin));
     }
   } catch (error) {
     void vscode.window.showErrorMessage(`Restore failed: ${describeUnknown(error)}`);

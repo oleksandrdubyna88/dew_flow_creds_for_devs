@@ -559,15 +559,16 @@ function renderHtml(options: EntityFormOptions): string {
     </div>
     <!-- The validation message rides with the buttons. Below them it would scroll out of
          sight, and "I pressed Save and nothing happened" is exactly what it exists to
-         answer. -->
-    <div class="error" id="error"></div>
+         answer. role=alert: a screen reader is told the save was refused, not left to
+         find a red line. -->
+    <div class="error" id="error" role="alert" aria-live="assertive"></div>
   </div>
   <h2>${isEdit ? 'Edit entity' : 'New entity'}</h2>
 
   <fieldset>
     <legend>General</legend>
     <label for="name">Name *</label>
-    <input id="name" type="text" value="${escapeHtml(d?.name ?? '')}">
+    <input id="name" type="text" autofocus value="${escapeHtml(d?.name ?? '')}">
     <label for="entityType">Type</label>
     <select id="entityType"${options.lockedKind !== undefined ? ' disabled' : ''}>${kindOptions}</select>
     ${
@@ -1342,6 +1343,20 @@ function renderHtml(options: EntityFormOptions): string {
   document.getElementById('cancel').addEventListener('click', () => {
     vscode.postMessage({ type: 'cancel' });
   });
+  // Keyboard: Esc cancels, Ctrl/Cmd+S saves — what every editor's hands already expect.
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      vscode.postMessage({ type: 'cancel' });
+    } else if ((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'S')) {
+      e.preventDefault();
+      document.getElementById('save').click();
+    }
+  });
+  // The sticky Save/Cancel bar is first in DOM order so that it can stick; keyboard focus
+  // must not follow it there. Tab-then-type on a fresh form lands in Name.
+  const nameField = document.getElementById('name');
+  if (nameField) { nameField.focus(); }
 </script>
 </body>
 </html>`;

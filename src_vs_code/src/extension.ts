@@ -10,7 +10,6 @@ import {
   pickFolderType,
   pickTargetFolder,
   promptFolderName,
-  showEntityDetails,
 } from './dialogs';
 import { EntityFormValues, KeyCandidate, showEntityForm } from './entityFormPanel';
 import { showEntityView } from './entityViewPanel';
@@ -72,7 +71,7 @@ import {
   removeWrap,
   upsertWrap,
   webauthnWraps,
-  wrapWithPin,
+  wrapWithPinAsync,
   wrapWithPrf,
 } from './keyWrap';
 import {
@@ -125,7 +124,7 @@ let envCollection: vscode.GlobalEnvironmentVariableCollection;
 
 const ORIGINS_KEY = 'credSshManager.shareOrigins';
 
-export function activate(context: vscode.ExtensionContext): void {
+export async function activate(context: vscode.ExtensionContext): Promise<void> {
   envCollection = context.environmentVariableCollection;
 
   // One place decides how long a copied secret lingers; see secretClipboard.ts for why
@@ -144,6 +143,14 @@ export function activate(context: vscode.ExtensionContext): void {
   );
   const storage = new StorageManager(context.globalState, context.secrets);
   context.subscriptions.push(storage); // it listens to SecretStorage changes
+  // Seal-at-rest for the local metadata cache (audit B8): load or mint the device key and
+  // seal any plaintext node slots BEFORE anything renders a tree. globalState is a plain
+  // SQLite file in the profile; the topology it held (hosts, users, CLI args, env-var names)
+  // is exactly what a stolen profile folder should not contain in the clear.
+  await storage.init();
+  if (storage.metadataFault !== undefined) {
+    void vscode.window.showWarningMessage(`CredsForDevs: ${storage.metadataFault}`);
+  }
   const provider = new CredTreeDataProvider(storage, context.extensionUri);
   const storageDir = context.globalStorageUri.fsPath;
   // Never let decrypted SSH key material outlive a session: clear any that a
@@ -1120,7 +1127,9 @@ ${detail}
     if (element?.kind !== 'node' || !element.node.details) {
       return;
     }
-    await openDetails(element.accountId, element.node, storage, mutated, storageDir);
+    // The viewer, not the old QuickPick: that one knew only the SSH fields, so a VPN, database,
+    // script or command entity opened as "Host —, Password not set" and read as broken.
+    await openEntityViewer(element.accountId, element.node, storage);
   });
 
   register('credSshManager.copyPassword', async (target) => {
@@ -1625,10 +1634,10 @@ ${detail}
           void vscode.window.showErrorMessage('A vault PIN is required before adding a key.');
           return;
         }
-        const payload = vaultKeys.decrypt(raw, key);
+        const payload = await vaultKeys.decrypt(raw, key);
         const master = newMasterKey();
         wraps = [
-          wrapWithPin(master, account.accountId, pin, Date.now()),
+          await wrapWithPinAsync(master, account.accountId, pin, Date.now()),
           wrapWithPrf(master, prf.credentialId, prfSalt, prf.secret, label.trim(), Date.now()),
         ];
         content = encryptJsonWrapped(
@@ -1645,6 +1654,9 @@ ${detail}
         `"${label.trim()}" can now unlock ${account.email}. The PIN keeps working as a fallback.`,
       );
       sync.notifyChange();
+      // The account row's icon and reason come from the readiness cache, which nothing
+      // else refreshes here — the sync cycle repaints the tree from the STALE map.
+      await refreshReadiness();
     } catch (error) {
       void vscode.window.showErrorMessage(
         `Adding the security key failed: ${error instanceof Error ? error.message : String(error)}`,
@@ -1711,12 +1723,12 @@ ${detail}
         void vscode.window.showErrorMessage('Could not unlock to re-key — nothing removed.');
         return;
       }
-      const payload = vaultKeys.decrypt(raw, key);
+      const payload = await vaultKeys.decrypt(raw, key);
       const master = newMasterKey();
       const content = encryptJsonWrapped(
         payload,
         master.toString('base64'),
-        [wrapWithPin(master, account.accountId, pin, Date.now())],
+        [await wrapWithPinAsync(master, account.accountId, pin, Date.now())],
         account,
         transport.embedsShares ? sharesFromEnvelope(raw) : undefined,
       );
@@ -1725,6 +1737,8 @@ ${detail}
       void vscode.window.showInformationMessage(
         `Removed "${picked.label}" and re-keyed the vault under your PIN — the removed key can no longer open it.`,
       );
+      sync.notifyChange();
+      await refreshReadiness();
     } else {
       // Other keys remain (re-keying would need each of them present to
       // re-wrap): drop this wrap, re-sign the envelope, and be honest that
@@ -1743,6 +1757,8 @@ ${detail}
       void vscode.window.showInformationMessage(
         `Removed "${picked.label}". Note: existing backups/snapshots remain openable by that key until the vault is re-keyed (remove all security keys to force a re-key under the PIN).`,
       );
+      sync.notifyChange();
+      await refreshReadiness();
     }
   });
 
@@ -2922,24 +2938,6 @@ async function openEntityViewer(
       return true;
     },
   });
-}
-
-async function openDetails(
-  accountId: string,
-  node: TreeNode,
-  storage: StorageManager,
-  onMutated: () => void,
-  storageDir: string,
-): Promise<void> {
-  const action = await showEntityDetails(accountId, node, storage);
-  if (action === 'edit') {
-    await editNode(accountId, node, storage, onMutated);
-  } else if (action === 'connect' && node.details) {
-    await connectEntity(accountId, node.details, storage, storageDir);
-  } else if (action === 'install' && node.details) {
-    const privateKey = await storage.getPrivateKey(accountId, node.details.id);
-    await installKeyToSystem(node.details, privateKey);
-  }
 }
 
 // ---------- helpers ----------

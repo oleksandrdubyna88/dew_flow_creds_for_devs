@@ -759,6 +759,39 @@ broker resolves the pair from the *grant*, never from the URL. A `db` or `vpn` c
 two functions and needs no change to the HTTP layer. Duplicate registration throws at startup — a
 shadowed capability is one that quietly stops being the one that was audited.
 
+### Sealed metadata at rest (0.57.0, B8)
+
+`metadataCipher.ts` (pure): AES-256-GCM over the JSON of a node slot, keyed by a per-device
+32-byte key in SecretStorage (`credSshManager.metadataKey`), with the slot name
+(`credSshManager.nodes.{accountId}`) bound as **AAD** — a blob moved between accounts refuses to
+open. `StorageManager.init()` (awaited by `activate` before any tree read) loads or mints the key
+and seals legacy plaintext slots in place; `saveNodes` seals every later write; `openNodesSlot`
+turns an unopenable slot into an empty tree plus `metadataFault` — one sentence `activate`
+surfaces — and migration never writes over a slot it could not read. Deliberately a DEVICE key,
+not PIN-derived: the tree stays visible while the OS session is unlocked (the same boundary every
+other secret already relies on), and a lost keychain loses only a cache the next sync rebuilds.
+Tombstones/horizon stay plaintext — ids and version vectors, no topology.
+
+### The block-B fixes (0.57.0)
+
+- **KDF off the UI thread.** `cryptoUtils.sealBlobAsync/openBlobAsync/decryptJsonAsync` and
+  `keyWrap.wrapWithPinAsync/unwrapWithPinAsync/wrapPinVaultAsync` are the async twins of the
+  scrypt paths — same bytes, same errors, `crypto.scrypt` on the libuv pool. `VaultKeys.unlock`,
+  `VaultKeys.encrypt/decrypt` (now async), `SyncManager.rekeyToNewPin`, the security-key
+  handlers and `backupManager` restore use them. The sync forms stay for pure callers and tests;
+  `shareFormat` still seals/opens shares synchronously (a follow-up).
+- **Grant lifetime.** `GrantRegistry.lookup(secret, now, limits)` returns live / expired(why) /
+  unknown and deletes an expired grant on the way out; `touch` bumps `uses` and `lastUsedAt`
+  only after consent. Limits come from `agentGrantIdleMinutes` / `agentGrantMaxCalls`, read per
+  request. `UseActionRegistry.actionsFor(kind)` feeds the consent dialog the full list of what
+  an Allow buys.
+- **One viewer.** `dialogs.showEntityDetails` (SSH-only QuickPick) is deleted; `viewDetails`
+  routes to `openEntityViewer`.
+- **Keyboard/a11y in the webviews**: `autofocus` on Name, Esc → cancel/close, Ctrl/Cmd+S → save,
+  `role="alert"` on the error line; `webviewHtml.test.ts` asserts each.
+- `addSecurityKey`/`removeSecurityKey` call `refreshReadiness()`; `handleDrag` warns about rows
+  it dropped from another profile.
+
 ### Client meta-commands are a shell escape (0.56.1)
 
 `refuseQuery(dbType, query)` in `dbCliLauncher.ts` is the gate between the agent's text and a

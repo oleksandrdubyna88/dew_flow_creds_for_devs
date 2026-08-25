@@ -68,6 +68,68 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Bounded on purpose: 256 KB of output per stream, 30 s per command (raisable to 120 s), 8 at a
   time, and every child killed when the window goes.
 
+## [0.57.0] — 2026-08-25
+
+### Fixed
+
+- **Unlocking no longer freezes the editor.** scrypt at N=2¹⁷ ran on the extension-host
+  thread — about a second with no typing, no IntelliSense, no other extension's callbacks —
+  every time a PIN opened a vault or a PIN wrap was written (set PIN, add/remove a security
+  key, a v1→v3 upgrade, a backup restore). Those paths now derive the key on Node's worker
+  pool. Same bytes, same format: a vault sealed one way opens the other, and a test proves it
+  in both directions.
+- **The account icon updates after Add / Remove Security Key.** Both handlers cleared the key
+  cache and triggered a sync, but the sync cycle repaints the tree from the *stale* readiness
+  map; the icon and its reason stayed wrong until Sync Now, Lock or Unlock. Both now refresh
+  readiness themselves.
+- **View Details opens the real viewer.** The old QuickPick knew only the SSH fields, so a VPN,
+  database, script or command entity opened as `Host —` / `Password — (not set)` and read as
+  broken while double-click showed everything. One surface now; the QuickPick is gone.
+- **The form is usable from the keyboard.** Name has focus when the form opens (the sticky
+  Save/Cancel bar had put Save first in the Tab order), Esc cancels, Ctrl/Cmd+S saves, and the
+  validation line is announced to a screen reader (`role=alert`). Esc closes the viewer.
+- **Dragging a mixed-profile selection says what it dropped.** The bulk actions already
+  reported skips; a drag that silently kept only the first profile's rows was the exception.
+- `Reset Google OAuth` has a menu entry on the account row (it was palette-only). The README no
+  longer hard-codes a command count that had drifted.
+
+### Security
+
+- **The local metadata cache is encrypted at rest.** Every secret *value* has always lived in
+  the OS keychain — but the tree itself (hosts, users, ports, every CLI argument and its note,
+  the names of bound env variables) sat in `globalState`, a plain SQLite file in the VS Code
+  profile: a complete topology map for anyone holding a stolen disk or a profile backup, no
+  keychain required. The node slots are now sealed with AES-256-GCM under a per-device key kept
+  in the keychain, with the storage slot bound as AAD so one account's blob cannot be presented
+  as another's. Existing plaintext slots are sealed on the first activation; the tree stays
+  visible whenever the OS session is unlocked, exactly as before. If the keychain is ever reset,
+  the cache reads as empty with one explanatory message — and repopulates from the next sync;
+  nothing is lost but the local copy.
+
+### Performance
+
+- **The tree stopped talking to the OS keychain.** Expanding a folder used to make one
+  SecretStorage read *per row* just to decide whether "Copy Password" belongs in the
+  context menu; the flag is now cached and refreshed with the history flags, in one walk.
+- **The filter got a debounce and a memory.** Keystrokes repaint after a 50 ms debounce; the
+  filter walk memoizes per-term verdicts until the tree changes; `getNodes`/`getChildren`
+  validate and sort once per actual change instead of on every call; and an idle sync cycle no
+  longer re-serializes the whole snapshot to discover nothing changed.
+
+### Changed
+
+- **Share with Claude Code tokens expire.** A token used to live exactly as long as the window
+  — so one pasted into an agent transcript that outlived the task kept buying unattended access
+  for days. Two settings now bound it: `credSshManager.agentGrantIdleMinutes` (default **60**;
+  a token an agent is using stays live, one it forgot about goes dead) and
+  `credSshManager.agentGrantMaxCalls` (default 0 = no cap). An expired token is refused with a
+  message that says so and why, instead of "unknown token". Closing the window still ends every
+  token.
+- **The consent dialog says what an Allow covers.** Consent is per grant, so one Allow given for
+  "open a terminal" also authorised every future command on that host — and the dialog only
+  ever named the triggering action. It now lists every action of the kind, and the lifetime
+  limits in force.
+
 ## [0.56.1] — 2026-08-25
 
 ### Security
