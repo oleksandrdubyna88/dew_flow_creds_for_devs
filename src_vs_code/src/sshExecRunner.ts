@@ -66,14 +66,36 @@ class Bounded {
 }
 
 export function runSshExec(argv: string[], options: SshExecOptions): Promise<SshExecOutcome> {
+  return runBounded('ssh', argv, false, options);
+}
+
+/**
+ * The same bounded child for any command: byte caps per stream, a wall-clock timeout
+ * escalating SIGTERM → SIGKILL, and an AbortSignal so nothing outlives the broker.
+ *
+ * <p>Extracted when a second kind needed it. None of these ceilings were ever
+ * ssh-specific — only the binary's name was, and leaving the generic machinery in a file
+ * whose doc says "running one ssh for an agent" would make that doc false the first time
+ * a `psql` came through it.</p>
+ *
+ * <p>`shell` is false for everything the agent influences. It is true for exactly one
+ * caller — a saved terminal command, which is human-authored shell syntax and contains
+ * no agent input at all.</p>
+ */
+export function runBounded(
+  command: string,
+  args: string[],
+  shell: boolean,
+  options: SshExecOptions,
+): Promise<SshExecOutcome> {
   return new Promise((resolve, reject) => {
     const startedAt = Date.now();
     let child;
     try {
-      child = spawn('ssh', argv, {
+      child = spawn(command, args, {
+        shell,
         env: options.env,
         windowsHide: true,
-        shell: false,
         stdio: ['ignore', 'pipe', 'pipe'],
       });
     } catch (error) {

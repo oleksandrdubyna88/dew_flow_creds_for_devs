@@ -68,6 +68,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Bounded on purpose: 256 KB of output per stream, 30 s per command (raisable to 120 s), 8 at a
   time, and every child killed when the window goes.
 
+## [0.52.0] — 2026-08-25
+
+### Added
+
+- **"Share with Claude Code" now covers every kind that has something an agent can
+  usefully do** — scripts, terminal commands, credentials, VPN tunnels and databases —
+  not just SSH. The consent model is unchanged: the first call asks, Allow covers that
+  token for the life of the window, every call is audited.
+
+  Per kind, and the reason each is shaped the way it is:
+
+  - **`script run` / `terminal run`** — the request body is **ignored**. What executes is
+    exactly what a human saved, so no agent text ever reaches an interpreter or a shell.
+    Both also require the content to have been vouched for on this machine already: the
+    broker's consent is per *token*, so it would not re-ask after a sync replaced the body.
+  - **`db query`** — the agent sends SQL; the extension spawns `psql` / `mysql` / `sqlcmd`
+    with the password in the environment variable that tool's own documentation names, and
+    only host, port and database ever reach a command line. **MongoDB is refused**, and
+    that is the interesting one: `mongosh` has no password environment variable and its
+    `--eval` runs in the same JavaScript interpreter that can read `process.env` — so a
+    "query" could print the password straight back. A capability that leaks by design is
+    worse than an absent one.
+  - **`credential env`** — writes the entity's bound variables into this window's terminal
+    environment and answers with the **names**. Honest about its narrowness in the consent
+    text: a shell living outside VS Code gets nothing from it.
+  - **`vpn up` / `vpn down`** — deliberately not a captured child. The tunnel needs
+    administrator rights, and no headless process can answer a UAC dialog; it opens the
+    same terminal the human Start button opens, and the agent learns only that.
+  - **SSH keys are excluded on purpose** — a key means nothing except attached to a host,
+    and the host entity already has `exec`.
+
+  The share menu is now gated by one computed `:shareable` flag rather than a regex trying
+  to express five inclusions and one exclusion. The bounded spawn (byte caps, timeout,
+  SIGTERM→SIGKILL, abort on window close) was extracted so every kind shares one child
+  launcher; the SSH path is byte-for-byte unchanged and its integration suite still passes.
+
 ## [0.51.0] — 2026-08-25
 
 ### Added

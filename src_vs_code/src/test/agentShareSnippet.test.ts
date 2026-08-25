@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { buildAgentSnippet } from '../agentShareSnippet';
+import { buildAgentSnippet, buildKindSnippet } from '../agentShareSnippet';
 
 /**
  * The snippet is the whole user interface of this feature: paste it, and an
@@ -59,4 +59,30 @@ test('it states the quoting rule that keeps one example working in every shell',
 
   assert.match(snippet, /PowerShell, cmd and bash alike/);
   assert.match(snippet, /single quotes inside/);
+});
+
+/* --- one snippet per kind: the agent must be told the verb that exists --- */
+
+test('each kind gets its own verb and no other', () => {
+  const base = { entityName: 'x', token: 'p.s', cliPath: 'C:/cli.js' };
+
+  assert.match(buildKindSnippet('script', base) ?? '', /script p\.s/);
+  assert.match(buildKindSnippet('terminal', base) ?? '', /run p\.s/);
+  assert.match(buildKindSnippet('credential', base) ?? '', /env p\.s/);
+  assert.match(buildKindSnippet('vpn', base) ?? '', /vpn-up p\.s/);
+  assert.match(buildKindSnippet('db', base) ?? '', /db p\.s -- /);
+});
+
+test('every snippet says the credential is never handed over, and that calls are logged', () => {
+  // The two facts the human needs after pasting: the agent cannot read the secret, and
+  // everything it does is on the record.
+  for (const kind of ['script', 'terminal', 'credential', 'vpn', 'db']) {
+    const text = buildKindSnippet(kind, { entityName: 'x', token: 'p.s', cliPath: 'C:/cli.js' }) ?? '';
+    assert.match(text, /never receive/i, kind);
+    assert.match(text, /logged/i, kind);
+  }
+});
+
+test('a kind with no agent capability gets no snippet rather than a wrong one', () => {
+  assert.equal(buildKindSnippet('sshkey', { entityName: 'x', token: 'p.s', cliPath: 'c' }), undefined);
 });

@@ -271,6 +271,21 @@ export class CredTreeDataProvider
     if (hasPassword) {
       contextValue += ':pwd';
     }
+    // One suffix the menu can test, computed where contextValue is already assembled:
+    // the alternative was a lookahead regex in package.json doing inclusion AND the
+    // sshkey exclusion, which nothing could test and nobody could read.
+    const shareable =
+      details !== undefined &&
+      details.isSshKey !== true &&
+      (Boolean(details.host) ||
+        details.isDb === true ||
+        (details.isVpn === true && isVpnStartable(details.vpnType)) ||
+        details.isTerminal === true ||
+        details.isScript === true ||
+        hasPassword);
+    if (shareable) {
+      contextValue += ':shareable';
+    }
     item.contextValue = contextValue;
     item.iconPath = new vscode.ThemeIcon(
       details?.isScript

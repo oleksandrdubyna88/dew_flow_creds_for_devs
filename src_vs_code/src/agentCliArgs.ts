@@ -15,11 +15,25 @@
 export type AgentCliRequest =
   | { kind: 'exec'; token: string; command: string }
   | { kind: 'terminal'; token: string }
+  | { kind: 'db'; token: string; query: string }
+  /** The verbs that take nothing: what runs is exactly what a human saved. */
+  | { kind: 'run'; token: string }
+  | { kind: 'script'; token: string }
+  | { kind: 'env'; token: string }
+  | { kind: 'vpn-up'; token: string }
+  | { kind: 'vpn-down'; token: string }
   | { kind: 'error'; message: string };
 
-const USAGE =
-  'usage: agentCli.js ssh <token> -- <command>\n' +
-  '       agentCli.js terminal <token>';
+/** Verbs whose whole payload is the token — nothing after it is meaningful. */
+const BARE_VERBS = ['terminal', 'run', 'script', 'env', 'vpn-up', 'vpn-down'] as const;
+
+type BareVerb = (typeof BARE_VERBS)[number];
+
+const USAGE = [
+  'usage: agentCli.js ssh <token> -- <command>',
+  '       agentCli.js db <token> -- <query>',
+  '       agentCli.js terminal|run|script|env|vpn-up|vpn-down <token>',
+].join(String.fromCharCode(10));
 
 export function parseAgentCliArgs(argv: readonly string[]): AgentCliRequest {
   const [verb, token, ...rest] = argv;
@@ -27,14 +41,17 @@ export function parseAgentCliArgs(argv: readonly string[]): AgentCliRequest {
     return { kind: 'error', message: USAGE };
   }
 
-  if (verb === 'terminal') {
+  if ((BARE_VERBS as readonly string[]).includes(verb)) {
     if (rest.length > 0) {
-      return { kind: 'error', message: `terminal takes no arguments after the token.\n${USAGE}` };
+      return {
+        kind: 'error',
+        message: verb + ' takes no arguments after the token.' + String.fromCharCode(10) + USAGE,
+      };
     }
-    return { kind: 'terminal', token };
+    return { kind: verb as BareVerb, token };
   }
 
-  if (verb !== 'ssh') {
+  if (verb !== 'ssh' && verb !== 'db') {
     return { kind: 'error', message: `unknown command "${verb}".\n${USAGE}` };
   }
 
@@ -44,9 +61,12 @@ export function parseAgentCliArgs(argv: readonly string[]): AgentCliRequest {
   if (separator !== 0) {
     return { kind: 'error', message: `the remote command must follow "--".\n${USAGE}` };
   }
-  const command = rest.slice(1).join(' ').trim();
-  if (command.length === 0) {
-    return { kind: 'error', message: `no remote command given.\n${USAGE}` };
+  const payload = rest.slice(1).join(' ').trim();
+  if (payload.length === 0) {
+    const what = verb === 'db' ? 'query' : 'remote command';
+    return { kind: 'error', message: 'no ' + what + ' given.' + String.fromCharCode(10) + USAGE };
   }
-  return { kind: 'exec', token, command };
+  return verb === 'db'
+    ? { kind: 'db', token, query: payload }
+    : { kind: 'exec', token, command: payload };
 }

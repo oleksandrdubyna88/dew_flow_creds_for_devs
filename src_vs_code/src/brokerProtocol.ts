@@ -32,6 +32,8 @@ export type ErrorCode =
   | 'payload_too_large'
   | 'too_many_requests'
   | 'consent_timeout'
+  /** The entity and the request are both fine; a binary this machine needs is absent. */
+  | 'tool_missing'
   | 'internal';
 
 const STATUS_BY_CODE: Readonly<Record<ErrorCode, number>> = {
@@ -44,6 +46,7 @@ const STATUS_BY_CODE: Readonly<Record<ErrorCode, number>> = {
   payload_too_large: 413,
   too_many_requests: 429,
   consent_timeout: 504,
+  tool_missing: 412,
   internal: 500,
 };
 
@@ -123,4 +126,13 @@ export function clampExecTimeout(requested: unknown): number {
     return DEFAULT_EXEC_TIMEOUT_MS;
   }
   return Math.min(MAX_EXEC_TIMEOUT_MS, Math.max(MIN_EXEC_TIMEOUT_MS, Math.round(requested)));
+}
+
+/**
+ * What `(credential, exportEnv)` answers with: the variable NAMES that were written into
+ * this window's terminal environment. Never a value — the same structural rule the rest
+ * of this file keeps.
+ */
+export interface EnvExportResponseBody {
+  written: string[];
 }

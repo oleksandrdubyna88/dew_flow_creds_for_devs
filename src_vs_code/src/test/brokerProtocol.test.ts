@@ -66,6 +66,7 @@ test('every error code maps to its documented status', () => {
     payload_too_large: 413,
     too_many_requests: 429,
     consent_timeout: 504,
+    tool_missing: 412,
     internal: 500,
   };
   for (const [code, status] of Object.entries(expected) as [ErrorCode, number][]) {
@@ -87,4 +88,10 @@ test('a requested timeout is clamped into the broker band, never trusted', () =>
   assert.equal(clampExecTimeout(7 * 24 * 3600_000), MAX_EXEC_TIMEOUT_MS);
   assert.equal(clampExecTimeout(45_000), 45_000);
   assert.equal(clampExecTimeout(45_000.6), 45_001);
+});
+
+test('a missing local tool is its own answer, not "no credential"', () => {
+  // The entity is fine and the request is fine — this machine simply has no psql. A 409
+  // would tell the agent to fix the vault, which is the wrong instruction.
+  assert.equal(statusForErrorCode('tool_missing'), 412);
 });

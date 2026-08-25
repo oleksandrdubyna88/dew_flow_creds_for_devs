@@ -55,7 +55,7 @@ import { connectEntity } from './sshConnect';
 import { CredsAgentServer } from './credsAgentServer';
 import { UseActionRegistry } from './useActions';
 import { sshExecAction, sshTerminalAction } from './sshUseActions';
-import { buildAgentSnippet } from './agentShareSnippet';
+import { buildAgentSnippet, buildKindSnippet } from './agentShareSnippet';
 import { DB_DEFAULT_PORTS, parseDbConnectionString } from './dbConnString';
 import { openInDbExtension } from './dbLauncher';
 import { openShare, resolveShares, sealShare, shareTranscript, sharesFromEnvelope } from './shareFormat';
@@ -96,6 +96,13 @@ import { scriptRunPlan } from './scriptRun';
 import { buildExternalBundle, isExternalBundle, remapExternalIds } from './externalBundle';
 import { withoutPassword } from './dbConnString';
 import { SelectedNode, describeSkips, resolveSelection } from './selectionResolver';
+import {
+  credentialExportEnvAction,
+  dbQueryAction,
+  scriptRunAction,
+  terminalRunAction,
+  vpnAction,
+} from './agentUseActions';
 import {
   AuthProvider,
   EntityKind,
@@ -283,6 +290,33 @@ export function activate(context: vscode.ExtensionContext): void {
   };
   useActions.register(sshExecAction(sshDeps));
   useActions.register(sshTerminalAction(sshDeps));
+
+  // The other kinds ride the same registry — the broker's dispatch never learned about
+  // any of them, which is what the (kind, action) seam was for.
+  const agentDeps = {
+    ...sshDeps,
+    trustStore: context.globalState,
+    applyEnv: (details: EntityMetadata, accountId: string) =>
+      applyEnvBindings(envCollection, storage, accountId, details),
+    onPath,
+    // The grant carries the account, so the tree element runVpn expects can be rebuilt
+    // exactly — the same function the human Start button calls, so an agent-opened
+    // tunnel is indistinguishable in mechanism from a hand-opened one.
+    open: async (accountId: string, entityId: string, action: 'start' | 'stop'): Promise<boolean> => {
+      const node = storage.getNode(accountId, entityId);
+      if (node === undefined) {
+        return false;
+      }
+      await runVpn({ kind: 'node', accountId, node }, action, storage, storageDir, vaultKeys);
+      return true;
+    },
+  };
+  useActions.register(scriptRunAction(agentDeps));
+  useActions.register(terminalRunAction(agentDeps));
+  useActions.register(credentialExportEnvAction(agentDeps));
+  useActions.register(dbQueryAction(agentDeps));
+  useActions.register(vpnAction(agentDeps, 'up'));
+  useActions.register(vpnAction(agentDeps, 'down'));
   context.subscriptions.push(agentServer);
 
   warnIfKeyringMissing(context);
@@ -1039,25 +1073,36 @@ ${detail}
       return;
     }
     const details = element.node.details;
-    const targetLabel = describeSshTarget(details);
-    if (targetLabel === undefined) {
+    const kind = kindOf(details);
+    const cliPath = path.join(context.extensionUri.fsPath, 'out', 'agentCli.js');
+
+    // SSH keeps its own snippet: it is the only kind whose instructions name a target
+    // (`user@host`), and the only one where the agent composes what runs.
+    let snippet: string | undefined;
+    if (kind === 'ssh') {
+      const targetLabel = describeSshTarget(details);
+      if (targetLabel === undefined) {
+        void vscode.window.showWarningMessage(
+          `"${element.node.name}" has no host configured — there is nothing an agent could connect to.`,
+        );
+        return;
+      }
+      snippet = buildAgentSnippet({
+        entityName: element.node.name,
+        target: targetLabel,
+        token: await agentServer.share(element.accountId, details.id, element.node.name, 'ssh'),
+        cliPath,
+      });
+    } else {
+      const token = await agentServer.share(element.accountId, details.id, element.node.name, kind);
+      snippet = buildKindSnippet(kind, { entityName: element.node.name, token, cliPath });
+    }
+    if (snippet === undefined) {
       void vscode.window.showWarningMessage(
-        `"${element.node.name}" has no host configured — there is nothing an agent could connect to.`,
+        `"${element.node.name}" has nothing an agent could do with it. SSH keys are deliberately excluded — a key only means anything attached to a host.`,
       );
       return;
     }
-    const token = await agentServer.share(
-      element.accountId,
-      details.id,
-      element.node.name,
-      'ssh',
-    );
-    const snippet = buildAgentSnippet({
-      entityName: element.node.name,
-      target: targetLabel,
-      token,
-      cliPath: path.join(context.extensionUri.fsPath, 'out', 'agentCli.js'),
-    });
     // The token is a bearer capability for as long as this window lives, so it
     // gets the same expiring clipboard every secret here does.
     await copySecret(vscode.env.clipboard, snippet);

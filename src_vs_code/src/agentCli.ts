@@ -34,6 +34,7 @@ const EXIT = {
   brokerFailure: 95,
   consentTimeout: 97,
   remoteTimeout: 98,
+  toolMissing: 99,
 } as const;
 
 const HEALTH_TIMEOUT_MS = 2_000;
@@ -110,6 +111,8 @@ function exitForError(code: unknown): number {
       return EXIT.entityGone;
     case 'too_many_requests':
       return EXIT.busy;
+    case 'tool_missing':
+      return EXIT.toolMissing;
     default:
       return EXIT.brokerFailure;
   }
@@ -142,31 +145,41 @@ async function main(): Promise<number> {
     return EXIT.brokerUnreachable;
   }
 
+  // One table instead of a chain of ternaries: a new verb is a row, and the compiler
+  // still checks the request shape each one sends.
+  const ROUTES: Record<string, { path: string; body: () => Record<string, unknown> }> = {
+    exec: { path: '/v1/use/exec', body: () => ({ command: (parsed as { command: string }).command }) },
+    terminal: { path: '/v1/use/terminal', body: () => ({}) },
+    db: { path: '/v1/use/query', body: () => ({ query: (parsed as { query: string }).query }) },
+    run: { path: '/v1/use/run', body: () => ({}) },
+    script: { path: '/v1/use/run', body: () => ({}) },
+    env: { path: '/v1/use/exportEnv', body: () => ({}) },
+    'vpn-up': { path: '/v1/use/up', body: () => ({}) },
+    'vpn-down': { path: '/v1/use/down', body: () => ({}) },
+  };
+  const route = ROUTES[parsed.kind];
+  if (route === undefined) {
+    note(`unknown verb "${parsed.kind}".`);
+    return EXIT.usage;
+  }
+
   let response: BrokerResponse;
   try {
-    response =
-      parsed.kind === 'exec'
-        ? await request(token.port, {
-            method: 'POST',
-            path: '/v1/use/exec',
-            token: token.secret,
-            body: { command: parsed.command },
-            timeoutMs: CALL_TIMEOUT_MS,
-          })
-        : await request(token.port, {
-            method: 'POST',
-            path: '/v1/use/terminal',
-            token: token.secret,
-            body: {},
-            timeoutMs: CALL_TIMEOUT_MS,
-          });
+    response = await request(token.port, {
+      method: 'POST',
+      path: route.path,
+      token: token.secret,
+      body: route.body(),
+      timeoutMs: CALL_TIMEOUT_MS,
+    });
   } catch (error) {
     note(
       `lost the connection to VS Code (${error instanceof Error ? error.message : String(error)}) — ` +
-        'the remote command may or may not have run.',
+        'the action may or may not have run.',
     );
     return EXIT.brokerFailure;
   }
+
 
   if (response.status !== 200) {
     return reportError(response.body);

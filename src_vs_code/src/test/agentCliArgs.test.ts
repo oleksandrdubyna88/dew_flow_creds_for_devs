@@ -51,3 +51,33 @@ test('a missing verb, a missing token, or an unknown verb all error with usage',
     assert.equal(parsed.kind === 'error' && parsed.message.includes('usage:'), true);
   }
 });
+
+/* --- the verbs the other kinds answer to --- */
+
+test('the no-argument verbs parse to their own request kinds', () => {
+  // Each of these runs exactly what a human saved, so there is nothing after the token
+  // to parse — and anything there is a mistake worth naming rather than ignoring.
+  assert.deepEqual(parseAgentCliArgs(['run', 'p.s']), { kind: 'run', token: 'p.s' });
+  assert.deepEqual(parseAgentCliArgs(['script', 'p.s']), { kind: 'script', token: 'p.s' });
+  assert.deepEqual(parseAgentCliArgs(['env', 'p.s']), { kind: 'env', token: 'p.s' });
+  assert.deepEqual(parseAgentCliArgs(['vpn-up', 'p.s']), { kind: 'vpn-up', token: 'p.s' });
+  assert.deepEqual(parseAgentCliArgs(['vpn-down', 'p.s']), { kind: 'vpn-down', token: 'p.s' });
+});
+
+test('a no-argument verb given arguments is refused, not silently trimmed', () => {
+  for (const verb of ['run', 'script', 'env', 'vpn-up', 'vpn-down']) {
+    const r = parseAgentCliArgs([verb, 'p.s', 'extra']);
+    assert.equal(r.kind, 'error', verb);
+  }
+});
+
+test('db takes its query after the same mandatory separator ssh uses', () => {
+  assert.deepEqual(parseAgentCliArgs(['db', 'p.s', '--', 'select', '1']), {
+    kind: 'db',
+    token: 'p.s',
+    query: 'select 1',
+  });
+  // Without `--` a query beginning with a dash would be read as our own flag.
+  assert.equal(parseAgentCliArgs(['db', 'p.s', 'select 1']).kind, 'error');
+  assert.equal(parseAgentCliArgs(['db', 'p.s', '--']).kind, 'error');
+});
