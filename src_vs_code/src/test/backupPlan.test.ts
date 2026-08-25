@@ -75,3 +75,16 @@ test('a v1 file still opens with the PIN recipe', () => {
   assert.equal(readVaultVersion(file), 1);
   assert.deepEqual(decryptJson(file, account.accountId + '123456'), { nodes: [] });
 });
+
+test('a v3 wrapped file routes through the slots — version numbers are not the rule', () => {
+  // The live bug: restore checked `version === 2`, the format moved to 3
+  // (VERSION_WRAPPED_FAST), and a vault with a registered YubiKey fell into the
+  // "old PIN-only" branch — asking for a PIN that cannot open it. The rule is the
+  // presence of KEY SLOTS, which is exactly what backupWriteMode already answers.
+  const master = newMasterKey();
+  const wrap = wrapWithPin(master, account.accountId, '123456', 1);
+  const file = encryptJsonWrapped({ nodes: [] }, master.toString('base64'), [wrap], account, undefined);
+
+  assert.equal(readVaultVersion(file) >= 3, true, 'the current writer emits v3+');
+  assert.deepEqual(backupWriteMode(file), { kind: 'wrapped' });
+});

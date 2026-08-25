@@ -68,6 +68,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Bounded on purpose: 256 KB of output per stream, 30 s per command (raisable to 120 s), 8 at a
   time, and every child killed when the window goes.
 
+## [0.46.2] — 2026-08-25
+
+### Fixed
+
+- **Restoring a current backup asked for a PIN that could not open it.** Restore routed
+  by `version === 2`; the wrapped format moved to version 3, and every key-wrapped vault
+  fell into the "old PIN-only" branch — a PIN prompt on a file a PIN alone cannot open.
+  Found by an operator's restore drill on a vault with a YubiKey registered the day
+  before.
+
+  Restore now routes by what actually decides the question — the presence of key slots
+  in the file (`backupWriteMode`, the same rule Backup already uses) — so it keeps
+  working when the version moves again. A genuine v1 file still gets the PIN prompt with
+  its explanation from 0.46.1.
+
 ## [0.46.1] — 2026-08-25
 
 ### Fixed

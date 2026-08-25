@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { verifyAccountSession } from './authManager';
 import { planBackupFileNames } from './backupNaming';
-import { BackupError, decryptJson, encryptJson, readBackupAccount, readVaultVersion } from './cryptoUtils';
+import { BackupError, decryptJson, encryptJson, readBackupAccount } from './cryptoUtils';
 import { nasDirFor } from './nasPaths';
 import { validatePin } from './pinPolicy';
 import { sharesFromEnvelope } from './shareFormat';
@@ -241,7 +241,11 @@ export async function restoreFromBackup(
   // entered the PIN, restore still errors".
   let payload: unknown;
   try {
-    if (readVaultVersion(content) === 2) {
+    // Routed by the presence of KEY SLOTS, not by a version number: `=== 2` broke the
+    // day the wrapped format moved to 3, sending key-wrapped vaults into the PIN-only
+    // branch — a PIN prompt on a file a PIN alone cannot open. backupWriteMode is the
+    // one place that answers this, and unparseable content counts as wrapped there.
+    if (backupWriteMode(content).kind === 'wrapped') {
       // Through the vault's own key slots: the stored PIN, a security-key touch, or the
       // PIN typed — the same door sync uses, on the same file format.
       const key = await vaultKeys.unlock(account, content, { interactive: true });
