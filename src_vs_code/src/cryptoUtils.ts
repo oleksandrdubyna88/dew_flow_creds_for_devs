@@ -478,6 +478,20 @@ export function verifyEnvelopeMac(
 }
 
 /**
+ * Whether a MAC status must STOP a sync cycle (fail closed).
+ *
+ * <p>Only `bad` does — a signature that is present but does not match means the signed
+ * envelope (account, unlock wraps, or the sealed blob itself) was altered at the shared
+ * location. Proceeding would decrypt, merge and re-sign it, writing a fresh valid MAC that
+ * heals the tamper into a legitimate-looking file; refusing leaves the evidence and hands
+ * the decision to a person. `missing` is a legacy/unsigned envelope, not tampering, and
+ * `ok` is the normal case — both proceed.</p>
+ */
+export function macStatusBlocksSync(status: EnvelopeMacStatus): boolean {
+  return status === 'bad';
+}
+
+/**
  * Rewrite a v2 envelope's `wraps` and (re)sign the metadata MAC with the
  * master key. Replaces the older unsigned wrap-rewrite for v2 vaults.
  */

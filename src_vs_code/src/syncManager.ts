@@ -4,7 +4,13 @@ import { BackupError } from './cryptoUtils';
 import { StorageManager } from './storageManager';
 import { sharesFromEnvelope } from './shareFormat';
 import { emptySnapshot, mergeProfiles, ProfileSnapshot } from './syncMerge';
-import { encryptJson, encryptJsonWrapped, readVaultWraps, verifyEnvelopeMac } from './cryptoUtils';
+import {
+  encryptJson,
+  encryptJsonWrapped,
+  macStatusBlocksSync,
+  readVaultWraps,
+  verifyEnvelopeMac,
+} from './cryptoUtils';
 import { isKeyWrap, webauthnWraps, upsertWrap, wrapWithPin } from './keyWrap';
 import { TransportFactory } from './transportFactory';
 import { VaultKeys } from './vaultKeys';
@@ -328,13 +334,19 @@ export class SyncManager implements vscode.Disposable {
       this.warnLocked(account);
       return { applied: false, pushed: false };
     }
-    // Detect tampering of the envelope's unauthenticated metadata (account /
-    // wraps) on this — the owner's — file. Only meaningful for v2 (signed).
+    // Detect tampering of the envelope's signed fields (account / unlock wraps / the
+    // sealed blob) on this — the owner's — file. Only meaningful for v2+ (signed).
     if (raw !== undefined && key.version === 2) {
       const mac = verifyEnvelopeMac(raw, key.masterKey);
-      if (mac === 'bad') {
+      if (macStatusBlocksSync(mac)) {
         this.warnTampered(account);
+        // Fail closed. Decrypting, merging and re-encrypting would write a fresh valid MAC
+        // over the altered file — healing a detected tamper into a legitimate-looking one.
+        // Refuse the whole cycle and leave the evidence for a person to judge.
+        return { applied: false, pushed: false };
       }
+      // Clean again — let a future recurrence warn instead of being silently deduped.
+      this.warnedAccounts.delete(`mac:${account.accountId}`);
     }
     try {
       if (raw === undefined) {
@@ -403,7 +415,7 @@ export class SyncManager implements vscode.Disposable {
     }
     this.warnedAccounts.add(`mac:${account.accountId}`);
     void vscode.window.showWarningMessage(
-      `The vault metadata for ${account.email} failed its integrity check — someone may have modified the stored file (account or unlock keys). Your data is still encrypted; review its security keys.`,
+      `The vault of ${account.email} failed its integrity check — its stored file (account, unlock keys, or the encrypted blob) was modified at the sync location. Auto-sync for this account is PAUSED so the change is not merged or re-signed; your local data is safe and still encrypted. Restore the file from a trusted copy and review its security keys.`,
     );
   }
 

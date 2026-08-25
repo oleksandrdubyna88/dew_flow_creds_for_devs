@@ -11,6 +11,7 @@ import {
   readBackupAccount,
   sealBlob,
   verifyEnvelopeMac,
+  macStatusBlocksSync,
 } from '../cryptoUtils';
 import { StoredAccount } from '../types';
 
@@ -245,4 +246,13 @@ test('the v3 MAC length-prefixes its fields, so a boundary cannot be shifted', (
   const shifted = { ...env, salt: env.salt + env.iv.slice(0, 1), iv: env.iv.slice(1) };
 
   assert.equal(verifyEnvelopeMac(JSON.stringify(shifted), master), 'bad');
+});
+
+test('a bad MAC blocks the sync cycle, but ok and legacy-missing proceed', () => {
+  // Fail closed on tamper only: a mismatched signature stops the cycle so it is not
+  // decrypted, merged and re-signed into a fresh valid file. A missing MAC is a legacy
+  // unsigned envelope, not tampering, and must keep syncing.
+  assert.equal(macStatusBlocksSync('bad'), true);
+  assert.equal(macStatusBlocksSync('ok'), false);
+  assert.equal(macStatusBlocksSync('missing'), false);
 });
