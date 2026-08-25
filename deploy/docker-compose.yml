@@ -140,6 +140,21 @@ services:
     # container renewing the certificate and the one writing the backups.
     security_opt:
       - no-new-privileges:true
+    # Everything dropped, then back only what the stock image genuinely needs. The
+    # master process runs as root here — it has to, to bind 80 — and that is precisely
+    # why the rest is worth taking away.
+    cap_drop:
+      - ALL
+    cap_add:
+      # Bind 80 and 443, which are privileged ports.
+      - NET_BIND_SERVICE
+      # Drop the workers to the `nginx` user after the master has bound.
+      - SETUID
+      - SETGID
+      # The stock entrypoint chowns its cache and run directories on start.
+      - CHOWN
+      # ...and writes into directories it does not own while doing so.
+      - DAC_OVERRIDE
     deploy:
       resources:
         limits:
