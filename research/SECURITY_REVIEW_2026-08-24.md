@@ -34,6 +34,7 @@ policy in front of them**, which is now fixed.
 | **H-1** | A synced entity ran a command through the **env-variable probe** | `envProbe.ts`, `types.ts` |
 | **H-2** | **nginx**, the only container facing the internet, had no ceiling | `docker-compose.yml` |
 | **H-3** | **certbot** — which holds the certificate private keys — ran on `:latest` | `docker-compose.yml` |
+| **M-2** | The **anonymous rate-limit bucket** held the whole internet | `Program.cs` |
 | **M-1** | The **PIN floor** accepted `12345678` on a blob attacked offline | `pinPolicy.ts` |
 
 ### C-1 · A shared entity ran local commands on Connect (CRITICAL, fixed)
@@ -131,17 +132,34 @@ right end state, but nginx's master process binds 80 and 443 as root and the cor
 daemon was not running on this machine, so it could not be — and an unverified hardening change
 the night before a launch is a worse trade than the hardening is a gain. Do it with the stack up.
 
+### M-2 · The anonymous rate-limit bucket held the whole internet (fixed)
+
+The **authenticated** half was already right: the limiter partitions on the verified caller
+email, and the middleware that resolves it deliberately runs just before `UseRateLimiter`, which
+is what makes that possible. That half was verified and is covered by a test.
+
+The **anonymous** half fell back to `RemoteIpAddress`. This container publishes no port — every
+request arrives through nginx on the docker network — so that address is nginx's, for every
+caller alive. One bucket of 120 per 10 seconds for the entire internet: enough unauthenticated
+traffic from one sender and the public health probe and every legitimate 401 start answering 429.
+
+The fix is ASP.NET Core's own `UseForwardedHeaders`, and the reason it is safe here rather than
+a new hole is worth writing down, because trusting a client-supplied header is ordinarily how a
+rate limiter is lost. nginx sets `$proxy_add_x_forwarded_for`, which **appends** the address it
+observed to whatever the client sent — so the rightmost entry is the proxy's own observation, and
+`ForwardLimit = 1` reads exactly that one. `KnownIPNetworks` then restricts the mechanism to
+requests arriving from a private address, which, with no published port, is the only way in.
+`XForwardedProto` is deliberately **not** enabled: `RequireForwardedHttps` reads that header
+itself and treats a missing one as plaintext, and letting the middleware consume it would quietly
+turn that guard into something else.
+
+Two tests, the second of which is the one that matters: two anonymous callers from different
+addresses no longer share a budget, and a caller **cannot** mint a fresh budget by prepending
+addresses of their own — only the entry nginx appended counts.
+
 ## Open — not fixed, with a recommendation for each
 
 Ordered by what I would do first. None is a reason to hold tomorrow's launch.
-
-### O-3 · The anonymous rate-limit bucket is one bucket for the whole internet (MEDIUM)
-
-The authenticated limiter partitions per verified email — verified, tested, correct. The
-anonymous fallback partitions on `RemoteIpAddress`, which behind nginx is always nginx. So every
-unauthenticated request on earth shares one 120-per-10s bucket. It exposes no vault data, but a
-single sender at roughly 12 requests a second can make public health checks and every 401/403
-path start returning 429. Fix: `UseForwardedHeaders` scoped to the docker `edge` network.
 
 ### O-4 · WebAuthn credentials are scoped to bare `localhost` (MEDIUM, pre-existing)
 

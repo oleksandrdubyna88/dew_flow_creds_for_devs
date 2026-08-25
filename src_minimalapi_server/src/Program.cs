@@ -1,9 +1,11 @@
 using System.Text.Json;
+using System.Net;
 using System.Security.Claims;
 using System.Threading.RateLimiting;
 using CredVaultServer;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Diagnostics;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.IdentityModel.Tokens;
 using Serilog;
@@ -78,10 +80,53 @@ builder.WebHost.ConfigureKestrel(o => o.Limits.MaxRequestBodySize = maxVaultByte
 // Light rate limiting per caller — cheap DoS guard.
 //
 // The partition key is the VERIFIED caller email (resolved by the middleware that runs
-// just before UseRateLimiter), so one noisy account cannot throttle anyone else. Requests
-// that carry no valid token have no identity to partition by and fall back to the remote
-// address; behind a proxy that is one shared bucket for all of them, which is the correct
-// behaviour for anonymous traffic and the wrong one for authenticated traffic.
+// just before UseRateLimiter), so one noisy account cannot throttle anyone else.
+//
+// Requests carrying no valid token have no identity to partition by and fall back to the
+// remote address — which is the caller's own only because `UseForwardedHeaders` above
+// resolves it from the entry nginx appended. Without that step it is nginx's address for
+// every caller alive, i.e. one bucket for the internet, and the first noisy sender takes
+// the public health probe and every legitimate 401 down with them.
+// Docker bridge networks live in the private ranges; loopback covers a host run and the
+// in-process test server. Nothing public is here, so a header arriving from a public
+// address is never trusted — and while the port stays unpublished that cannot happen.
+var trustedProxyNetworks = new System.Net.IPNetwork[]
+{
+    new(IPAddress.Parse("127.0.0.0"), 8),
+    new(IPAddress.Parse("10.0.0.0"), 8),
+    new(IPAddress.Parse("172.16.0.0"), 12),
+    new(IPAddress.Parse("192.168.0.0"), 16),
+    new(IPAddress.IPv6Loopback, 128),
+};
+
+// The true client address, for the anonymous partition below.
+//
+// This container publishes no port — every request arrives through nginx on the docker
+// network — so `RemoteIpAddress` is nginx's address for every caller alive. Partitioning
+// anonymous traffic on it put the whole internet in one bucket, which is a 429 on the
+// public health probe and on every legitimate 401 as soon as one sender is noisy.
+//
+// Trusting a client-supplied header is normally how you LOSE a rate limiter, so two
+// things make it safe here. nginx sets `$proxy_add_x_forwarded_for`, which APPENDS the
+// address it observed to whatever the client sent — so the rightmost entry is the proxy's
+// own observation and `ForwardLimit = 1` reads exactly that one. And `KnownIPNetworks`
+// restricts the whole mechanism to requests that arrived from a private address, which,
+// given no published port, is the only way in.
+builder.Services.Configure<ForwardedHeadersOptions>(options =>
+{
+    options.ForwardedHeaders = ForwardedHeaders.XForwardedFor;
+    options.ForwardLimit = 1;
+    // Deliberately NOT XForwardedProto: `RequireForwardedHttps` below reads that header
+    // itself and treats a missing one as plaintext. Letting the middleware consume it
+    // would quietly turn that guard into something else.
+    options.KnownIPNetworks.Clear();
+    options.KnownProxies.Clear();
+    foreach (var network in trustedProxyNetworks)
+    {
+        options.KnownIPNetworks.Add(network);
+    }
+});
+
 builder.Services.AddRateLimiter(options =>
 {
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
@@ -167,6 +212,9 @@ if (localEnabled)
 }
 
 var app = builder.Build();
+
+// Before anything reads the remote address — the limiter partitions on it.
+app.UseForwardedHeaders();
 
 var log = app.Logger;
 
