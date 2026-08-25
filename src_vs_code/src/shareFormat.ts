@@ -1,5 +1,6 @@
 import * as crypto from 'node:crypto';
 import { BackupError, openBlob, readBackupShares, sealBlob } from './cryptoUtils';
+import { ShareTranscript, SigningKeypair, signShare } from './shareSignature';
 import {
   OwnedShare,
   ShareItem,
@@ -23,15 +24,40 @@ import {
  * accountId (folder transport) or email (server transport); the recipient's
  * side must present the same value to open it.
  */
+/**
+ * The bytes a signature covers, rebuilt from an item as it sits on disk.
+ *
+ * <p>`toEmail` is not a field of `ShareItem` — it is where the item was FOUND,
+ * which is exactly why it belongs in the transcript: a share copied out of Bob's
+ * file into Carol's is being read with a different `toEmail` than it was signed
+ * with, and the signature stops matching.</p>
+ */
+export function shareTranscript(item: ShareItem, toEmail: string): ShareTranscript {
+  return {
+    shareId: item.id,
+    fromEmail: item.fromEmail,
+    toEmail: toEmail.toLowerCase(),
+    createdAt: item.createdAt,
+    senderPublicKey: item.senderPublicKey ?? '',
+    kdfN: item.kdfN,
+    kdfR: item.kdfR,
+    kdfP: item.kdfP,
+    data: item.data,
+    tag: item.tag,
+  };
+}
+
 export function sealShare(
   payload: SharePayload,
   recipientKeyId: string,
   from: StoredAccount,
   pin: string,
   createdAt: number,
+  signing?: SigningKeypair,
+  toEmail?: string,
 ): ShareItem {
   const blob = sealBlob(payload, recipientKeyId + pin);
-  return {
+  const item: ShareItem = {
     id: crypto.randomUUID(),
     fromEmail: from.email,
     from: { accountId: from.accountId, email: from.email, provider: from.provider },
@@ -40,6 +66,13 @@ export function sealShare(
     createdAt,
     ...blob,
   };
+  // Unsigned when there is no keypair or no addressee to bind to — the server
+  // transport supplies neither, and stamps the sender itself, which is stronger.
+  if (signing === undefined || toEmail === undefined) {
+    return item;
+  }
+  const signed: ShareItem = { ...item, senderPublicKey: signing.publicKey };
+  return { ...signed, signature: signShare(signing.privateKey, shareTranscript(signed, toEmail)) };
 }
 
 /** Decrypt a share item. Throws BackupError; validates the payload shape. */

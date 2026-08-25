@@ -1,6 +1,7 @@
 import * as crypto from 'node:crypto';
 import * as vscode from 'vscode';
 import { ProfileSnapshot } from './syncMerge';
+import { SigningKeypair, generateSigningKeypair } from './shareSignature';
 import { RemoteState, buildDefaultFolders, shouldSeedDefaults } from './defaultFolders';
 import { Tombstone, VersionVector, bumpVector, mergeVectors, normalizeTombstone } from './versionVector';
 import {
@@ -38,6 +39,14 @@ function secretKey(accountId: string, entityId: string): string {
 /** SecretStorage key for an entity's SSH private key content. */
 function privateKeySecretKey(accountId: string, entityId: string): string {
   return `${accountId}_${entityId}:sshPrivateKey`;
+}
+
+/**
+ * The account's own Ed25519 signing identity for shares on the folder transport.
+ * Keyed by account, not by entity — it identifies the signer, not a credential.
+ */
+function signingKeySecretKey(accountId: string): string {
+  return `${accountId}:shareSigningKey`;
 }
 
 /** SecretStorage key for an entity's VPN config file content. */
@@ -371,6 +380,44 @@ export class StorageManager {
 
   async deletePassword(accountId: string, entityId: string): Promise<void> {
     await this.secrets.delete(secretKey(accountId, entityId));
+  }
+
+  // ---------- share signing identity (SecretStorage, per account) ----------
+
+  /**
+   * This account's signing keypair, minted on first use.
+   *
+   * <p>In SecretStorage only, deliberately NOT wrapped into the vault payload as
+   * the plan proposed. A signing identity that syncs is one that an attacker who
+   * reads a backup can sign as, and the recovery path for a lost key already
+   * exists and is the honest one: the peer re-pins after comparing the new
+   * fingerprint. A key per machine also matches what a signature actually proves
+   * — "this machine", not "this person".</p>
+   */
+  async signingKeypair(accountId: string): Promise<SigningKeypair | undefined> {
+    const raw = await this.secrets.get(signingKeySecretKey(accountId));
+    if (raw === undefined) {
+      return undefined;
+    }
+    try {
+      const parsed = JSON.parse(raw) as SigningKeypair;
+      return typeof parsed.publicKey === 'string' && typeof parsed.privateKey === 'string'
+        ? parsed
+        : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  /** Mint one if this account has none yet, and return whichever it now has. */
+  async ensureSigningKeypair(accountId: string): Promise<SigningKeypair> {
+    const existing = await this.signingKeypair(accountId);
+    if (existing !== undefined) {
+      return existing;
+    }
+    const fresh = generateSigningKeypair();
+    await this.secrets.store(signingKeySecretKey(accountId), JSON.stringify(fresh));
+    return fresh;
   }
 
   // ---------- SSH private keys (SecretStorage, tenant-scoped) ----------

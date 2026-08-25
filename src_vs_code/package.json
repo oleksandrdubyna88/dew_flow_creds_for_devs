@@ -327,6 +327,12 @@
         "icon": "$(live-share)"
       },
       {
+        "command": "credSshManager.showShareFingerprint",
+        "title": "Show Signing Fingerprint…",
+        "category": "CredsForDevs",
+        "icon": "$(key)"
+      },
+      {
         "command": "credSshManager.createForUser",
         "title": "Create Entity for…",
         "category": "CredsForDevs",
@@ -495,6 +501,15 @@
         "title": "Stop VPN",
         "category": "CredsForDevs",
         "icon": "$(debug-stop)"
+      },
+      {
+        "command": "credSshManager.runScript",
+        "title": "Run Script",
+        "category": "CredsForDevs",
+        "icon": {
+          "light": "media/play-green-light.svg",
+          "dark": "media/play-green.svg"
+        }
       }
     ],
     "menus": {
@@ -785,6 +800,21 @@
           "command": "credSshManager.stopVpn",
           "when": "view == credSshManagerView && viewItem =~ /:vpnrun/",
           "group": "2_actions@1"
+        },
+        {
+          "command": "credSshManager.showShareFingerprint",
+          "when": "view == credSshManagerView && viewItem == account",
+          "group": "9_account@5"
+        },
+        {
+          "command": "credSshManager.runScript",
+          "when": "view == credSshManagerView && viewItem =~ /:script/",
+          "group": "inline@0"
+        },
+        {
+          "command": "credSshManager.runScript",
+          "when": "view == credSshManagerView && viewItem =~ /:script/",
+          "group": "2_actions@0"
         }
       ]
     }

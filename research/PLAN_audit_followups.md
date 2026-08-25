@@ -64,7 +64,7 @@ solo sync only, and the **server** transport (which stamps `fromEmail` from the
 OAuth token) is the single recommended standard for teams. Documented in
 `README.md` ("Which transport for what"). A NAS-only cryptographic alternative
 (Ed25519 sender signatures + key pinning + a fingerprint check) is designed as
-**backlog / optional** in [todo/PLAN_nas_sender_pki.md](../todo/PLAN_nas_sender_pki.md)
+**backlog / optional** in [todo/PLAN_nas_sender_pki.md](PLAN_nas_sender_pki.md)
 — it stays TOFU-based, so the server remains the stronger answer.
 
 ## 4. PIN change does not re-key (multi-key vaults) — DONE (2026-08-21, v0.21.0)

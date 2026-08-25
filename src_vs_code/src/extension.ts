@@ -19,6 +19,8 @@ import { nasPathFor, setAccountNasPath } from './nasPaths';
 import { describeSender } from './shareSender';
 import { keyringMayBeUnprotected, keyringWarningMessage } from './keyringWarning';
 import { confirmCommandMessage, isCommandTrusted, trustCommand } from './commandTrust';
+import { judgeSender, pinSenderKey, pinnedKey, verdictBlocksAccept } from './senderPinning';
+import { keyFingerprint } from './shareSignature';
 import {
   backupIntervalHoursFor,
   backupPathFor,
@@ -53,7 +55,7 @@ import { sshExecAction, sshTerminalAction } from './sshUseActions';
 import { buildAgentSnippet } from './agentShareSnippet';
 import { DB_DEFAULT_PORTS, parseDbConnectionString } from './dbConnString';
 import { openInDbExtension } from './dbLauncher';
-import { openShare, resolveShares, sealShare, sharesFromEnvelope } from './shareFormat';
+import { openShare, resolveShares, sealShare, shareTranscript, sharesFromEnvelope } from './shareFormat';
 import { SharingManager } from './sharingManager';
 import { TransportFactory } from './transportFactory';
 import { VaultKeys } from './vaultKeys';
@@ -84,6 +86,8 @@ import { applyEnvBindings, bindableFieldValue } from './envApply';
 import { envProbeCommand } from './envProbe';
 import { imageMime } from './attachment';
 import { syncReminderDue } from './syncReminder';
+import { substituteScript } from './scriptRender';
+import { scriptRunPlan } from './scriptRun';
 import {
   AuthProvider,
   EntityKind,
@@ -1028,6 +1032,37 @@ ${detail}
     await saveVpnConfigToFile(element.accountId, element.node.details, storage);
   });
 
+  register('credSshManager.runScript', (target) => {
+    vaultKeys.noteUserActivity(); // the user is here: postpone auto-lock
+    const element = asElement(target);
+    if (element?.kind !== 'node' || element.node.details === undefined) {
+      return;
+    }
+    const details = element.node.details;
+    if (details.script === undefined || details.script.trim().length === 0) {
+      void vscode.window.showWarningMessage('This script is empty — open Edit and write it first.');
+      return;
+    }
+    const plan = scriptRunPlan(details.scriptLanguage ?? 'other', process.platform);
+    if (plan.kind === 'unsupported') {
+      void vscode.window.showInformationMessage(plan.reason);
+      return;
+    }
+    // Variables substituted, THEN written to the extension's private storage — the same
+    // keys/ directory materialized SSH keys use, purged on activate/deactivate, so a
+    // script whose variables held anything sensitive does not outlive the session.
+    const body = substituteScript(details.script, details.scriptVars);
+    const fileName = `script-${details.id}${plan.extension}`;
+    const scriptPath = path.join(storageDir, 'keys', fileName);
+    fs.mkdirSync(path.dirname(scriptPath), { recursive: true, mode: 0o700 });
+    fs.writeFileSync(scriptPath, body.endsWith('\n') ? body : body + '\n', { mode: 0o700 });
+    const name = `CredsForDevs: ${element.node.name}`;
+    const existing = vscode.window.terminals.find((t) => t.name === name && t.exitStatus === undefined);
+    const terminal = existing ?? vscode.window.createTerminal({ name });
+    terminal.show();
+    terminal.sendText([plan.command, ...plan.args, `"${scriptPath}"`].join(' '), true);
+  });
+
   register('credSshManager.startVpn', (target) =>
     runVpn(target, 'start', storage, storageDir, vaultKeys),
   );
@@ -1395,10 +1430,26 @@ ${detail}
     }
     const delivered: string[] = [];
     const failed: string[] = [];
+    // Sign only where a signature means anything. The server stamps the sender
+    // from a verified token, which is stronger than anything a client can sign and
+    // needs no key distribution; on a folder there is nothing else to go on.
+    const location = nasPathFor(sender);
+    const signing =
+      location !== undefined && !isServerLocation(location)
+        ? await storage.ensureSigningKeypair(sender.accountId)
+        : undefined;
     for (const recipient of recipients) {
       try {
         const items = payloads.map((p) =>
-          sealShare(p, recipient.shareKeyId, sender, pin, Date.now()),
+          sealShare(
+            p,
+            recipient.shareKeyId,
+            sender,
+            pin,
+            Date.now(),
+            signing,
+            recipient.account.email,
+          ),
         );
         await sharing.appendShares(sender, recipient, items);
         delivered.push(recipient.account.email);
@@ -1582,12 +1633,108 @@ ${detail}
     await sharing.removeOwnShare(share);
   };
 
+  /**
+   * What the recipient is allowed to conclude about who sent this, and whether to
+   * go on. Runs BEFORE the PIN prompt: a share whose sender cannot be trusted
+   * should never reach the point where somebody is typing a secret for it.
+   */
+  const senderCheck = async (share: OwnedShare): Promise<boolean> => {
+    const account = storage.getAccount(share.accountId);
+    if (account === undefined) {
+      return false;
+    }
+    const location = nasPathFor(account);
+    if (location !== undefined && isServerLocation(location)) {
+      return true; // the server stamped it; nothing here can add to that
+    }
+
+    const verdict = judgeSender(context.globalState, share.accountId, {
+      transcript: shareTranscript(share.item, account.email),
+      signature: share.item.signature,
+    });
+
+    if (verdictBlocksAccept(verdict)) {
+      const known = pinnedKey(context.globalState, share.accountId, share.item.fromEmail);
+      const detail =
+        verdict === 'mismatch'
+          ? `This is signed by a DIFFERENT key than the one pinned for ${share.item.fromEmail}.
+
+Pinned:  ${known === undefined ? '—' : keyFingerprint(known)}
+This one: ${keyFingerprint(share.item.senderPublicKey ?? '')}
+
+Either they rotated their key, or somebody else is using their name. Compare the fingerprint with them directly before trusting it.`
+          : verdict === 'downgraded'
+            ? `${share.item.fromEmail} has signed shares before, and this one is not signed at all. That is what stripping a signature looks like.`
+            : 'The signature on this share does not verify.';
+      const choice = await vscode.window.showWarningMessage(detail, { modal: true }, 'Trust this key anyway');
+      if (choice !== 'Trust this key anyway') {
+        return false;
+      }
+      if (share.item.senderPublicKey !== undefined) {
+        await pinSenderKey(context.globalState, share.accountId, share.item.fromEmail, share.item.senderPublicKey);
+      }
+      return true;
+    }
+
+    if (verdict === 'firstContact' && share.item.senderPublicKey !== undefined) {
+      // Not "verified" — nobody has checked this key belongs to them yet. The
+      // fingerprint is the only thing that can, and it is shown here rather than
+      // buried in a command nobody runs.
+      const choice = await vscode.window.showInformationMessage(
+        `First share from ${share.item.fromEmail}. Read this fingerprint back to them before you trust it:
+
+${keyFingerprint(share.item.senderPublicKey)}
+
+After this, a share signed by any other key is refused.`,
+        { modal: true },
+        'Pin this key',
+      );
+      if (choice !== 'Pin this key') {
+        return false;
+      }
+      await pinSenderKey(context.globalState, share.accountId, share.item.fromEmail, share.item.senderPublicKey);
+    }
+    return true;
+  };
+
+  /**
+   * Show this account's own fingerprint, so the comparison can be two-sided.
+   *
+   * <p>The recipient is shown the sender's fingerprint on first contact — but a
+   * comparison needs both halves, and until now the sender had no way to read
+   * theirs. Without this the fingerprint step is theatre: the only person who can
+   * confirm the key is the one who cannot see it.</p>
+   */
+  register('credSshManager.showShareFingerprint', async (target) => {
+    const account = await accountFromTargetOrPick(target, storage, 'Whose signing fingerprint?');
+    if (account === undefined) {
+      return;
+    }
+    const keypair = await storage.ensureSigningKeypair(account.accountId);
+    const print = keyFingerprint(keypair.publicKey);
+    const choice = await vscode.window.showInformationMessage(
+      `Signing fingerprint for ${account.email}:
+
+${print}
+
+Read this to whoever is accepting your first share. It only matters on a shared folder — over the vault server the sender is stamped from your sign-in and cannot be forged.`,
+      { modal: true },
+      'Copy',
+    );
+    if (choice === 'Copy') {
+      await vscode.env.clipboard.writeText(print);
+    }
+  });
+
   register('credSshManager.acceptShare', async (target) => {
     const element = asElement(target);
     if (element?.kind !== 'sharedItem') {
       return;
     }
     const share = element.share;
+    if (!(await senderCheck(share))) {
+      return;
+    }
     const pin = await vscode.window.showInputBox({
       title: `Accept "${share.item.entityName}" from ${describeSender(
         share.item.fromEmail,

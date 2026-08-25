@@ -23,6 +23,8 @@ export interface AccountProfile extends StoredAccount {
  * of making you retype it from memory.</p>
  */
 export interface CommandArg {
+  /** Script variables name their row (`${NAME}` in the body); terminal args have none. */
+  name?: string;
   value: string;
   note?: string;
   disabled?: boolean;
@@ -55,6 +57,14 @@ export interface EntityMetadata {
   vpnConfigFileName?: string;
   /** Marks this entity as a CLI command (the `terminal` kind). */
   isTerminal?: boolean;
+  /** Marks this entity as a stored script (the `script` kind). */
+  isScript?: boolean;
+  /** The script's language, for highlighting. */
+  scriptLanguage?: string;
+  /** The script body; `${NAME}` placeholders reference `scriptVars`. */
+  script?: string;
+  /** The changeable parts, pulled out of the body — named rows. */
+  scriptVars?: CommandArg[];
   /** The base command, e.g. `aws sso login`. Arguments live in `commandArgs`. */
   command?: string;
   /** Arguments, one per row, each with an optional explanation. */
@@ -73,7 +83,7 @@ export interface EntityMetadata {
 export type VpnType = 'openvpn' | 'wireguard' | 'ikev2' | 'l2tp' | 'other';
 
 /** The five entity kinds the form's Type selector offers. */
-export type EntityKind = 'credential' | 'ssh' | 'sshkey' | 'vpn' | 'db' | 'terminal';
+export type EntityKind = 'credential' | 'ssh' | 'sshkey' | 'vpn' | 'db' | 'terminal' | 'script';
 
 export const ENTITY_KINDS: readonly EntityKind[] = [
   'credential',
@@ -82,6 +92,7 @@ export const ENTITY_KINDS: readonly EntityKind[] = [
   'vpn',
   'db',
   'terminal',
+  'script',
 ];
 
 /**
@@ -100,6 +111,7 @@ export const ENTITY_KIND_LABELS: Readonly<Record<EntityKind, { label: string; ic
   vpn: { label: 'VPN', icon: 'shield' },
   db: { label: 'Database', icon: 'database' },
   terminal: { label: 'Terminal command', icon: 'terminal' },
+  script: { label: 'Script', icon: 'file-code' },
 };
 
 /** A folder's declared content type; 'any' = unrestricted. */
@@ -108,6 +120,9 @@ export type FolderType = EntityKind | 'any' | 'project';
 
 /** The kind an entity's flags map to (priority: terminal > db > vpn > key > ssh). */
 export function kindOf(d: EntityMetadata | undefined): EntityKind {
+  if (d?.isScript) {
+    return 'script';
+  }
   // First, because a command entry has none of the other flags and every other kind
   // would otherwise fall through to 'credential' and lose its identity in the tree.
   if (d?.isTerminal) {
@@ -246,6 +261,19 @@ export interface ShareItem {
   kdfN?: number;
   kdfR?: number;
   kdfP?: number;
+  /**
+   * Ed25519 signature over the share's transcript, and the key that made it.
+   *
+   * <p>Both optional, and that is the compatibility story: a share from an older
+   * build has neither and is judged `unsigned` rather than rejected. `id` doubles
+   * as the transcript's `shareId` — it is already a fresh UUID per share, so
+   * there was no reason to add a second one.</p>
+   *
+   * <p>Only meaningful on the folder transport. The server stamps the sender from
+   * a verified token, which is strictly stronger and needs no key distribution.</p>
+   */
+  signature?: string;
+  senderPublicKey?: string;
 }
 
 /** What a share item decrypts to. */
@@ -372,6 +400,7 @@ function isCommandArgArray(value: unknown): value is CommandArg[] {
       const r = row as Record<string, unknown>;
       return (
         typeof r.value === 'string' &&
+        (r.name === undefined || typeof r.name === 'string') &&
         (r.note === undefined || typeof r.note === 'string') &&
         (r.disabled === undefined || typeof r.disabled === 'boolean')
       );
@@ -426,6 +455,10 @@ export function isEntityMetadata(value: unknown): value is EntityMetadata {
       (typeof v.vpnType === 'string' && (VPN_TYPES as readonly string[]).includes(v.vpnType))) &&
     (v.vpnConfigFileName === undefined || typeof v.vpnConfigFileName === 'string') &&
     (v.isTerminal === undefined || typeof v.isTerminal === 'boolean') &&
+    (v.isScript === undefined || typeof v.isScript === 'boolean') &&
+    (v.scriptLanguage === undefined || typeof v.scriptLanguage === 'string') &&
+    (v.script === undefined || typeof v.script === 'string') &&
+    (v.scriptVars === undefined || isCommandArgArray(v.scriptVars)) &&
     (v.command === undefined || typeof v.command === 'string') &&
     (v.commandNote === undefined || typeof v.commandNote === 'string') &&
     (v.commandArgs === undefined || isCommandArgArray(v.commandArgs)) &&

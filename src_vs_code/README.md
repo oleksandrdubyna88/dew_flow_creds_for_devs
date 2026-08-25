@@ -332,14 +332,27 @@ server enforces) — the transport handles this transparently.
 
 ### Which transport for what (architectural boundary)
 
-- **NAS folder → personal / solo sync.** It is the right choice for one person
-  syncing their own vault across their own machines. A share's `fromEmail` is a
-  **self-asserted claim** written into the file: anyone who can write to the
-  shared folder can forge a share that appears to come from someone else (the
-  envelope MAC covers the owner's own metadata but deliberately **not** the
-  cross-user `shares` array).
-  So the folder transport gives **no cryptographic sender authenticity** for
-  team sharing.
+- **NAS folder → personal / solo sync, now with signed senders.** It remains the
+  right choice for one person syncing their own vault across their own machines.
+  A share sent over a folder is signed with the sender's Ed25519 key, and the
+  recipient **pins that key on first contact**: every later share from that
+  address must match it, and one that does not is refused with both fingerprints
+  shown side by side.
+
+  **What that is and is not.** A signature proves *"signed by the holder of key
+  K"*. Tying K to a person is a separate problem, and if keys travel over the same
+  folder an attacker can write, they can publish their own. So this is
+  **trust-on-first-use plus continuity** — strong against somebody who turns up
+  after you have exchanged a share, weak against somebody already in place before
+  the first one. The only thing that closes that gap is reading the fingerprint to
+  each other out of band, which is why the first-contact dialog shows it and why
+  *Show Signing Fingerprint…* exists on your own account row. It is
+  forgery-resistant, not forgery-proof, and should never be described as the
+  latter.
+
+  A share from an older build carries no signature and is shown as unsigned rather
+  than refused. A sender who **has** signed before and suddenly does not is a
+  different matter and is refused: that is what stripping a signature looks like.
 - **Server transport → the recommended standard for teams.** The Cred Vault
   Server authenticates every request with that account's OAuth token and
   **stamps the share sender from the verified token**, so `fromEmail` is
