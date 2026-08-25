@@ -8,6 +8,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Vault format v3 — and every machine must be updated before any of them syncs.**
+  A v3 file is written automatically the next time a vault is saved, and a build older
+  than this one refuses it with *"Unsupported backup version: 3"*. That is a harder
+  edge than the v1→v2 step, which only happened when somebody deliberately registered
+  a security key: this one needs no action at all, so one updated laptop syncing to a
+  shared folder can lock every colleague still on 0.43.x out of their own vault.
+  **Roll the extension out to everyone first, then let anyone sync.** Reading v2 keeps
+  working forever, so no vault has to be converted by hand.
+
+  What v3 changes, and why it was worth a format bump:
+
+  - **The payload key comes from HKDF instead of scrypt.** scrypt is deliberately slow
+    because it guards a PIN a person chose; running it over a 256-bit master key buys
+    nothing and cost a measured **240 ms of frozen editor** per vault read or write —
+    on every sync cycle, on the single thread VS Code uses for typing. Reading a vault
+    went from **256.3 ms to 0.21 ms**. PIN-bound derivations stay on scrypt, where the
+    slowness is the whole point.
+  - **The envelope MAC now signs the encrypted payload, not just the header.** v2
+    signed `format`, `version`, `account` and `wraps` — everything except the
+    secrets — so anyone who could write to a shared folder could splice an older
+    legitimate payload back in, leave the header alone, and the integrity check still
+    said it was fine while the vault silently reverted to pre-rotation passwords. No
+    key, no PIN, no security key needed. Demonstrated before and after:
+    v2 answered *ok* to a swapped payload; v3 answers *bad*.
+
+### Changed
+
 - **The listing describes the whole extension again.** It had drifted: terminal-command entries,
   environment-variable bindings, dated snapshots, starting and stopping a VPN, attachments,
   auto-lock and `Clone…` had all shipped without ever reaching the README, and the settings table

@@ -362,6 +362,11 @@ A vault can be opened by **several security keys plus the PIN**, in the
 - **First key upgrades the vault** from v1 (PIN-derived) to v2, re-encrypting
   the payload under the new master key in one step. Update the extension on
   all your machines before adding a key — older builds cannot read v2.
+- **v3 (this release) upgrades itself, so update every machine BEFORE anyone syncs.**
+  Unlike the v2 step, nothing has to be switched on: the next save writes v3, and a
+  build older than this one refuses the file outright. One updated laptop syncing to a
+  shared folder is enough to lock a colleague out of their own vault until they update.
+  Reading v2 keeps working forever, so nothing needs converting by hand.
 - **Unlock**: the master key is cached in memory for the window, so
   background sync never asks for a touch again. `Lock Vaults (clear cached
   keys)` drops the cache; `Unlock Vault (Security Key)…` prompts on demand.
