@@ -68,6 +68,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Bounded on purpose: 256 KB of output per stream, 30 s per command (raisable to 120 s), 8 at a
   time, and every child killed when the window goes.
 
+## [0.54.0] — 2026-08-25
+
+### Changed
+
+- **Every vault is v3 now — the slow v1 format is retired, PIN-only included.** A PIN-only
+  vault used to stay on v1, whose payload key is `scrypt(accountId + PIN)` with a fresh salt
+  per file — so the derived key could never be cached and scrypt (~1 s, ~128 MiB) ran on
+  **every read and every write**, freezing the editor on each auto-sync cycle. v3 seals the
+  payload under a random master key (cheap HKDF) and stores that key once in a **pin-wrap**;
+  unlock runs scrypt a single time and everything after is fast. Until now v3 appeared only
+  when you registered a security key.
+
+  There is no v1 write path any more:
+
+  - a **legacy PIN-only vault migrates to v3 on its next sync** — the same PIN still opens it
+    and every secret is preserved (the migration only runs after a good decrypt, so a wrong
+    PIN can never overwrite an unreadable file);
+  - a **brand-new PIN-only vault is v3 from its first write**;
+  - **backups convert too**, on their next run — a backup keeps its own standalone backup PIN
+    as a self-contained pin-wrap, and dated snapshots (which copy the vault's ciphertext) are
+    v3 the moment the vault is. Changing a PIN also upgrades the format.
+
+  Reading a legacy v1/v2 file keeps working forever — the upgrade is lazy, never a forced
+  rewrite of a file you might not be able to reach. As with any format bump, **update every
+  machine before anyone syncs**: an older build refuses a v3 file outright.
+
+### Fixed
+
+- Ten security, performance and resilience findings from a post-merge review of the agent
+  broker / signatures / scripts / scope work — see `research/SECURITY_REVIEW_2026-08-25.md`.
+  Highlights: a psql option-injection on the agent DB path is refused; an auto-lock/sync race
+  that could seal an undecryptable vault, and a non-atomic backup that could truncate the live
+  file, are both closed; the accept-all and idle-sync scrypt storms no longer freeze the
+  editor; a server-advertised OAuth scope is validated before a token is minted for it; a
+  detected vault tamper now pauses sync instead of healing itself into a valid file.
+
 ## [0.53.2] — 2026-08-25
 
 ### Fixed

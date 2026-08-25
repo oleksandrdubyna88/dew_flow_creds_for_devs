@@ -503,14 +503,16 @@ A vault can be opened by **several security keys plus the PIN**, in the
   and one wrap per registered key — as plaintext metadata in the envelope
   (`wraps[]`). Any wrap opens the vault, so **adding or removing a key never
   re-encrypts your data** and never invalidates the others.
-- **First key upgrades the vault** from v1 (PIN-derived) to v2, re-encrypting
-  the payload under the new master key in one step. Update the extension on
-  all your machines before adding a key — older builds cannot read v2.
-- **v3 (this release) upgrades itself, so update every machine BEFORE anyone syncs.**
-  Unlike the v2 step, nothing has to be switched on: the next save writes v3, and a
-  build older than this one refuses the file outright. One updated laptop syncing to a
-  shared folder is enough to lock a colleague out of their own vault until they update.
-  Reading v2 keeps working forever, so nothing needs converting by hand.
+- **Every vault is v3 now — PIN-only included — so update every machine BEFORE anyone syncs.**
+  A vault used to stay on the slow v1 format (PIN-derived key, scrypt on every read and write)
+  unless you registered a security key. As of this release nothing writes v1 any more: the next
+  save migrates a PIN-only vault to **v3** (a random master key, wrapped once under your PIN, read
+  with HKDF), a brand-new vault is v3 from the start, and your **backups** convert on their next
+  run too. The migration is automatic and keeps the **same PIN** — nothing is converted by hand and
+  no data is touched. The catch is the same as any format bump: a build older than this one refuses
+  a v3 file (*"Unsupported backup version: 3"*), so one updated laptop syncing to a shared folder
+  can lock a colleague still on an old build out of their own vault. **Roll the extension out to
+  everyone first, then sync.** Reading a legacy v1/v2 file keeps working forever.
 - **Unlock**: the master key is cached in memory for the window, so
   background sync never asks for a touch again. `Lock Vaults (clear cached
   keys)` drops the cache; `Unlock Vault (Security Key)…` prompts on demand.
