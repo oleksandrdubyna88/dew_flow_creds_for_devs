@@ -323,6 +323,7 @@ export class CredTreeDataProvider
         moving?.type === 'entity' &&
         targetFolder?.folderType !== undefined &&
         targetFolder.folderType !== 'any' &&
+        targetFolder.folderType !== 'project' &&
         kindOf(moving.details) !== targetFolder.folderType
       ) {
         void vscode.window.showWarningMessage(
@@ -363,6 +364,8 @@ const TEAM_COLOR = new vscode.ThemeColor('credSshManager.teamIcon');
 
 function folderIcon(folderType: FolderType | undefined): vscode.ThemeIcon {
   switch (folderType) {
+    case 'project':
+      return new vscode.ThemeIcon('project', FOLDER_COLOR);
     case 'db':
       return new vscode.ThemeIcon('database', FOLDER_COLOR);
     case 'vpn':

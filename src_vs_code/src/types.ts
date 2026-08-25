@@ -103,7 +103,8 @@ export const ENTITY_KIND_LABELS: Readonly<Record<EntityKind, { label: string; ic
 };
 
 /** A folder's declared content type; 'any' = unrestricted. */
-export type FolderType = EntityKind | 'any';
+/** `project` is a folder-only type: a folder that carries the whole default set inside. */
+export type FolderType = EntityKind | 'any' | 'project';
 
 /** The kind an entity's flags map to (priority: terminal > db > vpn > key > ssh). */
 export function kindOf(d: EntityMetadata | undefined): EntityKind {
@@ -466,7 +467,7 @@ export function isTreeNode(value: unknown): value is TreeNode {
   if (
     v.folderType !== undefined &&
     !(typeof v.folderType === 'string' &&
-      ([...ENTITY_KINDS, 'any'] as string[]).includes(v.folderType))
+      ([...ENTITY_KINDS, 'any', 'project'] as string[]).includes(v.folderType))
   ) {
     return false;
   }

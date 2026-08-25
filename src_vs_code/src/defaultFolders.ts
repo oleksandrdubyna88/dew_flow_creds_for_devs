@@ -28,12 +28,12 @@ export const DEFAULT_FOLDERS: readonly DefaultFolderSpec[] = [
  * the version vector are stamped by the storage layer on insert, so they are
  * intentionally omitted here.
  */
-export function buildDefaultFolders(newId: () => string): TreeNode[] {
+export function buildDefaultFolders(newId: () => string, parentId: string | null = null): TreeNode[] {
   return DEFAULT_FOLDERS.map((spec, index) => ({
     id: newId(),
     name: spec.name,
     type: 'folder' as const,
-    parentId: null,
+    parentId,
     folderType: spec.folderType,
     sortOrder: index,
   }));
@@ -90,5 +90,9 @@ export function shouldSeedDefaults(
  * parent refuses.</p>
  */
 export function inheritedFolderType(parentType: FolderType | undefined): EntityKind | undefined {
-  return parentType !== undefined && parentType !== 'any' ? parentType : undefined;
+  // `project` dictates nothing: it is a folder-only type, and forcing its entities to
+  // kind "project" would invent an entity kind that does not exist.
+  return parentType !== undefined && parentType !== 'any' && parentType !== 'project'
+    ? parentType
+    : undefined;
 }

@@ -86,3 +86,28 @@ test('the old guards still hold whatever the remote says', () => {
   assert.equal(shouldSeedDefaults(0, true, 'empty'), false, 'seeded once already');
   assert.equal(shouldSeedDefaults(0, true, 'no-location'), false);
 });
+
+test('a project folder seeds the same set, parented under the project', () => {
+  let n = 0;
+  const nodes = buildDefaultFolders(() => `id-${n++}`, 'project-1');
+
+  assert.equal(nodes.length, DEFAULT_FOLDERS.length);
+  assert.ok(nodes.every((f) => f.parentId === 'project-1'));
+  // The same names and types as an account's default set — that is the feature: a
+  // project is the account's structure in miniature.
+  assert.deepEqual(
+    nodes.map((f) => f.folderType),
+    DEFAULT_FOLDERS.map((d) => d.folderType),
+  );
+});
+
+test('without a parent the seed stays at the root, as before', () => {
+  let n = 0;
+  assert.ok(buildDefaultFolders(() => `x${n++}`).every((f) => f.parentId === null));
+});
+
+test('a project dictates nothing to entities — like any, unlike a typed folder', () => {
+  // `project` is a FOLDER type, not an entity kind. Forcing entities inside to kind
+  // "project" would invent an entity kind that does not exist.
+  assert.equal(inheritedFolderType('project'), undefined);
+});

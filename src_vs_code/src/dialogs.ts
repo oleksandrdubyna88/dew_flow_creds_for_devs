@@ -39,6 +39,11 @@ export async function pickFolderType(
       label: `$(${ENTITY_KIND_LABELS[kind].icon}) ${ENTITY_KIND_LABELS[kind].label}`,
       value: kind as FolderType,
     })),
+    {
+      label: '$(project) Project',
+      description: 'creates the full folder set inside (db, vpn, ssh keys, ssh, passwords, terminal)',
+      value: 'project' as FolderType,
+    },
     { label: '$(folder) Any type', description: 'no restriction', value: 'any' as FolderType },
   ];
   for (const item of items) {

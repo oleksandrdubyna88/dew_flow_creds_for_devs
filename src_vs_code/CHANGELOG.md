@@ -41,6 +41,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Bounded on purpose: 256 KB of output per stream, 30 s per command (raisable to 120 s), 8 at a
   time, and every child killed when the window goes.
 
+## [0.46.0] — 2026-08-25
+
+### Added
+
+- **Project folders.** A new folder type in the picker: creating a *Project* folder seeds
+  the account's whole default structure inside it — `db`, `vpn`, `ssh keys`,
+  `ssh connections`, `passwords`, `terminal`, each with its type — so a client or an
+  environment gets its own complete miniature of the vault in one step.
+
+  A project dictates nothing to entities placed directly in it (it behaves like *Any
+  type* there — `project` is a folder type, not an entity kind), and its subfolders
+  enforce their types exactly as the top-level ones do. Renaming or deleting the seeded
+  subfolders is yours to do; they are ordinary folders once created.
+
+  Worth knowing: machines still on an older extension version will not recognise the new
+  folder type until they update — update everywhere before creating project folders in a
+  synced vault.
+
 ## [0.45.0] — 2026-08-25
 
 ### Added

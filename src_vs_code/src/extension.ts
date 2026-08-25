@@ -74,7 +74,7 @@ import {
 import { registerSecurityKey } from './webauthnPrf';
 import { validatePin } from './pinPolicy';
 import { CredTreeDataProvider, VIEW_ID } from './treeDataProvider';
-import { RemoteState, inheritedFolderType } from './defaultFolders';
+import { RemoteState, buildDefaultFolders, inheritedFolderType } from './defaultFolders';
 import * as childProcess from 'node:child_process';
 import * as fs from 'node:fs';
 import { resolveVpnLauncher } from './vpnExec';
@@ -729,13 +729,21 @@ ${detail}
     if (folderType === undefined) {
       return;
     }
+    const folderId = StorageManager.newId();
     await storage.addNode(location.accountId, {
-      id: StorageManager.newId(),
+      id: folderId,
       name,
       type: 'folder',
       parentId: location.parentId,
       folderType,
     });
+    if (folderType === 'project') {
+      // The feature itself: a project is the account's structure in miniature — the
+      // same named, typed set the account starts with, seeded inside this folder.
+      for (const sub of buildDefaultFolders(() => StorageManager.newId(), folderId)) {
+        await storage.addNode(location.accountId, sub);
+      }
+    }
     mutated();
   });
 
@@ -863,6 +871,7 @@ ${detail}
       if (
         required !== undefined &&
         required !== 'any' &&
+        required !== 'project' &&
         kindOf(element.node.details) !== required
       ) {
         void vscode.window.showWarningMessage(

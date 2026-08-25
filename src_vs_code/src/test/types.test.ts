@@ -131,3 +131,12 @@ test('the Microsoft scope for server calls is the configured API scope, or Graph
   assert.deepEqual(microsoftServerScopes(''), ['user.read']);
   assert.deepEqual(microsoftServerScopes(undefined), ['user.read']);
 });
+
+test('a folder of type project survives validation — it must sync', () => {
+  const { isTreeNode } = require('../types');
+
+  assert.equal(
+    isTreeNode({ id: 'f1', name: 'proj', type: 'folder', folderType: 'project', parentId: null }),
+    true,
+  );
+});
