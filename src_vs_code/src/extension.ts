@@ -17,6 +17,8 @@ import { showEntityView } from './entityViewPanel';
 import { GoogleAuthProvider } from './googleAuthProvider';
 import { nasPathFor, setAccountNasPath } from './nasPaths';
 import { describeSender } from './shareSender';
+import { keyringMayBeUnprotected, keyringWarningMessage } from './keyringWarning';
+import { confirmCommandMessage, isCommandTrusted, trustCommand } from './commandTrust';
 import {
   backupIntervalHoursFor,
   backupPathFor,
@@ -252,6 +254,8 @@ export function activate(context: vscode.ExtensionContext): void {
   useActions.register(sshTerminalAction(sshDeps));
   context.subscriptions.push(agentServer);
 
+  warnIfKeyringMissing(context);
+
   const register = (command: string, handler: (...args: unknown[]) => unknown) =>
     context.subscriptions.push(vscode.commands.registerCommand(command, handler));
 
@@ -389,6 +393,22 @@ ${detail}
       );
       return;
     }
+    // Read before it runs, once per exact line per machine. The justification for
+    // running unconfirmed was "these are commands you wrote yourself" — true until
+    // sync and Accept Share, both of which can deliver a command entry from
+    // somewhere else, under a name the reader has no reason to distrust.
+    if (!isCommandTrusted(context.globalState, element.node.id, line)) {
+      const choice = await vscode.window.showWarningMessage(
+        confirmCommandMessage(element.node.name, line),
+        { modal: true },
+        'Run',
+      );
+      if (choice !== 'Run') {
+        return;
+      }
+      await trustCommand(context.globalState, element.node.id, line);
+    }
+
     // A dedicated terminal per entry, reused: running the same command twice should not
     // leave two panels behind, and mixing it into whatever terminal happened to be open
     // loses the association between the entry and its output.
@@ -2143,6 +2163,41 @@ async function openDetails(
 function senderLocation(storage: StorageManager, accountId: string): string | undefined {
   const account = storage.getAccount(accountId);
   return account === undefined ? undefined : nasPathFor(account);
+}
+
+/**
+ * Say so, once, when this machine may have no keychain behind SecretStorage.
+ *
+ * <p>Once per machine, not once per window: VS Code says nothing about the
+ * fallback itself, so the person has to hear it — but a security warning that
+ * arrives every morning is one people learn to dismiss, and then the one that
+ * matters arrives after the habit is formed. The flag is deliberately in
+ * `globalState` rather than a setting: it is a "you have been told", not a
+ * preference anybody should have to find.</p>
+ */
+function warnIfKeyringMissing(context: vscode.ExtensionContext): void {
+  const KEY = 'credSshManager.keyringWarningShown';
+  if (context.globalState.get<boolean>(KEY) === true) {
+    return;
+  }
+  const unprotected = keyringMayBeUnprotected({
+    platform: process.platform,
+    dbusAddress: process.env.DBUS_SESSION_BUS_ADDRESS,
+    remoteName: vscode.env.remoteName,
+  });
+  if (!unprotected) {
+    return;
+  }
+  void context.globalState.update(KEY, true);
+  void vscode.window
+    .showWarningMessage(keyringWarningMessage(), 'How to fix this')
+    .then((choice) => {
+      if (choice === 'How to fix this') {
+        void vscode.env.openExternal(
+          vscode.Uri.parse('https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs#readme'),
+        );
+      }
+    });
 }
 
 function asElement(value: unknown): TreeElement | undefined {
