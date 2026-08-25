@@ -119,3 +119,15 @@ test('every entity kind has a label and an icon, so no picker can omit one', () 
     'the table and the kind list must not drift',
   );
 });
+
+test('the Microsoft scope for server calls is the configured API scope, or Graph for none', () => {
+  const { microsoftServerScopes } = require('../msScopes');
+
+  // A Graph token (user.read) can NEVER be validated by the vault server — Microsoft
+  // makes Graph access tokens unverifiable for third parties by design. The API scope
+  // from the operator's own Entra app registration is what produces a validatable token.
+  assert.deepEqual(microsoftServerScopes('api://1234/vault.access'), ['api://1234/vault.access']);
+  assert.deepEqual(microsoftServerScopes('  api://1234/vault.access  '), ['api://1234/vault.access']);
+  assert.deepEqual(microsoftServerScopes(''), ['user.read']);
+  assert.deepEqual(microsoftServerScopes(undefined), ['user.read']);
+});

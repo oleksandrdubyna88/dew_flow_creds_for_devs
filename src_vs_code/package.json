@@ -2,7 +2,7 @@
   "name": "creds-for-devs",
   "displayName": "CredsForDevs",
   "description": "Zero-trust credential manager for developers: SSH hosts, keys, VPN configs and database connections in VS Code. Secrets live in the OS keychain; optional end-to-end encrypted sync and team sharing through a self-hosted vault server that never sees a plaintext secret.",
-  "version": "0.42.1",
+  "version": "0.43.0",
   "publisher": "remsoftdev",
   "license": "MIT",
   "icon": "media/icon.png",
@@ -146,6 +146,11 @@
             "minimum": 0
           },
           "markdownDescription": "Per-account snapshot schedule, in **hours**: maps an account **email** to an interval, e.g. `{ \"work@corp.com\": 24, \"me@gmail.com\": 168 }`. `0` switches snapshots off for that account. Accounts without a mapping use `#credSshManager.backupIntervalHours#`.\n\nEasiest way to set: right-click the account -> *Set Backup Schedule…* — it offers hourly, every 6 hours, daily, weekly, off, or a custom number."
+        },
+        "credSshManager.microsoftApiScope": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "The API scope of **your organisation's own Entra app registration**, e.g. `api://<client-id>/vault.access`. Required for Microsoft sign-in against a Cred Vault Server.\n\nWhy: without this the extension sends a Microsoft **Graph** access token (`user.read`), and Graph tokens are deliberately unverifiable by third parties — every server rejects them with 401. A token minted for your own app registration is an ordinary validatable JWT.\n\nOne-time setup (Entra admin): **App registrations → New** (single tenant) → **Expose an API** → set Application ID URI `api://<client-id>` → **Add a scope** `vault.access` → **Add a client application** `aebc6443-996d-45c2-90f0-388ff96faa56` (Visual Studio Code) authorised for that scope. Then set the server's `MS_AUDIENCES=<client-id>` and put `api://<client-id>/vault.access` here."
         }
       }
     },

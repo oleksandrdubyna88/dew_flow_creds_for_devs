@@ -6,6 +6,7 @@ import { ServerTransport } from './serverTransport';
 import { StorageManager } from './storageManager';
 import { StoredAccount } from './types';
 import { VaultTransport, isServerLocation } from './vaultTransport';
+import { microsoftServerScopes } from './msScopes';
 
 /**
  * Resolves the transport for an account's configured location: a folder
@@ -68,9 +69,14 @@ export class TransportFactory {
       return this.googleAuth.getIdToken(account.accountId);
     }
     try {
+      // The API scope of the operator's Entra app registration, when configured — the
+      // only kind of Microsoft token a server can validate (see msScopes.ts).
+      const apiScope = vscode.workspace
+        .getConfiguration('credSshManager')
+        .get<string>('microsoftApiScope', '');
       const session = await vscode.authentication.getSession(
         account.provider,
-        ['user.read'],
+        microsoftServerScopes(apiScope),
         { createIfNone: false, account: { id: account.accountId, label: account.email } },
       );
       return session?.accessToken;

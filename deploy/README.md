@@ -27,10 +27,20 @@ Then pick at least one identity provider — `MS_TENANT`, `GOOGLE_ENABLED`, or `
 The server also refuses to start with none configured, since it would 401 every request and look
 exactly like a network fault.
 
-> **On `MS_AUDIENCES`:** leave it empty until the extension has its own app registration. An access
-> token minted for Microsoft Graph carries *Graph's* audience, so switching audience validation on
-> too early rejects every real token. Issuer trust, the domain boundary, and per-email scoping all
-> still apply meanwhile.
+> **On `MS_AUDIENCES`:** empty means the audience is not validated — any token from the trusted
+> tenant passes. To close that, give the extension its own app registration (one-time, Entra admin):
+>
+> 1. *App registrations → New* — e.g. "CredsForDevs Vault", single tenant.
+> 2. *Expose an API* → set the Application ID URI (`api://<client-id>`) → *Add a scope*
+>    `vault.access` (admins and users).
+> 3. *Add a client application*: `aebc6443-996d-45c2-90f0-388ff96faa56` (Visual Studio Code),
+>    authorised for that scope.
+> 4. Here: `MS_AUDIENCES=<client-id>,api://<client-id>`. In VS Code:
+>    `credSshManager.microsoftApiScope = api://<client-id>/vault.access`.
+>
+> This is not optional hardening if you use Microsoft sign-in: without a registration the
+> extension can only send a **Graph** token (`user.read`), which Microsoft makes unverifiable
+> by third parties — the server rejects it with 401 whatever you configure.
 
 > **On `LOCAL_SIGNING_KEY`:** anyone holding that string can mint a token for any email in
 > `ALLOWED_DOMAINS`. It exists for offline and air-gapped deployments and for the test suite. If you

@@ -41,6 +41,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Bounded on purpose: 256 KB of output per stream, 30 s per command (raisable to 120 s), 8 at a
   time, and every child killed when the window goes.
 
+## [0.43.0] — 2026-08-25
+
+### Fixed
+
+- **Microsoft sign-in against a vault server always got 401 — by design of Graph
+  tokens, not by any bug in the server.** The extension asked for `user.read`, which
+  yields a Microsoft **Graph** access token, and Microsoft deliberately makes Graph
+  tokens unverifiable by third parties. No server configuration could ever accept one.
+
+  New setting `credSshManager.microsoftApiScope`: the API scope of your organisation's
+  own Entra app registration (`api://<client-id>/vault.access`). With it set, the
+  extension requests a token minted for **your** API — an ordinary validatable JWT the
+  server pins with `MS_AUDIENCES`. The setting's description carries the one-time Entra
+  setup, including authorising VS Code's client id for the scope.
+
 ## [0.42.1] — 2026-08-24
 
 ### Changed
