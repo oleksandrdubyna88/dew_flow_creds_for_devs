@@ -2,7 +2,7 @@
   "name": "creds-for-devs",
   "displayName": "CredsForDevs",
   "description": "Zero-trust credential manager for developers: SSH hosts, keys, VPN configs and database connections in VS Code. Secrets live in the OS keychain; optional end-to-end encrypted sync and team sharing through a self-hosted vault server that never sees a plaintext secret.",
-  "version": "0.48.0",
+  "version": "0.49.0",
   "publisher": "remsoftdev",
   "license": "MIT",
   "icon": "media/icon.png",
@@ -510,6 +510,16 @@
           "light": "media/play-green-light.svg",
           "dark": "media/play-green.svg"
         }
+      },
+      {
+        "command": "credSshManager.exportExternal",
+        "title": "Export / Share Externally…",
+        "category": "CredsForDevs"
+      },
+      {
+        "command": "credSshManager.importExternal",
+        "title": "Import from External…",
+        "category": "CredsForDevs"
       }
     ],
     "menus": {
@@ -815,6 +825,16 @@
           "command": "credSshManager.runScript",
           "when": "view == credSshManagerView && viewItem =~ /:script/",
           "group": "2_actions@0"
+        },
+        {
+          "command": "credSshManager.exportExternal",
+          "when": "view == credSshManagerView && viewItem =~ /^(folder|entity)/",
+          "group": "3_manage@5"
+        },
+        {
+          "command": "credSshManager.importExternal",
+          "when": "view == credSshManagerView && viewItem == account",
+          "group": "3_manage@6"
         }
       ]
     }

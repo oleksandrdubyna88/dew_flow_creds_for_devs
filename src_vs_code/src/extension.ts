@@ -71,6 +71,8 @@ import {
   wrapWithPrf,
 } from './keyWrap';
 import {
+  decryptJson,
+  encryptJson,
   encryptJsonWrapped,
   readVaultWraps,
   resignEnvelopeWraps,
@@ -88,6 +90,7 @@ import { imageMime } from './attachment';
 import { syncReminderDue } from './syncReminder';
 import { substituteScript } from './scriptRender';
 import { scriptRunPlan } from './scriptRun';
+import { buildExternalBundle, isExternalBundle, remapExternalIds } from './externalBundle';
 import {
   AuthProvider,
   EntityKind,
@@ -1030,6 +1033,185 @@ ${detail}
       return;
     }
     await saveVpnConfigToFile(element.accountId, element.node.details, storage);
+  });
+
+  register('credSshManager.exportExternal', async (target) => {
+    vaultKeys.noteUserActivity(); // the user is here: postpone auto-lock
+    const element = asElement(target);
+    if (element?.kind !== 'node') {
+      return;
+    }
+    const { accountId, node } = element;
+
+    // A folder exports its whole subtree; an entity exports itself.
+    const all = storage.getNodes(accountId);
+    const picked: TreeNode[] = [];
+    const collect = (n: TreeNode): void => {
+      picked.push(n);
+      if (n.type === 'folder') {
+        for (const c of all.filter((x) => x.parentId === n.id)) {
+          collect(c);
+        }
+      }
+    };
+    collect(node);
+
+    const secrets: Record<string, import('./externalBundle').ExternalSecrets> = {};
+    for (const n of picked) {
+      if (n.type !== 'entity') {
+        continue;
+      }
+      const s: import('./externalBundle').ExternalSecrets = {};
+      s.password = await storage.getPassword(accountId, n.id);
+      s.privateKey = await storage.getPrivateKey(accountId, n.id);
+      s.vpnConfig = await storage.getVpnConfig(accountId, n.id);
+      s.dbConnection = await storage.getDbConnection(accountId, n.id);
+      s.notes = await storage.getNotes(accountId, n.id);
+      s.attachment = await storage.getAttachment(accountId, n.id);
+      s.image = await storage.getImage(accountId, n.id);
+      for (const key of Object.keys(s) as (keyof typeof s)[]) {
+        if (s[key] === undefined) {
+          delete s[key];
+        }
+      }
+      secrets[n.id] = s;
+    }
+    const bundle = buildExternalBundle(picked, secrets);
+
+    const mode = await vscode.window.showQuickPick(
+      [
+        {
+          label: '$(lock) Password-protected file',
+          detail: 'scrypt + AES-256-GCM under a password you tell the recipient out-of-band.',
+          plain: false,
+        },
+        {
+          label: '$(warning) Plain JSON — NOT protected',
+          detail: 'Readable by anyone who touches the file. Secrets included. Your explicit choice.',
+          plain: true,
+        },
+      ],
+      { title: `Export "${node.name}" for someone outside the organisation`, ignoreFocusOut: true },
+    );
+    if (mode === undefined) {
+      return;
+    }
+
+    let content: string;
+    let ext: string;
+    if (mode.plain) {
+      const sure = await vscode.window.showWarningMessage(
+        `The plain JSON file will contain ${Object.keys(secrets).length} entities' secrets readable by ANYONE. Continue?`,
+        { modal: true },
+        'Write plain JSON',
+      );
+      if (sure !== 'Write plain JSON') {
+        return;
+      }
+      content = JSON.stringify(bundle, null, 2);
+      ext = 'json';
+    } else {
+      const password = await vscode.window.showInputBox({
+        title: 'Password for the export',
+        prompt: 'Tell it to the recipient out-of-band — it is the only key to this file.',
+        password: true,
+        ignoreFocusOut: true,
+        validateInput: validatePin,
+      });
+      if (password === undefined) {
+        return;
+      }
+      content = encryptJson(bundle, password);
+      ext = 'enc';
+    }
+    const targetUri = await vscode.window.showSaveDialog({
+      title: 'Export to file',
+      defaultUri: vscode.Uri.file(path.join(os.homedir(), `${node.name}.${ext}`)),
+      filters: mode.plain ? { JSON: ['json'] } : { 'Encrypted export': ['enc'] },
+    });
+    if (targetUri === undefined) {
+      return;
+    }
+    await vscode.workspace.fs.writeFile(targetUri, Buffer.from(content, 'utf8'));
+    void vscode.window.showInformationMessage(
+      `Exported ${picked.length} node(s) to ${targetUri.fsPath}.`,
+    );
+  });
+
+  register('credSshManager.importExternal', async (target) => {
+    vaultKeys.noteUserActivity(); // the user is here: postpone auto-lock
+    const location = await resolveLocation(asElement(target), storage, 'Import into which profile?');
+    if (location === undefined) {
+      return;
+    }
+    const uris = await vscode.window.showOpenDialog({
+      title: 'Import from external file',
+      canSelectMany: false,
+      filters: { 'CredsForDevs export': ['enc', 'json'] },
+    });
+    const uri = uris?.[0];
+    if (uri === undefined) {
+      return;
+    }
+    const raw = Buffer.from(await vscode.workspace.fs.readFile(uri)).toString('utf8');
+
+    let payload: unknown;
+    try {
+      const parsed = JSON.parse(raw) as Record<string, unknown>;
+      if (parsed.format === 'creds-for-devs-external') {
+        payload = parsed;
+      } else {
+        // A sealed envelope: ask for the password it was exported with.
+        const password = await vscode.window.showInputBox({
+          title: 'Password for this export',
+          prompt: 'The password the sender protected the file with.',
+          password: true,
+          ignoreFocusOut: true,
+        });
+        if (password === undefined) {
+          return;
+        }
+        payload = decryptJson(raw, password);
+      }
+    } catch (error) {
+      void vscode.window.showErrorMessage(
+        `Import failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return;
+    }
+    if (!isExternalBundle(payload)) {
+      void vscode.window.showErrorMessage('Import failed: this is not a CredsForDevs export file.');
+      return;
+    }
+
+    // NEW ids for everything — the sender's ids belong to the sender's tree.
+    const remapped = remapExternalIds(payload, () => StorageManager.newId(), location.parentId);
+    for (const n of remapped.nodes) {
+      await storage.addNode(location.accountId, n);
+    }
+    for (const [id, s] of Object.entries(remapped.secrets)) {
+      await storage.setPassword(location.accountId, id, s.password);
+      if (s.privateKey !== undefined) {
+        await storage.setPrivateKey(location.accountId, id, s.privateKey);
+      }
+      if (s.vpnConfig !== undefined) {
+        await storage.setVpnConfig(location.accountId, id, s.vpnConfig);
+      }
+      if (s.dbConnection !== undefined) {
+        await storage.setDbConnection(location.accountId, id, s.dbConnection);
+      }
+      await storage.setNotes(location.accountId, id, s.notes);
+      if (s.attachment !== undefined) {
+        await storage.setAttachment(location.accountId, id, s.attachment);
+      }
+      if (s.image !== undefined) {
+        await storage.setImage(location.accountId, id, s.image);
+      }
+    }
+    mutated();
+    void vscode.window.showInformationMessage(
+      `Imported ${remapped.nodes.length} node(s) from ${path.basename(uri.fsPath)}.`,
+    );
   });
 
   register('credSshManager.runScript', (target) => {

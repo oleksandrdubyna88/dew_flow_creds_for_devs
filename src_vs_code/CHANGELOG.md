@@ -68,6 +68,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Bounded on purpose: 256 KB of output per stream, 30 s per command (raisable to 120 s), 8 at a
   time, and every child killed when the window goes.
 
+## [0.49.0] — 2026-08-25
+
+### Added
+
+- **Export for people outside the organisation.** Right-click a folder or an entity →
+  *Export / Share Externally…*: a folder takes its whole subtree, secrets included —
+  passwords, keys, VPN configs, connection strings, notes, attachments. Two forms:
+
+  - **Password-protected file** (default): the vault's own scrypt + AES-256-GCM envelope
+    under a password you pass to the recipient out-of-band.
+  - **Plain JSON — deliberately unprotected**: for feeding other tools. Chosen through
+    its own warning that says exactly what will be readable by anyone.
+
+  *Import from External…* on an account takes either form back — password prompt for
+  sealed files — and gives **every imported node a new id**: the sender's ids belong to
+  the sender's tree, and colliding with your own nodes would corrupt the next sync
+  merge. Round-tripped in tests and by drill: sealed, wrong-password refusal, plain.
+
 ## [0.48.0] — 2026-08-25
 
 ### Added
