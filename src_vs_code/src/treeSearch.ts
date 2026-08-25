@@ -141,10 +141,10 @@ function subtreeMatches(
   memo: FilterMemo | undefined,
 ): boolean {
   const compute = (): boolean => {
-    // The node's OWN text is checked before the cycle guard, always: a folder re-reached
-    // through a corrupt parent cycle still matches on its own name, and a row whose visible
-    // name contains the typed term must never be hidden by the guard that only exists to
-    // stop the walk from recursing forever.
+    // The node's own text first, then the cycle guard. The two orderings are EQUIVALENT — a
+    // node enters `visited` only after its own haystack was checked and failed, so a node
+    // re-reached through a cycle is by construction one that did not match — but this order
+    // says out loud that the guard's only job is termination, never hiding a visible match.
     if (matchesTerms(nodeHaystack(node), terms)) {
       return true;
     }

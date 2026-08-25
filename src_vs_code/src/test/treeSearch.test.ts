@@ -120,6 +120,29 @@ test('the count says how many entities the filter kept', () => {
   assert.equal(countMatches(s, ['a1'], searchTerms('nothinghere')), 0);
 });
 
+test('a folder inside a cycle still matches on its OWN name', () => {
+  // The guard exists to stop the walk recursing forever, and that is ALL it may do. A perf
+  // pass once moved it ahead of the node's own text check, which quietly turned it into a
+  // second thing: a row whose visible name contained the typed term was hidden, because the
+  // path that reached it had been walked before. Termination is the promise; hiding a
+  // visible match is not part of it.
+  const looping: Record<string, TreeNode[]> = {
+    root: [folder('f1', 'Passwords')],
+    f1: [folder('f2', 'two')],
+    f2: [folder('f1', 'Passwords')],
+  };
+
+  assert.deepEqual(
+    filterChildren(source(looping), 'a1', null, searchTerms('passwords')).map((n) => n.name),
+    ['Passwords'],
+  );
+  assert.deepEqual(
+    filterChildren(source(looping), 'a1', 'f2', searchTerms('passwords')).map((n) => n.name),
+    ['Passwords'],
+    'reached a second time through the cycle, it still says its own name',
+  );
+});
+
 test('a parent cycle in a corrupt vault does not hang the window', () => {
   // Nodes arrive by sync and by external import, so the tree is data, not an invariant.
   const looping: Record<string, TreeNode[]> = {
