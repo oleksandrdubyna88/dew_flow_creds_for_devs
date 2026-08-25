@@ -1,5 +1,6 @@
 import * as crypto from 'node:crypto';
-import { BackupError, SealedBlob, openBlob, sealBlob } from './cryptoUtils';
+import type { StoredAccount } from './types';
+import { BackupError, SealedBlob, encryptJsonWrapped, openBlob, sealBlob } from './cryptoUtils';
 
 /**
  * Multi-unlock key wrapping.
@@ -81,6 +82,38 @@ export function wrapWithPin(
     createdAt,
     ...sealBlob(masterKey.toString('base64'), accountId + pin),
   };
+}
+
+export interface WrappedVaultInit {
+  /** The v3 (wrapped/HKDF) envelope, ready to write. */
+  content: string;
+  /** The fresh master key it was sealed under — cache it so unlock stays cheap. */
+  masterKey: Buffer;
+  /** The wraps embedded in `content` — for now just the pin-wrap. */
+  wraps: KeyWrap[];
+}
+
+/**
+ * Build a v3 envelope for a vault that has only a PIN.
+ *
+ * <p>This is what replaces the v1 (scrypt-per-operation) envelope, for a migrating vault and
+ * for a brand-new one: a fresh random master key, sealed ONCE in a pin-wrap, with the payload
+ * encrypted under it by HKDF. After this, unlock unwraps the master with one scrypt and every
+ * read and write is cheap — where v1 ran a full scrypt on each. Composes the existing pieces
+ * (`wrapWithPin` + `encryptJsonWrapped`) rather than inventing a second wrapping path.</p>
+ */
+export function wrapPinVault(
+  payload: unknown,
+  accountId: string,
+  pin: string,
+  createdAt: number,
+  account?: StoredAccount,
+  shares?: unknown[],
+): WrappedVaultInit {
+  const masterKey = crypto.randomBytes(32);
+  const wraps = [wrapWithPin(masterKey, accountId, pin, createdAt)];
+  const content = encryptJsonWrapped(payload, masterKey, wraps, account, shares);
+  return { content, masterKey, wraps };
 }
 
 /** Wrap the master key under one security key's PRF secret. */

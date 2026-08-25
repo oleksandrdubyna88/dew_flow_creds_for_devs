@@ -4,7 +4,6 @@ import {
   BackupError,
   decryptJson,
   decryptJsonWithMasterKey,
-  encryptJson,
   encryptJsonWrapped,
   readVaultVersion,
   readVaultWraps,
@@ -16,6 +15,7 @@ import {
   isKeyWrap,
   unwrapWithPin,
   unwrapWithPrf,
+  wrapPinVault,
 } from './keyWrap';
 import { authenticateSecurityKey } from './webauthnPrf';
 import { validatePin } from './pinPolicy';
@@ -40,7 +40,9 @@ function pinKey(accountId: string): string {
 }
 
 export type VaultKey =
-  | { version: 1; passphrase: string }
+  // v1 is READ-ONLY now: it decrypts a legacy PIN-only file, and carries the PIN so the
+  // next write can upgrade it to v3. No v1 envelope is ever written again.
+  | { version: 1; passphrase: string; pin: string }
   | { version: 2; masterKey: Buffer; wraps: KeyWrap[] };
 
 // Wiping a key, and handing one out without aliasing the cached Buffer, live in a pure
@@ -181,7 +183,7 @@ export class VaultKeys {
       if (pin === undefined) {
         return undefined;
       }
-      return { version: 1, passphrase: account.accountId + pin };
+      return { version: 1, passphrase: account.accountId + pin, pin };
     }
 
     // Unlocking a LOCKED vault has to cost a gesture. Everything below that opens it
@@ -298,16 +300,36 @@ export class VaultKeys {
       : decryptJsonWithMasterKey(vaultContent, key.masterKey);
   }
 
-  /** Re-encrypt a vault payload with the same key material. */
+  /**
+   * Write a vault payload — always as v3.
+   *
+   * <p>A v2 key writes wrapped with its existing master. A <b>v1</b> key is upgraded on the
+   * spot: a PIN-only vault becomes wrapped/HKDF (`wrapPinVault`), so scrypt runs once at the
+   * next unlock instead of on every read and write, and a brand-new PIN-only vault is v3 from
+   * its very first write. The new master is cached for the account, so this session's later
+   * unlocks take the fast path; the next unlock from disk reads it back out of the pin-wrap.</p>
+   */
   encrypt(
     payload: unknown,
     key: VaultKey,
     account: StoredAccount,
     shares: unknown[] | undefined,
   ): string {
-    return key.version === 1
-      ? encryptJson(payload, key.passphrase, account, shares)
-      : encryptJsonWrapped(payload, key.masterKey, key.wraps, account, shares);
+    if (key.version === 2) {
+      return encryptJsonWrapped(payload, key.masterKey, key.wraps, account, shares);
+    }
+    const cached = this.cache.get(account.accountId);
+    if (cached?.version === 2) {
+      // Already upgraded this session — reuse that master rather than mint a second one.
+      return encryptJsonWrapped(payload, cached.masterKey, cached.wraps, account, shares);
+    }
+    const init = wrapPinVault(payload, account.accountId, key.pin, Date.now(), account, shares);
+    this.cache.set(account.accountId, {
+      version: 2,
+      masterKey: init.masterKey,
+      wraps: init.wraps,
+    });
+    return init.content;
   }
 
   private remember(account: StoredAccount, masterKey: Buffer, wraps: KeyWrap[]): VaultKey {

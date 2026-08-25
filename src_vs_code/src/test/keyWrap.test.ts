@@ -24,6 +24,7 @@ import {
   wrapWithPrf,
   prfSaltsByCredential,
   wrapForCredential,
+  wrapPinVault,
 } from '../keyWrap';
 
 const NOW = 1_800_000_000_000;
@@ -262,4 +263,53 @@ test('the assertion’s credential picks its OWN wrap — no fallback to the fir
 
   assert.equal(wrapForCredential([a, b], 'cred-B'), b);
   assert.equal(wrapForCredential([a, b], 'cred-C'), undefined);
+});
+
+test('wrapPinVault produces a v3 envelope that opens with the PIN and not a wrong one', () => {
+  // The migration off v1: a PIN-only vault becomes wrapped/HKDF, so scrypt runs once at
+  // unlock instead of on every read and write. It must round-trip and reject a wrong PIN.
+  const payload = { nodes: [{ id: 'a', name: 'Server A', type: 'entity' }], secret: 'hunter2' };
+
+  const init = wrapPinVault(payload, ACCOUNT, '2468', NOW);
+
+  // The file is version 3 (wrapped/fast), carrying exactly one pin-wrap.
+  assert.equal(readVaultVersion(init.content), 3);
+  const wraps = readVaultWraps(init.content).filter(isKeyWrap);
+  assert.equal(wraps.length, 1);
+  assert.equal(wraps[0].kind, 'pin');
+
+  // The pin-wrap recovers the same master key the payload was sealed under.
+  const recovered = unwrapWithPin(wraps[0], ACCOUNT, '2468');
+  assert.deepEqual(recovered, init.masterKey);
+  assert.deepEqual(decryptJsonWithMasterKey(init.content, recovered), payload);
+
+  // And the payload is readable with the returned master directly.
+  assert.deepEqual(decryptJsonWithMasterKey(init.content, init.masterKey), payload);
+
+  // A wrong PIN cannot unwrap it.
+  assert.throws(
+    () => unwrapWithPin(wraps[0], ACCOUNT, '9999'),
+    (e: unknown) => e instanceof BackupError,
+  );
+});
+
+test('migrating a v1 PIN-only vault to v3 preserves the data and the SAME PIN opens it', () => {
+  // The exact flow SyncManager runs: read+decrypt a legacy v1 file, then write it back as
+  // v3 via wrapPinVault. The guarantee that matters: nobody is locked out — the same PIN
+  // still opens the vault, and every secret survives.
+  const pin = 'my-sync-pin';
+  const v1 = encryptJson(payload, ACCOUNT + pin, undefined, []);
+  assert.equal(readVaultVersion(v1), 1);
+
+  const decrypted = decryptJson(v1, ACCOUNT + pin); // what unlock+decrypt yields
+  const migrated = wrapPinVault(decrypted, ACCOUNT, pin, NOW);
+
+  assert.equal(readVaultVersion(migrated.content), 3);
+  const pinWrap = readVaultWraps(migrated.content).filter(isKeyWrap)[0];
+  const master = unwrapWithPin(pinWrap, ACCOUNT, pin); // same PIN, one scrypt
+  assert.deepEqual(decryptJsonWithMasterKey(migrated.content, master), payload);
+
+  // The legacy v1 file still reads too — the upgrade is lazy, not a forced rewrite of
+  // files we might not be able to write.
+  assert.deepEqual(decryptJson(v1, ACCOUNT + pin), payload);
 });

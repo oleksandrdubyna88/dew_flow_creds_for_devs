@@ -38,7 +38,7 @@ test('detaching a v2 key does not alias the cached buffer', () => {
 });
 
 test('a v1 key has no wipeable bytes and is passed through unchanged', () => {
-  const k = { version: 1 as const, passphrase: 'acct-pin' };
+  const k = { version: 1 as const, passphrase: 'acct-pin', pin: 'pin' };
   assert.equal(detachVaultKey(k), k);
   wipeVaultKey(k); // must not throw; there is nothing to zero
   assert.equal(k.passphrase, 'acct-pin');

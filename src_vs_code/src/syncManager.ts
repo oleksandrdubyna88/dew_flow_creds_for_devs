@@ -5,13 +5,12 @@ import { StorageManager } from './storageManager';
 import { sharesFromEnvelope } from './shareFormat';
 import { emptySnapshot, mergeProfiles, ProfileSnapshot } from './syncMerge';
 import {
-  encryptJson,
   encryptJsonWrapped,
   macStatusBlocksSync,
   readVaultWraps,
   verifyEnvelopeMac,
 } from './cryptoUtils';
-import { isKeyWrap, webauthnWraps, upsertWrap, wrapWithPin } from './keyWrap';
+import { isKeyWrap, webauthnWraps, upsertWrap, wrapWithPin, wrapPinVault } from './keyWrap';
 import { TransportFactory } from './transportFactory';
 import { VaultKeys } from './vaultKeys';
 import { validatePin } from './pinPolicy';
@@ -206,8 +205,9 @@ export class SyncManager implements vscode.Disposable {
       );
       content = encryptJsonWrapped(payload, key.masterKey, wraps, account, shares);
     } else {
-      // v1: the passphrase IS accountId+PIN, so re-encrypt under the new one.
-      content = encryptJson(payload, account.accountId + newPin, account, shares);
+      // v1: a PIN change is also the moment to leave v1 behind — write v3 with the new
+      // PIN's wrap instead of another scrypt-per-op envelope.
+      content = wrapPinVault(payload, account.accountId, newPin, Date.now(), account, shares).content;
     }
     await transport.writeVault(account, content, []);
     this.keys.clearCache(account.accountId);
@@ -393,7 +393,13 @@ export class SyncManager implements vscode.Disposable {
     if (localChanged) {
       await this.storage.applySnapshot(account.accountId, merged);
     }
-    if (remoteChanged || !remoteExists) {
+    // A legacy PIN-only (v1) file we just decrypted is rewritten even with nothing to sync,
+    // so it migrates to v3 promptly — `encrypt` produces v3 for a v1 key. This is only
+    // reached after a SUCCESSFUL decrypt (a wrong PIN threw above), so it can never overwrite
+    // an unreadable file with local-only data.
+    const migrateV1 = raw !== undefined && key.version === 1;
+    const willWrite = remoteChanged || !remoteExists || migrateV1;
+    if (willWrite) {
       const content = this.keys.encrypt(
         { ...merged, exportedAt: Date.now() },
         key,
@@ -406,7 +412,7 @@ export class SyncManager implements vscode.Disposable {
       // re-decrypts once and re-caches — the idle-cycle case is what this optimizes.
       this.decryptedByHash.delete(account.accountId);
     }
-    return { applied: localChanged, pushed: remoteChanged || !remoteExists };
+    return { applied: localChanged, pushed: willWrite };
   }
 
   private warnTampered(account: StoredAccount): void {
