@@ -76,12 +76,25 @@ const storage = {
   },
 };
 const storageDir = fs.mkdtempSync(path.join(os.tmpdir(), 'creds-itest-'));
+// Recursive on purpose. Materialized keys live in `keys/<pid>/`, not `keys/` — each window
+// owns a subdirectory so one window's purge can never delete another's in-use file. This
+// helper read only the top level, so it returned [] no matter what was on disk: the
+// concurrent-key check could never pass, and the two checks either side of it — "leaves no
+// decrypted key on disk" and "no key material is left" — passed without ever looking at a
+// file. A test that cannot fail is worse than one that cannot pass; both were untrue here.
 const keyFiles = () => {
-  try {
-    return fs.readdirSync(path.join(storageDir, 'keys')).filter((f) => f.endsWith('.key'));
-  } catch {
-    return [];
-  }
+  const walk = (dir) => {
+    let entries;
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return [];
+    }
+    return entries.flatMap((e) =>
+      e.isDirectory() ? walk(path.join(dir, e.name)) : e.name.endsWith('.key') ? [e.name] : [],
+    );
+  };
+  return walk(path.join(storageDir, 'keys'));
 };
 // Only ever written to disk and pointed at with `-i`; ssh never gets far enough
 // to parse it in these cases, so its contents are irrelevant to what is asserted.

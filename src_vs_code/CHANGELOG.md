@@ -68,6 +68,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Bounded on purpose: 256 KB of output per stream, 30 s per command (raisable to 120 s), 8 at a
   time, and every child killed when the window goes.
 
+## [0.57.2] — 2026-08-25
+
+### Fixed
+
+- **A refused agent token said "unknown token" instead of "denied".** Pressing **Deny** settled the
+  grant correctly — and then the next *Share with Claude Code* swept it away, because the registry
+  deleted every refusal whenever it minted anything, reasoning that an unknown token is refused just
+  as well. It is not the same answer: denied means a person said no and retrying is pointless;
+  unknown means the token is not recognised, so an agent's obvious next move is to ask for a fresh
+  one — reopening the very dialog that was just refused. Refusals are now kept as bounded tombstones
+  (64 of them, oldest dropped first), so a Deny keeps meaning Deny for the life of the window.
+
+### Fixed (tests)
+
+- **Three assertions about decrypted key material were not testing anything.** The broker's
+  integration test looked for `*.key` in `keys/` without recursing, but materialized keys have lived
+  in `keys/<pid>/` since each window got its own directory — so the helper always returned an empty
+  list. One check could therefore never pass, and the two around it — *leaves no decrypted key on
+  disk* and *no key material is left* — could never fail. The production code was correct
+  throughout; the test was blind. It now walks the tree.
+
+- **The integration test runs in CI.** It drives the real broker over real HTTP and spawns the real
+  CLI, and it ran nowhere automatic — which is how both defects above reached released builds and
+  stayed. `npm run itest:server` stays manual on purpose: it needs a Cred Vault Server started by
+  hand, and a step that fails for a missing server teaches people to ignore red.
+
 ## [0.57.1] — 2026-08-25
 
 ### Performance

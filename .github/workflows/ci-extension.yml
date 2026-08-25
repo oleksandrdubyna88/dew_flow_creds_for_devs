@@ -58,6 +58,21 @@ jobs:
       - name: Test
         run: npm test
 
+      # Drives the REAL broker over real HTTP and spawns the real CLI as a subprocess — the
+      # only check that exercises the loopback surface end to end, and self-contained, so it
+      # belongs here. It ran nowhere until now, which is how two defects reached released
+      # builds and stayed: a denied grant answering "unknown token", and a key-file assertion
+      # that could never fail because it looked in the wrong directory. A test outside CI is
+      # a document, not a test.
+      #
+      # `npm run itest:server` is deliberately NOT here: it drives ServerTransport against a
+      # Cred Vault Server the operator starts by hand (see the header of
+      # scripts/server-transport-itest.cjs). Adding it would mean building and running the
+      # .NET server in this workflow; until someone does that, it stays a manual check rather
+      # than a step that fails for the wrong reason.
+      - name: Integration test (agent broker)
+        run: npm run itest:agent
+
       # Packaging proves the manifest is publishable: a missing icon, licence or
       # repository field fails here rather than at `vsce publish` time.
       - name: Package

@@ -48,6 +48,16 @@ export interface GrantLimits {
 
 export const NO_LIMITS: GrantLimits = { idleMs: 0, maxUses: 0 };
 
+/**
+ * How many refusals stay on record.
+ *
+ * <p>A refusal has to keep answering — see `prune` — but it must not accumulate for the life
+ * of a long-running window. Sixty-four is far more than any session's refusals and costs a
+ * few hundred bytes; past that the oldest refusal degrades to "unknown", which is the same
+ * answer the agent would get for a token from a previous window anyway.</p>
+ */
+export const MAX_DENIED_TOMBSTONES = 64;
+
 export type GrantExpiry = 'idle' | 'uses';
 
 export type GrantLookup =
@@ -149,21 +159,45 @@ export class GrantRegistry {
     return this.settle(secret, 'denied');
   }
 
+  /** How many refusals are still on record. */
+  deniedCount(): number {
+    let count = 0;
+    for (const grant of this.grants.values()) {
+      if (grant.status === 'denied') {
+        count += 1;
+      }
+    }
+    return count;
+  }
+
   /**
    * Reclaim dead grants before minting another.
    *
-   * <p>A <b>denied</b> grant is terminal — it exists only to refuse, and an unknown token is
-   * refused just the same, so deleting it changes nothing observable. An <b>allowed</b> grant
-   * is a live capability the person deliberately handed an agent, so the cap reclaims the
-   * oldest NON-allowed grant first (see oldestEvictable) and only drops an allowed one if the
-   * whole map is allowed grants — the bounded last resort.</p>
+   * <p>A <b>denied</b> grant is kept as a tombstone rather than swept. The sweep used to
+   * delete every refusal on the next mint, reasoning that an unknown token is refused just
+   * the same — false exactly where it matters. "Denied" and "unknown" are different answers
+   * to whoever holds the token: denied means a person said no, so retrying is pointless;
+   * unknown means the token is not recognised, so asking for a fresh one is the obvious next
+   * move — and that reopens the very modal the person just refused. The broker answers 403
+   * and 401, the CLI exits 92 and 91, so the distinction is visible all the way out. The
+   * tombstones are bounded rather than swept: oldest refusals go first, and they are also the
+   * cheapest thing the size cap below can reclaim.</p>
+   *
+   * <p>An <b>allowed</b> grant is a live capability the person deliberately handed an agent,
+   * so the cap reclaims the oldest NON-allowed grant first (see oldestEvictable) and only
+   * drops an allowed one if the whole map is allowed grants — the bounded last resort.</p>
    */
   // eslint-disable-next-line complexity
   private prune(): void {
+    // Map iteration is insertion-ordered, so this drops the oldest refusals first.
+    const denied: string[] = [];
     for (const [secret, grant] of this.grants) {
       if (grant.status === 'denied') {
-        this.grants.delete(secret);
+        denied.push(secret);
       }
+    }
+    for (const secret of denied.slice(0, Math.max(0, denied.length - MAX_DENIED_TOMBSTONES))) {
+      this.grants.delete(secret);
     }
     while (this.grants.size >= GrantRegistry.MAX_GRANTS) {
       const victim = this.oldestEvictable();

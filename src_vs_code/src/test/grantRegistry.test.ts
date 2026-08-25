@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { GrantRegistry } from '../grantRegistry';
+import { GrantRegistry, MAX_DENIED_TOMBSTONES } from '../grantRegistry';
 
 /**
  * The consent state machine. A grant is minted pending, settles once, and
@@ -70,19 +70,43 @@ test('the log label never contains the whole secret', () => {
   assert.equal(GrantRegistry.describe(grant).includes(grant.secret), false);
 });
 
-test('denied grants do not accumulate — the next mint reclaims them', () => {
-  // Every share adds a grant; without this, a long-lived window grows the map forever.
+test('a denied grant stays denied, however many grants are minted after it', () => {
+  // It used to be swept on the next mint, on the reasoning that "unknown" refuses just as
+  // well as "denied". It does not: they are different answers to whoever holds the token.
+  // Denied means a person said no — retrying is pointless. Unknown means the token is not
+  // recognised — asking for a fresh one is the obvious next move, and that reopens the
+  // modal the person just refused. The broker maps the two to 403 and 401, and the CLI to
+  // exit 92 and 91, so the difference is visible all the way out.
   const registry = new GrantRegistry();
-  const a = mint(registry);
-  registry.deny(a.secret);
-  const b = mint(registry);
-  registry.deny(b.secret);
+  const refused = mint(registry);
+  registry.deny(refused.secret);
 
-  mint(registry); // triggers the sweep
+  for (let i = 0; i < 5; i += 1) {
+    mint(registry);
+  }
 
-  // A refused token being unknown afterwards is the same refusal to any agent holding it.
-  assert.equal(registry.get(a.secret), undefined);
-  assert.equal(registry.get(b.secret), undefined);
+  assert.equal(registry.get(refused.secret)?.status, 'denied');
+  assert.equal(registry.lookup(refused.secret).kind, 'live', 'still addressable, so it can refuse');
+});
+
+test('denied tombstones are bounded — they answer, they do not accumulate forever', () => {
+  // The sweep existed for a real reason: every share adds a grant, and a long-lived window
+  // would grow the map without limit. Keeping the answer costs a bounded number of entries.
+  const registry = new GrantRegistry();
+  const first = mint(registry);
+  registry.deny(first.secret);
+
+  for (let i = 0; i < MAX_DENIED_TOMBSTONES + 10; i += 1) {
+    const g = mint(registry);
+    registry.deny(g.secret);
+  }
+  mint(registry); // one more sweep
+
+  assert.equal(registry.get(first.secret), undefined, 'the oldest refusal is the one that goes');
+  assert.ok(
+    registry.deniedCount() <= MAX_DENIED_TOMBSTONES,
+    `kept ${registry.deniedCount()} tombstones`,
+  );
 });
 
 test('an allowed grant is a live capability and survives later mints', () => {

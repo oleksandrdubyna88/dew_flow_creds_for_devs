@@ -811,6 +811,20 @@ not PIN-derived: the tree stays visible while the OS session is unlocked (the sa
 other secret already relies on), and a lost keychain loses only a cache the next sync rebuilds.
 Tombstones/horizon stay plaintext — ids and version vectors, no topology.
 
+### Refusals are remembered (0.57.2)
+
+`GrantRegistry.prune()` used to delete every `denied` grant before minting the next one, on the
+reasoning that an unknown token is refused just the same. It is not the same answer: the broker maps
+denied to 403 and unknown to 401, the CLI to exits 92 and 91, and an agent told "unknown" will
+sensibly ask for a fresh token — reopening the dialog the person just refused. Refusals are kept as
+tombstones bounded by `MAX_DENIED_TOMBSTONES` (64, oldest dropped first), which also makes them the
+cheapest thing the 256-grant cap can reclaim.
+
+`scripts/agent-broker-itest.cjs` now runs in `ci-extension.yml`. Its `keyFiles()` helper had read
+`keys/` without recursing while materialized keys live in `keys/<pid>/` — so it always returned an
+empty list, which made one assertion impossible to pass and the two around it impossible to fail.
+`itest:server` stays manual: it needs a Cred Vault Server started by hand.
+
 ### The block-B fixes (0.57.0)
 
 - **KDF off the UI thread.** `cryptoUtils.sealBlobAsync/openBlobAsync/decryptJsonAsync` and
