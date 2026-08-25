@@ -1,4 +1,5 @@
 using Serilog;
+using Serilog.Core;
 using Serilog.Events;
 
 namespace CredVaultServer;
@@ -34,10 +35,10 @@ namespace CredVaultServer;
 public static class CredVaultLogging
 {
     private const string ConsoleTemplate =
-        "[{Timestamp:HH:mm:ss} {Level:u3}] {SourceContext}: {Message:lj}{NewLine}{Exception}";
+        "[{UtcTimestamp:HH:mm:ss}Z {Level:u3}] {SourceContext}: {Message:lj}{NewLine}{Exception}";
 
     private const string FileTemplate =
-        "[{Timestamp:yyyy-MM-dd HH:mm:ss.fff} {Level:u3}] {SourceContext}: {Message:lj} {Properties:j}{NewLine}{Exception}";
+        "[{UtcTimestamp:yyyy-MM-dd HH:mm:ss.fff}Z {Level:u3}] {SourceContext}: {Message:lj} {Properties:j}{NewLine}{Exception}";
 
     /// <summary>
     /// Configures Serilog and installs it as the host's logger. Call it as the first
@@ -51,6 +52,30 @@ public static class CredVaultLogging
     private static LoggerConfiguration Apply(
         this LoggerConfiguration configuration,
         Func<LoggerConfiguration, LoggerConfiguration> configure) => configure(configuration);
+
+    /// <summary>
+    /// Adds <c>UtcTimestamp</c>, because Serilog's own <c>{Timestamp}</c> is local.
+    ///
+    /// <para>
+    /// <c>LogEvent.Timestamp</c> is a <see cref="DateTimeOffset"/> taken with the machine's
+    /// offset, so <c>{Timestamp:HH:mm:ss}</c> renders local time — while the file this
+    /// line goes into is named from <c>DateTime.UtcNow</c>. One file carrying two
+    /// timezones is not a cosmetic problem: the one moment anybody opens it is while
+    /// lining it up against another host's log, and the shared logging rule asks for UTC
+    /// in the folder, the file name and every line for exactly that reason.
+    /// </para>
+    ///
+    /// <para>
+    /// It reads as a non-issue here because the container happens to run UTC. The rule
+    /// exists so it does not depend on happening to.
+    /// </para>
+    /// </summary>
+    private sealed class UtcTimestampEnricher : ILogEventEnricher
+    {
+        public void Enrich(LogEvent logEvent, ILogEventPropertyFactory factory) =>
+            logEvent.AddPropertyIfAbsent(
+                factory.CreateProperty("UtcTimestamp", logEvent.Timestamp.UtcDateTime));
+    }
 
     public static void AddCredVaultLogging(this IHostApplicationBuilder builder, string appName)
     {
@@ -92,6 +117,7 @@ public static class CredVaultLogging
                 return c;
             })
             .Enrich.FromLogContext()
+            .Enrich.With(new UtcTimestampEnricher())
             .Enrich.WithProperty("Application", appName)
             .Enrich.WithProperty("ProcessId", Environment.ProcessId)
             .WriteTo.Console(outputTemplate: ConsoleTemplate);
