@@ -86,6 +86,8 @@ import { validatePin } from './pinPolicy';
 import { CredTreeDataProvider, VIEW_ID } from './treeDataProvider';
 import { EntityFlagsRefresher, entityFlagSource } from './entityFlags';
 import { maskEntriesFor } from './maskEntries';
+import { MaskEntry, buildMaskTable } from './secretMasker';
+import { describeScan, scanForSecrets } from './secretScan';
 import { RemoteState, buildDefaultFolders, inheritedFolderType } from './defaultFolders';
 import * as childProcess from 'node:child_process';
 import * as fs from 'node:fs';
@@ -428,6 +430,52 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
   register('credSshManager.clearSearch', () => {
     provider.setSearchQuery('');
+  });
+
+  /**
+   * Is a vault secret in this text?
+   *
+   * <p>Asked, never watched. VS Code exposes no clipboard-change event, and on Windows the
+   * clipboard is captured by Clipboard History at the moment of the copy — before any
+   * extension could react — which `secretClipboard.ts` already documents for its own TTL
+   * clearing. A background watcher would be a promise the platform cannot keep, so the answer
+   * is exact and on demand instead.</p>
+   */
+  const scanText = async (text: string, what: string): Promise<void> => {
+    vaultKeys.noteUserActivity(); // the user is here: postpone auto-lock
+    const entries: MaskEntry[] = [];
+    for (const account of storage.getAccounts()) {
+      for (const node of storage.getNodes(account.accountId)) {
+        if (node.type === 'entity') {
+          entries.push(...(await maskEntriesFor(storage, account.accountId, node.id)));
+        }
+      }
+    }
+    const report = scanForSecrets(text, buildMaskTable(entries));
+    const message = describeScan(report, what);
+    // A hit is a warning, a miss is information — the two must not look alike at a glance.
+    if (report.total > 0) {
+      void vscode.window.showWarningMessage(message);
+    } else {
+      void vscode.window.showInformationMessage(message);
+    }
+  };
+
+  register('credSshManager.scanClipboard', async () => {
+    await scanText(await vscode.env.clipboard.readText(), 'the clipboard');
+  });
+
+  register('credSshManager.scanDocument', async () => {
+    const editor = vscode.window.activeTextEditor;
+    if (editor === undefined) {
+      void vscode.window.showInformationMessage('Open a file first, then run this to scan it.');
+      return;
+    }
+    const selection = editor.selection.isEmpty ? undefined : editor.document.getText(editor.selection);
+    await scanText(
+      selection ?? editor.document.getText(),
+      selection === undefined ? 'this file' : 'the selection',
+    );
   });
   /**
    * Say a refusal out loud after a sync somebody asked for.

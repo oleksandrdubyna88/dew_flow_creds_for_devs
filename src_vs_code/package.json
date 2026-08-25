@@ -2,7 +2,7 @@
   "name": "creds-for-devs",
   "displayName": "CredsForDevs",
   "description": "Zero-trust credential manager for developers: SSH hosts and keys, VPN configs, databases, scripts and the CLI commands nobody remembers — in VS Code. Secrets live in the OS keychain; sync and team sharing are end-to-end encrypted, so the self-hosted vault server never sees plaintext. An AI coding agent can use an SSH credential without ever receiving it.",
-  "version": "0.58.1",
+  "version": "0.58.2",
   "publisher": "remsoftdev",
   "license": "MIT",
   "icon": "media/icon.png",
@@ -590,6 +590,16 @@
         "title": "Clear Filter",
         "category": "CredsForDevs",
         "icon": "$(close)"
+      },
+      {
+        "command": "credSshManager.scanClipboard",
+        "title": "Check Clipboard for Vault Secrets",
+        "category": "CredsForDevs"
+      },
+      {
+        "command": "credSshManager.scanDocument",
+        "title": "Scan This File for Vault Secrets",
+        "category": "CredsForDevs"
       }
     ],
     "menus": {

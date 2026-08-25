@@ -99,6 +99,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Bounded on purpose: 256 KB of output per stream, 30 s per command (raisable to 120 s), 8 at a
   time, and every child killed when the window goes.
 
+## [0.58.2] — 2026-08-25
+
+### Security
+
+- **An entry's name could carry instructions into an AI agent's context.** *Share with Claude
+  Code* builds a block of text you paste into an agent, and every line of it reads to the model
+  as instruction. The entry's name was interpolated into that text — and a name is not always
+  your own writing: it arrives with an accepted share (anyone who can write to a shared folder
+  chooses it) or from an imported file, and any string is accepted, newlines included. A name
+  ending the quoted phrase and opening a new line could therefore appear in the middle of the
+  instructions, in the same imperative voice as the rest, telling the agent to fetch and run
+  something. Nothing was ever executed by the extension; the target was the model reading the
+  snippet.
+
+  Names and targets in that snippet are now flattened to one line, their quotes neutralised so
+  they cannot close the phrase they sit in, and bounded — none of which a display name has any
+  legitimate need for. The vault still shows you the name exactly as it was sent, however odd:
+  only this one destination treats text as instruction, so only this one sanitises. Both
+  payloads are tests.
+
+  Credit where due: a parallel session found the same *shape* of defect in its own work — an
+  entity name reaching a shell command a person is told to paste — and flagged the pattern
+  rather than only fixing its own instance. This is that pattern, in a different place.
+
+### Added
+
+- **Check Clipboard for Vault Secrets** and **Scan This File for Vault Secrets** — ask, and get
+  an exact answer about what is in the clipboard, the open file, or the selection: which vault
+  secrets are in it and on which line, never the value itself. There is no background watcher
+  and the listing says why: VS Code offers no clipboard-change event, and Windows captures the
+  clipboard at the moment of the copy, so anything continuous would be a promise the platform
+  cannot keep.
+
 ## [0.58.1] — 2026-08-25
 
 ### Added

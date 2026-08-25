@@ -42,6 +42,12 @@ const PALETTE_ONLY = new Set([
   // TreeItem property and therefore invisible to a manifest check. A menu entry for it
   // would be a second door to the thing the row already is.
   'credSshManager.search',
+  // Asked for, not offered. Both scans answer "is a vault secret in this text" about something
+  // outside the tree — the clipboard, or the open editor — so there is no row to hang them on,
+  // and putting them in the editor's context menu would advertise a scan on every right-click
+  // in every file.
+  'credSshManager.scanClipboard',
+  'credSshManager.scanDocument',
 ]);
 
 // eslint-disable-next-line complexity
