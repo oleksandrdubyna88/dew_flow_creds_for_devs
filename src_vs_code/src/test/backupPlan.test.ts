@@ -61,7 +61,10 @@ test('a PIN passphrase can NEVER open a v2 file — restore must go through the 
   const wrap = wrapWithPin(master, account.accountId, '123456', 1);
   const file = encryptJsonWrapped({ nodes: [] }, master.toString('base64'), [wrap], account, undefined);
 
-  assert.equal(readVaultVersion(file), 2);
+  // 3, not 2: a wrapped vault is written at v3 since the payload key moved to HKDF
+  // and the MAC grew to cover the sealed blob. v2 files still READ — that is the
+  // whole point of a lazy upgrade — which the v2-fixture tests below assert.
+  assert.equal(readVaultVersion(file), 3);
   assert.throws(() => decryptJson(file, account.accountId + '123456'));
   assert.deepEqual(decryptJsonWithMasterKey(file, master.toString('base64')), { nodes: [] });
 });

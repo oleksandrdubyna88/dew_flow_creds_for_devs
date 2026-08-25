@@ -180,3 +180,69 @@ test('the envelope MAC verifies across both key forms — HKDF sees the same raw
   assert.equal(verifyEnvelopeMac(content, master), 'ok');
   assert.equal(verifyEnvelopeMac(content, master.toString('base64')), 'ok');
 });
+
+/**
+ * v3 moved the payload key to HKDF and grew the MAC to cover the sealed blob.
+ * Both changes are only safe if a v2 file written by a colleague's older build
+ * still opens, so that guarantee is asserted against a hand-built v2 envelope
+ * rather than assumed.
+ */
+function v2Envelope(payload: unknown, masterB64: string, wraps: unknown[]): string {
+  const blob = sealBlob(payload, masterB64); // v2 keyed the payload with scrypt
+  return JSON.stringify({
+    format: 'cred-ssh-manager-backup',
+    version: 2,
+    kdf: 'scrypt',
+    wraps,
+    ...blob,
+  });
+}
+
+test('a v2 vault written by an older build still opens, and a new write upgrades it to v3', () => {
+  const master = randomBytes(32);
+  const b64 = master.toString('base64');
+  const payload = { secret: 'from the old build' };
+
+  const old = v2Envelope(payload, b64, []);
+  assert.equal(JSON.parse(old).version, 2);
+  assert.deepEqual(decryptJsonWithMasterKey(old, master), payload, 'v2 must keep reading forever');
+
+  const rewritten = encryptJsonWrapped(payload, master, []);
+  assert.equal(JSON.parse(rewritten).version, 3);
+  assert.equal(JSON.parse(rewritten).kdf, 'hkdf');
+  assert.deepEqual(decryptJsonWithMasterKey(rewritten, master), payload);
+});
+
+test('splicing an older sealed blob into a v3 envelope is caught — the rollback v2 could not see', () => {
+  // The attack: write access to the shared folder, no key needed. Take an earlier
+  // legitimate blob for this same vault and put it back, leaving account/wraps/mac
+  // untouched. Under v2 the MAC signed only the header, so it still said 'ok' and
+  // the owner's secrets silently reverted.
+  const master = randomBytes(32);
+  const now = encryptJsonWrapped({ password: 'rotated-today' }, master, []);
+  const earlier = encryptJsonWrapped({ password: 'the-old-one' }, master, []);
+
+  const spliced = JSON.parse(now);
+  const stale = JSON.parse(earlier);
+  for (const field of ['salt', 'iv', 'tag', 'data']) {
+    spliced[field] = stale[field];
+  }
+
+  assert.equal(verifyEnvelopeMac(now, master), 'ok', 'the untouched file verifies');
+  assert.equal(
+    verifyEnvelopeMac(JSON.stringify(spliced), master),
+    'bad',
+    'a swapped payload must not pass the MAC',
+  );
+});
+
+test('the v3 MAC length-prefixes its fields, so a boundary cannot be shifted', () => {
+  // Plain concatenation would hash salt="AB",iv="C" the same as salt="A",iv="BC".
+  const master = randomBytes(32);
+  const content = encryptJsonWrapped({ a: 1 }, master, []);
+  const env = JSON.parse(content);
+
+  const shifted = { ...env, salt: env.salt + env.iv.slice(0, 1), iv: env.iv.slice(1) };
+
+  assert.equal(verifyEnvelopeMac(JSON.stringify(shifted), master), 'bad');
+});

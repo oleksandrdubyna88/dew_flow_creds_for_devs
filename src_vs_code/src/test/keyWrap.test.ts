@@ -58,7 +58,10 @@ test('several keys and the PIN all open the SAME vault', () => {
     wrapWithPrf(master, 'key-b', newPrfSalt(), prfB, 'B', NOW + 2),
   ];
   const vault = encryptJsonWrapped(payload, master.toString('base64'), wraps, undefined, []);
-  assert.equal(readVaultVersion(vault), 2);
+  // 3, not 2: a wrapped vault is written at v3 since the payload key moved to HKDF
+  // and the MAC grew to cover the sealed blob. v2 files still READ — that is the
+  // whole point of a lazy upgrade — which the v2-fixture tests below assert.
+  assert.equal(readVaultVersion(vault), 3);
   assert.equal(readVaultWraps(vault).length, 3);
 
   for (const key of [
@@ -122,7 +125,7 @@ test('the v1 -> v2 upgrade keeps the data and both unlock paths', () => {
   ];
   const v2 = encryptJsonWrapped(recovered, master.toString('base64'), wraps, undefined, []);
 
-  assert.equal(readVaultVersion(v2), 2);
+  assert.equal(readVaultVersion(v2), 3);
   // the same data, reachable by PIN and by the key
   assert.deepEqual(
     decryptJsonWithMasterKey(v2, unwrapWithPin(wraps[0], ACCOUNT, pin).toString('base64')),
