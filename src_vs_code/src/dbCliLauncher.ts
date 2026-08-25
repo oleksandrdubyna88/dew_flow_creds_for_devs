@@ -29,6 +29,24 @@ const CLIS: Partial<Record<DbType, DbCli>> = {
   mongodb: { exe: 'mongosh' },
 };
 
+/**
+ * Whether a string is a plain postgres URL, safe to hand psql as a positional dbname.
+ *
+ * <p>psql permutes argv like any getopt program, so a bare connection string that begins
+ * with `-` is read as an OPTION regardless of position — and psql's own `-o |command`
+ * opens a pipe through a shell. A stored `dbConnection` arrives by sync, Accept Share or
+ * external import, so it is data from elsewhere and cannot be assumed to be a URL. This is
+ * the database twin of `isSafeSshHost`: prove the shape, do not sanitize a bad one.</p>
+ */
+export function isSafePostgresUri(value: string): boolean {
+  try {
+    const url = new URL(value.trim());
+    return url.protocol === 'postgres:' || url.protocol === 'postgresql:';
+  } catch {
+    return false;
+  }
+}
+
 export function resolveDbCli(dbType: DbType, onPath: (exe: string) => boolean): DbCli | undefined {
   const cli = CLIS[dbType];
   if (cli === undefined) {
@@ -72,9 +90,17 @@ export function buildDbQueryLaunch(
 
   switch (dbType) {
     case 'postgres':
+      // A dbConnection is attacker-influenced data (sync / share / import). Refuse anything
+      // that is not a plain postgres URL rather than hand psql a token it could read as an
+      // option — the same class the ssh path already guards with isSafeSshHost + `--`.
+      if (!isSafePostgresUri(connectionString)) {
+        return undefined;
+      }
       // psql takes a whole URI, so everything the operator put in the query string —
-      // sslmode, application_name — survives; decomposing into flags would drop it.
-      return { exe: cli.exe, args: [withoutPassword(connectionString), '-c', query], env };
+      // sslmode, application_name — survives; decomposing into flags would drop it. `-c`
+      // and the query stay OPTIONS; the URI is a positional AFTER `--`, so even a value
+      // beginning with `-` can never be parsed by psql's getopt as an option.
+      return { exe: cli.exe, args: ['-c', query, '--', withoutPassword(connectionString)], env };
     case 'mysql': {
       const args = ['-h', parts.host ?? 'localhost'];
       if (parts.port !== undefined) {

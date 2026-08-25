@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { buildDbQueryLaunch, resolveDbCli } from '../dbCliLauncher';
+import { buildDbQueryLaunch, isSafePostgresUri, resolveDbCli } from '../dbCliLauncher';
 
 /**
  * Handing a query to a database CLI with the password never on the command line.
@@ -70,4 +70,34 @@ test('a connection string with no password still works', () => {
 
   assert.equal(launch?.env.PGPASSWORD, undefined);
   assert.equal(launch?.args.includes('select 1'), true);
+});
+
+test('isSafePostgresUri accepts a real URL and rejects anything that could be an option', () => {
+  // A stored dbConnection arrives by sync, Accept Share or external import — it is data
+  // from elsewhere, so "it is a postgres URL" has to be proven, not assumed.
+  assert.equal(isSafePostgresUri('postgresql://alice:pw@db:5432/orders'), true);
+  assert.equal(isSafePostgresUri('postgres://db/orders'), true);
+  assert.equal(isSafePostgresUri('-o|touch /tmp/pwned'), false); // the injection payload
+  assert.equal(isSafePostgresUri('--help'), false);
+  assert.equal(isSafePostgresUri('host=db user=alice'), false); // conninfo, not a URL
+  assert.equal(isSafePostgresUri(''), false);
+});
+
+test('postgres hands the connection string as a `--`-guarded positional, never an option', () => {
+  const launch = buildDbQueryLaunch('postgres', 'postgresql://alice:pw@db:5432/orders', 'select 1');
+  const args = launch?.args ?? [];
+  const sep = args.indexOf('--');
+  assert.notEqual(sep, -1); // there IS a `--`
+  // the connection string comes AFTER it, so psql's getopt can never read it as an option
+  const uriIdx = args.findIndex((a) => a.includes('db:5432/orders'));
+  assert.equal(uriIdx > sep, true);
+  // and -c / the query stay BEFORE the `--`, as real options
+  assert.equal(args.indexOf('-c') < sep, true);
+  assert.equal(args.indexOf('select 1') < sep, true);
+});
+
+test('a postgres connection string that could carry psql options is refused, not launched', () => {
+  // psql's own `-o |command` opens a pipe through a shell; a leading-dash bare argument
+  // reaches that parser. The launcher must refuse it rather than build a psql invocation.
+  assert.equal(buildDbQueryLaunch('postgres', '-o|touch /tmp/pwned', 'select 1'), undefined);
 });

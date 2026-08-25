@@ -17,7 +17,7 @@ import { scriptRunPlan } from './scriptRun';
 import { buildCommandLine } from './commandLine';
 import { isCommandTrusted } from './commandTrust';
 import { lockToOwner } from './keyInstaller';
-import { buildDbQueryLaunch, resolveDbCli } from './dbCliLauncher';
+import { buildDbQueryLaunch, isSafePostgresUri, resolveDbCli } from './dbCliLauncher';
 
 /**
  * The broker's non-SSH capabilities: a stored script, a stored terminal command, and a
@@ -272,6 +272,15 @@ export function dbQueryAction(
       const connection = await deps.storage.getDbConnection(ctx.accountId, ctx.entityId);
       if (connection === undefined || connection.length === 0) {
         return fail('no_credential', `"${ctx.entityName}" has no stored connection string.`);
+      }
+      if (dbType === 'postgres' && !isSafePostgresUri(connection)) {
+        return fail(
+          'not_supported',
+          `"${ctx.entityName}" has a stored connection string that is not a plain ` +
+            'postgres:// URL. The broker refuses it rather than hand psql a value that ' +
+            'could carry command-line options. Fix the entry to a ' +
+            'postgresql://user:pass@host:port/db URL, or query it yourself.',
+        );
       }
       const launch = buildDbQueryLaunch(dbType, connection, String((body as { query: string }).query));
       if (launch === undefined) {
