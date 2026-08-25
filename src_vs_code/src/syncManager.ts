@@ -182,12 +182,12 @@ export class SyncManager implements vscode.Disposable {
     let content: string;
     if (key.version === 2) {
       // Same master key, new PIN wrap; other (security-key) wraps untouched.
-      const master = Buffer.from(key.masterKeyBase64, 'base64');
+      const master = key.masterKey;
       const wraps = upsertWrap(
         readVaultWraps(raw).filter(isKeyWrap),
         wrapWithPin(master, account.accountId, newPin, Date.now()),
       );
-      content = encryptJsonWrapped(payload, key.masterKeyBase64, wraps, account, shares);
+      content = encryptJsonWrapped(payload, key.masterKey, wraps, account, shares);
     } else {
       // v1: the passphrase IS accountId+PIN, so re-encrypt under the new one.
       content = encryptJson(payload, account.accountId + newPin, account, shares);
@@ -320,7 +320,7 @@ export class SyncManager implements vscode.Disposable {
     // Detect tampering of the envelope's unauthenticated metadata (account /
     // wraps) on this — the owner's — file. Only meaningful for v2 (signed).
     if (raw !== undefined && key.version === 2) {
-      const mac = verifyEnvelopeMac(raw, key.masterKeyBase64);
+      const mac = verifyEnvelopeMac(raw, key.masterKey);
       if (mac === 'bad') {
         this.warnTampered(account);
       }

@@ -39,7 +39,21 @@ function pinKey(accountId: string): string {
 
 export type VaultKey =
   | { version: 1; passphrase: string }
-  | { version: 2; masterKeyBase64: string; wraps: KeyWrap[] };
+  | { version: 2; masterKey: Buffer; wraps: KeyWrap[] };
+
+/**
+ * Overwrite a cached key's bytes before letting go of it.
+ *
+ * <p>A v1 entry carries the PIN as a string and cannot be wiped — V8 strings are
+ * immutable and there is no API for it. That is the reason the v2 key is a
+ * `Buffer` of the RAW 32 bytes rather than its base64 text: a Buffer can be
+ * zeroed, a string can only be abandoned.</p>
+ */
+function wipe(key: VaultKey): void {
+  if (key.version === 2) {
+    key.masterKey.fill(0);
+  }
+}
 
 export class VaultKeys {
   private readonly cache = new Map<string, VaultKey>();
@@ -52,8 +66,15 @@ export class VaultKeys {
 
   clearCache(accountId?: string): void {
     if (accountId === undefined) {
+      for (const key of this.cache.values()) {
+        wipe(key);
+      }
       this.cache.clear();
     } else {
+      const key = this.cache.get(accountId);
+      if (key !== undefined) {
+        wipe(key);
+      }
       this.cache.delete(accountId);
     }
   }
@@ -67,6 +88,12 @@ export class VaultKeys {
    * later by default — opened the vault again without asking anyone.</p>
    */
   lock(): void {
+    // Dropping the reference is not forgetting the key: it leaves the bytes in the
+    // heap for the collector to move around at its convenience, and a dump taken in
+    // between reads them. Locking is supposed to mean the key is gone.
+    for (const key of this.cache.values()) {
+      wipe(key);
+    }
     this.cache.clear();
     this.lockState.lock();
   }
@@ -187,7 +214,7 @@ export class VaultKeys {
       if (pin !== undefined) {
         try {
           const master = unwrapWithPin(pinWrap, account.accountId, pin);
-          return this.remember(account, master.toString('base64'), wraps);
+          return this.remember(account, master, wraps);
         } catch {
           // stored PIN does not fit this vault — fall through
         }
@@ -212,7 +239,7 @@ export class VaultKeys {
         );
       }
       const master = unwrapWithPrf(used, result.secret);
-      return this.remember(account, master.toString('base64'), wraps);
+      return this.remember(account, master, wraps);
     }
 
     // 3) last resort: ask for the PIN explicitly
@@ -221,7 +248,7 @@ export class VaultKeys {
       if (pin !== undefined) {
         const master = unwrapWithPin(pinWrap, account.accountId, pin);
         await this.savePin(account, pin);
-        return this.remember(account, master.toString('base64'), wraps);
+        return this.remember(account, master, wraps);
       }
     }
     return undefined;
@@ -231,7 +258,7 @@ export class VaultKeys {
   decrypt(vaultContent: string, key: VaultKey): unknown {
     return key.version === 1
       ? decryptJson(vaultContent, key.passphrase)
-      : decryptJsonWithMasterKey(vaultContent, key.masterKeyBase64);
+      : decryptJsonWithMasterKey(vaultContent, key.masterKey);
   }
 
   /** Re-encrypt a vault payload with the same key material. */
@@ -243,11 +270,11 @@ export class VaultKeys {
   ): string {
     return key.version === 1
       ? encryptJson(payload, key.passphrase, account, shares)
-      : encryptJsonWrapped(payload, key.masterKeyBase64, key.wraps, account, shares);
+      : encryptJsonWrapped(payload, key.masterKey, key.wraps, account, shares);
   }
 
-  private remember(account: StoredAccount, masterKeyBase64: string, wraps: KeyWrap[]): VaultKey {
-    const key: VaultKey = { version: 2, masterKeyBase64, wraps };
+  private remember(account: StoredAccount, masterKey: Buffer, wraps: KeyWrap[]): VaultKey {
+    const key: VaultKey = { version: 2, masterKey, wraps };
     this.cache.set(account.accountId, key);
     return key;
   }

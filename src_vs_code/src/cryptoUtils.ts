@@ -81,7 +81,19 @@ interface BackupEnvelope extends SealedBlob {
   wraps?: unknown[];
 }
 
-function deriveKey(passphrase: string, salt: Buffer, params: ScryptParams): Buffer {
+/**
+ * A passphrase, as either the string a human typed or the bytes of one.
+ *
+ * <p><b>Which bytes is load-bearing.</b> Passing a string here feeds scrypt its
+ * UTF-8 — so for a master key carried as base64 TEXT, the compatible Buffer is
+ * `Buffer.from(text, 'utf8')` (44 bytes of ASCII), NOT `Buffer.from(text,
+ * 'base64')` (the 32 raw key bytes). The second looks more correct and derives a
+ * different AES key, which strands every vault ever written. `cryptoUtils.test.ts`
+ * asserts both directions.</p>
+ */
+export type Passphrase = string | Buffer;
+
+function deriveKey(passphrase: Passphrase, salt: Buffer, params: ScryptParams): Buffer {
   return crypto.scryptSync(passphrase, salt, KEY_LENGTH, {
     N: params.N,
     r: params.r,
@@ -99,7 +111,28 @@ function paramsOf(blob: SealedBlob): ScryptParams {
   };
 }
 
-export function sealBlob(payload: unknown, passphrase: string): SealedBlob {
+/**
+ * A master key as the two things it has to be, so no caller has to remember which.
+ *
+ * <p>A `string` is the legacy carrier: the key's base64 TEXT. A `Buffer` is the
+ * key itself, 32 raw bytes — which is what `masterKey` should mean to anyone
+ * reading it, and why the cache holds that form.</p>
+ *
+ * <p>`masterKeyScryptInput` exists because scrypt has always been fed the UTF-8 of
+ * the base64 text, never the raw key. Feeding it the raw key derives a different
+ * AES key and strands every vault ever written; the conversion is therefore not a
+ * detail to inline at a call site.</p>
+ */
+function masterKeyScryptInput(master: Passphrase): Passphrase {
+  return typeof master === 'string' ? master : Buffer.from(master.toString('base64'), 'utf8');
+}
+
+/** The raw 32 bytes — what HKDF and the wrap layer want. */
+function masterKeyRaw(master: Passphrase): Buffer {
+  return typeof master === 'string' ? Buffer.from(master, 'base64') : master;
+}
+
+export function sealBlob(payload: unknown, passphrase: Passphrase): SealedBlob {
   const salt = crypto.randomBytes(SALT_LENGTH);
   const iv = crypto.randomBytes(IV_LENGTH);
   const params: ScryptParams = { N: DEFAULT_SCRYPT_N, r: SCRYPT_R, p: SCRYPT_P };
@@ -130,7 +163,7 @@ export function sealBlob(payload: unknown, passphrase: string): SealedBlob {
  * Decrypt a sealed blob. Throws {@link BackupError}: 'wrong-password' when
  * GCM authentication fails, 'corrupted' for malformed pieces.
  */
-export function openBlob(blob: SealedBlob, passphrase: string): unknown {
+export function openBlob(blob: SealedBlob, passphrase: Passphrase): unknown {
   for (const field of ['salt', 'iv', 'tag', 'data'] as const) {
     if (typeof blob[field] !== 'string' || blob[field].length === 0) {
       throw new BackupError('corrupted', `Encrypted data is missing the "${field}" field.`);
@@ -200,12 +233,12 @@ export function encryptJson(
  */
 export function encryptJsonWrapped(
   payload: unknown,
-  masterKeyBase64: string,
+  masterKeyBase64: Passphrase,
   wraps: readonly unknown[],
   account?: StoredAccount,
   shares?: unknown[],
 ): string {
-  const blob = sealBlob(payload, masterKeyBase64);
+  const blob = sealBlob(payload, masterKeyScryptInput(masterKeyBase64));
   const envelope: BackupEnvelope & { mac?: string } = {
     format: FORMAT,
     version: VERSION_WRAPPED,
@@ -240,8 +273,8 @@ export function envelopeWithWraps(fileContent: string, wraps: readonly unknown[]
 }
 
 /** Decrypt a v2 payload once the master key has been unwrapped. */
-export function decryptJsonWithMasterKey(fileContent: string, masterKeyBase64: string): unknown {
-  return openBlob(parseEnvelope(fileContent), masterKeyBase64);
+export function decryptJsonWithMasterKey(fileContent: string, masterKeyBase64: Passphrase): unknown {
+  return openBlob(parseEnvelope(fileContent), masterKeyScryptInput(masterKeyBase64));
 }
 
 // ---- envelope MAC ----------------------------------------------------------
@@ -252,11 +285,17 @@ export function decryptJsonWithMasterKey(fileContent: string, masterKeyBase64: s
 // that metadata lets the OWNER detect such tampering on their own file.
 // `shares` are deliberately excluded: other users legitimately append them.
 
-function envelopeMacKey(masterKeyBase64: string): Buffer {
+/**
+ * The MAC key is HKDF over the RAW master key, so unlike `deriveKey` this one has
+ * to decode rather than take the text's bytes — the two uses genuinely want
+ * different byte sequences from the same key, which is why the conversion lives
+ * here and is spelled out rather than assumed.
+ */
+function envelopeMacKey(masterKeyBase64: Passphrase): Buffer {
   return Buffer.from(
     crypto.hkdfSync(
       'sha256',
-      Buffer.from(masterKeyBase64, 'base64'),
+      masterKeyRaw(masterKeyBase64),
       Buffer.alloc(0),
       Buffer.from('cred-ssh-manager/envelope-mac'),
       32,
@@ -274,7 +313,7 @@ function macCanonical(env: Record<string, unknown>): string {
   });
 }
 
-function computeEnvelopeMac(env: Record<string, unknown>, masterKeyBase64: string): string {
+function computeEnvelopeMac(env: Record<string, unknown>, masterKeyBase64: Passphrase): string {
   return crypto
     .createHmac('sha256', envelopeMacKey(masterKeyBase64))
     .update(macCanonical(env))
@@ -286,7 +325,7 @@ export type EnvelopeMacStatus = 'ok' | 'missing' | 'bad';
 /** Verify the envelope MAC with the (already unwrapped) master key. */
 export function verifyEnvelopeMac(
   fileContent: string,
-  masterKeyBase64: string,
+  masterKeyBase64: Passphrase,
 ): EnvelopeMacStatus {
   let env: Record<string, unknown>;
   try {
@@ -311,7 +350,7 @@ export function verifyEnvelopeMac(
 export function resignEnvelopeWraps(
   fileContent: string,
   wraps: readonly unknown[],
-  masterKeyBase64: string,
+  masterKeyBase64: Passphrase,
 ): string {
   const env = JSON.parse(fileContent) as Record<string, unknown>;
   if (typeof env?.format !== 'string') {

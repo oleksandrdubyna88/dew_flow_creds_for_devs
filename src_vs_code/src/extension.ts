@@ -1090,12 +1090,12 @@ ${detail}
       let content: string;
       if (key.version === 2) {
         // Already wrapped: add one more wrap around the SAME master key.
-        const master = Buffer.from(key.masterKeyBase64, 'base64');
+        const master = key.masterKey;
         wraps = upsertWrap(
           readVaultWraps(raw).filter(isKeyWrap),
           wrapWithPrf(master, prf.credentialId, prfSalt, prf.secret, label.trim(), Date.now()),
         );
-        content = resignEnvelopeWraps(raw, wraps, key.masterKeyBase64);
+        content = resignEnvelopeWraps(raw, wraps, key.masterKey);
       } else {
         // Upgrade v1 → v2: new master key, payload re-encrypted, two wraps.
         const pin = await vaultKeys.storedPin(account);
@@ -1209,7 +1209,7 @@ ${detail}
       }
       await transport.writeVault(
         account,
-        resignEnvelopeWraps(raw, remaining, key.masterKeyBase64),
+        resignEnvelopeWraps(raw, remaining, key.masterKey),
         [],
       );
       vaultKeys.clearCache(account.accountId);
