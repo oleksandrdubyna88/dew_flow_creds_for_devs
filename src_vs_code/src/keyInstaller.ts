@@ -4,9 +4,13 @@ import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { EntityMetadata } from './types';
 import { askpassScript } from './sshAskpass';
-import * as childProcess from 'node:child_process';
-import { currentOwner, restrictToOwnerArgv } from './fileAcl';
 import { deadPidSubdirs } from './keysPurge';
+import { lockToOwner, materializedKeysDir } from './materializedKeys';
+
+// lockToOwner and materializedKeysDir are vscode-free and live in materializedKeys.ts so the
+// agent broker (which runs partly under plain node) can use them; re-exported here so this
+// module's existing callers are unchanged.
+export { lockToOwner, materializedKeysDir };
 
 /**
  * Writing SSH key material to disk:
@@ -15,30 +19,6 @@ import { deadPidSubdirs } from './keysPurge';
  *  - materializePrivateKey() writes a stored key into the extension's
  *    private storage so `ssh -i` can use it for a connection.
  */
-
-
-/**
- * Apply the tightest access this OS can express to a file we just wrote a secret into.
- *
- * <p>POSIX `chmod` is already applied by the callers and is real there. On Windows it is
- * not: the inherited NTFS ACL still grants SYSTEM and the local Administrators group full
- * control. Where the operator is not the administrator that is precisely the wrong
- * audience, so the inheritance is broken and the owner alone is granted.</p>
- *
- * <p>Best-effort by design: a failure here must not stop a key from being usable — it is
- * a hardening step over an already-restricted profile directory, not the only lock.</p>
- */
-export function lockToOwner(filePath: string): void {
-  const argv = restrictToOwnerArgv(filePath, process.platform, currentOwner(process.env));
-  if (argv === undefined) {
-    return;
-  }
-  try {
-    childProcess.execFileSync(argv[0], argv.slice(1), { stdio: 'ignore', timeout: 5_000 });
-  } catch {
-    // An unwritable ACL is a weaker file, not a broken feature.
-  }
-}
 
 function ensureTrailingNewline(content: string): string {
   return content.endsWith('\n') ? content : `${content}\n`;
@@ -116,21 +96,6 @@ export async function installKeyToSystem(
     `Installed to ${willWrite.join(' and ')}.` +
       (privateKey !== undefined ? ` Use it with: ssh -i "${privatePath}" …` : ''),
   );
-}
-
-/**
- * The subdirectory of `keys/` this window owns.
- *
- * <p>Materialized key material used to live directly in `keys/`, shared by every window of
- * the same profile — so any window's activate/dispose purged the WHOLE directory, deleting a
- * live SSH session's key or a running script's file out from under a window that did nothing
- * wrong (opening a second window, or reloading one, was enough). Each window now writes under
- * `keys/<pid>/` and purges only its own, so one window can never delete another's in-use
- * file. The pid is stable for a window's extension host and changes on reload — exactly the
- * boundary wanted.</p>
- */
-export function materializedKeysDir(storageDir: string): string {
-  return path.join(storageDir, 'keys', String(process.pid));
 }
 
 function processAlive(pid: number): boolean {

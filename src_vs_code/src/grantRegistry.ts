@@ -73,9 +73,9 @@ export class GrantRegistry {
    *
    * <p>A <b>denied</b> grant is terminal — it exists only to refuse, and an unknown token is
    * refused just the same, so deleting it changes nothing observable. An <b>allowed</b> grant
-   * is a live capability the person deliberately handed an agent and is never dropped by the
-   * sweep. Only if a window somehow crosses the cap without a single denial does the last
-   * resort fire: drop the oldest, insertion order, to keep the map bounded.</p>
+   * is a live capability the person deliberately handed an agent, so the cap reclaims the
+   * oldest NON-allowed grant first (see oldestEvictable) and only drops an allowed one if the
+   * whole map is allowed grants — the bounded last resort.</p>
    */
   private prune(): void {
     for (const [secret, grant] of this.grants) {
@@ -84,12 +84,29 @@ export class GrantRegistry {
       }
     }
     while (this.grants.size >= GrantRegistry.MAX_GRANTS) {
-      const oldest = this.grants.keys().next().value;
-      if (oldest === undefined) {
+      const victim = this.oldestEvictable();
+      if (victim === undefined) {
         break;
       }
-      this.grants.delete(oldest);
+      this.grants.delete(victim);
     }
+  }
+
+  /**
+   * The grant the cap should reclaim next: the oldest NON-allowed (a pending grant awaiting
+   * or abandoned by consent), and only when every grant is allowed does it fall back to the
+   * oldest allowed one. An allowed grant is a live capability; preferring pending victims
+   * keeps the cap from silently revoking a token an agent is still using.
+   */
+  private oldestEvictable(): string | undefined {
+    let oldestAllowed: string | undefined;
+    for (const [secret, grant] of this.grants) {
+      if (grant.status !== 'allowed') {
+        return secret;
+      }
+      oldestAllowed ??= secret;
+    }
+    return oldestAllowed;
   }
 
   /** Only a pending grant settles; a settled one is never revisited. */

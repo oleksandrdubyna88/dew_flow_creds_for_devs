@@ -16,7 +16,7 @@ import { resolveScriptEnv } from './scriptRender';
 import { scriptRunPlan } from './scriptRun';
 import { buildCommandLine } from './commandLine';
 import { isCommandTrusted } from './commandTrust';
-import { lockToOwner, materializedKeysDir } from './keyInstaller';
+import { lockToOwner, materializedKeysDir } from './materializedKeys';
 import { buildDbQueryLaunch, isSafePostgresUri, resolveDbCli } from './dbCliLauncher';
 
 /**

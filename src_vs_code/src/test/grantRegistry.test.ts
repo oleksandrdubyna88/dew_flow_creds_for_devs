@@ -105,3 +105,18 @@ test('a pending grant mid-consent is not swept by a concurrent mint', () => {
 
   assert.equal(registry.get(pending.secret)?.status, 'pending');
 });
+
+test('the 256-grant cap reclaims pending grants but keeps a live allowed one', () => {
+  // An allowed grant is a live agent token. The cap used to evict strictly by insertion
+  // order, so this oldest grant — allowed and in use — was the FIRST thing dropped once a
+  // busy window crossed 256 shares. It must survive; the pending overflow is what goes.
+  const registry = new GrantRegistry();
+  const live = mint(registry); // the oldest entry
+  registry.allow(live.secret);
+
+  for (let i = 0; i < 300; i += 1) {
+    mint(registry); // 300 pending grants, well past the 256 cap
+  }
+
+  assert.equal(registry.get(live.secret)?.status, 'allowed', 'the live token must not be evicted');
+});
