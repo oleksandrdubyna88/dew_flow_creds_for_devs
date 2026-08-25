@@ -16,7 +16,7 @@ import { resolveScriptEnv } from './scriptRender';
 import { scriptRunPlan } from './scriptRun';
 import { buildCommandLine } from './commandLine';
 import { isCommandTrusted } from './commandTrust';
-import { lockToOwner } from './keyInstaller';
+import { lockToOwner, materializedKeysDir } from './keyInstaller';
 import { buildDbQueryLaunch, isSafePostgresUri, resolveDbCli } from './dbCliLauncher';
 
 /**
@@ -116,8 +116,7 @@ export function scriptRunAction(deps: AgentUseDeps): UseAction {
       }
       const resolved = resolveScriptEnv(entity.script, entity.scriptVars, language);
       const scriptPath = path.join(
-        deps.storageDir,
-        'keys',
+        materializedKeysDir(deps.storageDir),
         `agent-script-${ctx.entityId}${plan.extension}`,
       );
       try {

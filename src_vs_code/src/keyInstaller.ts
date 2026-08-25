@@ -6,6 +6,7 @@ import { EntityMetadata } from './types';
 import { askpassScript } from './sshAskpass';
 import * as childProcess from 'node:child_process';
 import { currentOwner, restrictToOwnerArgv } from './fileAcl';
+import { deadPidSubdirs } from './keysPurge';
 
 /**
  * Writing SSH key material to disk:
@@ -118,6 +119,31 @@ export async function installKeyToSystem(
 }
 
 /**
+ * The subdirectory of `keys/` this window owns.
+ *
+ * <p>Materialized key material used to live directly in `keys/`, shared by every window of
+ * the same profile — so any window's activate/dispose purged the WHOLE directory, deleting a
+ * live SSH session's key or a running script's file out from under a window that did nothing
+ * wrong (opening a second window, or reloading one, was enough). Each window now writes under
+ * `keys/<pid>/` and purges only its own, so one window can never delete another's in-use
+ * file. The pid is stable for a window's extension host and changes on reload — exactly the
+ * boundary wanted.</p>
+ */
+export function materializedKeysDir(storageDir: string): string {
+  return path.join(storageDir, 'keys', String(process.pid));
+}
+
+function processAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0); // signal 0 tests existence without touching the process
+    return true;
+  } catch (error) {
+    // ESRCH = gone; EPERM = exists but not ours to signal, i.e. still alive.
+    return (error as NodeJS.ErrnoException).code === 'EPERM';
+  }
+}
+
+/**
  * Write a stored private key into the extension's private storage
  * (dir 0700, file 0600) and return its path for `ssh -i`.
  */
@@ -126,7 +152,7 @@ export function materializePrivateKey(
   entityId: string,
   content: string,
 ): string {
-  const keysDir = path.join(storageDir, 'keys');
+  const keysDir = materializedKeysDir(storageDir);
   fs.mkdirSync(keysDir, { recursive: true, mode: 0o700 });
   const keyPath = path.join(keysDir, `${entityId}.key`);
   fs.writeFileSync(keyPath, ensureTrailingNewline(content), { mode: 0o600 });
@@ -153,7 +179,7 @@ export function materializeVpnConfig(
   fileName: string,
   content: string,
 ): string {
-  const keysDir = path.join(storageDir, 'keys');
+  const keysDir = materializedKeysDir(storageDir);
   fs.mkdirSync(keysDir, { recursive: true, mode: 0o700 });
   const configPath = path.join(keysDir, fileName);
   fs.writeFileSync(configPath, ensureTrailingNewline(content), { mode: 0o600 });
@@ -169,7 +195,7 @@ export function materializeVpnConfig(
  */
 export function writeAskpassScriptFile(storageDir: string, platform: NodeJS.Platform): string {
   const script = askpassScript(platform);
-  const keysDir = path.join(storageDir, 'keys');
+  const keysDir = materializedKeysDir(storageDir);
   fs.mkdirSync(keysDir, { recursive: true, mode: 0o700 });
   const scriptPath = path.join(keysDir, script.name);
   fs.writeFileSync(scriptPath, script.content, { mode: 0o700 });
@@ -226,14 +252,35 @@ export function forgetMaterializedKey(keyPath: string): void {
 }
 
 /**
- * Delete every materialized private key. Called on activate and deactivate
- * so decrypted key material never outlives the VS Code session (they are
- * re-materialized on demand at the next connect).
+ * Delete this window's materialized key material, and sweep leftovers from windows that
+ * crashed without disposing — but never a directory a LIVE window is still using.
+ *
+ * <p>Called on activate and deactivate so decrypted material never outlives the session
+ * that made it (everything is re-materialized on demand at the next connect). It purges
+ * only `keys/<own-pid>/`, then removes sibling `keys/<pid>/` directories whose process is
+ * gone; a live window's subdir is left untouched, which is the whole point of the split.</p>
  */
 export function purgeMaterializedKeys(storageDir: string): void {
   try {
-    fs.rmSync(path.join(storageDir, 'keys'), { recursive: true, force: true });
+    fs.rmSync(materializedKeysDir(storageDir), { recursive: true, force: true });
   } catch {
-    // nothing to purge
+    // nothing of our own to purge
+  }
+  const root = path.join(storageDir, 'keys');
+  let names: string[];
+  try {
+    names = fs
+      .readdirSync(root, { withFileTypes: true })
+      .filter((e) => e.isDirectory())
+      .map((e) => e.name);
+  } catch {
+    return; // no keys directory yet
+  }
+  for (const name of deadPidSubdirs(names, processAlive)) {
+    try {
+      fs.rmSync(path.join(root, name), { recursive: true, force: true });
+    } catch {
+      // best effort — a leftover directory is weaker cleanup, not a broken feature
+    }
   }
 }

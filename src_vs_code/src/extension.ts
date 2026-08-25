@@ -38,6 +38,7 @@ import {
   lockToOwner,
   removeInstalledKey,
   materializeVpnConfig,
+  materializedKeysDir,
   purgeMaterializedKeys,
 } from './keyInstaller';
 import {
@@ -1413,7 +1414,7 @@ ${detail}
     // disk and left there until the next purge.
     const resolved = resolveScriptEnv(details.script, details.scriptVars, details.scriptLanguage ?? 'other');
     const fileName = `script-${details.id}${plan.extension}`;
-    const scriptPath = path.join(storageDir, 'keys', fileName);
+    const scriptPath = path.join(materializedKeysDir(storageDir), fileName);
     fs.mkdirSync(path.dirname(scriptPath), { recursive: true, mode: 0o700 });
     fs.writeFileSync(
       scriptPath,
@@ -2553,7 +2554,7 @@ async function runVpn(
   const platform = process.platform === 'win32' ? 'win32' : process.platform === 'darwin' ? 'darwin' : 'linux';
   const tunnel = vpnTunnelName(details.name);
   const fileName = vpnConfigFileName(type, details.name);
-  const configPath = path.join(storageDir, 'keys', fileName);
+  const configPath = path.join(materializedKeysDir(storageDir), fileName);
 
   // Stop does not need the config re-written; start does. Asking for the vault on a Stop
   // would mean a locked vault could leave a tunnel up with no way to bring it down.
