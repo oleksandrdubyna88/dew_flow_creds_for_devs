@@ -239,6 +239,10 @@ export type TreeElement =
   | { kind: 'search' }
   | { kind: 'account'; account: StoredAccount }
   | { kind: 'node'; accountId: string; node: TreeNode }
+  /** One kept previous version of an entity, addressed by its POSITION in that
+   *  entity's history — the list is capped and rewritten in place, so an index stays
+   *  valid where a copy of the revision would go stale. */
+  | { kind: 'revision'; accountId: string; node: TreeNode; index: number }
   | { kind: 'teamScope'; account: StoredAccount }
   | { kind: 'teamMember'; member: TeamMember; viaAccountId: string }
   | { kind: 'sharedRoot' }

@@ -468,6 +468,32 @@ someone is that they cannot see which. One vault keeps its own two buttons; seve
 `Unlock…` that picks an account and then offers that vault exactly the choice a single one
 would have had. `warnedAccounts` still dedupes per account per session, so nothing nags.
 
+### History as tree rows (0.56.0)
+
+An entity with kept versions is `Collapsed` rather than `None`, and its children are
+`{ kind: 'revision', accountId, node, index }` — addressed by **position** in the capped list,
+which is rewritten in place, so an index stays valid where a copy of the revision would go
+stale. The provider caches `historyById: Map<id, RevisionHead[]>` — heads, not revisions:
+`revisionHead()` strips `secrets`, so no replaced password is resident in the extension host for
+the session. A handler that needs the secret (`revisionClicked` → the viewer) reads
+`storage.getHistory` at that moment through `nodeAt()`, which resolves a revision row to a node
+element carrying that version's name and metadata. That is why Run, Copy Command, Show Command
+and Clone needed no second code path: they take the same shape and act on "the entity as it
+was". The version row's `contextValue` is `revision` plus the entity's own `:cmd` / `:script`
+suffixes and nothing else — so the `^entity`, `:shareable` and `:pwd` menus never match it.
+`openRevisionViewer` refuses `setEnv`/`checkEnv` (an old secret in a live variable) and passes
+`history: []`. An index past the end renders *version no longer kept* rather than throwing.
+
+### The entity form's chrome (0.56.0)
+
+Save / Cancel and the validation line live in a `position: sticky` bar above the `<h2>`; long
+forms had them below the fold. Inputs are themed by exclusion
+(`input:not([type=checkbox]):not([type=radio]):not([type=file])`) because an attribute selector
+does not match an input with no `type`, and the browser default for one is a white box — how the
+Dates fields shipped. `webviewHtml.test.ts` parses the page script for every kind, so the
+template-string-inside-CSS-comment trap (a backtick in a comment ends the template) is a red
+test, not a shipped form.
+
 ### Clone
 
 `cloneNode` copies a folder or entity's settings and deliberately **not** its secrets. Duplicating

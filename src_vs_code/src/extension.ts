@@ -50,6 +50,7 @@ import {
   vpnTunnelName,
 } from './vpnCommand';
 import { StorageManager } from './storageManager';
+import { Revision, revisionHead } from './revisionHistory';
 import { SyncManager } from './syncManager';
 import { buildSshCommand, describeSshTarget } from './terminalManager';
 import { connectEntity } from './sshConnect';
@@ -259,14 +260,16 @@ export function activate(context: vscode.ExtensionContext): void {
    * moments it can change: startup, an edit, an accepted update.
    */
   const refreshHistoryFlags = async (): Promise<void> => {
-    provider.withHistory.clear();
+    provider.historyById.clear();
     for (const account of storage.getAccounts()) {
       for (const node of storage.getNodes(account.accountId)) {
         if (node.type !== 'entity') {
           continue;
         }
-        if ((await storage.getHistory(account.accountId, node.id)).length > 0) {
-          provider.withHistory.add(node.id);
+        const history = await storage.getHistory(account.accountId, node.id);
+        if (history.length > 0) {
+          // Heads only: the tree needs dates and names, never the old secrets.
+          provider.historyById.set(node.id, history.map(revisionHead));
         }
       }
     }
@@ -529,7 +532,7 @@ ${detail}
 
   register('credSshManager.runCommand', async (target) => {
     vaultKeys.noteUserActivity(); // the user is here: postpone auto-lock
-    const element = asElement(target);
+    const element = await nodeAt(asElement(target), storage);
     if (element?.kind !== 'node') {
       return;
     }
@@ -573,7 +576,7 @@ ${detail}
 
   register('credSshManager.copyCommand', async (target) => {
     vaultKeys.noteUserActivity(); // the user is here: postpone auto-lock
-    const element = asElement(target);
+    const element = await nodeAt(asElement(target), storage);
     if (element?.kind !== 'node') {
       return;
     }
@@ -590,7 +593,7 @@ ${detail}
 
   register('credSshManager.showCommand', async (target) => {
     vaultKeys.noteUserActivity(); // the user is here: postpone auto-lock
-    const element = asElement(target);
+    const element = await nodeAt(asElement(target), storage);
     if (element?.kind !== 'node') {
       return;
     }
@@ -607,7 +610,7 @@ ${detail}
 
   register('credSshManager.cloneNode', async (target) => {
     vaultKeys.noteUserActivity(); // the user is here: postpone auto-lock
-    const element = asElement(target);
+    const element = await nodeAt(asElement(target), storage);
     if (element?.kind !== 'node') {
       return;
     }
@@ -1078,6 +1081,15 @@ ${detail}
     await openEntityViewer(element.accountId, element.node, storage);
   });
 
+  register('credSshManager.revisionClicked', async (target) => {
+    vaultKeys.noteUserActivity(); // the user is here: postpone auto-lock
+    const element = await nodeAt(asElement(target), storage);
+    if (element?.revision === undefined || element.node.details === undefined) {
+      return;
+    }
+    openRevisionViewer(element.node, element.revision);
+  });
+
   register('credSshManager.viewDetails', async (target) => {
     vaultKeys.noteUserActivity(); // the user is here: postpone auto-lock
     const element = asElement(target);
@@ -1392,7 +1404,7 @@ ${detail}
 
   register('credSshManager.runScript', async (target) => {
     vaultKeys.noteUserActivity(); // the user is here: postpone auto-lock
-    const element = asElement(target);
+    const element = await nodeAt(asElement(target), storage);
     if (element?.kind !== 'node' || element.node.details === undefined) {
       return;
     }
@@ -2685,17 +2697,89 @@ async function saveVpnConfigToFile(
     );
     return;
   }
+  await saveTextAs('Save VPN config', details.vpnConfigFileName ?? `${details.name}.ovpn`, content);
+}
+
+/** Save-As for a text secret the caller already holds. */
+async function saveTextAs(title: string, suggestedName: string, content: string): Promise<void> {
   const uri = await vscode.window.showSaveDialog({
-    title: 'Save VPN config',
-    defaultUri: vscode.Uri.file(
-      path.join(os.homedir(), details.vpnConfigFileName ?? `${details.name}.ovpn`),
-    ),
+    title,
+    defaultUri: vscode.Uri.file(path.join(os.homedir(), suggestedName)),
   });
   if (uri === undefined) {
     return;
   }
   await vscode.workspace.fs.writeFile(uri, Buffer.from(content, 'utf8'));
-  void vscode.window.showInformationMessage(`VPN config saved to ${uri.fsPath}.`);
+  void vscode.window.showInformationMessage(`Saved to ${uri.fsPath}.`);
+}
+
+/**
+ * The read-only viewer, on a PREVIOUS version.
+ *
+ * <p>Every secret comes from the revision itself, never from the current entry — that is the
+ * whole point of looking. Two things the current entry's viewer offers are refused here:
+ * writing the value into a terminal variable (an old password into a live variable is a
+ * trap with a plausible name), and the history list (a version has no history of its own).
+ * Attachments are not kept in revisions, so none are shown.</p>
+ */
+function openRevisionViewer(node: TreeNode, revision: Revision): void {
+  const details = revision.details;
+  const { password, privateKey, vpnConfig, dbConnection, notes } = revision.secrets;
+  const dbParts = dbConnection !== undefined ? parseDbConnectionString(dbConnection) : undefined;
+  let dbPortIsDefault = false;
+  if (dbParts !== undefined && dbParts.port === undefined && details.dbType !== undefined) {
+    dbParts.port = DB_DEFAULT_PORTS[details.dbType];
+    dbPortIsDefault = true;
+  }
+  const refuseEnv = (): Promise<boolean> => {
+    void vscode.window.showWarningMessage(
+      'This is a previous version. Set terminal variables from the current entry, not from history.',
+    );
+    return Promise.resolve(false);
+  };
+  showEntityView({
+    details: {
+      ...details,
+      name: `${revision.name} — version replaced ${new Date(revision.at).toLocaleString()}`,
+    },
+    hasPassword: password !== undefined,
+    hasPrivateKey: privateKey !== undefined,
+    hasVpnConfig: vpnConfig !== undefined,
+    hasDbConnection: dbConnection !== undefined,
+    notes,
+    dbParts: dbParts !== undefined ? { ...dbParts, password: undefined } : undefined,
+    dbPortIsDefault,
+    dbHasPassword: dbParts?.password !== undefined,
+    sshCommand: buildSshCommand(details),
+    resolveSecret: (field) =>
+      Promise.resolve(
+        field === 'password'
+          ? password
+          : field === 'privateKey'
+            ? privateKey
+            : field === 'vpnConfig'
+              ? vpnConfig
+              : field === 'dbPassword'
+                ? dbParts?.password
+                : dbConnection,
+      ),
+    copyAllText: () => Promise.resolve(formatEntityBlock(details, password, dbConnection, notes)),
+    saveVpnConfig: () =>
+      vpnConfig === undefined
+        ? Promise.resolve()
+        : saveTextAs(
+            'Save VPN config (previous version)',
+            details.vpnConfigFileName ?? `${revision.name}.ovpn`,
+            vpnConfig,
+          ),
+    hasAttachment: false,
+    createdAt: node.createdAt,
+    updatedAt: revision.at,
+    history: [],
+    saveAttachment: () => Promise.resolve(),
+    setEnv: refuseEnv,
+    checkEnv: () => void refuseEnv(),
+  });
 }
 
 /** Double-click target: the read-only viewer with per-field Copy buttons. */
@@ -2880,6 +2964,38 @@ function warnIfKeyringMissing(context: vscode.ExtensionContext): void {
     });
 }
 
+/**
+ * The entity a row stands for — the current one, or the version it was at a point in time.
+ *
+ * <p>A revision row resolves to a node element carrying THAT version's name and metadata, so
+ * Run, Copy Command, Show Command and Clone need no second code path: they act on "the
+ * entity as it was" through the same shape they already take. The revision itself is read
+ * from SecretStorage here rather than carried on the element — the tree caches heads only,
+ * so an old password is never resident in the extension host longer than one action.</p>
+ */
+async function nodeAt(
+  element: TreeElement | undefined,
+  storage: StorageManager,
+): Promise<(Extract<TreeElement, { kind: 'node' }> & { revision?: Revision }) | undefined> {
+  if (element?.kind === 'node') {
+    return element;
+  }
+  if (element?.kind !== 'revision') {
+    return undefined;
+  }
+  const revision = (await storage.getHistory(element.accountId, element.node.id))[element.index];
+  if (revision === undefined) {
+    void vscode.window.showWarningMessage('That version is no longer kept.');
+    return undefined;
+  }
+  return {
+    kind: 'node',
+    accountId: element.accountId,
+    node: { ...element.node, name: revision.name, details: revision.details, children: undefined },
+    revision,
+  };
+}
+
 function asElement(value: unknown): TreeElement | undefined {
   if (typeof value !== 'object' || value === null) {
     return undefined;
@@ -2889,6 +3005,14 @@ function asElement(value: unknown): TreeElement | undefined {
     return v;
   }
   if (v.kind === 'node' && typeof v.accountId === 'string' && typeof v.node?.id === 'string') {
+    return v;
+  }
+  if (
+    v.kind === 'revision' &&
+    typeof v.accountId === 'string' &&
+    typeof v.node?.id === 'string' &&
+    typeof v.index === 'number'
+  ) {
     return v;
   }
   if (v.kind === 'teamMember' && typeof v.member?.account?.accountId === 'string') {

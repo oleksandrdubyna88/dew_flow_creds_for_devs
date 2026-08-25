@@ -68,6 +68,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Bounded on purpose: 256 KB of output per stream, 30 s per command (raisable to 120 s), 8 at a
   time, and every child killed when the window goes.
 
+## [0.56.0] — 2026-08-25
+
+### Added
+
+- **History is in the tree.** An entry with previous versions now has a twisty: open it and
+  its kept versions are rows underneath, newest first, each labelled with when it was replaced
+  and what it was called then. A single click on a version opens the read-only viewer **on
+  that version** — every field and every copy button reads the old value, never the current
+  one. Run in Terminal, Copy Command and Show Command work on an old version of a command
+  exactly as on the current one, and **Clone** from a version brings it back as a new entry.
+  Nothing else is offered on a version — no Edit, no Share, no Copy Password, and no writing
+  its secret into a terminal variable (an old password in a live variable is a trap with a
+  plausible name): a version is something to look at, run, or clone from, never something to
+  change.
+
+  The tree keeps only the *heads* of the history in memory — date, name, metadata. The old
+  secret is read from the keychain at the moment you act on a version, and not before.
+
+- **Save and Cancel moved to the top of the entity form**, above the heading, and stay there
+  while you scroll. A terminal command with a dozen argument rows, or a script with its
+  variables, put them below the fold; saving meant scrolling to the bottom to find out where
+  they had gone. The validation message travels with them for the same reason — "I pressed
+  Save and nothing happened" is exactly what it exists to answer.
+
+### Fixed
+
+- **The Created / Last changed fields were white boxes in a dark theme.** They were the only
+  inputs without a `type` attribute, and the form's styling selected inputs by type — so those
+  two got the browser's default. Inputs are now themed by exclusion (everything but checkbox,
+  radio and file), and a read-only field looks read-only: same box, dimmer text, no caret.
+
+### Also true, and now pinned by tests
+
+- **A clone has no history.** A clone is a new id and history is keyed by id, so the copy starts
+  with an empty past — exactly as it starts with no secrets.
+- **Accepting an update of something already accepted from the same sender** (choosing *Update
+  it*) records the current version into history first and makes the incoming one current, under
+  the same id and in the same folder.
+
 ## [0.55.0] — 2026-08-25
 
 ### Added

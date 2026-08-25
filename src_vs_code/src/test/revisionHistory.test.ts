@@ -4,6 +4,7 @@ import {
   MAX_REVISIONS,
   isRevisionList,
   pushRevision,
+  revisionHead,
   summarizeRevision,
 } from '../revisionHistory';
 
@@ -72,4 +73,20 @@ test('attachments are not part of a revision — states the limit rather than hi
   assert.equal('attachment' in pushed[0].secrets, false);
   assert.equal('image' in pushed[0].secrets, false);
   assert.equal(pushed[0].secrets.password, 'pw');
+});
+
+test('a head carries everything the tree draws and none of the secrets', () => {
+  // The tree caches heads for the whole session so a row can be built synchronously. A
+  // cache of full revisions would keep every replaced password resident for hours.
+  const head = revisionHead({
+    at: 1_700_000_000_000,
+    name: 'before',
+    details: { id: 'e', name: 'before', isSshEnabled: false, host: 'h' },
+    secrets: { password: 'hunter2', notes: 'private' },
+  });
+
+  assert.deepEqual(Object.keys(head).sort(), ['at', 'details', 'name']);
+  assert.equal('secrets' in head, false);
+  assert.equal(JSON.stringify(head).includes('hunter2'), false);
+  assert.equal(summarizeRevision(head).includes('"before"'), true, 'a head is enough for the row label');
 });

@@ -40,6 +40,21 @@ export interface Revision {
   secrets: RevisionSecrets;
 }
 
+/**
+ * A revision without its secrets — what the TREE needs to draw a history row.
+ *
+ * <p>The tree caches history in extension-host memory for the whole session so that a row
+ * can be built synchronously. Caching full revisions would keep every replaced password
+ * resident for hours; the head keeps the date, the name and the metadata, and a handler that
+ * needs the secret reads the revision from SecretStorage at that moment.</p>
+ */
+export type RevisionHead = Omit<Revision, 'secrets'>;
+
+export function revisionHead(revision: Revision): RevisionHead {
+  const { secrets: _secrets, ...head } = revision;
+  return head;
+}
+
 const SMALL_FIELDS = ['password', 'privateKey', 'vpnConfig', 'dbConnection', 'notes'] as const;
 
 /** A copy of the list with `revision` newest-first, capped, attachments stripped. */
@@ -55,7 +70,7 @@ export function pushRevision(list: readonly Revision[], revision: Revision): Rev
 }
 
 /** One line for a picker: when it was replaced, and what it was called then. */
-export function summarizeRevision(revision: Revision): string {
+export function summarizeRevision(revision: RevisionHead): string {
   return `${new Date(revision.at).toLocaleString()} — "${revision.name}"`;
 }
 

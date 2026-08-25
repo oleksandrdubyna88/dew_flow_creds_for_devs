@@ -5,6 +5,7 @@ import { senderIsVerified } from './shareSender';
 import { diagnoseTeamFailure } from './teamDiagnosis';
 import type { SharingManager } from './sharingManager';
 import { EntityKind, FolderType, OwnedShare, TreeElement, TreeNode, kindOf } from './types';
+import { RevisionHead, summarizeRevision } from './revisionHistory';
 import {
   accountMatches,
   countMatches,
@@ -53,13 +54,19 @@ export class CredTreeDataProvider
   readonly readiness = new Map<string, SyncReadiness>();
 
   /**
-   * Entity ids known to have kept revisions.
+   * Kept previous versions, per entity id.
    *
    * <p>Reading history means reading SecretStorage, which `getTreeItem` cannot await — so
    * the answer is cached here and refreshed at the moments it changes (an edit, an
-   * accepted update, a load), exactly as `readiness` is.</p>
+   * accepted update, a load), exactly as `readiness` is. The revisions themselves are
+   * cached rather than only a has/has-not flag because the refresh already reads them, and
+   * the tree needs their dates and names to render the rows under an entity.</p>
    */
-  readonly withHistory = new Set<string>();
+  readonly historyById = new Map<string, RevisionHead[]>();
+
+  hasHistory(entityId: string): boolean {
+    return (this.historyById.get(entityId)?.length ?? 0) > 0;
+  }
 
   /** Set by the extension: Team / Shared-with-me data source. */
   sharing: SharingManager | undefined;
@@ -148,6 +155,42 @@ export class CredTreeDataProvider
   }
 
   /**
+   * One kept version, as a row under its entity.
+   *
+   * <p>The context value starts with `revision` and then carries the same `:cmd` / `:script`
+   * suffixes an entity would, so Run and Copy Command work on an old version exactly as on
+   * the current one — and nothing else does: no Edit, no Share, no Copy Password. A previous
+   * version is something to look at, run, or clone from; it is not something to change.</p>
+   */
+  private revisionItem(element: Extract<TreeElement, { kind: 'revision' }>): vscode.TreeItem {
+    const head = this.historyById.get(element.node.id)?.[element.index];
+    const label = head === undefined ? 'version no longer kept' : summarizeRevision(head);
+    const item = new vscode.TreeItem(label, vscode.TreeItemCollapsibleState.None);
+    item.id = `${element.accountId}:${element.node.id}:rev${element.index}`;
+    let contextValue = 'revision';
+    if (head?.details?.isTerminal) {
+      contextValue += ':cmd';
+    }
+    if (head?.details?.isScript) {
+      contextValue += ':script';
+    }
+    item.contextValue = contextValue;
+    item.iconPath = new vscode.ThemeIcon('history', HISTORY_COLOR);
+    item.description = element.index === 0 ? 'previous version' : `${element.index + 1} versions ago`;
+    item.tooltip =
+      head === undefined
+        ? undefined
+        : `Replaced ${new Date(head.at).toLocaleString()} — click to see what it was. Clone it to bring it back as a new entry.`;
+    // A single click opens it: unlike an entity, a version has no other single-click job.
+    item.command = {
+      command: 'credSshManager.revisionClicked',
+      title: 'Show version',
+      arguments: [element],
+    };
+    return item;
+  }
+
+  /**
    * Shares the filter keeps — matched on what their row shows: the entity's name, its kind,
    * and who sent it. Never on the payload, which is still encrypted anyway.
    */
@@ -212,6 +255,20 @@ export class CredTreeDataProvider
       default:
         break;
     }
+    if (element.kind === 'revision') {
+      return [];
+    }
+    // An entity's children are its kept versions, newest first. The row already wears the
+    // history tint; what the tint promised was that the versions are one twisty away.
+    if (element.kind === 'node' && element.node.type === 'entity') {
+      const { accountId, node } = element;
+      return (this.historyById.get(node.id) ?? []).map((_head, index) => ({
+        kind: 'revision' as const,
+        accountId,
+        node,
+        index,
+      }));
+    }
     const accountId = element.kind === 'account' ? element.account.accountId : element.accountId;
     const parentId = element.kind === 'account' ? null : element.node.id;
     // A folder that matched by its own NAME opens in full: the answer to "show me
@@ -238,6 +295,9 @@ export class CredTreeDataProvider
   async getTreeItem(element: TreeElement): Promise<vscode.TreeItem> {
     if (element.kind === 'search') {
       return this.searchItem();
+    }
+    if (element.kind === 'revision') {
+      return this.revisionItem(element);
     }
     if (element.kind === 'teamScope') {
       const item = new vscode.TreeItem('Team', vscode.TreeItemCollapsibleState.Collapsed);
@@ -370,7 +430,12 @@ export class CredTreeDataProvider
     }
 
     const details = node.details;
-    const item = new vscode.TreeItem(node.name, vscode.TreeItemCollapsibleState.None);
+    const item = new vscode.TreeItem(
+      node.name,
+      this.hasHistory(node.id)
+        ? vscode.TreeItemCollapsibleState.Collapsed
+        : vscode.TreeItemCollapsibleState.None,
+    );
     item.id = `${accountId}:${node.id}`;
     // Capability flags drive the context menu: only actions that are
     // actually possible for THIS entity are offered.
@@ -435,7 +500,7 @@ export class CredTreeDataProvider
       // the tree rather than only after opening the entry. A theme colour rather than a
       // second set of SVG files: seven kinds times two states is fourteen files to keep
       // in step, and the tint says the same thing.
-      this.withHistory.has(node.id) ? HISTORY_COLOR : undefined,
+      this.hasHistory(node.id) ? HISTORY_COLOR : undefined,
     );
     item.description = describeTarget(node);
     item.tooltip = buildTooltip(node);

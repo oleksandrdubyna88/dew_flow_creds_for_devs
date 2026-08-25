@@ -513,7 +513,12 @@ function renderHtml(options: EntityFormOptions): string {
   .tok-var { color: var(--vscode-charts-purple, #c586c0); font-weight: 600; }
   .fieldDivider { border: 0; border-top: 1px solid var(--vscode-widget-border, #4444);
                   margin: 12px 0; }
-  input[type=text], input[type=password], input[type=number], textarea, select {
+  /* input:not(...) rather than a list of input[type=…]: an attribute selector does not
+     match an input with no type attribute at all, and the browser default for one of those is a
+     WHITE box in a dark theme. That is how the read-only Dates fields shipped looking like
+     they belonged to a different application. Named exclusions instead, so the next input
+     someone adds is themed whether or not they remember the attribute. */
+  input:not([type=checkbox]):not([type=radio]):not([type=file]), textarea, select {
     width: 100%; box-sizing: border-box; padding: 5px 7px;
     background: var(--vscode-input-background); color: var(--vscode-input-foreground);
     border: 1px solid var(--vscode-input-border, transparent); border-radius: 3px;
@@ -527,7 +532,18 @@ function renderHtml(options: EntityFormOptions): string {
 #commandPreview { font-family: var(--vscode-editor-font-family, monospace); opacity: 0.9; }
 .hint { font-size: .85em; opacity: .7; margin: 3px 0 0; }
   .error { color: var(--vscode-errorForeground); margin: 10px 0; min-height: 1.2em; white-space: pre-wrap; }
-  .buttons { display: flex; gap: 10px; margin-top: 8px; }
+  /* Inside the sticky bar the message must not reserve an empty line forever. */
+  .topBar .error { margin: 6px 0 0; min-height: 0; }
+  /* A field you cannot type in should look like it: same box, dimmer text, no caret. */
+  .readonly { opacity: .75; cursor: default; }
+  /* Save and Cancel sit ABOVE the heading, and stay there: a long form (a terminal command
+     with a dozen argument rows, a script with its variables) put them below the fold, so
+     saving meant scrolling to the bottom to find out where they had gone. Sticky, because
+     moving them to the top of the document alone would only relocate the same problem. */
+  .topBar { position: sticky; top: 0; z-index: 2; padding: 4px 0 8px;
+            background: var(--vscode-editor-background);
+            border-bottom: 1px solid var(--vscode-widget-border, #4444); margin-bottom: 14px; }
+  .buttons { display: flex; gap: 10px; }
   button { padding: 6px 18px; border: none; border-radius: 3px; cursor: pointer;
            background: var(--vscode-button-background); color: var(--vscode-button-foreground); }
   button.secondary { background: var(--vscode-button-secondaryBackground);
@@ -536,6 +552,16 @@ function renderHtml(options: EntityFormOptions): string {
 </style>
 </head>
 <body>
+  <div class="topBar">
+    <div class="buttons">
+      <button id="save">Save</button>
+      <button id="cancel" class="secondary">Cancel</button>
+    </div>
+    <!-- The validation message rides with the buttons. Below them it would scroll out of
+         sight, and "I pressed Save and nothing happened" is exactly what it exists to
+         answer. -->
+    <div class="error" id="error"></div>
+  </div>
   <h2>${isEdit ? 'Edit entity' : 'New entity'}</h2>
 
   <fieldset>
@@ -756,11 +782,11 @@ function renderHtml(options: EntityFormOptions): string {
     <div class="row">
       <div>
         <label>Created</label>
-        <input readonly value="${options.createdAt === undefined ? 'unknown (created before this was recorded)' : new Date(options.createdAt).toLocaleString()}">
+        <input type="text" class="readonly" readonly tabindex="-1" value="${options.createdAt === undefined ? 'unknown (created before this was recorded)' : new Date(options.createdAt).toLocaleString()}">
       </div>
       <div>
         <label>Last changed</label>
-        <input readonly value="${options.updatedAt === undefined ? '—' : new Date(options.updatedAt).toLocaleString()}">
+        <input type="text" class="readonly" readonly tabindex="-1" value="${options.updatedAt === undefined ? '—' : new Date(options.updatedAt).toLocaleString()}">
       </div>
     </div>
   </fieldset>`
@@ -771,11 +797,6 @@ function renderHtml(options: EntityFormOptions): string {
     <textarea id="notes" rows="3">${escapeHtml(options.initialNotes ?? '')}</textarea>
   </fieldset>
 
-  <div class="error" id="error"></div>
-  <div class="buttons">
-    <button id="save">Save</button>
-    <button id="cancel" class="secondary">Cancel</button>
-  </div>
 
 <script nonce="${nonce}">
   const vscode = acquireVsCodeApi();

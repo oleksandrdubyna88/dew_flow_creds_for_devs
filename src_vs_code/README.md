@@ -403,6 +403,13 @@ The **last 3 versions** of an entry are kept. An entry with history wears a **bl
 lists each kept version — when it was replaced, what it was called then, and a button to copy that
 version's secret.
 
+The versions are **rows in the tree**: open the entry's twisty and they are underneath, newest
+first, labelled by when each was replaced. One click on a version opens the viewer on *that*
+version — every copy button reads the old value. Run and Copy Command work on an old version of
+a command, and **Clone** brings one back as a new entry. Nothing else is offered on a version:
+no Edit, no Share, and no writing its secret into a terminal variable. A clone never carries
+history — a new id starts with an empty past, as it starts with no secrets.
+
 Two limits, so they are not discovered the hard way: a kept version does **not** include attachments
 (three copies of a 4 MB file per entry would cost more than the history is worth), and history is
 **local to the machine** — it is not part of the encrypted vault that syncs, so another machine keeps
