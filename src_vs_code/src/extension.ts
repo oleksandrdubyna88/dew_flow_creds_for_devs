@@ -1182,7 +1182,9 @@ ${detail}
     }
     const details = element.node.details;
     const kind = kindOf(details);
-    const cliPath = path.join(context.extensionUri.fsPath, 'out', 'agentCli.js');
+    // Next to the RUNNING entry — out/ under tsc, dist/ in the packaged bundle — so the
+    // snippet always names a CLI built the same way as the extension that minted the grant.
+    const cliPath = path.join(__dirname, 'agentCli.js');
 
     // SSH keeps its own snippet: it is the only kind whose instructions name a target
     // (`user@host`), and the only one where the agent composes what runs.

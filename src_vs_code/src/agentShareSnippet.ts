@@ -27,7 +27,7 @@ export interface SnippetInput {
   /** `user@host[:port]` from `describeSshTarget`. */
   target: string;
   token: string;
-  /** Absolute path to the compiled CLI (`out/agentCli.js`). */
+  /** Absolute path to the compiled CLI, next to the running entry (`out/` or `dist/`). */
   cliPath: string;
 }
 

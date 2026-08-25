@@ -25,7 +25,7 @@ flowchart TD
 
     subgraph Domain
         SYNC[syncManager.ts]
-        MERGE[syncMerge.ts + versionVector.ts<br/>pure, causal]
+        MERGE[syncMerge.ts + versionVector.ts + syncIdle.ts<br/>pure, causal]
         SHARE[sharingManager.ts + shareFormat.ts]
         BACKUP[backupManager.ts]
     end
@@ -792,6 +792,56 @@ Tombstones/horizon stay plaintext — ids and version vectors, no topology.
 - `addSecurityKey`/`removeSecurityKey` call `refreshReadiness()`; `handleDrag` warns about rows
   it dropped from another profile.
 
+### Performance: caches instead of per-row and per-cycle work (0.57.0–0.57.1, audit §3.C)
+
+Four costs the 2026-08-25 audit measured and removed. All numbers are from
+`scripts/tree-perf-bench.cjs` (1,000 entities, 300 in one folder), which runs the real compiled
+`StorageManager` and `CredTreeDataProvider` over counting fakes; `BENCH_OUT=<dir>` points it at
+any other build for a before/after.
+
+| cost | before | after |
+|---|---|---|
+| expand a 300-entity folder | 300 keychain reads | **0** (`passwordIds` cache) |
+| five filter keystrokes | 5 tree repaints | **1** (50 ms debounce) |
+| 100× `getNodes`+`getChildren`, no write | 13.9 ms | **0.08 ms** (identity cache) |
+| idle sync cycle | 7,000 keychain reads + 3 canonical serializations | **0** (skipped) |
+| cold module load (0.57.1) | 49 ms, 98 files | **23 ms**, one bundle |
+
+- **C1 — `passwordIds`.** `getTreeItem` used to await `storage.getPassword` per row to decide
+  whether `:pwd`/`:shareable` belong in the context menu. The answer is now a `Set` on the
+  provider keyed `accountId:entityId` (a restore can put one id into two profiles), filled in
+  the same walk that refreshes `historyById` — on startup, `mutated()`, restore, accepted
+  share, and now also on a pulled sync. Both caches are swapped at the end of the walk, not
+  cleared at the start, so a repaint mid-walk never shows a tree with every flag off.
+  `getTreeItem` is synchronous now.
+- **C2 — debounce + `FilterMemo`.** `setSearchQuery` applies the term synchronously (so
+  Escape-restore cannot be overtaken by a late keystroke) and coalesces the repaint by 50 ms.
+  Within a render, `FilterMemo` (in `treeSearch.ts`, pure) remembers per-term subtree verdicts
+  and filtered child lists: the root's answer is reused when the account row opens, and a kept
+  folder opens from the verdicts the root walk left. It is tuned to one term (a new term drops
+  it) and cleared by `provider.refresh()`, where every mutation arrives.
+- **C3 — the storage read cache.** `StorageManager` caches the validated node array and each
+  parent's sorted children per account, validated by the IDENTITY of the memento's stored
+  value: `ExtHostMemento` hands back the same object until something writes the key — this
+  window via `update` (a JSON clone) or another window via the change broadcast — so there are
+  no invalidation hooks to forget and no cross-window staleness. Returned arrays are frozen:
+  an in-place edit throws instead of corrupting the shared cache. (B8's sealing wraps the slot
+  read/write around this cache; the sealed envelope is a fresh object per write, so identity
+  validation still holds.)
+- **C4 — the idle-cycle skip.** `StorageManager.changeToken` (per-account mutation counter +
+  memento-identity check + a SecretStorage change-event epoch) changes whenever the local
+  snapshot may have; `syncIdle.ts` (pure) holds the decision: a cycle that ends with nothing
+  applied and nothing written leaves a mark naming the token and the remote-bytes hash it saw,
+  and the next cycle skips `getSnapshot` (seven keychain reads per entity) and `mergeProfiles`
+  exactly when both still match. The token is read BEFORE the snapshot so a write landing
+  mid-cycle is never marked as synced. `mergeProfiles` also fingerprints the merged snapshot
+  once instead of twice.
+- **C5 — the bundle (0.57.1).** `vscode:prepublish` bundles `out/extension.js` and
+  `out/agentCli.js` with esbuild into `dist/` — deliberately from the compiled output the
+  tests just ran against, not from the TypeScript sources, so the shipped file is a
+  concatenation of exactly what was tested. `main` points at `dist/`; `out/**` no longer
+  ships. F5 development needs `npm run bundle` once (or use the packaged vsix).
+
 ### Client meta-commands are a shell escape (0.56.1)
 
 `refuseQuery(dbType, query)` in `dbCliLauncher.ts` is the gate between the agent's text and a
@@ -820,13 +870,15 @@ cd src_vs_code
 npm ci
 npm run typecheck          # tsc --noEmit
 npm test                   # tsc && node --test "out/test/*.test.js"
-npm run package            # vsce package
+npm run bundle             # tsc + esbuild out/{extension,agentCli}.js -> dist/ (what ships; F5 needs it)
+npm run package            # vsce package (runs vscode:prepublish = bundle)
 npm run icon               # regenerate media/icon.png
+node scripts/tree-perf-bench.cjs   # tree/storage/sync perf counters; BENCH_OUT=<dir> for another build
 ```
 
-**79 tests**, all `node:test`, ~13 s. Note the glob in the test script: `node --test out/test/`
-resolves the directory as a module on Node 22+ and exits `MODULE_NOT_FOUND` — the suite silently ran
-nothing before 2026-08-23.
+**635 tests** (2026-08-25), all `node:test`, ~13 s. Note the glob in the test script: `node --test
+out/test/` resolves the directory as a module on Node 22+ and exits `MODULE_NOT_FOUND` — the suite
+silently ran nothing before 2026-08-23.
 
 `scripts/server-transport-itest.cjs` is a separate integration test that drives the compiled
 transport against a live server; it stubs `vscode` with a `Module._resolveFilename` patch and is not

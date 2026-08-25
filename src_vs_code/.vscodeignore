@@ -1,16 +1,18 @@
 # Everything here is excluded from the published .vsix.
-# What ships: out/*.js (minus tests), media/, package.json, README.md, CHANGELOG.md, LICENSE.
+# What ships: dist/*.js (the esbuild bundle of the tested out/), media/, package.json,
+# README.md, CHANGELOG.md, LICENSE.
 
 .vscode/**
 .vscode-test/**
 
-# TypeScript sources and their maps — the compiled out/ is what runs.
+# TypeScript sources and their maps — the dist/ bundle is what runs.
 src/**
 **/*.map
 tsconfig.json
 
-# Tests never ship.
-out/test/**
+# The unbundled compiler output: tests run against it, the bundle is built from it,
+# and shipping it beside dist/ would double the extension.
+out/**
 
 # Build + repo tooling.
 scripts/**

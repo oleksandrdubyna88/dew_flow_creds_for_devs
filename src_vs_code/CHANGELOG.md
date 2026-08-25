@@ -68,6 +68,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Bounded on purpose: 256 KB of output per stream, 30 s per command (raisable to 120 s), 8 at a
   time, and every child killed when the window goes.
 
+## [0.57.1] — 2026-08-25
+
+### Performance
+
+- **The extension ships as one bundled file.** `vsce package` now bundles the compiled output
+  with esbuild (`dist/extension.js` plus `dist/agentCli.js` for the agent CLI) instead of
+  shipping 98 separate compiled modules. Cold module load — the file walk VS Code performs
+  before it can call `activate()` — drops from a median **49 ms to 23 ms** (15 fresh Node
+  processes each way), and the shipped code shrinks from 892 KB in 98 files to 584 KB in one.
+  The bundle is built **from the same `out/` tree the tests run against**, so what ships is a
+  concatenation of exactly what was tested; `npm test` and both itests keep using `out/`
+  unchanged. Development note: `main` now points at `dist/`, so an Extension Development Host
+  (F5) run needs `npm run bundle` first.
+
 ## [0.57.0] — 2026-08-25
 
 ### Fixed
@@ -110,11 +124,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **The tree stopped talking to the OS keychain.** Expanding a folder used to make one
   SecretStorage read *per row* just to decide whether "Copy Password" belongs in the
-  context menu; the flag is now cached and refreshed with the history flags, in one walk.
-- **The filter got a debounce and a memory.** Keystrokes repaint after a 50 ms debounce; the
-  filter walk memoizes per-term verdicts until the tree changes; `getNodes`/`getChildren`
-  validate and sort once per actual change instead of on every call; and an idle sync cycle no
-  longer re-serializes the whole snapshot to discover nothing changed.
+  context menu — **300 keychain reads for a 300-entry folder, measured; now 0**. The flag is
+  cached on the provider and refreshed with the history flags, in one walk.
+- **The filter got a debounce and a memory.** Keystrokes repaint after a 50 ms debounce — the
+  term itself applies immediately, so Escape cannot be overtaken by a late keystroke — and
+  **five keystrokes now repaint once, not five times**. The filter walk memoizes per-term
+  verdicts until the tree changes, and `getNodes`/`getChildren` validate and sort once per
+  actual change instead of on every call: **a hundred repeated reads went from 13.9 ms to
+  0.08 ms**, a filter render pass over 1,000 entities from **4.3 ms to 1.6 ms**.
+- **An idle sync cycle costs nothing.** It used to rebuild the full local snapshot — seven
+  keychain reads per entity, **7,000 for a 1,000-entry vault** — and canonical-serialize it
+  three ways, every five minutes, to discover nothing had changed. The cycle now skips the
+  snapshot **and the merge** whenever a local change token and the remote bytes both still
+  match the last cycle that found the two sides identical; any local edit, another window's
+  write, or a changed remote file misses the check and merges in full.
+
+  All numbers: `scripts/tree-perf-bench.cjs`, run against the previous build and this one on
+  the same vault shape (1,000 entities, 300 in one folder).
 
 ### Changed
 
