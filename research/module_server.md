@@ -195,7 +195,7 @@ therefore never sees a partial blob, which is what lets `deploy/backup.sh` archi
 
 ## Tests
 
-`src_minimalapi_server/tests/` — xUnit v3 on Microsoft Testing Platform, 64 tests, ~1.5 s, entirely
+`src_minimalapi_server/tests/` — xUnit v3 on Microsoft Testing Platform, 68 tests, ~1.5 s, entirely
 in-process through `WebApplicationFactory`. No free port, no background `dotnet run`.
 
 ```bash

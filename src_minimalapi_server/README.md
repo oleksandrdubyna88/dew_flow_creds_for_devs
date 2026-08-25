@@ -96,7 +96,7 @@ speaks plain HTTP and expects the proxy to add HTTPS.
 
 ## Tests
 
-`tests/` is 64 xUnit v3 tests on Microsoft Testing Platform, hosted **in-process** through
+`tests/` is 68 xUnit v3 tests on Microsoft Testing Platform, hosted **in-process** through
 `WebApplicationFactory` — no free port, no background `dotnet run`, ~1.5 seconds. They cover the
 auth gates (including forged `alg=none`, wrong-key, missing-claim and expired tokens), domain
 enforcement, vault isolation and size caps, team listing, share delivery with sender stamping,

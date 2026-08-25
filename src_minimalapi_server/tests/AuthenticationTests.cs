@@ -102,4 +102,24 @@ public sealed class AuthenticationTests
 
         body.Should().Contain($"alice@{VaultServer.Domain}").And.Contain("Alice");
     }
+
+    [Fact]
+    public async Task TokenWithEmailVerifiedFalse_IsRejected()
+    {
+        // A valid signature and a real email claim, but email_verified=false — the
+        // Google anti-spoofing check in TokenIdentity refuses it whatever else is right.
+        using var server = new VaultServer();
+        var token = Tokens.WithClaims(
+            VaultServer.LocalSigningKey,
+            [
+                new Claim("email", $"eve@{VaultServer.Domain}"),
+                new Claim("email_verified", "false"),
+            ]);
+        using var client = WithToken(server, token);
+
+        var response = await client.GetAsync("/api/whoami", TestContext.Current.CancellationToken);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
 }

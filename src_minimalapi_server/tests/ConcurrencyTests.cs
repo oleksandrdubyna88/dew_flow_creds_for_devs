@@ -171,4 +171,40 @@ public sealed class ConcurrencyTests
 
         after.Should().NotBe(before);
     }
+
+    [Fact]
+    public async Task TwoUnconditionalWritesFiredConcurrentlyNeverCorruptTheBlob()
+    {
+        using var server = new VaultServer();
+        using var alice = server.ClientFor(Alice);
+        var ct = TestContext.Current.CancellationToken;
+
+        // No If-Match on either — the striped lock + atomic write are the only thing
+        // standing between two real parallel writers and a byte-interleaved blob.
+        var t1 = alice.PutAsync("/api/vault", new ByteArrayContent(First), ct);
+        var t2 = alice.PutAsync("/api/vault", new ByteArrayContent(Second), ct);
+        await Task.WhenAll(t1, t2);
+
+        var stored = await (await alice.GetAsync("/api/vault", ct))
+            .Content.ReadAsByteArrayAsync(ct);
+        (stored.SequenceEqual(First) || stored.SequenceEqual(Second)).Should()
+            .BeTrue("the write is all-or-nothing — one whole body, never a mix of the two");
+    }
+
+    [Fact]
+    public async Task IfMatchWithMultipleCandidatesSucceedsWhenAnyMatches()
+    {
+        using var server = new VaultServer();
+        using var alice = server.ClientFor(Alice);
+        var ct = TestContext.Current.CancellationToken;
+
+        await alice.PutAsync("/api/vault", new ByteArrayContent(First), ct);
+        var etag = (await alice.GetAsync("/api/vault", ct)).Headers.ETag!.Tag;
+
+        // A wrong candidate AND the real one — matching any is a match.
+        var resp = await alice.SendAsync(Put(Second, ifMatch: $"\"nope\", {etag}"), ct);
+
+        resp.StatusCode.Should().Be(HttpStatusCode.NoContent);
+    }
+
 }
