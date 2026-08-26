@@ -755,10 +755,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // opening into this machine's broker, and nobody would ever find out.
     void verifyBridgeSocket(accountId, details, remote);
 
-    const instructions = `${remoteInstructions(remote)}\n\nYour token for that host: ${token}`;
+    // The token goes THROUGH `remoteInstructions`, never appended after it: the block is pasted
+    // into a shell, and appending prose is what put a bearer token into a remote's history as a
+    // failed command.
+    const instructions = remoteInstructions(remote, token);
     const answer = await vscode.window.showInformationMessage(
-      `Bridge open to "${node.name}". Run the exported line on that host and \`creds\` works there.`,
-      'Copy the setup line',
+      `Bridge open to "${node.name}". Paste the setup block on that host and \`creds\` works there.`,
+      'Copy the setup block',
     );
     if (answer !== undefined) {
       await vscode.env.clipboard.writeText(instructions);

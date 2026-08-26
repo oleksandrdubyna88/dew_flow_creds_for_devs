@@ -285,3 +285,74 @@ test('an empty user still produces a scoped glob, never a bare wildcard', () => 
   assert.match(cmd, /\/tmp\/creds-user-\*\.sock/);
   assert.equal(/creds-\*\.sock/.test(cmd), false);
 });
+
+/**
+ * The setup block is PASTED INTO A SHELL — so every line of it must be safe to execute.
+ *
+ * <p>Found by the live click this plan existed for. The button says "Copy the setup line" and
+ * what landed on the clipboard was the export followed by three lines of prose and the token,
+ * so pasting it — which is exactly what the button invites — ran the prose:</p>
+ *
+ * <pre>
+ *   Then: command not found
+ *   credential: command not found
+ *   your: command not found
+ *   Your: command not found
+ * </pre>
+ *
+ * <p>The last of those is the one that matters: `Your token for that host: 61629.KkP…` reached
+ * the remote's shell history as a failed command. That token is a bearer credential for the
+ * broker, and this is a host the whole design deliberately does not trust with credentials.</p>
+ *
+ * <p>So the invariant is mechanical: every non-empty line is a comment or an assignment. Prose
+ * belongs behind a `#`, where it is still readable and cannot run.</p>
+ */
+
+const TOKEN = '61629.KkPlPrVr-Tu7kLy54GORzmqTFm3Whwolm1rRQ7FngYc';
+
+/** A line a POSIX shell would try to EXECUTE — not a comment, not an assignment. */
+function executableLines(block: string): string[] {
+  return block
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+    .filter((line) => !line.startsWith('#'))
+    .filter((line) => !/^(export\s+)?[A-Za-z_][A-Za-z0-9_]*=/.test(line));
+}
+
+test('every line of the setup block is a comment or an assignment', () => {
+  const block = remoteInstructions({ path: '/tmp/creds-dev-abc.sock' }, TOKEN);
+
+  assert.deepEqual(executableLines(block), [], 'these lines would run when pasted');
+});
+
+test('the block still carries the socket AND the token — it is useless without both', () => {
+  const block = remoteInstructions({ path: '/tmp/creds-dev-abc.sock' }, TOKEN);
+
+  assert.match(block, /CREDS_BROKER_SOCKET=\/tmp\/creds-dev-abc\.sock/);
+  assert.ok(block.includes(TOKEN), 'the person cannot run anything without it');
+});
+
+test('the token is never on a line a shell would run', () => {
+  // It has to reach a human somehow; it must not reach the history as a failed command.
+  const block = remoteInstructions({ path: '/tmp/creds-dev-abc.sock' }, TOKEN);
+
+  const tokenLines = block.split('\n').filter((l) => l.includes(TOKEN));
+  assert.ok(tokenLines.length > 0);
+  for (const line of tokenLines) {
+    assert.match(line.trim(), /^#/, `the token sits on an executable line: ${line}`);
+  }
+});
+
+test('the block shows the command to run, so nobody has to invent it', () => {
+  const block = remoteInstructions({ path: '/tmp/creds-dev-abc.sock' }, TOKEN);
+
+  assert.match(block, /creds ssh/, 'the example the person types next');
+});
+
+test('without a token it is still paste-safe — the caller may not have minted one', () => {
+  const block = remoteInstructions({ path: '/tmp/creds-dev-abc.sock' });
+
+  assert.deepEqual(executableLines(block), []);
+  assert.match(block, /CREDS_BROKER_SOCKET=/);
+});

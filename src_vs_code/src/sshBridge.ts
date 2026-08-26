@@ -205,15 +205,30 @@ export function buildBridgeArgv(
  *
  * <p>An environment variable rather than a flag because it survives into whatever the person
  * runs next — a script, a `git` hook, an agent — without every one of them learning a new
- * argument. It names a socket, never a secret: the token or alias is still required.</p>
+ * argument.</p>
+ *
+ * <p><b>Every line here is an assignment or a COMMENT, because this block is pasted into a
+ * shell.</b> It used to carry three lines of prose, and the token was appended to it as plain
+ * text by the caller. The live click this was written for pasted the result, and the shell ran
+ * the prose — `Then: command not found`, `credential: command not found` — ending with
+ * `Your token for that host: 61629.…` in the remote's history as a failed command. That token
+ * is a bearer credential for the broker, and this is a host the whole design deliberately does
+ * not trust with credentials.</p>
+ *
+ * <p>So the token belongs HERE rather than being appended by a caller: one function owns the
+ * block, and it puts the token inside a ready-to-run example behind a `#`, where a person can
+ * read it and a shell cannot run it.</p>
  */
-export function remoteInstructions(remote: RemoteSocket): string {
+export function remoteInstructions(remote: RemoteSocket, token?: string): string {
   return [
     `export CREDS_BROKER_SOCKET=${remote.path}`,
     '',
-    'Then `creds` works on this host exactly as it does on your own machine — and the',
-    'credential still never arrives here: the request travels back over this SSH connection,',
-    'your laptop performs it, and only the output returns. The consent prompt appears there.',
+    '# `creds` now works on this host exactly as it does on your own machine — and the',
+    '# credential still never arrives here: the request travels back over this SSH connection,',
+    '# your laptop performs it, and only the output returns. The consent prompt appears there.',
+    ...(token === undefined
+      ? []
+      : ['#', '# Your token for this host — try it with:', `#   creds ssh ${token} -- uname -a`]),
   ].join('\n');
 }
 
