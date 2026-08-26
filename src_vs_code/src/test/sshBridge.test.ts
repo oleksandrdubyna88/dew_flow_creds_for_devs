@@ -4,6 +4,9 @@ import { EntityMetadata } from '../types';
 import {
   bridgeId,
   buildBridgeArgv,
+  describeWideSocket,
+  isOwnerOnlyMode,
+  modeCheckCommand,
   remoteInstructions,
   remoteSocketPath,
 } from '../sshBridge';
@@ -55,16 +58,22 @@ test('the connection carries no command and opens no shell', () => {
   assert.ok(argv().includes('-N'));
 });
 
-test('a dropped session cannot block the next bridge', () => {
-  // Without StreamLocalBindUnlink a socket left behind by a lost connection makes every
-  // later bind fail, and the symptom — "the bridge will not start" — points nowhere useful.
-  assert.ok(argv().includes('StreamLocalBindUnlink=yes'));
+test('the two options that did nothing are gone', () => {
+  // Measured against a real OpenSSH 9.6 sshd, not reasoned from a man page. For a `-R` forward
+  // the socket is created by SSHD, so the server's copies of these govern and the client's are
+  // ignored: asking for StreamLocalBindMask=0000 still produced `srw-------`, and a stale
+  // socket still refused the next bind despite StreamLocalBindUnlink=yes. Sending them made a
+  // reader believe in a protection that was not there, which is worse than not sending them.
+  const a = argv();
+
+  assert.equal(a.some((x) => x.startsWith('StreamLocalBindMask')), false);
+  assert.equal(a.some((x) => x.startsWith('StreamLocalBindUnlink')), false);
 });
 
-test('the socket is owner-only on the remote, because that is the boundary there', () => {
-  // 0177 clears every bit but the owner's. On a shared host the other logins are exactly who
-  // this keeps out; the grant token is the second line, not the first.
-  assert.ok(argv().includes('StreamLocalBindMask=0177'));
+test('a dropped session cannot block the next bridge — because the PATH is unique', () => {
+  // The protection is real; it was just never the flag. sshd refuses to bind over an existing
+  // socket by default, so a fixed path would have worked once per host and then failed forever.
+  assert.notEqual(remoteSocketPath('dev', 'aaa'), remoteSocketPath('dev', 'bbb'));
 });
 
 test('a forward that cannot be established fails the connection instead of succeeding quietly', () => {
@@ -181,4 +190,39 @@ test('the remote instructions name a socket and never a secret', () => {
   }
   // And it says the thing a person needs to believe to use it safely.
   assert.match(text, /never arrives here/i);
+});
+
+/* --- observing what we cannot set --- */
+
+test('the mode check asks about the socket we actually created', () => {
+  const cmd = modeCheckCommand({ path: '/tmp/creds-dev-abc.sock' });
+
+  assert.match(cmd, /stat -c %a \/tmp\/creds-dev-abc\.sock/);
+});
+
+test('a host without stat answers "unknown" rather than an empty string', () => {
+  // An empty answer would read as mode "" and be reported as a wide socket, which is a false
+  // alarm on a host that is perfectly fine.
+  assert.match(modeCheckCommand({ path: '/tmp/x.sock' }), /\|\| echo unknown/);
+});
+
+test('only 600 counts as owner-only', () => {
+  assert.equal(isOwnerOnlyMode('600'), true);
+  assert.equal(isOwnerOnlyMode('0600'), true);
+  assert.equal(isOwnerOnlyMode(' 600\n'), true, 'stat output carries a newline');
+
+  for (const wide of ['666', '660', '644', '700', '755', 'unknown', '']) {
+    assert.equal(isOwnerOnlyMode(wide), false, wide);
+  }
+});
+
+test('a wide socket is reported as a fact about that host, not as our failure', () => {
+  // The bridge works; what changed is who else can reach it. A message that read as a bug in
+  // this extension would send somebody looking in the wrong place.
+  const text = describeWideSocket('666', { path: '/tmp/creds-dev-abc.sock' });
+
+  assert.match(text, /666/);
+  assert.match(text, /StreamLocalBindMask/);
+  assert.match(text, /cannot be set from this end/i);
+  assert.match(text, /anyone else logged in/i);
 });

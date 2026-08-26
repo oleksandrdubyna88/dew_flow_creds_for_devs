@@ -40,7 +40,7 @@ import {
   lockToOwner,
   removeInstalledKey,
   materializeVpnConfig,
-  materializedKeysDir,
+  materializedKeyPath,
   purgeMaterializedKeys,
   safeFileComponent,
 } from './keyInstaller';
@@ -95,6 +95,9 @@ import { burnIfOneUse } from './burnOnUse';
 import {
   bridgeId,
   buildBridgeArgv,
+  describeWideSocket,
+  isOwnerOnlyMode,
+  modeCheckCommand,
   remoteInstructions,
   remoteSocketPath,
 } from './sshBridge';
@@ -103,6 +106,8 @@ import { entityKey } from './entityFlags';
 import { parseToken } from './grantToken';
 import { materializePrivateKey } from './keyInstaller';
 import { isSafeSshTarget } from './sshCommand';
+import { buildSshExecArgv } from './sshExecCommand';
+import { runSshExec } from './sshExecRunner';
 import { resolveSshCredential } from './sshCredential';
 import {
   AliasMap,
@@ -583,6 +588,54 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
    * because the person needs a token on the far side anyway — so one action produces both
    * halves of what makes the remote useful.</p>
    */
+  /**
+   * Look at what the forwarded socket's permissions actually are.
+   *
+   * <p>They are the boundary on that host and this end cannot set them: for a `-R` forward the
+   * socket is created by sshd, so the SERVER's `StreamLocalBindMask` decides. Measured on a real
+   * host — a client asking for mode 0000 still got `srw-------`, because the client's copy of
+   * that option is ignored for a remote forward. So the honest thing is to observe and say when
+   * it is wrong, rather than ship a flag that reads like a guarantee.</p>
+   *
+   * <p>Best-effort and never fatal: a host without `stat`, or one that has not finished binding
+   * yet, simply produces no claim either way. Silence here means "not observed", never "safe".</p>
+   */
+  async function verifyBridgeSocket(
+    accountId: string,
+    entity: EntityMetadata,
+    remote: { path: string },
+  ): Promise<void> {
+    try {
+      const credential = await resolveSshCredential(storage, accountId, entity);
+      const keyPath =
+        credential.kind === 'storedKey' && storageDir !== undefined
+          ? materializePrivateKey(storageDir, `bridgecheck-${entity.id}`, credential.content)
+          : undefined;
+      const argv = buildSshExecArgv(entity, keyPath, modeCheckCommand(remote));
+      if (argv === undefined) {
+        return;
+      }
+      // A moment for sshd to bind before asking about the file.
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+      const outcome = await runSshExec(argv, {
+        env: process.env,
+        timeoutMs: 15_000,
+        signal: agentServer.signal,
+      });
+      const mode = (outcome.stdout ?? '').trim();
+      if (mode.length === 0 || mode === 'unknown') {
+        log.info('bridge', `could not read the mode of ${remote.path} on that host`);
+        return;
+      }
+      if (!isOwnerOnlyMode(mode)) {
+        log.warn('bridge', `${remote.path} is mode ${mode}, not 600`);
+        void vscode.window.showWarningMessage(describeWideSocket(mode, remote));
+      }
+    } catch (error) {
+      log.info('bridge', `socket check did not complete: ${describeError(error)}`);
+    }
+  }
+
   register('credSshManager.openRemoteBridge', async (...args: unknown[]) => {
     const element = args[0] as { accountId?: string; node?: { id: string; name: string } };
     const accountId = element?.accountId;
@@ -634,6 +687,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }
 
     bridges.start(key, remote.path, 'ssh', argv, process.env);
+
+    // The socket's permissions are the boundary on that host, and we cannot set them: for a
+    // `-R` forward sshd creates the socket, so the SERVER's StreamLocalBindMask governs. So
+    // look instead of assuming — measured on a real host after a version of this claimed a
+    // client flag did it. A host whose admin widened that mask hands every login there an
+    // opening into this machine's broker, and nobody would ever find out.
+    void verifyBridgeSocket(accountId, details, remote);
+
     const instructions = `${remoteInstructions(remote)}\n\nYour token for that host: ${token}`;
     const answer = await vscode.window.showInformationMessage(
       `Bridge open to "${node.name}". Run the exported line on that host and \`creds\` works there.`,
@@ -2128,7 +2189,7 @@ ${detail}
     // The id is vault data — import and restore write an envelope's ids verbatim — so it is
     // sanitised before it becomes a path. See `safeFileComponent`.
     const fileName = `script-${safeFileComponent(details.id)}${plan.extension}`;
-    const scriptPath = path.join(materializedKeysDir(storageDir), fileName);
+    const scriptPath = materializedKeyPath(storageDir, fileName);
     fs.mkdirSync(path.dirname(scriptPath), { recursive: true, mode: 0o700 });
     fs.writeFileSync(
       scriptPath,
@@ -2265,10 +2326,7 @@ ${detail}
     let commandLine: string;
     if (isScript && scriptPlan?.kind === 'run') {
       const body = rewriteScriptRefs(scriptEnv?.body ?? '', plan, details.scriptLanguage ?? 'other');
-      const scriptPath = path.join(
-        materializedKeysDir(storageDir),
-        `run-${details.id}${scriptPlan.extension}`,
-      );
+      const scriptPath = materializedKeyPath(storageDir, `run-${details.id}${scriptPlan.extension}`);
       fs.mkdirSync(path.dirname(scriptPath), { recursive: true, mode: 0o700 });
       fs.writeFileSync(scriptPath, body.endsWith('\n') ? body : `${body}\n`, { mode: 0o700 });
       lockToOwner(scriptPath);
@@ -3118,7 +3176,7 @@ async function runVpn(
   const platform = process.platform === 'win32' ? 'win32' : process.platform === 'darwin' ? 'darwin' : 'linux';
   const tunnel = vpnTunnelName(details.name);
   const fileName = vpnConfigFileName(type, details.name);
-  const configPath = path.join(materializedKeysDir(storageDir), fileName);
+  const configPath = materializedKeyPath(storageDir, fileName);
 
   // Stop does not need the config re-written; start does. Asking for the vault on a Stop
   // would mean a locked vault could leave a tunnel up with no way to bring it down.

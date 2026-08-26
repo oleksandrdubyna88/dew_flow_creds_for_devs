@@ -16,11 +16,15 @@ import { EntityMetadata } from './types';
  * Windows one would be the untested half.</p>
  *
  * <p><b>What the remote can reach, exactly.</b> The forwarded socket is an opening into the
- * broker on your machine, so its file permissions are the boundary on that side — hence a path
- * under the remote user's own runtime directory rather than a world-writable one, and hence
- * `StreamLocalBindMask` narrowing it to the owner. Beyond that nothing changes: a caller still
- * needs a grant token or an enabled alias, the consent modal still appears **on your machine**
- * because the broker is local, and no key or password ever exists on the remote side.</p>
+ * broker on your machine, so its file permissions are the boundary on that side. **We cannot set
+ * them** — for a `-R` forward the socket is created by sshd, so the SERVER's
+ * `StreamLocalBindMask` governs (default 0177, owner-only). This was measured, after a version
+ * of this file spent a while claiming a client-side flag did it; see {@link FIXED_OPTIONS}. What
+ * we can do is LOOK, which {@link modeCheckCommand} is for.</p>
+ *
+ * <p>Beyond that nothing changes: a caller still needs a grant token or an enabled alias, the
+ * consent modal still appears **on your machine** because the broker is local, and no key or
+ * password ever exists on the remote side.</p>
  *
  * <p>Pure and `vscode`-free, like `sshExecCommand.ts` beside it, so the flag rules are a unit
  * test rather than something discovered on a customer's jump box.</p>
@@ -34,10 +38,13 @@ export interface RemoteSocket {
 /**
  * A per-user, per-window path on the remote.
  *
- * <p>`/tmp/creds-<user>-<id>.sock` rather than a fixed name: a shared build host has other
- * people on it, and a predictable path is one another user can create first, so that our bind
- * either fails or — worse, with `StreamLocalBindUnlink` — replaces theirs. The id makes
- * collision a non-event and two of your own windows independent.</p>
+ * <p>`/tmp/creds-<user>-<id>.sock` rather than a fixed name, and the random id turns out to
+ * carry more weight than it was given. A predictable path on a shared build host is one another
+ * user can create first, so our bind would simply fail. It also happens to be the only thing
+ * saving us from our own dead sockets: sshd will not unlink an existing socket unless its
+ * `StreamLocalBindUnlink` is on, and the default is off — measured, refusing the bind with
+ * `remote port forwarding failed for listen path …`. A fixed path would therefore have worked
+ * exactly once per host, until the first dropped connection.</p>
  *
  * <p>Not `$XDG_RUNTIME_DIR`, though it would be the tidier home: it is unset on plenty of
  * sshd-spawned sessions, and a path that resolves to `/creds-…sock` at the filesystem root
@@ -75,25 +82,50 @@ function isUsablePort(port: number): boolean {
 }
 
 /**
- * The options every bridge carries, each one standing in for a failure.
+ * The options every bridge carries, each one standing in for a failure — and, as importantly,
+ * the two that were here and did nothing.
  *
  * <p>Keepalives: a bridge is a long-lived connection with nothing to say, and without them a
  * NAT or a corporate firewall drops it silently — the remote's next call then hangs until its
  * own timeout, which reads as the broker being broken rather than the tunnel being gone.</p>
  *
  * <p>`ExitOnForwardFailure`: without it ssh connects, the `-R` quietly fails to bind, and the
- * remote gets "connection refused" from a bridge everyone believes is up.</p>
+ * remote gets "connection refused" from a bridge everyone believes is up. This one is genuinely
+ * the client's and was measured working — see below.</p>
  *
- * <p>`StreamLocalBindUnlink`: a socket left by a dropped session makes every later bind fail.
- * `StreamLocalBindMask=0177` clears every bit but the owner's, which on a shared host is the
- * boundary between this opening and the other people logged in.</p>
+ * <h3>What was removed, and why it matters more than what stayed</h3>
+ *
+ * <p>This list used to carry `StreamLocalBindMask=0177` and `StreamLocalBindUnlink=yes`, with a
+ * comment claiming they made the remote socket owner-only and stopped a stale socket blocking
+ * the next bind. **Both were inert**, and it took a real remote host to find out: for a `-R`
+ * forward the socket is created by **sshd**, so the SERVER's copies of those options govern and
+ * the client's are ignored.</p>
+ *
+ * <p>Measured on OpenSSH 9.6p1 (Ubuntu), against a throwaway sshd with the stock defaults:</p>
+ * <ul>
+ *   <li>client asked for `StreamLocalBindMask=0000` — deliberately world-writable — and the
+ *       socket still came out `srw-------`. The mode is the server's `StreamLocalBindMask`,
+ *       whose default is 0177;</li>
+ *   <li>a socket left behind by an ended session was NOT removed, and the next bind was refused
+ *       with `remote port forwarding failed for listen path …` even with the client sending
+ *       `StreamLocalBindUnlink=yes`. The server's default is `no` and it is the one that counts.</li>
+ * </ul>
+ *
+ * <p>So the good news is real but not ours: the socket IS owner-only, by sshd's default. The bad
+ * news is that we cannot make it so — a host whose admin widened `StreamLocalBindMask` would
+ * hand every login on that box an opening into this machine's broker, and no flag here would
+ * stop it. That is why {@link modeCheckCommand} exists: the mode is now OBSERVED after the
+ * bridge is up, rather than asserted by a flag that never applied.</p>
+ *
+ * <p>The stale-socket refusal cannot bite us for a different reason — {@link remoteSocketPath}
+ * gives every bridge a fresh random path, so nothing of ours ever collides. What it does leave
+ * is litter: one dead socket per dropped bridge, which nobody unlinks. Bounded and inert
+ * (owner-only, in a sticky `/tmp`), but real.</p>
  */
 const FIXED_OPTIONS: readonly string[] = [
   '-o', 'ServerAliveInterval=30',
   '-o', 'ServerAliveCountMax=3',
   '-o', 'ExitOnForwardFailure=yes',
-  '-o', 'StreamLocalBindUnlink=yes',
-  '-o', 'StreamLocalBindMask=0177',
   '-o', 'ConnectTimeout=10',
 ];
 
@@ -176,4 +208,39 @@ export function remoteInstructions(remote: RemoteSocket): string {
     'credential still never arrives here: the request travels back over this SSH connection,',
     'your laptop performs it, and only the output returns. The consent prompt appears there.',
   ].join('\n');
+}
+
+/**
+ * The command that reports the forwarded socket's real permissions.
+ *
+ * <p>Because the client cannot SET them (see {@link FIXED_OPTIONS}), the only honest thing left
+ * is to look. `stat` is in coreutils on every Linux this runs on; a host without it answers
+ * nothing and the caller says so rather than claiming the socket is safe.</p>
+ *
+ * <p>Run through the same exec path the broker already uses, so it needs no new capability and
+ * no second way of reaching the host.</p>
+ */
+export function modeCheckCommand(remote: RemoteSocket): string {
+  return `stat -c %a ${remote.path} 2>/dev/null || echo unknown`;
+}
+
+/** Whether an observed mode means "owner only", which is the only acceptable answer. */
+export function isOwnerOnlyMode(mode: string): boolean {
+  return /^0?600$/.test(mode.trim());
+}
+
+/**
+ * What to tell the person about a socket that is readable by anyone else on that host.
+ *
+ * <p>Not a failure of the bridge — it works — but a fact about where it now reaches, and one
+ * they can only act on if somebody says it out loud.</p>
+ */
+export function describeWideSocket(mode: string, remote: RemoteSocket): string {
+  return (
+    `The bridge is up, but ${remote.path} on that host has mode ${mode} rather than 600. ` +
+    'Anyone else logged in there can reach this machine\'s broker through it — they would still ' +
+    'face the consent prompt here, but they should not be able to raise one at all. That mode ' +
+    "comes from the host's sshd (StreamLocalBindMask, default 0177) and cannot be set from this " +
+    'end; ask whoever administers it.'
+  );
 }
