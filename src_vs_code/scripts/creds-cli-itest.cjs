@@ -140,6 +140,7 @@ const action = (kind, verb, run) => ({
     undefined,
     undefined,
     (name) => aliases[name],
+    () => Object.entries(aliases).map(([name, a]) => ({ name, kind: a.kind })),
   );
 
   const token = await server.share('a-1', ENTITY.id, ENTITY.name, 'ssh');
@@ -225,6 +226,20 @@ const action = (kind, verb, run) => ({
     const aliasOverSocket = await runCli(['ssh', 'itest-alias', '--', 'anything'], { CREDS_BROKER_SOCKET: sock });
     check('a call by NAME works over the socket too, without any endpoint file', aliasOverSocket.code === 7, `code ${aliasOverSocket.code}`);
   }
+
+  // ---- creds ls ------------------------------------------------------------
+  const listed = await runCli(['ls'], aliasEnv);
+  check('`creds ls` names what is enabled', listed.stdout.includes('itest-alias'), JSON.stringify(listed.stdout + listed.stderr));
+  check('...with its kind beside it', /itest-alias\s+ssh/.test(listed.stdout), JSON.stringify(listed.stdout));
+  check('...and exits 0', listed.code === 0, `code ${listed.code}`);
+  check(
+    'the listing carries no address for the entry it names',
+    !/a-1|e-1|accountId|entityId/.test(listed.stdout),
+    JSON.stringify(listed.stdout),
+  );
+
+  const lsWithArg = await runCli(['ls', 'itest-alias'], aliasEnv);
+  check('`creds ls <name>` is refused rather than answering a different question', lsWithArg.code === 96, `code ${lsWithArg.code}`);
 
   // ---- the endpoint note is not a secret ----------------------------------
   const noteText = fs.readFileSync(path.join(endpointDir, fs.readdirSync(endpointDir)[0]), 'utf8');

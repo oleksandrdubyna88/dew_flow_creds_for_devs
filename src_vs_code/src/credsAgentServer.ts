@@ -2,12 +2,14 @@ import { describeError } from './describeError';
 import * as http from 'node:http';
 import * as vscode from 'vscode';
 import {
+  AliasListBody,
   ErrorCode,
   HealthBody,
   MAX_CONCURRENT_EXECS,
   MAX_REQUEST_BODY_BYTES,
   SERVICE_NAME,
   errorBody,
+  isAliasListRoute,
   parseBearer,
   parseAliasRoute,
   parseJsonObject,
@@ -141,6 +143,15 @@ export class CredsAgentServer implements vscode.Disposable {
     private readonly resolveAlias?: (
       name: string,
     ) => { accountId: string; entityId: string; entityName: string; kind: string } | undefined,
+    /**
+     * The names enabled for the CLI, for `creds ls`. Optional like the rest: absent means this
+     * window answers the listing route with an empty list rather than a crash.
+     *
+     * <p>Separate from {@link resolveAlias} even though both read the same registry, because
+     * they disclose different things and a future build might well want one without the other —
+     * resolving a name you already know is not the same as being handed every name there is.</p>
+     */
+    private readonly listAliases?: () => readonly { name: string; kind: string }[],
   ) {}
 
   /** The signal every spawned child watches, so none outlives this window. */
@@ -381,6 +392,16 @@ export class CredsAgentServer implements vscode.Disposable {
     // confirm this port still belongs to us BEFORE it sends a token to it.
     if (req.method === 'GET' && url.pathname === '/v1/health') {
       const body: HealthBody = { ok: true, service: SERVICE_NAME };
+      this.respond(res, 200, body);
+      return;
+    }
+
+    // Beside health on purpose: neither authenticates and neither performs anything. What this
+    // one discloses — the names a person enabled, and each entry's kind — is an owner decision
+    // recorded at `isAliasListRoute`. It raises no modal, so it is not throttled; the action
+    // route is, because there the modal IS the authorization.
+    if (req.method === 'GET' && isAliasListRoute(url.pathname)) {
+      const body: AliasListBody = { aliases: [...(this.listAliases?.() ?? [])] };
       this.respond(res, 200, body);
       return;
     }

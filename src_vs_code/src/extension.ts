@@ -113,6 +113,7 @@ import {
   AliasMap,
   aliasFor,
   describeAliasProblem,
+  listAliases,
   resolveAlias,
   withAlias,
   withoutAlias,
@@ -510,6 +511,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             kind: resolveKind(node.details),
           };
     },
+    // The seventh answers `creds ls`. Names and kinds only — the same registry the resolver
+    // reads, but a different disclosure: being handed every name is not the same as resolving
+    // one you already know, which is why the broker takes them as two callbacks.
+    () => listAliases(aliasMap()),
   );
   const sshDeps = {
     storage,

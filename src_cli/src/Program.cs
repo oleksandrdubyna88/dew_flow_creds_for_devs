@@ -71,6 +71,11 @@ internal static class Program
     /// </remarks>
     private static async Task<int> RunAsync(Request.Use use, BrokerContract contract)
     {
+        if (use.Verb == "ls")
+        {
+            return await ListAsync(contract);
+        }
+
         var wireVerb = CommandLine.WireVerb(use.Verb);
         var route = contract.RouteFor(wireVerb);
         if (route is null)
@@ -201,6 +206,65 @@ internal static class Program
             "db" => JsonSerializer.Serialize(new AliasQueryRequest(alias, payload ?? string.Empty), CredsJsonContext.Default.AliasQueryRequest),
             _ => JsonSerializer.Serialize(new AliasRequest(alias), CredsJsonContext.Default.AliasRequest),
         };
+
+    /// <summary>
+    /// Print the names this window has enabled for the CLI.
+    /// </summary>
+    /// <remarks>
+    /// <para>Every live window is asked, because a name is enabled in whichever window holds the
+    /// entry and the person need not know which. Names are printed once even if two windows
+    /// report the same one — the same entry open twice is not two entries.</para>
+    /// <para>Nothing here is authenticated, and that is the owner's recorded decision: the CLI
+    /// that most needs `ls` runs on a Remote-SSH host, where the registry lives on the other
+    /// machine and cannot be read from disk. What it discloses is names and kinds, never an
+    /// address or anything stored.</para>
+    /// </remarks>
+    private static async Task<int> ListAsync(BrokerContract contract)
+    {
+        var endpoints = BrokerClient.SocketPath() is not null
+            ? [new Endpoint(0, 1, BrokerClient.SocketPath(), string.Empty)]
+            : Endpoints.Read(Endpoints.DirectoryHere());
+
+        using var client = BrokerClient.Create(contract);
+        var seen = new SortedDictionary<string, string>(StringComparer.Ordinal);
+        var reached = 0;
+
+        foreach (var endpoint in endpoints)
+        {
+            if (!await client.IsOurBrokerAsync(endpoint.Port))
+            {
+                continue;
+            }
+            reached += 1;
+            var reply = await client.GetAsync(endpoint.Port, "/v1/aliases");
+            if (reply.Status != 200)
+            {
+                continue;
+            }
+            var list = JsonSerializer.Deserialize(reply.Body, CredsJsonContext.Default.AliasListResponse);
+            foreach (var entry in list?.Aliases ?? [])
+            {
+                seen[entry.Name] = entry.Kind;
+            }
+        }
+
+        if (reached == 0)
+        {
+            Note("no CredsForDevs window is running here.");
+            return contract.Exit("brokerUnreachable");
+        }
+        if (seen.Count == 0)
+        {
+            Note("no entry is enabled for the CLI yet — use \"Enable CLI Access\" on one in VS Code.");
+            return 0;
+        }
+
+        foreach (var (name, kind) in seen)
+        {
+            Console.Out.WriteLine($"{name}	{kind}");
+        }
+        return 0;
+    }
 
     private static string RequestBody(string wireVerb, string? payload) =>
         wireVerb switch

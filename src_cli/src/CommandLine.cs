@@ -36,6 +36,9 @@ internal static class CommandLine
         ["vpn-down"] = false,
     };
 
+    /// <summary>Verbs that name no entry at all — they ask the window a question about itself.</summary>
+    private static readonly string[] Tokenless = ["ls"];
+
     /// <summary>The wire verb for a user-facing one — <c>ssh</c> posts to the exec route.</summary>
     internal static string WireVerb(string spoken) => spoken == "ssh" ? "exec" : spoken;
 
@@ -47,6 +50,13 @@ internal static class CommandLine
         }
 
         var verb = argv[0];
+        if (Tokenless.Contains(verb))
+        {
+            return argv.Count > 1
+                ? new Request.Failed($"`creds {verb}` takes no arguments.")
+                : new Request.Use(verb, string.Empty, null);
+        }
+
         if (!PayloadRequired.TryGetValue(verb, out var needsPayload))
         {
             return new Request.Failed($"unknown verb \"{verb}\". Run `creds --help` to see what exists.");
@@ -94,7 +104,8 @@ internal static class CommandLine
     internal const string HelpText = """
         creds — use a credential from CredsForDevs without ever receiving it.
 
-          creds ssh <token> -- <command>     run a command on the remote host
+          creds ls                           the names enabled for the CLI here
+          creds ssh <token|name> -- <cmd>     run a command on the remote host
           creds terminal <token>             open an interactive terminal in VS Code
           creds run <token>                  run the saved command
           creds script <token>               run the saved script

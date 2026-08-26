@@ -165,3 +165,34 @@ export function parseAliasRoute(pathname: string): string | undefined {
   const action = pathname.slice(prefix.length);
   return ACTION_NAME.test(action) ? action : undefined;
 }
+
+/**
+ * `GET /v1/aliases` — the names this window has enabled for the CLI.
+ *
+ * <p>A separate path from `/v1/alias/<action>`, and a GET, so the two can never be confused:
+ * one performs something and raises a consent modal, the other only answers a question and
+ * raises nothing.</p>
+ *
+ * <p><b>What it deliberately discloses.</b> Like the action route it carries no token, so any
+ * local process can read it. It returns the NAMES a person chose and each entry's kind —
+ * never a host, a token, or anything stored. The reasoning, which is the owner's decision
+ * rather than an implementation detail: knowing a name lets a caller ask about a real entry
+ * instead of guessing, but it does not let it lie — the consent modal shows the true entry and
+ * the true command, so a targeted prompt is no more persuasive than an untargeted one. What is
+ * given up is inventory: a local process learns which names exist. That was judged comparable
+ * to reading `~/.ssh/config`, and it buys a `creds ls` that works on a Remote-SSH host, where
+ * reading the registry from disk is impossible because the registry is on the other machine.</p>
+ */
+export function isAliasListRoute(pathname: string): boolean {
+  return pathname === '/v1/aliases';
+}
+
+/** One enabled name, as the wire carries it. */
+export interface AliasListEntry {
+  name: string;
+  kind: string;
+}
+
+export interface AliasListBody {
+  aliases: AliasListEntry[];
+}

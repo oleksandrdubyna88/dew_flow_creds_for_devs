@@ -9,6 +9,7 @@ import {
   errorBody,
   parseBearer,
   parseJsonObject,
+  isAliasListRoute,
   parseAliasRoute,
   parseUseRoute,
   statusForErrorCode,
@@ -156,4 +157,20 @@ test('a leading capital is still refused, so no case variant aliases a real acti
   assert.equal(parseUseRoute('/v1/use/Exec'), undefined);
   assert.equal(parseUseRoute('/v1/use/EXPORTENV'), undefined);
   assert.equal(parseAliasRoute('/v1/alias/Exec'), undefined);
+});
+
+test('the listing route is its own path, and a GET', () => {
+  // Never the same path as an action: one answers a question and raises nothing, the other
+  // performs something and raises a modal. A shape that could be confused for the other is a
+  // shape somebody eventually confuses.
+  assert.equal(isAliasListRoute('/v1/aliases'), true);
+
+  for (const other of ['/v1/alias/exec', '/v1/alias', '/v1/aliases/', '/v1/aliases/exec', '/v1/health']) {
+    assert.equal(isAliasListRoute(other), false, other);
+  }
+});
+
+test('the listing path is not an action route, and an action path is not the listing', () => {
+  assert.equal(parseAliasRoute('/v1/aliases'), undefined);
+  assert.equal(isAliasListRoute('/v1/alias/exec'), false);
 });

@@ -29,6 +29,8 @@ namespace CredsCli;
 [JsonSerializable(typeof(AliasRequest))]
 [JsonSerializable(typeof(AliasExecRequest))]
 [JsonSerializable(typeof(AliasQueryRequest))]
+[JsonSerializable(typeof(AliasListResponse))]
+[JsonSerializable(typeof(AliasListEntry))]
 [JsonSerializable(typeof(Dictionary<string, int>))]
 [JsonSerializable(typeof(Dictionary<string, string>))]
 internal sealed partial class CredsJsonContext : JsonSerializerContext;
@@ -77,3 +79,11 @@ internal sealed record AliasExecRequest(
 internal sealed record AliasQueryRequest(
     [property: JsonPropertyName("alias")] string Alias,
     [property: JsonPropertyName("query")] string Query);
+
+/// <summary>What `creds ls` reads: names and kinds, and by design nothing else.</summary>
+internal sealed record AliasListResponse(
+    [property: JsonPropertyName("aliases")] AliasListEntry[]? Aliases);
+
+internal sealed record AliasListEntry(
+    [property: JsonPropertyName("name")] string Name,
+    [property: JsonPropertyName("kind")] string Kind);

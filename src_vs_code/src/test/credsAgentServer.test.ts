@@ -49,6 +49,8 @@ function world(options: {
   secrets?: readonly { value: string; label: string }[];
   burns?: boolean;
   alias?: { accountId: string; entityId: string; entityName: string; kind: string };
+  /** The names `creds ls` would see. Absent means this window has no registry at all. */
+  aliasList?: { name: string; kind: string }[];
   supports?: string[];
 }): World {
   const w: World = {
@@ -109,6 +111,7 @@ function world(options: {
     maskerFor(options.secrets),
     burnerFor(w, options.burns),
     aliasResolverFor(options.alias),
+    options.aliasList === undefined ? undefined : () => options.aliasList ?? [],
   );
   return w;
 }
@@ -558,6 +561,96 @@ test('a token call is not throttled by somebody else spamming aliases', async ()
     const answer = await call(port, '/v1/use/exec', { token: secret, body: { command: 'uptime' } });
 
     assert.equal(answer.status, 200, JSON.stringify(answer.body));
+  } finally {
+    w.server.dispose();
+  }
+});
+
+/**
+ * `creds ls` — the listing, and the line it deliberately does not cross.
+ *
+ * <p>Unauthenticated like the action route, because the CLI that needs it most is on a
+ * Remote-SSH host where the registry is on the other machine and cannot be read from disk. What
+ * it gives up is inventory — a local process learns which names exist — and what it must never
+ * give up is anything stored.</p>
+ */
+test('the listing answers without a token, because a remote CLI has none to give', async () => {
+  const w = world({ aliasList: [{ name: 'prod', kind: 'ssh' }, { name: 'staging-db', kind: 'db' }] });
+  try {
+    const { port } = await share(w);
+
+    const answer = await call(port, '/v1/aliases', { method: 'GET' });
+
+    assert.equal(answer.status, 200);
+    assert.deepEqual(answer.body.aliases, [
+      { name: 'prod', kind: 'ssh' },
+      { name: 'staging-db', kind: 'db' },
+    ]);
+  } finally {
+    w.server.dispose();
+  }
+});
+
+test('the listing carries names and kinds and NOTHING else', async () => {
+  // The whole safety argument rests on this: a name is something the person chose, a kind is
+  // one of seven words. An accountId or entityId here would hand a local process the addresses
+  // it would otherwise have to be given.
+  const w = world({ aliasList: [{ name: 'prod', kind: 'ssh' }] });
+  try {
+    const { port } = await share(w);
+
+    const answer = await call(port, '/v1/aliases', { method: 'GET' });
+    const entry = (answer.body.aliases as Record<string, unknown>[])[0];
+
+    assert.deepEqual(Object.keys(entry).sort(), ['kind', 'name']);
+    assert.equal(JSON.stringify(answer.body).includes('a1'), false, 'no account id');
+    assert.equal(JSON.stringify(answer.body).includes('e9'), false, 'no entity id');
+  } finally {
+    w.server.dispose();
+  }
+});
+
+test('a window with no registry answers an empty list rather than failing', async () => {
+  const w = world({});
+  try {
+    const { port } = await share(w);
+
+    const answer = await call(port, '/v1/aliases', { method: 'GET' });
+
+    assert.equal(answer.status, 200);
+    assert.deepEqual(answer.body.aliases, []);
+  } finally {
+    w.server.dispose();
+  }
+});
+
+test('the listing raises no dialog, and therefore is not throttled', async () => {
+  // The action route is rate-limited because there the modal IS the authorization. A listing
+  // asks nobody anything, so throttling it would only break `creds ls` in a loop.
+  const w = world({ aliasList: [{ name: 'prod', kind: 'ssh' }] });
+  try {
+    const { port } = await share(w);
+    const before = w.dialogs.length;
+
+    for (let i = 0; i < 20; i += 1) {
+      const answer = await call(port, '/v1/aliases', { method: 'GET' });
+      assert.equal(answer.status, 200, `call ${i}`);
+    }
+
+    assert.equal(w.dialogs.length, before, 'nobody was asked anything');
+  } finally {
+    w.server.dispose();
+  }
+});
+
+test('the listing is a GET only — a POST to it is not an action route', async () => {
+  const w = world({ aliasList: [{ name: 'prod', kind: 'ssh' }] });
+  try {
+    const { port } = await share(w);
+
+    const answer = await call(port, '/v1/aliases', { body: {} });
+
+    assert.equal(code(answer), 'not_found');
   } finally {
     w.server.dispose();
   }

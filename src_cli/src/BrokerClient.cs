@@ -118,6 +118,15 @@ internal sealed class BrokerClient(BrokerContract contract, HttpClient http) : I
         return new BrokerReply((int)response.StatusCode, body);
     }
 
+    /// <summary>Read the names this window has enabled. No token, and none comes back.</summary>
+    internal async Task<BrokerReply> GetAsync(int port, string route)
+    {
+        using var cts = new CancellationTokenSource(HealthTimeout);
+        using var response = await http.GetAsync(Url(port, route), cts.Token);
+        var body = await response.Content.ReadAsStringAsync(cts.Token);
+        return new BrokerReply((int)response.StatusCode, body);
+    }
+
     private static string Url(int port, string path) => $"http://127.0.0.1:{port}{path}";
 
     public void Dispose() => http.Dispose();
