@@ -3,6 +3,7 @@ import { Revision } from './revisionHistory';
 import type { StorageManager } from './storageManager';
 import { DbType } from './types';
 import { TotpSnapshot, totpSnapshot } from './totp';
+import { McpSource, ResolvedMcpAccess, accessMask, describeAccess } from './mcpAccess';
 
 /**
  * The shared half of the two entity viewers (audit 2026-08-25, A1).
@@ -118,4 +119,49 @@ export function dbDisplay(dbConnection: string | undefined, dbType: DbType | und
     dbPortIsDefault,
     dbHasPassword: parsed?.password !== undefined,
   };
+}
+
+/**
+ * The Agent-access summary both viewers show, computed once.
+ *
+ * <p>Here rather than in either panel because there are two of them — the live card and the
+ * card for a version out of history — and the field-to-secret ladder they used to carry twice
+ * is why this module exists at all (audit A1). A summary computed in one and not the other is
+ * the same defect one layer up.</p>
+ *
+ * <p>The revision viewer passes `asOfVersion`, which changes the sentence rather than the
+ * numbers: a snapshot carries whatever the switches were at the time, and showing that as a
+ * current permission would be alarming and wrong.</p>
+ */
+export function mcpSummary(
+  resolved: ResolvedMcpAccess,
+  folderName: string | undefined,
+  asOfVersion: boolean,
+): { summary: string; source: McpSource; folderName?: string; mask: boolean[]; asOfVersion: boolean } {
+  return {
+    summary: describeAccess(resolved.access),
+    source: resolved.source,
+    folderName,
+    mask: accessMask(resolved.access),
+    asOfVersion,
+  };
+}
+
+/** Where the answer came from, in the words the card says out loud. */
+export function describeMcpSource(m: {
+  source: McpSource;
+  folderName?: string;
+  asOfVersion?: boolean;
+}): string {
+  const when = m.asOfVersion === true ? ' — as of this version, not necessarily now' : '';
+  return whereFrom(m.source, m.folderName) + when;
+}
+
+function whereFrom(source: McpSource, folderName: string | undefined): string {
+  if (source === 'entity') {
+    return 'set on this entry';
+  }
+  return source === 'folder'
+    ? `inherited from the folder ${folderName ?? ''}`.trimEnd()
+    : 'no agent access';
 }

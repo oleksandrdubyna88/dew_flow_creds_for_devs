@@ -397,6 +397,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Bounded on purpose: 256 KB of output per stream, 30 s per command (raisable to 120 s), 8 at a
   time, and every child killed when the window goes.
 
+## [0.66.1] — 2026-08-26
+
+### Added
+
+- **The entity card shows Agent access too** — the same five segments and the same colours as the
+  form, plus what is allowed in words. And one thing the form does not need to say: **whether the
+  permission was set on this entry or inherited from its folder.** In the form you can see whether
+  the switches were touched; on a card there are no switches, so "visible · usable" would read
+  identically either way.
+
 ## [0.66.0] — 2026-08-26
 
 ### Added

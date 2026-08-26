@@ -2,6 +2,7 @@ import { escapeHtml, jsonForScript } from './webviewHtml';
 import * as crypto from 'node:crypto';
 import * as vscode from 'vscode';
 import { copySecret } from './secretClipboard';
+import { describeMcpSource } from './viewerOptions';
 import { DbConnParts } from './dbConnString';
 import { CommandArg, EntityMetadata } from './types';
 import { buildCommandLine, normalizeArgs } from './commandLine';
@@ -38,6 +39,15 @@ export interface EntityViewOptions {
   jumpHostName?: string;
   /** `SHA256:…` of the pinned host key, the string a server prints about itself (audit B10). */
   hostKeyFingerprint?: string;
+  /**
+   * What an agent may do with this entry, already resolved — and WHERE that answer came from.
+   *
+   * <p>The source is the half the form does not need. There you can see whether the switches
+   * were touched; here there are no switches, so "visible · usable" reads identically whether
+   * somebody chose it on this entry or its folder decided it. Said in words, or the card lies
+   * the same way in both cases.</p>
+   */
+  mcp?: { summary: string; source: 'entity' | 'folder' | 'none'; folderName?: string; mask: boolean[] };
   resolveSecret: (
     field: 'password' | 'privateKey' | 'vpnConfig' | 'dbConnection' | 'dbPassword' | 'totp',
   ) => Thenable<string | undefined>;
@@ -317,7 +327,17 @@ function renderHtml(options: EntityViewOptions): string {
     </div>`;
   };
 
+  const mcpRow = options.mcp === undefined ? '' : `<div class="row">
+      <label>Agent access</label>
+      <div class="mcpBar" aria-hidden="true">${options.mcp.mask
+        .map((on, i) => `<span class="mcpSeg mcpSeg${i}${on ? ' mcpSegOn' : ''}"></span>`)
+        .join('')}</div>
+      <div class="value">${escapeHtml(options.mcp.summary)}</div>
+      <div class="note">${escapeHtml(describeMcpSource(options.mcp))}</div>
+    </div>`;
+
   const rows = [
+    mcpRow,
     row('Name', 'name', d.name),
     row('Host', 'host', d.host),
     row('User', 'user', d.user),
@@ -457,6 +477,16 @@ function renderHtml(options: EntityViewOptions): string {
   h2 { margin: 0 0 14px; font-size: 1.2em; }
   .row { margin-bottom: 10px; }
   .note { opacity: .75; font-style: italic; }
+  /* The same five segments the form shows, in the same colours — a card and its editor must not
+     describe one permission set two different ways. */
+  .mcpBar { display: flex; gap: 3px; margin: 2px 0 4px; }
+  .mcpSeg { width: 26px; height: 4px; border-radius: 2px; opacity: .18; }
+  .mcpSegOn { opacity: 1; }
+  .mcpSeg0 { background: var(--vscode-credSshManager-depColor5, #5CC46F); }
+  .mcpSeg1 { background: var(--vscode-credSshManager-depColor4, #5BC8DE); }
+  .mcpSeg2 { background: var(--vscode-credSshManager-depColor2, #E8B02A); }
+  .mcpSeg3 { background: var(--vscode-credSshManager-depColor7, #B482F5); }
+  .mcpSeg4 { background: var(--vscode-credSshManager-depColor3, #FF8A76); }
   .env { font-size: .72em; letter-spacing: .5px; }
   .envTag { opacity: .8; font-family: var(--vscode-editor-font-family); font-size: .9em; }
   .envLine { margin-top: 3px; align-items: center; }

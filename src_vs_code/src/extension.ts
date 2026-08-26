@@ -89,6 +89,8 @@ import { CredTreeDataProvider, VIEW_ID } from './treeDataProvider';
 import { DepDecorationProvider } from './depDecorations';
 import { ExpansionMemory, expansionKey } from './treeExpansion';
 import { TRASH_RETENTION_CHOICES } from './trash';
+import { resolveMcpAccess } from './mcpAccess';
+import { mcpSummary } from './viewerOptions';
 import { buildDependencyCandidates, buildDependencyColorMap } from './depGraph';
 import { EntityFlagsRefresher, entityFlagSource } from './entityFlags';
 import { createDiagnosticLog } from './diagnosticLog';
@@ -3689,6 +3691,11 @@ async function openEntityViewer(
   const hasTotp = (await storage.getTotp(accountId, details.id)) !== undefined;
   showEntityView({
     details,
+    mcp: mcpSummary(
+      resolveMcpAccess(node, storage.getNode(accountId, node.parentId ?? ''), false),
+      storage.getNode(accountId, node.parentId ?? '')?.name,
+      false,
+    ),
     keySourceName,
     jumpHostName,
     hostKeyFingerprint: pinnedKey === undefined ? undefined : hostKeyFingerprint(pinnedKey),
