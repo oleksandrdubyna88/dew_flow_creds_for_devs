@@ -5,6 +5,7 @@ import * as path from 'node:path';
 import { test } from 'node:test';
 import { GitError, GitRunner, GitTransport } from '../gitTransport';
 import { GIT_BASE_ARGS, VAULT_BRANCH, cloneDirName, fetchArgv, initArgv, resetArgv } from '../gitRemote';
+import { CURRENT_WRAPPED_VERSION } from '../cryptoUtils';
 import { StoredAccount } from '../types';
 
 /**
@@ -176,7 +177,11 @@ function withVault(): Fake {
     path.join(dir, 'vault_alice_at_example_com.enc'),
     JSON.stringify({
       format: 'cred-ssh-manager-backup',
-      version: 3,
+      // The CURRENT version, never a literal: this fixture exists to be a *valid* envelope,
+      // not a v3 one. Pinned to 3 it would keep passing forever while quietly testing only
+      // the legacy read path, and the share-append behaviour on the format actually being
+      // written would have no coverage at all.
+      version: CURRENT_WRAPPED_VERSION,
       kdf: 'hkdf',
       account: ACCOUNT,
       salt: 'c2FsdA==',
