@@ -570,6 +570,8 @@ suffixes and nothing else — so the `^entity`, `:shareable` and `:pwd` menus ne
 
 ### Depends on — a relationship the vault can see (0.62.0)
 
+> Design record: [PLAN_depends_on.md](PLAN_depends_on.md).
+
 An SSH host is useless without the VPN that reaches its network. The vault knew all three
 entries and nothing about the sentence joining them, so it was re-derived by hand, usually while
 something was already broken. An entity now declares what it `dependsOn`; both ends wear one

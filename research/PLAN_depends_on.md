@@ -1,19 +1,48 @@
 # PLAN — "Depends on": one entity points at another, and the tree says so in colour
 
-> Status: **code written and green under test; step 13, the pass in a real vault, is NOT done.**
-> Steps 1–12 are landed and `research/module_extension.md` describes the feature as built; the
-> suite is 1527 tests / 0 failures with `tsc`, `eslint` and `bundle` clean. What remains is the
-> one thing no test stands in for — a person creating a dependency in the UI, seeing both ends
-> tinted, opening the sub-tree beside a history twisty, and pressing the go-to-folder button.
-> Until that happens this plan stays here, because until then nobody has seen the feature work.
+> Status: **IMPLEMENTED, 2026-08-26** (shipped as extension 0.62.0, commit `01c9602`). An entity
+> declares what it depends on; both ends wear one colour in the tree, the entity depended ON grows
+> a *Depended on by* sub-tree beside its version history, and a folder in that sub-tree carries a
+> button to where it really lives. Confirmed in a real vault by the owner, which was step 13 and
+> the only step no test could stand in for.
+> Still owed, and all three are tails rather than gaps: a drag begun on a sub-tree row is inert
+> (`handleDrag` filters raw elements for `kind === 'node'` without going through `asElement`, and
+> the real row still drags); the read-only viewer does not name the relationship in text; and
+> `depColors.ts` has no test of its own — its functions are covered through `depGraph` and
+> `depDecorations`.
+>
+> **Deviations, and the one that is worth reading first.** *Colour borrowing is ONE HOP, not
+> transitive* — pinned after my own test failed asserting a password would take the colour of the
+> VPN two links away. The code was right and the expectation was wrong: in a vault where
+> everything eventually reaches one VPN, following the chain would paint every entry the same
+> colour and stop saying anything. It is now a named guarantee rather than an implementation
+> detail nobody had thought about.
+>
+> **Eight new modules, not the five this plan named**, and the extra three were forced rather than
+> chosen: `eslint`'s 800-line ceiling left `treeDataProvider.ts` six lines of headroom, so
+> `treeIcons.ts`, `depTreeItems.ts` and `entityContextValue` (into `treeRowText.ts`) came out
+> first as pure moves — proved by the existing suite passing unedited — and `depPickerScript.ts`
+> came out of `entityFormScript.ts` for the same reason. `depIndexCache.ts` was added so the tree
+> and the decorations hold ONE index rather than two that could disagree.
+>
+> **`shareableDetails()` was extracted into `shareFormat.ts`** rather than left as a spread inside
+> `shareInbox.ts`: "what leaves this vault" is now one pure function with a test, instead of a
+> line nobody would notice a new field being absent from. A field added to `EntityMetadata`
+> travels by default; making it NOT travel is the decision that has to be visible.
+>
+> **One trap worth carrying forward:** `entityFormPage.test.ts` builds its options with
+> `as EntityFormOptions`. Adding two required fields to that interface produced no compile error
+> at all — the cast is a promise to keep the shape in step by hand — and surfaced instead as
+> eleven runtime `TypeError`s. Adding a required field to an interface a fixture casts into is
+> exactly when that promise comes due.
 >
 > Scope: `src_vs_code` only — `types.ts`, `treeDataProvider.ts`, the three entity-form modules,
 > `extension.ts`, `shareInbox.ts`, `shareFormat.ts`, `package.json`, and eight new modules.
 >
-> Related docs: [research/module_extension.md](../research/module_extension.md)
-> (§"History as tree rows", §"The form is three modules, not one file", §"The per-entity flag
-> caches", §"Performance: caches instead of per-row and per-cycle work"),
-> [research/architecture.md](../research/architecture.md).
+> Related docs: [module_extension.md](module_extension.md)
+> (§"Depends on — a relationship the vault can see", §"History as tree rows", §"The form is three
+> modules, not one file", §"The per-entity flag caches", §"Performance: caches instead of per-row
+> and per-cycle work"), [architecture.md](architecture.md).
 
 ## The goal
 
