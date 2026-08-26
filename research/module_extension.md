@@ -700,6 +700,57 @@ the single quote, which none of the copies did: no template interpolates into a 
 attribute today, and "none of them does today" is precisely the assumption a later edit breaks
 without a sound.
 
+### Two groups, two columns, and a colour per section (0.63.0)
+
+The form was one tall column that got taller with every feature, and on a wide screen it used a
+third of the width. It is now **Main** — what the entry IS: name and type, what it connects to,
+its secret, its notes, its dates — and **Additional**, holding lifetime, the advanced connection
+settings, dependencies, the one-time code and attachments. Each group flows into two columns
+above 1000px and collapses to one below it, Main above Additional.
+
+**Two sections were cut in half** to make that true rather than approximately true: `Lifetime`
+came out of `General`, and the jump host, tags, agent forwarding, pinned host key and port
+forwards came out of `Connection` into a new `Advanced connection`. Moving whole fieldsets would
+have been a third of the work and would have left lifetime sitting in the main group and a jump
+host beside a hostname.
+
+**`formSections.ts` is the catalog, and it exists because the alternative already failed here.** A
+section used to be two facts in two files that agreed by habit — markup in `entityFormPage.ts`,
+a show/hide rule in the page script — which is the same shape that shipped `script` as a kind
+nobody could select. Adding a group and a colour would have made it four. So id, legend, group,
+colour and visibility live in one list, and:
+
+- `openSection(id)` builds every fieldset's opening tag from it, so an id the switch does not
+  know cannot be rendered;
+- `formVisibilityScript.ts` **generates** `updateVisibility()` from it, so a section that exists
+  has a rule by construction — the hand-written ladder is gone;
+- the CSS rules for the border colours are generated from it too;
+- `webviewHtml.test.ts` walks it rather than a list typed out by hand. That test previously named
+  eight ids and would not have noticed a ninth section at all.
+
+**Fifteen sections share eleven colours.** The rule is not that every section differs — it is that
+no two VISIBLE AT ONCE may. `VPN`, `Database`, `Terminal command` and `Script` are chosen by the
+kind and can never appear beside one another, so they reuse the three colours the SSH sections
+need. `colorCollisionsForKind` makes that a checked property: a test walks every entity kind and
+fails naming both sections and the colour. An SSH connection is the worst case at eleven sections,
+which is where the palette size came from. Verified by giving `General` and `Notes` one colour and
+watching it name both, for every kind.
+
+Two decisions in the rendering worth stating. **Two columns are a flow (`column-count`), not a
+grid**: the sections have wildly different heights, and grid rows leave a tall `Connection` beside
+a short `Notes` with a hole under it. **Only the border carries the colour** — the legend keeps
+the theme's foreground, because fifteen coloured captions identify nothing.
+
+`Dates` is the one section allowed to be absent (a new entry has no dates, and "unknown" plus an
+em dash is noise at the moment it means least). It carries `optional: true` so the
+rendered-exactly-once check can stay a hard equality for the other fourteen instead of being
+softened for all of them.
+
+The eleventh palette colour is shared with the dependency tints by design rather than copied:
+adding it gave the dependency auto-pick eleven slots instead of ten, and the test that asserted
+"all ten taken" is now derived from `DEP_COLOR_KEYS` — it had gone red for a palette change while
+the behaviour it described had not moved.
+
 ### The entity form's chrome (0.56.0)
 
 Save / Cancel and the validation line live in a `position: sticky` bar above the `<h2>`; long

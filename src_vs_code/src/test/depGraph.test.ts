@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { DepColorKey } from '../depColors';
+import { DEP_COLOR_KEYS, DepColorKey } from '../depColors';
 import {
   ROOT_GROUP_NAME,
   buildDependencyCandidates,
@@ -316,23 +316,22 @@ test('auto-pick hands out the first unused colour', () => {
   );
 });
 
-test('with all ten taken it hands out the least-used, and a tie goes to palette order', () => {
-  const allOnce = new Map<DepColorKey, number>([
-    ['depColor1', 1],
-    ['depColor2', 1],
-    ['depColor3', 1],
-    ['depColor4', 1],
-    ['depColor5', 1],
-    ['depColor6', 1],
-    ['depColor7', 1],
-    ['depColor8', 1],
-    ['depColor9', 1],
-    ['depColor10', 1],
-  ]);
-  assert.equal(pickDepColor(allOnce), 'depColor1');
+test('with the whole palette taken it hands out the least-used, and a tie goes to palette order', () => {
+  // Built from DEP_COLOR_KEYS rather than from a list typed out here: this test named ten
+  // colours and went red the day an eleventh was added for the form's section borders — while
+  // the behaviour it describes had not changed at all.
+  const allOnce = new Map<DepColorKey, number>(DEP_COLOR_KEYS.map((key) => [key, 1]));
+  assert.equal(pickDepColor(allOnce), DEP_COLOR_KEYS[0]);
 
   const crowded = new Map(allOnce);
-  crowded.set('depColor1', 4);
-  crowded.set('depColor2', 3);
-  assert.equal(pickDepColor(crowded), 'depColor3');
+  crowded.set(DEP_COLOR_KEYS[0], 4);
+  crowded.set(DEP_COLOR_KEYS[1], 3);
+  assert.equal(pickDepColor(crowded), DEP_COLOR_KEYS[2]);
+});
+
+test('a palette with one free slot hands out that slot, wherever it is', () => {
+  const allButLast = new Map<DepColorKey, number>(
+    DEP_COLOR_KEYS.slice(0, -1).map((key) => [key, 1]),
+  );
+  assert.equal(pickDepColor(allButLast), DEP_COLOR_KEYS[DEP_COLOR_KEYS.length - 1]);
 });

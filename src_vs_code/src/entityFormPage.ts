@@ -3,6 +3,25 @@ import { normalizeTags } from './sshOptions';
 import { escapeHtml } from './webviewHtml';
 import { formPageScript } from './entityFormScript';
 import { initialDependencyRows } from './depGraph';
+import { FORM_SECTIONS } from './formSections';
+
+/**
+ * A fieldset's opening tag, from the catalog.
+ *
+ * <p>The id, the legend and the border colour all come from one place, so a section cannot be
+ * rendered with an id the visibility switch does not know or a colour nobody contributed. An
+ * unknown name throws at render time rather than producing a fieldset that silently never
+ * shows — the tests render every kind, so it cannot reach a user.</p>
+ */
+function openSection(id: string): string {
+  const section = FORM_SECTIONS.find((candidate) => candidate.id === id);
+  if (section === undefined) {
+    throw new Error(`No form section named ${id}`);
+  }
+  return `<fieldset id="${section.id}" class="sec ${section.color}">
+    <legend>${escapeHtml(section.legend)}</legend>`;
+}
+
 import { resolveKind } from './entityKind';
 import {
   FOREVER_LIFETIME,
@@ -189,6 +208,103 @@ export function renderHtml(options: EntityFormOptions): string {
     ? 'A private key is stored. Leave empty to keep it.'
     : 'No private key stored yet. Paste the full key (with line breaks).';
 
+  // The Additional group's sections, built here rather than inline below because they no longer
+  // sit where their neighbours do: Lifetime was cut out of General and Advanced connection out of
+  // Connection, and the rest are moved out of the main flow entirely. Naming them makes the
+  // composition at the bottom of the page readable as a list of what is in which group.
+  const lifetimeHtml = `${openSection('lifetimeSection')}
+    <label for="lifetime">Lifetime</label>
+    <select id="lifetime">${lifetimeOptions(d)}</select>
+    <p class="hint" id="lifetimeHint">A short-lived entry is really deleted when its time comes — secret, history and all, on every machine that syncs. Only an agent using it through the broker counts as a use; copying it yourself does not.</p>
+  </fieldset>`;
+
+  const advancedConnectionHtml = `${openSection('advancedConnectionSection')}
+    <label for="jumpHostEntityId">Jump host (bastion)</label>
+    <select id="jumpHostEntityId">${jumpOptions}</select>
+    <p class="hint">Reached first, as <code>ssh -J</code>. Another entity, never a typed command — a jump host that could be typed could be a command.</p>
+    <label for="tags">Tags</label>
+    <input id="tags" type="text" placeholder="production eu-west" value="${escapeHtml(normalizeTags(d?.tags).join(' '))}">
+    <p class="hint">Space-separated labels, shown on the row and matched by the filter.</p>
+    <div class="check"><input id="agentForward" type="checkbox" ${d?.agentForward === true ? 'checked' : ''}>
+      <label for="agentForward">Forward the SSH agent (<code>-A</code>)</label></div>
+    <p class="hint">Lets the remote host use your keys through the agent — needed to <code>git clone</code> from there. It also means anyone with root on that host can ask your agent to sign while you are connected; with this extension's agent, each such request still asks you.</p>
+    ${
+      options.hasStoredHostKey
+        ? `<label>Pinned host key</label>
+           <div class="line"><input readonly value="${escapeHtml(options.hostKeyFingerprint ?? '')}"></div>
+           <p class="hint">Checked on every connection. If the host is rebuilt, clear this and the next connection will show you the new fingerprint.</p>
+           <div class="check"><input id="clearHostKey" type="checkbox">
+             <label for="clearHostKey">Forget the pinned host key</label></div>`
+        : '<p class="hint">No host key pinned yet — the first connection shows you its fingerprint and offers to pin it.</p>'
+    }
+    <label>Port forwarding</label>
+    <div id="forwardRows"></div>
+    <button type="button" id="addForward" class="secondary">+ Add forward</button>
+    <p class="hint">Local (<code>-L</code>) makes a port here reach a service there; remote (<code>-R</code>) is the reverse. Written as <code>port:host:hostport</code>.</p>
+  </fieldset>`;
+
+  const totpHtml = `${openSection('totpSection')}
+    <label for="totp">Authenticator seed — an <code>otpauth://</code> URI or the base32 secret</label>
+    <input id="totp" type="password" autocomplete="off" spellcheck="false"
+           placeholder="otpauth://totp/GitHub:me?secret=JBSW…   or   JBSW Y3DP EHPK 3PXP">
+    <p class="hint">${
+      options.hasStoredTotp
+        ? `A seed is stored (${escapeHtml(options.storedTotpDescription ?? 'unreadable')}). Paste a new one to replace it.`
+        : 'Most services offer this under "can&#39;t scan the QR code?". Kept in the OS keychain; the codes are computed here, so the second app can close.'
+    }</p>
+    <div class="check"><input id="totpSteam" type="checkbox">
+      <label for="totpSteam">Steam Guard (5-character code)</label></div>
+    ${
+      options.hasStoredTotp
+        ? `<div class="check"><input id="clearTotp" type="checkbox">
+           <label for="clearTotp">Remove the stored seed</label></div>`
+        : ''
+    }
+  </fieldset>`;
+
+  const attachmentsHtml = `${openSection('attachmentsSection')}
+    <label for="attachFile">Additional file (pdf, office, text, archives — never executables)</label>
+    <input id="attachFile" type="file" accept="${fileAccept}">
+    <p class="hint">${
+      options.hasStoredAttachment
+        ? `A file is stored${d?.attachmentFileName ? ` (${escapeHtml(d.attachmentFileName)})` : ''}. Pick a new one to replace it.`
+        : 'Stored encrypted, synced only inside the vault. Up to 4 MB.'
+    }</p>
+    ${
+      options.hasStoredAttachment
+        ? `<div class="check"><input id="clearAttachment" type="checkbox">
+           <label for="clearAttachment">Remove the stored file</label></div>`
+        : ''
+    }
+    <label for="attachImage">Additional image</label>
+    <input id="attachImage" type="file" accept="${imageAccept}">
+    <p class="hint">${
+      options.hasStoredImage
+        ? `An image is stored${d?.imageFileName ? ` (${escapeHtml(d.imageFileName)})` : ''}. Pick a new one to replace it.`
+        : 'Shown as a preview in the viewer. Stored encrypted, up to 4 MB.'
+    }</p>
+    ${
+      options.hasStoredImage
+        ? `<div class="check"><input id="clearImage" type="checkbox">
+           <label for="clearImage">Remove the stored image</label></div>`
+        : ''
+    }
+  </fieldset>`;
+
+  const dependsOnHtml = `${openSection('dependsOnSection')}
+    <div class="check">
+      <input id="dependsOnOn" type="checkbox" ${dependsOnRows.length > 0 ? 'checked' : ''}>
+      <label for="dependsOnOn">This entry needs other entries to be usable</label>
+    </div>
+    <div id="dependsOnBody">
+      <div id="dependsOnRows"></div>
+      <div class="genRow">
+        <button type="button" id="addDependency">+ Add dependency</button>
+      </div>
+      <p class="hint">Both ends are marked with the same colour in the tree, and the entry you depend on grows a list of everything that needs it. The colour belongs to that entry — change it here and every entry depending on the same thing follows.</p>
+    </div>
+  </fieldset>`;
+
   return `<!DOCTYPE html>
 <html>
 <head>
@@ -197,7 +313,7 @@ export function renderHtml(options: EntityFormOptions): string {
       content="default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${nonce}';">
 <style>
   body { font-family: var(--vscode-font-family); color: var(--vscode-foreground);
-         background: var(--vscode-editor-background); padding: 16px 24px; max-width: 640px; }
+         background: var(--vscode-editor-background); padding: 16px 24px; max-width: 1280px; }
   h2 { margin: 0 0 12px; font-size: 1.2em; }
   fieldset { border: 1px solid var(--vscode-widget-border, #4444); border-radius: 4px;
              margin: 0 0 14px; padding: 10px 12px; }
@@ -208,6 +324,24 @@ export function renderHtml(options: EntityFormOptions): string {
   .check label { margin: 0; }
   .envRow { margin: 4px 0 0 2px; padding: 4px 8px;
             border-left: 2px solid var(--vscode-focusBorder, #007fd4); opacity: .95; }
+  /* Two columns as a FLOW, not a two-column grid: the sections have wildly different heights,
+     and grid rows would leave a tall Connection sitting beside a short Notes with a hole under
+     it. Multi-column packs them the way the eye expects. break-inside is what keeps a fieldset
+     from being sliced in half at the column boundary. Below the breakpoint the whole thing
+     collapses to one column, and the Main group is simply above the Additional one.
+     No backticks in here: one inside a CSS comment ends the template literal this page is. */
+  .fsGroup { column-count: 1; column-gap: 18px; }
+  .fsGroup > fieldset { break-inside: avoid; }
+  @media (min-width: 1000px) { .fsGroup { column-count: 2; } }
+  .groupTitle { margin: 18px 0 8px; font-size: .95em; text-transform: uppercase;
+                letter-spacing: .08em; opacity: .6; column-span: all; }
+  /* The legend keeps the default foreground on purpose - only the border carries the colour, so
+     a section is identified without the page turning into fifteen coloured captions. */
+  .sec { border-color: currentColor; }
+  ${FORM_SECTIONS.map(
+    (section) =>
+      `.sec.${section.color} { border-color: var(--vscode-credSshManager-${section.color}, var(--vscode-widget-border, #4444)); }`,
+  ).join('\n  ')}
   .depRow { display: flex; align-items: center; gap: 6px; margin: 6px 0; flex-wrap: wrap; }
   .depGone { opacity: .7; font-style: italic; }
   .depSwatches { display: inline-flex; gap: 3px; }
@@ -294,8 +428,10 @@ export function renderHtml(options: EntityFormOptions): string {
   </div>
   <h2>${isEdit ? 'Edit entity' : 'New entity'}</h2>
 
-  <fieldset>
-    <legend>General</legend>
+  <div id="mainGroup" class="fsGroup">
+  <h3 class="groupTitle">Main</h3>
+
+  ${openSection('generalSection')}
     <label for="name">Name *</label>
     <input id="name" type="text" autofocus value="${escapeHtml(d?.name ?? '')}">
     <label for="entityType">Type</label>
@@ -305,28 +441,9 @@ export function renderHtml(options: EntityFormOptions): string {
         ? `<p class="hint">Type is fixed by the folder's type.</p>`
         : ''
     }
-    <label for="lifetime">Lifetime</label>
-    <select id="lifetime">${lifetimeOptions(d)}</select>
-    <p class="hint" id="lifetimeHint">A short-lived entry is really deleted when its time comes — secret, history and all, on every machine that syncs. Only an agent using it through the broker counts as a use; copying it yourself does not.</p>
   </fieldset>
 
-  <fieldset>
-    <legend>Depends on</legend>
-    <div class="check">
-      <input id="dependsOnOn" type="checkbox" ${dependsOnRows.length > 0 ? 'checked' : ''}>
-      <label for="dependsOnOn">This entry needs other entries to be usable</label>
-    </div>
-    <div id="dependsOnBody">
-      <div id="dependsOnRows"></div>
-      <div class="genRow">
-        <button type="button" id="addDependency">+ Add dependency</button>
-      </div>
-      <p class="hint">Both ends are marked with the same colour in the tree, and the entry you depend on grows a list of everything that needs it. The colour belongs to that entry — change it here and every entry depending on the same thing follows.</p>
-    </div>
-  </fieldset>
-
-  <fieldset id="connectionSection">
-    <legend>Connection</legend>
+  ${openSection('connectionSection')}
     <div class="row">
       <div>
         <label for="host">Host *</label>
@@ -343,32 +460,9 @@ export function renderHtml(options: EntityFormOptions): string {
     <label for="sshKeyEntityId">SSH key source</label>
     <select id="sshKeyEntityId">${keyOptions}</select>
     <p class="hint">Pick another entity to use its key for this connection.</p>
-    <label for="jumpHostEntityId">Jump host (bastion)</label>
-    <select id="jumpHostEntityId">${jumpOptions}</select>
-    <p class="hint">Reached first, as <code>ssh -J</code>. Another entity, never a typed command — a jump host that could be typed could be a command.</p>
-    <label for="tags">Tags</label>
-    <input id="tags" type="text" placeholder="production eu-west" value="${escapeHtml(normalizeTags(d?.tags).join(' '))}">
-    <p class="hint">Space-separated labels, shown on the row and matched by the filter.</p>
-    <div class="check"><input id="agentForward" type="checkbox" ${d?.agentForward === true ? 'checked' : ''}>
-      <label for="agentForward">Forward the SSH agent (<code>-A</code>)</label></div>
-    <p class="hint">Lets the remote host use your keys through the agent — needed to <code>git clone</code> from there. It also means anyone with root on that host can ask your agent to sign while you are connected; with this extension's agent, each such request still asks you.</p>
-    ${
-      options.hasStoredHostKey
-        ? `<label>Pinned host key</label>
-           <div class="line"><input readonly value="${escapeHtml(options.hostKeyFingerprint ?? '')}"></div>
-           <p class="hint">Checked on every connection. If the host is rebuilt, clear this and the next connection will show you the new fingerprint.</p>
-           <div class="check"><input id="clearHostKey" type="checkbox">
-             <label for="clearHostKey">Forget the pinned host key</label></div>`
-        : '<p class="hint">No host key pinned yet — the first connection shows you its fingerprint and offers to pin it.</p>'
-    }
-    <label>Port forwarding</label>
-    <div id="forwardRows"></div>
-    <button type="button" id="addForward" class="secondary">+ Add forward</button>
-    <p class="hint">Local (<code>-L</code>) makes a port here reach a service there; remote (<code>-R</code>) is the reverse. Written as <code>port:host:hostport</code>.</p>
   </fieldset>
 
-  <fieldset id="keySection">
-    <legend>SSH key</legend>
+  ${openSection('keySection')}
     <label for="privateKey">Private key (content)</label>
     <textarea id="privateKey" rows="5" spellcheck="false" autocomplete="off"></textarea>
     <button type="button" id="genKey" class="secondary">Generate Ed25519 key pair</button>
@@ -389,8 +483,7 @@ export function renderHtml(options: EntityFormOptions): string {
            value="${escapeHtml(d?.sshKeyPath ?? '')}">
   </fieldset>
 
-  <fieldset id="vpnSection">
-    <legend>VPN</legend>
+  ${openSection('vpnSection')}
     <label for="vpnType">VPN type</label>
     <select id="vpnType">${vpnTypeOptions}</select>
     <label for="vpnConfigFile">Config file (.ovpn / .conf / …)</label>
@@ -432,8 +525,7 @@ export function renderHtml(options: EntityFormOptions): string {
     }
   </fieldset>
 
-  <fieldset id="terminalSection">
-    <legend>Terminal command</legend>
+  ${openSection('terminalSection')}
 
     <label for="command">Command</label>
     <input id="command" type="text" autocomplete="off" spellcheck="false"
@@ -456,8 +548,7 @@ export function renderHtml(options: EntityFormOptions): string {
     <p class="hint">This is exactly what runs.</p>
   </fieldset>
 
-  <fieldset id="dbSection">
-    <legend>Database</legend>
+  ${openSection('dbSection')}
     <label for="dbType">Database type</label>
     <select id="dbType">${dbTypeOptions}</select>
     <label for="dbConnection">Connection string</label>
@@ -486,8 +577,7 @@ export function renderHtml(options: EntityFormOptions): string {
     ${envRow('dbPassword', d)}
   </fieldset>
 
-  <fieldset id="passwordSection">
-    <legend>Secret</legend>
+  ${openSection('passwordSection')}
     <label for="password">Password / secret value</label>
     <input id="password" type="password" autocomplete="off">
     <div class="genRow">
@@ -505,28 +595,7 @@ export function renderHtml(options: EntityFormOptions): string {
     }
   </fieldset>
 
-  <fieldset id="totpSection">
-    <legend>One-time code (TOTP)</legend>
-    <label for="totp">Authenticator seed — an <code>otpauth://</code> URI or the base32 secret</label>
-    <input id="totp" type="password" autocomplete="off" spellcheck="false"
-           placeholder="otpauth://totp/GitHub:me?secret=JBSW…   or   JBSW Y3DP EHPK 3PXP">
-    <p class="hint">${
-      options.hasStoredTotp
-        ? `A seed is stored (${escapeHtml(options.storedTotpDescription ?? 'unreadable')}). Paste a new one to replace it.`
-        : 'Most services offer this under "can&#39;t scan the QR code?". Kept in the OS keychain; the codes are computed here, so the second app can close.'
-    }</p>
-    <div class="check"><input id="totpSteam" type="checkbox">
-      <label for="totpSteam">Steam Guard (5-character code)</label></div>
-    ${
-      options.hasStoredTotp
-        ? `<div class="check"><input id="clearTotp" type="checkbox">
-           <label for="clearTotp">Remove the stored seed</label></div>`
-        : ''
-    }
-  </fieldset>
-
-  <fieldset id="scriptSection">
-    <legend>Script</legend>
+  ${openSection('scriptSection')}
     <label for="scriptLanguage">Language</label>
     <select id="scriptLanguage">${scriptLanguageOptions(d?.scriptLanguage)}</select>
     <label for="scriptBody">Script</label>
@@ -541,41 +610,10 @@ export function renderHtml(options: EntityFormOptions): string {
     <button type="button" id="addScriptVar" class="secondary">+ Add variable</button>
   </fieldset>
 
-  <fieldset>
-    <legend>Attachments</legend>
-    <label for="attachFile">Additional file (pdf, office, text, archives — never executables)</label>
-    <input id="attachFile" type="file" accept="${fileAccept}">
-    <p class="hint">${
-      options.hasStoredAttachment
-        ? `A file is stored${d?.attachmentFileName ? ` (${escapeHtml(d.attachmentFileName)})` : ''}. Pick a new one to replace it.`
-        : 'Stored encrypted, synced only inside the vault. Up to 4 MB.'
-    }</p>
-    ${
-      options.hasStoredAttachment
-        ? `<div class="check"><input id="clearAttachment" type="checkbox">
-           <label for="clearAttachment">Remove the stored file</label></div>`
-        : ''
-    }
-    <label for="attachImage">Additional image</label>
-    <input id="attachImage" type="file" accept="${imageAccept}">
-    <p class="hint">${
-      options.hasStoredImage
-        ? `An image is stored${d?.imageFileName ? ` (${escapeHtml(d.imageFileName)})` : ''}. Pick a new one to replace it.`
-        : 'Shown as a preview in the viewer. Stored encrypted, up to 4 MB.'
-    }</p>
-    ${
-      options.hasStoredImage
-        ? `<div class="check"><input id="clearImage" type="checkbox">
-           <label for="clearImage">Remove the stored image</label></div>`
-        : ''
-    }
-  </fieldset>
-
   ${
     options.createdAt === undefined && options.updatedAt === undefined
       ? ''
-      : `<fieldset>
-    <legend>Dates</legend>
+      : `${openSection('datesSection')}
     <div class="row">
       <div>
         <label>Created</label>
@@ -589,10 +627,19 @@ export function renderHtml(options: EntityFormOptions): string {
   </fieldset>`
   }
 
-  <fieldset>
-    <legend>Notes</legend>
+  ${openSection('notesSection')}
     <textarea id="notes" rows="3">${escapeHtml(options.initialNotes ?? '')}</textarea>
   </fieldset>
+  </div>
+
+  <div id="additionalGroup" class="fsGroup">
+  <h3 class="groupTitle">Additional</h3>
+  ${lifetimeHtml}
+  ${advancedConnectionHtml}
+  ${dependsOnHtml}
+  ${totpHtml}
+  ${attachmentsHtml}
+  </div>
 
 
 ${formPageScript(nonce, d, {

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import Module from 'node:module';
 import { test } from 'node:test';
 import { ENTITY_KINDS } from '../types';
+import { FORM_SECTIONS } from '../formSections';
 import { escapeHtml, escapeHtmlForHighlighting, jsonForScript } from '../webviewHtml';
 
 /**
@@ -79,7 +80,10 @@ const viewer = withVscodeStub(
 );
 
 /** Render the form for one kind and return the HTML it produced. */
-function renderForm(lockedKind: string | undefined): string {
+function renderForm(
+  lockedKind: string | undefined,
+  extra: Record<string, unknown> = {},
+): string {
   currentPanel = newPanel();
   // The promise settles when the panel closes, which a stub never does; the html is
   // assigned synchronously before that promise is even constructed.
@@ -101,6 +105,7 @@ function renderForm(lockedKind: string | undefined): string {
     // the escaping and the script-parses checks below cover it like every other field.
     dependencyFolders: [{ id: 'f1', name: 'vpn', entities: [{ id: 'v1', name: 'org meter' }] }],
     dependencyColors: {},
+    ...extra,
   });
   assert.notEqual(currentPanel.webview.html.length, 0, 'the form rendered no html');
   return currentPanel.webview.html;
@@ -182,21 +187,42 @@ test('the viewer page script parses too', () => {
 });
 
 test('every fieldset the visibility switch touches exists exactly once', () => {
-  // The other half of the same failure: `show()` on a missing id throws, which kills the
-  // switch just as dead as a parse error does.
+  // The other half of the same failure: the switch hides a section by id, and an id that is in
+  // the catalog but not in the markup is a rule that governs nothing.
+  //
+  // Driven from FORM_SECTIONS rather than from a list typed out here — which is the whole point
+  // of the catalog. This test used to name eight ids by hand, and a section added to the page
+  // without one would have been invisible to it.
   const html = renderForm('script');
-  for (const id of [
-    'connectionSection',
-    'keySection',
-    'vpnSection',
-    'dbSection',
-    'terminalSection',
-    'scriptSection',
-    'passwordSection',
-    'totpSection',
-  ]) {
-    const count = html.split(`id="${id}"`).length - 1;
-    assert.equal(count, 1, `${id} appears ${count} times`);
+  for (const section of FORM_SECTIONS.filter((s) => s.optional !== true)) {
+    const count = html.split(`id="${section.id}"`).length - 1;
+    assert.equal(count, 1, `${section.id} appears ${count} times in the rendered form`);
+  }
+});
+
+test('the one optional section renders when it has something to say, and not before', () => {
+  // Dates is absent from a brand-new entry on purpose — "unknown" and "—" are two rows of noise
+  // at the moment they mean least. It is the only section allowed to be missing, so its two
+  // states are pinned here rather than left to the equality check above.
+  assert.ok(!renderForm('script').includes('id="datesSection"'));
+  assert.ok(
+    renderForm('script', { createdAt: 1_700_000_000_000 }).includes('id="datesSection"'),
+    'an entry with a creation date shows the Dates section',
+  );
+});
+
+test('every section renders inside its own group, and both groups exist', () => {
+  const html = renderForm('ssh');
+  assert.equal(html.split('id="mainGroup"').length - 1, 1);
+  assert.equal(html.split('id="additionalGroup"').length - 1, 1);
+
+  // The border colour is what tells two neighbouring sections apart, so a section rendered
+  // without its class is the failure this catches — silently uncoloured, never an error.
+  for (const section of FORM_SECTIONS.filter((s) => s.optional !== true)) {
+    assert.ok(
+      html.includes(`id="${section.id}" class="sec ${section.color}"`),
+      `${section.id} carries no colour class`,
+    );
   }
 });
 

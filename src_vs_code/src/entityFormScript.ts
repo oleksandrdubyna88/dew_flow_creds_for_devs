@@ -4,6 +4,7 @@ import { jsonForScript } from './webviewHtml';
 import { CommandArg, EntityMetadata, PortForward } from './types';
 import { DependencyFolderCandidate, DependencyRow } from './depGraph';
 import { dependencyPickerScript } from './depPickerScript';
+import { formVisibilityScript } from './formVisibilityScript';
 
 /** What the Depends-on picker needs, gathered once when the page is built. */
 export interface DependencyPickerData {
@@ -99,19 +100,7 @@ export function formPageScript(
     const el = document.getElementById(id);
     if (el) { el.style.display = visible ? '' : 'none'; }
   };
-  function currentKind() { return val('entityType'); }
-  function updateVisibility() {
-    const kind = currentKind();
-    show('connectionSection', kind === 'ssh');
-    show('keySection', kind === 'sshkey' || (kind === 'ssh' && val('sshKeyEntityId') === ''));
-    show('vpnSection', kind === 'vpn');
-    show('dbSection', kind === 'db');
-    show('terminalSection', kind === 'terminal');
-    show('scriptSection', kind === 'script');
-    show('passwordSection', kind !== 'db' && kind !== 'terminal' && kind !== 'script');
-    show('totpSection', kind !== 'sshkey' && kind !== 'terminal' && kind !== 'script');
-    updateLifetimeChoices(kind);
-  }
+  ${formVisibilityScript()}
 
   // The broker never serves a key pair, so "until an agent uses it once" could never fire for
   // an sshkey — the entry would sit in the vault forever while the label promised otherwise.

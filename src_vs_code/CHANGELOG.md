@@ -316,6 +316,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Bounded on purpose: 256 KB of output per stream, 30 s per command (raisable to 120 s), 8 at a
   time, and every child killed when the window goes.
 
+## [0.63.0] — 2026-08-26
+
+### Changed
+
+- **The entity form is two groups now, and every section has its own colour.** It was one tall
+  column that got taller with every feature, and on a wide screen it used a third of the width
+  and left the rest empty.
+  - **Main** holds what the entry IS — its name and type, what it connects to, its secret, its
+    notes and its dates. **Additional** holds everything else: lifetime, the advanced connection
+    settings, dependencies, the one-time code and attachments. Two sections were cut in half to
+    make that true rather than approximately true: Lifetime came out of General, and the jump
+    host, tags, agent forwarding and port forwards came out of Connection into **Advanced
+    connection**.
+  - On a wide window each group flows into **two columns**; below that it collapses to one, with
+    Main above Additional. A flow rather than a grid, so a tall section does not leave a hole
+    beside a short one.
+  - **Each bordered section wears a distinct border colour**, from the same palette the tree
+    already uses for dependencies. The caption stays the theme's own colour — only the border
+    carries the identity, so the page does not become fifteen coloured captions. A section keeps
+    its colour across every entity kind: Attachments is the same colour on a database, an SSH key
+    and a VPN.
+  - Fifteen sections share eleven colours, which is safe only because VPN, Database, Terminal
+    command and Script can never be on screen together. That is a checked property, not a claim:
+    a test walks every entity kind and fails naming both sections and the colour if two that
+    could share a screen ever share a colour.
+
 ## [0.62.1] — 2026-08-26
 
 ### Fixed

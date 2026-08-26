@@ -23,6 +23,9 @@ export const DEP_COLOR_KEYS = [
   'depColor8',
   'depColor9',
   'depColor10',
+  // Added with the coloured section borders on the entity form: eleven sections can be on
+  // screen at once for an SSH connection, which is one more than the dependency tints needed.
+  'depColor11',
 ] as const;
 
 export type DepColorKey = (typeof DEP_COLOR_KEYS)[number];
@@ -39,6 +42,7 @@ export const DEP_COLOR_LABELS: Readonly<Record<DepColorKey, string>> = {
   depColor8: 'Brown',
   depColor9: 'Turquoise',
   depColor10: 'Lime',
+  depColor11: 'Orange',
 };
 
 /**
@@ -61,6 +65,7 @@ export const DEP_COLOR_FALLBACK: Readonly<Record<DepColorKey, string>> = {
   depColor8: '#C0906A',
   depColor9: '#4FCBB0',
   depColor10: '#B9C742',
+  depColor11: '#FF9147',
 };
 
 /**
