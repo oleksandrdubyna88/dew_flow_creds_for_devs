@@ -90,6 +90,18 @@ import { createDiagnosticLog } from './diagnosticLog';
 import { resolveKind } from './entityKind';
 import { burnIfOneUse } from './burnOnUse';
 import {
+  bridgeId,
+  buildBridgeArgv,
+  remoteInstructions,
+  remoteSocketPath,
+} from './sshBridge';
+import { SshBridgeManager } from './sshBridgeManager';
+import { entityKey } from './entityFlags';
+import { parseToken } from './grantToken';
+import { materializePrivateKey } from './keyInstaller';
+import { isSafeSshTarget } from './sshCommand';
+import { resolveSshCredential } from './sshCredential';
+import {
   AliasMap,
   aliasFor,
   describeAliasProblem,
@@ -212,6 +224,26 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const log = createDiagnosticLog({ storageDir });
   context.subscriptions.push(log);
   log.info('extension', `activated; diagnostics for this run are in ${log.file}`);
+
+  // Live `ssh -R` bridges. Every one is killed with the window: a forwarded socket is an
+  // opening into this machine's broker, and one that outlived the window authorizing it would
+  // let a remote host reach a broker nobody is watching.
+  //
+  // Constructed here rather than beside the tree provider because it logs, and `log` does not
+  // exist until above. A bridge ending by itself — a dropped network, a refused forward — is
+  // exactly the kind of thing nobody sees happen and everybody needs afterwards.
+  const bridges = new SshBridgeManager(
+    (command, args, env) => {
+      const child = childProcess.spawn(command, [...args], { env, windowsHide: true, stdio: 'ignore' });
+      return {
+        kill: () => child.kill(),
+        exited: new Promise<number | null>((resolve) => child.once('exit', (code) => resolve(code))),
+      };
+    },
+    (key, code) => log.warn('bridge', `${key} ended (${String(code)})`),
+  );
+  context.subscriptions.push({ dispose: () => bridges.dispose() });
+
 
   // Never let decrypted SSH key material outlive a session: clear any that a
   // crash left behind, and clear again on shutdown (see deactivate()).
@@ -517,6 +549,80 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
    * `creds` call under it still raises the same consent modal as a pasted token would, and the
    * grant it mints still dies with this window.</p>
    */
+  /**
+   * Hold an `ssh -R` open to this host so `creds` works there.
+   *
+   * <p>The direction is the whole feature: VS Code's own forwarding shows a LOCAL client a
+   * REMOTE service, and this needs the opposite — the remote host reaching the broker on THIS
+   * machine. Nothing is copied over: no key, no password, no vault. The remote gets a socket
+   * that speaks to a broker here, the consent modal appears here, and only the output of an
+   * action travels back.</p>
+   *
+   * <p>The grant is minted first because it is what starts the broker and names its port, and
+   * because the person needs a token on the far side anyway — so one action produces both
+   * halves of what makes the remote useful.</p>
+   */
+  register('credSshManager.openRemoteBridge', async (...args: unknown[]) => {
+    const element = args[0] as { accountId?: string; node?: { id: string; name: string } };
+    const accountId = element?.accountId;
+    const node = element?.node;
+    if (accountId === undefined || node === undefined) {
+      return;
+    }
+    const key = entityKey(accountId, node.id);
+
+    if (bridges.isOpen(key)) {
+      const answer = await vscode.window.showQuickPick(['Keep it open', 'Close the bridge'], {
+        title: `"${node.name}" is bridged at ${bridges.remotePathFor(key)}`,
+      });
+      if (answer === 'Close the bridge') {
+        bridges.stop(key);
+        void vscode.window.showInformationMessage(`The bridge to "${node.name}" is closed.`);
+      }
+      return;
+    }
+
+    const details = storage.getNode(accountId, node.id)?.details;
+    if (details === undefined || (details.host ?? '') === '') {
+      void vscode.window.showWarningMessage(
+        `"${node.name}" has no host configured — there is nothing to bridge to.`,
+      );
+      return;
+    }
+
+    // Minting also starts the broker, which is what gives the port the forward needs.
+    const token = await agentServer.share(accountId, node.id, node.name, 'ssh');
+    const parsed = parseToken(token);
+    if (parsed === undefined) {
+      return;
+    }
+
+    const credential = await resolveSshCredential(storage, accountId, details);
+    const keyPath =
+      credential.kind === 'storedKey' && storageDir !== undefined
+        ? materializePrivateKey(storageDir, `bridge-${node.id}`, credential.content)
+        : undefined;
+
+    const remote = { path: remoteSocketPath(details.user ?? '', bridgeId(() => crypto.randomUUID())) };
+    const argv = buildBridgeArgv(details, { port: parsed.port, remote, keyPath }, isSafeSshTarget);
+    if (argv === undefined) {
+      void vscode.window.showWarningMessage(
+        `"${node.name}" cannot be bridged: its host is not a shape ssh can be given safely.`,
+      );
+      return;
+    }
+
+    bridges.start(key, remote.path, 'ssh', argv, process.env);
+    const instructions = `${remoteInstructions(remote)}\n\nYour token for that host: ${token}`;
+    const answer = await vscode.window.showInformationMessage(
+      `Bridge open to "${node.name}". Run the exported line on that host and \`creds\` works there.`,
+      'Copy the setup line',
+    );
+    if (answer !== undefined) {
+      await vscode.env.clipboard.writeText(instructions);
+    }
+  });
+
   register('credSshManager.enableCliAccess', async (...args: unknown[]) => {
     const element = args[0] as { accountId?: string; node?: { id: string; name: string } };
     const accountId = element?.accountId;

@@ -765,6 +765,11 @@
         "command": "credSshManager.enableCliAccess",
         "title": "Enable CLI Access…",
         "category": "CredsForDevs"
+      },
+      {
+        "command": "credSshManager.openRemoteBridge",
+        "title": "Open Remote Bridge…",
+        "category": "CredsForDevs"
       }
     ],
     "keybindings": [
@@ -1231,6 +1236,11 @@
           "command": "credSshManager.enableCliAccess",
           "when": "view == credSshManagerView && viewItem =~ /^entity/",
           "group": "agent@2"
+        },
+        {
+          "command": "credSshManager.openRemoteBridge",
+          "when": "view == credSshManagerView && viewItem =~ /:ssh/",
+          "group": "agent@3"
         }
       ]
     }
