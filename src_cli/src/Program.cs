@@ -131,12 +131,19 @@ internal static class Program
             return contract.Exit("usage");
         }
 
-        var endpoints = Endpoints.Read(Endpoints.DirectoryHere());
+        // On a Remote-SSH host there are no endpoint files: they live on the laptop at the other
+        // end of the bridge. The forwarded socket IS the endpoint, and there is exactly one, so
+        // discovery is skipped rather than made to fail and then be worked around.
+        var endpoints = BrokerClient.SocketPath() is not null
+            ? [new Endpoint(0, 1, BrokerClient.SocketPath(), string.Empty)]
+            : Endpoints.Read(Endpoints.DirectoryHere());
+
         if (endpoints.Count == 0)
         {
             Note(
                 "no CredsForDevs window is running, or none has been used yet this session. Open "
-                    + $"VS Code, or set {Endpoints.DirectoryOverrideVariable} if your install is not in the usual place.");
+                    + $"VS Code, or set {Endpoints.DirectoryOverrideVariable} if your install is not in the usual place. "
+                    + $"On a remote host, {BrokerClient.SocketVariable} should name the forwarded socket.");
             return contract.Exit("brokerUnreachable");
         }
 

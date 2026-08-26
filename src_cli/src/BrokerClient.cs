@@ -28,8 +28,42 @@ internal sealed class BrokerClient(BrokerContract contract, HttpClient http) : I
     /// <summary>Comfortably past the broker's own ceiling, so its clean answer arrives first.</summary>
     private static readonly TimeSpan CallTimeout = TimeSpan.FromMinutes(10);
 
-    internal static BrokerClient Create(BrokerContract contract) =>
-        new(contract, new HttpClient { Timeout = Timeout.InfiniteTimeSpan });
+    /// <summary>
+    /// Set on a Remote-SSH host by the bridge: the forwarded unix socket to speak through.
+    /// </summary>
+    /// <remarks>
+    /// On that host there is no loopback port to dial — the broker is on somebody's laptop at the
+    /// other end of an <c>ssh -R</c>. The token's port half is simply unused there; the secret
+    /// half still authorizes, and the consent modal still appears on the laptop.
+    /// </remarks>
+    internal const string SocketVariable = "CREDS_BROKER_SOCKET";
+
+    internal static string? SocketPath() =>
+        Environment.GetEnvironmentVariable(SocketVariable) is { Length: > 0 } p ? p : null;
+
+    internal static BrokerClient Create(BrokerContract contract) => Create(contract, SocketPath());
+
+    internal static BrokerClient Create(BrokerContract contract, string? socketPath)
+    {
+        var handler = new SocketsHttpHandler();
+        if (socketPath is not null)
+        {
+            // Every request goes to the socket regardless of the URL's authority, so the rest of
+            // this class composes the same `http://127.0.0.1:<port>/…` it always did and nothing
+            // downstream needs to know which transport it is on.
+            handler.ConnectCallback = async (_, token) =>
+            {
+                var socket = new System.Net.Sockets.Socket(
+                    System.Net.Sockets.AddressFamily.Unix,
+                    System.Net.Sockets.SocketType.Stream,
+                    System.Net.Sockets.ProtocolType.Unspecified);
+                await socket.ConnectAsync(new System.Net.Sockets.UnixDomainSocketEndPoint(socketPath), token);
+                return new System.Net.Sockets.NetworkStream(socket, ownsSocket: true);
+            };
+        }
+
+        return new BrokerClient(contract, new HttpClient(handler) { Timeout = Timeout.InfiniteTimeSpan });
+    }
 
     /// <summary>Whether a CredsForDevs broker is still listening on this port.</summary>
     internal async Task<bool> IsOurBrokerAsync(int port)

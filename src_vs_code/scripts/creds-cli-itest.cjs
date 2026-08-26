@@ -193,6 +193,26 @@ const action = (kind, verb, run) => ({
   const badName = await runCli(['ssh', 'Not A Valid Name', '--', 'x'], aliasEnv);
   check('a name a shell could misread is refused before any call (96)', badName.code === 96, `code ${badName.code}`);
 
+  // ---- the Remote-SSH transport -------------------------------------------
+  // What `ssh -R` forwards is a unix socket, and the binary on the remote host talks HTTP over
+  // it with no loopback port to dial. POSIX only: on Windows the broker's second listener is a
+  // named pipe, which is not what a bridge carries.
+  if (process.platform !== 'win32') {
+    const { socketPathFor } = require(path.join(OUT, 'brokerListeners.js'));
+    const sock = socketPathFor(storageDir, process.pid, process.platform);
+    check('the broker opened the socket a bridge would forward', sock !== undefined && fs.existsSync(sock), String(sock));
+
+    const overSocket = await runCli(
+      ['ssh', await server.share('a-1', ENTITY.id, ENTITY.name, 'ssh'), '--', 'anything'],
+      { CREDS_BROKER_SOCKET: sock },
+    );
+    check('the CLI reaches the broker over the socket, with no port dialled', overSocket.stdout.includes('hello from the broker'), JSON.stringify(overSocket.stdout + overSocket.stderr));
+    check('...and the exit code still passes through', overSocket.code === 7, `code ${overSocket.code}`);
+
+    const aliasOverSocket = await runCli(['ssh', 'itest-alias', '--', 'anything'], { CREDS_BROKER_SOCKET: sock });
+    check('a call by NAME works over the socket too, without any endpoint file', aliasOverSocket.code === 7, `code ${aliasOverSocket.code}`);
+  }
+
   // ---- the endpoint note is not a secret ----------------------------------
   const noteText = fs.readFileSync(path.join(endpointDir, fs.readdirSync(endpointDir)[0]), 'utf8');
   check(
