@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import Module from 'node:module';
 import { test } from 'node:test';
 import { ENTITY_KINDS } from '../types';
+import { escapeHtml, escapeHtmlForHighlighting } from '../webviewHtml';
 
 /**
  * The entity form's page script must PARSE, for every entity kind.
@@ -229,4 +230,48 @@ test('the viewer closes on Esc', () => {
   const script = pageScript(currentPanel.webview.html);
   assert.ok(script.includes("e.key === 'Escape'"), 'Esc is handled in the viewer');
   assert.ok(script.includes("type: 'close'"), 'and posts close to the host');
+});
+
+/**
+ * The one HTML escaper (audit A1's tail).
+ *
+ * <p>It existed three times — byte-identical private copies in `entityFormPanel`,
+ * `entityViewPanel` and `scriptRender` — which is the worst shape for a security helper: each
+ * file looks self-consistent, so the day one is hardened the other two keep the old behaviour
+ * and nothing says so. This file was already NAMED after the shared module before it existed.</p>
+ */
+
+test('every character that can break out of markup or an attribute is escaped', () => {
+  assert.equal(
+    escapeHtml(`<script>alert("x" & 'y')</script>`),
+    '&lt;script&gt;alert(&quot;x&quot; &amp; &#39;y&#39;)&lt;/script&gt;',
+  );
+});
+
+test('the ampersand goes first, so an escape is never double-escaped into nonsense', () => {
+  // & -> &amp; must happen before < -> &lt;, or "&lt;" arrives as "&amp;lt;" and the page
+  // shows the escape instead of the character.
+  assert.equal(escapeHtml('&lt;'), '&amp;lt;');
+  assert.equal(escapeHtml('a & b < c'), 'a &amp; b &lt; c');
+});
+
+test("the single quote is escaped too — the three copies did not", () => {
+  // No template interpolates into a single-quoted attribute TODAY. "None of them does today"
+  // is exactly the assumption a later edit breaks silently, and the fix costs one replace.
+  assert.equal(escapeHtml("it's"), 'it&#39;s');
+});
+
+test('ordinary text is returned unchanged', () => {
+  assert.equal(escapeHtml('prod.example.com:2222'), 'prod.example.com:2222');
+  assert.equal(escapeHtml(''), '');
+});
+
+test('the highlighter escaper leaves the apostrophe as data, and says why in its name', () => {
+  // scriptRender matches tokens IN the escaped string: a double quote survives as &quot; and
+  // it matches on that, while a single quote must stay ' because that is what it recognises a
+  // single-quoted string by. Escaping it turned 'v' into &#39;v&#39;, whose # the tokenizer
+  // read as a comment — which is what scriptRender's own test caught when the escapers were
+  // first unified. This pins the difference so the next unification attempt fails here first.
+  assert.equal(escapeHtmlForHighlighting(`x = 'v' & "w" <y>`), 'x = \'v\' &amp; &quot;w&quot; &lt;y&gt;');
+  assert.equal(escapeHtml(`x = 'v'`), 'x = &#39;v&#39;', 'the general one still escapes it');
 });

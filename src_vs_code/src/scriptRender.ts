@@ -1,3 +1,4 @@
+import { escapeHtmlForHighlighting as escapeHtml } from './webviewHtml';
 import { CommandArg } from './types';
 
 /**
@@ -63,13 +64,6 @@ const COMMENT: Record<string, RegExp | undefined> = {
   sql: /--[^\n]*/g,
 };
 
-function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}
 
 /**
  * Escaped HTML with `tok-comment` / `tok-string` / `tok-kw` / `tok-num` / `tok-var`

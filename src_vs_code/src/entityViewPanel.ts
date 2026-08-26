@@ -1,3 +1,4 @@
+import { escapeHtml } from './webviewHtml';
 import * as crypto from 'node:crypto';
 import * as vscode from 'vscode';
 import { copySecret } from './secretClipboard';
@@ -190,13 +191,6 @@ export function showEntityView(options: EntityViewOptions): void {
   });
 }
 
-function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}
 
 /** Inline "two pages" copy icon; follows the theme via currentColor. */
 const COPY_ICON =

@@ -550,6 +550,36 @@ suffixes and nothing else — so the `^entity`, `:shareable` and `:pwd` menus ne
 `openRevisionViewer` refuses `setEnv`/`checkEnv` (an old secret in a live variable) and passes
 `history: []`. An index past the end renders *version no longer kept* rather than throwing.
 
+### The form is three modules, not one file (audit A1's tail)
+
+`entityFormPanel.ts` was 1,433 lines and carried an `eslint-disable max-lines` header saying
+"do not grow this file further". It is now three, each with one job:
+
+| module | job | lines |
+|---|---|---|
+| `entityFormPanel.ts` | the webview lifecycle, the message plumbing, `toValues` | 358 |
+| `entityFormPage.ts` | options → markup and CSS; never learns what a message means | 504 |
+| `entityFormScript.ts` | the inline page script the browser runs | 624 |
+
+The first cut (page out of panel) still left the page at 1,088 lines, because markup and
+behaviour are two things; the second cut separated them. Both disables are gone from the panel;
+`formPageScript` keeps ONE documented `max-lines-per-function` disable, because it is a single
+template literal and slicing a browser program that reads top-to-bottom into fragments joined by
+string concatenation would be worse to read and worse to parse in the test that parses it.
+
+**It was verified as a pure move, not asserted to be one.** The page was rendered from the
+pre-split module and from the post-split modules with identical options and compared byte for
+byte: identical once the one intended difference is undone (see the escaper below). That check
+is worth more than the suite here, because a template-string move is exactly the kind of change
+that stays green while quietly dropping a fieldset.
+
+`webviewHtml.ts` is the one HTML escaper the three webview renderers share. It existed three
+times as byte-identical private copies — the worst shape for a security helper, since each file
+looks self-consistent and hardening one leaves the others silently behind. It now also escapes
+the single quote, which none of the copies did: no template interpolates into a single-quoted
+attribute today, and "none of them does today" is precisely the assumption a later edit breaks
+without a sound.
+
 ### The entity form's chrome (0.56.0)
 
 Save / Cancel and the validation line live in a `position: sticky` bar above the `<h2>`; long
@@ -605,8 +635,10 @@ REMEMBER to run, and the MAC-healing defect of 2026-08-25 is what forgetting it 
 uses, so a forged owner fails inside `decipher.final()` — a property rather than a branch. The MAC
 stays, because it detects tampering without unwrapping the master key.
 
-AAD binds metadata to ONE sealing, so only fields that are immutable for a given ciphertext may go
-in it. Two are not, and both were found the honest way — by an existing test failing:
+**The question to ask before binding anything: does this field change without the payload
+changing?** If it can, it cannot be AAD — a MAC is the tool for mutable metadata, because a MAC
+can be re-signed when the change is legitimate and an AEAD tag cannot. AAD binds metadata to ONE
+sealing, so only fields that are immutable for a given ciphertext may go in it. Two are not, and both were found the honest way — by an existing test failing:
 
 - **`wraps`** — add/remove Security Key rewrites the wraps around the SAME master key and must never
   re-encrypt the payload; that is the whole point of the wrap layer. Binding them made
