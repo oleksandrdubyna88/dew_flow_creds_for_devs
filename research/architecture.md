@@ -275,10 +275,26 @@ still a placeholder**. A tag never ships both.
 | The extension | [module_extension.md](module_extension.md) | All cryptography, the data model, sync and sharing, the UI |
 | The server | [module_server.md](module_server.md) | The HTTP contract, authorization, storage |
 | The deployment | [module_deployment.md](module_deployment.md) | Containers, TLS, updates, backups |
+| The CLI | [../src_cli/README.md](../src_cli/README.md) | `creds` — the terminal client of the broker. A .NET Native AOT binary holding no secret: it relays a request to the VS Code window named by a grant token and prints what comes back |
 
 ## Where the contract lives
 
-The HTTP contract between the two halves is stated once, in
-[module_server.md](module_server.md), and implemented twice — in `Program.cs` and in
-`src_vs_code/src/serverTransport.ts`. A change to one without the other ships a broken client, which
-is why `CLAUDE.md` makes that a repository rule rather than a hope.
+**Two contracts now, and both are implemented twice.**
+
+The HTTP contract between the extension and the server is stated once, in
+[module_server.md](module_server.md), and implemented in `Program.cs` and
+`src_vs_code/src/serverTransport.ts`. A change to one without the other ships a broken client,
+which is why `CLAUDE.md` makes keeping them together a repository rule rather than a hope.
+
+The **broker** contract — how a terminal client asks a VS Code window to use a credential —
+used to be a TypeScript module shared by its only two callers, which made it a shared
+implementation rather than a specification. With `src_cli/` it gained a second implementation in
+another language, so since 2026-08-26 it is a generated file: `contract/broker-v1.json`, emitted
+from `brokerProtocol.ts` by `npm run contract`, embedded into the CLI binary at build time, with
+a test on **each** side asserting its own tables match it.
+
+That check earns its place because this class of drift is silent. A client posting `vpn-up` to a
+route the broker renamed, or reporting exit 95 where the other reports 0, raises no error
+anywhere — it surfaces as an agent drawing a wrong conclusion in somebody’s terminal, with
+nothing in any log to explain it. Exactly that bug was found on the Node side while the CLI was
+being written: every verb whose answer carries no `exitCode` reported success as failure 95.

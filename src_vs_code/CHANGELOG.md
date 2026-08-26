@@ -139,6 +139,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Bounded on purpose: 256 KB of output per stream, 30 s per command (raisable to 120 s), 8 at a
   time, and every child killed when the window goes.
 
+## [0.60.0] — 2026-08-26
+
+### Added
+
+- **The broker listens on a unix socket (POSIX) or a named pipe (Windows) as well as its
+  loopback port.** The prerequisite for reaching it from WSL and for the `creds` CLI, and it
+  pays for itself locally first: on POSIX the socket is `0600`, so the operating system refuses
+  another user before a byte of ours runs. The loopback port never had that — any local process
+  may connect to a port, and only the grant token stopped it. On Windows the named pipe carries
+  the default DACL, which we neither set nor can set through Node, so there it is a convenience
+  and not a permission boundary; the code says so rather than implying otherwise. **The grant
+  token is still required on both** — this is defence in depth behind it, never a replacement.
+- **The wire contract is now a generated file, `contract/broker-v1.json`.** Emitted from
+  `brokerProtocol.ts` by `npm run contract`, with a test on each side asserting its own tables
+  match it. This exists because a second implementation of the protocol now does too: a client
+  sending `vpn-up` to a renamed route, or reporting exit 95 where the other reports 0, produces
+  no error anywhere — just an agent drawing a wrong conclusion in somebody's terminal.
+
+### Fixed
+
+- **A successful `env`, `vpn-up` or `vpn-down` reported itself as broker failure 95 and printed
+  nothing.** The CLI special-cased `terminal` and treated every other answer as a command
+  result, ending in "use its `exitCode`, or fail" — but `credential:exportEnv` answers
+  `{written}` and the VPN actions answer `{opened}`, and neither carries an `exitCode`. An agent
+  reading the code would conclude the export or the tunnel had failed. No test covered those
+  three verbs, and the logic was unreachable from one, being inline in `main`; it is now a pure
+  table keyed by verb, so an unhandled verb is a visible gap instead of a silent failure.
+  A refused VPN action (`opened: false` — the call worked, the person declined) now gets its own
+  code rather than 0, since exiting 0 would tell an agent the tunnel is up when it is not.
+
 ## [0.59.0] — 2026-08-26
 
 ### Added

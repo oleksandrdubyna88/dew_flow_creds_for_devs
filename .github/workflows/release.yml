@@ -152,6 +152,79 @@ jobs:
           gh release create "$GITHUB_REF_NAME" --title "cred-vault-server ${GITHUB_REF_NAME#server-v}"             --notes "Native AOT builds. Docker: ghcr.io/${{ github.repository_owner }}/cred-vault-server:${GITHUB_REF_NAME#server-v}"             2>/dev/null || true
           gh release upload "$GITHUB_REF_NAME" "$ASSET" --clobber
 
+  # The headless CLI, same technology and same four RIDs as the server: one toolchain in the
+  # repository, and the AOT analyzers already run on every ordinary build so an incompatible
+  # pattern fails at compile time rather than here. Tagged separately (cli-v*) because the CLI
+  # and the server version independently.
+  cli-binaries:
+    name: creds cli (${{ matrix.rid }})
+    if: startsWith(github.ref, 'refs/tags/cli-v')
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - rid: linux-x64
+            runner: ubuntu-latest
+          - rid: linux-arm64
+            runner: ubuntu-24.04-arm
+          - rid: win-x64
+            runner: windows-latest
+          - rid: win-arm64
+            runner: windows-11-arm
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Toolchain (linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends clang zlib1g-dev
+
+      # Never ship a binary that has not passed its own tests — and these include the contract
+      # check that stops this implementation drifting from the extension's.
+      - name: Test
+        run: dotnet build src_cli/tests/CredsCli.Tests.csproj -c Release && ./src_cli/tests/bin/Release/net10.0/CredsCli.Tests${{ runner.os == 'Windows' && '.exe' || '' }}
+        shell: bash
+
+      - name: Publish
+        run: dotnet publish src_cli/src/CredsCli.csproj -c Release -r ${{ matrix.rid }} -o out
+
+      # A binary that cannot answer --help did not really build; AOT failures often surface
+      # only at first run. Skipped when cross-architecture, where the runner cannot execute it.
+      - name: Smoke
+        if: ${{ !endsWith(matrix.rid, 'arm64') }}
+        shell: bash
+        run: ./out/creds${{ runner.os == 'Windows' && '.exe' || '' }} --help | grep -q 'creds ssh'
+
+      - name: Package
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#cli-v}"
+          NAME="creds-$VERSION-${{ matrix.rid }}"
+          mkdir "$NAME"
+          if [[ "${{ matrix.rid }}" == win-* ]]; then
+            cp out/creds.exe "$NAME/"
+            7z a "$NAME.zip" "$NAME" > /dev/null
+            echo "ASSET=$NAME.zip" >> "$GITHUB_ENV"
+          else
+            cp out/creds "$NAME/"
+            tar czf "$NAME.tar.gz" "$NAME"
+            echo "ASSET=$NAME.tar.gz" >> "$GITHUB_ENV"
+          fi
+
+      - name: Attach to the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          gh release create "$GITHUB_REF_NAME" --title "creds ${GITHUB_REF_NAME#cli-v}" --notes "Native AOT builds of the headless CLI." 2>/dev/null || true
+          gh release upload "$GITHUB_REF_NAME" "$ASSET" --clobber
+
   extension:
     name: publish extension
     if: startsWith(github.ref, 'refs/tags/extension-v') || inputs.target == 'extension'

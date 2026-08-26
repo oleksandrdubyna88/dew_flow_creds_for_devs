@@ -1,0 +1,35 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>creds</AssemblyName>
+    <RootNamespace>CredsCli</RootNamespace>
+    <!-- Native AOT, the same choice and for the same reason as the server: the trim/AOT
+         analyzers then run on EVERY build, so an incompatible pattern fails at compile time
+         rather than on a release runner. It matters more here than there — this binary starts
+         once per terminal command, and start-up is the whole user-visible cost. -->
+    <PublishAot>true</PublishAot>
+    <StripSymbols>true</StripSymbols>
+    <!-- No reflection-based JSON anywhere: every payload goes through the source-generated
+         context in CredsJsonContext. This turns an accidental reflective call into an error. -->
+    <JsonSerializerIsReflectionEnabledByDefault>false</JsonSerializerIsReflectionEnabledByDefault>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- The wire contract, generated from brokerProtocol.ts by
+         src_vs_code/scripts/emit-contract.mjs and embedded rather than shipped beside the
+         binary. Deviation from PLAN_headless_cli.md §4, which proposed an MSBuild target
+         generating C# constants into obj/: embedding needs no codegen machinery and no build
+         ordering, the bytes both implementations read are then literally identical, and a
+         test asserts the embedded copy still matches the file in the repository. The JSON is
+         under 2 KB, so "the JSON does not travel with it" is satisfied in the sense that
+         mattered — nothing extra to install or lose. -->
+    <EmbeddedResource Include="..\..\contract\broker-v1.json" LogicalName="broker-v1.json" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="CredsCli.Tests" />
+  </ItemGroup>
+
+</Project>
