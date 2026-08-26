@@ -1,6 +1,7 @@
 # PLAN — cred-vault-server operational hardening
 
-> Status: **items 1, 4 and 8 shipped 2026-08-23; items 2, 3, 5, 6 and 7 remain.**
+> Status: **items 1, 4 and 8 shipped 2026-08-23; items 2, 3, 5, 6 and 7 remain. Re-reviewed
+> against the client 2026-08-26 — one new item (9), and item 7 now has a pattern to copy.**
 > Scope: deployment/runtime of the `cred-vault-server` .NET service — not code changes to the
 > extension. This plan stays in `todo/` because most of its value is still ahead of it.
 >
@@ -83,6 +84,49 @@ between a user's two machines.
    restore is a hope, and this is the **largest single reliability risk in the product** — ahead of
    anything in the code. *Work:* restore into a clean stack, point a real extension at it, confirm a
    vault opens and an inbox lists. Then write down how long it took.
+
+9. **A sender cannot withdraw a share** (found 2026-08-26, reviewing the server against the client
+   that grew past this plan). `DELETE /api/shares/{id}` resolves the path as
+   `_sharesDir/KeyFor(callerEmail)/{id}.json` — the inbox is keyed by the RECIPIENT, so the caller
+   can only delete from their own. There is no route by which the person who sent it can take it
+   back. A share posted to the wrong colleague is posted.
+
+   **What made this worth raising now is ephemeral secrets** (0.59.0), which shipped after this
+   plan was written. `expiresAt` and `burnPolicy` DO travel inside the sealed payload —
+   `shareFormat.ts:180` strips only `notes`, `dependsOn` and `depColor` — so a shared secret keeps
+   its deadline at the recipient and an expired one is swept there. That half is sound. But
+   **burn-on-use has no deadline**: the sender's copy burns on first use and the pending share
+   stays live, in an inbox the sender cannot reach, for as long as the recipient ignores it.
+
+   *Decision needed:* whether a sender may delete a share they sent (the id would have to be
+   findable — today the sender is not told the id, and listing by sender is itself a disclosure),
+   and whether burning or deleting the source should attempt it. Item 3's age-based sweep is the
+   cheaper half-answer: it bounds the window without a new authorization rule.
+
+## What the review found did NOT need the server (2026-08-26)
+
+A large amount of client code landed between 2026-08-23 and 2026-08-26 — ephemeral secrets, the
+depends-on graph, the SSH agent, the headless `creds` CLI with named grants, the Remote-SSH broker
+bridge, agent forwarding, and the WSL agent relay. **None of it needs anything here**, and that is
+checked rather than assumed:
+
+- the client calls exactly five paths — `/api/vault`, `/api/team`, `/api/shares`,
+  `/api/shares/{id}` and `/api/client-config` — all of which exist;
+- no module of the broker, agent, CLI, bridge or relay refers to the vault server at all: those
+  surfaces are a loopback port, a named pipe and a unix socket, and the credential never travels;
+- every new entity field rides INSIDE the sealed payload, and `entityKind` is free-form up to 64
+  characters server-side, so new kinds need no server release;
+- the server takes no entity id anywhere, so the whole class of crafted-id defects fixed in the
+  extension has no counterpart here — `KeyFor` hashes the email and a share id must parse as a
+  GUID before it is joined to a path.
+
+The one thing the growth DID change is item 7's urgency: there is now a lot of client to be out of
+step with. It also supplied the pattern — `contract/broker-v1.json` is generated from the
+TypeScript and asserted by a test on BOTH sides, and the HTTP contract could be versioned the same
+way instead of inventing a second mechanism. Note the lesson recorded with it: those contract tests
+were green while `/v1/use/exportEnv` was unreachable in every released build, because each side
+only checked itself against the file. A version surface needs one end-to-end check that an old
+client actually gets the answer the rule promises.
 
 ## Build order
 
