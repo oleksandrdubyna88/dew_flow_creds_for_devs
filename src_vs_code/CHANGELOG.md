@@ -238,6 +238,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Bounded on purpose: 256 KB of output per stream, 30 s per command (raisable to 120 s), 8 at a
   time, and every child killed when the window goes.
 
+## [0.61.0] — 2026-08-26
+
+### Added
+
+- **A name a terminal can use.** *Enable CLI Access…* on an entry gives it an alias, so
+  `creds ssh prod-db -- uname -a` works instead of pasting a token. **The registry stores only
+  which entry a name points at — never a token, never a secret.** An alias says WHICH; the
+  consent modal still says WHETHER, and the grant it mints still dies with the window.
+  - Said plainly, because it is a real trade: before this, using a credential required a secret
+    you had copied. It now requires knowing a name, and names are not secret. The modal becomes
+    the load-bearing guard — backed on POSIX by the broker socket's `0600`, and on Windows by
+    the modal alone. That is why an alias is opt-in per entry rather than automatic.
+  - No token is ever returned by the alias route: the caller gets the ACTION, never a reusable
+    capability it could pass on.
+- **Windows announce themselves** in `<globalStorage>/endpoints/window-<pid>.json` so a terminal
+  can find one without a token. The file holds a port, a pipe and a pid — nothing anyone on the
+  machine could not enumerate anyway. A crashed window cannot delete its own note, so nothing
+  trusts the file: the unauthenticated health probe decides, exactly as it does for a token.
+- **The CLI works inside WSL with no configuration at all.** The Linux binary detects WSL and
+  hands the whole call to the Windows binary through interop, relaying its streams and exit
+  code. No mirrored networking, no firewall rule, no `npiperelay`+`socat` — and nothing starts
+  listening anywhere new, which is the part that matters for a credential broker.
+
 ## [0.60.0] — 2026-08-26
 
 ### Added

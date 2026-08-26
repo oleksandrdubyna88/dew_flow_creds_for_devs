@@ -67,6 +67,23 @@ internal sealed class BrokerClient(BrokerContract contract, HttpClient http) : I
         return new BrokerReply((int)response.StatusCode, body);
     }
 
+    /// <summary>
+    /// An alias call: no <c>Authorization</c> header, because there is no token to send.
+    /// </summary>
+    /// <remarks>
+    /// The absence of the header is the whole difference, and it is why the route is a separate
+    /// prefix rather than the same one with an optional field: a reader of either side can tell
+    /// at a glance which calls carry a copied secret and which lean on the consent modal.
+    /// </remarks>
+    internal async Task<BrokerReply> PostAliasAsync(int port, string route, string requestJson)
+    {
+        using var cts = new CancellationTokenSource(CallTimeout);
+        using var content = new StringContent(requestJson, Encoding.UTF8, "application/json");
+        using var response = await http.PostAsync(Url(port, route), content, cts.Token);
+        var body = await response.Content.ReadAsStringAsync(cts.Token);
+        return new BrokerReply((int)response.StatusCode, body);
+    }
+
     private static string Url(int port, string path) => $"http://127.0.0.1:{port}{path}";
 
     public void Dispose() => http.Dispose();

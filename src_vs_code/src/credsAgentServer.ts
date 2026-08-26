@@ -11,6 +11,7 @@ import {
   SERVICE_NAME,
   errorBody,
   parseBearer,
+  parseAliasRoute,
   parseJsonObject,
   parseUseRoute,
   statusForErrorCode,
@@ -27,6 +28,7 @@ import {
 } from './agentAuditFile';
 import { startLoopbackServer } from './loopbackServer';
 import { ExtraListener, socketPathFor, startExtraListener } from './brokerListeners';
+import { removeEndpoint, writeEndpoint } from './cliEndpoint';
 import { startOnce } from './idempotentStart';
 import { MaskEntry, buildMaskTable, maskResponseBody } from './secretMasker';
 
@@ -134,6 +136,17 @@ export class CredsAgentServer implements vscode.Disposable {
      * side of the wall that already has it.</p>
      */
     private readonly burnAfterUse?: (accountId: string, entityId: string) => Promise<boolean>,
+    /**
+     * Resolve a CLI alias to the entry it names. Optional: absent means this window serves no
+     * alias calls at all, which is what a build or a test without the registry should do.
+     *
+     * <p>Outside again, for the same reason as the other two: the broker holds grants, not
+     * stored records. It should not know where a name is kept any more than it knows where a
+     * password is.</p>
+     */
+    private readonly resolveAlias?: (
+      name: string,
+    ) => { accountId: string; entityId: string; entityName: string; kind: string } | undefined,
   ) {}
 
   /** The signal every spawned child watches, so none outlives this window. */
@@ -202,6 +215,97 @@ export class CredsAgentServer implements vscode.Disposable {
       this.port = port;
       server.on('request', (req, res) => void this.handle(req, res));
       await this.openExtraListener();
+      this.announce();
+    });
+  }
+
+  /**
+   * A call that names an entry by alias instead of holding a token.
+   *
+   * <p><b>What this changes, said plainly.</b> Every other route requires a secret the human
+   * copied out of a snippet. This one requires knowing a NAME, and names are not secret — so
+   * the consent modal becomes the load-bearing guard, backed on POSIX by the broker socket's
+   * `0600` and on Windows by nothing but the modal. That is why an alias is opt-in per entry,
+   * why the modal names the entry and the action, and why no token is ever returned: the
+   * caller gets the ACTION, never a reusable capability it could pass on.</p>
+   *
+   * <p>The grant is minted here and then follows exactly the same path as a token call —
+   * consent, masking, audit, one-use burn — because a second implementation of that tail is
+   * how one of them ends up missing a step.</p>
+   */
+  /**
+   * The body of an alias call, or `undefined` once the refusal has been sent.
+   *
+   * <p>Takes the raw text as an argument rather than reading it from a field: this server
+   * handles calls concurrently, and a field would let two in-flight requests overwrite each
+   * other's body — the same class of shared-mutable-state defect the git transport had.</p>
+   */
+  private async aliasBody(
+    req: http.IncomingMessage,
+    res: http.ServerResponse,
+  ): Promise<Record<string, unknown> | undefined> {
+    let raw: string;
+    try {
+      raw = await readBody(req);
+    } catch {
+      this.respondError(res, 'payload_too_large', 'Request body too large.');
+      return undefined;
+    }
+    const body = parseJsonObject(raw);
+    if (body === undefined || typeof body.alias !== 'string') {
+      this.respondError(res, 'invalid_request', 'Body must be a JSON object with an "alias".');
+      return undefined;
+    }
+    return body;
+  }
+
+  private async handleAlias(
+    req: http.IncomingMessage,
+    res: http.ServerResponse,
+    action: string,
+  ): Promise<void> {
+    const body = await this.aliasBody(req, res);
+    if (body === undefined) {
+      return; // already answered
+    }
+    const name = body.alias as string;
+
+    // Deliberately the same answer for "no aliases here" and "no such name": whether a name
+    // exists is not something an unauthenticated caller should be able to enumerate.
+    const target = this.resolveAlias?.(name);
+    if (target === undefined) {
+      this.respondError(res, 'not_found', `No entry is enabled for the CLI under "${name}".`);
+      return;
+    }
+
+    const grant = this.grants.mint(target.accountId, target.entityId, target.entityName, target.kind);
+    this.log({
+      grant: GrantRegistry.describe(grant),
+      entityName: target.entityName,
+      action: 'alias',
+      outcome: 'minted',
+      detail: `${name} · ${target.kind}`,
+    });
+    await this.perform(res, grant, action, body);
+  }
+
+  /**
+   * Leave a note saying where this window listens, so a terminal can find it without a token.
+   *
+   * <p>It carries a port, a pipe and a pid — nothing secret, and nothing anyone on the machine
+   * could not enumerate. That is what makes it safe to write at all, and why a grant token
+   * still never appears in it: knowing where the broker is has never been the thing that
+   * authorizes anything.</p>
+   */
+  private announce(): void {
+    if (this.storageDir === undefined) {
+      return;
+    }
+    writeEndpoint(this.storageDir, {
+      pid: process.pid,
+      port: this.port,
+      socket: this.extra?.address,
+      startedAt: new Date().toISOString(),
     });
   }
 
@@ -232,7 +336,7 @@ export class CredsAgentServer implements vscode.Disposable {
     }
   }
 
-  // eslint-disable-next-line complexity, max-lines-per-function
+  // eslint-disable-next-line complexity
   private async handle(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
     const url = new URL(req.url ?? '/', 'http://127.0.0.1');
 
@@ -241,6 +345,11 @@ export class CredsAgentServer implements vscode.Disposable {
     if (req.method === 'GET' && url.pathname === '/v1/health') {
       const body: HealthBody = { ok: true, service: SERVICE_NAME };
       this.respond(res, 200, body);
+      return;
+    }
+
+    if (req.method === 'POST' && parseAliasRoute(url.pathname) !== undefined) {
+      await this.handleAlias(req, res, parseAliasRoute(url.pathname) as string);
       return;
     }
 
@@ -279,6 +388,24 @@ export class CredsAgentServer implements vscode.Disposable {
       return;
     }
 
+    await this.perform(res, grant, action, body);
+  }
+
+  /**
+   * Everything after "we know which entry, and the caller may ask for it": capability check,
+   * validation, consent, the call, masking, the audit line, and the one-use burn.
+   *
+   * <p>Extracted so the alias route reaches it too. Duplicating any of it for a second entry
+   * point would be a way for consent, masking or the audit to apply to one caller and not the
+   * other — and the one that gets forgotten is always the newer path.</p>
+   */
+  // eslint-disable-next-line complexity, max-lines-per-function
+  private async perform(
+    res: http.ServerResponse,
+    grant: Grant,
+    action: string,
+    body: Record<string, unknown>,
+  ): Promise<void> {
     const useAction = this.actions.resolve(grant.kind, action);
     if (useAction === undefined) {
       this.respondError(res, 'not_supported', `"${grant.kind}" entities cannot ${action}.`);
@@ -584,15 +711,26 @@ export class CredsAgentServer implements vscode.Disposable {
     }
   }
 
+  /**
+   * Take down the local traces of this window: the socket file and the endpoint note.
+   *
+   * <p>Fire-and-forget, because `dispose` is synchronous. Both paths carry the pid, so
+   * anything left behind by a window that never reached here is always safe for the next one
+   * to remove — which is the real guarantee, since a crash never runs this at all.</p>
+   */
+  private removeLocalTraces(): void {
+    void this.extra?.close();
+    this.extra = undefined;
+    if (this.storageDir !== undefined) {
+      removeEndpoint(this.storageDir, process.pid);
+    }
+  }
+
   dispose(): void {
     this.abort.abort();
     this.server?.close();
     this.server = undefined;
-    // Fire-and-forget: dispose is synchronous, and a socket file left behind would otherwise
-    // be inherited by the next window with this pid. The path carries the pid precisely so
-    // that a corpse is always safe to remove, which `startExtraListener` then does.
-    void this.extra?.close();
-    this.extra = undefined;
+    this.removeLocalTraces();
     this.output?.dispose();
   }
 }

@@ -89,6 +89,14 @@ import { EntityFlagsRefresher, entityFlagSource } from './entityFlags';
 import { createDiagnosticLog } from './diagnosticLog';
 import { resolveKind } from './entityKind';
 import { burnIfOneUse } from './burnOnUse';
+import {
+  AliasMap,
+  aliasFor,
+  describeAliasProblem,
+  resolveAlias,
+  withAlias,
+  withoutAlias,
+} from './cliAliases';
 import { EphemeralSweeper } from './ephemeralSweeper';
 import { maskEntriesFor } from './maskEntries';
 import { MaskEntry, buildMaskTable } from './secretMasker';
@@ -186,6 +194,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     void vscode.window.showWarningMessage(`CredsForDevs: ${storage.metadataFault}`);
   }
   const provider = new CredTreeDataProvider(storage, context.extensionUri);
+
+  // CLI aliases: name → which entry, and nothing else. Kept in globalState rather than in the
+  // vault because a name is machine-local by nature — the terminal that types it is on this
+  // machine — and because putting it in the synced record would make every colleague's copy
+  // carry names only this machine can act on.
+  const ALIAS_KEY = 'credSshManager.cliAliases';
+  const aliasMap = (): AliasMap => context.globalState.get<AliasMap>(ALIAS_KEY, {});
+  const setAliasMap = (next: AliasMap): Thenable<void> =>
+    context.globalState.update(ALIAS_KEY, next);
   const storageDir = context.globalStorageUri.fsPath;
 
   // One diagnostic channel for everything that is not the agent broker, plus a file per run
@@ -417,6 +434,24 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       }
       return burned;
     },
+    // The sixth lets `creds ssh prod-db` name an entry instead of pasting a token. The
+    // registry holds only which entry a name points at — never a token and never a secret —
+    // so an alias says WHICH, and the consent modal still says WHETHER.
+    (name) => {
+      const alias = resolveAlias(aliasMap(), name);
+      if (alias === undefined) {
+        return undefined;
+      }
+      const node = storage.getNode(alias.accountId, alias.entityId);
+      return node === undefined
+        ? undefined
+        : {
+            accountId: alias.accountId,
+            entityId: alias.entityId,
+            entityName: node.name,
+            kind: resolveKind(node.details),
+          };
+    },
   );
   const sshDeps = {
     storage,
@@ -474,6 +509,50 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
   const register = (command: string, handler: (...args: unknown[]) => unknown) =>
     context.subscriptions.push(vscode.commands.registerCommand(command, handler));
+
+  /**
+   * Give an entry a name a terminal can use — or take it away again.
+   *
+   * <p>The name is all that is stored. It is not a credential and confers nothing: the first
+   * `creds` call under it still raises the same consent modal as a pasted token would, and the
+   * grant it mints still dies with this window.</p>
+   */
+  register('credSshManager.enableCliAccess', async (...args: unknown[]) => {
+    const element = args[0] as { accountId?: string; node?: { id: string; name: string } };
+    const accountId = element?.accountId;
+    const node = element?.node;
+    if (accountId === undefined || node === undefined) {
+      return;
+    }
+
+    const existing = aliasFor(aliasMap(), accountId, node.id);
+    if (existing !== undefined) {
+      const answer = await vscode.window.showQuickPick(['Keep it', `Remove "${existing}"`], {
+        title: `"${node.name}" is available to the CLI as "${existing}"`,
+      });
+      if (answer?.startsWith('Remove') === true) {
+        await setAliasMap(withoutAlias(aliasMap(), existing));
+        void vscode.window.showInformationMessage(`"${existing}" is no longer available to the CLI.`);
+      }
+      return;
+    }
+
+    const name = await vscode.window.showInputBox({
+      title: `Name for "${node.name}" in the terminal`,
+      prompt: 'Then: creds ssh <name> -- <command>. The name is not a secret; every call still asks you to allow it.',
+      value: node.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40),
+      validateInput: (value) => describeAliasProblem(value.trim()) ?? null,
+    });
+    if (name === undefined) {
+      return;
+    }
+
+    const kind = resolveKind(storage.getNode(accountId, node.id)?.details);
+    await setAliasMap(withAlias(aliasMap(), name.trim(), { accountId, entityId: node.id, kind }));
+    void vscode.window.showInformationMessage(
+      `"${node.name}" is now available in the terminal as: creds ${kind === 'db' ? 'db' : 'ssh'} ${name.trim()}`,
+    );
+  });
 
   register('credSshManager.refresh', () => {
     provider.refresh();

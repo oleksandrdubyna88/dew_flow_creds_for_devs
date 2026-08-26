@@ -25,6 +25,10 @@ namespace CredsCli;
 [JsonSerializable(typeof(ExecRequest))]
 [JsonSerializable(typeof(QueryRequest))]
 [JsonSerializable(typeof(EmptyRequest))]
+[JsonSerializable(typeof(Endpoint))]
+[JsonSerializable(typeof(AliasRequest))]
+[JsonSerializable(typeof(AliasExecRequest))]
+[JsonSerializable(typeof(AliasQueryRequest))]
 [JsonSerializable(typeof(Dictionary<string, int>))]
 [JsonSerializable(typeof(Dictionary<string, string>))]
 internal sealed partial class CredsJsonContext : JsonSerializerContext;
@@ -62,3 +66,14 @@ internal sealed record ExecRequest([property: JsonPropertyName("command")] strin
 internal sealed record QueryRequest([property: JsonPropertyName("query")] string Query);
 
 internal sealed record EmptyRequest;
+
+/// <summary>A call that names its entry rather than holding a token.</summary>
+internal sealed record AliasRequest([property: JsonPropertyName("alias")] string Alias);
+
+internal sealed record AliasExecRequest(
+    [property: JsonPropertyName("alias")] string Alias,
+    [property: JsonPropertyName("command")] string Command);
+
+internal sealed record AliasQueryRequest(
+    [property: JsonPropertyName("alias")] string Alias,
+    [property: JsonPropertyName("query")] string Query);

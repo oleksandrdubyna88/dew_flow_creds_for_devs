@@ -137,3 +137,21 @@ export function clampExecTimeout(requested: unknown): number {
 export interface EnvExportResponseBody {
   written: string[];
 }
+
+/**
+ * `/v1/alias/<action>` → the action, for a call that names its entry by alias.
+ *
+ * <p>A separate prefix rather than a flag on the use routes, so the two authorization stories
+ * cannot be confused at a glance: everything under `/v1/use/` requires a bearer token the human
+ * copied, and everything under `/v1/alias/` requires only a name and therefore leans entirely
+ * on the consent modal. Same action vocabulary, deliberately, so a verb never means one thing
+ * on one route and something else on the other.</p>
+ */
+export function parseAliasRoute(pathname: string): string | undefined {
+  const prefix = '/v1/alias/';
+  if (!pathname.startsWith(prefix)) {
+    return undefined;
+  }
+  const action = pathname.slice(prefix.length);
+  return /^[a-z][a-z0-9_-]{0,31}$/.test(action) ? action : undefined;
+}

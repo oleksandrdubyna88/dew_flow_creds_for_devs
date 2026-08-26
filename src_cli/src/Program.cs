@@ -24,6 +24,24 @@ internal static class Program
     {
         var contract = BrokerContract.Current;
 
+        // Inside WSL the broker's loopback belongs to Windows, not to this VM, so the whole call
+        // goes to the Windows binary and its streams come back. Before anything else, because
+        // even argument errors should be reported by the side that will handle the request.
+        if (WslInterop.ShouldRelayHere())
+        {
+            try
+            {
+                return WslInterop.Relay(args);
+            }
+            catch (Exception e) when (e is System.ComponentModel.Win32Exception or InvalidOperationException)
+            {
+                Note(
+                    $"this looks like WSL, but the Windows binary could not be started ({e.Message}). "
+                        + $"Put creds.exe on the PATH, or set {WslInterop.BinaryOverrideVariable} to its full path.");
+                return contract.Exit("toolMissing");
+            }
+        }
+
         switch (CommandLine.Parse(args))
         {
             case Request.Help help:
@@ -42,15 +60,17 @@ internal static class Program
         }
     }
 
+    /// <summary>
+    /// A token or an alias — whichever the second argument turns out to be.
+    /// </summary>
+    /// <remarks>
+    /// The token format is strict and self-identifying (<c>&lt;digits&gt;.&lt;base64url&gt;</c>),
+    /// and the alias grammar deliberately excludes a dot, so one string can never be both. That
+    /// is what lets <c>creds ssh 4242.abc -- x</c> and <c>creds ssh prod-db -- x</c> be the same
+    /// command rather than two.
+    /// </remarks>
     private static async Task<int> RunAsync(Request.Use use, BrokerContract contract)
     {
-        var token = GrantToken.Parse(use.Token);
-        if (token is null)
-        {
-            Note("that is not a CredsForDevs grant token — copy the whole token from the shared snippet.");
-            return contract.Exit("usage");
-        }
-
         var wireVerb = CommandLine.WireVerb(use.Verb);
         var route = contract.RouteFor(wireVerb);
         if (route is null)
@@ -59,6 +79,19 @@ internal static class Program
             return contract.Exit("usage");
         }
 
+        var token = GrantToken.Parse(use.Token);
+        return token is not null
+            ? await CallWithTokenAsync(token, route, wireVerb, use.Payload, contract)
+            : await CallWithAliasAsync(use.Token, wireVerb, use.Payload, contract);
+    }
+
+    private static async Task<int> CallWithTokenAsync(
+        GrantToken token,
+        string route,
+        string wireVerb,
+        string? payload,
+        BrokerContract contract)
+    {
         using var client = BrokerClient.Create(contract);
 
         // Before the token leaves this process: a closed window frees its port, and the OS
@@ -71,10 +104,77 @@ internal static class Program
             return contract.Exit("brokerUnreachable");
         }
 
+        return await SendAsync(
+            () => client.PostAsync(token, route, RequestBody(wireVerb, payload)),
+            wireVerb,
+            contract);
+    }
+
+    /// <summary>
+    /// A call that names its entry. No token is sent, and none comes back.
+    /// </summary>
+    /// <remarks>
+    /// Every live window is tried, because a name is enabled in the window that holds the entry
+    /// and the person need not know which one that is. A window that does not have the name
+    /// answers 404, which is also what it answers for a name it does have but has not enabled —
+    /// deliberately, so this cannot be used to enumerate what exists.
+    /// </remarks>
+    private static async Task<int> CallWithAliasAsync(
+        string alias,
+        string wireVerb,
+        string? payload,
+        BrokerContract contract)
+    {
+        if (!AliasName.IsValid(alias))
+        {
+            Note($"\"{alias}\" is neither a grant token nor a valid alias. {AliasName.Rule}");
+            return contract.Exit("usage");
+        }
+
+        var endpoints = Endpoints.Read(Endpoints.DirectoryHere());
+        if (endpoints.Count == 0)
+        {
+            Note(
+                "no CredsForDevs window is running, or none has been used yet this session. Open "
+                    + $"VS Code, or set {Endpoints.DirectoryOverrideVariable} if your install is not in the usual place.");
+            return contract.Exit("brokerUnreachable");
+        }
+
+        using var client = BrokerClient.Create(contract);
+        var aliasRoute = "/v1/alias/" + wireVerb;
+        var body = AliasBody(alias, wireVerb, payload);
+
+        foreach (var endpoint in endpoints)
+        {
+            if (!await client.IsOurBrokerAsync(endpoint.Port))
+            {
+                continue; // a note left by a window that has since closed
+            }
+
+            var reply = await client.PostAliasAsync(endpoint.Port, aliasRoute, body);
+            if (reply.Status == 404)
+            {
+                continue; // this window does not serve that name; try the next
+            }
+
+            return reply.Status == 200
+                ? Report(OutcomeReader.Interpret(wireVerb, reply.Body, contract))
+                : ReportError(reply.Body, contract);
+        }
+
+        Note($"no running VS Code window has \"{alias}\" enabled for the CLI. Enable it on the entry with \"Enable CLI Access\".");
+        return contract.Exit("entityGone");
+    }
+
+    private static async Task<int> SendAsync(
+        Func<Task<BrokerReply>> send,
+        string wireVerb,
+        BrokerContract contract)
+    {
         BrokerReply reply;
         try
         {
-            reply = await client.PostAsync(token, route, RequestBody(wireVerb, use.Payload));
+            reply = await send();
         }
         catch (Exception e) when (e is HttpRequestException or TaskCanceledException)
         {
@@ -86,6 +186,14 @@ internal static class Program
             ? Report(OutcomeReader.Interpret(wireVerb, reply.Body, contract))
             : ReportError(reply.Body, contract);
     }
+
+    private static string AliasBody(string alias, string wireVerb, string? payload) =>
+        wireVerb switch
+        {
+            "exec" => JsonSerializer.Serialize(new AliasExecRequest(alias, payload ?? string.Empty), CredsJsonContext.Default.AliasExecRequest),
+            "db" => JsonSerializer.Serialize(new AliasQueryRequest(alias, payload ?? string.Empty), CredsJsonContext.Default.AliasQueryRequest),
+            _ => JsonSerializer.Serialize(new AliasRequest(alias), CredsJsonContext.Default.AliasRequest),
+        };
 
     private static string RequestBody(string wireVerb, string? payload) =>
         wireVerb switch

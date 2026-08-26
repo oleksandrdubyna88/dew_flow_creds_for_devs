@@ -9,6 +9,7 @@ import {
   errorBody,
   parseBearer,
   parseJsonObject,
+  parseAliasRoute,
   parseUseRoute,
   statusForErrorCode,
 } from '../brokerProtocol';
@@ -94,4 +95,37 @@ test('a missing local tool is its own answer, not "no credential"', () => {
   // The entity is fine and the request is fine — this machine simply has no psql. A 409
   // would tell the agent to fix the vault, which is the wrong instruction.
   assert.equal(statusForErrorCode('tool_missing'), 412);
+});
+
+/**
+ * The alias route.
+ *
+ * <p>A separate prefix from `/v1/use/`, deliberately, because the two carry different
+ * authorization stories: a use route requires a bearer token the human copied, an alias route
+ * requires only a name and leans entirely on the consent modal. Anything that blurs them at
+ * the parser is a way for one caller to end up on the other's terms.</p>
+ */
+test('an alias route yields its action', () => {
+  assert.equal(parseAliasRoute('/v1/alias/exec'), 'exec');
+  assert.equal(parseAliasRoute('/v1/alias/vpn-up'), 'vpn-up');
+  assert.equal(parseAliasRoute('/v1/alias/exportEnv'), undefined, 'uppercase is not in the grammar');
+});
+
+test('the two route families never answer for each other', () => {
+  assert.equal(parseAliasRoute('/v1/use/exec'), undefined);
+  assert.equal(parseUseRoute('/v1/alias/exec'), undefined);
+});
+
+test('an alias route refuses anything that is not a plain action word', () => {
+  for (const bad of [
+    '/v1/alias/',
+    '/v1/alias/../use/exec',
+    '/v1/alias/exec/extra',
+    '/v1/alias/-leading',
+    '/v1/alias/9starts-with-a-digit',
+    '/v1/alias/' + 'a'.repeat(64),
+    '/v1/aliasexec',
+  ]) {
+    assert.equal(parseAliasRoute(bad), undefined, bad);
+  }
 });

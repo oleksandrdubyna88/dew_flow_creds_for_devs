@@ -25,6 +25,29 @@ internal static class OutcomeReader
 {
     private static readonly string[] ExecVerbs = ["exec", "db", "run", "script"];
 
+    /// <summary>
+    /// Deserialize, or <c>null</c> when the bytes are not what they claim to be.
+    /// </summary>
+    /// <remarks>
+    /// The broker is trusted; the wire is not. A response truncated by a dropped connection
+    /// must leave the CLI reporting a broker failure with its reserved exit code, not throwing
+    /// a stack trace at an agent that can do nothing with one. The Node client has always
+    /// caught this — a first draft here did not, and the test that mirrors its cases is what
+    /// found the difference.
+    /// </remarks>
+    private static T? TryRead<T>(string json, System.Text.Json.Serialization.Metadata.JsonTypeInfo<T> type)
+        where T : class
+    {
+        try
+        {
+            return JsonSerializer.Deserialize(json, type);
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
     internal static Outcome Interpret(string verb, string json, BrokerContract contract)
     {
         if (ExecVerbs.Contains(verb))
@@ -47,7 +70,7 @@ internal static class OutcomeReader
 
     private static Outcome FromExec(string json, BrokerContract contract)
     {
-        var body = JsonSerializer.Deserialize(json, CredsJsonContext.Default.ExecResponse);
+        var body = TryRead(json, CredsJsonContext.Default.ExecResponse);
         if (body is null)
         {
             return new Outcome(string.Empty, string.Empty, ["the broker sent an unreadable answer."], contract.Exit("brokerFailure"));
@@ -77,7 +100,7 @@ internal static class OutcomeReader
 
     private static Outcome FromEnv(string json)
     {
-        var written = JsonSerializer.Deserialize(json, CredsJsonContext.Default.EnvExportResponse)?.Written ?? [];
+        var written = TryRead(json, CredsJsonContext.Default.EnvExportResponse)?.Written ?? [];
         if (written.Length == 0)
         {
             return new Outcome(string.Empty, string.Empty, ["no variables were exported — the entry has nothing bound to a name."], 0);
@@ -100,7 +123,7 @@ internal static class OutcomeReader
     /// </remarks>
     private static Outcome FromVpn(string verb, string json, BrokerContract contract)
     {
-        var opened = JsonSerializer.Deserialize(json, CredsJsonContext.Default.OpenedResponse)?.Opened ?? false;
+        var opened = TryRead(json, CredsJsonContext.Default.OpenedResponse)?.Opened ?? false;
         var what = verb == "vpn-down" ? "brought down" : "brought up";
 
         return opened

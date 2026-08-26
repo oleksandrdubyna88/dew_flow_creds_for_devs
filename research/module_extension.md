@@ -1073,6 +1073,40 @@ The sweep stops entirely on a metadata fault, mirroring `SyncManager`’s fail-c
 the node list cannot be trusted, "this expired" and "this is unreadable" are indistinguishable,
 and one of those two answers deletes data.
 
+### Reaching the broker from a terminal (0.60.0–0.61.0)
+
+Three pieces, each with a boundary worth stating exactly.
+
+**A second listener** (`brokerListeners.ts`) sits beside the loopback port: a unix socket on
+POSIX, a named pipe on Windows, the same request handler. `loopbackServer.ts` is deliberately
+untouched — it is shared with the OAuth redirect catcher, which a browser must reach and which
+therefore genuinely needs TCP. On POSIX the socket is `0600`, so the OS refuses another user
+before a byte of ours runs; the port never had that. On Windows the pipe carries the default
+DACL, which we neither set nor can set through Node (`icacls` in `fileAcl.ts` takes a file path,
+and a pipe is not one) — so there it is a convenience, not a boundary. **The grant token is
+still required on both.**
+
+**An announcement per window** (`cliEndpoint.ts`) in `<globalStorage>/endpoints/window-<pid>.json`,
+holding a port, a pipe and a pid. Nothing secret, and nothing a local process could not
+enumerate anyway — which is what makes it safe to write. A crashed window cannot delete its own
+note, so staleness is normal and nothing trusts the file: the unauthenticated health probe
+decides, because the OS reissues freed port numbers.
+
+**Aliases** (`cliAliases.ts`, route `POST /v1/alias/<action>`) let `creds ssh prod-db` name an
+entry. The registry holds `name → (accountId, entityId, kind)` and nothing else: no token, no
+secret, nothing replayable. The trade is real and is written down rather than glossed — before
+aliases, using a credential required a secret the human had copied; now it requires knowing a
+name, and names are not secret. The consent modal becomes load-bearing, which is why an alias is
+opt-in per entry, why the modal names the entry and the action, and why the route **returns no
+token**: the caller gets the action, never a capability it could pass on. An unknown name and a
+name that exists but is not enabled get the same 404, so the route cannot be used to enumerate
+what a vault holds.
+
+Alias calls join the token path at `perform()` — capability check, validation, consent, masking,
+audit, one-use burn. That extraction is the point: a second copy of that tail is how consent or
+masking ends up applying to one caller and not the other, and it is always the newer path that
+loses a step.
+
 ### Masking the broker's output (0.57.3)
 
 Design record: [PLAN_ai_context_masking.md](PLAN_ai_context_masking.md) — including the clipboard
