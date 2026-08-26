@@ -28,6 +28,16 @@ interface Calls {
   asked: string[];
 }
 
+/** One stubbed `getSession` answer: a session, nothing, or the throw a provider can do. */
+function session(which: string, result: { id: string } | 'throw' | undefined): Promise<unknown> {
+  if (result === 'throw') {
+    return Promise.reject(new Error(`${which} provider not configured`));
+  }
+  return Promise.resolve(
+    result === undefined ? undefined : { account: { id: result.id, label: 'me@corp.com' } },
+  );
+}
+
 function world(options: {
   silent?: { id: string } | 'throw';
   interactive?: { id: string } | 'throw';
@@ -43,13 +53,7 @@ function world(options: {
       ): Promise<unknown> => {
         const which = o.createIfNone === true ? 'interactive' : 'silent';
         calls[which] += 1;
-        const result = which === 'interactive' ? options.interactive : options.silent;
-        if (result === 'throw') {
-          return Promise.reject(new Error(`${which} provider not configured`));
-        }
-        return Promise.resolve(
-          result === undefined ? undefined : { account: { id: result.id, label: 'me@corp.com' } },
-        );
+        return session(which, which === 'interactive' ? options.interactive : options.silent);
       },
     },
     window: {
