@@ -1,3 +1,4 @@
+import { SshExecAuth } from './sshExecCommand';
 import { EntityMetadata } from './types';
 
 /**
@@ -79,11 +80,34 @@ export interface BridgeOptions {
   /** Materialized private key, when the entity authenticates with one. */
   readonly keyPath?: string;
   readonly knownHostsFile?: string;
+  /**
+   * How this entity authenticates — the same two modes an agent exec has.
+   *
+   * <p>Defaults to `key`, which is also what makes a bridge FAIL rather than hang: see
+   * {@link authArgv}.</p>
+   */
+  readonly auth?: SshExecAuth;
   /** `ssh` argv fragments the human path already composes — jump host and the rest. */
   readonly extra?: readonly string[];
 }
 
 /** `-R` needs a numeric, in-range port; a bridge to port 0 would forward to nothing. */
+/**
+ * The one option that decides whether a bridge that cannot authenticate fails or HANGS.
+ *
+ * <p>Measured on a live host: with neither of these, `ssh` does not refuse — it waits at the
+ * password prompt on a stdin that is a pipe, forever, while every downstream check reads as
+ * "not yet" rather than "never". The process stayed alive with an established TCP connection
+ * and no authenticated session, which is the most convincing possible way to look healthy.</p>
+ *
+ * <p>The pairing is `buildSshExecArgv`’s, deliberately: `BatchMode=yes` for a key so a bad
+ * one fails at once, and `NumberOfPasswordPrompts=1` for a password because batch mode
+ * disables `SSH_ASKPASS` outright and the two can never both be set.</p>
+ */
+function authArgv(auth: SshExecAuth): string[] {
+  return auth === 'askpass' ? ['-o', 'NumberOfPasswordPrompts=1'] : ['-o', 'BatchMode=yes'];
+}
+
 function isUsablePort(port: number): boolean {
   return Number.isInteger(port) && port > 0 && port <= 65535;
 }
@@ -184,6 +208,7 @@ export function buildBridgeArgv(
   }
 
   return [
+    ...authArgv(options.auth ?? 'key'),
     ...FIXED_OPTIONS,
     ...hostKeyArgv(options.knownHostsFile),
     // No shell, no command: this connection exists only to carry the forward.
@@ -246,12 +271,53 @@ export function remoteInstructions(remote: RemoteSocket, token?: string, target?
  * no second way of reaching the host.</p>
  */
 export function modeCheckCommand(remote: RemoteSocket): string {
-  return `stat -c %a ${remote.path} 2>/dev/null || echo unknown`;
+  // `-S` first, because the two answers are different questions: a socket that is not there
+  // means the bridge never came up, and a mode that cannot be read means this host has no
+  // usable `stat`. Collapsing them into one word is what hid a dead bridge behind an info log.
+  return `if [ -S ${remote.path} ]; then stat -c %a ${remote.path} 2>/dev/null || echo unknown; else echo missing; fi`;
 }
 
 /** Whether an observed mode means "owner only", which is the only acceptable answer. */
 export function isOwnerOnlyMode(mode: string): boolean {
   return /^0?600$/.test(mode.trim());
+}
+
+/** The three things the probe can report, kept apart because they need different answers. */
+export type SocketProbe =
+  | { kind: 'missing' }
+  | { kind: 'unreadable' }
+  | { kind: 'mode'; mode: string };
+
+/**
+ * Read the probe’s single line.
+ *
+ * <p>An empty answer counts as `unreadable` rather than `missing`: nothing came back at all,
+ * which is a failed check and not an observation about the socket. Guessing "missing" there
+ * would report a working bridge as dead every time the check itself timed out.</p>
+ */
+export function interpretSocketProbe(stdout: string): SocketProbe {
+  const answer = stdout.trim();
+  if (answer === 'missing') {
+    return { kind: 'missing' };
+  }
+  return answer.length === 0 || answer === 'unknown' ? { kind: 'unreadable' } : { kind: 'mode', mode: answer };
+}
+
+/**
+ * What to tell the person when the socket is not there.
+ *
+ * <p>This is the message that was missing entirely. The bridge announced itself as open, the
+ * probe found nothing, and the finding went to a log file — so the failure was visible only to
+ * whoever thought to look at the one place that had it. It names authentication because that
+ * is what it has been every time: the forward is the last thing `ssh` does, so a socket that
+ * never appeared means the connection never got that far.</p>
+ */
+export function describeMissingSocket(remote: RemoteSocket, entityName: string): string {
+  return (
+    `The bridge to "${entityName}" did not come up: ${remote.path} was never created on that ` +
+    'host. That means ssh could not authenticate — check the credential saved for this entry, ' +
+    'and that its host accepts it non-interactively.'
+  );
 }
 
 /**

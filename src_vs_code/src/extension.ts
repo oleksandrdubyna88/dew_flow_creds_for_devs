@@ -99,6 +99,8 @@ import {
   describeWideSocket,
   isOwnerOnlyMode,
   modeCheckCommand,
+  describeMissingSocket,
+  interpretSocketProbe,
   remoteInstructions,
   remoteSocketPath,
   sweepCommand,
@@ -106,13 +108,12 @@ import {
 import { SshBridgeManager } from './sshBridgeManager';
 import { entityKey } from './entityFlags';
 import { parseToken } from './grantToken';
-import { materializePrivateKey } from './keyInstaller';
 import { isSafeSshTarget } from './sshCommand';
-import { buildSshExecArgv } from './sshExecCommand';
+import { resolveExecAuth } from './sshExecAuth';
+import { SshExecAuth, buildSshExecArgv } from './sshExecCommand';
 import { runSshExec } from './sshExecRunner';
 import { rcAlreadyHasIt, rcSnippet } from './wslRelay';
 import { WslRelayManager, spawnWslRelay } from './wslRelayManager';
-import { resolveSshCredential } from './sshCredential';
 import {
   AliasMap,
   aliasFor,
@@ -782,13 +783,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     entity: EntityMetadata,
     keyPath: string | undefined,
     user: string,
+    auth: SshExecAuth = 'key',
+    sweepEnv: NodeJS.ProcessEnv = process.env,
   ): Promise<void> {
-    const argv = buildSshExecArgv(entity, keyPath, sweepCommand(user));
+    const argv = buildSshExecArgv(entity, keyPath, sweepCommand(user), auth);
     if (argv === undefined) {
       return;
     }
     try {
-      await runSshExec(argv, { env: process.env, timeoutMs: 15_000, signal: agentServer.signal });
+      await runSshExec(argv, { env: sweepEnv, timeoutMs: 15_000, signal: agentServer.signal });
     } catch (error) {
       log.info('bridge', `socket sweep did not run: ${describeError(error)}`);
     }
@@ -800,12 +803,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     remote: { path: string },
   ): Promise<void> {
     try {
-      const credential = await resolveSshCredential(storage, accountId, entity);
-      const keyPath =
-        credential.kind === 'storedKey' && storageDir !== undefined
-          ? materializePrivateKey(storageDir, `bridgecheck-${entity.id}`, credential.content)
-          : undefined;
-      const argv = buildSshExecArgv(entity, keyPath, modeCheckCommand(remote));
+      if (storageDir === undefined) {
+        return;
+      }
+      const credential = await resolveExecAuth(storage, accountId, entity, storageDir);
+      if (!credential.ok) {
+        return; // the bridge itself already reported this
+      }
+      const keyPath = credential.keyPath;
+      const argv = buildSshExecArgv(entity, keyPath, modeCheckCommand(remote), credential.auth);
       if (argv === undefined) {
         return;
       }
@@ -813,19 +819,29 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       // and nothing else does, so every dropped bridge leaves one behind. Swept here, AFTER the
       // new one is up: it is then live, and the sweep keeps anything still being listened on,
       // which is what stops it removing another window's working bridge.
-      await sweepDeadSockets(entity, keyPath, entity.user ?? '');
+      await sweepDeadSockets(entity, keyPath, entity.user ?? '', credential.auth, credential.env);
       // A moment for sshd to bind before asking about the file.
       await new Promise((resolve) => setTimeout(resolve, 1500));
       const outcome = await runSshExec(argv, {
-        env: process.env,
+        env: credential.env,
         timeoutMs: 15_000,
         signal: agentServer.signal,
       });
-      const mode = (outcome.stdout ?? '').trim();
-      if (mode.length === 0 || mode === 'unknown') {
-        log.info('bridge', `could not read the mode of ${remote.path} on that host`);
+      const probe = interpretSocketProbe(outcome.stdout ?? '');
+      if (probe.kind === 'missing') {
+        // The bridge is NOT up. This used to share a branch with "no stat on this host" and go
+        // to an info log, so a dead bridge was announced as open and the only record of the
+        // failure was a line in a file nobody had a reason to open.
+        const text = describeMissingSocket(remote, entity.name ?? 'this entry');
+        log.info('bridge', text);
+        void vscode.window.showErrorMessage(text);
         return;
       }
+      if (probe.kind === 'unreadable') {
+        log.info('bridge', `${remote.path} is there, but its mode could not be read on that host`);
+        return;
+      }
+      const mode = probe.mode;
       if (!isOwnerOnlyMode(mode)) {
         log.warn('bridge', `${remote.path} is mode ${mode}, not 600`);
         void vscode.window.showWarningMessage(describeWideSocket(mode, remote));
@@ -870,14 +886,29 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       return;
     }
 
-    const credential = await resolveSshCredential(storage, accountId, details);
-    const keyPath =
-      credential.kind === 'storedKey' && storageDir !== undefined
-        ? materializePrivateKey(storageDir, `bridge-${node.id}`, credential.content)
-        : undefined;
+    // The SAME resolver an agent exec uses. This block used to handle `storedKey` alone and
+    // pass `undefined` for a key file, a password and no-credential-at-all — so a bridge to a
+    // password entity spawned an ssh with nothing to authenticate with, and (having no
+    // BatchMode) waited at the prompt forever rather than failing.
+    if (storageDir === undefined) {
+      return;
+    }
+    const credential = await resolveExecAuth(storage, accountId, details, storageDir);
+    if (credential.warning !== undefined) {
+      void vscode.window.showWarningMessage(credential.warning);
+    }
+    if (!credential.ok) {
+      void vscode.window.showErrorMessage(`Cannot bridge to "${node.name}": ${credential.message}`);
+      return;
+    }
+    const keyPath = credential.keyPath;
 
     const remote = { path: remoteSocketPath(details.user ?? '', bridgeId(() => crypto.randomUUID())) };
-    const argv = buildBridgeArgv(details, { port: parsed.port, remote, keyPath }, isSafeSshTarget);
+    const argv = buildBridgeArgv(
+      details,
+      { port: parsed.port, remote, keyPath, auth: credential.auth },
+      isSafeSshTarget,
+    );
     if (argv === undefined) {
       void vscode.window.showWarningMessage(
         `"${node.name}" cannot be bridged: its host is not a shape ssh can be given safely.`,
@@ -885,7 +916,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       return;
     }
 
-    bridges.start(key, remote.path, 'ssh', argv, process.env);
+    // The RESOLVED environment, not the parent’s: a password entity carries its answer in
+    // SSH_ASKPASS, and spawning with process.env would drop exactly the thing that lets this
+    // connection authenticate at all.
+    bridges.start(key, remote.path, 'ssh', argv, credential.env);
 
     // The socket's permissions are the boundary on that host, and we cannot set them: for a
     // `-R` forward sshd creates the socket, so the SERVER's StreamLocalBindMask governs. So

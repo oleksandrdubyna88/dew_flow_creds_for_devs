@@ -4,7 +4,9 @@ import { EntityMetadata } from '../types';
 import {
   bridgeId,
   buildBridgeArgv,
+  describeMissingSocket,
   describeWideSocket,
+  interpretSocketProbe,
   isOwnerOnlyMode,
   modeCheckCommand,
   remoteInstructions,
@@ -395,4 +397,86 @@ test('the instruction survives being pasted into the WRONG shell', () => {
 
   const comments = block.split('\n').filter((l) => l.trim().startsWith('#'));
   assert.ok(comments.length >= 4, 'the guidance is in comments, not in prose beside the button');
+});
+
+/* --- authenticating the bridge itself --- */
+
+/**
+ * The bridge must be able to authenticate, and must FAIL when it cannot.
+ *
+ * <p>Found on a live host. The bridge spawned `ssh` with no credential and no `BatchMode`, so
+ * it did not fail — it sat at the password prompt forever on a pipe nothing could type into,
+ * while the window said "Bridge open". Two separate defects with one symptom:</p>
+ *
+ * <ul>
+ *   <li>the exec path resolves FOUR credential kinds; the bridge resolved one (`storedKey`) and
+ *       silently passed `undefined` for the other three;</li>
+ *   <li>`buildSshExecArgv` sets `BatchMode=yes` for a key and `NumberOfPasswordPrompts=1` for a
+ *       password. `buildBridgeArgv` set neither, which is what turned a refusal into a hang.</li>
+ * </ul>
+ */
+
+test('a key bridge runs in batch mode, so a bad key FAILS instead of waiting for a password', () => {
+  // Without this the process stays alive at the prompt and every check downstream — including
+  // "is the socket there" — reads as "not yet" rather than "never".
+  const a = argv({ keyPath: '/keys/id_ed25519' });
+
+  assert.ok(a.includes('BatchMode=yes'), a.join(' '));
+});
+
+test('a password bridge asks ONCE, and must not be in batch mode', () => {
+  // BatchMode=yes disables askpass entirely, so the two are mutually exclusive: the same pairing
+  // `buildSshExecArgv` already makes for an agent exec.
+  const built = buildBridgeArgv(
+    HOST,
+    { port: 51234, remote: { path: '/tmp/x.sock' }, auth: 'askpass' },
+    SAFE,
+  );
+  const a = built ?? [];
+
+  assert.ok(a.includes('NumberOfPasswordPrompts=1'), a.join(' '));
+  assert.equal(a.includes('BatchMode=yes'), false, 'batch mode would ignore SSH_ASKPASS');
+});
+
+/* --- telling the truth about whether it came up --- */
+
+/**
+ * "No socket" and "cannot look" are different answers and must not share a branch.
+ *
+ * <p>The probe was `stat … || echo unknown`, so an ABSENT socket — the loudest possible evidence
+ * the bridge never came up — arrived as the same word as a host without coreutils, and was
+ * written to an info log while the window said the bridge was open. Twice, in this repo's own
+ * logs, before anyone noticed:</p>
+ *
+ * <pre>[16:59:06 INF] bridge: could not read the mode of /tmp/creds-root-….sock on that host</pre>
+ */
+
+test('the probe distinguishes a missing socket from a host that cannot answer', () => {
+  const cmd = modeCheckCommand({ path: '/tmp/creds-dev-abc.sock' });
+
+  assert.match(cmd, /-S \/tmp\/creds-dev-abc\.sock/, 'it asks whether the SOCKET exists first');
+  assert.match(cmd, /missing/, cmd);
+});
+
+test('an absent socket reads as missing — never as an unreadable mode', () => {
+  assert.deepEqual(interpretSocketProbe('missing'), { kind: 'missing' });
+  assert.deepEqual(interpretSocketProbe(' missing \n'), { kind: 'missing' });
+});
+
+test('a socket whose mode cannot be read is a THIRD answer, not a failure', () => {
+  assert.deepEqual(interpretSocketProbe('unknown'), { kind: 'unreadable' });
+  assert.deepEqual(interpretSocketProbe(''), { kind: 'unreadable' });
+});
+
+test('a mode comes back as a mode', () => {
+  assert.deepEqual(interpretSocketProbe('600'), { kind: 'mode', mode: '600' });
+  assert.deepEqual(interpretSocketProbe('0600\n'), { kind: 'mode', mode: '0600' });
+});
+
+test('a missing socket is described as the bridge being DOWN, and names the likely cause', () => {
+  const text = describeMissingSocket({ path: '/tmp/creds-dev-abc.sock' }, 'build box');
+
+  assert.match(text, /build box/);
+  assert.match(text, /not|never/i, 'it says the bridge is not up');
+  assert.match(text, /authenticat/i, 'and points at the cause a person can act on');
 });

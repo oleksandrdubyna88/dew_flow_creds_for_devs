@@ -8,6 +8,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The Remote Bridge could not authenticate, and said it was open anyway.** Four defects with one
+  symptom, found on a live password-authenticated host. The bridge resolved one credential kind of
+  four — a stored key — and passed `undefined` for a key file, a password and no-credential-at-all,
+  so the entity that needed it most got an `ssh` with nothing to authenticate with. Its argv also
+  set no `BatchMode`, and that is what turned a refusal into a hang: `ssh` waited at a password
+  prompt on a pipe, forever, with a live process and an established connection. The socket check
+  that would have caught it collapsed "no socket" and "this host has no `stat`" into one word and
+  wrote the result to an info log — twice, before anyone noticed. And the window announced
+  `Bridge open` before any of that had been checked. The credential resolution now lives in one
+  place (`sshExecAuth.ts`) shared with the agent exec path, the bridge argv carries the same
+  `BatchMode` / `NumberOfPasswordPrompts` pairing an exec does, an absent socket is reported to the
+  person as the bridge being down and names authentication as the cause, and a structural test
+  fails if anything that spawns a non-interactive `ssh` resolves a credential by hand again.
+
 - **The Remote Bridge setup block did not say which machine it belongs on.** The block is safe to
   paste — only the `export` runs, everything else is a comment behind `#` — but the instruction
   saying to paste it *on the remote host* lived in the notification beside the button, and that

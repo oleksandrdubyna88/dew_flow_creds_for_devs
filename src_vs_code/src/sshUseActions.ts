@@ -1,5 +1,4 @@
 import { describeError } from './describeError';
-import * as crypto from 'node:crypto';
 import * as fs from 'node:fs';
 import * as vscode from 'vscode';
 import {
@@ -17,9 +16,7 @@ import { resolveJumpChain } from './sshOptions';
 import { materializeKnownHosts } from './hostKeyTrust';
 import { runSshExec } from './sshExecRunner';
 import { agentForwardEnv, openSshProgram } from './sshProgram';
-import { resolveSshCredential } from './sshCredential';
-import { askpassEnv } from './sshAskpass';
-import { materializePrivateKey, writeAskpassScriptFile } from './keyInstaller';
+import { resolveExecAuth } from './sshExecAuth';
 import { describeSshTarget } from './terminalManager';
 import { connectEntity } from './sshConnect';
 import { EntityMetadata } from './types';
@@ -88,12 +85,12 @@ function entityFor(deps: SshUseDeps, ctx: UseActionContext): EntityMetadata | un
 }
 
 /**
- * Resolve the credential into what `ssh` needs: an optional key path and an
- * environment. The key is materialized per call and deleted in the caller's
- * `finally`; the human terminal path deletes the same file when its terminal
- * closes, so nothing here may assume a cached path still exists.
+ * Resolve the credential into what `ssh` needs, and map a failure onto a broker error code.
+ *
+ * <p>The resolution itself lives in `sshExecAuth.ts`, shared with the `ssh -R` bridge, which
+ * used to carry its own one-kind copy of it. What stays here is the part that is specific to
+ * an agent call: showing the warning and turning a refusal into a `UseActionResult`.</p>
  */
-// eslint-disable-next-line complexity
 async function prepareAuth(
   deps: SshUseDeps,
   ctx: UseActionContext,
@@ -102,55 +99,20 @@ async function prepareAuth(
   | { ok: true; keyPath?: string; env: NodeJS.ProcessEnv; auth: SshExecAuth; materialized?: string }
   | { ok: false; result: UseActionResult }
 > {
-  const source = await resolveSshCredential(deps.storage, ctx.accountId, entity);
-  if (source.warning !== undefined) {
-    // The human Connect path shows this; the agent path used to drop it, which
-    // is the one case where an entity authenticates with different key material
-    // than its configuration names and nobody is told.
-    deps.note(`${ctx.entityName}: ${source.warning}`);
-    void vscode.window.showWarningMessage(source.warning);
+  const resolved = await resolveExecAuth(deps.storage, ctx.accountId, entity, deps.storageDir);
+  if (resolved.warning !== undefined) {
+    // The human Connect path shows this; the agent path used to drop it, which is the one case
+    // where an entity authenticates with different key material than its configuration names
+    // and nobody is told.
+    deps.note(`${ctx.entityName}: ${resolved.warning}`);
+    void vscode.window.showWarningMessage(resolved.warning);
   }
-  if (source.kind === 'none') {
-    return {
-      ok: false,
-      result: fail('no_credential', `"${ctx.entityName}" has no stored password or key any more.`),
-    };
+  if (!resolved.ok) {
+    const code: ErrorCode = resolved.reason === 'no_credential' ? 'no_credential' : 'internal';
+    return { ok: false, result: fail(code, resolved.message) };
   }
-  if (source.kind === 'password') {
-    const scriptPath = writeAskpassScriptFile(deps.storageDir, process.platform);
-    return {
-      ok: true,
-      auth: 'askpass',
-      // spawn REPLACES the environment rather than merging it (unlike
-      // createTerminal), so the parent's PATH and HOME must be carried in
-      // explicitly — without them ssh is unresolvable and known_hosts is not
-      // found.
-      env: { ...process.env, ...askpassEnv(scriptPath, source.password, process.platform) },
-    };
-  }
-  if (source.kind === 'keyPath') {
-    return { ok: true, keyPath: source.path, env: { ...process.env }, auth: 'key' };
-  }
-  try {
-    // A name of this call's own, not the entity's: the file name decides who
-    // may delete it, and a shared one meant the first call to finish pulled the
-    // key out from under every other that was still authenticating with it —
-    // including a human terminal open on the same entity.
-    const keyPath = materializePrivateKey(
-      deps.storageDir,
-      `${source.keyEntityId}-${crypto.randomUUID()}`,
-      source.content,
-    );
-    return { ok: true, keyPath, env: { ...process.env }, auth: 'key', materialized: keyPath };
-  } catch (error) {
-    return {
-      ok: false,
-      result: fail(
-        'internal',
-        `Could not write the stored key to disk: ${describeError(error)}`,
-      ),
-    };
-  }
+  const { keyPath, env, auth, materialized } = resolved;
+  return { ok: true, keyPath, env, auth, materialized };
 }
 
 /**
