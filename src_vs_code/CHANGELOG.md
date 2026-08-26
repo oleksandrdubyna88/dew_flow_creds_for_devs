@@ -6,6 +6,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **A diagnostics channel you can actually attach to a bug report.** Until now the only output
+  channel was the agent broker's, and every other failure — a sync that could not decrypt, a
+  backup that could not be written, a transport that timed out — was a toast. A toast is right
+  for interrupting you and useless afterwards: it is gone by the time anyone asks what it said.
+
+  There is now a **CredsForDevs** output channel, and beside it a file per run at
+  `logs/{date}/creds-{time}-{pid}.log` in the extension's storage folder. **CredsForDevs: Show
+  Diagnostics** opens the channel and offers to copy the file path. Old runs are swept after
+  two weeks, and a whole day folder goes at once so the folder never fills with empty ones.
+
+  **No secret reaches it, and that is structural rather than a filter.** The log takes a source
+  and a message; it holds no vault, no keychain handle and no way to obtain one, so a secret
+  could only arrive if something formatted one in deliberately. A test drives the real failure
+  messages against a vault whose every secret is a distinctive marker and greps the output for
+  each of them.
+
 ### Security
 
 - **Vault format v4 — roll the extension out to every machine before any of them syncs.**

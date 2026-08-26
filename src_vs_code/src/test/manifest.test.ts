@@ -48,6 +48,9 @@ const PALETTE_ONLY = new Set([
   // in every file.
   'credSshManager.scanClipboard',
   'credSshManager.scanDocument',
+  // Reached when something has already gone wrong and the toast that said so has scrolled
+  // away. There is no row it belongs to — the diagnostics are the window's, not an entity's.
+  'credSshManager.showDiagnostics',
 ]);
 
 // eslint-disable-next-line complexity

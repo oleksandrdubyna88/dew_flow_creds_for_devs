@@ -25,6 +25,15 @@ const AUTO_SYNC_SETTING = 'autoSync';
 const INTERVAL_SETTING = 'autoSyncIntervalMinutes';
 const DEBOUNCE_MS = 5_000;
 
+/** What a failed cycle says, in one place, so the toast and the log can never differ. */
+function syncFailureText(account: StoredAccount, error: unknown): string {
+  const wrongPin = error instanceof BackupError && error.kind === 'wrong-password';
+  return wrongPin
+    ? `Sync for ${account.email}: the NAS file does not decrypt with this machine's PIN — run "CredsForDevs: Set Sync PIN" with the same PIN as the other machine.`
+    : `Sync for ${account.email} failed: ${describeError(error)}`;
+}
+
+
 /**
  * Automatic cross-machine sync over the NAS: the encrypted per-profile
  * vault_*.enc files are the transport. Cycle (per profile):
@@ -79,6 +88,15 @@ export class SyncManager implements vscode.Disposable {
     private readonly onCycleEnd?: () => void,
     /** Called with the accountId after each account's cycle SUCCEEDS — feeds the stale-sync reminder. */
     private readonly onAccountSynced?: (accountId: string) => void,
+    /**
+     * The diagnostic channel (audit A6). Optional so a test can build a manager without one,
+     * and last in the list so adding it cannot renumber an existing caller's arguments.
+     *
+     * <p>A sync failure was a toast and nothing else: gone in seconds, and a bug report about
+     * "sync stopped working" arrived with nothing to read. The toast still interrupts; this is
+     * what survives long enough to be sent.</p>
+     */
+    private readonly log?: { info(source: string, message: string): void; error(source: string, message: string): void },
   ) {
     this.configListener = vscode.workspace.onDidChangeConfiguration((e) => {
       if (e.affectsConfiguration(CONFIG_SECTION)) {
@@ -564,14 +582,15 @@ export class SyncManager implements vscode.Disposable {
   }
 
   private warnOnce(account: StoredAccount, error: unknown): void {
+    const message = syncFailureText(account, error);
+    // Logged on EVERY failure, deduped only for the toast. The dedupe exists so a five-minute
+    // timer does not nag; a log that skipped the recurrences would hide the one fact a reader
+    // wants — whether this failed once or has been failing all afternoon.
+    this.log?.error('sync', message);
     if (this.warnedAccounts.has(account.accountId)) {
       return;
     }
     this.warnedAccounts.add(account.accountId);
-    const message =
-      error instanceof BackupError && error.kind === 'wrong-password'
-        ? `Sync for ${account.email}: the NAS file does not decrypt with this machine's PIN — run "CredsForDevs: Set Sync PIN" with the same PIN as the other machine.`
-        : `Sync for ${account.email} failed: ${describeError(error)}`;
     void vscode.window.showWarningMessage(message);
   }
 }

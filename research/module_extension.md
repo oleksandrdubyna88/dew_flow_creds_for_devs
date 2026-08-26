@@ -1216,6 +1216,31 @@ the **real** `out/agentCli.js`, and spawns a real `ssh` at an address that refus
 the surface, the consent gate, the CLI exit codes, the byte and time ceilings and the dispose path
 are all exercised without an SSH server. `npm run itest:agent`.
 
+### Diagnostics: one channel, and a file per run (audit A6)
+
+`logFormat.ts` (pure) fixes the shape and `diagnosticLog.ts` writes it. The path follows the
+family logging rule — `logs/{yyyy-MM-dd}/creds-{HH-mm-ss}-{pid}.log` under `globalStorageUri`,
+**UTC everywhere**, a folder per day and a file per RUN. Per run rather than per day because the
+question anyone asks is "what did THAT run do"; the pid disambiguates the several windows VS Code
+starts in the same second when it restores a workspace.
+
+Three properties are the whole design:
+
+- **No secret can reach it.** The API takes a `source` and a `message`; the module holds no
+  `StorageManager`, no `SecretStorage` and no way to obtain one, so a secret could only arrive
+  if a caller formatted one in on purpose. `diagnosticLog.test.ts` drives the real failure
+  messages against a fixture whose every secret is a distinctive marker and greps for each.
+- **Failing to log never fails the feature.** Every write is guarded; an unwritable storage
+  folder degrades to the channel alone. Diagnostics that can take the product down are worse
+  than no diagnostics.
+- **The toast stays.** Interrupting a person and leaving them something to send afterwards are
+  different jobs. `SyncManager` logs on EVERY failure while the toast is still deduped per
+  account — a log that skipped recurrences would hide whether this failed once or all afternoon.
+
+`CredsForDevs: Show Diagnostics` opens the channel and offers the file path; it is declared
+palette-only in `manifest.test.ts`, because the diagnostics belong to the window rather than to
+any row.
+
 ## Security hardening (2026-08-25 review)
 
 A post-merge review ([SECURITY_REVIEW_2026-08-25.md](SECURITY_REVIEW_2026-08-25.md)) closed ten

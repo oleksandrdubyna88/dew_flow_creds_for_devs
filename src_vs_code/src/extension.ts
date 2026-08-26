@@ -1,4 +1,4 @@
-/* eslint-disable max-lines, max-lines-per-function, complexity, no-console --
+/* eslint-disable max-lines, max-lines-per-function, complexity --
    The 3,000-line activate() is audit item A1's subject: this file is being dismantled into
    modules, each of which lints clean; a marker per violation here would be deleted within
    days. Remove this header as the LAST step of A1, when the file is a thin composition. */
@@ -85,6 +85,7 @@ import {
 import { validatePin } from './pinPolicy';
 import { CredTreeDataProvider, VIEW_ID } from './treeDataProvider';
 import { EntityFlagsRefresher, entityFlagSource } from './entityFlags';
+import { createDiagnosticLog } from './diagnosticLog';
 import { resolveKind } from './entityKind';
 import { burnIfOneUse } from './burnOnUse';
 import { EphemeralSweeper } from './ephemeralSweeper';
@@ -160,6 +161,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   }
   const provider = new CredTreeDataProvider(storage, context.extensionUri);
   const storageDir = context.globalStorageUri.fsPath;
+
+  // One diagnostic channel for everything that is not the agent broker, plus a file per run
+  // (audit A6). A toast is right for interrupting a person and wrong for a bug report: it is
+  // gone by the time anyone asks what it said. Nothing here can read a vault — see
+  // diagnosticLog.ts on why "no secret reaches the log" is a property and not a filter.
+  const log = createDiagnosticLog({ storageDir });
+  context.subscriptions.push(log);
+  log.info('extension', `activated; diagnostics for this run are in ${log.file}`);
+
   // Never let decrypted SSH key material outlive a session: clear any that a
   // crash left behind, and clear again on shutdown (see deactivate()).
   purgeMaterializedKeys(storageDir);
@@ -201,6 +211,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     },
     () => void sharing.reload(),
     (accountId) => void context.globalState.update(`syncReminder.lastOk.${accountId}`, Date.now()),
+    log,
   );
   context.subscriptions.push(sync);
 
@@ -208,7 +219,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // snapshot is a copy of what sync maintains — with no sync location there is nothing to
   // copy, and the scheduler says so rather than inventing an export of its own.
   const backups = new BackupScheduler(storage, transports, context.globalState, (message) =>
-    console.log(`[creds-for-devs/backup] ${message}`),
+    log.info('backup', message),
   );
   context.subscriptions.push(backups);
 
@@ -219,7 +230,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const ephemeral = new EphemeralSweeper(
     storage,
     context.globalState,
-    (message) => console.log(`[creds-for-devs/ephemeral] ${message}`),
+    (message) => log.info('ephemeral', message),
     () => provider.refresh(),
   );
   ephemeral.start();
@@ -419,6 +430,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   register('credSshManager.refresh', () => {
     provider.refresh();
     void sharing.reload();
+  });
+
+  /**
+   * Show the diagnostics, and say where the file is (audit A6).
+   *
+   * <p>The channel is what somebody reads now; the path is what they attach to a bug report,
+   * which is the case this exists for — a failure that has already scrolled away.</p>
+   */
+  register('credSshManager.showDiagnostics', () => {
+    log.show();
+    void vscode.window.showInformationMessage(`Diagnostics for this window: ${log.file}`, 'Copy path').then(
+      (choice) => (choice === 'Copy path' ? vscode.env.clipboard.writeText(log.file) : undefined),
+    );
   });
 
   /**

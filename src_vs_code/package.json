@@ -453,6 +453,11 @@
         "icon": "$(refresh)"
       },
       {
+        "command": "credSshManager.showDiagnostics",
+        "title": "Show Diagnostics",
+        "category": "CredsForDevs"
+      },
+      {
         "command": "credSshManager.syncNow",
         "title": "Sync Now (NAS)",
         "category": "CredsForDevs",
