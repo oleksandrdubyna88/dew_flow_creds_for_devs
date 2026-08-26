@@ -1,20 +1,27 @@
 name: release
 
-# Two products, two tag shapes, so releasing one never ships the other:
+# Three products, three tag shapes, so releasing one never ships the others:
 #   server-v1.2.3     -> builds and pushes the container image
 #   extension-v0.24.0 -> packages and publishes to the VS Code Marketplace
+#   cli-v0.1.0        -> four Native AOT `creds` binaries, attached to the release
+#
+# The `cli-v*` line was missing while the `cli-binaries` job below was complete and
+# guarded by `if: startsWith(github.ref, 'refs/tags/cli-v')` — so the job existed, was
+# correct, and could never run. Found by pushing the first cli tag and watching nothing
+# happen. A guard on a job is not a trigger for the workflow.
 on:
   push:
     tags:
       - 'server-v*'
       - 'extension-v*'
+      - 'cli-v*'
   workflow_dispatch:
     inputs:
       target:
         description: 'What to release'
         required: true
         type: choice
-        options: [server, extension]
+        options: [server, extension, cli]
 
 permissions:
   contents: read
@@ -158,7 +165,7 @@ jobs:
   # and the server version independently.
   cli-binaries:
     name: creds cli (${{ matrix.rid }})
-    if: startsWith(github.ref, 'refs/tags/cli-v')
+    if: startsWith(github.ref, 'refs/tags/cli-v') || inputs.target == 'cli'
     strategy:
       fail-fast: false
       matrix:
