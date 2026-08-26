@@ -64,6 +64,11 @@ export function escapeHtmlForHighlighting(value: string): string {
  * constant icon nobody has yet made dynamic. Safe by content is not safe by construction, and
  * the edit that makes an icon vary by kind has no reason to look at how it reaches the page.</p>
  *
+ * <p><b>If you are reading this with a value in front of you, that is the trap.</b> The third
+ * site was cleared during the sweep for the first two by checking what the value happened to
+ * be — which answers the wrong question. Ask whether the SITE is safe whatever it is handed;
+ * a value is somebody's next edit away from being different.</p>
+ *
  * <p>Escaping `<` as `\u003c` keeps the text valid JSON for `JSON.parse`, and closes `<!--`
  * at the same time.</p>
  */
