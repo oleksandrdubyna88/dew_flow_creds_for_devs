@@ -76,6 +76,105 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   error-to-sentence rule (`describeError.ts`) plus `StorageManager.exportSecretsFor`.
   No behaviour change intended anywhere; the suite grew from 635 to 659 tests and runs
   green on Windows and WSL.
+### Added
+
+- **Generate a secret instead of inventing one.** The form's Secret section makes
+  passwords and passphrases; the SSH key section makes an Ed25519 pair. Strength is
+  reported in **bits**, not as a coloured bar — a bar tells you how a designer felt.
+
+  The passphrase list is exactly **256** words, which is what makes "eight bits per
+  word" true rather than approximately true; the optional capital and trailing digit
+  exist for sites that demand them and are deliberately not counted as strength.
+
+  A generated key pair is drawn in the editor and saved straight to the keychain.
+  `ssh-keygen` cannot do that — it writes a file by definition — and with *Add to SSH
+  Agent* the key is then used without ever becoming one.
+
+- **Import what you already have.** `~/.ssh/config`, and CSV or JSON exports from
+  Bitwarden, 1Password, KeePass, LastPass and Termius. The file's content decides how
+  it is read, so a misnamed export still imports; nothing lands before you have seen
+  the count and what will be skipped; and every skipped row is listed with its reason
+  rather than dropped in silence. Everything gets a fresh id, so an import can never
+  overwrite what was already there.
+
+  **KDBX is not read, on purpose.** KeePass's own database is Argon2-encrypted and
+  Argon2 is not in Node, so a half-right implementation would be worse than none.
+  KeePass exports CSV, which imports fine.
+
+- **A health report.** Reused passwords (the finding nobody sees by eye, and the one
+  that turns one breach into several), passwords under 60 bits, private keys in
+  `~/.ssh` with no passphrase, and plaintext credentials in a workspace `.env` — with
+  the `creds://` reference that fixes those.
+
+  All of it runs on your machine. The one exception is opt-in and asks again each run:
+  with `credSshManager.breachCheck` on, it can ask Have I Been Pwned whether a password
+  appears in public breaches. What is sent is the **first five characters of its
+  SHA-1** — one bucket out of a million — and the bucket is matched here, so the
+  service cannot tell which password was asked about.
+
+  No finding ever quotes the value that caused it: the report is meant to be pasted
+  into a bug, and a report containing a password would be the leak.
+
+- **The keyboard and the first five minutes.** `Ctrl+Alt+P` jumps to any credential by
+  name across every account — matching exactly what the tree filter matches, so it can
+  no more find a password by its value than the filter can. Plus bindings for filter,
+  copy password, connect and lock; a welcome view and a four-step walkthrough for a
+  clean install, which until now showed one "Search" row and nothing else; and a
+  status-bar item for the lock, which is the state that decides whether background sync
+  runs at all and could previously only be discovered by trying something.
+
+- **An SSH agent that asks before every single use — and Git commit signing with it.**
+  *Add to SSH Agent* on a stored key serves it from this window's memory over a socket
+  of its own, and `SSH_AUTH_SOCK` is set in every terminal opened afterwards, so `ssh`
+  and `git` find it with no configuration. The `0600` file the extension used to write
+  for `ssh -i` stops existing: *Connect SSH* on an agent-served key passes no `-i` at
+  all.
+
+  Every use opens a dialog naming the key, its fingerprint and **what is being signed** —
+  an SSH login as a named user, or a Git commit — because "a key is being used" is not
+  a decision anybody can make. Allow once, allow that key for ten minutes (a push signs
+  and authenticates in one breath), or deny. Every request is written down.
+
+  *Copy Git Signing Config* gives you the `gpg.format ssh` lines with the public key
+  inline, so Git signs commits with a key that exists in no file.
+
+  Two things that were measured rather than assumed, and are why the feature works:
+  the real `ssh-add -l` and the real `ssh-keygen -Y sign`/`-Y verify` — the exact
+  mechanism `git` uses — are driven against the agent on Windows and on Linux/WSL in
+  `npm run itest:ssh-agent`. And on Windows the signing config points `gpg.ssh.program`
+  at the **built-in** OpenSSH: the `ssh-keygen` Git for Windows ships is an MSYS build
+  that cannot reach a named pipe, and without that line Git fails to sign with nothing
+  naming the cause.
+
+  A key with its own passphrase is refused, with the `ssh-keygen -p -N ""` command that
+  fixes it — OpenSSH uses bcrypt_pbkdf, Node has no implementation of it, and guessing
+  at a KDF in a credential manager is the wrong kind of clever.
+
+- **One-time codes (TOTP).** Paste an `otpauth://` URI or a base32 secret; the viewer
+  shows the live code with a countdown, and the tree gains *Copy One-Time Code*. Steam
+  Guard's five-character variant included. The seed is a secret like any other — OS
+  keychain, synced inside the encrypted envelope — and **the webview never receives
+  it**: what the panel is sent is the six digits, which expire on their own.
+
+- **`creds://` secret references and *Run with Secrets*.** Write
+  `creds://you@corp.com/prod-db/password` where a value would go in a command argument
+  or a script variable. Running it resolves the reference into the child process's
+  environment **only** — the command line carries `"$CREDS_REF_1"`, not the value, so it
+  is not in the process list — and every appearance of that value in what the process
+  prints is replaced with a `<CREDS_MASKED:NAME>` marker that names which secret it was, including one split across two writes.
+
+  This is the half that was missing: a script's variables already avoided the script
+  file, and the extension could only *warn* that a body might print them, because a
+  normal terminal hands the child straight to the renderer and we never saw a byte.
+
+  A reference that could mean two entities is refused, naming both, rather than quietly
+  picking one — entity names are not unique, and a folder path disambiguates. The
+  terminal it runs in has no PTY, so interactive prompts and progress bars behave as
+  they do when piped; *Run in Terminal* is unchanged for those.
+
+  The agent broker's `script` action masks what it returns too, which closes the same
+  hole on that side. The broker's `env` verb stays, now documented as the weaker option
+  rather than the only one.
 
 ### Changed
 

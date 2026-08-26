@@ -75,6 +75,15 @@ test('attachments are not part of a revision — states the limit rather than hi
   assert.equal(pushed[0].secrets.password, 'pw');
 });
 
+test('a replaced TOTP seed is kept — an old seed still produces codes somebody may need', () => {
+  const pushed = pushRevision([], {
+    ...rev(1),
+    secrets: { totp: 'otpauth://totp/code?secret=JBSWY3DPEHPK3PXP&algorithm=SHA1&digits=6&period=30' },
+  });
+
+  assert.equal(pushed[0].secrets.totp, 'otpauth://totp/code?secret=JBSWY3DPEHPK3PXP&algorithm=SHA1&digits=6&period=30');
+});
+
 test('a head carries everything the tree draws and none of the secrets', () => {
   // The tree caches heads for the whole session so a row can be built synchronously. A
   // cache of full revisions would keep every replaced password resident for hours.

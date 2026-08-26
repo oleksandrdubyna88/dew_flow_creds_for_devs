@@ -64,6 +64,15 @@ function execOutcome(result: UseActionResult): string {
   return body.timedOut === true ? 'timed out' : `exit ${body.exitCode ?? 'killed'}`;
 }
 
+/*
+ * Masking the output an agent reads is NOT done here.
+ *
+ * <p>An earlier version of this file masked `stdout`/`stderr` inside `scriptRunAction`. That
+ * covered one action; `credsAgentServer.respond` now masks every response on its way out, which
+ * covers `ssh:exec`, `db:query`, `script:run` and anything added later without an action having
+ * to remember. One choke point, and no second masker to disagree with it.</p>
+ */
+
 /**
  * The message a not-yet-vouched-for body gets.
  *

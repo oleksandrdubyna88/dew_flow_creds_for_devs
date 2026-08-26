@@ -31,6 +31,25 @@ export interface CommandArg {
   disabled?: boolean;
 }
 
+/**
+ * One port-forwarding rule — a ROW, like a command argument, for the same reason: it can be
+ * kept and switched off without being retyped from memory next week.
+ *
+ * <p>`local` is ssh's `-L` (a port here reaches a service there); `remote` is `-R`
+ * (a port there reaches a service here).</p>
+ */
+export interface PortForward {
+  kind: 'local' | 'remote';
+  /** Which local interface to bind. Absent means ssh's default (loopback). */
+  bindAddress?: string;
+  bindPort: number;
+  host: string;
+  hostPort: number;
+  /** Kept, but not part of the connection. */
+  disabled?: boolean;
+  note?: string;
+}
+
 export interface EntityMetadata {
   id: string;
   name: string;
@@ -53,6 +72,27 @@ export interface EntityMetadata {
    */
   sshKeyEntityId?: string;
   isSshEnabled: boolean;
+  /**
+   * Id of another entity (same account) reached FIRST, as ssh's `-J`.
+   *
+   * <p>A typed reference rather than a `ProxyCommand` string, deliberately: a hostname that
+   * can carry `-oProxyCommand=` is the injection `sshCommand.ts` exists to refuse.</p>
+   */
+  jumpHostEntityId?: string;
+  /** `-L` / `-R` rules, each a row that can be switched off. */
+  portForwards?: PortForward[];
+  /** `-A`: let the remote host use this machine's SSH agent. */
+  agentForward?: boolean;
+  /**
+   * The pinned host key, as `<algorithm> <base64>` (audit B10).
+   *
+   * <p>Its presence is what turns `StrictHostKeyChecking` from `accept-new` — which accepts
+   * an impostor silently on first contact — into `yes` against a known_hosts file built from
+   * exactly this line.</p>
+   */
+  hostKey?: string;
+  /** Free labels, shown on the row and matched by the filter. */
+  tags?: string[];
   /** Marks this entity as an SSH key pair (enables "Install to system"). */
   isSshKey?: boolean;
   /** Marks this entity as a VPN (type + uploaded config file). */
@@ -94,6 +134,18 @@ export interface EntityMetadata {
   attachmentFileName?: string;
   /** Display name of the encrypted image (content in SecretStorage). */
   imageFileName?: string;
+  /**
+   * Serve this key through the extension's own SSH agent, so `ssh` and `git` can use it
+   * without it ever being written to disk. A PREFERENCE, not a secret — it syncs, so a key
+   * marked on one machine is served on the next one that unlocks it.
+   */
+  sshAgent?: boolean;
+  /**
+   * Whether a TOTP seed is stored for this entity (the seed itself is in SecretStorage).
+   * A plaintext flag so the tree can offer *Copy One-Time Code* without a keychain read
+   * per row — the same trade `isVpn` and `isDb` make for their menus.
+   */
+  hasTotp?: boolean;
   notes?: string;
 }
 
@@ -313,6 +365,8 @@ export interface SharePayload {
     vpnConfig?: string;
     dbConnection?: string;
     notes?: string;
+    /** The canonical `otpauth://` URI — the seed and its parameters, one string. */
+    totp?: string;
   };
   /** Folder chain (shared folder inclusive) recreated on accept. */
   folderPath?: Array<{ name: string; folderType?: FolderType }>;
@@ -393,6 +447,8 @@ export interface BackupBundle {
   images?: Record<string, string>;
   /** entityId -> notes. Moved out of plaintext metadata in 0.20. */
   notes?: Record<string, string>;
+  /** entityId -> canonical `otpauth://` URI. Absent in pre-0.57 backups. */
+  totps?: Record<string, string>;
   /**
    * nodeId -> tombstone. Since 0.22 an object `{ deletedAt, v }`; pre-0.22
    * backups carry a bare ms-epoch number, normalized in on read.
@@ -419,6 +475,37 @@ export function isStoredAccount(value: unknown): value is StoredAccount {
     typeof v.email === 'string' &&
     isAuthProvider(v.provider)
   );
+}
+
+// eslint-disable-next-line complexity -- a flat list of independent field checks (every clause is one field of a forwarding rule); splitting reads worse
+function hasForwardShape(r: Record<string, unknown>): boolean {
+  return (
+    (r.kind === 'local' || r.kind === 'remote') &&
+    typeof r.bindPort === 'number' &&
+    typeof r.hostPort === 'number' &&
+    typeof r.host === 'string'
+  );
+}
+
+// eslint-disable-next-line complexity -- a flat list of independent field checks (every clause is one optional field of a forwarding rule); splitting reads worse
+function hasForwardExtras(r: Record<string, unknown>): boolean {
+  return (
+    (r.bindAddress === undefined || typeof r.bindAddress === 'string') &&
+    (r.disabled === undefined || typeof r.disabled === 'boolean') &&
+    (r.note === undefined || typeof r.note === 'string')
+  );
+}
+
+function isPortForwardRow(row: unknown): boolean {
+  if (typeof row !== 'object' || row === null) {
+    return false;
+  }
+  const r = row as Record<string, unknown>;
+  return hasForwardShape(r) && hasForwardExtras(r);
+}
+
+function isPortForwardArray(value: unknown): value is PortForward[] {
+  return Array.isArray(value) && value.every((row) => isPortForwardRow(row));
 }
 
 function isCommandArgArray(value: unknown): value is CommandArg[] {
@@ -483,6 +570,11 @@ export function isEntityMetadata(value: unknown): value is EntityMetadata {
     (v.sshKeyPath === undefined || typeof v.sshKeyPath === 'string') &&
     (v.publicKey === undefined || typeof v.publicKey === 'string') &&
     (v.sshKeyEntityId === undefined || typeof v.sshKeyEntityId === 'string') &&
+    (v.jumpHostEntityId === undefined || typeof v.jumpHostEntityId === 'string') &&
+    (v.portForwards === undefined || isPortForwardArray(v.portForwards)) &&
+    (v.agentForward === undefined || typeof v.agentForward === 'boolean') &&
+    (v.hostKey === undefined || typeof v.hostKey === 'string') &&
+    (v.tags === undefined || (Array.isArray(v.tags) && v.tags.every((t) => typeof t === 'string'))) &&
     (v.isSshKey === undefined || typeof v.isSshKey === 'boolean') &&
     (v.isVpn === undefined || typeof v.isVpn === 'boolean') &&
     (v.isDb === undefined || typeof v.isDb === 'boolean') &&
@@ -504,6 +596,8 @@ export function isEntityMetadata(value: unknown): value is EntityMetadata {
     (v.envBindings === undefined || isEnvBindings(v.envBindings)) &&
     (v.attachmentFileName === undefined || typeof v.attachmentFileName === 'string') &&
     (v.imageFileName === undefined || typeof v.imageFileName === 'string') &&
+    (v.sshAgent === undefined || typeof v.sshAgent === 'boolean') &&
+    (v.hasTotp === undefined || typeof v.hasTotp === 'boolean') &&
     (v.notes === undefined || typeof v.notes === 'string')
   );
 }
@@ -582,6 +676,9 @@ export function isBackupBundle(value: unknown): value is BackupBundle {
     return false;
   }
   if (v.images !== undefined && !allStrings(v.images)) {
+    return false;
+  }
+  if (v.totps !== undefined && !allStrings(v.totps)) {
     return false;
   }
   if (v.exportedAt !== undefined && typeof v.exportedAt !== 'number') {

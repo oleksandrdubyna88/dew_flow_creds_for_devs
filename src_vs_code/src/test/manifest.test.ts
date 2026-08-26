@@ -51,6 +51,15 @@ const PALETTE_ONLY = new Set([
   // Reached when something has already gone wrong and the toast that said so has scrolled
   // away. There is no row it belongs to — the diagnostics are the window's, not an entity's.
   'credSshManager.showDiagnostics',
+  // Deliberately keyboard-and-palette: it acts on NO row, so there is no context menu it
+  // could belong to. Bound to Ctrl+Alt+P, which is the way it is meant to be reached.
+  'credSshManager.quickOpen',
+  // Same shape: a generated secret has no entity to hang off — the entity FORM has its own
+  // Generate buttons, and this is for the passwords that are not stored here at all.
+  'credSshManager.generateSecret',
+  // Scans everything at once, so it belongs to no row either. Deliberately not on the account
+  // menu: it reads `~/.ssh` and the workspace, which are not an account's property.
+  'credSshManager.healthReport',
 ]);
 
 // eslint-disable-next-line complexity

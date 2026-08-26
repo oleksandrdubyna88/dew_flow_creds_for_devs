@@ -10,6 +10,7 @@ import {
   writeAskpassScriptFile,
 } from './keyInstaller';
 import { resolveSshCredential } from './sshCredential';
+import { connectionOptions } from './connectionOptions';
 
 /**
  * The human Connect path: open an SSH session for an entity in a VS Code
@@ -22,14 +23,34 @@ export async function connectEntity(
   entity: EntityMetadata,
   storage: StorageManager,
   storageDir: string,
+  /**
+   * True when the SSH agent already serves the key this entity would use. Then no `-i` and no
+   * file: `ssh` finds the key through SSH_AUTH_SOCK, and the key never touches the disk for
+   * the human path either. Optional so the agent-free callers are unchanged.
+   */
+  agentServesKey = false,
 ): Promise<void> {
   const source = await resolveSshCredential(storage, accountId, entity);
   if (source.warning !== undefined) {
     void vscode.window.showWarningMessage(source.warning);
   }
 
+  // The connection-manager half (audit D7/B10): which bastion to go through, and whether this
+  // host is the one it claims to be. Resolved BEFORE anything is written to disk or a terminal
+  // opened, so a refused host key costs nothing and leaves nothing behind.
+  const options = await connectionOptions(accountId, entity, storage, storageDir);
+  if (options === undefined) {
+    return;
+  }
+
   let keyPath: string | undefined;
   let materialized: string | undefined;
+  if (agentServesKey && source.kind === 'storedKey') {
+    // Deliberately nothing: the agent answers, and writing the key out would defeat the
+    // feature exactly where a person can see it working.
+    openSshTerminal({ ...entity, sshKeyPath: undefined }, options);
+    return;
+  }
   if (source.kind === 'storedKey') {
     try {
       keyPath = materializePrivateKey(storageDir, source.keyEntityId, source.content);
@@ -48,7 +69,7 @@ export async function connectEntity(
   // dedicated terminal, so nobody retypes what the vault already knows. The password
   // rides the terminal's ENVIRONMENT — not a file, not the command line.
   if (source.kind === 'password') {
-    const command = buildSshCommand(entity);
+    const command = buildSshCommand(entity, process.platform, options);
     const target = describeSshTarget(entity);
     if (command === undefined || target === undefined) {
       void vscode.window.showWarningMessage(`"${entity.name}" has no host configured — cannot start SSH.`);
@@ -64,13 +85,18 @@ export async function connectEntity(
       env: askpassEnv(scriptPath, source.password, process.platform),
     });
     passTerminal.show();
-    // accept-new: with SSH_ASKPASS_REQUIRE=force even the host-key yes/no question
-    // would be answered by the askpass program — with the password.
-    passTerminal.sendText(`${command.replace(/^ssh /, 'ssh -o StrictHostKeyChecking=accept-new ')}`, true);
+    // accept-new: with SSH_ASKPASS_REQUIRE=force even the host-key yes/no question would be
+    // answered by the askpass program — with the password. A PINNED host needs no such
+    // question, and must not have it softened, so the option is added only without a pin.
+    const line =
+      options.knownHostsFile === undefined
+        ? command.replace(/^ssh /, 'ssh -o StrictHostKeyChecking=accept-new ')
+        : command;
+    passTerminal.sendText(line, true);
     return;
   }
 
-  const terminal = openSshTerminal({ ...entity, sshKeyPath: keyPath });
+  const terminal = openSshTerminal({ ...entity, sshKeyPath: keyPath }, options);
   // Wipe the decrypted key from disk as soon as the session ends.
   if (materialized !== undefined) {
     if (terminal === undefined) {

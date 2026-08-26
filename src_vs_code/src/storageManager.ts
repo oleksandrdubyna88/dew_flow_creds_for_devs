@@ -88,6 +88,11 @@ function dbConnSecretKey(accountId: string, entityId: string): string {
   return `${accountId}_${entityId}:dbConn`;
 }
 
+/** SecretStorage key for an entity's TOTP seed (the canonical `otpauth://` URI). */
+function totpSecretKey(accountId: string, entityId: string): string {
+  return `${accountId}_${entityId}:totp`;
+}
+
 /**
  * One account's validated tree, remembered against the memento value it was read from.
  * `children` memoizes `getChildren` per parent for that same value.
@@ -336,6 +341,7 @@ export class StorageManager implements vscode.Disposable {
         await this.secrets.delete(attachmentSecretKey(accountId, node.id));
         await this.secrets.delete(historySecretKey(accountId, node.id));
         await this.secrets.delete(imageSecretKey(accountId, node.id));
+        await this.secrets.delete(totpSecretKey(accountId, node.id));
       }
     }
     await this.globalState.update(nodesKey(accountId), undefined);
@@ -502,6 +508,7 @@ export class StorageManager implements vscode.Disposable {
         await this.secrets.delete(attachmentSecretKey(accountId, n.id));
         await this.secrets.delete(historySecretKey(accountId, n.id));
         await this.secrets.delete(imageSecretKey(accountId, n.id));
+        await this.secrets.delete(totpSecretKey(accountId, n.id));
       }
     }
     await this.setTombstones(accountId, tombstones);
@@ -739,6 +746,21 @@ export class StorageManager implements vscode.Disposable {
     this.touch(accountId);
   }
 
+  // ---------- TOTP seeds (SecretStorage, tenant-scoped) ----------
+
+  /** The canonical `otpauth://` URI, or undefined when the entity has no second factor here. */
+  getTotp(accountId: string, entityId: string): Thenable<string | undefined> {
+    return this.secrets.get(totpSecretKey(accountId, entityId));
+  }
+
+  async setTotp(accountId: string, entityId: string, uri: string): Promise<void> {
+    await this.secrets.store(totpSecretKey(accountId, entityId), uri);
+  }
+
+  async deleteTotp(accountId: string, entityId: string): Promise<void> {
+    await this.secrets.delete(totpSecretKey(accountId, entityId));
+  }
+
   // ---------- backup ----------
 
   /**
@@ -766,6 +788,7 @@ export class StorageManager implements vscode.Disposable {
       put('notes', await this.getNotes(accountId, id));
       put('attachment', await this.getAttachment(accountId, id));
       put('image', await this.getImage(accountId, id));
+      put('totp', await this.getTotp(accountId, id));
       out[id] = s;
     }
     return out;
@@ -782,9 +805,14 @@ export class StorageManager implements vscode.Disposable {
     const notes: Record<string, string> = {};
     const attachments: Record<string, string> = {};
     const images: Record<string, string> = {};
+    const totps: Record<string, string> = {};
     for (const node of nodes) {
       if (node.type !== 'entity') {
         continue;
+      }
+      const totp = await this.secrets.get(totpSecretKey(accountId, node.id));
+      if (totp !== undefined) {
+        totps[node.id] = totp;
       }
       const password = await this.secrets.get(secretKey(accountId, node.id));
       if (password !== undefined) {
@@ -827,6 +855,7 @@ export class StorageManager implements vscode.Disposable {
       notes,
       attachments,
       images,
+      totps,
       tombstones: this.getTombstones(accountId),
       horizon: this.getHorizon(accountId),
       exportedAt: Date.now(),
@@ -846,6 +875,7 @@ export class StorageManager implements vscode.Disposable {
       notes: bundle.notes ?? {},
       attachments: bundle.attachments ?? {},
       images: bundle.images ?? {},
+      totps: bundle.totps ?? {},
       tombstones: bundle.tombstones ?? {},
       horizon: bundle.horizon ?? {},
     };
@@ -862,6 +892,7 @@ export class StorageManager implements vscode.Disposable {
       notes: snapshot.notes,
       attachments: snapshot.attachments,
       images: snapshot.images,
+      totps: snapshot.totps,
       tombstones: snapshot.tombstones,
       horizon: snapshot.horizon,
     });
@@ -876,10 +907,14 @@ export class StorageManager implements vscode.Disposable {
     const notes = bundle.notes ?? {};
     const attachments = bundle.attachments ?? {};
     const images = bundle.images ?? {};
+    const totps = bundle.totps ?? {};
     // Drop secrets of entities that will disappear with the replaced tree.
     for (const node of this.getNodes(accountId)) {
       if (node.type !== 'entity') {
         continue;
+      }
+      if (totps[node.id] === undefined) {
+        await this.secrets.delete(totpSecretKey(accountId, node.id));
       }
       if (bundle.passwords[node.id] === undefined) {
         await this.secrets.delete(secretKey(accountId, node.id));
@@ -928,6 +963,9 @@ export class StorageManager implements vscode.Disposable {
     }
     for (const [entityId, content] of Object.entries(images)) {
       await this.secrets.store(imageSecretKey(accountId, entityId), content);
+    }
+    for (const [entityId, uri] of Object.entries(totps)) {
+      await this.secrets.store(totpSecretKey(accountId, entityId), uri);
     }
     // Stored notes are authoritative; drop any legacy plaintext copy.
     await this.saveNodes(

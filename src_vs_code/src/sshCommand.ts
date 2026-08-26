@@ -25,8 +25,17 @@
  */
 
 import { EntityMetadata } from './types';
+import { sshOptionArgv } from './sshOptions';
 
 export const DEFAULT_SSH_PORT = 22;
+
+/** What the caller resolved from the vault: the jump chain, and a pinned host key file. */
+export interface SshCommandOptions {
+  /** The `-J` value, already resolved and validated by `resolveJumpChain`. */
+  jump?: string;
+  /** A materialized known_hosts file holding this host's pinned key. */
+  knownHostsFile?: string;
+}
 
 /**
  * Hostnames, IPv4, and bracketed IPv6 — and never a leading `-`, which ssh reads as an
@@ -90,6 +99,7 @@ export function describeSshTarget(entity: EntityMetadata): string | undefined {
 export function buildSshCommand(
   entity: EntityMetadata,
   platform: NodeJS.Platform = process.platform,
+  options: SshCommandOptions = {},
 ): string | undefined {
   if (!isSafeSshTarget(entity)) {
     return undefined;
@@ -102,8 +112,40 @@ export function buildSshCommand(
   if (entity.port !== undefined && entity.port !== DEFAULT_SSH_PORT) {
     parts.push('-p', String(entity.port));
   }
+  // The connection-manager options (jump host, forwards, agent forwarding) are composed by
+  // `sshOptions.ts` — the SAME function the agent's argv builder calls, so the two surfaces
+  // cannot reach a host by different routes. Every element is already refused-or-safe there,
+  // which is why they are appended rather than quoted: quoting would be answering the wrong
+  // parser, as this file's header explains.
+  parts.push(...sshOptionArgv(entity, options.jump));
+  parts.push(...hostKeyArgv(options.knownHostsFile, platform));
   parts.push(entity.user ? `${entity.user}@${host}` : host);
   return parts.join(' ');
+}
+
+/**
+ * How the host key is checked, and it is the point of audit item B10.
+ *
+ * <p>With a pin, a known_hosts file holding exactly that key and `StrictHostKeyChecking=yes`: a
+ * changed key then FAILS the connection. Without one, `accept-new` as before — but the caller is
+ * expected to have shown the fingerprint first, which is the half that was missing.</p>
+ */
+function hostKeyArgv(knownHostsFile: string | undefined, platform: NodeJS.Platform): string[] {
+  if (knownHostsFile === undefined) {
+    // NOTHING, deliberately — and this is the difference between the two paths. A human
+    // terminal has a person in front of it, so ssh's own default (`ask`) prompts and they
+    // answer; forcing `accept-new` here would take that question away, which is the silence
+    // B10 is about. The agent's exec has nobody to ask and keeps `accept-new`; the password
+    // branch in `sshConnect.ts` also forces it, because with SSH_ASKPASS_REQUIRE=force the
+    // host-key question would otherwise be answered by the askpass program — with the password.
+    return [];
+  }
+  return [
+    '-o',
+    'StrictHostKeyChecking=yes',
+    '-o',
+    `UserKnownHostsFile=${shellQuote(knownHostsFile, platform)}`,
+  ];
 }
 
 /**

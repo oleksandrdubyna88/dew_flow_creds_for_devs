@@ -136,3 +136,70 @@ test('the flag is scoped to the account, because a restore can put one id into t
 
   assert.equal(item.contextValue, 'entity', 'another profile\'s password is not this row\'s');
 });
+
+// ---- the tokens the SSH-agent and TOTP menus hang off -------------------------
+//
+// Same shape as the `:pwd` cases above, and here for the same reason: which of "Add to SSH
+// Agent" / "Remove from SSH Agent" a person sees, and whether "Copy One-Time Code" appears at
+// all, is decided by these suffixes. A regression strands a shipped command behind a menu
+// state nobody can reach, which is exactly how `terminal` shipped unselectable in 0.26.0.
+
+function keyEntity(id: string, extra: Partial<TreeNode['details']> = {}): TreeNode {
+  return {
+    id,
+    name: id,
+    type: 'entity',
+    parentId: null,
+    details: { id, name: id, isSshEnabled: false, isSshKey: true, ...extra },
+  } as TreeNode;
+}
+
+test('a key NOT served by the agent offers Add (:agentoff)', async () => {
+  const { tree } = build([]);
+  const off = await tree.getTreeItem({ kind: 'node', accountId: 'a1', node: keyEntity('k1') });
+
+  assert.match(off.contextValue ?? '', /:key/);
+  assert.match(off.contextValue ?? '', /:agentoff/);
+});
+
+test('a key that IS served offers Remove (:agenton), and not Add', async () => {
+  const { tree } = build([]);
+  const on = await tree.getTreeItem({
+    kind: 'node',
+    accountId: 'a1',
+    node: keyEntity('k2', { sshAgent: true }),
+  });
+
+  assert.match(on.contextValue ?? '', /:agenton/);
+  assert.equal((on.contextValue ?? '').includes(':agentoff'), false, on.contextValue);
+});
+
+test('the agent tokens appear only on a KEY entity — nothing else can be served', async () => {
+  const { tree } = build([]);
+  const plain = await tree.getTreeItem({ kind: 'node', accountId: 'a1', node: entity('e1', 'plain') });
+
+  assert.equal((plain.contextValue ?? '').includes(':agent'), false, plain.contextValue);
+});
+
+test(':totp appears only when a seed is stored, and comes from the flag — not the keychain', async () => {
+  const { tree, keychainReads } = build([]);
+  const withSeed = { ...entity('e1', 'has'), details: { id: 'e1', name: 'has', isSshEnabled: false, hasTotp: true } } as TreeNode;
+
+  const has = await tree.getTreeItem({ kind: 'node', accountId: 'a1', node: withSeed });
+  const hasnt = await tree.getTreeItem({ kind: 'node', accountId: 'a1', node: entity('e2', 'none') });
+
+  assert.match(has.contextValue ?? '', /:totp/);
+  assert.equal((hasnt.contextValue ?? '').includes(':totp'), false, hasnt.contextValue);
+  assert.equal(keychainReads(), 0, 'the seed is never read to decide a menu');
+});
+
+test('clearing the seed clears the token, so Copy One-Time Code stops being offered', async () => {
+  // The regression this guards: a flag that only ever turns on leaves a command in the menu
+  // that can no longer do anything.
+  const { tree } = build([]);
+  const cleared = { ...entity('e1', 'was'), details: { id: 'e1', name: 'was', isSshEnabled: false, hasTotp: undefined } } as TreeNode;
+
+  const item = await tree.getTreeItem({ kind: 'node', accountId: 'a1', node: cleared });
+
+  assert.equal((item.contextValue ?? '').includes(':totp'), false, item.contextValue);
+});

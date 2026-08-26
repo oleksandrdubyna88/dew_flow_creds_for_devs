@@ -100,7 +100,7 @@ export function validatePin(value: string): string | undefined {
  * when the number is advice about a secret.
  */
 // eslint-disable-next-line complexity
-function estimateBits(value: string): number {
+export function estimateBits(value: string): number {
   const tokens = value.match(/[a-z]+|[A-Z]+|\d+|[^a-zA-Z\d]+/g) ?? [];
   let bits = 0;
   for (const token of tokens) {

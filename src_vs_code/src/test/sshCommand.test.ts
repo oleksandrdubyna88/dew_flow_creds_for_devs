@@ -58,3 +58,31 @@ test('describeSshTarget refuses the same values, so no UI shows a forged target'
   assert.equal(describeSshTarget(entity({ host: 'a.com; id' })), undefined);
   assert.equal(describeSshTarget(entity()), 'deploy@example.com');
 });
+
+// ---- the connection-manager options (audit D7/B10) ---------------------------
+
+test('with no pin the human line leaves ssh its own default, which ASKS', () => {
+  // The distinction B10 turns on: a person in a terminal can be asked, so nothing is forced
+  // and ssh prompts. Forcing accept-new here would remove the very question the audit wanted
+  // put back. (The agent's exec, which has nobody to ask, keeps accept-new — see
+  // sshExecCommand.ts.)
+  assert.equal(buildSshCommand(entity()), 'ssh deploy@example.com');
+});
+
+test('with a pin the line demands a match against exactly that key', () => {
+  const line = buildSshCommand(entity(), 'linux', { knownHostsFile: '/tmp/k/known_hosts' });
+
+  assert.match(line ?? '', /StrictHostKeyChecking=yes/);
+  assert.match(line ?? '', /UserKnownHostsFile="\/tmp\/k\/known_hosts"/);
+  assert.equal((line ?? '').includes('accept-new'), false);
+});
+
+test('a jump host and a forward reach the line through the shared composer', () => {
+  const line = buildSshCommand(
+    entity({ agentForward: true, portForwards: [{ kind: 'local', bindPort: 5432, host: 'db', hostPort: 5432 }] }),
+    'linux',
+    { jump: 'me@bastion.example.com' },
+  );
+
+  assert.equal(line, 'ssh -J me@bastion.example.com -A -L 5432:db:5432 deploy@example.com');
+});

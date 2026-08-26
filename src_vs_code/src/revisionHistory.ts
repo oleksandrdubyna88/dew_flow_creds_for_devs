@@ -29,6 +29,8 @@ export interface RevisionSecrets {
   vpnConfig?: string;
   dbConnection?: string;
   notes?: string;
+  /** The canonical `otpauth://` URI — a replaced seed is still a seed. */
+  totp?: string;
 }
 
 export interface Revision {
@@ -55,7 +57,7 @@ export function revisionHead(revision: Revision): RevisionHead {
   return head;
 }
 
-const SMALL_FIELDS = ['password', 'privateKey', 'vpnConfig', 'dbConnection', 'notes'] as const;
+const SMALL_FIELDS = ['password', 'privateKey', 'vpnConfig', 'dbConnection', 'notes', 'totp'] as const;
 
 /** A copy of the list with `revision` newest-first, capped, attachments stripped. */
 export function pushRevision(list: readonly Revision[], revision: Revision): Revision[] {

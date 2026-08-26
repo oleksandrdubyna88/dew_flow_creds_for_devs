@@ -7,12 +7,23 @@ import { highlightScript } from './scriptRender';
 import { describeFlag, isProbeSafe } from './helpText';
 import { readHelpText } from './helpLookup';
 import { BINDABLE_FIELDS, isValidEnvName } from './envBinding';
+import { parseTotpSecret } from './totp';
+import { normalizeTags, parseForward } from './sshOptions';
+import {
+  DEFAULT_PASSPHRASE,
+  DEFAULT_PASSWORD,
+  generateEd25519,
+  generatePassphrase,
+  generatePassword,
+} from './secretGenerator';
+import { parseSshPrivateKey } from './sshKeyParse';
 import {
   CommandArg,
   DB_TYPES,
   DbType,
   EntityKind,
   EntityMetadata,
+  PortForward,
   VPN_TYPES,
   VpnType,
 } from './types';
@@ -50,10 +61,19 @@ export interface EntityFormOptions {
   initialDbConnection?: string;
   /** Prefilled note (its own secret now, not plaintext metadata). */
   initialNotes?: string;
+  /** A TOTP seed is stored. The seed is never sent to the form — only this fact and… */
+  hasStoredTotp: boolean;
+  /** …how it is configured (`GitHub · 6 digits · SHA1 · every 30 s`), so it can be compared with the app. */
+  storedTotpDescription?: string;
   /** Set when the parent folder dictates the entity kind (selector locked). */
   lockedKind?: EntityKind;
   /** Other entities of the same account usable as a key source. */
   keyCandidates: KeyCandidate[];
+  /** Other SSH entities of the same account usable as a jump host (audit D7). */
+  jumpCandidates: KeyCandidate[];
+  /** A host key is pinned for this entity, and this is its fingerprint (audit B10). */
+  hasStoredHostKey: boolean;
+  hostKeyFingerprint?: string;
 }
 
 export interface EntityFormValues {
@@ -71,6 +91,11 @@ export interface EntityFormValues {
   clearAttachment: boolean;
   newImage?: string;
   clearImage: boolean;
+  /** The CANONICAL `otpauth://` URI — already parsed and normalised, ready to store. */
+  newTotp?: string;
+  clearTotp: boolean;
+  /** True when the person asked to forget the pinned host key (audit B10). */
+  clearHostKey: boolean;
 }
 
 /**
@@ -105,7 +130,9 @@ function readArgRows(data: Record<string, unknown>): CommandArg[] {
 }
 
 interface FormMessage {
-  type: 'save' | 'cancel' | 'splitCommand' | 'highlight';
+  type: 'save' | 'cancel' | 'splitCommand' | 'highlight' | 'generate';
+  /** `generate` only: which kind of secret to draw. */
+  kind?: 'password' | 'passphrase' | 'key';
   data?: Record<string, unknown>;
   text?: string;
   lang?: string;
@@ -168,6 +195,41 @@ async function splitAndDescribe(panel: vscode.WebviewPanel, text: string): Promi
   say(`Descriptions came from ${parsed.command} --help. Edit anything that is not what you meant.`, notes);
 }
 
+/**
+ * One generated secret, addressed at the field it belongs in.
+ *
+ * <p>This is the one direction a secret legitimately travels INTO a webview, and it is worth
+ * saying why it does not break the rule the viewer keeps: the form is where a person types a
+ * password, so its inputs already hold secret values by design. The read-only viewer is the
+ * panel that must never receive one. A generated value goes into the same input the user would
+ * otherwise have typed into, and leaves by the same Save.</p>
+ */
+function draw(kind: FormMessage['kind']): { target: string; value: string; note: string } {
+  if (kind === 'passphrase') {
+    const made = generatePassphrase(DEFAULT_PASSPHRASE);
+    return { target: 'password', value: made.value, note: made.description };
+  }
+  if (kind === 'key') {
+    const pair = generateEd25519();
+    const parsed = parseSshPrivateKey(pair.privateKey);
+    return {
+      target: 'privateKey',
+      value: pair.privateKey,
+      note: parsed.ok
+        ? `New Ed25519 key — ${parsed.key.fingerprint}. It has never been written to disk.`
+        : 'New Ed25519 key.',
+    };
+  }
+  const made = generatePassword(DEFAULT_PASSWORD);
+  return { target: 'password', value: made.value, note: made.description };
+}
+
+/** The public half of a freshly generated private key, for the form's Public key field. */
+function publicLineFor(privateKey: string): string {
+  const parsed = parseSshPrivateKey(privateKey);
+  return parsed.ok ? parsed.key.publicLine : '';
+}
+
 export function showEntityForm(options: EntityFormOptions): Promise<EntityFormValues | undefined> {
   const panel = vscode.window.createWebviewPanel(
     'credSshEntityForm',
@@ -191,6 +253,17 @@ export function showEntityForm(options: EntityFormOptions): Promise<EntityFormVa
       }
       if (message.type === 'splitCommand') {
         void splitAndDescribe(panel, message.text ?? '');
+        return;
+      }
+      if (message.type === 'generate') {
+        // Drawn HERE, not in the page: `crypto.randomInt` is a Node API, and a webview
+        // reaching for `Math.random()` would produce something that merely looks random.
+        const made = draw(message.kind);
+        void panel.webview.postMessage({
+          type: 'generated',
+          ...made,
+          publicLine: made.target === 'privateKey' ? publicLineFor(made.value) : '',
+        });
         return;
       }
       if (message.type === 'cancel') {
@@ -302,12 +375,24 @@ function toValues(data: Record<string, unknown>, options: EntityFormOptions): En
   const dbType = str(data, 'dbType');
   const dbConnection = str(data, 'dbConnection');
   const commandArgs = isTerminal ? normalizeArgs(readArgRows(data)) : undefined;
+  const jumpEntity = str(data, 'jumpHostEntityId');
+  // Both readers refuse rather than escape, exactly as the host and user fields do: what the
+  // webview posts is data, and `sshOptions.ts` is where "is this usable" is decided.
+  const forwards = readForwardRows(data);
+  const tags = normalizeTags(str(data, 'tags').split(/\s+/));
+  // A second factor belongs to a login: keys, commands and scripts have none. Switching an
+  // entity to one of those kinds scrubs a stored seed, as every other kind's fields are.
+  const isTotpKind = !isKey && !isTerminal && !isScript;
+  const totpParsed = isTotpKind ? parseTotpSecret(withSteamEncoder(str(data, 'totp'), bool(data, 'totpSteam'))) : undefined;
+  const clearTotp = isTotpKind ? bool(data, 'clearTotp') : options.hasStoredTotp;
+  const hasTotp = totpParsed !== undefined || (isTotpKind && options.hasStoredTotp && !clearTotp);
 
   return {
     details: {
       id: options.entityId,
       name: str(data, 'name').trim(),
       envBindings,
+      hasTotp: hasTotp || undefined,
       expiresAt: lifetime.expiresAt,
       burnPolicy: lifetime.burnPolicy,
       isScript: isScript || undefined,
@@ -326,8 +411,19 @@ function toValues(data: Record<string, unknown>, options: EntityFormOptions): En
       sshKeyPath: isSsh || isKey ? str(data, 'sshKeyPath').trim() || undefined : undefined,
       publicKey: isSsh || isKey ? str(data, 'publicKey').trim() || undefined : undefined,
       sshKeyEntityId: isSsh && keyEntity !== '' ? keyEntity : undefined,
+      // The connection-manager fields belong to an SSH connection and to nothing else, so
+      // switching an entity to another kind scrubs them exactly as it scrubs every other kind's
+      // fields. A pinned host key is kept unless the person asked to forget it.
+      jumpHostEntityId: isSsh && jumpEntity !== '' && jumpEntity !== options.entityId ? jumpEntity : undefined,
+      portForwards: isSsh && forwards.length > 0 ? forwards : undefined,
+      agentForward: isSsh && bool(data, 'agentForward') ? true : undefined,
+      hostKey: isSsh && !bool(data, 'clearHostKey') ? options.initial?.hostKey : undefined,
+      tags: isSsh && tags.length > 0 ? tags : undefined,
       isSshEnabled: isSsh,
       isSshKey: isKey || undefined,
+      // A key-only preference; kept as it was, because it is set from the tree menu rather
+      // than in the form and an edit must not silently unload a served key.
+      sshAgent: isKey ? options.initial?.sshAgent : undefined,
       isVpn: isVpn || undefined,
       vpnType: isVpn && isVpnType(vpnType) ? vpnType : undefined,
       vpnConfigFileName:
@@ -354,5 +450,63 @@ function toValues(data: Record<string, unknown>, options: EntityFormOptions): En
     newImage: str(data, 'imageContent') || undefined,
     clearImage: bool(data, 'clearImage'),
     newNotes: str(data, 'notes'),
+    newTotp: totpParsed?.uri,
+    clearTotp,
+    clearHostKey: bool(data, 'clearHostKey'),
   };
+}
+
+/**
+ * The forwarding rows as the webview posts them.
+ *
+ * <p>Read defensively and validated by the same function the command builders use: a row that
+ * does not parse is DROPPED rather than stored, because a stored rule that cannot be rendered is
+ * a rule that silently does nothing on every future connection.</p>
+ */
+function readForwardRows(data: Record<string, unknown>): PortForward[] {
+  const raw = data.portForwards;
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+  return raw
+    .map((row) => forwardFromRow(row))
+    .filter((forward): forward is PortForward => forward !== undefined);
+}
+
+/** One posted row, validated by the same parser the command builders use. */
+// eslint-disable-next-line complexity -- a flat list of independent field checks (a webview payload is read defensively, field by field); splitting reads worse
+function forwardFromRow(row: unknown): PortForward | undefined {
+  if (typeof row !== 'object' || row === null) {
+    return undefined;
+  }
+  const r = row as Record<string, unknown>;
+  const kind = r.kind === 'remote' ? 'remote' : 'local';
+  const parsed = typeof r.rule === 'string' ? parseForward(kind, r.rule) : undefined;
+  return parsed === undefined
+    ? undefined
+    : { ...parsed, disabled: r.disabled === true ? true : undefined };
+}
+
+/**
+ * Steam Guard seeds are exported as plain base32 with nothing marking them as Steam's; the
+ * checkbox supplies that marker as the `encoder=steam` parameter the URI form already knows.
+ */
+function needsSteamMarker(trimmed: string, steam: boolean): boolean {
+  return steam && trimmed.length > 0 && !/encoder=steam/i.test(trimmed);
+}
+
+function withSteamEncoder(text: string, steam: boolean): string {
+  const trimmed = text.trim();
+  if (!needsSteamMarker(trimmed, steam)) {
+    return trimmed;
+  }
+  return /^otpauth:/i.test(trimmed) ? appendSteam(trimmed) : steamUriFor(trimmed);
+}
+
+function appendSteam(uri: string): string {
+  return `${uri}${uri.includes('?') ? '&' : '?'}encoder=steam`;
+}
+
+function steamUriFor(secret: string): string {
+  return `otpauth://totp/Steam?secret=${encodeURIComponent(secret.replace(/[\s-]+/g, ''))}&encoder=steam`;
 }

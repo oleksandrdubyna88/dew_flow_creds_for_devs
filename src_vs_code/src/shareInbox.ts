@@ -487,6 +487,9 @@ After this, a share signed by any other key is refused.`,
     if (payload.secrets.notes !== undefined) {
       await this.deps.storage.setNotes(share.accountId, node.id, payload.secrets.notes);
     }
+    if (payload.secrets.totp !== undefined) {
+      await this.deps.storage.setTotp(share.accountId, node.id, payload.secrets.totp);
+    }
     await this.deps.sharing.removeOwnShare(share);
   }
 }

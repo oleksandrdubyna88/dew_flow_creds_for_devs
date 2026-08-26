@@ -45,6 +45,8 @@ export interface ProfileSnapshot {
   notes: Record<string, string>;
   attachments: Record<string, string>;
   images: Record<string, string>;
+  /** entityId -> canonical `otpauth://` URI. */
+  totps: Record<string, string>;
   /** id -> soft-delete record (object form; legacy number is normalized in). */
   tombstones: Record<string, Tombstone | number>;
   /** Element-wise max of every vector ever observed for this profile. */
@@ -69,6 +71,7 @@ export function emptySnapshot(): ProfileSnapshot {
     notes: {},
     attachments: {},
     images: {},
+    totps: {},
     tombstones: {},
     horizon: {},
   };
@@ -125,6 +128,7 @@ function fingerprint(snapshot: ProfileSnapshot): string {
     notes: sortRecord(snapshot.notes),
     attachments: sortRecord(snapshot.attachments),
     images: sortRecord(snapshot.images),
+    totps: sortRecord(snapshot.totps ?? {}),
     tombstones: sortRecord(
       Object.fromEntries(
         Object.entries(normalizeTombstones(snapshot.tombstones)).map(([id, t]) => [
@@ -172,6 +176,7 @@ export function mergeProfiles(
   const notes: Record<string, string> = {};
   const attachments: Record<string, string> = {};
   const images: Record<string, string> = {};
+  const totps: Record<string, string> = {};
   const nodes: TreeNode[] = [];
   const allIds = new Set([...localById.keys(), ...remoteById.keys()]);
 
@@ -223,6 +228,8 @@ export function mergeProfiles(
     copySecret(notes, id, primary.notes, fallback.notes);
     copySecret(attachments, id, primary.attachments, fallback.attachments);
     copySecret(images, id, primary.images, fallback.images);
+    // `?? {}`: a snapshot decoded from a pre-0.57 vault has no totps record at all.
+    copySecret(totps, id, primary.totps ?? {}, fallback.totps ?? {});
   }
 
   // Re-parent children whose parent did not survive the merge.
@@ -257,6 +264,7 @@ export function mergeProfiles(
     notes,
     attachments,
     images,
+    totps,
     tombstones,
     horizon,
   };

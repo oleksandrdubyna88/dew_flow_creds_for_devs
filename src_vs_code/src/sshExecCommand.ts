@@ -1,5 +1,12 @@
 import { EntityMetadata } from './types';
 import { DEFAULT_SSH_PORT, isSafeSshTarget } from './sshCommand';
+import { sshOptionArgv } from './sshOptions';
+
+/** The vault-resolved half, identical in meaning to `SshCommandOptions` on the human path. */
+export interface SshExecOptions {
+  jump?: string;
+  knownHostsFile?: string;
+}
 
 /**
  * Assemble the argv for a non-interactive agent `ssh` exec — an ARRAY, never
@@ -70,6 +77,7 @@ export function buildSshExecArgv(
   keyPath: string | undefined,
   remoteCommand: string,
   auth: SshExecAuth = 'key',
+  options: SshExecOptions = {},
 ): string[] | undefined {
   if (!isSafeSshTarget(entity)) {
     return undefined;
@@ -78,10 +86,17 @@ export function buildSshExecArgv(
     auth === 'askpass'
       ? ['-o', 'NumberOfPasswordPrompts=1']
       : ['-o', 'BatchMode=yes'];
+  // A pinned key is enforced here exactly as on the human path (audit B10): with a pin, a
+  // changed host key fails the call instead of being accepted silently. An agent's exec is
+  // precisely where nobody is watching a warning scroll past.
   argv.push(
-    '-o', 'StrictHostKeyChecking=accept-new',
+    ...(options.knownHostsFile === undefined
+      ? ['-o', 'StrictHostKeyChecking=accept-new']
+      : ['-o', 'StrictHostKeyChecking=yes', '-o', `UserKnownHostsFile=${options.knownHostsFile}`]),
     '-o', 'ConnectTimeout=10',
   );
+  // The same shared composer the human path uses — see `sshOptions.ts`.
+  argv.push(...sshOptionArgv(entity, options.jump));
   if (keyPath !== undefined && keyPath.length > 0) {
     argv.push('-i', keyPath);
   }

@@ -1,5 +1,6 @@
 import { MAX_ATTACHMENT_BYTES, fileNameRegex, imageNameRegex } from './attachment';
-import { CommandArg, EntityMetadata } from './types';
+import { renderForward } from './sshOptions';
+import { CommandArg, EntityMetadata, PortForward } from './types';
 
 /**
  * The entity form's inline page script.
@@ -26,14 +27,35 @@ function rowsJson(rows: CommandArg[] | undefined): string {
 }
 
 /**
+ * The forwarding rows, as the editor edits them.
+ *
+ * <p>A rule is edited as the compact `port:host:hostport` text people already have in their
+ * heads and in their `~/.ssh/config`, so a stored rule is rendered back into that one field
+ * rather than four.</p>
+ */
+function forwardsJson(forwards: PortForward[] | undefined): string {
+  return JSON.stringify(
+    (forwards ?? []).map((forward) => ({
+      kind: forward.kind,
+      rule: renderForward(forward)[1],
+      disabled: forward.disabled === true,
+    })),
+  );
+}
+
+/**
  * The two row lists the page starts with.
  *
  * <p>Named and separate so the builder below stays a template and nothing else: these are the
  * only host VALUES that cross into the page, and gathering them here is what makes "no secret
  * is interpolated into the script" checkable by reading three lines instead of five hundred.</p>
  */
-function initialRows(d: EntityMetadata | undefined): { args: string; scriptVars: string } {
-  return { args: rowsJson(d?.commandArgs), scriptVars: rowsJson(d?.scriptVars) };
+function initialRows(d: EntityMetadata | undefined): { args: string; scriptVars: string; forwards: string } {
+  return {
+    args: rowsJson(d?.commandArgs),
+    scriptVars: rowsJson(d?.scriptVars),
+    forwards: forwardsJson(d?.portForwards),
+  };
 }
 
 // One template literal, so it is one "function" only in the way TypeScript counts. Splitting
@@ -47,6 +69,7 @@ export function formPageScript(nonce: string, d: EntityMetadata | undefined): st
   const vscode = acquireVsCodeApi();
   const INITIAL_ARGS = ${rows.args};
   const INITIAL_SCRIPT_VARS = ${rows.scriptVars};
+  const INITIAL_FORWARDS = ${rows.forwards};
   const val = (id) => document.getElementById(id)?.value ?? '';
   const chk = (id) => document.getElementById(id)?.checked === true;
   const setError = (text) => { document.getElementById('error').textContent = text; };
@@ -69,6 +92,7 @@ export function formPageScript(nonce: string, d: EntityMetadata | undefined): st
     show('terminalSection', kind === 'terminal');
     show('scriptSection', kind === 'script');
     show('passwordSection', kind !== 'db' && kind !== 'terminal' && kind !== 'script');
+    show('totpSection', kind !== 'sshkey' && kind !== 'terminal' && kind !== 'script');
     updateLifetimeChoices(kind);
   }
 
@@ -565,6 +589,79 @@ export function formPageScript(nonce: string, d: EntityMetadata | undefined): st
     renderScriptVars();
   })();
 
+
+  // ---- port-forwarding rows ------------------------------------------------
+  // Built from an array rather than scraped from the DOM, exactly as the argument and script
+  // variable rows are: add/remove/reorder then has ONE implementation and the saved payload
+  // comes from the same array the UI edits.
+  var forwardRows = INITIAL_FORWARDS.slice();
+
+  function renderForwards() {
+    var host = document.getElementById('forwardRows');
+    if (!host) { return; }
+    host.textContent = '';
+    forwardRows.forEach(function (row, index) {
+      var wrap = document.createElement('div');
+      wrap.className = 'argRow';
+
+      var top = document.createElement('div');
+      top.className = 'argTop';
+
+      var on = document.createElement('input');
+      on.type = 'checkbox';
+      on.checked = row.disabled !== true;
+      on.title = 'Use this forward on the next connection';
+      on.addEventListener('change', function () {
+        forwardRows[index].disabled = !on.checked;
+        renderForwards();
+      });
+
+      var kind = document.createElement('select');
+      [['local', 'Local -L'], ['remote', 'Remote -R']].forEach(function (pair) {
+        var opt = document.createElement('option');
+        opt.value = pair[0];
+        opt.textContent = pair[1];
+        if (row.kind === pair[0]) { opt.selected = true; }
+        kind.appendChild(opt);
+      });
+      kind.addEventListener('change', function () { forwardRows[index].kind = kind.value; });
+
+      var rule = document.createElement('input');
+      rule.type = 'text';
+      rule.value = row.rule;
+      rule.placeholder = '5432:db.internal:5432';
+      rule.spellcheck = false;
+      rule.addEventListener('input', function () { forwardRows[index].rule = rule.value; });
+
+      var remove = document.createElement('button');
+      remove.type = 'button';
+      remove.className = 'secondary';
+      remove.textContent = '×';
+      remove.title = 'Remove this forward';
+      remove.addEventListener('click', function () {
+        forwardRows.splice(index, 1);
+        renderForwards();
+      });
+
+      top.appendChild(on);
+      top.appendChild(kind);
+      top.appendChild(rule);
+      top.appendChild(remove);
+      wrap.appendChild(top);
+      host.appendChild(wrap);
+    });
+  }
+  (function () {
+    var add = document.getElementById('addForward');
+    if (add) {
+      add.addEventListener('click', function () {
+        forwardRows.push({ kind: 'local', rule: '', disabled: false });
+        renderForwards();
+      });
+    }
+    renderForwards();
+  })();
+
   // ---- save / cancel ----
   document.getElementById('save').addEventListener('click', () => {
     setError('');
@@ -580,6 +677,14 @@ export function formPageScript(nonce: string, d: EntityMetadata | undefined): st
     const port = val('port').trim();
     if (kind === 'ssh' && port !== '' && (!new RegExp('^[0-9]+$').test(port) || Number(port) < 1 || Number(port) > 65535)) {
       setError('Port must be an integer between 1 and 65535.');
+      return;
+    }
+    // The shape check the host repeats with the real parser: a seed that is neither a URI
+    // nor base32 would be silently dropped there, and a silent drop is how a person types a
+    // seed twice before noticing nothing was kept.
+    const totpText = val('totp').trim();
+    if (totpText !== '' && !new RegExp('^otpauth://', 'i').test(totpText) && !new RegExp('^[A-Za-z2-7 =-]+$').test(totpText)) {
+      setError('The one-time code seed must be an otpauth:// URI or a base32 secret (letters A-Z, digits 2-7).');
       return;
     }
     vscode.postMessage({ type: 'save', data: {
@@ -603,10 +708,57 @@ export function formPageScript(nonce: string, d: EntityMetadata | undefined): st
       imageContent: imageContent, imageName: imageName,
       clearAttachment: chk('clearAttachment'), clearImage: chk('clearImage'),
       clearPassword: chk('clearPassword'), clearPrivateKey: chk('clearPrivateKey'),
+      totp: val('totp'), totpSteam: chk('totpSteam'), clearTotp: chk('clearTotp'),
+      jumpHostEntityId: val('jumpHostEntityId'), tags: val('tags'),
+      agentForward: chk('agentForward'), clearHostKey: chk('clearHostKey'),
+      portForwards: forwardRows,
     }});
   });
   document.getElementById('cancel').addEventListener('click', () => {
     vscode.postMessage({ type: 'cancel' });
+  });
+
+  // ---- generating a secret -------------------------------------------------
+  // The page asks; the host draws. Node's crypto is where unbiased randomness lives, and a
+  // webview reaching for Math.random() would produce something that only looks random.
+  var askFor = function (kind) {
+    return function () { vscode.postMessage({ type: 'generate', kind: kind }); };
+  };
+  var genPassword = document.getElementById('genPassword');
+  if (genPassword) { genPassword.addEventListener('click', askFor('password')); }
+  var genPassphrase = document.getElementById('genPassphrase');
+  if (genPassphrase) { genPassphrase.addEventListener('click', askFor('passphrase')); }
+  var genKey = document.getElementById('genKey');
+  if (genKey) { genKey.addEventListener('click', askFor('key')); }
+
+  // A generated value nobody can see is a value nobody will trust; the toggle is per click and
+  // never persisted, and the field goes back to a password box on save either way.
+  var reveal = document.getElementById('revealPassword');
+  if (reveal) {
+    reveal.addEventListener('click', function () {
+      var field = document.getElementById('password');
+      var shown = field.type === 'text';
+      field.type = shown ? 'password' : 'text';
+      reveal.textContent = shown ? 'Show' : 'Hide';
+    });
+  }
+
+  window.addEventListener('message', function (event) {
+    var data = event.data;
+    if (!data || data.type !== 'generated') { return; }
+    var field = document.getElementById(data.target);
+    if (!field) { return; }
+    field.value = data.value;
+    if (data.target === 'password') {
+      var hint = document.getElementById('genHint');
+      if (hint) { hint.textContent = data.note; }
+      field.type = 'text';
+      if (reveal) { reveal.textContent = 'Hide'; }
+    } else {
+      var keyHint = document.getElementById('genKeyHint');
+      if (keyHint) { keyHint.textContent = data.note; }
+      if (data.publicLine) { document.getElementById('publicKey').value = data.publicLine; }
+    }
   });
   // Keyboard: Esc cancels, Ctrl/Cmd+S saves — what every editor's hands already expect.
   document.addEventListener('keydown', (e) => {

@@ -14,11 +14,21 @@ import { EntityMetadata } from '../types';
 /**
  * The shared half of the two entity viewers, and the shared before-overwrite snapshot
  * (audit 2026-08-25, A1). Each used to exist twice; what is asserted here is exactly what
- * would have drifted: the field-to-secret mapping, the db display arithmetic, and the five
+ * would have drifted: the field-to-secret mapping, the db display arithmetic, and the six
  * secrets a revision must capture.
  */
 
-const FIELDS: ViewerSecretField[] = ['password', 'privateKey', 'vpnConfig', 'dbConnection', 'dbPassword'];
+const FIELDS: ViewerSecretField[] = [
+  'password',
+  'privateKey',
+  'vpnConfig',
+  'dbConnection',
+  'dbPassword',
+  'totp',
+];
+
+/** A seed whose code is checked below; the resolver must hand back the CODE, never this. */
+const SEED = 'otpauth://totp/x?secret=JBSWY3DPEHPK3PXP&algorithm=SHA1&digits=6&period=30';
 
 test('the resolver maps every viewer field, including the parsed db password', async () => {
   const reader = {
@@ -26,6 +36,7 @@ test('the resolver maps every viewer field, including the parsed db password', a
     privateKey: () => Promise.resolve('key'),
     vpnConfig: () => Promise.resolve('vpn'),
     dbConnection: () => Promise.resolve('postgresql://u:db-secret@h:5432/db'),
+    totpSeed: () => Promise.resolve(SEED),
   };
   const resolve = secretResolver(reader);
 
@@ -34,7 +45,11 @@ test('the resolver maps every viewer field, including the parsed db password', a
     got[field] = await resolve(field);
   }
 
-  assert.deepEqual(got, {
+  // `totp` is checked by shape rather than by value: it is a function of the clock, and it is
+  // the one field whose answer is DERIVED from the stored secret instead of being it.
+  const { totp, ...stored } = got;
+  assert.match(totp ?? '', /^[0-9]{6}$/);
+  assert.deepEqual(stored, {
     password: 'pw',
     privateKey: 'key',
     vpnConfig: 'vpn',
@@ -49,6 +64,7 @@ test('dbPassword resolves to nothing when there is no connection string', async 
     privateKey: () => Promise.resolve(undefined),
     vpnConfig: () => Promise.resolve(undefined),
     dbConnection: () => Promise.resolve(undefined),
+    totpSeed: () => Promise.resolve(undefined),
   });
 
   assert.equal(await resolve('dbPassword'), undefined);
@@ -100,7 +116,7 @@ test('dbDisplay never carries the password inline, but says one exists', () => {
   assert.deepEqual(none, { dbParts: undefined, dbPortIsDefault: false, dbHasPassword: false });
 });
 
-test('snapshotForRevision captures all five secrets of the given entity, as it is now', async () => {
+test('snapshotForRevision captures all six secrets of the given entity, as it is now', async () => {
   const reads: string[] = [];
   const value = (name: string) => (_a: string, id: string) => {
     reads.push(`${name}:${id}`);
@@ -112,6 +128,7 @@ test('snapshotForRevision captures all five secrets of the given entity, as it i
     getVpnConfig: value('vpnConfig'),
     getDbConnection: value('dbConnection'),
     getNotes: value('notes'),
+    getTotp: value('totp'),
   };
   const details: EntityMetadata = { id: 'e9', name: 'renamed already', isSshEnabled: false };
 
@@ -131,6 +148,35 @@ test('snapshotForRevision captures all five secrets of the given entity, as it i
     vpnConfig: 'vpnConfig-of-e9',
     dbConnection: 'dbConnection-of-e9',
     notes: 'notes-of-e9',
+    totp: 'totp-of-e9',
   });
-  assert.equal(reads.length, 5, 'every secret kind was read exactly once');
+  assert.equal(reads.length, 6, 'every secret kind was read exactly once');
+});
+
+test('the totp field resolves to the CODE, never to the seed it came from', async () => {
+  // The one field whose stored value must not be what Copy puts on the clipboard: a seed is
+  // permanent, and the code is the thing that expires.
+  const resolve = secretResolver({
+    password: () => Promise.resolve(undefined),
+    privateKey: () => Promise.resolve(undefined),
+    vpnConfig: () => Promise.resolve(undefined),
+    dbConnection: () => Promise.resolve(undefined),
+    totpSeed: () => Promise.resolve(SEED),
+  });
+
+  const code = await resolve('totp');
+  assert.match(code ?? '', /^[0-9]{6}$/);
+  assert.notEqual(code, SEED);
+});
+
+test('a reader with no seed resolves totp to nothing rather than throwing', async () => {
+  const resolve = secretResolver({
+    password: () => Promise.resolve(undefined),
+    privateKey: () => Promise.resolve(undefined),
+    vpnConfig: () => Promise.resolve(undefined),
+    dbConnection: () => Promise.resolve(undefined),
+    totpSeed: () => Promise.resolve(undefined),
+  });
+
+  assert.equal(await resolve('totp'), undefined);
 });

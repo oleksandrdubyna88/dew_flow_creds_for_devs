@@ -8,6 +8,8 @@ import { buildCommandLine, normalizeArgs } from './commandLine';
 import { highlightScript, resolveScriptEnv } from './scriptRender';
 import { Revision, summarizeRevision } from './revisionHistory';
 import { BINDABLE_FIELDS, BindableField } from './envBinding';
+import { TotpSnapshot } from './totp';
+import { normalizeForwards, normalizeTags, renderForward } from './sshOptions';
 
 /**
  * Read-only entity viewer (opened by double-click): the edit form's layout
@@ -32,9 +34,20 @@ export interface EntityViewOptions {
   dbPortIsDefault: boolean;
   dbHasPassword: boolean;
   sshCommand?: string;
+  /** The NAME of the jump-host entity, resolved by the caller — the id means nothing to a reader. */
+  jumpHostName?: string;
+  /** `SHA256:…` of the pinned host key, the string a server prints about itself (audit B10). */
+  hostKeyFingerprint?: string;
   resolveSecret: (
-    field: 'password' | 'privateKey' | 'vpnConfig' | 'dbConnection' | 'dbPassword',
+    field: 'password' | 'privateKey' | 'vpnConfig' | 'dbConnection' | 'dbPassword' | 'totp',
   ) => Thenable<string | undefined>;
+  /**
+   * The live one-time code — the SECOND deliberate exception to "the viewer never receives a
+   * secret", for the same reason as the image preview: a code that has to be READ cannot
+   * round-trip through the host. What travels is the derived code, which expires within the
+   * period; the seed it was derived from never does. Undefined when there is no seed.
+   */
+  totp?: () => Thenable<TotpSnapshot | undefined>;
   copyAllText: () => Promise<string>;
   /** Save-As flow for the VPN config (the row's button is a download). */
   saveVpnConfig: () => Promise<void>;
@@ -56,7 +69,7 @@ export interface EntityViewOptions {
 }
 
 interface CopyMessage {
-  type: 'copy' | 'download' | 'env' | 'envcheck' | 'close';
+  type: 'copy' | 'download' | 'env' | 'envcheck' | 'close' | 'totp';
   field: string;
 }
 
@@ -75,6 +88,15 @@ export function showEntityView(options: EntityViewOptions): void {
     const d = options.details;
     if (message.type === 'close') {
       panel.dispose();
+      return;
+    }
+    if (message.type === 'totp') {
+      // Asked for on load and again each time the shown code expires — computed here, from
+      // the seed the host holds, so the page only ever sees the expiring result.
+      const snapshot = await options.totp?.();
+      if (snapshot !== undefined) {
+        void panel.webview.postMessage({ type: 'totp', ...snapshot });
+      }
       return;
     }
     if (message.type === 'env' || message.type === 'envcheck') {
@@ -111,6 +133,7 @@ export function showEntityView(options: EntityViewOptions): void {
       case 'vpnConfig':
       case 'dbConnection':
       case 'dbPassword':
+      case 'totp':
         value = await options.resolveSecret(message.field);
         break;
       case 'all':
@@ -130,6 +153,9 @@ export function showEntityView(options: EntityViewOptions): void {
       case 'dbName': value = options.dbParts?.database; break;
       case 'dbUser': value = options.dbParts?.user; break;
       case 'ssh': value = options.sshCommand; break;
+      case 'agentForward': value = d.agentForward === true ? '-A' : undefined; break;
+      case 'hostKey': value = options.hostKeyFingerprint; break;
+      case 'tags': value = normalizeTags(d.tags).join(' '); break;
       case 'command': value = d.command; break;
       case 'commandNote': value = d.commandNote; break;
       case 'fullCommand': value = buildCommandLine(d.command ?? '', d.commandArgs); break;
@@ -166,6 +192,12 @@ export function showEntityView(options: EntityViewOptions): void {
                 r.secrets.dbConnection ??
                 r.secrets.vpnConfig ??
                 r.secrets.notes);
+          break;
+        }
+        const forward = /^forward(\d+)$/.exec(message.field);
+        if (forward !== null) {
+          const rule = normalizeForwards(d.portForwards)[Number(forward[1])];
+          value = rule === undefined ? undefined : renderForward(rule).join(' ');
           break;
         }
         const svar = /^svar(\d+)$/.exec(message.field);
@@ -291,6 +323,17 @@ function renderHtml(options: EntityViewOptions): string {
     row('User', 'user', d.user),
     row('Port', 'port', d.port !== undefined ? String(d.port) : undefined),
     row('Password', 'password', options.hasPassword ? '•' : undefined, true),
+    // The code is filled in by the host after load (see the `totp` message) and redrawn as
+    // it expires; the seed is not in this HTML and never will be.
+    ...(options.totp !== undefined
+      ? [
+          `<div class="row"><label>One-time code <span id="totpMeta" class="note"></span></label>
+      <div class="line"><input readonly id="totpCode" class="totp" value="······" aria-live="polite">
+        <span id="totpLeft" class="totpLeft" aria-label="seconds until the code changes"></span>
+        <button data-field="totp" data-action="copy" class="icon" title="Copy one-time code" aria-label="Copy one-time code">${COPY_ICON}</button>
+      </div></div>`,
+        ]
+      : []),
     row('Private key', 'privateKey', options.hasPrivateKey ? '•' : undefined, true),
     row('Public key', 'publicKey', d.publicKey),
     row('SSH key path', 'sshKeyPath', d.sshKeyPath),
@@ -299,6 +342,26 @@ function renderHtml(options: EntityViewOptions): string {
           <div class="line"><input readonly value="entity: ${escapeHtml(options.keySourceName)}"></div></div>`]
       : []),
     row('SSH command', 'ssh', options.sshCommand),
+    // The connection-manager fields (audit D7). Each renders only when the entity has it, so an
+    // entry that uses none of them looks exactly as it did before.
+    ...(options.jumpHostName !== undefined
+      ? [`<div class="row"><label>Jump host</label>
+          <div class="line"><input readonly value="entity: ${escapeHtml(options.jumpHostName)}"></div></div>`]
+      : []),
+    ...normalizeForwards(d.portForwards).map(
+      (forward, index) =>
+        `<div class="row">
+      <label>${forward.kind === 'local' ? 'Local forward (-L)' : 'Remote forward (-R)'}</label>
+      <div class="line"><input readonly value="${escapeHtml(renderForward(forward)[1])}">
+        <button data-field="forward${index}" data-action="copy" class="icon" title="Copy forward" aria-label="Copy forward">${COPY_ICON}</button>
+      </div>
+    </div>`,
+    ),
+    row('Agent forwarding', 'agentForward', d.agentForward === true ? 'on (-A)' : undefined),
+    // The fingerprint, never the key: a fingerprint is what a person can compare against what
+    // their server printed, and the key itself says nothing to anybody reading this panel.
+    row('Host key (pinned)', 'hostKey', options.hostKeyFingerprint),
+    row('Tags', 'tags', normalizeTags(d.tags).join(' ')),
     // A command entry: the verb, what it is for, every argument with its own note, and
     // the line that actually runs. The viewer previously knew nothing about this kind,
     // so it rendered a Name and stopped.
@@ -406,6 +469,8 @@ function renderHtml(options: EntityViewOptions): string {
   .tok-kw { color: var(--vscode-charts-blue, #569cd6); font-weight: 600; }
   .tok-num { color: var(--vscode-charts-green, #b5cea8); }
   .tok-var { color: var(--vscode-charts-purple, #c586c0); font-weight: 600; }
+  .totp { font-size: 1.25em; letter-spacing: .18em; max-width: 11em; flex: 0 1 11em; }
+  .totpLeft { align-self: center; min-width: 3em; opacity: .8; font-variant-numeric: tabular-nums; }
   .preview { width: 200px; height: 200px; object-fit: contain; cursor: zoom-in;
              border: 1px solid var(--vscode-widget-border, #3c3c3c); border-radius: 4px;
              background: var(--vscode-editor-background); }
@@ -470,6 +535,28 @@ function renderHtml(options: EntityViewOptions): string {
     button.innerHTML = ${JSON.stringify(CHECK_ICON)};
     setTimeout(() => { button.innerHTML = original; }, 1200);
   });
+  // The one-time code: asked for on load, counted down every quarter second, asked for
+  // again the moment it expires. The host computes it; this page only displays it.
+  const totpCode = document.getElementById('totpCode');
+  if (totpCode) {
+    const totpLeft = document.getElementById('totpLeft');
+    const totpMeta = document.getElementById('totpMeta');
+    let validUntil = 0;
+    const askForCode = () => vscode.postMessage({ type: 'totp', field: 'totp' });
+    window.addEventListener('message', (event) => {
+      if (event.data?.type !== 'totp') { return; }
+      totpCode.value = event.data.code;
+      validUntil = event.data.validUntil;
+      totpMeta.textContent = '— ' + event.data.description;
+    });
+    setInterval(() => {
+      if (!validUntil) { return; }
+      const remaining = Math.ceil((validUntil - Date.now()) / 1000);
+      if (remaining <= 0) { validUntil = 0; askForCode(); return; }
+      totpLeft.textContent = remaining + ' s';
+    }, 250);
+    askForCode();
+  }
 </script>
 </body>
 </html>`;

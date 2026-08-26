@@ -1,4 +1,5 @@
 import * as crypto from 'node:crypto';
+import { normalizeTags } from './sshOptions';
 import { escapeHtml } from './webviewHtml';
 import { formPageScript } from './entityFormScript';
 import { resolveKind } from './entityKind';
@@ -145,6 +146,16 @@ export function renderHtml(options: EntityFormOptions): string {
     ),
   ].join('');
 
+  // The same shape as the key source, and deliberately so: both are "point at another entity",
+  // and a jump host that could be typed as text would be a place to type a command.
+  const jumpOptions = [
+    `<option value="">— none —</option>`,
+    ...options.jumpCandidates.map(
+      (c) =>
+        `<option value="${escapeHtml(c.id)}"${d?.jumpHostEntityId === c.id ? ' selected' : ''}>${escapeHtml(c.name)}</option>`,
+    ),
+  ].join('');
+
   const vpnTypeOptions = VPN_TYPES.map(
     (t) =>
       `<option value="${t}"${(d?.vpnType ?? 'openvpn') === t ? ' selected' : ''}>${t}</option>`,
@@ -183,6 +194,7 @@ export function renderHtml(options: EntityFormOptions): string {
   legend { padding: 0 6px; opacity: .85; }
   label { display: block; margin: 8px 0 3px; }
   .check { display: flex; align-items: center; gap: 6px; margin: 6px 0; }
+  .genRow { display: flex; gap: 8px; margin: 6px 0 0; flex-wrap: wrap; }
   .check label { margin: 0; }
   .envRow { margin: 4px 0 0 2px; padding: 4px 8px;
             border-left: 2px solid var(--vscode-focusBorder, #007fd4); opacity: .95; }
@@ -295,12 +307,36 @@ export function renderHtml(options: EntityFormOptions): string {
     <label for="sshKeyEntityId">SSH key source</label>
     <select id="sshKeyEntityId">${keyOptions}</select>
     <p class="hint">Pick another entity to use its key for this connection.</p>
+    <label for="jumpHostEntityId">Jump host (bastion)</label>
+    <select id="jumpHostEntityId">${jumpOptions}</select>
+    <p class="hint">Reached first, as <code>ssh -J</code>. Another entity, never a typed command — a jump host that could be typed could be a command.</p>
+    <label for="tags">Tags</label>
+    <input id="tags" type="text" placeholder="production eu-west" value="${escapeHtml(normalizeTags(d?.tags).join(' '))}">
+    <p class="hint">Space-separated labels, shown on the row and matched by the filter.</p>
+    <div class="check"><input id="agentForward" type="checkbox" ${d?.agentForward === true ? 'checked' : ''}>
+      <label for="agentForward">Forward the SSH agent (<code>-A</code>)</label></div>
+    <p class="hint">Lets the remote host use your keys through the agent — needed to <code>git clone</code> from there. It also means anyone with root on that host can ask your agent to sign while you are connected; with this extension's agent, each such request still asks you.</p>
+    ${
+      options.hasStoredHostKey
+        ? `<label>Pinned host key</label>
+           <div class="line"><input readonly value="${escapeHtml(options.hostKeyFingerprint ?? '')}"></div>
+           <p class="hint">Checked on every connection. If the host is rebuilt, clear this and the next connection will show you the new fingerprint.</p>
+           <div class="check"><input id="clearHostKey" type="checkbox">
+             <label for="clearHostKey">Forget the pinned host key</label></div>`
+        : '<p class="hint">No host key pinned yet — the first connection shows you its fingerprint and offers to pin it.</p>'
+    }
+    <label>Port forwarding</label>
+    <div id="forwardRows"></div>
+    <button type="button" id="addForward" class="secondary">+ Add forward</button>
+    <p class="hint">Local (<code>-L</code>) makes a port here reach a service there; remote (<code>-R</code>) is the reverse. Written as <code>port:host:hostport</code>.</p>
   </fieldset>
 
   <fieldset id="keySection">
     <legend>SSH key</legend>
     <label for="privateKey">Private key (content)</label>
     <textarea id="privateKey" rows="5" spellcheck="false" autocomplete="off"></textarea>
+    <button type="button" id="genKey" class="secondary">Generate Ed25519 key pair</button>
+    <p class="hint" id="genKeyHint">A key made here is drawn in the editor and saved straight to the keychain — unlike <code>ssh-keygen</code>, which writes it to disk by definition. With <i>Add to SSH Agent</i> it can then be used without ever becoming a file.</p>
     <p class="hint">${privateKeyHint}</p>
     ${
       options.hasStoredPrivateKey
@@ -418,12 +454,37 @@ export function renderHtml(options: EntityFormOptions): string {
     <legend>Secret</legend>
     <label for="password">Password / secret value</label>
     <input id="password" type="password" autocomplete="off">
-    <p class="hint">${passwordHint}</p>
+    <div class="genRow">
+      <button type="button" id="genPassword" class="secondary">Generate password</button>
+      <button type="button" id="genPassphrase" class="secondary">Generate passphrase</button>
+      <button type="button" id="revealPassword" class="secondary">Show</button>
+    </div>
+    <p class="hint" id="genHint">${passwordHint}</p>
     ${envRow('password', d)}
     ${
       options.hasStoredPassword
         ? `<div class="check"><input id="clearPassword" type="checkbox">
            <label for="clearPassword">Clear the stored password</label></div>`
+        : ''
+    }
+  </fieldset>
+
+  <fieldset id="totpSection">
+    <legend>One-time code (TOTP)</legend>
+    <label for="totp">Authenticator seed — an <code>otpauth://</code> URI or the base32 secret</label>
+    <input id="totp" type="password" autocomplete="off" spellcheck="false"
+           placeholder="otpauth://totp/GitHub:me?secret=JBSW…   or   JBSW Y3DP EHPK 3PXP">
+    <p class="hint">${
+      options.hasStoredTotp
+        ? `A seed is stored (${escapeHtml(options.storedTotpDescription ?? 'unreadable')}). Paste a new one to replace it.`
+        : 'Most services offer this under "can&#39;t scan the QR code?". Kept in the OS keychain; the codes are computed here, so the second app can close.'
+    }</p>
+    <div class="check"><input id="totpSteam" type="checkbox">
+      <label for="totpSteam">Steam Guard (5-character code)</label></div>
+    ${
+      options.hasStoredTotp
+        ? `<div class="check"><input id="clearTotp" type="checkbox">
+           <label for="clearTotp">Remove the stored seed</label></div>`
         : ''
     }
   </fieldset>

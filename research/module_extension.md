@@ -38,6 +38,20 @@ flowchart TD
         CLI[agentCli.ts<br/>plain node, no vscode]
     end
 
+    subgraph SshAgent["SSH agent (socket / named pipe)"]
+        AGMGR[sshAgentManager.ts<br/>keys in memory, the modal]
+        AGSRV[sshAgentServer.ts<br/>protocol over net]
+        AGPROTO[sshAgentProtocol.ts<br/>framing + what is being signed]
+        AGKEY[sshKeyParse.ts + sshAgentSign.ts<br/>read a key, make a signature]
+    end
+
+    subgraph MaskedRun["Run with secrets"]
+        REF[secretRef.ts<br/>creds:// resolution]
+        PLANR[runPlan.ts<br/>rewrite to env reads]
+        MASK[outputMask.ts<br/>stream masking]
+        MTERM[maskedTerminal.ts<br/>pseudoterminal we own]
+    end
+
     subgraph Crypto
         CU[cryptoUtils.ts<br/>AES-256-GCM + scrypt]
         KW[keyWrap.ts<br/>key slots]
@@ -64,6 +78,10 @@ flowchart TD
     TREE --> SEARCH
     EXT --> SYNC & SHARE & BACKUP
     EXT --> BROKER
+    EXT --> AGMGR --> AGSRV --> AGPROTO & AGKEY
+    AGMGR --> SM
+    EXT --> REF & PLANR --> MTERM --> MASK
+    REF --> SM
     CLI -.->|HTTP 127.0.0.1| BROKER
     BROKER --> UA --> SSHUSE --> RUN
     SSHUSE --> SM
@@ -141,7 +159,7 @@ erDiagram
 
 | Data | Where | Encrypted by |
 |---|---|---|
-| Passwords, private keys, VPN configs, notes, DB connection strings | `SecretStorage` | the OS keychain |
+| Passwords, private keys, VPN configs, notes, DB connection strings, TOTP seeds | `SecretStorage` | the OS keychain |
 | Node tree, tombstones, version vectors, device id | `globalState` | nothing — it is metadata |
 | The off-machine vault blob | NAS folder or server | **this extension**, AES-256-GCM |
 
@@ -932,6 +950,43 @@ history, in the next backup, and — with no tombstone and no version bump — w
 next machine that synced. `expiresAt`/`burnPolicy` are on `EntityMetadata` and in
 `isEntityMetadata`; without the validator line they are stripped on every sync, import and sealed
 read. The sweep, the broker burn hook and the form are not built yet (they need `extension.ts`).
+### Connection-manager fields, and the end of a silent first contact (audit D7 + B10)
+
+An SSH entity now carries what every dedicated connection manager carries: a **jump host**, **port
+forwards**, **agent forwarding**, a **pinned host key**, and **tags**. `sshOptions.ts` is the pure
+half — validation and composition — and it is shared by BOTH command builders, `buildSshCommand`
+for the human terminal and `buildSshExecArgv` for the agent, for the reason `sshCredential.ts`
+exists: two renderings of "which bastion, which key" drift, and the first time they do, one surface
+reaches a host the other cannot.
+
+**Every field is untrusted, and each is refused rather than escaped.** Entities arrive by sync and
+by Accept Share, so a writer of a shared vault chooses these strings — and each is a fresh path into
+ssh's own argv parser, where a leading `-` is a flag and `-oProxyCommand=…` runs a local command
+before authenticating anything. A jump host is therefore a **typed reference to another entity**,
+never a string anybody typed; a forward's host goes through the same `isSafeSshHost` the destination
+does; a tag is letters, digits and `-_. `; and the jump walk is cycle-bounded and depth-capped
+because `jumpHostEntityId` is data, exactly as `parentId` is.
+
+**B10 — the host key.** Both paths used to pass `StrictHostKeyChecking=accept-new`, which does what
+it says: the first key a host offers is accepted, recorded and never mentioned. That is the one
+moment interception is cheap. Now `ssh-keyscan` runs first, the fingerprint is shown as the
+`SHA256:…` string the server itself prints, and a person says yes; afterwards the pin is enforced
+with `StrictHostKeyChecking=yes` against a known_hosts file built from exactly that key, so a
+changed key **fails the connection** instead of printing a warning nobody reads.
+
+The three-way split matters more than it looks. `pinVerdict` answers `first-contact`, `match`,
+`mismatch` or `unreachable`, and the last is the interesting one: a host that is down is **not** a
+host that changed its key, and reporting one as the other is how people learn to click through the
+alarm that matters. `mismatch` refuses by default and offers a *different* button — "I rebuilt it" —
+because a changed key is also what a reinstalled server looks like.
+
+And the two paths are deliberately **not** the same, which the first implementation got wrong and a
+test caught: a human terminal is left ssh's own default (`ask`, which prompts the person who is
+sitting there), while an agent's exec — which has nobody to ask — keeps `accept-new` and never pins.
+Forcing `accept-new` on the human path would have removed the very question B10 was about. A pin
+that already exists is enforced on both.
+
+Full record, deviations included: [PLAN_connection_manager.md](PLAN_connection_manager.md).
 
 ### The git transport (0.58.0)
 
@@ -1168,12 +1223,142 @@ mid-line) and no client word at a statement start; mssql: no line starts with `:
 launch passes `-x` because sqlcmd resolves `$(NAME)` from the environment. `buildDbQueryLaunch`
 re-checks, so nothing that builds a launch can bypass the action's refusal.
 
+## The SSH agent — a key that is used without existing as a file (0.57.0)
+
+Until this, using a stored key meant writing it out: `materializePrivateKey` puts it in
+`keys/<pid>/` at `0600` with an owner-only ACL, and deletes it when the terminal closes or the
+agent's exec finishes. That is a real protection and it was never the one people compare
+managers by; every major one now *serves* the key instead, and asks before each use.
+
+`sshAgentManager.ts` holds the loaded keys **in memory only** and owns the modal;
+`sshAgentServer.ts` (`vscode`-free) is the socket and the protocol; `sshAgentProtocol.ts`,
+`sshKeyParse.ts` and `sshAgentSign.ts` are pure and carry the parts that can be wrong silently.
+
+| Decision | Why |
+|---|---|
+| **Our own socket**, not `ssh-add` into a running agent | `ssh-add -c` delegates the confirmation to an askpass program the Windows service agent cannot display — and loading a key into another agent means writing it out first, which is the thing being removed. The owner's §7.5 decision; "load into an existing agent" is the recorded open tail |
+| **One socket per window** — `keys/<pid>/agent.sock`, or `\\.\pipe\creds-for-devs-agent-<pid>` | The same reasoning as `keys/<pid>/`: two windows must not fight over one agent, and a crashed window leaves a dead file the existing purge removes |
+| **The dialog names what is being signed** | `describeSignRequest` reads the blob: an RFC 4252 userauth request is an SSH login (with the user and service), an `SSHSIG` blob names its namespace — `git` for a commit. "A key is being used" is not a decision anyone can make |
+| **Allow once / Allow for 10 minutes / Deny** | A `git push` signs and authenticates in one breath; a strictly-per-use modal would have taught people to click through it. The window is per key, in memory, and stated in the dialog |
+| **A read-only agent** | Only `REQUEST_IDENTITIES` and `SIGN_REQUEST` are implemented; add, remove and lock are answered `FAILURE`. Nothing a client sends can change what is served |
+| **A passphrase-protected key is refused with the fix** | OpenSSH encrypts with `bcrypt_pbkdf`, which Node does not implement. The message names `ssh-keygen -p -N ""` instead of saying "unsupported key" — the vault already encrypts the key at rest, so storing it unencrypted here loses nothing |
+
+**Git commit signing** is what the agent unlocks: `gitSigningConfig.ts` emits the `gpg.format ssh`
+lines with the public key inline as `user.signingkey "key::ssh-ed25519 AAAA…"`, so no file has to
+exist for Git to sign. On Windows it also sets `gpg.ssh.program` to the **built-in** OpenSSH
+`ssh-keygen.exe` — measured 2026-08-25: the MSYS one Git for Windows ships answers
+`Bad file descriptor` to a named pipe, and without that line Git reports a signing failure with
+nothing naming the cause.
+
+**Verified against the real tools rather than reasoned about** (`scripts/ssh-agent-itest.cjs`):
+`ssh-add -l` lists the key with its fingerprint, and `ssh-keygen -Y sign` — the exact mechanism
+`git` uses — produces a signature `ssh-keygen -Y verify` accepts. Run on Windows (OpenSSH 9.5)
+and WSL Ubuntu (9.6). Node has no SSH library here and gains none: the protocol is four messages,
+and the signature encodings (Ed25519 raw, RSA per the client's flags, ECDSA as `mpint r || mpint s`
+rather than Node's DER) are each verified against `crypto.verify` in `sshKeySign.test.ts`.
+
+## `creds://` references and the masked run (0.57.0)
+
+A script's variables already travelled in the child's environment rather than in the body — and
+the README admitted the rest: the script can still print them. `detectSecretPrints` warns, once,
+and cannot do more, because `vscode.window.createTerminal({ env })` hands the child straight to the
+terminal renderer and the extension never sees a byte.
+
+`maskedTerminal.ts` is the other half. An `ExtensionTerminalOptions` pseudoterminal means **we**
+spawn the process and **we** decide what reaches the screen, so every chunk passes through
+`SecretMasker` first.
+
+- **`secretRef.ts`** resolves `creds://<account email>/<entity path>/<field>`. Addressing by name is
+  the one part with a cost, and it is stated rather than hidden: entity names carry no uniqueness
+  rule, so an ambiguous reference is **refused** naming both candidates, and a folder path
+  disambiguates. Silently picking one would work until the day it chose the other.
+- **`runPlan.ts`** rewrites each reference to a variable read in the right dialect — the *shell's*
+  for a command line, the *language's* for a script body. A command argument becomes `"$CREDS_REF_1"`
+  rather than the value, because argv is world-readable in the process list.
+- **`outputMask.ts`** holds back `longest − 1` characters between chunks, so a value split across two
+  `data` events is still caught. A value under four characters is not masked — the limit is a
+  constant with a test, because masking `42` would shred ordinary output and hide nothing.
+
+The broker's `script` action masks the `stdout`/`stderr` it returns, which closes the same hole on
+the agent side: `brokerProtocol.ts` guarantees no response *field* can carry a secret, and `stdout`
+was the exception. **The `env` verb was not retired** — the plan proposed it; what shipped makes it
+the documented weaker option, because deleting a capability people use on an argument is worse than
+labelling it.
+
+**The trade, stated where it will be met:** a pseudoterminal has no PTY. A program that prompts for
+a password interactively, draws a progress bar, or colours by `isatty` behaves as it does when
+piped. *Run in Terminal* is unchanged and is the door for those.
+
+## TOTP (0.57.0)
+
+`totp.ts` is pure and dependency-free: base32, RFC 6238 over HMAC-SHA1/256/512, and the Steam
+variant. The seed is stored as the canonical `otpauth://` URI in its own SecretStorage key, so the
+algorithm, digit count and period travel with it and every enumeration site took one line.
+
+The viewer shows a live code with a countdown, which is **the second deliberate exception** to "the
+read-only viewer never receives a secret value", for exactly the reason the image preview was the
+first: a value that must be *read* cannot round-trip through the host. What travels is the derived
+code, which expires within its period; the seed never leaves the extension host. The tree's `:totp`
+token comes from a plaintext `hasTotp` flag, never from a keychain read per row.
+
+## Generating, importing, and the health report (0.57.0)
+
+Three features that share one property: they are the reasons somebody starts using this, or stops.
+
+**`secretGenerator.ts`** draws passwords, passphrases and Ed25519 key pairs with `crypto.randomInt`
+and reports the bits it drew. The passphrase list is **exactly 256** four-letter words so the
+arithmetic is exact — eight bits per word — and a test asserts both the count and the uniqueness,
+because a duplicated word would overstate every phrase generated from it. Capitalisation and a
+trailing digit exist to satisfy composition rules and are deliberately **not** counted as strength.
+
+A generated key is the interesting case: it is drawn in the extension host and saved to
+SecretStorage, so it never touches disk — which `ssh-keygen` cannot do by construction. With the SSH
+agent above it is then *used* without becoming a file either.
+
+> **The one direction a secret travels INTO a webview.** The form's Generate buttons ask the host to
+> draw, and the value arrives in the input. That does not break the rule the viewer keeps: the form
+> is where a person types a password, so its inputs already hold secret values by design. The
+> read-only viewer still receives none (its TOTP exception is a derived code, not a stored secret).
+
+**`importFormats.ts`** reads `~/.ssh/config`, and CSV or JSON exports from Bitwarden, 1Password,
+KeePass, LastPass and Termius — one CSV reader with per-tool column aliases rather than five
+near-identical importers. The format is chosen by CONTENT, so a misnamed file still imports. Two
+rules the tests pin down: a skipped row is always reported (with its number or its name), and every
+node gets a **fresh id**, because an id from somebody else's export collides in the next sync merge.
+
+KDBX is deliberately absent and `PLAN_import.md` records why: Argon2 is not in Node, and this
+extension has no runtime dependencies. KeePass exports CSV, which the generic reader takes.
+
+**`hygiene.ts` + `hygieneScan.ts`** are the health report: reused passwords (compared by digest,
+never kept), passwords under 60 bits, unencrypted private keys in `~/.ssh`, and plaintext credentials
+in a workspace `.env`. The estimator is `pinPolicy`'s own, **exported rather than reimplemented** —
+two opinions about what "weak" means is how one product starts disagreeing with itself.
+
+| Decision | Why |
+|---|---|
+| No finding, and no rendered report, ever contains the value that caused it | It is the first test in the file. A report is a document people paste into a chat window |
+| An unencrypted `~/.ssh` key is **medium**, not high | That is the normal state of a key on a personal machine; calling it a catastrophe teaches people to ignore the whole report |
+| An unparseable key file produces **no** finding | A false accusation costs the reader's trust in every other line. Deliberately the opposite direction from `sshKeyParse`, which needs a parse failure to fall through to the real error |
+| The breach check is off, and asks anyway | It is the only thing in the product that uses the network for anything but the user's own sync location. Five hex characters of a SHA-1 travel — one bucket in 2²⁰ — and the bucket is matched locally |
+
+## The convenience layer (0.57.0)
+
+`quickOpen.ts` is *Go to Credential* (`Ctrl+Alt+P`): one list across every account, matched against
+**`nodeHaystack`** — the tree filter's own haystack, reused rather than re-derived. A picker with its
+own matcher would eventually search secrets, which is the oracle `treeSearch.ts` exists to refuse.
+
+`lockStatus.ts` (pure) holds the status bar's wording; `statusBar.ts` holds the item. Whether the
+vault is locked decides whether background sync runs at all, and until this it could only be
+discovered by trying something. Plus five keybindings, a `viewsWelcome` and a four-step walkthrough —
+a clean install used to show one "Search" row and nothing else.
+
 ## Secrets at rest and in flight
 
 | Path | Handling |
 |---|---|
 | Clipboard | Every secret copy expires after **45 s**, and only if the clipboard still holds exactly what was copied (`secretClipboard.ts`) |
-| SSH private key on disk | Materialised only when `ssh -i` needs a path; `0600` in a `0700` directory under the extension's own storage — never the OS temp dir — and purged on activate, on deactivate, and when the terminal closes |
+| SSH private key on disk | Materialised only when `ssh -i` needs a path; `0600` in a `0700` directory under the extension's own storage — never the OS temp dir — and purged on activate, on deactivate, and when the terminal closes. **A key served by the SSH agent is never written at all** |
+| TOTP seed | `SecretStorage`, as the canonical `otpauth://` URI. The viewer receives the derived code, never the seed |
 | Terminal | `buildSshCommand` composes host/user/port/key-*path* only. No password ever reaches a command line |
 | Webviews | `default-src 'none'`, nonce-based scripts, `localResourceRoots: []`, everything escaped. The read-only viewer never receives secret values at all — copy actions round-trip through the extension host |
 
@@ -1191,7 +1376,7 @@ npm run icon               # regenerate media/icon.png
 node scripts/tree-perf-bench.cjs   # tree/storage/sync perf counters; BENCH_OUT=<dir> for another build
 ```
 
-**635 tests** (2026-08-25), all `node:test`, ~13 s. Linting (audit A2): `eslint.config.mjs`
+**726 tests** (2026-08-25), all `node:test`, ~13 s. Linting (audit A2): `eslint.config.mjs`
 enforces exactly four rules — `max-lines: 800`, `max-lines-per-function: 50` (120 in tests,
 where a body narrates one scenario), `complexity: 4`, `no-console` — deliberately not a style
 linter. Pre-existing debt carries explicit `eslint-disable` markers at each site (178 inline +
@@ -1240,6 +1425,16 @@ Three properties are the whole design:
 `CredsForDevs: Show Diagnostics` opens the channel and offers the file path; it is declared
 palette-only in `manifest.test.ts`, because the diagnostics belong to the window rather than to
 any row.
+`scripts/ssh-agent-itest.cjs` (`npm run itest:ssh-agent`) drives the **real** OpenSSH tools against
+the compiled agent: `ssh-add -l` must list the key, and `ssh-keygen -Y sign` must produce a
+signature `ssh-keygen -Y verify` accepts. It needs no VS Code and no server, and it is the check
+that would catch a wrong public blob or a mis-encoded signature — the two mistakes a unit test can
+agree with itself about. On Windows it uses `C:\Windows\System32\OpenSSH` deliberately.
+
+`scripts/masked-run-itest.cjs` (`npm run itest:masked-run`) drives the pseudoterminal against a real
+child through a real shell, and asserts the value the child prints does not reach the terminal.
+**Both run on Windows and on Linux/WSL, and both were run on both** — that is where the shell
+mismatch in the masked run was found, rather than in review.
 
 ## Security hardening (2026-08-25 review)
 

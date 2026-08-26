@@ -93,7 +93,10 @@ function renderForm(lockedKind: string | undefined): string {
     hasStoredImage: false,
     hasStoredVpnConfig: false,
     hasStoredDbConnection: false,
+    hasStoredTotp: false,
+    hasStoredHostKey: false,
     keyCandidates: [],
+    jumpCandidates: [{ id: 'bastion', name: 'bastion' }],
   });
   assert.notEqual(currentPanel.webview.html.length, 0, 'the form rendered no html');
   return currentPanel.webview.html;
@@ -149,6 +152,14 @@ test('the viewer page script parses too', () => {
       { at: 1_699_999_000_000, name: 'probe (before)', details: { name: 'probe (before)' }, secrets: {} },
     ],
     resolveSecret: () => Promise.resolve(undefined),
+    // A one-time code row too: the page asks the host for the code after load.
+    totp: () =>
+      Promise.resolve({
+        code: '123456',
+        validUntil: 1_700_000_930_000,
+        period: 30,
+        description: '6 digits · SHA1 · every 30 s',
+      }),
     copyAllText: () => Promise.resolve(''),
     saveVpnConfig: () => Promise.resolve(),
     saveAttachment: () => Promise.resolve(),
@@ -160,6 +171,10 @@ test('the viewer page script parses too', () => {
     () => new Function('acquireVsCodeApi', pageScript(currentPanel.webview.html)),
     'viewer page script does not parse',
   );
+  assert.ok(currentPanel.webview.html.includes('id="totpCode"'), 'the one-time code row is rendered');
+  // The code is delivered by message after load, never baked into the page — so a leaked
+  // HTML string holds neither the seed nor a code.
+  assert.equal(currentPanel.webview.html.includes('123456'), false);
 });
 
 test('every fieldset the visibility switch touches exists exactly once', () => {
@@ -174,6 +189,7 @@ test('every fieldset the visibility switch touches exists exactly once', () => {
     'terminalSection',
     'scriptSection',
     'passwordSection',
+    'totpSection',
   ]) {
     const count = html.split(`id="${id}"`).length - 1;
     assert.equal(count, 1, `${id} appears ${count} times`);
@@ -274,4 +290,14 @@ test('the highlighter escaper leaves the apostrophe as data, and says why in its
   // first unified. This pins the difference so the next unification attempt fails here first.
   assert.equal(escapeHtmlForHighlighting(`x = 'v' & "w" <y>`), 'x = \'v\' &amp; &quot;w&quot; &lt;y&gt;');
   assert.equal(escapeHtml(`x = 'v'`), 'x = &#39;v&#39;', 'the general one still escapes it');
+});
+
+test('the connection form offers the D7 fields, each exactly once', () => {
+  // A field rendered twice is two inputs writing one value — the failure the fieldset
+  // uniqueness check above exists for, applied to the new controls.
+  const html = renderForm('ssh');
+  for (const id of ['jumpHostEntityId', 'tags', 'agentForward', 'forwardRows', 'addForward']) {
+    assert.equal(html.split(`id="${id}"`).length - 1, 1, `${id} is not present exactly once`);
+  }
+  assert.ok(html.includes('<option value="bastion"'), 'the jump-host picker lists other entities');
 });

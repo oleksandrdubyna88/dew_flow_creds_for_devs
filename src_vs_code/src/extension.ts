@@ -72,6 +72,7 @@ import { registerSecurityKey } from './webauthnPrf';
 import {
   dbDisplay,
   revisionSecretReader,
+  totpViewFor,
   secretResolver,
   storageSecretReader,
 } from './viewerOptions';
@@ -104,6 +105,30 @@ import { detectSecretPrints, resolveScriptEnv } from './scriptRender';
 import { scriptRunPlan } from './scriptRun';
 import { buildExternalBundle, isExternalBundle, remapExternalIds } from './externalBundle';
 import { withoutPassword } from './dbConnString';
+import { describeTotp, parseTotpSecret, totpSnapshot } from './totp';
+import { hostKeyFingerprint, parseHostKey } from './hostKeyPin';
+import { RefSource, resolveSecretRefs } from './secretRef';
+import {
+  buildCommandLineWithRefs,
+  planRefs,
+  refField,
+  rewriteScriptRefs,
+} from './runPlan';
+import { runInMaskedTerminal } from './maskedTerminal';
+import { MIN_MASKABLE_LENGTH } from './outputMask';
+import { SshAgentManager } from './sshAgentManager';
+import { gitSigningClipboardText, gitSigningConfig } from './gitSigningConfig';
+import { parseSshPrivateKey } from './sshKeyParse';
+import {
+  DEFAULT_PASSPHRASE,
+  DEFAULT_PASSWORD,
+  generatePassphrase,
+  generatePassword,
+} from './secretGenerator';
+import { folderPath, quickOpenItems } from './quickOpen';
+import { runHygieneScan } from './hygieneScan';
+import { ImportedEntity, parseImport, toTreeNodes } from './importFormats';
+import { LockStatusBar } from './statusBar';
 import { SelectedNode, describeSkips, resolveSelection } from './selectionResolver';
 import {
   credentialExportEnvAction,
@@ -114,6 +139,7 @@ import {
 } from './agentUseActions';
 import {
   AuthProvider,
+  ENTITY_KIND_LABELS,
   EntityKind,
   StoredAccount,
   EntityMetadata,
@@ -349,8 +375,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       );
     }
     provider.refresh();
+    // The status bar answers the same question the readiness icons do, so it is repainted from
+    // the same place rather than from every caller that might have changed the lock.
+    statusBar.render(locked, storage.getAccounts().length, false);
     return provider.readiness;
   };
+
+  // Whether the vault is locked decides whether background sync runs at all; until this it
+  // could only be discovered by trying something.
+  const statusBar = new LockStatusBar();
+  context.subscriptions.push(statusBar);
   void refreshReadiness();
 
   provider.onMutate = () => sync.notifyChange();
@@ -393,6 +427,20 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   };
   useActions.register(sshExecAction(sshDeps));
   useActions.register(sshTerminalAction(sshDeps));
+
+  // The SSH agent: keys served from memory, every use confirmed, SSH_AUTH_SOCK injected into
+  // new terminals. Nothing starts until a key is actually loaded.
+  const sshAgent = new SshAgentManager(storage, storageDir, envCollection, () =>
+    vaultKeys.noteUserActivity(),
+  );
+  context.subscriptions.push(sshAgent);
+  void sshAgent.loadMarked().then((count) => {
+    if (count > 0) {
+      void vscode.window.showInformationMessage(
+        `${count} SSH key(s) are served by the CredsForDevs agent. Every use asks first; see "CredsForDevs: SSH Agent" for the record.`,
+      );
+    }
+  });
 
   // The other kinds ride the same registry — the broker's dispatch never learned about
   // any of them, which is what the (kind, action) seam was for.
@@ -1106,8 +1154,11 @@ ${detail}
       hasStoredImage: false,
       hasStoredVpnConfig: false,
       hasStoredDbConnection: false,
+      hasStoredTotp: false,
+      hasStoredHostKey: false,
       lockedKind: folderKindOf(storage, location.accountId, location.parentId),
       keyCandidates: await collectKeyCandidates(storage, location.accountId, id),
+      jumpCandidates: collectJumpCandidates(storage, location.accountId, id),
     });
     if (result === undefined) {
       return;
@@ -1251,6 +1302,30 @@ ${detail}
     );
   });
 
+  // The current one-time code, computed from the stored seed at this moment. The seed
+  // itself never leaves SecretStorage; what lands on the clipboard expires twice — once
+  // when the period ends, once when the clipboard TTL clears it.
+  register('credSshManager.copyTotpCode', async (target) => {
+    vaultKeys.noteUserActivity(); // the user is here: postpone auto-lock
+    const element = asElement(target);
+    if (element?.kind !== 'node' || !element.node.details) {
+      return;
+    }
+    const now = Date.now();
+    const snapshot = totpSnapshot(await storage.getTotp(element.accountId, element.node.details.id), now);
+    if (snapshot === undefined) {
+      void vscode.window.showWarningMessage(
+        `"${element.node.name}" has no one-time code seed — open Edit and paste the otpauth:// URI or the base32 secret.`,
+      );
+      return;
+    }
+    await copySecret(vscode.env.clipboard, snapshot.code);
+    const secondsLeft = Math.ceil((snapshot.validUntil - now) / 1000);
+    void vscode.window.showInformationMessage(
+      copiedMessage(`One-time code of "${element.node.name}" (valid for ${secondsLeft} s more)`),
+    );
+  });
+
   // Per-entry SSH on/off switch (default is off for new entities).
   register('credSshManager.toggleSsh', async (target) => {
     const element = asElement(target);
@@ -1269,7 +1344,13 @@ ${detail}
     vaultKeys.noteUserActivity(); // the user is here: postpone auto-lock
     const element = asElement(target);
     if (element?.kind === 'node' && element.node.details) {
-      await connectEntity(element.accountId, element.node.details, storage, storageDir);
+      await connectEntity(
+        element.accountId,
+        element.node.details,
+        storage,
+        storageDir,
+        sshAgent.servesKeyFor(element.node),
+      );
     }
   });
 
@@ -1319,6 +1400,235 @@ ${detail}
     void vscode.window.showInformationMessage(
       copiedMessage(`Claude Code instructions for "${element.node.name}"`),
     );
+  });
+
+  // Serve this key through the extension's own SSH agent — the alternative to writing it out
+  // as a file, and the only door to Git commit signing with a vault-held key.
+  register('credSshManager.addKeyToAgent', async (target) => {
+    vaultKeys.noteUserActivity(); // the user is here: postpone auto-lock
+    const element = asElement(target);
+    if (element?.kind !== 'node' || !element.node.details) {
+      return;
+    }
+    const details = element.node.details;
+    const result = await sshAgent.load(element.accountId, details);
+    if (!result.ok) {
+      void vscode.window.showWarningMessage(result.reason);
+      return;
+    }
+    await storage.updateNode(element.accountId, {
+      ...element.node,
+      details: { ...details, sshAgent: true },
+    });
+    mutated();
+    void vscode.window.showInformationMessage(
+      `"${element.node.name}" (${result.fingerprint}) is served by the agent. New terminals get ` +
+        'SSH_AUTH_SOCK automatically; every use of the key asks first.' +
+        (process.platform === 'win32'
+          ? ' On Windows the built-in OpenSSH client reaches it; the ssh that ships with Git for Windows cannot.'
+          : ''),
+    );
+  });
+
+  register('credSshManager.removeKeyFromAgent', async (target) => {
+    vaultKeys.noteUserActivity(); // the user is here: postpone auto-lock
+    const element = asElement(target);
+    if (element?.kind !== 'node' || !element.node.details) {
+      return;
+    }
+    sshAgent.unload(element.node.details.id);
+    await storage.updateNode(element.accountId, {
+      ...element.node,
+      details: { ...element.node.details, sshAgent: undefined },
+    });
+    mutated();
+    void vscode.window.showInformationMessage(
+      `"${element.node.name}" is no longer served by the agent.`,
+    );
+  });
+
+  /**
+   * The `git config` lines that make Git sign commits with this key.
+   *
+   * <p>Reads the public half out of the stored key rather than requiring the key to be loaded
+   * first: a person asking how to configure signing has not necessarily loaded it yet, and
+   * refusing at that point would be an obstacle with no reason behind it.</p>
+   */
+  register('credSshManager.copyGitSigningConfig', async (target) => {
+    vaultKeys.noteUserActivity(); // the user is here: postpone auto-lock
+    const element = asElement(target);
+    if (element?.kind !== 'node' || !element.node.details) {
+      return;
+    }
+    const details = element.node.details;
+    const loaded = sshAgent.loadedKeys().find((k) => k.entityId === details.id);
+    let publicLine = loaded?.publicLine;
+    if (publicLine === undefined) {
+      const content = await storage.getPrivateKey(element.accountId, details.id);
+      const parsed = content === undefined ? undefined : parseSshPrivateKey(content, element.node.name);
+      if (parsed === undefined) {
+        void vscode.window.showWarningMessage(
+          `"${element.node.name}" has no private key stored, so there is no public half to sign with.`,
+        );
+        return;
+      }
+      if (!parsed.ok) {
+        void vscode.window.showWarningMessage(`"${element.node.name}": ${parsed.reason}`);
+        return;
+      }
+      publicLine = parsed.key.publicLine;
+    }
+    const config = gitSigningConfig(
+      publicLine,
+      process.platform,
+      sshAgent.socketPath ?? '(add the key to the agent to start it)',
+    );
+    await copySecret(vscode.env.clipboard, gitSigningClipboardText(config));
+    void vscode.window.showInformationMessage(
+      copiedMessage(`Git signing config for "${element.node.name}"`),
+    );
+  });
+
+  /**
+   * Generate a secret and put it on the clipboard, without an entity to hang it on.
+   *
+   * <p>The form has its own buttons; this is for the times a password is needed for something
+   * that is not stored here at all, which is most of them. It reports the entropy it drew
+   * rather than a colour, because the number is the only part that means anything.</p>
+   */
+  /**
+   * Go to an entity by name, across every account — the keyboard road into the tree.
+   *
+   * <p>It matches what the tree filter matches (`nodeHaystack`), so a picker can no more find a
+   * password by its value than the filter can.</p>
+   */
+  register('credSshManager.quickOpen', async () => {
+    vaultKeys.noteUserActivity(); // the user is here: postpone auto-lock
+    const items = quickOpenItems(
+      storage.getAccounts().map((account) => ({
+        accountId: account.accountId,
+        email: account.email,
+        nodes: storage.getNodes(account.accountId),
+      })),
+    );
+    if (items.length === 0) {
+      void vscode.window.showInformationMessage('No entities yet — add an account and create one first.');
+      return;
+    }
+    const picked = await vscode.window.showQuickPick(
+      items.map((item) => ({ ...item, label: `$(${ENTITY_KIND_LABELS[item.entityKind].icon}) ${item.label}` })),
+      { title: 'Go to credential', matchOnDescription: true, matchOnDetail: true, placeHolder: 'Type a name, host or user' },
+    );
+    if (picked === undefined) {
+      return;
+    }
+    const node = storage.getNode(picked.accountId, picked.nodeId);
+    if (node === undefined) {
+      return;
+    }
+    // Straight to the viewer rather than revealing the row: `TreeView.reveal` needs
+    // `getParent` on the provider, which this one does not implement — and opening the thing
+    // asked for is what the picker was for anyway.
+    await openEntityViewer(picked.accountId, node, storage);
+  });
+
+  /**
+   * The health report: weak and reused passwords, unencrypted keys in `~/.ssh`, plaintext
+   * credentials in the workspace's `.env` files.
+   *
+   * <p>Local by construction. The one check that could leave the machine — the breach corpus —
+   * is off by default and asks before it runs, saying exactly what travels.</p>
+   */
+  /**
+   * Import from another tool: `~/.ssh/config`, or a CSV/JSON export from Bitwarden, 1Password,
+   * KeePass, LastPass or Termius.
+   *
+   * <p>Nothing lands until the reader has seen the count and what was skipped — an import that
+   * silently drops a quarter of a file is worse than one that refuses it. Every node gets a
+   * fresh id: an id from somebody else's export would collide in the next sync merge.</p>
+   */
+  register('credSshManager.importFrom', async (target) => {
+    vaultKeys.noteUserActivity(); // the user is here: postpone auto-lock
+    const location = await resolveLocation(asElement(target), storage, 'Import into which profile?');
+    if (location === undefined) {
+      return;
+    }
+    const uris = await vscode.window.showOpenDialog({
+      title: 'Import from another tool',
+      canSelectMany: false,
+      filters: { 'Exports and ssh config': ['csv', 'json', 'txt', 'config'], 'Any file': ['*'] },
+      defaultUri: vscode.Uri.file(path.join(os.homedir(), '.ssh')),
+    });
+    const uri = uris?.[0];
+    if (uri === undefined) {
+      return;
+    }
+    const text = Buffer.from(await vscode.workspace.fs.readFile(uri)).toString('utf8');
+    const parsed = parseImport(text, uri.fsPath);
+    if (parsed.entities.length === 0) {
+      void vscode.window.showWarningMessage(
+        `Nothing to import from ${path.basename(uri.fsPath)} (read as ${parsed.source}). ` +
+          (parsed.skipped[0] ?? 'The file held no entries this reader understands.'),
+      );
+      return;
+    }
+    const skippedNote =
+      parsed.skipped.length === 0
+        ? ''
+        : `\n\n${parsed.skipped.length} entr(ies) will be SKIPPED:\n· ${parsed.skipped.slice(0, 8).join('\n· ')}`;
+    const confirmed = await vscode.window.showWarningMessage(
+      `Import ${parsed.entities.length} entr(ies) from ${path.basename(uri.fsPath)}, read as ${parsed.source}?` +
+        skippedNote,
+      { modal: true },
+      'Import',
+    );
+    if (confirmed !== 'Import') {
+      return;
+    }
+    const created = await importEntities(storage, location, parsed.entities);
+    mutated();
+    void vscode.window.showInformationMessage(
+      `Imported ${created} entr(ies) into ${storage.getAccount(location.accountId)?.email ?? 'the profile'}.` +
+        (parsed.skipped.length > 0 ? ` ${parsed.skipped.length} skipped.` : ''),
+    );
+  });
+
+  register('credSshManager.healthReport', async () => {
+    vaultKeys.noteUserActivity(); // the user is here: postpone auto-lock
+    const result = await vscode.window.withProgress(
+      {
+        location: vscode.ProgressLocation.Notification,
+        title: 'CredsForDevs: checking…',
+        // Cancellable because the optional breach check makes network calls: without this the
+        // only way out of a long scan is reloading the window.
+        cancellable: true,
+      },
+      (_progress, token) => runHygieneScan(storage, token),
+    );
+    const document = await vscode.workspace.openTextDocument({
+      content: result.markdown,
+      language: 'markdown',
+    });
+    await vscode.window.showTextDocument(document, { preview: true });
+  });
+
+  register('credSshManager.generateSecret', async () => {
+    vaultKeys.noteUserActivity(); // the user is here: postpone auto-lock
+    const kind = await vscode.window.showQuickPick(
+      [
+        { label: '$(key) Password', detail: '20 characters, mixed sets — for a field, not for typing', id: 'password' },
+        { label: '$(comment) Passphrase', detail: '6 words — for a PIN, or anything said aloud', id: 'passphrase' },
+      ],
+      { title: 'Generate a secret', ignoreFocusOut: true },
+    );
+    if (kind === undefined) {
+      return;
+    }
+    const made = kind.id === 'passphrase'
+      ? generatePassphrase(DEFAULT_PASSPHRASE)
+      : generatePassword(DEFAULT_PASSWORD);
+    await copySecret(vscode.env.clipboard, made.value);
+    void vscode.window.showInformationMessage(`${made.description} ${copiedMessage('It')}`);
   });
 
   register('credSshManager.installSshKey', async (target) => {
@@ -1514,6 +1824,9 @@ ${detail}
       if (s.image !== undefined) {
         await storage.setImage(location.accountId, id, s.image);
       }
+      if (s.totp !== undefined) {
+        await storage.setTotp(location.accountId, id, s.totp);
+      }
     }
     mutated();
     void vscode.window.showInformationMessage(
@@ -1597,6 +1910,156 @@ ${detail}
     const terminal = vscode.window.createTerminal({ name, env: resolved.env });
     terminal.show();
     terminal.sendText([plan.command, ...plan.args, `"${scriptPath}"`].join(' '), true);
+  });
+
+  /**
+   * Everything the reference resolver needs, built over this window's storage. Entities carry
+   * their folder path so an ambiguous name can be disambiguated by writing `Folder/Name`.
+   */
+  const refSource: RefSource = {
+    accounts: () => storage.getAccounts().map((a) => ({ accountId: a.accountId, email: a.email })),
+    entities: (accountId) => {
+      const nodes = storage.getNodes(accountId);
+      const byId = new Map(nodes.map((n) => [n.id, n]));
+      // `folderPath` is the quick-open walk, reused: two implementations of "where does this
+      // node sit" would disagree the first time a malformed parent chain arrived by sync.
+      return nodes
+        .filter((n) => n.type === 'entity')
+        .map((n) => ({ id: n.id, name: n.name, path: [...folderPath(n, byId), n.name] }));
+    },
+    fieldValue: async (accountId, entityId, field) => {
+      const details = storage.getNode(accountId, entityId)?.details;
+      if (details === undefined) {
+        return undefined;
+      }
+      if (field === 'notes') {
+        return (await storage.getNotes(accountId, entityId)) ?? details.notes;
+      }
+      if (field === 'totp') {
+        return totpSnapshot(await storage.getTotp(accountId, entityId), Date.now())?.code;
+      }
+      // The remaining five are exactly the env-bindable fields, so the one table that already
+      // maps a field to a value answers here too rather than a second copy of it.
+      return bindableFieldValue(storage, accountId, details, field);
+    },
+  };
+
+  /**
+   * Run a stored command or script with `creds://` references resolved into the CHILD's
+   * environment, and every resolved value masked in what the child prints.
+   *
+   * <p>The broker's `env` verb writes values into this window's terminal environment, where any
+   * later shell can read them back with `printenv`. This is the stronger shape: the value exists
+   * in one child process, for one run, and never reaches the screen.</p>
+   */
+  register('credSshManager.runWithSecrets', async (target) => {
+    vaultKeys.noteUserActivity(); // the user is here: postpone auto-lock
+    const element = await nodeAt(asElement(target), storage);
+    if (element?.kind !== 'node' || element.node.details === undefined) {
+      return;
+    }
+    const details = element.node.details;
+    const isScript = details.isScript === true;
+    const rawBody = isScript
+      ? (details.script ?? '')
+      : buildCommandLine(details.command ?? '', details.commandArgs);
+    if (rawBody.trim().length === 0) {
+      void vscode.window.showWarningMessage(
+        `"${element.node.name}" has nothing to run yet — open Edit and fill in the ${isScript ? 'script' : 'command'}.`,
+      );
+      return;
+    }
+
+    // The same content-trust gate the ordinary Run has: a body can arrive by sync or by an
+    // accepted share, and resolving secrets into it makes reading it first matter more, not less.
+    if (!isCommandTrusted(context.globalState, element.node.id, rawBody)) {
+      const choice = await vscode.window.showWarningMessage(
+        confirmCommandMessage(element.node.name, rawBody),
+        { modal: true },
+        'Run',
+      );
+      if (choice !== 'Run') {
+        return;
+      }
+      await trustCommand(context.globalState, element.node.id, rawBody);
+    }
+
+    const scriptPlan = isScript
+      ? scriptRunPlan(details.scriptLanguage ?? 'other', process.platform)
+      : undefined;
+    if (scriptPlan?.kind === 'unsupported') {
+      void vscode.window.showInformationMessage(scriptPlan.reason);
+      return;
+    }
+
+    // A script's own variables travel the way they always have; references are the addition.
+    const scriptEnv = isScript
+      ? resolveScriptEnv(details.script ?? '', details.scriptVars, details.scriptLanguage ?? 'other')
+      : undefined;
+    const searched = isScript
+      ? [scriptEnv?.body ?? '', ...(details.scriptVars ?? []).map((v) => v.value)]
+      : [details.command ?? '', ...(details.commandArgs ?? []).map((a) => a.value)];
+    const plan = planRefs(searched);
+    if (plan.refs.length === 0) {
+      void vscode.window.showWarningMessage(
+        `"${element.node.name}" holds no creds:// reference. Write one as a value — ` +
+          'creds://<account email>/<entity>/<field> — then run this again. ' +
+          `Nothing was run.`,
+      );
+      return;
+    }
+
+    const resolution = await resolveSecretRefs(plan.refs, refSource);
+    if (!resolution.ok) {
+      void vscode.window.showErrorMessage(`Nothing was run: ${resolution.error}`);
+      return;
+    }
+
+    const env: Record<string, string> = { ...(scriptEnv?.env ?? {}) };
+    for (const ref of plan.refs) {
+      env[plan.names[ref]] = resolution.values[ref];
+    }
+    // Script variable VALUES are masked too: a body may print those as readily as a reference,
+    // and the point of owning the output is that neither reaches the screen. Each carries the
+    // NAME it is read by, so the placeholder says which secret stood there.
+    const secrets = [
+      ...plan.refs.map((ref) => ({ value: resolution.values[ref], label: plan.names[ref] })),
+      ...Object.entries(scriptEnv?.env ?? {}).map(([label, value]) => ({ value, label })),
+    ];
+
+    let commandLine: string;
+    if (isScript && scriptPlan?.kind === 'run') {
+      const body = rewriteScriptRefs(scriptEnv?.body ?? '', plan, details.scriptLanguage ?? 'other');
+      const scriptPath = path.join(
+        materializedKeysDir(storageDir),
+        `run-${details.id}${scriptPlan.extension}`,
+      );
+      fs.mkdirSync(path.dirname(scriptPath), { recursive: true, mode: 0o700 });
+      fs.writeFileSync(scriptPath, body.endsWith('\n') ? body : `${body}\n`, { mode: 0o700 });
+      lockToOwner(scriptPath);
+      commandLine = [scriptPlan.command, ...scriptPlan.args, `"${scriptPath}"`].join(' ');
+    } else {
+      commandLine = buildCommandLineWithRefs(
+        details.command ?? '',
+        details.commandArgs,
+        plan,
+        process.platform,
+        vscode.env.shell,
+      );
+    }
+
+    const described = plan.refs
+      .map((ref) => `${plan.names[ref]} = ${refField(ref) ?? 'value'} of ${ref.replace(/^creds:\/\//, '')}`)
+      .join('; ');
+    runInMaskedTerminal({
+      name: `CredsForDevs run: ${element.node.name}`,
+      commandLine,
+      env,
+      secrets,
+      // The same shell the rewrite above spelled its variable reads for.
+      shell: vscode.env.shell,
+      banner: `${described}\r\n${maskingBanner(secrets)}`,
+    });
   });
 
   register('credSshManager.startVpn', (target) =>
@@ -1951,7 +2414,12 @@ ${detail}
       hasStoredImage: false,
       hasStoredVpnConfig: false,
       hasStoredDbConnection: false,
+      hasStoredTotp: false,
+      hasStoredHostKey: false,
       keyCandidates: [],
+      // An entity authored FOR somebody else references nothing in this vault: a jump host id
+      // here would name an entity the recipient does not have.
+      jumpCandidates: [],
     });
     if (result === undefined) {
       return;
@@ -1975,6 +2443,7 @@ ${detail}
         vpnConfig: result.newVpnConfig,
         dbConnection: result.newDbConnection,
         notes: result.newNotes,
+        totp: result.newTotp,
       },
     };
     await shareInbox.deliver(sender.accountId, payload, recipients, pin);
@@ -2147,6 +2616,28 @@ async function resolveLocation(
 }
 
 /** Other entities of the account that can serve as an SSH key source. */
+/**
+ * The entities that could serve as a jump host: SSH connections in the same account, minus this
+ * one. Synchronous, unlike the key candidates, because being an SSH connection is metadata — no
+ * keychain read is involved, and the form opens without waiting.
+ */
+function collectJumpCandidates(
+  storage: StorageManager,
+  accountId: string,
+  excludeEntityId: string,
+): KeyCandidate[] {
+  return storage
+    .getNodes(accountId)
+    .filter(
+      (node) =>
+        node.type === 'entity' &&
+        node.id !== excludeEntityId &&
+        node.details?.isSshEnabled === true &&
+        Boolean(node.details.host),
+    )
+    .map((node) => ({ id: node.id, name: node.name }));
+}
+
 async function collectKeyCandidates(
   storage: StorageManager,
   accountId: string,
@@ -2166,6 +2657,88 @@ async function collectKeyCandidates(
     }
   }
   return candidates;
+}
+
+/**
+ * What the terminal says about masking, told truthfully.
+ *
+ * <p>A value shorter than `MIN_MASKABLE_LENGTH` is deliberately NOT masked — replacing a
+ * six-digit string would turn every line number and byte count in the output into a placeholder,
+ * which is worse than the leak it prevents. But a **one-time code is exactly six digits**, so a
+ * banner promising that everything is masked would be false precisely where somebody is watching
+ * for it. So the promise is scoped to the values it actually covers, and the short ones are named
+ * as not covered.</p>
+ */
+export function maskingBanner(secrets: readonly { value: string; label: string }[]): string {
+  const short = secrets.filter((s) => s.value.length < MIN_MASKABLE_LENGTH).map((s) => s.label);
+  const masked =
+    "Values are in this process's environment only, and are replaced with <CREDS_MASKED:NAME> in its output.";
+  const caveat =
+    short.length === 0
+      ? ''
+      : ` NOT masked, because they are too short to replace without mangling ordinary output: ` +
+        `${short.join(', ')} — a one-time code is six digits, so treat this window as showing it.`;
+  return `${masked}${caveat} No PTY: a program that needs a real terminal should use Run in Terminal instead.`;
+}
+
+/**
+ * Land an import: the folders it asked for, then the nodes, then their secrets.
+ *
+ * <p>Folders are created once and reused, so a hundred rows from one Bitwarden folder produce
+ * one folder here rather than a hundred. Secrets go through `StorageManager`, which puts them
+ * in the keychain — never into the node metadata that syncs in plaintext.</p>
+ */
+async function importEntities(
+  storage: StorageManager,
+  location: NodeLocation,
+  entities: readonly ImportedEntity[],
+): Promise<number> {
+  const folders = new Map<string, string>();
+  const folderFor = async (name: string | undefined): Promise<string | null> => {
+    if (name === undefined || name.length === 0) {
+      return location.parentId;
+    }
+    const existing = folders.get(name);
+    if (existing !== undefined) {
+      return existing;
+    }
+    const id = StorageManager.newId();
+    await storage.addNode(location.accountId, {
+      id,
+      name,
+      type: 'folder',
+      parentId: location.parentId,
+      folderType: 'any',
+    });
+    folders.set(name, id);
+    return id;
+  };
+
+  // Resolved up front so `toTreeNodes` stays pure and synchronous.
+  const parents = new Map<string, string | null>();
+  for (const entity of entities) {
+    const key = entity.folder ?? '';
+    if (!parents.has(key)) {
+      parents.set(key, await folderFor(entity.folder));
+    }
+  }
+
+  const made = toTreeNodes(entities, () => StorageManager.newId(), (folder) => parents.get(folder ?? '') ?? null);
+  for (const { node, secrets } of made) {
+    await storage.addNode(location.accountId, node);
+    await storage.setPassword(location.accountId, node.id, secrets.password);
+    await storage.setNotes(location.accountId, node.id, secrets.notes);
+    if (secrets.privateKey !== undefined) {
+      await storage.setPrivateKey(location.accountId, node.id, secrets.privateKey);
+    }
+    if (secrets.dbConnection !== undefined) {
+      await storage.setDbConnection(location.accountId, node.id, secrets.dbConnection);
+    }
+    if (secrets.totp !== undefined) {
+      await storage.setTotp(location.accountId, node.id, secrets.totp);
+    }
+  }
+  return made.length;
 }
 
 /** Persist the password/private-key changes coming out of the form. */
@@ -2206,6 +2779,12 @@ async function applySecrets(
   } else if (result.newImage !== undefined) {
     await storage.setImage(accountId, entityId, result.newImage);
   }
+  // The form already canonicalised the seed (`toValues`), so this is a store, not a parse.
+  if (result.clearTotp) {
+    await storage.deleteTotp(accountId, entityId);
+  } else if (result.newTotp !== undefined) {
+    await storage.setTotp(accountId, entityId, result.newTotp);
+  }
 }
 
 async function editNode(
@@ -2227,6 +2806,12 @@ async function editNode(
   if (!node.details) {
     return;
   }
+  const storedHostKey = parseHostKey(node.details.hostKey);
+  // The form is told a seed exists and how it is configured — never the seed itself.
+  const storedTotp = await storage.getTotp(accountId, node.id);
+  const storedTotpParsed = storedTotp === undefined ? undefined : parseTotpSecret(storedTotp);
+  const storedTotpDescription =
+    storedTotpParsed === undefined ? undefined : describeTotp(storedTotpParsed.config);
   const result = await showEntityForm({
     mode: 'edit',
     entityId: node.id,
@@ -2242,7 +2827,12 @@ async function editNode(
     hasStoredDbConnection: (await storage.getDbConnection(accountId, node.id)) !== undefined,
     initialDbConnection: await storage.getDbConnection(accountId, node.id),
     initialNotes: (await storage.getNotes(accountId, node.id)) ?? node.details?.notes,
+    hasStoredTotp: storedTotpDescription !== undefined,
+    storedTotpDescription,
     keyCandidates: await collectKeyCandidates(storage, accountId, node.id),
+    jumpCandidates: collectJumpCandidates(storage, accountId, node.id),
+    hasStoredHostKey: storedHostKey !== undefined,
+    hostKeyFingerprint: storedHostKey === undefined ? undefined : hostKeyFingerprint(storedHostKey),
   });
   if (result === undefined) {
     return;
@@ -2452,6 +3042,10 @@ function openRevisionViewer(node: TreeNode, revision: Revision): void {
     ...db,
     sshCommand: buildSshCommand(details),
     resolveSecret: secretResolver(revisionSecretReader(revision)),
+    totp:
+      revision.secrets.totp === undefined
+        ? undefined
+        : totpViewFor(revisionSecretReader(revision)),
     copyAllText: () => Promise.resolve(formatEntityBlock(details, password, dbConnection, notes)),
     saveVpnConfig: () =>
       vpnConfig === undefined
@@ -2492,11 +3086,24 @@ async function openEntityViewer(
     details.sshKeyEntityId !== undefined
       ? (storage.getNode(accountId, details.sshKeyEntityId)?.name ?? '(missing entity)')
       : undefined;
+  // Resolved for the reader: an id names nothing, and a raw host key is a wall of base64 that
+  // cannot be compared with anything. A name and a SHA256 fingerprint can.
+  const jumpHostName =
+    details.jumpHostEntityId !== undefined
+      ? (storage.getNode(accountId, details.jumpHostEntityId)?.name ?? '(missing entity)')
+      : undefined;
+  const pinnedKey = parseHostKey(details.hostKey);
   const imageB64 = await storage.getImage(accountId, details.id);
   const imageMimeType = details.imageFileName !== undefined ? imageMime(details.imageFileName) : undefined;
+  // The seed can be edited while the panel is open, so the code is derived per request — and
+  // the webview only ever receives that code, never the seed it came from.
+  const totpReader = storageSecretReader(storage, accountId, details.id);
+  const hasTotp = (await storage.getTotp(accountId, details.id)) !== undefined;
   showEntityView({
     details,
     keySourceName,
+    jumpHostName,
+    hostKeyFingerprint: pinnedKey === undefined ? undefined : hostKeyFingerprint(pinnedKey),
     hasPassword,
     hasPrivateKey,
     hasVpnConfig,
@@ -2504,7 +3111,8 @@ async function openEntityViewer(
     notes,
     ...db,
     sshCommand: buildSshCommand(details),
-    resolveSecret: secretResolver(storageSecretReader(storage, accountId, details.id)),
+    resolveSecret: secretResolver(totpReader),
+    totp: hasTotp ? totpViewFor(totpReader) : undefined,
     copyAllText: async () =>
       formatEntityBlock(
         details,

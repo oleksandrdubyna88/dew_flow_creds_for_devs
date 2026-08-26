@@ -2,6 +2,7 @@ import { DB_DEFAULT_PORTS, DbConnParts, parseDbConnectionString } from './dbConn
 import { Revision } from './revisionHistory';
 import type { StorageManager } from './storageManager';
 import { DbType } from './types';
+import { TotpSnapshot, totpSnapshot } from './totp';
 
 /**
  * The shared half of the two entity viewers (audit 2026-08-25, A1).
@@ -18,7 +19,13 @@ import { DbType } from './types';
  */
 
 /** The fields the viewer's per-field Copy can ask for (mirrors `EntityViewOptions`). */
-export type ViewerSecretField = 'password' | 'privateKey' | 'vpnConfig' | 'dbConnection' | 'dbPassword';
+export type ViewerSecretField =
+  | 'password'
+  | 'privateKey'
+  | 'vpnConfig'
+  | 'dbConnection'
+  | 'dbPassword'
+  | 'totp';
 
 /** Where a viewer's secrets come from: the keychain (live) or the revision record. */
 export interface SecretReader {
@@ -26,6 +33,8 @@ export interface SecretReader {
   privateKey(): Thenable<string | undefined>;
   vpnConfig(): Thenable<string | undefined>;
   dbConnection(): Thenable<string | undefined>;
+  /** The stored `otpauth://` seed. The viewer never gets this — only the code below. */
+  totpSeed(): Thenable<string | undefined>;
 }
 
 /** The one field-to-secret ladder both viewers share. */
@@ -38,11 +47,20 @@ export function secretResolver(read: SecretReader): (field: ViewerSecretField) =
         ? read.privateKey()
         : field === 'vpnConfig'
           ? read.vpnConfig()
-          : field === 'dbPassword'
-            ? Promise.resolve(read.dbConnection()).then((v) =>
-                v === undefined ? undefined : parseDbConnectionString(v).password,
-              )
-            : read.dbConnection();
+          : field === 'totp'
+            ? // The CODE, never the seed — copying a one-time code is copying something that
+              // expires, which is the whole point of the field.
+              Promise.resolve(read.totpSeed()).then((uri) => totpSnapshot(uri, Date.now())?.code)
+            : field === 'dbPassword'
+              ? Promise.resolve(read.dbConnection()).then((v) =>
+                  v === undefined ? undefined : parseDbConnectionString(v).password,
+                )
+              : read.dbConnection();
+}
+
+/** The live code for a viewer, or undefined when the entry has no seed. */
+export function totpViewFor(read: SecretReader): () => Thenable<TotpSnapshot | undefined> {
+  return () => Promise.resolve(read.totpSeed()).then((uri) => totpSnapshot(uri, Date.now()));
 }
 
 /** Live secrets: read from the keychain at the moment the Copy button is pressed. */
@@ -56,17 +74,21 @@ export function storageSecretReader(
     privateKey: () => storage.getPrivateKey(accountId, entityId),
     vpnConfig: () => storage.getVpnConfig(accountId, entityId),
     dbConnection: () => storage.getDbConnection(accountId, entityId),
+    // Read at each request rather than once: the seed can be edited while the panel is open.
+    totpSeed: () => storage.getTotp(accountId, entityId),
   };
 }
 
 /** A revision's secrets: whatever the record kept, nothing read from the keychain. */
 export function revisionSecretReader(revision: Revision): SecretReader {
-  const { password, privateKey, vpnConfig, dbConnection } = revision.secrets;
+  const { password, privateKey, vpnConfig, dbConnection, totp } = revision.secrets;
   return {
     password: () => Promise.resolve(password),
     privateKey: () => Promise.resolve(privateKey),
     vpnConfig: () => Promise.resolve(vpnConfig),
     dbConnection: () => Promise.resolve(dbConnection),
+    // A replaced seed still produces codes — that is why history keeps it.
+    totpSeed: () => Promise.resolve(totp),
   };
 }
 

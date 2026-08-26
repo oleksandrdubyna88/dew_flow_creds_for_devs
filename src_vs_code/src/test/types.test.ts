@@ -37,6 +37,18 @@ test('accepts backup bundles with and without privateKeys (pre-0.5 compat)', () 
   assert.equal(isBackupBundle({ nodes, passwords: {}, privateKeys: { e1: 5 } }), false);
 });
 
+test('the totp record is optional (pre-0.57 bundles) and, when present, all strings', () => {
+  const nodes = [{ id: 'e1', name: 'prod key', type: 'entity', details: entity }];
+  assert.ok(isBackupBundle({ nodes, passwords: {} }));
+  assert.ok(isBackupBundle({ nodes, passwords: {}, totps: { e1: 'otpauth://totp/x?secret=JBSWY3DP' } }));
+  assert.equal(isBackupBundle({ nodes, passwords: {}, totps: { e1: 42 } }), false);
+});
+
+test('hasTotp is a boolean flag on the metadata — a seed can never sit there', () => {
+  assert.ok(isEntityMetadata({ ...entity, hasTotp: true }));
+  assert.equal(isEntityMetadata({ ...entity, hasTotp: 'otpauth://totp/x?secret=JBSWY3DP' }), false);
+});
+
 // --- who belongs in a team list ---------------------------------------------
 
 test('a team list does not offer you the very account you are looking at', () => {

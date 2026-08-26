@@ -412,6 +412,7 @@ export class SyncManager implements vscode.Disposable {
           notes: payload.notes ?? {},
           attachments: payload.attachments ?? {},
           images: payload.images ?? {},
+          totps: payload.totps ?? {},
           tombstones: payload.tombstones ?? {},
           horizon: payload.horizon ?? {},
         };

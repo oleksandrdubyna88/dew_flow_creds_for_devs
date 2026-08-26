@@ -33,6 +33,14 @@ machines; add the optional self-hosted server when a team needs to share.
 |---|---|
 | **SSH in one click** | The stored password is supplied to `ssh` through `SSH_ASKPASS` — never retyped, never on a command line, never in scrollback. A key kept in the vault is written out `0600` for that session and deleted when the terminal closes |
 | **SSH keys** | Store the key pair itself, or point at a file on this machine. One connection can borrow another entity's key. *Install SSH Key to System* writes the pair into `~/.ssh` — dir `0700`, private `0600`, public `0644` |
+| **SSH agent, confirming every use** | *Add to SSH Agent* serves a stored key from memory over a socket of this window's own, so **no key file exists on disk at all** — and every single use opens a dialog naming the key and what it is signing: an SSH login as *user*, or a Git commit. New terminals get `SSH_AUTH_SOCK`, so `ssh` and `git` just find it |
+| **Git commit signing** | *Copy Git Signing Config* gives you the `gpg.format ssh` lines with the public key inline, so Git signs commits with a key that lives only in the vault |
+| **One-time codes (TOTP)** | Paste the `otpauth://` URI or the base32 secret from any service's "can't scan the QR code?" screen. The viewer shows the live code with a countdown; the tree has *Copy One-Time Code*. Steam Guard too — so the second app can stay closed |
+| **Secret references + masked run** | Write `creds://you@corp.com/prod-db/password` where a value would go in a command or a script, then *Run with Secrets*: the value reaches only the child process's environment, and every appearance of it in what that process prints is replaced with a `<CREDS_MASKED:NAME>` marker naming which one it was |
+| **Generate, don't invent** | Passwords, passphrases and Ed25519 key pairs, made in the form with the OS's own randomness and reported in **bits** rather than as a coloured bar. A generated key is saved straight to the keychain — `ssh-keygen` cannot do that, it writes a file by definition |
+| **Import what you already have** | `~/.ssh/config`, and CSV or JSON exports from Bitwarden, 1Password, KeePass, LastPass and Termius. Every skipped row is reported rather than quietly dropped |
+| **Health report** | Reused passwords, weak ones, unencrypted keys in `~/.ssh`, plaintext credentials in a workspace `.env` — all on this machine. An optional breach check sends five characters of a hash and nothing else |
+| **Keyboard and orientation** | `Ctrl+Alt+P` jumps to any credential by name, plus filter, copy, connect and lock bindings, a walkthrough, and a status-bar item that says whether the vault is open or locked |
 | **VPN** | OpenVPN / WireGuard / IKEv2 / L2TP / other, with host, login, port and a key or certificate. The config file is a secret like any other; *Start VPN* / *Stop VPN* bring the tunnel up and down through the OS's own elevation prompt |
 | **Databases** | postgres / mysql / mssql / mongodb, entered as a connection string **or** as fields that rebuild it in the right dialect. *Open in DB Extension* hands the connection to Database Client, MongoDB for VS Code or the SQL Server extension |
 | **Terminal commands** | `aws sso login --sso-session OD-org` is unfindable in shell history a week later, and the part you forgot is never the verb. So each argument is a **row** with its own note and a tick to keep a flag without using it. *Run in Terminal*, *Copy Command*, *Show Command and Notes* |
@@ -230,6 +238,133 @@ require re-saving the entity), and a **`✓?`** button that opens a *fresh* term
 the variable — so it is seen rather than trusted from a notification. The probe's spelling
 follows the actual default shell, not the OS: PowerShell gets `$env:NAME`, cmd `%NAME%`, bash
 `$NAME`. Fair warning it carries: echoing prints the secret into that terminal's scrollback.
+
+## The SSH agent — a key that is never a file
+
+*Add to SSH Agent* on a stored SSH key serves it from this window's memory over a socket of its
+own (a named pipe on Windows). `SSH_AUTH_SOCK` is set in every integrated terminal opened
+afterwards, so `ssh` and `git` find it with no configuration — and the `0600` file the extension
+used to write for `ssh -i` stops existing. *Connect SSH* on an agent-served key passes no `-i`.
+
+**Every single use asks.** The dialog names the key, its fingerprint, and *what is being signed* —
+an SSH login as a particular user, or a Git commit signature — because "a key is being used" is
+not something anyone can decide about. Three answers: **Allow once**, **Allow for 10 minutes**
+(a `git push` signs and authenticates in one breath, and two modals per push is how people learn
+to click without reading), or **Deny**. Every request is a line in **CredsForDevs: SSH Agent**.
+
+**Git commit signing.** *Copy Git Signing Config* puts the `gpg.format ssh` lines on the clipboard
+with the public key inline (`user.signingkey "key::ssh-ed25519 AAAA…"`), so Git signs with a key
+that exists in no file. Add the same public key to GitHub/GitLab as a **signing** key — forges keep
+those separate from authentication keys.
+
+Honest boundaries:
+
+- **A passphrase-protected key is refused**, with the `ssh-keygen -p -N ""` command that fixes it.
+  OpenSSH encrypts with bcrypt_pbkdf and Node has no implementation of it; the vault already
+  encrypts the key at rest, so storing it unencrypted here loses nothing.
+- **On Windows use the built-in OpenSSH** (`C:\Windows\System32\OpenSSH`). The `ssh` that ships
+  with Git for Windows is an MSYS build that cannot connect to a named pipe — the signing config
+  sets `gpg.ssh.program` accordingly, and this is measured, not assumed.
+- Keys are held **in memory only**. Closing the window revokes everything, which is the whole
+  revocation story — the same as it is for agent grants.
+- The agent is **read-only**: it lists keys and signs. A client cannot add, remove or lock anything.
+
+## One-time codes (TOTP)
+
+Paste an `otpauth://` URI — or the bare base32 secret — from the service's "can't scan the QR
+code?" screen into the **One-time code** field. The viewer then shows the current code with a
+countdown next to it, the tree offers *Copy One-Time Code*, and the copy expires from the clipboard
+like every other secret here. Steam Guard's five-character variant is a checkbox.
+
+The seed is a secret like a password: it lives in the OS keychain, rides the same encrypted
+envelope in sync, backups and shares, and — the part worth stating — **the webview never receives
+it**. What the panel is sent is the six digits, which stop being true in under a minute anyway.
+
+## Secret references and *Run with Secrets*
+
+A script's variables never enter its text; they travel in the environment. What that could never
+stop is the script printing them itself. This closes that, and extends it to commands:
+
+```
+creds://you@corp.com/prod-db/password
+```
+
+Write that reference as a script variable's value or a command argument, and *Run with Secrets*:
+
+- resolves it from your vault **at the moment of running**, into the child process's environment
+  and nowhere else — the argument on the command line becomes `"$CREDS_REF_1"`, so the value is not
+  in the process list where every user on the machine can read it;
+- runs it in a terminal this extension owns, and **replaces every appearance of the value in what
+  the process prints** with `<CREDS_MASKED:NAME>`, naming which secret stood there — including a value split across two writes.
+
+Reference a folder path (`creds://you@corp.com/Servers/EU/gateway/privateKey`) when two entities
+share a name: a reference that could mean two things is **refused**, naming both, rather than
+quietly picking one. Fields: `password`, `privateKey`, `publicKey`, `dbConnection`, `dbPassword`,
+`notes`, `totp`.
+
+**What it cannot do**, so you meet it here rather than in a bug: the terminal it runs in has no
+PTY. A program that prompts interactively, draws a progress bar, or colours its output by detecting
+a terminal will behave as it does when piped — use *Run in Terminal* for those. And masking is
+textual: a program that base64s a value before printing it defeats it, which is why a script that
+prints its own variables is still flagged when you save it.
+
+## Generating a secret instead of inventing one
+
+The **Secret** section of the form has *Generate password* and *Generate passphrase*; the **SSH
+key** section has *Generate Ed25519 key pair*. `CredsForDevs: Generate Password or Passphrase…`
+does the same for a password that is not stored here at all, and puts it on the expiring clipboard.
+
+- A password is 20 characters over all four sets by default, with one character guaranteed from
+  each selected set and the whole thing shuffled — so it satisfies a site's composition rule
+  without the rule being visible in the result.
+- A passphrase is six words from a **256-word** list: exactly eight bits each, 48 bits for the
+  default. The optional capital and trailing digit exist for sites that demand them and are **not**
+  counted as strength, because a number that flatters is a number you cannot use.
+- **The strength is stated in bits**, not as a colour. A bar tells you how a designer felt; the bits
+  tell you how long a guess takes.
+- A generated key pair is drawn in the editor and saved to the keychain. `ssh-keygen` cannot do
+  that — it writes a file — and with *Add to SSH Agent* the key is then used without becoming one.
+
+## Import what you already have
+
+Right-click an account → *Import from ~/.ssh/config or another manager…*
+
+| From | What comes across |
+|---|---|
+| `~/.ssh/config` | Host, HostName, User, Port, IdentityFile — as connectable SSH entries |
+| Bitwarden, KeePass, LastPass, Termius (CSV) | name, username, password, address, notes, TOTP, folder |
+| Bitwarden, 1Password (JSON) | the same, from login items |
+
+The file's *content* decides how it is read, so a misnamed export still imports. Nothing lands
+before you have seen the count and what will be skipped — and skipped rows are listed with the
+reason, never dropped in silence. Everything gets a fresh id, so an import can never overwrite what
+you already had.
+
+**KDBX (KeePass's own database) is not read**, deliberately: it is Argon2-encrypted and Argon2 is
+not in Node, so a half-right implementation would be worse than none. KeePass exports CSV, which
+imports fine.
+
+## The health report
+
+`CredsForDevs: Health Report` looks at what you have and says what is wrong with it:
+
+- **passwords used in more than one entry** — the finding you cannot see by eye, and the one that
+  turns a single breach into several;
+- **passwords under 60 bits**;
+- **private keys in `~/.ssh` with no passphrase** — reported as *medium*, because that is the normal
+  state of a key on a machine only you use, and a report that calls everything a catastrophe is one
+  nobody reads twice;
+- **plaintext credentials in a workspace `.env`**, with the `creds://` reference that fixes them.
+
+All of it runs here. **The one exception is opt-in**: with `credSshManager.breachCheck` on, the
+report can ask [Have I Been Pwned](https://haveibeenpwned.com/Passwords) whether a password appears
+in public breach corpora — and it asks you again, each run, before it does. What is sent is the
+**first five characters of the password's SHA-1**: one bucket out of a million, shared by hundreds
+of thousands of passwords. The whole bucket comes back and the match happens on your machine, so the
+service cannot tell which password was asked about. The password never leaves.
+
+No finding ever quotes the value that caused it — the report is a document you can paste into a bug
+without pasting a password into it.
 
 ## Script entities
 
@@ -707,7 +842,11 @@ also on the right-click menu where it applies.
 - **Tree** — Add Folder · Add Entity · Edit · Clone… · Delete · Move to Folder… · Change Folder
   Type… · Move Up · Move Down · View Details · Refresh
 - **SSH** — Connect SSH · Toggle SSH (on/off) · Copy Password · Install SSH Key to System
-  (~/.ssh)
+  (~/.ssh) · Add to SSH Agent · Remove from SSH Agent · Copy Git Signing Config
+- **One-time codes** — Copy One-Time Code
+- **Secrets in a run** — Run with Secrets (`creds://` references, output masked)
+- **Getting started and getting around** — Go to Credential… (`Ctrl+Alt+P`) · Generate Password or
+  Passphrase… · Health Report · Import from ~/.ssh/config or another manager…
 - **VPN** — Start VPN · Stop VPN · Save VPN Config As…
 - **Databases** — Open in DB Extension · Copy Connection String
 - **Terminal commands** — Run in Terminal · Copy Command · Show Command and Notes

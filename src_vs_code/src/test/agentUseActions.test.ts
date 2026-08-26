@@ -136,3 +136,34 @@ test('terminalRunAction will not run a command no human has vouched for', async 
 
   assert.equal(code(await terminalRunAction(deps).run(ctx, {})), 'no_credential');
 });
+
+
+test('a script action returns its child output RAW — masking belongs to the broker', async () => {
+  // This used to assert the action masked its own stdout. It no longer does, and the change is
+  // the point: `credsAgentServer.respond` masks every response on its way out, so ssh:exec,
+  // db:query and anything added later are covered without an action remembering to. Asserted
+  // here so nobody re-adds a second masker that can disagree with the first — the end-to-end
+  // guarantee is checked against the real socket in scripts/agent-broker-itest.cjs.
+  const os = require('node:os') as typeof import('node:os');
+  const fs = require('node:fs') as typeof import('node:fs');
+  const path = require('node:path') as typeof import('node:path');
+  const { commandFingerprint } = require('../commandTrust') as typeof import('../commandTrust');
+
+  const body = 'console.log("plain output")';
+  const storageDir = fs.mkdtempSync(path.join(os.tmpdir(), 'creds-mask-'));
+  const deps = fakeDeps({
+    storageDir,
+    storage: {
+      getNode: () => ({
+        details: { id: 'e1', name: 'printer', script: body, scriptLanguage: 'javascript' },
+      }),
+    },
+    trustStore: { get: () => [commandFingerprint('e1', body)], update: async () => undefined },
+  });
+
+  const result = await scriptRunAction(deps).run(ctx, {});
+  const out = result.body as { stdout: string; exitCode: number | null };
+
+  assert.equal(out.exitCode, 0, JSON.stringify(out));
+  assert.match(out.stdout, /plain output/, 'the action passes its child output through untouched');
+});

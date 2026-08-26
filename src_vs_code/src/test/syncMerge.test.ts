@@ -30,6 +30,21 @@ test('union: nodes existing on only one side survive on both', () => {
   assert.deepEqual(merged.passwords, { a: 'pa', b: 'pb' });
 });
 
+test('a TOTP seed follows the winning node, and a changed seed counts as a change', () => {
+  const local = snap({ nodes: [node('x', 100, { A: 2 })], totps: { x: 'otpauth://totp/x?secret=NEW' } });
+  const remote = snap({ nodes: [node('x', 900, { A: 1 })], totps: { x: 'otpauth://totp/x?secret=OLD' } });
+  const { merged, remoteChanged } = mergeProfiles(local, remote, NOW);
+  assert.deepEqual(merged.totps, { x: 'otpauth://totp/x?secret=NEW' });
+  assert.equal(remoteChanged, true, 'the remote side must be rewritten with the newer seed');
+});
+
+test('a snapshot decoded from a pre-0.57 vault has no totps record and still merges', () => {
+  const legacy = { ...snap({ nodes: [node('a', 100, { A: 1 })] }) } as Partial<ProfileSnapshot>;
+  delete legacy.totps;
+  const { merged } = mergeProfiles(legacy as ProfileSnapshot, snap({ totps: { a: 'otpauth://totp/a?secret=SEED' } }), NOW);
+  assert.deepEqual(merged.totps, { a: 'otpauth://totp/a?secret=SEED' });
+});
+
 // ---- causality: a dominating vector wins regardless of updatedAt ----
 
 test('a causally-later edit wins even with a LOWER wall-clock (clock skew)', () => {

@@ -13,6 +13,8 @@ import {
 import { StorageManager } from './storageManager';
 import { UseAction, UseActionContext, UseActionResult } from './useActions';
 import { SshExecAuth, buildSshExecArgv, validateRemoteCommand } from './sshExecCommand';
+import { resolveJumpChain } from './sshOptions';
+import { materializeKnownHosts } from './hostKeyTrust';
 import { runSshExec } from './sshExecRunner';
 import { resolveSshCredential } from './sshCredential';
 import { askpassEnv } from './sshAskpass';
@@ -121,6 +123,23 @@ async function prepareAuth(
   }
 }
 
+/**
+ * The connection-manager options an agent may use WITHOUT being asked: the jump host this entity
+ * is configured to go through, and the host key it is pinned to.
+ *
+ * <p>Neither is agent input — both come from what a person saved. A FIRST CONTACT is deliberately
+ * not negotiated here: nobody is watching, so an unpinned host keeps ssh's `accept-new` and the
+ * fingerprint is offered when a human connects. A pinned one is enforced, which is the half that
+ * matters for an unattended call.</p>
+ */
+function connectionArgvOptions(
+  deps: SshUseDeps,
+  entity: EntityMetadata,
+  jump: string | undefined,
+): { jump?: string; knownHostsFile?: string } {
+  return { jump, knownHostsFile: materializeKnownHosts(deps.storageDir, entity) };
+}
+
 // eslint-disable-next-line max-lines-per-function
 export function sshExecAction(deps: SshUseDeps): UseAction {
   return {
@@ -165,11 +184,16 @@ export function sshExecAction(deps: SshUseDeps): UseAction {
         return prepared.result;
       }
       try {
+        const chain = resolveJumpChain(entity, (id) => deps.storage.getNode(ctx.accountId, id)?.details);
+        if (!chain.ok) {
+          return fail('no_credential', chain.reason);
+        }
         const argv = buildSshExecArgv(
           entity,
           prepared.keyPath,
           String((body as { command: string }).command),
           prepared.auth,
+          connectionArgvOptions(deps, entity, chain.value),
         ) as string[]; // the host was checked above
         const outcome = await runSshExec(argv, {
           env: prepared.env,

@@ -18,6 +18,8 @@ export interface ExternalSecrets {
   notes?: string;
   attachment?: string;
   image?: string;
+  /** The canonical `otpauth://` URI. */
+  totp?: string;
 }
 
 export interface ExternalBundle {

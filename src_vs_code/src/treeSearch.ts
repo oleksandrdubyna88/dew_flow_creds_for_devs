@@ -45,6 +45,9 @@ export function nodeHaystack(node: TreeNode): string {
     d?.commandNote,
     d?.sshKeyPath,
     d?.scriptLanguage,
+    // Tags are labels a person put on the row and can see on it — exactly the rule this
+    // haystack follows. They are not, and must never become, a place to keep a secret.
+    ...(d?.tags ?? []),
   ]
     .filter((part) => part !== undefined && part !== null && String(part).length > 0)
     .join(' ')

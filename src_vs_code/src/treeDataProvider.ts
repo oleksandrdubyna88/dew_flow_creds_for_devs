@@ -20,6 +20,7 @@ import { describeRemaining } from './entityExpiry';
 import { assertNever, canConnectSsh, resolveKind } from './entityKind';
 import { SyncReadiness } from './syncReadiness';
 import { isVpnStartable } from './vpnCommand';
+import { describeTarget } from './treeRowText';
 
 export const VIEW_ID = 'credSshManagerView';
 const DND_MIME = `application/vnd.code.tree.${VIEW_ID.toLowerCase()}`;
@@ -542,6 +543,9 @@ export class CredTreeDataProvider
     }
     if (details?.isSshKey) {
       contextValue += ':key';
+      // Two tokens rather than one, so Add and Remove are each offered only when they mean
+      // something — the same shape the VPN start/stop pair uses.
+      contextValue += details.sshAgent === true ? ':agenton' : ':agentoff';
     }
     if (details?.isVpn) {
       contextValue += ':vpn';
@@ -560,6 +564,11 @@ export class CredTreeDataProvider
     }
     if (hasPassword) {
       contextValue += ':pwd';
+    }
+    // From the plaintext flag, never from SecretStorage: the seed's presence is metadata,
+    // the seed is not.
+    if (details?.hasTotp === true) {
+      contextValue += ':totp';
     }
     // One suffix the menu can test, computed where contextValue is already assembled:
     // the alternative was a lookahead regex in package.json doing inclusion AND the
@@ -755,21 +764,8 @@ function folderIcon(folderType: FolderType | undefined): vscode.ThemeIcon {
   }
 }
 
-// eslint-disable-next-line complexity
-function describeTarget(node: TreeNode): string {
-  const d = node.details;
-  if (d?.isDb && !d.host) {
-    return d.dbType ?? 'db';
-  }
-  if (d?.isVpn && !d.host) {
-    return d.vpnType ?? 'vpn';
-  }
-  if (!d?.host) {
-    return '';
-  }
-  const target = d.user ? `${d.user}@${d.host}` : d.host;
-  return d.port !== undefined && d.port !== 22 ? `${target}:${d.port}` : target;
-}
+
+
 
 // eslint-disable-next-line complexity
 function buildTooltip(node: TreeNode): vscode.MarkdownString {
