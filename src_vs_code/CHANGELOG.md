@@ -316,6 +316,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Bounded on purpose: 256 KB of output per stream, 30 s per command (raisable to 120 s), 8 at a
   time, and every child killed when the window goes.
 
+## [0.64.0] — 2026-08-26
+
+### Fixed
+
+- **The tree remembers what you had open** — across a repaint, a window reload and a reboot. It
+  did not, in two opposite ways at once: an account row was drawn expanded unconditionally, so
+  collapsing one re-opened it, and a folder was drawn collapsed unconditionally, so opening one
+  closed it again. A repaint happens on every edit, every pulled sync and every keystroke in the
+  filter, which is why it read as a tree that would not stay where you put it.
+  - A row nobody has touched still gets a sensible default — an account open, everything else
+    closed — because a vault of three hundred entries that opened every folder on first sight
+    would be worse than one that forgot.
+  - While the filter is active the term decides what is open, as before, and expanding a row
+    then is not recorded: clearing the filter must not leave a tree shaped by a search nobody is
+    running any more.
+
 ## [0.63.0] — 2026-08-26
 
 ### Changed

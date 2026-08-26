@@ -87,6 +87,7 @@ import {
 import { validatePin } from './pinPolicy';
 import { CredTreeDataProvider, VIEW_ID } from './treeDataProvider';
 import { DepDecorationProvider } from './depDecorations';
+import { ExpansionMemory, expansionKey } from './treeExpansion';
 import { buildDependencyCandidates, buildDependencyColorMap } from './depGraph';
 import { EntityFlagsRefresher, entityFlagSource } from './entityFlags';
 import { createDiagnosticLog } from './diagnosticLog';
@@ -279,6 +280,27 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // this on safe for the other forty-odd of them.
     canSelectMany: true,
   });
+
+  // Which rows were open, kept in globalState so they survive a reload and a reboot.
+  //
+  // Recorded from the view's own events rather than guessed from anything the provider does:
+  // VS Code is the only thing that knows a twisty was clicked. While a filter is active the term
+  // decides what is open, so those events are ignored — otherwise clearing the filter would leave
+  // behind a tree shaped by a search nobody is running any more.
+  const expansion = new ExpansionMemory(context.globalState);
+  provider.expansion = expansion;
+  context.subscriptions.push(
+    treeView.onDidExpandElement((e) => {
+      if (provider.searchQuery.length === 0) {
+        void expansion.set(expansionKey(e.element), true);
+      }
+    }),
+    treeView.onDidCollapseElement((e) => {
+      if (provider.searchQuery.length === 0) {
+        void expansion.set(expansionKey(e.element), false);
+      }
+    }),
+  );
 
   // The label colour and badge for entities in a dependency relationship. It reads the tree
   // provider's OWN index rather than building a second one, so the colour a row is painted in

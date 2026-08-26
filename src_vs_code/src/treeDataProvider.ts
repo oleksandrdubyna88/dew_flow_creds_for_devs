@@ -8,7 +8,7 @@ import { OwnedShare, TreeElement, TreeNode } from './types';
 
 import { DepIndexCache } from './depIndexCache';
 import { dependentGroups, dependentsFolderItem, dependentsItem } from './depTreeItems';
-import { RevisionHead, summarizeRevision } from './revisionHistory';
+import { RevisionHead } from './revisionHistory';
 import {
   FilterMemo,
   accountMatches,
@@ -25,6 +25,8 @@ import { SyncReadiness } from './syncReadiness';
 import { describeTarget, entityContextValue } from './treeRowText';
 import { buildTooltip, folderIcon, kindIcon } from './treeIcons';
 import { parentOf } from './treeParent';
+import { ExpansionMemory, expansionKey } from './treeExpansion';
+import { revisionRowItem } from './revisionRowItem';
 import { depUri } from './depDecorations';
 
 export const VIEW_ID = 'credSshManagerView';
@@ -111,6 +113,14 @@ export class CredTreeDataProvider
 
   /** Set by the extension: Team / Shared-with-me data source. */
   sharing: SharingManager | undefined;
+
+  /**
+   * Set by the extension: which rows the person had open.
+   *
+   * <p>Optional so the provider still renders in a test that has no memento — the defaults are
+   * exactly what the tree did before this existed.</p>
+   */
+  expansion: ExpansionMemory | undefined;
 
   constructor(
     private readonly storage: StorageManager,
@@ -251,33 +261,8 @@ export class CredTreeDataProvider
    * the current one — and nothing else does: no Edit, no Share, no Copy Password. A previous
    * version is something to look at, run, or clone from; it is not something to change.</p>
    */
-  // eslint-disable-next-line complexity
   private revisionItem(element: Extract<TreeElement, { kind: 'revision' }>): vscode.TreeItem {
-    const head = this.historyOf(element.accountId, element.node.id)[element.index];
-    const label = head === undefined ? 'version no longer kept' : summarizeRevision(head);
-    const item = new vscode.TreeItem(label, vscode.TreeItemCollapsibleState.None);
-    item.id = `${element.accountId}:${element.node.id}:rev${element.index}`;
-    let contextValue = 'revision';
-    if (head?.details?.isTerminal) {
-      contextValue += ':cmd';
-    }
-    if (head?.details?.isScript) {
-      contextValue += ':script';
-    }
-    item.contextValue = contextValue;
-    item.iconPath = new vscode.ThemeIcon('history', HISTORY_COLOR);
-    item.description = element.index === 0 ? 'previous version' : `${element.index + 1} versions ago`;
-    item.tooltip =
-      head === undefined
-        ? undefined
-        : `Replaced ${new Date(head.at).toLocaleString()} — click to see what it was. Clone it to bring it back as a new entry.`;
-    // A single click opens it: unlike an entity, a version has no other single-click job.
-    item.command = {
-      command: 'credSshManager.revisionClicked',
-      title: 'Show version',
-      arguments: [element],
-    };
-    return item;
+    return revisionRowItem(element, this.historyOf(element.accountId, element.node.id)[element.index]);
   }
 
   /**
@@ -453,7 +438,7 @@ export class CredTreeDataProvider
       return this.revisionItem(element);
     }
     if (element.kind === 'teamScope') {
-      const item = new vscode.TreeItem('Team', vscode.TreeItemCollapsibleState.Collapsed);
+      const item = new vscode.TreeItem('Team', this.collapsible(element, false));
       item.id = `teamScope:${element.account.accountId}`;
       item.contextValue = 'teamScope';
       // An empty team and a refused one used to look identical. Only one of them
@@ -536,7 +521,10 @@ export class CredTreeDataProvider
     if (element.kind === 'account') {
       const item = new vscode.TreeItem(
         element.account.email,
-        vscode.TreeItemCollapsibleState.Expanded,
+        // Open unless the person shut it. It used to be `Expanded` unconditionally, which meant
+        // a collapsed account re-opened on the next repaint — and a repaint happens on every
+        // edit, every pulled sync and every keystroke in the filter.
+        this.collapsible(element, true),
       );
       item.id = `account:${element.account.accountId}`;
       item.contextValue = 'account';
@@ -565,10 +553,11 @@ export class CredTreeDataProvider
         element.accountId,
         element.node,
         this.dependencies.indexFor(element.accountId),
+        this.collapsible(element, false),
       );
     }
     if (element.kind === 'dependentsFolder') {
-      return dependentsFolderItem(element);
+      return dependentsFolderItem(element, this.collapsible(element, false));
     }
     if (element.kind === 'dependentEntity') {
       // A DIFFERENT id for the same node — VS Code keys expansion and selection on it, so the
@@ -589,9 +578,9 @@ export class CredTreeDataProvider
       // behind and refuse to open.
       const item = new vscode.TreeItem(
         node.name,
-        filtering
-          ? vscode.TreeItemCollapsibleState.Expanded
-          : vscode.TreeItemCollapsibleState.Collapsed,
+        // While filtering the term decides, as it always has. Otherwise the person does: a
+        // folder left open stays open across a repaint, a reload and a reboot.
+        filtering ? vscode.TreeItemCollapsibleState.Expanded : this.collapsible(element, false),
       );
       item.id = filtering ? `${accountId}:${node.id}:q${this.query}` : `${accountId}:${node.id}`;
       item.contextValue = 'folder';
@@ -619,7 +608,7 @@ export class CredTreeDataProvider
     const details = node.details;
     const item = new vscode.TreeItem(
       node.name,
-      this.entityCollapsible(accountId, node.id),
+      this.entityCollapsible(accountId, node),
     );
     item.id = id;
     // A synthetic address, not a file: it is what lets a FileDecorationProvider colour the
@@ -668,12 +657,29 @@ export class CredTreeDataProvider
    * something three other entries need, and being told about only one of those is worse than
    * being told about neither.</p>
    */
-  private entityCollapsible(accountId: string, entityId: string): vscode.TreeItemCollapsibleState {
+  /**
+   * Open, closed, or open-because-it-was-left-open.
+   *
+   * <p>Every expandable row goes through here rather than naming a state directly, which is what
+   * makes "the tree does not forget" one rule instead of one per row kind.</p>
+   */
+  private collapsible(
+    element: TreeElement,
+    defaultOpen: boolean,
+  ): vscode.TreeItemCollapsibleState {
+    return this.expansion?.isOpen(expansionKey(element), defaultOpen) ?? defaultOpen
+      ? vscode.TreeItemCollapsibleState.Expanded
+      : vscode.TreeItemCollapsibleState.Collapsed;
+  }
+
+  private entityCollapsible(
+    accountId: string,
+    node: TreeNode,
+  ): vscode.TreeItemCollapsibleState {
     const expandable =
-      this.hasHistory(accountId, entityId) ||
-      this.dependencies.hasDependents(accountId, entityId);
+      this.hasHistory(accountId, node.id) || this.dependencies.hasDependents(accountId, node.id);
     return expandable
-      ? vscode.TreeItemCollapsibleState.Collapsed
+      ? this.collapsible({ kind: 'node', accountId, node }, false)
       : vscode.TreeItemCollapsibleState.None;
   }
 

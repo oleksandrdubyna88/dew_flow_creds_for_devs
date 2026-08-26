@@ -26,8 +26,11 @@ export function dependentsItem(
   accountId: string,
   node: TreeNode,
   index: DependencyIndex,
+  // Passed in rather than decided here: whether a row is open is the expansion memory's answer,
+  // and this module has no business holding one.
+  state: vscode.TreeItemCollapsibleState = vscode.TreeItemCollapsibleState.Collapsed,
 ): vscode.TreeItem {
-  const item = new vscode.TreeItem('Depended on by', vscode.TreeItemCollapsibleState.Collapsed);
+  const item = new vscode.TreeItem('Depended on by', state);
   item.id = `dependents:${accountId}:${node.id}`;
   item.contextValue = 'dependents';
   item.iconPath = new vscode.ThemeIcon('references', tintOf(index, node.id));
@@ -50,8 +53,9 @@ function tintOf(index: DependencyIndex, entityId: string): vscode.ThemeColor | u
  */
 export function dependentsFolderItem(
   element: Extract<TreeElement, { kind: 'dependentsFolder' }>,
+  state: vscode.TreeItemCollapsibleState = vscode.TreeItemCollapsibleState.Collapsed,
 ): vscode.TreeItem {
-  const item = new vscode.TreeItem(element.name, vscode.TreeItemCollapsibleState.Collapsed);
+  const item = new vscode.TreeItem(element.name, state);
   item.id = `depfolder:${element.accountId}:${element.targetId}:${element.folderId ?? 'root'}`;
   item.contextValue = element.folderId === null ? 'dependentsRoot' : 'dependentsFolder';
   item.iconPath = folderIcon(undefined);

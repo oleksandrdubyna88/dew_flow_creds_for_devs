@@ -493,6 +493,36 @@ per-machine**, not in the sync bundle. Entries with history wear a theme-coloure
 flag is cached on the provider because reading history means reading SecretStorage, which
 `getTreeItem` cannot await.
 
+### The tree remembers what was open (0.64.0)
+
+It did not, in two opposite ways at once: an account row was built `Expanded` unconditionally and
+a folder `Collapsed` unconditionally. So collapsing an account re-opened it and opening a folder
+closed it — on the next repaint, which happens on every edit, every pulled sync and every
+keystroke in the filter. It read as a tree that would not stay where you put it.
+
+`treeExpansion.ts` (pure) holds the keying and the defaults; `ExpansionMemory` sits over
+`globalState`, so it survives a reload and a reboot. Every expandable row now asks
+`collapsible(element, defaultOpen)` rather than naming a state, which is what makes "the tree does
+not forget" one rule instead of one per row kind.
+
+Three decisions, each of which the obvious implementation gets wrong:
+
+- **A map of key → open, not a set of open keys.** An account defaults to OPEN, so "absent from
+  the set" cannot mean closed for it and open for a folder. Recording both answers is what lets a
+  deliberately collapsed account stay collapsed; a set could only express that by inverting itself
+  per kind.
+- **The key is NOT `TreeItem.id`.** A folder's id carries the live filter term — it has to,
+  because VS Code remembers expansion per id and a stable id would honour the collapsed state you
+  left behind and refuse to open on a hit (see the filter section below). Keying the memory on it
+  would file one folder under a different name for every term ever typed.
+- **Expansion events are ignored while the filter is active**, because the term decides what is
+  open then. Recording those would leave the tree shaped by a search nobody is running any more
+  the moment the filter cleared.
+
+A leaf answers `undefined` for its key rather than a key nobody would store, so a caller cannot
+remember a row that has no twisty. The map is bounded (oldest first) — a key for a deleted entry
+is inert, since ids are UUIDs and the key carries the account, but inert is not free.
+
 ### The tree filter (0.55.0)
 
 `treeSearch.ts` is `vscode`-free and holds the whole semantics; the provider only routes.
