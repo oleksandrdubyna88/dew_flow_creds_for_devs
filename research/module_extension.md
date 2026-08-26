@@ -1666,6 +1666,13 @@ argument from two directions.
 
 ## Security hardening (2026-08-25 review)
 
+The coverage pass that followed it ([SECURITY_REVIEW_2026-08-26.md](SECURITY_REVIEW_2026-08-26.md))
+found two more while writing tests for the modules no test loaded — a `</script>` break-out in the
+Depends-on picker, and a crafted entity id escaping the key directory — and named the root cause
+both share with two earlier findings: a protective measure applied at some of the sites that need
+it. `scriptInterpolation.test.ts` is the first mechanical answer to that; the path-building
+equivalent is recorded there as open.
+
 A post-merge review ([SECURITY_REVIEW_2026-08-25.md](SECURITY_REVIEW_2026-08-25.md)) closed ten
 findings; the behavioural guarantees they added, so the diagrams above are not read as the whole
 story:
