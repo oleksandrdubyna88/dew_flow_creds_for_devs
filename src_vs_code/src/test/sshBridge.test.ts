@@ -191,7 +191,11 @@ test('the remote instructions name a socket and never a secret', () => {
     assert.equal(new RegExp(forbidden, 'i').test(text.split('\n')[0]), false, forbidden);
   }
   // And it says the thing a person needs to believe to use it safely.
-  assert.match(text, /never arrives here/i);
+  // Pinned to the GUARANTEE, not to one preposition: the block used to say the credential never
+  // arrives "here" and now says "there", because it is read on the laptop and pasted on the
+  // remote. A test that pins the wording fails on a rewording and says nothing about the promise.
+  assert.match(text, /credential[^.]*never arrives/i);
+  assert.match(text, /consent prompt appears/i, "and it says WHERE the human is asked");
 });
 
 /* --- observing what we cannot set --- */
@@ -355,4 +359,40 @@ test('without a token it is still paste-safe — the caller may not have minted 
 
   assert.deepEqual(executableLines(block), []);
   assert.match(block, /CREDS_BROKER_SOCKET=/);
+});
+
+/**
+ * The block must say WHERE it goes, in its own first line.
+ *
+ * <p>Second defect found by the live click. The block is safe to paste into a POSIX shell — but
+ * a person pastes it into the terminal that is in front of them, and on Windows that is
+ * PowerShell, which does not know `export`:</p>
+ *
+ * <pre>
+ *   export: The term 'export' is not recognized as a name of a cmdlet…
+ * </pre>
+ *
+ * <p>The notification said "paste the setup block on that host". The BLOCK said nothing, and the
+ * block is what survives the copy. An instruction that lives only beside the button is an
+ * instruction that is gone the moment the button is used.</p>
+ *
+ * <p>`#` is a comment in both PowerShell and POSIX sh, so the first line is readable in whichever
+ * shell it lands in — including the wrong one.</p>
+ */
+
+test('the first line says the block belongs on the REMOTE host', () => {
+  const block = remoteInstructions({ path: '/tmp/creds-dev-abc.sock' }, TOKEN);
+  const first = block.split('\n')[0];
+
+  assert.match(first, /^#/, 'and it is a comment, so the wrong shell still shows it');
+  assert.match(first, /remote|that host/i, first);
+});
+
+test('the instruction survives being pasted into the WRONG shell', () => {
+  // PowerShell treats `#` as a comment too, so the person is told what went wrong by the text
+  // they just pasted rather than only by an error about `export`.
+  const block = remoteInstructions({ path: '/tmp/creds-dev-abc.sock' }, TOKEN);
+
+  const comments = block.split('\n').filter((l) => l.trim().startsWith('#'));
+  assert.ok(comments.length >= 4, 'the guidance is in comments, not in prose beside the button');
 });

@@ -219,16 +219,19 @@ export function buildBridgeArgv(
  * block, and it puts the token inside a ready-to-run example behind a `#`, where a person can
  * read it and a shell cannot run it.</p>
  */
-export function remoteInstructions(remote: RemoteSocket, token?: string): string {
+export function remoteInstructions(remote: RemoteSocket, token?: string, target?: string): string {
+  const where = target === undefined ? 'the REMOTE machine' : `"${target}"`;
   return [
+    `# Paste this on ${where}, in an SSH session there — not in the terminal in front of you.`,
+    '# Here it does nothing: the socket named below exists only on that side of the connection.',
     `export CREDS_BROKER_SOCKET=${remote.path}`,
     '',
-    '# `creds` now works on this host exactly as it does on your own machine — and the',
-    '# credential still never arrives here: the request travels back over this SSH connection,',
-    '# your laptop performs it, and only the output returns. The consent prompt appears there.',
+    '# `creds` then works there exactly as it does on your own machine — and the credential',
+    '# still never arrives there: the request travels back over this SSH connection, your laptop',
+    '# performs it, and only the output returns. The consent prompt appears on your laptop.',
     ...(token === undefined
       ? []
-      : ['#', '# Your token for this host — try it with:', `#   creds ssh ${token} -- uname -a`]),
+      : ['#', '# The token for that host — try it with:', `#   creds ssh ${token} -- uname -a`]),
   ].join('\n');
 }
 

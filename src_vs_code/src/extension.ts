@@ -897,9 +897,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // The token goes THROUGH `remoteInstructions`, never appended after it: the block is pasted
     // into a shell, and appending prose is what put a bearer token into a remote's history as a
     // failed command.
-    const instructions = remoteInstructions(remote, token);
+    const instructions = remoteInstructions(remote, token, node.name);
     const answer = await vscode.window.showInformationMessage(
-      `Bridge open to "${node.name}". Paste the setup block on that host and \`creds\` works there.`,
+      `Bridge open to "${node.name}". Open an SSH session there, paste the setup block, and \`creds\` works there.`,
       'Copy the setup block',
     );
     if (answer !== undefined) {
