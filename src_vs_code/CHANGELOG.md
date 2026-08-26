@@ -6,6 +6,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **A caller with no token could make the window raise unbounded consent dialogs.** The CLI alias
+  route (`creds ssh prod-db`) carries only a NAME, and names are not secret — so the consent modal
+  is the whole of its authorization, which makes the RATE of modals a security property rather
+  than a nicety. Twenty unauthenticated calls raised twenty dialogs: enough to make the editor
+  unusable, and — the dangerous half — enough that the twentieth is the one somebody clicks
+  through to make it stop. Now one prompt may be in flight at a time and at most five a minute,
+  spent when **asked** rather than when answered, since a caller whose dialog is never answered
+  has still consumed the window. Token calls are deliberately not throttled: a caller holding a
+  real token was already consented by a human who chose to, and punishing them for a local
+  process's behaviour would turn a defence into an outage.
+- **A `creds` token never falls back to a discovered window.** The endpoint files that let a
+  terminal find a window by name are readable — and forgeable — by anything with write access to
+  the storage folder, and the health probe only proves the far end claims our service name, which
+  a forger would. A token therefore always dials the port carried inside it, and an integration
+  test now fails the moment somebody adds a helpful fallback that would deliver a bearer secret to
+  whoever wrote the file.
+
 ### Added
 
 - **A diagnostics channel you can actually attach to a bug report.** Until now the only output
