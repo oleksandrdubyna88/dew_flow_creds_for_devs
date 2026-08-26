@@ -1,7 +1,5 @@
 import { describeError } from './describeError';
-import * as fs from 'node:fs';
 import * as http from 'node:http';
-import * as path from 'node:path';
 import * as vscode from 'vscode';
 import {
   ErrorCode,
@@ -20,15 +18,11 @@ import { Grant, GrantExpiry, GrantLimits, GrantLookup, GrantRegistry } from './g
 import { UseActionRegistry } from './useActions';
 import { formatToken } from './grantToken';
 import { formatAuditLine } from './agentAuditLog';
-import {
-  AUDIT_RETAIN_DAYS,
-  auditDayFolder,
-  auditFileName,
-  auditLogsToPrune,
-} from './agentAuditFile';
+import { BrokerAuditWriter } from './brokerAuditWriter';
 import { startLoopbackServer } from './loopbackServer';
 import { ExtraListener, socketPathFor, startExtraListener } from './brokerListeners';
 import { removeEndpoint, writeEndpoint } from './cliEndpoint';
+import { AliasThrottle } from './aliasThrottle';
 import { startOnce } from './idempotentStart';
 import { MaskEntry, buildMaskTable, maskResponseBody } from './secretMasker';
 
@@ -83,6 +77,8 @@ function expiredMessage(reason: GrantExpiry, limits: GrantLimits): string {
 
 export class CredsAgentServer implements vscode.Disposable {
   private readonly grants = new GrantRegistry();
+  /** The rate at which a caller with NO token may make this window ask a human. */
+  private readonly aliasThrottle = new AliasThrottle();
   private readonly consenting = new Map<string, Promise<boolean>>();
   private readonly abort = new AbortController();
   private output: vscode.OutputChannel | undefined;
@@ -102,9 +98,7 @@ export class CredsAgentServer implements vscode.Disposable {
    * history. The shared logging rule had already required a file per run for exactly
    * this reason; the broker simply had not followed it.</p>
    */
-  private auditPath: string | undefined;
-  // Audit appends run off the UI thread but in order — each awaits the previous. See appendToFile.
-  private auditQueue: Promise<void> = Promise.resolve();
+  private readonly audit = new BrokerAuditWriter();
   private calls = 0;
 
   constructor(
@@ -209,7 +203,7 @@ export class CredsAgentServer implements vscode.Disposable {
   private ensureStarted(): Promise<void> {
     return this.beginStart(async () => {
       this.output ??= vscode.window.createOutputChannel('CredsForDevs: Agent Access');
-      this.openAuditFile();
+      this.audit.open(this.storageDir, new Date(), process.pid);
       const { server, port } = await startLoopbackServer();
       this.server = server;
       this.port = port;
@@ -259,6 +253,39 @@ export class CredsAgentServer implements vscode.Disposable {
     return body;
   }
 
+  /**
+   * Whether this unauthenticated call may make the window ask a human.
+   *
+   * <p>Answers the refusal itself, so the caller reads as one guard rather than three lines of
+   * verdict handling — and so no path can admit a call and forget to report the refusal.</p>
+   */
+  /**
+   * The entry a name points at, or `undefined` once the refusal has been sent.
+   *
+   * <p>A window with no alias registry and a name that is not enabled get the **same** answer,
+   * deliberately: whether a given name exists is not something an unauthenticated caller
+   * should be able to enumerate one guess at a time.</p>
+   */
+  private aliasTarget(
+    res: http.ServerResponse,
+    name: string,
+  ): { accountId: string; entityId: string; entityName: string; kind: string } | undefined {
+    const target = this.resolveAlias?.(name);
+    if (target === undefined) {
+      this.respondError(res, 'not_found', `No entry is enabled for the CLI under "${name}".`);
+    }
+    return target;
+  }
+
+  private admitAliasCall(res: http.ServerResponse): boolean {
+    const verdict = this.aliasThrottle.admit(Date.now());
+    if (verdict === 'allow') {
+      return true;
+    }
+    this.respondError(res, 'too_many_requests', AliasThrottle.describe(verdict));
+    return false;
+  }
+
   private async handleAlias(
     req: http.IncomingMessage,
     res: http.ServerResponse,
@@ -270,11 +297,15 @@ export class CredsAgentServer implements vscode.Disposable {
     }
     const name = body.alias as string;
 
-    // Deliberately the same answer for "no aliases here" and "no such name": whether a name
-    // exists is not something an unauthenticated caller should be able to enumerate.
-    const target = this.resolveAlias?.(name);
+    const target = this.aliasTarget(res, name);
     if (target === undefined) {
-      this.respondError(res, 'not_found', `No entry is enabled for the CLI under "${name}".`);
+      return; // already answered
+    }
+
+    // The rate of prompts is this route's authorization, not a nicety — see aliasThrottle.ts.
+    // Checked after the name resolves so a refusal still cannot be used to learn what exists,
+    // and before minting so a refused call spends nothing.
+    if (!this.admitAliasCall(res)) {
       return;
     }
 
@@ -286,7 +317,13 @@ export class CredsAgentServer implements vscode.Disposable {
       outcome: 'minted',
       detail: `${name} · ${target.kind}`,
     });
-    await this.perform(res, grant, action, body);
+    try {
+      await this.perform(res, grant, action, body);
+    } finally {
+      // In a `finally`, because a prompt that timed out or threw has still been shown and the
+      // slot must come back — otherwise one failed call closes this route for the session.
+      this.aliasThrottle.release();
+    }
   }
 
   /**
@@ -655,61 +692,9 @@ export class CredsAgentServer implements vscode.Disposable {
     this.calls += 1;
     const line = formatAuditLine({ ...entry, at: new Date(), seq: this.calls });
     this.output?.appendLine(line);
-    this.appendToFile(line);
+    this.audit.append(line);
   }
 
-  /**
-   * The durable half. Best-effort in every direction: an unwritable storage
-   * directory must not stop the broker from serving, because a missing audit line
-   * is a smaller harm than a credential feature that refuses to work.
-   *
-   * <p>Appends are asynchronous and chained: they no longer block the extension-host
-   * thread on every broker call (a busy agent loop was a steady drip of synchronous disk
-   * I/O on the UI thread), and chaining onto the previous write preserves line order — a
-   * fire-and-forget append could interleave two lines.</p>
-   */
-  private appendToFile(line: string): void {
-    const target = this.auditPath;
-    if (target === undefined) {
-      return;
-    }
-    this.auditQueue = this.auditQueue.then(() =>
-      fs.promises.appendFile(target, `${line}\n`, 'utf8').then(undefined, () => undefined),
-    );
-  }
-
-  /** Open this run's file and sweep whatever has aged out. */
-  private openAuditFile(): void {
-    if (this.storageDir === undefined) {
-      return;
-    }
-    const startedAt = new Date();
-    const root = path.join(this.storageDir, 'logs');
-    const day = auditDayFolder(startedAt);
-    try {
-      fs.mkdirSync(path.join(root, day), { recursive: true });
-      this.auditPath = path.join(root, day, auditFileName(startedAt, process.pid));
-      this.sweepOldAudits(root, startedAt);
-    } catch {
-      this.auditPath = undefined;
-    }
-  }
-
-  private sweepOldAudits(root: string, now: Date): void {
-    try {
-      const found = fs
-        .readdirSync(root, { withFileTypes: true })
-        .filter((entry) => entry.isDirectory())
-        .flatMap((dir) =>
-          fs.readdirSync(path.join(root, dir.name)).map((fileName) => ({ day: dir.name, fileName })),
-        );
-      for (const stale of auditLogsToPrune(found, AUDIT_RETAIN_DAYS, now)) {
-        fs.rmSync(path.join(root, stale.day, stale.fileName), { force: true });
-      }
-    } catch {
-      // A folder we cannot read is a folder we do not prune.
-    }
-  }
 
   /**
    * Take down the local traces of this window: the socket file and the endpoint note.

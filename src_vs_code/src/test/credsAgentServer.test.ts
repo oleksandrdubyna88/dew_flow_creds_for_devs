@@ -503,3 +503,62 @@ test('disposing stops serving — the port answers nothing afterwards', async ()
 
   await assert.rejects(() => call(port, '/v1/use/exec', { token: secret, body: { command: 'uptime' } }));
 });
+
+/**
+ * The alias route carries no bearer token, so the consent modal is the whole of its
+ * authorization. That makes the RATE of modals a security property rather than a nicety.
+ *
+ * <p>A local process that knows a name — and names are not secret — can otherwise ask this
+ * window to raise dialogs as fast as it can post. Two consequences, both bad: the editor is
+ * unusable while it happens, and the twentieth identical dialog is the one somebody clicks
+ * through to make it stop. Consent fatigue is not a theoretical failure mode; it is the
+ * documented way this kind of gate is defeated.</p>
+ */
+test('an unauthenticated caller cannot raise unbounded consent dialogs', async () => {
+  const w = world({
+    alias: { accountId: 'a1', entityId: 'e9', entityName: 'prod', kind: 'ssh' },
+    // Every call is refused, so nothing runs and the count is purely how many times the
+    // person was asked.
+    answers: Array.from({ length: 40 }, () => 'Deny'),
+  });
+  try {
+    const { port } = await share(w);
+    const dialogsBefore = w.dialogs.length;
+
+    const answers = [];
+    for (let i = 0; i < 20; i += 1) {
+      answers.push(await call(port, '/v1/alias/exec', { body: { alias: 'prod', command: `probe-${i}` } }));
+    }
+
+    const asked = w.dialogs.length - dialogsBefore;
+    assert.ok(asked < 20, `20 unauthenticated calls raised ${asked} dialogs`);
+    assert.ok(
+      answers.some((a) => code(a) === 'too_many_requests'),
+      'and the excess is refused with a code the caller can act on',
+    );
+  } finally {
+    w.server.dispose();
+  }
+});
+
+test('a token call is not throttled by somebody else spamming aliases', async () => {
+  // The limit must sit on the unauthenticated door only. A person whose agent holds a real
+  // token has already been consented; punishing them for a local process's behaviour would
+  // turn a defence into an outage.
+  const w = world({
+    alias: { accountId: 'a1', entityId: 'e9', entityName: 'prod', kind: 'ssh' },
+    answers: Array.from({ length: 40 }, () => 'Allow'),
+  });
+  try {
+    const { port, secret } = await share(w);
+    for (let i = 0; i < 20; i += 1) {
+      await call(port, '/v1/alias/exec', { body: { alias: 'prod', command: 'x' } });
+    }
+
+    const answer = await call(port, '/v1/use/exec', { token: secret, body: { command: 'uptime' } });
+
+    assert.equal(answer.status, 200, JSON.stringify(answer.body));
+  } finally {
+    w.server.dispose();
+  }
+});
