@@ -16,6 +16,7 @@ import { SshExecAuth, buildSshExecArgv, validateRemoteCommand } from './sshExecC
 import { resolveJumpChain } from './sshOptions';
 import { materializeKnownHosts } from './hostKeyTrust';
 import { runSshExec } from './sshExecRunner';
+import { agentForwardEnv, openSshProgram } from './sshProgram';
 import { resolveSshCredential } from './sshCredential';
 import { askpassEnv } from './sshAskpass';
 import { materializePrivateKey, writeAskpassScriptFile } from './keyInstaller';
@@ -46,6 +47,35 @@ export interface SshUseDeps {
   acquireExecSlot(): (() => void) | undefined;
   /** Write one line to the agent audit channel. */
   note(message: string): void;
+  /**
+   * The agent's socket when one is running, undefined when it is not.
+   *
+   * <p>A function rather than a value: the agent starts and stops while the window lives, and
+   * a snapshot taken at construction would be a stale answer for the rest of the session.</p>
+   */
+  agentSocket(): string | undefined;
+}
+
+/**
+ * The program and environment that make `-A` more than a flag, plus one audit line when it
+ * cannot be.
+ *
+ * <p>`-A` in the argv is half of agent forwarding. The other half is that the client can reach
+ * the agent — on Windows only the built-in OpenSSH can, ours being a named pipe — and that
+ * `SSH_AUTH_SOCK` is in THIS child's environment rather than only in terminals. Both halves were
+ * missing until 2026-08-26; `sshProgram.ts` records the measurement.</p>
+ */
+function agentAwareLaunch(
+  deps: SshUseDeps,
+  entity: EntityMetadata,
+  env: NodeJS.ProcessEnv,
+): { program: string; env: NodeJS.ProcessEnv } {
+  const wanted = entity.agentForward === true;
+  const forwarding = agentForwardEnv(env, wanted, deps.agentSocket());
+  if (forwarding.warning !== undefined) {
+    deps.note(`ssh:exec — ${forwarding.warning}`);
+  }
+  return { program: openSshProgram('ssh', wanted, process.platform), env: forwarding.env };
 }
 
 function fail(code: ErrorCode, message: string): UseActionResult {
@@ -195,8 +225,10 @@ export function sshExecAction(deps: SshUseDeps): UseAction {
           prepared.auth,
           connectionArgvOptions(deps, entity, chain.value),
         ) as string[]; // the host was checked above
+        const launch = agentAwareLaunch(deps, entity, prepared.env);
         const outcome = await runSshExec(argv, {
-          env: prepared.env,
+          program: launch.program,
+          env: launch.env,
           timeoutMs: clampExecTimeout((body as { timeoutMs?: unknown }).timeoutMs),
           signal: deps.signal,
         });

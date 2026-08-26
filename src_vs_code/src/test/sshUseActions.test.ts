@@ -34,8 +34,10 @@ interface World {
   storageDir: string;
   /** Every key file this run materialised, in order. */
   materialised: string[];
-  /** The argv and env `runSshExec` was called with. */
-  runs: { argv: string[]; env: NodeJS.ProcessEnv; timeoutMs: number }[];
+  /** The argv, program and env `runSshExec` was called with. */
+  runs: { argv: string[]; program?: string; env: NodeJS.ProcessEnv; timeoutMs: number }[];
+  /** What the agent manager would report, so a test can run with and without an agent. */
+  agentSocket?: string;
   notes: string[];
   warnings: string[];
   slotsHeld: number;
@@ -98,8 +100,11 @@ function world(parts: Parts): World {
       },
       './hostKeyTrust': { materializeKnownHosts: (): string | undefined => undefined },
       './sshExecRunner': {
-        runSshExec: (argv: string[], o: { env: NodeJS.ProcessEnv; timeoutMs: number }): Promise<unknown> => {
-          w.runs.push({ argv, env: o.env, timeoutMs: o.timeoutMs });
+        runSshExec: (
+          argv: string[],
+          o: { env: NodeJS.ProcessEnv; timeoutMs: number; program?: string },
+        ): Promise<unknown> => {
+          w.runs.push({ argv, program: o.program, env: o.env, timeoutMs: o.timeoutMs });
           return parts.runFails === true
             ? Promise.reject(new Error('ssh is not installed'))
             : Promise.resolve({ exitCode: 0, stdout: 'ok\n', stderr: '', timedOut: false });
@@ -141,6 +146,7 @@ function deps(w: World, parts: Parts): unknown {
     note: (m: string): void => {
       w.notes.push(m);
     },
+    agentSocket: (): string | undefined => w.agentSocket,
   };
 }
 
@@ -368,6 +374,65 @@ test('the terminal action refuses a deleted entity rather than opening an empty 
 
     assert.equal((result.body.error as { code: string }).code, 'not_found');
     assert.equal(w.connected, 0);
+  } finally {
+    cleanup(w);
+  }
+});
+
+// --- agent forwarding is more than a flag in the argv (2026-08-26) -------------------------
+//
+// `-A` had reached the argv for months and forwarded nothing: the child never received
+// SSH_AUTH_SOCK, because the extension publishes it to TERMINALS. The old test asserting the
+// flag was present stayed green throughout, which is the whole lesson — see `sshProgram.ts`.
+
+const FORWARDING = { ...ENTITY, agentForward: true } as unknown as EntityMetadata;
+
+test('a forwarding connection hands the child the agent socket', async () => {
+  const parts: Parts = { source: KEY_SOURCE, entity: FORWARDING };
+  const w = world(parts);
+  w.agentSocket = '/run/creds/agent.sock';
+  try {
+    await exec(w, parts);
+
+    assert.equal(w.runs.length, 1);
+    assert.ok(w.runs[0].argv.includes('-A'), 'the flag is still sent');
+    assert.equal(
+      w.runs[0].env.SSH_AUTH_SOCK,
+      '/run/creds/agent.sock',
+      'and now something can answer it',
+    );
+  } finally {
+    cleanup(w);
+  }
+});
+
+test('a connection that did not ask for the agent is left exactly as it was', async () => {
+  // Exporting SSH_AUTH_SOCK makes our agent the AUTHENTICATION agent for that connection —
+  // a consent dialog for a key nobody chose. It travels with the checkbox, never alone.
+  const parts: Parts = { source: KEY_SOURCE };
+  const w = world(parts);
+  w.agentSocket = '/run/creds/agent.sock';
+  try {
+    await exec(w, parts);
+
+    assert.equal(w.runs[0].env.SSH_AUTH_SOCK, undefined);
+    assert.equal(w.runs[0].program, 'ssh');
+  } finally {
+    cleanup(w);
+  }
+});
+
+test('forwarding asked for with no agent loaded is SAID, not passed over in silence', async () => {
+  const parts: Parts = { source: KEY_SOURCE, entity: FORWARDING };
+  const w = world(parts);
+  try {
+    await exec(w, parts);
+
+    assert.equal(w.runs[0].env.SSH_AUTH_SOCK, undefined);
+    assert.ok(
+      w.notes.some((n) => n.includes('nothing will be forwarded')),
+      `the audit channel said: ${JSON.stringify(w.notes)}`,
+    );
   } finally {
     cleanup(w);
   }

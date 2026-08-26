@@ -26,6 +26,7 @@
 
 import { EntityMetadata } from './types';
 import { sshOptionArgv } from './sshOptions';
+import { openSshProgram } from './sshProgram';
 
 export const DEFAULT_SSH_PORT = 22;
 
@@ -35,6 +36,11 @@ export interface SshCommandOptions {
   jump?: string;
   /** A materialized known_hosts file holding this host's pinned key. */
   knownHostsFile?: string;
+  /**
+   * Whether the built-in Windows OpenSSH is installed. Injected only by tests, so that an
+   * assertion about the composed line cannot depend on which machine runs it.
+   */
+  builtInExists?: (candidate: string) => boolean;
 }
 
 /**
@@ -105,7 +111,13 @@ export function buildSshCommand(
     return undefined;
   }
   const host = entity.host as string; // isSafeSshTarget above proved it non-empty
-  const parts: string[] = ['ssh'];
+  // Not always the bare word: a connection that forwards the agent needs a client that can
+  // reach ours, and on Windows the `ssh` first on PATH is usually the MSYS one, which cannot
+  // open a named pipe. Composed here rather than at the five call sites so the command SHOWN
+  // in the viewer is the command that runs. See `sshProgram.ts`.
+  const parts: string[] = [
+    openSshProgram('ssh', entity.agentForward === true, platform, options.builtInExists),
+  ];
   if (entity.sshKeyPath) {
     parts.push('-i', shellQuote(entity.sshKeyPath, platform));
   }

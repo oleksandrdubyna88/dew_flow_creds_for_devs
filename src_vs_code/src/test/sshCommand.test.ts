@@ -86,3 +86,41 @@ test('a jump host and a forward reach the line through the shared composer', () 
 
   assert.equal(line, 'ssh -J me@bastion.example.com -A -L 5432:db:5432 deploy@example.com');
 });
+
+// --- which ssh the line actually names (2026-08-26) ----------------------------------------
+//
+// `-A` reached this line for months and forwarded nothing on Windows: the word `ssh` resolves
+// through PATH, and where Git for Windows is installed that is an MSYS build which cannot open
+// the named pipe our agent listens on. The test above asserts the FLAG is composed, which was
+// true throughout. See `sshProgram.ts` for the measurement.
+
+test('on Windows a forwarding line names the client that can reach the agent', () => {
+  const line = buildSshCommand(entity({ agentForward: true }), 'win32', {
+    builtInExists: () => true,
+  });
+
+  assert.equal(line, 'C:/Windows/System32/OpenSSH/ssh.exe -A deploy@example.com');
+});
+
+test('on Windows a line that does not forward keeps the bare word', () => {
+  // Nobody is moved off their own client for a connection that never needed ours.
+  const line = buildSshCommand(entity({}), 'win32', { builtInExists: () => true });
+
+  assert.equal(line, 'ssh deploy@example.com');
+});
+
+test('a Windows install without the built-in still gets a line it can run', () => {
+  const line = buildSshCommand(entity({ agentForward: true }), 'win32', {
+    builtInExists: () => false,
+  });
+
+  assert.equal(line, 'ssh -A deploy@example.com');
+});
+
+test('off Windows the word is unchanged — PATH was never the problem there', () => {
+  const line = buildSshCommand(entity({ agentForward: true }), 'linux', {
+    builtInExists: () => true,
+  });
+
+  assert.equal(line, 'ssh -A deploy@example.com');
+});

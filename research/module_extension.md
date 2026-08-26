@@ -1171,6 +1171,45 @@ that already exists is enforced on both.
 
 Full record, deviations included: [PLAN_connection_manager.md](PLAN_connection_manager.md).
 
+### Agent forwarding was a flag with nothing behind it (0.65.0)
+
+`-A` had been composed into both builders since D7, with a per-entity checkbox and a line in the
+viewer. On Windows it forwarded **nothing**, and could not have. Two independent reasons, neither
+of which produces an error:
+
+- **The wrong client.** The extension spawned a bare `ssh`, resolved from `PATH`. Wherever Git for
+  Windows is installed — which is everywhere this extension is useful — that is an MSYS build, and
+  an MSYS binary cannot open a named pipe: it answers `Bad file descriptor`. The agent
+  (`sshAgentServer.ts`) listens on a named pipe on Windows. Only
+  `C:/Windows/System32/OpenSSH/ssh.exe` reaches it.
+- **The variable never arrived.** `SSH_AUTH_SOCK` is published through VS Code's
+  `EnvironmentVariableCollection`, which by contract reaches **terminals**. A child spawned by the
+  extension host inherits `process.env`, where it was never set.
+
+An `ssh` that cannot find an agent does not fail — it authenticates some other way and forwards
+nothing. That is how this survived: there was no error to notice, and the unit test asserting `-A`
+is in the argv was green throughout. It proved the flag was **sent**; whether anything received it
+is a fact about a different process.
+
+`sshProgram.ts` now owns both halves, and **applies both only when the entity asks for
+forwarding** — that is the only case where either is load-bearing, and both cost something
+elsewhere: the built-in client is not the one a person's own `~/.ssh/config` was written against,
+and exporting `SSH_AUTH_SOCK` makes this agent the **authentication** agent for that connection,
+which means a consent dialog for a key nobody chose. A Windows install without the built-in falls
+back to `PATH` rather than failing to spawn: forwarding nothing is bad, not connecting at all is
+worse. Asked for with no key loaded, the audit channel says so instead of going quiet.
+
+The decision lives inside `buildSshCommand` rather than at its five call sites, so the command
+**shown** in the viewer is the command that runs — three of those callers only display it, and a
+displayed line that differs from the executed one is the same class of defect one layer up.
+
+The check that has teeth is in `scripts/ssh-agent-itest.cjs`: it drives the production resolver and
+the production environment builder against the real agent and asks whether the key comes back, and
+it asserts the negative half — that the MSYS client `PATH` would have given **cannot**. Reverting
+either half turns it red with the real symptom (`Could not open a connection to your authentication
+agent`). Shared rule: *A measure you have not OBSERVED working is a comment*.
+
+
 ### The git transport (0.58.0)
 
 `gitRemote.ts` is the pure half — argv builders, remote recognition, and the classification of

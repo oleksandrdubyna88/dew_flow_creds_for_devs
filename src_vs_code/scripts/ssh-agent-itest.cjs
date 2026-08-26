@@ -165,6 +165,42 @@ async function main() {
     `exit ${refused.code}`,
   );
 
+  // --- what makes `-A` more than a flag (2026-08-26) --------------------------------------
+  //
+  // Agent forwarding was wired end to end for months and forwarded nothing on Windows: the
+  // extension spawned the `ssh` first on PATH, which where Git for Windows is installed is an
+  // MSYS build that cannot open a named pipe, and SSH_AUTH_SOCK was published to TERMINALS
+  // rather than to the spawned child. A unit test asserting `-A` is in the argv was green the
+  // whole time, because a sent flag says nothing about the receiver.
+  //
+  // So this drives the PRODUCTION resolver and the PRODUCTION environment builder, and asks
+  // whether the key comes back. Red before the fix, on Windows, for both reasons at once.
+  const { openSshProgram, agentForwardEnv } = require(path.join(OUT, 'sshProgram.js'));
+  const chosen = openSshProgram('ssh-add', true, process.platform);
+  const forwarding = agentForwardEnv(process.env, true, socketPath);
+  check(
+    'the environment builder puts the agent socket where a child can see it',
+    forwarding.env.SSH_AUTH_SOCK === socketPath,
+    String(forwarding.env.SSH_AUTH_SOCK),
+  );
+  const reached = await run(chosen, ['-l'], { env: forwarding.env });
+  check(
+    'the client the resolver picks reaches the agent',
+    reached.stdout.includes(parsed.key.fingerprint),
+    `${chosen} said ${JSON.stringify((reached.stdout + reached.stderr).trim())}`,
+  );
+
+  // The negative half, which is what makes the choice load-bearing rather than cosmetic: the
+  // binary PATH would have given cannot do this. Skipped where Git for Windows is absent.
+  const MSYS_SSH_ADD = 'C:/Program Files/Git/usr/bin/ssh-add.exe';
+  if (isWindows && fs.existsSync(MSYS_SSH_ADD)) {
+    const msys = await run(MSYS_SSH_ADD, ['-l'], { env: forwarding.env });
+    check(
+      'the MSYS client PATH would have given cannot — which is why the resolver exists',
+      !msys.stdout.includes(parsed.key.fingerprint),
+      `MSYS ssh-add said ${JSON.stringify((msys.stdout + msys.stderr).trim())}`,
+    );
+  }
   server.dispose();
   const afterDispose = await run(tools.sshAdd, ['-l'], { env });
   check('after dispose the agent answers nothing', afterDispose.code !== 0, `exit ${afterDispose.code}`);

@@ -539,16 +539,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // one you already know, which is why the broker takes them as two callbacks.
     () => listAliases(aliasMap()),
   );
-  const sshDeps = {
-    storage,
-    storageDir,
-    signal: agentServer.signal,
-    acquireExecSlot: agentServer.acquireExecSlot,
-    note: agentServer.note,
-  };
-  useActions.register(sshExecAction(sshDeps));
-  useActions.register(sshTerminalAction(sshDeps));
-
   // The SSH agent: keys served from memory, every use confirmed, SSH_AUTH_SOCK injected into
   // new terminals. Nothing starts until a key is actually loaded.
   const sshAgent = new SshAgentManager(storage, storageDir, envCollection, () =>
@@ -562,6 +552,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       );
     }
   });
+
+  const sshDeps = {
+    storage,
+    storageDir,
+    signal: agentServer.signal,
+    acquireExecSlot: agentServer.acquireExecSlot,
+    note: agentServer.note,
+    // What makes `-A` real rather than decorative: the child needs SSH_AUTH_SOCK in its own
+    // environment, and the collection above reaches terminals only. See `sshProgram.ts`.
+    agentSocket: (): string | undefined => sshAgent.socketPath,
+  };
+  useActions.register(sshExecAction(sshDeps));
+  useActions.register(sshTerminalAction(sshDeps));
 
   // The other kinds ride the same registry — the broker's dispatch never learned about
   // any of them, which is what the (kind, action) seam was for.

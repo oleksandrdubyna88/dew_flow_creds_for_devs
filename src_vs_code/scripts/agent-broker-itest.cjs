@@ -160,6 +160,10 @@ function runCli(args) {
     signal: server.signal,
     acquireExecSlot: server.acquireExecSlot,
     note: server.note,
+    // No agent in this harness: the exec path must behave exactly as it always did when
+    // nothing is loaded. Supplying it is not optional — a missing callback is a throw, and
+    // it surfaces as a broker error rather than the ssh exit code the test is about.
+    agentSocket: () => undefined,
   };
   actions.register(sshExecAction(deps));
   actions.register(sshTerminalAction(deps));

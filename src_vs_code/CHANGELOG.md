@@ -128,6 +128,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Agent forwarding was a flag with nothing behind it.** The *Forward the SSH agent* checkbox
+  put `-A` into both command builders, and on Windows it forwarded nothing — for two independent
+  reasons, neither of which shows an error. The extension launched the `ssh` first on `PATH`,
+  which wherever Git for Windows is installed is an MSYS build that **cannot open a named pipe**
+  (`Bad file descriptor`) — and the agent listens on a named pipe on Windows. And `SSH_AUTH_SOCK`
+  was published through VS Code's environment collection, which reaches **terminals**; a process
+  the extension spawns never saw it.
+
+  An `ssh` that cannot find an agent does not fail; it authenticates another way and forwards
+  nothing. The unit test asserting `-A` was in the argv stayed green the whole time, because a
+  sent flag says nothing about the receiver.
+
+  Both halves are now decided in one place and applied **only when the entity asks to forward** —
+  nobody is moved off their own client, and nobody's connection quietly acquires this agent as its
+  **authentication** agent when it never asked. A Windows install without the built-in client
+  falls back rather than failing to spawn. Asked for with no key loaded, the audit channel says
+  so. The check that has teeth drives the real client against the real agent, and asserts the
+  negative half too — that the client `PATH` would have given cannot reach it.
+
 - **The context menu keeps up with the keychain.** Three ways the tree's cached per-entity
   flags could go stale, all found by an adversarial review of the 0.57 work and each now a
   test. A password saved in a **second window** of the same profile left this window's

@@ -23,6 +23,12 @@ const KILL_GRACE_MS = 2_000;
 
 export interface SshExecOptions {
   env: NodeJS.ProcessEnv;
+  /**
+   * The ssh binary to launch. Absent means the bare name, resolved from `PATH` — right for
+   * everything that does not depend on reaching the agent this extension serves. The one case
+   * that does, and why, is `sshProgram.ts`.
+   */
+  program?: string;
   timeoutMs: number;
   /** Aborted when the window goes away, so no ssh outlives its broker. */
   signal?: AbortSignal;
@@ -72,7 +78,7 @@ class Bounded {
 }
 
 export function runSshExec(argv: string[], options: SshExecOptions): Promise<SshExecOutcome> {
-  return runBounded('ssh', argv, false, options);
+  return runBounded(options.program ?? 'ssh', argv, false, options);
 }
 
 /**
