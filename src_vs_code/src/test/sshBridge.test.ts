@@ -9,6 +9,8 @@ import {
   modeCheckCommand,
   remoteInstructions,
   remoteSocketPath,
+  safeUserComponent,
+  sweepCommand,
 } from '../sshBridge';
 
 /**
@@ -225,4 +227,61 @@ test('a wide socket is reported as a fact about that host, not as our failure', 
   assert.match(text, /StreamLocalBindMask/);
   assert.match(text, /cannot be set from this end/i);
   assert.match(text, /anyone else logged in/i);
+});
+
+/* --- the sweep: removing dead sockets without touching a live one --- */
+
+test('the sweep does nothing at all when ss is missing', () => {
+  // The critical property, and the one worth stating first. Without `ss` the liveness test
+  // answers "not listening" for EVERY socket, so an unguarded sweep would delete every live
+  // bridge on the host. A little litter is the safe failure; that is not.
+  const cmd = sweepCommand('dev');
+
+  assert.match(cmd, /^command -v ss >\/dev\/null 2>&1 \|\| exit 0;/);
+});
+
+test('a socket something is listening on is kept', () => {
+  // Another window's bridge is a file of exactly the same shape. Removing it would break a
+  // tunnel somebody is using, with nothing to explain why.
+  const cmd = sweepCommand('dev');
+
+  assert.match(cmd, /ss -lx .* \|\| rm -f "\$f"/);
+  assert.match(cmd, /grep -qF "\$f"/, 'matched as a fixed string, not a pattern');
+});
+
+test('the sweep is scoped to this user\'s own sockets', () => {
+  assert.match(sweepCommand('dev'), /\/tmp\/creds-dev-\*\.sock/);
+  assert.equal(sweepCommand('dev').includes('/tmp/creds-*'), false, 'never every user');
+});
+
+test('a crafted user name cannot escape into the shell command', () => {
+  // The glob is interpolated into a command that runs on the remote host, so this is the one
+  // thing between a name arriving from a synced vault and that shell.
+  const cmd = sweepCommand('dev; rm -rf /; echo ');
+
+  // The dash survives, and should: it is in the allowed set and cannot be read as a flag
+  // inside a path. What must not survive is the separator and the space that would end the
+  // glob and start a new command.
+  assert.equal(cmd.includes('rm -rf /'), false, cmd);
+  assert.equal(/creds-[^*]*[; ]/.test(cmd), false, 'no separator or space reached the glob');
+  assert.match(cmd, /\/tmp\/creds-devrm-rfecho-\*\.sock/);
+});
+
+test('the sanitiser is shared with the path builder, so the two cannot drift', () => {
+  // The sweep's glob has to match what the path builder produced, or it sweeps nothing and the
+  // litter grows anyway — silently, since a sweep that finds nothing looks exactly like a
+  // sweep that had nothing to do.
+  const user = 'first.last';
+  const path = remoteSocketPath(user, 'abc');
+  const glob = sweepCommand(user);
+
+  assert.match(path, new RegExp(`/tmp/creds-${safeUserComponent(user)}-abc\.sock$`));
+  assert.ok(glob.includes(`/tmp/creds-${safeUserComponent(user)}-*.sock`));
+});
+
+test('an empty user still produces a scoped glob, never a bare wildcard', () => {
+  const cmd = sweepCommand('');
+
+  assert.match(cmd, /\/tmp\/creds-user-\*\.sock/);
+  assert.equal(/creds-\*\.sock/.test(cmd), false);
 });

@@ -100,6 +100,7 @@ import {
   modeCheckCommand,
   remoteInstructions,
   remoteSocketPath,
+  sweepCommand,
 } from './sshBridge';
 import { SshBridgeManager } from './sshBridgeManager';
 import { entityKey } from './entityFlags';
@@ -605,6 +606,30 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
    * <p>Best-effort and never fatal: a host without `stat`, or one that has not finished binding
    * yet, simply produces no claim either way. Silence here means "not observed", never "safe".</p>
    */
+  /**
+   * Remove this user's dead bridge sockets on the remote host.
+   *
+   * <p>Best-effort and quiet: litter is a tidiness problem, and a host where the sweep cannot
+   * run is a host with some extra inert files, not a broken bridge. The command itself refuses
+   * to do anything when `ss` is missing — without it the liveness test would answer "nobody
+   * listening" for every socket and the sweep would delete every live bridge on the machine.</p>
+   */
+  async function sweepDeadSockets(
+    entity: EntityMetadata,
+    keyPath: string | undefined,
+    user: string,
+  ): Promise<void> {
+    const argv = buildSshExecArgv(entity, keyPath, sweepCommand(user));
+    if (argv === undefined) {
+      return;
+    }
+    try {
+      await runSshExec(argv, { env: process.env, timeoutMs: 15_000, signal: agentServer.signal });
+    } catch (error) {
+      log.info('bridge', `socket sweep did not run: ${describeError(error)}`);
+    }
+  }
+
   async function verifyBridgeSocket(
     accountId: string,
     entity: EntityMetadata,
@@ -620,6 +645,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       if (argv === undefined) {
         return;
       }
+      // sshd does not unlink a `-R` socket when its session ends — measured on a real host —
+      // and nothing else does, so every dropped bridge leaves one behind. Swept here, AFTER the
+      // new one is up: it is then live, and the sweep keeps anything still being listened on,
+      // which is what stops it removing another window's working bridge.
+      await sweepDeadSockets(entity, keyPath, entity.user ?? '');
       // A moment for sshd to bind before asking about the file.
       await new Promise((resolve) => setTimeout(resolve, 1500));
       const outcome = await runSshExec(argv, {

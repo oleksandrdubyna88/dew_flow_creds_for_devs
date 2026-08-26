@@ -50,14 +50,21 @@ export interface RemoteSocket {
  * sshd-spawned sessions, and a path that resolves to `/creds-…sock` at the filesystem root
  * fails in a way that reads as our bug. `/tmp` is present on every POSIX host this runs on.</p>
  */
+/**
+ * The user name as it may appear in a path — and in the sweep's glob, which is interpolated into
+ * a shell command, so this is the only thing standing between a crafted user name and that shell.
+ */
+export function safeUserComponent(user: string): string {
+  return user.replace(/[^A-Za-z0-9_-]/g, '') || 'user';
+}
+
 export function remoteSocketPath(user: string, id: string): string {
   // No dot in the allowed set, deliberately. Stripping only the slashes turns
   // `../../etc/cron.d/evil` into `....etccron.devil` — harmless as a path, since it can no
   // longer leave /tmp, but it carries `..` into a filename and reads as something that got
   // away from us. A user name with dots (`first.last`) becomes `firstlast`, which costs
   // nothing: the id is what makes the path unique, not the name.
-  const safeUser = user.replace(/[^A-Za-z0-9_-]/g, '') || 'user';
-  return `/tmp/creds-${safeUser}-${id}.sock`;
+  return `/tmp/creds-${safeUserComponent(user)}-${id}.sock`;
 }
 
 /** A short, non-guessable id for one bridge. Injected so the argv is a pure function. */
@@ -242,5 +249,35 @@ export function describeWideSocket(mode: string, remote: RemoteSocket): string {
     'face the consent prompt here, but they should not be able to raise one at all. That mode ' +
     "comes from the host's sshd (StreamLocalBindMask, default 0177) and cannot be set from this " +
     'end; ask whoever administers it.'
+  );
+}
+
+/**
+ * Remove this user's dead bridge sockets on the remote host.
+ *
+ * <p><b>Why anything is left to remove.</b> For a `-R` forward sshd creates the socket and, by
+ * default, does not unlink it when the session ends (`StreamLocalBindUnlink no` — measured).
+ * Nothing else does either, so every dropped bridge leaves a file behind. They are inert —
+ * owner-only, in a sticky `/tmp` — but they accumulate for as long as the host lives.</p>
+ *
+ * <p><b>The one way to get this wrong is to delete a LIVE one.</b> Another window's bridge is a
+ * file of exactly the same shape, and removing it would break a tunnel somebody is using with no
+ * indication of why. So liveness is decided by whether anything is actually listening, which
+ * `ss -lx` answers — verified on a real host: the dead socket was swept, the live one kept, and
+ * the live bridge still answered afterwards.</p>
+ *
+ * <p>And if `ss` is missing the command sweeps <b>nothing</b>. That is not tidiness: without it
+ * the liveness test silently answers "not listening" for every socket, and the sweep would
+ * delete every live bridge on the host. A little litter is the safe failure; the other one is
+ * not.</p>
+ */
+export function sweepCommand(user: string): string {
+  const pattern = `/tmp/creds-${safeUserComponent(user)}-*.sock`;
+  return (
+    'command -v ss >/dev/null 2>&1 || exit 0; ' +
+    `for f in ${pattern}; do ` +
+    '[ -e "$f" ] || continue; ' +
+    'ss -lx 2>/dev/null | grep -qF "$f" || rm -f "$f"; ' +
+    'done'
   );
 }
