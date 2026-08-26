@@ -397,6 +397,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Bounded on purpose: 256 KB of output per stream, 30 s per command (raisable to 120 s), 8 at a
   time, and every child killed when the window goes.
 
+## [0.65.0] — 2026-08-26
+
+### Added
+
+- **A Trash, so deleting is no longer the one thing you cannot take back.** Delete now asks, with
+  **Move to Trash** as the button Enter presses and **Delete Permanently** beside it. Restoring is
+  dragging it back out. One trash per account, made on the first delete rather than sitting empty
+  in a new vault, and it syncs like any other folder — so something deleted on the laptop is
+  recoverable on the desktop.
+  - Right-click the Trash to have it **empty itself after 1, 3, 7, 30, 90 or 365 days**, or leave
+    it to keep everything until you empty it by hand. The choice lives on the folder rather than in
+    settings, because each account has its own trash and the answer has to travel with the vault.
+  - **What promised to destroy itself still does.** An entry set to burn after one agent use, or to
+    expire on a clock, goes on being deleted for real — secret, revision history and a causal
+    tombstone. The trash is a separate operation, not a new behaviour of deletion, and a test
+    fails if any of that machinery is ever routed through it.
+  - Nothing in the Trash is offered as a dependency target: depending on something you deleted
+    would be a relationship that lasts until the next cleanup.
+
 ## [0.64.1] — 2026-08-26
 
 ### Fixed

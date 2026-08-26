@@ -23,8 +23,9 @@ import { describeRemaining } from './entityExpiry';
 import { resolveKind } from './entityKind';
 import { SyncReadiness } from './syncReadiness';
 import { describeTarget, entityContextValue } from './treeRowText';
-import { buildTooltip, folderIcon, kindIcon } from './treeIcons';
+import { FOLDER_COLOR, buildTooltip, folderIcon, kindIcon } from './treeIcons';
 import { parentOf } from './treeParent';
+import { describeRetention, isTrashFolder } from './trash';
 import { ExpansionMemory, expansionKey } from './treeExpansion';
 import { revisionRowItem } from './revisionRowItem';
 import { depUri } from './depDecorations';
@@ -583,9 +584,16 @@ export class CredTreeDataProvider
         filtering ? vscode.TreeItemCollapsibleState.Expanded : this.collapsible(element, false),
       );
       item.id = filtering ? `${accountId}:${node.id}:q${this.query}` : `${accountId}:${node.id}`;
-      item.contextValue = 'folder';
-      item.iconPath = folderIcon(node.folderType);
-      if (node.folderType !== undefined && node.folderType !== 'any') {
+      // The trash says what it is and when it empties, in the place a folder says its type —
+      // "kept until emptied" beside a folder full of deleted secrets is the fact that matters.
+      const trash = isTrashFolder(node);
+      item.contextValue = trash ? 'trashFolder' : 'folder';
+      item.iconPath = trash
+        ? new vscode.ThemeIcon('trash', FOLDER_COLOR)
+        : folderIcon(node.folderType);
+      if (trash) {
+        item.description = describeRetention(node);
+      } else if (node.folderType !== undefined && node.folderType !== 'any') {
         item.description = node.folderType;
       }
       return item;

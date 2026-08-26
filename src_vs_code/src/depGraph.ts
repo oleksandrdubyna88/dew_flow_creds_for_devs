@@ -1,4 +1,5 @@
 import { DEP_COLOR_KEYS, DepColorKey, isDepColorKey } from './depColors';
+import { isInTrash } from './trash';
 import { TreeNode } from './types';
 
 /**
@@ -249,14 +250,15 @@ export function buildDependencyCandidates(
   nodes: readonly TreeNode[],
   excludeEntityId: string,
 ): DependencyFolderCandidate[] {
-  const folders = new Map<string, TreeNode>();
-  for (const node of nodes) {
-    if (node.type === 'folder') {
-      folders.set(node.id, node);
-    }
-  }
+  const byId = new Map(nodes.map((node) => [node.id, node]));
+  // Nothing in the trash is offered — depending on something the person deleted would be a
+  // relationship that exists only until the trash is emptied.
+  const live = nodes.filter((node) => !isInTrash(node, (id) => byId.get(id)));
+  const folders = new Map(
+    live.filter((node) => node.type === 'folder').map((node) => [node.id, node]),
+  );
   const groups = new Map<string, DependencyFolderCandidate>();
-  for (const node of nodes) {
+  for (const node of live) {
     addCandidate(groups, folders, node, excludeEntityId);
   }
   return orderCandidates(groups);

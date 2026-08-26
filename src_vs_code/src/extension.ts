@@ -88,6 +88,7 @@ import { validatePin } from './pinPolicy';
 import { CredTreeDataProvider, VIEW_ID } from './treeDataProvider';
 import { DepDecorationProvider } from './depDecorations';
 import { ExpansionMemory, expansionKey } from './treeExpansion';
+import { TRASH_RETENTION_CHOICES } from './trash';
 import { buildDependencyCandidates, buildDependencyColorMap } from './depGraph';
 import { EntityFlagsRefresher, entityFlagSource } from './entityFlags';
 import { createDiagnosticLog } from './diagnosticLog';
@@ -1032,6 +1033,66 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   });
 
   /**
+   * How long the trash keeps what is in it.
+   *
+   * <p>Stored on the folder rather than in settings: each account has its own trash, so it has
+   * its own answer, and the answer has to travel with the vault to the next machine.</p>
+   */
+  register('credSshManager.setTrashRetention', async (target?: unknown) => {
+    const element = asElement(target);
+    if (element?.kind !== 'node') {
+      return;
+    }
+    const items = [
+      { label: 'Keep until I empty it', days: undefined as number | undefined },
+      ...TRASH_RETENTION_CHOICES.map((days) => ({
+        label: days === 1 ? 'Empty after 1 day' : `Empty after ${days} days`,
+        days: days as number | undefined,
+      })),
+    ];
+    const picked = await vscode.window.showQuickPick(items, {
+      title: 'Empty the Trash automatically',
+      placeHolder: 'Entries older than this are deleted for real — secrets, history and all.',
+    });
+    if (picked === undefined) {
+      return;
+    }
+    await storage.setTrashRetention(element.accountId, picked.days);
+    mutated();
+  });
+
+  register('credSshManager.emptyTrash', async (target?: unknown) => {
+    const element = asElement(target);
+    if (element?.kind !== 'node') {
+      return;
+    }
+    const inside = storage.getChildren(element.accountId, element.node.id);
+    if (inside.length === 0) {
+      void vscode.window.showInformationMessage('The Trash is already empty.');
+      return;
+    }
+    const confirmed = await vscode.window.showWarningMessage(
+      `Permanently delete ${inside.length === 1 ? '1 item' : `${inside.length} items`} from the Trash?`,
+      {
+        modal: true,
+        detail:
+          'This removes the secrets, the revision history, and propagates to every machine that syncs. It cannot be undone.',
+      },
+      'Delete Permanently',
+    );
+    if (confirmed !== 'Delete Permanently') {
+      return;
+    }
+    // Sequential for the same reason every other bulk delete is: each mutator is an unlocked
+    // read-modify-write of one array, so two in flight would drop one of the deletions.
+    for (const node of inside) {
+      await storage.deleteNodeRecursive(element.accountId, node.id);
+    }
+    mutated();
+    void vscode.window.showInformationMessage(`Emptied the Trash — ${inside.length} deleted.`);
+  });
+
+  /**
    * From a folder inside the "Depended on by" list to that folder where it really lives.
    *
    * <p>The filter is cleared first, and that is not tidiness: a filtered-out row cannot be
@@ -1725,12 +1786,19 @@ ${detail}
           ? `folder "${targets[0].node.name}" and everything inside it`
           : `entity "${targets[0].node.name}" and its stored secrets`
         : `${targets.length} selected items, folders with everything inside them`;
+    // "Move to Trash" is FIRST, which makes it the button Enter presses. The safe answer being
+    // the reflex answer is the whole point of having a trash at all.
     const confirmed = await vscode.window.showWarningMessage(
-      `Delete ${what}? This cannot be undone.${skippedNote === '' ? '' : ` ${skippedNote}`}`,
-      { modal: true },
-      'Delete',
+      `Delete ${what}?${skippedNote === '' ? '' : ` ${skippedNote}`}`,
+      {
+        modal: true,
+        detail:
+          'Moving to Trash can be undone by dragging it back out. Deleting permanently cannot: it removes the secrets, the revision history, and propagates to every machine that syncs.',
+      },
+      'Move to Trash',
+      'Delete Permanently',
     );
-    if (confirmed !== 'Delete') {
+    if (confirmed === undefined) {
       return;
     }
     // Sequential, and not as a matter of style: every storage mutator is an unlocked
@@ -1738,11 +1806,17 @@ ${detail}
     // race and the later write would silently drop the earlier deletion.
     const removed: string[] = [];
     for (const t of targets) {
-      removed.push(...(await storage.deleteNodeRecursive(t.accountId, t.node.id)));
+      if (confirmed === 'Delete Permanently') {
+        removed.push(...(await storage.deleteNodeRecursive(t.accountId, t.node.id)));
+        continue;
+      }
+      await storage.moveToTrash(t.accountId, t.node.id);
+      removed.push(t.node.name);
     }
     mutated();
+    const verb = confirmed === 'Delete Permanently' ? 'Deleted' : 'Moved to Trash:';
     void vscode.window.showInformationMessage(
-      removed.length === 1 ? `Deleted "${removed[0]}".` : `Deleted ${removed.length} items.`,
+      removed.length === 1 ? `${verb} "${removed[0]}".` : `${verb} ${removed.length} items.`,
     );
   });
 

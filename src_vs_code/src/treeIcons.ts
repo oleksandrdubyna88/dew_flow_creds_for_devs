@@ -41,7 +41,7 @@ export function kindIcon(kind: EntityKind): string {
 }
 
 /** Folders are painted dark orange so they never blend in with items. */
-const FOLDER_COLOR = new vscode.ThemeColor('credSshManager.folderIcon');
+export const FOLDER_COLOR = new vscode.ThemeColor('credSshManager.folderIcon');
 
 // eslint-disable-next-line complexity
 export function folderIcon(folderType: FolderType | undefined): vscode.ThemeIcon {

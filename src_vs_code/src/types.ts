@@ -270,6 +270,23 @@ export interface TreeNode {
   folderType?: FolderType;
   /** Manual position among siblings (folders); lower comes first. */
   sortOrder?: number;
+  /**
+   * This folder is the account's trash. One per account, created on the first delete rather
+   * than seeded up front — an empty Trash in a brand-new vault is a question nobody asked.
+   *
+   * <p>A flag rather than a `folderType`, deliberately: `folderType` dictates what kind of
+   * entity a folder may hold, and the trash holds whatever was deleted. Teaching the kind
+   * machinery about a folder that accepts everything would touch the picker, the form's locked
+   * kind and `folderKindOf` for no gain.</p>
+   */
+  isTrash?: boolean;
+  /**
+   * Days after which an entry in the trash is deleted for real. Absent means kept until
+   * emptied by hand. Lives on the folder rather than in VS Code settings because each account
+   * has its own trash, and the choice has to travel with the vault to another machine — an
+   * editor setting is about a machine, not an account.
+   */
+  trashRetentionDays?: number;
 }
 
 /** A person discovered on a vault location (folder or server). */
@@ -683,6 +700,15 @@ export function isTreeNode(value: unknown): value is TreeNode {
     }
   }
   if (v.sortOrder !== undefined && typeof v.sortOrder !== 'number') {
+    return false;
+  }
+  // Without these two the trash flag and its retention are stripped by every sync, import and
+  // sealed-slot read — the folder would arrive on the second machine as an ordinary folder full
+  // of things somebody thought they had deleted.
+  if (v.isTrash !== undefined && typeof v.isTrash !== 'boolean') {
+    return false;
+  }
+  if (v.trashRetentionDays !== undefined && typeof v.trashRetentionDays !== 'number') {
     return false;
   }
   if (

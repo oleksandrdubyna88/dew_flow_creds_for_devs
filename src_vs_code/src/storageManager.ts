@@ -14,6 +14,7 @@ import { Revision, isRevisionList, pushRevision } from './revisionHistory';
 import { MetadataError, isSealedMetadata, newMetadataKey, openMetadata, sealMetadata } from './metadataCipher';
 import { ExternalSecrets } from './externalBundle';
 import { stampKind } from './entityKind';
+import { TRASH_FOLDER_NAME, findTrash } from './trash';
 import {
   BackupBundle,
   StoredAccount,
@@ -478,6 +479,50 @@ export class StorageManager implements vscode.Disposable {
       ),
     );
     await this.bumpHorizonToSeq(accountId);
+  }
+
+  /**
+   * Move a node into the account's trash, creating the trash on first use.
+   *
+   * <p><b>Deliberately not part of `deleteNodeRecursive`.</b> That method is the one real
+   * deletion — tombstone, every secret key, the revision history — and `burnOnUse`,
+   * `entityExpiry` and `ephemeralSweeper` depend on it staying that way. An entry that promised
+   * to destroy itself must not quietly become an entry sitting in a folder, still working. So
+   * this is a MOVE, it syncs as a move, and restoring is moving back.</p>
+   *
+   * <p>Returns the trash folder, so a caller can tell the person where the thing went.</p>
+   */
+  async moveToTrash(accountId: string, id: string): Promise<TreeNode> {
+    const trash = await this.ensureTrash(accountId);
+    // Moving the trash into itself, or a folder into its own descendant, is refused by leaving
+    // it where it is: `deleteNodeRecursive` is the only way to remove the trash itself.
+    if (id !== trash.id) {
+      await this.moveNode(accountId, id, trash.id);
+    }
+    return trash;
+  }
+
+  /** The account's trash, made on the first delete rather than seeded into every new vault. */
+  async ensureTrash(accountId: string): Promise<TreeNode> {
+    const existing = findTrash(this.getNodes(accountId));
+    if (existing !== undefined) {
+      return existing;
+    }
+    const trash: TreeNode = {
+      id: StorageManager.newId(),
+      name: TRASH_FOLDER_NAME,
+      type: 'folder',
+      parentId: null,
+      isTrash: true,
+    };
+    await this.addNode(accountId, trash);
+    return trash;
+  }
+
+  /** Set or clear how long the trash keeps what is in it. */
+  async setTrashRetention(accountId: string, days: number | undefined): Promise<void> {
+    const trash = await this.ensureTrash(accountId);
+    await this.updateNode(accountId, { ...trash, trashRetentionDays: days });
   }
 
   private async bumpHorizonToSeq(accountId: string): Promise<void> {
