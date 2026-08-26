@@ -1,9 +1,9 @@
 # Security & architecture review — 2026-08-26, the coverage pass
 
 > Scope: the whole shipped extension, reviewed while closing audit A3 (unit tests for every
-> module no test loaded). Twenty-one modules gained tests; two defects were found in the process,
-> both red-first, both of a class this repository has produced repeatedly. Verified on Windows
-> (1614 tests, 1610 pass + 4 POSIX-only skips) and under WSL (1614/1614), `tsc` and lint clean.
+> module no test loaded). Twenty-one modules gained tests; three defects were found in the
+> process, each red-first, all of a class this repository has produced repeatedly. Verified on
+> Windows (1625 tests, 1621 pass + 4 POSIX-only skips) and under WSL, `tsc` and lint clean.
 >
 > Predecessor: [SECURITY_REVIEW_2026-08-25.md](SECURITY_REVIEW_2026-08-25.md). None of its fixed
 > items were re-opened. This review is not a fresh audit of that ground; it is what looking at
@@ -11,10 +11,14 @@
 
 ## The short version
 
-**Two defects, one root cause.** Both are the same shape the previous review named twice: a
-protective measure that exists in the codebase and is applied at some of the sites that need it.
-Neither was found by looking for it — both fell out of writing a test that had to describe what
-the module guarantees.
+**Three defects, and two ways of describing what they share.** By mechanism, each is a
+protective measure that exists in this codebase and is applied at some of the sites that need it
+— the shape the previous review named twice. By INPUT, two of the three are the same untrusted
+value (an entity id) reaching two different mechanisms, which is the more useful framing because
+it names a fix that closes both.
+
+None was found by looking for it. Each fell out of writing a test that had to describe what the
+module guarantees — which is the argument for the coverage pass having been worth doing at all.
 
 The rest held up under a deliberate sweep: process spawning is argv-array almost everywhere and
 the one shell path is trust-gated; network egress is loopback, one constant endpoint, and the
@@ -27,7 +31,8 @@ single seam that both its entry points provably share.
 | # | Sev | Finding | Fix | Commit |
 |---|-----|---------|-----|--------|
 | 1 | **HIGH** | `depPickerScript.ts` interpolated four values — folder list, entity names, colours, saved rows — into the entity form's `<script>` element with raw `JSON.stringify`. That leaves `<` untouched, and an HTML parser ends a script element at `</script>` wherever it appears, inside a string literal included. A folder or entity named `</script><img src=x onerror=…>` closed the script early and the rest of the form's own code was parsed as markup. Names arrive from a **synced** vault, a shared entry or a restored backup. | All four go through `jsonForScript`. `webauthnPrf.ts` also lost its hand-rolled copy of the same escape. A scan now fails on any new site. | `dffc889` |
-| 2 | **HIGH** | Four places built a file name out of vault data — the materialised private key, the VPN config, the per-entity `known_hosts`, and a script body. An id of `x/../../../../evil` resolved clean out of `keys/<pid>/`, so connecting to a crafted entity wrote its **private key** to an arbitrary path. The prefix two of them add (`script-`, `known_hosts-`) stops the obvious `../` and nothing more: the prefixed segment is popped by the `..` that follows. | `safeFileComponent` in the functions that build the path, not at each caller. | `909eaf9` |
+| 2 | **HIGH** | Six places built a file name out of vault data — the materialised private key, the VPN config, the per-entity `known_hosts`, and a script body. An id of `x/../../../../evil` resolved clean out of `keys/<pid>/`, so connecting to a crafted entity wrote its **private key** to an arbitrary path. The prefix two of them add (`script-`, `known_hosts-`) stops the obvious `../` and nothing more: the prefixed segment is popped by the `..` that follows. | `safeFileComponent`, then `materializedKeyPath` as the only road into the directory, plus a scan. | `909eaf9`, `3e198a1` |
+| 3 | **HIGH** | SecretStorage keys are concatenated — `${accountId}_${entityId}`, plus a `:sshPrivateKey` / `:vpnConfig` / … suffix per kind — so `secretKey('a1', 'x:sshPrivateKey')` and `privateKeySecretKey('a1', 'x')` are **the same string**. An entity with that id, given a password, destroys entity `x`'s stored private key; reading that key back returns the attacker's password. Nothing reports an error. | `keyPart` escapes the three separators (`%`, `:`, `_`), none of which occurs in a uuid — so every key an installed build already wrote is unchanged, asserted by test. | `c523d8d` |
 
 ### Why #2 is reachable, and why the audit did not stop at "shares are safe"
 
@@ -43,11 +48,29 @@ file *and* its PIN — a social step, not a cryptographic break.
 `vpnCommand.ts` had been sanitising its own name since it was written, for exactly this reason.
 The other four sites had not.
 
-## The root cause both findings share
+## Three findings, one unvalidated input
+
+Findings 2 and 3 are the same input reaching two different mechanisms. **An entity id is trusted
+everywhere it is used**, and it is only trusted because it is normally a uuid:
+
+| mechanism | what a crafted id did |
+|---|---|
+| `path.join` into `keys/<pid>/` | wrote a private key — and, at two sites, an executable script — anywhere on disk |
+| SecretStorage key concatenation | destroyed another entity's private key, and served the attacker's password in its place |
+
+Both are fixed at the point of use, which is defence in depth rather than the class fix. **The
+class fix is validating the id where the envelope is opened**, and it is the first open item
+below — it needs a decision about vaults that already hold odd ids, which is why it was not taken
+unilaterally.
+
+Finding 2 also shows the sub-pattern the next section is about: sanitising four sites by hand,
+then finding two more only by enumerating them properly.
+
+## The root cause the findings share
 
 > A measure that exists in the codebase, applied at some of the sites that need it.
 
-This is now the third and fourth instance:
+This is now the third, fourth and fifth instance:
 
 | measure | applied | missing |
 |---|---|---|
@@ -61,9 +84,15 @@ so. `scriptInterpolation.test.ts` is the first mechanical answer: it scans every
 file and fails, **naming file and line**, on any `${JSON.stringify(…)}` inside a template literal,
 with a short allowlist of named exceptions that a second test fails on if it goes stale.
 
-**The path-building equivalent is not written**, and it is the honest open item from this review: a
-scan for "vault data reaching `path.join`" has more legitimate call sites than the script one, so
-it needs a rule that does not cry wolf. Recorded here rather than left implicit.
+**The path-building equivalent is `keysDirPaths.test.ts`**, and it is narrower on purpose: a scan
+for "vault data reaching `path.join`" anywhere has 49 call sites, most of them legitimate, and a
+rule that cries wolf is a rule people disable. So it guards the one directory where the secrets
+are — `materializedKeyPath` is the only sanctioned road in, and anything else joining into
+`keys/<pid>/` fails the suite by name.
+
+That guard is also what found two of the six sites in finding 2. It was written BEFORE the fix,
+and its failure listed six when the fix in hand covered four. Without it, four of six would have
+shipped as complete — which is exactly what the `jsonForScript` sweep did earlier the same day.
 
 ## Swept and found sound
 
@@ -93,13 +122,16 @@ it needs a rule that does not cry wolf. Recorded here rather than left implicit.
 
 ## Open
 
-1. **No mechanical guard on vault-data-to-path.** See above. The four known sites are fixed; a
-   fifth added tomorrow would not be caught.
-2. **Entity ids are not validated on import or restore.** Sanitising at the path is the right
-   defence-in-depth and is what shipped, but an id is also a map key and a DOM id elsewhere.
-   Validating ids at the trust boundary — where the envelope is opened — would close the class
-   rather than its current instances. Not taken here because it needs a migration story for
-   vaults that already hold odd ids.
+1. **Entity ids are still not validated on import or restore, and this is now the main item.**
+   Two mechanisms have been hit by the same input; both are fixed at the point of use, which
+   closes the instances and not the class. A third mechanism is unfixed by either: an id is also
+   a `TreeItem.id`, so `${accountId}:${node.id}:rev${index}` is concatenated the same way and a
+   crafted id can collapse two rows onto one identity in the tree. That one is cosmetic today —
+   it is worth listing because it shows the pattern does not stop at the two that were expensive.
+   Validating where the envelope is opened would close all of them at once. It needs a decision
+   about vaults that already hold odd ids, which is why it was not taken unilaterally.
+2. **No mechanical guard on vault-data-to-path in general.** `keysDirPaths.test.ts` closes the
+   key directory, which is where the secrets are; a name built for somewhere else is not covered.
 3. **`extension.ts` remains 3,490 lines.** Its four real decisions moved to `commandTargets.ts`
    and are tested; what is left is registration, whose manifest↔handler correspondence
    `commandsRegistered.test.ts` checks by scanning the tree. No further extraction is proposed —
