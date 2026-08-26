@@ -106,21 +106,59 @@ function world(options: {
       w.presence += 1;
     },
     undefined,
-    options.secrets === undefined ? undefined : () => Promise.resolve(options.secrets ?? []),
-    options.burns === undefined
-      ? undefined
-      : (_a: string, entityId: string): Promise<boolean> => {
-          w.burned.push(entityId);
-          return Promise.resolve(options.burns === true);
-        },
-    options.alias === undefined ? undefined : (name: string) => (name === 'prod' ? options.alias : undefined),
+    maskerFor(options.secrets),
+    burnerFor(w, options.burns),
+    aliasResolverFor(options.alias),
   );
   return w;
+}
+
+/* The broker's three optional collaborators, each absent unless a test asks for it — which is
+ * itself what several of the tests are about: a build with no masker must still answer, and a
+ * window with no alias registry must refuse an alias call rather than crash. Lifted out of the
+ * constructor call so the helper stays under the complexity limit; no test reads differently. */
+
+function maskerFor(
+  secrets: readonly { value: string; label: string }[] | undefined,
+): (() => Promise<readonly { value: string; label: string }[]>) | undefined {
+  return secrets === undefined ? undefined : () => Promise.resolve(secrets);
+}
+
+function burnerFor(
+  w: World,
+  burns: boolean | undefined,
+): ((a: string, entityId: string) => Promise<boolean>) | undefined {
+  if (burns === undefined) {
+    return undefined;
+  }
+  return (_a: string, entityId: string): Promise<boolean> => {
+    w.burned.push(entityId);
+    return Promise.resolve(burns);
+  };
+}
+
+function aliasResolverFor(
+  alias: { accountId: string; entityId: string; entityName: string; kind: string } | undefined,
+): ((name: string) => typeof alias) | undefined {
+  return alias === undefined ? undefined : (name: string) => (name === 'prod' ? alias : undefined);
 }
 
 interface Answer {
   status: number;
   body: Record<string, unknown>;
+}
+
+/** No header at all when there is no token — which is one of the refusals under test. */
+function bearer(token: string | undefined): Record<string, string> {
+  return token === undefined ? {} : { Authorization: `Bearer ${token}` };
+}
+
+/** `raw` wins, so a test can send bytes that are deliberately not JSON. */
+function payloadOf(options: { body?: unknown; raw?: string }): string | undefined {
+  if (options.raw !== undefined) {
+    return options.raw;
+  }
+  return options.body === undefined ? undefined : JSON.stringify(options.body);
 }
 
 async function call(
@@ -130,11 +168,8 @@ async function call(
 ): Promise<Answer> {
   const response = await fetch(`http://127.0.0.1:${port}${path}`, {
     method: options.method ?? 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(options.token === undefined ? {} : { Authorization: `Bearer ${options.token}` }),
-    },
-    body: options.raw ?? (options.body === undefined ? undefined : JSON.stringify(options.body)),
+    headers: { 'Content-Type': 'application/json', ...bearer(options.token) },
+    body: payloadOf(options),
   });
   const text = await response.text();
   return { status: response.status, body: text.length === 0 ? {} : (JSON.parse(text) as Record<string, unknown>) };
