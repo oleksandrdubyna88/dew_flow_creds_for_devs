@@ -48,6 +48,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **The WSL relay raises itself.** `CredsForDevs: Set Up the WSL Agent Relay` turns it on and
+  offers to add the one `export SSH_AUTH_SOCK=…` line your shell needs; after that the relay
+  starts whenever a key is loaded into the agent and stops when the last one is unloaded or the
+  window closes. Nothing outlives the window — measured: killing the `wsl.exe` does kill the
+  relay inside the distribution, and the socket it leaves behind is reclaimed by the next start.
+
+  Off unless asked for (`credSshManager.wslAgentRelay`), because it widens the agent's reach
+  from one Windows user to every process in that distribution running as you.
+
+  The export line is the one part the extension cannot do for you, and the reason is worth
+  knowing: VS Code's environment collection is a single namespace for every terminal of a
+  window, and a Windows terminal needs the agent's named pipe where a WSL one needs the relay's
+  unix path — there is no per-shell scope, and a Windows variable does not reach the
+  distribution at all unless it is named in `WSLENV`. So it goes in the shell's own rc, once,
+  and the command writes it there for you rather than shipping a mechanism that half-works.
+
 - **The SSH agent, from inside WSL — `creds relay`.** Everything else in the CLI crosses into
   Windows by re-executing itself, because a call is one short exchange whose arguments are names.
   `ssh` is not that: it opens `$SSH_AUTH_SOCK` and speaks a binary protocol over a connection it

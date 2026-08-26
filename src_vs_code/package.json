@@ -93,6 +93,21 @@
           },
           "markdownDescription": "Per-account vault location: maps an account **email** to a folder **or** a Cred Vault Server URL, e.g. `{ \"work@corp.com\": \"https://vault.corp.com\", \"me@gmail.com\": \"/mnt/home-nas/vault\" }`. Accounts without a mapping use `#credSshManager.nasBackupPath#`. Easiest way to set: right-click the account → *Set Sync Location…*"
         },
+        "credSshManager.wslAgentRelay": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "Run `creds relay` inside WSL while a key is loaded into the SSH agent, so `ssh` and `git` in a WSL shell can use it. **This widens the agent's reach**: the named pipe is reachable by one Windows user, the relay's unix socket by every process in that distribution running as you. Every signature still asks on Windows. Run `CredsForDevs: Set Up the WSL Agent Relay` — it turns this on and offers to add the one `export SSH_AUTH_SOCK=...` line your shell needs."
+        },
+        "credSshManager.wslRelayCommand": {
+          "type": "string",
+          "default": "creds",
+          "markdownDescription": "How `creds` is invoked inside WSL. A plain command name or path — it is refused rather than escaped, because it reaches a login shell."
+        },
+        "credSshManager.wslRelayDistro": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Which WSL distribution the relay runs in. Empty means the default one (`wsl -l -q` lists them)."
+        },
         "credSshManager.autoSync": {
           "type": "boolean",
           "default": false,
@@ -376,6 +391,11 @@
       ]
     },
     "commands": [
+      {
+        "command": "credSshManager.setUpWslRelay",
+        "title": "Set Up the WSL Agent Relay",
+        "category": "CredsForDevs"
+      },
       {
         "command": "credSshManager.addAccount",
         "title": "Add Account",

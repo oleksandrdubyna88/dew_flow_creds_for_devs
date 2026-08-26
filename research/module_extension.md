@@ -1314,6 +1314,14 @@ enumerate anyway — which is what makes it safe to write. A crashed window cann
 note, so staleness is normal and nothing trusts the file: the unauthenticated health probe
 decides, because the OS reissues freed port numbers.
 
+When `credSshManager.wslAgentRelay` is on, the same callback also raises **`WslRelayManager`**
+(`wslRelayManager.ts`) — `creds relay` inside the distribution, started with the agent and killed
+with it. The socket path is read from the relay's own first line rather than re-derived here, and
+both settings that reach the login shell are refused rather than escaped. The export a WSL shell
+needs stays in that shell's rc, written once by `CredsForDevs: Set Up the WSL Agent Relay`: VS
+Code has one environment namespace per window, and a Windows terminal needs the pipe where a WSL
+one needs the socket.
+
 The announcement also carries **`agentSocket`** (0.65.0) — where the SSH agent listens, when one
 is running. Written by `CredsAgentServer.setAgentAddress`, which `SshAgentManager` calls on both
 edges of the agent's life: it starts on the first key loaded and stops on the last, so an address

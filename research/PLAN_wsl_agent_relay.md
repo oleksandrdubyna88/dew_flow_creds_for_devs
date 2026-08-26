@@ -149,6 +149,45 @@ answering *unknown verb "relay-pipe"*. Name the project.
 
 **Also not in the plan:** `creds relay` refuses to run on Windows with an explanation, rather than
 failing at a unix socket that cannot exist there.
+## The follow-on that shipped the same day: it raises itself
+
+The plan ended at a relay a person starts by hand. That is one command per machine per reboot,
+which is the kind of step people stop taking. `WslRelayManager` now starts it when the agent
+starts and kills it when the agent stops or the window closes — the same shape and the same rule
+as `SshBridgeManager`, with the spawner injected so the lifetime is a unit test.
+
+**Measured first, again.** Killing the `wsl.exe` from Windows *does* kill the relay inside the
+distribution — so nothing outlives the window and there is no leak to clean up. The socket file
+is left behind, because a killed process runs no exit handler; that costs nothing, since
+`ClaimAsync` already reclaims a stale socket on the next start.
+
+**Restarts are bounded.** The ordinary failure is `creds` not being installed in the
+distribution, and an unbounded respawn would be a login shell started every few milliseconds for
+the rest of the session. Three failures inside five seconds and it stops, saying why; a run that
+lasted resets the count.
+
+**Off unless asked for** (`credSshManager.wslAgentRelay`), for the reason the security section
+above gives. The command that turns it on is palette-only: there is no tree row for "this
+computer's WSL", and a menu entry would advertise a bridge most people do not want.
+
+**What the extension deliberately does NOT do is set `SSH_AUTH_SOCK` for you.** VS Code's
+environment collection is one namespace for every terminal of a window, and a Windows terminal
+needs the agent's named pipe where a WSL one needs the relay's unix path — the API has no
+per-shell scope. A Windows variable does not reach the distribution at all unless it is named in
+`WSLENV`. So the export belongs in the shell's own rc, and the setup command offers to write it
+there once — idempotent by a marker comment rather than by the path, so someone who moved the
+socket with `CREDS_RELAY_SOCKET` does not end up with two exports fighting.
+
+**The socket path is read, never re-derived.** `AgentRelay.DefaultSocketPath` decides it in the
+CLI; the manager parses the relay's own first line of stdout. A second implementation of that
+rule on the TypeScript side would be two places that must agree about a path — the shape of
+defect the two-implementations rule exists for.
+
+**Both settings reach a login shell, so they are refused rather than escaped.** Settings are
+workspace-writable — a repository can ship a `.vscode/settings.json` — and the command and
+distribution names are spliced into `bash -lc`. The accepted character set is what those names
+actually need; nothing quotable is accepted, so there is nothing to quote correctly.
+
 ## Definition of Done
 
 - [x] `creds relay` serves a unix socket in WSL that a real `ssh-add -l` lists the key through.

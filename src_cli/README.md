@@ -97,6 +97,13 @@ ssh-add -l                          # the key, served from the VS Code window on
 git commit -S                       # signed by a key that is not in this filesystem
 ```
 
+**Or let the extension do it:** `CredsForDevs: Set Up the WSL Agent Relay` turns on
+`credSshManager.wslAgentRelay` and offers to write that export line into your `~/.bashrc`. From
+then on the relay comes up whenever a key is loaded into the agent and goes down with the last
+one — or with the window. The export line stays your shell's job: VS Code has one environment
+namespace per window, and a Windows terminal needs the named pipe where a WSL one needs this
+socket.
+
 The private key never enters WSL. Every signature raises the consent dialog **on Windows**, per
 key and per use. The address is resolved on every connection, so unloading a key and loading
 another is picked up without restarting the relay.

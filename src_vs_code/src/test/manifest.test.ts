@@ -32,6 +32,10 @@ const manifest: Manifest = JSON.parse(
  * how a feature ships invisible.
  */
 const PALETTE_ONLY = new Set([
+  // One-time machine setup: it turns the WSL relay on and offers to add the export line to the
+  // shell's rc. There is no tree row for "this computer's WSL", and a menu entry would advertise
+  // a bridge most people do not want — it widens the agent's reach into the distribution.
+  'credSshManager.setUpWslRelay',
   // Troubleshooting, used about once per machine.
   'credSshManager.resetGoogleOAuth',
   // Older aliases of backupToNas / restoreBackup, kept so muscle memory and any

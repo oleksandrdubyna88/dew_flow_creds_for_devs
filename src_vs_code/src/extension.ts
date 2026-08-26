@@ -110,6 +110,8 @@ import { materializePrivateKey } from './keyInstaller';
 import { isSafeSshTarget } from './sshCommand';
 import { buildSshExecArgv } from './sshExecCommand';
 import { runSshExec } from './sshExecRunner';
+import { rcAlreadyHasIt, rcSnippet } from './wslRelay';
+import { WslRelayManager, spawnWslRelay } from './wslRelayManager';
 import { resolveSshCredential } from './sshCredential';
 import {
   AliasMap,
@@ -546,8 +548,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     storageDir,
     envCollection,
     () => vaultKeys.noteUserActivity(),
-    // Published in the endpoint file so a relay inside WSL can find this agent without a pid.
-    agentServer.setAgentAddress,
+    // Published in the endpoint file so a relay inside WSL can find this agent without a pid,
+    // and — when the setting is on — used to raise and lower the relay with the agent itself.
+    (socketPath) => {
+      agentServer.setAgentAddress(socketPath);
+      followAgentWithRelay(socketPath);
+    },
   );
   context.subscriptions.push(sshAgent);
   void sshAgent.loadMarked().then((count) => {
@@ -557,6 +563,37 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       );
     }
   });
+
+  // The relay that carries this agent into WSL, where a Linux kernel cannot open a named pipe.
+  // Off unless asked for: it widens the agent's reach from one Windows user to every process in
+  // the distribution running as that user — see `research/PLAN_wsl_agent_relay.md`.
+  const wslRelay = new WslRelayManager(
+    (args) => spawnWslRelay(args, (text) => log.info('wsl-relay', text)),
+    (message) => log.info('wsl-relay', message),
+  );
+  context.subscriptions.push(wslRelay);
+
+  function relaySettings(): { enabled: boolean; command: string; distro: string } {
+    const config = vscode.workspace.getConfiguration('credSshManager');
+    return {
+      enabled: config.get<boolean>('wslAgentRelay', false),
+      command: config.get<string>('wslRelayCommand', 'creds'),
+      distro: config.get<string>('wslRelayDistro', ''),
+    };
+  }
+
+  function followAgentWithRelay(socketPath: string | undefined): void {
+    const { enabled, command, distro } = relaySettings();
+    if (socketPath === undefined || !enabled || process.platform !== 'win32') {
+      wslRelay.stop();
+      return;
+    }
+    const started = wslRelay.start(command, distro);
+    if (!started.ok) {
+      log.warn('wsl-relay', started.reason);
+      void vscode.window.showWarningMessage(`CredsForDevs: ${started.reason}`);
+    }
+  }
 
   const sshDeps = {
     storage,
@@ -603,6 +640,103 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
   const register = (command: string, handler: (...args: unknown[]) => unknown) =>
     context.subscriptions.push(vscode.commands.registerCommand(command, handler));
+
+  /**
+   * Point a WSL shell at the relay, once, and turn the relay on.
+   *
+   * <p>The one part the extension cannot do for you. VS Code's environment collection is a single
+   * namespace for every terminal of a window, and a Windows terminal needs the agent's named pipe
+   * where a WSL one needs this relay's unix path; there is no per-shell scope. A Windows variable
+   * does not even reach the distribution unless it is named in `WSLENV`. So the export belongs in
+   * the shell's own rc, and this offers to put it there rather than shipping a mechanism that
+   * half-works.</p>
+   */
+  register('credSshManager.setUpWslRelay', async () => {
+    if (process.platform !== 'win32') {
+      void vscode.window.showInformationMessage(
+        'The WSL relay is a Windows-only bridge — elsewhere ssh reaches the agent directly.',
+      );
+      return;
+    }
+    await vscode.workspace
+      .getConfiguration('credSshManager')
+      .update('wslAgentRelay', true, vscode.ConfigurationTarget.Global);
+    const { command, distro } = relaySettings();
+    const started = wslRelay.start(command, distro);
+    if (!started.ok) {
+      void vscode.window.showErrorMessage(`CredsForDevs: ${started.reason}`);
+      return;
+    }
+    const socketPath = await waitForRelaySocket();
+    if (socketPath.length === 0) {
+      void vscode.window.showErrorMessage(
+        'CredsForDevs: the relay did not report a socket. Check that `creds` is installed inside ' +
+          'the distribution, and see the "CredsForDevs: Diagnostics" channel.',
+      );
+      return;
+    }
+    await offerTheExportLine(socketPath, distro);
+  });
+
+  /** The relay names its socket on its first line of output; give it a moment to say so. */
+  async function waitForRelaySocket(): Promise<string> {
+    for (let attempt = 0; attempt < 20 && wslRelay.socketPath.length === 0; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+    return wslRelay.socketPath;
+  }
+
+  async function offerTheExportLine(socketPath: string, distro: string): Promise<void> {
+    const snippet = rcSnippet(socketPath);
+    const choice = await vscode.window.showInformationMessage(
+      `The relay is listening on ${socketPath}. Add this to your shell so ssh and git in WSL find it?`,
+      { modal: true, detail: snippet.trim() },
+      'Add to ~/.bashrc',
+      'Copy the line',
+    );
+    if (choice === 'Copy the line') {
+      await vscode.env.clipboard.writeText(snippet.trim());
+      return;
+    }
+    if (choice === 'Add to ~/.bashrc') {
+      await appendToBashrc(snippet, distro);
+    }
+  }
+
+  /**
+   * Append the block, unless it is already there.
+   *
+   * <p>The text goes in on the child's STDIN and is never spliced into the command, so nothing
+   * about the path or the marker can be read as shell syntax. Idempotent by the marker rather
+   * than the path: someone who moved the socket has our line with a path we would not match, and
+   * a second export would quietly fight their choice.</p>
+   */
+  async function appendToBashrc(snippet: string, distro: string): Promise<void> {
+    const distroArgv = distro.length > 0 ? ['-d', distro] : [];
+    const existing = await runWsl([...distroArgv, '-e', 'bash', '-lc', 'cat "$HOME/.bashrc" 2>/dev/null']);
+    if (rcAlreadyHasIt(existing)) {
+      void vscode.window.showInformationMessage('CredsForDevs: your ~/.bashrc already points at the relay.');
+      return;
+    }
+    await runWsl([...distroArgv, '-e', 'bash', '-lc', 'cat >> "$HOME/.bashrc"'], snippet);
+    void vscode.window.showInformationMessage(
+      'CredsForDevs: added to ~/.bashrc. Open a NEW WSL terminal, then `ssh-add -l` should list your key.',
+    );
+  }
+
+  function runWsl(args: readonly string[], stdin?: string): Promise<string> {
+    return new Promise((resolve) => {
+      const child = childProcess.spawn('wsl.exe', [...args], { stdio: ['pipe', 'pipe', 'ignore'], windowsHide: true });
+      let out = '';
+      child.stdout.setEncoding('utf8');
+      child.stdout.on('data', (chunk: string) => {
+        out += chunk;
+      });
+      child.on('error', () => resolve(''));
+      child.on('close', () => resolve(out));
+      child.stdin.end(stdin ?? '');
+    });
+  }
 
   /**
    * Give an entry a name a terminal can use — or take it away again.
