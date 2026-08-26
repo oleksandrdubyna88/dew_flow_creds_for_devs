@@ -71,7 +71,10 @@ const ProviderCtor = ((): new (storage: unknown, uri: unknown) => Provider => {
           }
         },
         TreeItemCollapsibleState: { None: 0, Collapsed: 1, Expanded: 2 },
-        Uri: { joinPath: (...parts: unknown[]): object => ({ parts }) },
+        Uri: {
+          joinPath: (...parts: unknown[]): object => ({ parts }),
+          from: (parts: unknown): object => ({ parts }),
+        },
       };
     }
     return original.call(this, request, ...rest);
@@ -107,6 +110,10 @@ function build(): { tree: Provider; storageWalks: () => number } {
   const storage = {
     getAccounts: () => [ACCOUNT],
     getAccount: () => ACCOUNT,
+    // Deliberately outside the `walks` tally: this test counts REPAINTS, and the dependency
+    // index reads nodes once per repaint. Counting it here would make the debounce assertion
+    // measure two different things at once.
+    getNodes: () => NODES,
     getChildren: (_a: string, parentId: string | null) => {
       walks += 1;
       return NODES.filter((n) => (n.parentId ?? null) === parentId);

@@ -9,9 +9,10 @@ import {
   resolveShares,
   sealShare,
   shareTranscript,
+  shareableDetails,
   sharesFromEnvelope,
 } from '../shareFormat';
-import { SharePayload, StoredAccount } from '../types';
+import { EntityMetadata, SharePayload, StoredAccount } from '../types';
 
 const NOW = 1_800_000_000_000;
 const admin: StoredAccount = { accountId: 'admin-1', email: 'admin@x', provider: 'microsoft' };
@@ -157,4 +158,32 @@ test('a fresh signed share reads as first contact, and as verified once pinned',
   assert.equal(judgeSender(store, 'acct', share), 'firstContact');
   await store.update('credSshManager.pinnedSenderKeys.acct', { 'bob@corp.com': signer.publicKey });
   assert.equal(judgeSender(store, 'acct', share), 'verified');
+});
+
+test('a shared copy carries no dependency of the vault it left', () => {
+  // `dependsOn` names ids in the SENDER's vault. Sent as-is, the recipient's resolver would
+  // report a permanent "no longer exists" for a relationship that was never theirs; the colour
+  // would claim other entries need this one, and none of those entries are being sent.
+  const shared = shareableDetails({
+    id: 'e1',
+    name: 'access-server',
+    isSshEnabled: true,
+    host: '10.0.0.1',
+    notes: 'a secret note',
+    dependsOn: ['v1', 'v2'],
+    depColor: 'depColor7',
+  });
+
+  assert.notEqual(shared, undefined);
+  const details = shared as EntityMetadata;
+  assert.equal(details.dependsOn, undefined);
+  assert.equal(details.depColor, undefined);
+  assert.equal(details.notes, undefined, 'a note is a secret and travels sealed, not here');
+  // Everything the recipient can actually use survives — this is a strip, not a rewrite.
+  assert.equal(details.host, '10.0.0.1');
+  assert.equal(details.name, 'access-server');
+});
+
+test('an entity with no metadata at all stays that way', () => {
+  assert.equal(shareableDetails(undefined), undefined);
 });

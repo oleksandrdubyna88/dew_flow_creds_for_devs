@@ -568,6 +568,78 @@ suffixes and nothing else — so the `^entity`, `:shareable` and `:pwd` menus ne
 `openRevisionViewer` refuses `setEnv`/`checkEnv` (an old secret in a live variable) and passes
 `history: []`. An index past the end renders *version no longer kept* rather than throwing.
 
+### Depends on — a relationship the vault can see (0.62.0)
+
+An SSH host is useless without the VPN that reaches its network. The vault knew all three
+entries and nothing about the sentence joining them, so it was re-derived by hand, usually while
+something was already broken. An entity now declares what it `dependsOn`; both ends wear one
+colour in the tree, and the entity depended ON grows a second sub-tree naming what needs it.
+
+**The colour is stamped on the TARGET, never on the edge**, and that placement is the whole
+feature rather than a storage detail. Pointing a second entity at `vpn / org meter` inherits its
+colour with nothing to choose; changing it once changes every row referring there — because
+there is no second copy to update. There is no propagation code anywhere, and there cannot be a
+drift bug, because the dependents do not store a colour at all. The cost is one extra
+`updateNode` against another record at save time (`applyDependencyColors`); a crash between the
+two leaves the colour unset and the next save re-picks it.
+
+**The relation rides `EntityMetadata`, for a reason `syncMerge` decides.** `pickNode` resolves a
+conflict by choosing a whole `TreeNode`; there is no field-level merge. A field on the record
+therefore inherits the causal ordering, the tombstones, the horizon rollback protection and the
+concurrency tie-break already written and tested. A separate edge collection would need every
+one of those again — plus its own type guard and its own place in `ProfileSnapshot`,
+`BackupBundle`, `SharePayload` and `Revision`. Two things it must not skip: `isEntityMetadata`,
+or every sync and import silently strips the field, and `toValues`, which builds `details` as an
+explicit literal and would silently drop it on every save.
+
+**The reverse index is derived per repaint, and deliberately NOT the `EntityFlagsRefresher`
+shape.** Those caches exist because their answer needs `SecretStorage`, which `getTreeItem`
+cannot await; `dependsOn` and `depColor` are plaintext fields already resident in
+`storage.getNodes`. `DepIndexCache` is `FilterMemo`'s lifecycle — built on demand, thrown away
+in `refresh()`, where every mutation already arrives — which also avoids the hazard the
+refresher exists to manage: a window after an edit in which the tree paints pre-edit answers.
+The tree and the decorations hold the SAME instance, so what a row is coloured and what hangs
+under it cannot disagree. `treeProviderPasswordFlag`'s "expanding a folder of 300 entities reads
+the keychain zero times" is what enforces the choice.
+
+**Colouring a row's LABEL needed an API this extension had never used.** A `TreeItem` can tint
+only its icon, and that channel already means "this keeps previous versions" — one channel with
+two meanings tells you neither. So every entity row carries a synthetic `resourceUri`
+(`credsdep:/<accountId>/<entityId>`) and `DepDecorationProvider` answers for it. It was built as
+a spike and looked at before anything was designed on top of it, because nothing in the API says
+whether `FileDecoration.color` reaches a *custom* tree. It does. **`provideFileDecoration` must
+refuse a foreign scheme on its first line** — a decoration provider is registered against the
+whole workbench, so VS Code asks it about every file in the person's workspace on every repaint;
+this is a correctness requirement with a test, not an optimisation.
+
+**The sub-tree is a place to act, not a picture.** A `dependentEntity` row carries the SAME
+`contextValue` as the entity's real row, and `asElement` narrows it back to a plain `node` — so
+Edit, Connect, Copy Password and the other forty commands work on it with no second code path.
+Only `item.id` differs (`dep:…`), because VS Code keys expansion and selection on it and two
+positions sharing one would move together. One accepted gap: `handleDrag` filters raw elements
+for `kind === 'node'` without going through `asElement`, so a drag begun on a shadow row is
+inert. Dragging the real row still works.
+
+`getParent` was written here, for the first time in this provider — `TreeView.reveal` cannot
+walk to a row without one, which is why Quick Open opens the viewer instead of selecting. The
+"go to the original folder" button clears the filter before revealing: a filtered-out row cannot
+be revealed, and a button whose whole job is "take me there" silently doing nothing is the worst
+available outcome.
+
+Three deliberate refusals, each a test: a dangling target is **not** swept (the target may be a
+sync away from returning, so the id stays and the tooltip says so); a stored id whose target is
+gone opens as a **missing row** rather than being dropped (dropping it would delete the
+relationship on the next unrelated Save); and colour borrowing is **one hop, never transitive**
+— in a vault where everything eventually reaches one VPN, following the chain would paint every
+entry the same colour and stop saying anything. `dependsOn` and `depColor` are stripped on share
+(`shareableDetails`): they name ids in the sender's vault and claim a relationship with entries
+that are not being sent.
+
+The line budget shaped the module split, not taste: `treeDataProvider.ts` had six lines of
+headroom against `eslint`'s 800, so `treeIcons.ts`, `depTreeItems.ts` and `entityContextValue`
+(into `treeRowText.ts`) came out first as pure moves, proved by the existing suite passing
+unedited. `depPickerScript.ts` came out of `entityFormScript.ts` for the same reason.
+
 ### The form is three modules, not one file (audit A1's tail)
 
 `entityFormPanel.ts` was 1,433 lines and carried an `eslint-disable max-lines` header saying

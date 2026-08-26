@@ -61,7 +61,10 @@ const ProviderCtor = ((): new (storage: unknown, uri: unknown) => Provider => {
           fire(): void {}
         },
         TreeItemCollapsibleState: { None: 0, Collapsed: 1, Expanded: 2 },
-        Uri: { joinPath: (...parts: unknown[]): object => ({ parts }) },
+        Uri: {
+          joinPath: (...parts: unknown[]): object => ({ parts }),
+          from: (parts: unknown): object => ({ parts }),
+        },
       };
     }
     return original.call(this, request, ...rest);
@@ -93,6 +96,10 @@ function build(nodes: TreeNode[]): { tree: Provider; keychainReads: () => number
   const storage = {
     getAccounts: () => [ACCOUNT],
     getAccount: () => ACCOUNT,
+    // Plaintext metadata, in memory, and NOT a keychain read — which is the whole reason the
+    // dependency index is allowed to be built inside `getTreeItem`. `reads` deliberately does
+    // not move here, so the 300-entity guarantee below still measures what it says it does.
+    getNodes: () => [FOLDER, ...nodes],
     getChildren: (_a: string, parentId: string | null) =>
       [FOLDER, ...nodes].filter((n) => (n.parentId ?? null) === parentId),
     getPassword: () => {

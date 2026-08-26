@@ -97,6 +97,10 @@ function renderForm(lockedKind: string | undefined): string {
     hasStoredHostKey: false,
     keyCandidates: [],
     jumpCandidates: [{ id: 'bastion', name: 'bastion' }],
+    // One folder with one entry, so the Depends-on picker renders with something to offer —
+    // the escaping and the script-parses checks below cover it like every other field.
+    dependencyFolders: [{ id: 'f1', name: 'vpn', entities: [{ id: 'v1', name: 'org meter' }] }],
+    dependencyColors: {},
   });
   assert.notEqual(currentPanel.webview.html.length, 0, 'the form rendered no html');
   return currentPanel.webview.html;

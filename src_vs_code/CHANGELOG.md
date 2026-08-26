@@ -258,6 +258,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Bounded on purpose: 256 KB of output per stream, 30 s per command (raisable to 120 s), 8 at a
   time, and every child killed when the window goes.
 
+## [0.62.0] — 2026-08-26
+
+### Added
+
+- **Depends on — a relationship the vault can finally see.** An SSH host is unreachable without
+  the VPN that opens its network; a password belongs to a database behind that same VPN. The
+  vault held all three entries and nothing about the sentence joining them, so it was rebuilt
+  from memory every time — usually while something was already broken. An entry now says what it
+  depends on, in the edit form: a toggle, a folder, an entry, and a colour.
+  - **Both ends are tinted with the same colour in the tree**, and the entry depended ON grows a
+    second twisty — *Depended on by* — listing what needs it, grouped by folder and showing only
+    the dependents, never the folder's other contents. Each of those folders carries a button
+    that takes you to where it really lives.
+  - **The colour belongs to the entry being depended on, not to the link.** Point a second entry
+    at the same VPN and it inherits the colour with nothing to choose; change it once and every
+    entry depending on that VPN follows. There is no propagation step and no copy to drift,
+    because the dependents never store a colour at all.
+  - The new twisty sits **beside** the version history rather than replacing it — an entry can
+    have both open at once, and that is a test rather than a hope.
+  - An entry shown under *Depended on by* is the entry, not a picture of it: Edit, Connect, Copy
+    Password and the rest of its menu work there. Dragging is the one thing that does not.
+  - A dependency whose target is deleted is **kept, not swept** — the row says the target is no
+    longer in the vault, and a sync that brings it back restores the relationship. Sharing an
+    entry strips its dependencies: they name entries in your vault, not the recipient's.
+  - Ten colours, each contributed with dark, light and both high-contrast variants, so what is
+    readable is the theme's arithmetic rather than a hex chosen once in a dark editor.
+
 ## [0.61.0] — 2026-08-26
 
 ### Added

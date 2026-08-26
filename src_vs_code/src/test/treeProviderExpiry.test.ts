@@ -56,7 +56,10 @@ const ProviderCtor = ((): new (storage: unknown, uri: unknown) => Provider => {
           fire(): void {}
         },
         TreeItemCollapsibleState: { None: 0, Collapsed: 1, Expanded: 2 },
-        Uri: { joinPath: (...parts: unknown[]): object => ({ parts }) },
+        Uri: {
+          joinPath: (...parts: unknown[]): object => ({ parts }),
+          from: (parts: unknown): object => ({ parts }),
+        },
       };
     }
     return original.call(this, request, ...rest);
@@ -75,6 +78,7 @@ function build(node: TreeNode): Provider {
   const storage = {
     getAccounts: () => [ACCOUNT],
     getAccount: () => ACCOUNT,
+    getNodes: () => [node],
     getChildren: () => [node],
     getPassword: () => Promise.resolve(undefined),
   };

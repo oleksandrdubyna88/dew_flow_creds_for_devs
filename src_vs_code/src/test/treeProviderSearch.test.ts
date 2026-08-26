@@ -57,7 +57,10 @@ const provider = ((): new (storage: unknown, uri: unknown) => {
           fire(): void {}
         },
         TreeItemCollapsibleState: { None: 0, Collapsed: 1, Expanded: 2 },
-        Uri: { joinPath: (...parts: unknown[]): object => ({ parts }) },
+        Uri: {
+          joinPath: (...parts: unknown[]): object => ({ parts }),
+          from: (parts: unknown): object => ({ parts }),
+        },
       };
     }
     return original.call(this, request, ...rest);
@@ -83,6 +86,10 @@ function fakeStorage(tree: Record<string, TreeNode[]>) {
   return {
     getAccounts: () => accounts,
     getAccount: (id: string) => accounts.find((a) => a.accountId === id),
+    getNodes: (accountId: string) =>
+      Object.entries(tree)
+        .filter(([key]) => key.startsWith(`${accountId}:`))
+        .flatMap(([, nodes]) => nodes),
     getChildren: (accountId: string, parentId: string | null) =>
       tree[`${accountId}:${parentId ?? 'root'}`] ?? [],
     getPassword: () => Promise.resolve(undefined),

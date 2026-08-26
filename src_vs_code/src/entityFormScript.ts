@@ -2,6 +2,15 @@ import { MAX_ATTACHMENT_BYTES, fileNameRegex, imageNameRegex } from './attachmen
 import { renderForward } from './sshOptions';
 import { jsonForScript } from './webviewHtml';
 import { CommandArg, EntityMetadata, PortForward } from './types';
+import { DependencyFolderCandidate, DependencyRow } from './depGraph';
+import { dependencyPickerScript } from './depPickerScript';
+
+/** What the Depends-on picker needs, gathered once when the page is built. */
+export interface DependencyPickerData {
+  rows: DependencyRow[];
+  folders: DependencyFolderCandidate[];
+  colors: Record<string, string>;
+}
 
 /**
  * The entity form's inline page script.
@@ -64,7 +73,14 @@ function initialRows(d: EntityMetadata | undefined): { args: string; scriptVars:
 // fragments joined by string concatenation — strictly harder to read and to parse in the
 // test that parses it. This is the exception the limit exists to make deliberate.
 // eslint-disable-next-line max-lines-per-function
-export function formPageScript(nonce: string, d: EntityMetadata | undefined): string {
+export function formPageScript(
+  nonce: string,
+  d: EntityMetadata | undefined,
+  // Defaulted so a caller that has no candidates to offer — and the script tests, which are
+  // about the generated program rather than about this feature — get a picker with an empty
+  // list rather than a page that fails to build. The real page always passes them.
+  picker: DependencyPickerData = { rows: [], folders: [], colors: {} },
+): string {
   const rows = initialRows(d);
   return `<script nonce="${nonce}">
   const vscode = acquireVsCodeApi();
@@ -116,6 +132,8 @@ export function formPageScript(nonce: string, d: EntityMetadata | undefined): st
       }
     }
   }
+
+  ${dependencyPickerScript(picker)}
 
   // ---- argument rows -------------------------------------------------------
   // Built from data rather than from markup: add, remove and reorder then have ONE
@@ -713,6 +731,7 @@ export function formPageScript(nonce: string, d: EntityMetadata | undefined): st
       jumpHostEntityId: val('jumpHostEntityId'), tags: val('tags'),
       agentForward: chk('agentForward'), clearHostKey: chk('clearHostKey'),
       portForwards: forwardRows,
+      dependsOn: collectDependsOn(),
     }});
   });
   document.getElementById('cancel').addEventListener('click', () => {

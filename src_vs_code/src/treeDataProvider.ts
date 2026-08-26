@@ -4,7 +4,10 @@ import { nasPathFor } from './nasPaths';
 import { senderIsVerified } from './shareSender';
 import { diagnoseTeamFailure } from './teamDiagnosis';
 import type { SharingManager } from './sharingManager';
-import { EntityKind, FolderType, OwnedShare, TreeElement, TreeNode } from './types';
+import { OwnedShare, TreeElement, TreeNode } from './types';
+
+import { DepIndexCache } from './depIndexCache';
+import { dependentGroups, dependentsFolderItem, dependentsItem } from './depTreeItems';
 import { RevisionHead, summarizeRevision } from './revisionHistory';
 import {
   FilterMemo,
@@ -17,10 +20,12 @@ import {
 } from './treeSearch';
 import { entityKey } from './entityFlags';
 import { describeRemaining } from './entityExpiry';
-import { assertNever, canConnectSsh, resolveKind } from './entityKind';
+import { resolveKind } from './entityKind';
 import { SyncReadiness } from './syncReadiness';
-import { isVpnStartable } from './vpnCommand';
-import { describeTarget } from './treeRowText';
+import { describeTarget, entityContextValue } from './treeRowText';
+import { buildTooltip, folderIcon, kindIcon } from './treeIcons';
+import { parentOf } from './treeParent';
+import { depUri } from './depDecorations';
 
 export const VIEW_ID = 'credSshManagerView';
 const DND_MIME = `application/vnd.code.tree.${VIEW_ID.toLowerCase()}`;
@@ -110,7 +115,12 @@ export class CredTreeDataProvider
   constructor(
     private readonly storage: StorageManager,
     private readonly extensionUri: vscode.Uri,
-  ) {}
+  ) {
+    // In the body, not as a field initializer: a parameter property is not assigned until the
+    // constructor runs, so `new DepIndexCache(this.storage)` beside the declaration would be
+    // handed `undefined` — which TypeScript catches, and a plain field would not have.
+    this.dependencies = new DepIndexCache(storage);
+  }
 
   /**
    * Give up the debounce timer and the emitter.
@@ -292,13 +302,34 @@ export class CredTreeDataProvider
    * answers become void — and a repaint a keystroke was still waiting on is absorbed, since
    * this one carries the current term already.
    */
+  /**
+   * The dependency index, shared with the decoration provider so the tree and the colours can
+   * never disagree about who depends on what. See `depIndexCache.ts` for why it is a per-repaint
+   * memo rather than a background walk.
+   */
+  readonly dependencies: DepIndexCache;
+
   refresh(): void {
     this.filterMemo.clear();
+    this.dependencies.clear();
     if (this.pendingRefresh !== undefined) {
       clearTimeout(this.pendingRefresh);
       this.pendingRefresh = undefined;
     }
     this.onDidChangeTreeDataEmitter.fire(undefined);
+  }
+
+  /**
+   * Required by `TreeView.reveal`, and written for it — the provider went without one until the
+   * "go to the original folder" button needed a row to be walked to. The arithmetic is in
+   * `treeParent.ts`, where it is testable without an editor; this is the seam.
+   *
+   * <p>A `dependentEntity` row deliberately answers `undefined`: reconstructing its parent means
+   * rebuilding the folder grouping it was rendered from, and nothing reveals a shadow row —
+   * the button navigates to the REAL folder, which is a plain node.</p>
+   */
+  getParent(element: TreeElement): TreeElement | undefined {
+    return parentOf(element, this.storage);
   }
 
   // eslint-disable-next-line complexity, max-lines-per-function
@@ -349,16 +380,43 @@ export class CredTreeDataProvider
     if (element.kind === 'revision') {
       return [];
     }
-    // An entity's children are its kept versions, newest first. The row already wears the
-    // history tint; what the tint promised was that the versions are one twisty away.
+    if (element.kind === 'dependents') {
+      return dependentGroups(
+        this.storage.getNodes(element.accountId),
+        this.dependencies.indexFor(element.accountId),
+        element.accountId,
+        element.node.id,
+      );
+    }
+    if (element.kind === 'dependentsFolder') {
+      // Only the entities the group was built from — never `storage`'s children of that
+      // folder. Showing the folder's other contents here would answer a question nobody asked.
+      return element.entities.map((node) => ({
+        kind: 'dependentEntity' as const,
+        accountId: element.accountId,
+        targetId: element.targetId,
+        node,
+      }));
+    }
+    // A shadow row is a leaf: it is one entity's SECOND position, and nesting its own history
+    // and dependents under it would let the tree walk in circles.
+    if (element.kind === 'dependentEntity') {
+      return [];
+    }
+    // An entity's children are its kept versions, newest first, and — when anything depends on
+    // it — one more row leading to what does. Two sub-trees, side by side rather than in each
+    // other's way: they are simply two different element kinds in one array.
     if (element.kind === 'node' && element.node.type === 'entity') {
       const { accountId, node } = element;
-      return this.historyOf(accountId, node.id).map((_head, index) => ({
+      const revisions = this.historyOf(accountId, node.id).map((_head, index) => ({
         kind: 'revision' as const,
         accountId,
         node,
         index,
       }));
+      return this.dependencies.hasDependents(accountId, node.id)
+        ? [...revisions, { kind: 'dependents' as const, accountId, node }]
+        : revisions;
     }
     const accountId = element.kind === 'account' ? element.account.accountId : element.accountId;
     const parentId = element.kind === 'account' ? null : element.node.id;
@@ -502,6 +560,26 @@ export class CredTreeDataProvider
       return item;
     }
 
+    if (element.kind === 'dependents') {
+      return dependentsItem(
+        element.accountId,
+        element.node,
+        this.dependencies.indexFor(element.accountId),
+      );
+    }
+    if (element.kind === 'dependentsFolder') {
+      return dependentsFolderItem(element);
+    }
+    if (element.kind === 'dependentEntity') {
+      // A DIFFERENT id for the same node — VS Code keys expansion and selection on it, so the
+      // two positions of one entity must not share one or they would move together.
+      return this.entityItem(
+        element.accountId,
+        element.node,
+        `dep:${element.accountId}:${element.targetId}:${element.node.id}`,
+      );
+    }
+
     const { accountId, node } = element;
     if (node.type === 'folder') {
       const filtering = this.query.length > 0;
@@ -524,68 +602,34 @@ export class CredTreeDataProvider
       return item;
     }
 
+    return this.entityItem(accountId, node, `${accountId}:${node.id}`);
+  }
+
+  /**
+   * An entity's row — built here for BOTH of the places an entity can appear: its own row, and
+   * again under whatever it is a dependency of.
+   *
+   * <p>One builder rather than two, because the shadow row must offer the same menu, the same
+   * icon and the same tint as the real one — an entry you can Connect to is one you can Connect
+   * to wherever you happen to be looking at it from. Only the `id` differs, and it has to: VS
+   * Code keys expansion and selection on it, so two positions sharing one id would move
+   * together.</p>
+   */
+  private entityItem(accountId: string, node: TreeNode, id: string): vscode.TreeItem {
     const details = node.details;
     const item = new vscode.TreeItem(
       node.name,
-      this.hasHistory(accountId, node.id)
-        ? vscode.TreeItemCollapsibleState.Collapsed
-        : vscode.TreeItemCollapsibleState.None,
+      this.entityCollapsible(accountId, node.id),
     );
-    item.id = `${accountId}:${node.id}`;
+    item.id = id;
+    // A synthetic address, not a file: it is what lets a FileDecorationProvider colour the
+    // LABEL, which a TreeItem cannot do on its own. Safe to set unconditionally because
+    // `label` and `iconPath` are both given explicitly below — a resourceUri only supplies
+    // those two when they are absent.
+    item.resourceUri = depUri(accountId, node.id);
     // Capability flags drive the context menu: only actions that are
     // actually possible for THIS entity are offered.
-    const hasPassword = this.hasPassword(accountId, node.id);
-    let contextValue = 'entity';
-    // One named predicate instead of two spellings of "is this SSH?" — the tree used to ask
-    // `details.host` here while `kindOf` asked `isSshEnabled` (audit S5).
-    if (canConnectSsh(details)) {
-      contextValue += ':ssh';
-    }
-    if (details?.isSshKey) {
-      contextValue += ':key';
-      // Two tokens rather than one, so Add and Remove are each offered only when they mean
-      // something — the same shape the VPN start/stop pair uses.
-      contextValue += details.sshAgent === true ? ':agenton' : ':agentoff';
-    }
-    if (details?.isVpn) {
-      contextValue += ':vpn';
-      if (isVpnStartable(details.vpnType)) {
-        contextValue += ':vpnrun';
-      }
-    }
-    if (details?.isDb) {
-      contextValue += ':db';
-    }
-    if (details?.isTerminal) {
-      contextValue += ':cmd';
-    }
-    if (details?.isScript) {
-      contextValue += ':script';
-    }
-    if (hasPassword) {
-      contextValue += ':pwd';
-    }
-    // From the plaintext flag, never from SecretStorage: the seed's presence is metadata,
-    // the seed is not.
-    if (details?.hasTotp === true) {
-      contextValue += ':totp';
-    }
-    // One suffix the menu can test, computed where contextValue is already assembled:
-    // the alternative was a lookahead regex in package.json doing inclusion AND the
-    // sshkey exclusion, which nothing could test and nobody could read.
-    const shareable =
-      details !== undefined &&
-      details.isSshKey !== true &&
-      (Boolean(details.host) ||
-        details.isDb === true ||
-        (details.isVpn === true && isVpnStartable(details.vpnType)) ||
-        details.isTerminal === true ||
-        details.isScript === true ||
-        hasPassword);
-    if (shareable) {
-      contextValue += ':shareable';
-    }
-    item.contextValue = contextValue;
+    item.contextValue = entityContextValue(details, this.hasPassword(accountId, node.id));
     item.iconPath = new vscode.ThemeIcon(
       // The same kind→icon table the "Shared with me" rows use. It was a flag ladder here and
       // a switch there, which is two places to teach about a new kind (audit A4).
@@ -606,12 +650,31 @@ export class CredTreeDataProvider
     item.tooltip = buildTooltip(node);
     // Single click only selects (the handler ignores it); a DOUBLE click
     // opens the read-only viewer. Actions live in the context menu.
+    //
+    // The argument is the PLAIN node element even when this row is a shadow one, so the
+    // handler opens the entity rather than learning that an entity has two positions.
     item.command = {
       command: 'credSshManager.itemClicked',
       title: 'Open',
-      arguments: [element],
+      arguments: [{ kind: 'node', accountId, node }],
     };
     return item;
+  }
+
+  /**
+   * A twisty when the entity has kept versions, or something depends on it — or both.
+   *
+   * <p>The two sub-trees are siblings, never alternatives: an entry can have been edited AND be
+   * something three other entries need, and being told about only one of those is worse than
+   * being told about neither.</p>
+   */
+  private entityCollapsible(accountId: string, entityId: string): vscode.TreeItemCollapsibleState {
+    const expandable =
+      this.hasHistory(accountId, entityId) ||
+      this.dependencies.hasDependents(accountId, entityId);
+    return expandable
+      ? vscode.TreeItemCollapsibleState.Collapsed
+      : vscode.TreeItemCollapsibleState.None;
   }
 
   // ---------- drag & drop ----------
@@ -709,80 +772,14 @@ export class CredTreeDataProvider
   }
 }
 
-// No `default` on purpose: every kind is named, so adding one to ENTITY_KINDS without giving
-// it an icon is a type error here rather than a silent padlock in the tree (audit A4).
-// eslint-disable-next-line complexity
-function kindIcon(kind: EntityKind): string {
-  switch (kind) {
-    case 'terminal':
-      return 'terminal';
-    case 'script':
-      return 'file-code';
-    case 'db':
-      return 'database';
-    case 'vpn':
-      return 'shield';
-    case 'sshkey':
-      return 'key';
-    case 'ssh':
-      return 'remote';
-    case 'credential':
-      return 'lock';
-    default:
-      return assertNever(kind, 'kindIcon');
-  }
-}
-
-/** Folders are painted dark orange so they never blend in with items. */
-const FOLDER_COLOR = new vscode.ThemeColor('credSshManager.folderIcon');
-
 /** Green: this account can sync on its own. Anything else stays the default grey. */
 /** Team/people rows are dark blue so they read as "other people", not data. */
 const HISTORY_COLOR = new vscode.ThemeColor('credSshManager.historyIcon');
 
 const TEAM_COLOR = new vscode.ThemeColor('credSshManager.teamIcon');
 
-// eslint-disable-next-line complexity
-function folderIcon(folderType: FolderType | undefined): vscode.ThemeIcon {
-  switch (folderType) {
-    case 'project':
-      return new vscode.ThemeIcon('project', FOLDER_COLOR);
-    case 'db':
-      return new vscode.ThemeIcon('database', FOLDER_COLOR);
-    case 'vpn':
-      return new vscode.ThemeIcon('shield', FOLDER_COLOR);
-    case 'sshkey':
-      return new vscode.ThemeIcon('key', FOLDER_COLOR);
-    case 'ssh':
-      return new vscode.ThemeIcon('remote', FOLDER_COLOR);
-    case 'credential':
-      return new vscode.ThemeIcon('lock', FOLDER_COLOR);
-    case 'terminal':
-      return new vscode.ThemeIcon('terminal', FOLDER_COLOR);
-    default:
-      return new vscode.ThemeIcon('folder', FOLDER_COLOR);
-  }
-}
 
 
 
 
-// eslint-disable-next-line complexity
-function buildTooltip(node: TreeNode): vscode.MarkdownString {
-  // Entity fields can originate from another user (accepted shares), so the
-  // tooltip must not render sender-controlled markdown/images. appendText
-  // escapes every metacharacter; isTrusted stays false.
-  const md = new vscode.MarkdownString();
-  md.supportThemeIcons = false;
-  const d0 = node.details;
-  const rows: string[] = [node.name];
-  if (d0?.host) rows.push(`Host: ${d0.host}`);
-  if (d0?.user) rows.push(`User: ${d0.user}`);
-  if (d0?.port !== undefined) rows.push(`Port: ${d0.port}`);
-  if (d0?.sshKeyPath) rows.push(`Key: ${d0.sshKeyPath}`);
-  rows.push(d0?.host ? 'Click: details · connects SSH via the play button' : 'Click: view details');
-  if (d0?.notes) rows.push('', d0.notes);
-  md.appendText(rows.join('\n'));
-  return md;
-}
 

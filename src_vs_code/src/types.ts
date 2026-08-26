@@ -146,6 +146,28 @@ export interface EntityMetadata {
    * per row — the same trade `isVpn` and `isDb` make for their menus.
    */
   hasTotp?: boolean;
+  /**
+   * Same-account entities this one DEPENDS ON — an SSH host that is unreachable without a VPN,
+   * a password that belongs to a database behind one.
+   *
+   * <p>A typed reference like `jumpHostEntityId`, and unlike the two above it belongs to no
+   * particular kind: anything can depend on anything. Ids arrive by sync, import and accepted
+   * shares, so an entry here CAN dangle and a pair CAN point at each other. Nothing walks it
+   * more than one hop, which is why there is no depth cap the way `resolveJumpChain` needs one;
+   * a target that no longer exists is skipped at render time, never thrown on.</p>
+   */
+  dependsOn?: string[];
+  /**
+   * The shared tint, stamped on the entity that is DEPENDED ON — never on the edge, and never
+   * on the dependent.
+   *
+   * <p>That placement IS the feature's central promise: pointing a second entity at this one
+   * inherits the colour with nothing to choose, and changing it once changes every row that
+   * refers here — because there is no second copy to go and update. One of
+   * `DEP_COLOR_KEYS` (depColors.ts); a value this build does not recognise is ignored when
+   * painting rather than rejected, so a vault written by a newer one still opens.</p>
+   */
+  depColor?: string;
   notes?: string;
 }
 
@@ -314,6 +336,26 @@ export type TreeElement =
    *  entity's history — the list is capped and rewritten in place, so an index stays
    *  valid where a copy of the revision would go stale. */
   | { kind: 'revision'; accountId: string; node: TreeNode; index: number }
+  /** The "Depended on by" sub-tree root under a TARGET entity. A SIBLING of the revision rows,
+   *  never a replacement: an entity may have both kept versions and dependents, and the two
+   *  must be expandable at the same time. */
+  | { kind: 'dependents'; accountId: string; node: TreeNode }
+  /** One folder holding at least one dependent, listing ONLY those — not the folder's other
+   *  contents. `folderId: null` is the account root, which has no folder to jump to, which is
+   *  why it is told apart by that field rather than by a separate kind: the "go to folder"
+   *  button is bound to `contextValue`, and this row simply never carries the one that has it. */
+  | {
+      kind: 'dependentsFolder';
+      accountId: string;
+      targetId: string;
+      folderId: string | null;
+      name: string;
+      entities: readonly TreeNode[];
+    }
+  /** A dependent entity, at a SECOND position in the tree. The same record as its own row, a
+   *  different row IDENTITY — the same trick `revision` plays, and for the same reason: VS Code
+   *  keys expansion and selection on `TreeItem.id`, so two positions must not share one. */
+  | { kind: 'dependentEntity'; accountId: string; targetId: string; node: TreeNode }
   | { kind: 'teamScope'; account: StoredAccount }
   | { kind: 'teamMember'; member: TeamMember; viaAccountId: string }
   | { kind: 'sharedRoot' }
@@ -508,6 +550,10 @@ function isPortForwardArray(value: unknown): value is PortForward[] {
   return Array.isArray(value) && value.every((row) => isPortForwardRow(row));
 }
 
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((item) => typeof item === 'string');
+}
+
 function isCommandArgArray(value: unknown): value is CommandArg[] {
   return (
     Array.isArray(value) &&
@@ -598,6 +644,11 @@ export function isEntityMetadata(value: unknown): value is EntityMetadata {
     (v.imageFileName === undefined || typeof v.imageFileName === 'string') &&
     (v.sshAgent === undefined || typeof v.sshAgent === 'boolean') &&
     (v.hasTotp === undefined || typeof v.hasTotp === 'boolean') &&
+    (v.dependsOn === undefined || isStringArray(v.dependsOn)) &&
+    // Loose on purpose, for the same reason `kind` above is: a colour key minted by a NEWER
+    // build must not make this one reject the whole entity. `isDepColorKey` (depColors.ts) is
+    // the strict gate, and it is applied where the value is USED, not where it is admitted.
+    (v.depColor === undefined || typeof v.depColor === 'string') &&
     (v.notes === undefined || typeof v.notes === 'string')
   );
 }

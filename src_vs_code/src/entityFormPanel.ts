@@ -17,6 +17,8 @@ import {
   generatePassword,
 } from './secretGenerator';
 import { parseSshPrivateKey } from './sshKeyParse';
+import { isDepColorKey } from './depColors';
+import { DependencyFolderCandidate, normalizeDependsOn } from './depGraph';
 import {
   CommandArg,
   DB_TYPES,
@@ -74,6 +76,20 @@ export interface EntityFormOptions {
   /** A host key is pinned for this entity, and this is its fingerprint (audit B10). */
   hasStoredHostKey: boolean;
   hostKeyFingerprint?: string;
+  /**
+   * This account's folders with the entities they hold, self excluded — the "pick a folder,
+   * then an entity" cascade behind the Depends-on rows.
+   *
+   * <p>Empty when authoring an entity for somebody else, the same call `jumpCandidates` already
+   * makes and for the same reason: an id addressing THIS vault means nothing in theirs.</p>
+   */
+  dependencyFolders: DependencyFolderCandidate[];
+  /**
+   * Target entity id -> the colour it already wears, for targets something currently depends
+   * on. Two jobs at once: pre-select the swatch when the person picks a target that is already
+   * in a relationship, and tell the auto-pick which colours are taken.
+   */
+  dependencyColors: Record<string, string>;
 }
 
 export interface EntityFormValues {
@@ -96,6 +112,15 @@ export interface EntityFormValues {
   clearTotp: boolean;
   /** True when the person asked to forget the pinned host key (audit B10). */
   clearHostKey: boolean;
+  /**
+   * Colour picks for the entities this one now depends ON — a SECOND entity's field in each
+   * case, which is why they are a sibling of `details` rather than something inside it.
+   *
+   * <p>The colour belongs to the target, and that is the whole mechanism behind "change it once
+   * and every dependent follows": there is no copy on this record to keep in step. The caller
+   * applies these onto those other entities.</p>
+   */
+  dependsOnColors: { targetId: string; color: string }[];
 }
 
 /**
@@ -376,6 +401,13 @@ function toValues(data: Record<string, unknown>, options: EntityFormOptions): En
   const dbConnection = str(data, 'dbConnection');
   const commandArgs = isTerminal ? normalizeArgs(readArgRows(data)) : undefined;
   const jumpEntity = str(data, 'jumpHostEntityId');
+  // Not scrubbed by kind, unlike every field around it: anything can depend on anything, so
+  // switching an entity from `ssh` to `credential` must not silently drop what it needs.
+  const dependsOnRows = readDependsOnRows(data);
+  const dependsOn = normalizeDependsOn(
+    dependsOnRows.map((row) => row.targetId),
+    options.entityId,
+  );
   // Both readers refuse rather than escape, exactly as the host and user fields do: what the
   // webview posts is data, and `sshOptions.ts` is where "is this usable" is decided.
   const forwards = readForwardRows(data);
@@ -393,6 +425,11 @@ function toValues(data: Record<string, unknown>, options: EntityFormOptions): En
       name: str(data, 'name').trim(),
       envBindings,
       hasTotp: hasTotp || undefined,
+      dependsOn: dependsOn.length > 0 ? dependsOn : undefined,
+      // The entity's OWN colour is never edited here — it is set on whichever record is the
+      // target of somebody else's dependency, by `dependsOnColors` above. Carrying it through
+      // untouched is what keeps an edit from erasing a colour other rows are painted in.
+      depColor: options.initial?.depColor,
       expiresAt: lifetime.expiresAt,
       burnPolicy: lifetime.burnPolicy,
       isScript: isScript || undefined,
@@ -453,7 +490,43 @@ function toValues(data: Record<string, unknown>, options: EntityFormOptions): En
     newTotp: totpParsed?.uri,
     clearTotp,
     clearHostKey: bool(data, 'clearHostKey'),
+    // Only the rows whose colour is one this build knows. A row posting an unrecognised key
+    // still creates the RELATIONSHIP above — it just does not restamp the target's colour,
+    // which is the safe half to drop.
+    dependsOnColors: dependsOnRows.filter((row) => isDepColorKey(row.color)),
   };
+}
+
+/**
+ * The dependency rows as the webview posts them: `{ targetId, color }`.
+ *
+ * <p>Read defensively like every other row list here — the payload crosses a webview boundary,
+ * so a malformed row is dropped rather than trusted. The folder each row was picked through is
+ * NOT read: it exists only to narrow the second dropdown, and storing it would be a second
+ * source of truth for where an entity lives, going stale the first time one is moved.</p>
+ */
+function readDependsOnRows(data: Record<string, unknown>): { targetId: string; color: string }[] {
+  const raw = data.dependsOn;
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+  return raw.map((row) => dependencyFromRow(row)).filter((row) => row !== undefined);
+}
+
+function dependencyFromRow(row: unknown): { targetId: string; color: string } | undefined {
+  const r = asRecord(row);
+  const targetId = stringOr(r?.targetId, '');
+  return targetId === '' ? undefined : { targetId, color: stringOr(r?.color, '') };
+}
+
+function asRecord(value: unknown): Record<string, unknown> | undefined {
+  return typeof value === 'object' && value !== null
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
+function stringOr(value: unknown, fallback: string): string {
+  return typeof value === 'string' ? value : fallback;
 }
 
 /**

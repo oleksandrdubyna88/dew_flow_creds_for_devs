@@ -48,7 +48,7 @@ const ProviderCtor = ((): new (storage: unknown, uri: unknown) => Provider => {
           constructor(readonly value: unknown) {}
         },
         TreeItemCollapsibleState: { None: 0, Collapsed: 1, Expanded: 2 },
-        Uri: { joinPath: (): object => ({}) },
+        Uri: { joinPath: (): object => ({}), from: (): object => ({}) },
         window: {
           showWarningMessage: (text: string): Promise<undefined> => {
             warnings.push(text);
@@ -80,6 +80,7 @@ function build(): Provider {
     {
       getAccounts: () => ACCOUNTS,
       getAccount: (id: string) => ACCOUNTS.find((a) => a.accountId === id),
+      getNodes: () => [],
       getChildren: () => [],
       getPassword: () => Promise.resolve(undefined),
     },

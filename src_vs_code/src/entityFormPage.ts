@@ -2,6 +2,7 @@ import * as crypto from 'node:crypto';
 import { normalizeTags } from './sshOptions';
 import { escapeHtml } from './webviewHtml';
 import { formPageScript } from './entityFormScript';
+import { initialDependencyRows } from './depGraph';
 import { resolveKind } from './entityKind';
 import {
   FOREVER_LIFETIME,
@@ -172,6 +173,15 @@ export function renderHtml(options: EntityFormOptions): string {
     ? 'The stored value is shown — edit freely; emptying it clears it.'
     : 'e.g. postgresql://user:pass@host:5432/db — kept encrypted in SecretStorage.';
 
+  // A stored id whose target is gone comes back as a `missing` row rather than vanishing —
+  // dropping it here would delete the relationship the next time Save was pressed on an
+  // unrelated field, and the target may be one sync away from returning.
+  const dependsOnRows = initialDependencyRows(
+    d?.dependsOn ?? [],
+    options.dependencyFolders,
+    options.dependencyColors,
+  );
+
   const passwordHint = options.hasStoredPassword
     ? 'A value is stored. Leave empty to keep it.'
     : 'No value stored yet.';
@@ -198,6 +208,17 @@ export function renderHtml(options: EntityFormOptions): string {
   .check label { margin: 0; }
   .envRow { margin: 4px 0 0 2px; padding: 4px 8px;
             border-left: 2px solid var(--vscode-focusBorder, #007fd4); opacity: .95; }
+  .depRow { display: flex; align-items: center; gap: 6px; margin: 6px 0; flex-wrap: wrap; }
+  .depGone { opacity: .7; font-style: italic; }
+  .depSwatches { display: inline-flex; gap: 3px; }
+  /* A swatch is painted with the contributed theme colour itself — a webview is given every
+     registered colour as a CSS variable — so what is picked here is what the tree will show,
+     in whichever theme is on. The hex behind the comma is only there for the case where that
+     variable is absent, so the picker degrades to ten distinguishable squares. */
+  .depSwatch { width: 18px; height: 18px; padding: 0; border-radius: 3px; cursor: pointer;
+               border: 1px solid var(--vscode-widget-border, #8884); }
+  .depSwatchOn { outline: 2px solid var(--vscode-focusBorder, #007fd4); outline-offset: 1px; }
+  .depRemove { padding: 1px 8px; }
   .envRow label { opacity: .85; }
   .codeWrap { position: relative; }
   .codeWrap pre { position: absolute; inset: 0; margin: 0; padding: 5px 7px; overflow: auto;
@@ -287,6 +308,21 @@ export function renderHtml(options: EntityFormOptions): string {
     <label for="lifetime">Lifetime</label>
     <select id="lifetime">${lifetimeOptions(d)}</select>
     <p class="hint" id="lifetimeHint">A short-lived entry is really deleted when its time comes — secret, history and all, on every machine that syncs. Only an agent using it through the broker counts as a use; copying it yourself does not.</p>
+  </fieldset>
+
+  <fieldset>
+    <legend>Depends on</legend>
+    <div class="check">
+      <input id="dependsOnOn" type="checkbox" ${dependsOnRows.length > 0 ? 'checked' : ''}>
+      <label for="dependsOnOn">This entry needs other entries to be usable</label>
+    </div>
+    <div id="dependsOnBody">
+      <div id="dependsOnRows"></div>
+      <div class="genRow">
+        <button type="button" id="addDependency">+ Add dependency</button>
+      </div>
+      <p class="hint">Both ends are marked with the same colour in the tree, and the entry you depend on grows a list of everything that needs it. The colour belongs to that entry — change it here and every entry depending on the same thing follows.</p>
+    </div>
   </fieldset>
 
   <fieldset id="connectionSection">
@@ -559,7 +595,11 @@ export function renderHtml(options: EntityFormOptions): string {
   </fieldset>
 
 
-${formPageScript(nonce, d)}
+${formPageScript(nonce, d, {
+  rows: dependsOnRows,
+  folders: options.dependencyFolders,
+  colors: options.dependencyColors,
+})}
 </body>
 </html>`;
 }

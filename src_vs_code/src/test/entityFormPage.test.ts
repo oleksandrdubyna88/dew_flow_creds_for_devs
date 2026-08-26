@@ -41,6 +41,8 @@ function options(overrides: Partial<EntityFormOptions> = {}): EntityFormOptions 
     hasStoredHostKey: false,
     keyCandidates: [],
     jumpCandidates: [],
+    dependencyFolders: [],
+    dependencyColors: {},
     ...overrides,
   } as EntityFormOptions;
 }

@@ -1,6 +1,8 @@
 import { DEFAULT_SSH_PORT } from './sshCommand';
 import { normalizeTags } from './sshOptions';
-import { TreeNode } from './types';
+import { EntityMetadata, TreeNode } from './types';
+import { canConnectSsh } from './entityKind';
+import { isVpnStartable } from './vpnCommand';
 
 /**
  * The grey text beside an entity's name in the tree: what it connects to, and its tags.
@@ -42,4 +44,77 @@ export function baseTarget(node: TreeNode): string {
 /** The whole description: the target, then the tags, separated so neither reads as the other. */
 export function describeTarget(node: TreeNode): string {
   return [baseTarget(node), tagLabel(node)].filter((part) => part.length > 0).join('  ');
+}
+
+/**
+ * The colon-joined capability tokens a row's context menu is keyed on — `entity:ssh:pwd`,
+ * `entity:vpn:vpnrun:shareable`, and so on. Every `viewItem` regex in `package.json` reads this
+ * string, so it decides which of the forty-odd commands are offered on a row.
+ *
+ * <p>Moved out of `getTreeItem` because an entity is about to be renderable in TWO places: its
+ * own row, and again under whatever it is a dependency of. Those two rows must offer the same
+ * menu — an entity you can Connect to is one you can Connect to wherever you are looking at it
+ * from — and the only way to guarantee that is one implementation, not two ladders that agree
+ * today. It is pure, so it is now a unit test rather than something reachable only through a
+ * stubbed `vscode`.</p>
+ */
+// eslint-disable-next-line complexity -- one branch per capability; moved verbatim from treeDataProvider
+export function entityContextValue(
+  details: EntityMetadata | undefined,
+  hasPassword: boolean,
+): string {
+  let contextValue = 'entity';
+  // One named predicate instead of two spellings of "is this SSH?" — the tree used to ask
+  // `details.host` here while `kindOf` asked `isSshEnabled` (audit S5).
+  if (canConnectSsh(details)) {
+    contextValue += ':ssh';
+  }
+  if (details?.isSshKey) {
+    contextValue += ':key';
+    // Two tokens rather than one, so Add and Remove are each offered only when they mean
+    // something — the same shape the VPN start/stop pair uses.
+    contextValue += details.sshAgent === true ? ':agenton' : ':agentoff';
+  }
+  if (details?.isVpn) {
+    contextValue += ':vpn';
+    if (isVpnStartable(details.vpnType)) {
+      contextValue += ':vpnrun';
+    }
+  }
+  if (details?.isDb) {
+    contextValue += ':db';
+  }
+  if (details?.isTerminal) {
+    contextValue += ':cmd';
+  }
+  if (details?.isScript) {
+    contextValue += ':script';
+  }
+  if (hasPassword) {
+    contextValue += ':pwd';
+  }
+  // From the plaintext flag, never from SecretStorage: the seed's presence is metadata,
+  // the seed is not.
+  if (details?.hasTotp === true) {
+    contextValue += ':totp';
+  }
+  return isShareable(details, hasPassword) ? `${contextValue}:shareable` : contextValue;
+}
+
+/**
+ * One suffix the menu can test, rather than a lookahead regex in `package.json` doing the
+ * inclusion AND the sshkey exclusion — which nothing could test and nobody could read.
+ */
+// eslint-disable-next-line complexity -- a disjunction over the kinds that can be shared
+function isShareable(details: EntityMetadata | undefined, hasPassword: boolean): boolean {
+  return (
+    details !== undefined &&
+    details.isSshKey !== true &&
+    (Boolean(details.host) ||
+      details.isDb === true ||
+      (details.isVpn === true && isVpnStartable(details.vpnType)) ||
+      details.isTerminal === true ||
+      details.isScript === true ||
+      hasPassword)
+  );
 }

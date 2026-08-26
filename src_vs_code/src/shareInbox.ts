@@ -7,7 +7,13 @@ import { isServerLocation } from './vaultTransport';
 import { describeSender } from './shareSender';
 import { judgeSender, pinSenderKey, pinnedKey, verdictBlocksAccept } from './senderPinning';
 import { keyFingerprint } from './shareSignature';
-import { openShare, resolveShares, sealShare, shareTranscript } from './shareFormat';
+import {
+  openShare,
+  resolveShares,
+  sealShare,
+  shareTranscript,
+  shareableDetails,
+} from './shareFormat';
 import { recordOrigin, resolveOrigin } from './shareOrigin';
 import { snapshotForRevision } from './revisionSnapshot';
 import { validatePin } from './pinPolicy';
@@ -510,7 +516,7 @@ export async function buildSharePayload(
   node: TreeNode,
 ): Promise<SharePayload> {
   const note = (await storage.getNotes(accountId, node.id)) ?? node.details?.notes;
-  const sharedDetails = node.details ? { ...node.details, notes: undefined } : node.details;
+  const sharedDetails = shareableDetails(node.details);
   return {
     node: { ...node, details: sharedDetails, parentId: null, children: undefined },
     secrets: {

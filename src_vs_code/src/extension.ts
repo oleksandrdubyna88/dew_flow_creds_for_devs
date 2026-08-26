@@ -85,6 +85,8 @@ import {
 } from './securityKeyOps';
 import { validatePin } from './pinPolicy';
 import { CredTreeDataProvider, VIEW_ID } from './treeDataProvider';
+import { DepDecorationProvider } from './depDecorations';
+import { buildDependencyCandidates, buildDependencyColorMap } from './depGraph';
 import { EntityFlagsRefresher, entityFlagSource } from './entityFlags';
 import { createDiagnosticLog } from './diagnosticLog';
 import { resolveKind } from './entityKind';
@@ -207,6 +209,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   }
   const provider = new CredTreeDataProvider(storage, context.extensionUri);
 
+
   // CLI aliases: name → which entry, and nothing else. Kept in globalState rather than in the
   // vault because a name is machine-local by nature — the terminal that types it is on this
   // machine — and because putting it in the synced record would make every colleague's copy
@@ -264,6 +267,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // this on safe for the other forty-odd of them.
     canSelectMany: true,
   });
+
+  // The label colour and badge for entities in a dependency relationship. It reads the tree
+  // provider's OWN index rather than building a second one, so the colour a row is painted in
+  // and the sub-tree hanging under it can never disagree about who depends on what.
+  const depDecorations = new DepDecorationProvider(provider.dependencies);
+  context.subscriptions.push(
+    depDecorations,
+    vscode.window.registerFileDecorationProvider(depDecorations),
+  );
 
   // Unlock coordinator (PIN / security keys / cached master keys).
   const vaultKeys = new VaultKeys(context.secrets);
@@ -439,6 +451,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   provider.onMutate = () => sync.notifyChange();
   const mutated = () => {
     provider.refresh();
+    // `refresh()` threw the dependency index away; this makes VS Code come back and ask for
+    // the decorations again. Both are needed: the tree repaints its rows, the decorations
+    // repaint their labels, and they are two different notification channels.
+    depDecorations.refresh();
     sync.notifyChange();
     // An edit or an accepted update may have created the first revision of something, or
     // stored its first password — one refresher here rather than a call at every mutation
@@ -711,6 +727,30 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
   register('credSshManager.clearSearch', () => {
     provider.setSearchQuery('');
+  });
+
+  /**
+   * From a folder inside the "Depended on by" list to that folder where it really lives.
+   *
+   * <p>The filter is cleared first, and that is not tidiness: a filtered-out row cannot be
+   * revealed, so a reveal into an active filter silently does nothing — the worst outcome for a
+   * button whose entire job is "take me there".</p>
+   */
+  register('credSshManager.goToOriginalFolder', async (target?: unknown) => {
+    const element = asElement(target);
+    if (element?.kind !== 'dependentsFolder' || element.folderId === null) {
+      return;
+    }
+    const folder = storage.getNode(element.accountId, element.folderId);
+    if (folder === undefined) {
+      void vscode.window.showWarningMessage('That folder is no longer in this vault.');
+      return;
+    }
+    provider.setSearchQuery('');
+    await treeView.reveal(
+      { kind: 'node', accountId: element.accountId, node: folder },
+      { select: true, focus: true, expand: true },
+    );
   });
 
   /**
@@ -1343,6 +1383,8 @@ ${detail}
       hasStoredHostKey: false,
       lockedKind: folderKindOf(storage, location.accountId, location.parentId),
       keyCandidates: await collectKeyCandidates(storage, location.accountId, id),
+      dependencyFolders: buildDependencyCandidates(storage.getNodes(location.accountId), id),
+      dependencyColors: buildDependencyColorMap(storage.getNodes(location.accountId)),
       jumpCandidates: collectJumpCandidates(storage, location.accountId, id),
     });
     if (result === undefined) {
@@ -1356,6 +1398,7 @@ ${detail}
       details: result.details,
     });
     await applySecrets(storage, location.accountId, id, result);
+    await applyDependencyColors(storage, location.accountId, result.dependsOnColors);
     await applyEnvBindings(envCollection, storage, location.accountId, result.details);
     mutated();
   });
@@ -2602,6 +2645,10 @@ ${detail}
       hasStoredTotp: false,
       hasStoredHostKey: false,
       keyCandidates: [],
+      // Authoring an entity for somebody else: a dependency on an entry in THIS vault would
+      // name an id their vault has never heard of. Same call the key and jump candidates make.
+      dependencyFolders: [],
+      dependencyColors: {},
       // An entity authored FOR somebody else references nothing in this vault: a jump host id
       // here would name an entity the recipient does not have.
       jumpCandidates: [],
@@ -2823,6 +2870,35 @@ function collectJumpCandidates(
     .map((node) => ({ id: node.id, name: node.name }));
 }
 
+/**
+ * Stamp the picked colour onto the entities this one now depends ON.
+ *
+ * <p>A write to a DIFFERENT record than the one being saved, and deliberately so: the colour
+ * belongs to the target, which is what makes "change it once and every dependent follows" true
+ * with no propagation code anywhere — the dependents do not store a colour to update. The cost
+ * is this one extra write, and a crash between the two leaves the colour unset, which the next
+ * save re-picks. Self-healing, and the same single-node-at-a-time shape every other mutator
+ * here has.</p>
+ *
+ * <p>Unchanged colours are skipped rather than rewritten: a rewrite would bump the target's
+ * version vector and make an untouched entity look edited to every other machine.</p>
+ */
+async function applyDependencyColors(
+  storage: StorageManager,
+  accountId: string,
+  picks: readonly { targetId: string; color: string }[],
+): Promise<void> {
+  for (const pick of picks) {
+    const target = storage.getNode(accountId, pick.targetId);
+    if (target?.details !== undefined && target.details.depColor !== pick.color) {
+      await storage.updateNode(accountId, {
+        ...target,
+        details: { ...target.details, depColor: pick.color },
+      });
+    }
+  }
+}
+
 async function collectKeyCandidates(
   storage: StorageManager,
   accountId: string,
@@ -3015,6 +3091,8 @@ async function editNode(
     hasStoredTotp: storedTotpDescription !== undefined,
     storedTotpDescription,
     keyCandidates: await collectKeyCandidates(storage, accountId, node.id),
+    dependencyFolders: buildDependencyCandidates(storage.getNodes(accountId), node.id),
+    dependencyColors: buildDependencyColorMap(storage.getNodes(accountId)),
     jumpCandidates: collectJumpCandidates(storage, accountId, node.id),
     hasStoredHostKey: storedHostKey !== undefined,
     hostKeyFingerprint: storedHostKey === undefined ? undefined : hostKeyFingerprint(storedHostKey),
@@ -3039,6 +3117,7 @@ async function editNode(
     details: result.details,
   });
   await applySecrets(storage, accountId, node.id, result);
+  await applyDependencyColors(storage, accountId, result.dependsOnColors);
   // AFTER the secrets land, so the values written are the ones just saved. The old
   // bindings are passed so a renamed or switched-off variable is deleted, not orphaned.
   await applyEnvBindings(envCollection, storage, accountId, result.details, node.details.envBindings);
@@ -3463,6 +3542,24 @@ function asElement(value: unknown): TreeElement | undefined {
     return v;
   }
   if (v.kind === 'sharedRoot') {
+    return v;
+  }
+  // A shadow row IS its entity — narrowed to the plain node element so that every command
+  // already reachable on the real row works here with no second code path. That is the whole
+  // point of giving it the same `contextValue`: the sub-tree is a place to act, not a picture.
+  if (
+    v.kind === 'dependentEntity' &&
+    typeof v.accountId === 'string' &&
+    typeof v.node?.id === 'string'
+  ) {
+    return { kind: 'node', accountId: v.accountId, node: v.node };
+  }
+  // Kept as itself: it has its own command rather than any of an entity's.
+  if (
+    v.kind === 'dependentsFolder' &&
+    typeof v.accountId === 'string' &&
+    typeof v.folderId === 'string'
+  ) {
     return v;
   }
   return undefined;
