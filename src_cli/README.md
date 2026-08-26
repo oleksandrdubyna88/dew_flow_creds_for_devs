@@ -67,9 +67,18 @@ Windows. CI installs them; a workstation without them builds and tests fine but 
 the native binary. Release binaries are built for all four RIDs by the `cli-binaries` job in
 `.github/workflows/release.yml`, on a `cli-v*` tag.
 
-## What is not built yet
+## Names, and where it runs
 
-Named grants (`creds ssh prod-db` instead of a pasted token) and the WSL bridge are planned in
-[`todo/PLAN_headless_cli.md`](../todo/PLAN_headless_cli.md) and
-[`todo/PLAN_remote_broker_bridge.md`](../todo/PLAN_remote_broker_bridge.md). Today a token names
-its own port, so discovery needs no file and nothing has to be found.
+`creds ssh prod-db` works: *Enable CLI Access…* on an entry gives it a name, and the registry
+holds only which entry that name points at — no token, no secret. An alias says WHICH; the
+consent modal still says WHETHER, and it is rate-limited precisely because a name is not a
+secret and the modal is the whole gate.
+
+Inside **WSL** the Linux binary hands the call to the Windows one through interop: no networking
+to configure and nothing new listening anywhere. On a **Remote-SSH** host, *Open Remote Bridge*
+holds an `ssh -R` open and `CREDS_BROKER_SOCKET` points this binary at the forwarded socket —
+the credential stays on your laptop, the consent prompt appears there, and only output comes back.
+
+Design records: [`research/PLAN_headless_cli.md`](../research/PLAN_headless_cli.md) and
+[`research/PLAN_remote_broker_bridge.md`](../research/PLAN_remote_broker_bridge.md), including
+what was deliberately NOT built and why.

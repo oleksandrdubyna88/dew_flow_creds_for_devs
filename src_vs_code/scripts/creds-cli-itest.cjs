@@ -193,6 +193,19 @@ const action = (kind, verb, run) => ({
   const badName = await runCli(['ssh', 'Not A Valid Name', '--', 'x'], aliasEnv);
   check('a name a shell could misread is refused before any call (96)', badName.code === 96, `code ${badName.code}`);
 
+  // A TOKEN must never fall back to a discovered endpoint. Discovery reads a file anyone with
+  // write access to globalStorage could forge, and its health probe only proves the far end
+  // says our service name — which a forger would. If a token could be rerouted that way, a
+  // bearer SECRET would be delivered to whatever wrote the file. The token carries its own
+  // port precisely so this is impossible, and this fails the moment somebody adds a helpful
+  // fallback: the endpoint file here is valid and points at a live broker.
+  const strayToken = await runCli(['ssh', `1.aaaaaaaaaaaa`, '--', 'x'], aliasEnv);
+  check(
+    'a token with an unreachable port does NOT fall back to a discovered endpoint',
+    strayToken.code === 90,
+    `code ${strayToken.code}`,
+  );
+
   // ---- the Remote-SSH transport -------------------------------------------
   // What `ssh -R` forwards is a unix socket, and the binary on the remote host talks HTTP over
   // it with no loopback port to dial. POSIX only: on Windows the broker's second listener is a
