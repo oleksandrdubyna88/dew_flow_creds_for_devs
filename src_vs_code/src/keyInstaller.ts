@@ -6,12 +6,17 @@ import * as vscode from 'vscode';
 import { EntityMetadata } from './types';
 import { askpassScript } from './sshAskpass';
 import { deadPidSubdirs } from './keysPurge';
-import { lockToOwner, materializedKeysDir, safeFileComponent } from './materializedKeys';
+import {
+  lockToOwner,
+  materializedKeyPath,
+  materializedKeysDir,
+  safeFileComponent,
+} from './materializedKeys';
 
 // lockToOwner and materializedKeysDir are vscode-free and live in materializedKeys.ts so the
 // agent broker (which runs partly under plain node) can use them; re-exported here so this
 // module's existing callers are unchanged.
-export { lockToOwner, materializedKeysDir, safeFileComponent };
+export { lockToOwner, materializedKeyPath, materializedKeysDir, safeFileComponent };
 
 /**
  * Writing SSH key material to disk:

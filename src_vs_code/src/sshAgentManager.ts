@@ -13,7 +13,7 @@ import {
 } from './agentConsent';
 import { signForAgent } from './sshAgentSign';
 import { StorageManager } from './storageManager';
-import { materializedKeysDir } from './materializedKeys';
+import { materializedKeyPath } from './materializedKeys';
 import { EntityMetadata, TreeNode } from './types';
 
 /**
@@ -41,7 +41,7 @@ function removeSocketFile(storageDir: string): void {
     return;
   }
   try {
-    fs.rmSync(path.join(materializedKeysDir(storageDir), 'agent.sock'), { force: true });
+    fs.rmSync(materializedKeyPath(storageDir, 'agent.sock'), { force: true });
   } catch {
     // best effort — the purge covers it
   }

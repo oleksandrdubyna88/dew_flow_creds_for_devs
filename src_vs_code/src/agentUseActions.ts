@@ -16,7 +16,7 @@ import { resolveScriptEnv } from './scriptRender';
 import { scriptRunPlan } from './scriptRun';
 import { buildCommandLine } from './commandLine';
 import { isCommandTrusted } from './commandTrust';
-import { lockToOwner, materializedKeysDir } from './materializedKeys';
+import { lockToOwner, materializedKeyPath } from './materializedKeys';
 import { buildDbQueryLaunch, isSafePostgresUri, refuseQuery, resolveDbCli } from './dbCliLauncher';
 
 /**
@@ -126,8 +126,8 @@ export function scriptRunAction(deps: AgentUseDeps): UseAction {
         return fail('too_many_requests', 'Too many commands are already running.');
       }
       const resolved = resolveScriptEnv(entity.script, entity.scriptVars, language);
-      const scriptPath = path.join(
-        materializedKeysDir(deps.storageDir),
+      const scriptPath = materializedKeyPath(
+        deps.storageDir,
         `agent-script-${ctx.entityId}${plan.extension}`,
       );
       try {

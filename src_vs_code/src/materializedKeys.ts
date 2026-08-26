@@ -79,3 +79,20 @@ export function safeFileComponent(name: string): string {
   const digest = crypto.createHash('sha256').update(name).digest('hex').slice(0, 8);
   return `${cleaned.slice(0, 60)}-${digest}`;
 }
+
+/**
+ * A path inside this window's key directory — the ONE way to build one.
+ *
+ * <p>That directory holds decrypted private keys, VPN configs, `known_hosts` files and
+ * executable script bodies, and every name written there is built from vault data. Sanitising at
+ * each call site was tried: four were fixed by hand and enumerating them properly afterwards
+ * found two more, both of which write a file with mode 0700 and then execute it. So the sanitiser
+ * lives here, on the only road in, and `keysDirPaths.test.ts` fails if anything joins into the
+ * directory by hand again.</p>
+ *
+ * <p>It does not create the directory: callers differ on the mode they want it at, and one that
+ * silently created it would make a purge race a write.</p>
+ */
+export function materializedKeyPath(storageDir: string, name: string): string {
+  return path.join(materializedKeysDir(storageDir), safeFileComponent(name));
+}

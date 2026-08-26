@@ -2,7 +2,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { runBounded } from './sshExecRunner';
-import { materializedKeysDir, safeFileComponent } from './materializedKeys';
+import { materializedKeyPath } from './materializedKeys';
 import { lockToOwner } from './materializedKeys';
 import {
   HostKey,
@@ -64,7 +64,7 @@ export async function scanHostKey(
  * trusts — outside the directory the purge can reach. See `safeFileComponent`.</p>
  */
 function knownHostsPath(storageDir: string, entityId: string): string {
-  return path.join(materializedKeysDir(storageDir), `known_hosts-${safeFileComponent(entityId)}`);
+  return materializedKeyPath(storageDir, `known_hosts-${entityId}`);
 }
 
 /**
