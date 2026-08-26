@@ -8,6 +8,16 @@ internal abstract record Request
     internal sealed record Failed(string Message) : Request;
 
     internal sealed record Help(string Text) : Request;
+
+    /// <summary>
+    /// The SSH agent relay, which is not a broker call at all.
+    /// </summary>
+    /// <remarks>
+    /// It posts nothing, carries no grant, and holds a connection open instead of exchanging one
+    /// request for one response — so it is its own shape rather than a <see cref="Use"/> with
+    /// empty fields. <c>Listen</c> is the WSL side, <c>Pipe</c> the Windows side it spawns.
+    /// </remarks>
+    internal sealed record Relay(bool Listen) : Request;
 }
 
 /// <summary>
@@ -50,6 +60,13 @@ internal static class CommandLine
         }
 
         var verb = argv[0];
+        if (verb is "relay" or "relay-pipe")
+        {
+            return argv.Count > 1
+                ? new Request.Failed($"`creds {verb}` takes no arguments.")
+                : new Request.Relay(verb == "relay");
+        }
+
         if (Tokenless.Contains(verb))
         {
             return argv.Count > 1
@@ -113,10 +130,15 @@ internal static class CommandLine
           creds env <token>                  export the secret into new VS Code terminals
           creds vpn-up <token>               bring the tunnel up
           creds vpn-down <token>             bring it down
+          creds relay                        (WSL) serve the SSH agent on a unix socket
 
         The token comes from "Share with Claude Code…" in VS Code. It reaches exactly one
         vault entry, stops working when that window closes, and the first call asks the
         human to allow it. You never receive the credential itself.
+
+        In WSL, `creds relay` gives ssh and git an agent socket inside the distribution.
+        The key stays in the VS Code window on Windows and every use asks there. It prints
+        the export line to set; leave it running.
 
         Quoting: put double quotes around the whole command and single quotes inside.
         Inner double quotes are dropped by Windows PowerShell, which silently changes what

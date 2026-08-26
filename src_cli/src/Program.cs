@@ -27,7 +27,10 @@ internal static class Program
         // Inside WSL the broker's loopback belongs to Windows, not to this VM, so the whole call
         // goes to the Windows binary and its streams come back. Before anything else, because
         // even argument errors should be reported by the side that will handle the request.
-        if (WslInterop.ShouldRelayHere())
+        // `relay` is the one verb that must stay on this side: it IS the Linux end of the
+        // bridge, and handing it to Windows would start a listener in the wrong kernel.
+        var staysHere = args.Length > 0 && args[0] == "relay";
+        if (!staysHere && WslInterop.ShouldRelayHere())
         {
             try
             {
@@ -54,6 +57,11 @@ internal static class Program
 
             case Request.Use use:
                 return await RunAsync(use, contract);
+
+            case Request.Relay relay:
+                return relay.Listen
+                    ? await AgentRelay.RunAsync(contract)
+                    : await RelayPipe.RunAsync(contract);
 
             default:
                 return contract.Exit("brokerFailure");

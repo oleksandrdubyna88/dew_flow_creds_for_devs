@@ -26,6 +26,19 @@ export interface CliEndpoint {
   readonly port: number;
   /** The socket or pipe address, when this window managed to open one. */
   readonly socket?: string;
+  /**
+   * Where the SSH agent is listening, when a key is loaded and it is running.
+   *
+   * <p>Absent whenever the agent is not up, which is most of the time — it starts on the first
+   * key and stops on the last. That is exactly why it is re-announced on both edges rather than
+   * written once at activation: a reader that trusted a startup snapshot would hand out the
+   * address of an agent that has since gone, and on Windows a pipe name whose server is gone is
+   * indistinguishable from one that never existed.</p>
+   *
+   * <p>Like everything else in this file it is <b>not a secret</b>: the address is derived from
+   * the pid and anyone on the machine can enumerate it. What it saves is the guessing.</p>
+   */
+  readonly agentSocket?: string;
   /** ISO-8601, so a human reading the file can tell a fresh window from a forgotten one. */
   readonly startedAt: string;
 }
@@ -50,8 +63,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
 }
 
-function optionalSocket(value: Record<string, unknown>): boolean {
-  return value.socket === undefined || typeof value.socket === 'string';
+function optionalString(value: unknown): boolean {
+  return value === undefined || typeof value === 'string';
 }
 
 /** True when a value read back from disk is the shape we wrote. */
@@ -59,7 +72,8 @@ export function isCliEndpoint(value: unknown): value is CliEndpoint {
   return (
     isRecord(value) &&
     REQUIRED.every(([key, type]) => typeof value[key] === type) &&
-    optionalSocket(value)
+    optionalString(value.socket) &&
+    optionalString(value.agentSocket)
   );
 }
 

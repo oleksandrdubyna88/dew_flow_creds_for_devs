@@ -8,7 +8,14 @@ internal sealed record Endpoint(
     [property: JsonPropertyName("pid")] int Pid,
     [property: JsonPropertyName("port")] int Port,
     [property: JsonPropertyName("socket")] string? Socket,
-    [property: JsonPropertyName("startedAt")] string StartedAt);
+    [property: JsonPropertyName("startedAt")] string StartedAt,
+    /// <summary>Where that window's SSH agent listens, when a key is loaded and it is up.</summary>
+    /// <remarks>
+    /// Absent most of the time: the agent starts on the first key and stops on the last, and the
+    /// window re-announces on both edges. A relay treats it as a hint, never a promise — what
+    /// decides is whether the connection opens.
+    /// </remarks>
+    [property: JsonPropertyName("agentSocket")] string? AgentSocket = null);
 
 /// <summary>
 /// Finding a window when the caller has a name rather than a token.

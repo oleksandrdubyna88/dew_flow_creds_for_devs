@@ -126,3 +126,28 @@ test('a socket-less window is still a valid announcement', () => {
   writeEndpoint(dir, withoutSocket);
   assert.equal(readEndpoints(dir)[0].socket, undefined);
 });
+
+// --- the agent's address, for a relay inside WSL (0.65.0) -----------------------------------
+//
+// A window in WSL cannot open a Windows named pipe, so `creds relay` bridges a unix socket to it
+// — and has to be told where "it" is without being handed a pid. The address is not a secret: it
+// is derived from the pid and anyone on the machine can enumerate it.
+
+test('the agent address round-trips when one is running', () => {
+  const dir = store();
+  const withAgent: CliEndpoint = { ...ENDPOINT, agentSocket: '\\.\pipe\creds-for-devs-agent-4242' };
+
+  writeEndpoint(dir, withAgent);
+
+  assert.deepEqual(readEndpoints(dir), [withAgent]);
+});
+
+test('an announcement without an agent is still valid — that is the usual state', () => {
+  // The agent runs only while a key is loaded, which is a minority of any session. Requiring the
+  // field would make every ordinary window unreadable to the CLI.
+  assert.equal(isCliEndpoint({ pid: 1, port: 2, startedAt: 'x' }), true);
+});
+
+test('an agent address of the wrong type is refused rather than passed on', () => {
+  assert.equal(isCliEndpoint({ pid: 1, port: 2, startedAt: 'x', agentSocket: 42 }), false);
+});

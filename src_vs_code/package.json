@@ -64,7 +64,8 @@
     "publish": "vsce publish",
     "itest:git": "npm run compile && node scripts/git-transport-itest.cjs",
     "contract": "npm run compile && node scripts/emit-contract.mjs",
-    "itest:cli": "npm run compile && node scripts/creds-cli-itest.cjs"
+    "itest:cli": "npm run compile && node scripts/creds-cli-itest.cjs",
+    "itest:wsl-relay": "npm run compile && node scripts/wsl-agent-relay-itest.cjs"
   },
   "devDependencies": {
     "@types/node": "^20.11.0",

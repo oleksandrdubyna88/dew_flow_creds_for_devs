@@ -90,6 +90,14 @@ export class CredsAgentServer implements vscode.Disposable {
   private server: http.Server | undefined;
   private extra: ExtraListener | undefined;
   private port = 0;
+  /**
+   * The SSH agent's address while it is running, for the endpoint file.
+   *
+   * <p>Kept here rather than read from the agent because the announcement is this class's job
+   * and the agent starts and stops on its own schedule — on the first key loaded and the last
+   * one unloaded. It tells us; we re-announce.</p>
+   */
+  private agentSocket: string | undefined;
   private running = 0;
 
   /**
@@ -345,6 +353,19 @@ export class CredsAgentServer implements vscode.Disposable {
    * still never appears in it: knowing where the broker is has never been the thing that
    * authorizes anything.</p>
    */
+  /**
+   * The SSH agent came up, or went away. Re-announce so a relay in WSL can find it.
+   *
+   * <p>Before the broker has a port there is nothing truthful to write, and the announcement
+   * that follows the port will carry this address anyway.</p>
+   */
+  readonly setAgentAddress = (socketPath: string | undefined): void => {
+    this.agentSocket = socketPath;
+    if (this.port > 0) {
+      this.announce();
+    }
+  };
+
   private announce(): void {
     if (this.storageDir === undefined) {
       return;
@@ -353,6 +374,7 @@ export class CredsAgentServer implements vscode.Disposable {
       pid: process.pid,
       port: this.port,
       socket: this.extra?.address,
+      agentSocket: this.agentSocket,
       startedAt: new Date().toISOString(),
     });
   }

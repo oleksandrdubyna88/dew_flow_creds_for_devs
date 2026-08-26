@@ -79,6 +79,42 @@ to configure and nothing new listening anywhere. On a **Remote-SSH** host, *Open
 holds an `ssh -R` open and `CREDS_BROKER_SOCKET` points this binary at the forwarded socket —
 the credential stays on your laptop, the consent prompt appears there, and only output comes back.
 
+## The SSH agent inside WSL — `creds relay`
+
+The rest of this binary crosses into Windows by re-executing itself, because a call is one short
+exchange whose arguments are names. `ssh` is not that: it opens `$SSH_AUTH_SOCK` and speaks a
+binary protocol over a connection it holds. A socket cannot be re-executed, and the agent is a
+**named pipe** — a Windows kernel object the Linux side cannot open at all.
+
+So `creds relay` serves a unix socket inside the distribution and gives each accepted connection
+its own Windows child to carry it:
+
+```bash
+creds relay &                       # prints the export line; leave it running
+export SSH_AUTH_SOCK=/run/user/1000/creds-agent.sock
+
+ssh-add -l                          # the key, served from the VS Code window on Windows
+git commit -S                       # signed by a key that is not in this filesystem
+```
+
+The private key never enters WSL. Every signature raises the consent dialog **on Windows**, per
+key and per use. The address is resolved on every connection, so unloading a key and loading
+another is picked up without restarting the relay.
+
+`CREDS_RELAY_SOCKET` overrides the path; without `XDG_RUNTIME_DIR` it falls back to
+`/tmp/creds-agent-<user>.sock`. A socket left by a crash is reclaimed; one a live relay is
+serving is refused rather than hijacked.
+
+**It widens the reach of the agent, and that is the point to weigh.** A named pipe is reachable
+by one Windows user; a unix socket is reachable by every process in that distribution running as
+you. The mitigation is not the socket mode — it is that a signature still has to be allowed on
+Windows, so the worst a process in WSL can do is ask, visibly. The relay is opt-in and never
+starts itself.
+
+If you set `CREDS_ENDPOINT_DIR` for a non-standard VS Code install, name it in `WSLENV`
+(`export WSLENV=CREDS_ENDPOINT_DIR/p`): environment variables do **not** cross from WSL into a
+Windows child on their own — measured, including from .NET's own process API.
 Design records: [`research/PLAN_headless_cli.md`](../research/PLAN_headless_cli.md) and
-[`research/PLAN_remote_broker_bridge.md`](../research/PLAN_remote_broker_bridge.md), including
+[`research/PLAN_remote_broker_bridge.md`](../research/PLAN_remote_broker_bridge.md) and
+[`research/PLAN_wsl_agent_relay.md`](../research/PLAN_wsl_agent_relay.md), including
 what was deliberately NOT built and why.

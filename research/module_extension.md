@@ -1314,6 +1314,14 @@ enumerate anyway — which is what makes it safe to write. A crashed window cann
 note, so staleness is normal and nothing trusts the file: the unauthenticated health probe
 decides, because the OS reissues freed port numbers.
 
+The announcement also carries **`agentSocket`** (0.65.0) — where the SSH agent listens, when one
+is running. Written by `CredsAgentServer.setAgentAddress`, which `SshAgentManager` calls on both
+edges of the agent's life: it starts on the first key loaded and stops on the last, so an address
+published once at activation would be a lie for most of a session. It is what lets `creds relay`
+inside WSL find the agent without being told a pid — see
+[PLAN_wsl_agent_relay.md](PLAN_wsl_agent_relay.md). Like everything else in the file it is not a
+secret: the address is derived from the pid.
+
 **Aliases** (`cliAliases.ts`, route `POST /v1/alias/<action>`) let `creds ssh prod-db` name an
 entry. The registry holds `name → (accountId, entityId, kind)` and nothing else: no token, no
 secret, nothing replayable. The trade is real and is written down rather than glossed — before

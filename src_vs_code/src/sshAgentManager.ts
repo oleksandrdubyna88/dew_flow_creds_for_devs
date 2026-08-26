@@ -65,6 +65,15 @@ export class SshAgentManager implements vscode.Disposable {
     private readonly envCollection: vscode.GlobalEnvironmentVariableCollection,
     /** Called when a human answers a dialog — the one moment presence is provable. */
     private readonly onUserPresent: () => void,
+    /**
+     * Called on both edges of the agent's life with its address, or `undefined` once it stops.
+     *
+     * <p>The window announces itself in a file a terminal — including one inside WSL, which
+     * cannot open a Windows pipe and needs a relay pointed at it — reads to find this agent
+     * without being told a pid. An address published once at startup would be a lie for most of
+     * the session, because the agent runs only while a key is loaded.</p>
+     */
+    private readonly onAddressChanged: (socketPath: string | undefined) => void = () => undefined,
   ) {}
 
   get socketPath(): string | undefined {
@@ -186,6 +195,7 @@ export class SshAgentManager implements vscode.Disposable {
     // Every terminal opened afterwards finds the agent with no configuration at all.
     this.envCollection.replace('SSH_AUTH_SOCK', socketPath);
     this.envCollection.description = 'CredsForDevs: secrets exposed as terminal variables';
+    this.onAddressChanged(socketPath);
     this.log(`agent listening on ${socketPath}`);
   }
 
@@ -193,6 +203,7 @@ export class SshAgentManager implements vscode.Disposable {
     this.server?.dispose();
     this.server = undefined;
     this.envCollection.delete('SSH_AUTH_SOCK');
+    this.onAddressChanged(undefined);
     this.log('agent stopped — no keys are loaded');
   }
 

@@ -541,8 +541,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   );
   // The SSH agent: keys served from memory, every use confirmed, SSH_AUTH_SOCK injected into
   // new terminals. Nothing starts until a key is actually loaded.
-  const sshAgent = new SshAgentManager(storage, storageDir, envCollection, () =>
-    vaultKeys.noteUserActivity(),
+  const sshAgent = new SshAgentManager(
+    storage,
+    storageDir,
+    envCollection,
+    () => vaultKeys.noteUserActivity(),
+    // Published in the endpoint file so a relay inside WSL can find this agent without a pid.
+    agentServer.setAgentAddress,
   );
   context.subscriptions.push(sshAgent);
   void sshAgent.loadMarked().then((count) => {

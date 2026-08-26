@@ -96,7 +96,8 @@ internal static class WslInterop
     /// caller's own redirection and piping keep working. Capturing would also have to re-encode
     /// output, which is how a bridge quietly corrupts binary stdout.
     /// </remarks>
-    internal static int Relay(IReadOnlyList<string> args)
+    /// <summary>The launch both forms share: the binary, the arguments, and the loop guard.</summary>
+    private static ProcessStartInfo StartInfo(IReadOnlyList<string> args)
     {
         var start = new ProcessStartInfo(WindowsBinary()) { UseShellExecute = false };
         foreach (var arg in args)
@@ -104,10 +105,34 @@ internal static class WslInterop
             start.ArgumentList.Add(arg);
         }
         start.Environment[RelayedVariable] = "1";
+        return start;
+    }
 
-        using var child = Process.Start(start)
+    internal static int Relay(IReadOnlyList<string> args)
+    {
+        using var child = Process.Start(StartInfo(args))
             ?? throw new InvalidOperationException($"could not start {WindowsBinary()}");
         child.WaitForExit();
         return child.ExitCode;
+    }
+
+    /// <summary>
+    /// The same launch, but with stdin and stdout as pipes the caller owns.
+    /// </summary>
+    /// <remarks>
+    /// <para>For <see cref="AgentRelay"/>, which is not relaying a call but carrying a held
+    /// connection: it must write into the child and read back from it rather than let the child
+    /// inherit this process's console. stderr is left inherited on purpose, so a diagnostic from
+    /// the Windows side reaches the terminal instead of being swallowed by a pump.</para>
+    /// <para>Binary integrity across this boundary was measured rather than assumed (2026-08-26):
+    /// 64 KB of random bytes through WSL interop pipes came back with an identical SHA-256.</para>
+    /// </remarks>
+    internal static Process StartPiped(IReadOnlyList<string> args)
+    {
+        var start = StartInfo(args);
+        start.RedirectStandardInput = true;
+        start.RedirectStandardOutput = true;
+        return Process.Start(start)
+            ?? throw new InvalidOperationException($"could not start {WindowsBinary()}");
     }
 }

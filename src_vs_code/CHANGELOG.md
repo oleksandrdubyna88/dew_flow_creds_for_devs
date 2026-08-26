@@ -48,6 +48,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **The SSH agent, from inside WSL — `creds relay`.** Everything else in the CLI crosses into
+  Windows by re-executing itself, because a call is one short exchange whose arguments are names.
+  `ssh` is not that: it opens `$SSH_AUTH_SOCK` and speaks a binary protocol over a connection it
+  holds, and the agent is a **named pipe** — a Windows kernel object the Linux side cannot open at
+  all. So the same trick moves down one level: a unix socket inside the distribution, and one
+  Windows child per accepted connection.
+
+  `git commit -S` and `ssh` inside WSL now use a key that never enters WSL. Every signature still
+  raises the consent dialog on Windows, per key and per use. The address is resolved on every
+  connection, so unloading one key and loading another is picked up without restarting the relay.
+
+  The whole design was measured with throwaway scripts before any of it was written — including
+  that WSL interop pipes do not corrupt binary, which is the assumption everything rests on. The
+  test that guards it drives the real `ssh-add -l` and `ssh-keygen -Y sign`/`-Y verify` **inside
+  WSL**, and is skipped with a printed reason rather than silently when there is no WSL or no SDK.
+
+  It widens the agent's reach and says so: a named pipe is reachable by one Windows user, a unix
+  socket by every process in that distribution running as you. The relay is opt-in, never starts
+  itself, and the dialog on Windows remains the gate.
+
 - **A diagnostics channel you can actually attach to a bug report.** Until now the only output
   channel was the agent broker's, and every other failure — a sync that could not decrypt, a
   backup that could not be written, a transport that timed out — was a toast. A toast is right
