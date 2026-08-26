@@ -79,7 +79,7 @@ test('an on-close entry is not on a clock either', () => {
   assert.equal(burnsOnClose(node), true);
   assert.equal(burnsOnAgentUse(node), false);
   assert.equal(isExpired(node, NOW + 1000 * HOUR), false);
-  assert.equal(describeRemaining(node, NOW), 'until this window closes');
+  assert.equal(describeRemaining(node, NOW), 'until VS Code closes');
 });
 
 test('a sweep picks exactly the expired entries, and never a folder', () => {

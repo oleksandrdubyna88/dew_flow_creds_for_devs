@@ -28,7 +28,7 @@ export type BurnPolicy =
   | 'ttl'
   /** Gone after an agent uses it once through the broker. */
   | 'oneUse'
-  /** Gone when this window closes. */
+  /** Gone shortly after the last VS Code window on this machine closes — a lease, see `ephemeralLease.ts`. */
   | 'onClose';
 
 export const BURN_POLICIES: readonly BurnPolicy[] = ['ttl', 'oneUse', 'onClose'];
@@ -46,7 +46,7 @@ export const LIFETIME_CHOICES: readonly {
   { label: 'Forever' },
   { label: '1 hour', policy: 'ttl', ms: 60 * 60_000 },
   { label: '1 day', policy: 'ttl', ms: 24 * 60 * 60_000 },
-  { label: 'Until this window closes', policy: 'onClose' },
+  { label: 'Until VS Code closes', policy: 'onClose' },
   { label: 'Until an agent uses it once', policy: 'oneUse' },
 ];
 
@@ -94,7 +94,7 @@ export function nodesBurnedOnClose(nodes: readonly TreeNode[]): TreeNode[] {
  * promise a precision the mechanism does not have.</p>
  */
 const CLOCKLESS: Partial<Record<BurnPolicy, string>> = {
-  onClose: 'until this window closes',
+  onClose: 'until VS Code closes',
   oneUse: 'until an agent uses it',
 };
 
@@ -126,4 +126,62 @@ function describeGap(ms: number): string {
 export function expiresSoon(node: TreeNode, nowMs: number, withinMs: number): boolean {
   const at = node.details?.expiresAt;
   return typeof at === 'number' && at > nowMs && at - nowMs <= withinMs;
+}
+
+/**
+ * The lifetime the form offers, as a value a `<select>` can carry.
+ *
+ * <p>A stable string rather than an index into {@link LIFETIME_CHOICES}: an index would
+ * silently re-point at a different lifetime the day a preset is inserted, and the symptom
+ * would be somebody's credential expiring in an hour instead of a day.</p>
+ */
+export const KEEP_LIFETIME = 'keep';
+export const FOREVER_LIFETIME = 'forever';
+
+export function lifetimeId(choice: { policy?: BurnPolicy; ms?: number }): string {
+  if (choice.policy === undefined) {
+    return FOREVER_LIFETIME;
+  }
+  return choice.policy === 'ttl' ? `ttl:${choice.ms ?? 0}` : choice.policy;
+}
+
+/**
+ * A `Map`, not an object literal: the id comes from a webview payload, and a plain object
+ * would answer `constructor` and `toString` with something that is not `undefined`.
+ */
+const CLOCKLESS_IDS = new Map<string, BurnPolicy>([
+  ['onClose', 'onClose'],
+  ['oneUse', 'oneUse'],
+]);
+
+/** The moment a `ttl:<ms>` id names, or `undefined` when it is not one. */
+function ttlFrom(
+  id: string,
+  nowMs: number,
+): { expiresAt: number; burnPolicy: BurnPolicy } | undefined {
+  const ms = id.startsWith('ttl:') ? Number(id.slice(4)) : Number.NaN;
+  return Number.isFinite(ms) && ms > 0 ? { expiresAt: nowMs + ms, burnPolicy: 'ttl' } : undefined;
+}
+
+/** The `expiresAt`/`burnPolicy` a chosen lifetime produces for the record being saved. */
+export function applyLifetime(
+  id: string,
+  nowMs: number,
+  current: { expiresAt?: number; burnPolicy?: BurnPolicy },
+): { expiresAt: number | undefined; burnPolicy: BurnPolicy | undefined } {
+  if (id === FOREVER_LIFETIME) {
+    return { expiresAt: undefined, burnPolicy: undefined };
+  }
+  const clockless = CLOCKLESS_IDS.get(id);
+  if (clockless !== undefined) {
+    return { expiresAt: undefined, burnPolicy: clockless };
+  }
+  // Anything unrecognised — including `keep` — leaves the record exactly as it was. An edit
+  // that only renamed an entry must never move the moment it dies.
+  return ttlFrom(id, nowMs) ?? { expiresAt: current.expiresAt, burnPolicy: current.burnPolicy };
+}
+
+/** Whether this entity already has a lifetime, and therefore something to keep. */
+export function hasLifetime(current: { expiresAt?: number; burnPolicy?: BurnPolicy }): boolean {
+  return current.burnPolicy !== undefined || typeof current.expiresAt === 'number';
 }

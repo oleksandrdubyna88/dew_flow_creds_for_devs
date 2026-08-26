@@ -86,6 +86,8 @@ import { validatePin } from './pinPolicy';
 import { CredTreeDataProvider, VIEW_ID } from './treeDataProvider';
 import { EntityFlagsRefresher, entityFlagSource } from './entityFlags';
 import { resolveKind } from './entityKind';
+import { burnIfOneUse } from './burnOnUse';
+import { EphemeralSweeper } from './ephemeralSweeper';
 import { maskEntriesFor } from './maskEntries';
 import { MaskEntry, buildMaskTable } from './secretMasker';
 import { describeScan, scanForSecrets } from './secretScan';
@@ -209,6 +211,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     console.log(`[creds-for-devs/backup] ${message}`),
   );
   context.subscriptions.push(backups);
+
+  // Short-lived entries: delete what has run out of clock, and renew the lease on what this
+  // window is holding open. Started here rather than lazily because a window OPENING is when
+  // entries orphaned by a window that crashed are found — that first pass is the whole
+  // crash-safety story, and a lazy start would skip it in exactly the case it exists for.
+  const ephemeral = new EphemeralSweeper(
+    storage,
+    context.globalState,
+    (message) => console.log(`[creds-for-devs/ephemeral] ${message}`),
+    () => provider.refresh(),
+  );
+  ephemeral.start();
+  context.subscriptions.push(ephemeral);
 
   // Stale-sync reminder: an account with a sync location that has not synced for three
   // days gets a warning, repeated every four hours until a sync succeeds. The point is
@@ -348,6 +363,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     () => vaultKeys.noteUserActivity(),
     storageDir,
     (accountId, entityId) => maskEntriesFor(storage, accountId, entityId),
+    // The fifth makes "until an agent uses it once" real: a successful call destroys the
+    // entry through the one deletion path, tombstone and revision history included.
+    async (accountId, entityId) => {
+      const burned = await burnIfOneUse(storage, accountId, entityId);
+      if (burned) {
+        provider.refresh();
+      }
+      return burned;
+    },
   );
   const sshDeps = {
     storage,

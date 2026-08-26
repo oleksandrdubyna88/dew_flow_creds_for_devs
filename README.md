@@ -47,6 +47,11 @@ with its own note, run with one click) and **scripts** (a highlighted editor, va
 out as `${NAME}` rows and delivered through the environment rather than pasted into the body).
 Any entry can also carry one encrypted file and one encrypted image.
 
+Any entry can also be given a **lifetime**, for the staging tokens and one-off keys nobody ever
+gets round to deleting: one hour, one day, until VS Code closes, or until an agent has used it
+once. When the time comes the entry is really deleted — secret, revision history and a tombstone
+that carries the deletion to every machine that syncs — never merely flagged as spent.
+
 Around them: folders with types, **project** folders that create the whole set at once, Ctrl/Shift
 multi-select for bulk delete/export/share, per-entry created and changed dates, the **last 3
 versions** of each entry, and an export for people outside your organisation — password-sealed, or

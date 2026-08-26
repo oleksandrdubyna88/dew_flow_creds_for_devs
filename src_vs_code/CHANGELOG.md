@@ -6,6 +6,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **Vault format v4 — roll the extension out to every machine before any of them syncs.**
+  A v4 file is written the next time a vault is saved, and a build older than this one
+  cannot read it (*"Unsupported backup version: 4"*). Reading v3 and v2 keeps working
+  forever, so no vault has to be converted by hand — but one updated laptop syncing to a
+  shared folder locks out every colleague still on 0.58.x, exactly as the v3 step did.
+
+  What v4 changes: **the envelope header is now bound to the encrypted payload itself.**
+  The header (format, version, KDF and the owning account) is plaintext, and until now the
+  only thing protecting it was a separate signature — a check the code had to *remember* to
+  run. Forgetting it is not hypothetical: it is precisely the MAC-healing defect fixed on
+  2026-08-25, where a tampered file was decrypted, merged and re-signed, and the fresh valid
+  signature made the tampering look legitimate. Binding the header as AEAD associated data
+  turns that from a branch into a property: on a shared folder, a file whose `account` has
+  been rewritten to name someone else now fails to decrypt at all, in the cipher, whatever
+  any caller remembered to check. The signature is still written, because it lets a reader
+  spot tampering without unwrapping the master key.
+
+  Two things are deliberately **not** bound, and both are load-bearing: the unlock **wraps**,
+  because adding or removing a security key rewrites them around the same master key and must
+  never re-encrypt the payload; and **shares**, because colleagues legitimately append those
+  to a folder envelope. Binding either would turn an ordinary action into apparent tampering.
+
 ### Fixed
 
 - **The context menu keeps up with the keychain.** Three ways the tree's cached per-entity
@@ -96,6 +120,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
   Bounded on purpose: 256 KB of output per stream, 30 s per command (raisable to 120 s), 8 at a
   time, and every child killed when the window goes.
+
+## [0.59.0] — 2026-08-26
+
+### Added
+
+- **Short-lived entries.** Any entry can be given a lifetime — 1 hour, 1 day, until VS Code
+  closes, or until an agent has used it once — for the staging tokens, temporary keys and
+  debugging passwords that nobody ever goes back to delete. When the time comes the entry is
+  **really deleted**: the secret, its revision history, and a causal tombstone that carries the
+  deletion to every machine that syncs. A "spent" flag was rejected deliberately — it would
+  leave the old secret readable from history, present in the next backup, and, with no tombstone,
+  silently resurrected by the next machine to sync.
+  - "Until VS Code closes" is a **lease**, not a close handler. A window that crashes or is
+    killed never runs a handler, and the entry it promised to destroy would then live forever
+    holding a working secret — the failure would land in the one direction the feature exists to
+    prevent. With a lease nobody has to run any code for the entry to die. Every window on the
+    machine renews, so the label says "until VS Code closes" rather than naming one window: that
+    is what the mechanism actually delivers.
+  - The lease is machine-local and never rides on the entity, because every write to a node bumps
+    its causal version — a lease stored in the record would republish that entry to the sync
+    location once a minute for as long as a window stayed open.
+  - An entry arriving from another machine is **adopted**, never swept on sight; deleting the
+    unleased would destroy the other laptop’s live entry the moment it synced in.
+  - Only the agent broker spends a one-use entry. Copying the password yourself does not, which
+    is why the label reads "until an agent uses it once" rather than "one-time".
+  - "Until an agent uses it once" is not offered for SSH **keys** and is dropped on write if it
+    somehow arrives: the broker never serves a key pair, so nothing could ever fire the burn and
+    the entry would sit in the vault forever while the label promised otherwise. A temporary key
+    for a customer’s instance is the first thing anyone reaches for here.
+  - Editing an entry keeps its lifetime exactly as it was ("Keep as is"), so renaming a one-hour
+    token does not quietly give it another hour.
+  - A sweep runs once a minute and on every window start — the start is what finds entries
+    orphaned by a window that crashed. It stops entirely on a metadata fault, the same
+    fail-closed rule sync uses: when the node list cannot be trusted, "expired" and "unreadable"
+    look identical and one of those two answers destroys data.
 
 ## [0.58.3] — 2026-08-25
 

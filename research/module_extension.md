@@ -583,7 +583,7 @@ lock.
 
 ### The envelope
 
-Three versions, all AES-256-GCM with a fresh 16-byte salt and 12-byte IV per encryption:
+Four versions, all AES-256-GCM with a fresh 16-byte salt and 12-byte IV per encryption:
 
 - **v1** — payload sealed directly under `scrypt(accountId + PIN)`. The salt is fresh per write, so
   the derived key cannot be cached and scrypt (~1 s) runs on every read AND write. **Read-only now:**
@@ -592,7 +592,33 @@ Three versions, all AES-256-GCM with a fresh 16-byte salt and 12-byte IV per enc
   once per unlock method (`KeyWrap[]`). A LUKS-style key-slot design: adding or removing a YubiKey
   rewrites one small wrap record, never the payload. v3 moved the payload key to **HKDF** (so a cached
   master key makes reads/writes cheap — scrypt runs once, at unlock, to unwrap) and grew the MAC to
-  cover the sealed blob; a wrapped write is always v3.
+  cover the sealed blob.
+- **v4** — v3 plus the header bound to the payload as **AEAD associated data** (audit A5). A wrapped
+  write is always v4.
+
+#### What v4 binds, and what it deliberately does not
+
+The header is plaintext and was protected only by the envelope MAC — a check a caller has to
+REMEMBER to run, and the MAC-healing defect of 2026-08-25 is what forgetting it looks like
+(decrypt, merge, re-sign, and the tamper is now legitimately signed). `headerAad` binds
+`format`, `version`, `account` and `kdf` through the same length-prefixed `canonicalBytes` the MAC
+uses, so a forged owner fails inside `decipher.final()` — a property rather than a branch. The MAC
+stays, because it detects tampering without unwrapping the master key.
+
+AAD binds metadata to ONE sealing, so only fields that are immutable for a given ciphertext may go
+in it. Two are not, and both were found the honest way — by an existing test failing:
+
+- **`wraps`** — add/remove Security Key rewrites the wraps around the SAME master key and must never
+  re-encrypt the payload; that is the whole point of the wrap layer. Binding them made
+  *"removing one key leaves the others working and the payload untouched"* fail immediately. Wrap
+  tampering stays the MAC's job — the right tool for mutable metadata, because a MAC can be re-signed
+  when the change is legitimate and AAD cannot.
+- **`shares`** — colleagues legitimately append them to a folder envelope; binding them would make
+  every incoming share indistinguishable from tampering.
+
+`envelopeAad.test.ts` pins all of it, including a **frozen real v3 envelope**: nothing in the tree can
+write v3 any more, so every other v3 case in the suite silently became a v4 case the day the writer
+changed, and the "reading v3 works forever" promise would otherwise have had no test at all.
 
 **No v1 is written (every vault is v3, PIN-only included).** `VaultKeys.encrypt` upgrades a v1 key on
 the spot — `keyWrap.wrapPinVault` mints a master key, seals it in a **pin-wrap**, and writes v3 — so a
@@ -914,6 +940,47 @@ people remain the rejected-push contract’s job.
 — no network, no account, genuinely git — and runs in CI. The rejected-push path is covered by
 unit tests instead: forcing a non-fast-forward through the public API would mean racing two
 pushes inside a millisecond, which is a flaky test for a path already pinned exactly.
+
+### Short-lived entries (0.59.0)
+
+`entityExpiry.ts` is the pure rule — `isExpired`, `burnsOnClose`, `burnsOnAgentUse`,
+`describeRemaining`, and the preset table the form renders. It answers *whether*, never *does*:
+the deleting goes through `StorageManager.deleteNodeRecursive`, the one path that writes a causal
+tombstone and removes all eight SecretStorage keys **including the revision history**. A "burned"
+marker that left the node in place was considered and rejected — it leaves the old password
+retrievable from history, present in the next backup, and with no tombstone and no version bump it
+is silently resurrected by the next machine to sync.
+
+Two mechanisms, deliberately unalike. A `ttl` entry carries `expiresAt` in its own metadata,
+written once and never touched, so it syncs like any other field and expires identically
+everywhere. An `onClose` entry carries no clock at all: its life is a **lease** in machine-local
+`globalState` (`ephemeralLease.ts`), renewed by `EphemeralSweeper` once a minute.
+
+The lease is the design decision worth recording. A close handler cannot deliver the promise — a
+window that crashes, is killed, or loses power never runs one, and the entry it was to destroy
+then lives forever holding a working secret, which is the single direction this feature must not
+fail in. It would also need to know WHICH window owns an entry, and no window identity exists
+here; inventing one would put a machine-local concept into a record that syncs. With a lease,
+nobody has to run any code for the entry to die. Two consequences are stated rather than hidden:
+every window on the machine renews, so the honest label is "until VS Code closes" rather than
+"this window"; and the lease never rides on the entity, because `stampVector` bumps a node’s
+causal version on every write and a lease in the record would republish it to the sync location
+every minute forever. An entry with no local lease is **adopted**, never swept — that is what an
+entry synced from another machine looks like, and sweeping it would destroy the other laptop’s
+live entry on arrival.
+
+`burnOnUse.ts` is the one-use half, called by `CredsAgentServer` after a successful call and only
+a successful one: an agent mistyping a command must not destroy a working credential. The broker
+takes it as an injected callback rather than reading `burnPolicy` itself — it holds a grant, not a
+stored record, and should no more read that field than it reads a password. `oneUse` is refused
+for `sshkey` at three layers (hidden in the form, dropped by `stampKind` on write, re-checked in
+`burnIfOneUse`) because the broker never serves a key pair: nothing could ever fire the burn, so
+the entry would sit in the vault forever while the UI promised it would vanish — and a temporary
+key for a customer’s box is exactly what people reach for first.
+
+The sweep stops entirely on a metadata fault, mirroring `SyncManager`’s fail-closed guard: when
+the node list cannot be trusted, "this expired" and "this is unreadable" are indistinguishable,
+and one of those two answers deletes data.
 
 ### Masking the broker's output (0.57.3)
 

@@ -16,6 +16,7 @@ import {
   searchTerms,
 } from './treeSearch';
 import { entityKey } from './entityFlags';
+import { describeRemaining } from './entityExpiry';
 import { assertNever, canConnectSsh, resolveKind } from './entityKind';
 import { SyncReadiness } from './syncReadiness';
 import { isVpnStartable } from './vpnCommand';
@@ -586,7 +587,13 @@ export class CredTreeDataProvider
       // in step, and the tint says the same thing.
       this.hasHistory(accountId, node.id) ? HISTORY_COLOR : undefined,
     );
-    item.description = describeTarget(node);
+    // What it points at, and — for a short-lived entry — how long it has. Deliberately in the
+    // description rather than as a second icon tint: the tint already means "has previous
+    // versions", and one channel carrying two meanings tells you neither. Same separator the
+    // account row uses.
+    item.description = [describeTarget(node), describeRemaining(node, Date.now())]
+      .filter(Boolean)
+      .join('  ·  ');
     item.tooltip = buildTooltip(node);
     // Single click only selects (the handler ignores it); a DOUBLE click
     // opens the read-only viewer. Actions live in the context menu.

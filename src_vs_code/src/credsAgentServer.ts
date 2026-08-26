@@ -121,6 +121,17 @@ export class CredsAgentServer implements vscode.Disposable {
       accountId: string,
       entityId: string,
     ) => Promise<readonly MaskEntry[]>,
+    /**
+     * Destroy the entity if it was marked to live for exactly one agent use; answers whether
+     * it did. Optional, like the masker: absent means nothing burns, never a crash.
+     *
+     * <p>The DECISION lives outside on purpose. The broker knows a grant, not a stored
+     * record — it should no more read `burnPolicy` than it reads a password — so the caller
+     * that owns storage answers "was this one-use, and is it gone now". That also keeps the
+     * single deletion path (`deleteNodeRecursive`, tombstone and history included) on the
+     * side of the wall that already has it.</p>
+     */
+    private readonly burnAfterUse?: (accountId: string, entityId: string) => Promise<boolean>,
   ) {}
 
   /** The signal every spawned child watches, so none outlives this window. */
@@ -280,6 +291,9 @@ export class CredsAgentServer implements vscode.Disposable {
         detail: hits > 0 ? `${summary} · masked ${hits} secret value(s)` : summary,
       });
       this.respond(res, result.status, sent);
+      // After the answer is on the wire, never before: the use has happened by now, and a
+      // storage failure while burning must not cost the agent the result it already earned.
+      await this.burnIfSpent(grant, result.status);
     } catch (error) {
       this.respondError(
         res,
@@ -414,6 +428,35 @@ export class CredsAgentServer implements vscode.Disposable {
       return maskResponseBody(body, buildMaskTable(entries));
     } catch {
       return { body, hits: 0 };
+    }
+  }
+
+  /**
+   * Destroy a one-use entry now that it has been used — and say so in the audit.
+   *
+   * <p>Only a successful call spends it. A refused, failed or not-supported call left the
+   * credential unused, and burning it there would destroy a working secret because the agent
+   * mistyped a command.</p>
+   *
+   * <p>Failing to burn is logged, never thrown: the response is already sent, and the sweep
+   * has no second chance at this — a `oneUse` entry carries no clock — so the audit line is
+   * the only record that the entry outlived its promise.</p>
+   */
+  private spender(status: number): ((a: string, e: string) => Promise<boolean>) | undefined {
+    return status === 200 ? this.burnAfterUse : undefined;
+  }
+
+  private async burnIfSpent(grant: Grant, status: number): Promise<void> {
+    const burn = this.spender(status);
+    if (burn === undefined) {
+      return;
+    }
+    try {
+      if (await burn(grant.accountId, grant.entityId)) {
+        this.note(`"${grant.entityName}" was one-use and has been deleted from the vault.`);
+      }
+    } catch (error) {
+      this.note(`"${grant.entityName}" was one-use but could NOT be deleted: ${describeError(error)}`);
     }
   }
 

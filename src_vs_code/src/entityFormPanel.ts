@@ -5,6 +5,15 @@
 import * as crypto from 'node:crypto';
 import * as vscode from 'vscode';
 import { resolveKind } from './entityKind';
+import {
+  FOREVER_LIFETIME,
+  KEEP_LIFETIME,
+  LIFETIME_CHOICES,
+  applyLifetime,
+  describeRemaining,
+  hasLifetime,
+  lifetimeId,
+} from './entityExpiry';
 import { normalizeArgs } from './commandLine';
 import { flagOf, parseCommandLine } from './commandParse';
 import { SCRIPT_LANGUAGES, highlightScript } from './scriptRender';
@@ -294,6 +303,9 @@ function readEnvBindings(data: Record<string, unknown>): Record<string, string> 
 function toValues(data: Record<string, unknown>, options: EntityFormOptions): EntityFormValues {
   const kind = (options.lockedKind ?? str(data, 'entityType')) as EntityKind;
   const envBindings = readEnvBindings(data);
+  // `keep` and anything unrecognised leave the existing lifetime exactly as it was: renaming
+  // an entry must never move the moment it dies.
+  const lifetime = applyLifetime(str(data, 'lifetime'), Date.now(), options.initial ?? {});
   const isScript = kind === 'script';
   const isSsh = kind === 'ssh';
   const isKey = kind === 'sshkey';
@@ -318,6 +330,8 @@ function toValues(data: Record<string, unknown>, options: EntityFormOptions): En
       id: options.entityId,
       name: str(data, 'name').trim(),
       envBindings,
+      expiresAt: lifetime.expiresAt,
+      burnPolicy: lifetime.burnPolicy,
       isScript: isScript || undefined,
       scriptLanguage: isScript ? str(data, 'scriptLanguage').trim() || 'bash' : undefined,
       script: isScript ? str(data, 'scriptBody') || undefined : undefined,
@@ -446,6 +460,26 @@ function renderHtml(options: EntityFormOptions): string {
   // Credential, and no `satisfies` on the neighbouring line noticed. Driving the loop from
   // ENTITY_KINDS makes an absent kind impossible; the Record makes an absent hint a
   // compile error.
+  const lifetimeOptions = (current: EntityMetadata | undefined): string => {
+    const keep = hasLifetime(current ?? {})
+      ? `<option value="${KEEP_LIFETIME}" selected>Keep as is (${escapeHtml(
+          describeRemaining({ details: current } as never, Date.now()) || 'unchanged',
+        )})</option>`
+      : '';
+    // `oneUse` is offered for every kind here and hidden for sshkey by the page script, so
+    // that switching Type re-evaluates it without a round trip. The write path refuses the
+    // combination regardless — this only keeps the person from being shown a choice that
+    // would be silently dropped.
+    const presets = LIFETIME_CHOICES.map((choice) => {
+      const id = lifetimeId(choice);
+      const selected = keep === '' && id === FOREVER_LIFETIME ? ' selected' : '';
+      return `<option value="${id}"${selected} data-policy="${choice.policy ?? ''}">${escapeHtml(
+        choice.label,
+      )}</option>`;
+    }).join('');
+    return keep + presets;
+  };
+
   const kindOptions = ENTITY_KINDS.map(
     (value) =>
       `<option value="${value}"${kind === value ? ' selected' : ''}>${
@@ -588,6 +622,9 @@ function renderHtml(options: EntityFormOptions): string {
         ? `<p class="hint">Type is fixed by the folder's type.</p>`
         : ''
     }
+    <label for="lifetime">Lifetime</label>
+    <select id="lifetime">${lifetimeOptions(d)}</select>
+    <p class="hint" id="lifetimeHint">A short-lived entry is really deleted when its time comes — secret, history and all, on every machine that syncs. Only an agent using it through the broker counts as a use; copying it yourself does not.</p>
   </fieldset>
 
   <fieldset id="connectionSection">
@@ -837,6 +874,27 @@ function renderHtml(options: EntityFormOptions): string {
     show('terminalSection', kind === 'terminal');
     show('scriptSection', kind === 'script');
     show('passwordSection', kind !== 'db' && kind !== 'terminal' && kind !== 'script');
+    updateLifetimeChoices(kind);
+  }
+
+  // The broker never serves a key pair, so "until an agent uses it once" could never fire for
+  // an sshkey — the entry would sit in the vault forever while the label promised otherwise.
+  // The write path drops the policy anyway; hiding it here is so nobody is offered a choice
+  // that would be silently discarded. A temporary key for a customer's box is the first thing
+  // anyone reaches for, which is why it must not merely be documented.
+  function updateLifetimeChoices(kind) {
+    var select = document.getElementById('lifetime');
+    if (!select) { return; }
+    var allowed = kind !== 'sshkey';
+    for (var i = 0; i < select.options.length; i++) {
+      var option = select.options[i];
+      if (option.getAttribute('data-policy') !== 'oneUse') { continue; }
+      option.hidden = !allowed;
+      option.disabled = !allowed;
+      if (!allowed && option.selected) {
+        select.value = 'forever';
+      }
+    }
   }
 
   // ---- argument rows -------------------------------------------------------
@@ -1344,7 +1402,7 @@ function renderHtml(options: EntityFormOptions): string {
       clearVpnConfig: chk('clearVpnConfig'),
       dbType: val('dbType'), dbConnection: val('dbConnection'),
       command: val('command'), commandNote: val('commandNote'), commandArgs: argRows,
-      envBindings: collectEnvBindings(),
+      envBindings: collectEnvBindings(), lifetime: val('lifetime'),
       scriptLanguage: val('scriptLanguage'), scriptBody: val('scriptBody'), scriptVars: scriptVarRows,
       attachmentContent: attachmentContent, attachmentName: attachmentName,
       imageContent: imageContent, imageName: imageName,
