@@ -26,6 +26,7 @@ import {
   auditLogsToPrune,
 } from './agentAuditFile';
 import { startLoopbackServer } from './loopbackServer';
+import { ExtraListener, socketPathFor, startExtraListener } from './brokerListeners';
 import { startOnce } from './idempotentStart';
 import { MaskEntry, buildMaskTable, maskResponseBody } from './secretMasker';
 
@@ -87,6 +88,7 @@ export class CredsAgentServer implements vscode.Disposable {
   // disable the feature for the window's life. See startOnce.
   private readonly beginStart = startOnce<void>();
   private server: http.Server | undefined;
+  private extra: ExtraListener | undefined;
   private port = 0;
   private running = 0;
 
@@ -199,7 +201,35 @@ export class CredsAgentServer implements vscode.Disposable {
       this.server = server;
       this.port = port;
       server.on('request', (req, res) => void this.handle(req, res));
+      await this.openExtraListener();
     });
+  }
+
+  /**
+   * The pipe or socket beside the port, when there is somewhere to put it.
+   *
+   * <p>Never fatal. A window that cannot open a socket — a storage path too long for the OS
+   * limit, a read-only directory — still has its loopback port, which is how every existing
+   * client reaches it. Failing to start the broker over this would take away a working feature
+   * to add a new one.</p>
+   */
+  private async openExtraListener(): Promise<void> {
+    const address =
+      this.storageDir === undefined
+        ? undefined
+        : socketPathFor(this.storageDir, process.pid, process.platform);
+    if (address === undefined) {
+      return;
+    }
+    try {
+      this.extra = await startExtraListener(
+        (req, res) => void this.handle(req, res),
+        address,
+        process.platform,
+      );
+    } catch (error) {
+      this.note(`the local socket could not be opened (${describeError(error)}); the port still works.`);
+    }
   }
 
   // eslint-disable-next-line complexity, max-lines-per-function
@@ -558,6 +588,11 @@ export class CredsAgentServer implements vscode.Disposable {
     this.abort.abort();
     this.server?.close();
     this.server = undefined;
+    // Fire-and-forget: dispose is synchronous, and a socket file left behind would otherwise
+    // be inherited by the next window with this pid. The path carries the pid precisely so
+    // that a corpse is always safe to remove, which `startExtraListener` then does.
+    void this.extra?.close();
+    this.extra = undefined;
     this.output?.dispose();
   }
 }
