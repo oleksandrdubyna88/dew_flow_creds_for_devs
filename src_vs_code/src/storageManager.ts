@@ -43,14 +43,36 @@ const METADATA_KEY_SLOT = 'credSshManager.metadataKey';
 const DEVICE_ID_KEY = 'credSshManager.deviceId';
 const DEVICE_SEQ_KEY = 'credSshManager.deviceSeq';
 
+/**
+ * The entity-id part of a SecretStorage key.
+ *
+ * <p>These keys are built by concatenation — `${accountId}_${entityId}`, with a `:sshPrivateKey`
+ * / `:vpnConfig` / `:notes` / … suffix for every kind but the password — and concatenation
+ * without an escape is ambiguous. The ambiguity was reachable: an entity whose id is
+ * `x:sshPrivateKey` produced exactly the key that holds entity `x`'s PRIVATE KEY, so saving the
+ * crafted entity's password destroyed a real key and reading that key back returned the
+ * attacker's password, with no error anywhere.</p>
+ *
+ * <p>Ordinary ids are uuids, so accepting a share cannot reach this (`shareInbox` mints a fresh
+ * local id) — but import and restore write an envelope's nodes with their own ids.</p>
+ *
+ * <p><b>Only the three separator characters are escaped, and a uuid contains none of them</b>,
+ * so every key an installed build already wrote is unchanged. `%` is escaped first and for that
+ * exact reason: without it an entity literally named `x%3AsshPrivateKey` would encode onto the
+ * same key as one named `x:sshPrivateKey`, trading one collision for another.</p>
+ */
+function keyPart(entityId: string): string {
+  return entityId.replace(/%/g, '%25').replace(/:/g, '%3A').replace(/_/g, '%5F');
+}
+
 /** Tenant-scoped SecretStorage key: `${accountId}_${entityId}`. */
 function secretKey(accountId: string, entityId: string): string {
-  return `${accountId}_${entityId}`;
+  return `${accountId}_${keyPart(entityId)}`;
 }
 
 /** SecretStorage key for an entity's SSH private key content. */
 function privateKeySecretKey(accountId: string, entityId: string): string {
-  return `${accountId}_${entityId}:sshPrivateKey`;
+  return `${accountId}_${keyPart(entityId)}:sshPrivateKey`;
 }
 
 /**
@@ -63,34 +85,34 @@ function signingKeySecretKey(accountId: string): string {
 
 /** SecretStorage key for an entity's VPN config file content. */
 function vpnConfigSecretKey(accountId: string, entityId: string): string {
-  return `${accountId}_${entityId}:vpnConfig`;
+  return `${accountId}_${keyPart(entityId)}:vpnConfig`;
 }
 
 /** SecretStorage key for an entity's notes (kept out of plaintext globalState). */
 function notesSecretKey(accountId: string, entityId: string): string {
-  return `${accountId}_${entityId}:notes`;
+  return `${accountId}_${keyPart(entityId)}:notes`;
 }
 
 function historySecretKey(accountId: string, entityId: string): string {
-  return `${accountId}_${entityId}:history`;
+  return `${accountId}_${keyPart(entityId)}:history`;
 }
 
 function attachmentSecretKey(accountId: string, entityId: string): string {
-  return `${accountId}_${entityId}:attachment`;
+  return `${accountId}_${keyPart(entityId)}:attachment`;
 }
 
 function imageSecretKey(accountId: string, entityId: string): string {
-  return `${accountId}_${entityId}:image`;
+  return `${accountId}_${keyPart(entityId)}:image`;
 }
 
 /** SecretStorage key for an entity's DB connection string. */
 function dbConnSecretKey(accountId: string, entityId: string): string {
-  return `${accountId}_${entityId}:dbConn`;
+  return `${accountId}_${keyPart(entityId)}:dbConn`;
 }
 
 /** SecretStorage key for an entity's TOTP seed (the canonical `otpauth://` URI). */
 function totpSecretKey(accountId: string, entityId: string): string {
-  return `${accountId}_${entityId}:totp`;
+  return `${accountId}_${keyPart(entityId)}:totp`;
 }
 
 /**
