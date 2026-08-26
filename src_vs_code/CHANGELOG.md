@@ -295,6 +295,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Bounded on purpose: 256 KB of output per stream, 30 s per command (raisable to 120 s), 8 at a
   time, and every child killed when the window goes.
 
+## [0.62.1] — 2026-08-26
+
+### Fixed
+
+- **A folder or entry name could break out of the entity form's script element.** The Depends-on
+  picker interpolated the folder list, the entity names and the saved rows with `JSON.stringify`,
+  which leaves `<` alone — and an HTML parser ends a `<script>` at `</script>` wherever it
+  appears, inside a string literal included. A name carrying it closed the script early and the
+  rest of the form was parsed as markup. Those names arrive from a **synced** vault, a shared
+  entry or a restored backup, so it was never bounded by what the local user types.
+  - Shipped in 0.62.0 and fixed within the hour. The fuller record, including the scan that now
+    fails the build on any `${JSON.stringify(…)}` inside a template literal, is under Unreleased.
+
 ## [0.62.0] — 2026-08-26
 
 ### Added
