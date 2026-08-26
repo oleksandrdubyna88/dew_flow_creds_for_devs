@@ -5,6 +5,7 @@
 import * as crypto from 'node:crypto';
 import * as vscode from 'vscode';
 import { ProfileSnapshot } from './syncMerge';
+import { quarantineUnsafeIds } from './idQuarantine';
 import { SigningKeypair, generateSigningKeypair } from './shareSignature';
 import { RemoteState, buildDefaultFolders, shouldSeedDefaults } from './defaultFolders';
 import { Tombstone, VersionVector, bumpVector, mergeVectors, normalizeTombstone } from './versionVector';
@@ -42,6 +43,9 @@ const METADATA_KEY_SLOT = 'credSshManager.metadataKey';
 
 const DEVICE_ID_KEY = 'credSshManager.deviceId';
 const DEVICE_SEQ_KEY = 'credSshManager.deviceSeq';
+
+/** Per account: the id an imported entity ARRIVED with -> the id it was given here. */
+const IMPORTED_IDS_KEY = 'credSshManager.importedIds';
 
 /**
  * The entity-id part of a SecretStorage key.
@@ -922,7 +926,13 @@ export class StorageManager implements vscode.Disposable {
 
   /** Replace one profile's whole tree and batch-restore its secrets. */
   // eslint-disable-next-line complexity, max-lines-per-function
-  async importBundle(accountId: string, bundle: BackupBundle): Promise<void> {
+  async importBundle(accountId: string, incoming: BackupBundle): Promise<void> {
+    // The trust boundary. Every id in this bundle came from OUTSIDE — a restored backup file,
+    // or whatever can write the sync location — and an id is concatenated into a SecretStorage
+    // key and into a file name. One that could break either is renamed before it enters the
+    // vault; an ordinary uuid is passed through untouched, which is what keeps a sync cycle
+    // from renaming a whole tree every time it runs.
+    const bundle = await this.quarantine(accountId, incoming);
     const privateKeys = bundle.privateKeys ?? {};
     const vpnConfigs = bundle.vpnConfigs ?? {};
     const dbConnections = bundle.dbConnections ?? {};
@@ -1003,6 +1013,28 @@ export class StorageManager implements vscode.Disposable {
   }
 
   // ---------- helpers ----------
+
+  /**
+   * Rename any entity whose id could break a key or a path, remembering what it was called.
+   *
+   * <p>The memory is per account and local, exactly like `shareOrigin`'s: it is what makes a
+   * SECOND import of the same file update the entity it created the first time rather than add
+   * a duplicate beside it. Nothing is written when nothing had to be renamed, so the ordinary
+   * path costs one regex per node and no state.</p>
+   */
+  private async quarantine(accountId: string, bundle: BackupBundle): Promise<BackupBundle> {
+    const all = this.globalState.get<Record<string, Record<string, string>>>(IMPORTED_IDS_KEY, {});
+    const known = all[accountId] ?? {};
+    const result = quarantineUnsafeIds(bundle, known, () => StorageManager.newId());
+    if (Object.keys(result.renamed).length === 0) {
+      return result.bundle;
+    }
+    await this.globalState.update(IMPORTED_IDS_KEY, {
+      ...all,
+      [accountId]: { ...known, ...result.renamed },
+    });
+    return result.bundle;
+  }
 
   static newId(): string {
     return crypto.randomUUID();

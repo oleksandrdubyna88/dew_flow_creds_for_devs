@@ -162,3 +162,50 @@ test('an already-stored secret keeps the key an existing install wrote', async (
 
   assert.ok(w.secrets.has(`${ACCOUNT}_${id}`), [...w.secrets.keys()].join(' | '));
 });
+
+/**
+ * The boundary itself: `importBundle` is where an outside id enters.
+ *
+ * <p>Reached by RESTORE (a file whose PIN someone may have been handed along with it) and by
+ * SYNC (an envelope written by whatever can write the sync location). `idQuarantine.ts` decides
+ * WHICH ids are renamed and is tested there; what is only true here is that the decision is
+ * actually applied at the door, and that an ordinary vault passes through unchanged.</p>
+ */
+
+function bundleOf(nodes: TreeNode[], passwords: Record<string, string> = {}): never {
+  return { nodes, passwords } as never;
+}
+
+test('an imported entity with a dangerous id is RENAMED before it enters the vault', async () => {
+  const w = instance(world());
+
+  await w.storage.importBundle(ACCOUNT, bundleOf([entity('x:sshPrivateKey')], { 'x:sshPrivateKey': 'pw' }));
+
+  const ids = w.storage.getNodes(ACCOUNT).map((n) => n.id);
+  assert.equal(ids.length, 1);
+  assert.notEqual(ids[0], 'x:sshPrivateKey', 'the crafted id reached the vault');
+  assert.equal(await w.storage.getPassword(ACCOUNT, ids[0]), 'pw', 'and its password came with it');
+});
+
+test('an ordinary vault imports with its ids UNCHANGED', async () => {
+  // Sync runs this on every cycle. Renaming here would rename the whole tree each time, push
+  // the renames, and replace every other machine's vault with strangers.
+  const w = instance(world());
+  const id = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890';
+
+  await w.storage.importBundle(ACCOUNT, bundleOf([entity(id)], { [id]: 'pw' }));
+
+  assert.deepEqual(w.storage.getNodes(ACCOUNT).map((n) => n.id), [id]);
+});
+
+test('importing the same crafted bundle twice does not leave two copies', async () => {
+  // The reason the rename is remembered rather than minted fresh each time.
+  const w = instance(world());
+  const crafted = bundleOf([entity('x:notes')]);
+
+  await w.storage.importBundle(ACCOUNT, crafted);
+  const firstId = w.storage.getNodes(ACCOUNT)[0].id;
+  await w.storage.importBundle(ACCOUNT, bundleOf([entity('x:notes')]));
+
+  assert.deepEqual(w.storage.getNodes(ACCOUNT).map((n) => n.id), [firstId]);
+});
