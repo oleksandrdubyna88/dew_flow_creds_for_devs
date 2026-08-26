@@ -941,6 +941,47 @@ people remain the rejected-push contract’s job.
 unit tests instead: forcing a non-fast-forward through the public API would mean racing two
 pushes inside a millisecond, which is a flaky test for a path already pinned exactly.
 
+### Short-lived entries (0.59.0)
+
+`entityExpiry.ts` is the pure rule — `isExpired`, `burnsOnClose`, `burnsOnAgentUse`,
+`describeRemaining`, and the preset table the form renders. It answers *whether*, never *does*:
+the deleting goes through `StorageManager.deleteNodeRecursive`, the one path that writes a causal
+tombstone and removes all eight SecretStorage keys **including the revision history**. A "burned"
+marker that left the node in place was considered and rejected — it leaves the old password
+retrievable from history, present in the next backup, and with no tombstone and no version bump it
+is silently resurrected by the next machine to sync.
+
+Two mechanisms, deliberately unalike. A `ttl` entry carries `expiresAt` in its own metadata,
+written once and never touched, so it syncs like any other field and expires identically
+everywhere. An `onClose` entry carries no clock at all: its life is a **lease** in machine-local
+`globalState` (`ephemeralLease.ts`), renewed by `EphemeralSweeper` once a minute.
+
+The lease is the design decision worth recording. A close handler cannot deliver the promise — a
+window that crashes, is killed, or loses power never runs one, and the entry it was to destroy
+then lives forever holding a working secret, which is the single direction this feature must not
+fail in. It would also need to know WHICH window owns an entry, and no window identity exists
+here; inventing one would put a machine-local concept into a record that syncs. With a lease,
+nobody has to run any code for the entry to die. Two consequences are stated rather than hidden:
+every window on the machine renews, so the honest label is "until VS Code closes" rather than
+"this window"; and the lease never rides on the entity, because `stampVector` bumps a node’s
+causal version on every write and a lease in the record would republish it to the sync location
+every minute forever. An entry with no local lease is **adopted**, never swept — that is what an
+entry synced from another machine looks like, and sweeping it would destroy the other laptop’s
+live entry on arrival.
+
+`burnOnUse.ts` is the one-use half, called by `CredsAgentServer` after a successful call and only
+a successful one: an agent mistyping a command must not destroy a working credential. The broker
+takes it as an injected callback rather than reading `burnPolicy` itself — it holds a grant, not a
+stored record, and should no more read that field than it reads a password. `oneUse` is refused
+for `sshkey` at three layers (hidden in the form, dropped by `stampKind` on write, re-checked in
+`burnIfOneUse`) because the broker never serves a key pair: nothing could ever fire the burn, so
+the entry would sit in the vault forever while the UI promised it would vanish — and a temporary
+key for a customer’s box is exactly what people reach for first.
+
+The sweep stops entirely on a metadata fault, mirroring `SyncManager`’s fail-closed guard: when
+the node list cannot be trusted, "this expired" and "this is unreadable" are indistinguishable,
+and one of those two answers deletes data.
+
 ### Masking the broker's output (0.57.3)
 
 `secretMasker.ts` (pure) prepares a table of exact needles — the value, its percent-encoded and
