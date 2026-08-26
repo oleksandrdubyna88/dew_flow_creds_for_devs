@@ -1644,14 +1644,25 @@ The lesson each time was the same: build the fixture against the REAL validator,
 reading of the type. Where a name is computed — backup file names, socket paths — read it back
 from the function that computes it instead of guessing it.
 
-**`extension.ts` is deliberately not unit-tested, and this is the reason.** After A1 it is
-wiring: it constructs the managers and registers the commands, and the logic it used to hold now
-lives in modules that are tested directly. What remains that is worth checking is the
-manifest↔handler correspondence, and `commandsRegistered.test.ts` already checks it by scanning
-the whole `src/` tree — deliberately not one file, because handlers keep moving out. A handful of
-non-exported helpers there (`resolveBulkTargets`, `collectJumpCandidates`, `asElement`,
-`folderKindOf`) would be worth extracting and testing; that is a real gap, not a claim of
-coverage, and it is left open rather than taken while another session is editing the file.
+**`extension.ts` is wiring, and the decisions that were hiding in it have been moved out.**
+After A1 it constructs the managers and registers the commands; the logic it used to hold lives
+in modules tested directly. What remained were four unexported functions — real decisions, in a
+3,500-line file no unit test can load. They are now `commandTargets.ts` (146 lines, no `vscode`
+import, so plain functions with plain inputs) and `commandTargets.test.ts` (19 tests).
+
+`asElement` is the gate every command passes through: VS Code hands a command whatever the
+invocation carried — a tree element from a context menu, `undefined` from the palette, and for a
+multi-select action a second array that may hold rows of any kind — and each shape is checked for
+the fields its commands will actually read. Two of its answers are decisions rather than
+validation, and both are now pinned: a **shadow row is NARROWED to the plain node element**, so
+every command reachable on the real row works on it with no second code path; and the
+**account-root group is refused**, because the command bound to a folder group has nowhere to go
+from there. Breaking either turns a test red.
+
+What is left in `extension.ts` is registration, whose manifest↔handler correspondence
+`commandsRegistered.test.ts` already checks by scanning the whole `src/` tree — deliberately not
+one file, because handlers keep moving out of it. That check and this extraction are the same
+argument from two directions.
 
 ## Security hardening (2026-08-25 review)
 

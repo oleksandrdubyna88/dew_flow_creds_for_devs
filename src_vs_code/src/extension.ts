@@ -115,7 +115,7 @@ import { EphemeralSweeper } from './ephemeralSweeper';
 import { maskEntriesFor } from './maskEntries';
 import { MaskEntry, buildMaskTable } from './secretMasker';
 import { describeScan, scanForSecrets } from './secretScan';
-import { RemoteState, buildDefaultFolders, inheritedFolderType } from './defaultFolders';
+import { RemoteState, buildDefaultFolders } from './defaultFolders';
 import * as childProcess from 'node:child_process';
 import * as fs from 'node:fs';
 import { resolveVpnLauncher } from './vpnExec';
@@ -151,7 +151,12 @@ import { folderPath, quickOpenItems } from './quickOpen';
 import { runHygieneScan } from './hygieneScan';
 import { ImportedEntity, parseImport, toTreeNodes } from './importFormats';
 import { LockStatusBar } from './statusBar';
-import { SelectedNode, describeSkips, resolveSelection } from './selectionResolver';
+import {
+  asElement,
+  collectJumpCandidates,
+  folderKindOf,
+  resolveBulkTargets,
+} from './commandTargets';
 import {
   credentialExportEnvAction,
   dbQueryAction,
@@ -162,7 +167,6 @@ import {
 import {
   AuthProvider,
   ENTITY_KIND_LABELS,
-  EntityKind,
   StoredAccount,
   EntityMetadata,
   SharePayload,
@@ -2773,17 +2777,6 @@ interface NodeLocation {
   parentId: string | null;
 }
 
-/** The entity kind a parent folder dictates, if it is typed. */
-function folderKindOf(
-  storage: StorageManager,
-  accountId: string,
-  parentId: string | null | undefined,
-): EntityKind | undefined {
-  if (parentId == null) {
-    return undefined;
-  }
-  return inheritedFolderType(storage.getNode(accountId, parentId)?.folderType);
-}
 
 /**
  * What is waiting for this account at its sync location, as far as we can tell.
@@ -2808,25 +2801,6 @@ async function probeRemote(
   }
 }
 
-/**
- * The nodes a bulk command should act on, and one sentence about what was left out.
- *
- * <p>Thin on purpose: every rule worth testing lives in `resolveSelection`, and this only
- * fetches the anchor account's nodes so the ancestor walk has a tree to walk.</p>
- */
-function resolveBulkTargets(
-  storage: StorageManager,
-  clicked: unknown,
-  selected: unknown,
-): { targets: SelectedNode[]; skippedNote: string } {
-  const anchor = asElement(clicked);
-  if (anchor?.kind !== 'node') {
-    return { targets: [], skippedNote: '' };
-  }
-  const rows = Array.isArray(selected) ? selected.map(asElement) : undefined;
-  const resolved = resolveSelection(anchor, rows, storage.getNodes(anchor.accountId));
-  return { targets: resolved.targets, skippedNote: describeSkips(resolved) };
-}
 
 /** Where a new node goes, based on what the command was invoked on. */
 async function resolveLocation(
@@ -2848,27 +2822,6 @@ async function resolveLocation(
 }
 
 /** Other entities of the account that can serve as an SSH key source. */
-/**
- * The entities that could serve as a jump host: SSH connections in the same account, minus this
- * one. Synchronous, unlike the key candidates, because being an SSH connection is metadata — no
- * keychain read is involved, and the form opens without waiting.
- */
-function collectJumpCandidates(
-  storage: StorageManager,
-  accountId: string,
-  excludeEntityId: string,
-): KeyCandidate[] {
-  return storage
-    .getNodes(accountId)
-    .filter(
-      (node) =>
-        node.type === 'entity' &&
-        node.id !== excludeEntityId &&
-        node.details?.isSshEnabled === true &&
-        Boolean(node.details.host),
-    )
-    .map((node) => ({ id: node.id, name: node.name }));
-}
 
 /**
  * Stamp the picked colour onto the entities this one now depends ON.
@@ -3510,60 +3463,6 @@ async function nodeAt(
   };
 }
 
-function asElement(value: unknown): TreeElement | undefined {
-  if (typeof value !== 'object' || value === null) {
-    return undefined;
-  }
-  const v = value as TreeElement;
-  if (v.kind === 'account' && typeof v.account?.accountId === 'string') {
-    return v;
-  }
-  if (v.kind === 'node' && typeof v.accountId === 'string' && typeof v.node?.id === 'string') {
-    return v;
-  }
-  if (
-    v.kind === 'revision' &&
-    typeof v.accountId === 'string' &&
-    typeof v.node?.id === 'string' &&
-    typeof v.index === 'number'
-  ) {
-    return v;
-  }
-  if (v.kind === 'teamMember' && typeof v.member?.account?.accountId === 'string') {
-    return v;
-  }
-  if (v.kind === 'teamScope' && typeof v.account?.accountId === 'string') {
-    return v;
-  }
-  if (v.kind === 'sharedSender' && typeof v.email === 'string') {
-    return v;
-  }
-  if (v.kind === 'sharedItem' && typeof v.share?.item?.id === 'string') {
-    return v;
-  }
-  if (v.kind === 'sharedRoot') {
-    return v;
-  }
-  // A shadow row IS its entity — narrowed to the plain node element so that every command
-  // already reachable on the real row works here with no second code path. That is the whole
-  // point of giving it the same `contextValue`: the sub-tree is a place to act, not a picture.
-  if (
-    v.kind === 'dependentEntity' &&
-    typeof v.accountId === 'string' &&
-    typeof v.node?.id === 'string'
-  ) {
-    return { kind: 'node', accountId: v.accountId, node: v.node };
-  }
-  // Kept as itself: it has its own command rather than any of an entity's.
-  if (
-    v.kind === 'dependentsFolder' &&
-    typeof v.accountId === 'string' &&
-    typeof v.folderId === 'string'
-  ) {
-    return v;
-  }
-  return undefined;
-}
 
 /** The account a command was invoked on, or a picked one. */
 async function accountFromTargetOrPick(
