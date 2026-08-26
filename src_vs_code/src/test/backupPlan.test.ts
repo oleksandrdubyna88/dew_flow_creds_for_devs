@@ -10,6 +10,7 @@ import {
   readVaultWraps,
   readVaultVersion,
   BackupError,
+  CURRENT_WRAPPED_VERSION,
 } from '../cryptoUtils';
 import { newMasterKey, newPrfSalt, unwrapWithPin, wrapPinVault, wrapWithPin, wrapWithPrf } from '../keyWrap';
 
@@ -46,7 +47,7 @@ test('a v3 backup with ONLY a pin-wrap is opened by its own PIN, not the vault k
   // standalone backup PIN. It must NOT route through vaultKeys.unlock, whose per-account
   // cache would shadow the sync vault's master with this backup's freshly-minted one.
   const v3PinOnly = wrapPinVault({ nodes: [] }, account.accountId, 'backup-pin', 1_700_000_000_000);
-  assert.equal(readVaultVersion(v3PinOnly.content), 3);
+  assert.equal(readVaultVersion(v3PinOnly.content), CURRENT_WRAPPED_VERSION);
   assert.deepEqual(backupWriteMode(v3PinOnly.content), { kind: 'pin' });
 });
 
@@ -80,7 +81,7 @@ test('a PIN passphrase can NEVER open a v2 file — restore must go through the 
   // 3, not 2: a wrapped vault is written at v3 since the payload key moved to HKDF
   // and the MAC grew to cover the sealed blob. v2 files still READ — that is the
   // whole point of a lazy upgrade — which the v2-fixture tests below assert.
-  assert.equal(readVaultVersion(file), 3);
+  assert.equal(readVaultVersion(file), CURRENT_WRAPPED_VERSION);
   assert.throws(() => decryptJson(file, account.accountId + '123456'));
   assert.deepEqual(decryptJsonWithMasterKey(file, master.toString('base64')), { nodes: [] });
 });
@@ -115,7 +116,7 @@ test('a v3 self-contained backup round-trips through its own backup PIN', () => 
   const backupPin = 'my-backup-pin';
 
   const written = wrapPinVault(bundle, account.accountId, backupPin, 1_700_000_000_000, account);
-  assert.equal(readVaultVersion(written.content), 3);
+  assert.equal(readVaultVersion(written.content), CURRENT_WRAPPED_VERSION);
 
   const pinWrap = readVaultWraps(written.content).find((w) => (w as { kind?: string }).kind === 'pin');
   const master = unwrapWithPin(pinWrap as never, account.accountId, backupPin);

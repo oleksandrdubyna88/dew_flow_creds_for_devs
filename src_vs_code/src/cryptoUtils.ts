@@ -42,7 +42,32 @@ const VERSION_WRAPPED = 2;
  * so nobody has to migrate anything by hand.</p>
  */
 const VERSION_WRAPPED_FAST = 3;
-const SUPPORTED_VERSIONS = [VERSION_PIN_ONLY, VERSION_WRAPPED, VERSION_WRAPPED_FAST];
+/**
+ * v4 = v3 plus the envelope header bound to the payload as AEAD associated data (audit A5).
+ *
+ * <p>The header (`format`, `version`, `account`, `wraps`, `kdf`) is plaintext and was
+ * protected only by a separate HMAC — a check a caller has to remember to run, and the
+ * MAC-healing defect of 2026-08-25 is what forgetting it looks like. Binding it as AAD makes
+ * a forged header fail inside `decipher.final()`: not a branch, a property. The MAC is still
+ * written, because it lets a reader detect tampering without unwrapping the master key, and
+ * removing a working guard was not part of adding a stronger one.</p>
+ */
+const VERSION_WRAPPED_AAD = 4;
+
+/**
+ * The version a wrapped vault is WRITTEN as today.
+ *
+ * <p>Exported so tests pin "whatever the current wrapped format is" rather than a literal
+ * that has to be hunted down in eight files every time the format moves — which is what
+ * happened when this became 4.</p>
+ */
+export const CURRENT_WRAPPED_VERSION = VERSION_WRAPPED_AAD;
+const SUPPORTED_VERSIONS = [
+  VERSION_PIN_ONLY,
+  VERSION_WRAPPED,
+  VERSION_WRAPPED_FAST,
+  VERSION_WRAPPED_AAD,
+];
 const KEY_LENGTH = 32; // AES-256
 const SALT_LENGTH = 16;
 const IV_LENGTH = 12; // recommended for GCM
@@ -171,10 +196,20 @@ function masterKeyRaw(master: Passphrase): Buffer {
   return typeof master === 'string' ? Buffer.from(master, 'base64') : master;
 }
 
-/** The AES-GCM half, given a key somebody else derived. */
-function sealWithKey(payload: unknown, key: Buffer, salt: Buffer): SealedBlob {
+/**
+ * The AES-GCM half, given a key somebody else derived.
+ *
+ * <p>`aad` binds plaintext envelope metadata to the ciphertext (audit A5). Whatever is
+ * passed here must be passed identically to `openWithKey`, or the tag will not verify —
+ * which is exactly the property that makes a forged header fail inside `decipher.final()`
+ * instead of in a branch someone has to remember to call.</p>
+ */
+function sealWithKey(payload: unknown, key: Buffer, salt: Buffer, aad?: Buffer): SealedBlob {
   const iv = crypto.randomBytes(IV_LENGTH);
   const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
+  if (aad !== undefined) {
+    cipher.setAAD(aad);
+  }
   key.fill(0);
   const plaintext = Buffer.from(JSON.stringify(payload), 'utf8');
   const ciphertext = Buffer.concat([cipher.update(plaintext), cipher.final()]);
@@ -188,7 +223,7 @@ function sealWithKey(payload: unknown, key: Buffer, salt: Buffer): SealedBlob {
 }
 
 /** The matching half. Throws the same BackupErrors `openBlob` does. */
-function openWithKey(blob: SealedBlob, key: Buffer): unknown {
+function openWithKey(blob: SealedBlob, key: Buffer, aad?: Buffer): unknown {
   const iv = Buffer.from(blob.iv, 'base64');
   const tag = Buffer.from(blob.tag, 'base64');
   const data = Buffer.from(blob.data, 'base64');
@@ -196,6 +231,9 @@ function openWithKey(blob: SealedBlob, key: Buffer): unknown {
   try {
     const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv);
     key.fill(0);
+    if (aad !== undefined) {
+      decipher.setAAD(aad);
+    }
     decipher.setAuthTag(tag);
     plaintext = Buffer.concat([decipher.update(data), decipher.final()]);
   } catch {
@@ -322,12 +360,23 @@ export function encryptJsonWrapped(
   shares?: unknown[],
 ): string {
   const salt = crypto.randomBytes(SALT_LENGTH);
-  const blob = sealWithKey(payload, payloadKey(masterKeyBase64, salt), salt);
-  const envelope: BackupEnvelope & { mac?: string } = {
+  // The header is decided BEFORE the payload is sealed, because it is what the payload is
+  // bound to. Anything added to `headerAad` must be known here — which is the point: a field
+  // the header gains later is a field somebody must consciously decide to bind.
+  const header = {
     format: FORMAT,
-    version: VERSION_WRAPPED_FAST,
-    kdf: 'hkdf',
+    version: VERSION_WRAPPED_AAD,
+    kdf: 'hkdf' as const,
     ...(account !== undefined ? { account } : {}),
+  };
+  const blob = sealWithKey(
+    payload,
+    payloadKey(masterKeyBase64, salt),
+    salt,
+    headerAad(header as unknown as Record<string, unknown>),
+  );
+  const envelope: BackupEnvelope & { mac?: string } = {
+    ...header,
     ...(shares !== undefined && shares.length > 0 ? { shares } : {}),
     wraps: [...wraps],
     ...blob,
@@ -363,7 +412,15 @@ export function decryptJsonWithMasterKey(fileContent: string, masterKeyBase64: P
   // different key and breaks the GCM tag, so it needs no separate protection — the
   // same self-authenticating property the scrypt parameters already rely on.
   return env.kdf === 'hkdf'
-    ? openWithKey(env, payloadKey(masterKeyBase64, Buffer.from(env.salt, 'base64')))
+    ? openWithKey(
+        env,
+        payloadKey(masterKeyBase64, Buffer.from(env.salt, 'base64')),
+        // v4 binds the header; v3 and older were sealed without it and must be opened the
+        // way they were written, or every existing vault would read as tampered.
+        env.version >= VERSION_WRAPPED_AAD
+          ? headerAad(env as unknown as Record<string, unknown>)
+          : undefined,
+      )
     : openBlob(env, masterKeyScryptInput(masterKeyBase64));
 }
 
@@ -441,6 +498,35 @@ export function canonicalBytes(values: readonly unknown[]): Buffer {
     chunks.push(length, bytes);
   }
   return Buffer.concat(chunks);
+}
+
+/**
+ * The header bytes bound to a v4 payload as AEAD associated data (audit A5).
+ *
+ * <p>Only what is IMMUTABLE for a given ciphertext. AAD binds metadata to one sealing, so a
+ * field that legitimately changes while the payload stays put cannot go here — and three of
+ * them do:</p>
+ *
+ * <ul>
+ *   <li><b>`wraps`</b> — adding or removing a security key rewrites the wraps around the SAME
+ *     master key and deliberately never re-encrypts the payload (that is the whole point of
+ *     the wrap layer). Binding them would make every key change corrupt the vault; the
+ *     existing "removing one key leaves the others working and the payload untouched" test
+ *     caught exactly that. Wrap tampering stays the envelope MAC's job — the right tool for
+ *     mutable metadata, because it is re-signed when the change is legitimate.</li>
+ *   <li><b>`shares`</b> — other people append them to a folder envelope; binding them would
+ *     make every incoming share look like tampering.</li>
+ *   <li><b>`salt`/`iv`/`tag`/`data`</b> — these ARE the sealed blob, already covered.</li>
+ * </ul>
+ *
+ * <p>What is left is what can never change without a re-seal: the format, the version, the KDF
+ * and the OWNER. `account` is the one that matters — forging the owner on a shared folder now
+ * fails inside `decipher.final()` rather than in a branch a caller has to remember.</p>
+ */
+function headerAad(env: Record<string, unknown>): Buffer {
+  return canonicalBytes(
+    (['format', 'version', 'account', 'kdf'] as const).map((field) => env[field]),
+  );
 }
 
 function macMaterialV3(env: Record<string, unknown>): Buffer {

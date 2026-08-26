@@ -13,6 +13,7 @@ import {
   verifyEnvelopeMac,
   macStatusBlocksSync,
   webauthnUserHandle,
+  CURRENT_WRAPPED_VERSION,
 } from '../cryptoUtils';
 import { StoredAccount } from '../types';
 
@@ -210,7 +211,7 @@ test('a v2 vault written by an older build still opens, and a new write upgrades
   assert.deepEqual(decryptJsonWithMasterKey(old, master), payload, 'v2 must keep reading forever');
 
   const rewritten = encryptJsonWrapped(payload, master, []);
-  assert.equal(JSON.parse(rewritten).version, 3);
+  assert.equal(JSON.parse(rewritten).version, CURRENT_WRAPPED_VERSION);
   assert.equal(JSON.parse(rewritten).kdf, 'hkdf');
   assert.deepEqual(decryptJsonWithMasterKey(rewritten, master), payload);
 });
