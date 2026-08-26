@@ -1,5 +1,6 @@
 import * as path from 'node:path';
 import * as childProcess from 'node:child_process';
+import * as crypto from 'node:crypto';
 import { currentOwner, restrictToOwnerArgv } from './fileAcl';
 
 /**
@@ -49,4 +50,32 @@ export function lockToOwner(filePath: string): void {
  */
 export function materializedKeysDir(storageDir: string): string {
   return path.join(storageDir, 'keys', String(process.pid));
+}
+
+/**
+ * A file name that cannot leave the directory it is joined to.
+ *
+ * <p>Both writers below build a name from vault data — an entity id, or a name a caller derived
+ * from one. A share cannot reach them (`shareInbox` gives every accepted entry a fresh local id,
+ * deliberately), but IMPORT and RESTORE write the envelope's nodes with their own ids, so a
+ * crafted backup someone is talked into importing puts an arbitrary id into the tree. An id of
+ * `x/../../../../evil` then resolves clean out of `keys/&lt;pid&gt;/` and the entity's private key
+ * is written wherever it says.</p>
+ *
+ * <p><b>It must not collapse two different ids onto one name.</b> That would be the worse bug:
+ * two entities sharing a key file means a connection authenticating with the wrong credential,
+ * and it would look like a working feature. So anything that had to be rewritten carries a short
+ * digest of the ORIGINAL, and a name that needed no rewriting — the ordinary uuid — is passed
+ * through untouched, because the file name is also how the purge and the wipe find it again.</p>
+ *
+ * <p>`vpnCommand.ts` already sanitised its own name for this reason. Doing it here instead of at
+ * each caller is the difference between a site that is safe and a site that is safe today.</p>
+ */
+export function safeFileComponent(name: string): string {
+  const cleaned = name.replace(/[^A-Za-z0-9._-]/g, '_').replace(/^\.+/, '_');
+  if (cleaned === name && cleaned.length > 0) {
+    return cleaned;
+  }
+  const digest = crypto.createHash('sha256').update(name).digest('hex').slice(0, 8);
+  return `${cleaned.slice(0, 60)}-${digest}`;
 }

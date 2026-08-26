@@ -8,6 +8,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **A crafted entity id could write a file outside the extension's key directory.** Four places
+  build a file name out of vault data — the materialised private key, the VPN config, the
+  per-entity `known_hosts`, and a script body — and an id such as `x/../../../../evil` resolved
+  clean out of `keys/<pid>/`. The prefix some of them add (`script-`, `known_hosts-`) stops the
+  obvious `../` and nothing more, because the prefixed segment is simply popped by the `..` that
+  follows it.
+
+  **Accepting a share was never a way in** — every accepted entry is given a fresh local id, on
+  purpose — but **import and restore write an envelope's nodes with their own ids**, so a backup
+  file someone is talked into importing, or a sync location an attacker can write to, puts an
+  arbitrary id into the tree. Connecting to that entity then writes its private key wherever the
+  id says.
+
+  Every one of those names now goes through `safeFileComponent`, which cannot produce a
+  separator and appends a digest of the original whenever it had to rewrite anything — so two
+  different ids can never collapse onto one file, which would be the worse bug: two entities
+  sharing a key file is a connection authenticating with the wrong credential. An ordinary uuid
+  is passed through untouched. `vpnCommand.ts` had been sanitising its own name for this reason
+  since it was written; the other four sites had not.
+
+
 - **A caller with no token could make the window raise unbounded consent dialogs.** The CLI alias
   route (`creds ssh prod-db`) carries only a NAME, and names are not secret — so the consent modal
   is the whole of its authorization, which makes the RATE of modals a security property rather

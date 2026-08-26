@@ -347,3 +347,75 @@ test('everything is swept when nothing is alive', () => {
     ['1', '2', '3'],
   );
 });
+
+/**
+ * Path traversal through an entity id.
+ *
+ * <p>These functions build a file name from an entity id or a caller-supplied name, and both
+ * arrive from the vault. A share cannot reach them — `shareInbox` gives every accepted entry a
+ * fresh local id, deliberately — but **import and restore write the envelope's nodes with their
+ * own ids**, so a crafted backup a person is talked into importing, or a sync location an
+ * attacker can write to, puts an arbitrary id into the tree. Connecting to that entity then
+ * writes its private key wherever the id says.</p>
+ *
+ * <p>`vpnConfigFileName` already sanitises for exactly this reason. These did not — the same
+ * "the measure exists, applied at one of the sites" shape this repository keeps producing.</p>
+ */
+
+const TRAVERSAL = 'x/../../../../evil';
+
+test('a traversing entity id cannot write a key outside the keys directory', () => {
+  const w = world();
+  try {
+    const keyPath = w.mod.materializePrivateKey(w.storage, TRAVERSAL, 'PRIVATE KEY BODY');
+
+    assert.ok(
+      path.resolve(keyPath).startsWith(path.resolve(w.storage)),
+      `the key escaped its directory: ${keyPath}`,
+    );
+  } finally {
+    cleanup(w);
+  }
+});
+
+test('a traversing VPN file name cannot write a config outside it either', () => {
+  const w = world();
+  try {
+    const configPath = w.mod.materializeVpnConfig(w.storage, `${TRAVERSAL}.conf`, '[Interface]');
+
+    assert.ok(
+      path.resolve(configPath).startsWith(path.resolve(w.storage)),
+      `the config escaped its directory: ${configPath}`,
+    );
+  } finally {
+    cleanup(w);
+  }
+});
+
+test('sanitising the name still keeps two different ids apart', () => {
+  // A sanitiser that collapsed everything to one name would make two entities overwrite each
+  // other's key — a connection using the wrong credential, which is worse than the traversal.
+  const w = world();
+  try {
+    const first = w.mod.materializePrivateKey(w.storage, 'ent-a/../b', 'A');
+    const second = w.mod.materializePrivateKey(w.storage, 'ent-a/../c', 'B');
+
+    assert.notEqual(first, second);
+    assert.equal(fs.readFileSync(first, 'utf8'), 'A\n', 'and neither overwrote the other');
+  } finally {
+    cleanup(w);
+  }
+});
+
+test('an ordinary uuid is left exactly as it is', () => {
+  // The sanitiser must not rewrite the normal case: the file name is how a purge and a wipe
+  // find the file again.
+  const w = world();
+  try {
+    const keyPath = w.mod.materializePrivateKey(w.storage, 'a1b2c3d4-e5f6-7890-abcd-ef1234567890', 'K');
+
+    assert.equal(path.basename(keyPath), 'a1b2c3d4-e5f6-7890-abcd-ef1234567890.key');
+  } finally {
+    cleanup(w);
+  }
+});

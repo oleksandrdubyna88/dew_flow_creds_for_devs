@@ -6,12 +6,12 @@ import * as vscode from 'vscode';
 import { EntityMetadata } from './types';
 import { askpassScript } from './sshAskpass';
 import { deadPidSubdirs } from './keysPurge';
-import { lockToOwner, materializedKeysDir } from './materializedKeys';
+import { lockToOwner, materializedKeysDir, safeFileComponent } from './materializedKeys';
 
 // lockToOwner and materializedKeysDir are vscode-free and live in materializedKeys.ts so the
 // agent broker (which runs partly under plain node) can use them; re-exported here so this
 // module's existing callers are unchanged.
-export { lockToOwner, materializedKeysDir };
+export { lockToOwner, materializedKeysDir, safeFileComponent };
 
 /**
  * Writing SSH key material to disk:
@@ -121,7 +121,8 @@ export function materializePrivateKey(
 ): string {
   const keysDir = materializedKeysDir(storageDir);
   fs.mkdirSync(keysDir, { recursive: true, mode: 0o700 });
-  const keyPath = path.join(keysDir, `${entityId}.key`);
+  // The id comes from the vault, and import/restore write an envelope's ids verbatim.
+  const keyPath = path.join(keysDir, `${safeFileComponent(entityId)}.key`);
   fs.writeFileSync(keyPath, ensureTrailingNewline(content), { mode: 0o600 });
   fs.chmodSync(keyPath, 0o600);
   lockToOwner(keyPath);
@@ -148,7 +149,7 @@ export function materializeVpnConfig(
 ): string {
   const keysDir = materializedKeysDir(storageDir);
   fs.mkdirSync(keysDir, { recursive: true, mode: 0o700 });
-  const configPath = path.join(keysDir, fileName);
+  const configPath = path.join(keysDir, safeFileComponent(fileName));
   fs.writeFileSync(configPath, ensureTrailingNewline(content), { mode: 0o600 });
   fs.chmodSync(configPath, 0o600);
   lockToOwner(configPath);

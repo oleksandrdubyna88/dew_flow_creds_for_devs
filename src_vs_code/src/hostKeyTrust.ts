@@ -2,7 +2,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { runBounded } from './sshExecRunner';
-import { materializedKeysDir } from './materializedKeys';
+import { materializedKeysDir, safeFileComponent } from './materializedKeys';
 import { lockToOwner } from './materializedKeys';
 import {
   HostKey,
@@ -55,9 +55,16 @@ export async function scanHostKey(
   }
 }
 
-/** Where this window keeps the known_hosts file for one entity. Purged with every other key material. */
+/**
+ * Where this window keeps the known_hosts file for one entity. Purged with every other key
+ * material.
+ *
+ * <p>The id is sanitised because it is vault data: import and restore write an envelope's ids
+ * verbatim, so one containing `../` would put this file — and the host key a connection then
+ * trusts — outside the directory the purge can reach. See `safeFileComponent`.</p>
+ */
 function knownHostsPath(storageDir: string, entityId: string): string {
-  return path.join(materializedKeysDir(storageDir), `known_hosts-${entityId}`);
+  return path.join(materializedKeysDir(storageDir), `known_hosts-${safeFileComponent(entityId)}`);
 }
 
 /**

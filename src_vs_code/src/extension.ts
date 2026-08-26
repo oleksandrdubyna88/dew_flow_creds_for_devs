@@ -42,6 +42,7 @@ import {
   materializeVpnConfig,
   materializedKeysDir,
   purgeMaterializedKeys,
+  safeFileComponent,
 } from './keyInstaller';
 import {
   VpnPlatform,
@@ -2124,7 +2125,9 @@ ${detail}
     // them by name. Before this, the substituted body — values and all — was written to
     // disk and left there until the next purge.
     const resolved = resolveScriptEnv(details.script, details.scriptVars, details.scriptLanguage ?? 'other');
-    const fileName = `script-${details.id}${plan.extension}`;
+    // The id is vault data — import and restore write an envelope's ids verbatim — so it is
+    // sanitised before it becomes a path. See `safeFileComponent`.
+    const fileName = `script-${safeFileComponent(details.id)}${plan.extension}`;
     const scriptPath = path.join(materializedKeysDir(storageDir), fileName);
     fs.mkdirSync(path.dirname(scriptPath), { recursive: true, mode: 0o700 });
     fs.writeFileSync(
