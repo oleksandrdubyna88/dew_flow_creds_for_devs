@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import Module from 'node:module';
 import { test } from 'node:test';
 import { ENTITY_KINDS } from '../types';
-import { escapeHtml, escapeHtmlForHighlighting } from '../webviewHtml';
+import { escapeHtml, escapeHtmlForHighlighting, jsonForScript } from '../webviewHtml';
 
 /**
  * The entity form's page script must PARSE, for every entity kind.
@@ -300,4 +300,46 @@ test('the connection form offers the D7 fields, each exactly once', () => {
     assert.equal(html.split(`id="${id}"`).length - 1, 1, `${id} is not present exactly once`);
   }
   assert.ok(html.includes('<option value="bastion"'), 'the jump-host picker lists other entities');
+});
+
+/**
+ * `jsonForScript` — the second escaper this module owns, for a different destination.
+ *
+ * <p>`escapeHtml` is for text and attributes; this one is for a value interpolated INSIDE a
+ * `<script>` element, where the danger is not a quote but the literal sequence `</script>`,
+ * which ends the element wherever it appears — inside a JavaScript string included. It lives
+ * here for the same reason `escapeHtml` does: there are three interpolation sites, and the
+ * escape used to exist at exactly one of them.</p>
+ */
+
+test('a value containing </script> is escaped so it cannot close the element', () => {
+  const json = jsonForScript(['</script><img src=x onerror=alert(1)>']);
+
+  assert.ok(!json.includes('</script>'), json);
+  assert.deepEqual(JSON.parse(json), ['</script><img src=x onerror=alert(1)>'], 'and it is still JSON');
+});
+
+test('the escaped form round-trips through JSON.parse unchanged', () => {
+  // The page parses these literals as JavaScript; an escape that changed the VALUE would
+  // silently corrupt whatever the person had stored.
+  for (const value of ['<', '</script>', '<!--', 'a < b && c > d', 'plain']) {
+    assert.equal(JSON.parse(jsonForScript(value)), value, value);
+  }
+});
+
+test('`<!--` is closed at the same time, not left for a second fix', () => {
+  assert.ok(!jsonForScript('<!--').includes('<!--'));
+});
+
+test('nothing but `<` is touched — quotes and backslashes stay JSON.stringify’s job', () => {
+  assert.equal(jsonForScript('he said "hi" \ ok'), JSON.stringify('he said "hi" \ ok'));
+});
+
+test('structures, not just strings, are escaped throughout', () => {
+  // The form passes arrays of objects; an escape applied only to a top-level string would
+  // leave every nested value exposed.
+  const json = jsonForScript({ rows: [{ name: '</script>', value: 'ok' }] });
+
+  assert.ok(!json.includes('</script>'));
+  assert.deepEqual(JSON.parse(json), { rows: [{ name: '</script>', value: 'ok' }] });
 });

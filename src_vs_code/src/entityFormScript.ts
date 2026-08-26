@@ -1,5 +1,6 @@
 import { MAX_ATTACHMENT_BYTES, fileNameRegex, imageNameRegex } from './attachment';
 import { renderForward } from './sshOptions';
+import { jsonForScript } from './webviewHtml';
 import { CommandArg, EntityMetadata, PortForward } from './types';
 
 /**
@@ -20,25 +21,6 @@ import { CommandArg, EntityMetadata, PortForward } from './types';
  * no secret is ever interpolated here — see the page module's note on what the form does and
  * does not send into the webview.</p>
  */
-
-/**
- * JSON for embedding INSIDE a `<script>` element.
- *
- * <p>`JSON.stringify` escapes quotes and backslashes, and leaves `&lt;` exactly as it found it.
- * An HTML parser ends a script element at `&lt;/script&gt;` regardless of the JavaScript
- * context the sequence appears in — inside a string literal included — so a stored value
- * carrying it closed this script early, and the remainder of the form's own code was then
- * parsed as markup. The page's CSP stops an injected `onerror` from running, but
- * `style-src 'unsafe-inline'` is allowed, so an injected element could still cover the form;
- * and either way the form is dead, because half its script became text.</p>
- *
- * <p>These values arrive from a SYNCED vault — a colleague's entity, a restored backup — so
- * "our own user typed it" was never the argument. Escaping every `&lt;` as `<` costs
- * nothing, is still valid JSON to `JSON.parse`, and closes `&lt;!--` at the same time.</p>
- */
-function jsonForScript(value: unknown): string {
-  return JSON.stringify(value).replace(/</g, '\\u003c');
-}
 
 /** One list of rows as a JSON literal; an absent list is an empty one, never `undefined`. */
 function rowsJson(rows: CommandArg[] | undefined): string {

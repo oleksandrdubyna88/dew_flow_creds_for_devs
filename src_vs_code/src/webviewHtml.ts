@@ -47,3 +47,26 @@ export function escapeHtmlForHighlighting(value: string): string {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
 }
+
+/**
+ * JSON for interpolation INSIDE a `<script>` element.
+ *
+ * <p>`JSON.stringify` escapes quotes and backslashes and leaves `<` exactly as it found it. An
+ * HTML parser ends a script element at `</script>` wherever that sequence appears — inside a
+ * string literal included — so a value carrying it closes the script early and the remainder
+ * of the page's own code is parsed as markup. That was a live defect in the entity form, whose
+ * lists come from a SYNCED vault (a colleague's entity, a restored backup), so "our user typed
+ * it" was never the argument.</p>
+ *
+ * <p>It lives beside `escapeHtml` for the reason that module's own note gives. There were three
+ * interpolation sites and the escape existed at ONE of them: `webauthnPrf.ts` did it inline,
+ * the form did not, and `entityViewPanel` was safe only because the value it passes is a
+ * constant icon nobody has yet made dynamic. Safe by content is not safe by construction, and
+ * the edit that makes an icon vary by kind has no reason to look at how it reaches the page.</p>
+ *
+ * <p>Escaping `<` as `\u003c` keeps the text valid JSON for `JSON.parse`, and closes `<!--`
+ * at the same time.</p>
+ */
+export function jsonForScript(value: unknown): string {
+  return JSON.stringify(value).replace(/</g, '\\u003c');
+}

@@ -591,16 +591,22 @@ byte: identical once the one intended difference is undone (see the escaper belo
 is worth more than the suite here, because a template-string move is exactly the kind of change
 that stays green while quietly dropping a fieldset.
 
-**JSON embedded in the page script is escaped separately, and for a different reason.** The
-three lists the form starts from — command arguments, script variables, port forwards — are
-interpolated into the inline `<script>` as JSON. `JSON.stringify` handles quotes and
-backslashes and leaves `<` alone, but an HTML parser ends a script element at `</script>`
-wherever that sequence appears, inside a string literal included: a stored value carrying it
-closed the script early and the remainder of the form's own code was parsed as markup. The
-values come from a SYNCED vault, so "our user typed it" was never the argument. `jsonForScript`
-escapes every `<` as `\u003c` — still valid JSON, and it closes `<!--` too. `webauthnPrf.ts`
-already did this at its own interpolation; the form did not, which is the shape this repository
-keeps finding: a security measure applied at one of two sites. Pinned by
+**JSON embedded in a page script is escaped separately, and for a different reason.** The three
+lists the entity form starts from — command arguments, script variables, port forwards — are
+interpolated into its inline `<script>` as JSON. `JSON.stringify` handles quotes and backslashes
+and leaves `<` alone, but an HTML parser ends a script element at `</script>` wherever that
+sequence appears, inside a string literal included: a stored value carrying it closed the script
+early and the remainder of the form's own code was parsed as markup. The values come from a
+SYNCED vault, so "our user typed it" was never the argument.
+
+`jsonForScript` (in `webviewHtml.ts`, beside `escapeHtml`) escapes every `<` as `\u003c` —
+still valid JSON to `JSON.parse`, and it closes `<!--` too. It sits in the shared module for
+exactly the reason that module's own note gives about `escapeHtml`: there are **three**
+interpolation sites and the escape existed at ONE of them. `webauthnPrf.ts` did it inline; the
+entity form did not, which was the live defect; and `entityViewPanel.ts` was safe only because
+the value it passes is a constant SVG nobody has yet made dynamic — safe by CONTENT, not by
+construction, and one ordinary edit ("let the icon vary by kind") from being the same bug. All
+three now go through the one function. Pinned by `webviewHtml.test.ts` and by
 `entityFormScript.test.ts`, which fails against the unfixed code.
 
 `webviewHtml.ts` is the one HTML escaper the three webview renderers share. It existed three

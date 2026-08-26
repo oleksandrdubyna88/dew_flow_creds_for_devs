@@ -1,4 +1,4 @@
-import { escapeHtml } from './webviewHtml';
+import { escapeHtml, jsonForScript } from './webviewHtml';
 import * as crypto from 'node:crypto';
 import * as vscode from 'vscode';
 import { copySecret } from './secretClipboard';
@@ -532,7 +532,7 @@ function renderHtml(options: EntityViewOptions): string {
     const button = document.querySelector('button[data-field="' + event.data.field + '"]');
     if (!button) { return; }
     const original = button.innerHTML;
-    button.innerHTML = ${JSON.stringify(CHECK_ICON)};
+    button.innerHTML = ${jsonForScript(CHECK_ICON)};
     setTimeout(() => { button.innerHTML = original; }, 1200);
   });
   // The one-time code: asked for on load, counted down every quarter second, asked for

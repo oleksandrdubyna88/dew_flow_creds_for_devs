@@ -40,7 +40,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   form stopped working, because half its script had become text.
 
   Every `<` in those literals is now escaped as `\u003c` — still valid JSON, and it closes
-  `<!--` at the same time. This matches what `webauthnPrf.ts` already did. Found by a test
+  `<!--` at the same time. The escaper (`jsonForScript`) sits beside the shared HTML escaper,
+  and all three places that interpolate into a page script now go through it: `webauthnPrf`
+  was already doing this inline, and the entity viewer was safe only because the value it
+  passes is a constant icon — safe by content rather than by construction. Found by a test
   written while covering the module, and the test fails against the unfixed code.
 
 - **Vault format v4 — roll the extension out to every machine before any of them syncs.**
