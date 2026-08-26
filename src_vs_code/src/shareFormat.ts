@@ -159,12 +159,19 @@ export function resolveShares(items: OwnedShare[], pins: readonly string[]): Res
  * The metadata a shared copy carries — which is the stored metadata minus everything that only
  * means something inside the vault it left.
  *
- * <p>Three fields go, each for its own reason. <b>`notes`</b> is a secret and travels in the
+ * <p>Five fields go, each for its own reason. <b>`notes`</b> is a secret and travels in the
  * sealed payload, not here. <b>`dependsOn`</b> names entity ids in the SENDER's vault: in the
  * recipient's they address nothing, so the lazy resolver would show them a permanent "no longer
  * exists" for a relationship that was never theirs. <b>`depColor`</b> goes with it, because a
  * colour is a statement about the other entries that need this one — and none of those are being
  * sent.</p>
+ *
+ * <p><b>`mcp` and `mcpCreatedByAgent` are the expensive pair.</b> They say what an AGENT may do
+ * with this entry, and they are a decision the sender made about the sender's own machine.
+ * Shipped as they are, an entry arrives in somebody else's vault already authorised for
+ * somebody else's agent — a permission granted by a person who was never asked, to software they
+ * have not seen. Sharing is how a credential reaches a colleague; it must not also be how an
+ * agent reaches one.</p>
  *
  * <p>Here rather than inline in `shareInbox.ts` so that "what leaves this vault" is one pure
  * function with a test, instead of a spread nobody would notice a new field being absent from.
@@ -177,5 +184,12 @@ export function shareableDetails(
   if (details === undefined) {
     return undefined;
   }
-  return { ...details, notes: undefined, dependsOn: undefined, depColor: undefined };
+  return {
+    ...details,
+    notes: undefined,
+    dependsOn: undefined,
+    depColor: undefined,
+    mcp: undefined,
+    mcpCreatedByAgent: undefined,
+  };
 }

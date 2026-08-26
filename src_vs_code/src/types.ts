@@ -1,4 +1,12 @@
 import { BurnPolicy, isBurnPolicy } from './entityExpiry';
+import { McpAccess } from './mcpAccess';
+import {
+  isCommandArgArray,
+  isEnvBindings,
+  isMcpAccess,
+  isPortForwardArray,
+  isStringArray,
+} from './typeGuards';
 export type AuthProvider = 'microsoft' | 'google';
 
 export type NodeType = 'folder' | 'entity';
@@ -168,6 +176,20 @@ export interface EntityMetadata {
    * painting rather than rejected, so a vault written by a newer one still opens.</p>
    */
   depColor?: string;
+  /**
+   * What an agent may do with this entry through MCP. See `mcpAccess.ts` for the ladder.
+   *
+   * <p>Absence and emptiness mean different things and the difference is load-bearing: the field
+   * being ABSENT means "ask the folder", an object with everything off means "decided here, and
+   * the answer is nothing". An entry closed on purpose must not start obeying its folder again
+   * the next time the folder is opened up.</p>
+   */
+  mcp?: McpAccess;
+  /**
+   * The agent created this entry itself. Only such entries are reachable by a delete permission
+   * scoped to `own` — so "tidy up after yourself" works and "delete my production key" does not.
+   */
+  mcpCreatedByAgent?: boolean;
   notes?: string;
 }
 
@@ -287,6 +309,14 @@ export interface TreeNode {
    * editor setting is about a machine, not an account.
    */
   trashRetentionDays?: number;
+  /**
+   * Folders only: what an agent may do with everything in here that has no answer of its own.
+   *
+   * <p>Inherited rather than applied once, deliberately — an entry created in this folder next
+   * week gets the same permissions. "Apply to all now" would leave half a folder configured and
+   * half not, with nothing on screen to tell them apart.</p>
+   */
+  mcp?: McpAccess;
 }
 
 /** A person discovered on a vault location (folder or server). */
@@ -536,80 +566,19 @@ export function isStoredAccount(value: unknown): value is StoredAccount {
   );
 }
 
-// eslint-disable-next-line complexity -- a flat list of independent field checks (every clause is one field of a forwarding rule); splitting reads worse
-function hasForwardShape(r: Record<string, unknown>): boolean {
-  return (
-    (r.kind === 'local' || r.kind === 'remote') &&
-    typeof r.bindPort === 'number' &&
-    typeof r.hostPort === 'number' &&
-    typeof r.host === 'string'
-  );
-}
-
-// eslint-disable-next-line complexity -- a flat list of independent field checks (every clause is one optional field of a forwarding rule); splitting reads worse
-function hasForwardExtras(r: Record<string, unknown>): boolean {
-  return (
-    (r.bindAddress === undefined || typeof r.bindAddress === 'string') &&
-    (r.disabled === undefined || typeof r.disabled === 'boolean') &&
-    (r.note === undefined || typeof r.note === 'string')
-  );
-}
-
-function isPortForwardRow(row: unknown): boolean {
-  if (typeof row !== 'object' || row === null) {
-    return false;
-  }
-  const r = row as Record<string, unknown>;
-  return hasForwardShape(r) && hasForwardExtras(r);
-}
-
-function isPortForwardArray(value: unknown): value is PortForward[] {
-  return Array.isArray(value) && value.every((row) => isPortForwardRow(row));
-}
-
-function isStringArray(value: unknown): value is string[] {
-  return Array.isArray(value) && value.every((item) => typeof item === 'string');
-}
-
-function isCommandArgArray(value: unknown): value is CommandArg[] {
-  return (
-    Array.isArray(value) &&
-    // eslint-disable-next-line complexity
-    value.every((row) => {
-      if (typeof row !== 'object' || row === null) {
-        return false;
-      }
-      const r = row as Record<string, unknown>;
-      return (
-        typeof r.value === 'string' &&
-        (r.name === undefined || typeof r.name === 'string') &&
-        (r.note === undefined || typeof r.note === 'string') &&
-        (r.disabled === undefined || typeof r.disabled === 'boolean')
-      );
-    })
-  );
-}
 
 /**
- * Binding NAMES are refused at the door when they are not variable names. The value
- * side is a name too (the variable), never a secret — secrets never travel here.
- * Rejecting the whole entity is deliberate: a binding name that cannot be a variable
- * has no honest origin, and the import is the last place it can be judged cheaply.
+ * The relationship and agent-permission half, split out only because the whole conjunction
+ * outgrew the per-function line budget. A field missing from here is stripped by every sync and
+ * import, so the split is bookkeeping and never a place to stop checking.
  */
-function isEnvBindings(value: unknown): value is Record<string, string> {
-  if (!allStringRecord(value)) {
-    return false;
-  }
-  return Object.values(value as Record<string, string>).every(
-    (name) => /^[A-Za-z_][A-Za-z0-9_]*$/.test(name),
-  );
-}
-
-function allStringRecord(value: unknown): boolean {
+// eslint-disable-next-line complexity -- one clause per field, as above
+function hasValidRelations(v: Record<string, unknown>): boolean {
   return (
-    typeof value === 'object' &&
-    value !== null &&
-    Object.values(value).every((v) => typeof v === 'string')
+    (v.dependsOn === undefined || isStringArray(v.dependsOn)) &&
+    (v.depColor === undefined || typeof v.depColor === 'string') &&
+    (v.mcp === undefined || isMcpAccess(v.mcp)) &&
+    (v.mcpCreatedByAgent === undefined || typeof v.mcpCreatedByAgent === 'boolean')
   );
 }
 
@@ -661,12 +630,26 @@ export function isEntityMetadata(value: unknown): value is EntityMetadata {
     (v.imageFileName === undefined || typeof v.imageFileName === 'string') &&
     (v.sshAgent === undefined || typeof v.sshAgent === 'boolean') &&
     (v.hasTotp === undefined || typeof v.hasTotp === 'boolean') &&
-    (v.dependsOn === undefined || isStringArray(v.dependsOn)) &&
+    hasValidRelations(v) &&
     // Loose on purpose, for the same reason `kind` above is: a colour key minted by a NEWER
     // build must not make this one reject the whole entity. `isDepColorKey` (depColors.ts) is
     // the strict gate, and it is applied where the value is USED, not where it is admitted.
-    (v.depColor === undefined || typeof v.depColor === 'string') &&
     (v.notes === undefined || typeof v.notes === 'string')
+  );
+}
+
+/**
+ * The folder-only fields: whether this is the trash, how long it keeps things, and what an agent
+ * may do with what is inside. Without these three the flags are stripped by every sync and
+ * import, and the trash would arrive on the second machine as an ordinary folder full of things
+ * somebody thought they had deleted.
+ */
+// eslint-disable-next-line complexity -- one clause per optional field, as every guard here is
+function hasValidFolderExtras(v: Record<string, unknown>): boolean {
+  return (
+    (v.isTrash === undefined || typeof v.isTrash === 'boolean') &&
+    (v.trashRetentionDays === undefined || typeof v.trashRetentionDays === 'number') &&
+    (v.mcp === undefined || isMcpAccess(v.mcp))
   );
 }
 
@@ -705,10 +688,7 @@ export function isTreeNode(value: unknown): value is TreeNode {
   // Without these two the trash flag and its retention are stripped by every sync, import and
   // sealed-slot read — the folder would arrive on the second machine as an ordinary folder full
   // of things somebody thought they had deleted.
-  if (v.isTrash !== undefined && typeof v.isTrash !== 'boolean') {
-    return false;
-  }
-  if (v.trashRetentionDays !== undefined && typeof v.trashRetentionDays !== 'number') {
+  if (!hasValidFolderExtras(v)) {
     return false;
   }
   if (

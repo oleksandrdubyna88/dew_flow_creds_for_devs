@@ -172,6 +172,8 @@ test('a shared copy carries no dependency of the vault it left', () => {
     notes: 'a secret note',
     dependsOn: ['v1', 'v2'],
     depColor: 'depColor7',
+    mcp: { delete: 'any' },
+    mcpCreatedByAgent: true,
   });
 
   assert.notEqual(shared, undefined);
@@ -179,6 +181,11 @@ test('a shared copy carries no dependency of the vault it left', () => {
   assert.equal(details.dependsOn, undefined);
   assert.equal(details.depColor, undefined);
   assert.equal(details.notes, undefined, 'a note is a secret and travels sealed, not here');
+  // The expensive pair. Shipped as they are, this entry arrives in somebody else's vault already
+  // authorised for somebody else's agent — a permission granted by a person who was never asked,
+  // to software they have not seen.
+  assert.equal(details.mcp, undefined);
+  assert.equal(details.mcpCreatedByAgent, undefined);
   // Everything the recipient can actually use survives — this is a strip, not a rewrite.
   assert.equal(details.host, '10.0.0.1');
   assert.equal(details.name, 'access-server');
