@@ -6,6 +6,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **The Remote Bridge setup block did not say which machine it belongs on.** The block is safe to
+  paste — only the `export` runs, everything else is a comment behind `#` — but the instruction
+  saying to paste it *on the remote host* lived in the notification beside the button, and that
+  notification is gone the moment the button is used. What survives the copy is six lines and a
+  cursor in whatever terminal is in front of the person; on Windows that is PowerShell, which
+  answers `export: The term 'export' is not recognized as a name of a cmdlet`. The block now opens
+  by naming the destination entity and saying that pasting it locally achieves nothing, both as
+  `#` comments — a comment in PowerShell and in POSIX sh alike, so the wrong shell shows the answer
+  rather than only an error about a word it does not know.
+
 ### Security
 
 - **A crafted entity id could write a file outside the extension's key directory.** Four places
