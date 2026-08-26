@@ -27,7 +27,7 @@ test('the use route yields the action name, and nothing else does', () => {
   for (const bad of [
     '/v1/use/',
     '/v1/use/../health',
-    '/v1/use/Exec', // uppercase is not a registered action name
+    '/v1/use/Exec', // a LEADING capital: never a second spelling of a real action
     '/v1/use/exec/extra',
     '/v1/health',
     '/',
@@ -108,7 +108,9 @@ test('a missing local tool is its own answer, not "no credential"', () => {
 test('an alias route yields its action', () => {
   assert.equal(parseAliasRoute('/v1/alias/exec'), 'exec');
   assert.equal(parseAliasRoute('/v1/alias/vpn-up'), 'vpn-up');
-  assert.equal(parseAliasRoute('/v1/alias/exportEnv'), undefined, 'uppercase is not in the grammar');
+  // Reachable, and it has to be: `exportEnv` is what agentUseActions.ts registers. An earlier
+  // version of this line asserted the opposite, which is how the `env` verb stayed a 404.
+  assert.equal(parseAliasRoute('/v1/alias/exportEnv'), 'exportEnv');
 });
 
 test('the two route families never answer for each other', () => {
@@ -128,4 +130,30 @@ test('an alias route refuses anything that is not a plain action word', () => {
   ]) {
     assert.equal(parseAliasRoute(bad), undefined, bad);
   }
+});
+
+/**
+ * Every action the registry actually registers must be reachable.
+ *
+ * <p>The defect this was written against had shipped: `parseUseRoute`'s grammar was
+ * lowercase-only, but `agentUseActions.ts` registers `exportEnv`. So `/v1/use/exportEnv`
+ * answered 404 and the `env` verb had **never worked from any client** — not the Node CLI, not
+ * the .NET one. Nothing caught it because no test drove that verb end to end; the unit tests
+ * asserted the grammar against a assumption about the registry rather than against the
+ * registry, and the neighbouring case even wrote that assumption down as a comment.</p>
+ */
+test('every registered action name is reachable as a route', () => {
+  // These are the action strings in sshUseActions.ts and agentUseActions.ts, verbatim.
+  for (const action of ['exec', 'terminal', 'run', 'query', 'exportEnv', 'up', 'down']) {
+    assert.equal(parseUseRoute(`/v1/use/${action}`), action, `"${action}" is registered but unreachable`);
+    assert.equal(parseAliasRoute(`/v1/alias/${action}`), action, `"${action}" unreachable by alias`);
+  }
+});
+
+test('a leading capital is still refused, so no case variant aliases a real action', () => {
+  // The half of the old rule that was right: an action starts lowercase, so `/v1/use/Exec`
+  // must not become a second spelling of `exec`.
+  assert.equal(parseUseRoute('/v1/use/Exec'), undefined);
+  assert.equal(parseUseRoute('/v1/use/EXPORTENV'), undefined);
+  assert.equal(parseAliasRoute('/v1/alias/Exec'), undefined);
 });

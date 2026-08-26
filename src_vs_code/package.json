@@ -63,7 +63,8 @@
     "package": "vsce package",
     "publish": "vsce publish",
     "itest:git": "npm run compile && node scripts/git-transport-itest.cjs",
-    "contract": "npm run compile && node scripts/emit-contract.mjs"
+    "contract": "npm run compile && node scripts/emit-contract.mjs",
+    "itest:cli": "npm run compile && node scripts/creds-cli-itest.cjs"
   },
   "devDependencies": {
     "@types/node": "^20.11.0",
@@ -242,6 +243,106 @@
           "light": "#0066CC",
           "highContrast": "#6BB6FF",
           "highContrastLight": "#0052A3"
+        }
+      },
+      {
+        "id": "credSshManager.depColor1",
+        "description": "Dependency colour 1 — Blue",
+        "defaults": {
+          "dark": "#6E9BF0",
+          "light": "#2A4FA8",
+          "highContrast": "#93B8FF",
+          "highContrastLight": "#1C3B86"
+        }
+      },
+      {
+        "id": "credSshManager.depColor2",
+        "description": "Dependency colour 2 — Amber",
+        "defaults": {
+          "dark": "#E8B02A",
+          "light": "#8F6200",
+          "highContrast": "#FFC64D",
+          "highContrastLight": "#7A5300"
+        }
+      },
+      {
+        "id": "credSshManager.depColor3",
+        "description": "Dependency colour 3 — Red",
+        "defaults": {
+          "dark": "#FF8A76",
+          "light": "#C0392B",
+          "highContrast": "#FFA595",
+          "highContrastLight": "#A32B1F"
+        }
+      },
+      {
+        "id": "credSshManager.depColor4",
+        "description": "Dependency colour 4 — Cyan",
+        "defaults": {
+          "dark": "#5BC8DE",
+          "light": "#0E7490",
+          "highContrast": "#7FDCEF",
+          "highContrastLight": "#0B5F77"
+        }
+      },
+      {
+        "id": "credSshManager.depColor5",
+        "description": "Dependency colour 5 — Green",
+        "defaults": {
+          "dark": "#5CC46F",
+          "light": "#2A7D36",
+          "highContrast": "#7ADB8B",
+          "highContrastLight": "#21682B"
+        }
+      },
+      {
+        "id": "credSshManager.depColor6",
+        "description": "Dependency colour 6 — Pink",
+        "defaults": {
+          "dark": "#FF8FBC",
+          "light": "#B0396B",
+          "highContrast": "#FFAAD0",
+          "highContrastLight": "#96285A"
+        }
+      },
+      {
+        "id": "credSshManager.depColor7",
+        "description": "Dependency colour 7 — Purple",
+        "defaults": {
+          "dark": "#B482F5",
+          "light": "#6A28C0",
+          "highContrast": "#C9A3FF",
+          "highContrastLight": "#591FA5"
+        }
+      },
+      {
+        "id": "credSshManager.depColor8",
+        "description": "Dependency colour 8 — Brown",
+        "defaults": {
+          "dark": "#C0906A",
+          "light": "#7A4A2E",
+          "highContrast": "#D8AA85",
+          "highContrastLight": "#663A22"
+        }
+      },
+      {
+        "id": "credSshManager.depColor9",
+        "description": "Dependency colour 9 — Turquoise",
+        "defaults": {
+          "dark": "#4FCBB0",
+          "light": "#0F7A66",
+          "highContrast": "#72E0C7",
+          "highContrastLight": "#0C6553"
+        }
+      },
+      {
+        "id": "credSshManager.depColor10",
+        "description": "Dependency colour 10 — Lime",
+        "defaults": {
+          "dark": "#B9C742",
+          "light": "#5E6D0C",
+          "highContrast": "#D0DE5E",
+          "highContrastLight": "#4E5B08"
         }
       }
     ],

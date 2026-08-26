@@ -80,6 +80,23 @@ jobs:
       - name: Integration test (git transport)
         run: npm run itest:git
 
+      # Drives the REAL .NET `creds` binary against a REAL broker. The contract tests on each
+      # side assert that the two implementations' tables agree; neither asserts that the binary
+      # can talk to the broker at all, and until this existed none ever had. It found a shipped
+      # defect on its first run: `/v1/use/exportEnv` was unreachable, so the `env` verb had
+      # never worked from any client. Needs the .NET SDK; the script SKIPS rather than fails
+      # when the CLI is not built, so this stays honest on a machine without one.
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: ../global.json
+
+      - name: Build the CLI
+        run: dotnet build ../src_cli/src/CredsCli.csproj
+
+      - name: Integration test (creds CLI against the broker)
+        run: npm run itest:cli
+
       # Packaging proves the manifest is publishable: a missing icon, licence or
       # repository field fails here rather than at `vsce publish` time.
       - name: Package

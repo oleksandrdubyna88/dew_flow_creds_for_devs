@@ -82,13 +82,23 @@ export interface TerminalResponseBody {
 }
 
 /** `POST /v1/use/<action>` → the action name; anything else → undefined. */
+/**
+ * The grammar for an action segment.
+ *
+ * <p>Must start lowercase, so `/v1/use/Exec` can never become a second spelling of `exec`.
+ * May carry uppercase after that, because `exportEnv` is a real registered action — and a
+ * lowercase-only grammar made `/v1/use/exportEnv` answer 404, so the `env` verb had never
+ * worked from any client. Whatever the registry registers, this has to be able to route.</p>
+ */
+const ACTION_NAME = /^[a-z][A-Za-z0-9_-]{0,31}$/;
+
 export function parseUseRoute(pathname: string): string | undefined {
   const prefix = '/v1/use/';
   if (!pathname.startsWith(prefix)) {
     return undefined;
   }
   const action = pathname.slice(prefix.length);
-  return /^[a-z][a-z0-9_-]{0,31}$/.test(action) ? action : undefined;
+  return ACTION_NAME.test(action) ? action : undefined;
 }
 
 /** `Authorization: Bearer <secret>` → the secret; anything else → undefined. */
@@ -153,5 +163,5 @@ export function parseAliasRoute(pathname: string): string | undefined {
     return undefined;
   }
   const action = pathname.slice(prefix.length);
-  return /^[a-z][a-z0-9_-]{0,31}$/.test(action) ? action : undefined;
+  return ACTION_NAME.test(action) ? action : undefined;
 }
