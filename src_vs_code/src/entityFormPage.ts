@@ -3,6 +3,8 @@ import { normalizeTags } from './sshOptions';
 import { escapeHtml } from './webviewHtml';
 import { formPageScript } from './entityFormScript';
 import { initialDependencyRows } from './depGraph';
+import { normalizeMcpAccess } from './mcpAccess';
+import { MCP_SWITCHES, mcpSwitchStyles } from './mcpSwitches';
 import { FORM_SECTIONS } from './formSections';
 
 /**
@@ -291,6 +293,29 @@ export function renderHtml(options: EntityFormOptions): string {
     }
   </fieldset>`;
 
+  // The six switches, in ladder order. Each one paints only its own control — `accent-color`
+  // leaves the label and the description at the theme's own foreground, which is what keeps the
+  // section from becoming six coloured captions.
+  const mcp = normalizeMcpAccess(d?.mcp);
+  const mcpSet = d?.mcp !== undefined;
+  const mcpHtml = `${openSection('mcpSection')}
+    <div class="mcpBar" aria-hidden="true">${MCP_SWITCHES.map(
+      (s) => `<span class="mcpSeg ${s.color}${s.on(mcp) ? ' mcpSegOn' : ''}"></span>`,
+    ).join('')}</div>
+    <p class="hint">${
+      mcpSet
+        ? 'Set on this entry.'
+        : 'Not set here — this entry follows its folder. Touching any switch decides it here instead.'
+    }</p>
+    ${MCP_SWITCHES.map(
+      (s) => `<div class="check">
+      <input id="${s.id}" type="checkbox" class="mcpSwitch ${s.color}" ${s.on(mcp) ? 'checked' : ''}>
+      <label for="${s.id}">${escapeHtml(s.label)}</label>
+    </div>
+    <p class="hint mcpWhy">${escapeHtml(s.why)}</p>`,
+    ).join('')}
+  </fieldset>`;
+
   const dependsOnHtml = `${openSection('dependsOnSection')}
     <div class="check">
       <input id="dependsOnOn" type="checkbox" ${dependsOnRows.length > 0 ? 'checked' : ''}>
@@ -348,6 +373,13 @@ export function renderHtml(options: EntityFormOptions): string {
     (section) =>
       `.sec.${section.color} { border-color: var(--vscode-credSshManager-${section.color}, var(--vscode-widget-border, #4444)); }`,
   ).join('\n  ')}
+  /* Five segments with gaps, dimmed where the switch is off: the whole permission set read at a
+     glance, in the same colours the switches themselves carry. */
+  .mcpBar { display: flex; gap: 3px; margin: 2px 0 6px; }
+  .mcpSeg { width: 26px; height: 4px; border-radius: 2px; opacity: .18; }
+  .mcpSegOn { opacity: 1; }
+  .mcpWhy { margin: 0 0 8px 22px; opacity: .75; }
+  ${mcpSwitchStyles()}
   .depRow { display: flex; align-items: center; gap: 6px; margin: 6px 0; flex-wrap: wrap; }
   .depGone { opacity: .7; font-style: italic; }
   .depSwatches { display: inline-flex; gap: 3px; }
@@ -647,6 +679,7 @@ export function renderHtml(options: EntityFormOptions): string {
   ${dependsOnHtml}
   ${totpHtml}
   ${attachmentsHtml}
+  ${mcpHtml}
   </div>
 
   </div>

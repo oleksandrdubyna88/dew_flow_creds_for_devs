@@ -18,6 +18,7 @@ import {
 } from './secretGenerator';
 import { parseSshPrivateKey } from './sshKeyParse';
 import { isDepColorKey } from './depColors';
+import { McpAccess } from './mcpAccess';
 import { DependencyFolderCandidate, normalizeDependsOn } from './depGraph';
 import {
   CommandArg,
@@ -426,6 +427,14 @@ function toValues(data: Record<string, unknown>, options: EntityFormOptions): En
       envBindings,
       hasTotp: hasTotp || undefined,
       dependsOn: dependsOn.length > 0 ? dependsOn : undefined,
+      // Absent means "ask the folder"; present-and-empty means "decided here, and the answer is
+      // nothing". The page sends `undefined` only while nobody has touched a switch on an entry
+      // that had none — so opening a form and pressing Save never converts an inheriting entry
+      // into one that has opted out.
+      mcp: readMcpAccess(data),
+      // Set by the create path when an agent makes an entry, and carried through every later
+      // edit: a delete permission scoped to `own` needs to know which entries those are.
+      mcpCreatedByAgent: options.initial?.mcpCreatedByAgent,
       // The entity's OWN colour is never edited here — it is set on whichever record is the
       // target of somebody else's dependency, by `dependsOnColors` above. Carrying it through
       // untouched is what keeps an edit from erasing a colour other rows are painted in.
@@ -505,6 +514,31 @@ function toValues(data: Record<string, unknown>, options: EntityFormOptions): En
  * NOT read: it exists only to narrow the second dropdown, and storing it would be a second
  * source of truth for where an entity lives, going stale the first time one is moved.</p>
  */
+/**
+ * The agent-access switches as the webview posts them.
+ *
+ * <p>`undefined` is a real answer here and not a missing one: it means the entry still follows
+ * its folder. Anything else is read defensively like every other row on this boundary, and the
+ * ladder in `mcpAccess.ts` normalises it afterwards.</p>
+ */
+function readMcpAccess(data: Record<string, unknown>): McpAccess | undefined {
+  const r = asRecord(data.mcp);
+  if (r === undefined) {
+    return undefined;
+  }
+  return {
+    view: r.view === true,
+    use: r.use === true,
+    edit: r.edit === true,
+    create: r.create === true,
+    delete: readDeleteScope(r.delete),
+  };
+}
+
+function readDeleteScope(raw: unknown): 'any' | 'own' | undefined {
+  return raw === 'any' || raw === 'own' ? raw : undefined;
+}
+
 function readDependsOnRows(data: Record<string, unknown>): { targetId: string; color: string }[] {
   const raw = data.dependsOn;
   if (!Array.isArray(raw)) {

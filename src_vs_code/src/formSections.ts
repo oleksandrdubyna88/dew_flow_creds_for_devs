@@ -96,6 +96,13 @@ export const FORM_SECTIONS: readonly FormSection[] = [
     kinds: EVERY_KIND,
   },
   {
+    id: 'mcpSection',
+    legend: 'Agent access (MCP)',
+    group: 'additional',
+    color: 'depColor12',
+    kinds: EVERY_KIND,
+  },
+  {
     id: 'datesSection',
     legend: 'Dates',
     group: 'main',

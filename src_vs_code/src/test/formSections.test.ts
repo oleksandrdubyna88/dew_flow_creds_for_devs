@@ -25,12 +25,12 @@ test('no two sections that can share a screen share a colour — for every kind'
   assert.deepEqual(collisions, []);
 });
 
-test('an SSH connection is the worst case, and it needs every one of the eleven', () => {
+test('an SSH connection is the worst case, and it needs every one of the twelve', () => {
   // Stated as its own test because it is the number that decided the palette size: if this
   // ever exceeds the palette, the check above starts failing and this says why.
   const colors = new Set(sectionsForKind('ssh').map((s) => s.color));
-  assert.equal(sectionsForKind('ssh').length, 11);
-  assert.equal(colors.size, 11);
+  assert.equal(sectionsForKind('ssh').length, 12);
+  assert.equal(colors.size, 12);
 });
 
 test('every section has a colour the manifest actually contributes', () => {
@@ -67,6 +67,7 @@ test('every section is in exactly one group, and both groups have contents', () 
       'attachmentsSection',
       'dependsOnSection',
       'lifetimeSection',
+      'mcpSection',
       'totpSection',
     ],
   );

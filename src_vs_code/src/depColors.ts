@@ -26,6 +26,9 @@ export const DEP_COLOR_KEYS = [
   // Added with the coloured section borders on the entity form: eleven sections can be on
   // screen at once for an SSH connection, which is one more than the dependency tints needed.
   'depColor11',
+  // The MCP section's border. Always on screen, so it cannot share with the SSH sections that
+  // are also on screen for an ssh entry — see formSections.ts's collision check.
+  'depColor12',
 ] as const;
 
 export type DepColorKey = (typeof DEP_COLOR_KEYS)[number];
@@ -43,6 +46,7 @@ export const DEP_COLOR_LABELS: Readonly<Record<DepColorKey, string>> = {
   depColor9: 'Turquoise',
   depColor10: 'Lime',
   depColor11: 'Orange',
+  depColor12: 'Slate',
 };
 
 /**
@@ -66,6 +70,7 @@ export const DEP_COLOR_FALLBACK: Readonly<Record<DepColorKey, string>> = {
   depColor9: '#4FCBB0',
   depColor10: '#B9C742',
   depColor11: '#FF9147',
+  depColor12: '#8FA8C8',
 };
 
 /**

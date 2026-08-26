@@ -397,6 +397,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Bounded on purpose: 256 KB of output per stream, 30 s per command (raisable to 120 s), 8 at a
   time, and every child killed when the window goes.
 
+## [0.66.0] — 2026-08-26
+
+### Added
+
+- **An Agent access section on every entry — six switches, all off.** Nothing is reachable by an
+  AI agent until you say so, per entry, and an entry that existed before this release is as
+  closed as a new one.
+  - The switches are a **ladder**: usable implies visible, replacing the secret implies usable,
+    and so on. Ticking a rung turns on everything below it and locks those, so "may change it but
+    may not see it" is not a state you can assemble by clicking.
+  - Each switch carries its **own colour**, and only the control is painted — the label and the
+    explanation under it stay the theme's own. A five-segment bar above them shows the whole
+    permission set at a glance, in the same colours.
+  - Every switch says what it costs beside it. *Replacing the secret* explains that the extension
+    generates the new value and the agent sees neither it nor the old one; *deleting anything*
+    says that the Trash emptying on a timer is a delay rather than a veto.
+  - **Not set is different from set to nothing.** An entry with no answer of its own will follow
+    its folder once folder settings arrive; one where you touched a switch has decided for
+    itself, even if the decision was to allow nothing. Opening a form and pressing Save does not
+    silently convert the first into the second.
+  - **These switches never travel.** Sharing an entry strips them, because a permission granted
+    on your machine must not arrive on somebody else's as an authorisation for their agent.
+
 ## [0.65.0] — 2026-08-26
 
 ### Added
