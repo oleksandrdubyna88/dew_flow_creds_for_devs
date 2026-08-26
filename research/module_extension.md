@@ -1436,6 +1436,37 @@ child through a real shell, and asserts the value the child prints does not reac
 **Both run on Windows and on Linux/WSL, and both were run on both** — that is where the shell
 mismatch in the masked run was found, rather than in review.
 
+### Testing a `vscode`-bound module, and the trap in it (audit A3)
+
+`src/test/vscodeStub.ts` holds the `Module._load` dance in one place — twelve test files carry
+their own drifted copy, and new tests use this instead. `loadWithVscode(path, stub)` installs a
+stub and loads the module under it; `configStub()` answers `workspace.getConfiguration` from a
+plain object and records writes.
+
+**It evicts the whole compiled graph from the require cache, and that is the point.** `require`
+is cached and these modules capture `vscode` at import time, so evicting only the module under
+test is not enough: `transportFactory` imports `nasPaths`, and a freshly-loaded factory would
+still consult the `nasPaths` copy bound to an EARLIER test's stub — reading settings that are no
+longer the test's and routing to the wrong backend. The first version of the helper did exactly
+that, and the seven tests it broke read as routing defects rather than as a stale cache. A
+stubbed test that quietly asserts nothing is the failure mode this whole file exists to avoid.
+
+What the first modules covered under it pin, all of which fail silently rather than loudly:
+
+- **`nasPaths` / `backupPaths`** — the email is matched case-insensitively (a case-sensitive
+  lookup does not error, it falls back to the GLOBAL folder and syncs the account somewhere
+  else); a whitespace-only setting is unset rather than a folder named `" "`; writing an
+  override finds the existing key whatever its case, instead of adding a second entry the
+  reader never sees; and a per-account interval of `0` means "disabled", so the falsy check
+  that treats it as unset silently re-enables a schedule somebody turned off.
+- **`envApply`** — each bound field reads its own source; a name bound to something not stored
+  writes NOTHING, because an empty variable reads to a shell as set-and-empty; and a name that
+  stops being bound is deleted, so no secret outlives its binding in every future terminal.
+- **`transportFactory`** — git is asked first but only about shapes that can be nothing else,
+  so `https://host/path` stays a server URL; an unconfigured account gets no transport rather
+  than an invented default; and a git location in a build with nowhere to clone refuses instead
+  of creating a directory named after a URL.
+
 ## Security hardening (2026-08-25 review)
 
 A post-merge review ([SECURITY_REVIEW_2026-08-25.md](SECURITY_REVIEW_2026-08-25.md)) closed ten
