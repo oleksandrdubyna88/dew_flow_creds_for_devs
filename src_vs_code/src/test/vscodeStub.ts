@@ -13,7 +13,17 @@ import Module from 'node:module';
  * <p>Not named `*.test.ts`, so the runner's `out/test/*.test.js` glob never treats it as a
  * suite with no tests in it.</p>
  */
-export function loadWithVscode<T>(request: string, stub: Record<string, unknown>): T {
+export function loadWithVscode<T>(
+  request: string,
+  stub: Record<string, unknown>,
+  /**
+   * Extra modules to substitute, keyed by the request string the module under test WRITES
+   * (`'./sshCredential'`, not a resolved path). For the few modules whose whole job is
+   * orchestrating other modules — open this, write that, then wipe it — the sequence is the
+   * behaviour, and it cannot be observed without standing in for the collaborators.
+   */
+  mocks: Record<string, unknown> = {},
+): T {
   const loader = Module as unknown as { _load(request: string, ...rest: unknown[]): unknown };
   const original = loader._load;
   // The WHOLE graph is evicted, not just the requested module, because `require` is cached
@@ -26,7 +36,10 @@ export function loadWithVscode<T>(request: string, stub: Record<string, unknown>
   // that, and the tests it broke read as routing defects rather than as a stale cache.
   evictOwnModules(require.resolve(request));
   loader._load = function patched(name: string, ...rest: unknown[]): unknown {
-    return name === 'vscode' ? stub : original.call(this, name, ...rest);
+    if (name === 'vscode') {
+      return stub;
+    }
+    return name in mocks ? mocks[name] : original.call(this, name, ...rest);
   };
   try {
     return require(request) as T;
@@ -93,6 +106,40 @@ export function configStub(values: Record<string, unknown> = {}): ConfigStub {
     },
   };
   return stub;
+}
+
+/**
+ * A working `vscode.EventEmitter` — the real semantics, not a recorder.
+ *
+ * <p>A module that builds a `Pseudoterminal` hands VS Code `emitter.event` and then fires
+ * through the emitter; a stub that only recorded `fire` calls would test nothing about what
+ * actually reaches the screen. This one delivers to its listeners, so a test can subscribe
+ * exactly as VS Code does and read the terminal's output.</p>
+ */
+export class StubEventEmitter<T> {
+  private readonly listeners: ((value: T) => void)[] = [];
+
+  readonly event = (listener: (value: T) => void): { dispose(): void } => {
+    this.listeners.push(listener);
+    return {
+      dispose: (): void => {
+        const at = this.listeners.indexOf(listener);
+        if (at >= 0) {
+          this.listeners.splice(at, 1);
+        }
+      },
+    };
+  };
+
+  fire(value: T): void {
+    for (const listener of [...this.listeners]) {
+      listener(value);
+    }
+  }
+
+  dispose(): void {
+    this.listeners.length = 0;
+  }
 }
 
 /** The handful of `vscode` values a settings-reading module touches. */
