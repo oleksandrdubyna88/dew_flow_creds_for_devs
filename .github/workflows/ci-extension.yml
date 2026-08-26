@@ -89,7 +89,7 @@ jobs:
       - name: Set up .NET
         uses: actions/setup-dotnet@v4
         with:
-          global-json-file: ../global.json
+          global-json-file: global.json
 
       - name: Build the CLI
         run: dotnet build ../src_cli/src/CredsCli.csproj
