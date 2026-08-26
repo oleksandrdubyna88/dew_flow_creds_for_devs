@@ -1,9 +1,9 @@
 import { describeError } from './describeError';
 import { parseAgentCliArgs } from './agentCliArgs';
 import { parseToken } from './grantToken';
+import { EXIT, interpretSuccess } from './agentCliOutcome';
 import {
   ErrorBody,
-  ExecResponseBody,
   HealthBody,
   SERVICE_NAME,
 } from './brokerProtocol';
@@ -27,18 +27,9 @@ import {
  * still legible.</p>
  */
 
-const EXIT = {
-  usage: 96,
-  brokerUnreachable: 90,
-  unknownToken: 91,
-  denied: 92,
-  entityGone: 93,
-  busy: 94,
-  brokerFailure: 95,
-  consentTimeout: 97,
-  remoteTimeout: 98,
-  toolMissing: 99,
-} as const;
+// One table, in `agentCliOutcome.ts`, because these codes are the contract: a second
+// implementation of this CLI in another language has to reproduce them exactly, and two
+// copies here would be the first place they drifted.
 
 const HEALTH_TIMEOUT_MS = 2_000;
 // Comfortably past the broker's own hard ceiling, so its clean `timedOut`
@@ -191,28 +182,20 @@ async function main(): Promise<number> {
     return reportError(response.body);
   }
 
-  if (parsed.kind === 'terminal') {
-    process.stdout.write('An SSH terminal is now open in the human\'s VS Code window.\n');
-    return 0;
+  // One table keyed by verb, in a pure module, rather than a chain that fell through to
+  // failure for anything it had not been taught about — which is how a successful `env`,
+  // `vpn-up` and `vpn-down` came to report themselves as broker failure 95 and print nothing.
+  const outcome = interpretSuccess(parsed.kind, response.body as Record<string, unknown>);
+  if (outcome.stdout.length > 0) {
+    process.stdout.write(outcome.stdout);
   }
-
-  // The broker's own response shape, so a field renamed there fails to compile
-  // here rather than silently going missing at runtime.
-  const body = response.body as unknown as Partial<ExecResponseBody>;
-  if (typeof body.stdout === 'string') {
-    process.stdout.write(body.stdout);
+  if (outcome.stderr.length > 0) {
+    process.stderr.write(outcome.stderr);
   }
-  if (typeof body.stderr === 'string') {
-    process.stderr.write(body.stderr);
+  for (const line of outcome.notes) {
+    note(line);
   }
-  if (body.stdoutTruncated === true || body.stderrTruncated === true) {
-    note('output was truncated at the size ceiling and the command was stopped.');
-  }
-  if (body.timedOut === true) {
-    note('the remote command hit the time ceiling and was terminated.');
-    return EXIT.remoteTimeout;
-  }
-  return typeof body.exitCode === 'number' ? body.exitCode : EXIT.brokerFailure;
+  return outcome.exitCode;
 }
 
 void main().then(
