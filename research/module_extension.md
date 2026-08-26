@@ -1519,6 +1519,56 @@ What the first modules covered under it pin, all of which fail silently rather t
   than an invented default; and a git location in a build with nowhere to clone refuses instead
   of creating a directory named after a URL.
 
+**The helper gained two things as the harder modules arrived.** `loadWithVscode` takes an
+optional third argument substituting arbitrary modules by the request string the module under
+test writes (`{'node:os': …}`, `{'./sshAgentServer': …}`) — that is what makes a private consent
+callback reachable through its REAL wiring rather than by reaching into the object. And
+`StubEventEmitter` delivers to its listeners instead of recording calls, which is the only way to
+read what a `Pseudoterminal` writes to a screen.
+
+**What the rest of the modules pin**, chosen so that each test names a consequence rather than a
+call:
+
+- **`maskedTerminal`** spawns real children that print the secret they were given; the screen must
+  never show it, including when the value is split across two chunks. **`sshConnect` /
+  `sshUseActions`** are tested as a SEQUENCE, because nothing either returns says whether a
+  decrypted key reached the disk or is still there: the key files are real files in a temp
+  directory, so "it was deleted" is answered by the filesystem.
+- **`syncManager`** — the three refusals, each guarding a different way to make every machine
+  worse: a locked vault, a detected tamper (re-encrypting would write a fresh valid MAC over the
+  altered file), and an unreadable local tree (the merge would empty the vault and the push would
+  empty every other machine in turn).
+- **`credsAgentServer`** is driven over real HTTP, and the `perform()` seam is proved by BREAKING
+  it: replacing masking with a pass-through turns three tests red across both entry points, and
+  removing the consent gate turns four red across both. Two doors reach that seam — a bearer token
+  and a CLI alias — and only a break that reddens both is evidence the extraction holds.
+- **`webauthnPrf`** is driven by a stand-in browser that fetches the real page and posts back, so
+  the unguessable path segment and the nonce check are tested by making the request a hostile
+  local process would make.
+
+**Four fixtures that made a test pass for the WRONG reason.** This is the failure mode of a
+stubbed suite, and it cost more time this session than any real defect:
+
+| fixture | what it silently did |
+|---|---|
+| a key wrap keyed `type` instead of `kind` | not a webauthn wrap → `backupWriteMode` answers `pin` → the test exercises the path it exists to prove is NOT taken |
+| an entity without `isSshEnabled` | `isBackupBundle` rejects the payload → `syncProfile` throws before the merge → three "nothing was written" tests never reach their guard |
+| a share item of `{id}` alone | `sharesFromEnvelope` drops it → "shares survive the rewrite" passes against zero shares |
+| a 7-character secret | below `MIN_MASKABLE_LENGTH` (8) → never masked → reads as a masking defect in the module |
+
+The lesson each time was the same: build the fixture against the REAL validator, not against a
+reading of the type. Where a name is computed — backup file names, socket paths — read it back
+from the function that computes it instead of guessing it.
+
+**`extension.ts` is deliberately not unit-tested, and this is the reason.** After A1 it is
+wiring: it constructs the managers and registers the commands, and the logic it used to hold now
+lives in modules that are tested directly. What remains that is worth checking is the
+manifest↔handler correspondence, and `commandsRegistered.test.ts` already checks it by scanning
+the whole `src/` tree — deliberately not one file, because handlers keep moving out. A handful of
+non-exported helpers there (`resolveBulkTargets`, `collectJumpCandidates`, `asElement`,
+`folderKindOf`) would be worth extracting and testing; that is a real gap, not a claim of
+coverage, and it is left open rather than taken while another session is editing the file.
+
 ## Security hardening (2026-08-25 review)
 
 A post-merge review ([SECURITY_REVIEW_2026-08-25.md](SECURITY_REVIEW_2026-08-25.md)) closed ten
