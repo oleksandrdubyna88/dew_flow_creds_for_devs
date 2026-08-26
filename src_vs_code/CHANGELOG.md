@@ -26,6 +26,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **A stored value containing `</script>` could break out of the entity form's page script.**
+  The form embeds three lists — command arguments, script variables and port forwards — into
+  its inline `<script>` as JSON. `JSON.stringify` escapes quotes and backslashes and leaves
+  `<` alone, but an HTML parser ends a script element at `</script>` wherever it appears,
+  string literal included. A value carrying that sequence therefore closed the script early
+  and the rest of the form's own code was parsed as markup.
+
+  These values arrive from a **synced** vault — a colleague's shared entity, or a restored
+  backup — so this was never limited to text you typed yourself. The page's CSP
+  (`script-src 'nonce-…'`) stopped an injected `onerror` from running, but `style-src` is
+  `'unsafe-inline'`, so an injected element could still cover the form; and either way the
+  form stopped working, because half its script had become text.
+
+  Every `<` in those literals is now escaped as `\u003c` — still valid JSON, and it closes
+  `<!--` at the same time. This matches what `webauthnPrf.ts` already did. Found by a test
+  written while covering the module, and the test fails against the unfixed code.
+
 - **Vault format v4 — roll the extension out to every machine before any of them syncs.**
   A v4 file is written the next time a vault is saved, and a build older than this one
   cannot read it (*"Unsupported backup version: 4"*). Reading v3 and v2 keeps working

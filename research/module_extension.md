@@ -591,6 +591,18 @@ byte: identical once the one intended difference is undone (see the escaper belo
 is worth more than the suite here, because a template-string move is exactly the kind of change
 that stays green while quietly dropping a fieldset.
 
+**JSON embedded in the page script is escaped separately, and for a different reason.** The
+three lists the form starts from — command arguments, script variables, port forwards — are
+interpolated into the inline `<script>` as JSON. `JSON.stringify` handles quotes and
+backslashes and leaves `<` alone, but an HTML parser ends a script element at `</script>`
+wherever that sequence appears, inside a string literal included: a stored value carrying it
+closed the script early and the remainder of the form's own code was parsed as markup. The
+values come from a SYNCED vault, so "our user typed it" was never the argument. `jsonForScript`
+escapes every `<` as `\u003c` — still valid JSON, and it closes `<!--` too. `webauthnPrf.ts`
+already did this at its own interpolation; the form did not, which is the shape this repository
+keeps finding: a security measure applied at one of two sites. Pinned by
+`entityFormScript.test.ts`, which fails against the unfixed code.
+
 `webviewHtml.ts` is the one HTML escaper the three webview renderers share. It existed three
 times as byte-identical private copies — the worst shape for a security helper, since each file
 looks self-consistent and hardening one leaves the others silently behind. It now also escapes
