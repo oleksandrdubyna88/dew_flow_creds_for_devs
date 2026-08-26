@@ -330,11 +330,17 @@ export function renderHtml(options: EntityFormOptions): string {
      from being sliced in half at the column boundary. Below the breakpoint the whole thing
      collapses to one column, and the Main group is simply above the Additional one.
      No backticks in here: one inside a CSS comment ends the template literal this page is. */
-  .fsGroup { column-count: 1; column-gap: 18px; }
-  .fsGroup > fieldset { break-inside: avoid; }
-  @media (min-width: 1000px) { .fsGroup { column-count: 2; } }
+  /* The two GROUPS are the two columns: Main on the left, Additional on the right, each one
+     stacked as a single column of its own sections. Not each group internally split in two —
+     that was the first reading of the requirement and it puts main fields on the right and
+     additional fields on the left, which is exactly the confusion the split exists to remove.
+     Below the breakpoint the grid collapses to one column and Main simply sits above Additional.
+     align-items: start, so the shorter column does not stretch to match the taller one.
+     No backticks in here: one inside a CSS comment ends the template literal this page is. */
+  .formGroups { display: grid; grid-template-columns: 1fr; gap: 0 24px; align-items: start; }
+  @media (min-width: 1000px) { .formGroups { grid-template-columns: 1fr 1fr; } }
   .groupTitle { margin: 18px 0 8px; font-size: .95em; text-transform: uppercase;
-                letter-spacing: .08em; opacity: .6; column-span: all; }
+                letter-spacing: .08em; opacity: .6; }
   /* The legend keeps the default foreground on purpose - only the border carries the colour, so
      a section is identified without the page turning into fifteen coloured captions. */
   .sec { border-color: currentColor; }
@@ -427,6 +433,8 @@ export function renderHtml(options: EntityFormOptions): string {
     <div class="error" id="error" role="alert" aria-live="assertive"></div>
   </div>
   <h2>${isEdit ? 'Edit entity' : 'New entity'}</h2>
+
+  <div class="formGroups">
 
   <div id="mainGroup" class="fsGroup">
   <h3 class="groupTitle">Main</h3>
@@ -641,6 +649,7 @@ export function renderHtml(options: EntityFormOptions): string {
   ${attachmentsHtml}
   </div>
 
+  </div>
 
 ${formPageScript(nonce, d, {
   rows: dependsOnRows,

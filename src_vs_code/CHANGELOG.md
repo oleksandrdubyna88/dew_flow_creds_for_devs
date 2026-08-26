@@ -335,6 +335,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Bounded on purpose: 256 KB of output per stream, 30 s per command (raisable to 120 s), 8 at a
   time, and every child killed when the window goes.
 
+## [0.64.1] — 2026-08-26
+
+### Fixed
+
+- **Main is the left column and Additional is the right one.** 0.63.0 read "each group in two
+  columns" as each group splitting itself in two and stacking, which put main fields on the right
+  of the screen and additional fields on the left — the opposite of the separation the split
+  exists to make. The two groups are now the two columns.
+
 ## [0.64.0] — 2026-08-26
 
 ### Fixed
@@ -364,9 +373,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     make that true rather than approximately true: Lifetime came out of General, and the jump
     host, tags, agent forwarding and port forwards came out of Connection into **Advanced
     connection**.
-  - On a wide window each group flows into **two columns**; below that it collapses to one, with
-    Main above Additional. A flow rather than a grid, so a tall section does not leave a hole
-    beside a short one.
+  - On a wide window **the two groups are the two columns** — Main on the left, Additional on the
+    right, each a single stack of its own sections. Below the breakpoint the pair collapses to one
+    column with Main above Additional.
   - **Each bordered section wears a distinct border colour**, from the same palette the tree
     already uses for dependencies. The caption stays the theme's own colour — only the border
     carries the identity, so the page does not become fifteen coloured captions. A section keeps
