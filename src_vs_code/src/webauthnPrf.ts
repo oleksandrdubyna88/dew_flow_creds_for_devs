@@ -4,6 +4,7 @@ import * as vscode from 'vscode';
 import { webauthnUserHandle } from './cryptoUtils';
 import { startLoopbackServer } from './loopbackServer';
 import { browserErrorHint } from './webauthnHint';
+import { jsonForScript } from './webviewHtml';
 
 /**
  * Security-key unlock via WebAuthn + the **PRF** extension.
@@ -201,7 +202,7 @@ interface PageOptions {
  */
 // eslint-disable-next-line max-lines-per-function
 function renderPage(options: PageOptions): string {
-  const data = JSON.stringify(options).replace(/</g, '\\u003c');
+  const data = jsonForScript(options);
   return `<!DOCTYPE html>
 <html>
 <head>
@@ -268,7 +269,7 @@ function renderPage(options: PageOptions): string {
         const created = await navigator.credentials.create({
           publicKey: {
             challenge: challenge,
-            rp: { id: ${JSON.stringify(RP_ID)}, name: ${JSON.stringify(RP_NAME)} },
+            rp: { id: ${jsonForScript(RP_ID)}, name: ${jsonForScript(RP_NAME)} },
             user: {
               // Stable, NOT random. A resident credential is keyed by (rp.id, user.id),
               // so a fresh id every time claimed another of the key's ~25 slots instead
@@ -313,7 +314,7 @@ function renderPage(options: PageOptions): string {
       const assertion = await navigator.credentials.get({
         publicKey: {
           challenge: challenge,
-          rpId: ${JSON.stringify(RP_ID)},
+          rpId: ${jsonForScript(RP_ID)},
           allowCredentials: allow,
           // 'required' — a touch alone is not enough; see browserErrorHint.
           userVerification: 'required',

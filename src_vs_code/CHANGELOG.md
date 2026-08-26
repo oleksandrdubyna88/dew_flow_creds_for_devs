@@ -26,6 +26,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **The Depends-on picker had the same `</script>` break-out, in new code.** The picker's
+  browser program interpolates the folder list, the entity names inside it, the colours in use
+  and the saved rows into the entity form's one `<script>` element — with raw `JSON.stringify`,
+  which leaves `<` untouched. A folder or entity named with that sequence closed the script
+  early and the rest of the form's code was parsed as markup.
+
+  Reachable exactly as the first one was: those names come from a **synced** vault, a colleague's
+  shared entry, or a restored backup.
+
+  Fixed the same way, and this time the cause is fixed too. `webauthnPrf.ts` also carried its
+  own hand-rolled copy of the escape — correct, but a duplicate sitting one import away from the
+  shared one — and now uses `jsonForScript` like everything else. A new test
+  (`scriptInterpolation.test.ts`) scans the whole source tree and **fails, naming the file and
+  line**, on any `${JSON.stringify(…)}` interpolated into a template literal that is not on a
+  short list of named, justified exceptions. This defect had been written three times by three
+  different hands; it is now a red test rather than something a reader has to notice.
+
+
 - **A stored value containing `</script>` could break out of the entity form's page script.**
   The form embeds three lists — command arguments, script variables and port forwards — into
   its inline `<script>` as JSON. `JSON.stringify` escapes quotes and backslashes and leaves

@@ -1,4 +1,5 @@
 import { DEP_COLOR_FALLBACK, DEP_COLOR_KEYS, DEP_COLOR_LABELS } from './depColors';
+import { jsonForScript } from './webviewHtml';
 import { DependencyFolderCandidate, DependencyRow } from './depGraph';
 
 /**
@@ -13,6 +14,15 @@ import { DependencyFolderCandidate, DependencyRow } from './depGraph';
  * entities, the colours already in use, and the rows this entity opens with. There is no round
  * trip to the extension host, so the second dropdown is populated by the same click that chose
  * the folder rather than a frame or two later.</p>
+ *
+ * <p><b>Every one of those goes through `jsonForScript`, never `JSON.stringify`.</b> This
+ * fragment runs inside the form's one `&lt;script&gt;` element and it carries FOLDER AND ENTITY
+ * NAMES, which arrive from a synced vault, a shared entry or a restored backup. `JSON.stringify`
+ * leaves `&lt;` alone, and an HTML parser ends a script element at `&lt;/script&gt;` wherever it
+ * appears — inside a string literal included — so a name carrying it closed this script early
+ * and the rest of the form's own code was parsed as markup. Fixed here after the identical
+ * defect was found and fixed in `entityFormScript.ts`, which is the file this fragment is
+ * interpolated into and which already imported the escaper.</p>
  */
 
 interface PickerData {
@@ -21,9 +31,15 @@ interface PickerData {
   colors: Record<string, string>;
 }
 
-/** The swatch palette, as the page needs it: key, human name, and a colour to paint. */
+/**
+ * The swatch palette, as the page needs it: key, human name, and a colour to paint.
+ *
+ * <p>Through `jsonForScript` like everything else here, even though the values are our own
+ * constants. Safe by CONTENT is not safe by construction, and the site is what a later edit
+ * changes — see that function's own note.</p>
+ */
 function paletteJson(): string {
-  return JSON.stringify(
+  return jsonForScript(
     DEP_COLOR_KEYS.map((key) => ({
       key,
       label: DEP_COLOR_LABELS[key],
@@ -40,10 +56,10 @@ function paletteJson(): string {
 export function dependencyPickerScript(data: PickerData): string {
   return `
   // ---- depends on -------------------------------------------------------
-  var DEP_FOLDERS = ${JSON.stringify(data.folders)};
-  var DEP_TAKEN = ${JSON.stringify(data.colors)};
+  var DEP_FOLDERS = ${jsonForScript(data.folders)};
+  var DEP_TAKEN = ${jsonForScript(data.colors)};
   var DEP_PALETTE = ${paletteJson()};
-  var depRows = ${JSON.stringify(data.rows)};
+  var depRows = ${jsonForScript(data.rows)};
 
   function depFolderById(id) {
     for (var i = 0; i < DEP_FOLDERS.length; i++) {

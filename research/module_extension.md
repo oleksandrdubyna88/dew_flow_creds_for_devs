@@ -683,6 +683,16 @@ construction, and one ordinary edit ("let the icon vary by kind") from being the
 three now go through the one function. Pinned by `webviewHtml.test.ts` and by
 `entityFormScript.test.ts`, which fails against the unfixed code.
 
+**The escape is now enforced by a scan, because it was written wrong three times.**
+`webauthnPrf.ts` knew the trap and escaped by hand; `entityFormScript.ts` did not, which was a
+live defect; and `depPickerScript.ts` reintroduced it in NEW code — in a fragment interpolated
+into the very file that had just been fixed and already imported the escaper. Three hands, three
+times, each caught by a person looking. `scriptInterpolation.test.ts` now scans every shipped
+source file and fails, naming the file and line, on any `${JSON.stringify(…)}` inside a template
+literal, with a short allowlist of named exceptions (an exception message, a hash key) that a
+second test proves has not gone stale. A fourth site now means arguing with a list rather than
+remembering a rule nobody wrote down.
+
 `webviewHtml.ts` is the one HTML escaper the three webview renderers share. It existed three
 times as byte-identical private copies — the worst shape for a security helper, since each file
 looks self-consistent and hardening one leaves the others silently behind. It now also escapes
