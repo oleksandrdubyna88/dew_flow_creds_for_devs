@@ -975,6 +975,10 @@ pushes inside a millisecond, which is a flaky test for a path already pinned exa
 
 ### Short-lived entries (0.59.0)
 
+Design record: [PLAN_ephemeral_secrets.md](PLAN_ephemeral_secrets.md) — including why the
+close-handler was rejected for a lease. The unbuilt tail (the `Burn Now…` command, the lifetime in
+the viewer, and the cross-machine burn test) is [../todo/PLAN_ephemeral_secrets_tail.md](../todo/PLAN_ephemeral_secrets_tail.md).
+
 `entityExpiry.ts` is the pure rule — `isExpired`, `burnsOnClose`, `burnsOnAgentUse`,
 `describeRemaining`, and the preset table the form renders. It answers *whether*, never *does*:
 the deleting goes through `StorageManager.deleteNodeRecursive`, the one path that writes a causal
@@ -1015,6 +1019,9 @@ the node list cannot be trusted, "this expired" and "this is unreadable" are ind
 and one of those two answers deletes data.
 
 ### Masking the broker's output (0.57.3)
+
+Design record: [PLAN_ai_context_masking.md](PLAN_ai_context_masking.md) — including the clipboard
+watcher recorded as refuted rather than deferred, so the proposal does not return unexamined.
 
 `secretMasker.ts` (pure) prepares a table of exact needles — the value, its percent-encoded and
 base64 forms, and a PEM key's body lines — longest first, so a short secret cannot cut a longer
