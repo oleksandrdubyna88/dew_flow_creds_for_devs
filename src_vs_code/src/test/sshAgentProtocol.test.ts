@@ -15,6 +15,7 @@ import {
   encodeSignResponse,
   encodeString,
   keyTypeOf,
+  describeUnknownShape,
 } from '../sshAgentProtocol';
 
 const blob = (type: string, body = 'body') => Buffer.concat([encodeString(type), encodeString(body)]);
@@ -129,4 +130,27 @@ test('a userauth blob for a method other than publickey is not reported as a log
     encodeString('password'),
   ]);
   assert.deepEqual(describeSignRequest(data), { kind: 'unknown' });
+});
+
+// --- what an unrecognised request leaves behind (0.77.0) ------------------------------------
+//
+// The dialog says "a signature whose purpose this build does not recognise" — deliberately, since
+// a guessed description would be worse. But nothing recorded WHAT was unrecognised, so the one
+// situation where a person most wants to look it up afterwards was the one that left no trace.
+// Seen on a real host: a forwarded agent was asked to sign something that was neither an SSH
+// login nor SSHSIG, and the log said only "SIGNED".
+
+test('an unrecognised request is recorded by its shape, not by a guess', () => {
+  const data = Buffer.concat([Buffer.from([0xde, 0xad, 0xbe, 0xef]), Buffer.alloc(300, 1)]);
+
+  const said = describeUnknownShape(data);
+
+  assert.match(said, /^304 bytes, starts de ad be ef /);
+});
+
+test('the record is a fingerprint, never a copy', () => {
+  // It exists to identify a framing, not to keep the bytes about to be signed.
+  const said = describeUnknownShape(Buffer.alloc(4096, 0xab));
+
+  assert.equal(said.split('starts ')[1].split(' ').length, 16);
 });

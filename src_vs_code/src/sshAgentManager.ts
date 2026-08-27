@@ -1,7 +1,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
-import { SignPurpose, describePurpose } from './sshAgentProtocol';
+import { SignPurpose, describePurpose, describeUnknownShape } from './sshAgentProtocol';
 import { AgentKey, SshAgentServer, agentSocketPath } from './sshAgentServer';
 import { parseSshPrivateKey } from './sshKeyParse';
 import {
@@ -187,7 +187,7 @@ export class SshAgentManager implements vscode.Disposable {
     const server = new SshAgentServer({
       socketPath,
       keys: () => [...this.keys.values()],
-      confirm: (key, purpose) => this.confirm(key, purpose),
+      confirm: (key, purpose, data) => this.confirm(key, purpose, data),
       log: (message) => this.log(message),
     });
     await server.listen();
@@ -215,7 +215,21 @@ export class SshAgentManager implements vscode.Disposable {
    * and remembers nothing — the same rule the broker's consent follows, for the same reason: a
    * mis-click must not lock a key out for the window's life.</p>
    */
-  private async confirm(key: AgentKey, purpose: SignPurpose): Promise<boolean> {
+  /**
+   * The one case the dialog cannot describe, written down so it can be answered afterwards.
+   *
+   * <p>Its own method rather than a branch inside `confirm`, which is at the complexity the
+   * linter allows — and because "what we could not describe" is a separate thing to read from
+   * "how consent is asked".</p>
+   */
+  private noteUnknown(purpose: SignPurpose, data: Buffer): void {
+    if (purpose.kind === 'unknown') {
+      this.log(`unrecognised signing request: ${describeUnknownShape(data)}`);
+    }
+  }
+
+  private async confirm(key: AgentKey, purpose: SignPurpose, data: Buffer): Promise<boolean> {
+    this.noteUnknown(purpose, data);
     if (withinAllowWindow(this.allowedUntil.get(key.entityId), Date.now())) {
       this.log(`allowed (within the 10-minute window) for ${describePurpose(purpose)}`);
       return true;

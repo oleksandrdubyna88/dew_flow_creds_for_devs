@@ -228,6 +228,25 @@ export function describeSignRequest(data: Buffer): SignPurpose {
     : describeUserauth(data);
 }
 
+/**
+ * Enough of an unrecognised request to identify its shape later, and nothing more.
+ *
+ * <p>When the purpose is unknown the human is asked a vague question — deliberately, because a
+ * guessed description would be worse. But until now nothing recorded WHAT was unrecognised, so
+ * the question could not be answered afterwards either: the one situation where a person most
+ * wants to look it up is the one that left no trace. Measured against a real host on 2026-08-27,
+ * where a forwarded agent was asked to sign something that was neither an SSH login nor SSHSIG,
+ * and the log said only "SIGNED".</p>
+ *
+ * <p>The length and the first bytes are framing — a session-id header, a magic, a field length.
+ * The blob is data about to be signed, not a secret, and the signature itself is never logged;
+ * the cap keeps it a fingerprint rather than a copy.</p>
+ */
+export function describeUnknownShape(data: Buffer): string {
+  const head = [...data.subarray(0, 16)].map((b) => b.toString(16).padStart(2, '0')).join(' ');
+  return `${data.length} bytes, starts ${head}`;
+}
+
 /** One sentence for the confirmation dialog. */
 export function describePurpose(purpose: SignPurpose): string {
   switch (purpose.kind) {
