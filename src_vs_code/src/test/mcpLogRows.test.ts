@@ -1,7 +1,7 @@
 import * as assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { formatAuditLine, parseAuditLine } from '../agentAuditLog';
-import { applyFilter, isRefusal, isRotation, mcpRowsIn } from '../mcpLogRows';
+import { applyFilter, emptyMessage, isAgentSecret, isRefusal, isRotation, mcpRowsIn } from '../mcpLogRows';
 import { renderMcpLog } from '../mcpLogPage';
 
 /**
@@ -149,4 +149,30 @@ test('a detail from a synced vault cannot break out of the page', () => {
 
   assert.equal(html.includes('<img src=x'), false);
   assert.match(html, /&lt;\/script&gt;/);
+});
+
+test('a secret that came from the agent is counted, and only that one is', () => {
+  // The one number in this view that is a cost rather than an activity: every level of this
+  // product is built so no secret passes through an agent, and creation is the exception.
+  const rows = mcpRowsIn(
+    [
+      line({ action: 'create', outcome: 'created with agent secret' }),
+      line({ action: 'create', outcome: 'created' }),
+      line({ action: 'rotate', outcome: 'rotated' }),
+    ].join('\n'),
+    '2026-08-27',
+  );
+
+  assert.equal(applyFilter(rows, 'agentSecrets').length, 1);
+  assert.equal(isAgentSecret(rows[0]), true);
+  assert.equal(isAgentSecret(rows[1]), false, 'an entry created without a secret is not one');
+  assert.equal(isAgentSecret(rows[2]), false, 'a rotation never passes the value through the agent');
+});
+
+test('the empty message tells the two silences apart', () => {
+  // "Nothing was replaced" and "no secret ever reached the vault from an agent" are different
+  // facts, and the second is the reassuring one somebody opened this filter to check.
+  assert.match(emptyMessage('agentSecrets', 3), /No secret has reached the vault from an agent/);
+  assert.match(emptyMessage('rotations', 3), /No secrets have been replaced/);
+  assert.match(emptyMessage('all', 0), /No agent has called this window yet/);
 });

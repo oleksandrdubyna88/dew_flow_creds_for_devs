@@ -4,6 +4,7 @@ import {
   McpLogRow,
   applyFilter,
   emptyMessage,
+  isAgentSecret,
   isRefusal,
   isRotation,
 } from './mcpLogRows';
@@ -110,7 +111,7 @@ function tableRow(row: McpLogRow): string {
     <td class="when">${escapeHtml(row.day)} ${escapeHtml(clockOf(row))}</td>
     <td>${escapeHtml(row.action)}</td>
     <td>${escapeHtml(row.entityName)}</td>
-    <td class="${kinds[0] === 'rotations' ? 'rotated' : (kinds[0] ?? '')}">${escapeHtml(row.outcome)}</td>
+    <td class="${outcomeClass(kinds[0])}">${escapeHtml(row.outcome)}</td>
     <td class="detail">${escapeHtml(row.detail ?? '')}</td>
   </tr>`;
 }
@@ -127,7 +128,18 @@ function kindsOf(row: McpLogRow): string[] {
   if (isRefusal(row)) {
     return ['refused'];
   }
-  return isRotation(row) ? ['rotations'] : [];
+  if (isRotation(row)) {
+    return ['rotations'];
+  }
+  return isAgentSecret(row) ? ['agentSecrets'] : [];
+}
+
+/** The filter id is a filter id; these are the two that also colour a cell. */
+function outcomeClass(kind: string | undefined): string {
+  if (kind === 'rotations' || kind === 'agentSecrets') {
+    return 'rotated';
+  }
+  return kind ?? '';
 }
 
 function clockOf(row: McpLogRow): string {

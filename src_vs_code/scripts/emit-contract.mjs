@@ -76,6 +76,10 @@ const reads = {
 // the same body — an `entry` id — and the same gate one rung higher.
 const mcpDeleteRoute = '/v1/mcp/delete';
 
+// The only MCP route whose body does not name an entry, because there is not one yet. It names a
+// folder instead — and only one somebody opened to creation.
+const mcpCreateRoute = '/v1/mcp/create';
+
 // The prefix an MCP client posts an action to. A prefix rather than a route per verb, because
 // the verb vocabulary is the `routes` table above and repeating it here would be two lists to
 // keep in step; what a second implementation cannot guess is where the prefix lives.
@@ -111,6 +115,7 @@ const contract = {
   reads,
   mcpUsePrefix,
   mcpDeleteRoute,
+  mcpCreateRoute,
   mcpActions,
   errors,
   // The band a client uses to report failures of the mechanism itself. A remote command's own

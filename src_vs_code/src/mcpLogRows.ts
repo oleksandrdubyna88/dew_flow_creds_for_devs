@@ -34,7 +34,7 @@ export function mcpRowsIn(text: string, day: string): McpLogRow[] {
 }
 
 /** What the view can narrow to. Each answers one question a person actually has. */
-export type McpLogFilter = 'all' | 'refused' | 'rotations';
+export type McpLogFilter = 'all' | 'refused' | 'rotations' | 'agentSecrets';
 
 export const MCP_LOG_FILTERS: readonly { id: McpLogFilter; label: string; hint: string }[] = [
   { id: 'all', label: 'Everything', hint: 'Every call an agent made through MCP.' },
@@ -47,6 +47,11 @@ export const MCP_LOG_FILTERS: readonly { id: McpLogFilter; label: string; hint: 
     id: 'rotations',
     label: 'Secrets replaced',
     hint: 'Every secret an agent rotated. The value passed through this window and never through the agent.',
+  },
+  {
+    id: 'agentSecrets',
+    label: 'Secrets from the agent',
+    hint: 'Entries an agent created and supplied the secret for — the only calls where a value passed through its context. The price of that level, counted.',
   },
 ];
 
@@ -81,12 +86,28 @@ export function isRotation(row: AuditEntry): boolean {
   return row.action === 'rotate' && !isRefusal(row);
 }
 
-export function applyFilter(rows: readonly McpLogRow[], filter: McpLogFilter): McpLogRow[] {
-  if (filter === 'refused') {
-    return rows.filter((row) => isRefusal(row));
-  }
-  return filter === 'rotations' ? rows.filter((row) => isRotation(row)) : [...rows];
+/**
+ * A secret that travelled through the agent's context.
+ *
+ * <p>The one number in this view that is a cost rather than an activity. Every level of this
+ * product is built so that no secret passes through an agent — except creation, where the agent
+ * provisioned the thing and is the only party holding the value. Counting them is how that trade
+ * stays visible instead of becoming a habit.</p>
+ */
+export function isAgentSecret(row: AuditEntry): boolean {
+  return row.outcome === 'created with agent secret';
 }
+
+export function applyFilter(rows: readonly McpLogRow[], filter: McpLogFilter): McpLogRow[] {
+  const match = MATCHERS[filter];
+  return match === undefined ? [...rows] : rows.filter((row) => match(row));
+}
+
+const MATCHERS: Partial<Record<McpLogFilter, (row: AuditEntry) => boolean>> = {
+  refused: isRefusal,
+  rotations: isRotation,
+  agentSecrets: isAgentSecret,
+};
 
 /**
  * What the view says when there is nothing to show.
@@ -99,7 +120,10 @@ export function emptyMessage(filter: McpLogFilter, totalRows: number): string {
   if (totalRows === 0) {
     return 'No agent has called this window yet. Entries are invisible to agents until you turn on Agent access for one.';
   }
-  return filter === 'refused'
-    ? 'Nothing was refused — every call an agent made was allowed.'
+  if (filter === 'refused') {
+    return 'Nothing was refused — every call an agent made was allowed.';
+  }
+  return filter === 'agentSecrets'
+    ? 'No secret has reached the vault from an agent. Every value an agent used was held by this window.'
     : 'No secrets have been replaced by an agent.';
 }

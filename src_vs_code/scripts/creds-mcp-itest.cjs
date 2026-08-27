@@ -168,6 +168,8 @@ const HANDSHAKE = [
   const ranQueries = [];
   /** Entity ids an agent moved to the Trash. */
   const trashed = [];
+  /** Entries an agent created, with the secret it supplied. */
+  const created = [];
   // A stub action: no ssh, no network — what is under test is the wire from the tool to the
   // broker and the gate in front of it, not what an action does once it is reached.
   const actions = new UseActionRegistry();
@@ -244,6 +246,19 @@ const HANDSHAKE = [
     (_accountId, entityId) => {
       trashed.push(entityId);
       return Promise.resolve(true);
+    },
+    // One folder open to creation, so the agent names none — and could not choose another.
+    {
+      choose: (body) => ({
+        ok: true,
+        target: { accountId: 'a-1', entityId: 'f-1', entityName: 'Servers', kind: 'ssh' },
+        summary: `${String(body.name)} (ssh) in "Servers"`,
+        withSecret: typeof body.secret === 'string' && body.secret.length > 0,
+      }),
+      make: (_decision, body) => {
+        created.push({ name: String(body.name), secret: String(body.secret ?? '') });
+        return Promise.resolve({ id: 'new-1', name: String(body.name) });
+      },
     },
   );
   // Starting the broker is what writes the announcement the binary discovers. `share` is the
@@ -489,6 +504,40 @@ const HANDSHAKE = [
   );
   check('and nothing was moved', trashed.length === 0, JSON.stringify(trashed));
   check('and nobody was asked', consent.asked === 0, String(consent.asked));
+
+  // ---- level 4: creating ---------------------------------------------------
+  const make = tools2.find((t) => t.name === 'creds_create');
+  check('it offers creds_create', make !== undefined, JSON.stringify(tools2.map((t) => t.name)));
+  check(
+    'only name and kind are required — leaving folder out is the ordinary case',
+    (make?.inputSchema?.required ?? []).sort().join(',') === 'kind,name',
+    JSON.stringify(make?.inputSchema?.required),
+  );
+  check(
+    'and its schema names no entry, because there is not one yet',
+    Object.keys(make?.inputSchema?.properties ?? {}).includes('name') &&
+      !Object.keys(make?.inputSchema?.properties ?? {}).includes('entry'),
+    JSON.stringify(Object.keys(make?.inputSchema?.properties ?? {})),
+  );
+
+  consent.answers = ['Allow'];
+  consent.asked = 0;
+  const made = await speak(env, [
+    ...HANDSHAKE,
+    {
+      jsonrpc: '2.0',
+      id: 13,
+      method: 'tools/call',
+      params: {
+        name: 'creds_create',
+        arguments: { name: 'app-03', kind: 'ssh', secret: 'AGENT-SUPPLIED-4f21', host: 'app-03.internal' },
+      },
+    },
+  ]);
+  const madeText = made.byId.get(13)?.result?.content?.[0]?.text ?? '';
+  check('an agent can store a credential it made', madeText.includes('"created":true'), madeText.slice(0, 200));
+  check('the window received the secret it supplied', created.length === 1 && created[0].secret === 'AGENT-SUPPLIED-4f21', JSON.stringify(created.map((c) => c.name)));
+  check('the human was asked', consent.asked === 1, String(consent.asked));
 
   server.dispose();
   console.log(fails === 0 ? '\nall checks passed' : `\n${fails} check(s) failed`);

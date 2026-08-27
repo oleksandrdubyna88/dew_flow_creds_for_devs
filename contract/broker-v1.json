@@ -31,6 +31,7 @@
   },
   "mcpUsePrefix": "/v1/mcp/use/",
   "mcpDeleteRoute": "/v1/mcp/delete",
+  "mcpCreateRoute": "/v1/mcp/create",
   "mcpActions": [
     "exec",
     "terminal",

@@ -256,6 +256,23 @@ export function isMcpDeleteRoute(pathname: string): boolean {
   return pathname === '/v1/mcp/delete';
 }
 
+/**
+ * `POST /v1/mcp/create` — an agent storing a credential it just made.
+ *
+ * <p>The only MCP route whose body does NOT name an entry, because there is not one yet. What it
+ * names instead is a folder, and only a folder somebody opened to creation: the set of places an
+ * agent may put something is the person's decision, not the agent's.</p>
+ *
+ * <p><b>It is also the one route where a secret travels TOWARD the vault.</b> Every other level
+ * is built so that no secret passes through an agent's context; this one cannot be, because the
+ * agent provisioned the thing and is the only party holding the value. The product records that
+ * rather than pretending otherwise — the entry is marked agent-created, and the journal counts
+ * it.</p>
+ */
+export function isMcpCreateRoute(pathname: string): boolean {
+  return pathname === '/v1/mcp/create';
+}
+
 export function parseMcpUseRoute(pathname: string): string | undefined {
   const prefix = '/v1/mcp/use/';
   if (!pathname.startsWith(prefix)) {

@@ -29,6 +29,15 @@ internal static class UseTools
     /// </remarks>
     internal sealed record UseTool(string Name, string Action, string Title, string Description, bool OwnRoute = false);
 
+    /// <summary>The routes that are not under the use prefix, by action.</summary>
+    private static string RouteFor(BrokerContract contract, UseTool tool) =>
+        tool.Action switch
+        {
+            "delete" => contract.DeleteRoute(),
+            "create" => contract.CreateRoute(),
+            _ => contract.McpUseRoute(tool.Action),
+        };
+
     /// <summary>
     /// The catalog, as data.
     /// </summary>
@@ -145,6 +154,25 @@ internal static class UseTools
             """,
             OwnRoute: true),
         new(
+            "creds_create",
+            "create",
+            "Store a credential you just made",
+            """
+            Save a credential into the person's vault — for something you just provisioned and now
+            hold the access to. Give a `name`, a `kind` (ssh, db, credential, vpn, terminal,
+            script, sshkey, config) and the `secret`; `host`, `user` and `port` if you have them.
+
+            You do NOT choose where it goes. It lands in a folder the person opened for this, and
+            if they opened more than one you name which in `folder` — creds_list shows the folders
+            entries live in. If none is open, this refuses and says which switch to turn on.
+
+            This is the one call where a secret travels from you to the vault: everywhere else the
+            window holds the value and you never see it. The entry is marked as agent-created,
+            which is what the narrow delete permission keys on, and the person's journal records
+            that the secret came from you. They approve the creation.
+            """,
+            OwnRoute: true),
+        new(
             "creds_export_env",
             "exportEnv",
             "Put a credential into the person's terminals",
@@ -183,7 +211,7 @@ internal static class UseTools
             return Failure("No entry id was given.", "Call creds_list first and pass an entry's `id`.");
         }
 
-        var route = tool.OwnRoute ? contract.DeleteRoute() : contract.McpUseRoute(tool.Action);
+        var route = RouteFor(contract, tool);
         var reply = await Windows.PostAsync(contract, route, Body(entryId, extraName, extraValue));
         if (reply is null)
         {
@@ -194,6 +222,58 @@ internal static class UseTools
                     : "The entry id may be stale — call creds_list again. Ids do not survive the entry being deleted and re-created.");
         }
         return reply.Status == 200 ? reply.Body : Refused(reply);
+    }
+
+    /// <summary>
+    /// Creating an entry: the one call whose body names no entry.
+    /// </summary>
+    /// <remarks>
+    /// Its own method rather than another shape threaded through <see cref="InvokeAsync"/>,
+    /// because the difference is not one more optional field — it is that there is nothing to
+    /// address. Everything else about it is the same: the window decides where it lands, the
+    /// person approves, and the refusal comes back in the window's own words.
+    /// </remarks>
+    internal static async Task<string> CreateAsync(
+        BrokerContract contract,
+        UseTool tool,
+        string name,
+        string kind,
+        string? secret,
+        string? folder,
+        string? host,
+        string? user)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            return Failure("No name was given.", "Give the new entry a name the person will recognise.");
+        }
+
+        var fields = new Dictionary<string, string> { ["name"] = name, ["kind"] = kind };
+        Put(fields, "secret", secret);
+        Put(fields, "folder", folder);
+        Put(fields, "host", host);
+        Put(fields, "user", user);
+
+        var reply = await Windows.PostAsync(
+            contract,
+            RouteFor(contract, tool),
+            JsonSerializer.Serialize(fields, McpJsonContext.Default.DictionaryStringString));
+        if (reply is null)
+        {
+            return Failure(
+                "No CredsForDevs window answered.",
+                "Open the folder in VS Code with the CredsForDevs extension and unlock the vault.");
+        }
+        return reply.Status == 200 ? reply.Body : Refused(reply);
+    }
+
+    /// <summary>An absent optional field is left out rather than sent as an empty string.</summary>
+    private static void Put(Dictionary<string, string> fields, string key, string? value)
+    {
+        if (!string.IsNullOrWhiteSpace(value))
+        {
+            fields[key] = value;
+        }
     }
 
     /// <summary>The request body, built field by field — never a blob handed over by a model.</summary>

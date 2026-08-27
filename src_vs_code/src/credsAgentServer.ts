@@ -9,13 +9,21 @@ import {
   parseBearer,
   parseAliasRoute,
   parseJsonObject,
+  isMcpCreateRoute,
   isMcpDeleteRoute,
   parseMcpUseRoute,
   parseUseRoute,
   statusForErrorCode,
 } from './brokerProtocol';
 import { ReadRouteSources, readRouteBody } from './brokerReadRoutes';
-import { BrokerDoor, handleMcpDelete, handleMcpUse, mcpDoor } from './brokerMcpDoor';
+import {
+  BrokerDoor,
+  McpCreateHooks,
+  handleMcpCreate,
+  handleMcpDelete,
+  handleMcpUse,
+  mcpDoor,
+} from './brokerMcpDoor';
 import { McpUseLookup, aliasTarget, readNamedBody } from './brokerRequests';
 import { describeLimits, expiredMessage, grantLimits } from './grantLimits';
 import { McpEntry } from './mcpEntries';
@@ -29,7 +37,8 @@ import { ExtraListener, socketPathFor, startExtraListener } from './brokerListen
 import { removeEndpoint, writeEndpoint } from './cliEndpoint';
 import { AliasThrottle } from './aliasThrottle';
 import { startOnce } from './idempotentStart';
-import { MaskEntry, buildMaskTable, maskResponseBody } from './secretMasker';
+import { MaskEntry } from './secretMasker';
+import { burnIfSpent, maskedBody } from './brokerResponse';
 
 /**
  * The broker: a loopback HTTP surface through which an agent asks this window
@@ -163,6 +172,14 @@ export class CredsAgentServer implements vscode.Disposable {
      * that the destination is a folder and not oblivion.</p>
      */
     private readonly moveToTrash?: (accountId: string, entityId: string) => Promise<boolean>,
+    /**
+     * Where an agent may create an entry, and how to make one.
+     *
+     * <p>The sixth and last of these, and the only one whose gate is not an entry: there is no
+     * entry yet. Which folders are open, which kinds they hold and what a request becomes are all
+     * questions about a vault, so they are answered on the other side of the wall.</p>
+     */
+    private readonly mcpCreate?: McpCreateHooks,
   ) {}
 
   /** The signal every spawned child watches, so none outlives this window. */
@@ -266,21 +283,25 @@ export class CredsAgentServer implements vscode.Disposable {
     return false;
   }
 
-  /** The two routes an MCP client posts to — one door, two verbs. See `brokerMcpDoor.ts`. */
+  /** The routes an MCP client posts to — one door, several verbs. See `brokerMcpDoor.ts`. */
   private async answerMcp(
     req: http.IncomingMessage,
     res: http.ServerResponse,
     pathname: string,
   ): Promise<boolean> {
+    const action = parseMcpUseRoute(pathname);
+    if (action !== undefined) {
+      await handleMcpUse(this.door, readBody, req, res, action, this.resolveMcpUse);
+      return true;
+    }
     if (isMcpDeleteRoute(pathname)) {
       await handleMcpDelete(this.door, readBody, req, res, this.resolveMcpUse, this.moveToTrash);
       return true;
     }
-    const action = parseMcpUseRoute(pathname);
-    if (action === undefined) {
+    if (!isMcpCreateRoute(pathname)) {
       return false;
     }
-    await handleMcpUse(this.door, readBody, req, res, action, this.resolveMcpUse);
+    await handleMcpCreate(this.door, readBody, req, res, this.mcpCreate);
     return true;
   }
 
@@ -516,7 +537,7 @@ export class CredsAgentServer implements vscode.Disposable {
       // stdout carries: an agent that composes a command can make it print the very password
       // the broker supplied to run it. One place, so every action is covered and any future
       // one is covered by default.
-      const { body: sent, hits } = await this.masked(grant, result.body);
+      const { body: sent, hits } = await maskedBody(this.maskEntriesFor, grant, result.body);
       this.log({
         grant: GrantRegistry.describe(grant),
         entityName: grant.entityName,
@@ -529,7 +550,7 @@ export class CredsAgentServer implements vscode.Disposable {
       this.respond(res, result.status, sent);
       // After the answer is on the wire, never before: the use has happened by now, and a
       // storage failure while burning must not cost the agent the result it already earned.
-      await this.burnIfSpent(grant, result.status);
+      await burnIfSpent(this.burnAfterUse, grant, result.status, this.note);
     } catch (error) {
       this.respondError(
         res,
@@ -644,56 +665,6 @@ export class CredsAgentServer implements vscode.Disposable {
     }
     // Dismissed or timed out: refuse this call, leave the grant re-promptable.
     return false;
-  }
-
-  /**
-   * The response body with this grant's own secrets replaced by placeholders.
-   *
-   * <p>Fails OPEN by design: if the table cannot be built, the call still answers. Masking is
-   * a second line — the first is that no response field carries a secret by construction —
-   * and turning a working exec into an error because a keychain read failed would trade a
-   * possible leak for a certain outage. The audit line records how many values were masked,
-   * never which.</p>
-   */
-  private async masked(grant: Grant, body: unknown): Promise<{ body: unknown; hits: number }> {
-    if (this.maskEntriesFor === undefined) {
-      return { body, hits: 0 };
-    }
-    try {
-      const entries = await this.maskEntriesFor(grant.accountId, grant.entityId);
-      return maskResponseBody(body, buildMaskTable(entries));
-    } catch {
-      return { body, hits: 0 };
-    }
-  }
-
-  /**
-   * Destroy a one-use entry now that it has been used — and say so in the audit.
-   *
-   * <p>Only a successful call spends it. A refused, failed or not-supported call left the
-   * credential unused, and burning it there would destroy a working secret because the agent
-   * mistyped a command.</p>
-   *
-   * <p>Failing to burn is logged, never thrown: the response is already sent, and the sweep
-   * has no second chance at this — a `oneUse` entry carries no clock — so the audit line is
-   * the only record that the entry outlived its promise.</p>
-   */
-  private spender(status: number): ((a: string, e: string) => Promise<boolean>) | undefined {
-    return status === 200 ? this.burnAfterUse : undefined;
-  }
-
-  private async burnIfSpent(grant: Grant, status: number): Promise<void> {
-    const burn = this.spender(status);
-    if (burn === undefined) {
-      return;
-    }
-    try {
-      if (await burn(grant.accountId, grant.entityId)) {
-        this.note(`"${grant.entityName}" was one-use and has been deleted from the vault.`);
-      }
-    } catch (error) {
-      this.note(`"${grant.entityName}" was one-use but could NOT be deleted: ${describeError(error)}`);
-    }
   }
 
   private respond(res: http.ServerResponse, status: number, body: unknown): void {

@@ -502,6 +502,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Bounded on purpose: 256 KB of output per stream, 30 s per command (raisable to 120 s), 8 at a
   time, and every child killed when the window goes.
 
+## [0.74.0] — 2026-08-27
+
+### Added
+
+- **An agent can store a credential it just made.** It provisions a host, it holds the access key,
+  and `creds_create` puts it in your vault without interrupting you for a form.
+  - **It does not choose where.** A folder is open to creation only if you turned its *Agents may
+    create entries* switch on, and that set is the whole of what an agent may choose between —
+    given a free choice it would make one, and the one it made would be wherever seemed
+    convenient. With one folder open it needs no argument; with several it must name one of
+    yours; with none it is refused and told which switch to turn on.
+  - **A typed folder dictates the kind.** A database folder holds databases, so an entry an agent
+    called something else is made as what the folder accepts — which is the same rule that applies
+    to you.
+  - **The entry is marked as agent-created**, and the narrow delete permission keys on exactly
+    that mark. Without it, *Agents may delete what they created* would cover nothing at all.
+  - Nothing can be created inside the **Trash**, whatever its switch says: the entry would be
+    invisible the moment it existed.
+
+- **A fourth filter in the MCP logs: Secrets from the agent.** This is the one call in the whole
+  product where a secret travels *toward* the vault — everywhere else the window holds the value
+  and the agent never sees it. That trade is real and the answer is not to pretend otherwise: the
+  journal counts them, by name and by date, so it stays visible instead of becoming a habit.
+
+### Fixed
+
+- **An optional tool argument was required.** A parameter with no default is marked required in
+  the schema an MCP client reads, so `creds_create` without a `folder` — the ordinary case, when
+  only one folder is open — failed to bind and reached the model as "an error occurred". Found by
+  the integration test, which is the only place a real client speaks to the real binary.
+
 ## [0.73.0] — 2026-08-27
 
 ### Added

@@ -153,6 +153,19 @@ internal static class Program
             // second destination. That is the permission, not a default.
             "rotate" => (string entry, string statement) =>
                 UseTools.InvokeAsync(contract, tool, entry, "statement", statement),
+            // The one shape with no entry id: there is no entry yet. The parameter names are
+            // what a model fills in, so they are the words the broker's body uses.
+            // Defaults, not just nullable types: a parameter with no default is REQUIRED in the
+            // generated schema, so a call that left `folder` out — the ordinary case, when only
+            // one folder is open — failed to bind and reached the model as "an error occurred".
+            "create" => (
+                    string name,
+                    string kind,
+                    string? secret = null,
+                    string? folder = null,
+                    string? host = null,
+                    string? user = null) =>
+                UseTools.CreateAsync(contract, tool, name, kind, secret, folder, host, user),
             _ => (string entry) => UseTools.InvokeAsync(contract, tool, entry, null, null),
         };
 

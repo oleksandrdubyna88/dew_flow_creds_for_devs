@@ -1,5 +1,6 @@
 import { loadWithVscode } from './vscodeStub';
 import type { McpUseLookup } from '../brokerRequests';
+import type { McpCreateHooks } from '../brokerMcpDoor';
 
 /**
  * The broker, started for real, with every collaborator a test might want to control.
@@ -34,6 +35,8 @@ interface World {
   burned: string[];
   /** Entity ids moved to the Trash by an agent. */
   trashed: string[];
+  /** Names of entries an agent created. */
+  created: string[];
   presence: number;
   /** Set by the run() stub to whatever the action should answer. */
   result: { status: number; body: Record<string, unknown> };
@@ -52,6 +55,8 @@ function world(options: {
   mcpUse?: 'usable' | 'closed';
   /** Whether this window can move entries to the Trash. Absent means it cannot. */
   trash?: boolean;
+  /** How a create request is answered: accepted into a folder, refused, or not served at all. */
+  create?: 'open' | 'closed';
   supports?: string[];
 }): World {
   const w: World = {
@@ -63,6 +68,7 @@ function world(options: {
     audit: [],
     burned: [],
     trashed: [],
+    created: [],
     presence: 0,
     result: { status: 200, body: { exitCode: 0, stdout: 'ok\n', stderr: '' } },
   };
@@ -117,6 +123,7 @@ function world(options: {
     mcpEntriesFor(options.mcpEntries),
     mcpUseFor(options.mcpUse),
     trashFor(w, options.trash),
+    createFor(w, options.create),
   );
   return w;
 }
@@ -198,6 +205,34 @@ function trashFor(
   return (_a: string, entityId: string): Promise<boolean> => {
     w.trashed.push(entityId);
     return Promise.resolve(true);
+  };
+}
+
+/**
+ * The vault's answer to a create request.
+ *
+ * <p>`open` accepts into one folder; `closed` refuses the way a vault with no folder open to
+ * creation does; absent means this window serves no create calls at all, which is a real
+ * configuration and one of the refusals under test.</p>
+ */
+function createFor(w: World, mode: 'open' | 'closed' | undefined): McpCreateHooks | undefined {
+  if (mode === undefined) {
+    return undefined;
+  }
+  return {
+    choose: (body) =>
+      mode === 'closed'
+        ? { ok: false, code: 'denied', message: 'No folder is open to agents for creating entries.' }
+        : {
+            ok: true,
+            target: { accountId: 'a1', entityId: 'f1', entityName: 'Servers', kind: 'ssh' },
+            summary: `${String(body.name)} (ssh) in "Servers"`,
+            withSecret: typeof body.secret === 'string' && body.secret.length > 0,
+          },
+    make: (_decision, body) => {
+      w.created.push(String(body.name));
+      return Promise.resolve({ id: 'new-1', name: String(body.name) });
+    },
   };
 }
 

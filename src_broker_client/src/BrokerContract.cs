@@ -26,6 +26,7 @@ public sealed record BrokerContract(
     [property: JsonPropertyName("mcpUsePrefix")] string? McpUsePrefix,
     [property: JsonPropertyName("mcpActions")] string[]? McpActions,
     [property: JsonPropertyName("mcpDeleteRoute")] string? McpDeleteRoute,
+    [property: JsonPropertyName("mcpCreateRoute")] string? McpCreateRoute,
     [property: JsonPropertyName("errors")] Dictionary<string, int> Errors,
     [property: JsonPropertyName("exitCodes")] Dictionary<string, int> ExitCodes)
 {
@@ -80,6 +81,9 @@ public sealed record BrokerContract(
     /// written before this line existed must degrade to the path this build knows.
     /// </remarks>
     public string DeleteRoute() => McpDeleteRoute is { Length: > 0 } route ? route : "/v1/mcp/delete";
+
+    /// <summary>Where an agent posts a new entry. The only body that names no entry.</summary>
+    public string CreateRoute() => McpCreateRoute is { Length: > 0 } route ? route : "/v1/mcp/create";
 
     /// <summary>
     /// The exit code for a named mechanism failure.

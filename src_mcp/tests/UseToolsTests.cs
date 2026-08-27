@@ -27,9 +27,11 @@ public sealed class UseToolsTests
         {
             contract.McpUseRoute(tool.Action).Should().Be($"/v1/mcp/use/{tool.Action}");
         }
-        // The one exception, and it is in the contract too: deleting is not a use of a credential.
-        UseTools.All.Where(t => t.OwnRoute).Select(t => t.Name).Should().Equal("creds_delete");
+        // Two exceptions, and both are in the contract. Deleting is not a use of a credential,
+        // and creating names no entry at all — there is not one yet.
+        UseTools.All.Where(t => t.OwnRoute).Select(t => t.Name).Should().BeEquivalentTo("creds_delete", "creds_create");
         contract.DeleteRoute().Should().Be("/v1/mcp/delete");
+        contract.CreateRoute().Should().Be("/v1/mcp/create");
     }
 
     [Fact]

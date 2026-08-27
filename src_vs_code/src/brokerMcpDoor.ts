@@ -1,6 +1,6 @@
 import * as http from 'node:http';
 import { ErrorCode } from './brokerProtocol';
-import { McpUseLookup, McpUseTarget, readMcpUse } from './brokerRequests';
+import { McpUseLookup, McpUseTarget, readMcpUse, readNamedBody } from './brokerRequests';
 
 /**
  * The MCP door: what happens between an agent's request and the machinery behind it.
@@ -180,4 +180,98 @@ function minted(door: BrokerDoor, target: McpUseTarget, what: string): Grantish 
     detail: `${target.entityName} · ${target.kind}`,
   });
   return grant;
+}
+
+/**
+ * An agent creating an entry.
+ *
+ * <p>The only MCP call with no entry id in it, so the gate is a different one: the folders a
+ * person opened to creation. Everything else is the shape the other two keep — throttle, mint,
+ * prompt, act, audit — because a person approving this is approving the same kind of thing.</p>
+ *
+ * <p><b>The grant is minted against the FOLDER.</b> There is no entity to name yet, and the grant
+ * exists here only to key the consent bookkeeping and label the audit line; it is used once and
+ * handed to nobody.</p>
+ */
+export async function handleMcpCreate(
+  door: BrokerDoor,
+  readBody: ReadBody,
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  create: McpCreateHooks | undefined,
+): Promise<void> {
+  const read = await readNamedBody(readBody, req, 'name', 'a "name" for the new entry');
+  if (!read.ok) {
+    door.refuse(res, read.code, read.message);
+    return;
+  }
+  const chosen = decide(create, read.body);
+  if (!chosen.ok) {
+    door.refuse(res, chosen.code, chosen.message);
+    return;
+  }
+  if (!door.admit(res)) {
+    return;
+  }
+  try {
+    await confirmAndCreate(door, res, chosen, create as McpCreateHooks, read.body);
+  } finally {
+    door.release();
+  }
+}
+
+/** A window with no vault behind it refuses in the same shape as a request that fits nowhere. */
+function decide(create: McpCreateHooks | undefined, body: Record<string, unknown>): CreateDecision {
+  return create === undefined
+    ? { ok: false, code: 'not_supported', message: 'This window cannot create entries.' }
+    : create.choose(body);
+}
+
+/** What the vault must answer for a create call: where it goes, and how to put it there. */
+export interface McpCreateHooks {
+  /** Which open folder this request lands in, or why none does. */
+  choose(body: Record<string, unknown>): CreateDecision;
+  /** Make it. Answers the new entry's id and name. */
+  make(
+    decision: CreateAccepted,
+    body: Record<string, unknown>,
+  ): Promise<{ id: string; name: string }>;
+}
+
+export type CreateDecision = CreateAccepted | { ok: false; code: ErrorCode; message: string };
+
+export interface CreateAccepted {
+  ok: true;
+  target: McpUseTarget;
+  /** One line for the prompt: the entry, its kind, and the folder it is going into. */
+  summary: string;
+  /** Whether the request carried a secret — the journal counts these. */
+  withSecret: boolean;
+}
+
+async function confirmAndCreate(
+  door: BrokerDoor,
+  res: http.ServerResponse,
+  decision: CreateAccepted,
+  create: McpCreateHooks,
+  body: Record<string, unknown>,
+): Promise<void> {
+  const grant = minted(door, decision.target, 'mcp-create');
+  const consent = await door.consent(grant, 'create', 'create an entry in', decision.summary);
+  if (consent !== 'allowed') {
+    const code: ErrorCode = consent === 'timeout' ? 'consent_timeout' : 'denied';
+    door.refuse(res, code, 'The human did not allow this.', grant, 'create', decision.summary);
+    return;
+  }
+  const made = await create.make(decision, body);
+  door.note({
+    grant: door.describe(grant),
+    entityName: made.name,
+    action: 'create',
+    // The journal's second filter reads this word. A secret that arrived from an agent passed
+    // through its context, and counting those is the price of this level said out loud.
+    outcome: decision.withSecret ? 'created with agent secret' : 'created',
+    detail: decision.summary,
+  });
+  door.respond(res, 200, { created: true, id: made.id, name: made.name });
 }

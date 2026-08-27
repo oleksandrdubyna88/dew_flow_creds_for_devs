@@ -315,3 +315,109 @@ test('the delete route is a POST with an entry, like every other MCP call', asyn
     w.server.dispose();
   }
 });
+
+/**
+ * `POST /v1/mcp/create` — an agent storing a credential it just made.
+ *
+ * <p>The only MCP body that names no entry, because there is not one yet. What it names is a
+ * folder, and only one somebody opened: given a free choice an agent would make one, and the one
+ * it made would be wherever seemed convenient.</p>
+ *
+ * <p>It is also the one call where a secret travels TOWARD the vault. The product's answer is not
+ * to pretend otherwise but to record it — which is why the audit line below says so in words the
+ * journal can count.</p>
+ */
+test('an agent may create into an open folder, and the human is asked first', async () => {
+  const w = world({ create: 'open' });
+  try {
+    const { port } = await share(w);
+
+    const answer = await call(port, '/v1/mcp/create', { body: { name: 'app-03', kind: 'ssh', secret: 'k' } });
+
+    assert.equal(answer.status, 200, JSON.stringify(answer.body));
+    assert.equal(answer.body.created, true);
+    assert.deepEqual(w.created, ['app-03']);
+    assert.equal(w.dialogs.length, 1);
+  } finally {
+    w.server.dispose();
+  }
+});
+
+test('the prompt says what is being made and where', async () => {
+  const w = world({ create: 'open' });
+  try {
+    const { port } = await share(w);
+
+    await call(port, '/v1/mcp/create', { body: { name: 'app-03', kind: 'ssh', secret: 'k' } });
+
+    assert.ok(w.dialogs[0].includes('app-03 (ssh) in "Servers"'), w.dialogs[0]);
+    assert.ok(w.dialogs[0].includes('create an entry in'), w.dialogs[0]);
+  } finally {
+    w.server.dispose();
+  }
+});
+
+test('a secret that came from the AGENT is recorded as such', async () => {
+  // The price of this level, said out loud. Every other level is built so no secret passes
+  // through an agent's context; here one does, and the journal counts them.
+  const w = world({ create: 'open' });
+  try {
+    const { port } = await share(w);
+
+    await call(port, '/v1/mcp/create', { body: { name: 'app-03', kind: 'ssh', secret: 'k' } });
+    await call(port, '/v1/mcp/create', { body: { name: 'no-secret-yet', kind: 'ssh' } });
+
+    assert.ok(w.audit.some((line) => line.includes('created with agent secret')), w.audit.join('\n'));
+    assert.ok(w.audit.some((line) => line.includes('→ created ')), w.audit.join('\n'));
+  } finally {
+    w.server.dispose();
+  }
+});
+
+test('a Deny makes nothing', async () => {
+  const w = world({ create: 'open', answers: ['Deny'] });
+  try {
+    const { port } = await share(w);
+
+    assert.equal(code(await call(port, '/v1/mcp/create', { body: { name: 'app-03', kind: 'ssh' } })), 'denied');
+    assert.deepEqual(w.created, []);
+  } finally {
+    w.server.dispose();
+  }
+});
+
+test('a vault with no open folder refuses before anybody is asked', async () => {
+  const w = world({ create: 'closed' });
+  try {
+    const { port } = await share(w);
+
+    assert.equal(code(await call(port, '/v1/mcp/create', { body: { name: 'app-03', kind: 'ssh' } })), 'denied');
+    assert.equal(w.dialogs.length, 0);
+    assert.deepEqual(w.created, []);
+  } finally {
+    w.server.dispose();
+  }
+});
+
+test('a window that cannot create says so rather than crashing', async () => {
+  const w = world({});
+  try {
+    const { port } = await share(w);
+
+    assert.equal(code(await call(port, '/v1/mcp/create', { body: { name: 'app-03', kind: 'ssh' } })), 'not_supported');
+  } finally {
+    w.server.dispose();
+  }
+});
+
+test('a body with no name is a bad request, not a refused creation', async () => {
+  const w = world({ create: 'open' });
+  try {
+    const { port } = await share(w);
+
+    assert.equal(code(await call(port, '/v1/mcp/create', { body: { kind: 'ssh' } })), 'invalid_request');
+    assert.equal(w.dialogs.length, 0);
+  } finally {
+    w.server.dispose();
+  }
+});
