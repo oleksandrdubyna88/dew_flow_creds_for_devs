@@ -70,6 +70,27 @@ public sealed record ShareRequest
         + EntityName.Length + EntityKind.Length + ToEmail.Length;
 }
 
+/// <summary>
+/// The sender's own receipt for one share they posted — what they sent, to whom, and when.
+/// </summary>
+/// <remarks>
+/// <para><b>A receipt, never a second copy.</b> It carries no <c>salt</c>, <c>iv</c>, <c>tag</c>
+/// or <c>data</c>: the sealed payload exists once, in the recipient's inbox. Putting it here too
+/// would double the exposure of every share to buy a listing nobody needs it for.</para>
+/// <para>It exists so a sender can find the id of something they sent, which is the one thing
+/// that made withdrawal impossible before — the inbox is keyed by the RECIPIENT, so the sender
+/// could neither see nor name what was waiting there. Listing a sender's own actions to that
+/// sender discloses nothing new; scanning every inbox for their name would have.</para>
+/// </remarks>
+public sealed record SentShare
+{
+    [JsonPropertyName("id")] public string Id { get; init; } = "";
+    [JsonPropertyName("toEmail")] public string ToEmail { get; init; } = "";
+    [JsonPropertyName("entityName")] public string EntityName { get; init; } = "";
+    [JsonPropertyName("entityKind")] public string EntityKind { get; init; } = "";
+    [JsonPropertyName("createdAt")] public long CreatedAt { get; init; }
+}
+
 /// <summary>A person discoverable in this deployment.</summary>
 public sealed record TeamMemberDto(string Email);
 

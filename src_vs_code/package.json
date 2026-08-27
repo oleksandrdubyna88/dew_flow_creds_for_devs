@@ -403,6 +403,11 @@
     },
     "commands": [
       {
+        "command": "credSshManager.withdrawShare",
+        "title": "Withdraw a Share You Sent…",
+        "category": "CredsForDevs"
+      },
+      {
         "command": "credSshManager.setUpWslRelay",
         "title": "Set Up the WSL Agent Relay",
         "category": "CredsForDevs"

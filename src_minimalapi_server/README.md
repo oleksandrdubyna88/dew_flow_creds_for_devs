@@ -36,6 +36,8 @@ keys). PINs, passwords, keys, and VPN configs never leave the machines.
 | POST | `/api/shares` | share one sealed entity with someone | sender = token email |
 | GET | `/api/shares` | **your** pending shares | recipient = token email |
 | DELETE | `/api/shares/{id}` | accept/decline cleanup of your own item | recipient = token email |
+| GET | `/api/shares/sent` | **what you sent** that nobody has dealt with yet — receipts, never a second copy of the payload | sender = token email |
+| DELETE | `/api/shares/sent/{id}` | **take one back** while it is still pending (`409` once it is not) | sender = token email |
 
 `POST /api/shares` body: `{ toEmail, entityName, entityKind, salt, iv, tag, data }`
 — the last four are base64 of the client-side AES-256-GCM envelope; the
@@ -60,6 +62,9 @@ Environment variables (double underscore = section separator) or
 | `Auth__Local__SigningKey` | HMAC secret enabling a symmetric **Local** token scheme — tests / offline deployments only. **Leave empty in production.** |
 | `Vault__MaxShareBytes` | per-share payload cap (default 1 MiB) |
 | `Vault__MaxInboxItems` | pending shares per recipient (default 500) |
+| `Vault__ShareMaxAgeDays` | a pending share and its receipt are swept after this long (default 31) |
+| `Vault__MaintenanceIntervalMinutes` | how often that pass runs (default 60; it also runs at startup) |
+| `Vault__MinimumClientContract` | oldest extension contract still served; below it, `426` (default 1) |
 | `Vault__AllowAnyDomain` | `true` to run with no domain boundary (the server refuses to start if `AllowedDomains` is empty and this is false) |
 | `Vault__RequireForwardedHttps` | refuse any request not forwarded as https. Enable ONLY when the app's port is unreachable except through your TLS proxy |
 | `Vault__PublishInstanceFile` | publish this instance for the DewFlow editor panel (default `true`; the container sets `false`) |
@@ -131,11 +136,16 @@ environment is global, the suite runs in one non-parallel collection.
 - **Rate limiting** is per authenticated caller (`Vault:RateLimit:*`), so one noisy account
   cannot throttle anyone else; requests with no valid token share a per-IP bucket. nginx adds a
   second, per-source-address layer in front.
-- **Inbox quotas** are enforced by count (`Vault:MaxInboxItems`), but there is **no TTL** — a share
-  nobody accepts sits until the recipient deletes it. See `todo/PLAN_server_ops.md`.
+- **Inbox quotas** are enforced by count (`Vault:MaxInboxItems`) AND by age: a pending share and
+  its sender-side receipt are swept after `Vault:ShareMaxAgeDays` (31). Before that sweep existed,
+  an inbox only ever shrank when its owner acted — so one that filled refused every later share,
+  a failure the SENDER saw about a state only the recipient could clear.
 - **Optimistic concurrency** is available and opt-in: `GET /api/vault` returns an `ETag`, `PUT`
   honours `If-Match` / `If-None-Match: *` and answers `412` when the caller's copy is stale. The
   extension sends it automatically. A client that sends neither header keeps last-write-wins.
 - **No audit log** beyond the application log.
-- **No HTTP contract versioning** — neither side negotiates, so an old extension talking to a new
-  server goes undetected. Same plan.
+- **The HTTP contract carries a version.** Every response sets `X-Creds-Contract`; the extension
+  sends the same header. Below `Vault:MinimumClientContract` the server answers `426` **before
+  authenticating**, so an out-of-date extension is told that rather than handed a `401` about a
+  token that was never the problem. A client that sends no header is served — every extension
+  released before the mechanism existed does exactly that.

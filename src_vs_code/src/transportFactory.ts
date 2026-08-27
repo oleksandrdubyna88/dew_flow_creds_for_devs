@@ -105,7 +105,14 @@ export class TransportFactory {
       );
     }
     return isServerLocation(location)
-      ? new ServerTransport(location, (a) => this.tokenFor(a))
+      ? new ServerTransport(
+          location,
+          (a) => this.tokenFor(a),
+          undefined,
+          // Said once per transport, and transports are cached per location — so a server that
+          // has moved ahead is mentioned once, not once per sync cycle.
+          (message) => void vscode.window.showWarningMessage(`CredsForDevs: ${message}`),
+        )
       : new FolderTransport(location, () => this.storage.getAccounts());
   }
 

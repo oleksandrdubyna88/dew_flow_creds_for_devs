@@ -74,6 +74,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+
+- **You can take back a share nobody has accepted yet** — `CredsForDevs: Withdraw a Share You
+  Sent…`. Until now this was impossible rather than merely missing: an inbox on the vault server
+  is keyed by the RECIPIENT, so the sender had no way to learn the id of the thing waiting there.
+  The server now keeps the sender a **receipt** — what, to whom, when, and no ciphertext, because
+  the sealed payload should exist exactly once.
+
+  It matters most for a secret set to burn on first use: that has no deadline, so your copy could
+  be gone while the pending share stayed live in an inbox you could not reach. Once the recipient
+  has accepted or declined you are told **that**, not a comforting "done" — and pointed at the
+  only move left, which is to rotate.
+
+- **The vault server can tell an out-of-date extension so.** Every response now carries the
+  server's contract version and the extension sends its own. If a server ever stops serving this
+  version you get a sentence saying to update — instead of a `401` about a token that was never
+  the problem. A server that has merely moved ahead is mentioned once, not once per sync.
+
+  Built while nothing is broken, which is the only time it can be built: on the day a response
+  shape changes, every old extension is already installed with no way to say what it speaks.
+
 - **The WSL relay raises itself.** `CredsForDevs: Set Up the WSL Agent Relay` turns it on and
   offers to add the one `export SSH_AUTH_SOCK=…` line your shell needs; after that the relay
   starts whenever a key is loaded into the agent and stops when the last one is unloaded or the

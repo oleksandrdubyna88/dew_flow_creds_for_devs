@@ -461,6 +461,38 @@ export interface SharePayload {
   folderPath?: Array<{ name: string; folderType?: FolderType }>;
 }
 
+/**
+ * The sender's receipt for one share they posted, as the server returns it.
+ *
+ * <p>A receipt, never a second copy: no `salt`, `iv`, `tag` or `data`. The sealed payload exists
+ * once, in the recipient's inbox — putting it here too would double the exposure of every share
+ * to buy a listing that does not need it.</p>
+ */
+export interface SentShare {
+  id: string;
+  toEmail: string;
+  entityName: string;
+  entityKind: string;
+  createdAt: number;
+}
+
+/** Field and type, as a table: five `&&` in a row is where a missing one hides. */
+const SENT_SHARE_FIELDS: readonly (readonly [string, string])[] = [
+  ['id', 'string'],
+  ['toEmail', 'string'],
+  ['entityName', 'string'],
+  ['entityKind', 'string'],
+  ['createdAt', 'number'],
+];
+
+export function isSentShare(value: unknown): value is SentShare {
+  if (typeof value !== 'object' || value === null) {
+    return false;
+  }
+  const v = value as Record<string, unknown>;
+  return SENT_SHARE_FIELDS.every(([key, type]) => typeof v[key] === type);
+}
+
 // eslint-disable-next-line complexity
 export function isShareItem(value: unknown): value is ShareItem {
   if (typeof value !== 'object' || value === null) {

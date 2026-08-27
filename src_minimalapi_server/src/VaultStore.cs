@@ -10,14 +10,16 @@ namespace CredVaultServer;
 /// on the filesystem. The server never decrypts anything it stores — vault
 /// bytes and a share item's `data` are ciphertext produced on the clients.
 /// </summary>
-public sealed class VaultStore
+public sealed partial class VaultStore
 {
+    private readonly string _dataDir;
     private readonly string _vaultsDir;
     private readonly string _sharesDir;
 
 
     public VaultStore(string dataDir)
     {
+        _dataDir = dataDir;
         _vaultsDir = Path.Combine(dataDir, "vaults");
         _sharesDir = Path.Combine(dataDir, "shares");
         Directory.CreateDirectory(_vaultsDir);

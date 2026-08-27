@@ -178,3 +178,77 @@ test('a successful write adopts the version the server returned', async () => {
 
   assert.equal(seen[2].ifMatch, '"v2"', 'the second write must build on the first, without re-reading');
 });
+
+// --- the contract handshake (0.66.0) -------------------------------------------------------
+//
+// Built before anything is broken, which is the only time it can be: on the day a response shape
+// changes, every old extension is already installed and has no way to say what it speaks.
+
+/** A stub that records what was sent and answers with what a test wants back. */
+function installServer(status: number, contract: string | undefined, body = ''): { sent: Headers[] } {
+  const sent: Headers[] = [];
+  globalThis.fetch = ((_input: unknown, init?: RequestInit) => {
+    sent.push(new Headers(init?.headers));
+    const headers = new Headers();
+    if (contract !== undefined) {
+      headers.set('X-Creds-Contract', contract);
+    }
+    return Promise.resolve(new Response(body, { status, headers }));
+  }) as typeof fetch;
+  return { sent };
+}
+
+const transportFor = (warn: (m: string) => void = () => undefined): ServerTransport =>
+  new ServerTransport('https://vault.example.com', () => Promise.resolve('a-token'), 5_000, warn);
+
+test('every request says which contract this extension speaks', async () => {
+  const { sent } = installServer(200, '1', '[]');
+
+  await transportFor().listShares(account);
+
+  assert.equal(sent[0].get('X-Creds-Contract'), '1');
+});
+
+test('a server that refuses this version says so in words, not as an auth problem', async () => {
+  // The alternative is a 401 about a token that was never the problem — the message that sends
+  // someone re-checking their sign-in for an hour.
+  installServer(426, '2', 'this server speaks contract 2 and no longer serves 1');
+
+  await assert.rejects(
+    () => transportFor().listShares(account),
+    (error: Error) => {
+      assert.match(error.message, /no longer serves this version/);
+      assert.match(error.message, /Update the extension/);
+      assert.match(error.message, /no longer serves 1/, 'the server’s own reason is quoted');
+      return true;
+    },
+  );
+});
+
+test('a server that has moved ahead is reported ONCE, not per request', async () => {
+  // A sync cycle makes several calls, and a notice that appears four times a minute is one people
+  // turn off — which is how a warning becomes worse than no warning.
+  installServer(200, '7', '[]');
+  const said: string[] = [];
+  const transport = transportFor((m) => said.push(m));
+
+  await transport.listShares(account);
+  await transport.listShares(account);
+  await transport.listShares(account);
+
+  assert.equal(said.length, 1, `it said: ${JSON.stringify(said)}`);
+  assert.match(said[0], /speaks contract 7/);
+  assert.equal(transport.serverContract, 7);
+});
+
+test('a server too old to name a version is not a fault', async () => {
+  // Every deployment that has not been updated yet sends no header.
+  installServer(200, undefined, '[]');
+  const said: string[] = [];
+  const transport = transportFor((m) => said.push(m));
+
+  await transport.listShares(account);
+
+  assert.deepEqual(said, []);
+  assert.equal(transport.serverContract, 0);
+});

@@ -32,6 +32,10 @@ const manifest: Manifest = JSON.parse(
  * how a feature ships invisible.
  */
 const PALETTE_ONLY = new Set([
+  // Asked for, not offered. It acts on something that is not in the tree — a share already sent,
+  // waiting in someone ELSE's inbox — so there is no row to hang it on, and it is a rare enough
+  // act that a permanent menu entry would be noise on every share.
+  'credSshManager.withdrawShare',
   // One-time machine setup: it turns the WSL relay on and offers to add the export line to the
   // shell's rc. There is no tree row for "this computer's WSL", and a menu entry would advertise
   // a bridge most people do not want — it widens the agent's reach into the distribution.

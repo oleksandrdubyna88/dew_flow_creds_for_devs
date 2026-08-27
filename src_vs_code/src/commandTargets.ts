@@ -151,3 +151,20 @@ export function asElement(value: unknown): TreeElement | undefined {
   }
   return undefined;
 }
+
+/**
+ * What to say after a withdrawal attempt.
+ *
+ * <p>"Already taken" is never dressed up as success. The point of asking was to stop a secret
+ * reaching someone; being told it worked when it did not is worse than being told nothing, and
+ * the honest answer names the only remaining move.</p>
+ */
+export function withdrawalMessage(outcome: 'withdrawn' | 'alreadyTaken' | 'notFound', name: string): string {
+  if (outcome === 'withdrawn') {
+    return `"${name}" was taken back before anyone accepted it.`;
+  }
+  if (outcome === 'alreadyTaken') {
+    return `"${name}" had already been accepted or declined — it cannot be taken back. Rotate the secret instead.`;
+  }
+  return `"${name}" is no longer listed as sent; nothing to take back.`;
+}

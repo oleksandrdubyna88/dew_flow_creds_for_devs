@@ -1,5 +1,22 @@
+import {
+  CLIENT_CONTRACT_VERSION,
+  CONTRACT_HEADER,
+  UPGRADE_REQUIRED,
+  serverAheadMessage,
+  serverContractFrom,
+  serverIsAhead,
+  tooOldMessage,
+} from './contractVersion';
 import { describeError } from './describeError';
-import { OwnedShare, ShareItem, StoredAccount, TeamMember, isShareItem } from './types';
+import {
+  OwnedShare,
+  SentShare,
+  ShareItem,
+  StoredAccount,
+  TeamMember,
+  isSentShare,
+  isShareItem,
+} from './types';
 import { VaultTransport } from './vaultTransport';
 
 /**
@@ -21,6 +38,25 @@ import { VaultTransport } from './vaultTransport';
  * Generous enough for an 8 MiB vault over a slow VPN, finite in every case.
  */
 export const DEFAULT_REQUEST_TIMEOUT_MS = 60_000;
+
+/**
+ * The headers every request carries: who we are, what we speak, and what we are sending.
+ *
+ * <p>The contract version costs one header and buys the ability to be TOLD we are too old,
+ * rather than misreading a response one day and calling it a sync failure. See
+ * `contractVersion.ts` for why it exists before anything is broken.</p>
+ */
+function requestHeaders(init: RequestInit & { rawBody?: string }, token: string): Headers {
+  const headers = new Headers(init.headers);
+  headers.set('Authorization', `Bearer ${token}`);
+  headers.set(CONTRACT_HEADER, String(CLIENT_CONTRACT_VERSION));
+  if (init.rawBody !== undefined) {
+    headers.set('Content-Type', 'application/octet-stream');
+  } else if (init.body !== undefined) {
+    headers.set('Content-Type', 'application/json');
+  }
+  return headers;
+}
 
 export class ServerTransport implements VaultTransport {
   /**
@@ -53,7 +89,42 @@ export class ServerTransport implements VaultTransport {
     /** Resolves the bearer token for one of MY accounts. */
     private readonly tokenFor: (account: StoredAccount) => Promise<string | undefined>,
     private readonly timeoutMs: number = DEFAULT_REQUEST_TIMEOUT_MS,
+    /** Told once, if this extension turns out to be behind the server it is talking to. */
+    private readonly warn: (message: string) => void = () => undefined,
   ) {}
+
+  /** The contract version the server last reported, or 0 if it has never said. */
+  serverContract = 0;
+
+  private warnedAboutVersion = false;
+
+  /**
+   * Read the server's version off any response, and say something the FIRST time it is ahead.
+   *
+   * <p>Once, not per request: a sync cycle makes several calls, and a notice that appears four
+   * times per minute is one people turn off — which is how a warning becomes worse than none.</p>
+   */
+  /**
+   * Read the version off the response, and refuse to go further if the server refused us.
+   *
+   * <p>Its own method so the request handler stays inside the size the linter enforces — but
+   * also because "what the version handshake does" is a separate thing to read from "how a
+   * request is made".</p>
+   */
+  private async checkContract(response: Response): Promise<void> {
+    this.noteServerContract(response);
+    if (response.status === UPGRADE_REQUIRED) {
+      throw new Error(tooOldMessage(this.location, await response.text().catch(() => '')));
+    }
+  }
+
+  private noteServerContract(response: Response): void {
+    this.serverContract = serverContractFrom(response.headers.get(CONTRACT_HEADER));
+    if (serverIsAhead(this.serverContract) && !this.warnedAboutVersion) {
+      this.warnedAboutVersion = true;
+      this.warn(serverAheadMessage(this.location, this.serverContract));
+    }
+  }
 
   private url(path: string): string {
     return `${this.location.replace(/\/+$/, '')}${path}`;
@@ -71,13 +142,7 @@ export class ServerTransport implements VaultTransport {
         `No usable ${account.provider} token for ${account.email} — sign in again to sync with ${this.location}.`,
       );
     }
-    const headers = new Headers(init.headers);
-    headers.set('Authorization', `Bearer ${token}`);
-    if (init.rawBody !== undefined) {
-      headers.set('Content-Type', 'application/octet-stream');
-    } else if (init.body !== undefined) {
-      headers.set('Content-Type', 'application/json');
-    }
+    const headers = requestHeaders(init, token);
     let response: Response;
     try {
       response = await fetch(this.url(path), {
@@ -99,6 +164,7 @@ export class ServerTransport implements VaultTransport {
         `Vault server unreachable (${this.location}): ${describeError(error)}`,
       );
     }
+    await this.checkContract(response);
     if (response.status === 401) {
       throw new Error(
         `Vault server rejected the ${account.provider} token for ${account.email} (401). Sign in again.`,
@@ -251,6 +317,42 @@ export class ServerTransport implements VaultTransport {
     await this.request(actingAs, `/api/shares/${encodeURIComponent(share.item.id)}`, {
       method: 'DELETE',
     });
+  }
+
+  /**
+   * What this account has sent and nobody has dealt with yet.
+   *
+   * <p>Server transport only, and that is not an omission: a folder or a git remote has no
+   * notion of a pending delivery — a share written there IS delivered the moment it syncs, so
+   * there is nothing in flight to take back.</p>
+   */
+  async listSent(account: StoredAccount): Promise<SentShare[]> {
+    const response = await this.request(account, '/api/shares/sent');
+    if (!response.ok) {
+      return [];
+    }
+    const payload: unknown = await response.json();
+    return Array.isArray(payload) ? payload.filter(isSentShare) : [];
+  }
+
+  /**
+   * Take back something still pending. Returns what actually happened.
+   *
+   * <p>"Already taken" is reported rather than swallowed: the whole point of asking was to stop
+   * a secret reaching someone, and being told it worked when it did not is worse than being told
+   * nothing. A 409 means it is beyond recall and the sender should rotate instead.</p>
+   */
+  async withdrawSent(
+    account: StoredAccount,
+    id: string,
+  ): Promise<'withdrawn' | 'alreadyTaken' | 'notFound'> {
+    const response = await this.request(account, `/api/shares/sent/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+    });
+    if (response.status === 409) {
+      return 'alreadyTaken';
+    }
+    return response.ok ? 'withdrawn' : 'notFound';
   }
 
   async deleteVault(account: StoredAccount): Promise<void> {

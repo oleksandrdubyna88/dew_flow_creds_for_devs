@@ -5,6 +5,7 @@ import {
   collectJumpCandidates,
   folderKindOf,
   resolveBulkTargets,
+  withdrawalMessage,
 } from '../commandTargets';
 import { TreeNode } from '../types';
 
@@ -220,4 +221,25 @@ test('a candidate carries the name a person will recognise, not just its id', ()
   const storage = storageOf([entity('b1', 'Bastion (EU)', { isSshEnabled: true, host: 'h' })]);
 
   assert.deepEqual(collectJumpCandidates(storage, 'a1', 'me'), [{ id: 'b1', name: 'Bastion (EU)' }]);
+});
+
+// --- what a person is told after trying to take a share back (0.66.0) -----------------------
+
+test('a withdrawal that worked says so plainly', () => {
+  assert.match(withdrawalMessage('withdrawn', 'prod db'), /taken back before anyone accepted/);
+  assert.match(withdrawalMessage('withdrawn', 'prod db'), /prod db/);
+});
+
+test('"already accepted" is never dressed up as success', () => {
+  // The point of asking was to stop a secret reaching someone. Being told it worked when it did
+  // not is worse than being told nothing, so the sentence names the only move left.
+  const said = withdrawalMessage('alreadyTaken', 'prod db');
+
+  assert.match(said, /cannot be taken back/);
+  assert.match(said, /Rotate the secret/);
+  assert.doesNotMatch(said, /taken back before/);
+});
+
+test('nothing to withdraw is its own answer, not a failure', () => {
+  assert.match(withdrawalMessage('notFound', 'prod db'), /no longer listed as sent/);
 });

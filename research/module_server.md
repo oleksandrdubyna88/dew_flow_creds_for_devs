@@ -20,10 +20,13 @@ whole server is ~1,450 lines.
 
 | File | Role |
 |---|---|
-| `src/Program.cs` | Configuration, startup guards, the pipeline, and all ten endpoints |
+| `src/Program.cs` | Configuration, startup guards, the pipeline, and all twelve endpoints |
 | `src/VaultStore.cs` | Filesystem storage: atomic writes, hashed paths, the crash sweep |
+| `src/VaultStoreOutbox.cs` | The sender's receipts, and the two sweeps that bound both sides |
+| `src/ShareMaintenance.cs` | The hourly pass: retire dealt-with receipts, prune what aged out |
+| `src/ContractVersion.cs` | The HTTP contract version, and what a mismatch does |
 | `src/TokenIdentity.cs` | Reads the verified caller identity out of JWT claims |
-| `src/Models.cs` | `ShareItem`, `ShareRequest`, `TeamMemberDto`, `WhoAmIDto` |
+| `src/Models.cs` | `ShareItem`, `ShareRequest`, `SentShare`, `TeamMemberDto`, `WhoAmIDto` |
 | `src/Logging.cs` | Serilog: console + a file per run |
 | `src/InstanceFile.cs` | Publishes where this instance is listening, for the DewFlow editor panel |
 | `src/HealthProbe.cs` | The container healthcheck the binary runs against itself (no curl in the image) |
@@ -76,6 +79,8 @@ identifier**, so there is nothing to tamper with.
 | `POST` | `/api/shares` | sender = token email | `201` | Body below |
 | `GET` | `/api/shares` | recipient = token email | `200` | Your inbox, **streamed** |
 | `DELETE` | `/api/shares/{id}` | recipient = token email | `204` / `404` | `id` must parse as a GUID |
+| `GET` | `/api/shares/sent` | sender = token email | `200` | Your own receipts, **streamed**. No ciphertext — see below |
+| `DELETE` | `/api/shares/sent/{id}` | sender = token email | `204` / `409` / `404` | Withdraw while pending; `409` once accepted or declined |
 
 ### `POST /api/shares`
 
@@ -106,6 +111,42 @@ The handler returns an `IAsyncEnumerable<ShareItem>` rather than a list. With
 `MaxInboxItems=500` and `MaxShareBytes=1 MiB`, materialising the inbox first put roughly 700 MiB
 live — before JSON encoding doubled it — on a request any same-domain account could provoke by
 filling someone's inbox. Streaming keeps one item live at a time.
+
+### The sender's side, and why it did not exist before
+
+An inbox is keyed by the RECIPIENT (`shares/<sha256(recipient)[..32]>/<id>.json`), which is what
+made a share impossible to withdraw rather than merely awkward: the sender could not learn the id
+of the thing waiting for someone else. Scanning every inbox for their name would have answered it
+and would have been a real disclosure — the server would then be able to answer "what has this
+person sent to whom".
+
+So the sender gets `sent/<sha256(sender)[..32]>/<id>.json`: a **receipt**, carrying `id`,
+`toEmail`, `entityName`, `entityKind` and `createdAt` and NO `salt`/`iv`/`tag`/`data`. The sealed
+payload still exists exactly once. Listing a sender their own actions discloses nothing new.
+
+`DELETE /api/shares/sent/{id}` reads that receipt, and the inbox it then reaches into is named by
+what the SENDER once wrote rather than by anything in the request — so a caller holding someone
+else's id has nothing to look it up in, and gets `404`. Already accepted is **`409`, not `404`**:
+"there is no such share" and "it is beyond recall" are different answers, and only one of them
+means the secret is now somewhere the sender cannot reach.
+
+`ShareMaintenance` retires a receipt once the inbox file is gone — the recipient acting is the
+only signal there is, because nothing tells the sender.
+
+### The contract version
+
+Every response carries `X-Creds-Contract: <server version>`; a client sends the same header.
+Below `Vault:MinimumClientContract` the middleware answers **`426` before authentication**, so an
+extension too old to be served is told THAT instead of a `401` about a token that was never the
+problem. A caller that sends nothing, or something a proxy mangled, is served — every extension
+released before this existed sends nothing.
+
+It rides on a header rather than in `/api/client-config` because that endpoint documents its own
+reason for having exactly one field, and because a header means a client learns the version from
+a call it was already making. The default minimum equals the current version, so the refusal path
+is unreachable in production today — which is precisely why `Vault:MinimumClientContract` is
+configurable: a test raises it and drives a real refusal, instead of a branch nobody has ever seen
+run being discovered wrong on the day it first matters.
 
 ### `/api/client-config` — why an anonymous endpoint is the right shape
 
@@ -188,8 +229,10 @@ therefore never sees a partial blob, which is what lets `deploy/backup.sh` archi
   rather than a per-email dictionary that would grow with every account and never be pruned. A client
   that sends neither header keeps the old last-write-wins behaviour, so an extension predating this
   still works.
-- **No inbox TTL.** A share nobody accepts sits there until the recipient deletes it or deletes
-  their account. Bounded by `MaxInboxItems`, not by time.
+- **Inbox TTL is `Vault:ShareMaxAgeDays` (31).** A pending share and its sender-side receipt are
+  swept by `ShareMaintenance`, hourly and once at startup. Before it, an inbox only ever shrank
+  when its owner acted — so one that reached `MaxInboxItems` refused every later share with `409`,
+  a failure the SENDER saw about a state only the recipient could clear.
 - **`/api/team` enumerates.** Any authenticated caller can list every colleague's email. That is the
   feature, but it is worth knowing it is also directory enumeration for anyone inside the domain.
 

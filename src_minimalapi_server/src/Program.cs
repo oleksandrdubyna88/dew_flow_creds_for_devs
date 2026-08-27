@@ -41,6 +41,15 @@ var allowAnyDomain = config.GetValue("Vault:AllowAnyDomain", false);
 var maxVaultBytes = config.GetValue("Vault:MaxVaultBytes", 8L * 1024 * 1024);
 var maxShareBytes = config.GetValue("Vault:MaxShareBytes", 1L * 1024 * 1024);
 var maxInboxItems = config.GetValue("Vault:MaxInboxItems", 500);
+// A pending share nobody accepted is swept after this many days. Without it an inbox only ever
+// shrank when its owner acted, so one that filled to MaxInboxItems refused every later share —
+// a failure the SENDER sees, about a state only the recipient can clear.
+var shareMaxAgeDays = config.GetValue("Vault:ShareMaxAgeDays", 31);
+var maintenanceMinutes = config.GetValue("Vault:MaintenanceIntervalMinutes", 60);
+// Raise this the day an older extension would MISREAD a response, never merely because a newer
+// one exists. Below it the server refuses with 426 instead of answering something the client
+// will get wrong.
+var minimumClientContract = config.GetValue("Vault:MinimumClientContract", ContractVersion.DefaultMinimumSupported);
 var requireHttps = config.GetValue("Vault:RequireForwardedHttps", false);
 var rateLimitPermits = config.GetValue("Vault:RateLimit:PermitLimit", 120);
 var rateLimitWindow = TimeSpan.FromSeconds(config.GetValue("Vault:RateLimit:WindowSeconds", 10));
@@ -73,6 +82,15 @@ builder.Services.ConfigureHttpJsonOptions(o =>
 
 var store = new VaultStore(dataDir);
 builder.Services.AddSingleton(store);
+
+// The hourly pass: retire receipts the recipient has already dealt with, prune what nobody
+// touched in a month. Registered from the same instance the endpoints close over, so tests and
+// production sweep exactly one store.
+builder.Services.AddHostedService(sp => new ShareMaintenance(
+    store,
+    sp.GetRequiredService<ILoggerFactory>().CreateLogger<ShareMaintenance>(),
+    TimeSpan.FromMinutes(Math.Max(1, maintenanceMinutes)),
+    TimeSpan.FromDays(Math.Max(1, shareMaxAgeDays))));
 
 // Hard request-body ceiling (backstop; endpoints also check Content-Length).
 builder.WebHost.ConfigureKestrel(o => o.Limits.MaxRequestBodySize = maxVaultBytes + 64 * 1024);
@@ -223,6 +241,22 @@ var app = builder.Build();
 app.UseForwardedHeaders();
 
 var log = app.Logger;
+
+// The contract version, decided before authentication so a client too old to be served is told
+// THAT rather than being handed a 401 about a token that was never the problem. Every response
+// carries the server version, so a client learns it from a call it was already making.
+app.Use(async (ctx, next) =>
+{
+    ctx.Response.Headers[ContractVersion.Header] = ContractVersion.Current.ToString();
+    var decision = ContractVersion.Judge(ctx.Request.Headers[ContractVersion.Header], minimumClientContract);
+    if (decision.Verdict == ContractVersion.Verdict.TooOld)
+    {
+        ctx.Response.StatusCode = StatusCodes.Status426UpgradeRequired;
+        await ctx.Response.WriteAsync(decision.Reason);
+        return;
+    }
+    await next();
+});
 
 // ---------- fail fast on misconfiguration ----------
 if (string.IsNullOrWhiteSpace(msTenant) && !googleEnabled && !localEnabled)
@@ -512,6 +546,20 @@ app.MapPost("/api/shares", async (HttpContext ctx, CancellationToken ct) =>
         KdfP = req.KdfP,
     };
     await store.AppendShareAsync(item.ToEmail, item, ct);
+    // The sender's own receipt — no ciphertext, just enough to name what they sent. Without it
+    // a share could not be withdrawn at all: the inbox is keyed by the recipient, so the sender
+    // had no way to learn the id of the thing waiting there.
+    await store.AppendSentAsync(
+        item.FromEmail,
+        new SentShare
+        {
+            Id = item.Id,
+            ToEmail = item.ToEmail,
+            EntityName = item.EntityName,
+            EntityKind = item.EntityKind,
+            CreatedAt = item.CreatedAt,
+        },
+        ct);
     log.LogInformation("share {Kind} from {From} to {To}", item.EntityKind, item.FromEmail, item.ToEmail);
     ctx.Response.StatusCode = StatusCodes.Status201Created;
 });
@@ -540,6 +588,58 @@ app.MapGet("/api/shares", async (HttpContext ctx, CancellationToken ct) =>
         await JsonSerializer.SerializeAsync(body, item, AppJsonContext.Default.ShareItem, ct);
     }
     await body.WriteAsync("]"u8.ToArray(), ct);
+});
+
+// What YOU have sent and nobody has dealt with yet. Your own actions, told back to you — the
+// disclosure the alternative would have needed (scanning every inbox for your name) is exactly
+// what this avoids.
+app.MapGet("/api/shares/sent", async (HttpContext ctx, CancellationToken ct) =>
+{
+    var caller = RequireCaller(ctx);
+    if (caller is null) return;
+    ctx.Response.ContentType = "application/json";
+    var body = ctx.Response.Body;
+    await body.WriteAsync("["u8.ToArray(), ct);
+    var first = true;
+    await foreach (var receipt in store.ListSentAsync(caller.Value.Email, ct))
+    {
+        if (!first)
+        {
+            await body.WriteAsync(","u8.ToArray(), ct);
+        }
+        first = false;
+        await JsonSerializer.SerializeAsync(body, receipt, AppJsonContext.Default.SentShare, ct);
+    }
+    await body.WriteAsync("]"u8.ToArray(), ct);
+});
+
+// Take back something you sent, while it is still pending.
+//
+// The receipt names the recipient, so the inbox this reaches into is decided by what the SENDER
+// once wrote rather than by anything in the request — a caller cannot name someone else's inbox
+// here any more than they could before. Already accepted is 409 rather than 404: "there is no
+// such share" and "it is beyond recall" are different answers, and only one of them means the
+// secret is now somewhere you cannot reach.
+app.MapDelete("/api/shares/sent/{id}", async (HttpContext ctx, string id, CancellationToken ct) =>
+{
+    var caller = RequireCaller(ctx);
+    if (caller is null) return;
+    var receipt = await store.ReadSentAsync(caller.Value.Email, id, ct);
+    if (receipt is null)
+    {
+        ctx.Response.StatusCode = StatusCodes.Status404NotFound;
+        return;
+    }
+    var withdrawn = store.DeleteShare(receipt.ToEmail, receipt.Id);
+    store.DeleteSent(caller.Value.Email, receipt.Id);
+    if (!withdrawn)
+    {
+        ctx.Response.StatusCode = StatusCodes.Status409Conflict;
+        await ctx.Response.WriteAsync("Already accepted or declined — it can no longer be withdrawn.", ct);
+        return;
+    }
+    log.LogInformation("withdrew share from {From} to {To}", caller.Value.Email, receipt.ToEmail);
+    ctx.Response.StatusCode = StatusCodes.Status204NoContent;
 });
 
 app.MapDelete("/api/shares/{id}", async (HttpContext ctx, string id) =>

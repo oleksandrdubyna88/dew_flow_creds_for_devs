@@ -114,6 +114,8 @@ import { parseToken } from './grantToken';
 import { isSafeSshTarget } from './sshCommand';
 import { resolveExecAuth } from './sshExecAuth';
 import { SshExecAuth, buildSshExecArgv } from './sshExecCommand';
+import { ServerTransport } from './serverTransport';
+import { withdrawalMessage } from './commandTargets';
 import { runSshExec } from './sshExecRunner';
 import { rcAlreadyHasIt, rcSnippet } from './wslRelay';
 import { WslRelayManager, spawnWslRelay } from './wslRelayManager';
@@ -2890,6 +2892,51 @@ ${detail}
     );
     sync.notifyChange();
     await refreshReadiness();
+  });
+
+  /**
+   * Take back a share that is still waiting for someone.
+   *
+   * <p>Until the server kept a sender-side receipt this was impossible rather than merely
+   * missing: an inbox is keyed by the RECIPIENT, so the sender had no way to learn the id of the
+   * thing waiting there. It matters most for a secret that burns on first use — that has no
+   * deadline, so the sender's copy can be gone while the pending share stays live.</p>
+   *
+   * <p>Server transport only, and that is not an omission: a folder or a git remote has nothing
+   * in flight — a share written there is delivered the moment it syncs.</p>
+   */
+  register('credSshManager.withdrawShare', async (target) => {
+    const account = await accountFromTargetOrPick(target, storage, 'Withdraw from which account?');
+    if (account === undefined) {
+      return;
+    }
+    const transport = transports.forAccount(account);
+    if (transport === undefined || transport.kind !== 'server') {
+      void vscode.window.showInformationMessage(
+        'Withdrawing only applies to a vault server — a folder or git remote delivers a share the '
+          + 'moment it syncs, so there is nothing pending to take back.',
+      );
+      return;
+    }
+    const sent = await (transport as ServerTransport).listSent(account);
+    if (sent.length === 0) {
+      void vscode.window.showInformationMessage('Nothing you sent is still waiting to be accepted.');
+      return;
+    }
+    const picked = await vscode.window.showQuickPick(
+      sent.map((item) => ({
+        label: item.entityName,
+        description: `to ${item.toEmail}`,
+        detail: new Date(item.createdAt).toLocaleString(),
+        id: item.id,
+      })),
+      { placeHolder: 'Which share should be taken back?' },
+    );
+    if (picked === undefined) {
+      return;
+    }
+    const outcome = await (transport as ServerTransport).withdrawSent(account, picked.id);
+    void vscode.window.showInformationMessage(withdrawalMessage(outcome, picked.label));
   });
 
   register('credSshManager.unlockWithSecurityKey', async (target) => {

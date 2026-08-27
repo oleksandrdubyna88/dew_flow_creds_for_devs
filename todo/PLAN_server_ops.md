@@ -1,7 +1,7 @@
 # PLAN — cred-vault-server operational hardening
 
-> Status: **items 1, 4 and 8 shipped 2026-08-23; items 2, 3, 5, 6 and 7 remain. Re-reviewed
-> against the client 2026-08-26 — one new item (9), and item 7 now has a pattern to copy.**
+> Status: **items 1, 3, 4, 7, 8 and 9 shipped; items 2, 5 and 6 remain.** (1, 4, 8 on 2026-08-23;
+> 3, 7 and 9 on 2026-08-26, after re-reviewing this plan against the client that grew past it.)
 > Scope: deployment/runtime of the `cred-vault-server` .NET service — not code changes to the
 > extension. This plan stays in `todo/` because most of its value is still ahead of it.
 >
@@ -37,7 +37,17 @@ between a user's two machines.
    Document the requirement and, optionally, probe at startup and refuse a
    non-local `Vault__DataDir`.
 
-3. **Inbox age-based pruning.** The per-recipient inbox quota is enforced
+3. ~~**Inbox age-based pruning.**~~ **SHIPPED 2026-08-26.** Owner decision: **31 days**.
+   `ShareMaintenance` (a `BackgroundService` on a `PeriodicTimer`) runs at startup and then every
+   `Vault:MaintenanceIntervalMinutes` (60), sweeping any pending share and any sender receipt
+   older than `Vault:ShareMaxAgeDays` (31). Age comes from the item's own `createdAt`, never the
+   file timestamp — a restore rewrites every mtime, and a sweep that trusted them would delete a
+   month of shares at the one moment nobody can afford a second failure. The test that matters is
+   end to end: it puts a 90-day-old share on disk, starts the REAL server and waits for it to go,
+   because a maintenance job that is registered but never reached looks identical from outside to
+   one that runs. Removing the registration turns exactly that test red. Original text follows.
+
+   **Inbox age-based pruning.** The per-recipient inbox quota is enforced
    (`Program.cs` share cap), but there is no TTL job that drops shares a
    recipient never accepted. *Decision needed:* max age before a pending share
    is swept.
@@ -65,7 +75,20 @@ between a user's two machines.
    the cached verdict. Keep probing — a health check that cannot see a full or detached volume is
    the constant the rule warns against.
 
-7. **The HTTP contract carries no version** (review architecture note). Neither side negotiates, and
+7. ~~**The HTTP contract carries no version**~~ **SHIPPED 2026-08-26.** Answer: a header both
+   sides send, `X-Creds-Contract`. Below `Vault:MinimumClientContract` the server answers **426
+   before authenticating** — an extension too old to serve is told THAT, not handed a 401 about a
+   token that was never the problem. Newer-than-the-server is served (it knows better than an
+   older server does, and it can read the version off the response). Absent or mangled is served:
+   every extension released before this sends nothing, and refusing them would turn a handshake
+   into an outage. It rides on a header rather than in `/api/client-config`, whose own doc argues
+   for exactly one field. The minimum is CONFIGURABLE, which is not a convenience: with it equal
+   to the current version the refusal branch is unreachable, and a test raises it to drive a real
+   refusal instead of trusting a path nobody has run. Client side: the transport sends the header,
+   turns 426 into a sentence quoting the server's own reason, and says ONCE — not per request —
+   when the server has moved ahead. Original text follows.
+
+   **The HTTP contract carries no version** (review architecture note). Neither side negotiates, and
    nothing detects an old extension talking to a new server — which is the normal state of the world,
    because users update on their own schedule. *Decision needed:* a `/api/version` surface, or a
    header the client sends and the server checks, and what the server should do on a mismatch
@@ -85,7 +108,19 @@ between a user's two machines.
    anything in the code. *Work:* restore into a clean stack, point a real extension at it, confirm a
    vault opens and an inbox lists. Then write down how long it took.
 
-9. **A sender cannot withdraw a share** (found 2026-08-26, reviewing the server against the client
+9. ~~**A sender cannot withdraw a share**~~ **SHIPPED 2026-08-26.** Owner's design, and it is the
+   one that avoids the disclosure: write what was sent into the SENDER's own file, reconcile
+   hourly against the recipient's, and drop the record once they have taken it. So the server
+   keeps `sent/<hash(sender)>/<id>.json` — a **receipt**, with no `salt`/`iv`/`tag`/`data`, since
+   the sealed payload should exist exactly once. `GET /api/shares/sent` lists a sender their own
+   actions, which discloses nothing new; scanning inboxes for their name would have.
+   `DELETE /api/shares/sent/{id}` withdraws, and names the inbox from the receipt rather than from
+   the request — so someone else's id has nothing to look up. Already accepted is **409, not 404**:
+   "no such share" and "beyond recall" are different answers, and only one means the secret is now
+   somewhere you cannot reach; the extension says so and names the only move left (rotate).
+   Reconciliation is the hourly half of item 3's pass. Original text follows.
+
+   **A sender cannot withdraw a share** (found 2026-08-26, reviewing the server against the client
    that grew past this plan). `DELETE /api/shares/{id}` resolves the path as
    `_sharesDir/KeyFor(callerEmail)/{id}.json` — the inbox is keyed by the RECIPIENT, so the caller
    can only delete from their own. There is no route by which the person who sent it can take it
