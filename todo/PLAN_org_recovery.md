@@ -141,8 +141,13 @@ signatures.
 
 ## Build order
 
-1. Contract doc: the endpoint table + wire shapes into `research/module_server.md` (rule 6 —
-   one source both halves implement against).
+1. ~~Contract doc first~~ — **revised 2026-08-27, and the revision matters.** Writing unbuilt
+   endpoints into `research/module_server.md` would break the folder rule that document lives
+   under: `research/` describes the system **as it is**, and a reader would take the table as
+   built. The contract therefore stays in THIS plan until each endpoint ships, and
+   `module_server.md` is updated as each one lands — which is what happened for
+   `/api/org-recovery/config` below. Rule 6's intent (one statement both halves implement
+   against) is met by the plan for the unbuilt half and by the module doc for the built half.
 2. ~~**R2**: `vaultRekey.ts` extraction~~ — **shipped 2026-08-27** (`199c12f`), brought forward
    because the recovery-code work needed it: `rekeyUnderPin` is the one place a master key
    rotates, both former branches repointed, and it reports a recovery code it could not carry.
@@ -166,7 +171,18 @@ signatures.
      No third-party vectors were copied; this is stronger and needs no attribution.
    - Fingerprints reuse the existing `keyFingerprint` from `shareSignature.ts` rather than
      inventing a second spelling.
-4. Server phase 1: config + guard + `GET /api/org-recovery/config`.
+4. ~~Server phase 1: config + guard + `GET /api/org-recovery/config`~~ — **shipped 2026-08-27**
+   (`OrgRecovery.cs`, 11 tests, documented in `module_server.md`). Deviations worth recording:
+   - The endpoint is readable by **any allowed caller**, not officers only, and that became a
+     test rather than a comment: enrolment is automatic and unconsented, so a person whose
+     secrets a quorum can recover must be able to see that and who they are.
+   - `enabled` and `setupComplete` are two fields, not one. Collapsing them is how a client
+     would try to enrol against a key the ceremony has not minted yet.
+   - The guard normalises duplicates and casing **before** counting, because three entries
+     naming two people would otherwise pass as a 2-of-2 in disguise — the exact shape the
+     three-officer minimum exists to refuse.
+   - A configured roster logs at **Warning** on startup. It is the one setting that changes what
+     happens to other people's vaults.
 5. Server phase 2: invites + setup + maintenance sweep.
 6. Extension: setup ceremony + officer panel + TOFU pinning + transparency UI.
 7. Extension: `ensureOrgEscrowWrap` on every sync write.

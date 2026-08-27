@@ -45,6 +45,12 @@ var maxInboxItems = config.GetValue("Vault:MaxInboxItems", 500);
 // shrank when its owner acted, so one that filled to MaxInboxItems refused every later share —
 // a failure the SENDER sees, about a state only the recipient can clear.
 var shareMaxAgeDays = config.GetValue("Vault:ShareMaxAgeDays", 31);
+// Corporate break-glass recovery. Empty roster = the feature does not exist on this server;
+// a non-empty one enrols EVERY account here, which is why the roster is published to every
+// caller rather than to officers only. See OrgRecovery.cs and todo/PLAN_org_recovery.md.
+var orgRecovery = OrgRecoveryConfig.Read(
+    SplitCsv(config["Vault:CorpRecovery:OfficerEmails"]),
+    config.GetValue("Vault:CorpRecovery:Threshold", 2));
 var maintenanceMinutes = config.GetValue("Vault:MaintenanceIntervalMinutes", 60);
 // Raise this the day an older extension would MISREAD a response, never merely because a newer
 // one exists. Below it the server refuses with 426 instead of answering something the client
@@ -286,6 +292,20 @@ if (localEnabled)
             + "Generate one with: openssl rand -base64 48");
     }
 }
+if (orgRecovery.Enabled)
+{
+    // Said at startup, at Warning, because it is the one setting that changes what happens to
+    // OTHER people's vaults: every account on this server becomes recoverable by this quorum.
+    // An operator who did not mean to enable it should find out from the log, not from a user.
+    log.LogWarning(
+        "CORPORATE RECOVERY IS ON: {Threshold} of {Count} officers ({Officers}) can jointly "
+        + "recover any vault on this server. Every account here is enrolled automatically. "
+        + "Roster fingerprint {Fingerprint}.",
+        orgRecovery.Threshold,
+        orgRecovery.OfficerEmails.Count,
+        string.Join(", ", orgRecovery.OfficerEmails),
+        orgRecovery.RosterFingerprint());
+}
 store.SweepStaleTempFiles();
 if ((msAudiences.Count == 0 && !string.IsNullOrWhiteSpace(msTenant))
     || (googleEnabled && googleAudiences.Count == 0))
@@ -495,6 +515,38 @@ app.MapGet("/api/team", async (HttpContext ctx, CancellationToken ct) =>
         .Select(e => new TeamMemberDto(e))
         .ToList();
     await ctx.Response.WriteAsJsonAsync(members, AppJsonContext.Default.ListTeamMemberDto);
+});
+
+// ----- corporate recovery: what every account here is subject to -----
+//
+// Readable by ANY allowed caller, not officers only. On a server with a roster configured,
+// every account is enrolled automatically — its vault gains an escrow wrap on the next write —
+// and somebody whose secrets a quorum of named colleagues can recover is entitled to know that,
+// and to know which colleagues. A silent escrow is a backdoor by shape even when it is
+// legitimate by intent.
+//
+// Every field is public by construction: a roster the operator wrote, a threshold, and (once
+// the ceremony has run) an X25519 PUBLIC key. The private half exists only as Shamir shares
+// sealed inside the officers' own vaults; this server has no code path that could hold one.
+app.MapGet("/api/org-recovery/config", async (HttpContext ctx, CancellationToken ct) =>
+{
+    var caller = RequireCaller(ctx);
+    if (caller is null) return;
+    await ctx.Response.WriteAsJsonAsync(
+        new OrgRecoveryConfigDto(
+            Enabled: orgRecovery.Enabled,
+            OfficerEmails: orgRecovery.OfficerEmails,
+            Threshold: orgRecovery.Threshold,
+            // The setup ceremony has not been built yet, so no key has been published and no
+            // client may enrol. Reported rather than implied: `enabled` says the operator
+            // asked for this, `setupComplete` says whether it can actually be used.
+            SetupComplete: false,
+            OrgPublicKey: "",
+            OrgPublicKeyFingerprint: "",
+            RosterFingerprint: orgRecovery.Enabled ? orgRecovery.RosterFingerprint() : "",
+            PublishedAt: 0),
+        AppJsonContext.Default.OrgRecoveryConfigDto,
+        cancellationToken: ct);
 });
 
 // ----- shares -----

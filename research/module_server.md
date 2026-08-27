@@ -1,6 +1,6 @@
 # Module: Cred Vault Server
 
-`src_minimalapi_server/` — a .NET 10 minimal API, eight source files, that stores ciphertext it
+`src_minimalapi_server/` — a .NET 10 minimal API, twelve source files, that stores ciphertext it
 cannot read.
 
 > This document is the **single statement of the HTTP contract**. It is implemented twice: in
@@ -14,19 +14,20 @@ without giving everyone read access to everyone's encrypted files — and so tha
 shared secret is a fact rather than a claim.
 
 It is deliberately small. There is no database, no ORM, no background service, no admin UI. The
-whole server is ~1,450 lines.
+whole server is ~2,100 lines.
 
 ## Files
 
 | File | Role |
 |---|---|
-| `src/Program.cs` | Configuration, startup guards, the pipeline, and all twelve endpoints |
+| `src/Program.cs` | Configuration, startup guards, the pipeline, and all thirteen endpoints |
 | `src/VaultStore.cs` | Filesystem storage: atomic writes, hashed paths, the crash sweep |
 | `src/VaultStoreOutbox.cs` | The sender's receipts, and the two sweeps that bound both sides |
 | `src/ShareMaintenance.cs` | The hourly pass: retire dealt-with receipts, prune what aged out |
 | `src/ContractVersion.cs` | The HTTP contract version, and what a mismatch does |
 | `src/TokenIdentity.cs` | Reads the verified caller identity out of JWT claims |
 | `src/Models.cs` | `ShareItem`, `ShareRequest`, `SentShare`, `TeamMemberDto`, `WhoAmIDto` |
+| `src/OrgRecovery.cs` | The corporate-recovery roster, its quorum guard and its fingerprint |
 | `src/Logging.cs` | Serilog: console + a file per run |
 | `src/InstanceFile.cs` | Publishes where this instance is listening, for the DewFlow editor panel |
 | `src/HealthProbe.cs` | The container healthcheck the binary runs against itself (no curl in the image) |
@@ -76,6 +77,7 @@ identifier**, so there is nothing to tamper with.
 | `PUT` | `/api/vault` | token email | `204` | 1..`MaxVaultBytes`; `400` outside that. Honours `If-Match` / `If-None-Match`, `412` when the precondition fails |
 | `DELETE` | `/api/vault` | token email | `204` | Deletes the vault, its `.email` sidecar, and the whole inbox |
 | `GET` | `/api/team` | any allowed caller | `200` | `[{email}]` — vault owners in the caller's own domain |
+| `GET` | `/api/org-recovery/config` | any allowed caller | `200` | The corporate-recovery roster this server runs under. See below |
 | `POST` | `/api/shares` | sender = token email | `201` | Body below |
 | `GET` | `/api/shares` | recipient = token email | `200` | Your inbox, **streamed** |
 | `DELETE` | `/api/shares/{id}` | recipient = token email | `204` / `404` | `id` must parse as a GUID |
@@ -148,6 +150,50 @@ is unreachable in production today — which is precisely why `Vault:MinimumClie
 configurable: a test raises it and drives a real refusal, instead of a branch nobody has ever seen
 run being discovered wrong on the day it first matters.
 
+### `/api/org-recovery/config` — and why it is not officer-only
+
+```json
+{
+  "enabled": true,
+  "officerEmails": ["cto@company.com", "lead@company.com", "devops@company.com"],
+  "threshold": 2,
+  "setupComplete": false,
+  "orgPublicKey": "",
+  "orgPublicKeyFingerprint": "",
+  "rosterFingerprint": "315f89eb…",
+  "publishedAt": 0
+}
+```
+
+An operator may configure a roster of **recovery officers** — `Vault:CorpRecovery:OfficerEmails`,
+minimum three, with `Vault:CorpRecovery:Threshold` (default 2) of them required to act together.
+When they do, every account on the server is enrolled: the client seals its vault master key to
+the organisation's recovery public key as an extra wrap, so a quorum of officers can open a vault
+whose owner has left. The design, the ceremonies and the remaining endpoints are
+[todo/PLAN_org_recovery.md](../todo/PLAN_org_recovery.md); **what is built today is this endpoint,
+its configuration and its guards** — the setup ceremony has not been written, which is exactly
+what `setupComplete: false` reports.
+
+**Readable by any allowed caller, deliberately.** Enrolment is automatic and needs no consent, so
+a person whose secrets a quorum of named colleagues can recover is entitled to know that, and to
+know which colleagues. A silent escrow is a backdoor by shape even when it is legitimate by
+intent. It stays behind authentication because the roster names real people.
+
+**`enabled` and `setupComplete` are two different facts** and collapsing them is how a client
+would try to enrol against a key that does not exist yet: the first means the operator asked for
+this, the second means the officers have actually run the ceremony.
+
+**`rosterFingerprint`** is what clients pin, the way `senderPinning.ts` pins a share signer: this
+server is trusted to relay, never to decide, so an operator quietly adding themselves to the
+roster — or lowering the threshold — is the change the fingerprint makes visible. Sorted before
+hashing and binding the threshold, so re-typing the same officers in another order is not a change
+and does not read as one.
+
+Nothing here is a secret the server must keep: a roster the operator wrote, a number, and (once
+the ceremony exists) an X25519 **public** key. The private half lives only as Shamir shares sealed
+inside the officers' own vaults, and there is no code path here that could hold one — which is
+what keeps this feature on the right side of rule 1.
+
 ### `/api/client-config` — why an anonymous endpoint is the right shape
 
 A client cannot authenticate until it knows **which scope to ask the identity provider for**, so
@@ -202,6 +248,16 @@ The server refuses to start rather than run in a state that looks like a network
    verified account on earth, by omission.
 3. **`DataDir` not writable** → checked *before* `VaultStore` is constructed, with a message that
    names the usual cause (a root-owned bind mount against an unprivileged container) and the fix.
+4. **A corporate-recovery roster that can never reach quorum** → fewer than three officers (a
+   2-of-2 goes down with the first departure, which is the event the feature exists for), a
+   threshold of 1 (any single officer opens every vault on the server), or a threshold above the
+   roster size (unreachable — the misconfiguration that looks like a working feature for months
+   and fails on the one day it is used). Duplicates and casing are normalised *before* the count,
+   so three entries naming two people are refused rather than passing as a 2-of-2 in disguise.
+
+A configured roster also logs at **Warning** on startup, naming the officers and the fingerprint:
+it is the one setting that changes what happens to *other people's* vaults, and an operator who
+did not mean to enable it should find out from the log rather than from a user.
 
 Then `SweepStaleTempFiles()` runs: any `*.tmp` older than ten minutes is a write interrupted by a
 crash, and is removed.
@@ -303,6 +359,8 @@ profile file inside a container reaches nobody.
 | `Vault:MaxVaultBytes` | 8 MiB | Per-vault upload cap |
 | `Vault:MaxShareBytes` | 1 MiB | Per-share payload cap |
 | `Vault:MaxInboxItems` | 500 | Pending shares per recipient |
+| `Vault:CorpRecovery:OfficerEmails` | *(empty — feature off)* | CSV of recovery officers; **min 3** when set |
+| `Vault:CorpRecovery:Threshold` | 2 | How many officers must act together; 2..roster size |
 | `Vault:RateLimit:PermitLimit` | 120 | Requests per window, per caller |
 | `Vault:RateLimit:WindowSeconds` | 10 | The window |
 | `Vault:RequireForwardedHttps` | `false` | Refuse anything not forwarded as https |

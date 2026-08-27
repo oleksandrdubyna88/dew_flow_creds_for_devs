@@ -41,6 +41,7 @@ public sealed record ClientConfigDto(string MicrosoftScope);
 [JsonSerializable(typeof(List<ShareItem>))]
 [JsonSerializable(typeof(SentShare))]
 [JsonSerializable(typeof(List<SentShare>))]
+[JsonSerializable(typeof(OrgRecoveryConfigDto))]
 public sealed partial class AppJsonContext : JsonSerializerContext;
 
 /// <summary>The instance file's contract, indented for the human who opens it.</summary>
