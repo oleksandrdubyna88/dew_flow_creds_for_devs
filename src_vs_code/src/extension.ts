@@ -171,6 +171,13 @@ import { withdrawalMessage } from './commandTargets';
 import { runSshExec } from './sshExecRunner';
 import { InstallTarget, Machine, installScript } from './installCommand';
 import { parseDistros, rcAlreadyHasIt, rcSnippet, toWslPath } from './wslRelay';
+import {
+  ReadinessCheck,
+  failed,
+  itDidNotAnswer,
+  itWorks,
+  whatIsMissing,
+} from './wslRelayReadiness';
 import { DEFAULT_DISTRO, WslRelayManager, spawnWslRelay } from './wslRelayManager';
 import {
   AliasMap,
@@ -964,6 +971,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     if (chosen === undefined) {
       return;
     }
+    const missing = await whatIsNotReady(chosen);
+    if (missing.length > 0) {
+      void vscode.window.showWarningMessage(missing, { modal: true });
+      return;
+    }
     const config = vscode.workspace.getConfiguration('credSshManager');
     await config.update('wslRelayDistros', chosen, vscode.ConfigurationTarget.Global);
     await config.update('wslAgentRelay', true, vscode.ConfigurationTarget.Global);
@@ -1011,6 +1023,78 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     return picked === undefined ? undefined : picked.map((item) => item.label);
   }
 
+  /**
+   * Everything that has to be true before a relay can work, checked before one is started.
+   *
+   * <p>All of them at once rather than the first failure: someone who has installed neither half
+   * should hear that once, not discover the second after fixing the first.</p>
+   */
+  async function whatIsNotReady(distros: readonly string[]): Promise<string> {
+    const windowsBinary = windowsCredsForWsl();
+    for (const distro of distros) {
+      const checks: ReadinessCheck[] = [
+        {
+          label: 'the Windows half (`creds.exe`) is installed',
+          ok: windowsBinary.length > 0,
+          fix: 'run "Install `creds` (terminal CLI)" from the Install... menu',
+        },
+        {
+          label: '`creds` is installed inside the distribution',
+          ok: await credsIsInside(distro),
+          fix: 'use "Copy install command for another machine..." and run it there',
+        },
+        {
+          label: 'a key is loaded into the SSH agent',
+          ok: sshAgent.socketPath !== undefined,
+          fix: 'right-click a key under "ssh keys" and choose "Add to SSH Agent"',
+        },
+      ];
+      if (failed(checks).length > 0) {
+        return whatIsMissing(distro, checks);
+      }
+    }
+    return '';
+  }
+
+  /** Whether the chosen command resolves inside that distribution. */
+  async function credsIsInside(distro: string): Promise<boolean> {
+    const { command } = relaySettings();
+    const distroArgv = distro.length > 0 ? ['-d', distro] : [];
+    const found = await runWsl([
+      ...distroArgv,
+      '-e',
+      'bash',
+      '-lc',
+      `command -v ${command} >/dev/null 2>&1 && echo yes`,
+    ]);
+    return found.includes('yes');
+  }
+
+  /**
+   * Ask the agent, through the relay, whether it answers — and say so either way.
+   *
+   * <p>The half people asked for. A setup that ends in silence is one you have to go and test
+   * yourself, which is what the setup was for.</p>
+   */
+  async function verifyThroughRelay(distro: string, socketPath: string): Promise<void> {
+    const distroArgv = distro.length > 0 ? ['-d', distro] : [];
+    const listed = await runWsl([
+      ...distroArgv,
+      '-e',
+      'bash',
+      '-lc',
+      `SSH_AUTH_SOCK=${socketPath} ssh-add -l 2>&1`,
+    ]);
+    const fingerprint = /SHA256:[A-Za-z0-9+/=]+/.exec(listed)?.[0];
+    if (fingerprint === undefined) {
+      void vscode.window.showWarningMessage(`CredsForDevs: ${itDidNotAnswer(distro, listed)}`);
+      return;
+    }
+    void vscode.window.showInformationMessage(
+      `CredsForDevs: ${itWorks(distro, socketPath, fingerprint)}`,
+    );
+  }
+
   /** Wait for one distribution's relay to name its socket, then offer the export line. */
   async function setUpOneDistro(distro: string): Promise<void> {
     const socketPath = await waitForRelaySocket(distro);
@@ -1022,6 +1106,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       return;
     }
     await offerTheExportLine(socketPath, distro);
+    await verifyThroughRelay(distro, socketPath);
   }
 
   /** The relay names its socket on its first line of output; give it a moment to say so. */
