@@ -6,6 +6,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Install `creds` on a remote host from the entity's own context menu.** The bridge asks a person
+  to run `creds` on a machine that may never have had it, and until now the honest answer to "so
+  how does it get there" was to build it and copy it by hand. *Install `creds` on the Host…* uses
+  the connection the entry already describes: one probe (does it have `creds`, what architecture,
+  what OS, can it download at all), a confirmation showing the **exact command** that will run —
+  this puts a binary on a machine that is not yours — then the published installer, with progress
+  and the resulting path. Three things are deliberate. It cannot hang: the command runs with stdin
+  closed and `install.sh` uses `sudo -n` where there is no terminal, because a plain `sudo` over a
+  non-interactive `ssh` waits for a password nobody can type — the same shape as the bridge's
+  missing `BatchMode`. It does not believe the exit code: `curl … | sh` reports the *shell's*
+  status, so a 404 body fed to `sh` exits 0 having done nothing, and success is read from the
+  installer's own line instead. And it resolves the credential through the shared path, so it works
+  for a password entry and not only a key one — the distinction that made the bridge quietly
+  useless for exactly the hosts it existed for.
+
 ### Fixed
 
 - **A form emptied itself whenever you left its tab.** Press `+`, type a name, go and open a file to

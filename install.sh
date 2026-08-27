@@ -109,12 +109,21 @@ fi
 tar xzf "$work/$archive" -C "$work" || die "the archive could not be extracted."
 [ -f "$work/$name/creds" ] || die "the archive did not contain $name/creds."
 
+# `sudo -n` when there is no terminal, and that is not a detail.
+#
+# This script is also run non-interactively — over an ssh exec from the extension, with stdin a
+# pipe. A plain `sudo` there does not fail: it waits for a password nobody can type, forever,
+# and the caller sees a command that never returns. The same shape as an ssh with no BatchMode.
+# With a terminal, an interactive prompt is what a person expects, so both are kept.
 if [ -w "$PREFIX" ]; then
   install -m 0755 "$work/$name/creds" "$PREFIX/creds"
-elif have sudo; then
+elif have sudo && [ -t 0 ]; then
   sudo install -m 0755 "$work/$name/creds" "$PREFIX/creds"
+elif have sudo && sudo -n true 2>/dev/null; then
+  sudo -n install -m 0755 "$work/$name/creds" "$PREFIX/creds"
 else
-  die "$PREFIX is not writable and sudo is not available. Set CREDS_PREFIX to a directory you own."
+  die "$PREFIX is not writable, and sudo is unavailable or would need a password with no terminal to ask at.
+  Re-run as root, or set CREDS_PREFIX to a directory you own (e.g. CREDS_PREFIX=/c/Users/strug/.local/bin)."
 fi
 
 echo "creds-install: installed $PREFIX/creds"

@@ -114,6 +114,14 @@ import { entityKey } from './entityFlags';
 import { parseToken } from './grantToken';
 import { isSafeSshTarget } from './sshCommand';
 import { resolveExecAuth } from './sshExecAuth';
+import {
+  blockerFor,
+  confirmationFor,
+  installCommand,
+  interpretInstall,
+  interpretProbe,
+  probeCommand,
+} from './remoteCliInstall';
 import { SshExecAuth, buildSshExecArgv } from './sshExecCommand';
 import { ServerTransport } from './serverTransport';
 import { withdrawalMessage } from './commandTargets';
@@ -202,6 +210,7 @@ let envCollection: vscode.GlobalEnvironmentVariableCollection;
  * One edit writes several secret kinds in a row; this coalesces them into one walk.
  */
 const SECRETS_SETTLE_MS = 400;
+
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
   envCollection = context.environmentVariableCollection;
@@ -873,6 +882,110 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       }
     } catch (error) {
       log.info('bridge', `socket check did not complete: ${describeError(error)}`);
+    }
+  }
+
+
+  /**
+   * Install `creds` on the host this entity points at.
+   *
+   * <p>The bridge asks a person to run `creds` on a machine that may never have had it, and the
+   * honest answer to "how does it get there" used to be: build it and copy it yourself. This is
+   * the same SSH connection the entity already describes, used twice — once to ask what the host
+   * is, once to run the published installer on it.</p>
+   *
+   * <p>It goes through `resolveExecAuth` like every other non-interactive `ssh` here, so it works
+   * for a password entity and not only a key one — the distinction that made the bridge silently
+   * unusable for exactly the hosts it was for.</p>
+   */
+  register('credSshManager.installRemoteCli', async (...args: unknown[]) => {
+    const element = args[0] as { accountId?: string; node?: { id: string; name: string } };
+    const accountId = element?.accountId;
+    const node = element?.node;
+    if (accountId === undefined || node === undefined || storageDir === undefined) {
+      return;
+    }
+    const details = storage.getNode(accountId, node.id)?.details;
+    if (details === undefined || (details.host ?? '') === '') {
+      void vscode.window.showWarningMessage(`"${node.name}" has no host configured.`);
+      return;
+    }
+
+    const credential = await resolveExecAuth(storage, accountId, details, storageDir);
+    if (credential.warning !== undefined) {
+      void vscode.window.showWarningMessage(credential.warning);
+    }
+    if (!credential.ok) {
+      void vscode.window.showErrorMessage(`Cannot reach "${node.name}": ${credential.message}`);
+      return;
+    }
+
+    const facts = await runRemote(details, credential, probeCommand(), 20_000);
+    if (facts.timedOut) {
+      void vscode.window.showWarningMessage(
+        `"${node.name}" did not answer within 20 seconds — the host may be unreachable.`,
+      );
+      return;
+    }
+    const blocker = blockerFor(interpretProbe(facts.stdout));
+    if (blocker.length > 0) {
+      void vscode.window.showWarningMessage(`Cannot install on "${node.name}": ${blocker}`);
+      return;
+    }
+
+    // Asked BEFORE anything runs, and showing the command itself rather than a description of
+    // it: this downloads a binary onto a machine that is not this one.
+    const ask = confirmationFor(interpretProbe(facts.stdout), node.name);
+    const answer = await vscode.window.showInformationMessage(
+      ask.message,
+      { modal: true, detail: ask.detail },
+      ask.action,
+    );
+    if (answer !== ask.action) {
+      return;
+    }
+
+    const outcome = await vscode.window.withProgress(
+      {
+        location: vscode.ProgressLocation.Notification,
+        title: `CredsForDevs: installing creds on "${node.name}"…`,
+        cancellable: false,
+      },
+      async () => {
+        const run = await runRemote(details, credential, installCommand(), 180_000);
+        return run.timedOut
+          ? ({ kind: 'failed', reason: 'the install did not finish within three minutes.' } as const)
+          : interpretInstall(run.stdout, run.stderr, run.exitCode);
+      },
+    );
+
+    if (outcome.kind === 'installed') {
+      void vscode.window.showInformationMessage(
+        `\`creds\` is installed on "${node.name}" at ${outcome.path}.`,
+      );
+      return;
+    }
+    void vscode.window.showErrorMessage(`Could not install on "${node.name}": ${outcome.reason}`);
+  });
+
+  /** One non-interactive `ssh` with a resolved credential — the shape every caller here needs. */
+  async function runRemote(
+    entity: EntityMetadata,
+    credential: Extract<Awaited<ReturnType<typeof resolveExecAuth>>, { ok: true }>,
+    command: string,
+    timeoutMs: number,
+  ): Promise<{ stdout: string; stderr: string; exitCode: number; timedOut: boolean }> {
+    const argv = buildSshExecArgv(entity, credential.keyPath, command, credential.auth);
+    if (argv === undefined) {
+      return { stdout: '', stderr: 'its host is not a shape ssh can be given safely.', exitCode: -1, timedOut: false };
+    }
+    try {
+      const run = await runSshExec(argv, { env: credential.env, timeoutMs, signal: agentServer.signal });
+      // A timeout stays its OWN fact rather than folding into a non-zero exit: "the host did
+      // not answer in time" and "the command failed" need different words to a person.
+      return { stdout: run.stdout, stderr: run.stderr, exitCode: run.exitCode ?? -1, timedOut: run.timedOut };
+    } catch (error) {
+      return { stdout: '', stderr: describeError(error), exitCode: -1, timedOut: false };
     }
   }
 
