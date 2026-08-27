@@ -34,7 +34,7 @@ import { INTERVAL_CHOICES, describeInterval } from './backupSchedule';
 import { buildCommandLine, describeCommand } from './commandLine';
 import { SyncReadiness, syncReadiness } from './syncReadiness';
 import { BackupScheduler } from './backupScheduler';
-import { isServerLocation } from './vaultTransport';
+import { VaultTransport, isServerLocation } from './vaultTransport';
 import {
   installKeyToSystem,
   lockToOwner,
@@ -80,10 +80,15 @@ import {
 import { snapshotForRevision } from './revisionSnapshot';
 import {
   envelopeWithAddedKey,
+  envelopeWithRecoveryCode,
   envelopeWithRemovedKey,
+  envelopeWithoutRecoveryCode,
+  hasRecoveryCode,
   isSecurityKeyRefusal,
   removalWouldRekey,
 } from './securityKeyOps';
+import { generateRecoveryCode, isRecoveryCodeError } from './recoveryCode';
+import { showRecoveryCodeView } from './recoveryCodeView';
 import { validatePin } from './pinPolicy';
 import { CredTreeDataProvider, VIEW_ID } from './treeDataProvider';
 import { DepDecorationProvider } from './depDecorations';
@@ -3025,6 +3030,192 @@ ${detail}
       next.rekeyed
         ? `Removed "${picked.label}" and re-keyed the vault under your PIN — the removed key can no longer open it.`
         : `Removed "${picked.label}". Note: existing backups/snapshots remain openable by that key until the vault is re-keyed (remove all security keys to force a re-key under the PIN).`,
+    );
+    sync.notifyChange();
+    await refreshReadiness();
+  });
+
+  // ---------- the printed recovery code (roadmap D9) ----------
+
+  /**
+   * The account, its transport and its stored vault — the three things every wrap-changing
+   * ceremony needs before it can start, with the same refusals worded once.
+   */
+  async function vaultToRewrite(
+    target: unknown,
+    prompt: string,
+  ): Promise<{ account: StoredAccount; transport: VaultTransport; raw: string } | undefined> {
+    const account = await accountFromTargetOrPick(target, storage, prompt);
+    if (account === undefined) {
+      return undefined;
+    }
+    const transport = transports.forAccount(account);
+    if (transport === undefined) {
+      void vscode.window.showErrorMessage(
+        `Set a sync location for ${account.email} first — the recovery code lives in its vault.`,
+      );
+      return undefined;
+    }
+    const raw = await transport.readVault(account);
+    if (raw === undefined) {
+      void vscode.window.showErrorMessage(
+        `${account.email} has no vault yet — run "Sync Now" once, then set a recovery code.`,
+      );
+      return undefined;
+    }
+    return { account, transport, raw };
+  }
+
+  /**
+   * Mint a printed recovery code and wrap the master key under it.
+   *
+   * <p>Unlocking first is what proves the person may add an opener at all; the arithmetic
+   * lives in `securityKeyOps`, and the code itself is shown exactly once, by a panel that
+   * has no Copy button on purpose.</p>
+   */
+  register('credSshManager.setupRecoveryCode', async (target) => {
+    const found = await vaultToRewrite(target, 'Set up a recovery code for…');
+    if (found === undefined) {
+      return;
+    }
+    const { account, transport, raw } = found;
+    const regenerated = hasRecoveryCode(raw);
+    if (regenerated) {
+      const answer = await vscode.window.showWarningMessage(
+        `${account.email} already has a recovery code. Generating a new one immediately retires the printed one — that paper stops working.`,
+        { modal: true },
+        'Generate a new code',
+      );
+      if (answer !== 'Generate a new code') {
+        return;
+      }
+    }
+    const key = await vaultKeys.unlock(account, raw, { interactive: true });
+    if (key === undefined) {
+      void vscode.window.showErrorMessage('Could not unlock the vault — no recovery code was set.');
+      return;
+    }
+    try {
+      const code = generateRecoveryCode();
+      const next = await envelopeWithRecoveryCode(
+        {
+          raw,
+          key,
+          account,
+          storedPin: await vaultKeys.storedPin(account),
+          now: Date.now(),
+          pendingShares: transport.embedsShares ? sharesFromEnvelope(raw) : undefined,
+          decrypt: (r, k) => vaultKeys.decrypt(r, k),
+        },
+        code.secret,
+      );
+      if (isSecurityKeyRefusal(next)) {
+        // Only the legacy-upgrade path refuses, and only for a missing PIN — a vault openable
+        // by a piece of paper alone is the one shape this must never create.
+        void vscode.window.showErrorMessage(
+          'Set a vault PIN first — a recovery code may not be the only way into a vault.',
+        );
+        return;
+      }
+      await transport.writeVault(account, next.content, []);
+      vaultKeys.clearCache(account.accountId);
+      showRecoveryCodeView({
+        email: account.email,
+        code: code.formatted,
+        createdAt: Date.now(),
+        regenerated,
+      });
+      sync.notifyChange();
+      await refreshReadiness();
+    } catch (error) {
+      void vscode.window.showErrorMessage(
+        `Setting the recovery code failed: ${describeError(error)}`,
+      );
+    }
+  });
+
+  /**
+   * Open a vault with the printed code — the explicit path, because the automatic cascade
+   * never reaches it: in the case this exists for, the vault still HAS a PIN wrap and key
+   * wraps, and it is their holder who no longer has the PIN or the key.
+   */
+  register('credSshManager.unlockWithRecoveryCode', async (target) => {
+    const found = await vaultToRewrite(target, 'Unlock which account with a recovery code?');
+    if (found === undefined) {
+      return;
+    }
+    const { account, raw } = found;
+    if (!hasRecoveryCode(raw)) {
+      void vscode.window.showInformationMessage(
+        `${account.email} has no recovery code set up. It can only be created while the vault still opens.`,
+      );
+      return;
+    }
+    const typed = await vaultKeys.promptRecoveryCode(account);
+    if (typed === undefined) {
+      return;
+    }
+    try {
+      const key = await vaultKeys.unlockWithRecoveryCode(account, raw, typed);
+      if (isRecoveryCodeError(key) || key === 'no-recovery-code') {
+        void vscode.window.showErrorMessage(
+          key === 'bad-checksum'
+            ? 'That code has a mistyped character — the checksum does not match. Check it against the paper.'
+            : 'That is not this vault’s recovery code.',
+        );
+        return;
+      }
+      void vscode.window.showInformationMessage(`Vault of ${account.email} unlocked.`);
+      await refreshReadiness();
+      // The person is here because their PIN or key is gone. Offer the replacement now,
+      // while the master key is cached — `setPin` re-keys without asking for anything else.
+      const answer = await vscode.window.showWarningMessage(
+        `Set a new PIN for ${account.email} now? You reached this vault with the printed code, so whatever PIN it had may be lost.`,
+        { modal: true },
+        'Set a new PIN',
+      );
+      if (answer === 'Set a new PIN') {
+        await sync.setPin(account);
+      }
+      await sync.syncNow(account.accountId);
+      await refreshReadiness();
+    } catch (error) {
+      void vscode.window.showErrorMessage(`Unlock failed: ${describeError(error)}`);
+    }
+  });
+
+  register('credSshManager.removeRecoveryCode', async (target) => {
+    const found = await vaultToRewrite(target, 'Remove the recovery code from…');
+    if (found === undefined) {
+      return;
+    }
+    const { account, transport, raw } = found;
+    if (!hasRecoveryCode(raw)) {
+      void vscode.window.showInformationMessage(`${account.email} has no recovery code set up.`);
+      return;
+    }
+    const confirmed = await vscode.window.showWarningMessage(
+      `Remove the recovery code from ${account.email}? If the PIN and the security keys are then lost, this vault cannot be opened by anyone.`,
+      { modal: true },
+      'Remove',
+    );
+    if (confirmed !== 'Remove') {
+      return;
+    }
+    const key = await vaultKeys.unlock(account, raw, { interactive: true });
+    if (key === undefined) {
+      void vscode.window.showErrorMessage('Could not unlock the vault — nothing removed.');
+      return;
+    }
+    const next = envelopeWithoutRecoveryCode(raw, key);
+    if (isSecurityKeyRefusal(next)) {
+      void vscode.window.showErrorMessage('Could not unlock to update wraps — nothing removed.');
+      return;
+    }
+    await transport.writeVault(account, next, []);
+    vaultKeys.clearCache(account.accountId);
+    void vscode.window.showInformationMessage(
+      'Recovery code removed. Note: a copy of the vault made earlier stays openable by that printed code until the vault is re-keyed.',
     );
     sync.notifyChange();
     await refreshReadiness();

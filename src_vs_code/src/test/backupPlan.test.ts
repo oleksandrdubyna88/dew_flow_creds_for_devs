@@ -12,7 +12,16 @@ import {
   BackupError,
   CURRENT_WRAPPED_VERSION,
 } from '../cryptoUtils';
-import { newMasterKey, newPrfSalt, unwrapWithPin, wrapPinVault, wrapWithPin, wrapWithPrf } from '../keyWrap';
+import {
+  newMasterKey,
+  newPrfSalt,
+  unwrapWithPin,
+  wrapPinVault,
+  wrapWithPin,
+  wrapWithPrf,
+  wrapWithRecoveryCode,
+} from '../keyWrap';
+import { generateRecoveryCode } from '../recoveryCode';
 
 const account = { accountId: 'a1', email: 'me@x.dev', provider: 'microsoft' as const };
 
@@ -49,6 +58,22 @@ test('a v3 backup with ONLY a pin-wrap is opened by its own PIN, not the vault k
   const v3PinOnly = wrapPinVault({ nodes: [] }, account.accountId, 'backup-pin', 1_700_000_000_000);
   assert.equal(readVaultVersion(v3PinOnly.content), CURRENT_WRAPPED_VERSION);
   assert.deepEqual(backupWriteMode(v3PinOnly.content), { kind: 'pin' });
+});
+
+test('a vault whose only non-PIN slot is a RECOVERY CODE is still vault-keyed', () => {
+  // The routing was "has a webauthn wrap", written when webauthn was the only other kind.
+  // A vault with PIN + recovery code has no webauthn wrap, so it read as a self-contained
+  // PIN backup — and that write path replaces the wraps wholesale, silently destroying the
+  // printed code's slot. Exactly the class of defect backupWriteMode's doc comment exists
+  // to prevent, one kind later.
+  const master = newMasterKey();
+  const wraps = [
+    wrapWithPin(master, account.accountId, '123456', 1_700_000_000_000),
+    wrapWithRecoveryCode(master, generateRecoveryCode().secret, 1_700_000_000_000),
+  ];
+  const file = encryptJsonWrapped({ nodes: [] }, master.toString('base64'), wraps, account, undefined);
+
+  assert.deepEqual(backupWriteMode(file), { kind: 'wrapped' });
 });
 
 test('no vault yet means a PIN is the only key there is', () => {

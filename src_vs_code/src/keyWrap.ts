@@ -19,6 +19,8 @@ import {
  *   - `pin`      : AES-256-GCM(masterKey) under scrypt(accountId + PIN)
  *   - `webauthn` : AES-256-GCM(masterKey) under HKDF(PRF secret of one
  *                  security key) — one wrap per registered YubiKey
+ *   - `recovery` : AES-256-GCM(masterKey) under HKDF(printed recovery code) —
+ *                  at most one, replaced wholesale on regenerate
  *
  * Any single wrap yields the master key, so several YubiKeys and the PIN all
  * open the same vault, and adding/removing a key never re-encrypts the data.
@@ -27,7 +29,7 @@ import {
 
 export const MASTER_KEY_BYTES = 32;
 
-export type KeyWrapKind = 'pin' | 'webauthn';
+export type KeyWrapKind = 'pin' | 'webauthn' | 'recovery';
 
 export interface KeyWrap extends SealedBlob {
   kind: KeyWrapKind;
@@ -47,7 +49,7 @@ export function isKeyWrap(value: unknown): value is KeyWrap {
   }
   const v = value as Record<string, unknown>;
   return (
-    (v.kind === 'pin' || v.kind === 'webauthn') &&
+    (v.kind === 'pin' || v.kind === 'webauthn' || v.kind === 'recovery') &&
     typeof v.id === 'string' &&
     typeof v.salt === 'string' &&
     typeof v.iv === 'string' &&
@@ -152,6 +154,38 @@ export function wrapWithPrf(
   };
 }
 
+/**
+ * Derive the wrapping key from the printed recovery code's core. HKDF for the same
+ * reason as the PRF secret: 150 bits drawn uniformly need no slow KDF — scrypt here
+ * would only protect a low-entropy human choice, which this is not.
+ */
+function recoveryWrappingKey(secret: Buffer, salt: Buffer): Buffer {
+  return Buffer.from(
+    crypto.hkdfSync('sha256', secret, salt, Buffer.from('cred-ssh-manager/recovery-code'), 32),
+  );
+}
+
+/**
+ * Wrap the master key under the printed recovery code. Constant `id` — like the PIN
+ * wrap — so `upsertWrap` keeps exactly one slot and regenerating replaces it.
+ */
+export function wrapWithRecoveryCode(masterKey: Buffer, secret: Buffer, createdAt: number): KeyWrap {
+  const salt = crypto.randomBytes(16);
+  const key = recoveryWrappingKey(secret, salt);
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
+  const data = Buffer.concat([cipher.update(masterKey), cipher.final()]);
+  return {
+    kind: 'recovery',
+    id: 'recovery',
+    createdAt,
+    salt: salt.toString('base64'),
+    iv: iv.toString('base64'),
+    tag: cipher.getAuthTag().toString('base64'),
+    data: data.toString('base64'),
+  };
+}
+
 /** The master key a pin-wrap's decrypted payload carries — or a 'corrupted' error, never a guess. */
 function masterFromPinPayload(payload: unknown): Buffer {
   if (typeof payload !== 'string') {
@@ -209,33 +243,58 @@ export async function wrapPinVaultAsync(
   return { content, masterKey, wraps };
 }
 
-/** Recover the master key from a security-key wrap. */
+/**
+ * The AES-GCM unwrap body the two high-entropy wraps (PRF, recovery code) share —
+ * extracted when the recovery wrap arrived, so a hardening lands in both at once.
+ */
 // eslint-disable-next-line complexity
-export function unwrapWithPrf(wrap: KeyWrap, prfSecret: Buffer): Buffer {
+function unwrapMasterKey(
+  wrap: KeyWrap,
+  deriveKey: (salt: Buffer) => Buffer,
+  what: string,
+  wrongMessage: string,
+): Buffer {
   const salt = Buffer.from(wrap.salt, 'base64');
   const iv = Buffer.from(wrap.iv, 'base64');
   const tag = Buffer.from(wrap.tag, 'base64');
   const data = Buffer.from(wrap.data, 'base64');
   if (salt.length !== 16 || iv.length !== 12 || tag.length !== 16) {
-    throw new BackupError('corrupted', 'Security-key wrap has malformed parameters.');
+    throw new BackupError('corrupted', `${what} has malformed parameters.`);
   }
   try {
-    const decipher = crypto.createDecipheriv('aes-256-gcm', prfWrappingKey(prfSecret, salt), iv);
+    const decipher = crypto.createDecipheriv('aes-256-gcm', deriveKey(salt), iv);
     decipher.setAuthTag(tag);
     const key = Buffer.concat([decipher.update(data), decipher.final()]);
     if (key.length !== MASTER_KEY_BYTES) {
-      throw new BackupError('corrupted', 'Security-key wrap holds a malformed master key.');
+      throw new BackupError('corrupted', `${what} holds a malformed master key.`);
     }
     return key;
   } catch (error) {
     if (error instanceof BackupError) {
       throw error;
     }
-    throw new BackupError(
-      'wrong-password',
-      'This security key does not open the vault (wrong key, or the wrap was replaced).',
-    );
+    throw new BackupError('wrong-password', wrongMessage);
   }
+}
+
+/** Recover the master key from a security-key wrap. */
+export function unwrapWithPrf(wrap: KeyWrap, prfSecret: Buffer): Buffer {
+  return unwrapMasterKey(
+    wrap,
+    (salt) => prfWrappingKey(prfSecret, salt),
+    'Security-key wrap',
+    'This security key does not open the vault (wrong key, or the wrap was replaced).',
+  );
+}
+
+/** Recover the master key from the recovery-code wrap. */
+export function unwrapWithRecoveryCode(wrap: KeyWrap, secret: Buffer): Buffer {
+  return unwrapMasterKey(
+    wrap,
+    (salt) => recoveryWrappingKey(secret, salt),
+    'Recovery-code wrap',
+    'This recovery code does not open the vault (wrong code, or a newer code replaced it).',
+  );
 }
 
 /** Replace/add a wrap by id, keeping the rest untouched. */
@@ -251,6 +310,25 @@ export function removeWrap(wraps: readonly KeyWrap[], kind: KeyWrapKind, id: str
 /** The security keys registered for a vault, in registration order. */
 export function webauthnWraps(wraps: readonly KeyWrap[]): KeyWrap[] {
   return wraps.filter((w) => w.kind === 'webauthn').sort((a, b) => a.createdAt - b.createdAt);
+}
+
+/** The vault's one recovery-code wrap, when a code has been set up. */
+export function recoveryWrap(wraps: readonly KeyWrap[]): KeyWrap | undefined {
+  return wraps.find((w) => w.kind === 'recovery');
+}
+
+/**
+ * Whether any wrap here ties this file to the VAULT's own master key — a security
+ * key, a recovery code, anything that is not the self-contained pin-wrap.
+ *
+ * <p>Deliberately "any non-pin kind" rather than a list of the current kinds:
+ * `backupWriteMode` routed by "has a webauthn wrap" and the day the recovery kind
+ * arrived, a pin+recovery vault read as a standalone PIN backup — whose write path
+ * would have silently stripped the recovery wrap. A kind added later must fail
+ * SAFE here without anyone remembering this function exists.</p>
+ */
+export function hasVaultKeyedWrap(wraps: readonly KeyWrap[]): boolean {
+  return wraps.some((w) => w.kind !== 'pin');
 }
 
 /**

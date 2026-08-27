@@ -13,20 +13,25 @@ import {
   CURRENT_WRAPPED_VERSION,
 } from '../cryptoUtils';
 import {
+  hasVaultKeyedWrap,
   isKeyWrap,
   newMasterKey,
   newPrfSalt,
+  recoveryWrap,
   removeWrap,
   unwrapWithPin,
   unwrapWithPrf,
+  unwrapWithRecoveryCode,
   upsertWrap,
   webauthnWraps,
   wrapWithPin,
   wrapWithPrf,
+  wrapWithRecoveryCode,
   prfSaltsByCredential,
   wrapForCredential,
   wrapPinVault,
 } from '../keyWrap';
+import { generateRecoveryCode } from '../recoveryCode';
 
 const NOW = 1_800_000_000_000;
 const ACCOUNT = 'acct-1';
@@ -110,6 +115,67 @@ test('upsertWrap replaces a key by id instead of duplicating it', () => {
   const wraps = upsertWrap([first], second);
   assert.equal(wraps.length, 1);
   assert.equal(wraps[0].label, 'new label');
+});
+
+test('a recovery-code wrap round-trips the master key and rejects a wrong code', () => {
+  const master = newMasterKey();
+  const code = generateRecoveryCode();
+  const wrap = wrapWithRecoveryCode(master, code.secret, NOW);
+  assert.ok(isKeyWrap(wrap), 'the guard must accept the new kind or sync drops it');
+  assert.equal(wrap.id, 'recovery');
+  assert.deepEqual(unwrapWithRecoveryCode(wrap, code.secret), master);
+  assert.throws(
+    () => unwrapWithRecoveryCode(wrap, generateRecoveryCode().secret),
+    BackupError,
+  );
+});
+
+test('PIN, security key and recovery code all open the SAME vault', () => {
+  const master = newMasterKey();
+  const prf = crypto.randomBytes(32);
+  const code = generateRecoveryCode();
+  const wraps = [
+    wrapWithPin(master, ACCOUNT, 'pin', NOW),
+    wrapWithPrf(master, 'key-a', newPrfSalt(), prf, 'A', NOW + 1),
+    wrapWithRecoveryCode(master, code.secret, NOW + 2),
+  ];
+  const vault = encryptJsonWrapped(payload, master.toString('base64'), wraps, undefined, []);
+  assert.equal(readVaultWraps(vault).filter(isKeyWrap).length, 3);
+  for (const key of [
+    unwrapWithPin(wraps[0], ACCOUNT, 'pin'),
+    unwrapWithPrf(wraps[1], prf),
+    unwrapWithRecoveryCode(wraps[2], code.secret),
+  ]) {
+    assert.deepEqual(decryptJsonWithMasterKey(vault, key.toString('base64')), payload);
+  }
+  // The recovery wrap is invisible to the security-key helpers.
+  assert.equal(webauthnWraps(wraps).length, 1);
+  assert.equal(recoveryWrap(wraps), wraps[2]);
+});
+
+test('upsertWrap keeps exactly one recovery slot — regenerating replaces it', () => {
+  const master = newMasterKey();
+  const first = generateRecoveryCode();
+  const second = generateRecoveryCode();
+  const wraps = upsertWrap(
+    [wrapWithPin(master, ACCOUNT, 'pin', NOW), wrapWithRecoveryCode(master, first.secret, NOW)],
+    wrapWithRecoveryCode(master, second.secret, NOW + 5),
+  );
+  assert.equal(wraps.filter((w) => w.kind === 'recovery').length, 1);
+  const wrap = recoveryWrap(wraps)!;
+  assert.deepEqual(unwrapWithRecoveryCode(wrap, second.secret), master);
+  assert.throws(() => unwrapWithRecoveryCode(wrap, first.secret), BackupError);
+});
+
+test('hasVaultKeyedWrap: any non-pin wrap counts, a pin alone does not', () => {
+  const master = newMasterKey();
+  const pin = wrapWithPin(master, ACCOUNT, 'pin', NOW);
+  const key = wrapWithPrf(master, 'k', newPrfSalt(), crypto.randomBytes(32), 'K', NOW);
+  const code = wrapWithRecoveryCode(master, generateRecoveryCode().secret, NOW);
+  assert.equal(hasVaultKeyedWrap([pin]), false);
+  assert.equal(hasVaultKeyedWrap([pin, key]), true);
+  assert.equal(hasVaultKeyedWrap([pin, code]), true);
+  assert.equal(hasVaultKeyedWrap([]), false);
 });
 
 test('the v1 -> v2 upgrade keeps the data and both unlock paths', () => {

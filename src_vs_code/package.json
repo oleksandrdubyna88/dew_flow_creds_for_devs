@@ -689,6 +689,23 @@
         "icon": "$(unlock)"
       },
       {
+        "command": "credSshManager.setupRecoveryCode",
+        "title": "Set Up Recovery Code…",
+        "category": "CredsForDevs",
+        "icon": "$(output)"
+      },
+      {
+        "command": "credSshManager.unlockWithRecoveryCode",
+        "title": "Unlock Vault (Recovery Code)…",
+        "category": "CredsForDevs",
+        "icon": "$(unlock)"
+      },
+      {
+        "command": "credSshManager.removeRecoveryCode",
+        "title": "Remove Recovery Code…",
+        "category": "CredsForDevs"
+      },
+      {
         "command": "credSshManager.lockVaults",
         "title": "Lock Vaults (clear cached keys)",
         "category": "CredsForDevs",
@@ -1057,6 +1074,21 @@
           "command": "credSshManager.setAutoLock",
           "when": "view == credSshManagerView && viewItem == account",
           "group": "2_keys@5"
+        },
+        {
+          "command": "credSshManager.setupRecoveryCode",
+          "when": "view == credSshManagerView && viewItem == account",
+          "group": "2_keys@6"
+        },
+        {
+          "command": "credSshManager.unlockWithRecoveryCode",
+          "when": "view == credSshManagerView && viewItem == account",
+          "group": "2_keys@7"
+        },
+        {
+          "command": "credSshManager.removeRecoveryCode",
+          "when": "view == credSshManagerView && viewItem == account",
+          "group": "2_keys@8"
         },
         {
           "command": "credSshManager.removeAccount",

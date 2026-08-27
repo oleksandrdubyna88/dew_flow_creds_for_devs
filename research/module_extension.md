@@ -866,7 +866,34 @@ pin-only v3 file (a `pin`-wrap with no key-wrap → `silentPin` → `unwrapWithP
 | KDF | scrypt, `N=2^17`, `r=8`, `p=1` (legacy blobs: `N=2^15`) |
 | Cipher | AES-256-GCM, 128-bit tag |
 | WebAuthn wrap | HKDF over the PRF secret, `info="cred-ssh-manager/webauthn"` |
+| Recovery-code wrap | HKDF over the printed code's 30-symbol core, `info="cred-ssh-manager/recovery-code"` |
 | Envelope MAC | HMAC-SHA256, `info="cred-ssh-manager/envelope-mac"`, compared with `timingSafeEqual` |
+
+**The third wrap kind — the printed recovery code** (`recoveryCode.ts`, roadmap D9). A vault has two
+ways in that both live with one person: the PIN in a head, the security key in a pocket. The code is
+the third, deliberately offline: `RC1-XXXXX-…-CCCC`, 30 symbols of Crockford Base32 (`I L O U`
+excluded) drawn with `crypto.randomInt` — **150 bits exactly**, reported unrounded — plus a
+deterministic 4-symbol checksum so a mistyped character is named locally instead of arriving as
+"wrong code". Parsing is case-insensitive, ignores separators, and maps the confusables back
+(`O→0`, `I/L→1`), because the input is a person reading paper.
+
+HKDF rather than scrypt, for the reason `prfWrappingKey` already gives: a slow KDF protects a
+low-entropy human choice, and this is not one. The slot's id is the constant `'recovery'`, so
+`upsertWrap` keeps exactly one and regenerating retires its predecessor with no separate revocation
+step — asserted by `securityKeyOps.test.ts` ("the OLD code opens nothing").
+
+`envelopeWithRecoveryCode` shares its two regimes with `envelopeWithAddedKey` through one
+`envelopeWithAddedWrap`: around the same master for a wrapped vault, through the v1 upgrade
+otherwise — and that upgrade **requires the PIN**, so a vault openable by a piece of paper alone is
+a shape the code cannot create. `envelopeWithoutRecoveryCode` drops the slot and re-signs; it does
+not re-key, and the caller says out loud that an older copy stays openable by that printout — the
+same honesty `removeSecurityKey` practises.
+
+`hasVaultKeyedWrap` exists because of what the third kind broke on arrival: `backupWriteMode`
+routed by "has a webauthn wrap", so a PIN + recovery-code vault read as a self-contained PIN backup
+whose write path replaces the wraps wholesale — silently destroying the printed code's slot. The
+question is now "is there any NON-pin wrap", so a kind added later fails safe without anyone
+remembering the function exists.
 
 **KDF parameters are recorded in the blob**, so raising the cost never orphans an old vault, and
 `kdfMigration.test.ts` proves both that the round-trip works and that a mismatched recorded `N`
@@ -899,6 +926,27 @@ Only the LOCK demands a gesture. Reading a password from an unlocked vault does 
 credential-read path calls `unlock()` at all, because credentials live in the OS keychain and are
 not protected by the vault key. Every caller of `unlock()` is a vault-management act: sync, register
 or remove a security key, re-key.
+
+**The recovery code is not in that cascade, on purpose.** `unlockPlan` learns the fact
+(`hasRecoveryWrap`) but never routes to it beside the PIN and the key — a picker that lists the
+piece of paper next to the daily factors teaches people to reach for the paper. It appears in
+exactly two places: as a named hint when the degenerate vault (a recovery wrap and nothing else)
+meets a person, and as its own command, `Unlock Vault (Recovery Code)…`. The command is the real
+path, because in the case the feature exists for the vault still *has* a PIN wrap and key wraps —
+it is their holder who no longer has the PIN or the key, so no automatic branch would ever reach
+the code. A background caller is never told about it: nobody is there to read paper.
+
+`VaultKeys.unlockWithRecoveryCode` goes through the same private `remember()` as every other
+unlock, which is what makes the follow-up free: the command then offers to set a new PIN, and
+`SyncManager.setPin` → `rekeyToNewPin` finds the master key already cached and needs no second
+gesture from a person who, by definition, has no other factor to offer. The offer is a modal, not a
+refusal to continue — a hard block would strand an already-stressed owner mid-emergency.
+
+The code is displayed by `recoveryCodeView.ts` exactly once and stored nowhere: not in
+`SecretStorage`, not in a log, only as its HKDF-wrapped form inside the vault file. That panel has
+a Print button and **no way to copy** — the one deliberate exception to this extension's
+copy-button-everywhere habit, because a clipboard is read by managers, sync tools and screenshot
+pipelines, and this is the factor for the day the laptop is gone.
 
 ## Sync
 

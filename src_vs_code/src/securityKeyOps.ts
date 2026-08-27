@@ -2,11 +2,13 @@ import {
   KeyWrap,
   isKeyWrap,
   newMasterKey,
+  recoveryWrap,
   removeWrap,
   upsertWrap,
   webauthnWraps,
   wrapWithPinAsync,
   wrapWithPrf,
+  wrapWithRecoveryCode,
 } from './keyWrap';
 import { encryptJsonWrapped, readVaultWraps, resignEnvelopeWraps } from './cryptoUtils';
 import type { VaultKey } from './vaultKeys';
@@ -23,6 +25,10 @@ import { StoredAccount } from './types';
  * and every stale backup holding its wrap — stops opening future versions), and
  * remove-one-of-many (drop the slot and re-sign; copies already made stay openable until a
  * re-key, and the caller says so out loud).</p>
+ *
+ * <p>The recovery-code slot ({@link envelopeWithRecoveryCode}) rides the same two regimes as
+ * adding a key, and for the same reasons — which is why the legacy-upgrade half is one
+ * function both call rather than two that drift.</p>
  */
 
 /** What a WebAuthn registration ceremony produced, as the wrap needs it. */
@@ -41,7 +47,12 @@ export interface NextEnvelope {
   rekeyed: boolean;
 }
 
-export function isSecurityKeyRefusal(value: NextEnvelope | SecurityKeyRefusal): value is SecurityKeyRefusal {
+/**
+ * `unknown` rather than the union, because the removal paths answer
+ * `string | SecurityKeyRefusal` — a refusal IS a string, so a narrower signature would
+ * force every one of those callers to cast before asking the question this exists to answer.
+ */
+export function isSecurityKeyRefusal(value: unknown): value is SecurityKeyRefusal {
   return value === 'pin-required' || value === 'not-wrapped';
 }
 
@@ -73,13 +84,43 @@ export async function envelopeWithAddedKey(
   prf: RegisteredPrf,
   label: string,
 ): Promise<NextEnvelope | SecurityKeyRefusal> {
+  return envelopeWithAddedWrap(args, (master, now) =>
+    wrapWithPrf(master, prf.credentialId, prf.prfSalt, prf.secret, label.trim(), now),
+  );
+}
+
+/**
+ * The next envelope after setting (or REPLACING) the printed recovery code's slot.
+ *
+ * <p>Same two regimes as adding a key, deliberately: a wrapped vault gains one more opener
+ * around the same master, and a legacy vault takes the upgrade — which needs the PIN, so a
+ * vault can never end up openable by a piece of paper alone. The slot's id is constant, so
+ * `upsertWrap` replaces it and a regenerated code retires its predecessor without any
+ * separate revocation step.</p>
+ */
+export async function envelopeWithRecoveryCode(
+  args: EnvelopeArgs,
+  secret: Buffer,
+): Promise<NextEnvelope | SecurityKeyRefusal> {
+  return envelopeWithAddedWrap(args, (master, now) => wrapWithRecoveryCode(master, secret, now));
+}
+
+/**
+ * Add one wrap of any kind: around the existing master when the vault is already wrapped,
+ * or through the v1 upgrade when it is not.
+ *
+ * <p>One function rather than one per kind, because the halves are identical apart from the
+ * wrap being built — and the legacy branch is the half where a divergence would be a silent
+ * lockout rather than a compile error.</p>
+ */
+async function envelopeWithAddedWrap(
+  args: EnvelopeArgs,
+  build: (master: Buffer, now: number) => KeyWrap,
+): Promise<NextEnvelope | SecurityKeyRefusal> {
   const { raw, key, account, storedPin, now } = args;
   if (key.version === 2) {
     // Already wrapped: add one more wrap around the SAME master key.
-    const wraps = upsertWrap(
-      readVaultWraps(raw).filter(isKeyWrap),
-      wrapWithPrf(key.masterKey, prf.credentialId, prf.prfSalt, prf.secret, label.trim(), now),
-    );
+    const wraps = upsertWrap(readVaultWraps(raw).filter(isKeyWrap), build(key.masterKey, now));
     return { content: resignEnvelopeWraps(raw, wraps, key.masterKey), rekeyed: false };
   }
   // Upgrade v1 → wrapped: new master key, payload re-encrypted, two wraps.
@@ -88,10 +129,7 @@ export async function envelopeWithAddedKey(
   }
   const payload = await args.decrypt(raw, key);
   const master = newMasterKey();
-  const wraps = [
-    await wrapWithPinAsync(master, account.accountId, storedPin, now),
-    wrapWithPrf(master, prf.credentialId, prf.prfSalt, prf.secret, label.trim(), now),
-  ];
+  const wraps = [await wrapWithPinAsync(master, account.accountId, storedPin, now), build(master, now)];
   return {
     content: encryptJsonWrapped(payload, master.toString('base64'), wraps, account, args.pendingShares),
     rekeyed: true,
@@ -101,6 +139,30 @@ export async function envelopeWithAddedKey(
 /** The wraps currently on a vault file, typed. */
 export function vaultKeyWraps(raw: string): KeyWrap[] {
   return readVaultWraps(raw).filter(isKeyWrap);
+}
+
+/** Whether this vault currently has a printed recovery code registered. */
+export function hasRecoveryCode(raw: string): boolean {
+  return recoveryWrap(vaultKeyWraps(raw)) !== undefined;
+}
+
+/**
+ * The next envelope after REMOVING the recovery-code slot.
+ *
+ * <p>No re-key branch, and that is a decision rather than an omission: re-keying needs every
+ * remaining opener present to be re-wrapped, and the security keys are not. So a printed code
+ * removed here stops opening FUTURE versions of the vault while a copy already on disk stays
+ * openable by it — exactly what removing one of several security keys does, and the caller
+ * says so in the same words.</p>
+ */
+export function envelopeWithoutRecoveryCode(
+  raw: string,
+  key: VaultKey,
+): string | SecurityKeyRefusal {
+  if (key.version !== 2) {
+    return 'not-wrapped';
+  }
+  return resignEnvelopeWraps(raw, removeWrap(vaultKeyWraps(raw), 'recovery', 'recovery'), key.masterKey);
 }
 
 /**

@@ -15,6 +15,7 @@ const base = {
   hasStoredPin: false,
   hasPinWrap: true,
   hasKeyWrap: true,
+  hasRecoveryWrap: false,
 };
 
 test('a stored PIN opens silently — no prompt, no picker, nothing changed for sync', () => {
@@ -53,6 +54,40 @@ test('a background caller with no silent path is refused, never prompted', () =>
 test('no way in at all is refused, not an invented prompt', () => {
   assert.deepEqual(
     unlockPlan({ ...base, hasPinWrap: false, hasKeyWrap: false }),
+    { kind: 'refuse' },
+  );
+});
+
+test('a printed code is named only when nothing ordinary is left', () => {
+  // The degenerate vault: no PIN wrap, no key wrap, a recovery code registered. Saying
+  // "refused" there would be true and useless — the factor for exactly this day exists.
+  assert.deepEqual(
+    unlockPlan({ ...base, hasPinWrap: false, hasKeyWrap: false, hasRecoveryWrap: true }),
+    { kind: 'recoveryCodeAvailable' },
+  );
+});
+
+test('a printed code never preempts the PIN or the key, and never reaches a background caller', () => {
+  // The paper is the last resort, not an option beside the two daily ones — offering it
+  // in the picker is how people would learn to reach for it.
+  assert.deepEqual(unlockPlan({ ...base, hasRecoveryWrap: true }), { kind: 'choose' });
+  assert.deepEqual(
+    unlockPlan({ ...base, hasKeyWrap: false, hasRecoveryWrap: true }),
+    { kind: 'promptPin' },
+  );
+  assert.deepEqual(
+    unlockPlan({ ...base, hasPinWrap: false, hasRecoveryWrap: true }),
+    { kind: 'key' },
+  );
+  // Unattended sync must never be told about it: nobody is there to read paper.
+  assert.deepEqual(
+    unlockPlan({
+      ...base,
+      interactive: false,
+      hasPinWrap: false,
+      hasKeyWrap: false,
+      hasRecoveryWrap: true,
+    }),
     { kind: 'refuse' },
   );
 });

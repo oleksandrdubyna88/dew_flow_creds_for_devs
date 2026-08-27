@@ -11,12 +11,20 @@ import {
 import {
   KeyWrap,
   prfSaltsByCredential,
+  recoveryWrap,
   wrapForCredential,
   isKeyWrap,
   unwrapWithPinAsync,
   unwrapWithPrf,
+  unwrapWithRecoveryCode,
   wrapPinVaultAsync,
 } from './keyWrap';
+import {
+  RecoveryCodeError,
+  describeRecoveryCodeInput,
+  isRecoveryCodeError,
+  parseRecoveryCode,
+} from './recoveryCode';
 import { authenticateSecurityKey } from './webauthnPrf';
 import { validatePin } from './pinPolicy';
 import { StoredAccount } from './types';
@@ -119,6 +127,49 @@ export class VaultKeys {
     this.cache.delete(account.accountId);
   }
 
+  /**
+   * Ask for the printed recovery code. Never stored anywhere — unlike the PIN, which is
+   * kept for this machine, a code that lives on disk is a code that stopped being an
+   * offline factor.
+   */
+  async promptRecoveryCode(account: StoredAccount): Promise<string | undefined> {
+    return vscode.window.showInputBox({
+      title: `Unlock ${account.email} with the recovery code`,
+      prompt: 'The printed code — RC1-XXXXX-…  Dashes, spaces and case do not matter.',
+      ignoreFocusOut: true,
+      validateInput: describeRecoveryCodeInput,
+    });
+  }
+
+  /**
+   * Open a vault with the printed recovery code.
+   *
+   * <p>Deliberately outside `unlock`'s cascade: in the case this exists for, the vault
+   * still HAS a PIN wrap and key wraps — their holder simply no longer has the PIN or the
+   * key — so no automatic path would ever reach the code. It goes through `remember`, so
+   * the caller's follow-up "set a new PIN" finds the master key already cached and needs
+   * no second gesture.</p>
+   */
+  async unlockWithRecoveryCode(
+    account: StoredAccount,
+    vaultContent: string,
+    typed: string,
+  ): Promise<VaultKey | RecoveryCodeError | 'no-recovery-code'> {
+    const parsed = parseRecoveryCode(typed);
+    if (isRecoveryCodeError(parsed)) {
+      return parsed;
+    }
+    const wraps = readVaultWraps(vaultContent).filter(isKeyWrap);
+    const wrap = recoveryWrap(wraps);
+    if (wrap === undefined) {
+      return 'no-recovery-code';
+    }
+    const master = unwrapWithRecoveryCode(wrap, parsed.secret);
+    const key = this.remember(account, master, wraps);
+    this.lockState.noteUnlocked(Date.now());
+    return key;
+  }
+
   /** Ask for the PIN (used when none is stored, or to re-enter it). */
   async promptPin(account: StoredAccount, purpose: string): Promise<string | undefined> {
     return vscode.window.showInputBox({
@@ -218,7 +269,19 @@ export class VaultKeys {
       hasStoredPin: storedPin !== undefined,
       hasPinWrap: pinWrap !== undefined,
       hasKeyWrap: Object.keys(salts).length > 0,
+      hasRecoveryWrap: recoveryWrap(wraps) !== undefined,
     });
+
+    if (plan.kind === 'recoveryCodeAvailable') {
+      // Nothing ordinary is left, but the paper exists. Naming the command beats a bare
+      // refusal — and it stays a message rather than a prompt, so the code is only ever
+      // typed on the path that also offers to set a new PIN afterwards.
+      void vscode.window.showWarningMessage(
+        `${account.email} has no PIN or security key registered — only its printed recovery code. ` +
+          'Run "CredsForDevs: Unlock Vault (Recovery Code)…" to open it.',
+      );
+      return undefined;
+    }
 
     if (plan.kind === 'refuse') {
       return undefined;

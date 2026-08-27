@@ -3,17 +3,23 @@ import * as crypto from 'node:crypto';
 import { test } from 'node:test';
 import {
   envelopeWithAddedKey,
+  envelopeWithRecoveryCode,
   envelopeWithRemovedKey,
+  envelopeWithoutRecoveryCode,
+  hasRecoveryCode,
   removalWouldRekey,
   vaultKeyWraps,
   isSecurityKeyRefusal,
 } from '../securityKeyOps';
 import {
   newMasterKey,
+  recoveryWrap,
   unwrapWithPinAsync,
+  unwrapWithRecoveryCode,
   webauthnWraps,
   wrapWithPinAsync,
 } from '../keyWrap';
+import { generateRecoveryCode } from '../recoveryCode';
 import { decryptJsonWithMasterKey, encryptJsonWrapped } from '../cryptoUtils';
 import type { VaultKey } from '../vaultKeys';
 import { StoredAccount } from '../types';
@@ -171,6 +177,87 @@ test('the resign path refuses a legacy unlock instead of writing something it ca
   const next = await envelopeWithRemovedKey(argsFor(raw, legacy), first.id);
 
   assert.equal(next, 'not-wrapped');
+});
+
+test('setting a recovery code adds a slot around the SAME master, beside the key', async () => {
+  const master = newMasterKey();
+  let raw = await wrappedVault(master);
+  const added = await envelopeWithAddedKey(argsFor(raw, wrappedKey(raw, master)), prf('cred-a'), 'K');
+  assert.ok(!isSecurityKeyRefusal(added));
+  raw = added.content;
+  const code = generateRecoveryCode();
+
+  const next = await envelopeWithRecoveryCode(argsFor(raw, wrappedKey(raw, master)), code.secret);
+
+  assert.ok(!isSecurityKeyRefusal(next));
+  assert.equal(next.rekeyed, false, 'a printed code must not re-encrypt the payload');
+  assert.equal(hasRecoveryCode(next.content), true);
+  const wraps = vaultKeyWraps(next.content);
+  assert.equal(webauthnWraps(wraps).length, 1, 'the security key is untouched');
+  assert.deepEqual(unwrapWithRecoveryCode(recoveryWrap(wraps)!, code.secret), master);
+  assert.deepEqual(decryptJsonWithMasterKey(next.content, master), PAYLOAD, 'payload untouched');
+});
+
+test('a recovery code on a legacy vault refuses without a PIN, and upgrades with one', async () => {
+  const key: VaultKey = { version: 1, passphrase: 'acc-1oldpin', pin: 'oldpin' };
+  const code = generateRecoveryCode();
+
+  // Without a PIN the vault would end up openable by a piece of paper alone.
+  const refused = await envelopeWithRecoveryCode(
+    { ...argsFor('irrelevant-v1-bytes', key), storedPin: undefined },
+    code.secret,
+  );
+  assert.equal(refused, 'pin-required');
+
+  const next = await envelopeWithRecoveryCode(argsFor('irrelevant-v1-bytes', key), code.secret);
+  assert.ok(!isSecurityKeyRefusal(next));
+  assert.equal(next.rekeyed, true);
+  const wraps = vaultKeyWraps(next.content);
+  assert.equal(wraps.length, 2, 'the PIN wrap and the recovery wrap');
+  const master = await unwrapWithPinAsync(wraps.find((w) => w.kind === 'pin')!, ACCOUNT.accountId, PIN);
+  assert.deepEqual(unwrapWithRecoveryCode(recoveryWrap(wraps)!, code.secret), master);
+  assert.deepEqual(decryptJsonWithMasterKey(next.content, master), PAYLOAD);
+});
+
+test('regenerating a recovery code retires the printed one — the OLD code opens nothing', async () => {
+  // The whole reason the slot has a constant id: replace, never accumulate. A second
+  // printed page must make the first one worthless the moment it is written.
+  const master = newMasterKey();
+  const raw = await wrappedVault(master);
+  const first = generateRecoveryCode();
+  const second = generateRecoveryCode();
+
+  const once = await envelopeWithRecoveryCode(argsFor(raw, wrappedKey(raw, master)), first.secret);
+  assert.ok(!isSecurityKeyRefusal(once));
+  const twice = await envelopeWithRecoveryCode(
+    argsFor(once.content, wrappedKey(once.content, master)),
+    second.secret,
+  );
+  assert.ok(!isSecurityKeyRefusal(twice));
+
+  const wraps = vaultKeyWraps(twice.content);
+  assert.equal(wraps.filter((w) => w.kind === 'recovery').length, 1, 'one slot, not two');
+  assert.deepEqual(unwrapWithRecoveryCode(recoveryWrap(wraps)!, second.secret), master);
+  assert.throws(
+    () => unwrapWithRecoveryCode(recoveryWrap(wraps)!, first.secret),
+    'the previously printed code must be dead',
+  );
+});
+
+test('removing the recovery code drops the slot, keeps the master, and refuses a legacy key', async () => {
+  const master = newMasterKey();
+  const raw = await wrappedVault(master);
+  const code = generateRecoveryCode();
+  const withCode = await envelopeWithRecoveryCode(argsFor(raw, wrappedKey(raw, master)), code.secret);
+  assert.ok(!isSecurityKeyRefusal(withCode));
+
+  const next = envelopeWithoutRecoveryCode(withCode.content, wrappedKey(withCode.content, master));
+  assert.ok(!isSecurityKeyRefusal(next));
+  assert.equal(hasRecoveryCode(next), false);
+  assert.deepEqual(decryptJsonWithMasterKey(next, master), PAYLOAD, 'no re-key, same master');
+
+  const legacy: VaultKey = { version: 1, passphrase: 'x', pin: 'x' };
+  assert.equal(envelopeWithoutRecoveryCode(withCode.content, legacy), 'not-wrapped');
 });
 
 test('removalWouldRekey: last key + PIN → yes; other keys left or no PIN → no', async () => {

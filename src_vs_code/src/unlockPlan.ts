@@ -17,6 +17,13 @@ export interface UnlockFacts {
   hasStoredPin: boolean;
   hasPinWrap: boolean;
   hasKeyWrap: boolean;
+  /**
+   * A printed recovery code is registered. Deliberately NOT one of the ways this cascade
+   * opens a vault: it is the factor for the day the other two are gone, reached by its own
+   * command, never offered beside them — a picker that lists the piece of paper next to the
+   * PIN teaches people to reach for the paper.
+   */
+  hasRecoveryWrap: boolean;
 }
 
 export type UnlockPlan =
@@ -28,6 +35,13 @@ export type UnlockPlan =
   | { kind: 'key' }
   /** Only a typed PIN can open this. */
   | { kind: 'promptPin' }
+  /**
+   * Nothing ordinary opens this vault, but a printed code does — say so instead of
+   * refusing silently. A hint for the person, never an inline prompt: the code is typed
+   * through its own command, so the one path that reads it is the one that also offers
+   * to set a fresh PIN afterwards.
+   */
+  | { kind: 'recoveryCodeAvailable' }
   /** No path for this caller. Background with nothing stored, or no wraps at all. */
   | { kind: 'refuse' };
 
@@ -47,6 +61,9 @@ export function unlockPlan(facts: UnlockFacts): UnlockPlan {
   }
   if (facts.hasPinWrap) {
     return { kind: 'promptPin' };
+  }
+  if (facts.hasRecoveryWrap) {
+    return { kind: 'recoveryCodeAvailable' };
   }
   return { kind: 'refuse' };
 }

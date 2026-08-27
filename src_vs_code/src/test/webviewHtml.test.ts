@@ -99,6 +99,10 @@ const folderForm = withVscodeStub(
   () => require('../folderFormPanel') as { showFolderForm(options: Record<string, unknown>): unknown },
 );
 
+const recoveryView = withVscodeStub(
+  () => require('../recoveryCodeView') as { showRecoveryCodeView(options: Record<string, unknown>): void },
+);
+
 /** Render the form for one kind and return the HTML it produced. */
 function renderForm(
   lockedKind: string | undefined,
@@ -204,6 +208,37 @@ test('the viewer page script parses too', () => {
   // The code is delivered by message after load, never baked into the page — so a leaked
   // HTML string holds neither the seed nor a code.
   assert.equal(currentPanel.webview.html.includes('123456'), false);
+});
+
+test('the recovery-code page parses, shows the code, and offers no way to copy it', () => {
+  currentPanel = newPanel();
+  recoveryView.showRecoveryCodeView({
+    email: 'me@corp.com',
+    code: 'RC1-ABCDE-FGHJK-MNPQR-STVWX-YZ012-34567-89AB',
+    createdAt: 1_700_000_000_000,
+    regenerated: true,
+  });
+  const html = currentPanel.webview.html;
+  assert.notEqual(html.length, 0, 'the recovery view rendered no html');
+  assert.doesNotThrow(
+    () => new Function('acquireVsCodeApi', pageScript(html)),
+    'recovery-code page script does not parse',
+  );
+  // Every group of the code reaches the page — this is the one place it is ever readable.
+  for (const group of ['ABCDE', 'FGHJK', 'MNPQR', 'STVWX', 'YZ012', '34567', '89AB']) {
+    assert.ok(html.includes(group), `the code group ${group} is missing from the page`);
+  }
+  assert.ok(html.includes('window.print()'), 'print is the affordance this page exists for');
+  // The deliberate exception to the extension's copy-button-everywhere habit: a clipboard is
+  // read by more programs than the person expects, and this factor outlives the laptop.
+  //
+  // The assertion is about a MECHANISM, not a word — the page's own prose explains why there
+  // is no copy button, and an earlier version of this check failed on that explanation. What
+  // must be absent is a way to copy, not the topic.
+  for (const mechanism of ['navigator.clipboard', 'execCommand', "type: 'copy'", 'data-action="copy"']) {
+    assert.equal(html.includes(mechanism), false, `the page offers a copy mechanism: ${mechanism}`);
+  }
+  assert.ok(html.includes('destroy it'), 'a regenerated code must retire its printed predecessor out loud');
 });
 
 test('every fieldset the visibility switch touches exists exactly once', () => {

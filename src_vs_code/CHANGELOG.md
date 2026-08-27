@@ -6,7 +6,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **A printable recovery code — the third way into a vault.** Until now a vault had two openers and
+  both lived with one person: the PIN in a head, the security key in a pocket. Lose both and the
+  data is gone, which is correct against an attacker and a disaster for the owner. *Set Up Recovery
+  Code…* mints `RC1-XXXXX-…` — 30 symbols of Crockford Base32, **150 bits exactly**, with a
+  checksum that names a mistyped character locally instead of letting it arrive as "wrong code" —
+  and wraps the vault's master key under it, beside the PIN and every registered key. The page that
+  shows it has a Print button and **no way to copy it**: a clipboard is read by clipboard managers,
+  sync tools and screenshot pipelines, and this is the factor that has to outlive the laptop. It is
+  shown once, stored nowhere, and generating a new one retires the old printout.
+
+  *Unlock Vault (Recovery Code)…* is a command of its own rather than an option in the unlock
+  picker, and that is the design rather than an oversight: in the case this exists for, the vault
+  still *has* a PIN wrap and key wraps — it is their holder who no longer has the PIN or the key —
+  so no automatic branch would ever reach the code. Listing paper beside the daily factors would
+  also teach people to reach for the paper. After it opens the vault it offers a new PIN
+  immediately, and that costs no second gesture from someone who has no other factor left to give.
+
 ### Fixed
+
+- **A vault whose only non-PIN opener was a recovery code was misfiled by "Snapshot Vault".** The
+  backup write path picks its mode by what is already in the file, and asked "is there a security
+  key wrap" — written when a security key was the only other kind there was. A vault holding a PIN
+  and a printed code answered no, so it was written as a self-contained PIN backup, and that path
+  replaces the wraps wholesale: the printed code's slot would have been destroyed with nothing
+  failing and nothing warning. The question is now "is there any wrap that is not the PIN", so the
+  next kind added fails safe without anyone having to remember this code exists. Found while
+  building the feature above, fixed with the failing test written first.
 
 - **The remote install downloaded the script and then closed the pipe it arrived on.** The command
   was `curl … | sh < /dev/null`: the redirection wins over the pipe, so the shell read an empty
