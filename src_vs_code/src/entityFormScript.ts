@@ -6,6 +6,7 @@ import { DependencyFolderCandidate, DependencyRow } from './depGraph';
 import { dependencyPickerScript } from './depPickerScript';
 import { mcpSwitchScript } from './mcpSwitchScript';
 import { configTabsScript } from './configTabsScript';
+import { qrPasteScript } from './qrPasteScript';
 import { formVisibilityScript } from './formVisibilityScript';
 
 /** What the Depends-on picker needs, gathered once when the page is built. */
@@ -778,6 +779,8 @@ export function formPageScript(
       if (data.publicLine) { document.getElementById('publicKey').value = data.publicLine; }
     }
   });
+  ${qrPasteScript()}
+
   // Keyboard: Esc cancels, Ctrl/Cmd+S saves — what every editor's hands already expect.
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {

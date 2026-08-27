@@ -8,6 +8,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Paste a QR code to fill in a one-time code.** The seed field asked for an `otpauth://` URI or a
+  base32 secret, and that text is the one thing you often cannot get: **Google Authenticator exports
+  only as a picture** (*Transfer accounts → Export accounts*), and Microsoft Authenticator exports
+  nothing at all, in any form. Snip the QR with `Win+Shift+S`, press `Ctrl+V` in the entry form, and
+  the seed is in the field.
+
+  It reads both kinds: the QR a service shows at enrolment, and a whole Google Authenticator export —
+  every account in one picture, listed by issuer so you can pick the one this entry is for. A
+  counter-based (HOTP) entry is refused **by name**, because a second copy of one advances a counter
+  the first then no longer matches. A picture with no QR in it, or a QR carrying something else, says
+  so instead of quietly storing rubbish — and a poster that happens to read as valid base32 is never
+  mistaken for a seed.
+
+  The reader is written from the standard rather than taken from a package: **the extension still has
+  zero runtime dependencies**. Forty-one real payloads — the app stores, a device sign-in page, a
+  café's wi-fi and menu and business card, a SEPA transfer, a UPI payment, a poster campaign, a
+  calendar invitation, Ukrainian and Japanese text, and Google exports — are decoded in the test
+  suite from pictures that are variously tiny, zoomed, inverted, blurred, noisy, cropped to the edge
+  and rotated by 7°, 33° and 90°.
+
+- **Choose whether a one-time code travels with a share.** Sharing an entry that has a TOTP seed now
+  asks once, as a checkbox that starts unticked: tick it and the recipient can produce codes for that
+  login too, leave it and everything else is shared while your second factor stays here. The question
+  only appears when something in the selection actually has a seed.
+
 - **Config files live in the vault now.** `appsettings.Development.json`, `.env`, and their
   relatives cannot be committed, so they are passed between developers by hand and lost regularly —
   and losing one costs days, because nothing describes what was in it. `dotnet user-secrets` solves
@@ -44,6 +69,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   access themselves and gets their own.
 
 ### Fixed
+
+- **A shared entry left its one-time code behind — and claimed it had not.** The sending half never
+  read the TOTP seed, while the receiving half had always been ready to store one, so sharing an
+  entry with a second factor delivered everything except the second factor. Worse, the "this entry
+  has a one-time code" flag travelled regardless: the recipient got a row offering *Copy One-Time
+  Code* on an entry that could not produce one. Both halves are fixed together, and the seed now
+  travels only when you tick the box (above); when you do not, it is not even read.
 
 - **The Remote Bridge menu item said "Open" while a bridge was open.** The command toggled; the
   title did not. Somebody looking for *Close* found nothing, and had to click *Open Remote Bridge…*

@@ -92,6 +92,29 @@ function steamCode(value: number): string {
 }
 
 /** The code valid at `nowMs`. */
+/**
+ * Bytes → base32, the direction a seed travels when it arrives as raw bytes.
+ *
+ * <p>Lives here rather than beside its one caller because this module owns the alphabet, and a
+ * second copy of `ABCDEFGHIJKLMNOPQRSTUVWXYZ234567` in another file is a second thing to keep
+ * right. No padding: `otpauth://` secrets are written without it, and {@link decodeBase32}
+ * accepts it either way.</p>
+ */
+export function encodeBase32(bytes: Buffer): string {
+  let text = '';
+  let bits = 0;
+  let value = 0;
+  for (const byte of bytes) {
+    value = (value << 8) | byte;
+    bits += 8;
+    while (bits >= 5) {
+      text += BASE32_ALPHABET[(value >>> (bits - 5)) & 31];
+      bits -= 5;
+    }
+  }
+  return bits === 0 ? text : text + BASE32_ALPHABET[(value << (5 - bits)) & 31];
+}
+
 export function totpCode(config: TotpConfig, nowMs: number): string {
   const counter = Math.floor(nowMs / 1000 / config.period);
   const value = truncate(hmacDigest(config.algorithm, config.secret, counter));

@@ -265,6 +265,9 @@ export function renderHtml(options: EntityFormOptions): string {
         ? `A seed is stored (${escapeHtml(options.storedTotpDescription ?? 'unreadable')}). Paste a new one to replace it.`
         : 'Most services offer this under "can&#39;t scan the QR code?". Kept in the OS keychain; the codes are computed here, so the second app can close.'
     }</p>
+    <button type="button" id="totpPasteQr" class="secondary">Paste a QR image (Ctrl+V)</button>
+    <p class="hint" id="totpQrHint" aria-live="polite">Snip the QR with <kbd>Win</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd> and press <kbd>Ctrl</kbd>+<kbd>V</kbd> here — an enrolment code, or a whole Google Authenticator export (<em>Transfer accounts → Export accounts</em>).</p>
+    <div id="totpQrChoices" class="qrChoices"></div>
     <div class="check"><input id="totpSteam" type="checkbox">
       <label for="totpSteam">Steam Guard (5-character code)</label></div>
     ${
@@ -469,6 +472,14 @@ export function renderHtml(options: EntityFormOptions): string {
   button.secondary { background: var(--vscode-button-secondaryBackground);
                      color: var(--vscode-button-secondaryForeground); }
   .row { display: grid; grid-template-columns: 2fr 1fr; gap: 10px; }
+  /* The accounts found in a pasted QR. Empty and invisible until there is more than one to
+     choose between — an export picture holds every account at once. */
+  .qrChoices:empty { display: none; }
+  .qrChoices { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }
+  .qrChoices button { text-align: left; padding: 5px 10px; }
+  .qrChoices .qrWhy { font-size: .85em; opacity: .7; }
+  kbd { font-family: var(--vscode-editor-font-family, monospace); font-size: .9em;
+        border: 1px solid var(--vscode-widget-border, #4444); border-radius: 3px; padding: 0 3px; }
 </style>
 </head>
 <body>

@@ -8,6 +8,8 @@ import { describeFlag, isProbeSafe } from './helpText';
 import { readHelpText } from './helpLookup';
 import { BINDABLE_FIELDS, isValidEnvName } from './envBinding';
 import { parseTotpSecret } from './totp';
+import { readPastedQr } from './qrPaste';
+import { withSteamEncoder } from './totpSteam';
 import { normalizeTags, parseForward } from './sshOptions';
 import {
   DEFAULT_PASSPHRASE,
@@ -192,7 +194,12 @@ interface FormMessage {
     | 'highlight'
     | 'generate'
     | 'configFields'
-    | 'configFieldEdit';
+    | 'configFieldEdit'
+    | 'qrImage';
+  /** `qrImage` only: the pasted picture as grey pixels, base64, and its size. */
+  gray?: string;
+  width?: number;
+  height?: number;
   /** `configFieldEdit` only: which row was changed, and to what. */
   path?: string;
   value?: string;
@@ -360,20 +367,25 @@ export function showEntityForm(options: EntityFormOptions): Promise<EntityFormVa
  * <p>Returns whether the message WAS a round-trip, so the caller's dispatch stays a single line
  * and the list of them stays here.</p>
  */
+const ROUND_TRIPS: Record<string, (message: FormMessage) => Record<string, unknown>> = {
+  highlight: (message) => highlighted(message),
+  configFields: (message) => ({ type: 'configFieldsResult', ...fieldsAnswer(message) }),
+  configFieldEdit: (message) => ({ type: 'configBody', text: editedConfigBody(message) }),
+  // The seed the page gets back is one it is about to hold anyway — the form is where a person
+  // types seeds. The picture itself is kept on neither side.
+  qrImage: (message) => ({
+    type: 'qrResult',
+    ...readPastedQr({ gray: message.gray ?? '', width: message.width ?? 0, height: message.height ?? 0 }),
+  }),
+};
+
 function answerRoundTrip(panel: vscode.WebviewPanel, message: FormMessage): boolean {
-  if (message.type === 'highlight') {
-    void panel.webview.postMessage(highlighted(message));
-    return true;
+  const answer = ROUND_TRIPS[message.type]?.(message);
+  if (answer === undefined) {
+    return false;
   }
-  if (message.type === 'configFields') {
-    void panel.webview.postMessage({ type: 'configFieldsResult', ...fieldsAnswer(message) });
-    return true;
-  }
-  if (message.type === 'configFieldEdit') {
-    void panel.webview.postMessage({ type: 'configBody', text: editedConfigBody(message) });
-    return true;
-  }
-  return false;
+  void panel.webview.postMessage(answer);
+  return true;
 }
 
 /** Its own function so the two defaults above do not count against the dispatch's complexity. */
@@ -766,28 +778,4 @@ function forwardFromRow(row: unknown): PortForward | undefined {
   return parsed === undefined
     ? undefined
     : { ...parsed, disabled: r.disabled === true ? true : undefined };
-}
-
-/**
- * Steam Guard seeds are exported as plain base32 with nothing marking them as Steam's; the
- * checkbox supplies that marker as the `encoder=steam` parameter the URI form already knows.
- */
-function needsSteamMarker(trimmed: string, steam: boolean): boolean {
-  return steam && trimmed.length > 0 && !/encoder=steam/i.test(trimmed);
-}
-
-function withSteamEncoder(text: string, steam: boolean): string {
-  const trimmed = text.trim();
-  if (!needsSteamMarker(trimmed, steam)) {
-    return trimmed;
-  }
-  return /^otpauth:/i.test(trimmed) ? appendSteam(trimmed) : steamUriFor(trimmed);
-}
-
-function appendSteam(uri: string): string {
-  return `${uri}${uri.includes('?') ? '&' : '?'}encoder=steam`;
-}
-
-function steamUriFor(secret: string): string {
-  return `otpauth://totp/Steam?secret=${encodeURIComponent(secret.replace(/[\s-]+/g, ''))}&encoder=steam`;
 }

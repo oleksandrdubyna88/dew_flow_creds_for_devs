@@ -1,7 +1,8 @@
 # Module: CredsForDevs (VS Code extension)
 
 `src_vs_code/` — TypeScript, compiled with `tsc`, **zero runtime dependencies**: Node built-ins and
-the `vscode` API only.
+the `vscode` API only. That has survived a YAML/TOML/INI validator, a Shamir split, an SSH agent and
+an unreleased QR decoder — each of which had an obvious package and was written instead.
 
 ## Purpose
 
@@ -1757,7 +1758,8 @@ document. No snippet contains a key and none could; a test walks all twenty-two.
 **Sharing carries the document.** The body travels sealed beside the password and the notes, and
 `shareableDetails` strips `configKeyHash` as its sixth field — a key is minted by ONE window for ONE
 vault, so a recipient holding that hash would have an entry claiming a key they were never given,
-cannot use, and cannot revoke. They enable code access themselves and get their own.
+cannot use, and cannot revoke. They enable code access themselves and get their own. (A seventh field joined the list later, and
+it is the only conditional one — see *Sharing a seed is a separate decision*.)
 
 **A config holds no password, and that is enforced on write.** `keepsPassword(kind)` scrubs a stored
 one when an entity becomes a config — the rule TOTP already follows. It matters more than it looks:
@@ -1929,6 +1931,63 @@ read-only viewer never receives a secret value", for exactly the reason the imag
 first: a value that must be *read* cannot round-trip through the host. What travels is the derived
 code, which expires within its period; the seed never leaves the extension host. The tree's `:totp`
 token comes from a plaintext `hasTotp` flag, never from a keychain read per row.
+
+### The seed arrives as a pasted picture (unreleased)
+
+The field above shipped with one input — the `otpauth://` URI or the base32 secret, as text — and
+that text is the one thing a person often cannot get. **Google Authenticator exports only as a QR
+image** (*Transfer accounts → Export accounts*), and Microsoft Authenticator exports nothing at all,
+in any form. So the TOTP section of the form takes a **pasted image**: `Win+Shift+S`, `Ctrl+V`, and
+the seed is in the field.
+
+| File | Job |
+|---|---|
+| `qrSample.ts` | Pixels → modules: a per-block threshold (with a global Otsu fallback for blurred captures), the 1:1:3:1:1 finder search, the triple chosen by *geometry* rather than by vote count, the module size measured **along** the axis between finders so rotation does not inflate it, and a perspective sample pinned by the bottom-right alignment pattern |
+| `qrDecode.ts` | Modules → text: format code, mask, the zigzag codeword order, the version/level block layout, Reed–Solomon over GF(256), and the numeric / alphanumeric / byte segments (UTF-8, falling back to Shift-JIS, which a great many symbols carry with no ECI header) |
+| `otpMigration.ts` | Text → accounts: a plain `otpauth://`, or Google's `otpauth-migration://offline?data=` — base64 protobuf holding every exported account at once |
+| `qrPaste.ts` | The seam: base64 grey pixels in, accounts out |
+| `qrPasteScript.ts` | The page's half — clipboard → `createImageBitmap` → canvas → grey pixels, capped at 1600 px on the long side |
+
+Four decisions are worth keeping:
+
+- **The extension still has zero runtime dependencies.** `jsqr` was the alternative and was declined
+  by the owner; the reader is written from ISO/IEC 18004. What makes that safe is the fixture: the
+  forty symbols in `src/test/qrCorpus.ts` were encoded by a *third-party* encoder at authoring time,
+  so the standard's tables are checked against somebody else's reading of the standard rather than
+  against an encoder of the same author's making.
+- **Decoding happens in the host, not in the page.** The page owns the only image decoder in the
+  process (its canvas) and nothing else; the reader is seven hundred lines of table-driven bit work,
+  and the page script is a template string no test can reach.
+- **A counter-based (HOTP) entry in an export is refused by name**, because a second copy of one
+  desynchronises the counter and breaks the original.
+- **A bare base32 string is not accepted from a picture**, though the field still accepts one typed
+  by hand: `HELLO WORLD` is valid base32, and a poster that says it must not become a credential.
+
+Measured on the corpus: all forty symbols decode from their matrices and from rendered pictures at
+2 px and 9 px per module, inverted, noisy, blurred, cropped to one module of quiet zone, and rotated
+by 7°, 33° and 90°. Against 44 hand-held **photographs** from a third-party test corpus — a much
+harder input than a screenshot, and not the case this feature exists for — 26 decode.
+
+### Sharing a seed is a separate decision (unreleased)
+
+Found while the input above was being built: **`buildSharePayload` read every secret except the TOTP
+seed**, while the accept side has always written `payload.secrets.totp` if one arrived — so sharing
+an existing entry silently left its second factor behind, and `hasTotp` travelled anyway, giving the
+recipient a `:totp` tree token and a *Copy One-Time Code* action on an entry that could not produce
+one. The same shape of half-delivery `configKeyHash` was, in a different field. (The *Create for…*
+flow was never affected: it sends the seed the sender just typed.)
+
+The fix is not "send it too". A one-time-code seed is the sender's **second factor**, and a copy of
+it produces codes for that login for as long as the seed lives — sometimes exactly the intent (a
+service account nobody owns personally), sometimes the last thing meant. So `buildSharePayload` takes
+`includeTotp` as a parameter rather than a default, and the share conversation asks once, as a
+checkbox, **unticked**, and only when something in the selection actually has a seed — counted from
+the plaintext `hasTotp` flag, so nothing is decrypted to decide whether to ask. Dismissing the list
+cancels the share, like every other step. Unticked, the seed is never read from the keychain at all,
+and `shareableDetails` drops `hasTotp` so the copy makes no claim it cannot keep.
+
+`shareableDetails` therefore has a **seventh** field and its first conditional one: six are always
+stripped, `hasTotp` travels exactly when the seed does.
 
 ## Generating, importing, and the health report (0.57.0)
 
