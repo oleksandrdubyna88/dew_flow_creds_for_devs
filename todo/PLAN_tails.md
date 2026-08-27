@@ -4,7 +4,8 @@
 > re-read all eleven open plans against the code they describe. Three of them were describing a
 > world that no longer exists. Plus the defects and asks the owner
 > raised in the same session: T9, T11, T12 (viewer and tree), T13, T14 (arrival feedback and the
-> generators), and T10 (the MCP surface does not know configs exist).
+> generators), T15 (the filter cancels itself when you click a result), and T10 (the MCP surface
+> does not know configs exist).
 >
 > Related docs: [../research/module_extension.md](../research/module_extension.md),
 > [../research/module_server.md](../research/module_server.md),
@@ -578,6 +579,49 @@ which is the only implementation of the wire format here.
 
 ---
 
+### T15. The filter reverts itself the moment you touch what it found (DEFECT)
+
+**Symptom.** Search finds the right rows — the tree even says *"Search: aws  1 found"*. Click one,
+and the filter disappears and takes the result with it, so there is nothing left to act on. The
+owner: *"ищет хорошо, но если я нажимаю — поиск исчезает, и всё, я не могу ничего сделать."*
+
+**Root cause, and it is one flag.** `credSshManager.search` (`extension.ts:1590-1610`) drives a
+`vscode.window.createInputBox()`. A quick-input widget hides as soon as it loses focus unless
+`ignoreFocusOut` is set, and this one does not set it. So clicking the tree hides the box, which
+fires `onDidHide`, which finds `accepted === false` and runs `provider.setSearchQuery(before)` —
+restoring the filter that was there before the search, normally empty.
+
+The handler is not wrong about what it wants: *"Escape puts back whatever was filtered before, so a
+cancelled search is not a lost one"* (`extension.ts:1586-1588`) is a good rule. The defect is that
+`onDidHide` cannot tell **Escape** from **focus moved to the thing you were searching for**, and it
+files both as cancelled. Every click on a result is read as *"never mind"*.
+
+**Fix, in two parts, matching the two things the owner asked for.**
+
+1. **Interacting with a result must not cancel the search.** Set `ignoreFocusOut = true` so hiding
+   means Escape or Accept, and only those two — then the existing accept/cancel logic becomes
+   correct instead of merely well-intentioned. The filter term survives, the tree stays filtered,
+   and the row is there to click, right-click and open. The existing *Search: … N found* row with
+   its `×` (`credSshManager.clearSearch`) is then the way out, which is what it was always for.
+2. **Clearing the search keeps your place.** With a row selected, closing the filter should reveal
+   that row in the now-unfiltered tree and briefly tint it — the owner asked for this explicitly and
+   named it as the same behaviour as an accepted share or an import. So it is **T13's helper, called
+   from a third site**, not a second mechanism.
+
+**The ordering trap, already documented in this file.** `extension.ts:1680-1682` records it: *"a
+filtered-out row cannot be revealed, so a reveal into an active filter silently does nothing."* The
+reveal in part 2 must therefore run **after** the filter is cleared and the tree has refreshed, or
+it will do nothing and look like the highlight failed. Whatever this ends up looking like, that
+ordering is the thing the test must pin.
+
+**Tests.** The cancel/keep decision is the pure part and it is the whole defect: given
+(accepted | escaped | focus-lost) and a previous term, which term does the tree end up with —
+focus-lost keeps the new one, Escape restores the old, Accept keeps the new. Plus an ordering
+assertion for part 2: the reveal is requested after the clear, never before.
+
+
+---
+
 ## 4. Build order
 
 Ordered so that each step is verifiable on its own, and the two that need a person come last.
@@ -591,7 +635,9 @@ Ordered so that each step is verifiable on its own, and the two that need a pers
 4. **T8** — two ported sinks and a prune, all server-side, no client contract touched.
 5. **T14** — the generator options and the button styling: the pure half already exists, so this
    is mostly UI plus the recorded-decision reversal in T14b.
-6. **T13** — the arrival highlight, over the decoration provider that is already registered.
+6. **T13, then T15** — the arrival highlight over the decoration provider that is already
+   registered, then the filter fix that calls the same helper from its third site. T15's part 1
+   (the flag) is independent and can go first if the highlight slips.
 7. **T10** — the MCP config surface: one tool over an existing pure catalog, plus the
    instructions paragraph.
 8. **T4** — the README, then the test that keeps it honest. The test is written **first** and
@@ -623,6 +669,8 @@ and both the failure and the pass are reported.
   each key type round-trips through `sshKeyParse`.
 - **T13** — the highlight lapses on an injected clock, and a second arrival does not cut the
   first one short.
+- **T15** — the keep/restore decision for accepted, escaped and focus-lost; and the reveal is
+  requested after the filter is cleared, never before.
 - **T4** — `listingCoverage.test.ts` **must fail on today's README**, naming the MCP and config
   command ids among the missing. That failure is the evidence the test has teeth; anything that
   passes immediately here is measuring nothing.
@@ -639,6 +687,8 @@ and both the failure and the pass are reported.
       type and size are choosable with Ed25519 first and the weaker options labelled; the
       recorded "no algorithm choice" comment is updated rather than left contradicting the UI;
       the generate buttons read as buttons; the other generators are swept and findings listed.
+- [ ] T15: clicking a filtered result no longer cancels the filter; Escape still restores the
+      previous term; closing the search reveals and tints the selected row, after the clear.
 - [ ] T13: an accepted share and an import reveal and briefly tint their new row, through the
       decoration provider that already exists — not a second one; the tint's real capability
       (row colour, not a border) is stated.
@@ -663,7 +713,7 @@ and both the failure and the pass are reported.
 - [ ] T8: the server's console output is coloured under redirection (counted, not observed), a run
       crossing midnight segments, `logs/` has a named retention owner, and the obsolete mirror-list
       item is deleted with its reason.
-- [ ] `research/module_extension.md` and `research/module_server.md` updated for T1, T3, T4, T8, T9, T10, T11, T12, T13, T14;
+- [ ] `research/module_extension.md` and `research/module_server.md` updated for T1, T3, T4, T8, T9, T10, T11, T12, T13, T14, T15;
       `research/module_mcp.md` (or `module_extension.md`'s MCP section) for T10.
 - [ ] `node .claude/rules/shared/tools/plan-lifecycle.mjs` and `pin-check.mjs` pass.
 - [ ] This plan promoted to `research/` with its deviations recorded, and anything left extracted
