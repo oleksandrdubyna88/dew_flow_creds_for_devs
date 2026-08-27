@@ -129,6 +129,7 @@ import { TRASH_RETENTION_CHOICES, isInTrash } from './trash';
 import { showFolderForm } from './folderFormPanel';
 import { formPanels, lockNotice } from './formPanels';
 import { configFileNameFor } from './configFile';
+import { ConfigHolder, ConfigRouteSources } from './brokerConfigRoute';
 import { enableConfigAccess, revokeConfigAccess } from './configAccess';
 import { runBounded } from './sshExecRunner';
 import { writeConfigFile } from './configWrite';
@@ -167,6 +168,7 @@ import { SshExecAuth, buildSshExecArgv } from './sshExecCommand';
 import { ServerTransport } from './serverTransport';
 import { withdrawalMessage } from './commandTargets';
 import { runSshExec } from './sshExecRunner';
+import { InstallTarget, bashInstall, powershellInstall } from './installCommand';
 import { parseDistros, rcAlreadyHasIt, rcSnippet } from './wslRelay';
 import { DEFAULT_DISTRO, WslRelayManager, spawnWslRelay } from './wslRelayManager';
 import {
@@ -263,6 +265,14 @@ let envCollection: vscode.GlobalEnvironmentVariableCollection;
  */
 const SECRETS_SETTLE_MS = 400;
 
+
+function scriptFor(shell: 'powershell' | 'bash', target: InstallTarget): string {
+  return shell === 'bash' ? bashInstall(target) : powershellInstall(target);
+}
+
+function where(shell: 'powershell' | 'bash'): string {
+  return shell === 'bash' ? 'Linux or WSL' : 'Windows PowerShell';
+}
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
   envCollection = context.environmentVariableCollection;
@@ -728,6 +738,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // because there is no entry yet — and the set of open folders is the person's decision, which
     // is the whole of what stops an agent choosing where to put things.
     mcpCreateHooks(storage, () => mutated()),
+    // The twelfth: the config read route. A key rather than a grant, no consent modal, and every
+    // attempt audited — the reasons are in `brokerProtocol.isConfigReadRoute`.
+    configRouteSources(storage),
   );
   // The SSH agent: keys served from memory, every use confirmed, SSH_AUTH_SOCK injected into
   // new terminals. Nothing starts until a key is actually loaded.
@@ -864,6 +877,35 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
    * the shell's own rc, and this offers to put it there rather than shipping a mechanism that
    * half-works.</p>
    */
+  /**
+   * The install command for a machine this extension is NOT running on.
+   *
+   * <p>The two buttons above it install here. This is for a colleague's laptop, a jump box, a
+   * fresh container — anywhere a person has a terminal and no VS Code. The script resolves the
+   * newest release itself and verifies the checksum, so what gets pasted stays correct after this
+   * extension has moved on: see `installCommand.ts`.</p>
+   */
+  register('credSshManager.copyInstallPowerShell', () => copyInstallScript('powershell'));
+  register('credSshManager.copyInstallBash', () => copyInstallScript('bash'));
+
+  async function copyInstallScript(shell: 'powershell' | 'bash'): Promise<void> {
+    const target = await vscode.window.showQuickPick(
+      [
+        { label: 'creds', description: 'the terminal CLI' },
+        { label: 'creds-mcp', description: 'the MCP server' },
+      ],
+      { placeHolder: `Which binary should the ${shell} command install?` },
+    );
+    if (target === undefined) {
+      return;
+    }
+    await vscode.env.clipboard.writeText(scriptFor(shell, target.label as InstallTarget));
+    void vscode.window.showInformationMessage(
+      `Copied. Paste it into a ${where(shell)} terminal on the machine that needs ` +
+        `${target.label}. It resolves the newest release itself and checks the download.`,
+    );
+  }
+
   register('credSshManager.setUpWslRelay', async () => {
     if (process.platform !== 'win32') {
       void vscode.window.showInformationMessage(
@@ -4635,6 +4677,52 @@ async function updateConfigDetails(
     return;
   }
   await storage.updateNode(element.accountId, { ...element.node, details: { ...details, ...change } });
+}
+
+/**
+ * What the config read route needs: which entries carry a key hash, and how to read one.
+ *
+ * <p>The walk stays here rather than in the route because it is a question about a VAULT — the
+ * same reason the other five suppliers are outside `CredsAgentServer`. Folders are skipped and
+ * so is anything in the Trash: an entry somebody deleted must stop answering, and the Trash is
+ * where deleting puts it.</p>
+ */
+function configRouteSources(storage: StorageManager): ConfigRouteSources {
+  return {
+    holders: () => collectConfigHolders(storage),
+    body: (holder) => Promise.resolve(storage.getConfigBody(holder.accountId, holder.entityId)),
+    // No audit sink here: the server supplies its own, so every door writes through one channel.
+  };
+}
+
+function collectConfigHolders(storage: StorageManager): ConfigHolder[] {
+  const found: ConfigHolder[] = [];
+  for (const { accountId } of storage.getAccounts()) {
+    const byId = (id: string): TreeNode | undefined => storage.getNode(accountId, id);
+    for (const node of storage.getNodes(accountId)) {
+      addConfigHolder(found, accountId, node, byId);
+    }
+  }
+  return found;
+}
+
+function addConfigHolder(
+  found: ConfigHolder[],
+  accountId: string,
+  node: TreeNode,
+  byId: (id: string) => TreeNode | undefined,
+): void {
+  const details = node.details;
+  if (details?.configKeyHash === undefined || isInTrash(node, byId)) {
+    return;
+  }
+  found.push({
+    accountId,
+    entityId: node.id,
+    entityName: node.name,
+    format: details.configFormat ?? 'json',
+    configKeyHash: details.configKeyHash,
+  });
 }
 
 async function applySecrets(

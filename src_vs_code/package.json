@@ -403,7 +403,23 @@
         }
       ]
     },
+    "submenus": [
+      {
+        "id": "credSshManager.install",
+        "label": "Install..."
+      }
+    ],
     "commands": [
+      {
+        "command": "credSshManager.copyInstallPowerShell",
+        "title": "Copy install command (PowerShell)...",
+        "category": "CredsForDevs"
+      },
+      {
+        "command": "credSshManager.copyInstallBash",
+        "title": "Copy install command (bash)...",
+        "category": "CredsForDevs"
+      },
       {
         "command": "credSshManager.withdrawShare",
         "title": "Withdraw a Share You Sent…",
@@ -1021,6 +1037,24 @@
       }
     ],
     "menus": {
+      "credSshManager.install": [
+        {
+          "command": "credSshManager.installCli",
+          "group": "here@1"
+        },
+        {
+          "command": "credSshManager.installMcpServer",
+          "group": "here@2"
+        },
+        {
+          "command": "credSshManager.copyInstallPowerShell",
+          "group": "elsewhere@1"
+        },
+        {
+          "command": "credSshManager.copyInstallBash",
+          "group": "elsewhere@2"
+        }
+      ],
       "view/title": [
         {
           "command": "credSshManager.addAccount",
@@ -1073,14 +1107,9 @@
           "group": "tools@2"
         },
         {
-          "command": "credSshManager.installMcpServer",
+          "submenu": "credSshManager.install",
           "when": "view == credSshManagerView",
           "group": "tools@3"
-        },
-        {
-          "command": "credSshManager.installCli",
-          "when": "view == credSshManagerView",
-          "group": "tools@4"
         }
       ],
       "view/item/context": [

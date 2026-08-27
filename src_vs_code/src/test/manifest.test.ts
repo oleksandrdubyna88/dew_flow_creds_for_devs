@@ -15,7 +15,10 @@ import { test } from 'node:test';
 interface Manifest {
   contributes: {
     commands: { command: string; title: string; category?: string }[];
-    menus: Record<string, { command: string; when?: string; group?: string }[]>;
+    // An entry is EITHER a command or a submenu — VS Code allows both, and the checks below
+    // have to know that or they read a submenu as a command that does not exist.
+    menus: Record<string, { command?: string; submenu?: string; when?: string; group?: string }[]>;
+    submenus?: { id: string; label: string }[];
     configuration: { properties: Record<string, unknown> };
   };
 }
@@ -103,19 +106,48 @@ test('every contributed command is reachable from a menu, or is listed as palett
   assert.deepEqual(unreachable, [], 'add it to a menu, or to PALETTE_ONLY with the reason');
 });
 
-test('every menu entry points at a command that exists', () => {
+test('every menu entry points at a command or a submenu that exists', () => {
+  // Both kinds, because a submenu entry carries no `command` at all — reading one as a dangling
+  // command is how this test greeted the first submenu the extension ever contributed.
   const declared = new Set(manifest.contributes.commands.map((c) => c.command));
-  const dangling: string[] = [];
-
-  for (const [menu, items] of Object.entries(manifest.contributes.menus)) {
-    for (const item of items) {
-      if (!declared.has(item.command)) {
-        dangling.push(`${menu}: ${item.command}`);
-      }
-    }
-  }
+  const submenus = new Set((manifest.contributes.submenus ?? []).map((entry) => entry.id));
+  const dangling = Object.entries(manifest.contributes.menus).flatMap(([menu, items]) =>
+    items
+      .filter((item) => !isKnown(item, declared, submenus))
+      .map((item) => `${menu}: ${label(item)}`),
+  );
 
   assert.deepEqual(dangling, []);
+});
+
+/** What to call an entry that resolved to nothing. */
+function label(item: { command?: string; submenu?: string }): string {
+  return item.command ?? item.submenu ?? '(neither a command nor a submenu)';
+}
+
+/** A menu entry names a command, or a submenu — never both, and never neither. */
+function isKnown(
+  item: { command?: string; submenu?: string },
+  commands: ReadonlySet<string>,
+  submenus: ReadonlySet<string>,
+): boolean {
+  if (item.command !== undefined) {
+    return commands.has(item.command);
+  }
+  return item.submenu !== undefined && submenus.has(item.submenu);
+}
+
+test("a submenu's own entries are all commands, so nothing nests twice", () => {
+  // VS Code permits a submenu inside a submenu; this extension does not want one. A second level
+  // of nesting in a title menu is a menu people stop reading.
+  const ids = new Set((manifest.contributes.submenus ?? []).map((entry) => entry.id));
+  const nested = Object.entries(manifest.contributes.menus)
+    .filter(([menu]) => ids.has(menu))
+    .flatMap(([menu, items]) =>
+      items.filter((i) => i.submenu !== undefined).map((i) => `${menu}: ${i.submenu}`),
+    );
+
+  assert.deepEqual(nested, []);
 });
 
 test('locking is offered wherever unlocking is', () => {
@@ -158,7 +190,7 @@ test('no two menu items compete for the same slot', () => {
       }
       const slot = `${item.when ?? ''}::${item.group}`;
       const at = seen.get(slot) ?? [];
-      at.push(item.command);
+      at.push(item.command ?? `submenu:${item.submenu}`);
       seen.set(slot, at);
     }
     for (const [slot, commands] of seen) {
