@@ -107,7 +107,9 @@
         },
         "credSshManager.wslRelayDistros": {
           "type": "array",
-          "items": { "type": "string" },
+          "items": {
+            "type": "string"
+          },
           "default": [],
           "markdownDescription": "Which WSL distributions reach the SSH agent. A socket lives inside one distribution's filesystem, so each needs its own relay — and each needs `creds` installed in it. Empty means the one WSL calls default. `CredsForDevs: Set Up the WSL Agent Relay` lists what it found and lets you pick."
         },
@@ -867,6 +869,11 @@
         "category": "CredsForDevs"
       },
       {
+        "command": "credSshManager.showConfigChanges",
+        "title": "Show What Changed",
+        "category": "CredsForDevs"
+      },
+      {
         "command": "credSshManager.enableConfigAccess",
         "title": "Enable Code Access…",
         "category": "CredsForDevs"
@@ -1527,6 +1534,11 @@
           "command": "credSshManager.revokeConfigAccess",
           "when": "view == credSshManagerView && viewItem =~ /:config/ && viewItem =~ /:codeon/",
           "group": "2_actions@14"
+        },
+        {
+          "command": "credSshManager.showConfigChanges",
+          "when": "view == credSshManagerView && viewItem =~ /:config/",
+          "group": "2_actions@15"
         }
       ]
     }

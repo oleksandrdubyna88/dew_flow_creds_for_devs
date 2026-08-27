@@ -1,6 +1,12 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { configFileNameFor, ignoredArgv, trackedArgv, writeVerdict } from '../configFile';
+import {
+  configFileNameFor,
+  ignoredArgv,
+  trackedArgv,
+  trackedCopyWarning,
+  writeVerdict,
+} from '../configFile';
 
 /**
  * Putting a config on disk, and the git question that comes with it.
@@ -80,4 +86,15 @@ test('a name cannot climb out of the folder it was given', () => {
 test('a name that is only dots names a directory, so it is replaced', () => {
   assert.equal(configFileNameFor('..', 'json', 'x'), 'config.json');
   assert.equal(configFileNameFor('.', 'json', 'x'), 'config.json');
+});
+
+test('the tracked-copy warning names the file and says what to do', () => {
+  // The quiet failure: somebody puts the config in the vault, feels safer, and leaves the tracked
+  // copy where it was. Nothing breaks, nothing warns, and the secrets are still one push away —
+  // the vault has become a SECOND place to keep them rather than the place.
+  const warning = trackedCopyWarning('appsettings.Development.json');
+
+  assert.match(warning, /appsettings\.Development\.json/);
+  assert.match(warning, /\.gitignore/);
+  assert.match(warning, /does not remove it/, 'the warning must correct the false sense of safety');
 });

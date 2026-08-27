@@ -46,6 +46,22 @@ export function writeVerdict(fileName: string, tracked: boolean, ignored: boolea
   };
 }
 
+/**
+ * What to say when the file this config describes is ALSO in the repository.
+ *
+ * <p>The failure this catches is quiet and complete: somebody puts their config in the vault,
+ * feels safer, and leaves the tracked copy exactly where it was. Nothing breaks, nothing warns,
+ * and the secrets are still one `git push` from being published — the vault has become a second
+ * place to keep them rather than the place.</p>
+ *
+ * <p>Said on SAVE rather than refused, because the tracked file may be a template with no secrets
+ * in it at all, and this cannot tell the difference. What it can do is make sure nobody believes
+ * the vault fixed something it did not.</p>
+ */
+export function trackedCopyWarning(fileName: string): string {
+  return `"${fileName}" is also tracked by git in this workspace. Storing it here does not remove it from the repository — the tracked copy is still one push from being published. Delete it and add it to .gitignore, or rename one of the two.`;
+}
+
 /** `git ls-files --error-unmatch -- <file>`: exit 0 means the path is tracked. */
 export function trackedArgv(file: string): string[] {
   return ['ls-files', '--error-unmatch', '--', file];

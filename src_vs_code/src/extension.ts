@@ -128,7 +128,8 @@ import { ExpansionMemory, expansionKey } from './treeExpansion';
 import { TRASH_RETENTION_CHOICES, isInTrash } from './trash';
 import { showFolderForm } from './folderFormPanel';
 import { formPanels, lockNotice } from './formPanels';
-import { configFileNameFor } from './configFile';
+import { configFileNameFor, trackedArgv, trackedCopyWarning } from './configFile';
+import { describeChanges, diffConfigs, summarizeChanges } from './configDiff';
 import { ConfigHolder, ConfigRouteSources } from './brokerConfigRoute';
 import { enableConfigAccess, revokeConfigAccess } from './configAccess';
 import { runBounded } from './sshExecRunner';
@@ -2913,6 +2914,15 @@ ${detail}
     }
   });
 
+  register('credSshManager.showConfigChanges', async (target) => {
+    vaultKeys.noteUserActivity();
+    const element = await nodeAt(asElement(target), storage);
+    if (element?.kind !== 'node' || element.node.details === undefined) {
+      return;
+    }
+    await showConfigChanges(storage, element.accountId, element.node);
+  });
+
   register('credSshManager.writeConfigFile', async (target) => {
     vaultKeys.noteUserActivity(); // the user is here: postpone auto-lock
     const element = await nodeAt(asElement(target), storage);
@@ -4725,6 +4735,65 @@ function addConfigHolder(
   });
 }
 
+/**
+ * Say something when the file this config describes is ALSO in the repository.
+ *
+ * <p>Fire-and-forget on purpose: it runs `git` and a save must not wait on that. The failure it
+ * catches is quiet — the vault becomes a second place to keep the secrets rather than the place —
+ * so a warning that arrives a moment late is still the whole value.</p>
+ */
+async function warnIfTrackedCopy(details: EntityMetadata): Promise<void> {
+  const folder = vscode.workspace.workspaceFolders?.[0];
+  if (details.isConfig !== true || folder === undefined) {
+    return;
+  }
+  const name = configFileNameFor(details.configFileName, details.configFormat ?? 'json', details.name);
+  if (await isTrackedHere(name, folder.uri.fsPath)) {
+    void vscode.window.showWarningMessage(trackedCopyWarning(name));
+  }
+}
+
+/** Exit 0 from `git ls-files --error-unmatch`. Anything else — including no git — is "no". */
+async function isTrackedHere(fileName: string, cwd: string): Promise<boolean> {
+  const outcome = await runBounded('git', [...trackedArgv(fileName)], false, {
+    cwd,
+    env: process.env,
+    timeoutMs: 10_000,
+  });
+  return outcome.exitCode === 0;
+}
+
+/**
+ * What changed since the previous version of this config, by KEY.
+ *
+ * <p>Against the newest revision rather than against a sync event, deliberately: a body arrives
+ * from a colleague's sync, an accepted share, a restore, or the person's own edit, and all four
+ * put the previous one into history. Asking history covers every route with one answer instead of
+ * instrumenting each of them.</p>
+ *
+ * <p>Shown as a modal list of KEY NAMES and no values. A config holds connection strings and
+ * passwords; which keys moved is the reviewable half and carries neither.</p>
+ */
+async function showConfigChanges(
+  storage: StorageManager,
+  accountId: string,
+  node: TreeNode,
+): Promise<void> {
+  const details = node.details;
+  const history = await storage.getHistory(accountId, node.id);
+  const previous = history[0]?.secrets.config;
+  if (details === undefined || previous === undefined) {
+    void vscode.window.showInformationMessage(`"${node.name}" has no previous version to compare with.`);
+    return;
+  }
+  const current = (await storage.getConfigBody(accountId, node.id)) ?? '';
+  const changes = diffConfigs(details.configFormat ?? 'json', previous, current);
+  void vscode.window.showInformationMessage(
+    `"${node.name}": ${summarizeChanges(changes)} since ${new Date(history[0].at).toLocaleString()}.`,
+    { modal: true, detail: describeChanges(changes) },
+  );
+}
+
 async function applySecrets(
   storage: StorageManager,
   accountId: string,
@@ -4756,6 +4825,7 @@ async function applySecrets(
   // scrubbing the form does to every other kind's fields when the type changes. An entity turned
   // from a config into something else must not keep a config body nothing can reach or edit.
   await storage.setConfigBody(accountId, entityId, result.newConfigBody);
+  void warnIfTrackedCopy(result.details);
   if (result.clearAttachment) {
     await storage.setAttachment(accountId, entityId, undefined);
   } else if (result.newAttachment !== undefined) {
