@@ -1,27 +1,21 @@
 # PLAN — close the gap to the family logging convention
 
-> Status: **plan only for the code; item 2 is void.** Re-read against the shared rule 2026-08-27
-> ([PLAN_tails.md](PLAN_tails.md), T8) and the rule had moved underneath it. Scope:
-> `src_minimalapi_server/src/Logging.cs`. Serilog with a file per run **has** shipped; the coloured
-> console sink, the midnight segment and retention have not.
+> Status: **IMPLEMENTED, 2026-08-27.** The family's `AnsiConsoleSink` and `DailyRunFileSink` are
+> ported into `src_minimalapi_server/src/` and wired in `Logging.cs`; `LogRetention` sweeps day
+> folders older than 14 days at startup. `LoggingSinkTests` 7/7 (escape count with a by-hand
+> control, the midnight segment, no backward roll, the retention decision, the disk sweep, zero
+> disables it); server suite 141/141.
 >
-> **Item 2 no longer exists to be done.** It asked for a row in the shared rule's *Mirrors* table.
-> That table is gone: the rule moved into `.claude/rules/shared`, a submodule of
-> `dew_flow_conventions`, and now says *"A new repository **mounts the submodule** — it never copies
-> this file"* — which this repository already does (`.gitmodules`, and `pin-check.mjs` is green).
-> The mechanism the item named was replaced by the one it would have registered against. Kept below,
-> struck through, because deleting it outright would leave the next reader wondering whether the
-> registration was skipped or was never needed.
->
-> **And the rule grew three DoD lines this plan predates**, all three of them open here: a run
-> crossing midnight must segment into the next day's folder with the same pid; every code path that
-> builds a container wires the same sinks; and the repository must **name its `logs/` retention
-> owner**. Item 3 below is that last one, written before the rule required it.
->
-> Worth recording, because it decides the retention answer: **the extension already solved this.**
-> `diagnosticLog.ts` sweeps its own run files at `retainDays: 14`. The half of this product nobody
-> wrote a logging plan for is the half that meets the rule, so the server should adopt that number
-> rather than choose a second one.
+> **Deviations.** Item 2 was **void, not done**: it asked for a row in the shared rule's *Mirrors*
+> table, and that table no longer exists — the rule moved into the `.claude/rules/shared`
+> submodule this repository already mounts, whose DoD now reads *"a new repository mounts the
+> submodule — it never copies this file"*. Recorded below, struck through. Item 2b (the midnight
+> segment) was not in the original plan at all; the rule grew it after this plan was written, and
+> it shipped here. The retention number was **adopted, not decided**: the extension's
+> `diagnosticLog.ts` had already chosen 14 days, and one product should give one answer. The
+> deviation note `Logging.cs` used to carry about the plain console sink is replaced by the closed
+> record. One rule-DoD line is satisfied vacuously and worth naming: the only non-host code path,
+> the `--health-probe` fast exit, builds no container and wires no logger by design.
 >
 > Source rule: `.claude/rules/shared/common/logging-serilog.md`.
 

@@ -115,7 +115,7 @@ have shipped:
 - `todo/PLAN_extension_security_tail.md` — findings 6, 7, 8, 10, 14
 - `todo/PLAN_server_ops.md` — the operational items, now partly shipped; concurrency, inbox TTL,
   contract versioning and a **restore rehearsal** remain
-- `todo/PLAN_logging_convention.md` — port the family's `AnsiConsoleSink`, and add this repository to
+- `research/PLAN_logging_convention.md` — port the family's `AnsiConsoleSink`, and add this repository to
   the mirror list in the shared logging rule
 - `todo/PLAN_marketplace_listing.md` — the listing has no screenshots
 - `todo/PLAN_nas_sender_pki.md` — untouched, still optional

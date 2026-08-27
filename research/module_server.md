@@ -30,7 +30,10 @@ whole server is ~2,100 lines.
 | `src/OrgRecovery.cs` | The corporate-recovery roster, its quorum guard and its fingerprint |
 | `src/OrgRecoveryStore.cs` | Setup invites and the published org public key, on disk |
 | `src/OrgRecoveryMaintenance.cs` | Drops setup invites nobody acknowledged |
-| `src/Logging.cs` | Serilog: console + a file per run |
+| `src/Logging.cs` | Serilog wiring: the coloured console + the segmenting run file |
+| `src/AnsiConsoleSink.cs` | Hand-written ANSI colour (ported from the family — Serilog's own theme writes zero escapes once stdout is redirected, and a container's captured stdout always is) |
+| `src/DailyRunFileSink.cs` | A file per run, segmenting at UTC midnight (`00-00-00-<pid>.log` in the next day's folder) so a never-restarting container cannot grow one file for months |
+| `src/LogRetention.cs` | The named owner of `logs/`: day folders older than `Logging:RetentionDays` (14, the extension's own number) swept at startup |
 | `src/InstanceFile.cs` | Publishes where this instance is listening, for the DewFlow editor panel |
 | `src/HealthProbe.cs` | The container healthcheck the binary runs against itself (no curl in the image) |
 | `src/AppJsonContext.cs` | The `JsonSerializerContext` source-gen contract that makes Native AOT possible |
@@ -494,6 +497,7 @@ profile file inside a container reaches nobody.
 | `Auth:Local:SigningKey` | *(empty = disabled)* | HMAC key for the offline scheme |
 | `Vault:PublishInstanceFile` | `true` | Publish this instance for the DewFlow editor panel |
 | `Logging:Directory` | `<app>/logs` | Root of the per-run log files |
+| `Logging:RetentionDays` | `14` | Day folders older than this are deleted at startup; `0` disables the sweep |
 | `Serilog:MinimumLevel:Default` | `Information` | Verbosity |
 
 Environment form uses `__` as the section separator: `Vault__AllowedDomains`.

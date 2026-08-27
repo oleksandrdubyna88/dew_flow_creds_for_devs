@@ -13,7 +13,7 @@
 >
 > Plans this one corrects rather than duplicates: [PLAN_audit_roadmap_2026_08_25.md](PLAN_audit_roadmap_2026_08_25.md),
 > [PLAN_extension_security_tail.md](PLAN_extension_security_tail.md),
-> [PLAN_logging_convention.md](PLAN_logging_convention.md),
+> [PLAN_logging_convention.md](../research/PLAN_logging_convention.md) (now promoted),
 > [PLAN_marketplace_listing.md](PLAN_marketplace_listing.md),
 > [PLAN_ephemeral_secrets_tail.md](PLAN_ephemeral_secrets_tail.md).
 
@@ -322,9 +322,9 @@ direction should say so where the item is, not only here.
 
 ---
 
-### T8. The logging plan asks for something that no longer exists
+### T8. ~~The logging plan asks for something that no longer exists~~ — **DONE 2026-08-27, plan promoted**
 
-**Symptom.** [PLAN_logging_convention.md](PLAN_logging_convention.md) has three items. Item 2 is
+**Symptom.** [PLAN_logging_convention.md](../research/PLAN_logging_convention.md) has three items. Item 2 is
 *"Register this repository in the mirror list"* — and the shared rule has no mirror list any more.
 It moved into `.claude/rules/shared` (a submodule of `dew_flow_conventions`) and now ends with
 *"A new repository **mounts the submodule** — it never copies this file"*, which this repository
@@ -560,15 +560,17 @@ leaving it asserting a design the UI no longer follows is how the next reader is
 list: Ed25519 (default), ECDSA P-256/384/521, RSA 3072/4096 — and **not** RSA-2048, which is the one
 the old comment was actually protecting people from.
 
-**T14c. The generate controls do not read as buttons.** They are real `<button class="secondary">`
-elements, but `button.secondary` (`entityFormPage.ts:475-476`) paints
-`--vscode-button-secondaryBackground`, which in the dark themes the owner uses sits within a few
-percent of the panel background — so it renders as plain text. The ask: **make them look like
-Save**. Save is the plain `button` rule at `:473-474` (`--vscode-button-background`). Simplest
-correct fix: drop `class="secondary"` from the generate buttons so they inherit the primary style.
-If secondary is wanted elsewhere for hierarchy, give it a visible border instead of a
-near-invisible fill — a secondary button that cannot be seen is not a hierarchy, it is a missing
-control.
+**T14c. Secondary buttons do not read as buttons — anywhere.** Extended by the owner beyond the
+generators: *+ Add argument*, *Split pasted command into rows*, *Show/Hide*, and every other
+`<button class="secondary">` across the entity forms have the same problem. `button.secondary`
+(`entityFormPage.ts:475-476`) paints `--vscode-button-secondaryBackground`, which in the dark
+themes the owner uses sits within a few percent of the panel background — so they all render as
+plain text, and "хер поймёшь что это кнопка". The ask: **make them blue like Save** — the plain
+`button` rule at `:473-474` (`--vscode-button-background`). The fix is therefore ONE rule, not a
+sweep of call sites: restyle `button.secondary` itself to the primary palette (or delete the class
+and its rule if nothing then distinguishes them). Keep exactly one visual hierarchy decision,
+made once in CSS — going button-by-button is how half of them would end up missed, which is this
+defect's own origin story.
 
 **T14d. Find the other generators.** The owner asked to look for the rest and give them options too.
 Known so far: *Generate passphrase* (`entityFormPage.ts:665`, `DEFAULT_PASSPHRASE` at
@@ -937,6 +939,28 @@ existing.
 
 ---
 
+### T22. The view title says the product name twice, and the help mark moves into it
+
+**The ask.** The tree's title renders as *CREDSFORDEVS: CREDENTIALS* — the container is already
+named CredsForDevs, so the view's own `"name": "Credentials"` (`package.json:403`) makes the bar
+say the same thing twice in two words. Drop it: the view keeps only the product name. That frees
+the title row, and T21's help entry — the yellow question mark — moves **into the title bar right
+after the name** instead of (or in addition to) the status bar: a `view/title` menu contribution
+with the `$(question)` icon. The owner also asked for **a space between the help mark and the
+sign-in item** that lives on that row — check what VS Code allows about title-bar item spacing
+(menu groups control order; raw pixel gaps may not be expressible, and if not, that limit is
+recorded rather than faked with a spacer no-op command).
+
+**Where.** `package.json:403` (`views` → `name`), the `view/title` menu block, and T21's entry
+point moves here as its primary home — the status-bar item stays or goes per what the title bar
+turns out to allow; decide while building T21, record the choice.
+
+**Tests.** Manifest assertions beside T4's: the view's name does not repeat the container's; a
+`view/title` command with the question icon exists and points at the T21 help command.
+
+
+---
+
 ## 4. Build order
 
 Ordered so that each step is verifiable on its own, and the two that need a person come last.
@@ -967,7 +991,7 @@ Ordered so that each step is verifiable on its own, and the two that need a pers
 11. **T3** — the ratchet, last of the code items: it takes a baseline of the tree, so it should be
    taken after the rest have stopped moving it.
 12. **T2** — needs a browser and a physical security key.
-13. **T21** — the Help surface: catalog type and entry point first, articles in English, the
+13. **T21 + T22** — the Help surface and its title-bar home; the view rename rides along: catalog type and entry point first, articles in English, the
     language switch, pictures deliberately later.
 14. **T5** — needs the owner. Prepared by then, decided here.
 
@@ -1015,7 +1039,10 @@ and both the failure and the pass are reported.
 ## 6. Definition of Done
 
 - [ ] T9: the viewer's columns are as wide as the form's, proven by a test watched failing at 640 px.
-- [ ] T21: the help entry point is in the status bar with a yellow question mark; every article
+- [ ] T22: the tree no longer says the product name twice; the help mark sits in the title bar
+      after the name, with the spacing question answered rather than assumed.
+- [ ] T21: the help entry point exists with a yellow question mark (title bar per T22, status bar
+      as fallback); every article
       carries what/why/setup/usage/what-can-go-wrong; the hard-to-guess features lead the index;
       search, breadcrumbs and Back work; the language choice persists and falls back to English
       visibly; media slots exist and are empty.
@@ -1064,7 +1091,7 @@ and both the failure and the pass are reported.
 - [ ] T8: the server's console output is coloured under redirection (counted, not observed), a run
       crossing midnight segments, `logs/` has a named retention owner, and the obsolete mirror-list
       item is deleted with its reason.
-- [ ] `research/module_extension.md` and `research/module_server.md` updated for T1, T3, T4, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17, T18, T19, T20, T21;
+- [ ] `research/module_extension.md` and `research/module_server.md` updated for T1, T3, T4, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17, T18, T19, T20, T21, T22;
       `research/module_mcp.md` (or `module_extension.md`'s MCP section) for T10.
 - [ ] `node .claude/rules/shared/tools/plan-lifecycle.mjs` and `pin-check.mjs` pass.
 - [ ] This plan promoted to `research/` with its deviations recorded, and anything left extracted

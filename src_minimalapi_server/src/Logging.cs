@@ -24,12 +24,14 @@ namespace CredVaultServer;
 /// </para>
 ///
 /// <para>
-/// DEVIATION from the family rule, recorded deliberately: the rule mandates the family's
-/// hand-written <c>AnsiConsoleSink</c>, because Serilog's console themes emit nothing once
-/// stdout is redirected and an Aspire dashboard redirects it by definition. This service
-/// has no Aspire host — it runs under Docker, where <c>docker compose logs</c> colours by
-/// stream and the file sink is what anyone actually reads. Porting that sink is
-/// <c>todo/PLAN_logging_convention.md</c>.
+/// The family's <c>AnsiConsoleSink</c> and <c>DailyRunFileSink</c> are ported here
+/// (2026-08-27, closing the deviation this note used to record): the console is coloured
+/// through hand-written escapes because Serilog's own themes emit nothing once stdout is
+/// redirected — and a container's captured stdout is redirected by definition; the file
+/// segments at UTC midnight so a run that never restarts cannot grow one file for months;
+/// and <see cref="LogRetention"/> is the named owner of <c>logs/</c>, sweeping day folders
+/// older than 14 days at startup — the same number the extension's `diagnosticLog.ts`
+/// chose, because one product should give one answer.
 /// </para>
 /// </summary>
 public static class CredVaultLogging
@@ -86,10 +88,10 @@ public static class CredVaultLogging
         var logRoot = string.IsNullOrWhiteSpace(configured)
             ? Path.Combine(AppContext.BaseDirectory, "logs")
             : configured;
-        var runFile = Path.Combine(
+        LogRetention.PruneAtStartup(
             logRoot,
-            startedUtc.ToString("yyyy-MM-dd"),
-            $"{appName}-{startedUtc:HH-mm-ss}-{Environment.ProcessId}.log");
+            DateOnly.FromDateTime(startedUtc),
+            builder.Configuration.GetValue("Logging:RetentionDays", LogRetention.DefaultRetainDays));
 
         var configuration = new LoggerConfiguration()
             // Levels come from configuration, never from call sites: changing verbosity is
@@ -120,19 +122,15 @@ public static class CredVaultLogging
             .Enrich.With(new UtcTimestampEnricher())
             .Enrich.WithProperty("Application", appName)
             .Enrich.WithProperty("ProcessId", Environment.ProcessId)
-            .WriteTo.Console(outputTemplate: ConsoleTemplate);
+            .WriteTo.Sink(new AnsiConsoleSink());
 
         // A container with no writable log mount must still start and still serve. Losing
         // the file sink is a degraded log, not an outage — so this failure is reported on
         // the console and swallowed, which is the one place swallowing is correct.
         try
         {
-            Directory.CreateDirectory(Path.GetDirectoryName(runFile)!);
-            configuration = configuration.WriteTo.File(
-                runFile,
-                outputTemplate: FileTemplate,
-                shared: false,
-                flushToDiskInterval: TimeSpan.FromSeconds(2));
+            configuration = configuration.WriteTo.Sink(
+                new DailyRunFileSink(logRoot, appName, FileTemplate, startedUtc));
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
