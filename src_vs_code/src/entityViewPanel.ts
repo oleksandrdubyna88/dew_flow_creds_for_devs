@@ -267,6 +267,23 @@ function renderHtml(options: EntityViewOptions): string {
 
   // Render ONLY fields that actually hold a value — the viewer must never
   // show empty rows or capabilities the entity does not have.
+  /**
+   * A read-only block of CODE: highlighted, with the same Copy the plain rows carry.
+   *
+   * <p>It existed once, hand-written, for the stored script — while the same script "as it runs"
+   * and the whole config body went through `row` and came out as flat text. Two blocks of the
+   * same JSON, one coloured and one grey, is a difference that means nothing; a config is read
+   * here far more often than it is edited, and a wall of one-coloured JSON is the version nobody
+   * can scan.</p>
+   */
+  const codeRow = (label: string, field: string, text: string | undefined, language: string): string =>
+    text === undefined || text.length === 0
+      ? ''
+      : `<div class="row"><label>${escapeHtml(label)}</label>
+      <div class="line"><pre class="code">${highlightScript(text, language)}</pre>
+        <button data-field="${field}" data-action="copy" class="icon" title="Copy ${escapeHtml(label)} (raw)" aria-label="Copy ${escapeHtml(label)}">${COPY_ICON}</button>
+      </div></div>`;
+
   const row = (
     label: string,
     field: string,
@@ -423,25 +440,21 @@ function renderHtml(options: EntityViewOptions): string {
     row('DB user', 'dbUser', options.dbParts?.user),
     row('DB password', 'dbPassword', options.dbHasPassword ? '•' : undefined, true),
     row('Script language', 'scriptLanguage', d.isScript ? (d.scriptLanguage ?? 'bash') : undefined),
-    ...(d.isScript && d.script !== undefined && d.script.length > 0
-      ? [
-          `<div class="row"><label>Script</label>
-      <div class="line"><pre class="code">${highlightScript(d.script, d.scriptLanguage ?? 'other')}</pre>
-        <button data-field="script" data-action="copy" class="icon" title="Copy script (raw)" aria-label="Copy script">${COPY_ICON}</button>
-      </div></div>`,
-        ]
-      : []),
+    codeRow('Script', 'script', d.isScript ? d.script : undefined, d.scriptLanguage ?? 'other'),
     ...(d.isScript ? normalizeArgs(d.scriptVars).map((v, i) => argRow(v, i, true)) : []),
     // Visible again, and safe to be: the body reads its variables from the environment
     // now, so it carries names rather than values (see resolveScriptEnv).
-    row(
+    codeRow(
       'Script as it runs (variables read from the environment)',
       'scriptFull',
       d.isScript && d.script !== undefined && d.script.length > 0
         ? resolveScriptEnv(d.script, d.scriptVars, d.scriptLanguage ?? 'other').body
         : undefined,
+      d.scriptLanguage ?? 'other',
     ),
-    row('Config file', 'config', options.config),
+    // Its FORMAT is the language: `json` and `yaml` are spelled the same in both tables, and
+    // `env`, `toml` and `ini` were taught to the highlighter for exactly this row.
+    codeRow('Config file', 'config', options.config, d.configFormat ?? 'json'),
     row('Notes', 'notes', options.notes),
     row('Created', 'createdAt', options.createdAt === undefined ? undefined : new Date(options.createdAt).toLocaleString()),
     row('Last changed', 'updatedAt', options.updatedAt === undefined ? undefined : new Date(options.updatedAt).toLocaleString()),

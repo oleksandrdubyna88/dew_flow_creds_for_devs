@@ -385,6 +385,42 @@ test('the viewer SHOWS a config file, which is the one thing it was opened for',
     currentPanel.webview.html.includes('Server=localhost'),
     'the row is there but empty — which is what the defect looked like',
   );
+  // Highlighted, like the Script block beside it. A config is read in the viewer far more often
+  // than it is edited, and a wall of one-coloured JSON is the version nobody can scan.
+  //
+  // Asserted on the code BLOCK, not on a `tok-` class name: those names are in the stylesheet
+  // whatever the markup does, so the obvious assertion passes against a plain textarea. This
+  // entity is a config and nothing else, so exactly one code block belongs in its page.
+  assert.equal(
+    currentPanel.webview.html.split('<pre class="code">').length - 1,
+    1,
+    'the config is rendered as flat text, not as a highlighted code block',
+  );
+});
+
+test('the viewer highlights the script AS IT RUNS too, not only the stored one', () => {
+  // Two blocks of the same JSON, one coloured and one grey, is a difference that means nothing —
+  // and it is what the viewer showed.
+  currentPanel = newPanel();
+  viewer.showEntityView({
+    details: {
+      name: 'appsettings.json', kind: 'script', isScript: true, scriptLanguage: 'json',
+      script: '{ "AllowedHosts": "*" }', isSshEnabled: false,
+    },
+    hasPassword: false, hasPrivateKey: false, hasVpnConfig: false, hasDbConnection: false,
+    dbPortIsDefault: false, dbHasPassword: false, hasAttachment: false, history: [],
+    resolveSecret: () => Promise.resolve(undefined), copyAllText: () => Promise.resolve(''),
+    saveVpnConfig: () => Promise.resolve(), saveAttachment: () => Promise.resolve(),
+    setEnv: () => Promise.resolve(true), checkEnv: () => {},
+  });
+
+  const html = currentPanel.webview.html;
+  assert.ok(html.includes('Script as it runs'), 'the as-it-runs block is missing');
+  assert.equal(
+    html.split('<pre class="code">').length - 1,
+    2,
+    'both the stored script and the one as it runs should be code blocks',
+  );
 });
 
 test('the viewer closes on Esc', () => {

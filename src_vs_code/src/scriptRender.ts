@@ -62,6 +62,13 @@ const COMMENT: Record<string, RegExp | undefined> = {
   dockerfile: /#[^\n]*/g,
   javascript: /\/\/[^\n]*/g,
   sql: /--[^\n]*/g,
+  // The config formats. They reach the highlighter by their own id — `json` and `yaml` already
+  // matched a script language by name, and these three did not exist here because nobody writes a
+  // SCRIPT in them. JSON is absent on purpose: it has no comment syntax, and inventing one would
+  // colour a line of somebody's document as though it were inert.
+  env: /#[^\n]*/g,
+  toml: /#[^\n]*/g,
+  ini: /[#;][^\n]*/g,
 };
 
 
