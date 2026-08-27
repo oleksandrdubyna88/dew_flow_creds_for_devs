@@ -1013,6 +1013,60 @@ verb per entity kind.
 
 ---
 
+### T24. The form's MCP section deserves a column, more switches than it has, and words an agent can use
+
+Three asks in one message, all about the *Agent access (MCP)* block in the edit form.
+
+**T24a. Layout: a third column when the screen fits one.** Today the form is two groups — `main` |
+`additional` — and the MCP section rides inside *additional* (`formSections.ts:100-104`,
+`group: 'additional'`). Wanted: at three-column width the MCP section becomes its **own third
+column**; at two-column width it goes back under Additional; at one column the order is main →
+additional → MCP. Mechanically that is a third `SectionGroup` value (`'agent'`), a third grid slot
+in `.formGroups` behind a wider breakpoint (`TWO_COLUMN_AT` has a sibling, `THREE_COLUMN_AT`
+~1500px, in `webviewHtml.ts` beside the constants T9 put there), and CSS `order` for the
+single-column case. The section catalog keeps being the one source: nothing about a section's
+placement is decided in markup.
+
+**T24b. The block under-reports what agents can actually reach — study and propose.** The six
+switches cover the broker's entry-level actions. Since they were written, the agent surface grew,
+and none of it is visible or controllable per entry:
+
+| capability | exists as | visible in the MCP block? |
+|---|---|---|
+| the six broker switches | `mcpAccess` mask | yes — the block |
+| CLI aliases (`creds ssh <name>` from any terminal — including an agent's) | alias map | **no** — and a CLI alias is agent-reachable BY DESIGN, with no consent modal on some routes |
+| the remote bridge (`ssh -R` to a Remote-SSH host) | bridge state | **no** |
+| WSL relay (the agent inside WSL reaching the Windows window) | relay setup | **no** |
+| config code access (`POST /v1/config/read` key) | `configKeyHash` | **no** — a minted key is a standing, modal-free door |
+| ephemeral burn-on-agent-use | `burnPolicy` | indirectly (Lifetime section) |
+
+The honest-and-transparent shape to propose (a proposal, because it is a design decision the owner
+approves): the block grows a read-only **"Other ways agents can reach this entry"** footer listing
+whichever of the above are LIVE for this entry — each with a jump to where it is managed. Not new
+switches for everything: a CLI alias and a config key are capabilities with their own lifecycles;
+duplicating their on/off here would create two owners for one door. The block's job is that
+**nothing agent-reachable is invisible from the place a person goes to reason about agent access.**
+
+**T24c. The words, rewritten for two readers.** The switch descriptions read well for a person; the
+owner wants the MCP surface described so *"Claude мог хавать это всё правильно и эффективно"* —
+what, when, how, why per switch. That is two texts, not one: the FORM's per-switch prose (human,
+already decent, tighten to what/why/what-it-costs), and the **MCP server's own instructions and
+per-tool descriptions** (`src_mcp/src/Program.cs:181-197`, `Tools.cs`/`UseTools.cs`) — which is
+T10's territory for configs and extends to the whole surface: each tool description should say
+when to reach for it, what the consent flow will do, and what NOT to attempt (no secret is
+obtainable), in the register the existing instructions block already uses. One review pass over
+every tool description against the six-switch ladder, so the words an agent reads match the
+switches a person set.
+
+**Tests.** T24a: the section catalog names the third group and the form's grid emits it; the
+one-column order is main → additional → agent, asserted on emitted order. T24b: an entry with a
+live alias/config key renders the footer naming it; one with neither renders no footer. T24c is
+prose reviewed against the switch semantics — the testable half is T10's byte-identity for
+snippets and the existing "list answers match the mask" tests.
+
+
+---
+
 ## 4. Build order
 
 Ordered so that each step is verifiable on its own, and the two that need a person come last.
@@ -1035,7 +1089,9 @@ Ordered so that each step is verifiable on its own, and the two that need a pers
 8. **T13, then T15** — the arrival highlight over the decoration provider that is already
    registered, then the filter fix that calls the same helper from its third site. T15's part 1
    (the flag) is independent and can go first if the highlight slips.
-9. **T10** — the MCP config surface: one tool over an existing pure catalog, plus the
+9. **T10, then T24c** — the MCP config surface, then the description pass over every tool
+   against the switch ladder. **T24a/b** ride the form-layout work and the owner's approval of
+   the footer proposal.: one tool over an existing pure catalog, plus the
    instructions paragraph.
 10. **T17** — the form highlighter. Late deliberately: it is the only item here whose approach is
    a real design choice rather than a fix, and the overlay should be shown to the owner.
@@ -1095,6 +1151,9 @@ and both the failure and the pass are reported.
 - [ ] T9: the viewer's columns are as wide as the form's, proven by a test watched failing at 640 px.
 - [ ] T22: the tree no longer says the product name twice; the help mark sits in the title bar
       after the name, with the spacing question answered rather than assumed.
+- [ ] T24: the MCP section is its own column at three-column width and last in one column; the
+      agent-reachability footer proposal is put to the owner; every MCP tool description says
+      when, how and why in the register the instructions block set.
 - [ ] T23: the viewer shows this entry's CLI aliases with a copyable `creds <verb> <alias>` row;
       the filter understands the capability predicates, combinable, metadata-only.
 - [ ] T21: the help entry point exists with a yellow question mark (title bar per T22, status bar
@@ -1147,7 +1206,7 @@ and both the failure and the pass are reported.
 - [ ] T8: the server's console output is coloured under redirection (counted, not observed), a run
       crossing midnight segments, `logs/` has a named retention owner, and the obsolete mirror-list
       item is deleted with its reason.
-- [ ] `research/module_extension.md` and `research/module_server.md` updated for T1, T3, T4, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17, T18, T19, T20, T21, T22, T23;
+- [ ] `research/module_extension.md` and `research/module_server.md` updated for T1, T3, T4, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17, T18, T19, T20, T21, T22, T23, T24;
       `research/module_mcp.md` (or `module_extension.md`'s MCP section) for T10.
 - [ ] `node .claude/rules/shared/tools/plan-lifecycle.mjs` and `pin-check.mjs` pass.
 - [ ] This plan promoted to `research/` with its deviations recorded, and anything left extracted

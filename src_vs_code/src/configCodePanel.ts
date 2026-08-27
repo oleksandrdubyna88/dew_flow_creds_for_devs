@@ -26,7 +26,6 @@ export interface CodePanelOptions {
 
 export function configCodePanel(options: CodePanelOptions): string {
   return `<div class="codePanel">
-  <h3>Read this from code</h3>
   ${accessLine(options)}
   <div class="row">
     <label for="snippetLanguage">Language</label>

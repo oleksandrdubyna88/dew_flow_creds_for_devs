@@ -4,6 +4,7 @@ import { EntityViewOptions, copyValueFor, renderEntityViewHtml } from '../entity
 import { EntityMetadata } from '../types';
 import { PAGE_MAX_WIDTH_PX, TWO_COLUMN_AT } from '../webviewHtml';
 import { snippetFor } from '../configSnippet';
+import { FORM_SECTIONS } from '../formSections';
 import { CONFIG_KEY_ENV } from '../configKey';
 
 /**
@@ -142,4 +143,53 @@ test('the snippet panel and the viewer share one copy icon', () => {
       'which is what made its button read as "not a copy button"',
   );
   assert.ok(icons.length > 0);
+});
+
+// ---------------------------------------------------------------------------
+// T19 — the viewer's three framed groups, coloured from the FORM's catalog so
+// the two pages cannot describe one section in two colours.
+// ---------------------------------------------------------------------------
+
+test('a config entry shows three frames, in order: main, dates, code', () => {
+  const html = renderEntityViewHtml(
+    options({
+      details: metadata({ isConfig: true } as never),
+      createdAt: 1756300000000,
+    }),
+  );
+  const frames = [...html.matchAll(/<fieldset class="sec (depColor\d+)"><legend>([^<]*)<\/legend>/g)];
+  assert.deepEqual(
+    frames.map((m) => m[2]),
+    ['Main', 'Dates &amp; history', 'Read this from code'],
+    'the viewer renders a flat run of rows where the owner asked for three framed groups',
+  );
+});
+
+test('a kind with no code story shows two frames, not an empty third', () => {
+  const html = renderEntityViewHtml(options({ createdAt: 1756300000000 }));
+  const frames = [...html.matchAll(/<fieldset class="sec /g)];
+  assert.equal(frames.length, 2, 'an empty code frame is a frame around nothing');
+});
+
+test('dates and history live inside the dates frame, not the main one', () => {
+  const html = renderEntityViewHtml(options({ createdAt: 1756300000000 }));
+  const main = html.indexOf('<legend>Main</legend>');
+  const dates = html.indexOf('<legend>Dates &amp; history</legend>');
+  const created = html.indexOf('>Created<');
+  assert.ok(main !== -1 && dates !== -1 && created !== -1);
+  assert.ok(created > dates, 'Created renders before the dates frame opens — it is in Main');
+});
+
+test("the frame colours are the form catalog's own, by identity", () => {
+  const html = renderEntityViewHtml(
+    options({ details: metadata({ isConfig: true } as never), createdAt: 1756300000000 }),
+  );
+  const byId = (id: string): string => {
+    const section = FORM_SECTIONS.find((s) => s.id === id);
+    assert.ok(section !== undefined, `the form catalog lost section "${id}"`);
+    return section.color;
+  };
+  assert.ok(html.includes(`class="sec ${byId('generalSection')}"><legend>Main<`));
+  assert.ok(html.includes(`class="sec ${byId('datesSection')}"><legend>Dates &amp; history<`));
+  assert.ok(html.includes(`class="sec ${byId('configSection')}"><legend>Read this from code<`));
 });

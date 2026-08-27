@@ -15,6 +15,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   because the old test pinned "seven folders" and passed straight through the gap. Existing
   accounts are deliberately untouched — the seed never re-runs over a vault someone has arranged.
 
+### Added (viewer)
+
+- **The viewer wears the form's framed groups.** Three coloured frames — *Main*, *Dates & history*,
+  *Read this from code* — with the colours taken from the edit form's own section catalog, so the
+  same group wears the same colour on every kind and on both pages. A kind with no code story gets
+  two frames, never an empty third.
+
 ### Fixed
 
 - **The viewer's columns were half their old width.** The read-only viewer grew a second column in

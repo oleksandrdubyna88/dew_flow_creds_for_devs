@@ -22,6 +22,7 @@ import {
 } from './configSnippet';
 import { CONFIG_KEY_ENV } from './configKey';
 import { configFileNameFor } from './configFile';
+import { FORM_SECTIONS } from './formSections';
 import { Revision, summarizeRevision } from './revisionHistory';
 import { BINDABLE_FIELDS, BindableField } from './envBinding';
 import { TotpSnapshot } from './totp';
@@ -291,6 +292,29 @@ export async function copyValueFor(
   return value;
 }
 
+
+/**
+ * A viewer group frame, coloured from the FORM's section catalog (T19).
+ *
+ * <p>The owner asked for the viewer's flat run of rows to wear the same framed groups the edit
+ * form has — three of them: the main fields, dates-and-history, and the code panel column. The
+ * colours are looked up by section id rather than spelled here, so the viewer's "main" frame is
+ * the same colour as the form's General section on every kind, and a colour renamed in
+ * `formSections.ts` fails this file's tests instead of silently unframing the page.</p>
+ */
+function viewFrame(sectionId: string, legend: string, body: string): string {
+  if (body.trim().length === 0) {
+    return '';
+  }
+  const section = FORM_SECTIONS.find((candidate) => candidate.id === sectionId);
+  if (section === undefined) {
+    throw new Error(`viewFrame: unknown section id "${sectionId}"`);
+  }
+  return `<fieldset class="sec ${section.color}"><legend>${escapeHtml(legend)}</legend>
+${body}
+</fieldset>`;
+}
+
 const COPY_ICON = SHARED_COPY_ICON;
 
 const DOWNLOAD_ICON =
@@ -404,7 +428,7 @@ export function renderEntityViewHtml(options: EntityViewOptions): string {
       <div class="note">${escapeHtml(describeMcpSource(options.mcp))}</div>
     </div>`;
 
-  const rows = [
+  const mainRows = [
     mcpRow,
     row('Name', 'name', d.name),
     row('Host', 'host', d.host),
@@ -497,20 +521,6 @@ export function renderEntityViewHtml(options: EntityViewOptions): string {
     // `env`, `toml` and `ini` were taught to the highlighter for exactly this row.
     codeRow('Config file', 'config', options.config, d.configFormat ?? 'json'),
     row('Notes', 'notes', options.notes),
-    row('Created', 'createdAt', options.createdAt === undefined ? undefined : new Date(options.createdAt).toLocaleString()),
-    row('Last changed', 'updatedAt', options.updatedAt === undefined ? undefined : new Date(options.updatedAt).toLocaleString()),
-    ...(options.history.length > 0
-      ? [
-          `<div class="row"><label>History (${options.history.length} kept, newest first)</label>${options.history
-            .map(
-              (r, i) =>
-                `<div class="line"><input readonly value="${escapeHtml(summarizeRevision(r))}">
-        <button data-field="rev${i}" data-action="copy" class="icon" title="Copy that version's secret" aria-label="Copy previous secret">${COPY_ICON}</button>
-      </div>`,
-            )
-            .join('')}</div>`,
-        ]
-      : []),
     row(
       `Additional file${d.attachmentFileName ? ` (${d.attachmentFileName})` : ''}`,
       'attachment',
@@ -526,6 +536,25 @@ export function renderEntityViewHtml(options: EntityViewOptions): string {
              title="Click to zoom (×2, twice; a third click resets)" alt="Stored image">
         <button data-field="image" data-action="download" class="icon" title="Save image" aria-label="Save image">${DOWNLOAD_ICON}</button>
       </div></div>`,
+        ]
+      : []),
+  ].join('\n');
+
+  // The owner's second frame: when it happened, and what it was before — one colour on every
+  // kind, the same one the form's Dates section wears.
+  const datesRows = [
+    row('Created', 'createdAt', options.createdAt === undefined ? undefined : new Date(options.createdAt).toLocaleString()),
+    row('Last changed', 'updatedAt', options.updatedAt === undefined ? undefined : new Date(options.updatedAt).toLocaleString()),
+    ...(options.history.length > 0
+      ? [
+          `<div class="row"><label>History (${options.history.length} kept, newest first)</label>${options.history
+            .map(
+              (r, i) =>
+                `<div class="line"><input readonly value="${escapeHtml(summarizeRevision(r))}">
+        <button data-field="rev${i}" data-action="copy" class="icon" title="Copy that version's secret" aria-label="Copy previous secret">${COPY_ICON}</button>
+      </div>`,
+            )
+            .join('')}</div>`,
         ]
       : []),
   ].join('\n');
@@ -561,7 +590,6 @@ export function renderEntityViewHtml(options: EntityViewOptions): string {
      not, and the two pages then narrow the same way instead of nearly the same way. */
   .viewGroups { display: grid; grid-template-columns: 1fr; gap: 0 24px; align-items: start; }
   @media (min-width: ${TWO_COLUMN_AT}px) { .viewGroups { grid-template-columns: 1fr 1fr; } }
-  .codePanel h3 { margin: 0 0 8px; font-size: 1em; opacity: .9; }
   .hint.bad { color: var(--vscode-editorWarning-foreground, #cca700); opacity: 1; }
   .code { flex: 1; margin: 0; padding: 6px 8px; max-height: 320px; overflow: auto;
     font-family: var(--vscode-editor-font-family, monospace); font-size: 13px; line-height: 1.45;
@@ -573,6 +601,15 @@ export function renderEntityViewHtml(options: EntityViewOptions): string {
   .tok-num { color: var(--vscode-charts-green, #b5cea8); }
   .tok-var { color: var(--vscode-charts-purple, #c586c0); font-weight: 600; }
   .totp { font-size: 1.25em; letter-spacing: .18em; max-width: 11em; flex: 0 1 11em; }
+  /* The form's frame rules, verbatim in shape: only the border carries the colour. */
+  fieldset { border: 1px solid var(--vscode-widget-border, #4444); border-radius: 4px;
+             margin: 0 0 14px; padding: 10px 12px; }
+  legend { padding: 0 6px; opacity: .85; }
+  .sec { border-color: currentColor; }
+  ${FORM_SECTIONS.map(
+    (section) =>
+      `.sec.${section.color} { border-color: var(--vscode-credSshManager-${section.color}, var(--vscode-widget-border, #4444)); }`,
+  ).join('\n  ')}
   .totpLeft { align-self: center; min-width: 3em; opacity: .8; font-variant-numeric: tabular-nums; }
   .preview { width: 200px; height: 200px; object-fit: contain; cursor: zoom-in;
              border: 1px solid var(--vscode-widget-border, #3c3c3c); border-radius: 4px;
@@ -608,8 +645,11 @@ export function renderEntityViewHtml(options: EntityViewOptions): string {
     <button class="primary" data-field="all">${COPY_ICON} Copy All</button>
   </div>
   <div class="viewGroups">
-    <div>${rows}</div>
-    ${codePanelFor(options)}
+    <div>
+      ${viewFrame('generalSection', 'Main', mainRows)}
+      ${viewFrame('datesSection', 'Dates & history', datesRows)}
+    </div>
+    ${viewFrame('configSection', 'Read this from code', codePanelFor(options))}
   </div>
 <script nonce="${nonce}">
   const vscode = acquireVsCodeApi();
