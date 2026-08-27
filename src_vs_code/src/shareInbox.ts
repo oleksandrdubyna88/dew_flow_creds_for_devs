@@ -16,7 +16,7 @@ import {
 } from './shareFormat';
 import { recordOrigin, resolveOrigin } from './shareOrigin';
 import { snapshotForRevision } from './revisionSnapshot';
-import { validatePin } from './pinPolicy';
+import { pinValidator } from './pinInput';
 import { OwnedShare, SharePayload, TeamMember, TreeNode } from './types';
 
 /**
@@ -53,11 +53,17 @@ export class ShareInbox {
       prompt: 'Encrypts the shared item. Tell it to the recipient out-of-band.',
       password: true,
       ignoreFocusOut: true,
-      validateInput: validatePin,
+      // Advice only while CHOOSING (sealing a new share) — accepting types it back.
+      validateInput: pinValidator(confirm ? 'choosing' : 'entering'),
     });
     if (pin === undefined || !confirm) {
       return pin;
     }
+    return this.confirmSharePin(pin);
+  }
+
+  /** The repeat prompt: the same PIN typed twice, or nothing. */
+  private async confirmSharePin(pin: string): Promise<string | undefined> {
     const repeat = await vscode.window.showInputBox({
       title: 'One-time share PIN',
       prompt: 'Repeat the PIN',

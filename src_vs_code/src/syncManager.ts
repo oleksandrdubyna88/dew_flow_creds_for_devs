@@ -23,7 +23,7 @@ import {
 } from './orgEscrowOps';
 import { TransportFactory } from './transportFactory';
 import { VaultKey, VaultKeys } from './vaultKeys';
-import { validatePin } from './pinPolicy';
+import { pinValidator } from './pinInput';
 import { VaultTransport } from './vaultTransport';
 import { StoredAccount, isBackupBundle } from './types';
 
@@ -200,7 +200,7 @@ export class SyncManager implements vscode.Disposable {
         'Encrypts this account\'s NAS vault. Must be the SAME on every machine for this account.',
       password: true,
       ignoreFocusOut: true,
-      validateInput: validatePin,
+      validateInput: pinValidator('choosing'),
     });
     if (pin === undefined) {
       return;

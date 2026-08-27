@@ -26,7 +26,7 @@ import {
   parseRecoveryCode,
 } from './recoveryCode';
 import { authenticateSecurityKey } from './webauthnPrf';
-import { validatePin } from './pinPolicy';
+import { pinValidator } from './pinInput';
 import { StoredAccount } from './types';
 import { unlockPlan } from './unlockPlan';
 import { detachVaultKey, wipeVaultKey } from './vaultKeyLifetime';
@@ -177,7 +177,9 @@ export class VaultKeys {
       prompt: "This account's vault PIN (same on every machine for this account)",
       password: true,
       ignoreFocusOut: true,
-      validateInput: validatePin,
+      // An EXISTING PIN typed back: refusals catch typos, but no strength advice —
+      // there is nothing the typist can do about it from this box.
+      validateInput: pinValidator('entering'),
     });
   }
 

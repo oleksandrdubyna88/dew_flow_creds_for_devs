@@ -1,6 +1,6 @@
 import * as assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { MIN_PIN_LENGTH, describePinStrength, validatePin } from '../pinPolicy';
+import { MIN_PIN_LENGTH, describePinStrength, pinFeedback, validatePin } from '../pinPolicy';
 
 /**
  * PIN strength. This PIN is not an online password: it wraps ciphertext that
@@ -59,4 +59,43 @@ test('the estimate is advisory and rises with real entropy', () => {
   assert.equal(typeof weak, 'string');
   assert.notEqual(weak, strong);
   assert.match(strong, /centuries|years/);
+});
+
+// ---------------------------------------------------------------------------
+// T1 (PLAN_tails) — the advisory that reached nobody. `describePinStrength` was
+// exported, documented as "shown live in the input box", and called by nothing
+// but this file. `pinFeedback` is what the input boxes actually consume.
+// ---------------------------------------------------------------------------
+
+test('choosing a weak-but-legal PIN gets advice naming a duration', () => {
+  const feedback = pinFeedback('hunter2!', 'choosing');
+  assert.ok(feedback !== undefined, 'a legal-but-weak PIN deserves advice while choosing');
+  assert.equal(feedback.kind, 'advice');
+  assert.match(feedback.message, /Offline guessing/);
+});
+
+test('entering an existing PIN gets no advice — there is nothing the typist can do about it', () => {
+  assert.equal(pinFeedback('hunter2!', 'entering'), undefined);
+});
+
+test('a refusal is a refusal in BOTH modes — a mode must never soften it', () => {
+  for (const mode of ['choosing', 'entering'] as const) {
+    const feedback = pinFeedback('12345678', mode);
+    assert.ok(feedback !== undefined, `mode ${mode} let a refused PIN through`);
+    assert.equal(feedback.kind, 'error');
+  }
+});
+
+test('the refusal text is byte-identical to validatePin, so the two paths cannot drift', () => {
+  for (const pin of ['', 'short', '12345678', 'password', 'aaaaaaaa']) {
+    const direct = validatePin(pin);
+    const routed = pinFeedback(pin, 'choosing');
+    assert.equal(routed?.kind === 'error' ? routed.message : undefined, direct);
+  }
+});
+
+test('a strong PIN while choosing still gets its estimate, not silence', () => {
+  const feedback = pinFeedback('correct horse battery staple', 'choosing');
+  assert.equal(feedback?.kind, 'advice');
+  assert.match(feedback?.message ?? '', /centuries|years/);
 });

@@ -139,8 +139,8 @@ function humanDuration(seconds: number): string {
 
 /**
  * How long an offline attacker who holds the file would need, on average.
- * Advisory: shown live in the input box, never a refusal — the refusals are in
- * `validatePin`. Ends in "at best" because the estimate assumes the attacker
+ * Advisory, never a refusal — the refusals are in `validatePin`. Reaches input boxes
+ * through `pinFeedback('choosing')`; nothing shows it while a PIN is merely re-entered. Ends in "at best" because the estimate assumes the attacker
  * guesses no better than this heuristic does.
  */
 export function describePinStrength(value: string): string {
@@ -149,4 +149,38 @@ export function describePinStrength(value: string): string {
   }
   const guesses = Math.pow(2, Math.max(0, estimateBits(value) - 1));
   return `Offline guessing: about ${humanDuration(guesses * SECONDS_PER_GUESS)} at best.`;
+}
+
+/** What an input box shows for a PIN: a refusal, advice, or nothing. */
+export interface PinFeedback {
+  readonly message: string;
+  readonly kind: 'error' | 'advice';
+}
+
+/**
+ * The one validator every PIN input box consumes, in one of two modes.
+ *
+ * <p>`choosing` — the PIN is being INVENTED here (a new sync PIN, a share PIN, an export
+ * password): refusals first, and above them the live crack-time estimate, because now is the
+ * one moment the person can act on it. `entering` — the PIN already exists and is merely being
+ * typed back: refusals still apply (they catch typos shorter than any real PIN), but the
+ * estimate is withheld. Telling someone their existing PIN is weak while they unlock with it is
+ * not advice; it is nagging, and it teaches them to stop reading the box that also carries the
+ * refusals.</p>
+ *
+ * <p>The refusal text is `validatePin`'s own, byte for byte — one refusal rule, two callers,
+ * pinned by test so the paths cannot drift. This function exists because its predecessor did
+ * not: `describePinStrength` was documented as "shown live in the input box" while nothing but
+ * its own test ever called it ([PLAN_tails.md] T1).</p>
+ */
+export function pinFeedback(value: string, mode: 'choosing' | 'entering'): PinFeedback | undefined {
+  const refusal = validatePin(value);
+  if (refusal !== undefined) {
+    return { message: refusal, kind: 'error' };
+  }
+  if (mode === 'entering') {
+    return undefined;
+  }
+  const estimate = describePinStrength(value);
+  return estimate === '' ? undefined : { message: estimate, kind: 'advice' };
 }

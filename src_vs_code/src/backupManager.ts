@@ -10,7 +10,7 @@ import {
 } from './cryptoUtils';
 import { isKeyWrap, unwrapWithPinAsync, wrapPinVaultAsync } from './keyWrap';
 import { nasDirFor } from './nasPaths';
-import { validatePin } from './pinPolicy';
+import { pinValidator } from './pinInput';
 import { sharesFromEnvelope } from './shareFormat';
 import { StorageManager } from './storageManager';
 import { StoredAccount, isBackupBundle } from './types';
@@ -42,7 +42,8 @@ async function promptMasterPin(
     title: purpose,
     prompt: detail ?? 'Master PIN/password for the encrypted backup',
     password: true,
-    validateInput: validatePin,
+    // Advice only while CHOOSING (confirm) — typing an existing PIN back gets refusals only.
+    validateInput: pinValidator(confirm ? 'choosing' : 'entering'),
   });
   if (pin === undefined || !confirm) {
     return pin;

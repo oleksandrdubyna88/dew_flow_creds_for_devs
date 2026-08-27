@@ -121,7 +121,7 @@ import {
 import { unwrapWithOrgEscrow, orgEscrowWrap, isKeyWrap as isWrap } from './keyWrap';
 import { rekeyUnderPin } from './vaultRekey';
 import { decryptJsonWithMasterKey, readBackupAccount } from './cryptoUtils';
-import { validatePin } from './pinPolicy';
+import { pinValidator } from './pinInput';
 import { CredTreeDataProvider, VIEW_ID } from './treeDataProvider';
 import { DepDecorationProvider } from './depDecorations';
 import { ExpansionMemory, expansionKey } from './treeExpansion';
@@ -2919,7 +2919,7 @@ ${detail}
         prompt: 'Tell it to the recipient out-of-band — it is the only key to this file.',
         password: true,
         ignoreFocusOut: true,
-        validateInput: validatePin,
+        validateInput: pinValidator('choosing'),
       });
       if (password === undefined) {
         return;
@@ -4033,7 +4033,7 @@ ${detail}
       prompt: 'The vault is re-keyed under this. Hand it over out of band; they replace it.',
       password: true,
       ignoreFocusOut: true,
-      validateInput: validatePin,
+      validateInput: pinValidator('choosing'),
     });
     if (temporaryPin === undefined) {
       wipeRecovered(master);

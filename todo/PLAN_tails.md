@@ -878,6 +878,65 @@ is thin wiring over these.
 
 ---
 
+### T21. A Help surface — because the features nobody can decode are the ones nobody uses
+
+**The ask, in the owner's shape.** An unobtrusive entry point at the bottom of the tree — a status
+bar item with a yellow question mark — opening a **Help page**: search at the top centre; every
+feature documented; the articles ordered so that **the least self-explanatory things come first**
+(the owner's own examples: what are *MCP logs* and why do they exist; what does *Install…* do, why,
+how, what it gives you). Each topic on the index links into a full article on the same page — with
+a Back button and breadcrumbs at the top. Every article in one fixed style: **what it is → why →
+how to set it up → how to use it** (plus *what can go wrong*, per the owner's "в каком порядке, что
+может пойти не так"). A language setting at the top of the page — English, Russian, Ukrainian,
+German, Spanish — remembered **for the help pages only**. Pictures and GIFs come later; build it
+text-only now, with the slots ready.
+
+**What this is architecturally: a webview with a content catalog, and the catalog is the work.**
+
+- **Entry point.** A `vscode.StatusBarItem` (the lock/sync item is precedent) with `$(question)`
+  and a yellow tint via `ThemeColor` — anchored to this view's window, low priority so it sits at
+  the end. Plus a `CredsForDevs: Help` command for the palette, because a status bar can be hidden.
+- **The page.** One webview panel in the repo's established pure-page shape: `helpPage.ts`
+  (markup, no `vscode`, testable), `helpPanel.ts` (the panel + message loop), following
+  `entityViewPage`/`entityViewPanel`. Client-side routing inside the page — index → article —
+  with breadcrumbs and Back as page state, not panel re-creation.
+- **Search.** Over the catalog's titles and bodies, client-side; the catalog is small enough that
+  anything cleverer than substring-with-ranking is over-engineering.
+- **The catalog** — `helpContent.ts` — is a typed list of articles, each REQUIRED to fill the
+  same fields: `id`, `title`, `whatItIs`, `why`, `setup`, `usage`, `whatCanGoWrong`,
+  `mediaSlots` (empty for now, so the picture pass later is content-only). The type enforces the
+  owner's "вся документация в одном стиле" — an article that skips *why* does not compile.
+- **Ordering.** The index order is explicit in the catalog, not alphabetical, and the plan's rule
+  is written next to it: **the less guessable a feature is from its menu entry, the earlier it
+  goes.** MCP logs, Install…, corporate recovery, the broker/agent story, config code access,
+  ephemeral entries, the WSL relay — before passwords and folders.
+- **Languages.** `package.json` setting `credSshManager.helpLanguage` (`en` default, `ru`, `uk`,
+  `de`, `es`) — a real setting so it syncs and persists, read by the panel, switchable from the
+  page header; changing it on the page writes the setting back. Scoped to help only by NAME and
+  by use: nothing else reads it. Translation strategy is the honest part: the catalog type
+  carries per-language bodies, `en` required, the others optional with a visible "not translated
+  yet, showing English" fallback — a missing translation must never hide an article.
+- **Content source.** The README already documents everything in near-article shape (T4 keeps it
+  complete); the catalog articles are written fresh in the four-field style, not pasted from the
+  README — but T4's coverage test gives the checklist of what must exist: **every command and
+  setting shown in a menu should be reachable from some article**, which is the mechanical form
+  of the owner's "должно быть описано всё".
+
+**Tests.** The catalog is data, so the guarantees are cheap and real: every article has every
+required field non-empty in English; ids are unique; the explicit index order contains every
+article exactly once; every `contributes.commands` id referenced from articles exists in the
+manifest (no dead links); search over the catalog finds an article by a word in its body; the
+language fallback returns English rather than nothing. The page half: breadcrumbs render for a
+nested article, and the index renders in catalog order.
+
+**Size warning, stated now.** Five languages times ~20 articles is the largest content object in
+the repository. The first build ships `en` complete and the other four as fallback-to-English —
+translations are content passes the owner can order separately, not a gate on the surface
+existing.
+
+
+---
+
 ## 4. Build order
 
 Ordered so that each step is verifiable on its own, and the two that need a person come last.
@@ -908,7 +967,9 @@ Ordered so that each step is verifiable on its own, and the two that need a pers
 11. **T3** — the ratchet, last of the code items: it takes a baseline of the tree, so it should be
    taken after the rest have stopped moving it.
 12. **T2** — needs a browser and a physical security key.
-13. **T5** — needs the owner. Prepared by then, decided here.
+13. **T21** — the Help surface: catalog type and entry point first, articles in English, the
+    language switch, pictures deliberately later.
+14. **T5** — needs the owner. Prepared by then, decided here.
 
 ## 5. Test plan
 
@@ -954,6 +1015,10 @@ and both the failure and the pass are reported.
 ## 6. Definition of Done
 
 - [ ] T9: the viewer's columns are as wide as the form's, proven by a test watched failing at 640 px.
+- [ ] T21: the help entry point is in the status bar with a yellow question mark; every article
+      carries what/why/setup/usage/what-can-go-wrong; the hard-to-guess features lead the index;
+      search, breadcrumbs and Back work; the language choice persists and falls back to English
+      visibly; media slots exist and are empty.
 - [ ] T20: the viewer shows bare `ssh` wherever PATH's client can serve the connection, a
       second line only when the two differ, and every external-tool launch checks the binary
       and offers its install recipe — Linux recipes opening with update-upgrade.
@@ -999,7 +1064,7 @@ and both the failure and the pass are reported.
 - [ ] T8: the server's console output is coloured under redirection (counted, not observed), a run
       crossing midnight segments, `logs/` has a named retention owner, and the obsolete mirror-list
       item is deleted with its reason.
-- [ ] `research/module_extension.md` and `research/module_server.md` updated for T1, T3, T4, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17, T18, T19, T20;
+- [ ] `research/module_extension.md` and `research/module_server.md` updated for T1, T3, T4, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17, T18, T19, T20, T21;
       `research/module_mcp.md` (or `module_extension.md`'s MCP section) for T10.
 - [ ] `node .claude/rules/shared/tools/plan-lifecycle.mjs` and `pin-check.mjs` pass.
 - [ ] This plan promoted to `research/` with its deviations recorded, and anything left extracted
