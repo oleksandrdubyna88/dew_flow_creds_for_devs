@@ -252,3 +252,77 @@ test('a server too old to name a version is not a fault', async () => {
   assert.deepEqual(said, []);
   assert.equal(transport.serverContract, 0);
 });
+
+// --- taking a share back (0.66.0) ----------------------------------------------------------
+//
+// The server side has its own tests. These are the other half: that this client reads the
+// receipts, and — the part that matters — that it does not report success for a share that was
+// already accepted. Being told a withdrawal worked when it did not is worse than being told
+// nothing, because the point of asking was to stop a secret reaching someone.
+
+/** Like installServer, but it also records the URL each call went to. */
+function installRecordingServer(status: number, body = ''): { urls: string[] } {
+  const urls: string[] = [];
+  globalThis.fetch = ((input: unknown) => {
+    urls.push(String(input));
+    // 204 has no body by definition, and `new Response('', {status: 204})` THROWS — which the
+    // transport would then report as an unreachable server, from a stub that meant to say yes.
+    return Promise.resolve(new Response(status === 204 ? null : body, { status }));
+  }) as typeof fetch;
+  return { urls };
+}
+
+test('sent receipts are read back, and a malformed one is dropped rather than trusted', async () => {
+  installServer(
+    200,
+    '1',
+    JSON.stringify([
+      { id: 'a', toEmail: 'bob@example.com', entityName: 'prod db', entityKind: 'db', createdAt: 1 },
+      { id: 'b', toEmail: 'carol@example.com' },
+      'not an object',
+    ]),
+  );
+
+  const sent = await transportFor().listSent(account);
+
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].entityName, 'prod db');
+});
+
+test('a server that will not list gives an empty list, not a crash', async () => {
+  installServer(500, '1', 'nope');
+
+  assert.deepEqual(await transportFor().listSent(account), []);
+});
+
+test('a withdrawal that worked is reported as such', async () => {
+  installRecordingServer(204);
+
+  assert.equal(await transportFor().withdrawSent(account, 'abc'), 'withdrawn');
+});
+
+test('a share the recipient already took is NOT reported as withdrawn', async () => {
+  // 409 is the server saying it is beyond recall. Flattening that into success would tell someone
+  // their secret is safe at the exact moment it is not.
+  installRecordingServer(409, 'Already accepted or declined');
+
+  assert.equal(await transportFor().withdrawSent(account, 'abc'), 'alreadyTaken');
+});
+
+test('an unknown id is neither a success nor an "already taken"', async () => {
+  installRecordingServer(404);
+
+  assert.equal(await transportFor().withdrawSent(account, 'abc'), 'notFound');
+});
+
+test('a crafted id cannot walk out of the route it belongs to', async () => {
+  const { urls } = installRecordingServer(404);
+
+  await transportFor().withdrawSent(account, '../../api/vault');
+
+  assert.equal(urls.length, 1);
+  assert.ok(
+    urls[0].endsWith('/api/shares/sent/..%2F..%2Fapi%2Fvault'),
+    `it asked for ${urls[0]}`,
+  );
+});
