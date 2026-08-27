@@ -948,6 +948,14 @@ Three properties of the client half worth carrying in the head:
   one — so each candidate is checked against the integrity tag, and a contribution that will not
   even decrypt is dropped rather than fatal. One officer resealing to a stale session must not
   stop the others from finishing.
+- **The relay chooses the order, the count and the labels of what it hands back**, so the search
+  is hardened against all three. `combineShares` THROWS on a duplicated x or one outside 1..255 —
+  x=0 IS the secret — and `combinations` walks subsets in list order, so a poisoned pair placed
+  first was reached before any valid subset and took the whole recovery with it. Contributions are
+  now filtered to one per index, in-field, **first wins** so a genuine officer cannot be displaced
+  by a later duplicate; the interpolation itself is wrapped so one bad combination costs that
+  combination and not the recovery. Filtering also bounds the search: `combinations` materialises
+  every C(n, t) subset before the first is tried, and n was whatever the server chose to post.
 
 The break-glass session keypair lives in **memory only**, in the window that started the recovery.
 Writing it anywhere would put the means to decrypt a quorum's worth of key material on disk beside

@@ -164,3 +164,68 @@ test('the session private key never appears in what is sent to the server', () =
   assert.equal(wire.includes(session.privateKey.toString('base64')), false);
   assert.equal(wire.includes(SET.shares[0].bytes.toString('base64')), false, 'nor the share itself');
 });
+
+// ---------------------------------------------------------------- what a hostile relay can do
+
+/**
+ * The server relays the contributions and chooses their ORDER, their COUNT, and — because
+ * `shareIndex` and `officerEmail` sit outside the sealed blob — their labels. It cannot read a
+ * share, and the integrity tag stops it forging a quorum. What it must also not be able to do is
+ * stop a real quorum from working, which is what these pin down.
+ */
+
+test('a duplicated index does not abort a recovery that has a valid quorum in it', async () => {
+  // `combineShares` THROWS on a duplicate, `combinations` emits subsets in list order, and the
+  // server picks that order — so a poisoned pair placed first was reached before any valid
+  // subset and took the whole recovery with it.
+  const session = newSessionKeys();
+  const real = realContribution('cto@x.dev', 0, session.publicKey);
+  const contributions = [
+    real,
+    { ...real, officerEmail: 'replay@x.dev' }, // same x, submitted twice
+    realContribution('lead@x.dev', 1, session.publicKey),
+  ];
+
+  const outcome = recoverOrgKey(contributions, session.privateKey, 2, 3, SET.integrityTag);
+
+  assert.ok(outcome.kind === 'recovered', 'a duplicate must be skipped, not fatal');
+  assert.deepEqual(outcome.orgPrivateKey, ORG.privateKey);
+});
+
+test('an out-of-range index is dropped rather than thrown', async () => {
+  // x = 0 IS the secret and x > 255 is outside the field; both make `combineShares` throw.
+  const session = newSessionKeys();
+  const real = realContribution('cto@x.dev', 0, session.publicKey);
+  for (const bad of [0, 256, 1.5, Number.NaN]) {
+    const outcome = recoverOrgKey(
+      [
+        { ...real, shareIndex: bad, officerEmail: 'hostile@x.dev' },
+        real,
+        realContribution('lead@x.dev', 1, session.publicKey),
+      ],
+      session.privateKey, 2, 3, SET.integrityTag);
+
+    assert.ok(outcome.kind === 'recovered', `index ${bad} aborted the recovery`);
+  }
+});
+
+test('a flood of contributions cannot make the search unbounded', async () => {
+  // `combinations` builds every C(n, t) subset eagerly, and the server chooses n. At n=26, t=8
+  // that is 1.5M subsets built before the first is tried — on the extension-host thread.
+  const session = newSessionKeys();
+  const real = [
+    realContribution('cto@x.dev', 0, session.publicKey),
+    realContribution('lead@x.dev', 1, session.publicKey),
+  ];
+  const flood = Array.from({ length: 60 }, (_, i) => ({
+    ...real[0],
+    officerEmail: `filler${i}@x.dev`,
+    shareIndex: (i % 250) + 3,
+  }));
+
+  const started = Date.now();
+  const outcome = recoverOrgKey([...flood, ...real], session.privateKey, 2, 3, SET.integrityTag);
+
+  assert.ok(Date.now() - started < 5_000, 'the search must be bounded regardless of n');
+  assert.ok(outcome.kind === 'recovered' || outcome.kind === 'noValidQuorum');
+});

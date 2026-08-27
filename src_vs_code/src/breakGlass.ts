@@ -6,7 +6,7 @@ import {
   publicKeyForPrivate,
   sealToPublicKey,
 } from './orgEscrowCrypto';
-import { ShamirShare, combineShares, verifyRecombined } from './shamir';
+import { MAX_SHARES, ShamirShare, combineShares, verifyRecombined } from './shamir';
 
 /**
  * The arithmetic of a break-glass recovery, with no server and no `vscode` in sight.
@@ -75,21 +75,88 @@ export function recoverOrgKey(
   totalShares: number,
   integrityTag: string,
 ): RecoveryOutcome {
-  const opened = openContributions(contributions, sessionPrivateKey);
+  const opened = usableContributions(openContributions(contributions, sessionPrivateKey));
   if (opened.length < threshold) {
     return { kind: 'tooFew', have: opened.length, need: threshold };
   }
   for (const subset of combinations(opened, threshold)) {
-    const candidate = combineShares(subset.map((o) => o.share));
-    if (verifyRecombined(candidate, totalShares, threshold, integrityTag)) {
-      return {
-        kind: 'recovered',
-        orgPrivateKey: candidate,
-        contributors: subset.map((o) => o.officerEmail),
-      };
+    const found = tryQuorum(subset, totalShares, threshold, integrityTag);
+    if (found !== undefined) {
+      return found;
     }
   }
   return { kind: 'noValidQuorum', opened: opened.length };
+}
+
+/**
+ * One candidate subset: rebuild it, and answer only if it really is the organisation's key.
+ *
+ * <p>A subset that does not verify rebuilt SOMETHING — 32 bytes of a key that is not the right
+ * one — and dropping that reference leaves it in the heap for a dump to find. It is zeroed here
+ * rather than left to the collector.</p>
+ */
+function tryQuorum(
+  subset: readonly OpenedContribution[],
+  totalShares: number,
+  threshold: number,
+  integrityTag: string,
+): RecoveryOutcome | undefined {
+  const candidate = tryCombine(subset);
+  if (candidate === undefined) {
+    return undefined;
+  }
+  if (verifyRecombined(candidate, totalShares, threshold, integrityTag)) {
+    return {
+      kind: 'recovered',
+      orgPrivateKey: candidate,
+      contributors: subset.map((o) => o.officerEmail),
+    };
+  }
+  candidate.fill(0);
+  return undefined;
+}
+
+/**
+ * Interpolation that answers `undefined` instead of throwing.
+ *
+ * <p>`combineShares` refuses a malformed set by throwing, which is right for a programming
+ * error and wrong here: the set is chosen by a SERVER, and one bad combination must cost that
+ * combination rather than the whole recovery.</p>
+ */
+function tryCombine(subset: readonly OpenedContribution[]): Buffer | undefined {
+  try {
+    return combineShares(subset.map((o) => o.share));
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * The contributions worth searching: one per share index, each index inside the field.
+ *
+ * <p>Two things the relay controls and must not be able to weaponise. An index outside 1..255
+ * makes interpolation throw — x=0 IS the secret — and two contributions at the same x are one
+ * point counted twice, which throws as well. Filtering here rather than catching later also
+ * bounds the search: without it a server can post as many well-formed contributions as it likes
+ * and every extra one multiplies the number of subsets to try.</p>
+ *
+ * <p>The FIRST contribution at an index wins, so a genuine officer cannot be displaced by a
+ * later duplicate — and the cap is the field's own size, since a share set can never contain
+ * more than 255 distinct points.</p>
+ */
+function usableContributions(opened: readonly OpenedContribution[]): OpenedContribution[] {
+  const byIndex = new Map<number, OpenedContribution>();
+  for (const candidate of opened) {
+    if (isUsableIndex(candidate.share.index) && !byIndex.has(candidate.share.index)) {
+      byIndex.set(candidate.share.index, candidate);
+    }
+  }
+  return [...byIndex.values()];
+}
+
+/** A share's x must be a whole number inside the field, and never 0 — 0 IS the secret. */
+function isUsableIndex(index: number): boolean {
+  return Number.isInteger(index) && index >= 1 && index <= MAX_SHARES;
 }
 
 interface OpenedContribution {
