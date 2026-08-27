@@ -27,6 +27,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Removing your last security key retired the printed recovery code without saying so.** The
+  removal re-keys the vault — that is the whole point, so the removed key stops opening future
+  copies — and a re-key mints a fresh master key. A registered recovery code cannot come along:
+  re-wrapping the new master under that code would need the code, and it lives on paper and
+  nowhere else. So the code was correctly discarded and nothing said a word. The vault stayed
+  openable, nothing failed, and the only thing that broke was the owner's belief that the page in
+  their drawer still worked — which they would have discovered on the one day it mattered. The
+  removal now warns **before** it happens, and offers a fresh code to print immediately after.
+  Master-key rotation also moved into one place (`vaultRekey.ts`) instead of being inlined in the
+  two branches that had already drifted apart in what they carried over.
+
 - **A vault whose only non-PIN opener was a recovery code was misfiled by "Snapshot Vault".** The
   backup write path picks its mode by what is already in the file, and asked "is there a security
   key wrap" — written when a security key was the only other kind there was. A vault holding a PIN

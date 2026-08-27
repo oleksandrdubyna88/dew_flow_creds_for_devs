@@ -1,16 +1,15 @@
 import {
   KeyWrap,
   isKeyWrap,
-  newMasterKey,
   recoveryWrap,
   removeWrap,
   upsertWrap,
   webauthnWraps,
-  wrapWithPinAsync,
   wrapWithPrf,
   wrapWithRecoveryCode,
 } from './keyWrap';
-import { encryptJsonWrapped, readVaultWraps, resignEnvelopeWraps } from './cryptoUtils';
+import { readVaultWraps, resignEnvelopeWraps } from './cryptoUtils';
+import { rekeyUnderPin } from './vaultRekey';
 import type { VaultKey } from './vaultKeys';
 import { StoredAccount } from './types';
 
@@ -45,6 +44,11 @@ export interface NextEnvelope {
   content: string;
   /** True when the payload was re-encrypted under a FRESH master key. */
   rekeyed: boolean;
+  /**
+   * A registered recovery code did not survive the rotation — see `RekeyResult`. Always
+   * false where nothing was rotated, so a caller may report it unconditionally.
+   */
+  recoveryCodeRetired: boolean;
 }
 
 /**
@@ -121,19 +125,27 @@ async function envelopeWithAddedWrap(
   if (key.version === 2) {
     // Already wrapped: add one more wrap around the SAME master key.
     const wraps = upsertWrap(readVaultWraps(raw).filter(isKeyWrap), build(key.masterKey, now));
-    return { content: resignEnvelopeWraps(raw, wraps, key.masterKey), rekeyed: false };
+    return {
+      content: resignEnvelopeWraps(raw, wraps, key.masterKey),
+      rekeyed: false,
+      recoveryCodeRetired: false,
+    };
   }
-  // Upgrade v1 → wrapped: new master key, payload re-encrypted, two wraps.
+  // Upgrade v1 → wrapped: new master key, payload re-encrypted, two wraps. A v1 file holds
+  // no wraps at all, so this rotation has nothing it could fail to carry.
   if (storedPin === undefined) {
     return 'pin-required';
   }
-  const payload = await args.decrypt(raw, key);
-  const master = newMasterKey();
-  const wraps = [await wrapWithPinAsync(master, account.accountId, storedPin, now), build(master, now)];
-  return {
-    content: encryptJsonWrapped(payload, master.toString('base64'), wraps, account, args.pendingShares),
-    rekeyed: true,
-  };
+  const rotated = await rekeyUnderPin({
+    payload: await args.decrypt(raw, key),
+    account,
+    pin: storedPin,
+    now,
+    pendingShares: args.pendingShares,
+    previousWraps: [],
+    extraWraps: (master, at) => [build(master, at)],
+  });
+  return { content: rotated.content, rekeyed: true, recoveryCodeRetired: rotated.recoveryCodeRetired };
 }
 
 /** The wraps currently on a vault file, typed. */
@@ -192,20 +204,26 @@ export async function envelopeWithRemovedKey(
   const { raw, key, account, storedPin, now } = args;
   // One parse, one removal, one verdict — the same one `removalWouldRekey` answers for the
   // caller's wording, so the message and the branch can never disagree about what happened.
-  const remaining = removeWrap(vaultKeyWraps(raw), 'webauthn', wrapId);
+  const existing = vaultKeyWraps(raw);
+  const remaining = removeWrap(existing, 'webauthn', wrapId);
 
   if (webauthnWraps(remaining).length === 0 && storedPin !== undefined) {
-    const payload = await args.decrypt(raw, key);
-    const master = newMasterKey();
+    // A rotation carries the PIN and nothing else: the removed key must not survive it, and a
+    // registered recovery code CANNOT survive it — re-wrapping the fresh master under that code
+    // would need the code, which is on paper and nowhere else. `previousWraps` is what makes
+    // the loss reportable instead of silent.
+    const rotated = await rekeyUnderPin({
+      payload: await args.decrypt(raw, key),
+      account,
+      pin: storedPin,
+      now,
+      pendingShares: args.pendingShares,
+      previousWraps: existing,
+    });
     return {
-      content: encryptJsonWrapped(
-        payload,
-        master.toString('base64'),
-        [await wrapWithPinAsync(master, account.accountId, storedPin, now)],
-        account,
-        args.pendingShares,
-      ),
+      content: rotated.content,
       rekeyed: true,
+      recoveryCodeRetired: rotated.recoveryCodeRetired,
     };
   }
 
@@ -214,5 +232,9 @@ export async function envelopeWithRemovedKey(
   if (key.version !== 2) {
     return 'not-wrapped';
   }
-  return { content: resignEnvelopeWraps(raw, remaining, key.masterKey), rekeyed: false };
+  return {
+    content: resignEnvelopeWraps(raw, remaining, key.masterKey),
+    rekeyed: false,
+    recoveryCodeRetired: false,
+  };
 }

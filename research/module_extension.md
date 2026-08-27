@@ -889,6 +889,29 @@ a shape the code cannot create. `envelopeWithoutRecoveryCode` drops the slot and
 not re-key, and the caller says out loud that an older copy stays openable by that printout — the
 same honesty `removeSecurityKey` practises.
 
+**Rotation lives in one place — `vaultRekey.rekeyUnderPin`.** It is the only operation that
+actually *revokes* an opener: a fresh master, the payload re-encrypted, a new wrap set.
+Everything else edits `wraps[]` around a master that stays put, which is why removing one of
+several security keys leaves that key opening every copy already on disk (said out loud in the
+toast, not hidden). The arithmetic used to be inlined and duplicated in two branches — the v1
+upgrade and the last-key removal — that had already drifted in what they carried over; both now
+call the extracted function, and a third caller is what the corporate break-glass tier will need
+([PLAN_org_recovery.md](../todo/PLAN_org_recovery.md)).
+
+The PIN is the anchor and cannot be optional: a rotation must leave a vault its owner can still
+open, and the PIN is the only factor available without a physical gesture. `extraWraps` is how a
+caller that *can* prove another factor right now adds it, and it is handed the **fresh** master —
+a caller that captured the old one would mint a slot that opens nothing, a failure visible only
+on the next machine to try that factor.
+
+**A recovery code cannot survive a rotation**, and that is arithmetic rather than an oversight:
+re-wrapping the new master under the code needs the code, which exists only on paper. So
+`RekeyResult.recoveryCodeRetired` reports the loss and the callers act on it — *Remove Security
+Key* now warns **before** the destructive step when the removal will re-key a vault holding a
+code, and offers to mint a replacement immediately afterwards. The silence was the defect: the
+vault stays perfectly openable, so nothing fails, and what breaks is only the owner's belief that
+the page in their drawer still works. Caught by test, red first, while building the tier above.
+
 `hasVaultKeyedWrap` exists because of what the third kind broke on arrival: `backupWriteMode`
 routed by "has a webauthn wrap", so a PIN + recovery-code vault read as a self-contained PIN backup
 whose write path replaces the wraps wholesale — silently destroying the printed code's slot. The

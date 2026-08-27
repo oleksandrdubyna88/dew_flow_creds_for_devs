@@ -260,6 +260,54 @@ test('removing the recovery code drops the slot, keeps the master, and refuses a
   assert.equal(envelopeWithoutRecoveryCode(withCode.content, legacy), 'not-wrapped');
 });
 
+test('re-keying after the last key is removed retires the printed code, and SAYS so', async () => {
+  // The defect the recovery code introduced into an older path: the re-key branch writes a
+  // brand-new master under a single PIN wrap, so a registered recovery code is discarded with
+  // it — necessarily, because re-wrapping the new master under that code would need the code,
+  // and it is deliberately stored nowhere. The vault is still openable, so nothing fails; what
+  // breaks is the person's belief that the paper in their drawer still works.
+  //
+  // The behaviour is therefore correct and the SILENCE is the bug: the result has to carry the
+  // fact so the caller can say it and offer a fresh code.
+  const master = newMasterKey();
+  let raw = await wrappedVault(master);
+  const added = await envelopeWithAddedKey(argsFor(raw, wrappedKey(raw, master)), prf('cred-a'), 'K');
+  assert.ok(!isSecurityKeyRefusal(added));
+  raw = added.content;
+  const code = generateRecoveryCode();
+  const withCode = await envelopeWithRecoveryCode(argsFor(raw, wrappedKey(raw, master)), code.secret);
+  assert.ok(!isSecurityKeyRefusal(withCode));
+  raw = withCode.content;
+  const keyWrapId = webauthnWraps(vaultKeyWraps(raw))[0].id;
+
+  const next = await envelopeWithRemovedKey(argsFor(raw, wrappedKey(raw, master)), keyWrapId);
+
+  assert.ok(!isSecurityKeyRefusal(next));
+  assert.equal(next.rekeyed, true);
+  assert.equal(
+    next.recoveryCodeRetired,
+    true,
+    'the caller cannot warn about a printed code it was never told died',
+  );
+  // And the fact behind the flag: that code opens nothing written from here on.
+  assert.equal(hasRecoveryCode(next.content), false);
+});
+
+test('a re-key with no recovery code registered does not claim one was retired', async () => {
+  const master = newMasterKey();
+  let raw = await wrappedVault(master);
+  const added = await envelopeWithAddedKey(argsFor(raw, wrappedKey(raw, master)), prf('cred-a'), 'K');
+  assert.ok(!isSecurityKeyRefusal(added));
+  raw = added.content;
+  const keyWrapId = webauthnWraps(vaultKeyWraps(raw))[0].id;
+
+  const next = await envelopeWithRemovedKey(argsFor(raw, wrappedKey(raw, master)), keyWrapId);
+
+  assert.ok(!isSecurityKeyRefusal(next));
+  assert.equal(next.rekeyed, true);
+  assert.equal(next.recoveryCodeRetired, false, 'nothing was retired, so nothing is claimed');
+});
+
 test('removalWouldRekey: last key + PIN → yes; other keys left or no PIN → no', async () => {
   const master = newMasterKey();
   let raw = await wrappedVault(master);

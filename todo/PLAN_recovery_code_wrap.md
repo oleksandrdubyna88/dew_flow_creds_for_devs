@@ -69,6 +69,15 @@ the NAS backup write would silently strip the recovery wrap — the exact bug cl
 own doc comment exists to prevent. The check becomes kind-agnostic ("any non-pin wrap") via a new
 `hasVaultKeyedWrap`, RED test first.
 
+**Found after the feature landed, fixed the same way (red first):** the re-key branch of
+*Remove Security Key* writes a fresh master under a single PIN wrap — so a registered recovery
+code was discarded with it, silently. That discard is unavoidable arithmetic (re-wrapping the new
+master under the code needs the code, which is on paper only); the silence was the defect. The
+observed failure was `actual: undefined` against `expected: true` on a new
+`NextEnvelope.recoveryCodeRetired`. Rotation moved into `vaultRekey.rekeyUnderPin` — the R2
+extraction, brought forward because this is where it was needed — with both existing branches
+repointed, and the removal now warns before the destructive step and offers a fresh code after.
+
 **Known limitation, stated rather than hidden:** an older installed build's `isKeyWrap` is an
 allowlist — a wrap-mutating action performed there (add/remove security key, PIN change) filters
 the unknown `'recovery'` kind out. For a personal vault (machines usually run the same build) this

@@ -2992,18 +2992,26 @@ ${detail}
     if (picked === undefined) {
       return;
     }
+    // Whether this removal RE-KEYS (last key gone, PIN present) decides the wording of the
+    // failure message; the arithmetic itself lives in securityKeyOps (audit A1).
+    const storedPin = await vaultKeys.storedPin(account);
+    const wouldRekey = removalWouldRekey(wraps, picked.wrap.id, storedPin);
+    // A re-key mints a fresh master, and a printed recovery code cannot be carried onto it —
+    // the code lives on paper and nowhere else. Say that BEFORE the destructive step, not in
+    // the toast afterwards: it is the difference between a choice and a surprise.
+    const codeWillDie = wouldRekey && hasRecoveryCode(raw);
     const confirmed = await vscode.window.showWarningMessage(
-      `Remove "${picked.label}" from ${account.email}? It will no longer unlock this vault.`,
+      `Remove "${picked.label}" from ${account.email}? It will no longer unlock this vault.` +
+        (codeWillDie
+          ? '\n\nThis is the last security key, so the vault is re-keyed under your PIN — and that ' +
+            'retires the printed recovery code with it. You will be offered a new one to print.'
+          : ''),
       { modal: true },
       'Remove',
     );
     if (confirmed !== 'Remove') {
       return;
     }
-    // Whether this removal RE-KEYS (last key gone, PIN present) decides the wording of the
-    // failure message; the arithmetic itself lives in securityKeyOps (audit A1).
-    const storedPin = await vaultKeys.storedPin(account);
-    const wouldRekey = removalWouldRekey(wraps, picked.wrap.id, storedPin);
     const key = await vaultKeys.unlock(account, raw, { interactive: true });
     if (key === undefined) {
       void vscode.window.showErrorMessage(
@@ -3031,13 +3039,27 @@ ${detail}
     }
     await transport.writeVault(account, next.content, []);
     vaultKeys.clearCache(account.accountId);
+    sync.notifyChange();
+    await refreshReadiness();
+    if (next.recoveryCodeRetired) {
+      // The rotation could not carry the code across. Offering the replacement here — rather
+      // than leaving a line in a toast — is what stops somebody keeping a dead page in a
+      // drawer believing it still opens the vault.
+      const answer = await vscode.window.showWarningMessage(
+        `Removed "${picked.label}" and re-keyed the vault. The printed recovery code no longer opens it — destroy that page. Set up a new one now?`,
+        { modal: true },
+        'Set Up Recovery Code',
+      );
+      if (answer === 'Set Up Recovery Code') {
+        await vscode.commands.executeCommand('credSshManager.setupRecoveryCode', target);
+      }
+      return;
+    }
     void vscode.window.showInformationMessage(
       next.rekeyed
         ? `Removed "${picked.label}" and re-keyed the vault under your PIN — the removed key can no longer open it.`
         : `Removed "${picked.label}". Note: existing backups/snapshots remain openable by that key until the vault is re-keyed (remove all security keys to force a re-key under the PIN).`,
     );
-    sync.notifyChange();
-    await refreshReadiness();
   });
 
   // ---------- the printed recovery code (roadmap D9) ----------
