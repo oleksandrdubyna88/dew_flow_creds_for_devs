@@ -90,6 +90,9 @@ export function entityContextValue(
   if (details?.isScript) {
     contextValue += ':script';
   }
+  if (details?.isConfig) {
+    contextValue += ':config';
+  }
   if (hasPassword) {
     contextValue += ':pwd';
   }

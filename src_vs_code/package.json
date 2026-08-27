@@ -813,6 +813,11 @@
         }
       },
       {
+        "command": "credSshManager.writeConfigFile",
+        "title": "Write Config File Here…",
+        "category": "CredsForDevs"
+      },
+      {
         "command": "credSshManager.exportExternal",
         "title": "Export / Share Externally…",
         "category": "CredsForDevs"
@@ -1395,6 +1400,11 @@
           "command": "credSshManager.installRemoteCli",
           "when": "view == credSshManagerView && viewItem =~ /:ssh/",
           "group": "agent@4"
+        },
+        {
+          "command": "credSshManager.writeConfigFile",
+          "when": "view == credSshManagerView && viewItem =~ /:config/",
+          "group": "2_actions@13"
         }
       ]
     }

@@ -96,6 +96,9 @@ import { ExpansionMemory, expansionKey } from './treeExpansion';
 import { TRASH_RETENTION_CHOICES, isInTrash } from './trash';
 import { showFolderForm } from './folderFormPanel';
 import { formPanels, lockNotice } from './formPanels';
+import { configFileNameFor } from './configFile';
+import { runBounded } from './sshExecRunner';
+import { writeConfigFile } from './configWrite';
 import { describeConfigProblem, savedButInvalidNotice } from './configFormat';
 import { mcpAsOfVersion, mcpFor } from './viewerOptions';
 import { buildDependencyCandidates, buildDependencyColorMap } from './depGraph';
@@ -2611,6 +2614,29 @@ ${detail}
     void vscode.window.showInformationMessage(
       `Imported ${remapped.nodes.length} node(s) from ${path.basename(uri.fsPath)}.`,
     );
+  });
+
+  register('credSshManager.writeConfigFile', async (target) => {
+    vaultKeys.noteUserActivity(); // the user is here: postpone auto-lock
+    const element = await nodeAt(asElement(target), storage);
+    if (element?.kind !== 'node' || element.node.details === undefined) {
+      return;
+    }
+    const body = await storage.getConfigBody(element.accountId, element.node.id);
+    if (body === undefined || body.length === 0) {
+      void vscode.window.showWarningMessage(`"${element.node.name}" has nothing in it yet.`);
+      return;
+    }
+    const details = element.node.details;
+    await writeConfigFile({
+      suggestedName: configFileNameFor(details.configFileName, details.configFormat ?? 'json', element.node.name),
+      body,
+      git: (args, cwd) =>
+        runBounded('git', [...args], false, { cwd, env: process.env, timeoutMs: 10_000 }).then(
+          (outcome) => outcome.exitCode,
+        ),
+      lock: lockToOwner,
+    });
   });
 
   register('credSshManager.runScript', async (target) => {
