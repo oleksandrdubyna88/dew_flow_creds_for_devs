@@ -957,6 +957,17 @@ Three properties of the client half worth carrying in the head:
   combination and not the recovery. Filtering also bounds the search: `combinations` materialises
   every C(n, t) subset before the first is tried, and n was whatever the server chose to post.
 
+**A recovery checks that the ciphertext it was handed is the target's.** Every vault on a server
+is sealed to the *same* organisation key, so the reconstructed key opens all of them — a quorum
+convened for one person is, cryptographically, a quorum able to open anybody, and
+`recoveredVaultIsTheTarget` is the only thing separating the two. Without it a server can answer a
+legitimate recovery of A with B's blob: the officers decrypt B's secrets under an authorisation
+for A, the audit line names A, and the re-keyed result is written back to A's path, so A is later
+handed a vault full of B's plaintext. Neither half is something the server could do alone. The
+comparison is against the envelope's plaintext `account` header, which the v4 AAD and the envelope
+MAC bind — so it is meaningful rather than hopeful — and anything unreadable is refused, because
+absence is not a reason to proceed on trust.
+
 **The sealed payload is the authority on a share's shape.** `shareIndex`, `threshold` and
 `totalShares` live inside the GCM-authenticated invite blob, and the server relays an
 unauthenticated plaintext copy of each beside it. Accepting a share takes all three from the

@@ -7,6 +7,7 @@ import {
   sealToPublicKey,
 } from './orgEscrowCrypto';
 import { MAX_SHARES, ShamirShare, combineShares, verifyRecombined } from './shamir';
+import { readBackupAccount } from './cryptoUtils';
 
 /**
  * The arithmetic of a break-glass recovery, with no server and no `vscode` in sight.
@@ -229,6 +230,38 @@ function combinations<T>(items: readonly T[], size: number): T[][] {
  */
 export function keyMatchesPublished(orgPrivateKey: Buffer, publishedPublicKey: Buffer): boolean {
   return publicKeyForPrivate(orgPrivateKey).equals(publishedPublicKey);
+}
+
+/**
+ * Whether the ciphertext a recovery was handed really belongs to the person it authorised.
+ *
+ * <p><b>Every vault on a server is sealed to the SAME organisation key</b>, so the reconstructed
+ * key opens all of them. A quorum convened to recover one person is therefore, in cryptographic
+ * terms, a quorum able to open anybody — and the only thing separating the two is this check.
+ * Without it a server can answer a legitimate recovery of A with B's blob: the officers decrypt
+ * B's secrets under an authorisation for A, the audit line names A, and the re-keyed result is
+ * written back to A's path, so A is later handed a vault full of B's plaintext under a temporary
+ * PIN. Neither half of that is something the server could do alone.</p>
+ *
+ * <p>The envelope's `account` header is plaintext precisely so a restore knows whose vault it is
+ * holding before it opens anything, and it is bound by the v4 AAD and the envelope MAC — so
+ * comparing against it is meaningful rather than merely hopeful. Anything unreadable is refused:
+ * absence is not a reason to proceed on trust.</p>
+ */
+export function recoveredVaultIsTheTarget(vaultContent: string, targetEmail: string): boolean {
+  const owner = safeAccount(vaultContent);
+  if (owner === undefined) {
+    return false;
+  }
+  return owner.email.trim().toLowerCase() === targetEmail.trim().toLowerCase();
+}
+
+function safeAccount(vaultContent: string): { email: string } | undefined {
+  try {
+    return readBackupAccount(vaultContent);
+  } catch {
+    return undefined;
+  }
 }
 
 /**

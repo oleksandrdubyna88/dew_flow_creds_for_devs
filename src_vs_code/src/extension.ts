@@ -104,6 +104,7 @@ import {
   endRecoverySession,
   keyMatchesPublished,
   newSessionKeys,
+  recoveredVaultIsTheTarget,
   recoverOrgKey,
   sealShareToSession,
   wipe as wipeRecovered,
@@ -3574,6 +3575,17 @@ ${detail}
     orgPrivateKey: Buffer,
   ): Promise<void> {
     const { content, etag } = await client.readTargetVault(account, sessionId);
+    // The quorum authorised opening THIS person's vault. Every vault on the server is sealed to
+    // the same organisation key, so the reconstructed key opens all of them — and the only thing
+    // separating "a quorum for A" from "a quorum for anybody" is checking that the ciphertext
+    // the server handed back is the one that was asked for.
+    if (!recoveredVaultIsTheTarget(content, targetEmail)) {
+      void vscode.window.showErrorMessage(
+        `The server returned a vault that does not belong to ${targetEmail}. Nothing was opened. `
+          + 'Report this: a correct server cannot answer a recovery with somebody else’s vault.',
+      );
+      return;
+    }
     const escrow = orgEscrowWrap(readVaultWraps(content).filter(isWrap));
     if (escrow === undefined) {
       void vscode.window.showErrorMessage(
