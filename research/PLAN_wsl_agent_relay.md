@@ -4,7 +4,7 @@
 > `src_vs_code/src/cliEndpoint.ts` + `extension.ts` (publish the agent's address), and one new
 > integration script.
 >
-> Related: [PLAN_cli_bridge_tail.md](../todo/PLAN_cli_bridge_tail.md) §2 (this is its **4b**),
+> Related: [PLAN_cli_bridge_tail.md](PLAN_cli_bridge_tail.md) §2 (this is its **4b**),
 > [module_extension.md](module_extension.md),
 > [PLAN_ssh_agent.md](PLAN_ssh_agent.md) (D1 — the agent this reaches),
 > [PLAN_headless_cli.md](PLAN_headless_cli.md) (the interop trick this extends).

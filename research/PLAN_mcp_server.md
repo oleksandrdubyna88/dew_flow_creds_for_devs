@@ -19,7 +19,7 @@
 >
 > Связанные: [PLAN_agent_ssh_broker.md](PLAN_agent_ssh_broker.md),
 > [PLAN_headless_cli.md](PLAN_headless_cli.md),
-> [../todo/PLAN_cli_bridge_tail.md](../todo/PLAN_cli_bridge_tail.md).
+> [PLAN_cli_bridge_tail.md](PLAN_cli_bridge_tail.md).
 
 ## Проблема
 

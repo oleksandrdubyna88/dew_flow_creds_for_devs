@@ -264,6 +264,26 @@ Three constraints that are encoded rather than remembered:
 Only WireGuard and OpenVPN get a button — the tree adds `:vpnrun` to `contextValue` for those. IKEv2
 and L2TP are OS-level profiles; a button for them could only ever explain itself.
 
+#### Paired tokens, where an action has two directions
+
+Three places need to offer one of two opposite items rather than one item that toggles, and each
+spends **two** tokens on it: `:agenton` / `:agentoff` for the SSH agent, and `:bridged` /
+`:nobridge` for the Remote Bridge. A single token would leave the other item needing "ssh AND NOT
+bridged", which VS Code expresses awkwardly and which shows **both** items on any row whose value
+is stale.
+
+The bridge pair exists because of a defect a live click found: *Open Remote Bridge…* kept that
+title while a bridge was running — the command toggled and the label did not — so somebody looking
+for *Close* found nothing, and had to click *Open* on an open bridge to reach a quick-pick hidden
+behind it. That is durable status (rule 8) inside a tree: the only place a row can show its state
+is `contextValue`, so the provider asks `isBridged` per row and never caches it.
+
+**The refresh is the load-bearing half.** It runs on open, on close, and in `SshBridgeManager`’s
+`onEnded` callback — the case that decides whether the label is honest, because a bridge that dies
+by itself must take its row back to *Open* rather than leave *Close* offered for something that no
+longer exists. A row whose state went stale between render and click is told so ("it had already
+ended") rather than told a bridge was closed that was not.
+
 ### Pasting a command
 
 `commandParse.ts` splits a pasted line into a verb and argument rows; `helpText.ts` reads what each
@@ -671,6 +691,13 @@ The line budget shaped the module split, not taste: `treeDataProvider.ts` had si
 headroom against `eslint`'s 800, so `treeIcons.ts`, `depTreeItems.ts` and `entityContextValue`
 (into `treeRowText.ts`) came out first as pure moves, proved by the existing suite passing
 unedited. `depPickerScript.ts` came out of `entityFormScript.ts` for the same reason.
+
+That file has since answered the same question twice more, and the answer is always a row builder:
+`revisionRowItem.ts` when remembering open rows pushed it to 815, and `searchRowItem.ts` when the
+bridge's `:bridged` / `:nobridge` pair pushed it to 810. A row builder is the cheapest thing in
+there to give its own file, because it reads nothing off the provider that cannot be handed to it.
+The alternative each time was to shorten a comment until the file fit, which buys a green lint by
+deleting the reason the code is the way it is.
 
 ### The form is three modules, not one file (audit A1's tail)
 
