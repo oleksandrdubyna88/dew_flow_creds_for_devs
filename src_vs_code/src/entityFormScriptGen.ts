@@ -25,6 +25,10 @@ export function generateWiring(): string {
         genDigits: genChecked('genDigits'),
         genSymbols: genChecked('genSymbols'),
         genKeyType: typeSel ? typeSel.value : undefined,
+        genWords: (function () {
+          var wordsSel = document.getElementById('genWords');
+          return wordsSel ? Number(wordsSel.value) : undefined;
+        })(),
       });
     };
   };

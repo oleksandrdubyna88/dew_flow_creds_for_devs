@@ -13,6 +13,7 @@ import {
   generateEd25519,
   generatePassphrase,
   generatePassword,
+  PASSPHRASE_WORD_CHOICES,
   PASSWORD_LENGTH_CHOICES,
   SSH_KEY_TYPES,
   generateKeyPairOf,
@@ -227,5 +228,14 @@ test('every offered key type generates a pair the SSH parser round-trips', () =>
     const pair = generateKeyPairOf(type.id);
     const parsed = parseSshPrivateKey(pair.privateKey, 'generated');
     assert.ok(parsed.ok, `${type.id}: the generated key did not parse: ${parsed.ok ? '' : parsed.reason}`);
+  }
+});
+
+test('the passphrase word counts are the offered list, six by default (T14d)', () => {
+  assert.deepEqual([...PASSPHRASE_WORD_CHOICES], [4, 5, 6, 8, 10]);
+  assert.equal(DEFAULT_PASSPHRASE.words, 6);
+  for (const words of PASSPHRASE_WORD_CHOICES) {
+    const made = generatePassphrase({ ...DEFAULT_PASSPHRASE, words });
+    assert.equal(made.value.split('-').length, words);
   }
 });

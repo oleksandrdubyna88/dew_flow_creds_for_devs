@@ -1,5 +1,6 @@
 import {
   DEFAULT_PASSWORD,
+  PASSPHRASE_WORD_CHOICES,
   PASSWORD_LENGTH_CHOICES,
   SSH_KEY_TYPES,
   generateKeyPairOf,
@@ -20,6 +21,7 @@ import { parseSshPrivateKey } from './sshKeyParse';
 
 export interface GenerateRequest {
   kind?: 'password' | 'passphrase' | 'key';
+  genWords?: number;
   genLength?: number;
   genLower?: boolean;
   genUpper?: boolean;
@@ -39,7 +41,11 @@ export interface GenerateRequest {
  */
 export function draw(message: GenerateRequest): { target: string; value: string; note: string } {
   if (message.kind === 'passphrase') {
-    const made = generatePassphrase(DEFAULT_PASSPHRASE);
+    // The word count is clamped to the offered list, like the password length.
+    const words = PASSPHRASE_WORD_CHOICES.includes(message.genWords ?? -1)
+      ? (message.genWords as number)
+      : DEFAULT_PASSPHRASE.words;
+    const made = generatePassphrase({ ...DEFAULT_PASSPHRASE, words });
     return { target: 'password', value: made.value, note: made.description };
   }
   return message.kind === 'key' ? drawKey(message) : drawPassword(message);

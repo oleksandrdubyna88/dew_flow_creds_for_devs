@@ -1,7 +1,7 @@
 import * as crypto from 'node:crypto';
 import { normalizeTags } from './sshOptions';
 import { CONFIG_FORMATS, CONFIG_FORMAT_LABELS } from './configFormat';
-import { PASSWORD_LENGTH_CHOICES, SSH_KEY_TYPES } from './secretGenerator';
+import { PASSPHRASE_WORD_CHOICES, PASSWORD_LENGTH_CHOICES, SSH_KEY_TYPES } from './secretGenerator';
 import { ZOOM_CSS, zoomControlHtml, zoomStyle } from './zoomControl';
 import { describeAttachment } from './attachmentMeta';
 import { PAGE_MAX_WIDTH_PX, THREE_COLUMN_AT, TWO_COLUMN_AT, escapeHtml } from './webviewHtml';
@@ -725,6 +725,10 @@ export function renderHtml(options: EntityFormOptions): string {
       <span class="check inline"><input id="genUpper" type="checkbox" checked><label for="genUpper">A-Z</label></span>
       <span class="check inline"><input id="genDigits" type="checkbox" checked><label for="genDigits">0-9</label></span>
       <span class="check inline"><input id="genSymbols" type="checkbox" checked><label for="genSymbols">!#%</label></span>
+      <label for="genWords" class="inline">Words</label>
+      <select id="genWords">${PASSPHRASE_WORD_CHOICES.map(
+        (words) => `<option value="${words}"${words === 6 ? ' selected' : ''}>${words}</option>`,
+      ).join('')}</select>
     </div>
     <div class="genRow">
       <button type="button" id="genPassword">Generate password</button>

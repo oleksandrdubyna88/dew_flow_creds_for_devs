@@ -24,6 +24,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added (form)
 
+- **The passphrase takes a word count** — 4 / 5 / 6 / 8 / 10 words, default 6 — beside the
+  password options, clamped the same way. The palette's *Generate a secret* stopped claiming
+  "20 characters" for a generator that now draws 32.
 - **The generators take orders.** The password button used to draw 20 characters from all four
   classes, and nothing could ask otherwise. Now: length 6 / 8 / 12 / 16 / 32 / 64 (default 32 —
   a deliberate change to what an unattended click produces) and the four character classes as

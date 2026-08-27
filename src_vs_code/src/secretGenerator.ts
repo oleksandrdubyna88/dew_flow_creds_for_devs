@@ -186,6 +186,9 @@ export interface PassphraseOptions {
   addNumber: boolean;
 }
 
+/** The word counts the form offers; 6 is the default (48 bits from a 256-word list). */
+export const PASSPHRASE_WORD_CHOICES: readonly number[] = [4, 5, 6, 8, 10];
+
 export const DEFAULT_PASSPHRASE: PassphraseOptions = {
   words: 6,
   separator: '-',

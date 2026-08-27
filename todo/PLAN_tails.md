@@ -572,7 +572,18 @@ and its rule if nothing then distinguishes them). Keep exactly one visual hierar
 made once in CSS — going button-by-button is how half of them would end up missed, which is this
 defect's own origin story.
 
-**T14d. Find the other generators.** The owner asked to look for the rest and give them options too.
+**T14d. Find the other generators.** — **SWEPT 2026-08-27; findings:** (1) the palette's
+*Generate a secret* QuickPick claimed "20 characters" after the default moved to 32 — fixed, it
+says 32; (2) the passphrase gained its knob: word count 4/5/6/8/10 (default 6), clamped host-side
+like the length; (3) `secretKinds.ts` (what an AGENT's rotate/create draws) deliberately keeps
+the defaults — an agent asked for "a password" should get the house default, not a parameter
+surface, and the 20→32 improvement rode along automatically; its keypair absence stays, with the
+reason already recorded in the file (rotating a keypair means installing the public half — a
+different operation, not a longer password); (4) the one-time share PIN stays TYPED, left alone:
+it is spoken aloud to a colleague by design, and a generated 32-character PIN is exactly what
+people cannot dictate. Original text follows.
+
+**T14d (original). Find the other generators.** The owner asked to look for the rest and give them options too.
 Known so far: *Generate passphrase* (`entityFormPage.ts:665`, `DEFAULT_PASSPHRASE` at
 `secretGenerator.ts:184` — word count is the knob, and the separator is the other one), and the
 one-time share PIN, which is typed rather than generated and arguably should be offerable. Sweep

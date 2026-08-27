@@ -2859,7 +2859,7 @@ ${detail}
     vaultKeys.noteUserActivity(); // the user is here: postpone auto-lock
     const kind = await vscode.window.showQuickPick(
       [
-        { label: '$(key) Password', detail: '20 characters, mixed sets — for a field, not for typing', id: 'password' },
+        { label: '$(key) Password', detail: '32 characters, mixed sets — for a field, not for typing', id: 'password' },
         { label: '$(comment) Passphrase', detail: '6 words — for a PIN, or anything said aloud', id: 'passphrase' },
       ],
       { title: 'Generate a secret', ignoreFocusOut: true },
