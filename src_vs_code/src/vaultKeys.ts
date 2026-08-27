@@ -385,9 +385,19 @@ export class VaultKeys {
     key: VaultKey,
     account: StoredAccount,
     shares: unknown[] | undefined,
+    /**
+     * The wrap list to write, when the caller has changed it — corporate-escrow enrolment is
+     * the one that does. Omitted means "whatever the key already carries", which is every
+     * other caller.
+     *
+     * <p>Passed rather than mutated: `detachVaultKey` hands out a copy whose `wraps` array is
+     * SHARED with the cached key, so editing it in place would rewrite the cache from under
+     * whoever else is holding it.</p>
+     */
+    wraps?: readonly KeyWrap[],
   ): Promise<string> {
     if (key.version === 2) {
-      return encryptJsonWrapped(payload, key.masterKey, key.wraps, account, shares);
+      return encryptJsonWrapped(payload, key.masterKey, wrapsToWrite(key, wraps), account, shares);
     }
     const cached = this.cache.get(account.accountId);
     if (cached?.version === 2) {
@@ -430,6 +440,14 @@ export class VaultKeys {
     await this.savePin(account, entered);
     return entered;
   }
+}
+
+/** The caller's wrap list when it supplied one, the key's own otherwise. */
+function wrapsToWrite(
+  key: { wraps: KeyWrap[] },
+  supplied: readonly KeyWrap[] | undefined,
+): readonly KeyWrap[] {
+  return supplied === undefined ? key.wraps : supplied;
 }
 
 function safeVersion(vaultContent: string): number {

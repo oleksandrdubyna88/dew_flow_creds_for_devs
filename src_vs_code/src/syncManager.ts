@@ -13,9 +13,16 @@ import {
   readVaultWraps,
   verifyEnvelopeMac,
 } from './cryptoUtils';
-import { isKeyWrap, webauthnWraps, upsertWrap, wrapWithPinAsync, wrapPinVaultAsync } from './keyWrap';
+import { KeyWrap, isKeyWrap, webauthnWraps, upsertWrap, wrapWithPinAsync, wrapPinVaultAsync } from './keyWrap';
+import {
+  EscrowAction,
+  EscrowEnrolment,
+  applyEscrowAction,
+  describeEscrowAction,
+  escrowAction,
+} from './orgEscrowOps';
 import { TransportFactory } from './transportFactory';
-import { VaultKeys } from './vaultKeys';
+import { VaultKey, VaultKeys } from './vaultKeys';
 import { validatePin } from './pinPolicy';
 import { VaultTransport } from './vaultTransport';
 import { StoredAccount, isBackupBundle } from './types';
@@ -24,6 +31,16 @@ const CONFIG_SECTION = 'credSshManager';
 const AUTO_SYNC_SETTING = 'autoSync';
 const INTERVAL_SETTING = 'autoSyncIntervalMinutes';
 const DEBOUNCE_MS = 5_000;
+
+/** One notice per account per distinct escrow change — not one per sync cycle. */
+function escrowNoticeKey(
+  account: StoredAccount,
+  action: EscrowAction,
+  enrolment: EscrowEnrolment | undefined,
+): string {
+  const generation = enrolment === undefined ? '' : enrolment.orgPublicKeyFingerprint;
+  return `escrow:${account.accountId}:${action.kind}:${generation}`;
+}
 
 /** What a failed cycle says, in one place, so the toast and the log can never differ. */
 function syncFailureText(account: StoredAccount, error: unknown): string {
@@ -78,6 +95,19 @@ export class SyncManager implements vscode.Disposable {
    * not-configured only in combination with a missing PIN.
    */
   private readonly securityKeyAccounts = new Set<string>();
+
+  /**
+   * How a cycle finds out what this account's server wants sealed to its recovery key.
+   *
+   * <p>A settable field rather than a constructor argument: corporate recovery is wired up in
+   * `activate()` after the transports exist, and threading it through the constructor would
+   * make every test that builds a SyncManager declare a concept it does not use. Undefined —
+   * the default — means the cycle behaves exactly as it did before this feature.</p>
+   */
+  resolveEscrow: ((account: StoredAccount) => Promise<EscrowEnrolment | undefined>) | undefined;
+
+  /** Who the officers are, for the sentence shown when a vault enrols. */
+  escrowOfficers: readonly string[] = [];
   private readonly configListener: vscode.Disposable;
 
   constructor(
@@ -467,13 +497,17 @@ export class SyncManager implements vscode.Disposable {
     if (localChanged) {
       await this.storage.applySnapshot(account.accountId, merged);
     }
-    const willWrite = remoteChanged || !remoteExists || migrateV1;
+    // Corporate escrow rides the ordinary write: enrolling is a wrap change, and a wrap change
+    // is a reason to write even when nothing else moved.
+    const escrow = await this.escrowFor(account, key);
+    const willWrite = remoteChanged || !remoteExists || migrateV1 || escrow.action.kind !== 'unchanged';
     if (willWrite) {
       const content = await this.keys.encrypt(
         { ...merged, exportedAt: Date.now() },
         key,
         account,
         transport.embedsShares ? pendingShares : undefined,
+        escrow.wraps,
       );
       await transport.writeVault(account, content, []);
       // We just replaced the remote; its next read will not match the cached hash anyway,
@@ -488,6 +522,61 @@ export class SyncManager implements vscode.Disposable {
       this.converged.set(account.accountId, mark);
     }
     return { applied: localChanged, pushed: willWrite };
+  }
+
+  /**
+   * Resolve corporate escrow for this cycle: what should happen to the wrap, and the wrap
+   * list the write should carry.
+   *
+   * <p>Only for a v2 key. A legacy vault's write mints a fresh master of its own
+   * (`wrapPinVaultAsync`), so a wrap list built against the old one would seal nothing —
+   * enrolment simply happens on the cycle after the upgrade, which is the next one.</p>
+   *
+   * <p>A resolver that throws is not allowed to stop a sync. Corporate recovery being
+   * unreachable is a reason to leave the wraps alone, never a reason for somebody's own
+   * secrets to stop syncing.</p>
+   */
+  private async escrowFor(
+    account: StoredAccount,
+    key: VaultKey,
+  ): Promise<{ action: EscrowAction; wraps: readonly KeyWrap[] | undefined }> {
+    if (key.version !== 2 || this.resolveEscrow === undefined) {
+      return { action: { kind: 'unchanged' }, wraps: undefined };
+    }
+    const enrolment = await this.askEscrow(account);
+    const action = escrowAction(key.wraps, enrolment);
+    if (action.kind === 'unchanged') {
+      return { action, wraps: undefined };
+    }
+    this.announceEscrow(account, action, enrolment);
+    return {
+      action,
+      wraps: applyEscrowAction(key.wraps, action, key.masterKey, enrolment, Date.now()),
+    };
+  }
+
+  private async askEscrow(account: StoredAccount): Promise<EscrowEnrolment | undefined> {
+    try {
+      return await this.resolveEscrow?.(account);
+    } catch (error) {
+      this.log?.info('sync', `corporate recovery unreadable for ${account.email}: ${describeError(error)}`);
+      return undefined;
+    }
+  }
+
+  /** Say it once per account per change, not once per sync cycle. */
+  private announceEscrow(
+    account: StoredAccount,
+    action: EscrowAction,
+    enrolment: EscrowEnrolment | undefined,
+  ): void {
+    const said = escrowNoticeKey(account, action, enrolment);
+    const message = describeEscrowAction(action, this.escrowOfficers);
+    if (this.warnedAccounts.has(said)) {
+      return;
+    }
+    this.warnedAccounts.add(said);
+    void vscode.window.showInformationMessage(`${account.email}: ${message}`);
   }
 
   private warnTampered(account: StoredAccount): void {
