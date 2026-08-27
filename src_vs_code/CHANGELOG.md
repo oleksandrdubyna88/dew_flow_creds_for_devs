@@ -45,6 +45,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Clicking a search result no longer cancels the search.** The filter box hid the moment focus
+  left it, and the hide handler — unable to tell that from Escape — put the previous (usually
+  empty) filter back: the tree un-filtered itself exactly when you clicked what it had found.
+  The box now stays open while you work with the results; Escape still restores what was
+  filtered before, Enter still keeps the term. Closing the search with a row selected reveals
+  that row in the full tree and briefly tints it, so you keep your place.
+- **A new arrival shows itself.** An accepted share, an imported bundle, a freshly created entity
+  or folder is revealed in the tree and glows green for five seconds — "it worked" and "here it
+  is" are one event now. The tint rides the same decoration channel as the dependency colours
+  (one provider, so they cannot flicker over each other) and briefly outranks them.
+
 - **The SSH command row stopped naming `C:\Windows` when it does not have to.** On a forwarding
   connection the viewer showed the full built-in OpenSSH path — needed only because the MSYS `ssh`
   that Git for Windows puts on PATH cannot open the agent's named pipe. The extension now probes

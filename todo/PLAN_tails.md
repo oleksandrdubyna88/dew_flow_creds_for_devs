@@ -1265,6 +1265,62 @@ cannot silently drop it); the rest is a screenshot judgement, named as such.
 
 ---
 
+### T32. The title bar sheds two dead buttons, and the account row learns to count
+
+**The ask.** (1) Remove *New Entity* and *New Folder* from the view's TITLE bar — with no account
+context they are useless there (both need to know where the thing goes; the context menu on a
+folder is where they work). (2) The PLUS on the account row goes too; in its place the row shows
+three numbers: **entries (histories not counted) / entries in the Trash / entries shared**, in
+different colours, zeros written out ("0"), never blanked.
+
+**Where.** `package.json` `view/title` menu entries for the two commands (delete the
+contributions, keep the commands — the palette and context menus still use them); the account
+row's inline `view/item/context` plus icon; `treeDataProvider.ts`'s account `TreeItem`.
+
+**The API reality on colours — same wall as T30, worth restating once:** a tree row's
+`description` is plain text; three numbers in three colours are not expressible there. The
+honest options: (a) the counts as plain text `12 / 3 / 2` in the description — works today,
+colourless; (b) one `FileDecoration` badge (max two characters) — too small for three counts;
+(c) colours via the label-highlights trick — renders as filter-match background, not colour.
+**Proposal: (a)**, with the counts ordered and separated exactly as the owner wrote them, and the
+colour half recorded as declined-with-reason unless VS Code grows description styling.
+
+**Counting rules to pin in tests:** histories excluded by construction (revisions are not tree
+nodes — confirm and pin); the Trash count is the trash subtree's entity count; "shared" is the
+entries this account shared that are still pending (`sent/` receipts), not everything ever
+shared; folders count as structure, not entries. Zero renders as `0`, and the row shows
+`0 / 0 / 0` rather than nothing — the owner said so explicitly.
+
+**Tests.** The count function against a fixture tree (entities vs folders vs trash vs shares,
+zeros); the account item's description formats as `a / b / c`; the two title-bar contributions
+are gone from the manifest while the commands survive (manifest assertion beside T4's).
+
+
+---
+
+### T33. Icons in the account and view menus, where the verb has an obvious picture
+
+**The ask.** The long context menus (the account's, the view's `…`) are walls of text; add icons
+at least where the picture is obvious — download, backup, restore, lock, unlock — coloured if
+possible.
+
+**The API reality.** A `commands` contribution takes an `icon` (codicon id or SVG pair), and VS
+Code shows it in TITLE bars and inline slots — but **dropdown context menus do not render icons
+for extension-contributed items**, and codicons in menus cannot be coloured by the extension
+(theme `$(lock)` etc. render monochrome where they render at all). So the deliverable is: icons
+added to the `commands` contributions (they improve the palette and any inline slot for free),
+the codicon choices made for the obvious verbs (`$(cloud-download)` backup, `$(history)` restore,
+`$(lock)`/`$(unlock)` vaults, `$(save)` snapshot, `$(key)` security key…), and the menu-rendering
+and colour limits recorded here rather than fought. Where an icon CAN show today — the inline
+`view/item/context` slots and the view title — the same contributions light up.
+
+**Tests.** Manifest: every command in the named "obvious verb" list carries an `icon`; the icon
+ids are valid codicons (a static list check, so a typo fails the build rather than rendering a
+missing glyph).
+
+
+---
+
 ## 4. Build order
 
 Ordered so that each step is verifiable on its own, and the two that need a person come last.
@@ -1349,6 +1405,10 @@ and both the failure and the pass are reported.
 - [ ] T9: the viewer's columns are as wide as the form's, proven by a test watched failing at 640 px.
 - [ ] T22: the tree no longer says the product name twice; the help mark sits in the title bar
       after the name, with the spacing question answered rather than assumed.
+- [ ] T33: the obvious-verb commands carry codicon icons; the menu-rendering and colour
+      limits are recorded, not fought.
+- [ ] T32: the title bar's New Entity / New Folder are gone, the account plus is replaced by
+      `entries / trash / shared` with zeros written out, and the colour limit is recorded.
 - [ ] T31: checkboxes read as checked/unchecked at a glance on the owner's theme — accent-color
       first, the hand-drawn box only if the screenshot still reads weak.
 - [ ] T30: folder descriptions underlined (behind the owner's yes on the combining-mark trick),
@@ -1417,7 +1477,7 @@ and both the failure and the pass are reported.
 - [ ] T8: the server's console output is coloured under redirection (counted, not observed), a run
       crossing midnight segments, `logs/` has a named retention owner, and the obsolete mirror-list
       item is deleted with its reason.
-- [ ] `research/module_extension.md` and `research/module_server.md` updated for T1, T3, T4, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17, T18, T19, T20, T21, T22, T23, T24, T25, T26, T27, T28, T29, T30, T31;
+- [ ] `research/module_extension.md` and `research/module_server.md` updated for T1, T3, T4, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17, T18, T19, T20, T21, T22, T23, T24, T25, T26, T27, T28, T29, T30, T31, T32, T33;
       `research/module_mcp.md` (or `module_extension.md`'s MCP section) for T10.
 - [ ] `node .claude/rules/shared/tools/plan-lifecycle.mjs` and `pin-check.mjs` pass.
 - [ ] This plan promoted to `research/` with its deviations recorded, and anything left extracted

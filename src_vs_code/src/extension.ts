@@ -123,6 +123,9 @@ import { rekeyUnderPin } from './vaultRekey';
 import { decryptJsonWithMasterKey, readBackupAccount } from './cryptoUtils';
 import { pinValidator } from './pinInput';
 import { CredTreeDataProvider, VIEW_ID } from './treeDataProvider';
+import { ArrivalHighlights } from './arrivalHighlight';
+import { wireSearchBox } from './searchBox';
+import { ARRIVAL_WINDOW_MS } from './arrivalHighlight';
 import { DepDecorationProvider } from './depDecorations';
 import { ExpansionMemory, expansionKey } from './treeExpansion';
 import { TRASH_RETENTION_CHOICES, isInTrash } from './trash';
@@ -395,7 +398,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // The label colour and badge for entities in a dependency relationship. It reads the tree
   // provider's OWN index rather than building a second one, so the colour a row is painted in
   // and the sub-tree hanging under it can never disagree about who depends on what.
-  const depDecorations = new DepDecorationProvider(provider.dependencies);
+  // T13: rows that just arrived glow for a few seconds through the SAME provider the
+  // dependency colours use — a second provider racing it is how the tint would flicker.
+  const arrivals = new ArrivalHighlights();
+  const depDecorations = new DepDecorationProvider(provider.dependencies, arrivals);
   context.subscriptions.push(
     depDecorations,
     vscode.window.registerFileDecorationProvider(depDecorations),
@@ -1589,29 +1595,27 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
    */
   register('credSshManager.search', () => {
     vaultKeys.noteUserActivity(); // the user is here: postpone auto-lock
-    const box = vscode.window.createInputBox();
-    const before = provider.searchQuery;
-    let accepted = false;
-    box.title = 'Filter credentials';
-    box.value = before;
-    box.placeholder = 'name, host, user, command…';
-    box.prompt = 'Filters as you type. Secrets are never searched.';
-    box.onDidChangeValue((value) => provider.setSearchQuery(value));
-    box.onDidAccept(() => {
-      accepted = true;
-      box.hide();
+    // Wiring in searchBox.ts, where it is tested — including the T15 flag that lets a person
+    // CLICK what the filter found without the box reading it as "never mind".
+    wireSearchBox(vscode.window.createInputBox(), {
+      before: provider.searchQuery,
+      apply: (term) => provider.setSearchQuery(term),
     });
-    box.onDidHide(() => {
-      if (!accepted) {
-        provider.setSearchQuery(before);
-      }
-      box.dispose();
-    });
-    box.show();
   });
 
-  register('credSshManager.clearSearch', () => {
+  register('credSshManager.clearSearch', async () => {
+    // Keep the reader's place (T15's second half): the row selected under the filter is
+    // revealed — and briefly tinted, the same "here it is" an accepted share gets — in the
+    // now-unfiltered tree. Clear FIRST: a filtered-out row cannot be revealed, and that
+    // failure is silent (the goToOriginalFolder note).
+    const selected = treeView.selection.find(
+      (element): element is Extract<typeof element, { kind: 'node' }> =>
+        (element as { kind?: string }).kind === 'node',
+    );
     provider.setSearchQuery('');
+    if (selected !== undefined) {
+      await announceArrival(selected.accountId, selected.node.id);
+    }
   });
 
   /**
@@ -2233,6 +2237,36 @@ ${detail}
 
   // ---------- folder / entity CRUD ----------
 
+  /**
+   * "It worked" and "here it is" as one event (T13): reveal the row and tint it for a few
+   * seconds. Every path that puts a NEW row into the tree calls this — an accepted share, an
+   * import, a fresh entity or folder, and the filter's parting reveal (T15). Not edit: a
+   * highlight that fires on everything highlights nothing.
+   *
+   * <p>The reveal must run AFTER any active filter is cleared and the tree refreshed — a
+   * filtered-out row cannot be revealed, and the failure is silent (see goToOriginalFolder's
+   * own note). Callers that clear the filter do so before calling this.</p>
+   */
+  const announceArrival = async (accountId: string, entityId: string): Promise<void> => {
+    arrivals.announce(accountId, entityId, Date.now());
+    arrivals.sweep(Date.now());
+    depDecorations.refresh();
+    // Repaint once more when the window lapses, so the tint actually goes away — the provider
+    // answers from the clock, but nothing else would ask it again.
+    setTimeout(() => depDecorations.refresh(), ARRIVAL_WINDOW_MS + 100);
+    const node = storage.getNode(accountId, entityId);
+    if (node !== undefined) {
+      try {
+        await treeView.reveal(
+          { kind: 'node', accountId, node },
+          { select: true, focus: true, expand: true },
+        );
+      } catch {
+        // Reveal is best-effort: a row inside a collapsed remote state must not fail the add.
+      }
+    }
+  };
+
   register('credSshManager.addFolder', async (target) => {
     const location = await resolveLocation(asElement(target), storage, 'Add folder to which profile?');
     if (location === undefined) {
@@ -2265,6 +2299,7 @@ ${detail}
       }
     }
     mutated();
+    await announceArrival(location.accountId, folderId);
   });
 
   // Manual folder ordering among siblings.
@@ -2346,6 +2381,7 @@ ${detail}
     await applyDependencyColors(storage, location.accountId, result.dependsOnColors);
     await applyEnvBindings(envCollection, storage, location.accountId, result.details);
     mutated();
+    await announceArrival(location.accountId, id);
   });
 
   register('credSshManager.editNode', async (target) => {
@@ -3015,6 +3051,12 @@ ${detail}
       }
     }
     mutated();
+    // The first imported ROOT is where the reveal lands: the import's whole shape arrived
+    // under it, and highlighting all N rows would highlight nothing.
+    const firstRoot = remapped.nodes.find((n) => n.parentId === location.parentId);
+    if (firstRoot !== undefined) {
+      await announceArrival(location.accountId, firstRoot.id);
+    }
     void vscode.window.showInformationMessage(
       `Imported ${remapped.nodes.length} node(s) from ${path.basename(uri.fsPath)}.`,
     );
@@ -4444,6 +4486,8 @@ ${detail}
     sharing,
     state: context.globalState,
     onMutated: mutated,
+    // Fire-and-forget: the tint and reveal must never fail an accept.
+    onArrived: (accountId, entityId) => void announceArrival(accountId, entityId),
   });
 
   register('credSshManager.shareEntity', async (target, selected) => {

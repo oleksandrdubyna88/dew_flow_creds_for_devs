@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { ArrivalHighlights } from './arrivalHighlight';
 import { DepColorKey, depColorThemeId } from './depColors';
 import { RelationLabel } from './depGraph';
 
@@ -63,7 +64,16 @@ export class DepDecorationProvider implements vscode.FileDecorationProvider, vsc
   private readonly emitter = new vscode.EventEmitter<undefined>();
   readonly onDidChangeFileDecorations = this.emitter.event;
 
-  constructor(private readonly source: DepDecorationSource) {}
+  /**
+   * @param arrivals The just-arrived rows (T13). Merged HERE rather than registered as a second
+   * provider, deliberately: VS Code composes multiple decorations poorly, and two providers
+   * racing over one row is how the dependency colour would start flickering.
+   */
+  constructor(
+    private readonly source: DepDecorationSource,
+    private readonly arrivals?: ArrivalHighlights,
+    private readonly now: () => number = Date.now,
+  ) {}
 
   /**
    * Answer for one row.
@@ -79,6 +89,24 @@ export class DepDecorationProvider implements vscode.FileDecorationProvider, vsc
     if (ref === undefined) {
       return undefined;
     }
+    // A row that just ARRIVED outranks its dependency colour for the few seconds it glows —
+    // "here it is" is the more urgent statement, and the dependency tint returns by itself
+    // when the window lapses and the next repaint asks again.
+    return this.arrivalDecoration(ref) ?? this.dependencyDecoration(ref);
+  }
+
+  private arrivalDecoration(ref: DepRef): vscode.FileDecoration | undefined {
+    if (this.arrivals?.isActive(ref.accountId, ref.entityId, this.now()) !== true) {
+      return undefined;
+    }
+    return new vscode.FileDecoration(
+      undefined,
+      'Just arrived',
+      new vscode.ThemeColor('credSshManager.newArrival'),
+    );
+  }
+
+  private dependencyDecoration(ref: DepRef): vscode.FileDecoration | undefined {
     const label = this.source.relationLabel(ref.accountId, ref.entityId);
     if (label === undefined) {
       return undefined;

@@ -39,6 +39,8 @@ export interface ShareInboxDeps {
   readonly sharing: SharingManager;
   /** The extension's globalState: share origins and pinned sender keys live here. */
   readonly state: vscode.Memento;
+  /** Called with each accepted entry's LOCAL id, so the tree can reveal and tint it (T13). */
+  readonly onArrived?: (accountId: string, entityId: string) => void;
   /** Called after an accepted share changed the tree, so caches refresh and sync runs. */
   readonly onMutated: () => void;
 }
@@ -544,6 +546,7 @@ After this, a share signed by any other key is refused.`,
       await this.deps.storage.setConfigBody(share.accountId, node.id, payload.secrets.config);
     }
     await this.deps.sharing.removeOwnShare(share);
+    this.deps.onArrived?.(share.accountId, node.id);
   }
 }
 

@@ -227,6 +227,16 @@
     },
     "colors": [
       {
+        "id": "credSshManager.newArrival",
+        "description": "The short-lived tint on a row that just arrived: an accepted share, an import, a fresh entity or folder",
+        "defaults": {
+          "dark": "#3FB950",
+          "light": "#1A7F37",
+          "highContrast": "#4AE168",
+          "highContrastLight": "#117A2D"
+        }
+      },
+      {
         "id": "credSshManager.teamIcon",
         "description": "Team / people icons in the Cred SSH tree",
         "defaults": {
