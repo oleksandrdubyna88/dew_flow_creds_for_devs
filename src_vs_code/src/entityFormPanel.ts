@@ -18,6 +18,7 @@ import {
 } from './secretGenerator';
 import { parseSshPrivateKey } from './sshKeyParse';
 import { isDepColorKey } from './depColors';
+import { FORM_WEBVIEW_OPTIONS, formPanels } from './formPanels';
 import { readMcpAccess } from './mcpAccess';
 import { DependencyFolderCandidate, normalizeDependsOn } from './depGraph';
 import {
@@ -261,8 +262,12 @@ export function showEntityForm(options: EntityFormOptions): Promise<EntityFormVa
     'credSshEntityForm',
     options.mode === 'create' ? 'New Entity' : `Edit: ${options.initial?.name ?? ''}`,
     vscode.ViewColumn.Active,
-    { enableScripts: true, localResourceRoots: [] },
+    FORM_WEBVIEW_OPTIONS,
   );
+  // A filled-in form holds a plaintext secret for as long as it stays open, so locking the
+  // vaults has to be able to reach it. Registered BEFORE the markup is built: rendering can
+  // throw, and a panel already on screen must be closable whether or not it ever got a page.
+  const unregister = formPanels.register(panel);
   panel.webview.html = renderHtml(options);
 
   return new Promise((resolve) => {
@@ -303,6 +308,7 @@ export function showEntityForm(options: EntityFormOptions): Promise<EntityFormVa
       }
     });
     panel.onDidDispose(() => {
+      unregister();
       if (!settled) {
         resolve(undefined);
       }

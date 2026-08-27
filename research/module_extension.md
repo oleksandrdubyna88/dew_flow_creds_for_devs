@@ -1410,6 +1410,54 @@ empty list, which made one assertion impossible to pass and the two around it im
 - `addSecurityKey`/`removeSecurityKey` call `refreshReadiness()`; `handleDrag` warns about rows
   it dropped from another profile.
 
+### A form survives being hidden, and a lock reaches it
+
+**The symptom.** Press `+`, type a name, go and open a file to look up the password you were about
+to paste, come back — and every field is empty. It reads as the form wiping itself whenever focus
+moves, which is how it was reported.
+
+**The cause was not a handler.** Nothing in this codebase ran. A webview panel created without
+`retainContextWhenHidden` has its context DESTROYED by VS Code the moment its tab goes to the
+background of its editor group, and `webview.html` is re-assigned on the way back — so the page is
+rebuilt from the `options` it was opened with, and everything typed since is gone. Both forms were
+created that way; so is the read-only viewer, where it costs a scroll position rather than work.
+
+**Why not `getState`/`setState`.** The webview state API is the other way to survive a reload, and
+it is the wrong one HERE: VS Code persists that state to workspace storage on disk, and this form's
+inputs hold plaintext passwords, private keys, VPN configs and notes. A product whose central claim
+is that the server never sees plaintext does not write plaintext to disk to keep a form tidy.
+
+**What shipped.** `formPanels.ts` — free of `vscode`, so its rules are unit tests:
+
+| export | job |
+|---|---|
+| `FORM_WEBVIEW_OPTIONS` | the one options object both forms are created with, `retainContextWhenHidden` included — one constant so the two cannot drift apart on it |
+| `createFormPanelRegistry()` | a registry of open forms; state in a closure, the shape `idempotentStart.ts` uses |
+| `formPanels` | the one shared instance the two panels fill and the lock empties |
+| `lockNotice(notice, closed)` | the lock message, with the closed forms named |
+
+**The trade this made, and its counterweight.** A password typed into a hidden form used to die
+with the page. It now lives in the webview's memory until the tab closes — a lifetime nobody chose,
+which was a side effect of the defect. So locking the vaults closes the open forms: `lockState.ts`
+defines a lock as "refuse the stored secret until a person says otherwise", and a filled-in form
+alive behind the editor tab is the one place that would not have been true. `extension.ts` grew a
+single `lockNow(notice)` helper; the idle timer and *Lock Vaults* both go through it, so a third
+lock path cannot forget a step.
+
+**The notice says so.** Auto-lock measures idle time against VAULT activity, and typing into a
+webview is not vault activity — a filled-in form can sit beside an hour of other work and be closed
+by the timer. `lockNotice` appends *"An open form was closed — anything typed into it was not
+saved."* Losing typed input without being told is the complaint this whole change began as.
+
+**Two things were measured rather than assumed.** `closeAll` snapshots and clears before disposing,
+and the comment used to claim this was because a `Set` mutated mid-iteration skips elements — it is
+not; a JS `Set` iterator copes with the element it is on being deleted, and the naive version passed
+the test written to catch it. The assertion that actually separates the two implementations is a
+`dispose()` that THROWS: every panel behind the failing one is a form that may have a password on
+screen, so a lock must not be abortable by one misbehaving webview. `formPanels.test.ts` pins that
+case, and `webviewHtml.test.ts` pins the flag itself on both forms by capturing the options the
+panel was created with — there is no DOM in a unit test to observe the retention through.
+
 ### The per-entity flag caches, and the three rules that keep them honest
 
 `entityFlags.ts` (pure) owns the walk that fills the tree's two per-entity caches — does this

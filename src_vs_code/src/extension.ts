@@ -90,6 +90,7 @@ import { DepDecorationProvider } from './depDecorations';
 import { ExpansionMemory, expansionKey } from './treeExpansion';
 import { TRASH_RETENTION_CHOICES, isInTrash } from './trash';
 import { showFolderForm } from './folderFormPanel';
+import { formPanels, lockNotice } from './formPanels';
 import { mcpAsOfVersion, mcpFor } from './viewerOptions';
 import { buildDependencyCandidates, buildDependencyColorMap } from './depGraph';
 import { EntityFlagsRefresher, entityFlagSource } from './entityFlags';
@@ -404,6 +405,22 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   context.subscriptions.push({ dispose: () => clearInterval(reminderTimer) });
   void syncReminderTick();
 
+  /**
+   * Lock the vaults, and everything that must follow from it.
+   *
+   * <p>One helper rather than the same sequence spelled at two call sites: the idle timer and
+   * the *Lock Vaults* command differ only in what they say afterwards. Closing the open forms is
+   * exactly the kind of step that gets added to one of two copies — a form holds a plaintext
+   * secret in its webview, and since the page now survives being hidden it holds it for as long
+   * as the tab is open, which is the trade this change made deliberately.</p>
+   */
+  const lockNow = (notice: string): void => {
+    vaultKeys.lock();
+    const closedForms = formPanels.closeAll();
+    void refreshReadiness();
+    void vscode.window.showInformationMessage(lockNotice(notice, closedForms));
+  };
+
   // Auto-lock. Checked on a coarse timer: the window is measured in tens of minutes, so
   // a minute of drift costs nothing and a tighter tick would only wake the machine more.
   const autoLock = setInterval(() => {
@@ -411,9 +428,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       .getConfiguration('credSshManager')
       .get<number>('autoLockMinutes', 60);
     if (vaultKeys.dueForAutoLock(Date.now(), minutes)) {
-      vaultKeys.lock();
-      void refreshReadiness();
-      void vscode.window.showInformationMessage(
+      lockNow(
         `Vaults locked after ${minutes} minutes idle. Local credentials still work; sync resumes when you unlock.`,
       );
     }
@@ -3012,9 +3027,7 @@ ${detail}
   });
 
   register('credSshManager.lockVaults', () => {
-    vaultKeys.lock();
-    void refreshReadiness();
-    void vscode.window.showInformationMessage(
+    lockNow(
       'Vaults locked. Background sync is paused until you unlock; your saved credentials still work locally.',
     );
   });

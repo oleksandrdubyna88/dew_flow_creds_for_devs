@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { McpAccess, readMcpAccess } from './mcpAccess';
 import { FolderFormOptions, renderFolderHtml } from './folderFormPage';
+import { FORM_WEBVIEW_OPTIONS, formPanels } from './formPanels';
 
 /**
  * The folder form's webview: lifecycle and messages, no markup.
@@ -34,8 +35,11 @@ export function showFolderForm(options: FolderFormOptions): Promise<FolderFormVa
     'credSshFolderForm',
     `Folder: ${options.name}`,
     vscode.ViewColumn.Active,
-    { enableScripts: true, localResourceRoots: [] },
+    FORM_WEBVIEW_OPTIONS,
   );
+  // No secret of its own, but it is closed on lock with the entity form all the same: two
+  // forms with two different answers to "does a lock reach this" is a rule nobody can state.
+  const unregister = formPanels.register(panel);
   panel.webview.html = renderFolderHtml(options);
 
   return new Promise((resolve) => {
@@ -50,6 +54,7 @@ export function showFolderForm(options: FolderFormOptions): Promise<FolderFormVa
       panel.dispose();
     });
     panel.onDidDispose(() => {
+      unregister();
       if (!settled) {
         resolve(undefined);
       }

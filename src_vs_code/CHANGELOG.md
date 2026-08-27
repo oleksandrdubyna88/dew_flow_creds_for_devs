@@ -8,6 +8,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A form emptied itself whenever you left its tab.** Press `+`, type a name, go and open a file to
+  look up the password you were about to paste, come back — and every field is blank. It reads as
+  the form clearing itself on focus change, and nothing in the extension ever ran: a webview panel
+  created without `retainContextWhenHidden` has its page DESTROYED by VS Code the moment its tab
+  goes to the background of its editor group, and rebuilt from the options it was opened with on the
+  way back. Both the entity form and the folder form did this. They now keep their contents, from
+  one shared options object so the two cannot drift apart on it again. The state is deliberately NOT
+  persisted through VS Code's webview `setState`, which would write it to disk: these inputs hold
+  plaintext passwords and private keys, and a vault that never lets a server see plaintext does not
+  leave it in workspace storage to keep a form tidy. The trade this makes is that a typed-in secret
+  now lives in the page until the tab closes rather than dying when it is hidden — so locking the
+  vaults closes any open form, and says that it did, because auto-lock measures idle time against
+  vault activity and typing into a webview is not vault activity.
+
 - **The Remote Bridge could not authenticate, and said it was open anyway.** Four defects with one
   symptom, found on a live password-authenticated host. The bridge resolved one credential kind of
   four — a stored key — and passed `undefined` for a key file, a password and no-credential-at-all,
