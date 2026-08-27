@@ -327,4 +327,68 @@ public sealed class OrgRecoverySetupTests
 
         published.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
+
+    [Fact]
+    public async Task AnInventedCeremonyCannotPublishAKey()
+    {
+        // The guard was "nobody is still pending", and PendingOfficersAsync can only report
+        // officers who hold an invite FOR THAT setupId. A setupId that never existed has none,
+        // so the count was zero and the publish went through — no invites, no shares, no quorum.
+        // One officer could then make every vault on the server seal itself to a key they alone
+        // hold. This is the most direct path to the whole product's secrets in the codebase.
+        using var server = Server();
+        using var cto = server.ClientFor(Cto);
+
+        var published = await cto.PostAsJsonAsync(
+            "/api/org-recovery/setup",
+            new { setupId = Guid.NewGuid().ToString(), orgPublicKey = PublicKey(), rosterFingerprint = "" },
+            Ct);
+
+        published.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        (await published.Content.ReadAsStringAsync(Ct)).Should().Contain("no such ceremony");
+    }
+
+    [Fact]
+    public async Task ACeremonyThatInvitedFewerOfficersThanTheRosterCannotPublish()
+    {
+        // The other half of the same hole: invite ONE officer, let them acknowledge, and the
+        // "nobody pending" test passes with a two-thirds-empty quorum.
+        using var server = Server();
+        var setupId = Guid.NewGuid().ToString();
+        using var cto = server.ClientFor(Cto);
+        (await cto.PostAsJsonAsync("/api/org-recovery/invites", Invite(setupId, Cto, 1), Ct))
+            .StatusCode.Should().Be(HttpStatusCode.Created);
+
+        var inbox = await cto.GetStringAsync("/api/org-recovery/invites", Ct);
+        using var parsed = JsonDocument.Parse(inbox);
+        await cto.PostAsync(
+            $"/api/org-recovery/invites/{parsed.RootElement[0].GetProperty("id").GetString()}/ack", null, Ct);
+
+        var published = await cto.PostAsJsonAsync(
+            "/api/org-recovery/setup",
+            new { setupId, orgPublicKey = PublicKey(), rosterFingerprint = "" },
+            Ct);
+
+        published.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        (await published.Content.ReadAsStringAsync(Ct)).Should().Contain("1 of 3");
+    }
+
+    [Fact]
+    public async Task OnlyTheOfficerWhoRanTheCeremonyMayPublishItsKey()
+    {
+        // Otherwise a second officer waits for somebody else's ceremony to complete and
+        // publishes THEIR key against it, inheriting a legitimately-assembled quorum.
+        using var server = Server();
+        var setupId = await SendInvitesAsync(server, Guid.NewGuid().ToString());
+        await AckAllAsync(server);
+        using var lead = server.ClientFor(Lead);
+
+        var published = await lead.PostAsJsonAsync(
+            "/api/org-recovery/setup",
+            new { setupId, orgPublicKey = PublicKey(9), rosterFingerprint = "" },
+            Ct);
+
+        published.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        (await published.Content.ReadAsStringAsync(Ct)).Should().Contain("did not run that ceremony");
+    }
 }

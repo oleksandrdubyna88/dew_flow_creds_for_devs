@@ -48,6 +48,7 @@ public sealed record ClientConfigDto(string MicrosoftScope);
 [JsonSerializable(typeof(SetupStatusDto))]
 [JsonSerializable(typeof(PublishSetupRequest))]
 [JsonSerializable(typeof(OrgRecoverySetup))]
+[JsonSerializable(typeof(CeremonyRecord))]
 [JsonSerializable(typeof(RecoverySession))]
 [JsonSerializable(typeof(RecoverySessionDto))]
 [JsonSerializable(typeof(SessionContribution))]

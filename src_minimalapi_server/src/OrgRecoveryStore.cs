@@ -22,6 +22,7 @@ public sealed class OrgRecoveryStore
     private readonly string _root;
     private readonly string _invitesDir;
     private readonly string _sessionsDir;
+    private readonly string _ceremoniesDir;
     private readonly string _setupPath;
     private readonly string _auditPath;
 
@@ -30,10 +31,12 @@ public sealed class OrgRecoveryStore
         _root = Path.Combine(dataDir, "org-recovery");
         _invitesDir = Path.Combine(_root, "invites");
         _sessionsDir = Path.Combine(_root, "sessions");
+        _ceremoniesDir = Path.Combine(_root, "ceremonies");
         _setupPath = Path.Combine(_root, "setup.json");
         _auditPath = Path.Combine(_root, "audit.log");
         Directory.CreateDirectory(_invitesDir);
         Directory.CreateDirectory(_sessionsDir);
+        Directory.CreateDirectory(_ceremoniesDir);
     }
 
     private string InboxFor(string officerEmail) =>
@@ -182,6 +185,61 @@ public sealed class OrgRecoveryStore
             JsonSerializer.SerializeToUtf8Bytes(setup, AppJsonContext.Default.OrgRecoverySetup),
             ct);
 
+    // ---------- the ceremony record ----------
+
+    private string CeremonyPath(string setupId) =>
+        Path.Combine(_ceremoniesDir, setupId + ".json");
+
+    /// <summary>Record this ceremony, or add an officer to the one already recorded.</summary>
+    public async Task NoteInvitedAsync(
+        string setupId,
+        string initiatorEmail,
+        string toEmail,
+        CancellationToken ct)
+    {
+        var existing = await ReadCeremonyAsync(setupId, ct);
+        var invited = existing?.Invited ?? [];
+        if (!invited.Contains(toEmail))
+        {
+            invited.Add(toEmail);
+        }
+        await AtomicWriteAsync(
+            CeremonyPath(setupId),
+            JsonSerializer.SerializeToUtf8Bytes(
+                new CeremonyRecord
+                {
+                    SetupId = setupId,
+                    // The FIRST inviter owns the ceremony; a later officer posting into it
+                    // cannot take it over and then publish their own key against its quorum.
+                    InitiatorEmail = existing?.InitiatorEmail ?? initiatorEmail,
+                    Invited = invited,
+                    StartedAt = existing?.StartedAt ?? DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                },
+                AppJsonContext.Default.CeremonyRecord),
+            ct);
+    }
+
+    public async Task<CeremonyRecord?> ReadCeremonyAsync(string setupId, CancellationToken ct)
+    {
+        var path = CeremonyPath(setupId);
+        if (!File.Exists(path))
+        {
+            return null;
+        }
+        try
+        {
+            await using var stream = File.OpenRead(path);
+            return await JsonSerializer.DeserializeAsync(
+                stream, AppJsonContext.Default.CeremonyRecord, ct);
+        }
+        catch (Exception e) when (e is JsonException or IOException)
+        {
+            // Unreadable reads as "no such ceremony", which REFUSES a publish rather than
+            // allowing one — the safe direction for a guard.
+            return null;
+        }
+    }
+
     // ---------- break-glass sessions ----------
 
     private string SessionPath(string sessionId) =>
@@ -190,6 +248,7 @@ public sealed class OrgRecoveryStore
     public async Task WriteSessionAsync(RecoverySession session, CancellationToken ct)
     {
         Directory.CreateDirectory(_sessionsDir);
+        Directory.CreateDirectory(_ceremoniesDir);
         await AtomicWriteAsync(
             SessionPath(session.SessionId),
             JsonSerializer.SerializeToUtf8Bytes(session, AppJsonContext.Default.RecoverySession),

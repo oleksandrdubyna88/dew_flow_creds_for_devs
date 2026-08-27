@@ -673,6 +673,12 @@ app.MapPost("/api/org-recovery/invites", async (HttpContext ctx, CancellationTok
             $"This server's roster is {orgRecovery.Threshold} of {orgRecovery.OfficerEmails.Count}.");
         return;
     }
+    // Record what this ceremony IS before relaying anything for it. Without a record, the
+    // publish guard below has nothing to ask its question about: "is anybody still pending?"
+    // can only be answered from invites that exist, so a ceremony nobody ever ran had nobody
+    // pending and published unopposed.
+    await orgStore.NoteInvitedAsync(
+        request.SetupId, caller.Value.Email, request.ToEmail.Trim().ToLowerInvariant(), ct);
     await orgStore.AppendInviteAsync(
         new EscrowInviteItem
         {
@@ -762,6 +768,32 @@ app.MapPost("/api/org-recovery/setup", async (HttpContext ctx, CancellationToken
             ctx,
             StatusCodes.Status409Conflict,
             "That ceremony has already published a different key.");
+        return;
+    }
+    // Three questions the "nobody pending" test cannot answer on its own, in the order a
+    // forged publish would fail them.
+    var ceremony = await orgStore.ReadCeremonyAsync(request.SetupId, ct);
+    if (ceremony is null)
+    {
+        await Fail(
+            ctx,
+            StatusCodes.Status409Conflict,
+            "There is no such ceremony on this server — a key may only be published for one it saw run.");
+        return;
+    }
+    if (ceremony.InitiatorEmail != caller.Value.Email)
+    {
+        // Otherwise a second officer waits for somebody else's ceremony to complete and
+        // publishes THEIR key against its legitimately-assembled quorum.
+        await Fail(ctx, StatusCodes.Status409Conflict, "You did not run that ceremony.");
+        return;
+    }
+    if (ceremony.Invited.Count < orgRecovery.OfficerEmails.Count)
+    {
+        await Fail(
+            ctx,
+            StatusCodes.Status409Conflict,
+            $"That ceremony invited {ceremony.Invited.Count} of {orgRecovery.OfficerEmails.Count} officers.");
         return;
     }
     var pending = await orgStore.PendingOfficersAsync(request.SetupId, orgRecovery.OfficerEmails, ct);

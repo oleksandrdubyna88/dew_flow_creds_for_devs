@@ -175,6 +175,23 @@ public sealed record PublishSetupRequest
         && written == 32;
 }
 
+/// <summary>
+/// What this server saw of a ceremony, recorded when its first invite was posted.
+///
+/// <para>It exists because the publish guard needed something to be true ABOUT: asking "is
+/// anybody still pending?" can only be answered from invites that exist, so a ceremony that
+/// never happened had nobody pending and published unopposed. This is the record that makes the
+/// question meaningful — who ran it, and how many officers it actually invited.</para>
+/// </summary>
+public sealed record CeremonyRecord
+{
+    public string SetupId { get; init; } = "";
+    public string InitiatorEmail { get; init; } = "";
+    /// <summary>Distinct officers invited. A publish needs this to equal the roster size.</summary>
+    public List<string> Invited { get; init; } = [];
+    public long StartedAt { get; init; }
+}
+
 /// <summary>The published key, as it sits on disk.</summary>
 public sealed record OrgRecoverySetup
 {

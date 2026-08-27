@@ -235,6 +235,13 @@ Four refusals, each for a way the ceremony could produce something that *looks* 
   shares minted as 2-of-5 would implement a different scheme behind that same pin.
 - **Publishing while anyone is pending → `409`.** A key whose quorum cannot be assembled is
   recoverable-looking and not recoverable, which is the worst of the three states to be in.
+- **Publishing for a ceremony this server never saw → `409`**, likewise one whose recorded
+  initiator is not the caller, or which invited fewer officers than the roster holds. "Is anybody
+  still pending?" can only be answered from invites that EXIST, so on its own it passed a
+  `setupId` nobody had ever used — one officer could publish their own key, with no invites, no
+  shares and no quorum, and every client would then seal its master key to a key that person held
+  alone. The server records a ceremony (`org-recovery/ceremonies/`) as its first invite is posted:
+  who ran it and whom it invited. That record is what the question is asked *about*.
 
 Republishing the **same** `setupId` with the **same** key is `200` — a retry after a dropped
 response has to succeed. The same ceremony offering a *different* key is `409`: that is not a
@@ -361,6 +368,7 @@ ${DataDir}/vaults/<key>.email    the plaintext email, for team discovery
 ${DataDir}/shares/<key>/<guid>.json
 ${DataDir}/org-recovery/setup.json                    the published org PUBLIC key
 ${DataDir}/org-recovery/invites/<key>/<guid>.json     one officer's sealed Shamir share
+${DataDir}/org-recovery/ceremonies/<guid>.json        who ran a setup, and whom it invited
 ${DataDir}/org-recovery/sessions/<guid>.json          a live break-glass and its contributions
 ${DataDir}/org-recovery/audit.log                     NDJSON: who opened whose vault, never swept
 ```
