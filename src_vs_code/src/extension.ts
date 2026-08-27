@@ -130,6 +130,7 @@ import {
 } from './cliAliases';
 import { EphemeralSweeper } from './ephemeralSweeper';
 import { maskEntriesFor } from './maskEntries';
+import { visibleMcpEntries } from './mcpEntries';
 import { MaskEntry, buildMaskTable } from './secretMasker';
 import { describeScan, scanForSecrets } from './secretScan';
 import { RemoteState, buildDefaultFolders } from './defaultFolders';
@@ -546,6 +547,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // reads, but a different disclosure: being handed every name is not the same as resolving
     // one you already know, which is why the broker takes them as two callbacks.
     () => listAliases(aliasMap()),
+    // The eighth answers the MCP server's one read route: the non-secret half of the entries
+    // somebody opened to agents. Nothing appears until a switch is on, which is what stands in
+    // for a token there — see `isMcpEntriesRoute`.
+    () => visibleMcpEntries(storage),
   );
   // The SSH agent: keys served from memory, every use confirmed, SSH_AUTH_SOCK injected into
   // new terminals. Nothing starts until a key is actually loaded.

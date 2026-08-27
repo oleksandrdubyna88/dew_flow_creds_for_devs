@@ -77,4 +77,30 @@ public class BrokerContractTests
             code.Should().BeInRange(80, 125, $"{name} must stay in the reserved band");
         }
     }
+
+    [Fact]
+    public void The_read_routes_are_in_the_contract_rather_than_in_each_client()
+    {
+        // Two binaries speak this protocol now, and the second one has no other way to learn
+        // where to GET. The alias listing was spelled out by hand in the CLI while it was the
+        // only one of its kind; both live in the contract now, which is where anything both
+        // sides must agree on belongs.
+        var contract = BrokerContract.Current;
+
+        contract.Reads.Should().NotBeNull("this build's embedded contract carries the read routes");
+        contract.ReadRoute("aliases", "unused").Should().Be("/v1/aliases");
+        contract.ReadRoute("mcpEntries", "unused").Should().Be("/v1/mcp/entries");
+    }
+
+    [Fact]
+    public void A_contract_without_the_reads_section_degrades_to_the_path_this_build_knows()
+    {
+        // A copy written before that section existed is a real thing to meet. Falling back to
+        // the value that used to be hard-coded keeps an old file working; throwing on a missing
+        // key would turn an additive change into a breaking one.
+        var older = new BrokerContract(1, "creds-for-devs-agent", BrokerContract.Current.Health,
+            [], [], null, [], []);
+
+        older.ReadRoute("aliases", "/v1/aliases").Should().Be("/v1/aliases");
+    }
 }

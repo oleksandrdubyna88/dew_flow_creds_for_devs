@@ -25,6 +25,10 @@
     "vpn-up": "/v1/use/up",
     "vpn-down": "/v1/use/down"
   },
+  "reads": {
+    "aliases": "/v1/aliases",
+    "mcpEntries": "/v1/mcp/entries"
+  },
   "errors": {
     "invalid_request": 400,
     "unauthorized": 401,

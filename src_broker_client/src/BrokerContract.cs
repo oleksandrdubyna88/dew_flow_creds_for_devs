@@ -22,6 +22,7 @@ public sealed record BrokerContract(
     [property: JsonPropertyName("health")] HealthRoute Health,
     [property: JsonPropertyName("limits")] Dictionary<string, int> Limits,
     [property: JsonPropertyName("routes")] Dictionary<string, string> Routes,
+    [property: JsonPropertyName("reads")] Dictionary<string, string>? Reads,
     [property: JsonPropertyName("errors")] Dictionary<string, int> Errors,
     [property: JsonPropertyName("exitCodes")] Dictionary<string, int> ExitCodes)
 {
@@ -42,6 +43,18 @@ public sealed record BrokerContract(
 
     /// <summary>The route a verb posts to, or <c>null</c> when this build has no such verb.</summary>
     public string? RouteFor(string verb) => Routes.TryGetValue(verb, out var route) ? route : null;
+
+    /// <summary>
+    /// A read route by name — the GET endpoints that perform nothing and carry no token.
+    /// </summary>
+    /// <remarks>
+    /// Nullable and defaulted because a contract file written before this section existed is a
+    /// real thing to meet: the resource is embedded at build time and so is always in step here,
+    /// but a copy read from somewhere else must degrade to the path this build knows rather than
+    /// throwing on a missing key. The fallback is the value that was hard-coded before.
+    /// </remarks>
+    public string ReadRoute(string name, string fallback) =>
+        Reads is not null && Reads.TryGetValue(name, out var route) ? route : fallback;
 
     /// <summary>
     /// The exit code for a named mechanism failure.

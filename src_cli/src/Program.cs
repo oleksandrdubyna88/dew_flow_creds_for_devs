@@ -246,7 +246,7 @@ internal static class Program
                 continue;
             }
             reached += 1;
-            var reply = await client.GetAsync(endpoint.Port, "/v1/aliases");
+            var reply = await client.GetAsync(endpoint.Port, contract.ReadRoute("aliases", "/v1/aliases"));
             if (reply.Status != 200)
             {
                 continue;

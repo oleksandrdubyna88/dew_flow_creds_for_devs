@@ -10,6 +10,10 @@ import {
   MAX_STREAM_BYTES,
   MIN_EXEC_TIMEOUT_MS,
   SERVICE_NAME,
+  isAliasListRoute,
+  isMcpEntriesRoute,
+  parseAliasRoute,
+  parseUseRoute,
   statusForErrorCode,
 } from '../brokerProtocol';
 import { EXIT } from '../agentCliOutcome';
@@ -35,6 +39,7 @@ interface Contract {
   health: { method: string; path: string; authenticated: boolean };
   limits: Record<string, number>;
   routes: Record<string, string>;
+  reads: Record<string, string>;
   errors: Record<string, number>;
   exitCodes: Record<string, number>;
 }
@@ -104,4 +109,27 @@ test('health is unauthenticated, and says so, because that is load-bearing', () 
   assert.equal(health.authenticated, false);
   assert.equal(health.path, '/v1/health');
   assert.equal(health.method, 'GET');
+});
+
+test('the read routes travel in the contract, and the code agrees with what it says', () => {
+  // Two GET routes now, and the second is read by a binary with no other way to learn its path.
+  // Asserted against the predicates themselves rather than against a copy of the strings: a
+  // route renamed in `brokerProtocol.ts` and not regenerated fails here.
+  const { reads } = load();
+
+  assert.deepEqual(Object.keys(reads).sort(), ['aliases', 'mcpEntries']);
+  assert.equal(isAliasListRoute(reads.aliases), true);
+  assert.equal(isMcpEntriesRoute(reads.mcpEntries), true);
+  for (const route of Object.values(reads)) {
+    assert.match(route, /^\/v1\//, route);
+  }
+});
+
+test('the read routes are not use routes — nothing under them performs anything', () => {
+  const { reads } = load();
+
+  for (const route of Object.values(reads)) {
+    assert.equal(parseUseRoute(route), undefined, route);
+    assert.equal(parseAliasRoute(route), undefined, route);
+  }
 });

@@ -51,6 +51,8 @@ function world(options: {
   alias?: { accountId: string; entityId: string; entityName: string; kind: string };
   /** The names `creds ls` would see. Absent means this window has no registry at all. */
   aliasList?: { name: string; kind: string }[];
+  /** What the vault would show an agent. Absent means this window shows agents nothing. */
+  mcpEntries?: Record<string, unknown>[];
   supports?: string[];
 }): World {
   const w: World = {
@@ -112,6 +114,7 @@ function world(options: {
     burnerFor(w, options.burns),
     aliasResolverFor(options.alias),
     options.aliasList === undefined ? undefined : () => options.aliasList ?? [],
+    mcpEntriesFor(options.mcpEntries),
   );
   return w;
 }
@@ -138,6 +141,20 @@ function burnerFor(
     w.burned.push(entityId);
     return Promise.resolve(burns);
   };
+}
+
+/**
+ * The entries a window would show an agent.
+ *
+ * <p>`as never`: these fixtures are deliberately PARTIAL. What is under test here is the door —
+ * that it answers, that it needs no token, that it is a GET. Whether the shape is right is the
+ * claim `mcpEntries.test.ts` makes, against the code that actually builds it, and a full fixture
+ * here would only assert that a literal matches itself.</p>
+ */
+function mcpEntriesFor(
+  entries: Record<string, unknown>[] | undefined,
+): (() => Promise<never>) | undefined {
+  return entries === undefined ? undefined : () => Promise.resolve(entries as never);
 }
 
 function aliasResolverFor(
@@ -651,6 +668,77 @@ test('the listing is a GET only — a POST to it is not an action route', async 
     const answer = await call(port, '/v1/aliases', { body: {} });
 
     assert.equal(code(answer), 'not_found');
+  } finally {
+    w.server.dispose();
+  }
+});
+
+/**
+ * `GET /v1/mcp/entries` — what an agent may see, and what stands in for a token there.
+ *
+ * <p>The third read-only route on this server, and the third that authenticates nothing. It
+ * discloses considerably more than the alias listing does — a host, a user, a port, a
+ * connection string — so the argument that covers that one does not stretch to cover this. What
+ * covers it is that nothing appears at all unless somebody turned a switch on for that entry:
+ * the set is one a person assembled deliberately, not "what this vault holds".</p>
+ *
+ * <p>The shaping is tested next door in `mcpEntries.test.ts`, which is where the decision about
+ * WHICH fields cross lives. These tests are about the door.</p>
+ */
+test('the entries route answers without a token, like the other two read routes', async () => {
+  const w = world({ mcpEntries: [{ id: 'e1', name: 'orders-db', kind: 'db', hasPassword: true }] });
+  try {
+    const { port } = await share(w);
+
+    const answer = await call(port, '/v1/mcp/entries', { method: 'GET' });
+
+    assert.equal(answer.status, 200);
+    assert.deepEqual(answer.body.entries, [
+      { id: 'e1', name: 'orders-db', kind: 'db', hasPassword: true },
+    ]);
+  } finally {
+    w.server.dispose();
+  }
+});
+
+test('a window whose vault has opened nothing answers an empty list, not a refusal', async () => {
+  // The common case by a wide margin, and the one that must not look like a malfunction: every
+  // entry is invisible to agents until somebody says otherwise.
+  const w = world({});
+  try {
+    const { port } = await share(w);
+
+    const answer = await call(port, '/v1/mcp/entries', { method: 'GET' });
+
+    assert.equal(answer.status, 200);
+    assert.deepEqual(answer.body.entries, []);
+  } finally {
+    w.server.dispose();
+  }
+});
+
+test('the entries route raises no dialog and is therefore not throttled', async () => {
+  const w = world({ mcpEntries: [{ id: 'e1', name: 'prod', kind: 'ssh' }] });
+  try {
+    const { port } = await share(w);
+    const before = w.dialogs.length;
+
+    for (let i = 0; i < 20; i += 1) {
+      assert.equal((await call(port, '/v1/mcp/entries', { method: 'GET' })).status, 200, `call ${i}`);
+    }
+
+    assert.equal(w.dialogs.length, before, 'nobody was asked anything');
+  } finally {
+    w.server.dispose();
+  }
+});
+
+test('it is a GET only — a POST to it is not an action route', async () => {
+  const w = world({ mcpEntries: [] });
+  try {
+    const { port } = await share(w);
+
+    assert.equal(code(await call(port, '/v1/mcp/entries', { body: {} })), 'not_found');
   } finally {
     w.server.dispose();
   }

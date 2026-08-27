@@ -196,3 +196,28 @@ export interface AliasListEntry {
 export interface AliasListBody {
   aliases: AliasListEntry[];
 }
+
+/**
+ * `GET /v1/mcp/entries` — the non-secret half of every entry a person opened to agents.
+ *
+ * <p>A GET beside health and the alias list, for the same reason both of those are: it performs
+ * nothing and raises nothing. What it answers is built by `mcpEntries.ts`, which names every
+ * field it discloses one at a time; there is no shape here a password could travel in.</p>
+ *
+ * <p><b>Why it carries no token.</b> The other read route on this server is unauthenticated
+ * because a name discloses little. This one discloses considerably more — a host, a user, a
+ * port, a connection string with the password removed — so the same argument would not stretch
+ * to cover it, and it is not what carries it. What carries it is that <b>nothing appears here
+ * at all unless somebody turned a switch on for that entry</b>. Every entry is invisible by
+ * default, including every entry that existed before the feature; the disclosure is not
+ * "what this vault holds" but "what its owner chose to show an agent", which is a set a person
+ * assembled deliberately and can empty in one gesture.</p>
+ *
+ * <p>A token would not add much against the threat this leaves open — a hostile process already
+ * on this machine, running as this user — and it would have to be minted, stored somewhere the
+ * MCP client can read it, and rotated when a window restarts. The switch is the authorization,
+ * and it is the one a person can see.</p>
+ */
+export function isMcpEntriesRoute(pathname: string): boolean {
+  return pathname === '/v1/mcp/entries';
+}

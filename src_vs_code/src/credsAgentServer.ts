@@ -2,20 +2,18 @@ import { describeError } from './describeError';
 import * as http from 'node:http';
 import * as vscode from 'vscode';
 import {
-  AliasListBody,
   ErrorCode,
-  HealthBody,
   MAX_CONCURRENT_EXECS,
   MAX_REQUEST_BODY_BYTES,
-  SERVICE_NAME,
   errorBody,
-  isAliasListRoute,
   parseBearer,
   parseAliasRoute,
   parseJsonObject,
   parseUseRoute,
   statusForErrorCode,
 } from './brokerProtocol';
+import { ReadRouteSources, readRouteBody } from './brokerReadRoutes';
+import { McpEntry } from './mcpEntries';
 import { Grant, GrantExpiry, GrantLimits, GrantLookup, GrantRegistry } from './grantRegistry';
 import { UseActionRegistry } from './useActions';
 import { formatToken } from './grantToken';
@@ -160,6 +158,19 @@ export class CredsAgentServer implements vscode.Disposable {
      * resolving a name you already know is not the same as being handed every name there is.</p>
      */
     private readonly listAliases?: () => readonly { name: string; kind: string }[],
+    /**
+     * The entries a person opened to agents, already reduced to their non-secret half.
+     *
+     * <p>Outside for the third time, and for the third time because the broker holds grants
+     * rather than stored records: deciding WHICH entries are visible means resolving a switch
+     * against its folder and against the Trash, which is a question about the vault. This side
+     * only knows how to answer a GET with whatever it is handed.</p>
+     *
+     * <p>Asynchronous unlike the other two, because "is there a password" is a keychain read.
+     * Absent means this window shows agents nothing, which is what a build or a test without
+     * the vault should do.</p>
+     */
+    private readonly listMcpEntries?: () => Promise<readonly McpEntry[]>,
   ) {}
 
   /** The signal every spawned child watches, so none outlives this window. */
@@ -406,25 +417,21 @@ export class CredsAgentServer implements vscode.Disposable {
     }
   }
 
+  /** The GET routes' suppliers, gathered so `brokerReadRoutes` can answer without this class. */
+  private get readSources(): ReadRouteSources {
+    return { aliases: this.listAliases, mcpEntries: this.listMcpEntries };
+  }
+
   // eslint-disable-next-line complexity
   private async handle(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
     const url = new URL(req.url ?? '/', 'http://127.0.0.1');
 
-    // Health carries no authorization on purpose: it is what lets the CLI
-    // confirm this port still belongs to us BEFORE it sends a token to it.
-    if (req.method === 'GET' && url.pathname === '/v1/health') {
-      const body: HealthBody = { ok: true, service: SERVICE_NAME };
-      this.respond(res, 200, body);
-      return;
-    }
-
-    // Beside health on purpose: neither authenticates and neither performs anything. What this
-    // one discloses — the names a person enabled, and each entry's kind — is an owner decision
-    // recorded at `isAliasListRoute`. It raises no modal, so it is not throttled; the action
-    // route is, because there the modal IS the authorization.
-    if (req.method === 'GET' && isAliasListRoute(url.pathname)) {
-      const body: AliasListBody = { aliases: [...(this.listAliases?.() ?? [])] };
-      this.respond(res, 200, body);
+    // Health, the alias listing and the entries an agent may see — one kind of route, described
+    // once in `brokerReadRoutes.ts`: none authenticates, none performs anything, none is
+    // throttled. Everything below this line needs a token or raises a modal.
+    const read = req.method === 'GET' ? await readRouteBody(url.pathname, this.readSources) : undefined;
+    if (read !== undefined) {
+      this.respond(res, 200, read);
       return;
     }
 
