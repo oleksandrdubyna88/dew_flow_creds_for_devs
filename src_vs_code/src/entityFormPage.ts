@@ -4,7 +4,7 @@ import { CONFIG_FORMATS, CONFIG_FORMAT_LABELS } from './configFormat';
 import { PASSWORD_LENGTH_CHOICES, SSH_KEY_TYPES } from './secretGenerator';
 import { ZOOM_CSS, zoomControlHtml, zoomStyle } from './zoomControl';
 import { describeAttachment } from './attachmentMeta';
-import { PAGE_MAX_WIDTH_PX, TWO_COLUMN_AT, escapeHtml } from './webviewHtml';
+import { PAGE_MAX_WIDTH_PX, THREE_COLUMN_AT, TWO_COLUMN_AT, escapeHtml } from './webviewHtml';
 import { formPageScript } from './entityFormScript';
 import { initialDependencyRows } from './depGraph';
 import { accessMask, normalizeMcpAccess } from './mcpAccess';
@@ -398,8 +398,23 @@ export function renderHtml(options: EntityFormOptions): string {
      Below the breakpoint the grid collapses to one column and Main simply sits above Additional.
      align-items: start, so the shorter column does not stretch to match the taller one.
      No backticks in here: one inside a CSS comment ends the template literal this page is. */
+  /* T24a: one column stacks main -> additional -> agent; two columns put the agent group under
+     Additional (exactly the old layout); a screen wide enough gives Agent access its OWN third
+     column. CSS order + grid placement, so the MARKUP stays one source order. */
   .formGroups { display: grid; grid-template-columns: 1fr; gap: 0 24px; align-items: start; }
-  @media (min-width: ${TWO_COLUMN_AT}px) { .formGroups { grid-template-columns: 1fr 1fr; } }
+  #agentGroup { order: 3; }
+  @media (min-width: ${TWO_COLUMN_AT}px) {
+    .formGroups { grid-template-columns: 1fr 1fr; }
+    #mainGroup { grid-column: 1; grid-row: 1 / span 2; }
+    #additionalGroup { grid-column: 2; grid-row: 1; }
+    #agentGroup { grid-column: 2; grid-row: 2; order: 0; }
+  }
+  @media (min-width: ${THREE_COLUMN_AT}px) {
+    .formGroups { grid-template-columns: 1fr 1fr 1fr; }
+    #mainGroup { grid-row: 1; }
+    #additionalGroup { grid-row: 1; }
+    #agentGroup { grid-column: 3; grid-row: 1; }
+  }
   .groupTitle { margin: 18px 0 8px; font-size: .95em; text-transform: uppercase;
                 letter-spacing: .08em; opacity: .6; }
   /* The legend keeps the default foreground on purpose - only the border carries the colour, so
@@ -799,6 +814,10 @@ export function renderHtml(options: EntityFormOptions): string {
   ${dependsOnHtml}
   ${totpHtml}
   ${attachmentsHtml}
+  </div>
+
+  <div id="agentGroup" class="fsGroup">
+  <h3 class="groupTitle">Agent access</h3>
   ${mcpHtml}
   </div>
 

@@ -261,3 +261,15 @@ test('an entity name is escaped in the heading, like everywhere else it is shown
   assert.doesNotMatch(html, /<img src=x/);
   assert.match(html, /&lt;img src=x/);
 });
+
+test('the agent group is its own third column slot, last in one-column order (T24a)', () => {
+  const html = renderHtml(options());
+  const agent = html.indexOf('id="agentGroup"');
+  const additional = html.indexOf('id="additionalGroup"');
+  assert.ok(agent !== -1 && additional !== -1);
+  assert.ok(agent > additional, 'markup order: main, additional, agent — the one-column order');
+  const agentBlock = html.slice(agent, html.indexOf('</div>', html.indexOf('mcpSection')));
+  assert.ok(agentBlock.includes('mcpSection'), 'the MCP section lives in the agent group');
+  assert.ok(html.includes('#agentGroup { grid-column: 3;'), 'the third column exists at width');
+  assert.ok(html.includes("min-width: 1500px"), 'the three-column breakpoint is the shared constant');
+});

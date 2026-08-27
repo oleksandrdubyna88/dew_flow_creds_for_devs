@@ -41,6 +41,9 @@ export const PAGE_MAX_WIDTH_PX = 1280;
 /** The window width at which a two-column page stops stacking. */
 export const TWO_COLUMN_AT = 1000;
 
+/** Where the form grows its THIRD column — the Agent access group (tails T24a). */
+export const THREE_COLUMN_AT = 1500;
+
 /**
  * Escape a value for interpolation into HTML **text or a double-quoted attribute**.
  *

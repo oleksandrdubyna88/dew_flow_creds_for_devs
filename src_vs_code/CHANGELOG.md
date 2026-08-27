@@ -65,6 +65,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Agent access gets its own column when the screen affords one.** On a wide window (1500px+)
+  the edit form is three columns — Main, Additional, Agent access; at two columns the MCP block
+  sits under Additional exactly as before; in one column the order is Main, then Additional,
+  then Agent access. CSS placement over one markup order, so nothing about the form's content
+  moved.
+
 - **The config editor colours as you type — and JSON stopped being one colour everywhere.** The
   script body's overlay editor (type in the box, read the coloured layer) now covers the config
   *Contents* box too, with the Format select as its language. And the shared highlighter learned
