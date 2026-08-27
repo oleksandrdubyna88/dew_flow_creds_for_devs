@@ -510,13 +510,15 @@ export function formPageScript(
     imageContent = b64; imageName = name;
   });
 
-  // ---- script editor: overlay highlighting + variable rows ----
+  // ---- overlay-highlighted editors: the script body and the config body (T17) ----
+  // One wiring for both: the highlighter runs in the extension host, answers are routed by
+  // hlTarget, and the textarea keeps painting its own glyphs until the overlay demonstrably
+  // holds the same content (the lit class + watchdog below).
   var scriptVarRows = INITIAL_SCRIPT_VARS.slice();
-  (function wireScript() {
-    var body = document.getElementById('scriptBody');
-    var hl = document.getElementById('scriptHl');
-    var langSel = document.getElementById('scriptLanguage');
-    if (!body || !hl || !langSel) { return; }
+  function wireOverlayEditor(bodyId, hlId, langOf) {
+    var body = document.getElementById(bodyId);
+    var hl = document.getElementById(hlId);
+    if (!body || !hl) { return; }
     var wrap = body.parentElement;
     var timer;
     var watchdog;
@@ -527,7 +529,7 @@ export function formPageScript(
     function ask() {
       clearTimeout(timer);
       timer = setTimeout(function () {
-        vscode.postMessage({ type: 'highlight', text: body.value, lang: langSel.value });
+        vscode.postMessage({ type: 'highlight', text: body.value, lang: langOf(), hlTarget: hlId });
         // If nothing answers — a handler that threw, a host that went away — stop hiding
         // the textarea's glyphs. An editor showing nothing is worse than an unhighlighted
         // one, and this is the state the user actually hit.
@@ -538,13 +540,12 @@ export function formPageScript(
       }, 16);
     }
     body.addEventListener('input', ask);
-    langSel.addEventListener('change', ask);
     body.addEventListener('scroll', function () {
       hl.scrollTop = body.scrollTop; hl.scrollLeft = body.scrollLeft;
     });
     window.addEventListener('message', function (event) {
       var msg = event.data || {};
-      if (msg.type === 'highlighted') {
+      if (msg.type === 'highlighted' && msg.hlTarget === hlId) {
         clearTimeout(watchdog);
         hl.innerHTML = msg.html + String.fromCharCode(10);
         hl.scrollTop = body.scrollTop;
@@ -554,6 +555,20 @@ export function formPageScript(
       }
     });
     ask();
+    return ask;
+  }
+  (function wireScript() {
+    var langSel = document.getElementById('scriptLanguage');
+    if (!langSel) { return; }
+    var ask = wireOverlayEditor('scriptBody', 'scriptHl', function () { return langSel.value; });
+    if (ask) { langSel.addEventListener('change', ask); }
+  })();
+  (function wireConfig() {
+    var formatSel = document.getElementById('configFormat');
+    if (!formatSel) { return; }
+    // The FORMAT is the language — json/yaml/toml/ini/env all have highlighter grammars.
+    var ask = wireOverlayEditor('configBody', 'configHl', function () { return formatSel.value; });
+    if (ask) { formatSel.addEventListener('change', ask); }
   })();
 
   function renderScriptVars() {

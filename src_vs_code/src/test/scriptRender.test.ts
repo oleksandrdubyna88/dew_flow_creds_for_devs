@@ -182,3 +182,45 @@ test('each flagged name is reported once, however many times it is printed', () 
 test('an unknown language flags nothing rather than guessing', () => {
   assert.deepEqual(detectSecretPrints('echo ${A}', ['A'], 'sql'), []);
 });
+
+// ---------------------------------------------------------------------------
+// T17 — the key/value split that keeps a data-format body from being one colour,
+// and the round-trip guarantee that colouring can never alter what is saved.
+// ---------------------------------------------------------------------------
+
+test('JSON keys and values wear different classes — the owner benchmark was VS Code itself', () => {
+  const html = highlightScript('{ "Serilog": { "MinimumLevel": "Information" } }', 'json');
+  assert.ok(html.includes('<span class="tok-key">&quot;Serilog&quot;</span>'), 'the key is a key');
+  assert.ok(html.includes('<span class="tok-string">&quot;Information&quot;</span>'), 'the value stays a string');
+  assert.ok(html.includes('<span class="tok-key">&quot;MinimumLevel&quot;</span>'));
+});
+
+test('the line-start keys of yaml, toml, ini and env are keys too', () => {
+  for (const [language, text, key] of [
+    ['yaml', 'AllowedHosts: "*"', 'AllowedHosts'],
+    ['toml', 'name = "creds"', 'name'],
+    ['ini', 'timeout = 30', 'timeout'],
+    ['env', 'DB_HOST=localhost', 'DB_HOST'],
+  ] as const) {
+    const html = highlightScript(text, language);
+    assert.ok(html.includes(`<span class="tok-key">${key}</span>`), `${language}: ${html}`);
+  }
+});
+
+test('colouring never alters the text: stripping the spans re-yields the escaped input', () => {
+  const bodies: ReadonlyArray<[string, string]> = [
+    ['json', '{ "a": [1, true, null], "b": "x <script> y" }'],
+    ['yaml', 'a: 1\n# note\nb: "two"'],
+    ['bash', 'echo "hi" # ${VAR} and 42'],
+    ['env', 'KEY=value # tail'],
+  ];
+  for (const [language, body] of bodies) {
+    const html = highlightScript(body, language);
+    const stripped = html.replace(/<span class="tok-[a-z]+">/g, '').replace(/<\/span>/g, '');
+    assert.equal(
+      stripped,
+      highlightScript(body, 'nonexistent-language').replace(/<span class="tok-[a-z]+">/g, '').replace(/<\/span>/g, ''),
+      `${language}: the coloured output must re-escape to exactly what would be saved`,
+    );
+  }
+});

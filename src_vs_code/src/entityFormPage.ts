@@ -458,6 +458,8 @@ export function renderHtml(options: EntityFormOptions): string {
   .tok-kw { color: var(--vscode-charts-blue, #569cd6); font-weight: 600; }
   .tok-num { color: var(--vscode-charts-green, #b5cea8); }
   .tok-var { color: var(--vscode-charts-purple, #c586c0); font-weight: 600; }
+  /* T17: the key side of a pair — the split that keeps a JSON body from being one colour. */
+  .tok-key { color: var(--vscode-debugTokenExpression-name, #9CDCFE); }
   .fieldDivider { border: 0; border-top: 1px solid var(--vscode-widget-border, #4444);
                   margin: 12px 0; }
   /* input:not(...) rather than a list of input[type=…]: an attribute selector does not
@@ -755,8 +757,11 @@ export function renderHtml(options: EntityFormOptions): string {
     <div id="configRawPane">
       <label for="configBody">Contents</label>
       <div class="codeWrap">
-        <textarea id="configBody" rows="18" spellcheck="false" autocomplete="off"
-                  placeholder='{ "ConnectionStrings": { "Default": "..." } }'>${escapeHtml(options.initialConfigBody ?? '')}</textarea>
+        <div class="codeWrap">
+          <pre id="configHl" aria-hidden="true"></pre>
+          <textarea id="configBody" rows="18" spellcheck="false" autocomplete="off"
+                    placeholder='{ "ConnectionStrings": { "Default": "..." } }'>${escapeHtml(options.initialConfigBody ?? '')}</textarea>
+        </div>
       </div>
     </div>
     <div id="configFieldsPane" style="display:none">

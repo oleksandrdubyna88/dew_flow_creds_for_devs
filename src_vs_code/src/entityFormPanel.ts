@@ -203,6 +203,8 @@ interface FormMessage {
   /** `configFieldEdit` only: which row was changed, and to what. */
   path?: string;
   value?: string;
+  /** `highlight` only (T17): which overlay asked, echoed back with the answer. */
+  hlTarget?: string;
   /** `zoom` only (T28): which way the press went. */
   zoomDelta?: number;
   /** `generate` only: which kind of secret to draw. */
@@ -389,8 +391,13 @@ function answerRoundTrip(panel: vscode.WebviewPanel, message: FormMessage): bool
 }
 
 /** Its own function so the two defaults above do not count against the dispatch's complexity. */
-function highlighted(message: FormMessage): { type: string; html: string } {
-  return { type: 'highlighted', html: highlightScript(message.text ?? '', message.lang ?? 'other') };
+function highlighted(message: FormMessage): { type: string; html: string; hlTarget: string } {
+  return {
+    type: 'highlighted',
+    html: highlightScript(message.text ?? '', message.lang ?? 'other'),
+    // Echoed verbatim so two overlay editors on one page cannot swap answers (T17).
+    hlTarget: message.hlTarget ?? 'scriptHl',
+  };
 }
 
 /**

@@ -562,6 +562,8 @@ export function renderEntityViewHtml(options: EntityViewOptions): string {
   .tok-kw { color: var(--vscode-charts-blue, #569cd6); font-weight: 600; }
   .tok-num { color: var(--vscode-charts-green, #b5cea8); }
   .tok-var { color: var(--vscode-charts-purple, #c586c0); font-weight: 600; }
+  /* T17: the key side of a pair — the split that keeps a JSON body from being one colour. */
+  .tok-key { color: var(--vscode-debugTokenExpression-name, #9CDCFE); }
   .totp { font-size: 1.25em; letter-spacing: .18em; max-width: 11em; flex: 0 1 11em; }
   /* The form's frame rules, verbatim in shape: only the border carries the colour. */
   fieldset { border: 1px solid var(--vscode-widget-border, #4444); border-radius: 4px;

@@ -65,6 +65,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **The config editor colours as you type — and JSON stopped being one colour everywhere.** The
+  script body's overlay editor (type in the box, read the coloured layer) now covers the config
+  *Contents* box too, with the Format select as its language. And the shared highlighter learned
+  the split that carries a data file: KEYS wear their own colour, distinct from string values —
+  JSON, YAML, TOML, INI and .env — the way VS Code itself colours the same document. One
+  highlighter serves the form's editors, the viewer's code rows and the *Read this from code*
+  panel, so they cannot drift; a test pins that stripping the colours re-yields exactly the text
+  that would be saved.
+
 - **A stored file is a described row, not a masked secret.** The viewer used to render an
   attached file as a password-style input full of dots. Now: the file's name (dark orange,
   slightly larger — one shared style on both pages), its size, and when and by whom it last

@@ -84,6 +84,15 @@ export function highlightScript(code: string, language: string): string {
   if (comment !== undefined) {
     parts.push(comment);
   }
+  // KEYS before strings (T17): in the data formats a document is mostly strings, and painting
+  // keys and values alike is how a JSON body rendered as one colour — the owner's benchmark
+  // was how VS Code itself colours the same file, where the key/value split carries the page.
+  if (language === 'json') {
+    parts.push(/&quot;(?:[^&]|&(?!quot;))*?&quot;(?=\s*:)/g);
+  }
+  if (language === 'yaml' || language === 'toml' || language === 'ini' || language === 'env') {
+    parts.push(/^[ \t]*[A-Za-z0-9_.$-]+(?=[ \t]*[:=])/gm);
+  }
   // Strings after escaping: quotes survive escaping as &quot; for ", keep ' literal.
   parts.push(/&quot;(?:[^&]|&(?!quot;))*?&quot;/g);
   parts.push(/'[^'\n]*'/g);
@@ -96,10 +105,21 @@ export function highlightScript(code: string, language: string): string {
 
   const combined = new RegExp(parts.map((r) => '(?:' + r.source + ')').join('|'), 'g' + (language === 'sql' ? 'i' : ''));
 
+  // A key is a quoted string with a colon after it (json) or a bare word at line start (the
+  // other data formats); the replacer cannot see the lookahead, so keys are re-detected on the
+  // ORIGINAL escaped text by position. Cheaper and simpler: mark them in a first pass.
+  const isDataKeyLanguage =
+    language === 'json' || language === 'yaml' || language === 'toml' || language === 'ini' || language === 'env';
   // eslint-disable-next-line complexity
-  return escaped.replace(combined, (match) => {
+  return escaped.replace(combined, (match, ...rest: unknown[]) => {
+    const offset = rest[rest.length - 2] as number;
+    const source = rest[rest.length - 1] as string;
     if (comment !== undefined && new RegExp('^' + comment.source).test(match)) {
       return '<span class="tok-comment">' + match + '</span>';
+    }
+    if (isDataKeyLanguage && /^[ \t]*[:=]/.test(source.slice(offset + match.length))) {
+      // Followed by a colon/equals: this token is the KEY side of a pair.
+      return '<span class="tok-key">' + match + '</span>';
     }
     if (match.startsWith('&quot;') || match.startsWith("'")) {
       return '<span class="tok-string">' + match + '</span>';
