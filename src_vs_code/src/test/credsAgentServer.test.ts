@@ -1,8 +1,6 @@
 import * as assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { loadWithVscode } from './vscodeStub';
 import { SERVICE_NAME } from '../brokerProtocol';
-import type { McpUseLookup } from '../brokerRequests';
 
 /**
  * The agent broker, driven over real HTTP (audit A3).
@@ -23,7 +21,7 @@ import type { McpUseLookup } from '../brokerRequests';
  * burning cannot cost the agent a result it already earned.</p>
  */
 
-import { SECRET, World, call, code, share, world } from './brokerWorld';
+import { SECRET, call, code, share, world } from './brokerWorld';
 
 test('health is unauthenticated — it is what lets the CLI check the port before sending a token', async () => {
   const w = world({});

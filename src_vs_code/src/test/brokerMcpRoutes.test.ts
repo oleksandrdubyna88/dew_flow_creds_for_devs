@@ -1,6 +1,6 @@
 import * as assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { World, call, code, share, world } from './brokerWorld';
+import { call, code, share, world } from './brokerWorld';
 
 /**
  * The two routes an MCP client uses, driven over real HTTP against the real broker.
