@@ -122,17 +122,42 @@ signatures.
 2. ~~The server-ops work in flight~~ — landed 2026-08-27 (`ContractVersion.cs`,
    `VaultStoreOutbox.cs`, `ShareMaintenance.cs` are committed); this plan's endpoints assume
    those files and the precondition is satisfied.
-3. **X25519 raw-key spike**: `node:crypto` has no direct raw-32-bytes export for X25519 —
-   the JWK round-trip path must be proven against the exact Node runtime VS Code's extension host
-   embeds, in a throwaway script, before `orgEscrowCrypto.ts` is written.
+3. ~~**X25519 raw-key spike**~~ — **done 2026-08-27, and it refuted half the guess.** Measured with
+   a throwaway script before a line of the module was written:
+
+   | claim | measured |
+   |---|---|
+   | JWK round-trip is the reliable route to raw bytes | **only for the PUBLIC half.** Importing a private JWK is refused — `Invalid JWK OKP key` — unless the public member rides along, which a bare share holder does not have |
+   | DER tail gives the same 32 bytes | yes, byte-identical to JWK's `x`/`d`; prefixes constant across 50 generated keypairs |
+   | rotation cost matters on every sync write | no: seal **0.138 ms**, open **0.154 ms** (mean of 200), wrap 214 JSON bytes |
+
+   So **both directions go through DER** and the JWK route is not used at all. The private key is
+   32 bytes with no structure around it, which is what makes splitting it possible.
+
+   Remaining honest gap: measured on Node 24 (this machine), while the floor is Node 18
+   (`engines.vscode ^1.85.0`, esbuild `--target=node18`). Every API used — `diffieHellman`,
+   `hkdfSync`, DER `createPublicKey`/`createPrivateKey` — long predates 18, but that is an
+   argument, not a measurement.
 
 ## Build order
 
 1. Contract doc: the endpoint table + wire shapes into `research/module_server.md` (rule 6 —
    one source both halves implement against).
-2. **R2**: `vaultRekey.ts` extraction + characterization tests (extension only, ships alone).
-3. Extension pure crypto: X25519 spike → `orgEscrowCrypto.ts`, `shamir.ts`, `keyWrap.ts`
-   `'org-escrow'` kind + forward-compat wrap filtering.
+2. ~~**R2**: `vaultRekey.ts` extraction~~ — **shipped 2026-08-27** (`199c12f`), brought forward
+   because the recovery-code work needed it: `rekeyUnderPin` is the one place a master key
+   rotates, both former branches repointed, and it reports a recovery code it could not carry.
+3. **Extension pure crypto** — **`shamir.ts` and `orgEscrowCrypto.ts` shipped 2026-08-27.**
+   Still open in this step: the `'org-escrow'` `KeyWrap` kind and the forward-compat wrap
+   filtering. What the two modules landed with, worth keeping:
+   - Shamir is **not authenticated** by construction, and too few shares return a well-formed
+     WRONG secret rather than an error — pinned by test. `mintShareSet`/`verifyRecombined` carry
+     an HKDF-HMAC tag bound to the roster shape; that tag, never the server's count, is the gate.
+   - The field multiply is checked against an **independent log/antilog implementation over all
+     65 536 pairs**, and the zero-information property (one share leaves all 256 secret bytes
+     possible) is computed with that independent multiply so a bug cannot agree with itself.
+     No third-party vectors were copied; this is stronger and needs no attribution.
+   - Fingerprints reuse the existing `keyFingerprint` from `shareSignature.ts` rather than
+     inventing a second spelling.
 4. Server phase 1: config + guard + `GET /api/org-recovery/config`.
 5. Server phase 2: invites + setup + maintenance sweep.
 6. Extension: setup ceremony + officer panel + TOFU pinning + transparency UI.
