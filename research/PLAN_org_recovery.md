@@ -277,5 +277,5 @@ single-use PUT), audit entry per completed session, sweep spares the audit log.
       both ceremonies; the "threshold is a courtesy" note is in both code and docs.
 - [ ] A full remote rehearsal: 3 officers on 3 machines, one target, break-glass to a re-keyed
       vault, audit line present, target's second device recovers with the new PIN only.
-- [ ] `/security-review` run on the new crypto modules; findings addressed before release.
+- [x] `/security-review` run on the new crypto modules 2026-08-27; **all seven findings addressed** (commits `60dc195`, `f392f40`, `2125e03`, `3681641`, `c61ab64`, `6236478`, `c2f095f`). The primitives came through clean — field arithmetic checked exhaustively, secrecy measured, no key or nonce reuse, no weak randomness; every defect was in the wiring. Two were severe: the TOFU pin was never written and the sync resolver never assigned, so the feature's central defence was inert and no vault enrolled at all; and the break-glass session key was taken from the server unverified, which a compromised relay could use to harvest a quorum. Both closed, with a structural test that fails if either is ever unwired again.
 - [ ] Follow-up rotation plan extracted; this plan promoted with deviations recorded.
