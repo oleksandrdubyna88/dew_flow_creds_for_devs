@@ -47,7 +47,7 @@ var maxInboxItems = config.GetValue("Vault:MaxInboxItems", 500);
 var shareMaxAgeDays = config.GetValue("Vault:ShareMaxAgeDays", 31);
 // Corporate break-glass recovery. Empty roster = the feature does not exist on this server;
 // a non-empty one enrols EVERY account here, which is why the roster is published to every
-// caller rather than to officers only. See OrgRecovery.cs and todo/PLAN_org_recovery.md.
+// caller rather than to officers only. See OrgRecovery.cs and research/PLAN_org_recovery.md.
 var orgRecovery = OrgRecoveryConfig.Read(
     SplitCsv(config["Vault:CorpRecovery:OfficerEmails"]),
     config.GetValue("Vault:CorpRecovery:Threshold", 2));

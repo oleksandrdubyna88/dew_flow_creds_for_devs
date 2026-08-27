@@ -901,7 +901,7 @@ rather than a newer one. Pinned end-to-end: registering a security key on a vaul
 `quantum-yubikey-2031` wrap must return it byte for byte.
 
 **The fourth kind — `org-escrow`** (`orgEscrowCrypto.ts`, `shamir.ts`;
-[PLAN_org_recovery.md](../todo/PLAN_org_recovery.md)). The master key sealed to an organisation's
+[PLAN_org_recovery.md](PLAN_org_recovery.md)). The master key sealed to an organisation's
 recovery *public* key: X25519 + HKDF + AES-256-GCM, a fresh ephemeral keypair per seal, at most one
 slot, carrying the fingerprint of the org key generation it was sealed to so a client can tell
 "current" from "stale" without holding either half.
@@ -961,7 +961,7 @@ several security keys leaves that key opening every copy already on disk (said o
 toast, not hidden). The arithmetic used to be inlined and duplicated in two branches — the v1
 upgrade and the last-key removal — that had already drifted in what they carried over; both now
 call the extracted function, and a third caller is what the corporate break-glass tier will need
-([PLAN_org_recovery.md](../todo/PLAN_org_recovery.md)).
+([PLAN_org_recovery.md](PLAN_org_recovery.md)).
 
 The PIN is the anchor and cannot be optional: a rotation must leave a vault its owner can still
 open, and the PIN is the only factor available without a physical gesture. `extraWraps` is how a

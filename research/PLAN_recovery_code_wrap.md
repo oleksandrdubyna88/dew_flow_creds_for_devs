@@ -1,10 +1,17 @@
 # PLAN — a printable recovery code as a third KeyWrap
 
-> Status: **plan only, nothing implemented yet.** Scope: `src_vs_code` only (keyWrap,
-> securityKeyOps, unlockPlan, vaultKeys, backupPlan, two new modules, extension commands).
+> Status: **IMPLEMENTED, 2026-08-27.** Roadmap D9's first half shipped whole: the printed
+> `RC1-…` code as a third `KeyWrap` kind, an explicit unlock command, and a print-only page.
 >
-> Related docs: [module_extension.md](../research/module_extension.md),
-> [PLAN_audit_roadmap_2026_08_25.md](PLAN_audit_roadmap_2026_08_25.md) (item **D9**, first half),
+> Two defects were found while building it, each fixed red-first and each recorded in full below:
+> `backupWriteMode` would have silently stripped the new slot on a NAS backup, and removing your
+> last security key retired a registered recovery code **in silence** — unavoidable arithmetic,
+> but the silence was the defect. The R2 rotation extraction (`vaultRekey.rekeyUnderPin`) was
+> brought forward from [PLAN_org_recovery.md](PLAN_org_recovery.md) because this is where it was
+> first needed.
+>
+> Related docs: [module_extension.md](module_extension.md),
+> [PLAN_audit_roadmap_2026_08_25.md](../todo/PLAN_audit_roadmap_2026_08_25.md) (item **D9**),
 > [PLAN_org_recovery.md](PLAN_org_recovery.md) (the corporate tier built on top of this).
 
 ## The symptom
@@ -14,7 +21,7 @@ forgotten PIN after a holiday, a YubiKey through a washing machine — and the v
 cryptographically gone, which is correct behaviour for an attacker and a disaster for the owner.
 Every serious credential manager ships a third, offline factor for exactly this: a printed
 high-entropy code in a drawer. Roadmap D9 named it
-([PLAN_audit_roadmap_2026_08_25.md:233-235](PLAN_audit_roadmap_2026_08_25.md)); the wrap slots it
+([PLAN_audit_roadmap_2026_08_25.md:233-235](../todo/PLAN_audit_roadmap_2026_08_25.md)); the wrap slots it
 needs have existed since v2 (`keyWrap.ts`).
 
 ## The design

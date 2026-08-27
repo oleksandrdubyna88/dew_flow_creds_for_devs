@@ -2,7 +2,7 @@ namespace CredVaultServer;
 
 /// <summary>
 /// Corporate break-glass recovery, server side — the operator's configuration and the one
-/// thing clients read from it. See <c>todo/PLAN_org_recovery.md</c> for the whole design.
+/// thing clients read from it. See <c>research/PLAN_org_recovery.md</c> for the whole design.
 ///
 /// <para><b>The server never holds a share it can open.</b> That is rule 1 of this repository
 /// and this feature is the one most likely to be asked to break it. What lives here is an

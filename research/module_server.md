@@ -189,7 +189,7 @@ minimum three, with `Vault:CorpRecovery:Threshold` (default 2) of them required 
 When they do, every account on the server is enrolled: the client seals its vault master key to
 the organisation's recovery public key as an extra wrap, so a quorum of officers can open a vault
 whose owner has left. The design, the ceremonies and the remaining endpoints are
-[todo/PLAN_org_recovery.md](../todo/PLAN_org_recovery.md); **what is built today is this endpoint,
+[PLAN_org_recovery.md](PLAN_org_recovery.md); **what is built today is this endpoint,
 its configuration and its guards** — the setup ceremony has not been written, which is exactly
 what `setupComplete: false` reports.
 

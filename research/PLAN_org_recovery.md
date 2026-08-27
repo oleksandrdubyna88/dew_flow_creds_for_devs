@@ -1,6 +1,6 @@
 # PLAN — corporate break-glass recovery of personal vaults (Shamir 2-of-N)
 
->️ Status: **IMPLEMENTED, 2026-08-27** — steps 1–9 of the build order are built and tested on
+> Status: **IMPLEMENTED, 2026-08-27** — steps 1–9 of the build order are built and tested on
 > both halves. Step 10 (a cheap officer-roster rotation that re-splits the existing key instead
 > of running a fresh ceremony) is deliberately not built and is extracted below as the open tail.
 > Owner decisions recorded 2026-08-27; every deviation is recorded against its step.
@@ -9,8 +9,8 @@
 > three-machine rehearsal — three officers, one target, a real recovery — has not been run, and
 > until it has, this is a feature that passes its tests rather than one that is known to work.
 >
-> Related docs: [module_server.md](../research/module_server.md),
-> [module_extension.md](../research/module_extension.md),
+> Related docs: [module_server.md](module_server.md),
+> [module_extension.md](module_extension.md),
 > [PLAN_recovery_code_wrap.md](PLAN_recovery_code_wrap.md) (the personal tier, built first).
 
 ## The symptom

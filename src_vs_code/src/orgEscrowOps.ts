@@ -7,7 +7,7 @@ import { OrgRecoveryVerdict, verdictBlocksEnrolment } from './orgRecoveryPinning
  *
  * <p>Enrolment is automatic: on a server with corporate recovery configured, every vault gains
  * the wrap on its next ordinary write, with no command to run and nothing to click. That is
- * the owner's decision (recorded in `todo/PLAN_org_recovery.md`) and it is why the client is
+ * the owner's decision (recorded in `research/PLAN_org_recovery.md`) and it is why the client is
  * obliged to SAY so — see `orgRecoveryPinning.orgRecoveryNotice`.</p>
  *
  * <p>Pure — no `vscode`, no I/O.</p>

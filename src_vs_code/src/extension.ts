@@ -3164,7 +3164,7 @@ ${detail}
     );
   });
 
-  // ---------- corporate recovery (todo/PLAN_org_recovery.md) ----------
+  // ---------- corporate recovery (research/PLAN_org_recovery.md) ----------
 
   /**
    * Session keypairs for recoveries THIS window started.

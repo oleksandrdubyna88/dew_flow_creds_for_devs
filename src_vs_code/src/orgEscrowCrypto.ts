@@ -2,7 +2,7 @@ import * as crypto from 'node:crypto';
 
 /**
  * Sealing a secret to a public key nobody currently holds the other half of — the primitive
- * the corporate escrow wrap is built from (see `todo/PLAN_org_recovery.md`).
+ * the corporate escrow wrap is built from (see `research/PLAN_org_recovery.md`).
  *
  * <p>Everything else in this extension is symmetric: the vault's master key is wrapped under
  * factors its owner can present. Escrow cannot be, because the whole point is that a vault
