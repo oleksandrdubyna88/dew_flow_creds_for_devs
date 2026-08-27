@@ -20,6 +20,9 @@ namespace CredsMcp;
 [JsonSerializable(typeof(McpCapabilities))]
 [JsonSerializable(typeof(McpEntry[]))]
 [JsonSerializable(typeof(ToolFailure))]
+[JsonSerializable(typeof(BrokerErrorEnvelope))]
+[JsonSerializable(typeof(BrokerErrorDetail))]
+[JsonSerializable(typeof(Dictionary<string, string>))]
 internal sealed partial class McpJsonContext : JsonSerializerContext;
 
 /// <summary>What <c>GET /v1/mcp/entries</c> answers with.</summary>
@@ -72,3 +75,18 @@ internal sealed record McpCapabilities(
 internal sealed record ToolFailure(
     [property: JsonPropertyName("error")] string Error,
     [property: JsonPropertyName("hint")] string Hint);
+
+/// <summary>
+/// The broker's refusal, as it comes off the wire.
+/// </summary>
+/// <remarks>
+/// Read rather than re-worded: the window already says the useful thing — which switch to turn
+/// on, that the person declined, that this kind of entry has no such action. A second set of
+/// sentences here would be a second set to keep correct, and the copy is always the vague one.
+/// </remarks>
+internal sealed record BrokerErrorEnvelope(
+    [property: JsonPropertyName("error")] BrokerErrorDetail? Error);
+
+internal sealed record BrokerErrorDetail(
+    [property: JsonPropertyName("code")] string? Code,
+    [property: JsonPropertyName("message")] string? Message);

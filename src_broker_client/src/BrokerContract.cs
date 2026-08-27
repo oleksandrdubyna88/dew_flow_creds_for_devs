@@ -23,6 +23,7 @@ public sealed record BrokerContract(
     [property: JsonPropertyName("limits")] Dictionary<string, int> Limits,
     [property: JsonPropertyName("routes")] Dictionary<string, string> Routes,
     [property: JsonPropertyName("reads")] Dictionary<string, string>? Reads,
+    [property: JsonPropertyName("mcpUsePrefix")] string? McpUsePrefix,
     [property: JsonPropertyName("errors")] Dictionary<string, int> Errors,
     [property: JsonPropertyName("exitCodes")] Dictionary<string, int> ExitCodes)
 {
@@ -55,6 +56,18 @@ public sealed record BrokerContract(
     /// </remarks>
     public string ReadRoute(string name, string fallback) =>
         Reads is not null && Reads.TryGetValue(name, out var route) ? route : fallback;
+
+    /// <summary>
+    /// Where an MCP client posts one action.
+    /// </summary>
+    /// <remarks>
+    /// A prefix plus the action, rather than a route per verb: the verb vocabulary is
+    /// <see cref="Routes"/> and repeating it would be two lists to keep in step. Nullable with a
+    /// fallback for the same reason <see cref="ReadRoute"/> is — a contract file written before
+    /// this section existed must degrade to the path this build knows.
+    /// </remarks>
+    public string McpUseRoute(string action) =>
+        (McpUsePrefix is { Length: > 0 } prefix ? prefix : "/v1/mcp/use/") + action;
 
     /// <summary>
     /// The exit code for a named mechanism failure.

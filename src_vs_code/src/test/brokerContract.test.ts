@@ -13,6 +13,7 @@ import {
   isAliasListRoute,
   isMcpEntriesRoute,
   parseAliasRoute,
+  parseMcpUseRoute,
   parseUseRoute,
   statusForErrorCode,
 } from '../brokerProtocol';
@@ -40,6 +41,7 @@ interface Contract {
   limits: Record<string, number>;
   routes: Record<string, string>;
   reads: Record<string, string>;
+  mcpUsePrefix: string;
   errors: Record<string, number>;
   exitCodes: Record<string, number>;
 }
@@ -132,4 +134,27 @@ test('the read routes are not use routes — nothing under them performs anythin
     assert.equal(parseUseRoute(route), undefined, route);
     assert.equal(parseAliasRoute(route), undefined, route);
   }
+});
+
+test('the MCP action prefix travels too, and is a prefix rather than eight more routes', () => {
+  // The verb vocabulary is the `routes` table; repeating it here would be two lists to keep in
+  // step. What a second implementation cannot guess is where the prefix lives.
+  const { mcpUsePrefix, routes } = load();
+
+  assert.equal(mcpUsePrefix, '/v1/mcp/use/');
+  for (const verb of Object.keys(routes)) {
+    const action = routes[verb].replace('/v1/use/', '');
+    assert.equal(parseMcpUseRoute(`${mcpUsePrefix}${action}`), action, verb);
+  }
+});
+
+test('an MCP action route is not a use route and not an alias route', () => {
+  // Three prefixes, three authorization stories. A path that parsed as two of them would mean
+  // one of the three gates could be reached through the wrong door.
+  const path = '/v1/mcp/use/exec';
+
+  assert.equal(parseMcpUseRoute(path), 'exec');
+  assert.equal(parseUseRoute(path), undefined);
+  assert.equal(parseAliasRoute(path), undefined);
+  assert.equal(isMcpEntriesRoute(path), false);
 });

@@ -21,15 +21,23 @@ const fs = require('fs');
 const { spawn } = require('child_process');
 const Module = require('module');
 
+/** Consent answers the fake window gives, in order, and how often it was asked. */
+const consent = { answers: ['Allow'], asked: 0 };
+global.__CREDS_MCP_CONSENT__ = consent;
+
 // ---- vscode stub -----------------------------------------------------------
-// Nothing here raises a modal — the route under test performs nothing — but the broker module
-// imports `vscode` at load time regardless.
+// The modal is real here: an MCP use call raises one, and whether it does — and how often — is
+// half of what the level-2 checks below are about.
 const stub = path.join(os.tmpdir(), 'creds-mcp-itest-vscode-stub.cjs');
 fs.writeFileSync(
   stub,
   `module.exports = {
      window: {
-       showWarningMessage: () => Promise.resolve(undefined),
+       showWarningMessage: () => {
+         const c = global.__CREDS_MCP_CONSENT__;
+         c.asked += 1;
+         return Promise.resolve(c.answers.shift());
+       },
        showInformationMessage: () => Promise.resolve(undefined),
        showErrorMessage: () => Promise.resolve(undefined),
        createOutputChannel: () => ({ appendLine(){}, dispose(){} }),
@@ -44,6 +52,8 @@ Module._resolveFilename = (req, ...a) => (req === 'vscode' ? stub : orig.call(Mo
 const OUT = path.join(__dirname, '..', 'out');
 const { CredsAgentServer } = require(path.join(OUT, 'credsAgentServer.js'));
 const { UseActionRegistry } = require(path.join(OUT, 'useActions.js'));
+
+
 
 let fails = 0;
 const check = (what, ok, extra) => {
@@ -153,8 +163,21 @@ const HANDSHAKE = [
   }
 
   const storageDir = fs.mkdtempSync(path.join(os.tmpdir(), 'creds-mcp-itest-'));
+  // A stub action: no ssh, no network — what is under test is the wire from the tool to the
+  // broker and the gate in front of it, not what an action does once it is reached.
+  const actions = new UseActionRegistry();
+  actions.register({
+    kind: 'db',
+    action: 'query',
+    verb: 'run a query on',
+    validate: () => ({ ok: true }),
+    summarize: (body) => String(body.query ?? ''),
+    describeOutcome: () => 'done',
+    run: (_ctx, body) => Promise.resolve({ status: 200, body: { rows: 1, echoed: body.query } }),
+  });
+
   const server = new CredsAgentServer(
-    new UseActionRegistry(),
+    actions,
     () => {},
     storageDir,
     undefined,
@@ -162,6 +185,13 @@ const HANDSHAKE = [
     undefined,
     undefined,
     () => Promise.resolve(ENTRIES),
+    // The gate the whole route exists for: `e-1` may be used, `e-shut` exists and may not.
+    (id) => {
+      if (id === 'e-1') {
+        return { kind: 'usable', target: { accountId: 'a-1', entityId: 'e-1', entityName: 'orders-db', kind: 'db' } };
+      }
+      return id === 'e-shut' ? { kind: 'closed', entityName: 'prod-db' } : undefined;
+    },
   );
   // Starting the broker is what writes the announcement the binary discovers. `share` is the
   // only way in, and the grant it mints is never used here — the route under test needs none.
@@ -241,6 +271,59 @@ const HANDSHAKE = [
     'with no window it says so, in a sentence a person can act on',
     aloneText.includes('No CredsForDevs window answered') && aloneText.includes('unlock the vault'),
     aloneText.slice(0, 200),
+  );
+
+  // ---- level 2: using an entry ---------------------------------------------
+  const tools2 = (await speak(env, [...HANDSHAKE, { jsonrpc: '2.0', id: 5, method: 'tools/list', params: {} }]))
+    .byId.get(5)?.result?.tools ?? [];
+  const query = tools2.find((t) => t.name === 'creds_query');
+  check('it offers the action tools too', query !== undefined, JSON.stringify(tools2.map((t) => t.name)));
+  check(
+    'an action tool declares itself NOT read-only, because it runs something real',
+    query?.annotations?.readOnlyHint !== true,
+    JSON.stringify(query?.annotations),
+  );
+  check(
+    'its schema asks for the entry id and the query, by the broker own names',
+    Object.keys(query?.inputSchema?.properties ?? {}).sort().join(',') === 'entry,query',
+    JSON.stringify(query?.inputSchema?.properties),
+  );
+
+  consent.answers = ['Allow'];
+  consent.asked = 0;
+  const used = await speak(env, [
+    ...HANDSHAKE,
+    { jsonrpc: '2.0', id: 6, method: 'tools/call', params: { name: 'creds_query', arguments: { entry: 'e-1', query: 'select 1' } } },
+  ]);
+  const usedText = used.byId.get(6)?.result?.content?.[0]?.text ?? '';
+  check('an open entry can be used, end to end', usedText.includes('"rows":1'), usedText.slice(0, 200));
+  check('and the human was asked, exactly once', consent.asked === 1, `asked ${consent.asked}`);
+
+  consent.answers = ['Allow'];
+  consent.asked = 0;
+  const shut = await speak(env, [
+    ...HANDSHAKE,
+    { jsonrpc: '2.0', id: 7, method: 'tools/call', params: { name: 'creds_query', arguments: { entry: 'e-shut', query: 'select 1' } } },
+  ]);
+  const shutText = shut.byId.get(7)?.result?.content?.[0]?.text ?? '';
+  check(
+    'a closed entry is refused, in words that name the switch',
+    shutText.includes('Usable by agents') && shutText.includes('prod-db'),
+    shutText.slice(0, 240),
+  );
+  check('and nobody was asked about it', consent.asked === 0, `asked ${consent.asked}`);
+
+  consent.answers = ['Deny'];
+  consent.asked = 0;
+  const denied = await speak(env, [
+    ...HANDSHAKE,
+    { jsonrpc: '2.0', id: 8, method: 'tools/call', params: { name: 'creds_query', arguments: { entry: 'e-1', query: 'select 1' } } },
+  ]);
+  const deniedText = denied.byId.get(8)?.result?.content?.[0]?.text ?? '';
+  check(
+    'a Deny still refuses - the switch is a precondition, not a decision',
+    deniedText.includes('"error"') && !deniedText.includes('"rows"'),
+    deniedText.slice(0, 240),
   );
 
   server.dispose();

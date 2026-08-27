@@ -9,12 +9,15 @@ import {
   parseBearer,
   parseAliasRoute,
   parseJsonObject,
+  parseMcpUseRoute,
   parseUseRoute,
   statusForErrorCode,
 } from './brokerProtocol';
 import { ReadRouteSources, readRouteBody } from './brokerReadRoutes';
+import { McpUseLookup, aliasTarget, readMcpUse, readNamedBody } from './brokerRequests';
+import { describeLimits, expiredMessage, grantLimits } from './grantLimits';
 import { McpEntry } from './mcpEntries';
-import { Grant, GrantExpiry, GrantLimits, GrantLookup, GrantRegistry } from './grantRegistry';
+import { Grant, GrantLookup, GrantRegistry } from './grantRegistry';
 import { UseActionRegistry } from './useActions';
 import { formatToken } from './grantToken';
 import { formatAuditLine } from './agentAuditLog';
@@ -42,38 +45,6 @@ import { MaskEntry, buildMaskTable, maskResponseBody } from './secretMasker';
  */
 
 const CONSENT_TIMEOUT_MS = 5 * 60_000;
-
-/**
- * The token lifetime the person configured: idle minutes and a call cap, zero meaning off.
- *
- * <p>Read per request rather than once, so changing the setting takes effect on the next
- * call instead of the next window. Defaults: an hour idle, no cap — a token an agent is
- * using stays live; one it forgot about dies on its own.</p>
- */
-function grantLimits(): GrantLimits {
-  const config = vscode.workspace.getConfiguration('credSshManager');
-  const idleMinutes = Math.max(0, config.get<number>('agentGrantIdleMinutes', 60));
-  const maxUses = Math.max(0, Math.floor(config.get<number>('agentGrantMaxCalls', 0)));
-  return { idleMs: idleMinutes * 60_000, maxUses };
-}
-
-function describeLimits(limits: GrantLimits): string {
-  const parts: string[] = [];
-  if (limits.idleMs > 0) {
-    parts.push(`until it goes unused for ${Math.round(limits.idleMs / 60_000)} minutes`);
-  }
-  if (limits.maxUses > 0) {
-    parts.push(`for at most ${limits.maxUses} calls`);
-  }
-  parts.push('and never past this window closing');
-  return parts.join(', ');
-}
-
-function expiredMessage(reason: GrantExpiry, limits: GrantLimits): string {
-  return reason === 'idle'
-    ? `This grant expired: it went unused for more than ${Math.round(limits.idleMs / 60_000)} minutes. Ask the person for a fresh Share with Claude Code.`
-    : `This grant expired: it reached its limit of ${limits.maxUses} calls. Ask the person for a fresh Share with Claude Code.`;
-}
 
 export class CredsAgentServer implements vscode.Disposable {
   private readonly grants = new GrantRegistry();
@@ -171,6 +142,16 @@ export class CredsAgentServer implements vscode.Disposable {
      * the vault should do.</p>
      */
     private readonly listMcpEntries?: () => Promise<readonly McpEntry[]>,
+    /**
+     * Resolve an entry id for an agent's USE call — and say whether it may.
+     *
+     * <p>One callback rather than a lookup and a separate permission check, because the two
+     * questions have one answer and splitting them is how a path ends up asking the first and
+     * forgetting the second. Outside for the fourth time, and for the same reason as the other
+     * three: this class holds grants, not stored records, and the switch it turns on is
+     * resolved against a folder and against the Trash — questions about a vault.</p>
+     */
+    private readonly resolveMcpUse?: (entryId: string) => McpUseLookup,
   ) {}
 
   /** The signal every spawned child watches, so none outlives this window. */
@@ -258,55 +239,13 @@ export class CredsAgentServer implements vscode.Disposable {
    * how one of them ends up missing a step.</p>
    */
   /**
-   * The body of an alias call, or `undefined` once the refusal has been sent.
-   *
-   * <p>Takes the raw text as an argument rather than reading it from a field: this server
-   * handles calls concurrently, and a field would let two in-flight requests overwrite each
-   * other's body — the same class of shared-mutable-state defect the git transport had.</p>
-   */
-  private async aliasBody(
-    req: http.IncomingMessage,
-    res: http.ServerResponse,
-  ): Promise<Record<string, unknown> | undefined> {
-    let raw: string;
-    try {
-      raw = await readBody(req);
-    } catch {
-      this.respondError(res, 'payload_too_large', 'Request body too large.');
-      return undefined;
-    }
-    const body = parseJsonObject(raw);
-    if (body === undefined || typeof body.alias !== 'string') {
-      this.respondError(res, 'invalid_request', 'Body must be a JSON object with an "alias".');
-      return undefined;
-    }
-    return body;
-  }
-
-  /**
    * Whether this unauthenticated call may make the window ask a human.
    *
    * <p>Answers the refusal itself, so the caller reads as one guard rather than three lines of
-   * verdict handling — and so no path can admit a call and forget to report the refusal.</p>
+   * verdict handling — and so no path can admit a call and forget to report the refusal. Both
+   * routes that carry no token pass through here; see `brokerRequests.ts` for what each of them
+   * has to satisfy before reaching it.</p>
    */
-  /**
-   * The entry a name points at, or `undefined` once the refusal has been sent.
-   *
-   * <p>A window with no alias registry and a name that is not enabled get the **same** answer,
-   * deliberately: whether a given name exists is not something an unauthenticated caller
-   * should be able to enumerate one guess at a time.</p>
-   */
-  private aliasTarget(
-    res: http.ServerResponse,
-    name: string,
-  ): { accountId: string; entityId: string; entityName: string; kind: string } | undefined {
-    const target = this.resolveAlias?.(name);
-    if (target === undefined) {
-      this.respondError(res, 'not_found', `No entry is enabled for the CLI under "${name}".`);
-    }
-    return target;
-  }
-
   private admitAliasCall(res: http.ServerResponse): boolean {
     const verdict = this.aliasThrottle.admit(Date.now());
     if (verdict === 'allow') {
@@ -316,21 +255,67 @@ export class CredsAgentServer implements vscode.Disposable {
     return false;
   }
 
+  /**
+   * An agent asking to use an entry it can see.
+   *
+   * <p>The same shape as an alias call and deliberately so — throttle, mint, consent, perform,
+   * mask, audit, burn — with one gate in front of it: that entry's own <b>Usable by agents</b>
+   * switch. The switch says "you may ask"; the modal is still what says yes. The gate, the body
+   * and the refusal wording live in `brokerRequests.ts`.</p>
+   */
+  private async handleMcpUse(
+    req: http.IncomingMessage,
+    res: http.ServerResponse,
+    action: string,
+  ): Promise<void> {
+    const read = await readMcpUse(readBody, req, this.resolveMcpUse);
+    if (!read.ok) {
+      this.respondError(res, read.code, read.message);
+      return;
+    }
+
+    // The same throttle as the alias route, and for the same reason: everything below this line
+    // can make the window ask a human, and the rate of prompts is what stops a local process
+    // turning that into an attack on the person's patience.
+    if (!this.admitAliasCall(res)) {
+      return;
+    }
+
+    const target = read.target;
+    const grant = this.grants.mint(target.accountId, target.entityId, target.entityName, target.kind);
+    this.log({
+      grant: GrantRegistry.describe(grant),
+      entityName: target.entityName,
+      action: 'mcp',
+      outcome: 'minted',
+      detail: `${target.entityName} · ${target.kind}`,
+    });
+    try {
+      await this.perform(res, grant, action, read.body);
+    } finally {
+      this.aliasThrottle.release();
+    }
+  }
+
   private async handleAlias(
     req: http.IncomingMessage,
     res: http.ServerResponse,
     action: string,
   ): Promise<void> {
-    const body = await this.aliasBody(req, res);
-    if (body === undefined) {
-      return; // already answered
+    const read = await readNamedBody(readBody, req, 'alias', 'an "alias"');
+    if (!read.ok) {
+      this.respondError(res, read.code, read.message);
+      return;
     }
+    const body = read.body;
     const name = body.alias as string;
 
-    const target = this.aliasTarget(res, name);
-    if (target === undefined) {
-      return; // already answered
+    const found = aliasTarget(this.resolveAlias, name);
+    if (!found.ok) {
+      this.respondError(res, found.code, found.message);
+      return;
     }
+    const target = found.target;
 
     // The rate of prompts is this route's authorization, not a nicety — see aliasThrottle.ts.
     // Checked after the name resolves so a refusal still cannot be used to learn what exists,
@@ -432,6 +417,12 @@ export class CredsAgentServer implements vscode.Disposable {
     const read = req.method === 'GET' ? await readRouteBody(url.pathname, this.readSources) : undefined;
     if (read !== undefined) {
       this.respond(res, 200, read);
+      return;
+    }
+
+    const mcpAction = req.method === 'POST' ? parseMcpUseRoute(url.pathname) : undefined;
+    if (mcpAction !== undefined) {
+      await this.handleMcpUse(req, res, mcpAction);
       return;
     }
 

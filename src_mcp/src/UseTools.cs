@@ -1,0 +1,200 @@
+using System.Text.Json;
+using CredsBroker;
+
+namespace CredsMcp;
+
+/// <summary>
+/// Level 2: asking a window to USE a credential, without ever receiving it.
+/// </summary>
+/// <remarks>
+/// <para>Every one of these posts to <c>/v1/mcp/use/&lt;action&gt;</c> and comes back with what
+/// the action produced — a command's output, a query's rows, "opened". <b>None of them can
+/// return a secret</b>, because no response shape in the protocol has a field one could travel
+/// in; the window holds the password, uses it, and answers with the result.</para>
+/// <para>Two gates stand in front of each, and they are not the same gate. The entry's
+/// <b>Usable by agents</b> switch says an agent may ask at all — off by default, and off for
+/// every entry that existed before the feature. The consent modal in the window says whether
+/// this particular call happens, every time, showing the person the real entry and the real
+/// command. Turning the switch on does not pre-authorise anything.</para>
+/// <para>The tool descriptions say both of those out loud. A model that does not know a human
+/// will be asked writes a different, worse plan — one that batches twenty calls, or apologises
+/// in advance for something that is going to work.</para>
+/// </remarks>
+internal static class UseTools
+{
+    /// <summary>One tool: what it is called, what it posts to, and what to tell the model.</summary>
+    internal sealed record UseTool(string Name, string Action, string Title, string Description);
+
+    /// <summary>
+    /// The catalog, as data.
+    /// </summary>
+    /// <remarks>
+    /// The actions are the broker's own vocabulary, the same words the CLI's verbs map onto. A
+    /// name invented here would be a second vocabulary to keep in step with the first.
+    /// </remarks>
+    internal static readonly UseTool[] All =
+    [
+        new(
+            "creds_exec",
+            "exec",
+            "Run a command on a host",
+            """
+            Run a shell command on an SSH host from the person's vault. Give the entry's `id` from
+            creds_list and the `command` to run; you get its stdout, stderr and exit code back.
+
+            You never receive the key or the password — the window connects with it. The person is
+            shown the entry and the exact command and must approve it, every call. Assume a few
+            seconds of waiting, and do not batch: twenty calls is twenty prompts.
+            """),
+        new(
+            "creds_query",
+            "query",
+            "Run a query on a database",
+            """
+            Run a SQL query against a database entry from the person's vault. Give the entry's
+            `id` from creds_list and the `query`; you get the result back as text.
+
+            The password never reaches you or the command line — it goes to the client through its
+            environment. The person approves each query, and sees it in full before doing so, so
+            write queries you would be comfortable showing them.
+            """),
+        new(
+            "creds_run",
+            "run",
+            "Run a saved command or script",
+            """
+            Run what a `terminal` or `script` entry already holds — the command the person saved,
+            not one you supply. Give the entry's `id` from creds_list.
+
+            Use this when creds_list showed you an entry of kind `terminal` or `script`: its own
+            `command` field tells you what it will do. The person approves the run.
+            """),
+        new(
+            "creds_open_terminal",
+            "terminal",
+            "Open a terminal for the person",
+            """
+            Open an interactive terminal on an SSH host, in the person's editor, connected with
+            the stored credential. Give the entry's `id` from creds_list.
+
+            This is for THEM, not for you: you get back only whether it opened. You cannot read
+            what happens in it or type into it. Use it when the next step needs a human at a
+            prompt — and the person approves the opening, as they do every action here.
+            """),
+        new(
+            "creds_vpn_up",
+            "up",
+            "Bring a VPN up",
+            """
+            Bring up a VPN connection from the person's vault. Give the entry's `id` from
+            creds_list.
+
+            Reach for this when an entry's `dependsOn` names a VPN and the host it fronts is not
+            answering: that dependency is the person saying "this needs that first". You get back
+            whether it came up, never the configuration. The person approves it, as they do every
+            action here.
+            """),
+        new(
+            "creds_vpn_down",
+            "down",
+            "Take a VPN down",
+            """
+            Take down a VPN connection you or the person brought up. Give the entry's `id` from
+            creds_list. Courtesy after a task that needed one; the person still approves it.
+            """),
+        new(
+            "creds_export_env",
+            "exportEnv",
+            "Put a credential into the person's terminals",
+            """
+            Make an entry's secret available to NEW terminals the person opens, as the environment
+            variable they configured for it. Give the entry's `id` from creds_list.
+
+            You are told the variable NAMES that were written and never their values — that is the
+            whole point of the verb: the person's own shell gets the secret, you get the names to
+            refer to. Existing terminals are unaffected, and the person approves the write.
+            """),
+    ];
+
+    /// <summary>
+    /// Perform one action and answer with whatever the window said.
+    /// </summary>
+    /// <remarks>
+    /// <para>The body is built here rather than taken from the model: `entry` is the id, and the
+    /// one extra field an action needs (a command, a query) is added under the name the broker
+    /// expects. A model handing over a whole JSON body would be a model choosing which fields
+    /// this program sends.</para>
+    /// <para>Failures come back as an object with a sentence in it, never as a thrown exception.
+    /// An MCP client shows a tool error to the model, and the model has to act on it: "no window
+    /// answered" and "that entry is not open to you" are both fixable in seconds when the answer
+    /// says so.</para>
+    /// </remarks>
+    internal static async Task<string> InvokeAsync(
+        BrokerContract contract,
+        UseTool tool,
+        string entryId,
+        string? extraName,
+        string? extraValue)
+    {
+        if (string.IsNullOrWhiteSpace(entryId))
+        {
+            return Failure("No entry id was given.", "Call creds_list first and pass an entry's `id`.");
+        }
+
+        var route = contract.McpUseRoute(tool.Action);
+        var reply = await Windows.PostAsync(contract, route, Body(entryId, extraName, extraValue));
+        if (reply is null)
+        {
+            return Failure(
+                "No CredsForDevs window answered for that entry.",
+                Windows.Announced() == 0
+                    ? "Open the folder in VS Code with the CredsForDevs extension and unlock the vault."
+                    : "The entry id may be stale — call creds_list again. Ids do not survive the entry being deleted and re-created.");
+        }
+        return reply.Status == 200 ? reply.Body : Refused(reply);
+    }
+
+    /// <summary>The request body, built field by field — never a blob handed over by a model.</summary>
+    private static string Body(string entryId, string? extraName, string? extraValue)
+    {
+        var fields = new Dictionary<string, string> { ["entry"] = entryId };
+        if (extraName is not null && extraValue is not null)
+        {
+            fields[extraName] = extraValue;
+        }
+        return JsonSerializer.Serialize(fields, McpJsonContext.Default.DictionaryStringString);
+    }
+
+    /// <summary>
+    /// A refusal, passed on with the window's own sentence.
+    /// </summary>
+    /// <remarks>
+    /// The broker already says the useful thing — which switch to turn on, that the person
+    /// declined, that this kind of entry has no such action. Rewriting it here would be a second
+    /// place to keep those sentences correct, and the second copy is always the vague one.
+    /// </remarks>
+    private static string Refused(BrokerReply reply)
+    {
+        var envelope = Windows.Parse(reply.Body, McpJsonContext.Default.BrokerErrorEnvelope);
+        var message = envelope?.Error?.Message;
+        return Failure(
+            message is { Length: > 0 } ? message : $"The window refused the call (HTTP {reply.Status}).",
+            HintFor(envelope?.Error?.Code));
+    }
+
+    /// <summary>What to do about it — one sentence per refusal a person can actually act on.</summary>
+    private static string HintFor(string? code) =>
+        code switch
+        {
+            "denied" => "Ask the person to allow it, or to turn the switch on in the entry's Agent access section.",
+            "not_found" => "Call creds_list again — the entry may have been deleted or the window closed.",
+            "not_supported" => "That action does not apply to this kind of entry. creds_list says each entry's kind.",
+            "too_many_requests" => "Too many prompts too quickly. Wait a moment and make one call, not several.",
+            "consent_timeout" => "Nobody answered the prompt. Ask the person to look at their editor.",
+            "tool_missing" => "The machine is missing a program this needs — the message says which.",
+            _ => "Tell the person what you were trying to do; the window's own log has the detail.",
+        };
+
+    private static string Failure(string error, string hint) =>
+        JsonSerializer.Serialize(new ToolFailure(error, hint), McpJsonContext.Default.ToolFailure);
+}

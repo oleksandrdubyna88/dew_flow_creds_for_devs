@@ -63,6 +63,45 @@ internal static class Windows
     internal static int Announced() => Endpoints.Read(Endpoints.DirectoryHere()).Count;
 
     /// <summary>
+    /// Post an action to whichever window serves this entry.
+    /// </summary>
+    /// <remarks>
+    /// <para>The entry id came from a list that had already merged every window, so which window
+    /// holds it is not something the caller knows — and cannot be, since a person can have two
+    /// open with different accounts unlocked. Windows are tried newest-first and the first one
+    /// that does not answer <c>not_found</c> is the answer; a 404 means "not mine", which is
+    /// exactly what the broker says for an id it does not serve.</para>
+    /// <para><b>Only the 404 falls through.</b> A refusal — the switch is off, the person clicked
+    /// Deny, the action is not supported — is a real answer from the window that owns the entry,
+    /// and asking the next window after one of those would raise a second consent modal for a
+    /// call that was already decided.</para>
+    /// </remarks>
+    internal static async Task<BrokerReply?> PostAsync(BrokerContract contract, string route, string json)
+    {
+        var endpoints = Endpoints.Read(Endpoints.DirectoryHere());
+        if (endpoints.Count == 0)
+        {
+            return null;
+        }
+
+        using var client = BrokerClient.Create(contract);
+        var notFound = contract.Errors.GetValueOrDefault("not_found", 404);
+        foreach (var endpoint in endpoints)
+        {
+            if (!await client.IsOurBrokerAsync(endpoint.Port))
+            {
+                continue;
+            }
+            var reply = await client.PostAliasAsync(endpoint.Port, route, json);
+            if (reply.Status != notFound)
+            {
+                return reply;
+            }
+        }
+        return null;
+    }
+
+    /// <summary>
     /// A body this build cannot read is skipped, never thrown over.
     /// </summary>
     /// <remarks>

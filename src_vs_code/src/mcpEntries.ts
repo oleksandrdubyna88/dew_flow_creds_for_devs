@@ -247,6 +247,50 @@ async function storedSecrets(
 }
 
 /**
+ * What an entry id means to an agent asking to USE it.
+ *
+ * <p>Three answers, because the middle one is the one worth having: an entry that exists and is
+ * closed is a sentence a person can act on ("turn on Usable by agents"), while collapsing it
+ * into "no such entry" would make the product look broken exactly when it is working.</p>
+ *
+ * <p>Searched across every account, because an id is unique to a vault and an agent has no
+ * account to name — it got the id from a list that had already merged them.</p>
+ */
+export type UsableEntry =
+  | { kind: 'usable'; accountId: string; node: TreeNode }
+  | { kind: 'closed'; node: TreeNode }
+  | undefined;
+
+/**
+ * Find an entry by id and say whether an agent may use it.
+ *
+ * <p>Resolution goes through `resolveMcpInTree`, the same road the tree row, the card and the
+ * list take — inheritance from the folder, and nothing at all inside the Trash. A synchronous
+ * lookup on purpose: this runs before a consent modal, and nothing here reads a secret.</p>
+ */
+export function findUsableEntry(
+  source: Pick<McpVaultSource, 'getAccounts' | 'getNode'>,
+  entryId: string,
+): UsableEntry {
+  for (const { accountId } of source.getAccounts()) {
+    const node = source.getNode(accountId, entryId);
+    if (node?.type === 'entity') {
+      return verdictFor(accountId, node, (id) => source.getNode(accountId, id));
+    }
+  }
+  return undefined;
+}
+
+function verdictFor(
+  accountId: string,
+  node: TreeNode,
+  byId: (id: string) => TreeNode | undefined,
+): UsableEntry {
+  const access = resolveMcpInTree(node, byId).access;
+  return access.use === true ? { kind: 'usable', accountId, node } : { kind: 'closed', node };
+}
+
+/**
  * Dependencies as NAMES, never ids.
  *
  * <p>An id means nothing to an agent — it cannot look one up, because the only thing that

@@ -90,6 +90,7 @@ public class BrokerContractTests
         contract.Reads.Should().NotBeNull("this build's embedded contract carries the read routes");
         contract.ReadRoute("aliases", "unused").Should().Be("/v1/aliases");
         contract.ReadRoute("mcpEntries", "unused").Should().Be("/v1/mcp/entries");
+        contract.McpUseRoute("exec").Should().Be("/v1/mcp/use/exec");
     }
 
     [Fact]
@@ -99,8 +100,9 @@ public class BrokerContractTests
         // the value that used to be hard-coded keeps an old file working; throwing on a missing
         // key would turn an additive change into a breaking one.
         var older = new BrokerContract(1, "creds-for-devs-agent", BrokerContract.Current.Health,
-            [], [], null, [], []);
+            [], [], null, null, [], []);
 
         older.ReadRoute("aliases", "/v1/aliases").Should().Be("/v1/aliases");
+        older.McpUseRoute("exec").Should().Be("/v1/mcp/use/exec");
     }
 }

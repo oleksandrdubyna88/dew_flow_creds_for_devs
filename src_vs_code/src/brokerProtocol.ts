@@ -221,3 +221,29 @@ export interface AliasListBody {
 export function isMcpEntriesRoute(pathname: string): boolean {
   return pathname === '/v1/mcp/entries';
 }
+
+/**
+ * `POST /v1/mcp/use/<action>` — an agent asking to USE an entry it can see.
+ *
+ * <p>A third prefix, and by now the pattern is the point: `/v1/use/` carries a bearer token a
+ * human copied, `/v1/alias/` carries a name and leans entirely on the consent modal, and this
+ * one carries an entry id and is gated by that entry's own <b>Usable by agents</b> switch. A
+ * reader of either side can tell at a glance which authorization story a call belongs to,
+ * which a single prefix with a flag in the body could never offer.</p>
+ *
+ * <p><b>The switch is a precondition, not a replacement for consent.</b> Everything through here
+ * still raises the modal, still passes through the same throttle, still masks the entry's own
+ * secrets out of the output, and still writes an audit line. Turning the switch on says "you may
+ * ask"; the modal is still what says yes.</p>
+ *
+ * <p>Same action vocabulary as the other two, deliberately, so a verb never means one thing on
+ * one route and something else on another.</p>
+ */
+export function parseMcpUseRoute(pathname: string): string | undefined {
+  const prefix = '/v1/mcp/use/';
+  if (!pathname.startsWith(prefix)) {
+    return undefined;
+  }
+  const action = pathname.slice(prefix.length);
+  return ACTION_NAME.test(action) ? action : undefined;
+}

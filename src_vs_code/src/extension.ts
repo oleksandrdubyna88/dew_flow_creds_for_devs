@@ -144,7 +144,8 @@ import {
 } from './cliAliases';
 import { EphemeralSweeper } from './ephemeralSweeper';
 import { maskEntriesFor } from './maskEntries';
-import { visibleMcpEntries } from './mcpEntries';
+import { findUsableEntry, visibleMcpEntries } from './mcpEntries';
+import { McpUseLookup } from './brokerRequests';
 import { CREDS_CLI, CREDS_MCP, CredsAction, CredsProduct, CredsRid } from './credsInstall';
 import { InstallHost, binaryPath, installMenu, performInstall, removeInstall } from './binaryInstaller';
 import { MCP_CLIENT_TARGETS, installedMessage, mcpServerBlock } from './mcpClientConfig';
@@ -583,6 +584,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // somebody opened to agents. Nothing appears until a switch is on, which is what stands in
     // for a token there — see `isMcpEntriesRoute`.
     () => visibleMcpEntries(storage),
+    // The ninth is the same question one rung up: may an agent USE this entry. A single callback
+    // because the lookup and the permission are one answer, and splitting them is how a route
+    // ends up asking the first and forgetting the second.
+    (entryId) => mcpUseLookup(storage, entryId),
   );
   // The SSH agent: keys served from memory, every use confirmed, SSH_AUTH_SOCK injected into
   // new terminals. Nothing starts until a key is actually loaded.
@@ -3457,6 +3462,11 @@ ${detail}
         dbConnection: result.newDbConnection,
         notes: result.newNotes,
         totp: result.newTotp,
+        // NOT the config body, yet. Handing a colleague the config is the point of the feature,
+        // but the share payload has its own sealed shape and its own accept/import path, and a
+        // body added here without the far end would deliver an entry that arrives EMPTY — a
+        // silent partial share, which is worse than a share that does not offer it. Tracked in
+        // todo/PLAN_config_entities.md; until then, "Write config file here…" is the way across.
       },
     };
     await shareInbox.deliver(sender.accountId, payload, recipients, pin);
@@ -3760,6 +3770,10 @@ async function applySecrets(
     await storage.setDbConnection(accountId, entityId, result.newDbConnection);
   }
   await storage.setNotes(accountId, entityId, result.newNotes);
+  // `undefined` for every kind that is not a config, which DELETES — deliberately, and the same
+  // scrubbing the form does to every other kind's fields when the type changes. An entity turned
+  // from a config into something else must not keep a config body nothing can reach or edit.
+  await storage.setConfigBody(accountId, entityId, result.newConfigBody);
   if (result.clearAttachment) {
     await storage.setAttachment(accountId, entityId, undefined);
   } else if (result.newAttachment !== undefined) {
@@ -3847,6 +3861,9 @@ async function editNode(
     hasStoredDbConnection: (await storage.getDbConnection(accountId, node.id)) !== undefined,
     initialDbConnection: await storage.getDbConnection(accountId, node.id),
     initialNotes: (await storage.getNotes(accountId, node.id)) ?? node.details?.notes,
+    // Prefilled, unlike the password and the key: a config is a document somebody opens Edit to
+    // change one line of, and a blank box would make every edit a retype from memory.
+    initialConfigBody: await storage.getConfigBody(accountId, node.id),
     hasStoredTotp: storedTotpDescription !== undefined,
     storedTotpDescription,
     keyCandidates: await collectKeyCandidates(storage, accountId, node.id),
@@ -4406,4 +4423,30 @@ async function runInstall(
   } catch (error) {
     void vscode.window.showErrorMessage(`Could not install ${product.label}: ${describeError(error)}`);
   }
+}
+
+/**
+ * What an entry id means to the broker's MCP use route.
+ *
+ * <p>The vault's answer, in the broker's vocabulary. Here rather than in `mcpEntries.ts` because
+ * the shapes belong to two different sides of the wall: that module knows about switches and
+ * folders, the broker knows about grants, and this line is where one becomes the other.</p>
+ */
+function mcpUseLookup(storage: StorageManager, entryId: string): McpUseLookup {
+  const found = findUsableEntry(storage, entryId);
+  if (found === undefined) {
+    return undefined;
+  }
+  if (found.kind === 'closed') {
+    return { kind: 'closed', entityName: found.node.name };
+  }
+  return {
+    kind: 'usable',
+    target: {
+      accountId: found.accountId,
+      entityId: found.node.id,
+      entityName: found.node.name,
+      kind: resolveKind(found.node.details),
+    },
+  };
 }

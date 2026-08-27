@@ -74,6 +74,10 @@ internal static class Program
         };
         options.ToolCollection ??= [];
         options.ToolCollection.Add(ListTool(contract));
+        foreach (var tool in UseTools.All)
+        {
+            options.ToolCollection.Add(UseTool(contract, tool));
+        }
 
         await using var transport = new StdioServerTransport(ServerName);
         await using var server = McpServer.Create(transport, options);
@@ -104,6 +108,51 @@ internal static class Program
             });
 
     /// <summary>
+    /// One action tool, with the hints that decide how carefully a client treats it.
+    /// </summary>
+    /// <remarks>
+    /// <para><b>None of these is read-only and none is idempotent</b>, and saying so is the
+    /// point: every one of them runs something on a real machine with a real credential.
+    /// `Destructive` is true for the same reason — a client may use these hints to skip a
+    /// confirmation of its own, and this is not the place to be optimistic. The window's consent
+    /// modal is unaffected either way; it asks regardless.</para>
+    /// <para>Two parameters at most, and each named for what the broker calls it. A tool taking
+    /// a whole JSON body would be a tool letting a model choose which fields this program
+    /// sends.</para>
+    /// </remarks>
+    private static McpServerTool UseTool(BrokerContract contract, UseTools.UseTool tool) =>
+        McpServerTool.Create(
+            ArgumentsFor(contract, tool),
+            new McpServerToolCreateOptions
+            {
+                Name = tool.Name,
+                Title = tool.Title,
+                Description = tool.Description,
+                ReadOnly = false,
+                Idempotent = false,
+                Destructive = true,
+                OpenWorld = true,
+            });
+
+    /// <summary>
+    /// The delegate whose parameters become the tool's schema.
+    /// </summary>
+    /// <remarks>
+    /// Three shapes, because three is how many the seven actions need: an entry alone, an entry
+    /// and a command, an entry and a query. The parameter NAMES are what a model sees and fills
+    /// in, so they are the broker's own words rather than anything invented here.
+    /// </remarks>
+    private static Delegate ArgumentsFor(BrokerContract contract, UseTools.UseTool tool) =>
+        tool.Action switch
+        {
+            "exec" => (string entry, string command) =>
+                UseTools.InvokeAsync(contract, tool, entry, "command", command),
+            "query" => (string entry, string query) =>
+                UseTools.InvokeAsync(contract, tool, entry, "query", query),
+            _ => (string entry) => UseTools.InvokeAsync(contract, tool, entry, null, null),
+        };
+
+    /// <summary>
     /// What the client is told about this server before any tool is called.
     /// </summary>
     /// <remarks>
@@ -113,9 +162,15 @@ internal static class Program
     /// </remarks>
     private const string Instructions =
         """
-        CredsForDevs holds this person's credentials. You can see the ones they explicitly opened
-        to you, and you can never read a secret: passwords, private keys, VPN configs and
-        one-time-code seeds are not obtainable through this server by any request.
+        CredsForDevs holds this person's credentials. Start with creds_list: it shows the entries
+        they explicitly opened to you, and each one's `can` says what you may do with it.
+
+        You can never read a secret. Passwords, private keys, VPN configs and one-time-code seeds
+        are not obtainable through this server by any request — the window holds them, uses them
+        on your behalf, and answers with the result.
+
+        Every action asks the person first, in their editor, showing them the real entry and the
+        real command. Plan for that: make one call, not twenty, and expect a few seconds.
 
         An empty list means nothing has been opened to you yet — not that they have no
         credentials. Tell them they can open one in VS Code: right-click the entry, Edit, and the
@@ -138,6 +193,8 @@ internal static class Program
         Or use "CredsForDevs: Install the MCP Server" from the extension's menu, which puts the
         binary somewhere on PATH and writes that block for you.
 
-        Tools: creds_list — the entries opened to agents, with what may be done with each.
+        Tools: creds_list, then creds_exec / creds_query / creds_run / creds_open_terminal /
+        creds_vpn_up / creds_vpn_down / creds_export_env — each gated by that entry's own switch
+        and by the person's approval, every call.
         """;
 }

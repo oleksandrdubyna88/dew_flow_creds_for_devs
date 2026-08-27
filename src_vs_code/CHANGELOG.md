@@ -491,6 +491,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Bounded on purpose: 256 KB of output per stream, 30 s per command (raisable to 120 s), 8 at a
   time, and every child killed when the window goes.
 
+## [0.70.0] — 2026-08-27
+
+### Added
+
+- **An agent can now USE a credential it was opened to — and still cannot read one.** Seven new
+  tools on the MCP server: run a command on a host, run a query on a database, run a saved command
+  or script, open a terminal for you, bring a VPN up or down, and put a credential into your
+  terminals as the variable you configured. Each one goes to a running window, which holds the
+  secret, uses it, and answers with the result.
+  - **Two gates, and they are not the same gate.** The entry's *Usable by agents* switch says an
+    agent may ask at all — off by default, and off for every entry that existed before the feature.
+    **The consent prompt still asks you, every single call**, showing the real entry and the real
+    command. Turning a switch on pre-authorises nothing.
+  - An entry that is closed is refused **before anybody is asked**. A prompt raised for something
+    the switches already forbid is how a person learns to click Allow without reading.
+  - The refusal names the switch — *"orders-db is not open to agents for use. Turn on Usable by
+    agents…"* — so the agent can tell you what to turn on instead of reporting a mystery. An entry
+    id this window does not serve is a plain "not found", and the id is not echoed back.
+  - The tools tell the model that you will be asked, and to make one call rather than twenty. A
+    model that does not know that writes a worse plan — and twenty prompts is how consent stops
+    meaning anything. There is a test for that sentence being present in every description; it
+    caught three that were missing it.
+  - `creds_export_env` answers with variable NAMES and never values, the same rule the CLI's `env`
+    verb has always kept.
+
+### Fixed
+
+- **The broker's request handling had grown a copy of itself.** The MCP action route was written
+  as a copy of the alias route's body reading; both are now one function, along with the refusal
+  wording, in `brokerRequests.ts`.
+
 ## [0.69.0] — 2026-08-27
 
 ### Added

@@ -29,6 +29,7 @@
     "aliases": "/v1/aliases",
     "mcpEntries": "/v1/mcp/entries"
   },
+  "mcpUsePrefix": "/v1/mcp/use/",
   "errors": {
     "invalid_request": 400,
     "unauthorized": 401,
