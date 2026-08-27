@@ -6,6 +6,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **The remote install downloaded the script and then closed the pipe it arrived on.** The command
+  was `curl … | sh < /dev/null`: the redirection wins over the pipe, so the shell read an empty
+  stdin — which is where the *script* was arriving — executed nothing, exited, and curl died
+  writing into a closed pipe (`curl: (23) Failure writing output to destination`). Both
+  requirements were real and they collided on one file descriptor: the installer must reach the
+  shell, and the shell must be unable to wait for input, because `sudo` over a non-interactive
+  `ssh` waits forever otherwise. A file separates them — the script is downloaded, run from the
+  filesystem with stdin closed, and removed unconditionally afterwards. The test that should have
+  caught this asserted `< /dev/null` was *present*, which is how an assertion can be confident and
+  be about the wrong property; it now checks that the script does not arrive on stdin **and** that
+  stdin is closed, as two separate things. Found on a live host, which is the only place it could
+  show.
+
 ### Added
 
 - **Install `creds` on a remote host from the entity's own context menu.** The bridge asks a person

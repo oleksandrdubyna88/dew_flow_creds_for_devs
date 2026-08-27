@@ -2,7 +2,7 @@
   "name": "creds-for-devs",
   "displayName": "CredsForDevs",
   "description": "Zero-trust credential manager for developers: SSH hosts and keys, VPN configs, databases, scripts and the CLI commands nobody remembers — in VS Code. Secrets live in the OS keychain; sync and team sharing are end-to-end encrypted, so the self-hosted vault server never sees plaintext. An AI coding agent can use an SSH credential without ever receiving it.",
-  "version": "0.68.1",
+  "version": "0.68.2",
   "publisher": "remsoftdev",
   "license": "MIT",
   "icon": "media/icon.png",
@@ -695,6 +695,18 @@
         "icon": "$(lock)"
       },
       {
+        "command": "credSshManager.installMcpServer",
+        "title": "Install the MCP Server…",
+        "category": "CredsForDevs",
+        "icon": "$(plug)"
+      },
+      {
+        "command": "credSshManager.installCli",
+        "title": "Install `creds` (terminal CLI)…",
+        "category": "CredsForDevs",
+        "icon": "$(terminal)"
+      },
+      {
         "command": "credSshManager.setAutoLock",
         "title": "Set Auto-Lock…",
         "category": "CredsForDevs"
@@ -973,6 +985,16 @@
           "command": "credSshManager.backupNow",
           "when": "view == credSshManagerView",
           "group": "backup@3"
+        },
+        {
+          "command": "credSshManager.installMcpServer",
+          "when": "view == credSshManagerView",
+          "group": "tools@1"
+        },
+        {
+          "command": "credSshManager.installCli",
+          "when": "view == credSshManagerView",
+          "group": "tools@2"
         }
       ],
       "view/item/context": [

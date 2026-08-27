@@ -99,14 +99,29 @@ export function blockerFor(facts: RemoteFacts): string {
 /**
  * The command that installs, or re-installs, on the remote.
  *
- * <p>`&lt; /dev/null` closes stdin explicitly. The installer already refuses to wait at a `sudo`
- * prompt without a terminal, and this is the belt to that brace: a command run over ssh must be
- * unable to block on input under any circumstances, because the thing on the other side is a
- * progress notification, not a person.</p>
+ * <p><b>Downloaded to a file, then run — never piped.</b> The obvious
+ * `curl … | sh &lt; /dev/null` is wrong in a way that only a live host revealed: the
+ * redirection wins over the pipe, so the shell reads an empty stdin, and stdin is where the
+ * SCRIPT was arriving. It executes nothing, exits, and curl dies writing into a closed pipe:</p>
+ *
+ * <pre>curl: (23) Failure writing output to destination</pre>
+ *
+ * <p>Both requirements are real and they conflict on one file descriptor: the installer must
+ * reach the shell, and the shell must be unable to wait for input (`sudo` over a
+ * non-interactive ssh waits forever otherwise — the same shape as the bridge without
+ * `BatchMode`). A file separates them: the script comes from the filesystem, stdin is closed.</p>
+ *
+ * <p>The temporary file carries the pid so two installs cannot collide, and is removed
+ * unconditionally — `;` rather than `&amp;&amp;`, because the run that FAILED is exactly the one
+ * whose leftovers nobody would come back for.</p>
  */
 export function installCommand(prefix: string = ''): string {
   const env = prefix.length > 0 ? `CREDS_PREFIX=${shellQuote(prefix)} ` : '';
-  return `curl -fsSL ${INSTALLER_URL} | ${env}sh < /dev/null`;
+  const script = '/tmp/creds-install.$$.sh';
+  return (
+    `curl -fsSL ${INSTALLER_URL} -o ${script} && ` +
+    `${env}sh ${script} < /dev/null; rm -f ${script}`
+  );
 }
 
 /** Single-quote for a POSIX shell; the only characters that need it here are the quotes. */

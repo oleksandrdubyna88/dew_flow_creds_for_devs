@@ -73,14 +73,42 @@ test('both supported architectures pass, under either spelling', () => {
   }
 });
 
-test('the install command closes STDIN — it must be unable to wait for input', () => {
-  // The lesson from the bridge: a remote command that can block does not fail, it hangs, and
-  // everything downstream then reads as "not yet" rather than "never". On the other side of this
-  // one is a progress notification, not a person who could answer a sudo prompt.
+/**
+ * The shell must not be fed the script on the same stdin it is forbidden to read.
+ *
+ * <p>Measured against a live host, which is the only place it could show:</p>
+ *
+ * <pre>curl: (23) Failure writing output to destination</pre>
+ *
+ * <p>The command was `curl … | sh &lt; /dev/null`. The redirection wins over the pipe, so the
+ * shell reads an empty stdin — and the SCRIPT is what arrives that way — executes nothing, exits,
+ * and curl dies writing into a closed pipe. The intent was right (the installer must be unable to
+ * wait for input) and the mechanism destroyed the delivery.</p>
+ *
+ * <p>The first version of this test asserted that `&lt; /dev/null` was PRESENT — which is how a
+ * test pins a property confidently and has it be the wrong one. What matters is that the script
+ * does NOT arrive on stdin and that stdin is closed; so it is downloaded to a file first, and the
+ * two halves are asserted separately.</p>
+ */
+
+test('the script is NOT piped into the shell — the redirect would eat it', () => {
   const cmd = installCommand();
 
-  assert.match(cmd, /< \/dev\/null/, cmd);
+  assert.equal(/\|\s*(\w+=\S+\s+)*sh\b/.test(cmd), false, cmd);
+});
+
+test('the shell still cannot wait for input, because the script comes from a FILE', () => {
+  // Both halves matter: a remote command that can block does not fail, it hangs, and everything
+  // downstream reads as "not yet" rather than "never". On the other side is a progress
+  // notification, not a person who could answer a sudo prompt.
+  const cmd = installCommand();
+
+  assert.match(cmd, /sh \S+ < \/dev\/null/, cmd);
   assert.ok(cmd.includes(INSTALLER_URL));
+});
+
+test('the downloaded script is removed afterwards, whatever happened', () => {
+  assert.match(installCommand(), /rm -f/, 'nothing is left behind in /tmp on another machine');
 });
 
 test('a chosen prefix is quoted, so a path with a space cannot split the command', () => {
