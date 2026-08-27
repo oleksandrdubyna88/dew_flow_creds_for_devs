@@ -6,8 +6,28 @@ import {
   shouldSeedDefaults,
   inheritedFolderType,
 } from '../defaultFolders';
+import { ENTITY_KINDS } from '../types';
 
-test('the default set is the seven requested folders, each with its own type', () => {
+/**
+ * The guarantee, written against the KIND LIST rather than against a count.
+ *
+ * <p>The test below this one pinned the literal seven folders — and it kept passing through the
+ * whole of the defect it should have caught: `config` shipped as an entity kind in 0.77.0 and no
+ * default folder was ever added for it, so every account seeded since, and every project folder
+ * ever scaffolded, had nowhere typed to put one. A count agrees with whatever the list happens to
+ * say; this asks the question the seed exists to answer.</p>
+ */
+test('every kind an entity can be has a default folder to land in', () => {
+  const seeded = new Set(DEFAULT_FOLDERS.map((f) => f.folderType));
+  const missing = ENTITY_KINDS.filter((kind) => !seeded.has(kind));
+  assert.deepEqual(
+    missing,
+    [],
+    `no default folder for: ${missing.join(', ')} — a new account has nowhere typed to put one`,
+  );
+});
+
+test('the default set covers every kind, each folder with its own type', () => {
   assert.deepEqual(
     DEFAULT_FOLDERS.map((f) => [f.name, f.folderType]),
     [
@@ -18,6 +38,7 @@ test('the default set is the seven requested folders, each with its own type', (
       ['passwords', 'credential'],
       ['terminal', 'terminal'],
       ['scripts', 'script'],
+      ['config', 'config'],
     ],
   );
 });

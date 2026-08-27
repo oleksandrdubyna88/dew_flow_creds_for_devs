@@ -118,7 +118,9 @@ test('the sanctioned escaper is what the script-building modules actually use', 
   // The guard above is a prohibition; this is the positive half. A module that builds a page
   // script and imports nothing to escape with is either not interpolating anything, or is
   // about to be the fourth instance.
-  const builders = ['entityFormScript.ts', 'depPickerScript.ts', 'webauthnPrf.ts', 'entityViewPanel.ts'];
+  // entityViewPanel.ts split on 2026-08-27: the page and its script moved to entityViewPage.ts
+  // (pure, testable), the panel kept only the message loop — so the module on guard here moved too.
+  const builders = ['entityFormScript.ts', 'depPickerScript.ts', 'webauthnPrf.ts', 'entityViewPage.ts'];
 
   for (const name of builders) {
     const source = fs.readFileSync(path.join(SRC, name), 'utf8');

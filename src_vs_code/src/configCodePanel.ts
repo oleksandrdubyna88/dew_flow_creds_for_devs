@@ -1,6 +1,6 @@
 import { Snippet, SNIPPET_LANGUAGES, snippetLanguage } from './configSnippet';
 import { highlightScript } from './scriptRender';
-import { escapeHtml } from './webviewHtml';
+import { COPY_ICON as COPY, escapeHtml } from './webviewHtml';
 
 /**
  * The viewer's second column: "how do I read this from code?", answered per language.
@@ -43,10 +43,7 @@ export function configCodePanel(options: CodePanelOptions): string {
 </div>`;
 }
 
-/** Reuses the viewer's own icon so the two copy buttons are the same button. */
-const COPY =
-  '<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">' +
-  '<path d="M4 2h7l3 3v8a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1z" opacity=".85"/></svg>';
+
 
 /**
  * Whether this config is reachable from code at all, said before the code that assumes it is.

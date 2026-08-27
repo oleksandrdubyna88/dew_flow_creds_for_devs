@@ -8,6 +8,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **A `config` folder in the default set.** Config entities shipped in 0.77.0 and the starter
+  folders never learned: a brand-new account and every scaffolded project folder got db, vpn,
+  ssh keys, ssh connections, passwords, terminal and scripts — and nowhere typed to put a config.
+  Both take one list, so one line fixed both; the new test checks the list against the KIND list,
+  because the old test pinned "seven folders" and passed straight through the gap. Existing
+  accounts are deliberately untouched — the seed never re-runs over a vault someone has arranged.
+
+### Fixed
+
+- **The viewer's columns were half their old width.** The read-only viewer grew a second column in
+  0.77.0 (the *Read this from code* panel) and kept the 640px body cap from its one-column days,
+  while splitting into two columns at a 1000px window — so it split exactly where it had no room,
+  and a config body wrapped mid-word (`"W arning"`). Both pages now take one shared width constant
+  (1280px), and a test fails if either page ever gets a private number again.
+- **Copy All moved to the top of the viewer.** It was the page's last element, which on a config
+  entry put the one whole-entity action underneath up to 320px of scrolling code sample. It now
+  sits beside the title.
+- **The snippet panel's copy button copies the snippet.** It posted `field: "snippet"` to a switch
+  with no case of that name, so it copied nothing and the page said "Nothing to copy — the field
+  is empty" beside a visibly non-empty snippet. It now copies the snippet exactly as shown — the
+  language and variant picked in the selects ride along, so C# stays C# on the clipboard. The
+  button also wears the same copy glyph as every other copy button: it had re-drawn its own,
+  under a comment claiming it reused the shared one.
+
+## [0.78.0] — 2026-08-27
+
+### Added
+
 - **Paste a QR code to fill in a one-time code.** The seed field asked for an `otpauth://` URI or a
   base32 secret, and that text is the one thing you often cannot get: **Google Authenticator exports
   only as a picture** (*Transfer accounts → Export accounts*), and Microsoft Authenticator exports
@@ -68,179 +96,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   stays behind is the access key: it was minted for your vault, and the recipient enables code
   access themselves and gets their own.
 
-### Fixed
-
-- **The entry form now says which entry it is editing.** The heading read *Edit entity* over forty
-  fields; two windows open on two entries of the same kind were told apart only by the tab title,
-  which is the first thing a wide editor group truncates. It now names the entry and shows its kind.
-
-- **A one-time code could still be missed when the metadata and the keychain disagreed.** The
-  question about sharing a seed was raised from the plaintext "this entry has one" flag, so an entry
-  whose seed was stored but whose flag never got set was never asked about — and a question that is
-  never asked is a silent *no*. The flag is now believed where it vouches for a seed and checked
-  against the keychain where it does not. The mirror case is closed too: a flag with nothing behind
-  it can no longer travel as a claim, because what is sent is derived from the seed actually read.
-
-- **A shared entry left its one-time code behind — and claimed it had not.** The sending half never
-  read the TOTP seed, while the receiving half had always been ready to store one, so sharing an
-  entry with a second factor delivered everything except the second factor. Worse, the "this entry
-  has a one-time code" flag travelled regardless: the recipient got a row offering *Copy One-Time
-  Code* on an entry that could not produce one. Both halves are fixed together, and the seed now
-  travels only when you tick the box (above); when you do not, it is not even read.
-
-- **The Remote Bridge menu item said "Open" while a bridge was open.** The command toggled; the
-  title did not. Somebody looking for *Close* found nothing, and had to click *Open Remote Bridge…*
-  on an already-open bridge to discover the choice hidden behind it — which is the project's own
-  rule 8 in miniature: an action that changes state must show the state it is in. In a tree the only
-  place that can live is the row's `contextValue`, so an SSH row now carries `:bridged` or
-  `:nobridge` and exactly one of *Open Remote Bridge…* / *Close Remote Bridge* is offered. Two
-  tokens rather than one, following the `:agenton` / `:agentoff` pair already here: a single flag
-  would leave the open item needing "ssh AND NOT bridged", which shows **both** items on any row
-  whose value is stale. The tree refreshes on open, on close, and — the case that matters — when a
-  bridge ends by itself, so a dropped network takes the row back to *Open* instead of leaving
-  *Close* offered for something that no longer exists.
-
-### Added
-
-- **Corporate recovery — a quorum of colleagues can open a vault whose owner is gone.** When the
-  operator of a Cred Vault Server names recovery officers (at least three, any two of them acting
-  together by default), every vault on that server also seals its key so that quorum can open it.
-  The organisation's recovery key is split with Shamir's scheme at setup and then destroyed: no
-  single person holds it, the server never sees it, and each officer's share lives sealed under
-  their own PIN or YubiKey in their own vault.
-
-  **You are told.** Enrolment happens automatically and without asking, which is exactly why the
-  extension is obliged to say so: a notice the first time, a *Corporate Recovery…* page listing the
-  officers, the key fingerprint and every recovery that has ever happened on that server, and a
-  refusal to seal anything to a key that is not the one this machine pinned. A silent escrow is a
-  backdoor by shape even when it is legitimate by intent, and this one is not silent.
-
-  A recovery re-keys the vault it opened — the point is that its owner is gone — and is written
-  into a record every officer can read.
-
-### Added
-
-- **A printable recovery code — the third way into a vault.** Until now a vault had two openers and
-  both lived with one person: the PIN in a head, the security key in a pocket. Lose both and the
-  data is gone, which is correct against an attacker and a disaster for the owner. *Set Up Recovery
-  Code…* mints `RC1-XXXXX-…` — 30 symbols of Crockford Base32, **150 bits exactly**, with a
-  checksum that names a mistyped character locally instead of letting it arrive as "wrong code" —
-  and wraps the vault's master key under it, beside the PIN and every registered key. The page that
-  shows it has a Print button and **no way to copy it**: a clipboard is read by clipboard managers,
-  sync tools and screenshot pipelines, and this is the factor that has to outlive the laptop. It is
-  shown once, stored nowhere, and generating a new one retires the old printout.
-
-  *Unlock Vault (Recovery Code)…* is a command of its own rather than an option in the unlock
-  picker, and that is the design rather than an oversight: in the case this exists for, the vault
-  still *has* a PIN wrap and key wraps — it is their holder who no longer has the PIN or the key —
-  so no automatic branch would ever reach the code. Listing paper beside the daily factors would
-  also teach people to reach for the paper. After it opens the vault it offers a new PIN
-  immediately, and that costs no second gesture from someone who has no other factor left to give.
-
-### Fixed
-
-- **A security review of corporate recovery, and the seven things it found.** The cryptography
-  itself came through clean — the field arithmetic was checked exhaustively, the secret sharing's
-  secrecy measured, no key or nonce reuse, no weak randomness. Every defect was in the wiring
-  around it, and two mattered enough to say plainly: the feature's central defence (pinning the
-  organisation's recovery key, so a substituted one is refused rather than trusted) existed in the
-  source and was never called, and the break-glass session key was taken from the server on trust,
-  so a compromised server could have collected a quorum's shares and rebuilt the organisation's
-  key. Both are closed, along with five others: a key could be published for a ceremony that never
-  happened, a recovery never checked the vault it opened belonged to the person it authorised, an
-  accepted share took its shape from the server's plaintext instead of the sealed copy, one
-  malformed contribution could abort a recovery that had a real quorum in it, and reconstructed key
-  material survived every failure path instead of being wiped.
-
-- **Removing your last security key retired the printed recovery code without saying so.** The
-  removal re-keys the vault — that is the whole point, so the removed key stops opening future
-  copies — and a re-key mints a fresh master key. A registered recovery code cannot come along:
-  re-wrapping the new master under that code would need the code, and it lives on paper and
-  nowhere else. So the code was correctly discarded and nothing said a word. The vault stayed
-  openable, nothing failed, and the only thing that broke was the owner's belief that the page in
-  their drawer still worked — which they would have discovered on the one day it mattered. The
-  removal now warns **before** it happens, and offers a fresh code to print immediately after.
-  Master-key rotation also moved into one place (`vaultRekey.ts`) instead of being inlined in the
-  two branches that had already drifted apart in what they carried over.
-
-- **A vault whose only non-PIN opener was a recovery code was misfiled by "Snapshot Vault".** The
-  backup write path picks its mode by what is already in the file, and asked "is there a security
-  key wrap" — written when a security key was the only other kind there was. A vault holding a PIN
-  and a printed code answered no, so it was written as a self-contained PIN backup, and that path
-  replaces the wraps wholesale: the printed code's slot would have been destroyed with nothing
-  failing and nothing warning. The question is now "is there any wrap that is not the PIN", so the
-  next kind added fails safe without anyone having to remember this code exists. Found while
-  building the feature above, fixed with the failing test written first.
-
-- **The remote install downloaded the script and then closed the pipe it arrived on.** The command
-  was `curl … | sh < /dev/null`: the redirection wins over the pipe, so the shell read an empty
-  stdin — which is where the *script* was arriving — executed nothing, exited, and curl died
-  writing into a closed pipe (`curl: (23) Failure writing output to destination`). Both
-  requirements were real and they collided on one file descriptor: the installer must reach the
-  shell, and the shell must be unable to wait for input, because `sudo` over a non-interactive
-  `ssh` waits forever otherwise. A file separates them — the script is downloaded, run from the
-  filesystem with stdin closed, and removed unconditionally afterwards. The test that should have
-  caught this asserted `< /dev/null` was *present*, which is how an assertion can be confident and
-  be about the wrong property; it now checks that the script does not arrive on stdin **and** that
-  stdin is closed, as two separate things. Found on a live host, which is the only place it could
-  show.
-
-### Added
-
-- **Install `creds` on a remote host from the entity's own context menu.** The bridge asks a person
-  to run `creds` on a machine that may never have had it, and until now the honest answer to "so
-  how does it get there" was to build it and copy it by hand. *Install `creds` on the Host…* uses
-  the connection the entry already describes: one probe (does it have `creds`, what architecture,
-  what OS, can it download at all), a confirmation showing the **exact command** that will run —
-  this puts a binary on a machine that is not yours — then the published installer, with progress
-  and the resulting path. Three things are deliberate. It cannot hang: the command runs with stdin
-  closed and `install.sh` uses `sudo -n` where there is no terminal, because a plain `sudo` over a
-  non-interactive `ssh` waits for a password nobody can type — the same shape as the bridge's
-  missing `BatchMode`. It does not believe the exit code: `curl … | sh` reports the *shell's*
-  status, so a 404 body fed to `sh` exits 0 having done nothing, and success is read from the
-  installer's own line instead. And it resolves the credential through the shared path, so it works
-  for a password entry and not only a key one — the distinction that made the bridge quietly
-  useless for exactly the hosts it existed for.
-
-### Fixed
-
-- **A form emptied itself whenever you left its tab.** Press `+`, type a name, go and open a file to
-  look up the password you were about to paste, come back — and every field is blank. It reads as
-  the form clearing itself on focus change, and nothing in the extension ever ran: a webview panel
-  created without `retainContextWhenHidden` has its page DESTROYED by VS Code the moment its tab
-  goes to the background of its editor group, and rebuilt from the options it was opened with on the
-  way back. Both the entity form and the folder form did this. They now keep their contents, from
-  one shared options object so the two cannot drift apart on it again. The state is deliberately NOT
-  persisted through VS Code's webview `setState`, which would write it to disk: these inputs hold
-  plaintext passwords and private keys, and a vault that never lets a server see plaintext does not
-  leave it in workspace storage to keep a form tidy. The trade this makes is that a typed-in secret
-  now lives in the page until the tab closes rather than dying when it is hidden — so locking the
-  vaults closes any open form, and says that it did, because auto-lock measures idle time against
-  vault activity and typing into a webview is not vault activity.
-
-- **The Remote Bridge could not authenticate, and said it was open anyway.** Four defects with one
-  symptom, found on a live password-authenticated host. The bridge resolved one credential kind of
-  four — a stored key — and passed `undefined` for a key file, a password and no-credential-at-all,
-  so the entity that needed it most got an `ssh` with nothing to authenticate with. Its argv also
-  set no `BatchMode`, and that is what turned a refusal into a hang: `ssh` waited at a password
-  prompt on a pipe, forever, with a live process and an established connection. The socket check
-  that would have caught it collapsed "no socket" and "this host has no `stat`" into one word and
-  wrote the result to an info log — twice, before anyone noticed. And the window announced
-  `Bridge open` before any of that had been checked. The credential resolution now lives in one
-  place (`sshExecAuth.ts`) shared with the agent exec path, the bridge argv carries the same
-  `BatchMode` / `NumberOfPasswordPrompts` pairing an exec does, an absent socket is reported to the
-  person as the bridge being down and names authentication as the cause, and a structural test
-  fails if anything that spawns a non-interactive `ssh` resolves a credential by hand again.
-
-- **The Remote Bridge setup block did not say which machine it belongs on.** The block is safe to
-  paste — only the `export` runs, everything else is a comment behind `#` — but the instruction
-  saying to paste it *on the remote host* lived in the notification beside the button, and that
-  notification is gone the moment the button is used. What survives the copy is six lines and a
-  cursor in whatever terminal is in front of the person; on Windows that is PowerShell, which
-  answers `export: The term 'export' is not recognized as a name of a cmdlet`. The block now opens
-  by naming the destination entity and saying that pasting it locally achieves nothing, both as
-  `#` comments — a comment in PowerShell and in POSIX sh alike, so the wrong shell shows the answer
-  rather than only an error about a word it does not know.
+## [0.77.0] — 2026-08-27
 
 ### Security
 
@@ -264,7 +120,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   is passed through untouched. `vpnCommand.ts` had been sanitising its own name for this reason
   since it was written; the other four sites had not.
 
-
 - **A caller with no token could make the window raise unbounded consent dialogs.** The CLI alias
   route (`creds ssh prod-db`) carries only a NAME, and names are not secret — so the consent modal
   is the whole of its authorization, which makes the RATE of modals a security property rather
@@ -275,6 +130,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   has still consumed the window. Token calls are deliberately not throttled: a caller holding a
   real token was already consented by a human who chose to, and punishing them for a local
   process's behaviour would turn a defence into an outage.
+
 - **A `creds` token never falls back to a discovered window.** The endpoint files that let a
   terminal find a window by name are readable — and forgeable — by anything with write access to
   the storage folder, and the health probe only proves the far end claims our service name, which
@@ -282,8 +138,114 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   test now fails the moment somebody adds a helpful fallback that would deliver a bearer secret to
   whoever wrote the file.
 
+- **The Depends-on picker had the same `</script>` break-out, in new code.** The picker's
+  browser program interpolates the folder list, the entity names inside it, the colours in use
+  and the saved rows into the entity form's one `<script>` element — with raw `JSON.stringify`,
+  which leaves `<` untouched. A folder or entity named with that sequence closed the script
+  early and the rest of the form's code was parsed as markup.
+
+  Reachable exactly as the first one was: those names come from a **synced** vault, a colleague's
+  shared entry, or a restored backup.
+
+  Fixed the same way, and this time the cause is fixed too. `webauthnPrf.ts` also carried its
+  own hand-rolled copy of the escape — correct, but a duplicate sitting one import away from the
+  shared one — and now uses `jsonForScript` like everything else. A new test
+  (`scriptInterpolation.test.ts`) scans the whole source tree and **fails, naming the file and
+  line**, on any `${JSON.stringify(…)}` interpolated into a template literal that is not on a
+  short list of named, justified exceptions. This defect had been written three times by three
+  different hands; it is now a red test rather than something a reader has to notice.
+
+- **A stored value containing `</script>` could break out of the entity form's page script.**
+  The form embeds three lists — command arguments, script variables and port forwards — into
+  its inline `<script>` as JSON. `JSON.stringify` escapes quotes and backslashes and leaves
+  `<` alone, but an HTML parser ends a script element at `</script>` wherever it appears,
+  string literal included. A value carrying that sequence therefore closed the script early
+  and the rest of the form's own code was parsed as markup.
+
+  These values arrive from a **synced** vault — a colleague's shared entity, or a restored
+  backup — so this was never limited to text you typed yourself. The page's CSP
+  (`script-src 'nonce-…'`) stopped an injected `onerror` from running, but `style-src` is
+  `'unsafe-inline'`, so an injected element could still cover the form; and either way the
+  form stopped working, because half its script had become text.
+
+  Every `<` in those literals is now escaped as `\u003c` — still valid JSON, and it closes
+  `<!--` at the same time. The escaper (`jsonForScript`) sits beside the shared HTML escaper,
+  and all three places that interpolate into a page script now go through it: `webauthnPrf`
+  was already doing this inline, and the entity viewer was safe only because the value it
+  passes is a constant icon — safe by content rather than by construction. Found by a test
+  written while covering the module, and the test fails against the unfixed code.
+
+- **Vault format v4 — roll the extension out to every machine before any of them syncs.**
+  A v4 file is written the next time a vault is saved, and a build older than this one
+  cannot read it (*"Unsupported backup version: 4"*). Reading v3 and v2 keeps working
+  forever, so no vault has to be converted by hand — but one updated laptop syncing to a
+  shared folder locks out every colleague still on 0.58.x, exactly as the v3 step did.
+
+  What v4 changes: **the envelope header is now bound to the encrypted payload itself.**
+  The header (format, version, KDF and the owning account) is plaintext, and until now the
+  only thing protecting it was a separate signature — a check the code had to *remember* to
+  run. Forgetting it is not hypothetical: it is precisely the MAC-healing defect fixed on
+  2026-08-25, where a tampered file was decrypted, merged and re-signed, and the fresh valid
+  signature made the tampering look legitimate. Binding the header as AEAD associated data
+  turns that from a branch into a property: on a shared folder, a file whose `account` has
+  been rewritten to name someone else now fails to decrypt at all, in the cipher, whatever
+  any caller remembered to check. The signature is still written, because it lets a reader
+  spot tampering without unwrapping the master key.
+
+  Two things are deliberately **not** bound, and both are load-bearing: the unlock **wraps**,
+  because adding or removing a security key rewrites them around the same master key and must
+  never re-encrypt the payload; and **shares**, because colleagues legitimately append those
+  to a folder envelope. Binding either would turn an ordinary action into apparent tampering.
+
 ### Added
 
+- **Corporate recovery — a quorum of colleagues can open a vault whose owner is gone.** When the
+  operator of a Cred Vault Server names recovery officers (at least three, any two of them acting
+  together by default), every vault on that server also seals its key so that quorum can open it.
+  The organisation's recovery key is split with Shamir's scheme at setup and then destroyed: no
+  single person holds it, the server never sees it, and each officer's share lives sealed under
+  their own PIN or YubiKey in their own vault.
+
+  **You are told.** Enrolment happens automatically and without asking, which is exactly why the
+  extension is obliged to say so: a notice the first time, a *Corporate Recovery…* page listing the
+  officers, the key fingerprint and every recovery that has ever happened on that server, and a
+  refusal to seal anything to a key that is not the one this machine pinned. A silent escrow is a
+  backdoor by shape even when it is legitimate by intent, and this one is not silent.
+
+  A recovery re-keys the vault it opened — the point is that its owner is gone — and is written
+  into a record every officer can read.
+
+- **A printable recovery code — the third way into a vault.** Until now a vault had two openers and
+  both lived with one person: the PIN in a head, the security key in a pocket. Lose both and the
+  data is gone, which is correct against an attacker and a disaster for the owner. *Set Up Recovery
+  Code…* mints `RC1-XXXXX-…` — 30 symbols of Crockford Base32, **150 bits exactly**, with a
+  checksum that names a mistyped character locally instead of letting it arrive as "wrong code" —
+  and wraps the vault's master key under it, beside the PIN and every registered key. The page that
+  shows it has a Print button and **no way to copy it**: a clipboard is read by clipboard managers,
+  sync tools and screenshot pipelines, and this is the factor that has to outlive the laptop. It is
+  shown once, stored nowhere, and generating a new one retires the old printout.
+
+  *Unlock Vault (Recovery Code)…* is a command of its own rather than an option in the unlock
+  picker, and that is the design rather than an oversight: in the case this exists for, the vault
+  still *has* a PIN wrap and key wraps — it is their holder who no longer has the PIN or the key —
+  so no automatic branch would ever reach the code. Listing paper beside the daily factors would
+  also teach people to reach for the paper. After it opens the vault it offers a new PIN
+  immediately, and that costs no second gesture from someone who has no other factor left to give.
+
+- **Install `creds` on a remote host from the entity's own context menu.** The bridge asks a person
+  to run `creds` on a machine that may never have had it, and until now the honest answer to "so
+  how does it get there" was to build it and copy it by hand. *Install `creds` on the Host…* uses
+  the connection the entry already describes: one probe (does it have `creds`, what architecture,
+  what OS, can it download at all), a confirmation showing the **exact command** that will run —
+  this puts a binary on a machine that is not yours — then the published installer, with progress
+  and the resulting path. Three things are deliberate. It cannot hang: the command runs with stdin
+  closed and `install.sh` uses `sudo -n` where there is no terminal, because a plain `sudo` over a
+  non-interactive `ssh` waits for a password nobody can type — the same shape as the bridge's
+  missing `BatchMode`. It does not believe the exit code: `curl … | sh` reports the *shell's*
+  status, so a 404 body fed to `sh` exits 0 having done nothing, and success is read from the
+  installer's own line instead. And it resolves the credential through the shared path, so it works
+  for a password entry and not only a key one — the distinction that made the bridge quietly
+  useless for exactly the hosts it existed for.
 
 - **You can take back a share nobody has accepted yet** — `CredsForDevs: Withdraw a Share You
   Sent…`. Until now this was impossible rather than merely missing: an inbox on the vault server
@@ -355,117 +317,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   could only arrive if something formatted one in deliberately. A test drives the real failure
   messages against a vault whose every secret is a distinctive marker and greps the output for
   each of them.
-
-### Security
-
-- **The Depends-on picker had the same `</script>` break-out, in new code.** The picker's
-  browser program interpolates the folder list, the entity names inside it, the colours in use
-  and the saved rows into the entity form's one `<script>` element — with raw `JSON.stringify`,
-  which leaves `<` untouched. A folder or entity named with that sequence closed the script
-  early and the rest of the form's code was parsed as markup.
-
-  Reachable exactly as the first one was: those names come from a **synced** vault, a colleague's
-  shared entry, or a restored backup.
-
-  Fixed the same way, and this time the cause is fixed too. `webauthnPrf.ts` also carried its
-  own hand-rolled copy of the escape — correct, but a duplicate sitting one import away from the
-  shared one — and now uses `jsonForScript` like everything else. A new test
-  (`scriptInterpolation.test.ts`) scans the whole source tree and **fails, naming the file and
-  line**, on any `${JSON.stringify(…)}` interpolated into a template literal that is not on a
-  short list of named, justified exceptions. This defect had been written three times by three
-  different hands; it is now a red test rather than something a reader has to notice.
-
-
-- **A stored value containing `</script>` could break out of the entity form's page script.**
-  The form embeds three lists — command arguments, script variables and port forwards — into
-  its inline `<script>` as JSON. `JSON.stringify` escapes quotes and backslashes and leaves
-  `<` alone, but an HTML parser ends a script element at `</script>` wherever it appears,
-  string literal included. A value carrying that sequence therefore closed the script early
-  and the rest of the form's own code was parsed as markup.
-
-  These values arrive from a **synced** vault — a colleague's shared entity, or a restored
-  backup — so this was never limited to text you typed yourself. The page's CSP
-  (`script-src 'nonce-…'`) stopped an injected `onerror` from running, but `style-src` is
-  `'unsafe-inline'`, so an injected element could still cover the form; and either way the
-  form stopped working, because half its script had become text.
-
-  Every `<` in those literals is now escaped as `\u003c` — still valid JSON, and it closes
-  `<!--` at the same time. The escaper (`jsonForScript`) sits beside the shared HTML escaper,
-  and all three places that interpolate into a page script now go through it: `webauthnPrf`
-  was already doing this inline, and the entity viewer was safe only because the value it
-  passes is a constant icon — safe by content rather than by construction. Found by a test
-  written while covering the module, and the test fails against the unfixed code.
-
-- **Vault format v4 — roll the extension out to every machine before any of them syncs.**
-  A v4 file is written the next time a vault is saved, and a build older than this one
-  cannot read it (*"Unsupported backup version: 4"*). Reading v3 and v2 keeps working
-  forever, so no vault has to be converted by hand — but one updated laptop syncing to a
-  shared folder locks out every colleague still on 0.58.x, exactly as the v3 step did.
-
-  What v4 changes: **the envelope header is now bound to the encrypted payload itself.**
-  The header (format, version, KDF and the owning account) is plaintext, and until now the
-  only thing protecting it was a separate signature — a check the code had to *remember* to
-  run. Forgetting it is not hypothetical: it is precisely the MAC-healing defect fixed on
-  2026-08-25, where a tampered file was decrypted, merged and re-signed, and the fresh valid
-  signature made the tampering look legitimate. Binding the header as AEAD associated data
-  turns that from a branch into a property: on a shared folder, a file whose `account` has
-  been rewritten to name someone else now fails to decrypt at all, in the cipher, whatever
-  any caller remembered to check. The signature is still written, because it lets a reader
-  spot tampering without unwrapping the master key.
-
-  Two things are deliberately **not** bound, and both are load-bearing: the unlock **wraps**,
-  because adding or removing a security key rewrites them around the same master key and must
-  never re-encrypt the payload; and **shares**, because colleagues legitimately append those
-  to a folder envelope. Binding either would turn an ordinary action into apparent tampering.
-
-### Fixed
-
-- **Agent forwarding was a flag with nothing behind it.** The *Forward the SSH agent* checkbox
-  put `-A` into both command builders, and on Windows it forwarded nothing — for two independent
-  reasons, neither of which shows an error. The extension launched the `ssh` first on `PATH`,
-  which wherever Git for Windows is installed is an MSYS build that **cannot open a named pipe**
-  (`Bad file descriptor`) — and the agent listens on a named pipe on Windows. And `SSH_AUTH_SOCK`
-  was published through VS Code's environment collection, which reaches **terminals**; a process
-  the extension spawns never saw it.
-
-  An `ssh` that cannot find an agent does not fail; it authenticates another way and forwards
-  nothing. The unit test asserting `-A` was in the argv stayed green the whole time, because a
-  sent flag says nothing about the receiver.
-
-  Both halves are now decided in one place and applied **only when the entity asks to forward** —
-  nobody is moved off their own client, and nobody's connection quietly acquires this agent as its
-  **authentication** agent when it never asked. A Windows install without the built-in client
-  falls back rather than failing to spawn. Asked for with no key loaded, the audit channel says
-  so. The check that has teeth drives the real client against the real agent, and asserts the
-  negative half too — that the client `PATH` would have given cannot reach it.
-
-- **The context menu keeps up with the keychain.** Three ways the tree's cached per-entity
-  flags could go stale, all found by an adversarial review of the 0.57 work and each now a
-  test. A password saved in a **second window** of the same profile left this window's
-  *Copy Password* missing until an unrelated edit — the extension now listens for the
-  keychain change. Two flag refreshes running at once **raced**, and the walk that finished
-  last won, so a slow one begun before an edit could put pre-edit flags back; refreshes are
-  serialized and coalesced. And the revision cache was keyed by entity id alone while the
-  password cache was keyed by account and id, so **two profiles holding the same entity id**
-  (what a restore produces) showed one profile's versions under the other's row.
-- **A share that fails to save no longer blames your PIN.** A storage failure part-way through
-  importing an accepted share was reported as *"does not decrypt with that PIN"*, sending the
-  reader back to retype a PIN that was correct while the real error was never shown.
-
-### Internal
-
-- **The size and complexity rules are now a linter, and the 3,100-line `activate()` began
-  its diet** (audit A2 + A1). `npm run lint` enforces max-lines 800 / max-lines-per-function
-  50 / complexity 4 / no-console in CI — pre-existing debt carries explicit
-  `eslint-disable` markers, so a lint failure always means a NEW violation. Four subsystems
-  moved out of `extension.ts` (3,106 → 2,594 lines), each with its own tests: the sharing
-  conversation (`shareInbox.ts`), the security-key re-wrap/re-key arithmetic
-  (`securityKeyOps.ts`), the viewers' shared secret ladder and db display
-  (`viewerOptions.ts`) with the before-overwrite snapshot (`revisionSnapshot.ts`), and the
-  error-to-sentence rule (`describeError.ts`) plus `StorageManager.exportSecretsFor`.
-  No behaviour change intended anywhere; the suite grew from 635 to 659 tests and runs
-  green on Windows and WSL.
-### Added
 
 - **Generate a secret instead of inventing one.** The form's Secret section makes
   passwords and passphrases; the SSH key section makes an Ed25519 pair. Strength is
@@ -565,6 +416,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   hole on that side. The broker's `env` verb stays, now documented as the weaker option
   rather than the only one.
 
+- **Share with Claude Code…** — an AI coding agent can now use an SSH credential without ever
+  receiving it. Right-click an SSH entity, and the clipboard gets a paste-ready snippet: a grant
+  token and the two commands an agent runs. It can execute a remote command (stdout, stderr and the
+  exit code come back) or ask VS Code to open the interactive terminal for you.
+
+  The agent never sees the password or the key. It has a token, and the token buys one thing: this
+  window, which already holds the credential, runs `ssh` on its behalf — the password riding that
+  child's environment through the same askpass mechanism Connect has used since 0.42.0. There is no
+  endpoint that returns a secret, and no response shape with a field one could travel in.
+
+  The token carries the broker's own loopback port, so the CLI reaches the exact window that minted
+  it — no discovery file to go stale, no confusion with a second window. It lives in memory only:
+  closing or reloading the window ends it. The first call asks you to Allow or Deny and shows the
+  command about to run; after that calls are silent, but every one of them — allowed, refused or
+  failed — is a line in the new **CredsForDevs: Agent Access** output panel. Only your Allow counts
+  as you being present, so a long agent run never postpones auto-lock.
+
+  Bounded on purpose: 256 KB of output per stream, 30 s per command (raisable to 120 s), 8 at a
+  time, and every child killed when the window goes.
+
 ### Changed
 
 - **Vault format v3 — and every machine must be updated before any of them syncs.**
@@ -592,8 +463,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     key, no PIN, no security key needed. Demonstrated before and after:
     v2 answered *ok* to a swapped payload; v3 answers *bad*.
 
-### Changed
-
 - **The listing describes the whole extension again.** It had drifted: terminal-command entries,
   environment-variable bindings, dated snapshots, starting and stopping a VPN, attachments,
   auto-lock and `Clone…` had all shipped without ever reaching the README, and the settings table
@@ -605,27 +474,154 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   has no security or productivity category, and filing a credential manager under "Snippets" or
   "AI" to appear in a browsable list is mis-filing.
 
-### Added
+### Fixed
 
-- **Share with Claude Code…** — an AI coding agent can now use an SSH credential without ever
-  receiving it. Right-click an SSH entity, and the clipboard gets a paste-ready snippet: a grant
-  token and the two commands an agent runs. It can execute a remote command (stdout, stderr and the
-  exit code come back) or ask VS Code to open the interactive terminal for you.
+- **The entry form now says which entry it is editing.** The heading read *Edit entity* over forty
+  fields; two windows open on two entries of the same kind were told apart only by the tab title,
+  which is the first thing a wide editor group truncates. It now names the entry and shows its kind.
 
-  The agent never sees the password or the key. It has a token, and the token buys one thing: this
-  window, which already holds the credential, runs `ssh` on its behalf — the password riding that
-  child's environment through the same askpass mechanism Connect has used since 0.42.0. There is no
-  endpoint that returns a secret, and no response shape with a field one could travel in.
+- **A one-time code could still be missed when the metadata and the keychain disagreed.** The
+  question about sharing a seed was raised from the plaintext "this entry has one" flag, so an entry
+  whose seed was stored but whose flag never got set was never asked about — and a question that is
+  never asked is a silent *no*. The flag is now believed where it vouches for a seed and checked
+  against the keychain where it does not. The mirror case is closed too: a flag with nothing behind
+  it can no longer travel as a claim, because what is sent is derived from the seed actually read.
 
-  The token carries the broker's own loopback port, so the CLI reaches the exact window that minted
-  it — no discovery file to go stale, no confusion with a second window. It lives in memory only:
-  closing or reloading the window ends it. The first call asks you to Allow or Deny and shows the
-  command about to run; after that calls are silent, but every one of them — allowed, refused or
-  failed — is a line in the new **CredsForDevs: Agent Access** output panel. Only your Allow counts
-  as you being present, so a long agent run never postpones auto-lock.
+- **A shared entry left its one-time code behind — and claimed it had not.** The sending half never
+  read the TOTP seed, while the receiving half had always been ready to store one, so sharing an
+  entry with a second factor delivered everything except the second factor. Worse, the "this entry
+  has a one-time code" flag travelled regardless: the recipient got a row offering *Copy One-Time
+  Code* on an entry that could not produce one. Both halves are fixed together, and the seed now
+  travels only when you tick the box (above); when you do not, it is not even read.
 
-  Bounded on purpose: 256 KB of output per stream, 30 s per command (raisable to 120 s), 8 at a
-  time, and every child killed when the window goes.
+- **The Remote Bridge menu item said "Open" while a bridge was open.** The command toggled; the
+  title did not. Somebody looking for *Close* found nothing, and had to click *Open Remote Bridge…*
+  on an already-open bridge to discover the choice hidden behind it — which is the project's own
+  rule 8 in miniature: an action that changes state must show the state it is in. In a tree the only
+  place that can live is the row's `contextValue`, so an SSH row now carries `:bridged` or
+  `:nobridge` and exactly one of *Open Remote Bridge…* / *Close Remote Bridge* is offered. Two
+  tokens rather than one, following the `:agenton` / `:agentoff` pair already here: a single flag
+  would leave the open item needing "ssh AND NOT bridged", which shows **both** items on any row
+  whose value is stale. The tree refreshes on open, on close, and — the case that matters — when a
+  bridge ends by itself, so a dropped network takes the row back to *Open* instead of leaving
+  *Close* offered for something that no longer exists.
+
+- **A security review of corporate recovery, and the seven things it found.** The cryptography
+  itself came through clean — the field arithmetic was checked exhaustively, the secret sharing's
+  secrecy measured, no key or nonce reuse, no weak randomness. Every defect was in the wiring
+  around it, and two mattered enough to say plainly: the feature's central defence (pinning the
+  organisation's recovery key, so a substituted one is refused rather than trusted) existed in the
+  source and was never called, and the break-glass session key was taken from the server on trust,
+  so a compromised server could have collected a quorum's shares and rebuilt the organisation's
+  key. Both are closed, along with five others: a key could be published for a ceremony that never
+  happened, a recovery never checked the vault it opened belonged to the person it authorised, an
+  accepted share took its shape from the server's plaintext instead of the sealed copy, one
+  malformed contribution could abort a recovery that had a real quorum in it, and reconstructed key
+  material survived every failure path instead of being wiped.
+
+- **Removing your last security key retired the printed recovery code without saying so.** The
+  removal re-keys the vault — that is the whole point, so the removed key stops opening future
+  copies — and a re-key mints a fresh master key. A registered recovery code cannot come along:
+  re-wrapping the new master under that code would need the code, and it lives on paper and
+  nowhere else. So the code was correctly discarded and nothing said a word. The vault stayed
+  openable, nothing failed, and the only thing that broke was the owner's belief that the page in
+  their drawer still worked — which they would have discovered on the one day it mattered. The
+  removal now warns **before** it happens, and offers a fresh code to print immediately after.
+  Master-key rotation also moved into one place (`vaultRekey.ts`) instead of being inlined in the
+  two branches that had already drifted apart in what they carried over.
+
+- **A vault whose only non-PIN opener was a recovery code was misfiled by "Snapshot Vault".** The
+  backup write path picks its mode by what is already in the file, and asked "is there a security
+  key wrap" — written when a security key was the only other kind there was. A vault holding a PIN
+  and a printed code answered no, so it was written as a self-contained PIN backup, and that path
+  replaces the wraps wholesale: the printed code's slot would have been destroyed with nothing
+  failing and nothing warning. The question is now "is there any wrap that is not the PIN", so the
+  next kind added fails safe without anyone having to remember this code exists. Found while
+  building the feature above, fixed with the failing test written first.
+
+- **The remote install downloaded the script and then closed the pipe it arrived on.** The command
+  was `curl … | sh < /dev/null`: the redirection wins over the pipe, so the shell read an empty
+  stdin — which is where the *script* was arriving — executed nothing, exited, and curl died
+  writing into a closed pipe (`curl: (23) Failure writing output to destination`). Both
+  requirements were real and they collided on one file descriptor: the installer must reach the
+  shell, and the shell must be unable to wait for input, because `sudo` over a non-interactive
+  `ssh` waits forever otherwise. A file separates them — the script is downloaded, run from the
+  filesystem with stdin closed, and removed unconditionally afterwards. The test that should have
+  caught this asserted `< /dev/null` was *present*, which is how an assertion can be confident and
+  be about the wrong property; it now checks that the script does not arrive on stdin **and** that
+  stdin is closed, as two separate things. Found on a live host, which is the only place it could
+  show.
+
+- **A form emptied itself whenever you left its tab.** Press `+`, type a name, go and open a file to
+  look up the password you were about to paste, come back — and every field is blank. It reads as
+  the form clearing itself on focus change, and nothing in the extension ever ran: a webview panel
+  created without `retainContextWhenHidden` has its page DESTROYED by VS Code the moment its tab
+  goes to the background of its editor group, and rebuilt from the options it was opened with on the
+  way back. Both the entity form and the folder form did this. They now keep their contents, from
+  one shared options object so the two cannot drift apart on it again. The state is deliberately NOT
+  persisted through VS Code's webview `setState`, which would write it to disk: these inputs hold
+  plaintext passwords and private keys, and a vault that never lets a server see plaintext does not
+  leave it in workspace storage to keep a form tidy. The trade this makes is that a typed-in secret
+  now lives in the page until the tab closes rather than dying when it is hidden — so locking the
+  vaults closes any open form, and says that it did, because auto-lock measures idle time against
+  vault activity and typing into a webview is not vault activity.
+
+- **The Remote Bridge could not authenticate, and said it was open anyway.** Four defects with one
+  symptom, found on a live password-authenticated host. The bridge resolved one credential kind of
+  four — a stored key — and passed `undefined` for a key file, a password and no-credential-at-all,
+  so the entity that needed it most got an `ssh` with nothing to authenticate with. Its argv also
+  set no `BatchMode`, and that is what turned a refusal into a hang: `ssh` waited at a password
+  prompt on a pipe, forever, with a live process and an established connection. The socket check
+  that would have caught it collapsed "no socket" and "this host has no `stat`" into one word and
+  wrote the result to an info log — twice, before anyone noticed. And the window announced
+  `Bridge open` before any of that had been checked. The credential resolution now lives in one
+  place (`sshExecAuth.ts`) shared with the agent exec path, the bridge argv carries the same
+  `BatchMode` / `NumberOfPasswordPrompts` pairing an exec does, an absent socket is reported to the
+  person as the bridge being down and names authentication as the cause, and a structural test
+  fails if anything that spawns a non-interactive `ssh` resolves a credential by hand again.
+
+- **The Remote Bridge setup block did not say which machine it belongs on.** The block is safe to
+  paste — only the `export` runs, everything else is a comment behind `#` — but the instruction
+  saying to paste it *on the remote host* lived in the notification beside the button, and that
+  notification is gone the moment the button is used. What survives the copy is six lines and a
+  cursor in whatever terminal is in front of the person; on Windows that is PowerShell, which
+  answers `export: The term 'export' is not recognized as a name of a cmdlet`. The block now opens
+  by naming the destination entity and saying that pasting it locally achieves nothing, both as
+  `#` comments — a comment in PowerShell and in POSIX sh alike, so the wrong shell shows the answer
+  rather than only an error about a word it does not know.
+
+- **Agent forwarding was a flag with nothing behind it.** The *Forward the SSH agent* checkbox
+  put `-A` into both command builders, and on Windows it forwarded nothing — for two independent
+  reasons, neither of which shows an error. The extension launched the `ssh` first on `PATH`,
+  which wherever Git for Windows is installed is an MSYS build that **cannot open a named pipe**
+  (`Bad file descriptor`) — and the agent listens on a named pipe on Windows. And `SSH_AUTH_SOCK`
+  was published through VS Code's environment collection, which reaches **terminals**; a process
+  the extension spawns never saw it.
+
+  An `ssh` that cannot find an agent does not fail; it authenticates another way and forwards
+  nothing. The unit test asserting `-A` was in the argv stayed green the whole time, because a
+  sent flag says nothing about the receiver.
+
+  Both halves are now decided in one place and applied **only when the entity asks to forward** —
+  nobody is moved off their own client, and nobody's connection quietly acquires this agent as its
+  **authentication** agent when it never asked. A Windows install without the built-in client
+  falls back rather than failing to spawn. Asked for with no key loaded, the audit channel says
+  so. The check that has teeth drives the real client against the real agent, and asserts the
+  negative half too — that the client `PATH` would have given cannot reach it.
+
+- **The context menu keeps up with the keychain.** Three ways the tree's cached per-entity
+  flags could go stale, all found by an adversarial review of the 0.57 work and each now a
+  test. A password saved in a **second window** of the same profile left this window's
+  *Copy Password* missing until an unrelated edit — the extension now listens for the
+  keychain change. Two flag refreshes running at once **raced**, and the walk that finished
+  last won, so a slow one begun before an edit could put pre-edit flags back; refreshes are
+  serialized and coalesced. And the revision cache was keyed by entity id alone while the
+  password cache was keyed by account and id, so **two profiles holding the same entity id**
+  (what a restore produces) showed one profile's versions under the other's row.
+
+- **A share that fails to save no longer blames your PIN.** A storage failure part-way through
+  importing an accepted share was reported as *"does not decrypt with that PIN"*, sending the
+  reader back to retype a PIN that was correct while the real error was never shown.
 
 ## [0.76.0] — 2026-08-27
 

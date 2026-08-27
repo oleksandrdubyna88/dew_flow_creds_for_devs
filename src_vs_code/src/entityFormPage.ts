@@ -1,7 +1,7 @@
 import * as crypto from 'node:crypto';
 import { normalizeTags } from './sshOptions';
 import { CONFIG_FORMATS, CONFIG_FORMAT_LABELS } from './configFormat';
-import { escapeHtml } from './webviewHtml';
+import { PAGE_MAX_WIDTH_PX, TWO_COLUMN_AT, escapeHtml } from './webviewHtml';
 import { formPageScript } from './entityFormScript';
 import { initialDependencyRows } from './depGraph';
 import { accessMask, normalizeMcpAccess } from './mcpAccess';
@@ -350,7 +350,8 @@ export function renderHtml(options: EntityFormOptions): string {
       content="default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${nonce}';">
 <style>
   body { font-family: var(--vscode-font-family); color: var(--vscode-foreground);
-         background: var(--vscode-editor-background); padding: 16px 24px; max-width: 1280px; }
+         background: var(--vscode-editor-background); padding: 16px 24px;
+         max-width: ${PAGE_MAX_WIDTH_PX}px; }
   h2 { margin: 0 0 12px; font-size: 1.2em; }
   /* The kind beside the name: two entries can share a name and be different things. */
   .kindChip { margin-left: 10px; font-size: .62em; letter-spacing: .08em;
@@ -378,7 +379,7 @@ export function renderHtml(options: EntityFormOptions): string {
      align-items: start, so the shorter column does not stretch to match the taller one.
      No backticks in here: one inside a CSS comment ends the template literal this page is. */
   .formGroups { display: grid; grid-template-columns: 1fr; gap: 0 24px; align-items: start; }
-  @media (min-width: 1000px) { .formGroups { grid-template-columns: 1fr 1fr; } }
+  @media (min-width: ${TWO_COLUMN_AT}px) { .formGroups { grid-template-columns: 1fr 1fr; } }
   .groupTitle { margin: 18px 0 8px; font-size: .95em; text-transform: uppercase;
                 letter-spacing: .08em; opacity: .6; }
   /* The legend keeps the default foreground on purpose - only the border carries the colour, so

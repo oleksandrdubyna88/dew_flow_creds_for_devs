@@ -33,6 +33,16 @@ const KEY_BYTES = 32;
  * password into the field gets told what it is not, instead of a failed read they have to guess
  * the cause of. It is also what lets a leak scanner recognise one of ours on sight.</p>
  */
+/**
+ * The environment variable the .NET provider reads when it is given no key explicitly.
+ *
+ * <p>Here rather than in `configAccess.ts` because that module imports `vscode` for its
+ * dialog and clipboard, and this is a string every page that explains the key has to name —
+ * including the read-only viewer, which is otherwise `vscode`-free and testable. Re-exported
+ * from `configAccess.ts` so no caller had to change.</p>
+ */
+export const CONFIG_KEY_ENV = 'CREDSFORDEVS_KEY';
+
 export const CONFIG_KEY_PREFIX = 'cfgk_';
 
 export function newConfigKey(): string {

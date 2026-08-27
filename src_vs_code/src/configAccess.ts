@@ -1,5 +1,13 @@
 import * as vscode from 'vscode';
-import { CONFIG_KEY_PREFIX, configKeyHash, describeConfigKey, newConfigKey } from './configKey';
+import {
+  CONFIG_KEY_ENV,
+  CONFIG_KEY_PREFIX,
+  configKeyHash,
+  describeConfigKey,
+  newConfigKey,
+} from './configKey';
+
+export { CONFIG_KEY_ENV } from './configKey';
 
 /**
  * Opening a config to code, and closing it again.
@@ -8,9 +16,6 @@ import { CONFIG_KEY_PREFIX, configKeyHash, describeConfigKey, newConfigKey } fro
  * imports no `vscode` and is a unit test. What is here is the dialog, the clipboard, and the one
  * sentence that has to be right — that this is the only time the key will be shown.</p>
  */
-
-/** The environment variable the .NET provider reads when it is given no key explicitly. */
-export const CONFIG_KEY_ENV = 'CREDSFORDEVS_KEY';
 
 export interface ConfigAccessDeps {
   readonly entityName: string;

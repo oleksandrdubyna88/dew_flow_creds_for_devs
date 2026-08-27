@@ -287,6 +287,12 @@ Two small drifts, one edit each, grouped because neither deserves its own sectio
 checks the *Currently open* table (which does match, 11 for 11) and not the promoted one. Worth
 naming: the check that exists is not the check people assume exists.
 
+**T6c.** `src_vs_code/CHANGELOG.md` stopped getting release sections: `[Unreleased]` is followed
+directly by `[0.76.0]`, so everything shipped in 0.77.0, 0.78.0, 0.78.1 and 0.79.0 sits under
+*Unreleased* while four release commits and four installed builds say otherwise. The fix is
+mechanical — cut the accumulated block into dated sections matching the release commits — and the
+lesson is T4's again: a record nothing checks is a record that drifts.
+
 **T6b.** [ЗАДАЧА_проверка_mcp_вручную.md](ЗАДАЧА_проверка_mcp_вручную.md) tells the tester to
 confirm version **0.76.0** in three places. The current version is 0.78.1, and two of the releases
 in between (0.77.0 config entities, 0.78.0 QR paste) touch surfaces the pass walks through. A manual
@@ -513,9 +519,11 @@ border. So "green border" will be a green row tint for five seconds; if that rea
 beside the dependency colours already in use, the fallback is the badge slot. Worth stating in the
 plan rather than discovering at review, and worth showing the owner before it is called done.
 
-**Where to fire it.** One helper, called from the two paths that place rows the user did not choose:
-share acceptance (`shareInbox.ts`) and import. Not from ordinary create/edit — a highlight that
-fires on everything highlights nothing.
+**Where to fire it.** One helper, called wherever a row APPEARS for the first time — the owner
+asked for creation too, and he is right that it is the same event from the reader's side:
+share acceptance (`shareInbox.ts`), import, and creating an entity or a folder. **Not on edit**,
+and that is the line: create places a row that was not there, edit changes one you are already
+looking at. A highlight that fires on everything highlights nothing.
 
 **Tests.** The timing and the set of highlighted ids are the pure part: a decoration is offered for
 an id after it is announced, and is gone once the window has elapsed; a second arrival during the
@@ -622,31 +630,285 @@ assertion for part 2: the reveal is requested after the clear, never before.
 
 ---
 
+### T16. The default folder set never learned about configs (DEFECT)
+
+**Symptom.** Create a project folder and it comes with db, vpn, ssh keys, ssh connections,
+passwords, terminal and scripts — and no **config**. The owner suspected the same hole for a
+brand-new user, and it is there: **one list feeds both**.
+
+`DEFAULT_FOLDERS` (`defaultFolders.ts:17-25`) has seven entries and no `config`, while `config` has
+been a first-class `FolderType`/`EntityKind` since 0.77.0. Both callers take that list verbatim:
+
+- `storageManager.ts:408` — the one-time seed for a brand-new, empty account;
+- `extension.ts:2263` — the sub-folders scaffolded inside a new `project` folder.
+
+So every account created since configs shipped, and every project folder ever made, is missing the
+folder for the feature the last release was about. The one-line addition fixes both at once, which
+is the payoff of the list having stayed single.
+
+**The half that a one-line fix does NOT cover, and it is the owner's own case.** Seeding is
+deliberately once-only and never re-runs — `shouldSeedDefaults` requires `nodeCount === 0 && !alreadySeeded`,
+and the comment says why in as many words: *"renaming or deleting the defaults is respected — they
+don't come back."* That rule is right and must not be weakened. It also means an existing account —
+the owner's — will still have no config folder after this fix, because it was seeded before configs
+existed.
+
+So there is a decision here, not just an edit:
+
+1. **New accounts and new project folders only** (the one-line change). Honest, cheap, and leaves
+   every existing account to make the folder by hand.
+2. **Back-fill, narrowly**: add a `config` folder to an account that has been seeded, has no folder
+   of type `config`, and has not deleted one. The third condition is the hard one — nothing records
+   a deleted default, so "never had it" and "did not want it" are indistinguishable today, and
+   guessing wrong re-creates a folder somebody removed. That is exactly the failure the once-only
+   rule exists to prevent.
+3. **Offer it instead of doing it**: when an account has config entries but no config folder, say
+   so once and let the person add it.
+
+Recommended: **1 now**, and 3 as a separate, small follow-up if the owner wants existing accounts
+served. 2 is the tempting one and the one that breaks a rule the code deliberately holds.
+
+**Also check while in there:** the `sortOrder` is the array index, so where `config` is inserted is
+where it appears. Next to `scripts` is the natural home — both are file-shaped entries.
+
+**Tests.** `defaultFolders.test.ts`: every `FolderType` that can hold entities has a default folder,
+written as a check over the type list rather than a literal count — a test asserting "seven folders"
+would have passed happily through this whole defect, and would fail for the wrong reason on the next
+kind. Plus: the project scaffold and the account seed produce the same set, since they share a list
+and a future change might not.
+
+
+---
+
+### T17. One highlighter, four surfaces, and none of them colours like an editor
+
+**Symptom, in the owner's four points.** (1) Everything that colours code must use **one**
+highlighter. (2) Different languages must actually look different — today a JSON script body
+renders essentially one colour, because the shared highlighter only marks comments, strings and
+a keyword list, and a JSON document is nearly all strings. (3) The bar is **how VS Code itself
+colours the same JSON** — keys distinct from values, numbers and booleans distinct from strings,
+punctuation quiet. (4) The *Read this from code* snippet panel has the same problem as the
+bodies.
+
+The four surfaces: the config *Contents* box in the form (`entityFormPage.ts:709` — a plain
+`<textarea>`, no colour at all), the script body in the form (`:684`, same), the viewer's code
+rows, and the snippet panel (`configCodePanel.ts` → `highlightSnippet`). The last two DO go
+through the one highlighter (`highlightScript`, `scriptRender.ts:80`) — point 1 is already the
+architecture — but that highlighter knows three token classes, so its output reads as one
+colour on exactly the format the owner is looking at.
+
+**Where.** The form's bodies are plain `<textarea>`s: `entityFormPage.ts:709-710` (`configBody`) and
+`:684-685` (`scriptBody`). The viewer's are `<pre class="code">` run through
+`highlightScript(text, language)` (`scriptRender.ts:80`). So the highlighter exists, is pure, and
+already knows the languages — the form simply never calls it, because a `<textarea>` cannot render
+markup at all.
+
+**This is the one item here that is not a small fix, and the plan should say so before anyone
+starts.** A textarea's content is text by definition. Colouring an editable box means one of:
+
+1. **The overlay technique** — a highlighted `<pre>` underneath and a transparent-text
+   `<textarea>` on top, with their scroll, font metrics, padding and wrapping kept in lockstep.
+   Standard, dependency-free, and reuses `highlightScript` as-is. It fails visibly when the two
+   layers disagree by a pixel, and it has to re-highlight on input (cheap: these bodies are small).
+2. **A `contenteditable` div** — real markup, but it takes over undo, paste, IME and selection,
+   and would need every one of those rebuilt. For a box people paste `appsettings.json` into,
+   losing paste fidelity is worse than losing colour.
+3. **An editor library** — CodeMirror or Monaco. Correct in every detail and out of the question:
+   this extension has **zero runtime dependencies** and the owner has twice chosen to keep it that
+   way (`jsqr` refused for the QR reader, `zxcvbn` refused for the PIN estimator).
+
+**Recommended: 1**, deliberately, with the trade written down. And a caveat worth agreeing before
+building: with the overlay, the *caret* is the textarea's own, so it stays correct — but any
+mismatch in `white-space`, `tab-size`, `word-break` or font between the two layers shows up as text
+drifting away from its colours as you type. Those four properties are the whole risk, and pinning
+them is most of the work.
+
+**The highlighter itself is the other half of the work.** Keeping ONE implementation
+(`highlightScript`) and teaching it enough token classes that languages differ: JSON keys versus
+string values, numbers, booleans/null, punctuation left quiet; comments and keywords as today for
+the shell-shaped languages. Map classes to VS Code's own theme tokens
+(`--vscode-symbolIcon-*` / the `editor` palette is not exposed to webviews — the honest route is
+a small set of CSS variables with sensible dark/light values, named after token kinds, so themes
+degrade gracefully). The format select's language key already rides along
+(`CONFIG_FORMATS` in `configFormat.ts`); a format without a rule set falls back to plain text
+**visibly the same as today**, never a half-coloured guess. And it stays dependency-free —
+`highlight.js` is the third library this repo would have refused.
+
+**Tests.** The pure half is the only testable half and it is worth having: for each offered format,
+the highlighted output re-escapes to the original text — colouring must never alter what would be
+saved. That is the guarantee that matters here, because the failure this design can actually cause
+is a body that looks right and saves wrong. The pixel alignment is a person's judgement and should
+be shown to the owner rather than asserted.
+
+
+---
+
+### T18. The snippet panel's copy button is a decoy (DEFECT, found by the owner 2026-08-27)
+
+**Symptom, in the owner's three points.** The copy button beside the *Read this from code* snippet
+(1) looks different from every other copy button on the page, (2) shows nothing on hover, and
+(3) **copies nothing when clicked.**
+
+**Root causes — three small ones, and the third is the real defect.**
+
+1. **A second icon.** `configCodePanel.ts:47-50` declares its own `COPY` SVG — a single-path
+   document glyph — under a comment that says *"Reuses the viewer's own icon so the two copy
+   buttons are the same button"*. It does not reuse it; it re-draws it, differently (the viewer's
+   `COPY_ICON` is the two-rect duplicate glyph). The comment describes the intent, the constant
+   contradicts it. Import the icon instead of copying it — reuse-first exists for exactly this.
+2. **The hover.** The markup does carry `title="Copy snippet"` (`configCodePanel.ts:40`), so the
+   silent hover the owner saw is worth a minute of checking rather than assuming — likely the
+   button's hit area versus its 14px icon, or the panel re-render replacing the hovered node.
+   Verify while fixing 1; if the title genuinely never shows, that is its own finding.
+3. **The click does nothing, by omission.** The button posts `{ type: 'copy', field: 'snippet' }`
+   like every other copy button — and the host's copy switch (`entityViewPanel.ts:85-140`) has no
+   `case 'snippet'`. The fall-through leaves `value` undefined, and the panel answers *"Nothing to
+   copy — the field is empty."* A button wired to a handler that never learned its name.
+
+**The fix for 3 has one subtlety worth stating.** What must land on the clipboard is the snippet
+**as currently shown** — the language and variant the person picked in the selects, which live in
+the webview. The host renders snippets through `snippetFor(language, variant, context)` already
+(`snippetAnswer`, `entityViewPage.ts:125`), so the copy message must carry the same
+`language|variant` payload the snippet-request message already carries, and the host re-derives the
+text. Copying the DEFAULT snippet while the user looks at Rust would be a worse bug than the dead
+button, because it would look fixed.
+
+**Tests.** RED first: the copy switch, given `field: 'snippet'` with a language and variant,
+resolves the same text `snippetFor` produces for them — fails today because the case does not
+exist. And the panel markup uses the shared `COPY_ICON`, asserted by identity (one constant, two
+call sites), not by comparing SVG strings.
+
+
+---
+
+### T19. The viewer shows a flat list where the form shows framed groups
+
+**Symptom.** The edit form wraps its fields in coloured, labelled frames — *General*, *Secret*,
+*Lifetime* — one colour per section, the same colour for that section on every kind. The viewer of
+the same entity is one flat run of rows: Agent access, Name, Config file, Created, Last changed,
+History, all visually equal. The owner wants the viewer grouped the same way, three frames:
+
+1. **the main fields** (name, the secret-shaped content, host/user/etc.),
+2. **dates and history** (Created, Last changed, History),
+3. **the right-hand extras** where they exist (the config code panel's column).
+
+Three frames, three different colours — and **consistent across kinds**: the main frame wears one
+colour on every entity, the dates frame another, everywhere.
+
+**The catalog already exists; the viewer just never took it.** The form gets its frames from
+`FORM_SECTIONS` (`formSections.ts:60` — id, legend and border colour in one place, rendered by the
+`fieldset` helper at `entityFormPage.ts:12-25`, with the comment explaining why one catalog:
+*"a section cannot be told apart from its colour"*). The viewer (`entityViewPage.ts`) renders bare
+`.row` divs and knows nothing of it. So this is the viewer adopting the existing section machinery,
+not a second framing system — the same reuse shape as T13's decoration provider.
+
+**The mapping is the design decision, and it is smaller than the form's.** The viewer does not need
+the form's eight-plus sections; the owner asked for three. Map them onto the catalog rather than
+inventing colours: the *main* frame borrows the form's General colour, *dates/history* gets its own
+catalog entry, and the code panel keeps a third. Where the viewer's rows fall into "main" versus
+"dates" is a static assignment per row kind — the row builders already know which field they are
+rendering.
+
+**Tests.** On the built HTML (`entityViewPage.test.ts`, beside the T9/T12 assertions): the three
+frames are present in order for a config entry, two for a kind with no code panel; the Created,
+Last changed and History rows sit inside the dates frame and not the main one; and the frame
+colour classes come from the shared catalog — asserted by class identity, so a colour renamed in
+`formSections.ts` fails here instead of silently unframing the viewer.
+
+
+---
+
+### T20. The SSH command shows a Windows path to the world, and nothing checks the tools exist
+
+Owner's report, five asks in one: the viewer's *SSH command* row shows
+`C:/Windows/System32/OpenSSH/ssh.exe …` — (1) show a Linux line too, at minimum; (2) show the
+normal `ssh …` a person types even on Windows; (3) check the PATH first, and if the ssh there
+works, never show the C: path at all; (4) the extension can be installed ON Linux and everything
+must work there; (5) when no ssh client is installed at all, say so at *Connect* and offer to
+install it — opening a terminal that runs the install, with `sudo apt update && apt upgrade` first
+on Linux. And beyond ssh: every launch that depends on an external tool (DB CLIs, VPN clients)
+should make the same offer.
+
+**What the code actually does today — the symptom is narrower than it looks, and the fix must not
+break the reason the path exists.** `buildSshCommand` (`sshCommand.ts:105`) emits the bare word
+`ssh` on every platform, Linux included — asks 1, 2 and 4 are already the default behaviour. The
+C: path appears only via `openSshProgram` (`sshProgram.ts:68`): **agent forwarding is on** and the
+platform is Windows, because our SSH agent is a named pipe and the MSYS `ssh` that Git-for-Windows
+puts first on PATH cannot open one (`mustUseBuiltIn`, `sshProgram.ts:64-66`). The screenshot's
+entity has `-A` on — that is why it got the long path. So:
+
+- **Ask 3 is the real fix**: instead of "needsAgent && win32 → hardcode System32", *probe which
+  ssh PATH resolves to*. If `where ssh` yields the built-in OpenSSH (System32 on PATH is the
+  modern-Windows default), the bare `ssh` can open the pipe and the viewer shows `ssh …` — path
+  gone. Only when PATH's first ssh is the MSYS one AND the connection needs the agent does the
+  full path earn its place, and then a hint should say why it is there.
+- **Ask 1 (a second, Linux-flavoured line)** matters for the copy-to-another-machine case: the
+  command someone copies out of the viewer is often pasted on a different box. Cheap once the
+  Windows line is bare `ssh` — they are then usually identical, and the second line is shown only
+  when they differ (i.e. when the full path had to be used).
+
+**Ask 5 — the missing-client check — is new machinery, and it should be ONE mechanism, not one
+per tool.** The launches that depend on an external binary today:
+
+| tool | launched by | install (win) | install (debian-ish) |
+|---|---|---|---|
+| `ssh` / `ssh-keygen` | connect, key gen, git signing (`gitSigningConfig.ts:17` hardcodes the same System32 path — same probe applies) | `Add-WindowsCapability … OpenSSH.Client` | `sudo apt install openssh-client` |
+| `psql` / `mysql` / `sqlcmd` / `mongosh` | *Open in DB CLI* (`dbCliLauncher.ts:24-29`) | winget per tool | `sudo apt install postgresql-client` etc. |
+| `wg-quick` / `openvpn` | VPN up/down (`vpnCommand.ts:29`) | winget / installer | `sudo apt install wireguard` / `openvpn` |
+
+Shape: a small `toolCheck.ts` — `whichAsync(tool)` plus a per-tool install recipe table — called at
+the launch sites. When the binary is missing: a modal naming what is missing (*"psql is not
+installed. Install it?"*), and on Yes a terminal running the recipe. On Linux the recipe opens with
+`sudo apt update && sudo apt upgrade -y &&` per the owner's explicit instruction — recorded here as
+an owner decision, since an upgrade is more than an install strictly needs. Distro detection can be
+minimal (apt present → apt recipe; otherwise show the command for the person to adapt) — guessing
+five package managers wrong is worse than naming one and saying so.
+
+**Also swept, per "what did I forget":** `git` (used by the git-sync transport and the repo check
+in config materialisation) — worth the same check; the terminal-command entities run arbitrary
+user commands and are out of scope by design (the command is the user's own); `creds`/`creds-mcp`
+install flows already exist and stay as they are.
+
+**Tests.** The probe and the recipe table are pure: PATH resolution decides bare-vs-full command
+(the four combinations of needsAgent x what-PATH-holds); each tool has a recipe for both
+platforms; the Linux recipe starts with the update-upgrade preamble; and `buildSshCommand` on
+Linux never emits a Windows path (pin the regression the owner hit). The modal-and-terminal half
+is thin wiring over these.
+
+
+---
+
 ## 4. Build order
 
 Ordered so that each step is verifiable on its own, and the two that need a person come last.
 
-1. **T9, T12, then T11** — the three defects the owner is looking at, two of them in the same file. First, because a live regression
+1. **T16, T9, T12, T18, T19, then T11** — the defects and viewer asks the owner is looking at.
+   T16 goes first: it is one line and a test, and it is the only one that changes what a NEW
+   user sees. T18 and T19 ride with T9/T12 — same page module, same test file. First, because a live regression
    outranks bookkeeping. T9 is one number and T12 is one move, both in `entityViewPanel.ts`; T11 needs its measurement
    before its fix.
 2. **T6a, T6b, T7, and the ephemeral tail's §2.5** — documentation only, no build, no risk. Early
    because every later step is read against them.
 3. **T1** — one pure function, one thin adapter, six call sites. Smallest real change.
 4. **T8** — two ported sinks and a prune, all server-side, no client contract touched.
-5. **T14** — the generator options and the button styling: the pure half already exists, so this
+5. **T20** — the ssh-command probe first (it deletes the C: path from the viewer), then the
+   shared tool-check with its install offers.
+6. **T14** — the generator options and the button styling: the pure half already exists, so this
    is mostly UI plus the recorded-decision reversal in T14b.
-6. **T13, then T15** — the arrival highlight over the decoration provider that is already
+7. **T13, then T15** — the arrival highlight over the decoration provider that is already
    registered, then the filter fix that calls the same helper from its third site. T15's part 1
    (the flag) is independent and can go first if the highlight slips.
-7. **T10** — the MCP config surface: one tool over an existing pure catalog, plus the
+8. **T10** — the MCP config surface: one tool over an existing pure catalog, plus the
    instructions paragraph.
-8. **T4** — the README, then the test that keeps it honest. The test is written **first** and
+9. **T17** — the form highlighter. Late deliberately: it is the only item here whose approach is
+   a real design choice rather than a fix, and the overlay should be shown to the owner.
+10. **T4** — the README, then the test that keeps it honest. The test is written **first** and
    watched failing against today's README, because a coverage test authored after the document it
    covers is a test shaped to pass.
-9. **T3** — the ratchet, last of the code items: it takes a baseline of the tree, so it should be
+11. **T3** — the ratchet, last of the code items: it takes a baseline of the tree, so it should be
    taken after the rest have stopped moving it.
-10. **T2** — needs a browser and a physical security key.
-11. **T5** — needs the owner. Prepared by then, decided here.
+12. **T2** — needs a browser and a physical security key.
+13. **T5** — needs the owner. Prepared by then, decided here.
 
 ## 5. Test plan
 
@@ -665,8 +927,17 @@ and both the failure and the pass are reported.
   `npm run ratchet` red.
 - **T10** — the snippet a tool returns is byte-identical to the viewer's for the same entry; an
   unknown language names the valid ids.
+- **T20** — PATH resolution decides bare-vs-full ssh; recipes exist per tool per platform; the
+  Linux recipe opens with update-upgrade; Linux never sees a Windows path.
 - **T14** — every offered length and class combination honoured; **all classes off is refused**;
   each key type round-trips through `sshKeyParse`.
+- **T16** — every entity-holding folder type has a default folder, checked against the type list.
+- **T18** — copying the snippet field resolves exactly what `snippetFor` renders for the shown
+  language and variant; the panel uses the shared copy icon by identity.
+- **T19** — three frames in order on a config entry, two without a code panel; dates and history
+  inside the dates frame; colours by catalog class identity.
+- **T17** — for every offered format, highlighting round-trips: the coloured output re-escapes to
+  exactly the text that would be saved.
 - **T13** — the highlight lapses on an injected clock, and a second arrival does not cut the
   first one short.
 - **T15** — the keep/restore decision for accepted, escaped and focus-lost; and the reveal is
@@ -683,13 +954,27 @@ and both the failure and the pass are reported.
 ## 6. Definition of Done
 
 - [ ] T9: the viewer's columns are as wide as the form's, proven by a test watched failing at 640 px.
+- [ ] T20: the viewer shows bare `ssh` wherever PATH's client can serve the connection, a
+      second line only when the two differ, and every external-tool launch checks the binary
+      and offers its install recipe — Linux recipes opening with update-upgrade.
 - [ ] T14: password length and character classes are choosable (default 32, all four on); SSH key
       type and size are choosable with Ed25519 first and the weaker options labelled; the
       recorded "no algorithm choice" comment is updated rather than left contradicting the UI;
       the generate buttons read as buttons; the other generators are swept and findings listed.
 - [ ] T15: clicking a filtered result no longer cancels the filter; Escape still restores the
       previous term; closing the search reveals and tints the selected row, after the clear.
-- [ ] T13: an accepted share and an import reveal and briefly tint their new row, through the
+- [ ] T19: the viewer groups its rows into the owner's three frames, coloured from the form's
+      section catalog, consistent across kinds.
+- [ ] T18: the snippet copy button copies the snippet as shown, uses the shared icon, and its
+      hover names it; the "reuses the viewer's icon" comment is finally true.
+- [ ] T17: the form's config and script bodies are highlighted for every format the select
+      offers, with unsupported formats falling back to plain text; the round-trip test proves
+      colouring cannot change what is saved; the overlay's four alignment properties are pinned.
+- [ ] T16: a config folder is seeded for new accounts and new project folders, asserted over the
+      folder-type list rather than a count; the once-only seeding rule is left intact and the
+      existing-account question is answered in writing.
+- [ ] T13: an accepted share, an import, and a newly created entity or folder reveal and briefly
+      tint their new row, through the
       decoration provider that already exists — not a second one; the tint's real capability
       (row colour, not a border) is stated.
 - [ ] T12: *Copy All* is at the top-left, beside the title, and the dead `.footer` rule is gone.
@@ -707,13 +992,14 @@ and both the failure and the pass are reported.
 - [ ] T5: the four tag commands are written down with what each publishes, and the owner's decision
       is recorded here.
 - [ ] T6: `todo/README.md`'s *Promoted* table matches `research/`; the manual MCP pass names the
-      current version.
+      current version; the CHANGELOG's `[Unreleased]` block is cut into the dated sections the
+      release commits claim.
 - [ ] T7: the roadmap's status line states only what the code supports, and A1 carries its
       measurement.
 - [ ] T8: the server's console output is coloured under redirection (counted, not observed), a run
       crossing midnight segments, `logs/` has a named retention owner, and the obsolete mirror-list
       item is deleted with its reason.
-- [ ] `research/module_extension.md` and `research/module_server.md` updated for T1, T3, T4, T8, T9, T10, T11, T12, T13, T14, T15;
+- [ ] `research/module_extension.md` and `research/module_server.md` updated for T1, T3, T4, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17, T18, T19, T20;
       `research/module_mcp.md` (or `module_extension.md`'s MCP section) for T10.
 - [ ] `node .claude/rules/shared/tools/plan-lifecycle.mjs` and `pin-check.mjs` pass.
 - [ ] This plan promoted to `research/` with its deviations recorded, and anything left extracted

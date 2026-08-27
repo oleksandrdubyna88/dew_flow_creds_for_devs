@@ -1,0 +1,145 @@
+import * as assert from 'node:assert/strict';
+import { test } from 'node:test';
+import { EntityViewOptions, copyValueFor, renderEntityViewHtml } from '../entityViewPage';
+import { EntityMetadata } from '../types';
+import { PAGE_MAX_WIDTH_PX, TWO_COLUMN_AT } from '../webviewHtml';
+import { snippetFor } from '../configSnippet';
+import { CONFIG_KEY_ENV } from '../configKey';
+
+/**
+ * The read-only viewer's markup.
+ *
+ * <p>These are layout assertions, which is unusual and deliberate. The viewer grew a second column
+ * in 0.77.0 for the "Read this from code" panel and kept the body width it had chosen when it was
+ * one column, so both columns rendered at roughly half the old width and a config body wrapped
+ * mid-word. Nothing could see that: the page was built inside a `vscode`-importing module, so no
+ * test could reach it, and the defect survived until somebody looked at a screenshot.</p>
+ *
+ * <p>So what is pinned here is not pixels but two RELATIONS that carry the intent — the viewer is
+ * at least as wide as the form it mirrors, and the page's one whole-entity action is reachable
+ * before the long content rather than after it. Both survive restyling; a hard-coded pixel count
+ * would not, and would be deleted the first time it got in the way.</p>
+ */
+
+function metadata(overrides: Partial<EntityMetadata> = {}): EntityMetadata {
+  return { id: 'e1', name: 'conf1', ...overrides } as EntityMetadata;
+}
+
+function options(overrides: Partial<EntityViewOptions> = {}): EntityViewOptions {
+  return {
+    details: metadata(),
+    hasPassword: false,
+    hasPrivateKey: false,
+    hasVpnConfig: false,
+    hasDbConnection: false,
+    dbPortIsDefault: false,
+    dbHasPassword: false,
+    hasAttachment: false,
+    history: [],
+    resolveSecret: async () => undefined,
+    copyAllText: async () => '',
+    saveVpnConfig: async () => {},
+    saveAttachment: async () => {},
+    setEnv: async () => true,
+    checkEnv: () => {},
+    ...overrides,
+  } as EntityViewOptions;
+}
+
+/** The `max-width` the page gives its `body`, in pixels. */
+function bodyMaxWidth(html: string): number {
+  const body = /body\s*\{[^}]*\}/.exec(html);
+  assert.ok(body !== null, 'the page has a body rule');
+  const width = /max-width:\s*(\d+)px/.exec(body[0]);
+  assert.ok(width !== null, `the body rule sets no max-width: ${body[0]}`);
+  return Number(width[1]);
+}
+
+test('the viewer takes its width from the shared constant, not a number of its own', () => {
+  const viewer = bodyMaxWidth(renderEntityViewHtml(options()));
+  assert.equal(
+    viewer,
+    PAGE_MAX_WIDTH_PX,
+    `the viewer caps its body at ${viewer}px instead of the shared ${PAGE_MAX_WIDTH_PX}px — ` +
+      'a private number is how it sat at 640px for four months while the form used 1280px, ' +
+      'halving every column',
+  );
+  assert.ok(
+    PAGE_MAX_WIDTH_PX >= TWO_COLUMN_AT,
+    'the shared constants themselves disagree: the page splits into two columns before it is ' +
+      'allowed to be wide enough to hold them',
+  );
+});
+
+test('the page cannot ask for two columns it has no room for', () => {
+  const html = renderEntityViewHtml(options());
+  const breakpoint = /@media\s*\(min-width:\s*(\d+)px\)/.exec(html);
+  assert.ok(breakpoint !== null, 'the page has a two-column breakpoint');
+  assert.ok(
+    bodyMaxWidth(html) >= Number(breakpoint[1]),
+    `the layout switches to two columns at ${breakpoint[1]}px of WINDOW while the container is ` +
+      `capped at ${bodyMaxWidth(html)}px — it splits exactly where it cannot fit`,
+  );
+});
+
+test('Copy All is reachable before the content, not below it', () => {
+  const html = renderEntityViewHtml(options({ details: metadata({ isConfig: true } as never) }));
+  const copyAll = html.indexOf('data-field="all"');
+  const grid = html.indexOf('class="viewGroups"');
+  assert.ok(copyAll !== -1, 'the page offers Copy All');
+  assert.ok(grid !== -1, 'the page has its content grid');
+  assert.ok(
+    copyAll < grid,
+    'Copy All is emitted after the content grid, so on a config entry it sits below a code ' +
+      'panel up to 320px tall and off the screen the reader is looking at',
+  );
+});
+
+// ---------------------------------------------------------------------------
+// T18 — the snippet copy button. It shipped posting `field: "snippet"` to a
+// switch with no case of that name, so it copied nothing and the page answered
+// "Nothing to copy — the field is empty" beside a visibly non-empty snippet.
+// ---------------------------------------------------------------------------
+
+test('copying the snippet resolves the exact text shown for the chosen language', async () => {
+  const opts = options({ details: metadata({ isConfig: true } as never) });
+  const shown = snippetFor('csharp', 'aspnet', {
+    envVar: CONFIG_KEY_ENV,
+    fileName: 'appsettings.Development.json',
+  });
+  const copied = await copyValueFor(opts, 'snippet|csharp|aspnet');
+  assert.ok(copied !== undefined && copied.length > 0, 'the snippet field resolves to text');
+  assert.equal(
+    copied,
+    shown.code,
+    'the copy must be the snippet as SHOWN — same language, same variant — not a default',
+  );
+});
+
+test('a bare snippet field still copies something rather than nothing', async () => {
+  const copied = await copyValueFor(options({ details: metadata({ isConfig: true } as never) }), 'snippet');
+  assert.ok(
+    copied !== undefined && copied.length > 0,
+    'field "snippet" with no language resolved to nothing — the shipped defect: no case ' +
+      'answered to the name every copy button on the panel posts',
+  );
+});
+
+test('the snippet panel and the viewer share one copy icon', () => {
+  const html = renderEntityViewHtml(options({ details: metadata({ isConfig: true } as never) }));
+  const icons = html.match(/<svg[^>]*>/g) ?? [];
+  const copyButtons = html.match(/aria-label="Copy [^"]*"/g) ?? [];
+  assert.ok(copyButtons.length >= 2, 'the page has several copy buttons');
+  const glyphs = new Set(
+    (html.match(/aria-label="Copy [^"]*">(<svg.*?<\/svg>)/g) ?? []).map((m) =>
+      m.slice(m.indexOf('<svg')),
+    ),
+  );
+  assert.equal(
+    glyphs.size,
+    1,
+    `the page draws ${glyphs.size} different copy glyphs — the snippet panel re-drew its own, ` +
+      'which is what made its button read as "not a copy button"',
+  );
+  assert.ok(icons.length > 0);
+});

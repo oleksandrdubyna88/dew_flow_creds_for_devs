@@ -22,6 +22,11 @@ export const DEFAULT_FOLDERS: readonly DefaultFolderSpec[] = [
   { name: 'passwords', folderType: 'credential' },
   { name: 'terminal', folderType: 'terminal' },
   { name: 'scripts', folderType: 'script' },
+  // Added 2026-08-27. `config` has been an entity kind since 0.77.0 and was never given a
+  // folder, so every account seeded since — and every project folder ever scaffolded, since
+  // both take this list verbatim — had nowhere typed to put one. Last, beside `scripts`,
+  // because both hold file-shaped entries; the index IS the display order.
+  { name: 'config', folderType: 'config' },
 ];
 
 /**

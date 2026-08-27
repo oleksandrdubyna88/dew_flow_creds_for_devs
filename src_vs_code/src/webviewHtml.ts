@@ -11,6 +11,37 @@
  */
 
 /**
+ * The copy glyph every webview surface shares.
+ *
+ * <p>It was declared twice — here-shaped in the viewer and re-drawn, differently, in the
+ * snippet panel under a comment claiming it reused the viewer's. Two icons for one action is
+ * how the owner read the snippet button as "not a copy button"; one constant is the fix that
+ * cannot regress.</p>
+ */
+export const COPY_ICON =
+  '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3">' +
+  '<rect x="5.5" y="5.5" width="8" height="8" rx="1"/>' +
+  '<path d="M10.5 5.5v-2a1 1 0 0 0-1-1h-6a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2"/></svg>';
+
+/**
+ * How wide a two-column webview page may get, and where it splits.
+ *
+ * <p>Here rather than in each page because they must agree, and for four months they did not:
+ * the viewer copied the form's `TWO_COLUMN_AT` rule when it grew its code panel in 0.77.0 and
+ * kept its own 640px cap from when it had one column. It then split into two columns at a
+ * WINDOW width its own CONTAINER could never reach, so every column rendered at ~308px — half
+ * what the single column had been — and a config body wrapped mid-word.</p>
+ *
+ * <p>The invariant is one line: `PAGE_MAX_WIDTH_PX` must be at least `TWO_COLUMN_AT`, or the
+ * layout splits where it has no room. Sharing the numbers is what makes that checkable once
+ * instead of per page.</p>
+ */
+export const PAGE_MAX_WIDTH_PX = 1280;
+
+/** The window width at which a two-column page stops stacking. */
+export const TWO_COLUMN_AT = 1000;
+
+/**
  * Escape a value for interpolation into HTML **text or a double-quoted attribute**.
  *
  * <p>The single quote is escaped as well as the double, which the three copies did not do.
