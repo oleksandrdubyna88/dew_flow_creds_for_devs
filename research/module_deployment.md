@@ -235,3 +235,22 @@ Everything above was exercised on 2026-08-23 rather than reasoned about:
 - `compose config` valid in all four TLS modes, and refused with a blank `ALLOWED_DOMAINS`
 - per-run log files land on the mounted volume; a second run produces a second file
 - shellcheck clean (bash and POSIX sh)
+
+Corporate recovery was added to the stack on 2026-08-27 and exercised the same way. It is the one
+setting here that changes what happens to **other people's** vaults, so nothing about it was taken
+from the YAML:
+
+- `compose config` resolves `CORP_RECOVERY_OFFICERS` / `_THRESHOLD` / `_SETUP_TTL_HOURS` when set,
+  and to `""` / `2` / `72` when the `.env` never mentions them — an existing deployment that pulls
+  this image gains no corporate recovery by upgrading, which is the only acceptable default
+- the server, started with exactly those variables, logged the roster **WARNING** at startup and
+  served `GET /api/org-recovery/config` to an ordinary account: the disclosure path works from a
+  compose-shaped environment, not only from a test fixture
+- an ordinary account was refused an officer endpoint (`403`) while an officer got their inbox
+  (`200 []`) against the same running server
+- both startup guards were watched refusing: `CORP_RECOVERY_THRESHOLD=1` and a two-officer roster
+  each stopped the host with the message naming the fix, rather than starting and failing later
+
+The keys are absent from `.env.example` on purpose until an operator writes them: an empty roster is
+the feature switched off, and that is the state every deployment should be in until somebody decides
+otherwise on the record.
