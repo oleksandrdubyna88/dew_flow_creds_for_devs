@@ -6,6 +6,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **The Remote Bridge menu item said "Open" while a bridge was open.** The command toggled; the
+  title did not. Somebody looking for *Close* found nothing, and had to click *Open Remote Bridge…*
+  on an already-open bridge to discover the choice hidden behind it — which is the project's own
+  rule 8 in miniature: an action that changes state must show the state it is in. In a tree the only
+  place that can live is the row's `contextValue`, so an SSH row now carries `:bridged` or
+  `:nobridge` and exactly one of *Open Remote Bridge…* / *Close Remote Bridge* is offered. Two
+  tokens rather than one, following the `:agenton` / `:agentoff` pair already here: a single flag
+  would leave the open item needing "ssh AND NOT bridged", which shows **both** items on any row
+  whose value is stale. The tree refreshes on open, on close, and — the case that matters — when a
+  bridge ends by itself, so a dropped network takes the row back to *Open* instead of leaving
+  *Close* offered for something that no longer exists.
+
 ### Added
 
 - **Corporate recovery — a quorum of colleagues can open a vault whose owner is gone.** When the

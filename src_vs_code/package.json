@@ -2,7 +2,7 @@
   "name": "creds-for-devs",
   "displayName": "CredsForDevs",
   "description": "Zero-trust credential manager for developers: SSH hosts and keys, VPN configs, databases, scripts and the CLI commands nobody remembers — in VS Code. Secrets live in the OS keychain; sync and team sharing are end-to-end encrypted, so the self-hosted vault server never sees plaintext. An AI coding agent can use an SSH credential without ever receiving it.",
-  "version": "0.76.0",
+  "version": "0.76.1",
   "publisher": "remsoftdev",
   "license": "MIT",
   "icon": "media/icon.png",
@@ -911,6 +911,11 @@
         "command": "credSshManager.openRemoteBridge",
         "title": "Open Remote Bridge…",
         "category": "CredsForDevs"
+      },
+      {
+        "command": "credSshManager.closeRemoteBridge",
+        "title": "Close Remote Bridge",
+        "category": "CredsForDevs"
       }
     ],
     "keybindings": [
@@ -1455,7 +1460,12 @@
         },
         {
           "command": "credSshManager.openRemoteBridge",
-          "when": "view == credSshManagerView && viewItem =~ /:ssh/",
+          "when": "view == credSshManagerView && viewItem =~ /:nobridge/",
+          "group": "agent@3"
+        },
+        {
+          "command": "credSshManager.closeRemoteBridge",
+          "when": "view == credSshManagerView && viewItem =~ /:bridged/",
           "group": "agent@3"
         },
         {

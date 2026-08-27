@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { baseTarget, describeTarget, tagLabel } from '../treeRowText';
-import { TreeNode } from '../types';
+import { baseTarget, describeTarget, entityContextValue, tagLabel } from '../treeRowText';
+import { EntityMetadata, TreeNode } from '../types';
 
 /**
  * The grey text beside a row — now a pure module, so it is testable at all.
@@ -66,4 +66,53 @@ test('no secret field can reach the row text', () => {
   for (const secret of ['hunter2', 'AAAA', 'ssh-ed25519']) {
     assert.equal(text.includes(secret), false, `${secret} must not appear in a tree row`);
   }
+});
+
+/**
+ * The context value is what decides which menu items an entry offers.
+ *
+ * <p><b>Why the bridge needed a second token.</b> The *Open Remote Bridge…* item kept that title
+ * while a bridge was open — the command toggled, the label did not. A person looking for "close"
+ * found nothing and had to click "open" on an already-open bridge to discover the choice hidden
+ * behind it. That is the project's rule 8 in miniature: an action that changes state must show the
+ * state it is in, and in a tree the only place that can live is the row's `contextValue`.</p>
+ *
+ * <p>Two tokens rather than one, following the `:agenton` / `:agentoff` pair already here: with a
+ * single `:bridged`, the "open" item would need `when` to say "ssh AND NOT bridged", which VS Code
+ * expresses awkwardly and which silently offers both items on any row whose value is missing.</p>
+ */
+
+const SSH = { host: 'h', user: 'u', isSshEnabled: true } as EntityMetadata;
+
+test('an ssh entry with no bridge offers OPEN and not close', () => {
+  const value = entityContextValue(SSH, false, false);
+
+  assert.match(value, /:ssh\b/);
+  assert.match(value, /:nobridge\b/);
+  assert.equal(/:bridged\b/.test(value), false, value);
+});
+
+test('an ssh entry WITH a bridge offers close and not open', () => {
+  const value = entityContextValue(SSH, false, true);
+
+  assert.match(value, /:bridged\b/);
+  assert.equal(/:nobridge\b/.test(value), false, value);
+});
+
+test('the two tokens are mutually exclusive, so both items can never show at once', () => {
+  // The failure this prevents is a row offering "Open Remote Bridge…" and "Close Remote Bridge"
+  // together, which tells a person nothing about which state they are in.
+  for (const bridged of [true, false]) {
+    const value = entityContextValue(SSH, false, bridged);
+    const both = /:bridged\b/.test(value) && /:nobridge\b/.test(value);
+    assert.equal(both, false, value);
+  }
+});
+
+test('a non-ssh entry carries no bridge token at all', () => {
+  // A VPN or a password has nothing to bridge; a `:nobridge` on it would be true and useless,
+  // and would make the "open" item's `when` clause match rows it must never appear on.
+  const value = entityContextValue({ isVpn: true } as EntityMetadata, false, false);
+
+  assert.equal(/bridge/.test(value), false, value);
 });

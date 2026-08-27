@@ -326,8 +326,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         exited: new Promise<number | null>((resolve) => child.once('exit', (code) => resolve(code))),
       };
     },
-    (key, code) => log.warn('bridge', `${key} ended (${String(code)})`),
+    (key, code) => {
+      log.warn('bridge', `${key} ended (${String(code)})`);
+      // A bridge that dies by itself — a dropped network, a killed ssh — must take its row
+      // back to "Open Remote Bridge…". Without this the menu keeps offering *Close* for a
+      // bridge that no longer exists, which is the stuck-in-flight state rule 8 forbids.
+      provider.refresh();
+    },
   );
+  // Answered per row, never cached: the map is the truth and it changes underneath the tree.
+  provider.isBridged = (accountId, nodeId) => bridges.isOpen(entityKey(accountId, nodeId));
   context.subscriptions.push({ dispose: () => bridges.dispose() });
 
 
@@ -1125,6 +1133,35 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }
   }
 
+  /**
+   * Close the bridge this entry has open.
+   *
+   * <p>Its own command rather than a second meaning for *Open Remote Bridge…*, because a menu
+   * item that toggles silently is one a person cannot read: the title stayed "Open" while a
+   * bridge ran, so somebody looking for "close" found nothing and had to click "open" on an
+   * open bridge to reach the choice hidden behind it. The row now carries `:bridged` or
+   * `:nobridge` and exactly one of the two items is offered.</p>
+   *
+   * <p>No confirmation: the title says what it does, and a bridge costs one click to reopen.</p>
+   */
+  register('credSshManager.closeRemoteBridge', (...args: unknown[]) => {
+    const element = args[0] as { accountId?: string; node?: { id: string; name: string } };
+    const accountId = element?.accountId;
+    const node = element?.node;
+    if (accountId === undefined || node === undefined) {
+      return;
+    }
+    const closed = bridges.stop(entityKey(accountId, node.id));
+    provider.refresh();
+    void vscode.window.showInformationMessage(
+      closed
+        ? `The bridge to "${node.name}" is closed.`
+        // The row said "bridged" and the map disagreed — the ssh died between the render and
+        // the click. Say so rather than claiming to have closed something that was already gone.
+        : `"${node.name}" had no bridge open — it had already ended.`,
+    );
+  });
+
   register('credSshManager.openRemoteBridge', async (...args: unknown[]) => {
     const element = args[0] as { accountId?: string; node?: { id: string; name: string } };
     const accountId = element?.accountId;
@@ -1140,6 +1177,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       });
       if (answer === 'Close the bridge') {
         bridges.stop(key);
+        provider.refresh();
         void vscode.window.showInformationMessage(`The bridge to "${node.name}" is closed.`);
       }
       return;
@@ -1194,6 +1232,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // SSH_ASKPASS, and spawning with process.env would drop exactly the thing that lets this
     // connection authenticate at all.
     bridges.start(key, remote.path, 'ssh', argv, credential.env);
+    provider.refresh();
 
     // The socket's permissions are the boundary on that host, and we cannot set them: for a
     // `-R` forward sshd creates the socket, so the SERVER's StreamLocalBindMask governs. So

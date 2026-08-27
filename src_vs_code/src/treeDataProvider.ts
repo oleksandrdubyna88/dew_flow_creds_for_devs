@@ -27,6 +27,7 @@ import { FOLDER_COLOR, buildTooltip, entityIcon, folderIcon, kindIcon } from './
 import { parentOf } from './treeParent';
 import { describeRetention, isTrashFolder } from './trash';
 import { ExpansionMemory, expansionKey } from './treeExpansion';
+import { searchRowItem } from './searchRowItem';
 import { revisionRowItem } from './revisionRowItem';
 import { depUri } from './depDecorations';
 
@@ -126,6 +127,15 @@ export class CredTreeDataProvider
    */
   expansion: ExpansionMemory | undefined;
 
+  /**
+   * Set by the extension: whether a Remote Bridge is open to an entry right now.
+   *
+   * <p>Optional for the same reason `expansion` is — a test with no bridge manager renders the
+   * tree exactly as it did before this existed. Absent means "no bridge", which is the state
+   * every row is in until one is opened.</p>
+   */
+  isBridged: ((accountId: string, nodeId: string) => boolean) | undefined;
+
   constructor(
     private readonly storage: StorageManager,
     private readonly extensionUri: vscode.Uri,
@@ -217,44 +227,17 @@ export class CredTreeDataProvider
     return searchTerms(this.query);
   }
 
-  /**
-   * The filter row.
-   *
-   * <p>A tree cannot hold a real text field — the API takes rows, not widgets — so the row
-   * IS the field: clicking it opens an input that filters as you type, and it then shows the
-   * term it is filtering by, with how many entries survived. The count is the part that
-   * matters when nothing matches, because an empty tree and a broken tree look identical
-   * otherwise.</p>
-   */
-  // eslint-disable-next-line complexity
+  /** The filter row — see `searchRowItem`, which owns everything about how it looks. */
   private searchItem(): vscode.TreeItem {
     const terms = this.terms();
-    const active = terms.length > 0;
-    const item = new vscode.TreeItem(
-      active ? `Search: ${this.query}` : 'Search',
-      vscode.TreeItemCollapsibleState.None,
-    );
-    item.id = 'search';
-    // Two context values, because the × is contributed as an inline action and an inline
-    // action cannot be conditional on anything but this string.
-    item.contextValue = active ? 'credSearchActive' : 'credSearch';
-    item.iconPath = new vscode.ThemeIcon(active ? 'filter-filled' : 'search');
-    if (active) {
-      const found = countMatches(
+    return searchRowItem(this.query, terms, () =>
+      countMatches(
         this.storage,
         this.storage.getAccounts().map((a) => a.accountId),
         terms,
         this.filterMemo,
-      );
-      item.description = found === 0 ? 'nothing matches' : `${found} found`;
-    } else {
-      item.description = 'filter by name, host, command…';
-    }
-    item.tooltip = active
-      ? `Filtering by "${this.query}" — click to change it, × to clear. Secrets are never searched.`
-      : 'Click to filter the tree as you type. Names, hosts, users, commands — never secrets.';
-    item.command = { command: 'credSshManager.search', title: 'Search' };
-    return item;
+      ),
+    );
   }
 
   /**
@@ -629,7 +612,11 @@ export class CredTreeDataProvider
     item.resourceUri = depUri(accountId, node.id);
     // Capability flags drive the context menu: only actions that are
     // actually possible for THIS entity are offered.
-    item.contextValue = entityContextValue(details, this.hasPassword(accountId, node.id));
+    item.contextValue = entityContextValue(
+      details,
+      this.hasPassword(accountId, node.id),
+      this.isBridged?.(accountId, node.id) ?? false,
+    );
     // Both the kind glyph and — where an agent may reach this entry — the access ladder, because
     // a row has exactly one icon slot. See `entityIcon` for what that costs and why.
     item.iconPath = entityIcon(

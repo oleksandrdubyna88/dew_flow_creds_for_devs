@@ -62,12 +62,23 @@ export function describeTarget(node: TreeNode): string {
 export function entityContextValue(
   details: EntityMetadata | undefined,
   hasPassword: boolean,
+  /** Whether a bridge is open to this entry right now — see the `:bridged` pair below. */
+  bridged: boolean = false,
 ): string {
   let contextValue = 'entity';
   // One named predicate instead of two spellings of "is this SSH?" — the tree used to ask
   // `details.host` here while `kindOf` asked `isSshEnabled` (audit S5).
   if (canConnectSsh(details)) {
     contextValue += ':ssh';
+    // Two tokens, the same shape as the agent pair above, and for the same reason: the menu
+    // must offer *Open Remote Bridge…* or *Close Remote Bridge*, never both and never the
+    // wrong one. It used to offer "open" while a bridge was running — the command toggled and
+    // the title did not, so somebody looking for "close" found nothing and had to click
+    // "open" on an open bridge to reach the choice hidden behind it.
+    //
+    // A single `:bridged` would leave the open item needing "ssh and NOT bridged", which VS
+    // Code expresses awkwardly and which shows BOTH items on any row whose value is stale.
+    contextValue += bridged ? ':bridged' : ':nobridge';
   }
   if (details?.isSshKey) {
     contextValue += ':key';
