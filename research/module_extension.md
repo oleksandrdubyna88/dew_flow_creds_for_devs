@@ -1754,13 +1754,18 @@ column answers "how do I read this from code?" in twenty languages instead, and 
 depth — three plug into their platform's configuration system, seventeen hand you a parsed
 document. No snippet contains a key and none could; a test walks all twenty-two.
 
-**What is NOT built: a config cannot be SHARED at all.** Not a broken share — no menu item.
-`isShareable` (`treeRowText.ts:126`) asks for a host, a database, a startable VPN, a terminal
-command, a script, or a stored password, and a config is none of those and has none: its body IS
-the secret, and the password slot is hidden on its form. Fixing it is one line there and must be the
-LAST one, because the share payload does not carry `config` — a shareable row without a travelling
-body delivers an entry that arrives empty. Order and both halves:
-[../todo/PLAN_config_sharing.md](../todo/PLAN_config_sharing.md).
+**Sharing carries the document.** The body travels sealed beside the password and the notes, and
+`shareableDetails` strips `configKeyHash` as its sixth field — a key is minted by ONE window for ONE
+vault, so a recipient holding that hash would have an entry claiming a key they were never given,
+cannot use, and cannot revoke. They enable code access themselves and get their own.
+
+**A config holds no password, and that is enforced on write.** `keepsPassword(kind)` scrubs a stored
+one when an entity becomes a config — the rule TOTP already follows. It matters more than it looks:
+`setPassword(undefined)` means "keep what is stored", so a converted credential kept an invisible
+password, and `isShareable` returned true for anything with one. Such a config was shareable before
+any of this, and would have delivered the password with the document left behind. `isShareable` now
+names the kind explicitly, so the two cannot disagree again. Record:
+[PLAN_config_sharing.md](PLAN_config_sharing.md).
 
 ### The per-entity flag caches, and the three rules that keep them honest
 

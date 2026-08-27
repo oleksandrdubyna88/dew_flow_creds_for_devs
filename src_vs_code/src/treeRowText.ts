@@ -132,6 +132,10 @@ function isShareable(details: EntityMetadata | undefined, hasPassword: boolean):
       (details.isVpn === true && isVpnStartable(details.vpnType)) ||
       details.isTerminal === true ||
       details.isScript === true ||
+      // Named explicitly rather than left to follow from `hasPassword`: a config HAS no password,
+      // and until the body travelled, an entry that became shareable through a leftover one
+      // delivered the password and left the document behind.
+      details.isConfig === true ||
       hasPassword)
   );
 }

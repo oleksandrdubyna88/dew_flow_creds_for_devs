@@ -1,10 +1,9 @@
 # PLAN — a shared config arrives with its contents
 
-> Status: **plan only, nothing implemented yet.** Scope: the share payload, the accept path, and
-> the one line in `isShareable` that must go LAST.
+> Status: **IMPLEMENTED, 2026-08-27.** Shipped the same day it was extracted, because the owner
+> tried sharing a config and found the JSON did not survive.
 >
-> Extracted from [PLAN_config_entities.md](../research/PLAN_config_entities.md), which shipped
-> everything else on 2026-08-27.
+> Extracted from [PLAN_config_entities.md](PLAN_config_entities.md), which shipped everything else.
 
 ## The symptom
 
@@ -68,3 +67,26 @@ over by whatever means they already trust.
 - [ ] The comment in `extension.ts` explaining why the body was left out is removed, because it
       no longer describes the code.
 - [ ] `research/module_extension.md` records what a shared config carries.
+
+## What shipped differently
+
+**The build order held, and it mattered.** The plan said the body travels FIRST and `isShareable`
+learns about the kind LAST, and both landed in one change — but written in that order, so at no
+point did a shareable row exist without a travelling body.
+
+**A hole was found on the way that the plan had not predicted.** `setPassword(undefined)` means
+"keep whatever is stored", so an entity converted from a credential into a config KEPT its
+password: invisible, because the form hides the slot, and uneditable. And `isShareable` returned
+true for anything with a stored password — so such a config was *already* shareable, before any of
+this, and sharing it would have delivered the password with the document left behind. Exactly the
+half-delivery this plan existed to avoid, reached by a route nobody would look down.
+
+Fixed by the rule TOTP already follows: `keepsPassword(kind)` in `entityKind.ts`, applied on write,
+so switching an entity to a config scrubs a stored password as switching away from a login scrubs a
+seed. And `isShareable` now names the kind explicitly rather than letting it follow from having a
+password, so the two can never disagree again.
+
+**Found and NOT fixed, because it belongs to another feature:** `buildSharePayload` never reads the
+TOTP seed, while the accept path writes `payload.secrets.totp`. So sharing an existing entity loses
+its second factor, while `hasTotp` travels in the metadata and claims otherwise — the same
+half-delivery shape, in TOTP. Reported to the owner rather than changed here.

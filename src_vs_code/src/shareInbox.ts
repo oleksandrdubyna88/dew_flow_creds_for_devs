@@ -496,6 +496,9 @@ After this, a share signed by any other key is refused.`,
     if (payload.secrets.totp !== undefined) {
       await this.deps.storage.setTotp(share.accountId, node.id, payload.secrets.totp);
     }
+    if (payload.secrets.config !== undefined) {
+      await this.deps.storage.setConfigBody(share.accountId, node.id, payload.secrets.config);
+    }
     await this.deps.sharing.removeOwnShare(share);
   }
 }
@@ -525,6 +528,8 @@ export async function buildSharePayload(
       vpnConfig: await storage.getVpnConfig(accountId, node.id),
       dbConnection: await storage.getDbConnection(accountId, node.id),
       notes: note,
+      // Handing a colleague the document IS the feature. Sealed like every other secret here.
+      config: await storage.getConfigBody(accountId, node.id),
     },
   };
 }

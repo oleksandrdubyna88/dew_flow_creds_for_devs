@@ -39,8 +39,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   of the same name is still tracked in your repository, saving says so: storing it here does not
   remove it from git, and believing otherwise is the failure this feature exists to prevent.
 
-  Not yet: a config cannot be shared with a colleague — the menu item is absent, because sharing keys
-  off a host or a stored password and a config has neither. Use *Write config file here…* meanwhile.
+  **Share one with a colleague** and the document goes with it, sealed like any other secret. What
+  stays behind is the access key: it was minted for your vault, and the recipient enables code
+  access themselves and gets their own.
 
 ### Fixed
 

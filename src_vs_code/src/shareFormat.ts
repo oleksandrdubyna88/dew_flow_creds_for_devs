@@ -173,6 +173,12 @@ export function resolveShares(items: OwnedShare[], pins: readonly string[]): Res
  * have not seen. Sharing is how a credential reaches a colleague; it must not also be how an
  * agent reaches one.</p>
  *
+ * <p><b>`configKeyHash` is the sixth, and it is the one this file's last paragraph predicted.</b> A
+ * config key is minted by ONE window for ONE vault, and only its hash is kept. Shipped as it is,
+ * the recipient's entry claims a key they were never given, cannot use, and — worse — cannot
+ * revoke, because revoking clears a hash whose key lives in somebody else's clipboard. They enable
+ * code access themselves and get their own.</p>
+ *
  * <p>Here rather than inline in `shareInbox.ts` so that "what leaves this vault" is one pure
  * function with a test, instead of a spread nobody would notice a new field being absent from.
  * A field added to `EntityMetadata` travels by default; making it NOT travel is the decision
@@ -191,5 +197,6 @@ export function shareableDetails(
     depColor: undefined,
     mcp: undefined,
     mcpCreatedByAgent: undefined,
+    configKeyHash: undefined,
   };
 }

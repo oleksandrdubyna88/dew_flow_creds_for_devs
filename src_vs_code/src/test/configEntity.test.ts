@@ -6,8 +6,8 @@ import {
   hasValidConfigFields,
   isConfigFormat,
 } from '../configFormat';
-import { ENTITY_KIND_LABELS, EntityMetadata, isEntityMetadata } from '../types';
-import { canBurnOnAgentUse, kindOf, resolveKind, stampKind } from '../entityKind';
+import { ENTITY_KINDS, ENTITY_KIND_LABELS, EntityMetadata, isEntityMetadata } from '../types';
+import { canBurnOnAgentUse, keepsPassword, kindOf, resolveKind, stampKind } from '../entityKind';
 import { entityContextValue } from '../treeRowText';
 
 /**
@@ -120,20 +120,34 @@ test('the body is not a metadata field — there is nowhere in the record for it
   assert.equal('configBody' in stamped, false, 'nor under any other spelling');
 });
 
-test('a config is NOT shareable today, and that is recorded rather than rediscovered', () => {
-  // Not a decision — a consequence. `isShareable` asks for a host, a database, a startable VPN, a
-  // terminal command, a script, or a stored password. A config is none of those and has none: its
-  // BODY is the secret, and the password slot is hidden on its form. So no `:shareable` token, and
-  // no Share item in the menu.
+test('a config holds no password, so switching an entity to one scrubs a stored password', () => {
+  // Found by the owner asking how they had just shared a config. They had not — that entry was a
+  // script — but the question exposed a real hole one step away.
   //
-  // Pinned so that whoever adds the token has to come here and read why the order matters: the
-  // share payload does not carry `config`, so a shareable row on its own delivers an entry that
-  // arrives EMPTY. See todo/PLAN_config_sharing.md.
-  const config = details({ kind: 'config', isConfig: true, configFormat: 'json' });
+  // `setPassword(undefined)` means "keep whatever is stored", so an entity converted from a
+  // credential into a config KEEPS its password: invisible, since the form hides the slot, and
+  // uneditable. And `isShareable` returns true for anything with a stored password — so that
+  // config becomes shareable, and a share carries `password` while the config BODY stays behind.
+  // The silent half-delivery, reached by a route nobody would look down.
+  //
+  // The same rule TOTP already follows: a second factor belongs to a login, so switching to a kind
+  // that cannot hold one scrubs the seed.
+  assert.equal(keepsPassword('config'), false);
+  for (const kind of ENTITY_KINDS.filter((one) => one !== 'config')) {
+    assert.equal(keepsPassword(kind), true, kind);
+  }
+});
 
-  assert.equal(entityContextValue(config, false).includes(':shareable'), false);
-  assert.ok(entityContextValue(config, false).includes(':config'));
-  // The neighbours it is being compared against, so a change to the RULE fails here too.
-  assert.ok(entityContextValue(details({ kind: 'script', isScript: true }), false).includes(':shareable'));
-  assert.ok(entityContextValue(details(), true).includes(':shareable'), 'a stored password is shareable');
+test('a config IS shareable, and says so by its kind rather than by having a password', () => {
+  // It was not, and the reason was accidental: `isShareable` asked for a host, a database, a VPN, a
+  // command, a script, or a stored password, and a config has none of those. So the menu item
+  // simply never appeared, which is not a decision anybody took.
+  //
+  // Named by KIND now. Leaving it to follow from `hasPassword` was the dangerous version: an entry
+  // converted from a credential kept an invisible password, became shareable through it, and would
+  // have delivered that password with the document left behind.
+  const config = details({ kind: 'config', isConfig: true });
+
+  assert.ok(entityContextValue(config, false).includes(':shareable'));
+  assert.ok(entityContextValue(config, true).includes(':shareable'));
 });

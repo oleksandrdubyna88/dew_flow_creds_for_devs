@@ -298,3 +298,66 @@ test('sharing an empty folder says so instead of asking for recipients', async (
 
   assert.ok(ui.infos.some((m) => m.includes('holds no entities')), ui.infos.join(' | '));
 });
+
+test('an accepted config arrives with its contents, which is the whole point of sharing one', async () => {
+  // The gap the owner found by trying it: a config could be shared and its JSON did not survive.
+  // This is the far end — the sending half is `buildSharePayload`, and the two are useless apart.
+  const w = world();
+  const body = '{\n  "ConnectionStrings": { "Default": "Server=prod" }\n}';
+  const share = sealedShare(
+    {
+      node: {
+        id: 'sender-side-config',
+        name: 'appsettings.Development.json',
+        type: 'entity',
+        parentId: null,
+        details: {
+          id: 'sender-side-config',
+          name: 'appsettings.Development.json',
+          isSshEnabled: false,
+          kind: 'config',
+          isConfig: true,
+          configFormat: 'json',
+          configFileName: 'appsettings.Development.json',
+        },
+      },
+      secrets: { config: body },
+    },
+    PIN,
+  );
+  ui.inputs = [PIN];
+
+  await w.inbox.acceptOne(share);
+
+  const nodes = w.storage.getNodes(RECIPIENT.accountId);
+  assert.equal(await w.storage.getConfigBody(RECIPIENT.accountId, nodes[0].id), body);
+  // The format travels with it: without one the document cannot be validated, laid out as fields,
+  // or written with the right extension.
+  assert.equal(nodes[0].details?.configFormat, 'json');
+});
+
+test('an accepted config carries no key hash, so the recipient mints their own', async () => {
+  // `shareableDetails` strips it on the way out; this is the assertion from the receiving side,
+  // because that is where the damage would be — an entry claiming a key its owner was never given,
+  // cannot use, and cannot revoke.
+  const w = world();
+  const share = sealedShare(
+    {
+      node: {
+        id: 'sender-side-config',
+        name: 'conf',
+        type: 'entity',
+        parentId: null,
+        details: { id: 'sender-side-config', name: 'conf', isSshEnabled: false, isConfig: true },
+      },
+      secrets: { config: '{}' },
+    },
+    PIN,
+  );
+  ui.inputs = [PIN];
+
+  await w.inbox.acceptOne(share);
+
+  const nodes = w.storage.getNodes(RECIPIENT.accountId);
+  assert.equal(nodes[0].details?.configKeyHash, undefined);
+});

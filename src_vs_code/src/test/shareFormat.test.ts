@@ -191,6 +191,31 @@ test('a shared copy carries no dependency of the vault it left', () => {
   assert.equal(details.name, 'access-server');
 });
 
+test('a shared config keeps its format and file name, and loses the key hash', () => {
+  // The sixth stripped field, and the one this module's own doc predicted: "a field added to
+  // EntityMetadata travels by default; making it NOT travel is the decision that has to be
+  // visible." A config key is minted by ONE window for ONE vault and only its hash is kept — so a
+  // recipient carrying that hash has an entry claiming a key they were never given, cannot use,
+  // and cannot revoke, because revoking clears a hash whose key is in somebody else's clipboard.
+  const shared = shareableDetails({
+    id: 'e2',
+    name: 'appsettings.Development.json',
+    isSshEnabled: false,
+    kind: 'config',
+    isConfig: true,
+    configFormat: 'json',
+    configFileName: 'appsettings.Development.json',
+    configKeyHash: 'Zm9vYmFyZm9vYmFyZm9vYmFyZm9vYmFyZm9vYmFyZm9vYmE=',
+  }) as EntityMetadata;
+
+  assert.equal(shared.configKeyHash, undefined, 'the recipient cannot use or revoke this key');
+  // Everything they CAN use survives — this is a strip, not a rewrite. Without the format the
+  // document cannot be validated, laid out as fields, or written with the right extension.
+  assert.equal(shared.configFormat, 'json');
+  assert.equal(shared.configFileName, 'appsettings.Development.json');
+  assert.equal(shared.isConfig, true);
+});
+
 test('an entity with no metadata at all stays that way', () => {
   assert.equal(shareableDetails(undefined), undefined);
 });

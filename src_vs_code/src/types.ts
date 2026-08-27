@@ -445,6 +445,8 @@ export interface SharePayload {
     notes?: string;
     /** The canonical `otpauth://` URI — the seed and its parameters, one string. */
     totp?: string;
+    /** A config file's contents. What stays behind is `configKeyHash` — see `shareFormat.ts`. */
+    config?: string;
   };
   /** Folder chain (shared folder inclusive) recreated on accept. */
   folderPath?: Array<{ name: string; folderType?: FolderType }>;

@@ -18,6 +18,7 @@ import {
 } from './secretGenerator';
 import { parseSshPrivateKey } from './sshKeyParse';
 import { isDepColorKey } from './depColors';
+import { keepsPassword } from './entityKind';
 import {
   ConfigFormat,
   ConfigProblem,
@@ -667,7 +668,10 @@ function toValues(data: Record<string, unknown>, options: EntityFormOptions): En
       notes: undefined, // notes now live in SecretStorage, never in metadata
     },
     newPassword: !isDb && password.length > 0 ? password : undefined,
-    clearPassword: bool(data, 'clearPassword'),
+    // A config has no password slot, so a stored one is invisible and uneditable — and, until this
+    // line, enough to make the entry shareable. Scrubbed on write, exactly as a TOTP seed is when
+    // an entity moves to a kind that cannot hold one.
+    clearPassword: keepsPassword(kind) ? bool(data, 'clearPassword') : options.hasStoredPassword,
     newPrivateKey: (isSsh || isKey || isVpn) && privateKey.length > 0 ? privateKey : undefined,
     clearPrivateKey: bool(data, 'clearPrivateKey') || bool(data, 'clearVpnKey'),
     newVpnConfig: isVpn && vpnConfig.length > 0 ? vpnConfig : undefined,

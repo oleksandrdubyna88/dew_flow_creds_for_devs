@@ -158,6 +158,26 @@ export function permittedBurnPolicy(
 }
 
 /**
+ * Whether an entity of this kind can hold a password at all.
+ *
+ * <p>A config cannot: its BODY is the secret, and the form hides the password slot entirely. That
+ * makes a stored password on a config invisible AND uneditable — and `setPassword(undefined)` means
+ * "keep whatever is stored", so an entity converted from a credential into a config kept one
+ * silently.</p>
+ *
+ * <p>Which mattered more than it looks. `isShareable` returns true for anything with a stored
+ * password, so such a config became shareable — and a share carries `password` while the config
+ * body stays behind. A half-delivery reached by a route nobody would look down.</p>
+ *
+ * <p>The rule TOTP already follows, and for the same shape of reason: a second factor belongs to a
+ * login, so switching to a kind that cannot hold one scrubs the seed. Applied on WRITE, in
+ * `toValues`, so the impossible state cannot reach the vault.</p>
+ */
+export function keepsPassword(kind: EntityKind): boolean {
+  return kind !== 'config';
+}
+
+/**
  * The compile-time half of "one place of truth": a `switch` over every kind ends here, and
  * adding a kind without teaching that switch about it stops being a runtime surprise and
  * becomes a type error at the call site.

@@ -4389,11 +4389,7 @@ ${detail}
         dbConnection: result.newDbConnection,
         notes: result.newNotes,
         totp: result.newTotp,
-        // NOT the config body, yet. Handing a colleague the config is the point of the feature,
-        // but the share payload has its own sealed shape and its own accept/import path, and a
-        // body added here without the far end would deliver an entry that arrives EMPTY — a
-        // silent partial share, which is worse than a share that does not offer it. Tracked in
-        // todo/PLAN_config_entities.md; until then, "Write config file here…" is the way across.
+        config: result.newConfigBody,
       },
     };
     await shareInbox.deliver(sender.accountId, payload, recipients, pin);
