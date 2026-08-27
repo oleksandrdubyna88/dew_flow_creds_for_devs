@@ -5,6 +5,7 @@ import { CommandArg, EntityMetadata, PortForward } from './types';
 import { DependencyFolderCandidate, DependencyRow } from './depGraph';
 import { dependencyPickerScript } from './depPickerScript';
 import { mcpSwitchScript } from './mcpSwitchScript';
+import { configTabsScript } from './configTabsScript';
 import { formVisibilityScript } from './formVisibilityScript';
 
 /** What the Depends-on picker needs, gathered once when the page is built. */
@@ -126,6 +127,8 @@ export function formPageScript(
   ${mcpSwitchScript(d?.mcp !== undefined)}
 
   ${dependencyPickerScript(picker)}
+
+  ${configTabsScript()}
 
   // ---- argument rows -------------------------------------------------------
   // Built from data rather than from markup: add, remove and reorder then have ONE

@@ -141,7 +141,10 @@ function pageScript(html: string): string {
   return (match as RegExpExecArray)[1];
 }
 
-const KINDS = [undefined, 'credential', 'ssh', 'sshkey', 'vpn', 'db', 'terminal', 'script'];
+// Driven from the catalog, not typed out here. The hand-written list was missing `config` the
+// day that kind was added — and this is the test whose whole job is to catch a page script that
+// does not parse, which is a failure that silently leaves every fieldset visible at once.
+const KINDS = [undefined, ...ENTITY_KINDS];
 
 test('the form page script parses for every kind', () => {
   for (const kind of KINDS) {

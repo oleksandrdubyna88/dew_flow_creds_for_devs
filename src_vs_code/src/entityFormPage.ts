@@ -401,6 +401,15 @@ export function renderHtml(options: EntityFormOptions): string {
   .depSwatchOn { outline: 2px solid var(--vscode-focusBorder, #007fd4); outline-offset: 1px; }
   .depRemove { padding: 1px 8px; }
   .envRow label { opacity: .85; }
+  /* The config section's Raw / Fields tabs. Coloured from the editor's own tokens rather than
+     from fixed values, so a high-contrast theme is legible without a second rule. */
+  .tabs { display: flex; gap: 2px; margin: 8px 0 6px; }
+  .tab { background: transparent; color: var(--vscode-foreground); opacity: .7;
+         border: none; border-bottom: 2px solid transparent; padding: 4px 10px; cursor: pointer; }
+  .tab.on { opacity: 1; border-bottom-color: var(--vscode-focusBorder); }
+  .fieldRow { display: grid; grid-template-columns: minmax(140px, 40%) 1fr; gap: 8px;
+              align-items: center; margin: 4px 0; }
+  .fieldRow label { margin: 0; overflow-wrap: anywhere; opacity: .85; }
   .codeWrap { position: relative; }
   .codeWrap pre { position: absolute; inset: 0; margin: 0; padding: 5px 7px; overflow: auto;
     font-family: var(--vscode-editor-font-family, monospace); font-size: 13px; line-height: 1.45;
@@ -667,10 +676,20 @@ export function renderHtml(options: EntityFormOptions): string {
            placeholder="appsettings.Development.json"
            value="${escapeHtml(d?.configFileName ?? '')}">
     <p class="hint">What "Write config file here…" saves it as. It is not a path — you choose the folder when you write it.</p>
-    <label for="configBody">Contents</label>
-    <div class="codeWrap">
-      <textarea id="configBody" rows="18" spellcheck="false" autocomplete="off"
-                placeholder='{ "ConnectionStrings": { "Default": "..." } }'>${escapeHtml(options.initialConfigBody ?? '')}</textarea>
+    <div class="tabs" role="tablist">
+      <button type="button" id="configTabRaw" class="tab on" role="tab">Raw</button>
+      <button type="button" id="configTabFields" class="tab" role="tab">Fields</button>
+    </div>
+    <div id="configRawPane">
+      <label for="configBody">Contents</label>
+      <div class="codeWrap">
+        <textarea id="configBody" rows="18" spellcheck="false" autocomplete="off"
+                  placeholder='{ "ConnectionStrings": { "Default": "..." } }'>${escapeHtml(options.initialConfigBody ?? '')}</textarea>
+      </div>
+    </div>
+    <div id="configFieldsPane" style="display:none">
+      <p class="hint" id="configFieldsNote"></p>
+      <div id="configFieldRows"></div>
     </div>
     <p class="hint">Stored as a secret, like a password — never in plain metadata, never in a share, never handed to an agent. A body that does not parse is still saved; the row is marked until it does.</p>
 

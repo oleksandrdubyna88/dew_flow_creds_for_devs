@@ -19,6 +19,7 @@ import {
 import { parseSshPrivateKey } from './sshKeyParse';
 import { isDepColorKey } from './depColors';
 import { isConfigFormat } from './configFormat';
+import { ConfigField, configFields, withFieldValues } from './configFields';
 import { FORM_WEBVIEW_OPTIONS, formPanels } from './formPanels';
 import { readMcpAccess } from './mcpAccess';
 import { DependencyFolderCandidate, normalizeDependsOn } from './depGraph';
@@ -177,7 +178,17 @@ function readArgRows(data: Record<string, unknown>): CommandArg[] {
 }
 
 interface FormMessage {
-  type: 'save' | 'cancel' | 'splitCommand' | 'highlight' | 'generate';
+  type:
+    | 'save'
+    | 'cancel'
+    | 'splitCommand'
+    | 'highlight'
+    | 'generate'
+    | 'configFields'
+    | 'configFieldEdit';
+  /** `configFieldEdit` only: which row was changed, and to what. */
+  path?: string;
+  value?: string;
   /** `generate` only: which kind of secret to draw. */
   kind?: 'password' | 'passphrase' | 'key';
   data?: Record<string, unknown>;
@@ -294,12 +305,7 @@ export function showEntityForm(options: EntityFormOptions): Promise<EntityFormVa
     let settled = false;
     // eslint-disable-next-line complexity
     panel.webview.onDidReceiveMessage((message: FormMessage) => {
-      if (message.type === 'highlight') {
-        // One highlighter, host-side; the page round-trips instead of duplicating it.
-        void panel.webview.postMessage({
-          type: 'highlighted',
-          html: highlightScript(message.text ?? '', message.lang ?? 'other'),
-        });
+      if (answerRoundTrip(panel, message)) {
         return;
       }
       if (message.type === 'splitCommand') {
@@ -334,6 +340,73 @@ export function showEntityForm(options: EntityFormOptions): Promise<EntityFormVa
       }
     });
   });
+}
+
+/**
+ * The round-trips: the page asks, the host answers, and nothing is stored on either side.
+ *
+ * <p>Three messages with one shape, so they live in one place. The highlighter's own comment
+ * already stated the rule the other two follow — one implementation, host-side, that a unit test
+ * can reach, rather than a copy inside a template string where nothing can check it. Gathering
+ * them also keeps `showEntityForm` under the fifty-line ceiling it was sitting exactly on.</p>
+ *
+ * <p>Returns whether the message WAS a round-trip, so the caller's dispatch stays a single line
+ * and the list of them stays here.</p>
+ */
+function answerRoundTrip(panel: vscode.WebviewPanel, message: FormMessage): boolean {
+  if (message.type === 'highlight') {
+    void panel.webview.postMessage(highlighted(message));
+    return true;
+  }
+  if (message.type === 'configFields') {
+    void panel.webview.postMessage({ type: 'configFieldsResult', fields: fieldRowsFor(message) });
+    return true;
+  }
+  if (message.type === 'configFieldEdit') {
+    void panel.webview.postMessage({ type: 'configBody', text: editedConfigBody(message) });
+    return true;
+  }
+  return false;
+}
+
+/** Its own function so the two defaults above do not count against the dispatch's complexity. */
+function highlighted(message: FormMessage): { type: string; html: string } {
+  return { type: 'highlighted', html: highlightScript(message.text ?? '', message.lang ?? 'other') };
+}
+
+/**
+ * The rows for whatever the page is currently holding, or `null`.
+ *
+ * <p>Spans are deliberately NOT sent. The page would then be holding offsets into a document it
+ * can go on editing in the Raw tab, and a stale offset splices into the wrong place — silently,
+ * and in a file of secrets. Recomputing from the text the page just sent is always consistent
+ * with what the page has.</p>
+ *
+ * <p>`null` rather than `undefined` because this crosses a `postMessage` boundary, where
+ * `undefined` does not survive JSON and would arrive as a missing property.</p>
+ */
+function fieldRowsFor(message: FormMessage): { path: string; value: string }[] | null {
+  const fields = fieldsOf(message, message.text ?? '');
+  return fields === undefined ? null : fields.map(({ path, value }) => ({ path, value }));
+}
+
+/** The rows for one message's format and body, or nothing when that format has no field view. */
+function fieldsOf(message: FormMessage, body: string): readonly ConfigField[] | undefined {
+  const format = message.lang ?? '';
+  return isConfigFormat(format) ? configFields(format, body) : undefined;
+}
+
+/** The document with one row's value spliced in — or unchanged, if that row is no longer there. */
+function editedConfigBody(message: FormMessage): string {
+  const body = message.text ?? '';
+  const field = fieldNamed(message, body);
+  return field === undefined
+    ? body
+    : withFieldValues(body, [{ field, value: message.value ?? '' }]);
+}
+
+function fieldNamed(message: FormMessage, body: string): ConfigField | undefined {
+  return (fieldsOf(message, body) ?? []).find((field) => field.path === message.path);
 }
 
 // ---------- form data → typed result ----------
