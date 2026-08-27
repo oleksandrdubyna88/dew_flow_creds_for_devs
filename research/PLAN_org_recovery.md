@@ -188,6 +188,12 @@ signatures.
      three-officer minimum exists to refuse.
    - A configured roster logs at **Warning** on startup. It is the one setting that changes what
      happens to other people's vaults.
+   - **A bad roster does not stop the server** — corrected 2026-08-27, after the guard shipped as
+     a startup refusal. Refusing to boot took ordinary vault sync down for everybody over one
+     optional feature nobody had enrolled in yet; the property worth protecting is only that no
+     key is ever sealed to a quorum that cannot be assembled. `Read` now returns an **empty**
+     roster plus a `Misconfiguration` reason, so off is the shape rather than a flag to test, and
+     `Program.cs` logs the reason at **Error**.
 5. ~~Server phase 2: invites + setup + maintenance sweep~~ — **shipped 2026-08-27**
    (`OrgRecoveryStore.cs`, `OrgRecoveryMaintenance.cs`, five endpoints, 15 tests). Deviations:
    - **Republishing is idempotent, not refused.** The plan said `409` when `setupComplete` is

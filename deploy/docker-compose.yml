@@ -76,9 +76,10 @@ services:
       # Corporate break-glass recovery. EMPTY = the feature does not exist on this server,
       # which is the default and the right one for most deployments. Setting it enrols EVERY
       # account here — each vault also seals its key so a quorum of these officers can open it
-      # without its owner — so it is not a setting to try out. The server refuses to start on a
-      # roster that can never reach quorum (fewer than three officers, or a threshold outside
-      # 2..N) and logs a WARNING naming the officers whenever it IS set.
+      # without its owner — so it is not a setting to try out. A roster that can never reach
+      # quorum (fewer than three officers, or a threshold outside 2..N) leaves the feature OFF
+      # and logs an ERROR saying why; the server starts either way. A roster that IS usable
+      # logs a WARNING naming the officers.
       Vault__CorpRecovery__OfficerEmails: ${CORP_RECOVERY_OFFICERS:-}
       Vault__CorpRecovery__Threshold: ${CORP_RECOVERY_THRESHOLD:-2}
       Vault__CorpRecovery__SetupTtlHours: ${CORP_RECOVERY_SETUP_TTL_HOURS:-72}

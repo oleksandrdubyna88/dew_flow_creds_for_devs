@@ -248,8 +248,10 @@ from the YAML:
   compose-shaped environment, not only from a test fixture
 - an ordinary account was refused an officer endpoint (`403`) while an officer got their inbox
   (`200 []`) against the same running server
-- both startup guards were watched refusing: `CORP_RECOVERY_THRESHOLD=1` and a two-officer roster
-  each stopped the host with the message naming the fix, rather than starting and failing later
+- both misconfigurations were watched being caught: `CORP_RECOVERY_THRESHOLD=1` and a two-officer
+  roster each left the feature **off** with an `Error` line naming the fix, and the server started
+  normally — corrected 2026-08-27 from a refusal to boot, which stopped ordinary vault sync for
+  everybody over a feature nobody had enrolled in yet
 
 The keys are absent from `.env.example` on purpose until an operator writes them: an empty roster is
 the feature switched off, and that is the state every deployment should be in until somebody decides

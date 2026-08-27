@@ -19,6 +19,12 @@ public sealed record OrgRecoveryConfig
     /// <summary>How many officers must contribute to reconstruct the key.</summary>
     public required int Threshold { get; init; }
 
+    /// <summary>
+    /// Empty when the operator's configuration is usable — including the ordinary case of no
+    /// roster at all. Otherwise the reason corporate recovery is off despite being configured.
+    /// </summary>
+    public string Misconfiguration { get; init; } = string.Empty;
+
     public bool Enabled => OfficerEmails.Count > 0;
 
     public bool IsOfficer(string email) =>
@@ -51,11 +57,19 @@ public sealed record OrgRecoveryConfig
     public const int MinimumOfficers = 3;
 
     /// <summary>
-    /// Read the roster, refusing a shape that can never reach quorum.
+    /// Read the roster. A shape that can never reach quorum turns the feature OFF and says why;
+    /// it does not stop the server.
     ///
-    /// <para>A misconfigured roster is exactly the failure that must not wait until somebody
-    /// needs it: an unreachable threshold looks like a working feature for months and fails on
-    /// the one day it is used. Same reasoning as the auth and domain guards beside it.</para>
+    /// <para>This used to throw, which took the whole server down over one optional feature —
+    /// ordinary vault sync stopped for everybody because of a typo in a roster nobody had
+    /// enrolled against yet. The property worth protecting is narrower than an outage: no
+    /// master key may ever be sealed to a quorum that cannot be assembled. Returning an empty
+    /// roster gets that by construction, because every downstream check reads
+    /// <see cref="Enabled"/>, and there is nothing for a client to enrol against.</para>
+    ///
+    /// <para>Off is therefore not silent: <see cref="Misconfiguration"/> carries the reason and
+    /// the host logs it at Error. An operator who configured this and got nothing has to learn
+    /// it at startup, not on the day a colleague leaves.</para>
     /// </summary>
     public static OrgRecoveryConfig Read(IReadOnlyList<string> officerEmails, int threshold)
     {
@@ -64,27 +78,52 @@ public sealed record OrgRecoveryConfig
             .Where(e => e.Length > 0)
             .Distinct()
             .ToList();
+        var complaint = QuorumComplaint(officers, threshold);
+        return complaint.Length > 0
+            ? new OrgRecoveryConfig
+            {
+                // Deliberately empty rather than the roster as typed: a client shown officers it
+                // could not actually be recovered by would read that as an enrolment.
+                OfficerEmails = [],
+                Threshold = threshold,
+                Misconfiguration = complaint,
+            }
+            : new OrgRecoveryConfig { OfficerEmails = officers, Threshold = threshold };
+    }
+
+    /// <summary>
+    /// Why this roster cannot be used, or empty when it can.
+    ///
+    /// <para>No roster at all is not a complaint — it is the default, and the overwhelmingly
+    /// common one. Reporting it would make the startup log noisy on every server that never
+    /// wanted the feature, and train operators to skip the line that matters.</para>
+    /// </summary>
+    private static string QuorumComplaint(IReadOnlyList<string> officers, int threshold)
+    {
         if (officers.Count == 0)
         {
-            return new OrgRecoveryConfig { OfficerEmails = [], Threshold = threshold };
+            return string.Empty;
         }
         if (officers.Count < MinimumOfficers)
         {
-            throw new InvalidOperationException(
-                $"Vault:CorpRecovery:OfficerEmails names {officers.Count} officer(s); at least "
+            return $"Vault:CorpRecovery:OfficerEmails names {officers.Count} officer(s); at least "
                 + $"{MinimumOfficers} are required. A smaller roster cannot survive one of them "
-                + "leaving — which is the event this feature exists for. Leave it empty to run "
-                + "without corporate recovery.");
+                + "leaving — which is the event this feature exists for. Corporate recovery is "
+                + "OFF until this is fixed; no vault on this server is sealed to it.";
         }
-        if (threshold < 2 || threshold > officers.Count)
+        if (!ThresholdIsReachable(threshold, officers.Count))
         {
-            throw new InvalidOperationException(
-                $"Vault:CorpRecovery:Threshold is {threshold}, which is outside 2..{officers.Count}. "
-                + "A threshold of 1 would let any single officer open every vault on this server; "
-                + "one above the roster size can never be reached.");
+            return $"Vault:CorpRecovery:Threshold is {threshold}, which is outside "
+                + $"2..{officers.Count}. A threshold of 1 would let any single officer open every "
+                + "vault on this server; one above the roster size can never be reached. "
+                + "Corporate recovery is OFF until this is fixed; no vault on this server is "
+                + "sealed to it.";
         }
-        return new OrgRecoveryConfig { OfficerEmails = officers, Threshold = threshold };
+        return string.Empty;
     }
+
+    private static bool ThresholdIsReachable(int threshold, int officerCount) =>
+        threshold >= 2 && threshold <= officerCount;
 }
 
 /// <summary>

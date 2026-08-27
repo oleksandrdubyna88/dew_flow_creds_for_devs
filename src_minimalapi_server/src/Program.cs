@@ -321,6 +321,15 @@ if (orgRecovery.Enabled)
         string.Join(", ", orgRecovery.OfficerEmails),
         orgRecovery.RosterFingerprint());
 }
+else if (orgRecovery.Misconfiguration.Length > 0)
+{
+    // The server starts anyway. Corporate recovery is one optional feature among many, and
+    // refusing to boot over a typo in its roster stops ordinary vault sync for everybody —
+    // an outage caused by the safety check, on a server where nothing was enrolled yet.
+    // At Error, not Warning: unlike the empty default this is a setting somebody wrote and
+    // is entitled to believe is working.
+    log.LogError("CORPORATE RECOVERY IS OFF: {Reason}", orgRecovery.Misconfiguration);
+}
 store.SweepStaleTempFiles();
 if ((msAudiences.Count == 0 && !string.IsNullOrWhiteSpace(msTenant))
     || (googleEnabled && googleAudiences.Count == 0))

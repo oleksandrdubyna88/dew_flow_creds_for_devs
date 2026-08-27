@@ -346,16 +346,34 @@ The server refuses to start rather than run in a state that looks like a network
    verified account on earth, by omission.
 3. **`DataDir` not writable** → checked *before* `VaultStore` is constructed, with a message that
    names the usual cause (a root-owned bind mount against an unprivileged container) and the fix.
-4. **A corporate-recovery roster that can never reach quorum** → fewer than three officers (a
-   2-of-2 goes down with the first departure, which is the event the feature exists for), a
-   threshold of 1 (any single officer opens every vault on the server), or a threshold above the
-   roster size (unreachable — the misconfiguration that looks like a working feature for months
-   and fails on the one day it is used). Duplicates and casing are normalised *before* the count,
-   so three entries naming two people are refused rather than passing as a 2-of-2 in disguise.
+The corporate-recovery roster is deliberately **not** on that list. It used to be, and that was
+the wrong lever: corporate recovery is one optional feature among many, and a typo in its roster
+stopped ordinary vault sync for everybody — an outage caused by the safety check, on a server
+where nobody had enrolled yet. What must not happen is narrower than an outage: no master key may
+ever be sealed to a quorum that cannot be assembled.
 
-A configured roster also logs at **Warning** on startup, naming the officers and the fingerprint:
-it is the one setting that changes what happens to *other people's* vaults, and an operator who
-did not mean to enable it should find out from the log rather than from a user.
+So a roster that can never reach quorum leaves the feature **off** and the server running:
+
+| roster | result |
+|---|---|
+| empty | off, silently — the default, and the common case |
+| fewer than three officers | off + **Error** log; a 2-of-2 goes down with the first departure, which is the event the feature exists for |
+| threshold of 1 | off + **Error** log; any single officer would open every vault on the server |
+| threshold above the roster size | off + **Error** log; unreachable, the misconfiguration that looks like a working feature for months |
+| three or more, threshold in 2..N | **on** + **Warning** log naming the officers and the fingerprint |
+
+`OrgRecoveryConfig.Read` implements this by returning an **empty** roster whenever it complains,
+never the roster as typed — every downstream check reads `Enabled`, so off is the shape rather
+than a flag somebody could forget to test, and a client is never shown officers it could not
+actually be recovered by. The reason travels in `Misconfiguration`, which `Program.cs` logs at
+**Error**: off-because-of-a-typo is indistinguishable from off-on-purpose otherwise, and the
+operator who wrote those two lines is entitled to believe they work. Duplicates and casing are
+normalised *before* the count, so three entries naming two people are rejected rather than
+passing as a 2-of-2 in disguise.
+
+A usable roster logs at **Warning** instead, naming the officers and the fingerprint: it is the
+one setting that changes what happens to *other people's* vaults, and an operator who did not
+mean to enable it should find out from the log rather than from a user.
 
 Then `SweepStaleTempFiles()` runs: any `*.tmp` older than ten minutes is a write interrupted by a
 crash, and is removed.

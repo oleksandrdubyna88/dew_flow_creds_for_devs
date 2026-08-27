@@ -5,9 +5,9 @@ using FluentAssertions;
 namespace CredVaultServer.Tests;
 
 /// <summary>
-/// Corporate recovery, server side, phase one: the operator's roster, the guard that refuses a
-/// roster which can never reach quorum, and the endpoint that tells every account on the server
-/// what it is subject to.
+/// Corporate recovery, server side, phase one: the operator's roster, the guard that turns the
+/// feature off on a roster which can never reach quorum, and the endpoint that tells every
+/// account on the server what it is subject to.
 /// </summary>
 [Collection(ServerCollection.Name)]
 public sealed class OrgRecoveryConfigTests
@@ -31,18 +31,19 @@ public sealed class OrgRecoveryConfigTests
         return JsonDocument.Parse(body).RootElement.Clone();
     }
 
-    private static Exception? StartupFailure(Dictionary<string, string?> overrides)
+    /// <summary>
+    /// Start a server on a roster that cannot reach quorum and ask it what it thinks it has.
+    ///
+    /// <para>The point of the helper is that constructing the server is expected to WORK.
+    /// Corporate recovery is one optional feature among many; a typo in its roster must not
+    /// take ordinary vault sync down with it, on a server where nothing has been enrolled
+    /// yet. The property that has to survive is narrower and is what these tests assert: a
+    /// roster that cannot be assembled never becomes something a client can enrol against.</para>
+    /// </summary>
+    private static async Task<JsonElement> ConfigDespite(Dictionary<string, string?> overrides)
     {
         using var server = new VaultServer(overrides);
-        try
-        {
-            using var client = server.CreateClient();
-            return null;
-        }
-        catch (Exception ex)
-        {
-            return ex;
-        }
+        return await ConfigFor(server, Alice);
     }
 
     [Fact]
@@ -145,47 +146,98 @@ public sealed class OrgRecoveryConfigTests
     // ---------------------------------------------------------------- the guards
 
     [Fact]
-    public void ARosterOfTwoIsRefused_ItCannotSurviveOneOfThemLeaving()
+    public async Task ARosterOfTwoTurnsTheFeatureOff_AndTheServerStillStarts()
     {
         // The whole feature exists for the day somebody leaves. A 2-of-2 roster goes down with
-        // the first departure, which is the event it was configured for.
-        var failure = StartupFailure(WithRoster("cto@example.com,lead@example.com"));
+        // the first departure, which is the event it was configured for — so it must not be
+        // used. But refusing to START on it punishes every account here for a setting none of
+        // them touched, and takes ordinary sync down over a feature nobody had enrolled in yet.
+        var config = await ConfigDespite(WithRoster("cto@example.com,lead@example.com"));
 
-        failure.Should().NotBeNull();
-        failure!.ToString().Should().Contain("at least 3", "the message must say what the minimum is");
+        config.GetProperty("enabled").GetBoolean().Should().BeFalse();
+        config.GetProperty("officerEmails").GetArrayLength().Should()
+            .Be(0, "naming the officers of a refused roster would read to a client as an enrolment");
     }
 
     [Fact]
-    public void AThresholdOfOneIsRefused_ThatIsNotAQuorum()
+    public async Task AThresholdOfOneTurnsTheFeatureOff_ThatIsNotAQuorum()
     {
         // With a threshold of 1 any single officer opens every vault on the server, which is
         // precisely the concentration of power the split exists to prevent.
-        var failure = StartupFailure(WithRoster(Officers, "1"));
+        var config = await ConfigDespite(WithRoster(Officers, "1"));
 
-        failure.Should().NotBeNull();
-        failure!.ToString().Should().Contain("outside 2..3");
+        config.GetProperty("enabled").GetBoolean().Should().BeFalse();
+        config.GetProperty("officerEmails").GetArrayLength().Should().Be(0);
     }
 
     [Fact]
-    public void AThresholdAboveTheRosterSizeIsRefused_ItCanNeverBeReached()
+    public async Task AThresholdAboveTheRosterSizeTurnsTheFeatureOff_ItCanNeverBeReached()
     {
         // The misconfiguration that looks like a working feature for months and fails on the
         // one day it is used.
-        var failure = StartupFailure(WithRoster(Officers, "4"));
+        var config = await ConfigDespite(WithRoster(Officers, "4"));
 
-        failure.Should().NotBeNull();
-        failure!.ToString().Should().Contain("outside 2..3");
+        config.GetProperty("enabled").GetBoolean().Should().BeFalse();
+        config.GetProperty("officerEmails").GetArrayLength().Should().Be(0);
     }
 
     [Fact]
-    public void DuplicatesAndCasingDoNotInflateTheRosterPastTheGuard()
+    public async Task DuplicatesAndCasingDoNotInflateTheRosterPastTheMinimum()
     {
         // Three entries that are two people would pass a naive count and leave a 2-of-2 in
         // disguise — the exact shape the minimum is there to refuse.
-        var failure = StartupFailure(WithRoster("CTO@example.com,cto@example.com,lead@example.com"));
+        var config = await ConfigDespite(
+            WithRoster("CTO@example.com,cto@example.com,lead@example.com"));
 
-        failure.Should().NotBeNull();
-        failure!.ToString().Should().Contain("2 officer(s)", "the count must be of PEOPLE");
+        config.GetProperty("enabled").GetBoolean().Should().BeFalse();
+    }
+
+    // ------------------------------------------------- and it has to SAY why, or it is silent
+
+    [Fact]
+    public void ARosterTooSmallToSurviveADepartureSaysSo()
+    {
+        // Off without a reason is indistinguishable from never configured, and the operator
+        // who typed two addresses believes the feature is running. The string is what the
+        // startup log prints.
+        var config = OrgRecoveryConfig.Read(["cto@example.com", "lead@example.com"], 2);
+
+        config.Enabled.Should().BeFalse();
+        config.Misconfiguration.Should().Contain("2 officer(s)", "the count must be of PEOPLE");
+        config.Misconfiguration.Should().Contain("at least 3", "and say what the minimum is");
+    }
+
+    [Fact]
+    public void AnUnreachableThresholdSaysSo()
+    {
+        var tooLow = OrgRecoveryConfig.Read(["a@x.com", "b@x.com", "c@x.com"], 1);
+        var tooHigh = OrgRecoveryConfig.Read(["a@x.com", "b@x.com", "c@x.com"], 4);
+
+        tooLow.Enabled.Should().BeFalse();
+        tooLow.Misconfiguration.Should().Contain("outside 2..3");
+        tooHigh.Enabled.Should().BeFalse();
+        tooHigh.Misconfiguration.Should().Contain("outside 2..3");
+    }
+
+    [Fact]
+    public void AnEmptyRosterIsNotAMisconfiguration_ItIsTheDefault()
+    {
+        // The difference the startup log turns on: nothing configured is silence, something
+        // configured wrongly is an error. Collapsing them would make the default noisy and
+        // train operators to ignore the line that matters.
+        var config = OrgRecoveryConfig.Read([], 2);
+
+        config.Enabled.Should().BeFalse();
+        config.Misconfiguration.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void AUsableRosterCarriesNoComplaint()
+    {
+        var config = OrgRecoveryConfig.Read(["a@x.com", "b@x.com", "c@x.com"], 2);
+
+        config.Enabled.Should().BeTrue();
+        config.Misconfiguration.Should().BeEmpty();
     }
 
     [Fact]
