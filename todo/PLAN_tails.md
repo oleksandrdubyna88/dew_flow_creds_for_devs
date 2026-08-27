@@ -961,6 +961,58 @@ turns out to allow; decide while building T21, record the choice.
 
 ---
 
+### T23. "Enable CLI Access" leads nowhere you can see, and search cannot ask capability questions
+
+**The ask, in the owner's words:** *"я сделал enable in CLI — и что теперь? я даже скопировать это
+не могу."* Two surfaces, one root — a capability that exists on an entry is invisible on the entry.
+
+**T23a. The viewer says nothing about CLI access.** The Agent-access line is precedent: the viewer
+opens with what agents may do. CLI grants get no equivalent — *Enable CLI Access…*
+(`package.json:931`) mints an alias into `globalState`'s `ALIAS_KEY` map (`extension.ts:308-313`),
+and after that no surface shows that this entry HAS an alias or what it is called. Add, beside the
+Agent-access block: which CLI aliases point at this entry, and — the owner's concrete ask — **a
+copyable command row**, `creds ssh <alias>` (verb by kind: `ssh`, `db`, `run`, `env`, `config`…),
+with the standard copy button. The alias map is keyed by name → entry; the viewer needs the reverse
+lookup, which is a five-line scan of a small map.
+
+**T23b. Search filters by capability.** Today `nodeHaystack` (`treeSearch.ts:34`) matches free text
+over name/host/user/command. The owner wants to FILTER: all entries with TOTP; all CLI-enabled; all
+with env-variable bindings; all by each MCP switch or a combination — *"что у нас ещё есть? изучи и
+добавь"*. The study, from `EntityMetadata` and the stores:
+
+| filterable capability | where it lives |
+|---|---|
+| has a one-time code | `totpEnabled` / TOTP secret present |
+| CLI-enabled (has an alias) | the alias map, reverse-scanned |
+| binds env variables | `envBindings` non-empty |
+| each MCP switch (visible / usable / rotate / create / delete-own / delete-any) | `mcpAccess`, plus folder inheritance via `resolveMcpAccess` |
+| open to code (config key minted) | `configKeyHash` present |
+| ephemeral (has a lifetime) | `expiresAt` / `burnPolicy` |
+| depends on / depended on by | `dependsOn`, the dependency index |
+| has attachments / an image | the has-attachment flags |
+| agent-forwarding SSH entries | `agentForward` |
+| shared to me / by me | share origin metadata |
+| in the Trash | ancestry under the trash folder |
+
+**Syntax over UI**: the existing filter box learns typed predicates — `has:totp`, `has:cli`,
+`has:env`, `mcp:usable`, `has:code-access`, `is:ephemeral`, `has:deps` — combinable with each other
+and with free text (`aws has:totp mcp:usable`). A QuickPick "insert a filter" helper can list them
+so nobody memorises the grammar; the grammar is the feature, because combinations were asked for
+explicitly. `nodeHaystack` stays what it is (free text); predicates are a separate match layer in
+`treeSearch.ts`, pure and testable.
+
+**The boundary that must hold:** filters read METADATA only — `nodeHaystack`'s own guarantee
+("Secrets are never searched") extends to predicates. `has:totp` reads the flag, never the seed.
+
+**Tests.** Each predicate against a fixture tree (positive and negative); combinations AND
+together; free text still works beside them; an unknown predicate is reported, not silently
+treated as text; the folder-inheritance case for `mcp:*` matches what the tree's own badge shows
+(same resolver, asserted by identity). For T23a: the reverse alias lookup, and the command row's
+verb per entity kind.
+
+
+---
+
 ## 4. Build order
 
 Ordered so that each step is verifiable on its own, and the two that need a person come last.
@@ -978,22 +1030,24 @@ Ordered so that each step is verifiable on its own, and the two that need a pers
    shared tool-check with its install offers.
 6. **T14** — the generator options and the button styling: the pure half already exists, so this
    is mostly UI plus the recorded-decision reversal in T14b.
-7. **T13, then T15** — the arrival highlight over the decoration provider that is already
+7. **T23** — the CLI-access row in the viewer, then the filter predicates over the capability
+   table above.
+8. **T13, then T15** — the arrival highlight over the decoration provider that is already
    registered, then the filter fix that calls the same helper from its third site. T15's part 1
    (the flag) is independent and can go first if the highlight slips.
-8. **T10** — the MCP config surface: one tool over an existing pure catalog, plus the
+9. **T10** — the MCP config surface: one tool over an existing pure catalog, plus the
    instructions paragraph.
-9. **T17** — the form highlighter. Late deliberately: it is the only item here whose approach is
+10. **T17** — the form highlighter. Late deliberately: it is the only item here whose approach is
    a real design choice rather than a fix, and the overlay should be shown to the owner.
-10. **T4** — the README, then the test that keeps it honest. The test is written **first** and
+11. **T4** — the README, then the test that keeps it honest. The test is written **first** and
    watched failing against today's README, because a coverage test authored after the document it
    covers is a test shaped to pass.
-11. **T3** — the ratchet, last of the code items: it takes a baseline of the tree, so it should be
+12. **T3** — the ratchet, last of the code items: it takes a baseline of the tree, so it should be
    taken after the rest have stopped moving it.
-12. **T2** — needs a browser and a physical security key.
-13. **T21 + T22** — the Help surface and its title-bar home; the view rename rides along: catalog type and entry point first, articles in English, the
+13. **T2** — needs a browser and a physical security key.
+14. **T21 + T22** — the Help surface and its title-bar home; the view rename rides along: catalog type and entry point first, articles in English, the
     language switch, pictures deliberately later.
-14. **T5** — needs the owner. Prepared by then, decided here.
+15. **T5** — needs the owner. Prepared by then, decided here.
 
 ## 5. Test plan
 
@@ -1041,6 +1095,8 @@ and both the failure and the pass are reported.
 - [ ] T9: the viewer's columns are as wide as the form's, proven by a test watched failing at 640 px.
 - [ ] T22: the tree no longer says the product name twice; the help mark sits in the title bar
       after the name, with the spacing question answered rather than assumed.
+- [ ] T23: the viewer shows this entry's CLI aliases with a copyable `creds <verb> <alias>` row;
+      the filter understands the capability predicates, combinable, metadata-only.
 - [ ] T21: the help entry point exists with a yellow question mark (title bar per T22, status bar
       as fallback); every article
       carries what/why/setup/usage/what-can-go-wrong; the hard-to-guess features lead the index;
@@ -1091,7 +1147,7 @@ and both the failure and the pass are reported.
 - [ ] T8: the server's console output is coloured under redirection (counted, not observed), a run
       crossing midnight segments, `logs/` has a named retention owner, and the obsolete mirror-list
       item is deleted with its reason.
-- [ ] `research/module_extension.md` and `research/module_server.md` updated for T1, T3, T4, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17, T18, T19, T20, T21, T22;
+- [ ] `research/module_extension.md` and `research/module_server.md` updated for T1, T3, T4, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17, T18, T19, T20, T21, T22, T23;
       `research/module_mcp.md` (or `module_extension.md`'s MCP section) for T10.
 - [ ] `node .claude/rules/shared/tools/plan-lifecycle.mjs` and `pin-check.mjs` pass.
 - [ ] This plan promoted to `research/` with its deviations recorded, and anything left extracted
