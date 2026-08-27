@@ -69,3 +69,29 @@ export function rcSnippet(socketPath: string): string {
 export function rcAlreadyHasIt(text: string): boolean {
   return text.includes(RC_MARKER);
 }
+
+/**
+ * Distributions that are plumbing rather than somewhere a person works.
+ *
+ * <p>Filtered from the picker rather than hidden everywhere: Docker Desktop installs these and
+ * they have no login shell to put an export line into, so offering them is offering a choice
+ * that cannot work. Anything else WSL reports is shown, because guessing which of someone's own
+ * distributions is 'real' is not ours to do.</p>
+ */
+const SYSTEM_DISTROS = new Set(['docker-desktop', 'docker-desktop-data']);
+
+/**
+ * The distributions `wsl -l -q` reported.
+ *
+ * <p><b>Takes a Buffer, not a string, and that is the whole point.</b> WSL answers in UTF-16LE
+ * with CRLF — measured 2026-08-27: the bytes begin `55 00 62 00`. Decoded as UTF-8 every name
+ * comes back interleaved with NUL characters and matches nothing, which is the kind of failure
+ * that looks like "no distributions found" rather than like an encoding bug.</p>
+ */
+export function parseDistros(raw: Buffer): string[] {
+  return raw
+    .toString('utf16le')
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((name) => name.length > 0 && !SYSTEM_DISTROS.has(name));
+}

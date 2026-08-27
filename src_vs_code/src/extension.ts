@@ -167,8 +167,8 @@ import { SshExecAuth, buildSshExecArgv } from './sshExecCommand';
 import { ServerTransport } from './serverTransport';
 import { withdrawalMessage } from './commandTargets';
 import { runSshExec } from './sshExecRunner';
-import { rcAlreadyHasIt, rcSnippet } from './wslRelay';
-import { WslRelayManager, spawnWslRelay } from './wslRelayManager';
+import { parseDistros, rcAlreadyHasIt, rcSnippet } from './wslRelay';
+import { DEFAULT_DISTRO, WslRelayManager, spawnWslRelay } from './wslRelayManager';
 import {
   AliasMap,
   aliasFor,
@@ -761,22 +761,25 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   );
   context.subscriptions.push(wslRelay);
 
-  function relaySettings(): { enabled: boolean; command: string; distro: string } {
+  function relaySettings(): { enabled: boolean; command: string; distros: string[] } {
     const config = vscode.workspace.getConfiguration('credSshManager');
+    const chosen = config.get<string[]>('wslRelayDistros', []);
     return {
       enabled: config.get<boolean>('wslAgentRelay', false),
       command: config.get<string>('wslRelayCommand', 'creds'),
-      distro: config.get<string>('wslRelayDistro', ''),
+      // An empty list means the distribution WSL calls default — which is what someone who never
+      // opened the picker gets, and the only sane answer when they have exactly one.
+      distros: chosen.length > 0 ? chosen : [DEFAULT_DISTRO],
     };
   }
 
   function followAgentWithRelay(socketPath: string | undefined): void {
-    const { enabled, command, distro } = relaySettings();
+    const { enabled, command, distros } = relaySettings();
     if (socketPath === undefined || !enabled || process.platform !== 'win32') {
       wslRelay.stop();
       return;
     }
-    const started = wslRelay.start(command, distro);
+    const started = wslRelay.start(command, distros);
     if (!started.ok) {
       log.warn('wsl-relay', started.reason);
       void vscode.window.showWarningMessage(`CredsForDevs: ${started.reason}`);
@@ -868,38 +871,83 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       );
       return;
     }
-    await vscode.workspace
-      .getConfiguration('credSshManager')
-      .update('wslAgentRelay', true, vscode.ConfigurationTarget.Global);
-    const { command, distro } = relaySettings();
-    const started = wslRelay.start(command, distro);
+    const chosen = await chooseDistros();
+    if (chosen === undefined) {
+      return;
+    }
+    const config = vscode.workspace.getConfiguration('credSshManager');
+    await config.update('wslRelayDistros', chosen, vscode.ConfigurationTarget.Global);
+    await config.update('wslAgentRelay', true, vscode.ConfigurationTarget.Global);
+
+    const { command } = relaySettings();
+    const started = wslRelay.start(command, chosen);
     if (!started.ok) {
       void vscode.window.showErrorMessage(`CredsForDevs: ${started.reason}`);
       return;
     }
-    const socketPath = await waitForRelaySocket();
+    for (const distro of chosen) {
+      await setUpOneDistro(distro);
+    }
+  });
+
+  /**
+   * Which distributions to serve.
+   *
+   * <p>A socket lives inside one distribution's filesystem, so this is a real choice and not a
+   * detail: a relay in one is invisible from the other. With a single distribution there is
+   * nothing to ask about; with several, picking silently would be choosing for the person.</p>
+   *
+   * <p>Returns undefined when they cancelled — which is different from choosing none.</p>
+   */
+  async function chooseDistros(): Promise<string[] | undefined> {
+    const found = parseDistros(await runWslRaw(['-l', '-q']));
+    if (found.length === 0) {
+      void vscode.window.showErrorMessage(
+        'CredsForDevs: no WSL distributions found. `wsl -l -q` listed none.',
+      );
+      return undefined;
+    }
+    if (found.length === 1) {
+      return [found[0]];
+    }
+    const already = new Set(relaySettings().distros);
+    const picked = await vscode.window.showQuickPick(
+      found.map((distro) => ({ label: distro, picked: already.has(distro) })),
+      {
+        canPickMany: true,
+        title: `Found ${found.length} WSL distributions`,
+        placeHolder: 'Which should reach the SSH agent? Pick one, several, or all.',
+      },
+    );
+    return picked === undefined ? undefined : picked.map((item) => item.label);
+  }
+
+  /** Wait for one distribution's relay to name its socket, then offer the export line. */
+  async function setUpOneDistro(distro: string): Promise<void> {
+    const socketPath = await waitForRelaySocket(distro);
     if (socketPath.length === 0) {
       void vscode.window.showErrorMessage(
-        'CredsForDevs: the relay did not report a socket. Check that `creds` is installed inside ' +
-          'the distribution, and see the "CredsForDevs: Diagnostics" channel.',
+        `CredsForDevs: the relay in ${distro || 'the default distribution'} reported no socket. ` +
+          'Check that `creds` is installed there, and see the "CredsForDevs: Diagnostics" channel.',
       );
       return;
     }
     await offerTheExportLine(socketPath, distro);
-  });
+  }
 
   /** The relay names its socket on its first line of output; give it a moment to say so. */
-  async function waitForRelaySocket(): Promise<string> {
-    for (let attempt = 0; attempt < 20 && wslRelay.socketPath.length === 0; attempt += 1) {
+  async function waitForRelaySocket(distro: string): Promise<string> {
+    for (let attempt = 0; attempt < 20 && wslRelay.socketPathFor(distro).length === 0; attempt += 1) {
       await new Promise((resolve) => setTimeout(resolve, 250));
     }
-    return wslRelay.socketPath;
+    return wslRelay.socketPathFor(distro);
   }
 
   async function offerTheExportLine(socketPath: string, distro: string): Promise<void> {
     const snippet = rcSnippet(socketPath);
     const choice = await vscode.window.showInformationMessage(
-      `The relay is listening on ${socketPath}. Add this to your shell so ssh and git in WSL find it?`,
+      `${distro || 'The default distribution'}: the relay is listening on ${socketPath}. ` +
+        'Add this to that shell so ssh and git there find it?',
       { modal: true, detail: snippet.trim() },
       'Add to ~/.bashrc',
       'Copy the line',
@@ -932,6 +980,23 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     void vscode.window.showInformationMessage(
       'CredsForDevs: added to ~/.bashrc. Open a NEW WSL terminal, then `ssh-add -l` should list your key.',
     );
+  }
+
+  /**
+   * The same child, but handing back BYTES.
+   *
+   * <p>`wsl -l -q` answers in UTF-16LE — measured, the bytes begin `55 00 62 00`. Decoding it as
+   * UTF-8 gives names interleaved with NULs that match nothing, and the symptom is "no
+   * distributions found" rather than anything that points at an encoding.</p>
+   */
+  function runWslRaw(args: readonly string[]): Promise<Buffer> {
+    return new Promise((resolve) => {
+      const child = childProcess.spawn('wsl.exe', [...args], { stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true });
+      const chunks: Buffer[] = [];
+      child.stdout.on('data', (chunk: Buffer) => chunks.push(chunk));
+      child.on('error', () => resolve(Buffer.alloc(0)));
+      child.on('close', () => resolve(Buffer.concat(chunks)));
+    });
   }
 
   function runWsl(args: readonly string[], stdin?: string): Promise<string> {

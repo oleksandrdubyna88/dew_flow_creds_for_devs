@@ -2,21 +2,27 @@ import { spawn } from 'node:child_process';
 import { isSafeShellWord, relayArgv, socketFromExportLine } from './wslRelay';
 
 /**
- * The `creds relay` this window is holding open inside WSL.
+ * The `creds relay` processes this window is holding open inside WSL — one per distribution.
  *
- * <p>Same shape and the same reason as `sshBridgeManager.ts`: something has to own a long-lived
- * child, and the spawner is injected so the lifetime rules are a unit test rather than something
- * you discover by leaving a window open overnight.</p>
+ * <p>Same shape and the same reason as `sshBridgeManager.ts`: something has to own long-lived
+ * children, and the spawner is injected so the lifetime rules are a unit test rather than
+ * something you discover by leaving a window open overnight.</p>
  *
- * <p><b>The relay must not outlive the agent it reaches.</b> A socket inside the distribution is
- * an opening onto a key held in this window; leaving one behind after the key is unloaded would
- * mean a path in WSL that answers for nothing, or worse, answers for whatever window announced
- * itself next. So it starts when the agent starts, and dies when the agent stops or the window
- * does.</p>
+ * <p><b>One per distribution, not one in total.</b> The socket lives inside a distribution's own
+ * filesystem, so a relay in `Ubuntu` is invisible from `Ubuntu-26.04` — two distributions need two
+ * relays, and there is nothing to share between them. The first version held a single child and
+ * quietly served whichever distribution WSL called default, which is a choice made for the person
+ * rather than by them.</p>
  *
- * <p><b>Restarts are bounded, on purpose.</b> The common failure is `creds` not being installed in
- * the distribution, and a relay that respawns forever would be a login shell started every second
- * for the rest of the session. Three quick failures and it stops, having said why.</p>
+ * <p><b>A relay must not outlive the agent it reaches.</b> A socket inside a distribution is an
+ * opening onto a key held in this window; leaving one behind after the key is unloaded would mean
+ * a path in WSL that answers for nothing, or worse, answers for whatever window announced itself
+ * next. So they start when the agent starts, and die when it stops or the window does.</p>
+ *
+ * <p><b>Restarts are bounded, per distribution.</b> The common failure is `creds` not being
+ * installed in that one, and an unbounded respawn would be a login shell started every few
+ * milliseconds for the rest of the session. Three quick failures and that distribution is left
+ * alone, having said why — the others carry on.</p>
  */
 
 /** A running `wsl.exe`, as much of it as this needs. */
@@ -34,17 +40,34 @@ export type RelaySpawner = (args: readonly string[]) => RelayProcess;
 export const QUICK_FAILURE_MS = 5_000;
 export const MAX_QUICK_FAILURES = 3;
 
+/** The distribution WSL calls default, as a key. Empty because that is what `relayArgv` takes. */
+export const DEFAULT_DISTRO = '';
+
 export interface RelayStartRefusal {
   readonly ok: false;
   readonly reason: string;
 }
 
+/** One distribution's relay and what we know about it. */
+interface Relay {
+  child: RelayProcess;
+  socket: string;
+  startedAt: number;
+}
+
 export class WslRelayManager {
-  private current: RelayProcess | undefined;
-  private startedAt = 0;
-  private quickFailures = 0;
-  private wanted: { command: string; distro: string } | undefined;
-  private socket = '';
+  private readonly open = new Map<string, Relay>();
+
+  /**
+   * Consecutive quick failures per distribution.
+   *
+   * <p>Kept beside `open` rather than inside it because it has to OUTLIVE the entry: the count
+   * is what a restart decision reads, and the entry is gone by then.</p>
+   */
+  private readonly failures = new Map<string, number>();
+
+  /** What the caller asked for, so a relay that dies on its own can be brought back. */
+  private wanted: { command: string; distros: readonly string[] } | undefined;
 
   constructor(
     private readonly spawn: RelaySpawner,
@@ -52,109 +75,129 @@ export class WslRelayManager {
     private readonly now: () => number = () => Date.now(),
   ) {}
 
-  /** Where the relay said it is listening, once it has said so. */
-  get socketPath(): string {
-    return this.socket;
+  /** Where each relay said it is listening, once it has said so. */
+  socketPathFor(distro: string): string {
+    return this.open.get(distro)?.socket ?? '';
+  }
+
+  /** The distributions currently being served. */
+  serving(): string[] {
+    return [...this.open.keys()];
   }
 
   get running(): boolean {
-    return this.current !== undefined;
+    return this.open.size > 0;
   }
 
   /**
-   * Start the relay, replacing any this window already had.
+   * Serve exactly these distributions, replacing whatever was running.
    *
-   * <p>Replacing rather than refusing: the caller starting a second one has decided the first is
-   * stale, and refusing would leave the window holding a child nobody asked for.</p>
+   * <p>Replacing rather than merging: the caller has just chosen, and a distribution they left out
+   * of that choice should stop being served rather than linger because it was picked last time.</p>
    */
-  start(command: string, distro: string): { ok: true } | RelayStartRefusal {
-    const refusal = refuse(command, distro);
+  start(command: string, distros: readonly string[]): { ok: true } | RelayStartRefusal {
+    const refusal = refuse(command, distros);
     if (refusal !== undefined) {
       return { ok: false, reason: refusal };
     }
     this.stop();
-    this.wanted = { command, distro };
-    this.quickFailures = 0;
-    this.launch();
+    this.failures.clear();
+    this.wanted = { command, distros: [...distros] };
+    distros.forEach((distro) => this.launch(distro));
     return { ok: true };
   }
 
   stop(): void {
     this.wanted = undefined;
-    this.socket = '';
-    const running = this.current;
-    this.current = undefined;
-    running?.kill();
+    const running = [...this.open.values()];
+    this.open.clear();
+    running.forEach((relay) => relay.child.kill());
   }
 
   dispose(): void {
     this.stop();
   }
 
-  private launch(): void {
+  private launch(distro: string): void {
     const wanted = this.wanted;
     if (wanted === undefined) {
       return;
     }
-    const child = this.spawn(relayArgv(wanted.command, wanted.distro));
-    this.current = child;
-    this.startedAt = this.now();
-    child.onLine((line) => this.readSocket(line));
-    void child.exited.then((code) => this.onExit(child, code));
+    const child = this.spawn(relayArgv(wanted.command, distro));
+    this.open.set(distro, { child, socket: '', startedAt: this.now() });
+    child.onLine((line) => this.readSocket(distro, child, line));
+    void child.exited.then((code) => this.onExit(distro, child, code));
   }
 
-  private readSocket(line: string): void {
+  private readSocket(distro: string, child: RelayProcess, line: string): void {
+    const relay = this.open.get(distro);
     const path = socketFromExportLine(line);
-    if (path.length > 0) {
-      this.socket = path;
-      this.log(`wsl relay listening on ${path}`);
+    if (relay?.child === child && path.length > 0) {
+      relay.socket = path;
+      this.log(`wsl relay for ${name(distro)} listening on ${path}`);
     }
   }
 
   /**
-   * Only the child we are still holding may change anything.
+   * Only the child we are still holding for that distribution may change anything.
    *
    * <p>A relay killed by `stop()` resolves its `exited` afterwards, and without this check that
-   * late resolution would restart a relay the caller had just turned off — the same guard the
-   * bridge manager needs for the same reason.</p>
+   * late resolution would restart one the caller had just turned off — the same guard the bridge
+   * manager needs for the same reason.</p>
    */
-  private onExit(child: RelayProcess, code: number | null): void {
-    if (this.current !== child) {
+  private onExit(distro: string, child: RelayProcess, code: number | null): void {
+    const relay = this.open.get(distro);
+    if (relay?.child !== child) {
       return;
     }
-    this.current = undefined;
-    this.socket = '';
-    const quick = this.now() - this.startedAt < QUICK_FAILURE_MS;
-    this.quickFailures = quick ? this.quickFailures + 1 : 0;
-    this.log(`wsl relay ended (exit ${code ?? 'signal'})`);
-    this.restartOrGiveUp();
+    this.open.delete(distro);
+    this.failures.set(distro, nextFailureCount(this.failures.get(distro), this.now() - relay.startedAt));
+    this.log(`wsl relay for ${name(distro)} ended (${describeExit(code)})`);
+    this.restartOrGiveUp(distro);
   }
 
-  private restartOrGiveUp(): void {
-    if (this.wanted === undefined) {
+  /** True while the caller still asks for this distribution — a `stop()` clears that. */
+  private stillWanted(distro: string): boolean {
+    return this.wanted !== undefined && this.wanted.distros.includes(distro);
+  }
+
+  private restartOrGiveUp(distro: string): void {
+    if (!this.stillWanted(distro)) {
       return;
     }
-    if (this.quickFailures >= MAX_QUICK_FAILURES) {
+    if ((this.failures.get(distro) ?? 0) >= MAX_QUICK_FAILURES) {
       this.log(
-        `wsl relay failed ${MAX_QUICK_FAILURES} times in a row — not restarting it again. ` +
-          'Check that `creds` is installed inside the distribution.',
+        `wsl relay for ${name(distro)} failed ${MAX_QUICK_FAILURES} times in a row — not ` +
+          'restarting it again. Check that `creds` is installed inside that distribution.',
       );
-      this.wanted = undefined;
       return;
     }
-    this.launch();
+    this.launch(distro);
   }
 }
 
+/** A run shorter than the threshold never got going; anything longer resets the count. */
+function nextFailureCount(previous: number | undefined, ranFor: number): number {
+  return ranFor < QUICK_FAILURE_MS ? (previous ?? 0) + 1 : 0;
+}
+
+/** An exit code, or the fact that there was not one. */
+function describeExit(code: number | null): string {
+  return code === null ? 'no exit code — killed or never started' : `exit ${code}`;
+}
+
+/** What to call a distribution in a log line when the caller named none. */
+function name(distro: string): string {
+  return distro.length > 0 ? distro : 'the default distribution';
+}
+
 /** The reason this may not start, or undefined when it may. */
-function refuse(command: string, distro: string): string | undefined {
+function refuse(command: string, distros: readonly string[]): string | undefined {
   if (!isSafeShellWord(command)) {
     return `"${command}" is not a plain command name — refusing to build a shell line out of it.`;
   }
-  if (distro.length > 0 && !isSafeShellWord(distro)) {
-    return `"${distro}" is not a plain distribution name.`;
-  }
-  return undefined;
+  const bad = distros.find((distro) => distro.length > 0 && !isSafeShellWord(distro));
+  return bad === undefined ? undefined : `"${bad}" is not a plain distribution name.`;
 }
 
 /**

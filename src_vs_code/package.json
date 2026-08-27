@@ -105,10 +105,11 @@
           "default": "creds",
           "markdownDescription": "How `creds` is invoked inside WSL. A plain command name or path — it is refused rather than escaped, because it reaches a login shell."
         },
-        "credSshManager.wslRelayDistro": {
-          "type": "string",
-          "default": "",
-          "markdownDescription": "Which WSL distribution the relay runs in. Empty means the default one (`wsl -l -q` lists them)."
+        "credSshManager.wslRelayDistros": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": [],
+          "markdownDescription": "Which WSL distributions reach the SSH agent. A socket lives inside one distribution's filesystem, so each needs its own relay — and each needs `creds` installed in it. Empty means the one WSL calls default. `CredsForDevs: Set Up the WSL Agent Relay` lists what it found and lets you pick."
         },
         "credSshManager.autoSync": {
           "type": "boolean",
