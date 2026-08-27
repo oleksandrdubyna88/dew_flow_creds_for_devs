@@ -34,9 +34,8 @@ public sealed class UseToolsTests
     {
         // The actions are the broker's vocabulary, not a second one invented here. A name that is
         // in no route would 404 at the far end, and the person would be told the entry is gone.
-        var known = BrokerContract.Current.Routes.Values
-            .Select(route => route.Replace("/v1/use/", string.Empty))
-            .ToHashSet(StringComparer.Ordinal);
+        // `McpActions` and not `Routes`: the CLI's verb table has no `rotate`.
+        var known = (BrokerContract.Current.McpActions ?? []).ToHashSet(StringComparer.Ordinal);
 
         foreach (var tool in UseTools.All)
         {

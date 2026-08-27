@@ -18,6 +18,7 @@ import {
   statusForErrorCode,
 } from '../brokerProtocol';
 import { EXIT } from '../agentCliOutcome';
+import { switchForAction } from '../mcpEntries';
 
 /**
  * The TypeScript side of the two-sided contract check.
@@ -42,6 +43,7 @@ interface Contract {
   routes: Record<string, string>;
   reads: Record<string, string>;
   mcpUsePrefix: string;
+  mcpActions: string[];
   errors: Record<string, number>;
   exitCodes: Record<string, number>;
 }
@@ -157,4 +159,30 @@ test('an MCP action route is not a use route and not an alias route', () => {
   assert.equal(parseUseRoute(path), undefined);
   assert.equal(parseAliasRoute(path), undefined);
   assert.equal(isMcpEntriesRoute(path), false);
+});
+
+test('the MCP action list is the CLI verb set PLUS rotate, and says so', () => {
+  // Not the same set, and the difference is the point: the CLI has no `rotate`, because rotation
+  // is a thing an agent asks for with a placeholder and not a shape a terminal command has.
+  const { mcpActions, routes } = load();
+  const cliActions = new Set(Object.values(routes).map((r) => r.replace('/v1/use/', '')));
+
+  assert.ok(mcpActions.includes('rotate'));
+  for (const action of cliActions) {
+    assert.ok(mcpActions.includes(action), action);
+  }
+  assert.equal(mcpActions.length, cliActions.size + 1);
+});
+
+test('every MCP action asks for a switch, and rotate asks for a higher one than the rest', () => {
+  // The ladder, at the one place it decides something. A rotation riding in on a permission
+  // somebody granted for a read-only query is exactly what the per-action gate prevents.
+  const { mcpActions } = load();
+
+  assert.equal(switchForAction('rotate'), 'edit');
+  for (const action of mcpActions.filter((a) => a !== 'rotate')) {
+    assert.equal(switchForAction(action), 'use', action);
+  }
+  // A verb added to the broker and forgotten in the table must fail closed, not open.
+  assert.equal(switchForAction('somethingNew'), 'delete');
 });

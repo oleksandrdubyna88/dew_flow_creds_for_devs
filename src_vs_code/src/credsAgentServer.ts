@@ -151,7 +151,7 @@ export class CredsAgentServer implements vscode.Disposable {
      * three: this class holds grants, not stored records, and the switch it turns on is
      * resolved against a folder and against the Trash — questions about a vault.</p>
      */
-    private readonly resolveMcpUse?: (entryId: string) => McpUseLookup,
+    private readonly resolveMcpUse?: (entryId: string, action: string) => McpUseLookup,
   ) {}
 
   /** The signal every spawned child watches, so none outlives this window. */
@@ -268,7 +268,7 @@ export class CredsAgentServer implements vscode.Disposable {
     res: http.ServerResponse,
     action: string,
   ): Promise<void> {
-    const read = await readMcpUse(readBody, req, this.resolveMcpUse);
+    const read = await readMcpUse(readBody, req, this.resolveMcpUse, action);
     if (!read.ok) {
       this.respondError(res, read.code, read.message);
       return;

@@ -258,7 +258,7 @@ async function storedSecrets(
  */
 export type UsableEntry =
   | { kind: 'usable'; accountId: string; node: TreeNode }
-  | { kind: 'closed'; node: TreeNode }
+  | { kind: 'closed'; node: TreeNode; needed: keyof McpAccess }
   | undefined;
 
 /**
@@ -271,23 +271,56 @@ export type UsableEntry =
 export function findUsableEntry(
   source: Pick<McpVaultSource, 'getAccounts' | 'getNode'>,
   entryId: string,
+  action: string,
 ): UsableEntry {
   for (const { accountId } of source.getAccounts()) {
     const node = source.getNode(accountId, entryId);
     if (node?.type === 'entity') {
-      return verdictFor(accountId, node, (id) => source.getNode(accountId, id));
+      return verdictFor(accountId, node, (id) => source.getNode(accountId, id), action);
     }
   }
   return undefined;
 }
 
+/**
+ * Which switch an action needs.
+ *
+ * <p>Not every action sits on the same rung, and the ladder is the whole point: `rotate`
+ * replaces a stored secret, which is <b>edit</b>, while running a command or opening a terminal
+ * is <b>use</b>. Deciding this per action rather than once per call is what stops a rotation
+ * riding in on a permission somebody granted for a read-only query.</p>
+ *
+ * <p>An action this table does not know asks for the HIGHEST rung it could be, not the lowest.
+ * A verb added to the broker and forgotten here should fail closed.</p>
+ */
+export function switchForAction(action: string): keyof McpAccess {
+  if (action === 'rotate') {
+    return 'edit';
+  }
+  return KNOWN_USE_ACTIONS.has(action) ? 'use' : 'delete';
+}
+
+/** The verbs that are plain USE. Written out, so an unknown one falls through to the top rung. */
+const KNOWN_USE_ACTIONS = new Set([
+  'exec',
+  'terminal',
+  'query',
+  'run',
+  'exportEnv',
+  'up',
+  'down',
+]);
+
 function verdictFor(
   accountId: string,
   node: TreeNode,
   byId: (id: string) => TreeNode | undefined,
+  action: string,
 ): UsableEntry {
   const access = resolveMcpInTree(node, byId).access;
-  return access.use === true ? { kind: 'usable', accountId, node } : { kind: 'closed', node };
+  const needed = switchForAction(action);
+  const granted = needed === 'delete' ? access.delete !== undefined : access[needed] === true;
+  return granted ? { kind: 'usable', accountId, node } : { kind: 'closed', node, needed };
 }
 
 /**

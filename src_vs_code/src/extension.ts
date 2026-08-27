@@ -145,6 +145,7 @@ import {
 import { EphemeralSweeper } from './ephemeralSweeper';
 import { maskEntriesFor } from './maskEntries';
 import { findUsableEntry, visibleMcpEntries } from './mcpEntries';
+import { RotateDeps, rotateAction } from './rotateAction';
 import { McpUseLookup } from './brokerRequests';
 import { CREDS_CLI, CREDS_MCP, CredsAction, CredsProduct, CredsRid } from './credsInstall';
 import { InstallHost, binaryPath, installMenu, performInstall, removeInstall } from './binaryInstaller';
@@ -587,7 +588,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // The ninth is the same question one rung up: may an agent USE this entry. A single callback
     // because the lookup and the permission are one answer, and splitting them is how a route
     // ends up asking the first and forgetting the second.
-    (entryId) => mcpUseLookup(storage, entryId),
+    (entryId, action) => mcpUseLookup(storage, entryId, action),
   );
   // The SSH agent: keys served from memory, every use confirmed, SSH_AUTH_SOCK injected into
   // new terminals. Nothing starts until a key is actually loaded.
@@ -682,6 +683,28 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   useActions.register(dbQueryAction(agentDeps));
   useActions.register(vpnAction(agentDeps, 'up'));
   useActions.register(vpnAction(agentDeps, 'down'));
+
+  // Level 3. Each rotation WRAPS the action that already knows how to reach the far side, so
+  // there is one implementation of "run a query against this database" and not two — the
+  // rotating one adds the generate before it and the store after it, and nothing else.
+  const rotateDeps: RotateDeps = {
+    generate: () => generatePassword(DEFAULT_PASSWORD).value,
+    entity: (ctx) => storage.getNode(ctx.accountId, ctx.entityId)?.details,
+    current: (ctx, slot) =>
+      slot === 'password'
+        ? Promise.resolve(storage.getPassword(ctx.accountId, ctx.entityId))
+        : Promise.resolve(storage.getDbConnection(ctx.accountId, ctx.entityId)),
+    snapshot: (ctx, details) =>
+      snapshotForRevision(storage, ctx.accountId, { id: ctx.entityId, name: ctx.entityName, details }),
+    record: (ctx, revision) => storage.recordRevision(ctx.accountId, ctx.entityId, revision),
+    store: (ctx, slot, value) =>
+      slot === 'password'
+        ? storage.setPassword(ctx.accountId, ctx.entityId, value)
+        : storage.setDbConnection(ctx.accountId, ctx.entityId, value),
+    onRotated: () => mutated(),
+  };
+  useActions.register(rotateAction(dbQueryAction(agentDeps), 'query', rotateDeps));
+  useActions.register(rotateAction(sshExecAction(sshDeps), 'command', rotateDeps));
   context.subscriptions.push(agentServer);
 
   warnIfKeyringMissing(context);
@@ -4454,13 +4477,13 @@ async function runInstall(
  * the shapes belong to two different sides of the wall: that module knows about switches and
  * folders, the broker knows about grants, and this line is where one becomes the other.</p>
  */
-function mcpUseLookup(storage: StorageManager, entryId: string): McpUseLookup {
-  const found = findUsableEntry(storage, entryId);
+function mcpUseLookup(storage: StorageManager, entryId: string, action: string): McpUseLookup {
+  const found = findUsableEntry(storage, entryId, action);
   if (found === undefined) {
     return undefined;
   }
   if (found.kind === 'closed') {
-    return { kind: 'closed', entityName: found.node.name };
+    return { kind: 'closed', entityName: found.node.name, needed: found.needed };
   }
   return {
     kind: 'usable',

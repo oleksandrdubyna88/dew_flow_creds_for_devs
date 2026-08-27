@@ -1,5 +1,6 @@
 import * as http from 'node:http';
 import { ErrorCode, parseJsonObject } from './brokerProtocol';
+import { MCP_SWITCHES } from './mcpSwitches';
 
 /**
  * What an unauthenticated request body must contain, and what a refusal says.
@@ -58,8 +59,18 @@ function names(body: Record<string, unknown> | undefined, field: string): body i
  */
 export type McpUseLookup =
   | { kind: 'usable'; target: McpUseTarget }
-  | { kind: 'closed'; entityName: string }
+  | { kind: 'closed'; entityName: string; needed: NeededSwitch }
   | undefined;
+
+/**
+ * Which switch would have to be on.
+ *
+ * <p>Named in the refusal, because "not open to agents" is not actionable and "turn on Agents
+ * may replace the secret" is. Not every action sits on the same rung: rotating replaces a stored
+ * secret and asks for <b>edit</b>, while running a command asks for <b>use</b> — so a rotation
+ * cannot ride in on a permission somebody granted for a read-only query.</p>
+ */
+export type NeededSwitch = 'view' | 'use' | 'edit' | 'create' | 'delete';
 
 export interface McpUseTarget {
   accountId: string;
@@ -68,13 +79,6 @@ export interface McpUseTarget {
   kind: string;
 }
 
-/**
- * The refusal one lookup deserves — the code, and the sentence that names what to do about it.
- *
- * <p>Naming the switch is safe here and would not be on the alias route: an alias is a name a
- * person chose, guessable one try at a time, while an entry id is a uuid nobody enumerates. So
- * the alias route answers "no such entry" to both questions on purpose, and this one does not.</p>
- */
 /**
  * The whole front half of an MCP use call: the body, the entry, and whether it may be used.
  *
@@ -86,19 +90,21 @@ export interface McpUseTarget {
 export async function readMcpUse(
   read: (req: http.IncomingMessage) => Promise<string>,
   req: http.IncomingMessage,
-  resolve: ((entryId: string) => McpUseLookup) | undefined,
+  resolve: ((entryId: string, action: string) => McpUseLookup) | undefined,
+  action: string,
 ): Promise<
   { ok: true; body: Record<string, unknown>; target: McpUseTarget } | { ok: false; code: ErrorCode; message: string }
 > {
   const parsed = await readNamedBody(read, req, 'entry', 'an "entry" id');
-  return parsed.ok ? usable(parsed.body, resolve) : parsed;
+  return parsed.ok ? usable(parsed.body, resolve, action) : parsed;
 }
 
 function usable(
   body: Record<string, unknown>,
-  resolve: ((entryId: string) => McpUseLookup) | undefined,
+  resolve: ((entryId: string, action: string) => McpUseLookup) | undefined,
+  action: string,
 ): { ok: true; body: Record<string, unknown>; target: McpUseTarget } | { ok: false; code: ErrorCode; message: string } {
-  const found = resolve?.(body.entry as string);
+  const found = resolve?.(body.entry as string, action);
   return found?.kind === 'usable'
     ? { ok: true, body, target: found.target }
     : { ok: false, ...refusalFor(found) };
@@ -123,12 +129,36 @@ export function aliasTarget(
     : { ok: true, target };
 }
 
+/**
+ * The refusal one lookup deserves — the code, and the sentence that names what to do about it.
+ *
+ * <p>Naming the switch is safe here and would not be on the alias route: an alias is a name a
+ * person chose, guessable one try at a time, while an entry id is a uuid nobody enumerates. So
+ * the alias route answers "no such entry" to both questions on purpose, and this one does not.</p>
+ */
 export function refusalFor(found: McpUseLookup): { code: ErrorCode; message: string } {
   if (found?.kind === 'closed') {
     return {
       code: 'denied',
-      message: `"${found.entityName}" is not open to agents for use. Turn on "Usable by agents" in its Agent access section.`,
+      message: `"${found.entityName}" is not open to agents for that. Turn on "${labelFor(found.needed)}" in its Agent access section.`,
     };
   }
   return { code: 'not_found', message: 'No such entry, or this window does not serve it.' };
+}
+
+/**
+ * The switch's label, taken from the form rather than written down again.
+ *
+ * <p>A refusal that named a switch by a word the form does not print would send a person hunting
+ * for a control that is not there. The catalog in `mcpSwitches.ts` is what the form renders, so
+ * it is what this reads; a copy here would agree until somebody edited one of them.</p>
+ *
+ * <p>`delete` maps to the own-only switch because it is the lower of the two red ones: told to
+ * turn on the narrower permission, a person can always choose the wider, and the reverse advice
+ * would be a credential manager recommending the bigger grant.</p>
+ */
+function labelFor(needed: NeededSwitch): string {
+  const id = `mcp${needed.charAt(0).toUpperCase()}${needed.slice(1)}`;
+  const wanted = needed === 'delete' ? 'mcpDeleteOwn' : id;
+  return MCP_SWITCHES.find((s) => s.id === wanted)?.label ?? needed;
 }

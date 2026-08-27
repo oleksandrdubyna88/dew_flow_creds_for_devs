@@ -162,16 +162,16 @@ function mcpEntriesFor(
  */
 function mcpUseFor(
   verdict: 'usable' | 'closed' | undefined,
-): ((id: string) => McpUseLookup) | undefined {
+): ((id: string, action: string) => McpUseLookup) | undefined {
   if (verdict === undefined) {
     return undefined;
   }
-  return (id: string): McpUseLookup => {
+  return (id: string, action: string): McpUseLookup => {
     if (id !== 'e1') {
       return undefined;
     }
     return verdict === 'closed'
-      ? { kind: 'closed', entityName: 'prod' }
+      ? { kind: 'closed', entityName: 'prod', needed: action === 'rotate' ? 'edit' : 'use' }
       : { kind: 'usable', target: { accountId: 'a1', entityId: 'e1', entityName: 'prod', kind: 'ssh' } };
   };
 }

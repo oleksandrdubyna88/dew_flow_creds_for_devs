@@ -71,10 +71,12 @@ internal static class Windows
     /// open with different accounts unlocked. Windows are tried newest-first and the first one
     /// that does not answer <c>not_found</c> is the answer; a 404 means "not mine", which is
     /// exactly what the broker says for an id it does not serve.</para>
-    /// <para><b>Only the 404 falls through.</b> A refusal — the switch is off, the person clicked
-    /// Deny, the action is not supported — is a real answer from the window that owns the entry,
-    /// and asking the next window after one of those would raise a second consent modal for a
-    /// call that was already decided.</para>
+    /// <para><b>Only "not found" falls through, and it is read from the CODE.</b> The status is
+    /// not enough: <c>not_supported</c> rides on 404 as well, so a status check alone would treat
+    /// "this kind of entry has no such action" as "not my entry", try every other window, and
+    /// finally tell the person no window answered — which is both wrong and unactionable. Every
+    /// other refusal is a real answer from the window that owns the entry, and asking the next
+    /// window after one would raise a second consent modal for a call already decided.</para>
     /// </remarks>
     internal static async Task<BrokerReply?> PostAsync(BrokerContract contract, string route, string json)
     {
@@ -85,7 +87,6 @@ internal static class Windows
         }
 
         using var client = BrokerClient.Create(contract);
-        var notFound = contract.Errors.GetValueOrDefault("not_found", 404);
         foreach (var endpoint in endpoints)
         {
             if (!await client.IsOurBrokerAsync(endpoint.Port))
@@ -93,12 +94,23 @@ internal static class Windows
                 continue;
             }
             var reply = await client.PostAliasAsync(endpoint.Port, route, json);
-            if (reply.Status != notFound)
+            if (!MeansNotMine(reply))
             {
                 return reply;
             }
         }
         return null;
+    }
+
+    /// <summary>Does this reply mean "that entry is not mine", as opposed to any other refusal?</summary>
+    internal static bool MeansNotMine(BrokerReply reply) =>
+        reply.Status != 200 && ErrorCodeOf(reply.Body) == "not_found";
+
+    /// <summary>The error code in a refusal, or empty when the body is not one we can read.</summary>
+    internal static string ErrorCodeOf(string body)
+    {
+        var envelope = Parse(body, McpJsonContext.Default.BrokerErrorEnvelope);
+        return envelope?.Error?.Code ?? string.Empty;
     }
 
     /// <summary>

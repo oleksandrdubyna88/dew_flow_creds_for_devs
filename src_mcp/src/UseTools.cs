@@ -103,6 +103,27 @@ internal static class UseTools
             creds_list. Courtesy after a task that needed one; the person still approves it.
             """),
         new(
+            "creds_rotate",
+            "rotate",
+            "Replace a secret, without ever seeing it",
+            """
+            Change a credential on the far side AND in the vault, in one step, without the new
+            secret ever reaching you. Give the entry's `id` from creds_list and a `statement`
+            containing the literal text {{creds:new}} where the new secret goes:
+
+              ALTER USER app IDENTIFIED BY '{{creds:new}}'
+
+            The window generates the value, substitutes it, runs the statement, snapshots the old
+            value into that entry's history, and stores the new one. You get back that it worked
+            and whatever the statement printed — with the new secret masked out of it. You never
+            see either value, old or new.
+
+            Only a statement that SUCCEEDS updates the vault, so a refusal on the far side leaves
+            everything as it was. Needs the entry's "Agents may replace the secret" switch, which
+            is a rung above using it, and the person approves the statement — they see it with
+            {{creds:new}} still in it, which is what makes it safe to show them.
+            """),
+        new(
             "creds_export_env",
             "exportEnv",
             "Put a credential into the person's terminals",

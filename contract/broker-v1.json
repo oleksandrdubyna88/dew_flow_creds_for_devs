@@ -30,6 +30,16 @@
     "mcpEntries": "/v1/mcp/entries"
   },
   "mcpUsePrefix": "/v1/mcp/use/",
+  "mcpActions": [
+    "exec",
+    "terminal",
+    "query",
+    "run",
+    "exportEnv",
+    "up",
+    "down",
+    "rotate"
+  ],
   "errors": {
     "invalid_request": 400,
     "unauthorized": 401,

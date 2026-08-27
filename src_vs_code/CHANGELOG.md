@@ -502,6 +502,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Bounded on purpose: 256 KB of output per stream, 30 s per command (raisable to 120 s), 8 at a
   time, and every child killed when the window goes.
 
+## [0.71.0] — 2026-08-27
+
+### Added
+
+- **An agent can rotate a secret without ever seeing one — old or new.** The problem looks
+  unsolvable at first: to run `ALTER USER app IDENTIFIED BY '…'` somebody has to know the new
+  password, and if the agent composes that statement then the agent knows it. So it does not
+  compose it. It writes a **placeholder**:
+
+      ALTER USER app IDENTIFIED BY '{{creds:new}}'
+
+  The window generates the value, substitutes it, runs the statement, snapshots the old value into
+  that entry's history, and stores the new one. The agent is told it worked, with the new secret
+  masked out of whatever the statement printed.
+  - **The far side changes first.** Only a statement that actually succeeded updates the vault —
+    and a non-zero exit code inside a perfectly successful call counts as failure, because a
+    database refusing `ALTER USER` answers exactly that way. The other order leaves you holding a
+    password the server never accepted, which looks like a working entry until you try it.
+  - **The prompt shows the placeholder, not the value.** You approve the *shape* of the statement —
+    what it changes and where. Displaying the generated secret would put it on your screen, in any
+    screenshot, and in this window's own audit line.
+  - **It needs a higher switch than using does.** Rotation asks for *Agents may replace the
+    secret*; running a command asks for *Usable by agents*. A rotation cannot ride in on a
+    permission you granted for a read-only query, and the refusal names the switch you would have
+    to turn on.
+  - The placeholder is deliberately **not** `creds://…`, which already means "the value stored
+    today" everywhere else in this product. One spelling meaning both is the kind of ambiguity
+    discovered by somebody rotating the wrong thing.
+  - A database's password lives inside its connection string; a rotation rebuilds that string with
+    the new password and **everything else exactly as you wrote it** — host, port, database,
+    options.
+
+### Fixed
+
+- **"That action does not apply here" read as "no window has your entry".** `not_supported` and
+  `not_found` share HTTP 404, and the MCP server was deciding which windows to keep asking by the
+  status alone — so asking a VPN entry to run a query walked every open window and finally
+  reported that none answered. It reads the error code now. Found by the integration test, which
+  is the only place the two halves meet.
+
 ## [0.70.0] — 2026-08-27
 
 ### Added

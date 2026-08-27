@@ -24,6 +24,7 @@ public sealed record BrokerContract(
     [property: JsonPropertyName("routes")] Dictionary<string, string> Routes,
     [property: JsonPropertyName("reads")] Dictionary<string, string>? Reads,
     [property: JsonPropertyName("mcpUsePrefix")] string? McpUsePrefix,
+    [property: JsonPropertyName("mcpActions")] string[]? McpActions,
     [property: JsonPropertyName("errors")] Dictionary<string, int> Errors,
     [property: JsonPropertyName("exitCodes")] Dictionary<string, int> ExitCodes)
 {

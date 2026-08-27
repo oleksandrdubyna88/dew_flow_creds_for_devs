@@ -149,6 +149,8 @@ internal static class Program
                 UseTools.InvokeAsync(contract, tool, entry, "command", command),
             "query" => (string entry, string query) =>
                 UseTools.InvokeAsync(contract, tool, entry, "query", query),
+            "rotate" => (string entry, string statement) =>
+                UseTools.InvokeAsync(contract, tool, entry, "statement", statement),
             _ => (string entry) => UseTools.InvokeAsync(contract, tool, entry, null, null),
         };
 

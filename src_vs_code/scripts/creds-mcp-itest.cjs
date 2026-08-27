@@ -52,6 +52,7 @@ Module._resolveFilename = (req, ...a) => (req === 'vscode' ? stub : orig.call(Mo
 const OUT = path.join(__dirname, '..', 'out');
 const { CredsAgentServer } = require(path.join(OUT, 'credsAgentServer.js'));
 const { UseActionRegistry } = require(path.join(OUT, 'useActions.js'));
+const { rotateAction } = require(path.join(OUT, 'rotateAction.js'));
 
 
 
@@ -163,6 +164,8 @@ const HANDSHAKE = [
   }
 
   const storageDir = fs.mkdtempSync(path.join(os.tmpdir(), 'creds-mcp-itest-'));
+  /** Every statement the far side was actually handed — the proof that substitution happened. */
+  const ranQueries = [];
   // A stub action: no ssh, no network — what is under test is the wire from the tool to the
   // broker and the gate in front of it, not what an action does once it is reached.
   const actions = new UseActionRegistry();
@@ -173,8 +176,31 @@ const HANDSHAKE = [
     validate: () => ({ ok: true }),
     summarize: (body) => String(body.query ?? ''),
     describeOutcome: () => 'done',
-    run: (_ctx, body) => Promise.resolve({ status: 200, body: { rows: 1, echoed: body.query } }),
+    run: (_ctx, body) => {
+      ranQueries.push(String(body.query ?? ''));
+      return Promise.resolve({ status: 200, body: { exitCode: 0, rows: 1, stdout: 'ALTER ok' } });
+    },
   });
+
+  // Its rotating twin, wrapping the same stub — which is the whole design: one implementation of
+  // "reach the far side", and the rotation adds the generate before it and the store after.
+  const rotated = { recorded: 0, stored: [] };
+  actions.register(
+    rotateAction(actions.resolve('db', 'query'), 'query', {
+      generate: () => 'GENERATED-9f2c41ab',
+      entity: () => ({ id: 'e-1', name: 'orders-db', kind: 'db', isSshEnabled: false, dbType: 'mysql' }),
+      current: () => Promise.resolve('mysql://app:old@db-01.example.internal:3306/orders'),
+      snapshot: () => Promise.resolve({ at: 1, name: 'orders-db', details: {}, secrets: {} }),
+      record: () => {
+        rotated.recorded += 1;
+        return Promise.resolve();
+      },
+      store: (_ctx, slot, value) => {
+        rotated.stored.push({ slot, value });
+        return Promise.resolve();
+      },
+    }),
+  );
 
   const server = new CredsAgentServer(
     actions,
@@ -185,12 +211,20 @@ const HANDSHAKE = [
     undefined,
     undefined,
     () => Promise.resolve(ENTRIES),
-    // The gate the whole route exists for: `e-1` may be used, `e-shut` exists and may not.
-    (id) => {
+    // The gate the whole route exists for, and it is PER ACTION: `e-1` may be used, and may be
+    // rotated only because this fixture says its `edit` switch is on too; `e-use-only` may be
+    // used and NOT rotated, which is the rung the ladder exists to keep apart.
+    (id, action) => {
+      const target = (name) => ({ accountId: 'a-1', entityId: id, entityName: name, kind: 'db' });
       if (id === 'e-1') {
-        return { kind: 'usable', target: { accountId: 'a-1', entityId: 'e-1', entityName: 'orders-db', kind: 'db' } };
+        return { kind: 'usable', target: target('orders-db') };
       }
-      return id === 'e-shut' ? { kind: 'closed', entityName: 'prod-db' } : undefined;
+      if (id === 'e-use-only') {
+        return action === 'rotate'
+          ? { kind: 'closed', entityName: 'staging-db', needed: 'edit' }
+          : { kind: 'usable', target: target('staging-db') };
+      }
+      return id === 'e-shut' ? { kind: 'closed', entityName: 'prod-db', needed: 'use' } : undefined;
     },
   );
   // Starting the broker is what writes the announcement the binary discovers. `share` is the
@@ -325,6 +359,80 @@ const HANDSHAKE = [
     deniedText.includes('"error"') && !deniedText.includes('"rows"'),
     deniedText.slice(0, 240),
   );
+
+  // ---- level 3: rotation ---------------------------------------------------
+  // What the far side receives is what proves it: the agent wrote a placeholder and the window
+  // must have substituted a real value into the statement before running it.
+  const rotate = tools2.find((t) => t.name === 'creds_rotate');
+  check('it offers creds_rotate', rotate !== undefined, JSON.stringify(tools2.map((t) => t.name)));
+  check(
+    'the rotate schema asks for a statement, not a value',
+    Object.keys(rotate?.inputSchema?.properties ?? {}).sort().join(',') === 'entry,statement',
+    JSON.stringify(rotate?.inputSchema?.properties),
+  );
+  check(
+    'its description tells the model where to put the placeholder',
+    (rotate?.description ?? '').includes('{{creds:new}}'),
+    (rotate?.description ?? '').slice(0, 120),
+  );
+
+  consent.answers = ['Allow'];
+  consent.asked = 0;
+  ranQueries.length = 0;
+  const rotatedOut = await speak(env, [
+    ...HANDSHAKE,
+    {
+      jsonrpc: '2.0',
+      id: 9,
+      method: 'tools/call',
+      params: {
+        name: 'creds_rotate',
+        arguments: { entry: 'e-1', statement: "ALTER USER app IDENTIFIED BY '{{creds:new}}'" },
+      },
+    },
+  ]);
+  const rotatedText = rotatedOut.byId.get(9)?.result?.content?.[0]?.text ?? '';
+  check('a rotation runs and reports success', rotatedText.includes('"rotated":true'), rotatedText.slice(0, 200));
+  check('the far side received a real statement', ranQueries.length === 1, JSON.stringify(ranQueries));
+  check(
+    'with the placeholder replaced by a generated value',
+    ranQueries[0] !== undefined && !ranQueries[0].includes('{{creds:new}}') && ranQueries[0].includes('ALTER USER'),
+    JSON.stringify(ranQueries[0]),
+  );
+  check(
+    'and the new secret is NOT in what the agent received',
+    !rotatedOut.out.includes('GENERATED-9f2c41ab'),
+    'the generated value leaked into the tool answer',
+  );
+  check('the old value went into history before the write', rotated.recorded === 1, String(rotated.recorded));
+  check(
+    'and the stored connection string carries the new password',
+    rotated.stored.length === 1 && rotated.stored[0].value.includes('GENERATED-9f2c41ab'),
+    JSON.stringify(rotated.stored),
+  );
+
+  consent.answers = ['Allow'];
+  consent.asked = 0;
+  ranQueries.length = 0;
+  const notAllowed = await speak(env, [
+    ...HANDSHAKE,
+    {
+      jsonrpc: '2.0',
+      id: 10,
+      method: 'tools/call',
+      params: {
+        name: 'creds_rotate',
+        arguments: { entry: 'e-use-only', statement: "ALTER USER app IDENTIFIED BY '{{creds:new}}'" },
+      },
+    },
+  ]);
+  const notAllowedText = notAllowed.byId.get(10)?.result?.content?.[0]?.text ?? '';
+  check(
+    'an entry that may be USED may not be ROTATED — the ladder holds',
+    notAllowedText.includes('Agents may replace the secret') && notAllowedText.includes('staging-db'),
+    notAllowedText.slice(0, 240),
+  );
+  check('and nothing ran for it', ranQueries.length === 0, JSON.stringify(ranQueries));
 
   server.dispose();
   console.log(fails === 0 ? '\nall checks passed' : `\n${fails} check(s) failed`);
