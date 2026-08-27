@@ -151,6 +151,9 @@ import { maskEntriesFor } from './maskEntries';
 import { findUsableEntry, visibleMcpEntries } from './mcpEntries';
 import { RotateDeps, rotateAction } from './rotateAction';
 import { showMcpLog } from './mcpLogPanel';
+import { CreateRequest, chooseTarget, creatableFolders, detailsFor, summarizeCreate } from './mcpCreate';
+import type { EntityKind } from './types';
+import { CreateDecision, McpCreateHooks } from './brokerMcpDoor';
 import { McpUseLookup } from './brokerRequests';
 import { CREDS_CLI, CREDS_MCP, CredsAction, CredsProduct, CredsRid } from './credsInstall';
 import { InstallHost, binaryPath, installMenu, performInstall, removeInstall } from './binaryInstaller';
@@ -603,6 +606,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       }
       return moved;
     },
+    // The eleventh and last: where an agent may create, and how. The gate is a FOLDER's switch,
+    // because there is no entry yet — and the set of open folders is the person's decision, which
+    // is the whole of what stops an agent choosing where to put things.
+    mcpCreateHooks(storage, () => mutated()),
   );
   // The SSH agent: keys served from memory, every use confirmed, SSH_AUTH_SOCK injected into
   // new terminals. Nothing starts until a key is actually loaded.
@@ -4576,4 +4583,81 @@ async function moveEntryToTrash(
   }
   await storage.moveToTrash(accountId, entityId);
   return true;
+}
+
+/**
+ * What the broker asks the vault when an agent wants to create an entry.
+ *
+ * <p>Two questions, deliberately split by the consent prompt between them: <b>where does this
+ * go</b> is answered before anybody is asked, so a request that fits nowhere is refused without
+ * raising a modal; <b>make it</b> happens only after the answer is yes.</p>
+ */
+function mcpCreateHooks(storage: StorageManager, onMade: () => void): McpCreateHooks {
+  return {
+    choose: (body) => chooseCreateTarget(storage, body),
+    make: async (decision, body) => {
+      const request = readCreateRequest(body);
+      const id = StorageManager.newId();
+      const kind = decision.target.kind as EntityKind;
+      await storage.addNode(decision.target.accountId, {
+        id,
+        name: request.name,
+        type: 'entity',
+        parentId: decision.target.entityId,
+        details: detailsFor(id, kind, request),
+      });
+      if (request.secret !== undefined && request.secret.length > 0) {
+        await storage.setPassword(decision.target.accountId, id, request.secret);
+      }
+      onMade();
+      return { id, name: request.name };
+    },
+  };
+}
+
+/**
+ * Where a create request lands.
+ *
+ * <p>The `target` it answers with is shaped like a use target because that is what the door mints
+ * a grant against — and here the "entity" it names is the FOLDER, because there is no entity yet.
+ * That is the one place in this product where those two words point at the same field, and it is
+ * worth saying out loud rather than leaving to be discovered.</p>
+ */
+function chooseCreateTarget(storage: StorageManager, body: Record<string, unknown>): CreateDecision {
+  const request = readCreateRequest(body);
+  const targets = creatableFolders(
+    storage.getAccounts(),
+    (accountId) => storage.getNodes(accountId),
+    (accountId, id) => storage.getNode(accountId, id),
+  );
+  const chosen = chooseTarget(targets, request);
+  if (!chosen.ok) {
+    return { ok: false, code: 'denied', message: chosen.message };
+  }
+  return {
+    ok: true,
+    target: {
+      accountId: chosen.target.accountId,
+      entityId: chosen.target.folderId,
+      entityName: chosen.target.folderName,
+      kind: chosen.kind,
+    },
+    summary: summarizeCreate(request, chosen.target, chosen.kind),
+    withSecret: typeof body.secret === 'string' && body.secret.length > 0,
+  };
+}
+
+/** Everything from a webview or a broker body is untrusted, and this one crosses two processes. */
+function readCreateRequest(body: Record<string, unknown>): CreateRequest {
+  const text = (key: string): string | undefined =>
+    typeof body[key] === 'string' && (body[key] as string).length > 0 ? (body[key] as string) : undefined;
+  return {
+    name: text('name') ?? '',
+    kind: text('kind') ?? 'credential',
+    secret: text('secret'),
+    host: text('host'),
+    user: text('user'),
+    port: typeof body.port === 'number' && Number.isInteger(body.port) ? body.port : undefined,
+    folder: text('folder'),
+  };
 }
