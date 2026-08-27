@@ -4,6 +4,8 @@ import { EntityMetadata } from './types';
 import { StorageManager } from './storageManager';
 import { askpassEnv } from './sshAskpass';
 import { buildSshCommand, describeSshTarget, openSshTerminal } from './terminalManager';
+import { sshClientPresent } from './sshProgram';
+import { offerToInstall } from './toolEnsure';
 import {
   forgetMaterializedKey,
   materializePrivateKey,
@@ -30,6 +32,13 @@ export async function connectEntity(
    */
   agentServesKey = false,
 ): Promise<void> {
+  // The terminal ssh opens in would only say "command not found" AFTER a key may have been
+  // materialised; checking first costs one stat and produces an offer instead of a corpse
+  // (tails T20).
+  if (!sshClientPresent()) {
+    await offerToInstall('ssh');
+    return;
+  }
   const source = await resolveSshCredential(storage, accountId, entity);
   if (source.warning !== undefined) {
     void vscode.window.showWarningMessage(source.warning);

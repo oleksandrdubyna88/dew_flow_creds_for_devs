@@ -125,6 +125,7 @@ import { pinValidator } from './pinInput';
 import { CredTreeDataProvider, VIEW_ID } from './treeDataProvider';
 import { ArrivalHighlights } from './arrivalHighlight';
 import { wireSearchBox } from './searchBox';
+import { offerToInstall } from './toolEnsure';
 import { ARRIVAL_WINDOW_MS } from './arrivalHighlight';
 import { DepDecorationProvider } from './depDecorations';
 import { ExpansionMemory, expansionKey } from './treeExpansion';
@@ -5181,9 +5182,9 @@ async function runVpn(
   // a GUI that neither takes --config nor belongs on a command line.
   const launcher = resolveVpnLauncher(type, process.platform, process.env, onPath, fs.existsSync);
   if (launcher.kind === 'missing') {
-    void vscode.window.showErrorMessage(
-      `Could not find ${type} on this machine. Looked for: ${launcher.looked.join(', ')}. Install it, or connect with the client you normally use.`,
-    );
+    // T20: an offer instead of a dead end — the modal names what is missing and, on Yes, opens
+    // a terminal running the platform's install recipe (visible, so sudo can ask).
+    await offerToInstall(type === 'wireguard' ? 'wg-quick' : 'openvpn');
     return;
   }
   if (launcher.kind === 'openvpn-connect') {

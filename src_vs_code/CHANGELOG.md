@@ -43,6 +43,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **A revision viewer names the version on its own line.** "version replaced at <date>" was glued
   to the entry's name in the title and read as part of it; it is a subtitle now, with the "at".
 
+### Added
+
+- **A missing tool becomes an offer, not a dead end.** Connect over SSH on a machine with no ssh
+  client and the extension used to open a terminal that immediately said "command not found";
+  the VPN path said "install it" and left you to find out how. Both now check first and offer to
+  install: a modal names what is missing, and Yes opens a visible terminal running the
+  platform's own recipe — `Add-WindowsCapability`/winget on Windows, apt on Linux, opening with
+  `sudo apt update && sudo apt upgrade -y` there by explicit choice. The recipe table covers
+  ssh, WireGuard, OpenVPN, the four DB CLIs and git; a machine without apt is told the command
+  and that it needs adapting, never guessed at.
+
 ### Fixed
 
 - **Clicking a search result no longer cancels the search.** The filter box hid the moment focus

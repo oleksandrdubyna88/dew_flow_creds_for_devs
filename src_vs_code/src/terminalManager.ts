@@ -33,3 +33,4 @@ export function openSshTerminal(
   terminal.sendText(command, true);
   return terminal;
 }
+

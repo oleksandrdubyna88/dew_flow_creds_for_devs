@@ -171,3 +171,25 @@ export function agentForwardEnv(
   }
   return { env: { ...base, SSH_AUTH_SOCK: socketPath } };
 }
+
+/**
+ * Whether ANY usable ssh client exists on this machine (tails T20): the built-in Windows one,
+ * or something answering to the bare word on PATH. Cheap stats only — this runs on every
+ * connect click.
+ */
+export function sshClientPresent(
+  platform: NodeJS.Platform = process.platform,
+  env: NodeJS.ProcessEnv = process.env,
+  exists: (p: string) => boolean = fs.existsSync,
+): boolean {
+  if (platform === 'win32' && exists(builtInOpenSsh('ssh'))) {
+    return true;
+  }
+  const dirs = (env.PATH ?? '').split(platform === 'win32' ? ';' : ':');
+  const names = platform === 'win32' ? ['ssh.exe', 'ssh'] : ['ssh'];
+  // The platform's OWN join: this code answers for the platform in the ARGUMENT, and the
+  // host's separator (path.join) would build `/usr/bin\ssh` when a Windows machine reasons
+  // about a Linux PATH — which is exactly what the test does.
+  const join = platform === 'win32' ? path.win32.join : path.posix.join;
+  return dirs.some((dir) => dir.length > 0 && names.some((n) => exists(join(dir, n))));
+}
