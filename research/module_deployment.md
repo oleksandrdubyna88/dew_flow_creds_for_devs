@@ -253,6 +253,21 @@ from the YAML:
   normally — corrected 2026-08-27 from a refusal to boot, which stopped ordinary vault sync for
   everybody over a feature nobody had enrolled in yet
 
+All three roster branches were then watched again on **0.3.1 as deployed**, against the published
+image on the production host, in throwaway containers (`--rm`, no volumes, no published ports,
+their own random signing key) so the live stack was never involved:
+
+| roster passed to the probe | observed |
+|---|---|
+| two officers | `ERR … names 2 officer(s); at least 3 are required` **then** `Application started` |
+| three officers, threshold 1 | `ERR … Threshold is 1, which is outside 2..3` **then** `Application started` |
+| three officers, threshold 2 | `WRN CORPORATE RECOVERY IS ON: 2 of 3 officers …` + fingerprint |
+
+The `Application started` line is the whole point of the change and is why the probe greps for it
+rather than for the error alone: on 0.3.0 the process exited instead. The production container's
+own log contains no `CORPORATE` line at all, which is the fourth branch — no roster, feature off,
+silent.
+
 The keys are absent from `.env.example` on purpose until an operator writes them: an empty roster is
 the feature switched off, and that is the state every deployment should be in until somebody decides
 otherwise on the record.
