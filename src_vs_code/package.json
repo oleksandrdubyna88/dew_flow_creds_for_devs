@@ -244,6 +244,16 @@
         }
       },
       {
+        "id": "credSshManager.fileName",
+        "description": "Stored file and image names in the entity pages (T27) — the dark orange the owner asked for",
+        "defaults": {
+          "dark": "#D98A3D",
+          "light": "#A85E1C",
+          "highContrast": "#F0A050",
+          "highContrastLight": "#8A4A10"
+        }
+      },
+      {
         "id": "credSshManager.teamIcon",
         "description": "Team / people icons in the Cred SSH tree",
         "defaults": {

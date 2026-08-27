@@ -152,6 +152,17 @@ export interface EntityMetadata {
   envBindings?: Record<string, string>;
   /** Display name of the encrypted attachment (content in SecretStorage). */
   attachmentFileName?: string;
+  /** Write-time stamps (T27). The entity's own `updatedAt` moves on every edit, so showing it
+   * for the file would lie; these move only when the FILE does. Absent on entries stored
+   * before the stamps existed — shown as "not recorded", never guessed. */
+  attachmentSize?: number;
+  attachmentChangedAt?: number;
+  attachmentChangedBy?: string;
+  imageSize?: number;
+  imageWidth?: number;
+  imageHeight?: number;
+  imageChangedAt?: number;
+  imageChangedBy?: string;
   /** Display name of the encrypted image (content in SecretStorage). */
   imageFileName?: string;
   /**

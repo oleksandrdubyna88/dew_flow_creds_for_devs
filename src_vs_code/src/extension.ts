@@ -124,6 +124,7 @@ import { decryptJsonWithMasterKey, readBackupAccount } from './cryptoUtils';
 import { pinValidator } from './pinInput';
 import { CredTreeDataProvider, VIEW_ID } from './treeDataProvider';
 import { ArrivalHighlights } from './arrivalHighlight';
+import { carryThroughDetails } from './attachmentMeta';
 import { wireSearchBox } from './searchBox';
 import { offerToInstall } from './toolEnsure';
 import { ARRIVAL_WINDOW_MS } from './arrivalHighlight';
@@ -2388,7 +2389,14 @@ ${detail}
       name: result.details.name,
       type: 'entity',
       parentId: location.parentId,
-      details: result.details,
+      // The seam that stamps attachment metadata — and, found while building it, the one that
+      // keeps configKeyHash alive across an edit (see carryThroughDetails).
+      details: carryThroughDetails(
+        result,
+        undefined,
+        storage.getAccount(location.accountId)?.email,
+        Date.now(),
+      ),
     });
     await applySecrets(storage, location.accountId, id, result);
     await applyDependencyColors(storage, location.accountId, result.dependsOnColors);
@@ -5093,6 +5101,12 @@ async function editNode(
     createdAt: node.createdAt,
     updatedAt: node.updatedAt,
     hasStoredImage: (await storage.getImage(accountId, node.id)) !== undefined,
+    // T27: the edit form shows WHAT is stored, not only that something is.
+    imageDataUri: await (async () => {
+      const b64 = await storage.getImage(accountId, node.id);
+      const mime = node.details?.imageFileName === undefined ? undefined : imageMime(node.details.imageFileName);
+      return b64 !== undefined && mime !== undefined ? `data:${mime};base64,${b64}` : undefined;
+    })(),
     hasStoredVpnConfig: (await storage.getVpnConfig(accountId, node.id)) !== undefined,
     hasStoredDbConnection: (await storage.getDbConnection(accountId, node.id)) !== undefined,
     initialDbConnection: await storage.getDbConnection(accountId, node.id),
@@ -5126,7 +5140,12 @@ async function editNode(
   await storage.updateNode(accountId, {
     ...node,
     name: result.details.name,
-    details: result.details,
+    details: carryThroughDetails(
+      result,
+      node.details,
+      storage.getAccount(accountId)?.email,
+      Date.now(),
+    ),
   });
   await applySecrets(storage, accountId, node.id, result);
   await applyDependencyColors(storage, accountId, result.dependsOnColors);

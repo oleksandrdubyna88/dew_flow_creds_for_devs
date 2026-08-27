@@ -3,6 +3,7 @@ import { normalizeTags } from './sshOptions';
 import { CONFIG_FORMATS, CONFIG_FORMAT_LABELS } from './configFormat';
 import { PASSWORD_LENGTH_CHOICES, SSH_KEY_TYPES } from './secretGenerator';
 import { ZOOM_CSS, zoomControlHtml, zoomStyle } from './zoomControl';
+import { describeAttachment } from './attachmentMeta';
 import { PAGE_MAX_WIDTH_PX, TWO_COLUMN_AT, escapeHtml } from './webviewHtml';
 import { formPageScript } from './entityFormScript';
 import { initialDependencyRows } from './depGraph';
@@ -283,11 +284,12 @@ export function renderHtml(options: EntityFormOptions): string {
   const attachmentsHtml = `${openSection('attachmentsSection')}
     <label for="attachFile">Additional file (pdf, office, text, archives — never executables)</label>
     <input id="attachFile" type="file" accept="${fileAccept}">
-    <p class="hint">${
-      options.hasStoredAttachment
-        ? `A file is stored${d?.attachmentFileName ? ` (${escapeHtml(d.attachmentFileName)})` : ''}. Pick a new one to replace it.`
-        : 'Stored encrypted, synced only inside the vault. Up to 4 MB.'
-    }</p>
+    ${
+      options.hasStoredAttachment && d !== undefined
+        ? `<div class="fileName">${escapeHtml(d.attachmentFileName ?? 'file')}</div>
+           <p class="hint">${escapeHtml(describeAttachment(d, 'attachment'))} — pick a new file to replace it.</p>`
+        : `<p class="hint">Stored encrypted, synced only inside the vault. Up to 4 MB.</p>`
+    }
     ${
       options.hasStoredAttachment
         ? `<div class="check"><input id="clearAttachment" type="checkbox">
@@ -296,11 +298,16 @@ export function renderHtml(options: EntityFormOptions): string {
     }
     <label for="attachImage">Additional image</label>
     <input id="attachImage" type="file" accept="${imageAccept}">
-    <p class="hint">${
-      options.hasStoredImage
-        ? `An image is stored${d?.imageFileName ? ` (${escapeHtml(d.imageFileName)})` : ''}. Pick a new one to replace it.`
-        : 'Shown as a preview in the viewer. Stored encrypted, up to 4 MB.'
-    }</p>
+    ${
+      options.hasStoredImage && d !== undefined
+        ? `${
+            options.imageDataUri !== undefined
+              ? `<img class="formPreview" src="${options.imageDataUri}" alt="Stored image">`
+              : ''
+          }<div class="fileName">${escapeHtml(d.imageFileName ?? 'image')}</div>
+           <p class="hint">${escapeHtml(describeAttachment(d, 'image'))} — pick a new image to replace it.</p>`
+        : `<p class="hint">Shown as a preview in the viewer. Stored encrypted, up to 4 MB.</p>`
+    }
     ${
       options.hasStoredImage
         ? `<div class="check"><input id="clearImage" type="checkbox">
@@ -362,6 +369,11 @@ export function renderHtml(options: EntityFormOptions): string {
              margin: 0 0 14px; padding: 10px 12px; }
   legend { padding: 0 6px; opacity: .85; }
   ${ZOOM_CSS}
+  /* T27: the same treatment the viewer gives — captions a notch up, names dark orange. */
+  .fileName { color: var(--vscode-credSshManager-fileName, #d98a3d); font-size: 1.08em;
+              font-family: var(--vscode-editor-font-family, monospace); margin: 4px 0 2px; }
+  .formPreview { max-width: 220px; max-height: 160px; display: block; margin: 6px 0;
+                 border: 1px solid var(--vscode-widget-border, #3c3c3c); border-radius: 4px; }
   /* The native checkbox tinted by webview defaults is nearly invisible on dark themes
      (tails T31): checked gets the action colour, and the size raise is what helps the
      UNCHECKED box, whose border the browser draws thicker at 15px than at the 13px default.

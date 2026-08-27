@@ -289,3 +289,49 @@ test('no aliases, no row — a capability line about nothing is noise', () => {
   const html = renderEntityViewHtml(options());
   assert.ok(!html.includes('CLI access'));
 });
+
+// ---------------------------------------------------------------------------
+// T27 — a stored file is a described row, not a masked secret.
+// ---------------------------------------------------------------------------
+
+test('a stored file shows its name and what is known — never a password box', () => {
+  const html = renderEntityViewHtml(
+    options({
+      details: metadata({
+        attachmentFileName: 'export.json',
+        attachmentSize: 3300,
+        attachmentChangedAt: 1756300000000,
+        attachmentChangedBy: 'a@b.c',
+      } as never),
+      hasAttachment: true,
+    }),
+  );
+  assert.ok(html.includes('class="fileName">export.json<'), 'the name wears the highlight class');
+  assert.ok(html.includes('3.2 KB'), 'the size is shown');
+  assert.ok(html.includes('by a@b.c'), 'who changed it is shown');
+  const fileRow = html.slice(html.indexOf('Additional file'), html.indexOf('</fieldset>', html.indexOf('Additional file')));
+  assert.ok(!fileRow.includes('type="password"') && !fileRow.includes('value="•"'),
+    'the file row dressed as a secret again');
+});
+
+test('a legacy entry says "not recorded" — never a guess', () => {
+  const html = renderEntityViewHtml(
+    options({ details: metadata({ attachmentFileName: 'old.pdf' } as never), hasAttachment: true }),
+  );
+  assert.ok(html.includes('size not recorded'));
+  assert.ok(html.includes('last change not recorded'));
+});
+
+test('an image carries its dimensions when stamped, and its metadata line', () => {
+  const html = renderEntityViewHtml(
+    options({
+      details: metadata({
+        imageFileName: 'shot.png', imageSize: 2048, imageWidth: 1920, imageHeight: 1080,
+        imageChangedAt: 1756300000000,
+      } as never),
+      imageDataUri: 'data:image/png;base64,AAAA',
+    }),
+  );
+  assert.ok(html.includes('1920×1080'));
+  assert.ok(html.includes('class="fileName">shot.png<'));
+});

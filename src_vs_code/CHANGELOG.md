@@ -54,6 +54,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ssh, WireGuard, OpenVPN, the four DB CLIs and git; a machine without apt is told the command
   and that it needs adapting, never guessed at.
 
+### Fixed
+
+- **Editing a config no longer turns its code access off.** The form rebuilds an entry's
+  metadata from its inputs and knew nothing of the code-access key's hash, so an ordinary
+  rename wrote the metadata wholesale and the hash died — every `creds config` call refused
+  from that moment, with nothing saying why. The write path now carries it through while the
+  entry stays a config; changing the kind still retires the key deliberately, the same scrub
+  sharing does. Found while building the attachment stamps below.
+
+### Added
+
+- **A stored file is a described row, not a masked secret.** The viewer used to render an
+  attached file as a password-style input full of dots. Now: the file's name (dark orange,
+  slightly larger — one shared style on both pages), its size, and when and by whom it last
+  changed; images add their pixel dimensions and the edit form shows the stored image as a
+  preview beside the same metadata line. The stamps are written when the FILE changes — the
+  entry's own "last changed" moves on every edit, so showing it for the file would lie — and
+  entries stored before the stamps existed say "not recorded", never a guess.
+
 ### Changed
 
 - **The MCP tree icon is a pentagon now.** An entry opened to agents used to wear its kind glyph

@@ -59,6 +59,8 @@ export interface EntityFormOptions {
   mode: 'create' | 'edit';
   /** The text-zoom offset (T28), from `credSshManager.uiScale`. */
   uiScale?: number;
+  /** The stored image as a data: URI (T27) — shown as a preview beside its metadata. */
+  imageDataUri?: string;
   entityId: string;
   initial?: EntityMetadata;
   hasStoredPassword: boolean;

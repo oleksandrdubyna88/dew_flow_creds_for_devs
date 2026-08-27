@@ -25,6 +25,7 @@ import { CONFIG_KEY_ENV } from './configKey';
 import { configFileNameFor } from './configFile';
 import { FORM_SECTIONS } from './formSections';
 import { WINDOWS_OPENSSH_DIR } from './sshProgram';
+import { describeAttachment } from './attachmentMeta';
 import { Revision, summarizeRevision } from './revisionHistory';
 import { BINDABLE_FIELDS, BindableField } from './envBinding';
 import { TotpSnapshot } from './totp';
@@ -472,22 +473,31 @@ export function renderEntityViewHtml(options: EntityViewOptions): string {
 
   // The right column's frame (T19 amendment): attachments and the stored image belong in
   // Additional, beside the code panel — the same side and colour the FORM keeps them on.
+  // A FILE is not a secret (T27): no masked input — the name, what is known about it, and the
+  // download. "Not recorded" is what a legacy entry honestly has.
   const additionalRows = [
-    row(
-      `Additional file${d.attachmentFileName ? ` (${d.attachmentFileName})` : ''}`,
-      'attachment',
-      options.hasAttachment ? '•' : undefined,
-      true,
-      'download',
-    ),
+    ...(options.hasAttachment
+      ? [
+          `<div class="row"><label class="fileCaption">Additional file</label>
+      <div class="line">
+        <div>
+          <div class="fileName">${escapeHtml(d.attachmentFileName ?? 'file')}</div>
+          <div class="note">${escapeHtml(describeAttachment(d, 'attachment'))}</div>
+        </div>
+        <button data-field="attachment" data-action="download" class="icon" title="Save file" aria-label="Save file">${DOWNLOAD_ICON}</button>
+      </div></div>`,
+        ]
+      : []),
     ...(options.imageDataUri !== undefined
       ? [
-          `<div class="row"><label>Additional image${d.imageFileName ? ` (${escapeHtml(d.imageFileName)})` : ''}</label>
+          `<div class="row"><label class="fileCaption">Additional image</label>
       <div class="line">
         <img id="imgPreview" class="preview" src="${options.imageDataUri}"
              title="Click to zoom (×2, twice; a third click resets)" alt="Stored image">
         <button data-field="image" data-action="download" class="icon" title="Save image" aria-label="Save image">${DOWNLOAD_ICON}</button>
-      </div></div>`,
+      </div>
+      <div class="fileName">${escapeHtml(d.imageFileName ?? 'image')}</div>
+      <div class="note">${escapeHtml(describeAttachment(d, 'image'))}</div></div>`,
         ]
       : []),
   ].join('\n');
@@ -593,6 +603,10 @@ export function renderEntityViewHtml(options: EntityViewOptions): string {
   .pageHead h2 { margin: 0; }
   .subtitle { margin: -8px 0 12px; opacity: .7; }
   ${ZOOM_CSS}
+  /* T27: captions a notch larger, the NAME dark orange and larger still — the owner's spec. */
+  .fileCaption { font-size: 1.08em; }
+  .fileName { color: var(--vscode-credSshManager-fileName, #d98a3d); font-size: 1.08em;
+              font-family: var(--vscode-editor-font-family, monospace); margin: 2px 0; }
 </style>
 </head>
 <body>
