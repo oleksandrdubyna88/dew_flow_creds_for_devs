@@ -103,6 +103,9 @@ export function entityContextValue(
   }
   if (details?.isConfig) {
     contextValue += ':config';
+    // Two tokens rather than one, so Enable and Revoke are each offered only when they mean
+    // something — the same shape the SSH-agent and VPN start/stop pairs use.
+    contextValue += details.configKeyHash === undefined ? ':codeoff' : ':codeon';
   }
   if (hasPassword) {
     contextValue += ':pwd';

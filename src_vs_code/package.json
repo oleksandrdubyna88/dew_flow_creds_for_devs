@@ -850,6 +850,16 @@
         "category": "CredsForDevs"
       },
       {
+        "command": "credSshManager.enableConfigAccess",
+        "title": "Enable Code Access…",
+        "category": "CredsForDevs"
+      },
+      {
+        "command": "credSshManager.revokeConfigAccess",
+        "title": "Revoke Code Access…",
+        "category": "CredsForDevs"
+      },
+      {
         "command": "credSshManager.exportExternal",
         "title": "Export / Share Externally…",
         "category": "CredsForDevs"
@@ -1477,6 +1487,16 @@
           "command": "credSshManager.finishBreakGlass",
           "when": "view == credSshManagerView && viewItem == account-corpOfficer",
           "group": "4_corp@5"
+        },
+        {
+          "command": "credSshManager.enableConfigAccess",
+          "when": "view == credSshManagerView && viewItem =~ /:config/ && viewItem =~ /:codeoff/",
+          "group": "2_actions@14"
+        },
+        {
+          "command": "credSshManager.revokeConfigAccess",
+          "when": "view == credSshManagerView && viewItem =~ /:config/ && viewItem =~ /:codeon/",
+          "group": "2_actions@14"
         }
       ]
     }

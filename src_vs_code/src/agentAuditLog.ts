@@ -30,8 +30,16 @@ export interface AuditEntry {
   via?: AuditDoor;
 }
 
-/** The three ways in. Named here because the line format and its reader must agree. */
-export type AuditDoor = 'token' | 'alias' | 'mcp';
+/**
+ * The ways in. Named here because the line format and its reader must agree.
+ *
+ * <p>`config` is the fourth and the odd one: the other three end in a human answering a consent
+ * modal, and this one deliberately does not — an application reading its configuration at startup
+ * cannot answer a dialog, and one that appeared on every `dotnet run` would be clicked through
+ * blind inside a day. The key IS the authorization there, which is exactly why every use of it
+ * has to reach this log.</p>
+ */
+export type AuditDoor = 'token' | 'alias' | 'mcp' | 'config';
 
 function two(value: number): string {
   return String(value).padStart(2, '0');

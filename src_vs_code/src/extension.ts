@@ -129,6 +129,7 @@ import { TRASH_RETENTION_CHOICES, isInTrash } from './trash';
 import { showFolderForm } from './folderFormPanel';
 import { formPanels, lockNotice } from './formPanels';
 import { configFileNameFor } from './configFile';
+import { enableConfigAccess, revokeConfigAccess } from './configAccess';
 import { runBounded } from './sshExecRunner';
 import { writeConfigFile } from './configWrite';
 import { mcpAsOfVersion, mcpFor } from './viewerOptions';
@@ -2780,6 +2781,31 @@ ${detail}
     );
   });
 
+  register('credSshManager.enableConfigAccess', async (target) => {
+    vaultKeys.noteUserActivity();
+    const element = await nodeAt(asElement(target), storage);
+    if (element?.kind !== 'node' || element.node.details === undefined) {
+      return;
+    }
+    await enableConfigAccess({
+      entityName: element.node.name,
+      store: (configKeyHash) => updateConfigDetails(storage, element, { configKeyHash }),
+    });
+    mutated();
+  });
+
+  register('credSshManager.revokeConfigAccess', async (target) => {
+    vaultKeys.noteUserActivity();
+    const element = await nodeAt(asElement(target), storage);
+    if (element?.kind !== 'node' || element.node.details === undefined) {
+      return;
+    }
+    if (await revokeConfigAccess({ entityName: element.node.name, store: () => Promise.resolve() })) {
+      await updateConfigDetails(storage, element, { configKeyHash: undefined });
+      mutated();
+    }
+  });
+
   register('credSshManager.writeConfigFile', async (target) => {
     vaultKeys.noteUserActivity(); // the user is here: postpone auto-lock
     const element = await nodeAt(asElement(target), storage);
@@ -4527,6 +4553,25 @@ async function importEntities(
 }
 
 /** Persist the password/private-key changes coming out of the form. */
+/**
+ * Change one config-only field on an entity, leaving everything else exactly as it was.
+ *
+ * <p>A read-modify-write rather than a targeted setter, because `updateNode` takes a whole node —
+ * and spelling the spread at both call sites is how one of them eventually drops a field nobody
+ * was thinking about.</p>
+ */
+async function updateConfigDetails(
+  storage: StorageManager,
+  element: { accountId: string; node: TreeNode },
+  change: Partial<EntityMetadata>,
+): Promise<void> {
+  const details = element.node.details;
+  if (details === undefined) {
+    return;
+  }
+  await storage.updateNode(element.accountId, { ...element.node, details: { ...details, ...change } });
+}
+
 async function applySecrets(
   storage: StorageManager,
   accountId: string,

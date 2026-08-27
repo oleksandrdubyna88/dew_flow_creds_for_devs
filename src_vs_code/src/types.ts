@@ -128,6 +128,11 @@ export interface EntityMetadata {
   configFormat?: ConfigFormat;
   /** What materialising it writes, e.g. `appsettings.Development.json`. The body is a SECRET. */
   configFileName?: string;
+  /**
+   * SHA-256 of the key an application uses to read this config, or absent when nobody has opened
+   * it to code. Never the key itself — see `configKey.ts` for why only the hash is kept.
+   */
+  configKeyHash?: string;
   /** The base command, e.g. `aws sso login`. Arguments live in `commandArgs`. */
   command?: string;
   /** Arguments, one per row, each with an optional explanation. */
@@ -636,6 +641,7 @@ export function isEntityMetadata(value: unknown): value is EntityMetadata {
     (v.isTerminal === undefined || typeof v.isTerminal === 'boolean') &&
     (v.isScript === undefined || typeof v.isScript === 'boolean') &&
     hasValidConfigFields(v) &&
+    (v.configKeyHash === undefined || typeof v.configKeyHash === 'string') &&
     (v.scriptLanguage === undefined || typeof v.scriptLanguage === 'string') &&
     (v.script === undefined || typeof v.script === 'string') &&
     (v.scriptVars === undefined || isCommandArgArray(v.scriptVars)) &&
