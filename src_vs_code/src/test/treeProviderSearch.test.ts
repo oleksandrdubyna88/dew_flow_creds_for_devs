@@ -109,10 +109,30 @@ test('the filter row is the first root, above the first account', () => {
   const roots = tree.getChildren();
 
   assert.equal(roots[0]?.kind, 'search', 'the search row must come first');
+  // The separator (T29) sits BETWEEN accounts — never before the first, never after the last.
   assert.deepEqual(
     roots.slice(1).map((r) => (r.kind === 'account' ? r.account.email : r.kind)),
-    ['one@example.com', 'two@example.com'],
+    ['one@example.com', 'separator', 'two@example.com'],
   );
+  assert.notEqual(roots[1]?.kind, 'separator', 'a separator before the first account separates nothing');
+  assert.notEqual(roots.at(-1)?.kind, 'separator', 'a separator after the last account separates nothing');
+});
+
+test('a lone account gets no separator, and the separator row is inert', async () => {
+  const storage = fakeStorage({ 'a1:root': [entity('e1', 'GitHub token')] });
+  // One signed-in account: the fixture's list is cut down, not just its nodes.
+  storage.getAccounts = () => [{ accountId: 'a1', email: 'one@example.com', provider: 'microsoft' }];
+  const tree = new provider(storage, { fsPath: '/ext' });
+  const roots = tree.getChildren();
+  assert.ok(!roots.some((r) => r.kind === 'separator'), 'one account needs nothing separated');
+
+  const two = build();
+  const separator = two.getChildren().find((r) => r.kind === 'separator');
+  assert.ok(separator !== undefined);
+  const item = await two.getTreeItem(separator);
+  assert.equal(item.command, undefined, 'a separator with a command is a button in disguise');
+  assert.equal(item.contextValue, 'separator');
+  assert.equal(two.getChildren(separator).length, 0);
 });
 
 test('a filter hides the accounts that hold no match', () => {

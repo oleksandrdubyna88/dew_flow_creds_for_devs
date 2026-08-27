@@ -366,6 +366,10 @@ export type TreeElement =
   /** The filter row, pinned above the first account. Carries no data — the term lives on
    *  the provider, so typing does not rebuild the element identity. */
   | { kind: 'search' }
+  /** A blank, inert row between two accounts (tails T29): VS Code's tree has no separators and
+   *  no row CSS, so the owner's fallback — "просто пустую строку" — is the implementable half.
+   *  Carries the account ABOVE it so its identity is stable across repaints. */
+  | { kind: 'separator'; afterAccountId: string }
   | { kind: 'account'; account: StoredAccount }
   | { kind: 'node'; accountId: string; node: TreeNode }
   /** One kept previous version of an entity, addressed by its POSITION in that

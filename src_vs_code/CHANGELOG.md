@@ -56,6 +56,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **The tree reads in layers.** A blank separator row now sits between accounts (VS Code's tree
+  offers no real separators — the row is inert: no menu, no command, never at an edge). The
+  account row's inline plus is gone; in its place the row counts what lives there:
+  **entries / in the Trash / shared**, zeros written out, with the same numbers spelled in the
+  tooltip. *New Entity* and *New Folder* left the view's title bar — with no target folder they
+  could only ask, and the folder context menu is where they already work. The obvious-verb
+  commands (backup, restore, lock, unlock, import, export, auto-lock, MCP logs…) carry codicons
+  now — the palette and title bars show them; VS Code does not render icons in dropdown menus,
+  and that limit is recorded rather than fought.
+
 - **Agents can learn how code reads a config.** `creds_config_snippet` — a new, read-only MCP
   tool: call it with a config entry's id for the language catalog, again with a language for the
   exact code to paste and the file it goes into ("Program.cs, before builder.Build()."). It

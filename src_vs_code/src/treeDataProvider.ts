@@ -28,6 +28,7 @@ import { FOLDER_COLOR, buildTooltip, entityIcon, folderIcon, kindIcon } from './
 import { parentOf } from './treeParent';
 import { describeRetention, isTrashFolder } from './trash';
 import { ExpansionMemory, expansionKey } from './treeExpansion';
+import { accountCounts, formatAccountCounts } from './accountCounts';
 import { buildJudge, searchRowFor } from './providerSearch';
 import { revisionRowItem } from './revisionRowItem';
 import { depUri } from './depDecorations';
@@ -325,6 +326,11 @@ export class CredTreeDataProvider
       const roots: TreeElement[] = [{ kind: 'search' }];
       for (const account of this.storage.getAccounts()) {
         if (accountMatches(this.storage, account.accountId, this.judge(account.accountId), this.filterMemo)) {
+          // BETWEEN accounts only (T29): never before the first, never after the last — a
+          // separator at an edge separates nothing.
+          if (roots.some((existing) => existing.kind === 'account')) {
+            roots.push({ kind: 'separator', afterAccountId: account.accountId });
+          }
           roots.push({ kind: 'account', account });
         }
       }
@@ -333,7 +339,7 @@ export class CredTreeDataProvider
       }
       return roots;
     }
-    if (element.kind === 'search') {
+    if (element.kind === 'search' || element.kind === 'separator') {
       return [];
     }
     const terms = this.terms();
@@ -516,6 +522,15 @@ export class CredTreeDataProvider
         ` · ${new Date(share.createdAt).toLocaleString()}`;
       return item;
     }
+    if (element.kind === 'separator') {
+      // Inert on purpose: no command, no icon, and a contextValue no menu contribution
+      // matches — a separator that grows a right-click menu has stopped separating.
+      const item = new vscode.TreeItem('', vscode.TreeItemCollapsibleState.None);
+      item.id = `separator:${element.afterAccountId}`;
+      item.contextValue = 'separator';
+      return item;
+    }
+
     if (element.kind === 'account') {
       const item = new vscode.TreeItem(
         element.account.email,
@@ -541,12 +556,23 @@ export class CredTreeDataProvider
       );
       // The reason belongs on the row itself: a grey icon that does not say why is a
       // riddle — and it used to be overwritten by the provider name one line later.
+      // The three counts (T32) replace the row's plus: entries / trash / shared, zeros
+      // written out. Colours for the numbers are not expressible in a description — the
+      // limit is recorded in accountCounts.ts.
+      const counts = accountCounts(
+        this.storage.getNodes(element.account.accountId),
+        (id) => this.storage.getNode(element.account.accountId, id),
+        this.sharing?.ownShares ?? [],
+        element.account.accountId,
+      );
       item.description = [
         element.account.provider,
+        formatAccountCounts(counts),
         ready !== undefined && !ready.ready ? ready.reason : undefined,
       ]
         .filter(Boolean)
         .join('  ·  ');
+      item.tooltip = `${counts.entries} entries · ${counts.trash} in the Trash · ${counts.shared} shared with this account`;
       return item;
     }
 

@@ -486,7 +486,8 @@
       {
         "command": "credSshManager.removeInstalledKey",
         "title": "Remove Installed Key…",
-        "category": "CredsForDevs"
+        "category": "CredsForDevs",
+        "icon": "$(trash)"
       },
       {
         "command": "credSshManager.saveVpnConfig",
@@ -641,7 +642,8 @@
       {
         "command": "credSshManager.importFrom",
         "title": "Import from ~/.ssh/config or another manager…",
-        "category": "CredsForDevs"
+        "category": "CredsForDevs",
+        "icon": "$(cloud-download)"
       },
       {
         "command": "credSshManager.addKeyToAgent",
@@ -704,7 +706,8 @@
       {
         "command": "credSshManager.removeSecurityKey",
         "title": "Remove Security Key…",
-        "category": "CredsForDevs"
+        "category": "CredsForDevs",
+        "icon": "$(trash)"
       },
       {
         "command": "credSshManager.unlockWithSecurityKey",
@@ -788,7 +791,8 @@
       {
         "command": "credSshManager.setAutoLock",
         "title": "Set Auto-Lock…",
-        "category": "CredsForDevs"
+        "category": "CredsForDevs",
+        "icon": "$(watch)"
       },
       {
         "command": "credSshManager.backupToNas",
@@ -891,12 +895,14 @@
       {
         "command": "credSshManager.exportExternal",
         "title": "Export / Share Externally…",
-        "category": "CredsForDevs"
+        "category": "CredsForDevs",
+        "icon": "$(export)"
       },
       {
         "command": "credSshManager.importExternal",
         "title": "Import from External…",
-        "category": "CredsForDevs"
+        "category": "CredsForDevs",
+        "icon": "$(cloud-download)"
       },
       {
         "command": "credSshManager.search",
@@ -1070,16 +1076,6 @@
           "group": "navigation@1"
         },
         {
-          "command": "credSshManager.addEntity",
-          "when": "view == credSshManagerView",
-          "group": "navigation@2"
-        },
-        {
-          "command": "credSshManager.addFolder",
-          "when": "view == credSshManagerView",
-          "group": "navigation@3"
-        },
-        {
           "command": "credSshManager.refresh",
           "when": "view == credSshManagerView",
           "group": "navigation@4"
@@ -1123,7 +1119,7 @@
       "view/item/context": [
         {
           "command": "credSshManager.addEntity",
-          "when": "view == credSshManagerView && viewItem =~ /^(account|folder)$/",
+          "when": "view == credSshManagerView && viewItem =~ /^folder$/",
           "group": "inline@1"
         },
         {
