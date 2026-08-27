@@ -397,6 +397,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Bounded on purpose: 256 KB of output per stream, 30 s per command (raisable to 120 s), 8 at a
   time, and every child killed when the window goes.
 
+## [0.68.0] — 2026-08-27
+
+### Added
+
+- **The tree shows agent access, in five colours, on the row itself.** An entry an agent may
+  reach carries a small ladder under its icon — green *visible*, cyan *usable*, amber *may
+  replace the secret*, purple *may create*, red *may delete* — the same five colours as the
+  switches in the form and the bar on the card. Lit up to whatever the entry actually resolves
+  to, inheritance and all.
+  - **Only where there is something to say.** An entry no agent can reach — which is every entry
+    until you say otherwise — keeps the editor's own icon exactly as before. The stripes appear
+    where they mean something rather than as a band across a tree that has nothing to report.
+  - **The Trash is not exempt from itself.** A deleted entry's row shows no access, because a
+    deleted entry grants none.
+  - This costs the row's one icon slot, so the seven kind glyphs are now drawn by this extension
+    rather than taken from VS Code's set — for those rows only. There is no second slot: a tree
+    row has one icon, one label colour and a two-character badge, and the label colour and the
+    badge already belong to dependencies.
+  - The icons are generated, committed, and painted from `package.json`'s own contributed
+    colours, so the tree, the form and the card cannot drift apart. `npm run icons:mcp` redraws
+    all 140 of them; a test fails if the extension can ask for a file the generator did not
+    write, or if one is left behind that nothing reads.
+
+### Fixed
+
+- **Looking up a node walked the whole profile.** `getNode` was a linear scan, which was fine
+  while it answered one question at a time and stopped being fine the moment a tree row asked one
+  per repaint: a folder of 300 entries in a vault of a thousand nodes is a million comparisons
+  per keystroke in the filter box. It is a map now, built with the cache entry that already
+  exists.
+
 ## [0.67.0] — 2026-08-27
 
 ### Added

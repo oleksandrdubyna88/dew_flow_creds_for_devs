@@ -100,6 +100,9 @@ function build(nodes: TreeNode[]): { tree: Provider; keychainReads: () => number
     // dependency index is allowed to be built inside `getTreeItem`. `reads` deliberately does
     // not move here, so the 300-entity guarantee below still measures what it says it does.
     getNodes: () => [FOLDER, ...nodes],
+    // The row's icon asks for the parent folder and walks up from it, to know whether an agent
+    // may reach this entry and whether it is in the Trash. Also not a keychain read.
+    getNode: (_a: string, id: string) => [FOLDER, ...nodes].find((n) => n.id === id),
     getChildren: (_a: string, parentId: string | null) =>
       [FOLDER, ...nodes].filter((n) => (n.parentId ?? null) === parentId),
     getPassword: () => {

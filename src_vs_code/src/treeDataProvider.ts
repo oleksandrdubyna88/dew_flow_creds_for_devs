@@ -23,7 +23,7 @@ import { describeRemaining } from './entityExpiry';
 import { resolveKind } from './entityKind';
 import { SyncReadiness } from './syncReadiness';
 import { describeTarget, entityContextValue } from './treeRowText';
-import { FOLDER_COLOR, buildTooltip, folderIcon, kindIcon } from './treeIcons';
+import { FOLDER_COLOR, buildTooltip, entityIcon, folderIcon, kindIcon } from './treeIcons';
 import { parentOf } from './treeParent';
 import { describeRetention, isTrashFolder } from './trash';
 import { ExpansionMemory, expansionKey } from './treeExpansion';
@@ -627,15 +627,13 @@ export class CredTreeDataProvider
     // Capability flags drive the context menu: only actions that are
     // actually possible for THIS entity are offered.
     item.contextValue = entityContextValue(details, this.hasPassword(accountId, node.id));
-    item.iconPath = new vscode.ThemeIcon(
-      // The same kind→icon table the "Shared with me" rows use. It was a flag ladder here and
-      // a switch there, which is two places to teach about a new kind (audit A4).
-      kindIcon(resolveKind(details)),
-      // Tinted when previous versions are kept, so "this has been changed" is visible in
-      // the tree rather than only after opening the entry. A theme colour rather than a
-      // second set of SVG files: seven kinds times two states is fourteen files to keep
-      // in step, and the tint says the same thing.
-      this.hasHistory(accountId, node.id) ? HISTORY_COLOR : undefined,
+    // Both the kind glyph and — where an agent may reach this entry — the access ladder, because
+    // a row has exactly one icon slot. See `entityIcon` for what that costs and why.
+    item.iconPath = entityIcon(
+      this.extensionUri,
+      node,
+      (id) => this.storage.getNode(accountId, id),
+      this.hasHistory(accountId, node.id),
     );
     // What it points at, and — for a short-lived entry — how long it has. Deliberately in the
     // description rather than as a second icon tint: the tint already means "has previous
@@ -786,10 +784,7 @@ export class CredTreeDataProvider
   }
 }
 
-/** Green: this account can sync on its own. Anything else stays the default grey. */
 /** Team/people rows are dark blue so they read as "other people", not data. */
-const HISTORY_COLOR = new vscode.ThemeColor('credSshManager.historyIcon');
-
 const TEAM_COLOR = new vscode.ThemeColor('credSshManager.teamIcon');
 
 

@@ -129,6 +129,15 @@ interface NodeCacheEntry {
   nodes: readonly TreeNode[];
   /** Keyed by parent id; `null` is the root, as `getChildren` spells it. */
   children: Map<string | null, readonly TreeNode[]>;
+  /**
+   * Keyed by node id, built with the entry rather than on demand.
+   *
+   * <p>`getNode` was a linear scan of the whole profile, which was fine while it answered
+   * single questions. It stopped being fine when a tree row started asking one per repaint —
+   * a folder of 300 entries times a vault of a thousand nodes is a million comparisons per
+   * keystroke in the filter box. The map costs one pass over a list that was just built.</p>
+   */
+  byId: Map<string, TreeNode>;
 }
 
 /** Folders first (manual order, then name), entities alphabetical. */
@@ -396,7 +405,13 @@ export class StorageManager implements vscode.Disposable {
     }
     const plain = this.openNodesSlot(accountId, raw);
     const nodes = Object.freeze(Array.isArray(plain) ? plain.filter(isTreeNode) : []);
-    const entry: NodeCacheEntry = { raw, nodes, children: new Map() };
+    const entry: NodeCacheEntry = {
+      raw,
+      nodes,
+      children: new Map(),
+      // Built back to front so the FIRST of a duplicated id wins, the way the linear scan did.
+      byId: new Map(nodes.map((node): [string, TreeNode] => [node.id, node]).reverse()),
+    };
     this.nodeCache.set(accountId, entry);
     return entry;
   }
@@ -407,7 +422,7 @@ export class StorageManager implements vscode.Disposable {
   }
 
   getNode(accountId: string, id: string): TreeNode | undefined {
-    return this.getNodes(accountId).find((n) => n.id === id);
+    return this.nodeEntry(accountId).byId.get(id);
   }
 
   /** The sorted children of one position (`null` = root) — frozen, shared until the next write. */

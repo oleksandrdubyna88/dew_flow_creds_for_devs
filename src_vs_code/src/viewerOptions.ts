@@ -2,7 +2,6 @@ import { DB_DEFAULT_PORTS, DbConnParts, parseDbConnectionString } from './dbConn
 import { Revision } from './revisionHistory';
 import type { StorageManager } from './storageManager';
 import { DbType, TreeNode } from './types';
-import { isInTrash } from './trash';
 import { TotpSnapshot, totpSnapshot } from './totp';
 import {
   McpAccess,
@@ -11,7 +10,7 @@ import {
   accessMask,
   describeAccess,
   normalizeMcpAccess,
-  resolveMcpAccess,
+  resolveMcpInTree,
 } from './mcpAccess';
 
 /**
@@ -169,8 +168,8 @@ export function mcpFor(
   byId: (id: string) => TreeNode | undefined,
   asOfVersion: boolean,
 ): ReturnType<typeof mcpSummary> {
-  const folder = node.parentId === undefined || node.parentId === null ? undefined : byId(node.parentId);
-  return mcpSummary(resolveMcpAccess(node, folder, isInTrash(node, byId)), folder?.name, asOfVersion);
+  const resolved = resolveMcpInTree(node, byId);
+  return mcpSummary(resolved, resolved.folder?.name, asOfVersion);
 }
 
 /**

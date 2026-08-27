@@ -1,4 +1,5 @@
 import { TreeNode } from './types';
+import { isInTrash } from './trash';
 
 /**
  * What an agent is allowed to do with one entry, and where that answer comes from.
@@ -125,6 +126,23 @@ export function resolveMcpAccess(
   }
   const own = entity.details === undefined ? undefined : entity.details.mcp;
   return own === undefined ? inheritedFrom(folder) : { access: normalizeMcpAccess(own), source: 'entity' };
+}
+
+/**
+ * The same answer, found from the tree rather than from three arguments.
+ *
+ * <p>Three callers need it — the card, the tree row, and (next) the broker — and each of them
+ * has only a node and a way to look ids up. Assembling the three arguments at each call site is
+ * where the card got it wrong: it passed `inTrash: false` because it had nothing at hand to
+ * answer with, and a deleted entry's card advertised permissions the resolver would refuse.
+ * Taking the lookup instead of the boolean makes that unrepresentable.</p>
+ */
+export function resolveMcpInTree(
+  node: TreeNode,
+  byId: (id: string) => TreeNode | undefined,
+): ResolvedMcpAccess & { folder: TreeNode | undefined } {
+  const folder = node.parentId === undefined || node.parentId === null ? undefined : byId(node.parentId);
+  return { ...resolveMcpAccess(node, folder, isInTrash(node, byId)), folder };
 }
 
 function inheritedFrom(folder: TreeNode | undefined): ResolvedMcpAccess {

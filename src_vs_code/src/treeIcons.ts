@@ -1,6 +1,8 @@
 import * as vscode from 'vscode';
 import { EntityKind, FolderType, TreeNode } from './types';
-import { assertNever } from './entityKind';
+import { assertNever, resolveKind } from './entityKind';
+import { accessLevel, mcpIconFile } from './mcpIcons';
+import { resolveMcpInTree } from './mcpAccess';
 
 /**
  * What a tree row LOOKS like: its icon, and the tooltip behind it.
@@ -39,6 +41,46 @@ export function kindIcon(kind: EntityKind): string {
       return assertNever(kind, 'kindIcon');
   }
 }
+
+/**
+ * An entity row's icon: the editor's own codicon, or a generated glyph with the ladder under it.
+ *
+ * <p>The split is at level 0 on purpose. An entry no agent can reach — every entry, until
+ * somebody says otherwise — keeps the codicon and the history tint exactly as before, so the
+ * hand-drawn glyphs never spread across a whole tree that has nothing to say. Where there IS
+ * something to say, the one icon slot carries it, and the history tint comes along inside the
+ * generated file rather than being lost: a themed colour cannot be applied to a file icon, so
+ * the file is drawn in that colour instead.</p>
+ */
+export function entityIcon(
+  extensionUri: vscode.Uri,
+  node: TreeNode,
+  byId: (id: string) => TreeNode | undefined,
+  history: boolean,
+): vscode.ThemeIcon | { light: vscode.Uri; dark: vscode.Uri } {
+  // The same kind→icon table the "Shared with me" rows use. It was a flag ladder in the tree
+  // and a switch here, which is two places to teach about a new kind (audit A4).
+  const kind = resolveKind(node.details);
+  // Inheritance and the Trash included — a row must not claim more than the broker will give.
+  const level = accessLevel(resolveMcpInTree(node, byId).access);
+  const light = mcpIconFile(kind, level, history, 'light');
+  const dark = mcpIconFile(kind, level, history, 'dark');
+  if (light === undefined || dark === undefined) {
+    return new vscode.ThemeIcon(kindIcon(kind), history ? HISTORY_COLOR : undefined);
+  }
+  return {
+    light: vscode.Uri.joinPath(extensionUri, 'media', ...light.split('/')),
+    dark: vscode.Uri.joinPath(extensionUri, 'media', ...dark.split('/')),
+  };
+}
+
+/**
+ * Tinted when previous versions are kept, so "this has been changed" is visible in the tree
+ * rather than only after opening the entry. A theme colour rather than a second set of SVG
+ * files: seven kinds times two states is fourteen files to keep in step, and the tint says the
+ * same thing.
+ */
+const HISTORY_COLOR = new vscode.ThemeColor('credSshManager.historyIcon');
 
 /** Folders are painted dark orange so they never blend in with items. */
 export const FOLDER_COLOR = new vscode.ThemeColor('credSshManager.folderIcon');
