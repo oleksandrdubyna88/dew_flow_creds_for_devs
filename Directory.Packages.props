@@ -12,6 +12,12 @@
 
     <!-- Serilog: the one logging stack, per .claude/rules/shared/common/logging-serilog.md. Apache-2.0. -->
     <PackageVersion Include="Serilog.AspNetCore" Version="10.0.0" />
+
+    <!-- creds-mcp: the official MCP SDK. The first package either binary has taken, and the
+         reason it is affordable was measured rather than assumed (2026-08-27): with PublishAot
+         and JsonSerializerIsReflectionEnabledByDefault=false it publishes with zero trim
+         warnings, and the published binary answers a real initialize/tools-list exchange. MIT. -->
+    <PackageVersion Include="ModelContextProtocol" Version="2.2.0" />
   </ItemGroup>
 
   <ItemGroup>

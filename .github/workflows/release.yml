@@ -1,9 +1,10 @@
 name: release
 
-# Three products, three tag shapes, so releasing one never ships the others:
+# Four products, four tag shapes, so releasing one never ships the others:
 #   server-v1.2.3     -> builds and pushes the container image
 #   extension-v0.24.0 -> packages and publishes to the VS Code Marketplace
 #   cli-v0.1.0        -> four Native AOT `creds` binaries, attached to the release
+#   mcp-v0.1.0        -> four Native AOT `creds-mcp` binaries, attached to the release
 #
 # The `cli-v*` line was missing while the `cli-binaries` job below was complete and
 # guarded by `if: startsWith(github.ref, 'refs/tags/cli-v')` — so the job existed, was
@@ -15,13 +16,14 @@ on:
       - 'server-v*'
       - 'extension-v*'
       - 'cli-v*'
+      - 'mcp-v*'
   workflow_dispatch:
     inputs:
       target:
         description: 'What to release'
         required: true
         type: choice
-        options: [server, extension, cli]
+        options: [server, extension, cli, mcp]
 
 permissions:
   contents: read
@@ -256,6 +258,83 @@ jobs:
           gh release create "$GITHUB_REF_NAME" --title "creds ${GITHUB_REF_NAME#cli-v}" --notes "Native AOT builds of the headless CLI." 2>/dev/null || true
           gh release upload "$GITHUB_REF_NAME" "$ASSET" --clobber
           gh release upload "$GITHUB_REF_NAME" "$ASSET.sha256" --clobber
+
+  # The MCP server: same technology, same four RIDs, its own tag line. Versioned apart from the
+  # CLI because they are two binaries with two audiences — a person installs `creds` for their
+  # terminal and `creds-mcp` for their agent, and neither release should move the other.
+  mcp-binaries:
+    name: creds-mcp (${{ matrix.rid }})
+    if: startsWith(github.ref, 'refs/tags/mcp-v') || inputs.target == 'mcp'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - rid: linux-x64
+            runner: ubuntu-latest
+          - rid: linux-arm64
+            runner: ubuntu-24.04-arm
+          - rid: win-x64
+            runner: windows-latest
+          - rid: win-arm64
+            runner: windows-11-arm
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Toolchain (linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends clang zlib1g-dev
+
+      # The shared library first, then this binary's own. The library's tests are what stop the
+      # two implementations of the wire contract drifting, and this binary is now one of them.
+      - name: Test
+        run: |
+          dotnet build src_broker_client/tests/BrokerClient.Tests.csproj -c Release
+          ./src_broker_client/tests/bin/Release/net10.0/CredsBroker.Tests${{ runner.os == 'Windows' && '.exe' || '' }}
+          dotnet build src_mcp/tests/CredsMcp.Tests.csproj -c Release
+          ./src_mcp/tests/bin/Release/net10.0/CredsMcp.Tests${{ runner.os == 'Windows' && '.exe' || '' }}
+        shell: bash
+
+      - name: Publish
+        run: dotnet publish src_mcp/src/CredsMcp.csproj -c Release -r ${{ matrix.rid }} -o out
+
+      # A binary that cannot answer --help did not really build; AOT failures often surface only
+      # at first run, and this one carries a package the others do not. Skipped when
+      # cross-architecture, where the runner cannot execute it.
+      - name: Smoke
+        if: ${{ !endsWith(matrix.rid, 'arm64') }}
+        shell: bash
+        run: ./out/creds-mcp${{ runner.os == 'Windows' && '.exe' || '' }} --help | grep -q 'creds_list'
+
+      - name: Package
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#mcp-v}"
+          NAME="creds-mcp-$VERSION-${{ matrix.rid }}"
+          mkdir "$NAME"
+          if [[ "${{ matrix.rid }}" == win-* ]]; then
+            cp out/creds-mcp.exe "$NAME/"
+            7z a "$NAME.zip" "$NAME" > /dev/null
+            echo "ASSET=$NAME.zip" >> "$GITHUB_ENV"
+          else
+            cp out/creds-mcp "$NAME/"
+            tar czf "$NAME.tar.gz" "$NAME"
+            echo "ASSET=$NAME.tar.gz" >> "$GITHUB_ENV"
+          fi
+
+      - name: Attach to the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          gh release create "$GITHUB_REF_NAME" --title "creds-mcp ${GITHUB_REF_NAME#mcp-v}" --notes "Native AOT builds of the MCP server." 2>/dev/null || true
+          gh release upload "$GITHUB_REF_NAME" "$ASSET" --clobber
 
   extension:
     name: publish extension

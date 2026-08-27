@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>creds-mcp</AssemblyName>
+    <RootNamespace>CredsMcp</RootNamespace>
+    <!-- Native AOT, the same choice and the same four RIDs as `creds` and the server. It matters
+         here for the same reason it matters there: an MCP client starts this process and waits
+         for the handshake before it can list a single tool, so start-up is the user-visible
+         cost. The trim/AOT analyzers then run on every ordinary build. -->
+    <PublishAot>true</PublishAot>
+    <StripSymbols>true</StripSymbols>
+    <!-- Kept even with a package in the graph. Measured 2026-08-27: the MCP SDK publishes with
+         zero trim warnings under both settings and the published binary answers a real
+         initialize / tools/list exchange either way — the SDK carries a source-generated context
+         for its own protocol types. So the rule that made an accidental reflective call a
+         compile error in `creds` costs nothing here and is kept. -->
+    <JsonSerializerIsReflectionEnabledByDefault>false</JsonSerializerIsReflectionEnabledByDefault>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="ModelContextProtocol" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Discovery, the health probe, the wire contract and the WSL bridge — the same code
+         `creds` uses, so a fix to any of it is made once. This project exists because an MCP
+         client owns its server's process lifetime and the extension has zero runtime
+         dependencies; it does not exist because the protocol is different. -->
+    <ProjectReference Include="..\..\src_broker_client\src\BrokerClient.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="CredsMcp.Tests" />
+  </ItemGroup>
+
+</Project>
