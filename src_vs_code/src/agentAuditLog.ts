@@ -17,7 +17,21 @@ export interface AuditEntry {
   detail?: string;
   /** This window's call number. Absent in the older channel-only lines. */
   seq?: number;
+  /**
+   * Which door the call came through.
+   *
+   * <p>Three of them reach the same machinery — a bearer token a human copied, a CLI alias, and
+   * an MCP client naming an entry by id — and until this field existed a finished line could not
+   * say which. That mattered the moment there was a view over these files that shows only what
+   * an agent did: filtering by the verb is wrong, because `query` is a verb all three can send.</p>
+   *
+   * <p>Absent in lines written before it existed, and read back that way rather than guessed.</p>
+   */
+  via?: AuditDoor;
 }
+
+/** The three ways in. Named here because the line format and its reader must agree. */
+export type AuditDoor = 'token' | 'alias' | 'mcp';
 
 function two(value: number): string {
   return String(value).padStart(2, '0');
@@ -45,6 +59,63 @@ function oneLine(text: string, max = 200): string {
 
 export function formatAuditLine(entry: AuditEntry): string {
   const seq = entry.seq === undefined ? '' : `#${entry.seq} `;
-  const head = `[${clockOf(entry.at)}] ${seq}${entry.action} ${entry.entityName} (${entry.grant}) → ${entry.outcome}`;
+  const via = entry.via === undefined ? '' : ` via ${entry.via}`;
+  const head = `[${clockOf(entry.at)}] ${seq}${entry.action} ${entry.entityName} (${entry.grant})${via} → ${entry.outcome}`;
   return entry.detail === undefined ? head : `${head}  ${oneLine(entry.detail)}`;
+}
+
+/**
+ * One line, read back.
+ *
+ * <p>Written and read in one module on purpose: the format is not a wire contract anybody else
+ * implements, it is a shape this product prints and then shows in a filtered view. The guarantee
+ * worth having is the round trip, and it is asserted as one — format an entry, parse it, get the
+ * entry back — rather than by two regexes maintained apart from each other.</p>
+ *
+ * <p>A line it cannot read yields `undefined` rather than a half-filled row. These files are
+ * swept but not versioned, so a fortnight after any format change the folder holds both; a row
+ * showing an entity called `(…)` because a parse half-worked is worse than a line left out.</p>
+ */
+export function parseAuditLine(line: string): AuditEntry | undefined {
+  const match = LINE.exec(line);
+  if (match === null) {
+    return undefined;
+  }
+  const [, clock, seq, action, entityName, grant, via, outcome, detail] = match;
+  return {
+    at: timeOf(clock),
+    grant,
+    entityName,
+    action,
+    outcome,
+    seq: numberOrNothing(seq),
+    via: via as AuditDoor | undefined,
+    detail: textOrNothing(detail),
+  };
+}
+
+// `[12:00:00Z] #3 query orders-db (tok…f2) via mcp → exit 0  SELECT 1`
+const LINE =
+  /^\[(\d\d:\d\d:\d\dZ)\] (?:#(\d+) )?(\S+) (.*?) \(([^)]*)\)(?: via (token|alias|mcp))? → ([^ ]+(?: [^ ]+)*?)(?:  (.*))?$/;
+
+/** An absent capture group and an empty one both mean the line did not carry it. */
+function numberOrNothing(value: string | undefined): number | undefined {
+  return value === undefined || value === '' ? undefined : Number(value);
+}
+
+function textOrNothing(value: string | undefined): string | undefined {
+  return value === undefined || value === '' ? undefined : value;
+}
+
+/**
+ * The clock back into a Date, on today's date.
+ *
+ * <p>The line carries a time and the FILE carries the day, so a row read on its own knows the
+ * hour and not the date. The reader that walks a day folder overwrites this with the folder's
+ * date; alone, it is the time of day and nothing is claimed about which one.</p>
+ */
+function timeOf(clock: string): Date {
+  const at = new Date(0);
+  at.setUTCHours(Number(clock.slice(0, 2)), Number(clock.slice(3, 5)), Number(clock.slice(6, 8)), 0);
+  return at;
 }

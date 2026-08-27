@@ -502,6 +502,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Bounded on purpose: 256 KB of output per stream, 30 s per command (raisable to 120 s), 8 at a
   time, and every child killed when the window goes.
 
+## [0.72.0] — 2026-08-27
+
+### Added
+
+- **MCP logs**, in the ⋯ menu: every call an AI agent made to this window — when, what, which
+  entry, and what it was told. Three filters: **Everything**, **Refused** (what it asked for and
+  did not get — a switch that is off, a prompt you declined, a prompt nobody answered), and
+  **Secrets replaced** (every rotation; the value passed through this window and never through
+  the agent).
+  - **It is not a second store.** The broker already writes one line per call to disk — a file
+    per run, a folder per day, swept after a fortnight — so this is that record, filtered to the
+    calls that arrived through MCP. History between sessions comes free, the sweep already works,
+    and no second place appears that could disagree with the first.
+  - Every audit line now says **which door a call came through**: a bearer token you copied, a
+    CLI alias, or an MCP client. Filtering by the verb would have been wrong — `query` is a verb
+    all three can send.
+  - A rotation that was **refused** counts as a refusal and not as a replacement. That is the
+    only reading which leaves the "Secrets replaced" number worth trusting.
+  - A refusal is matched against the broker's own error codes rather than by looking for the word
+    "denied" — a refusal reads `consent_timeout`, `not_supported`, `too_many_requests` and half a
+    dozen more, and a view that caught only the obvious one would under-report the exact thing
+    somebody opened it to count.
+
 ## [0.71.0] — 2026-08-27
 
 ### Added

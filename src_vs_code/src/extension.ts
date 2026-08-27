@@ -147,6 +147,7 @@ import { EphemeralSweeper } from './ephemeralSweeper';
 import { maskEntriesFor } from './maskEntries';
 import { findUsableEntry, visibleMcpEntries } from './mcpEntries';
 import { RotateDeps, rotateAction } from './rotateAction';
+import { showMcpLog } from './mcpLogPanel';
 import { McpUseLookup } from './brokerRequests';
 import { CREDS_CLI, CREDS_MCP, CredsAction, CredsProduct, CredsRid } from './credsInstall';
 import { InstallHost, binaryPath, installMenu, performInstall, removeInstall } from './binaryInstaller';
@@ -3418,6 +3419,8 @@ ${detail}
     }
     await applyInstallChoice(host, product, rid, action, picked);
   };
+
+  register('credSshManager.showMcpLog', () => showMcpLog(storageDir));
 
   register('credSshManager.installMcpServer', () => offerInstall(CREDS_MCP));
   register('credSshManager.installCli', () => offerInstall(CREDS_CLI));

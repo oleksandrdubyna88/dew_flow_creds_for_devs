@@ -20,7 +20,7 @@ import { McpEntry } from './mcpEntries';
 import { Grant, GrantLookup, GrantRegistry } from './grantRegistry';
 import { UseActionRegistry } from './useActions';
 import { formatToken } from './grantToken';
-import { formatAuditLine } from './agentAuditLog';
+import { AuditDoor, formatAuditLine } from './agentAuditLog';
 import { BrokerAuditWriter } from './brokerAuditWriter';
 import { startLoopbackServer } from './loopbackServer';
 import { ExtraListener, socketPathFor, startExtraListener } from './brokerListeners';
@@ -291,7 +291,7 @@ export class CredsAgentServer implements vscode.Disposable {
       detail: `${target.entityName} · ${target.kind}`,
     });
     try {
-      await this.perform(res, grant, action, read.body);
+      await this.perform(res, grant, action, read.body, 'mcp');
     } finally {
       this.aliasThrottle.release();
     }
@@ -333,7 +333,7 @@ export class CredsAgentServer implements vscode.Disposable {
       detail: `${name} · ${target.kind}`,
     });
     try {
-      await this.perform(res, grant, action, body);
+      await this.perform(res, grant, action, body, 'alias');
     } finally {
       // In a `finally`, because a prompt that timed out or threw has still been shown and the
       // slot must come back — otherwise one failed call closes this route for the session.
@@ -466,7 +466,7 @@ export class CredsAgentServer implements vscode.Disposable {
       return;
     }
 
-    await this.perform(res, grant, action, body);
+    await this.perform(res, grant, action, body, 'token');
   }
 
   /**
@@ -483,15 +483,16 @@ export class CredsAgentServer implements vscode.Disposable {
     grant: Grant,
     action: string,
     body: Record<string, unknown>,
+    via: AuditDoor,
   ): Promise<void> {
     const useAction = this.actions.resolve(grant.kind, action);
     if (useAction === undefined) {
-      this.respondError(res, 'not_supported', `"${grant.kind}" entities cannot ${action}.`);
+      this.respondError(res, 'not_supported', `"${grant.kind}" entities cannot ${action}.`, grant, action, undefined, via);
       return;
     }
     const validated = useAction.validate(body);
     if (!validated.ok) {
-      this.respondError(res, 'invalid_request', validated.message, grant, action);
+      this.respondError(res, 'invalid_request', validated.message, grant, action, undefined, via);
       return;
     }
 
@@ -499,7 +500,7 @@ export class CredsAgentServer implements vscode.Disposable {
     const consent = await this.consent(grant, action, useAction.verb, summary);
     if (consent !== 'allowed') {
       const code: ErrorCode = consent === 'timeout' ? 'consent_timeout' : 'denied';
-      this.respondError(res, code, 'The human did not allow this grant.', grant, action, summary);
+      this.respondError(res, code, 'The human did not allow this grant.', grant, action, summary, via);
       return;
     }
 
@@ -521,6 +522,7 @@ export class CredsAgentServer implements vscode.Disposable {
         grant: GrantRegistry.describe(grant),
         entityName: grant.entityName,
         action,
+        via,
         outcome:
           result.status === 200 ? useAction.describeOutcome(result) : String(result.status),
         detail: hits > 0 ? `${summary} · masked ${hits} secret value(s)` : summary,
@@ -711,6 +713,10 @@ export class CredsAgentServer implements vscode.Disposable {
     grant?: Grant,
     action?: string,
     detail?: string,
+    // Which door the refusal came in by. A refused call is the interesting half of an agent's
+    // record — what it asked for and was told no — so a line that could not say which door it
+    // arrived at would be missing from exactly the view that wants it most.
+    via?: AuditDoor,
   ): void {
     // An unknown token is answered but never logged: the CLI legitimately
     // probes, and a log line per probe would drown the real calls.
@@ -721,6 +727,7 @@ export class CredsAgentServer implements vscode.Disposable {
         action: action ?? 'request',
         outcome: code,
         detail: detail ?? message,
+        via,
       });
     }
     this.respond(res, statusForErrorCode(code), errorBody(code, message));
