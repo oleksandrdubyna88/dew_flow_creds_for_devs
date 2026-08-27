@@ -98,6 +98,38 @@ function notesSecretKey(accountId: string, entityId: string): string {
   return `${accountId}_${keyPart(entityId)}:notes`;
 }
 
+/** SecretStorage key for a config entity's file contents — a secret, exactly like the notes. */
+function configSecretKey(accountId: string, entityId: string): string {
+  return `${accountId}_${keyPart(entityId)}:config`;
+}
+
+/**
+ * Every SecretStorage key one entity owns.
+ *
+ * <p>Extracted while the config body was being added, because the list existed TWICE, written
+ * out by hand in `removeAccount` and in the delete path — and the failure mode of that shape is
+ * silent in the worst possible way: a kind added to one block and not the other leaves a
+ * plaintext secret in the OS keychain after the entity that explained it is gone, where nothing
+ * will ever look for it again. It is the same duplication audit A1 removed from the two export
+ * walks, in the one place it had survived.</p>
+ *
+ * <p>The history key is included: previous versions of a secret are secrets.</p>
+ */
+function entitySecretKeys(accountId: string, entityId: string): readonly string[] {
+  return [
+    secretKey(accountId, entityId),
+    privateKeySecretKey(accountId, entityId),
+    vpnConfigSecretKey(accountId, entityId),
+    dbConnSecretKey(accountId, entityId),
+    notesSecretKey(accountId, entityId),
+    attachmentSecretKey(accountId, entityId),
+    historySecretKey(accountId, entityId),
+    imageSecretKey(accountId, entityId),
+    totpSecretKey(accountId, entityId),
+    configSecretKey(accountId, entityId),
+  ];
+}
+
 function historySecretKey(accountId: string, entityId: string): string {
   return `${accountId}_${keyPart(entityId)}:history`;
 }
@@ -369,15 +401,9 @@ export class StorageManager implements vscode.Disposable {
   async removeAccount(accountId: string): Promise<void> {
     for (const node of this.getNodes(accountId)) {
       if (node.type === 'entity') {
-        await this.secrets.delete(secretKey(accountId, node.id));
-        await this.secrets.delete(privateKeySecretKey(accountId, node.id));
-        await this.secrets.delete(vpnConfigSecretKey(accountId, node.id));
-        await this.secrets.delete(dbConnSecretKey(accountId, node.id));
-        await this.secrets.delete(notesSecretKey(accountId, node.id));
-        await this.secrets.delete(attachmentSecretKey(accountId, node.id));
-        await this.secrets.delete(historySecretKey(accountId, node.id));
-        await this.secrets.delete(imageSecretKey(accountId, node.id));
-        await this.secrets.delete(totpSecretKey(accountId, node.id));
+        for (const key of entitySecretKeys(accountId, node.id)) {
+          await this.secrets.delete(key);
+        }
       }
     }
     await this.globalState.update(nodesKey(accountId), undefined);
@@ -586,15 +612,9 @@ export class StorageManager implements vscode.Disposable {
       const v = bumpVector(n.v ?? {}, deviceId, this.nextSeq());
       tombstones[n.id] = { deletedAt: now, v };
       if (n.type === 'entity') {
-        await this.secrets.delete(secretKey(accountId, n.id));
-        await this.secrets.delete(privateKeySecretKey(accountId, n.id));
-        await this.secrets.delete(vpnConfigSecretKey(accountId, n.id));
-        await this.secrets.delete(dbConnSecretKey(accountId, n.id));
-        await this.secrets.delete(notesSecretKey(accountId, n.id));
-        await this.secrets.delete(attachmentSecretKey(accountId, n.id));
-        await this.secrets.delete(historySecretKey(accountId, n.id));
-        await this.secrets.delete(imageSecretKey(accountId, n.id));
-        await this.secrets.delete(totpSecretKey(accountId, n.id));
+        for (const key of entitySecretKeys(accountId, n.id)) {
+          await this.secrets.delete(key);
+        }
       }
     }
     await this.setTombstones(accountId, tombstones);
@@ -816,6 +836,21 @@ export class StorageManager implements vscode.Disposable {
     this.touch(accountId);
   }
 
+  // ---------- config bodies (SecretStorage, tenant-scoped) ----------
+
+  getConfigBody(accountId: string, entityId: string): Thenable<string | undefined> {
+    return this.secrets.get(configSecretKey(accountId, entityId));
+  }
+
+  async setConfigBody(accountId: string, entityId: string, value: string | undefined): Promise<void> {
+    if (value === undefined || value.length === 0) {
+      await this.secrets.delete(configSecretKey(accountId, entityId));
+    } else {
+      await this.secrets.store(configSecretKey(accountId, entityId), value);
+    }
+    this.touch(accountId);
+  }
+
   // ---------- DB connection strings (SecretStorage, tenant-scoped) ----------
 
   getDbConnection(accountId: string, entityId: string): Thenable<string | undefined> {
@@ -875,6 +910,7 @@ export class StorageManager implements vscode.Disposable {
       put('attachment', await this.getAttachment(accountId, id));
       put('image', await this.getImage(accountId, id));
       put('totp', await this.getTotp(accountId, id));
+      put('config', await this.getConfigBody(accountId, id));
       out[id] = s;
     }
     return out;
@@ -892,6 +928,7 @@ export class StorageManager implements vscode.Disposable {
     const attachments: Record<string, string> = {};
     const images: Record<string, string> = {};
     const totps: Record<string, string> = {};
+    const configs: Record<string, string> = {};
     for (const node of nodes) {
       if (node.type !== 'entity') {
         continue;
@@ -899,6 +936,10 @@ export class StorageManager implements vscode.Disposable {
       const totp = await this.secrets.get(totpSecretKey(accountId, node.id));
       if (totp !== undefined) {
         totps[node.id] = totp;
+      }
+      const configBody = await this.secrets.get(configSecretKey(accountId, node.id));
+      if (configBody !== undefined) {
+        configs[node.id] = configBody;
       }
       const password = await this.secrets.get(secretKey(accountId, node.id));
       if (password !== undefined) {
@@ -942,6 +983,7 @@ export class StorageManager implements vscode.Disposable {
       attachments,
       images,
       totps,
+      configs,
       tombstones: this.getTombstones(accountId),
       horizon: this.getHorizon(accountId),
       exportedAt: Date.now(),
@@ -962,6 +1004,7 @@ export class StorageManager implements vscode.Disposable {
       attachments: bundle.attachments ?? {},
       images: bundle.images ?? {},
       totps: bundle.totps ?? {},
+      configs: bundle.configs ?? {},
       tombstones: bundle.tombstones ?? {},
       horizon: bundle.horizon ?? {},
     };
@@ -979,6 +1022,7 @@ export class StorageManager implements vscode.Disposable {
       attachments: snapshot.attachments,
       images: snapshot.images,
       totps: snapshot.totps,
+      configs: snapshot.configs,
       tombstones: snapshot.tombstones,
       horizon: snapshot.horizon,
     });
@@ -1000,6 +1044,7 @@ export class StorageManager implements vscode.Disposable {
     const attachments = bundle.attachments ?? {};
     const images = bundle.images ?? {};
     const totps = bundle.totps ?? {};
+    const configs = bundle.configs ?? {};
     // Drop secrets of entities that will disappear with the replaced tree.
     for (const node of this.getNodes(accountId)) {
       if (node.type !== 'entity') {
@@ -1007,6 +1052,9 @@ export class StorageManager implements vscode.Disposable {
       }
       if (totps[node.id] === undefined) {
         await this.secrets.delete(totpSecretKey(accountId, node.id));
+      }
+      if (configs[node.id] === undefined) {
+        await this.secrets.delete(configSecretKey(accountId, node.id));
       }
       if (bundle.passwords[node.id] === undefined) {
         await this.secrets.delete(secretKey(accountId, node.id));
@@ -1058,6 +1106,9 @@ export class StorageManager implements vscode.Disposable {
     }
     for (const [entityId, uri] of Object.entries(totps)) {
       await this.secrets.store(totpSecretKey(accountId, entityId), uri);
+    }
+    for (const [entityId, body] of Object.entries(configs)) {
+      await this.secrets.store(configSecretKey(accountId, entityId), body);
     }
     // Stored notes are authoritative; drop any legacy plaintext copy.
     await this.saveNodes(

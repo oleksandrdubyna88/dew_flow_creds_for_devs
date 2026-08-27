@@ -7,7 +7,8 @@ import {
   resolveKind,
   stampKind,
 } from '../entityKind';
-import { ENTITY_KINDS, EntityKind, EntityMetadata, kindOf } from '../types';
+import { ENTITY_KINDS, EntityKind, EntityMetadata } from '../types';
+import { kindOf } from '../entityKind';
 
 /**
  * One place of truth for "what kind is this" (audit 2026-08-25, A4).
@@ -80,8 +81,18 @@ test('a one-use burn is refused for a kind the broker never serves', () => {
   assert.equal(stampKind(details({ kind: 'sshkey', burnPolicy: 'oneUse' })).burnPolicy, undefined);
 });
 
+test('a config cannot burn on agent use either, for the opposite reason', () => {
+  // `sshkey` is excluded because nothing could ever fire the burn — the broker never serves a key
+  // pair. `config` is excluded because something WOULD fire it, on the first application start,
+  // and an application reads its configuration at every start. A config that destroyed itself the
+  // first time it worked is not a short-lived secret but a broken one, and the second `dotnet run`
+  // is where you would find that out.
+  assert.equal(canBurnOnAgentUse('config'), false);
+  assert.equal(stampKind(details({ kind: 'config', burnPolicy: 'oneUse' })).burnPolicy, undefined);
+});
+
 test('every other kind may burn on agent use, and keeps the policy through a write', () => {
-  for (const kind of ENTITY_KINDS.filter((k) => k !== 'sshkey')) {
+  for (const kind of ENTITY_KINDS.filter((k) => k !== 'sshkey' && k !== 'config')) {
     assert.equal(canBurnOnAgentUse(kind), true, kind);
     assert.equal(stampKind(details({ kind, burnPolicy: 'oneUse' })).burnPolicy, 'oneUse', kind);
   }

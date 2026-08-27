@@ -18,6 +18,7 @@ import {
 } from './secretGenerator';
 import { parseSshPrivateKey } from './sshKeyParse';
 import { isDepColorKey } from './depColors';
+import { isConfigFormat } from './configFormat';
 import { FORM_WEBVIEW_OPTIONS, formPanels } from './formPanels';
 import { readMcpAccess } from './mcpAccess';
 import { DependencyFolderCandidate, normalizeDependsOn } from './depGraph';
@@ -65,6 +66,17 @@ export interface EntityFormOptions {
   initialDbConnection?: string;
   /** Prefilled note (its own secret now, not plaintext metadata). */
   initialNotes?: string;
+  /**
+   * Prefilled config body — a secret, and one of the two the form deliberately sends INTO the
+   * webview.
+   *
+   * <p>The empty-means-keep rule the password and the private key follow cannot apply here: a
+   * config is a document somebody opens Edit to change one line of, and a form that showed it
+   * blank would make every edit a retype from memory. The DB connection string is prefilled for
+   * exactly this reason and is the precedent. Deleting the text and saving therefore CLEARS the
+   * body, which is what an empty document should mean.</p>
+   */
+  initialConfigBody?: string;
   /** A TOTP seed is stored. The seed is never sent to the form — only this fact and… */
   hasStoredTotp: boolean;
   /** …how it is configured (`GitHub · 6 digits · SHA1 · every 30 s`), so it can be compared with the app. */
@@ -105,6 +117,14 @@ export interface EntityFormValues {
   newDbConnection?: string;
   clearDbConnection: boolean;
   newNotes?: string;
+  /**
+   * The config body as the form last held it — sent whole, not as a delta.
+   *
+   * <p>Unlike `newPassword`, an empty string here is a REAL value meaning "the document is now
+   * empty", because the form was prefilled with whatever was stored. `undefined` is what says
+   * this entity is not a config at all.</p>
+   */
+  newConfigBody?: string;
   newAttachment?: string;
   clearAttachment: boolean;
   newImage?: string;
@@ -395,6 +415,8 @@ function toValues(data: Record<string, unknown>, options: EntityFormOptions): En
   const isVpn = kind === 'vpn';
   const isDb = kind === 'db';
   const isTerminal = kind === 'terminal';
+  const isConfig = kind === 'config';
+  const configFormat = str(data, 'configFormat');
 
   const portText = str(data, 'port').trim();
   const password = str(data, 'password');
@@ -482,6 +504,12 @@ function toValues(data: Record<string, unknown>, options: EntityFormOptions): En
         isVpn && !clearVpnConfig && vpnFileName.length > 0 ? vpnFileName : undefined,
       isDb: isDb || undefined,
       dbType: isDb && isDbType(dbType) ? dbType : undefined,
+      isConfig: isConfig || undefined,
+      // Defaulted to JSON rather than left absent: a config whose format is unknown cannot be
+      // validated, materialised with the right extension, or parsed by a provider — and every
+      // one of those failures would read as a bug rather than as a field nobody filled in.
+      configFormat: isConfig ? (isConfigFormat(configFormat) ? configFormat : 'json') : undefined,
+      configFileName: isConfig ? str(data, 'configFileName').trim() || undefined : undefined,
       isTerminal: isTerminal || undefined,
       command: isTerminal ? str(data, 'command').trim() || undefined : undefined,
       commandArgs: isTerminal && commandArgs !== undefined && commandArgs.length > 0 ? commandArgs : undefined,
@@ -502,6 +530,10 @@ function toValues(data: Record<string, unknown>, options: EntityFormOptions): En
     newImage: str(data, 'imageContent') || undefined,
     clearImage: bool(data, 'clearImage'),
     newNotes: str(data, 'notes'),
+    // Sent whole and unconditionally for a config, so that emptying the box empties the document.
+    // Every other secret here treats blank as "keep what is stored"; this one cannot, because the
+    // form was prefilled with the stored text and blank is therefore a deliberate edit.
+    newConfigBody: isConfig ? str(data, 'configBody') : undefined,
     newTotp: totpParsed?.uri,
     clearTotp,
     clearHostKey: bool(data, 'clearHostKey'),

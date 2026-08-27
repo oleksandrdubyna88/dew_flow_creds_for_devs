@@ -1,4 +1,5 @@
 import { BurnPolicy, isBurnPolicy } from './entityExpiry';
+import { ConfigFormat, hasValidConfigFields } from './configFormat';
 import { McpAccess } from './mcpAccess';
 import {
   isCommandArgArray,
@@ -121,6 +122,12 @@ export interface EntityMetadata {
   script?: string;
   /** The changeable parts, pulled out of the body — named rows. */
   scriptVars?: CommandArg[];
+  /** Marks this entity as a stored configuration file (the `config` kind). */
+  isConfig?: boolean;
+  /** What it is validated and assembled as — see `configFormat.ts` for why a format, not a language. */
+  configFormat?: ConfigFormat;
+  /** What materialising it writes, e.g. `appsettings.Development.json`. The body is a SECRET. */
+  configFileName?: string;
   /** The base command, e.g. `aws sso login`. Arguments live in `commandArgs`. */
   command?: string;
   /** Arguments, one per row, each with an optional explanation. */
@@ -197,7 +204,7 @@ export type VpnType = 'openvpn' | 'wireguard' | 'ikev2' | 'l2tp' | 'other';
 
 /** The entity kinds the form's Type selector offers. Adding one is a compile error in every
  * switch that must handle it — see `assertNever` in entityKind.ts. */
-export type EntityKind = 'credential' | 'ssh' | 'sshkey' | 'vpn' | 'db' | 'terminal' | 'script';
+export type EntityKind = 'credential' | 'ssh' | 'sshkey' | 'vpn' | 'db' | 'terminal' | 'script' | 'config';
 
 export const ENTITY_KINDS: readonly EntityKind[] = [
   'credential',
@@ -207,6 +214,7 @@ export const ENTITY_KINDS: readonly EntityKind[] = [
   'db',
   'terminal',
   'script',
+  'config',
 ];
 
 /**
@@ -226,37 +234,13 @@ export const ENTITY_KIND_LABELS: Readonly<Record<EntityKind, { label: string; ic
   db: { label: 'Database', icon: 'database' },
   terminal: { label: 'Terminal command', icon: 'terminal' },
   script: { label: 'Script', icon: 'file-code' },
+  config: { label: 'Config file', icon: 'settings-gear' },
 };
 
 /** A folder's declared content type; 'any' = unrestricted. */
 /** `project` is a folder-only type: a folder that carries the whole default set inside. */
 export type FolderType = EntityKind | 'any' | 'project';
 
-/** The kind an entity's flags map to (priority: terminal > db > vpn > key > ssh). */
-// eslint-disable-next-line complexity
-export function kindOf(d: EntityMetadata | undefined): EntityKind {
-  if (d?.isScript) {
-    return 'script';
-  }
-  // First, because a command entry has none of the other flags and every other kind
-  // would otherwise fall through to 'credential' and lose its identity in the tree.
-  if (d?.isTerminal) {
-    return 'terminal';
-  }
-  if (d?.isDb) {
-    return 'db';
-  }
-  if (d?.isVpn) {
-    return 'vpn';
-  }
-  if (d?.isSshKey) {
-    return 'sshkey';
-  }
-  if (d?.isSshEnabled) {
-    return 'ssh';
-  }
-  return 'credential';
-}
 
 export type DbType = 'postgres' | 'mysql' | 'mssql' | 'mongodb';
 
@@ -570,6 +554,8 @@ export interface BackupBundle {
   notes?: Record<string, string>;
   /** entityId -> canonical `otpauth://` URI. Absent in pre-0.57 backups. */
   totps?: Record<string, string>;
+  /** entityId -> config file contents. A secret, like `notes`. Absent before the `config` kind. */
+  configs?: Record<string, string>;
   /**
    * nodeId -> tombstone. Since 0.22 an object `{ deletedAt, v }`; pre-0.22
    * backups carry a bare ms-epoch number, normalized in on read.
@@ -649,6 +635,7 @@ export function isEntityMetadata(value: unknown): value is EntityMetadata {
     (v.vpnConfigFileName === undefined || typeof v.vpnConfigFileName === 'string') &&
     (v.isTerminal === undefined || typeof v.isTerminal === 'boolean') &&
     (v.isScript === undefined || typeof v.isScript === 'boolean') &&
+    hasValidConfigFields(v) &&
     (v.scriptLanguage === undefined || typeof v.scriptLanguage === 'string') &&
     (v.script === undefined || typeof v.script === 'string') &&
     (v.scriptVars === undefined || isCommandArgArray(v.scriptVars)) &&

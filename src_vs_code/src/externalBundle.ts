@@ -20,6 +20,8 @@ export interface ExternalSecrets {
   image?: string;
   /** The canonical `otpauth://` URI. */
   totp?: string;
+  /** The config file's contents — a secret, like the notes above it. */
+  config?: string;
 }
 
 export interface ExternalBundle {

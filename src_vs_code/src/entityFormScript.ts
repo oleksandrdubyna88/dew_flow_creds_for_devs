@@ -715,6 +715,8 @@ export function formPageScript(
       command: val('command'), commandNote: val('commandNote'), commandArgs: argRows,
       envBindings: collectEnvBindings(), lifetime: val('lifetime'),
       scriptLanguage: val('scriptLanguage'), scriptBody: val('scriptBody'), scriptVars: scriptVarRows,
+      configFormat: val('configFormat'), configFileName: val('configFileName'),
+      configBody: val('configBody'),
       attachmentContent: attachmentContent, attachmentName: attachmentName,
       imageContent: imageContent, imageName: imageName,
       clearAttachment: chk('clearAttachment'), clearImage: chk('clearImage'),

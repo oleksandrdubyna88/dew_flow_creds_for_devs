@@ -27,6 +27,8 @@ export function kindIcon(kind: EntityKind): string {
       return 'terminal';
     case 'script':
       return 'file-code';
+    case 'config':
+      return 'settings-gear';
     case 'db':
       return 'database';
     case 'vpn':

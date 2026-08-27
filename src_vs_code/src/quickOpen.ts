@@ -1,4 +1,5 @@
-import { EntityKind, TreeNode, kindOf } from './types';
+import { EntityKind, TreeNode } from './types';
+import { kindOf } from './entityKind';
 import { nodeHaystack } from './treeSearch';
 
 /**

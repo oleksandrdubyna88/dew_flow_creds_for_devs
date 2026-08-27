@@ -47,6 +47,8 @@ export interface ProfileSnapshot {
   images: Record<string, string>;
   /** entityId -> canonical `otpauth://` URI. */
   totps: Record<string, string>;
+  /** entityId -> config file contents. A secret, merged exactly like the notes. */
+  configs: Record<string, string>;
   /** id -> soft-delete record (object form; legacy number is normalized in). */
   tombstones: Record<string, Tombstone | number>;
   /** Element-wise max of every vector ever observed for this profile. */
@@ -72,6 +74,7 @@ export function emptySnapshot(): ProfileSnapshot {
     attachments: {},
     images: {},
     totps: {},
+    configs: {},
     tombstones: {},
     horizon: {},
   };
@@ -129,6 +132,7 @@ function fingerprint(snapshot: ProfileSnapshot): string {
     attachments: sortRecord(snapshot.attachments),
     images: sortRecord(snapshot.images),
     totps: sortRecord(snapshot.totps ?? {}),
+    configs: sortRecord(snapshot.configs ?? {}),
     tombstones: sortRecord(
       Object.fromEntries(
         Object.entries(normalizeTombstones(snapshot.tombstones)).map(([id, t]) => [
@@ -177,6 +181,7 @@ export function mergeProfiles(
   const attachments: Record<string, string> = {};
   const images: Record<string, string> = {};
   const totps: Record<string, string> = {};
+  const configs: Record<string, string> = {};
   const nodes: TreeNode[] = [];
   const allIds = new Set([...localById.keys(), ...remoteById.keys()]);
 
@@ -230,6 +235,9 @@ export function mergeProfiles(
     copySecret(images, id, primary.images, fallback.images);
     // `?? {}`: a snapshot decoded from a pre-0.57 vault has no totps record at all.
     copySecret(totps, id, primary.totps ?? {}, fallback.totps ?? {});
+    // `?? {}` for the same reason the line above needs one: a snapshot decoded from a vault
+    // written before the `config` kind carries no configs record at all.
+    copySecret(configs, id, primary.configs ?? {}, fallback.configs ?? {});
   }
 
   // Re-parent children whose parent did not survive the merge.
@@ -265,6 +273,7 @@ export function mergeProfiles(
     attachments,
     images,
     totps,
+    configs,
     tombstones,
     horizon,
   };

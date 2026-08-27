@@ -79,14 +79,14 @@ export const FORM_SECTIONS: readonly FormSection[] = [
     legend: 'Secret',
     group: 'main',
     color: 'depColor4',
-    kinds: allBut('db', 'terminal', 'script'),
+    kinds: allBut('db', 'terminal', 'script', 'config'),
   },
   {
     id: 'totpSection',
     legend: 'One-time code (TOTP)',
     group: 'additional',
     color: 'depColor5',
-    kinds: allBut('sshkey', 'terminal', 'script'),
+    kinds: allBut('sshkey', 'terminal', 'script', 'config'),
   },
   {
     id: 'attachmentsSection',
@@ -148,6 +148,15 @@ export const FORM_SECTIONS: readonly FormSection[] = [
     kinds: ['terminal'],
   },
   { id: 'scriptSection', legend: 'Script', group: 'main', color: 'depColor9', kinds: ['script'] },
+  // depColor9 again, and legitimately: `colorCollisionsForKind` checks what can be on screen
+  // TOGETHER, and a config is never a script, a VPN or an SSH connection.
+  {
+    id: 'configSection',
+    legend: 'Config file',
+    group: 'main',
+    color: 'depColor9',
+    kinds: ['config'],
+  },
 ];
 
 /** Can this section be on screen for this kind? The worst case, ignoring `condition`. */

@@ -127,6 +127,15 @@ export const KIND_GLYPHS: Record<EntityKind, string> = {
     '<path d="M8.8 1.8v3.6h3.6" fill="none" stroke="{C}" stroke-width="1.4" stroke-linejoin="round"/>' +
     '<path d="M6.9 8.6L5.6 10l1.3 1.4M9.1 8.6L10.4 10l-1.3 1.4" fill="none" stroke="{C}" ' +
     'stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>',
+  // The script's page and folded corner, with sliders where its chevrons are: a config IS a
+  // document, and what distinguishes it is that the values in it are meant to be turned. Two
+  // sliders rather than a gear, because a gear at sixteen pixels above a stripe band is a blob.
+  config:
+    '<path d="M3.6 1.8h5.2l3.6 3.6v8.8H3.6z" fill="none" stroke="{C}" stroke-width="1.4" stroke-linejoin="round"/>' +
+    '<path d="M8.8 1.8v3.6h3.6" fill="none" stroke="{C}" stroke-width="1.4" stroke-linejoin="round"/>' +
+    '<path d="M5.4 8.9h5.2M5.4 11.5h5.2" fill="none" stroke="{C}" stroke-width="1.3" stroke-linecap="round"/>' +
+    '<circle cx="7.1" cy="8.9" r="1.05" fill="{C}"/>' +
+    '<circle cx="8.9" cy="11.5" r="1.05" fill="{C}"/>',
 };
 
 /** The stripe band: five bars across the bottom, lit up to `level`. */

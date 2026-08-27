@@ -1,5 +1,6 @@
 import * as crypto from 'node:crypto';
 import { normalizeTags } from './sshOptions';
+import { CONFIG_FORMATS, CONFIG_FORMAT_LABELS } from './configFormat';
 import { escapeHtml } from './webviewHtml';
 import { formPageScript } from './entityFormScript';
 import { initialDependencyRows } from './depGraph';
@@ -67,6 +68,15 @@ import type { EntityFormOptions } from './entityFormPanel';
  * variable name, pre-filled from the entity name the way the operator asked for it —
  * `git key` -> `ENV_GITKEY_PRIVATEKEY` — and editable after.
  */
+function configFormatOptions(current: string | undefined): string {
+  return CONFIG_FORMATS.map(
+    (format) =>
+      `<option value="${format}" ${format === (current ?? 'json') ? 'selected' : ''}>${
+        CONFIG_FORMAT_LABELS[format].label
+      }</option>`,
+  ).join('');
+}
+
 function scriptLanguageOptions(current: string | undefined): string {
   return SCRIPT_LANGUAGES.map(
     (l) => `<option value="${l.id}" ${l.id === (current ?? 'bash') ? 'selected' : ''}>${l.label}</option>`,
@@ -87,6 +97,7 @@ const KIND_HINT: Record<EntityKind, string> = {
   db: '',
   terminal: '',
   script: '',
+  config: ' — a file your app reads, kept out of git',
 };
 
 /**
@@ -647,6 +658,21 @@ export function renderHtml(options: EntityFormOptions): string {
     <div id="scriptVarRows"></div>
     <button type="button" id="addScriptVar" class="secondary">+ Add variable</button>
   </fieldset>
+
+  ${openSection('configSection')}
+    <label for="configFormat">Format</label>
+    <select id="configFormat">${configFormatOptions(d?.configFormat)}</select>
+    <label for="configFileName">File name</label>
+    <input id="configFileName" type="text" spellcheck="false" autocomplete="off"
+           placeholder="appsettings.Development.json"
+           value="${escapeHtml(d?.configFileName ?? '')}">
+    <p class="hint">What "Write config file here…" saves it as. It is not a path — you choose the folder when you write it.</p>
+    <label for="configBody">Contents</label>
+    <div class="codeWrap">
+      <textarea id="configBody" rows="18" spellcheck="false" autocomplete="off"
+                placeholder='{ "ConnectionStrings": { "Default": "..." } }'>${escapeHtml(options.initialConfigBody ?? '')}</textarea>
+    </div>
+    <p class="hint">Stored as a secret, like a password — never in plain metadata, never in a share, never handed to an agent. A body that does not parse is still saved; the row is marked until it does.</p>
 
   ${
     options.createdAt === undefined && options.updatedAt === undefined

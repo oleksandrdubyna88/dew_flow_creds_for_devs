@@ -1,4 +1,4 @@
-import { ENTITY_KINDS, EntityKind, EntityMetadata, kindOf } from './types';
+import { ENTITY_KINDS, EntityKind, EntityMetadata } from './types';
 
 /**
  * What kind of thing an entity is — asked in ONE place (audit 2026-08-25, A4).
@@ -18,6 +18,40 @@ import { ENTITY_KINDS, EntityKind, EntityMetadata, kindOf } from './types';
  * with a defined end (every machine on a build that reads `kind`), not a second source of
  * truth — `resolveKind` prefers `kind` whenever it is present.</p>
  */
+
+/**
+ * Moved here from `types.ts` while the `config` kind was being added — for the lint ceiling,
+ * and because it belonged here anyway: this module's own header says the kind is asked in ONE
+ * place, while the derivation it falls back to lived in the types file and was imported back.
+ */
+/** The kind an entity's flags map to (priority: terminal > db > vpn > key > ssh). */
+// eslint-disable-next-line complexity
+export function kindOf(d: EntityMetadata | undefined): EntityKind {
+  if (d?.isConfig) {
+    return 'config';
+  }
+  if (d?.isScript) {
+    return 'script';
+  }
+  // First, because a command entry has none of the other flags and every other kind
+  // would otherwise fall through to 'credential' and lose its identity in the tree.
+  if (d?.isTerminal) {
+    return 'terminal';
+  }
+  if (d?.isDb) {
+    return 'db';
+  }
+  if (d?.isVpn) {
+    return 'vpn';
+  }
+  if (d?.isSshKey) {
+    return 'sshkey';
+  }
+  if (d?.isSshEnabled) {
+    return 'ssh';
+  }
+  return 'credential';
+}
 
 export function isEntityKind(value: unknown): value is EntityKind {
   return typeof value === 'string' && (ENTITY_KINDS as readonly string[]).includes(value);
@@ -62,6 +96,7 @@ function legacyFlags(kind: EntityKind, wasSshEnabled: boolean): Partial<EntityMe
     isDb: on('db'),
     isTerminal: on('terminal'),
     isScript: on('script'),
+    isConfig: on('config'),
   };
 }
 
@@ -88,7 +123,7 @@ export function canConnectSsh(details: EntityMetadata | undefined): boolean {
  * <p>`sshkey` is deliberately absent: the broker never serves a key pair, so nothing about a
  * key pair can ever pass through the one place a one-use burn fires.</p>
  */
-export type BrokerServedKind = Exclude<EntityKind, 'sshkey'>;
+export type BrokerServedKind = Exclude<EntityKind, 'sshkey' | 'config'>;
 
 /**
  * Whether a one-use burn could ever fire for this kind.
@@ -98,9 +133,15 @@ export type BrokerServedKind = Exclude<EntityKind, 'sshkey'>;
  * the entry would sit in the vault forever while the UI said it would vanish after first use.
  * Temporary SSH KEYS for a customer's instance are the first thing anyone reaches for here,
  * which is exactly why the impossible combination has to be refused rather than documented.</p>
+ *
+ * <p>`config` is excluded for the opposite reason — not because nothing could fire the burn, but
+ * because something would fire it on the FIRST application start, and an application reads its
+ * configuration at every start. A config that destroyed itself the first time it worked is not a
+ * short-lived secret; it is a broken one, and the second `dotnet run` is where you would find
+ * out.</p>
  */
 export function canBurnOnAgentUse(kind: EntityKind): kind is BrokerServedKind {
-  return kind !== 'sshkey';
+  return kind !== 'sshkey' && kind !== 'config';
 }
 
 /**
