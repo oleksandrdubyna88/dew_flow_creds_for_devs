@@ -1,6 +1,11 @@
 import * as assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { EntityViewOptions, copyValueFor, renderEntityViewHtml } from '../entityViewPage';
+import {
+  EntityViewOptions,
+  copyValueFor,
+  portableSshCommand,
+  renderEntityViewHtml,
+} from '../entityViewPage';
 import { EntityMetadata } from '../types';
 import { PAGE_MAX_WIDTH_PX, TWO_COLUMN_AT } from '../webviewHtml';
 import { snippetFor } from '../configSnippet';
@@ -192,4 +197,44 @@ test("the frame colours are the form catalog's own, by identity", () => {
   assert.ok(html.includes(`class="sec ${byId('generalSection')}"><legend>Main<`));
   assert.ok(html.includes(`class="sec ${byId('datesSection')}"><legend>Dates &amp; history<`));
   assert.ok(html.includes(`class="sec ${byId('configSection')}"><legend>Read this from code<`));
+});
+
+// ---------------------------------------------------------------------------
+// T20 — the portable ssh line; T26 — the image zoom that letterboxed.
+// ---------------------------------------------------------------------------
+
+test('a full-path ssh command grows a portable twin; a bare one does not', () => {
+  const full = 'C:/Windows/System32/OpenSSH/ssh.exe -A -p 2222 root@host';
+  assert.equal(portableSshCommand(full), 'ssh -A -p 2222 root@host');
+  assert.equal(portableSshCommand('ssh root@host'), undefined);
+  assert.equal(portableSshCommand(undefined), undefined);
+
+  const withRow = renderEntityViewHtml(options({ sshCommand: full }));
+  assert.ok(withRow.includes('SSH command (any machine)'), 'the portable row is missing');
+  const withoutRow = renderEntityViewHtml(options({ sshCommand: 'ssh root@host' }));
+  assert.ok(
+    !withoutRow.includes('SSH command (any machine)'),
+    'a second row identical to the first is noise',
+  );
+});
+
+test('the image zoom drives width only — height follows the picture', () => {
+  const html = renderEntityViewHtml(options({ imageDataUri: 'data:image/png;base64,AAAA' }));
+  assert.ok(html.includes('height: auto'), 'the preview pins a height, so a clamped width letterboxes');
+  assert.ok(
+    !/preview\.style\.height/.test(html),
+    'the zoom script sets height — a square box in a narrower column reads as height-only zoom',
+  );
+});
+
+test('an entry with an image shows the Additional frame on the right, before the code panel', () => {
+  const html = renderEntityViewHtml(
+    options({
+      details: metadata({ isConfig: true } as never),
+      imageDataUri: 'data:image/png;base64,AAAA',
+      createdAt: 1756300000000,
+    }),
+  );
+  const frames = [...html.matchAll(/<legend>([^<]*)<\/legend>/g)].map((m) => m[1]);
+  assert.deepEqual(frames, ['Main', 'Dates &amp; history', 'Additional', 'Read this from code']);
 });

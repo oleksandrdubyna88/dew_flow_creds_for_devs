@@ -23,6 +23,7 @@ import {
 import { CONFIG_KEY_ENV } from './configKey';
 import { configFileNameFor } from './configFile';
 import { FORM_SECTIONS } from './formSections';
+import { WINDOWS_OPENSSH_DIR } from './sshProgram';
 import { Revision, summarizeRevision } from './revisionHistory';
 import { BINDABLE_FIELDS, BindableField } from './envBinding';
 import { TotpSnapshot } from './totp';
@@ -228,6 +229,7 @@ export async function copyValueFor(
     case 'dbName': value = options.dbParts?.database; break;
     case 'dbUser': value = options.dbParts?.user; break;
     case 'ssh': value = options.sshCommand; break;
+    case 'sshPortable': value = portableSshCommand(options.sshCommand); break;
     case 'agentForward': value = d.agentForward === true ? '-A' : undefined; break;
     case 'hostKey': value = options.hostKeyFingerprint; break;
     case 'tags': value = normalizeTags(d.tags).join(' '); break;
@@ -313,6 +315,23 @@ function viewFrame(sectionId: string, legend: string, body: string): string {
   return `<fieldset class="sec ${section.color}"><legend>${escapeHtml(legend)}</legend>
 ${body}
 </fieldset>`;
+}
+
+
+/**
+ * The same ssh command with the bare word, for pasting on another machine (T20).
+ *
+ * <p>Returns undefined when the shown command already IS the bare word — which, after the PATH
+ * probe, is the common case — so the second row appears only when the two genuinely differ:
+ * when an MSYS ssh shadows the built-in and the full path had to be used. Same flags, same
+ * order; only the program word changes, because the flags are the part worth carrying.</p>
+ */
+export function portableSshCommand(sshCommand: string | undefined): string | undefined {
+  if (sshCommand === undefined) {
+    return undefined;
+  }
+  const prefix = `${WINDOWS_OPENSSH_DIR}/ssh.exe `;
+  return sshCommand.startsWith(prefix) ? `ssh ${sshCommand.slice(prefix.length)}` : undefined;
 }
 
 const COPY_ICON = SHARED_COPY_ICON;
@@ -454,6 +473,7 @@ export function renderEntityViewHtml(options: EntityViewOptions): string {
           <div class="line"><input readonly value="entity: ${escapeHtml(options.keySourceName)}"></div></div>`]
       : []),
     row('SSH command', 'ssh', options.sshCommand),
+    row('SSH command (any machine)', 'sshPortable', portableSshCommand(options.sshCommand)),
     // The connection-manager fields (audit D7). Each renders only when the entity has it, so an
     // entry that uses none of them looks exactly as it did before.
     ...(options.jumpHostName !== undefined
@@ -521,6 +541,11 @@ export function renderEntityViewHtml(options: EntityViewOptions): string {
     // `env`, `toml` and `ini` were taught to the highlighter for exactly this row.
     codeRow('Config file', 'config', options.config, d.configFormat ?? 'json'),
     row('Notes', 'notes', options.notes),
+  ].join('\n');
+
+  // The right column's frame (T19 amendment): attachments and the stored image belong in
+  // Additional, beside the code panel — the same side and colour the FORM keeps them on.
+  const additionalRows = [
     row(
       `Additional file${d.attachmentFileName ? ` (${d.attachmentFileName})` : ''}`,
       'attachment',
@@ -611,7 +636,10 @@ export function renderEntityViewHtml(options: EntityViewOptions): string {
       `.sec.${section.color} { border-color: var(--vscode-credSshManager-${section.color}, var(--vscode-widget-border, #4444)); }`,
   ).join('\n  ')}
   .totpLeft { align-self: center; min-width: 3em; opacity: .8; font-variant-numeric: tabular-nums; }
-  .preview { width: 200px; height: 200px; object-fit: contain; cursor: zoom-in;
+  /* Width only, height auto (T26): the zoom used to set BOTH to a square, the column clamped
+     the width, and the un-clamped height turned into empty letterbox bands that read as a
+     distorted zoom. max-width keeps the box inside the column at every zoom step. */
+  .preview { width: 200px; max-width: 100%; height: auto; cursor: zoom-in;
              border: 1px solid var(--vscode-widget-border, #3c3c3c); border-radius: 4px;
              background: var(--vscode-editor-background); }
   label { display: block; margin-bottom: 3px; opacity: .8; }
@@ -649,7 +677,10 @@ export function renderEntityViewHtml(options: EntityViewOptions): string {
       ${viewFrame('generalSection', 'Main', mainRows)}
       ${viewFrame('datesSection', 'Dates & history', datesRows)}
     </div>
-    ${viewFrame('configSection', 'Read this from code', codePanelFor(options))}
+    <div>
+      ${viewFrame('attachmentsSection', 'Additional', additionalRows)}
+      ${viewFrame('configSection', 'Read this from code', codePanelFor(options))}
+    </div>
   </div>
 <script nonce="${nonce}">
   const vscode = acquireVsCodeApi();
@@ -734,8 +765,8 @@ export function renderEntityViewHtml(options: EntityViewOptions): string {
     preview.addEventListener('click', () => {
       zoom = (zoom + 1) % 3;
       const size = 200 * Math.pow(2, zoom);
+      // Width only — height follows the aspect ratio, and max-width lets the column cap it.
       preview.style.width = size + 'px';
-      preview.style.height = size + 'px';
       preview.style.cursor = zoom === 2 ? 'zoom-out' : 'zoom-in';
     });
   }

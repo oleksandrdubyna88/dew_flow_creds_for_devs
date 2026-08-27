@@ -24,6 +24,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The SSH command row stopped naming `C:\Windows` when it does not have to.** On a forwarding
+  connection the viewer showed the full built-in OpenSSH path — needed only because the MSYS `ssh`
+  that Git for Windows puts on PATH cannot open the agent's named pipe. The extension now probes
+  which `ssh` the PATH actually resolves first: when it is already the built-in (the modern-Windows
+  default), the command is the plain `ssh …` a person can paste anywhere. When the full path still
+  has to be used, a second row — *SSH command (any machine)* — carries the same flags behind the
+  bare word.
+- **The image zoom zoomed, instead of letterboxing.** The zoom set both width and height to a
+  square; the column clamped the width and the leftover height became empty bands that read as a
+  broken, height-only zoom. It now drives width only — height follows the picture, and the column
+  caps the box.
+- **Attachments and the stored image moved into an *Additional* frame on the right** — the side and
+  colour the edit form keeps them on.
 - **The viewer's columns were half their old width.** The read-only viewer grew a second column in
   0.77.0 (the *Read this from code* panel) and kept the 640px body cap from its one-column days,
   while splitting into two columns at a 1000px window — so it split exactly where it had no room,

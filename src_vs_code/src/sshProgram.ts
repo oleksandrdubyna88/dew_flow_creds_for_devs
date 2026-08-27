@@ -1,4 +1,5 @@
 import * as fs from 'fs';
+import * as path from 'path';
 
 /**
  * Which OpenSSH binary this extension launches, and the environment that lets it reach the
@@ -48,6 +49,49 @@ export function builtInOpenSsh(tool: OpenSshTool): string {
   return `${WINDOWS_OPENSSH_DIR}/${tool}.exe`;
 }
 
+/** How the probe sees the PATH: injectable, so the decision is a unit test. */
+export interface PathProbe {
+  readonly pathDirs: readonly string[];
+  /** Whether this directory holds an `ssh` executable. */
+  readonly hasTool: (dir: string) => boolean;
+}
+
+function defaultProbe(): PathProbe {
+  return {
+    pathDirs: (process.env.PATH ?? '').split(';').filter((dir) => dir.length > 0),
+    hasTool: (dir) => fs.existsSync(path.join(dir, 'ssh.exe')),
+  };
+}
+
+/** A PATH entry, comparable: separators unified, trailing separator dropped, case folded. */
+function normalizeDir(dir: string): string {
+  return dir.replace(/\//g, '\\').replace(/\\+$/, '').toLowerCase();
+}
+
+/**
+ * Whether the FIRST `ssh` a bare spawn would find on this machine's PATH is the built-in
+ * Windows OpenSSH — the one that can open our agent's named pipe.
+ *
+ * <p>This is what deletes the `C:/Windows/System32/OpenSSH/ssh.exe` path from the viewer on a
+ * modern Windows (tails T20): System32\OpenSSH is usually ON the PATH, and when it wins the
+ * race the bare word `ssh` already does everything the full path was defending against — so
+ * the command a person copies is the command they would have typed. Only when an MSYS ssh
+ * (Git for Windows) shadows it does the full path still earn its place.</p>
+ *
+ * <p>First hit decides, exactly as `CreateProcess` would resolve the bare word.</p>
+ */
+export function pathSshIsBuiltIn(
+  platform: NodeJS.Platform,
+  probe: PathProbe = defaultProbe(),
+): boolean {
+  if (platform !== 'win32') {
+    return false; // off Windows there is no built-in/MSYS split to detect
+  }
+  const builtIn = normalizeDir(WINDOWS_OPENSSH_DIR);
+  const first = probe.pathDirs.find((dir) => probe.hasTool(dir));
+  return first !== undefined && normalizeDir(first) === builtIn;
+}
+
 /**
  * The binary to launch for `tool`.
  *
@@ -70,9 +114,19 @@ export function openSshProgram(
   needsAgent: boolean,
   platform: NodeJS.Platform,
   exists: (candidate: string) => boolean = fs.existsSync,
+  probe?: PathProbe,
 ): string {
+  if (!mustUseBuiltIn(needsAgent, platform)) {
+    return tool;
+  }
+  // The bare word is preferred whenever it would resolve to the built-in anyway: the command
+  // shown in the viewer is the command that runs, and `ssh …` is one a person can paste on any
+  // machine. The full path remains for the machine where an MSYS ssh shadows the built-in.
+  if (pathSshIsBuiltIn(platform, probe)) {
+    return tool;
+  }
   const builtIn = builtInOpenSsh(tool);
-  return mustUseBuiltIn(needsAgent, platform) && exists(builtIn) ? builtIn : tool;
+  return exists(builtIn) ? builtIn : tool;
 }
 
 /**

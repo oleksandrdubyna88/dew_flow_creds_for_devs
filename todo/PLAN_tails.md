@@ -811,6 +811,10 @@ catalog entry, and the code panel keeps a third. Where the viewer's rows fall in
 "dates" is a static assignment per row kind — the row builders already know which field they are
 rendering.
 
+**Amendment (owner, same day):** attachments and the stored image belong in an **Additional**
+frame in the RIGHT column, above the code panel — the side and colour (`attachmentsSection`,
+`depColor6`) the form keeps them on. Shipped with the frames.
+
 **Tests.** On the built HTML (`entityViewPage.test.ts`, beside the T9/T12 assertions): the three
 frames are present in order for a config entry, two for a kind with no code panel; the Created,
 Last changed and History rows sit inside the dates frame and not the main one; and the frame
@@ -1067,6 +1071,42 @@ snippets and the existing "list answers match the mask" tests.
 
 ---
 
+### T25. The tree's MCP mark: a pentagon of edges, not a padlock
+
+**The ask.** When an entry has MCP access on, the tree overlays a padlock icon — the owner wants it
+gone, replaced by **a regular pentagon whose five edges are the five switch colours**: the left
+edge is green, then clockwise, each edge one switch, in the ladder's own order; an edge whose
+switch is off renders grey. The whole permission set read from one small glyph, in the same colours
+the switches and the `mcpBar` already use.
+
+**Where.** `entityIcon` (`treeIcons.ts` / `mcpIcons.ts`) composes the row icon today; the switch
+colours are the `mcpSwitches.ts` catalog — the same single source the bars draw from, which is what
+keeps a tree glyph, a form bar and a viewer bar from disagreeing. The pentagon is an SVG built from
+the catalog (five `<path>` edges, stroke per switch, grey when off), rendered per mask — 32
+combinations, so generate-on-demand into the icon cache rather than shipping 32 files.
+
+**The check to run before building:** the six-switch ladder — the form shows six checkboxes; the
+BAR shows five segments. Establish which five edges the owner means (the bar's five), and record
+where the sixth lives, so the pentagon and the bar say the same thing.
+
+**Tests.** The edge-to-switch assignment (left edge, clockwise) against the catalog order; an
+all-off mask is all grey; the SVG for a mask is stable (cache key = mask).
+
+---
+
+### T26. ~~The image zoom letterboxed instead of zooming~~ — **FIXED 2026-08-27, in T19's commit**
+
+The owner: first click zooms proportionally, second "only in height", suspected the column width.
+Close: the zoom set BOTH `width` and `height` to a square (800px at step two), the column clamped
+the width to ~600px, and `object-fit: contain` letterboxed the picture inside the remaining
+600×800 box — the empty bands read as a broken zoom. The fix drives **width only** with
+`max-width: 100%` and `height: auto`, so height follows the picture and the column caps the box.
+Test: the built page carries `height: auto` and the zoom script no longer touches
+`style.height`.
+
+
+---
+
 ## 4. Build order
 
 Ordered so that each step is verifiable on its own, and the two that need a person come last.
@@ -1151,6 +1191,9 @@ and both the failure and the pass are reported.
 - [ ] T9: the viewer's columns are as wide as the form's, proven by a test watched failing at 640 px.
 - [ ] T22: the tree no longer says the product name twice; the help mark sits in the title bar
       after the name, with the spacing question answered rather than assumed.
+- [ ] T25: the tree marks MCP access with the five-edge pentagon in catalog colours, padlock
+      gone; the five-vs-six question answered in writing.
+- [ ] T26: done — the zoom drives width only. (Recorded, test in entityViewPage.test.ts.)
 - [ ] T24: the MCP section is its own column at three-column width and last in one column; the
       agent-reachability footer proposal is put to the owner; every MCP tool description says
       when, how and why in the register the instructions block set.
@@ -1206,7 +1249,7 @@ and both the failure and the pass are reported.
 - [ ] T8: the server's console output is coloured under redirection (counted, not observed), a run
       crossing midnight segments, `logs/` has a named retention owner, and the obsolete mirror-list
       item is deleted with its reason.
-- [ ] `research/module_extension.md` and `research/module_server.md` updated for T1, T3, T4, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17, T18, T19, T20, T21, T22, T23, T24;
+- [ ] `research/module_extension.md` and `research/module_server.md` updated for T1, T3, T4, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17, T18, T19, T20, T21, T22, T23, T24, T25, T26;
       `research/module_mcp.md` (or `module_extension.md`'s MCP section) for T10.
 - [ ] `node .claude/rules/shared/tools/plan-lifecycle.mjs` and `pin-check.mjs` pass.
 - [ ] This plan promoted to `research/` with its deviations recorded, and anything left extracted

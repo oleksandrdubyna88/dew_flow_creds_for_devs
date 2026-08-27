@@ -26,7 +26,7 @@
 
 import { EntityMetadata } from './types';
 import { sshOptionArgv } from './sshOptions';
-import { openSshProgram } from './sshProgram';
+import { PathProbe, openSshProgram } from './sshProgram';
 
 export const DEFAULT_SSH_PORT = 22;
 
@@ -41,6 +41,8 @@ export interface SshCommandOptions {
    * assertion about the composed line cannot depend on which machine runs it.
    */
   builtInExists?: (candidate: string) => boolean;
+  /** How the PATH is probed for the built-in ssh. Injected only by tests, same reason. */
+  pathProbe?: PathProbe;
 }
 
 /**
@@ -116,7 +118,7 @@ export function buildSshCommand(
   // open a named pipe. Composed here rather than at the five call sites so the command SHOWN
   // in the viewer is the command that runs. See `sshProgram.ts`.
   const parts: string[] = [
-    openSshProgram('ssh', entity.agentForward === true, platform, options.builtInExists),
+    openSshProgram('ssh', entity.agentForward === true, platform, options.builtInExists, options.pathProbe),
   ];
   if (entity.sshKeyPath) {
     parts.push('-i', shellQuote(entity.sshKeyPath, platform));

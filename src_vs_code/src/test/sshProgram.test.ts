@@ -5,6 +5,7 @@ import {
   agentForwardEnv,
   builtInOpenSsh,
   openSshProgram,
+  pathSshIsBuiltIn,
 } from '../sshProgram';
 
 const present = (): boolean => true;
@@ -63,4 +64,54 @@ test('forwarding asked for with no agent running says so instead of going quiet'
 
 test('an empty socket path counts as no agent', () => {
   assert.equal(agentForwardEnv({}, true, '').warning, NO_AGENT_TO_FORWARD);
+});
+
+// ---------------------------------------------------------------------------
+// T20 (PLAN_tails) — the PATH probe. The owner's viewer showed
+// `C:/Windows/System32/OpenSSH/ssh.exe …` on a forwarding connection; on a
+// modern Windows the FIRST ssh on PATH usually IS that binary, and then the
+// full path is noise a person cannot paste anywhere else.
+// ---------------------------------------------------------------------------
+
+test('when PATH already resolves ssh to the built-in, the bare word is kept even for forwarding', () => {
+  const program = openSshProgram('ssh', true, 'win32', () => true, {
+    pathDirs: ['C:\\Users\\dev\\bin', 'C:\\Windows\\System32\\OpenSSH'],
+    hasTool: (dir: string) => dir === 'C:\\Windows\\System32\\OpenSSH',
+  });
+  assert.equal(program, 'ssh');
+});
+
+test('when PATH resolves ssh to the MSYS one first, a forwarding connection still gets the full built-in path', () => {
+  const program = openSshProgram('ssh', true, 'win32', () => true, {
+    pathDirs: ['C:\\Program Files\\Git\\usr\\bin', 'C:\\Windows\\System32\\OpenSSH'],
+    hasTool: () => true,
+  });
+  assert.equal(program, 'C:/Windows/System32/OpenSSH/ssh.exe');
+});
+
+test('the probe never touches a non-forwarding connection — PATH decides, as it always did', () => {
+  const program = openSshProgram('ssh', false, 'win32', () => true, {
+    pathDirs: ['C:\\Program Files\\Git\\usr\\bin'],
+    hasTool: () => true,
+  });
+  assert.equal(program, 'ssh');
+});
+
+test('pathSshIsBuiltIn compares case-insensitively and takes the FIRST hit', () => {
+  assert.equal(
+    pathSshIsBuiltIn('win32', {
+      pathDirs: ['c:\\windows\\system32\\openssh', 'C:\\Program Files\\Git\\usr\\bin'],
+      hasTool: () => true,
+    }),
+    true,
+  );
+  assert.equal(
+    pathSshIsBuiltIn('win32', {
+      pathDirs: ['C:\\Program Files\\Git\\usr\\bin', 'C:\\Windows\\System32\\OpenSSH'],
+      hasTool: () => true,
+    }),
+    false,
+  );
+  // No ssh anywhere on PATH: not "built-in", and the caller falls back to the full path.
+  assert.equal(pathSshIsBuiltIn('win32', { pathDirs: ['C:\\bin'], hasTool: () => false }), false);
 });
