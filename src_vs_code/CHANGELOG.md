@@ -6,6 +6,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Config files live in the vault now.** `appsettings.Development.json`, `.env`, and their
+  relatives cannot be committed, so they are passed between developers by hand and lost regularly —
+  and losing one costs days, because nothing describes what was in it. `dotnet user-secrets` solves
+  "do not commit"; it solves neither "hand it to a colleague" nor "do not lose it".
+
+  A **Config file** is its own kind of entry, with a format (JSON, `.env`, YAML, XML, TOML, INI) and
+  a file name. Its contents are stored as a **secret**, like a password: never in plain metadata,
+  never handed to an agent. A body that does not parse is still saved — configs get pasted in
+  halves, and a vault that refuses unfinished work is a vault people keep a copy of on the side —
+  but you are asked first, and the row stays marked `!!!` until it parses.
+
+  The editor has two tabs. **Raw** is the document. **Fields** lays every value out as a row you can
+  edit without hunting through braces, and it is a view over the raw text rather than a second copy
+  of it: editing one row changes that one value, and your indentation, your blank lines and your
+  comments are exactly where you left them.
+
+  **Read it from code.** Enable code access on the entry and a key is minted, copied to your
+  clipboard and shown once — the vault keeps only a hash, so it cannot be read back. Put the key in
+  `CREDSFORDEVS_KEY`, and `creds config <key>` prints the document for your application to read at
+  startup. The entry's viewer shows the code to do it in **twenty languages**, with a version picker
+  where it matters (.NET 6+ against .NET Framework, ES modules against CommonJS). For .NET that
+  plugs straight into `IConfiguration`; for the rest it hands you the parsed document.
+
+  **Write config file here…** puts it on disk for the tools no provider covers — `docker compose`,
+  Vite, `dotnet ef`. It refuses a path git tracks, and asks about one git does not ignore.
+
+  **Show what changed** reports which KEYS a colleague added, removed or moved since the previous
+  version — not "the config changed", and not a line diff of a reformatted document. And if a file
+  of the same name is still tracked in your repository, saving says so: storing it here does not
+  remove it from git, and believing otherwise is the failure this feature exists to prevent.
+
+  Not yet: sharing an entry does not carry its contents. Use *Write config file here…* meanwhile.
+
 ### Fixed
 
 - **The Remote Bridge menu item said "Open" while a bridge was open.** The command toggled; the

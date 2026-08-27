@@ -1695,10 +1695,68 @@ saved."* Losing typed input without being told is the complaint this whole chang
 and the comment used to claim this was because a `Set` mutated mid-iteration skips elements — it is
 not; a JS `Set` iterator copes with the element it is on being deleted, and the naive version passed
 the test written to catch it. The assertion that actually separates the two implementations is a
-`dispose()` that THROWS: every panel behind the failing one is a form that may have a password on
-screen, so a lock must not be abortable by one misbehaving webview. `formPanels.test.ts` pins that
-case, and `webviewHtml.test.ts` pins the flag itself on both forms by capturing the options the
-panel was created with — there is no DOM in a unit test to observe the retention through.
+`dispose()` that THROWS.
+
+### Configs: the kind an application reads
+
+The full record is [PLAN_config_entities.md](PLAN_config_entities.md); this is the shape as it stands.
+
+**The body is a SECRET.** It lives in SecretStorage beside the notes, and there is no field on
+`EntityMetadata` it could sit in — `configEntity.test.ts` asserts there is none, under any spelling.
+A script body is what a person typed at a shell; a config body holds connection strings with
+passwords in them, and notes were moved out of plaintext metadata in 0.20 for exactly this reason.
+It rides every path a secret must survive: export, backup bundle, sync snapshot, causal merge,
+restore, deletion, and — found while fixing the viewer — `RevisionSecrets`, so an edit that breaks a
+config is undoable.
+
+**Its own kind, not a switch on `script`.** `creds script <token>` means "run the saved script",
+which on an appsettings.json is nonsense. `kindIcon` ends in `assertNever`, so adding the kind named
+every switch that had not been taught about it — four of them.
+
+| Module | Job |
+|---|---|
+| `configFormat.ts` | The six formats, and `describeConfigProblem`. JSON and `.env` are exact; YAML, XML, TOML and INI are hand-written structural checks whose limits are recorded as tests, because the extension ships no runtime dependencies |
+| `configFields.ts` | The Fields view: path to value to **span**, and `fieldsOutcome`'s three answers |
+| `configDiff.ts` | What changed between two versions, by key. Values never reach the description |
+| `configFile.ts` | The file name, the git verdicts, the tracked-copy warning |
+| `configKey.ts` | The long-lived key: minted, hashed, matched, labelled |
+| `configSnippet.ts` + `configSnippetBodies.ts` | Twenty languages of "read this from code" |
+| `brokerConfigRoute.ts` | `POST /v1/config/read`, apart from `brokerReadRoutes.ts` because it authenticates |
+
+**The Fields tab is a VIEW over the raw text.** Parse-edit-serialise cannot keep a document —
+`JSON.parse` then `JSON.stringify` loses the indentation somebody chose, the blank lines and the
+trailing newline; for `.env` it loses every comment. So a field records WHERE its value sits and an
+edit is spliced into that span. An untouched body comes back byte-identical because nothing
+reassembled it. Edits apply from the END backwards, since a splice shifts every offset after it.
+
+**Validity is recomputed, never stored.** A body changes without this window editing it — a
+colleague's sync, an accepted share, a restore — and a verdict written at save time would describe a
+document that is no longer there. The flag walk computes it, and touches the keychain only for
+entries that are configs.
+
+**The key is not a grant.** Grants die with the window and carry its TCP port in their own text; a
+key pasted into a `Program.cs` has to work in a year. Only a SHA-256 is kept, so losing it means
+minting a new one — which is what makes a leaked vault file useless for reaching a config. No slow
+KDF, deliberately: the input is 256 bits from the OS, and there is nothing to guess.
+
+**Reading raises no consent modal**, and that is the trade. An application starting cannot answer a
+dialog, and one appearing on every `dotnet run` would be clicked through blind inside a day. What
+stands in its place: opt-in per entry, revocable, one entry per key, and every attempt in the audit
+log through `via: 'config'` — the fourth door, added to `AuditDoor` for this.
+
+**Both refusals are identical from outside.** A wrong key and a real key whose body is gone answer
+the same 401 with the same sentence, so the route cannot be probed for which keys are real. The
+audit line tells them apart, because the person reading that is the owner.
+
+**There is no NuGet package, and the reason is worth keeping.** .NET already ships the half one
+would wrap: `AddJsonStream` takes a stream, so what was missing is ten lines. The viewer's second
+column answers "how do I read this from code?" in twenty languages instead, and states its own
+depth — three plug into their platform's configuration system, seventeen hand you a parsed
+document. No snippet contains a key and none could; a test walks all twenty-two.
+
+**What is NOT built:** sharing does not carry the body. Left out rather than half-built, because a
+body added to the sending end alone delivers an entry that arrives EMPTY —
+[../todo/PLAN_config_sharing.md](../todo/PLAN_config_sharing.md).
 
 ### The per-entity flag caches, and the three rules that keep them honest
 

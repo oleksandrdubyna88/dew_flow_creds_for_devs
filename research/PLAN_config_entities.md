@@ -1,10 +1,15 @@
 # PLAN — configs live in the vault, and an app reads one at startup
 
-> Status: **plan only, nothing implemented yet.** Scope: a new `config` entity kind across
-> `src_vs_code`, a broker read route, a `creds config` verb, and a .NET configuration provider.
+> Status: **IMPLEMENTED, 2026-08-27.** All seven phases shipped. Scope as built: a `config` entity
+> kind across `src_vs_code`, a broker read route, a `creds config` verb — and, instead of the .NET
+> package this plan called for, a per-language snippet panel in the viewer. The deviations are at
+> the bottom and the largest of them is that one.
 >
-> Related docs: [module_extension.md](../research/module_extension.md),
-> [module_server.md](../research/module_server.md), [architecture.md](../research/architecture.md).
+> Open tail extracted: [PLAN_config_sharing.md](../todo/PLAN_config_sharing.md) — sharing does not
+> carry the body yet.
+>
+> Related docs: [module_extension.md](module_extension.md), [module_server.md](module_server.md),
+> [architecture.md](architecture.md).
 
 ## The symptom
 
@@ -158,3 +163,72 @@ Each phase ships something that works on its own.
 - [ ] `contract/broker-v1.json` regenerated, and both sides' tests are green.
 - [ ] `npm test` and the server test executable green; `dotnet build` at 0 warnings.
 - [ ] `research/module_extension.md` updated, and this plan promoted with its deviations recorded.
+
+## What shipped differently
+
+The most valuable part of this record, per the convention. Ten of them, and the first is the one
+that changed what the feature IS.
+
+**1. There is no NuGet package.** Phase 6 was a .NET configuration provider, published and
+versioned. It became a per-language snippet panel in the viewer instead, and the owner's question
+is what surfaced it: *"can't we just have an instruction?"* Checking rather than answering showed
+that .NET already ships the half a package would wrap — `IConfigurationBuilder.AddJsonStream` takes
+a stream, so what was missing is "run the CLI and hand over the bytes", about ten lines. A package
+carrying ten lines would have bought a fifth release line, a public API and a version story. A
+snippet covers **twenty** languages instead of one. The one real thing a package would still buy —
+no CLI dependency, by talking to the broker through `src_broker_client` — is recorded here and not
+built, because nothing has asked for it.
+
+**2. Twenty languages, not "C# first and others later".** Depth is stated rather than implied:
+three plug into their platform's own configuration system and seventeen hand you a parsed
+document. Twenty entries that all looked equally deep would have been the dishonest version.
+
+**3. The viewer grew a second column.** Not in this plan at all — the owner asked for it during the
+work, laid out with the form's own two-column rule so the two pages narrow identically.
+
+**4. Validation asks BEFORE saving.** The plan said "saves anyway and reports". That shipped, and a
+live window showed why it is wrong: the report arrived in a toast after the form had closed, by
+which point the only thing to do about it was reopen the entry. It is now a modal question with
+Cancel, asked while the form is still open.
+
+**5. The Fields tab distinguishes three outcomes, not two.** `configFields` answered `undefined`
+for two unrelated reasons and this plan's own module comment called them "two different reasons
+that read the same to the caller". They do not: a JSON config with one missing brace reported "No
+field view for this format", which is false about JSON and silent about the brace. Reported from a
+live window.
+
+**6. The Fields tab is a VIEW over the raw text, not a second representation.** Parse-edit-serialise
+cannot keep a document — indentation, blank lines, comments and the trailing newline all go. Each
+field records where its value SITS, and an edit is spliced into that span.
+
+**7. `config` cannot burn on first agent use.** Found while adding the kind. `sshkey` is excluded
+from that policy because nothing could ever fire it; `config` is excluded for the opposite reason —
+something would fire it on the first application start, and an application reads its configuration
+at every start.
+
+**8. The body joined `RevisionSecrets`.** Found while fixing the viewer: previous versions of a
+config were falling out of history, so an edit that broke one could not be undone. `revisionSnapshot.ts`
+exists precisely because a secret added to one path and forgotten in another vanishes silently, and
+its test counts the secrets — which is what turned this from a thought into a red line.
+
+**9. The diff runs against the newest revision, not at sync time.** The plan said "on a pulled
+sync". A body arrives from a colleague's sync, an accepted share, a restore, or the person's own
+edit, and all four put the previous one into history — so asking history covers every route with
+one answer instead of adding a UI side effect to a merge.
+
+**10. Three extractions the line ceilings forced, all of which improved the code.** `kindOf` moved
+from `types.ts` into `entityKind.ts`, where that module's own header already said the kind is asked
+in one place. `entitySecretKeys()` replaced a nine-key list written out by hand TWICE — the failure
+mode being a plaintext secret left in the keychain after its entity is gone. And the config route's
+HTTP half went into `brokerConfigRoute.ts`, the same extraction `brokerReadRoutes.ts` already is.
+
+## Measured, not assumed
+
+- **V8 reports a JSON error position only sometimes.** `Expected ',' or '}' … at position 13 (line 4
+  column 1)` carries one; `Unexpected token 'o', …` carries a context snippet and no position. The
+  snippet spans the failure rather than pointing at it, on a message format that is not a contract —
+  so the line is reported when known and omitted when not.
+- **A JS `Set` iterator tolerates deleting the element it is on.** The first sweep comment claimed
+  otherwise; breaking the implementation on purpose showed the naive version passing.
+- **The `${` check cannot look for "the next `}` anywhere".** `{"pw": "${DB_PASSWORD"}` has one, at
+  the end of the object. The name must be an identifier and the character after it must be `}`.
