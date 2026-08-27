@@ -76,6 +76,8 @@ interface World {
   warnings: string[];
   errors: string[];
   logs: string[];
+  /** The wrap list `encrypt` was handed, when the cycle passed one. Undefined = it did not. */
+  escrowWraps?: unknown[];
 }
 
 interface Parts {
@@ -134,7 +136,12 @@ function manager(w: World, parts: Parts): InstanceType<Sync['SyncManager']> {
     unlock: (): Promise<unknown> => Promise.resolve(parts.key),
     decrypt: (): Promise<unknown> =>
       Promise.resolve({ ...emptySnapshot(), nodes: parts.remoteNodes ?? [], version: 1, accountId: 'a1' }),
-    encrypt: (bundle: unknown): Promise<string> => Promise.resolve(JSON.stringify(bundle)),
+    encrypt: (bundle: unknown, _k: unknown, _a: unknown, _s: unknown, wraps?: unknown[]): Promise<string> => {
+      // Recorded rather than ignored: whether a cycle changed the wrap list is the whole
+      // question the corporate-escrow tests below ask, and it is invisible in the ciphertext.
+      w.escrowWraps = wraps === undefined ? w.escrowWraps : [...wraps];
+      return Promise.resolve(JSON.stringify(bundle));
+    },
   };
   const transport = {
     location: '/mnt/nas',
@@ -371,4 +378,132 @@ test('disposing stops the timers — a disposed manager does not keep syncing', 
   const sync = manager(w, { raw: envelope(), key: KEY });
 
   assert.doesNotThrow(() => sync.dispose());
+});
+
+// ---------------------------------------------------------------- corporate escrow
+
+/**
+ * Enrolment rides the ordinary sync write. `orgEscrowOps` decides WHAT should happen and is pure
+ * and tested; what is only true here is that the cycle asks, applies the answer, and — the part
+ * that matters most — cannot be stopped by the asking going wrong.
+ */
+
+const ORG = require('../orgEscrowCrypto') as typeof import('../orgEscrowCrypto');
+
+type Enrolment = import('../orgEscrowOps').EscrowEnrolment;
+
+/**
+ * A WRAPPED key — `VaultKey.version === 2` means "wrapped", which is a different number from the
+ * envelope's own version. The harness's `KEY` above says 3, which no `VaultKey` ever is; it works
+ * for the other tests only because none of them reads it. Escrow does: a legacy key mints a fresh
+ * master of its own on write, so a wrap list built against the old one would seal nothing.
+ */
+const WRAPPED_KEY = { version: 2, masterKey: Buffer.alloc(32, 7), wraps: [] };
+
+function enrolment(verdict: Enrolment['verdict'] = 'verified'): Enrolment {
+  const pair = ORG.generateOrgRecoveryKeypair();
+  return {
+    orgPublicKey: pair.publicKey,
+    orgPublicKeyFingerprint: 'FP-1',
+    verdict,
+  };
+}
+
+/** The wraps the write actually carried, read back out of what `encrypt` was handed. */
+function wrapsWritten(w: World): { kind: string }[] {
+  const stub = require('../keyWrap') as typeof import('../keyWrap');
+  return (w.escrowWraps ?? []).filter(stub.isKeyWrap);
+}
+
+test('a cycle with no escrow resolver behaves exactly as it did before the feature', async () => {
+  // The default. Corporate recovery must be invisible to every deployment that has none.
+  const w = world();
+  const sync = manager(w, { raw: envelope(), key: KEY, remoteNodes: [], localNodes: [node('n1', 'a')] });
+
+  try {
+    await sync.syncNow();
+  } finally {
+    sync.dispose();
+  }
+
+  assert.equal(w.escrowWraps, undefined, 'no wrap list was passed to encrypt');
+});
+
+test('a resolver that THROWS cannot stop somebody’s own secrets from syncing', async () => {
+  // The most consequential branch in the wiring. Corporate recovery being unreachable — a
+  // timeout, an older server, an offline laptop — is a reason to leave the wraps alone, never
+  // a reason for a person's own vault to stop syncing.
+  const w = world();
+  const sync = manager(w, { raw: envelope(), key: WRAPPED_KEY, remoteNodes: [], localNodes: [node('n1', 'a')] });
+  sync.resolveEscrow = (): Promise<never> => Promise.reject(new Error('server unreachable'));
+
+  try {
+    await sync.syncNow();
+  } finally {
+    sync.dispose();
+  }
+
+  assert.equal(w.writes.length, 1, 'the cycle still wrote');
+  assert.equal(w.escrowWraps, undefined, 'and changed no wraps');
+  assert.ok(
+    w.logs.some((l) => /corporate recovery unreadable/.test(l)),
+    'the failure is in the diagnostic log rather than in front of the person',
+  );
+});
+
+test('an enrolling cycle writes even when nothing else changed', async () => {
+  // A wrap change IS a reason to write. Without this, a vault on an idle machine would never
+  // enrol at all — it would wait for an unrelated edit.
+  const w = world();
+  const sync = manager(w, { raw: envelope(), key: WRAPPED_KEY, remoteNodes: [], localNodes: [] });
+  sync.resolveEscrow = (): Promise<Enrolment> => Promise.resolve(enrolment());
+  sync.escrowOfficers = ['cto@corp.com'];
+
+  try {
+    await sync.syncNow();
+  } finally {
+    sync.dispose();
+  }
+
+  assert.equal(w.writes.length, 1);
+  assert.deepEqual(wrapsWritten(w).map((x) => x.kind), ['org-escrow']);
+  assert.ok(
+    w.warnings.some((m) => /recoverable by your organisation's officers \(cto@corp\.com\)/.test(m)),
+    'and the person is told, by name',
+  );
+});
+
+test('the notice is said once per change, not once per cycle', async () => {
+  // A message that appears every five minutes is one people switch off, which makes it worse
+  // than no message at all.
+  const w = world();
+  const sync = manager(w, { raw: envelope(), key: WRAPPED_KEY, remoteNodes: [], localNodes: [] });
+  const fixed = enrolment();
+  sync.resolveEscrow = (): Promise<Enrolment> => Promise.resolve(fixed);
+
+  try {
+    await sync.syncNow();
+    await sync.syncNow();
+  } finally {
+    sync.dispose();
+  }
+
+  assert.equal(
+    w.warnings.filter((m) => /recoverable by your organisation/.test(m)).length,
+    1,
+  );
+});
+
+test('an untrusted key does not enrol, and says why', async () => {
+  const w = world();
+  const sync = manager(w, { raw: envelope(), key: WRAPPED_KEY, remoteNodes: [], localNodes: [] });
+  sync.resolveEscrow = (): Promise<Enrolment> => Promise.resolve(enrolment('keyChanged'));
+
+  try {
+    await sync.syncNow();
+  } finally {
+    sync.dispose();
+  }
+
+  assert.equal(wrapsWritten(w).length, 0, 'nothing was sealed to a key this machine distrusts');
 });

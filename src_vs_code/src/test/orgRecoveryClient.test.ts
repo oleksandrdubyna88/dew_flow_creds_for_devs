@@ -176,3 +176,111 @@ test('publishing returns the refusal text rather than throwing it away', async (
   assert.equal(refused.ok, false);
   assert.match((refused as { reason: string }).reason, /have not acknowledged/);
 });
+
+// ---------------------------------------------------------------- break-glass
+
+test('starting a session posts the ephemeral key and returns the server’s view', async () => {
+  const seen = respondWith(201, {
+    sessionId: 's1',
+    initiatorEmail: 'cto@example.com',
+    targetEmail: 'departed@example.com',
+    sessionPublicKey: 'PUB',
+    status: 'open',
+    threshold: 2,
+    collected: 0,
+    contributingOfficers: [],
+    startedAt: 1,
+    expiresAt: 2,
+    contributions: [],
+  });
+
+  const session = await client().startSession(account, 'departed@example.com', 'PUB');
+
+  assert.equal(session.sessionId, 's1');
+  assert.equal(seen[0].method, 'POST');
+  assert.match(seen[0].body ?? '', /departed@example\.com/);
+  assert.match(seen[0].body ?? '', /PUB/);
+});
+
+test('a refused start carries the server’s own words, not a bare status', async () => {
+  // The two refusals differ — no key published yet, or a target outside the domain — and only
+  // the server knows which happened.
+  respondWith(409, 'No corporate recovery key has been published.');
+
+  await assert.rejects(
+    () => client().startSession(account, 'departed@example.com', 'PUB'),
+    /No corporate recovery key has been published/,
+  );
+});
+
+test('contributing sends the share index — without it the shares cannot be interpolated', async () => {
+  // A share is a point on a curve; a point with no x is not a point. It is not secret, and the
+  // server validates it, so a client that dropped it would be refused rather than silently wrong.
+  const seen = respondWith(204, '');
+
+  await client().contribute(account, 's1', {
+    shareIndex: 2,
+    ephemeralPublicKey: 'E',
+    salt: 'S',
+    iv: 'I',
+    tag: 'T',
+    data: 'D',
+  });
+
+  assert.match(seen[0].url, /\/sessions\/s1\/contribute$/);
+  assert.match(seen[0].body ?? '', /"shareIndex":2/);
+});
+
+test('a contribution the server refuses is reported, never swallowed', async () => {
+  // Silently treating a refusal as success would leave an officer believing they had helped.
+  respondWith(409, 'That recovery session is finished.');
+  await assert.rejects(() => client().contribute(account, 's1', {}), /session is finished/);
+});
+
+test('the target vault comes back with its ETag, so the write-back can be conditional', async () => {
+  globalThis.fetch = (() =>
+    Promise.resolve(
+      new Response('the-ciphertext', { status: 200, headers: { ETag: '"abc123"' } }),
+    )) as typeof fetch;
+
+  const vault = await client().readTargetVault(account, 's1');
+
+  assert.equal(vault.content, 'the-ciphertext');
+  assert.equal(vault.etag, '"abc123"', 'without this the re-key would clobber a concurrent write');
+});
+
+test('reading the target vault before quorum reports WHY rather than a status code', async () => {
+  respondWith(409, '1 of 2 officers have contributed.');
+  await assert.rejects(() => client().readTargetVault(account, 's1'), /1 of 2 officers/);
+});
+
+test('the write-back sends If-Match when it has one, and omits it when it does not', async () => {
+  let seen = respondWith(204, '');
+  await client().writeTargetVault(account, 's1', 'rekeyed', '"abc123"');
+  assert.equal(seen[0].headers.get('If-Match'), '"abc123"');
+  assert.equal(seen[0].method, 'PUT');
+
+  seen = respondWith(204, '');
+  await client().writeTargetVault(account, 's1', 'rekeyed', undefined);
+  assert.equal(seen[0].headers.get('If-Match'), null);
+});
+
+test('a 412 on the write-back says the vault moved, so the officer can re-read and retry', async () => {
+  respondWith(412, 'That vault changed while the quorum was being collected.');
+  await assert.rejects(
+    () => client().writeTargetVault(account, 's1', 'rekeyed', '"stale"'),
+    /changed while the quorum/,
+  );
+});
+
+test('the audit is empty rather than fatal when it cannot be read', async () => {
+  // A non-officer, or an older server. The page that shows it must still render.
+  respondWith(403, 'not an officer');
+  assert.deepEqual(await client().readAudit(account), []);
+});
+
+test('setup status comes back parsed', async () => {
+  respondWith(200, { setupId: 's1', total: 3, pending: ['lead@example.com'] });
+  const status = await client().setupStatus(account, 's1');
+  assert.deepEqual(status.pending, ['lead@example.com']);
+});

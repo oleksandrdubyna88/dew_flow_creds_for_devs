@@ -209,3 +209,96 @@ test('importing the same crafted bundle twice does not leave two copies', async 
 
   assert.deepEqual(w.storage.getNodes(ACCOUNT).map((n) => n.id), [firstId]);
 });
+
+// ---------------------------------------------------------------- the officer's escrow share
+
+/**
+ * An officer's Shamir share of the organisation's recovery key.
+ *
+ * <p>It lives in SecretStorage and NOT in the vault payload, which is a security decision rather
+ * than a storage one: the payload syncs to the server, and a share that syncs would sit beside
+ * the very escrow wraps it exists to open. The consequence — that it does not follow the officer
+ * to a second machine — is the honest cost, and the question the manual pass exists to settle.</p>
+ */
+
+const shareWrap = (setupId = 's1', fingerprint = 'FP-1'): unknown => ({
+  setupId,
+  shareIndex: 2,
+  threshold: 2,
+  totalShares: 3,
+  integrityTag: 'dGFn',
+  orgPublicKeyFingerprint: fingerprint,
+  createdAt: 1_756_000_000_000,
+  sealed: {
+    kind: 'pin',
+    id: 'pin',
+    createdAt: 1_756_000_000_000,
+    salt: 'c2FsdA==',
+    iv: 'aXY=',
+    tag: 'dGFn',
+    data: 'ZGF0YQ==',
+  },
+});
+
+test('an escrow share round-trips, and lands under a key of its own', async () => {
+  const w = instance(world());
+
+  await w.storage.setOrgEscrowShare(ACCOUNT, shareWrap() as never);
+
+  assert.deepEqual(await w.storage.getOrgEscrowShare(ACCOUNT), shareWrap());
+  assert.deepEqual(
+    [...w.secrets.keys()],
+    ['a1:orgEscrowShare'],
+    'keyed by ACCOUNT, like the signing identity — it identifies the officer, not an entity',
+  );
+});
+
+test('an account with no share answers undefined rather than throwing', async () => {
+  // The panel asks this on every render to say whether THIS machine can contribute.
+  const w = instance(world());
+  assert.equal(await w.storage.getOrgEscrowShare(ACCOUNT), undefined);
+});
+
+test('a share this build cannot read reads as absent, not as a crash', async () => {
+  // A wrap from a later build, or a hand-edited keychain entry. Reporting "this machine holds no
+  // share" is correct and actionable — the officer re-accepts. Throwing would take the whole
+  // corporate-recovery page down with it.
+  const w = instance(world());
+  w.secrets.set('a1:orgEscrowShare', '{ not json');
+  assert.equal(await w.storage.getOrgEscrowShare(ACCOUNT), undefined);
+
+  w.secrets.set('a1:orgEscrowShare', JSON.stringify({ setupId: 's1' }));
+  assert.equal(await w.storage.getOrgEscrowShare(ACCOUNT), undefined, 'no sealed half');
+});
+
+test('shares are per account, and clearing one leaves the other', async () => {
+  // One person may hold officer roles on two servers under two accounts; recovering with the
+  // wrong server's share would rebuild a key nothing is sealed to.
+  const w = instance(world());
+  await w.storage.setOrgEscrowShare('a1', shareWrap('s1', 'FP-1') as never);
+  await w.storage.setOrgEscrowShare('a2', shareWrap('s2', 'FP-2') as never);
+
+  await w.storage.clearOrgEscrowShare('a1');
+
+  assert.equal(await w.storage.getOrgEscrowShare('a1'), undefined);
+  assert.equal(
+    (await w.storage.getOrgEscrowShare('a2'))?.orgPublicKeyFingerprint,
+    'FP-2',
+  );
+});
+
+test('the share does not collide with an entity whose id looks like its key', async () => {
+  // The same class as the private-key collision at the top of this file: `a1:orgEscrowShare`
+  // must not be reachable by naming an entity.
+  const w = instance(world());
+  await w.storage.addNode(ACCOUNT, entity(':orgEscrowShare'));
+  await w.storage.setOrgEscrowShare(ACCOUNT, shareWrap() as never);
+
+  await w.storage.setPassword(ACCOUNT, ':orgEscrowShare', 'attacker-password');
+
+  assert.notEqual(
+    await w.storage.getOrgEscrowShare(ACCOUNT),
+    undefined,
+    'a crafted entity id overwrote the officer share',
+  );
+});

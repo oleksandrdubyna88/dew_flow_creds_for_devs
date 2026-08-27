@@ -124,4 +124,184 @@ public sealed class OrgRecoveryMaintenanceTests
             Directory.Delete(dir, recursive: true);
         }
     }
+
+    [Fact]
+    public async Task AnExpiredSessionIsClosedAndALiveOneIsLeftAlone()
+    {
+        // A session is a live authorisation to read one person's vault. It carries its own
+        // deadline rather than being aged like an invite, because how long that authorisation
+        // stands is a decision made when it starts, not one derived later from a file's mtime.
+        var (store, dir) = NewStore();
+        try
+        {
+            var now = DateTimeOffset.UtcNow;
+            await store.WriteSessionAsync(
+                new RecoverySession
+                {
+                    SessionId = "expired",
+                    InitiatorEmail = "cto@example.com",
+                    TargetEmail = "departed@example.com",
+                    ExpiresAt = now.AddHours(-1).ToUnixTimeMilliseconds(),
+                },
+                Ct);
+            await store.WriteSessionAsync(
+                new RecoverySession
+                {
+                    SessionId = "live",
+                    InitiatorEmail = "cto@example.com",
+                    TargetEmail = "departed@example.com",
+                    ExpiresAt = now.AddHours(+1).ToUnixTimeMilliseconds(),
+                },
+                Ct);
+
+            var sweep = new OrgRecoveryMaintenance(
+                store, NullLogger<OrgRecoveryMaintenance>.Instance,
+                TimeSpan.FromHours(1), TimeSpan.FromHours(72));
+            await sweep.SweepAsync(Ct);
+
+            (await store.ReadSessionAsync("expired", Ct)).Should().BeNull();
+            (await store.ReadSessionAsync("live", Ct)).Should().NotBeNull("a live session must survive");
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task ExpiringASessionTakesItsCollectedContributionsWithIt()
+    {
+        // The contributions ARE the sensitive part — each is an officer's share, resealed. A
+        // sweep that dropped the session record and left them behind would leave a quorum's
+        // worth of material on disk with nothing pointing at it.
+        var (store, dir) = NewStore();
+        try
+        {
+            await store.WriteSessionAsync(
+                new RecoverySession
+                {
+                    SessionId = "expired",
+                    InitiatorEmail = "cto@example.com",
+                    TargetEmail = "departed@example.com",
+                    ExpiresAt = DateTimeOffset.UtcNow.AddHours(-1).ToUnixTimeMilliseconds(),
+                    Contributions =
+                    [
+                        new SessionContribution
+                        {
+                            OfficerEmail = "lead@example.com",
+                            ShareIndex = 2,
+                            Data = Convert.ToBase64String(new byte[48]),
+                        },
+                    ],
+                },
+                Ct);
+
+            var sweep = new OrgRecoveryMaintenance(
+                store, NullLogger<OrgRecoveryMaintenance>.Instance,
+                TimeSpan.FromHours(1), TimeSpan.FromHours(72));
+            await sweep.SweepAsync(Ct);
+
+            (await store.ReadSessionAsync("expired", Ct)).Should().BeNull();
+            Directory.EnumerateFiles(Path.Combine(dir, "org-recovery", "sessions"))
+                .Should().BeEmpty("nothing of the session may outlive it");
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task DroppingOneCeremonyLeavesAnotherCeremonyIntact()
+    {
+        // Superseding a ceremony must not disturb one that is still being run — the shares of
+        // the second belong to a key that may already be published.
+        var (store, dir) = NewStore();
+        try
+        {
+            var doomed = Guid.NewGuid().ToString();
+            var keep = Guid.NewGuid().ToString();
+            var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            await store.AppendInviteAsync(Invite("lead@example.com", now, doomed), Ct);
+            await store.AppendInviteAsync(Invite("devops@example.com", now, doomed), Ct);
+            await store.AppendInviteAsync(Invite("lead@example.com", now, keep), Ct);
+
+            var dropped = await store.DropInvitesAsync(doomed, Ct);
+
+            dropped.Should().Be(2);
+            (await CountAsync(store, "lead@example.com")).Should().Be(1, "the other ceremony survives");
+            (await CountAsync(store, "devops@example.com")).Should().Be(0);
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task TheAuditLogSurvivesEverySweepAndKeepsItsOrder()
+    {
+        // Never pruned, by design: a recovery nobody can look up afterwards is a recovery
+        // nobody can question, and being witnessed is the point of a quorum.
+        var (store, dir) = NewStore();
+        try
+        {
+            foreach (var target in new[] { "first@example.com", "second@example.com" })
+            {
+                await store.AppendAuditAsync(
+                    new AuditEntryDto(
+                        Guid.NewGuid().ToString(), "vault-recovery", "cto@example.com", target,
+                        ["cto@example.com", "lead@example.com"], 1, 2),
+                    Ct);
+            }
+
+            var sweep = new OrgRecoveryMaintenance(
+                store, NullLogger<OrgRecoveryMaintenance>.Instance,
+                TimeSpan.FromHours(1), TimeSpan.FromMilliseconds(1));
+            await sweep.SweepAsync(Ct);
+
+            var entries = new List<AuditEntryDto>();
+            await foreach (var entry in store.ReadAuditAsync(Ct))
+            {
+                entries.Add(entry);
+            }
+
+            entries.Should().HaveCount(2);
+            entries[0].TargetEmail.Should().Be("first@example.com", "oldest first");
+            entries[1].TargetEmail.Should().Be("second@example.com");
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task ATornLastLineDoesNotHideTheAuditEntriesBeforeIt()
+    {
+        // NDJSON is chosen so a crash mid-append costs the line being written and nothing else.
+        // That is only true if the reader actually skips it.
+        var (store, dir) = NewStore();
+        try
+        {
+            await store.AppendAuditAsync(
+                new AuditEntryDto("s1", "vault-recovery", "cto@example.com", "departed@example.com",
+                    ["cto@example.com"], 1, 2),
+                Ct);
+            await File.AppendAllTextAsync(
+                Path.Combine(dir, "org-recovery", "audit.log"), "{\"sessionId\": \"tor", Ct);
+
+            var entries = new List<AuditEntryDto>();
+            await foreach (var entry in store.ReadAuditAsync(Ct))
+            {
+                entries.Add(entry);
+            }
+
+            entries.Should().HaveCount(1, "the complete line before the torn one survives");
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
 }
