@@ -957,6 +957,16 @@ Three properties of the client half worth carrying in the head:
   combination and not the recovery. Filtering also bounds the search: `combinations` materialises
   every C(n, t) subset before the first is tried, and n was whatever the server chose to post.
 
+**Recovered key material is zeroed on every path, not only the happy one.** `recoverOrgKey` wipes
+the opened shares in a `finally` — `threshold` of them ARE the organisation's private key, they are
+copies it decrypted itself, and on the `noValidQuorum` path there is not even a key handed back for
+a caller to be responsible for. `endRecoverySession` exists as a named operation rather than a
+`wipe` call at each site because the sites were the problem: removing a session from its map is a
+dropped reference, which the field's own doc comment always said was not enough. The three sites in
+`extension.ts` that hold key material across an `await` — the recovery itself, the re-key, and an
+officer's contribution — each wrap it in `try/finally`, because a failed unwrap or a network error
+was the likeliest way to reach the end of those functions and the only way that skipped the wipe.
+
 The break-glass session keypair lives in **memory only**, in the window that started the recovery.
 Writing it anywhere would put the means to decrypt a quorum's worth of key material on disk beside
 them; closing the window abandons the recovery, which is the correct trade because starting another

@@ -76,6 +76,23 @@ export function recoverOrgKey(
   integrityTag: string,
 ): RecoveryOutcome {
   const opened = usableContributions(openContributions(contributions, sessionPrivateKey));
+  try {
+    return search(opened, threshold, totalShares, integrityTag);
+  } finally {
+    // The opened shares are the plaintext Shamir shares, and `threshold` of them ARE the
+    // organisation's private key. They are decrypted copies this function made, so nothing
+    // else can be responsible for them — and on the `noValidQuorum` path there is not even a
+    // key handed back for a caller to take responsibility FOR.
+    wipe(...opened.map((o) => o.share.bytes));
+  }
+}
+
+function search(
+  opened: readonly OpenedContribution[],
+  threshold: number,
+  totalShares: number,
+  integrityTag: string,
+): RecoveryOutcome {
   if (opened.length < threshold) {
     return { kind: 'tooFew', have: opened.length, need: threshold };
   }
@@ -212,6 +229,18 @@ function combinations<T>(items: readonly T[], size: number): T[][] {
  */
 export function keyMatchesPublished(orgPrivateKey: Buffer, publishedPublicKey: Buffer): boolean {
   return publicKeyForPrivate(orgPrivateKey).equals(publishedPublicKey);
+}
+
+/**
+ * Finish with a session's keypair.
+ *
+ * <p>Both halves, and it exists as a named operation rather than a `wipe` call at each site
+ * because the sites are the problem: removing the session from its map is a dropped reference,
+ * which the doc comment on `RecoverySessionKeys.privateKey` has always said is not enough.
+ * Idempotent, so the `finally` that calls it may follow a path that already did.</p>
+ */
+export function endRecoverySession(keys: RecoverySessionKeys): void {
+  wipe(keys.privateKey, keys.publicKey);
 }
 
 /** Overwrite recovered key material. A dropped reference is not a forgotten key. */

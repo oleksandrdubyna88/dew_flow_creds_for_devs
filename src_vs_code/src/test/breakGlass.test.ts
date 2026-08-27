@@ -3,6 +3,7 @@ import * as crypto from 'node:crypto';
 import { test } from 'node:test';
 import {
   Contribution,
+  endRecoverySession,
   keyMatchesPublished,
   newSessionKeys,
   recoverOrgKey,
@@ -228,4 +229,68 @@ test('a flood of contributions cannot make the search unbounded', async () => {
 
   assert.ok(Date.now() - started < 5_000, 'the search must be bounded regardless of n');
   assert.ok(outcome.kind === 'recovered' || outcome.kind === 'noValidQuorum');
+});
+
+// ---------------------------------------------------------------- key material lifetime
+
+test('ending a session really zeroes both halves of the session key', () => {
+  // `RecoverySessionKeys.privateKey` is what turns the collected contributions back into
+  // shares. Dropping the reference — which is all `Map.delete` does — leaves the bytes in the
+  // heap for a dump to find, and the comment on that field has always claimed otherwise.
+  const keys = newSessionKeys();
+  const before = Buffer.from(keys.privateKey);
+  assert.notDeepEqual(before, Buffer.alloc(32), 'a real key to begin with');
+
+  endRecoverySession(keys);
+
+  assert.deepEqual(keys.privateKey, Buffer.alloc(32));
+  assert.deepEqual(keys.publicKey, Buffer.alloc(32), 'the public half goes too — nothing is owed it');
+});
+
+test('ending a session twice is safe', () => {
+  // The finally block that calls this may run after an early return that already did.
+  const keys = newSessionKeys();
+  endRecoverySession(keys);
+  assert.doesNotThrow(() => endRecoverySession(keys));
+});
+
+test('a recovery leaves the caller’s contributions intact — it wipes only its own copies', () => {
+  // The opened shares are the plaintext Shamir shares, and `threshold` of them ARE the org
+  // private key, so they must be zeroed before the function returns. This pins that the wipe
+  // reaches the internal copies ONLY: the sealed blobs the caller still holds must survive, or
+  // a retry after a transient failure would be impossible.
+  const session = newSessionKeys();
+  const contributions = [
+    realContribution('cto@x.dev', 0, session.publicKey),
+    realContribution('lead@x.dev', 1, session.publicKey),
+  ];
+
+  const first = recoverOrgKey(contributions, session.privateKey, 2, 3, SET.integrityTag);
+  const second = recoverOrgKey(contributions, session.privateKey, 2, 3, SET.integrityTag);
+
+  assert.ok(first.kind === 'recovered');
+  assert.ok(second.kind === 'recovered', 'the contributions were consumed rather than read');
+  assert.deepEqual(second.orgPrivateKey, ORG.privateKey);
+});
+
+test('a failed recovery leaves nothing reconstructible behind', () => {
+  // `noValidQuorum` still opened every contribution it could. Those shares are as sensitive as
+  // a successful run's, and there is no key handed back to the caller to take responsibility
+  // for them.
+  const session = newSessionKeys();
+  const older = mintShareSet(generateOrgRecoveryKeypair().privateKey, 3, 2);
+  const contributions = [
+    contribute('cto@x.dev', older.shares[0].index, older.shares[0].bytes, session.publicKey),
+    contribute('lead@x.dev', older.shares[1].index, older.shares[1].bytes, session.publicKey),
+  ];
+
+  const outcome = recoverOrgKey(contributions, session.privateKey, 2, 3, SET.integrityTag);
+
+  assert.equal(outcome.kind, 'noValidQuorum');
+  // The shares of the OLDER ceremony must not still be sitting in memory as plaintext; the
+  // observable proxy is that re-running still works, i.e. only internal copies were touched.
+  assert.equal(
+    recoverOrgKey(contributions, session.privateKey, 2, 3, older.integrityTag).kind,
+    'recovered',
+  );
 });

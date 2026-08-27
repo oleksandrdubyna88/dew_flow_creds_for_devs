@@ -101,6 +101,7 @@ import {
 import {
   Contribution,
   RecoverySessionKeys,
+  endRecoverySession,
   keyMatchesPublished,
   newSessionKeys,
   recoverOrgKey,
@@ -3435,15 +3436,20 @@ ${detail}
     }
     const share = await openShareWithPin(wrap, account.accountId, vaultPin);
     const sealed = sealShareToSession(share, Buffer.from(session.sessionPublicKey, 'base64'));
-    await client.contribute(account, sessionId, {
-      shareIndex: sealed.shareIndex,
-      ephemeralPublicKey: sealed.ephemeralPublicKey,
-      salt: sealed.salt,
-      iv: sealed.iv,
-      tag: sealed.tag,
-      data: sealed.data,
-    });
-    wipeRecovered(share.bytes);
+    try {
+      await client.contribute(account, sessionId, {
+        shareIndex: sealed.shareIndex,
+        ephemeralPublicKey: sealed.ephemeralPublicKey,
+        salt: sealed.salt,
+        iv: sealed.iv,
+        tag: sealed.tag,
+        data: sealed.data,
+      });
+    } finally {
+      // The officer's own plaintext share. A network failure is the likeliest way to reach
+      // this line, and it is exactly the case where the old code kept the share alive.
+      wipeRecovered(share.bytes);
+    }
     void vscode.window.showInformationMessage(
       `Your share is with ${session.initiatorEmail}'s recovery of ${session.targetEmail}.`,
     );
@@ -3486,6 +3492,12 @@ ${detail}
       await finishBreakGlass(account, client, sessionId.trim(), keys);
     } catch (error) {
       void vscode.window.showErrorMessage(`Recovery failed: ${describeError(error)}`);
+    } finally {
+      // Every exit: the two early returns inside, a thrown unwrap, a failed write-back. The
+      // session key is what turns the collected contributions back into shares, so a path that
+      // leaves it live leaves a quorum's worth of material reachable in this process.
+      endRecoverySession(keys);
+      breakGlassSessions.delete(sessionId.trim());
     }
   });
 
@@ -3532,9 +3544,13 @@ ${detail}
       );
       return;
     }
-    await openAndRekey(account, client, session.sessionId, session.targetEmail, outcome.orgPrivateKey);
-    wipeRecovered(outcome.orgPrivateKey);
-    breakGlassSessions.delete(sessionId);
+    try {
+      await openAndRekey(account, client, session.sessionId, session.targetEmail, outcome.orgPrivateKey);
+    } finally {
+      // A failed unwrap or a network error on the write-back must not leave the organisation's
+      // reconstructed private key in memory — it opens every vault on that server.
+      wipeRecovered(outcome.orgPrivateKey);
+    }
   }
 
   async function openAndRekey(
