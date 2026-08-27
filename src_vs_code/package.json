@@ -413,13 +413,8 @@
     ],
     "commands": [
       {
-        "command": "credSshManager.copyInstallPowerShell",
-        "title": "Copy install command (PowerShell)...",
-        "category": "CredsForDevs"
-      },
-      {
-        "command": "credSshManager.copyInstallBash",
-        "title": "Copy install command (bash)...",
+        "command": "credSshManager.copyInstallCommand",
+        "title": "Copy install command for another machine...",
         "category": "CredsForDevs"
       },
       {
@@ -1054,12 +1049,8 @@
           "group": "here@2"
         },
         {
-          "command": "credSshManager.copyInstallPowerShell",
+          "command": "credSshManager.copyInstallCommand",
           "group": "elsewhere@1"
-        },
-        {
-          "command": "credSshManager.copyInstallBash",
-          "group": "elsewhere@2"
         }
       ],
       "view/title": [

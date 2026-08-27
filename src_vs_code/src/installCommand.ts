@@ -29,6 +29,19 @@ export const RELEASES_REPO = 'oleksandrdubyna88/dew_flow_creds_for_devs';
 
 export type InstallTarget = 'creds' | 'creds-mcp';
 
+/** The four things the release workflow builds. */
+export type Rid = 'win-x64' | 'win-arm64' | 'linux-x64' | 'linux-arm64';
+
+/**
+ * A machine to install on: a fixed architecture, or the instruction to work it out there.
+ *
+ * <p>Detection is the safer default and stays the recommended choice — the script runs ON the
+ * machine it installs to, so `uname -m` knows more than the person copying it does. Pinning is
+ * for the case where somebody KNOWS the target and wants a script with no branch in it, which is
+ * also the script you can read at a glance before running it on a server.</p>
+ */
+export type Machine = { os: 'windows' | 'linux'; rid?: Rid };
+
 /**
  * The regular expression that picks one asset, anchored so it cannot pick another binary's.
  *
@@ -46,11 +59,13 @@ export function assetPattern(target: InstallTarget, rid: string): string {
  * distribution's default profile. A script that needs root to install a user's own credential
  * helper is a script people run as root.</p>
  */
-export function bashInstall(target: InstallTarget): string {
+export function bashInstall(target: InstallTarget, rid?: Rid): string {
   return [
     'set -eu',
     `repo=${RELEASES_REPO}`,
-    'case "$(uname -m)" in aarch64|arm64) rid=linux-arm64 ;; *) rid=linux-x64 ;; esac',
+    rid === undefined
+      ? 'case "$(uname -m)" in aarch64|arm64) rid=linux-arm64 ;; *) rid=linux-x64 ;; esac'
+      : `rid=${rid}`,
     'url=$(curl -fsSL "https://api.github.com/repos/$repo/releases?per_page=100" |',
     `  grep -o "https://[^\\"]*${target}-[0-9][^\\"]*-$rid\\.tar\\.gz" | head -1)`,
     `[ -n "\${url:-}" ] || { echo "No ${target} release for $rid has been published yet."; exit 1; }`,
@@ -72,11 +87,13 @@ export function bashInstall(target: InstallTarget): string {
  * <p>`%LOCALAPPDATA%\\Programs` rather than anywhere under `Program Files`: no elevation, and the
  * PATH entry it adds is the user's own. The same reasoning as `~/.local/bin` above.</p>
  */
-export function powershellInstall(target: InstallTarget): string {
+export function powershellInstall(target: InstallTarget, rid?: Rid): string {
   return [
     "$ErrorActionPreference = 'Stop'",
     `$repo = '${RELEASES_REPO}'`,
-    "$rid = if ($env:PROCESSOR_ARCHITECTURE -eq 'ARM64') { 'win-arm64' } else { 'win-x64' }",
+    rid === undefined
+      ? "$rid = if ($env:PROCESSOR_ARCHITECTURE -eq 'ARM64') { 'win-arm64' } else { 'win-x64' }"
+      : `$rid = '${rid}'`,
     '$assets = (Invoke-RestMethod "https://api.github.com/repos/$repo/releases?per_page=100") | ForEach-Object { $_.assets }',
     `$a = $assets | Where-Object { $_.name -match "^${target}-\\d.*-$rid\\.zip$" } | Select-Object -First 1`,
     `if (-not $a) { throw "No ${target} release for $rid has been published yet." }`,
@@ -96,4 +113,18 @@ export function powershellInstall(target: InstallTarget): string {
     'Remove-Item $tmp -Recurse -Force',
     `Write-Host "installed: $dest\\${target}.exe - open a NEW terminal for the PATH change"`,
   ].join('\n');
+}
+
+/**
+ * The script for one machine — the shell follows from the operating system.
+ *
+ * <p>Asking "which shell?" separately invites the one mistake this cannot recover from: a
+ * PowerShell script pasted into bash produces a wall of syntax errors, and a bash script pasted
+ * into PowerShell quietly runs the first line and stops. The machine is the question a person
+ * can answer; the shell is a consequence.</p>
+ */
+export function installScript(target: InstallTarget, machine: Machine): string {
+  return machine.os === 'windows'
+    ? powershellInstall(target, machine.rid)
+    : bashInstall(target, machine.rid);
 }

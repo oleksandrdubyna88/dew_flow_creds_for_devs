@@ -169,7 +169,7 @@ import { SshExecAuth, buildSshExecArgv } from './sshExecCommand';
 import { ServerTransport } from './serverTransport';
 import { withdrawalMessage } from './commandTargets';
 import { runSshExec } from './sshExecRunner';
-import { InstallTarget, bashInstall, powershellInstall } from './installCommand';
+import { InstallTarget, Machine, installScript } from './installCommand';
 import { parseDistros, rcAlreadyHasIt, rcSnippet } from './wslRelay';
 import { DEFAULT_DISTRO, WslRelayManager, spawnWslRelay } from './wslRelayManager';
 import {
@@ -267,13 +267,6 @@ let envCollection: vscode.GlobalEnvironmentVariableCollection;
 const SECRETS_SETTLE_MS = 400;
 
 
-function scriptFor(shell: 'powershell' | 'bash', target: InstallTarget): string {
-  return shell === 'bash' ? bashInstall(target) : powershellInstall(target);
-}
-
-function where(shell: 'powershell' | 'bash'): string {
-  return shell === 'bash' ? 'Linux or WSL' : 'Windows PowerShell';
-}
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
   envCollection = context.environmentVariableCollection;
@@ -886,27 +879,58 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
    * newest release itself and verifies the checksum, so what gets pasted stays correct after this
    * extension has moved on: see `installCommand.ts`.</p>
    */
-  register('credSshManager.copyInstallPowerShell', () => copyInstallScript('powershell'));
-  register('credSshManager.copyInstallBash', () => copyInstallScript('bash'));
+  register('credSshManager.copyInstallCommand', () => copyInstallScript());
 
-  async function copyInstallScript(shell: 'powershell' | 'bash'): Promise<void> {
+  /**
+   * The list of machines, in the order a person scans it.
+   *
+   * <p>Detection first and recommended: the script runs ON the machine it installs to, so
+   * `uname -m` knows more than whoever copied it. The pinned four are for when the target is
+   * known — and for a script you can read at a glance before running it on a server.</p>
+   */
+  const MACHINES: { label: string; description: string; machine: Machine }[] = [
+    {
+      label: 'Windows',
+      description: 'PowerShell, architecture detected there',
+      machine: { os: 'windows' },
+    },
+    {
+      label: 'Linux, WSL or a container',
+      description: 'bash, architecture detected there',
+      machine: { os: 'linux' },
+    },
+    { label: 'Windows x64', description: 'PowerShell', machine: { os: 'windows', rid: 'win-x64' } },
+    { label: 'Windows arm64', description: 'PowerShell', machine: { os: 'windows', rid: 'win-arm64' } },
+    { label: 'Linux x64', description: 'bash', machine: { os: 'linux', rid: 'linux-x64' } },
+    { label: 'Linux arm64', description: 'bash', machine: { os: 'linux', rid: 'linux-arm64' } },
+  ];
+
+  async function copyInstallScript(): Promise<void> {
     const target = await vscode.window.showQuickPick(
       [
         { label: 'creds', description: 'the terminal CLI' },
         { label: 'creds-mcp', description: 'the MCP server' },
       ],
-      { placeHolder: `Which binary should the ${shell} command install?` },
+      { placeHolder: 'Which binary should the command install?' },
     );
     if (target === undefined) {
       return;
     }
-    await vscode.env.clipboard.writeText(scriptFor(shell, target.label as InstallTarget));
+    const machine = await vscode.window.showQuickPick(MACHINES, {
+      placeHolder: 'Which machine will run it?',
+    });
+    if (machine === undefined) {
+      return;
+    }
+    await vscode.env.clipboard.writeText(
+      installScript(target.label as InstallTarget, machine.machine),
+    );
     void vscode.window.showInformationMessage(
-      `Copied. Paste it into a ${where(shell)} terminal on the machine that needs ` +
-        `${target.label}. It resolves the newest release itself and checks the download.`,
+      `Copied a ${machine.description.startsWith('bash') ? 'bash' : 'PowerShell'} command for ` +
+        `${target.label} on ${machine.label}. It finds the newest release itself and checks the ` +
+        'download before installing.',
     );
   }
-
   register('credSshManager.setUpWslRelay', async () => {
     if (process.platform !== 'win32') {
       void vscode.window.showInformationMessage(
