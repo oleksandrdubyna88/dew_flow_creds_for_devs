@@ -160,9 +160,9 @@ produces.
       the three new suites — `qrDecode.test.ts`, `qrSample.test.ts`, `otpMigration.test.ts`.
 - [x] `npm run typecheck` and `npm run lint` clean; no file over the 800-line ceiling.
 - [x] `package.json` has no `dependencies` key — the property the README claims is still true.
-- [ ] **A pasted export QR fills the field, and the resulting code matches a phone showing the same
-      seed.** Only a person with a phone and a clipboard can do this one; everything up to it is
-      covered by tests.
+- [x] **A pasted QR fills the field and the entry produces working codes.** Checked by the owner on
+      2026-08-27 against a **real VPN** enrolment QR — the one thing no test can do, because it needs
+      a clipboard, a picture nobody made for this reader, and a service that accepts the result.
 - [x] An image with no QR, and a QR that is not an OTP payload, both say so instead of failing
       silently — `a picture with no QR code in it says so instead of inventing one`, and
       `a QR that is not an authenticator code says what it actually is`.
