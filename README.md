@@ -99,6 +99,30 @@ inboxes, certificates — lives in host directories the containers only borrow.
 Full operator guide, including the four TLS modes and what to choose for an internal network:
 **[deploy/README.md](deploy/README.md)**.
 
+## `creds` on another machine
+
+The extension is one half; `creds` is the other — the same broker, reached from a terminal, a
+script, or a host you are connected to over Remote-SSH. On a remote host it is what turns the
+bridge into something usable, and it is why *Open Remote Bridge…* hands you a setup block rather
+than a working command.
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/oleksandrdubyna88/dew_flow_creds_for_devs/main/install.sh | sh
+```
+
+Native AOT: one file, no runtime to install first — 6.8 MB on disk, ~3 MB to download. It picks
+the build for the machine it runs on, verifies the release checksum, and refuses to install on a
+mismatch. `CREDS_PREFIX` chooses somewhere other than `/usr/local/bin`; `CREDS_VERSION` pins a
+release instead of taking the newest.
+
+Piping a script into `sh` is a thing worth being deliberate about, on a tool about credentials
+most of all. [install.sh](install.sh) is 120 lines, does exactly what is written above, and reads
+in a minute — download it and look before you run it on anything you care about.
+
+**What it does NOT install is a credential.** `creds` holds none and can obtain none: it relays a
+request to the VS Code window that minted the grant token, that window performs the action, and
+only the output comes back. There is no field in the protocol a secret could travel in.
+
 ## Where the real documentation lives
 
 - [research/architecture.md](research/architecture.md) — how the two halves fit together, the trust

@@ -233,6 +233,21 @@ jobs:
             echo "ASSET=$NAME.tar.gz" >> "$GITHUB_ENV"
           fi
 
+      # A checksum beside each archive, written by the job that BUILT it.
+      #
+      # Per-asset rather than one SHA256SUMS, deliberately: the four builds run on four
+      # runners with no barrier between them, and a single combined file would need a fifth
+      # job whose only purpose is to collect them — a step that can fail on its own and leave
+      # a release with binaries and no sums. Four small files have no such failure mode.
+      #
+      # This matters more here than for most tools: `creds` is installed on remote hosts by a
+      # one-line command, and a download nobody can verify is a download that has to be
+      # trusted because it arrived over TLS — which says the bytes were not altered in
+      # transit, and nothing at all about which bytes they are.
+      - name: Checksum
+        shell: bash
+        run: sha256sum "$ASSET" > "$ASSET.sha256"
+
       - name: Attach to the release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -240,6 +255,7 @@ jobs:
         run: |
           gh release create "$GITHUB_REF_NAME" --title "creds ${GITHUB_REF_NAME#cli-v}" --notes "Native AOT builds of the headless CLI." 2>/dev/null || true
           gh release upload "$GITHUB_REF_NAME" "$ASSET" --clobber
+          gh release upload "$GITHUB_REF_NAME" "$ASSET.sha256" --clobber
 
   extension:
     name: publish extension
