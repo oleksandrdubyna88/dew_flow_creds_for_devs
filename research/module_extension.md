@@ -2119,6 +2119,21 @@ before the feature. The extension gained no runtime dependency: the MCP SDK live
 | `secretKinds.ts` | what this extension can generate — and, named one at a time, what it cannot |
 | `brokerRequests.ts` / `brokerMcpDoor.ts` | the routes, the gate, the prompt, and the refusal wording |
 | `mcpLogRows.ts` / `mcpLogPage.ts` | the journal, as a view over the audit file |
+| `mcpSnippetRoute.ts` | how code reads one config, told to an agent (2026-08-27, tails T10) |
+
+**Configs finally reach the agent surface (2026-08-27, tails T10).** The viewer had a
+twenty-language answer to "how do I read this from code?" and the one surface built for agents
+never learned configs existed. `GET /v1/mcp/config-snippet?id&language&variant` serves the SAME
+catalog the viewer renders (`configSnippet.ts` — byte-identity pinned by test): no language → the
+catalog, a language → the snippet, its target ("Program.cs, before builder.Build().") and the env
+var the key arrives in. It answers only for entries the entries route would show — one visibility
+wall, `visibleConfigDetails` beside `visibleMcpEntries` — and the refusal never distinguishes
+not-found from not-visible from not-a-config. The listing gained `codeAccessEnabled` so an agent
+can say "run Enable Code Access…" instead of hunting for a mint it will never have; the response
+shape has no field a secret could travel in, and a test asserts the field list. On the binary:
+`creds_config_snippet` (read-only, idempotent, no modal), first-window-that-recognises across
+windows; the contract's `reads` gained `mcpConfigSnippet`, with the usual fallback for older
+contract copies.
 
 **Three routes, three authorization stories, told apart by their prefix** — the same reason
 `/v1/alias/` was a prefix rather than a flag. `/v1/use/` carries a bearer token a human copied;

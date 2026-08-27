@@ -56,6 +56,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Agents can learn how code reads a config.** `creds_config_snippet` — a new, read-only MCP
+  tool: call it with a config entry's id for the language catalog, again with a language for the
+  exact code to paste and the file it goes into ("Program.cs, before builder.Build()."). It
+  serves the same twenty-language catalog the viewer renders, byte-identical by test, and only
+  for entries whose switches already show them to agents. The listing now says
+  `codeAccessEnabled`, so an agent tells you to run *Enable Code Access…* instead of pretending
+  it could mint the key — it cannot, and the tool's own description says so.
 - **"Enable CLI Access" finally leads somewhere you can see.** The viewer shows the entry's CLI
   aliases as ready-to-copy commands — `creds ssh prod-db`, `creds db …`, the verb following the
   kind — beside the Agent-access block, with a line saying what the command can and cannot

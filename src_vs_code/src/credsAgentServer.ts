@@ -28,6 +28,7 @@ import {
 import { McpUseLookup, aliasTarget, readNamedBody } from './brokerRequests';
 import { describeLimits, expiredMessage, grantLimits } from './grantLimits';
 import { McpEntry } from './mcpEntries';
+import { EntityMetadata } from './types';
 import { ConfigRouteSources, answerConfigRead } from './brokerConfigRoute';
 import { Grant, GrantLookup, GrantRegistry } from './grantRegistry';
 import { UseActionRegistry } from './useActions';
@@ -155,6 +156,9 @@ export class CredsAgentServer implements vscode.Disposable {
      * the vault should do.</p>
      */
     private readonly listMcpEntries?: () => Promise<readonly McpEntry[]>,
+    /** An agent-VISIBLE config entry by id — the snippet route's supplier (T10), behind the
+     *  same wall as the listing above. Absent answers "no such config". */
+    private readonly visibleConfig?: (entityId: string) => EntityMetadata | undefined,
     /**
      * Resolve an entry id for an agent's USE call — and say whether it may.
      *
@@ -453,8 +457,12 @@ export class CredsAgentServer implements vscode.Disposable {
     // throttled. Everything below this line needs a token or raises a modal.
     // The suppliers inline: `brokerReadRoutes` answers all three GET routes from them, and a
     // getter holding two field references was a name for something that reads better as one.
-    const sources: ReadRouteSources = { aliases: this.listAliases, mcpEntries: this.listMcpEntries };
-    const read = req.method === 'GET' ? await readRouteBody(url.pathname, sources) : undefined;
+    const sources: ReadRouteSources = {
+      aliases: this.listAliases,
+      mcpEntries: this.listMcpEntries,
+      visibleConfig: this.visibleConfig,
+    };
+    const read = req.method === 'GET' ? await readRouteBody(url.pathname, sources, url.searchParams) : undefined;
     if (read !== undefined) {
       this.respond(res, 200, read);
       return;

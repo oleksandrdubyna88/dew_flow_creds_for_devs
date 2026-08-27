@@ -194,7 +194,7 @@ import {
 } from './cliAliases';
 import { EphemeralSweeper } from './ephemeralSweeper';
 import { maskEntriesFor } from './maskEntries';
-import { findUsableEntry, visibleMcpEntries } from './mcpEntries';
+import { findUsableEntry, visibleConfigDetails, visibleMcpEntries } from './mcpEntries';
 import { McpEntriesCache } from './mcpEntriesCache';
 import { RotateDeps, rotateAction } from './rotateAction';
 import { showMcpLog } from './mcpLogPanel';
@@ -738,6 +738,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // somebody opened to agents. Nothing appears until a switch is on, which is what stands in
     // for a token there — see `isMcpEntriesRoute`.
     () => mcpEntries.entries(),
+    // The snippet route's supplier (T10): the same visibility wall as the listing, answered
+    // for ONE id. A config an agent cannot list is a config this cannot name.
+    (entityId) => visibleConfigDetails(storage, entityId),
     // The ninth is the same question one rung up: may an agent USE this entry. A single callback
     // because the lookup and the permission are one answer, and splitting them is how a route
     // ends up asking the first and forgetting the second.

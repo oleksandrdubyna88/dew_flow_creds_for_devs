@@ -50,6 +50,7 @@ function world(options: {
   /** The names `creds ls` would see. Absent means this window has no registry at all. */
   aliasList?: { name: string; kind: string }[];
   /** What the vault would show an agent. Absent means this window shows agents nothing. */
+  visibleConfig?: (entityId: string) => import('../types').EntityMetadata | undefined;
   mcpEntries?: Record<string, unknown>[];
   /** How an entry id resolves for an MCP use call. Absent means this window serves none. */
   mcpUse?: 'usable' | 'closed';
@@ -121,6 +122,7 @@ function world(options: {
     aliasResolverFor(options.alias),
     options.aliasList === undefined ? undefined : () => options.aliasList ?? [],
     mcpEntriesFor(options.mcpEntries),
+    options.visibleConfig,
     mcpUseFor(options.mcpUse),
     trashFor(w, options.trash),
     createFor(w, options.create),

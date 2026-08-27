@@ -4,9 +4,12 @@ import {
   HealthBody,
   SERVICE_NAME,
   isAliasListRoute,
+  isMcpConfigSnippetRoute,
   isMcpEntriesRoute,
 } from './brokerProtocol';
 import { McpEntriesBody, McpEntry } from './mcpEntries';
+import { ConfigSnippetBody, configSnippetResult } from './mcpSnippetRoute';
+import { EntityMetadata } from './types';
 
 /**
  * The broker's GET routes, in one place because they are one KIND of route.
@@ -27,22 +30,35 @@ import { McpEntriesBody, McpEntry } from './mcpEntries';
  * can be tested without starting a listener.</p>
  */
 
-/** Where the two non-trivial answers come from. Absent means this window has none. */
+/** Where the non-trivial answers come from. Absent means this window has none. */
 export interface ReadRouteSources {
   aliases?: () => readonly AliasListEntry[];
   mcpEntries?: () => Promise<readonly McpEntry[]>;
+  /** An AGENT-VISIBLE config entry by id, through the same wall the entries route uses —
+   * anything else answers undefined, deliberately indistinguishable from absent (T10). */
+  visibleConfig?: (entityId: string) => EntityMetadata | undefined;
 }
 
 /** The body a GET route answers with, or `undefined` when the path is not one of them. */
 export async function readRouteBody(
   pathname: string,
   sources: ReadRouteSources,
-): Promise<HealthBody | AliasListBody | McpEntriesBody | undefined> {
+  query: URLSearchParams = new URLSearchParams(),
+): Promise<HealthBody | AliasListBody | McpEntriesBody | ConfigSnippetBody | undefined> {
   if (pathname === '/v1/health') {
     return { ok: true, service: SERVICE_NAME };
   }
   if (isAliasListRoute(pathname)) {
     return { aliases: aliasesFrom(sources) };
+  }
+  if (isMcpConfigSnippetRoute(pathname)) {
+    // Always 200; a refusal travels as `error` IN the body. The tool reads the JSON either
+    // way, and "which ids exist" is the entries route's disclosure, not this one's.
+    return configSnippetResult(
+      sources.visibleConfig?.(query.get('id') ?? ''),
+      query.get('language') ?? undefined,
+      query.get('variant') ?? undefined,
+    );
   }
   return isMcpEntriesRoute(pathname) ? { entries: await entriesFrom(sources) } : undefined;
 }

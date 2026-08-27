@@ -22,6 +22,59 @@ internal static class Tools
 {
     internal const string ListName = "creds_list";
 
+    internal const string ConfigSnippetName = "creds_config_snippet";
+
+    internal const string ConfigSnippetDescription =
+        """
+        How an application reads one CONFIG entry from the vault — the code to paste, per
+        language, with the file it goes into.
+
+        A `config` entry is a whole config file (appsettings.Development.json, .env) kept out of
+        git; the app reads it at startup through a long-lived key. Call with just the entry `id`
+        (a kind "config" row from creds_list) to get the language catalog; call again with
+        `language` (and optionally `variant`) to get the snippet, WHERE it goes ("Program.cs,
+        before builder.Build()."), and the environment variable the key must arrive in.
+
+        You can never read the config's CONTENT here, and you can never mint the key: if the
+        entry's `codeAccessEnabled` is false, the person must run "Enable Code Access…" on it in
+        VS Code — the key is shown once, to them. Your half is pasting the snippet and telling
+        them where the key goes.
+        """;
+
+    /// <summary>
+    /// The snippet answer, from the first window that recognises the id.
+    /// </summary>
+    /// <remarks>
+    /// <para>First-answer rather than merge: a snippet is per entry, and two windows holding
+    /// the same vault give the same answer. A body whose <c>error</c> is set means "that window
+    /// does not see this config" — the next window may; only when every window refuses is the
+    /// refusal the answer.</para>
+    /// </remarks>
+    internal static async Task<string> ConfigSnippetAsync(
+        BrokerContract contract, string entry, string? language, string? variant)
+    {
+        var route = contract.ReadRoute("mcpConfigSnippet", "/v1/mcp/config-snippet");
+        var query = $"{route}?id={Uri.EscapeDataString(entry)}"
+            + (string.IsNullOrEmpty(language) ? "" : $"&language={Uri.EscapeDataString(language)}")
+            + (string.IsNullOrEmpty(variant) ? "" : $"&variant={Uri.EscapeDataString(variant)}");
+        var bodies = await Windows.ReadAllAsync(contract, query);
+        if (bodies.Count == 0)
+        {
+            return NoWindow();
+        }
+
+        string? refusal = null;
+        foreach (var body in bodies)
+        {
+            if (!body.Contains("\"error\"", StringComparison.Ordinal))
+            {
+                return body;
+            }
+            refusal ??= body;
+        }
+        return refusal ?? NoWindow();
+    }
+
     internal const string ListDescription =
         """
         List the credentials the person has explicitly opened to you in CredsForDevs — SSH hosts,

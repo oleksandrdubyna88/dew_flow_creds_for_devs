@@ -223,6 +223,20 @@ export function isMcpEntriesRoute(pathname: string): boolean {
 }
 
 /**
+ * `GET /v1/mcp/config-snippet?id=…&language=…&variant=…` — how an application reads one config,
+ * told to an agent (tails T10).
+ *
+ * <p>Unauthenticated for the entries route's own reason, and it reveals strictly LESS: it
+ * answers only for entries the switch already shows there, and what it adds — a code sample
+ * assembled from the file name and format, and the language catalog — is public text. It never
+ * returns the config body, and the key the sample names is minted only by the person, in their
+ * own window. The full argument is `mcpSnippetRoute.ts`.</p>
+ */
+export function isMcpConfigSnippetRoute(pathname: string): boolean {
+  return pathname === '/v1/mcp/config-snippet';
+}
+
+/**
  * `POST /v1/config/read` — one config file, to the application that holds its key.
  *
  * <p><b>The one authenticated route on this server that is not a use.</b> The other two GETs

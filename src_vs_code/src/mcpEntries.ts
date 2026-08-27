@@ -49,6 +49,10 @@ export interface McpEntry {
   hasPrivateKey: boolean;
   hasNotes: boolean;
   hasTotp: boolean;
+  /** Config entries only (T10): whether a code-access key was minted. "false" is the
+   * actionable half — the agent tells the person to run Enable Code Access…; it can never
+   * mint one itself. */
+  codeAccessEnabled?: boolean;
   /** The names this entry needs to be usable, so an agent can bring up a VPN first. */
   dependsOn: string[];
   /** What may be done with it, from the ladder — beyond `view`, which it evidently has. */
@@ -117,6 +121,7 @@ export function mcpEntryFor(node: TreeNode, context: McpEntryContext): McpEntry 
     hasPrivateKey: context.hasPrivateKey,
     hasNotes: context.hasNotes,
     hasTotp: context.hasTotp,
+    codeAccessEnabled: details.isConfig === true ? details.configKeyHash !== undefined : undefined,
     dependsOn: [...context.dependsOn],
     can: capabilitiesOf(context.resolved.access),
   };
@@ -187,6 +192,29 @@ export async function visibleMcpEntries(source: McpVaultSource): Promise<readonl
     }
   }
   return found;
+}
+
+/**
+ * The details of ONE agent-visible CONFIG entry, by id — the snippet route's supplier (T10).
+ *
+ * <p>Beside `visibleMcpEntries` so there is one visibility wall, not two: the same
+ * `resolveMcpInTree` + `shown` pair decides, and an entry the listing would not show cannot be
+ * named here either. Not-found, not-visible and not-a-config are one `undefined`,
+ * deliberately.</p>
+ */
+export function visibleConfigDetails(
+  source: McpVaultSource,
+  entityId: string,
+): EntityMetadata | undefined {
+  for (const { accountId } of source.getAccounts()) {
+    const node = source.getNode(accountId, entityId);
+    if (node === undefined) {
+      continue;
+    }
+    const resolved = resolveMcpInTree(node, (id) => source.getNode(accountId, id));
+    return shown(node, resolved) && node.details?.isConfig === true ? node.details : undefined;
+  }
+  return undefined;
 }
 
 async function entryIfVisible(

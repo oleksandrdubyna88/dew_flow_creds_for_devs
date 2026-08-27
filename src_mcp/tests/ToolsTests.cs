@@ -113,3 +113,26 @@ public sealed class ToolsTests
         Tools.ListName.Should().Be("creds_list");
     }
 }
+
+/// <summary>
+/// The config-snippet tool's own decisions (tails T10): the description that teaches the
+/// boundary, and the first-window-that-recognises rule.
+/// </summary>
+public sealed class ConfigSnippetToolTests
+{
+    [Fact]
+    public void TheDescriptionTeachesTheBoundary_NotJustTheHappyPath()
+    {
+        // What stops a model from hunting for a way around the wall is the wall being stated.
+        Tools.ConfigSnippetDescription.Should().Contain("never read the config");
+        Tools.ConfigSnippetDescription.Should().Contain("never mint the key");
+        Tools.ConfigSnippetDescription.Should().Contain("Enable Code Access");
+        Tools.ConfigSnippetDescription.Should().Contain("codeAccessEnabled");
+    }
+
+    [Fact]
+    public void TheToolNameFollowsTheFamily()
+    {
+        Tools.ConfigSnippetName.Should().Be("creds_config_snippet");
+    }
+}

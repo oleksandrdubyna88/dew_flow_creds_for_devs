@@ -74,6 +74,7 @@ internal static class Program
         };
         options.ToolCollection ??= [];
         options.ToolCollection.Add(ListTool(contract));
+        options.ToolCollection.Add(ConfigSnippetTool(contract));
         foreach (var tool in UseTools.All)
         {
             options.ToolCollection.Add(UseTool(contract, tool));
@@ -120,6 +121,26 @@ internal static class Program
     /// a whole JSON body would be a tool letting a model choose which fields this program
     /// sends.</para>
     /// </remarks>
+    /// <summary>
+    /// The config-snippet tool (tails T10). Read-only and idempotent honestly: it returns
+    /// public text assembled from an entry's file name and format, raises no modal, and cannot
+    /// reach a secret — the response has no field one could travel in.
+    /// </summary>
+    private static McpServerTool ConfigSnippetTool(BrokerContract contract) =>
+        McpServerTool.Create(
+            (string entry, string? language, string? variant) =>
+                Tools.ConfigSnippetAsync(contract, entry, language, variant),
+            new McpServerToolCreateOptions
+            {
+                Name = Tools.ConfigSnippetName,
+                Title = "How code reads one config entry",
+                Description = Tools.ConfigSnippetDescription,
+                ReadOnly = true,
+                Idempotent = true,
+                Destructive = false,
+                OpenWorld = false,
+            });
+
     private static McpServerTool UseTool(BrokerContract contract, UseTools.UseTool tool) =>
         McpServerTool.Create(
             ArgumentsFor(contract, tool),
@@ -193,6 +214,11 @@ internal static class Program
         An empty list means nothing has been opened to you yet — not that they have no
         credentials. Tell them they can open one in VS Code: right-click the entry, Edit, and the
         Agent access section.
+
+        A `config` entry is a whole config file the vault keeps out of git — the app reads it at
+        startup through a key only the person can mint. creds_config_snippet gives you the exact
+        code to paste, per language, and the file it goes into; `codeAccessEnabled` on the list
+        says whether the key exists yet. You wire the code; the person mints the key.
         """;
 
     private const string HelpText =

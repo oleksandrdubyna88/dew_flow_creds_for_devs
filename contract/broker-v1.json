@@ -27,7 +27,8 @@
   },
   "reads": {
     "aliases": "/v1/aliases",
-    "mcpEntries": "/v1/mcp/entries"
+    "mcpEntries": "/v1/mcp/entries",
+    "mcpConfigSnippet": "/v1/mcp/config-snippet"
   },
   "configRead": {
     "method": "POST",
