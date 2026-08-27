@@ -3,6 +3,7 @@ import * as crypto from 'node:crypto';
 import * as vscode from 'vscode';
 import { copySecret } from './secretClipboard';
 import { describeMcpSource } from './viewerOptions';
+import { mcpBarHtml, mcpSwitchStyles } from './mcpSwitches';
 import { DbConnParts } from './dbConnString';
 import { CommandArg, EntityMetadata } from './types';
 import { buildCommandLine, normalizeArgs } from './commandLine';
@@ -329,9 +330,7 @@ function renderHtml(options: EntityViewOptions): string {
 
   const mcpRow = options.mcp === undefined ? '' : `<div class="row">
       <label>Agent access</label>
-      <div class="mcpBar" aria-hidden="true">${options.mcp.mask
-        .map((on, i) => `<span class="mcpSeg mcpSeg${i}${on ? ' mcpSegOn' : ''}"></span>`)
-        .join('')}</div>
+      ${mcpBarHtml(options.mcp.mask)}
       <div class="value">${escapeHtml(options.mcp.summary)}</div>
       <div class="note">${escapeHtml(describeMcpSource(options.mcp))}</div>
     </div>`;
@@ -478,15 +477,13 @@ function renderHtml(options: EntityViewOptions): string {
   .row { margin-bottom: 10px; }
   .note { opacity: .75; font-style: italic; }
   /* The same five segments the form shows, in the same colours — a card and its editor must not
-     describe one permission set two different ways. */
+     describe one permission set two different ways. Both the markup and the colours come from
+     the switch catalog; this file used to keep its own copy of the five hex values, which is a
+     palette that agrees with the form only until somebody edits one of them. */
   .mcpBar { display: flex; gap: 3px; margin: 2px 0 4px; }
   .mcpSeg { width: 26px; height: 4px; border-radius: 2px; opacity: .18; }
   .mcpSegOn { opacity: 1; }
-  .mcpSeg0 { background: var(--vscode-credSshManager-depColor5, #5CC46F); }
-  .mcpSeg1 { background: var(--vscode-credSshManager-depColor4, #5BC8DE); }
-  .mcpSeg2 { background: var(--vscode-credSshManager-depColor2, #E8B02A); }
-  .mcpSeg3 { background: var(--vscode-credSshManager-depColor7, #B482F5); }
-  .mcpSeg4 { background: var(--vscode-credSshManager-depColor3, #FF8A76); }
+  ${mcpSwitchStyles()}
   .env { font-size: .72em; letter-spacing: .5px; }
   .envTag { opacity: .8; font-family: var(--vscode-editor-font-family); font-size: .9em; }
   .envLine { margin-top: 3px; align-items: center; }

@@ -67,6 +67,31 @@ export const MCP_SWITCHES: readonly McpSwitch[] = [
   },
 ];
 
+/**
+ * The stripes, in ladder order, with the two delete scopes merged into one.
+ *
+ * <p>Derived from the switches rather than written beside them: a sixth colour added to
+ * `MCP_SWITCHES` appears here, and a duplicate does not. The list is the same length as
+ * `accessMask`, which is what the tree icon and the viewer are generated from — the number five
+ * is stated once, in the shape of the ladder, and never typed again.</p>
+ */
+export const MCP_BAR_COLORS: readonly DepColorKey[] = [...new Set(MCP_SWITCHES.map((s) => s.color))];
+
+/**
+ * The bar, from a mask.
+ *
+ * <p>One builder for all three surfaces — the entity form, the folder form and the read-only
+ * viewer. The form's copy used to map the SWITCHES and so drew six segments while the page
+ * script repainted five, leaving the last one frozen at whatever it was when the form opened.
+ * Nothing here is escaped because nothing here is user text: the only variable is a boolean.</p>
+ */
+export function mcpBarHtml(mask: readonly boolean[]): string {
+  const segs = MCP_BAR_COLORS.map(
+    (color, i) => `<span class="mcpSeg ${color}${mask[i] === true ? ' mcpSegOn' : ''}"></span>`,
+  ).join('');
+  return `<div class="mcpBar" aria-hidden="true">${segs}</div>`;
+}
+
 /** The CSS that paints each control in its own colour and nothing else in it. */
 export function mcpSwitchStyles(): string {
   const swatch = (key: DepColorKey): string =>

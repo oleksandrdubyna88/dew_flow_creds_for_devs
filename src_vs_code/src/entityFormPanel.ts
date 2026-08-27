@@ -18,7 +18,7 @@ import {
 } from './secretGenerator';
 import { parseSshPrivateKey } from './sshKeyParse';
 import { isDepColorKey } from './depColors';
-import { McpAccess } from './mcpAccess';
+import { readMcpAccess } from './mcpAccess';
 import { DependencyFolderCandidate, normalizeDependsOn } from './depGraph';
 import {
   CommandArg,
@@ -431,7 +431,7 @@ function toValues(data: Record<string, unknown>, options: EntityFormOptions): En
       // nothing". The page sends `undefined` only while nobody has touched a switch on an entry
       // that had none — so opening a form and pressing Save never converts an inheriting entry
       // into one that has opted out.
-      mcp: readMcpAccess(data),
+      mcp: readMcpAccess(data.mcp),
       // Set by the create path when an agent makes an entry, and carried through every later
       // edit: a delete permission scoped to `own` needs to know which entries those are.
       mcpCreatedByAgent: options.initial?.mcpCreatedByAgent,
@@ -521,24 +521,6 @@ function toValues(data: Record<string, unknown>, options: EntityFormOptions): En
  * its folder. Anything else is read defensively like every other row on this boundary, and the
  * ladder in `mcpAccess.ts` normalises it afterwards.</p>
  */
-function readMcpAccess(data: Record<string, unknown>): McpAccess | undefined {
-  const r = asRecord(data.mcp);
-  if (r === undefined) {
-    return undefined;
-  }
-  return {
-    view: r.view === true,
-    use: r.use === true,
-    edit: r.edit === true,
-    create: r.create === true,
-    delete: readDeleteScope(r.delete),
-  };
-}
-
-function readDeleteScope(raw: unknown): 'any' | 'own' | undefined {
-  return raw === 'any' || raw === 'own' ? raw : undefined;
-}
-
 function readDependsOnRows(data: Record<string, unknown>): { targetId: string; color: string }[] {
   const raw = data.dependsOn;
   if (!Array.isArray(raw)) {

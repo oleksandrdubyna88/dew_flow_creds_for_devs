@@ -3,8 +3,8 @@ import { normalizeTags } from './sshOptions';
 import { escapeHtml } from './webviewHtml';
 import { formPageScript } from './entityFormScript';
 import { initialDependencyRows } from './depGraph';
-import { normalizeMcpAccess } from './mcpAccess';
-import { MCP_SWITCHES, mcpSwitchStyles } from './mcpSwitches';
+import { accessMask, normalizeMcpAccess } from './mcpAccess';
+import { MCP_SWITCHES, mcpBarHtml, mcpSwitchStyles } from './mcpSwitches';
 import { FORM_SECTIONS } from './formSections';
 
 /**
@@ -299,9 +299,7 @@ export function renderHtml(options: EntityFormOptions): string {
   const mcp = normalizeMcpAccess(d?.mcp);
   const mcpSet = d?.mcp !== undefined;
   const mcpHtml = `${openSection('mcpSection')}
-    <div class="mcpBar" aria-hidden="true">${MCP_SWITCHES.map(
-      (s) => `<span class="mcpSeg ${s.color}${s.on(mcp) ? ' mcpSegOn' : ''}"></span>`,
-    ).join('')}</div>
+    ${mcpBarHtml(accessMask(mcp))}
     <p class="hint">${
       mcpSet
         ? 'Set on this entry.'

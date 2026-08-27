@@ -88,9 +88,9 @@ import { validatePin } from './pinPolicy';
 import { CredTreeDataProvider, VIEW_ID } from './treeDataProvider';
 import { DepDecorationProvider } from './depDecorations';
 import { ExpansionMemory, expansionKey } from './treeExpansion';
-import { TRASH_RETENTION_CHOICES } from './trash';
-import { resolveMcpAccess } from './mcpAccess';
-import { mcpSummary } from './viewerOptions';
+import { TRASH_RETENTION_CHOICES, isInTrash } from './trash';
+import { showFolderForm } from './folderFormPanel';
+import { mcpAsOfVersion, mcpFor } from './viewerOptions';
 import { buildDependencyCandidates, buildDependencyColorMap } from './depGraph';
 import { EntityFlagsRefresher, entityFlagSource } from './entityFlags';
 import { createDiagnosticLog } from './diagnosticLog';
@@ -3374,6 +3374,40 @@ async function applySecrets(
   }
 }
 
+/**
+ * A folder's own form — its name, and the agent access its contents inherit.
+ *
+ * <p>This used to be `promptFolderName`, an input box with one field in it, because a folder had
+ * nothing else to say. Agent access is inherited from the folder, so there is now a second thing,
+ * and five permissions do not fit in a text prompt.</p>
+ *
+ * <p>An empty name leaves the folder alone rather than blanking it: the box comes back empty when
+ * somebody clears it and saves, and a nameless folder is not a thing anyone asked for.</p>
+ */
+async function editFolder(
+  accountId: string,
+  node: TreeNode,
+  storage: StorageManager,
+  onMutated: () => void,
+): Promise<void> {
+  const nodes = storage.getNodes(accountId);
+  const result = await showFolderForm({
+    name: node.name,
+    mcp: node.mcp,
+    entryCount: nodes.filter((n) => n.parentId === node.id && n.type === 'entity').length,
+    inTrash: isInTrash(node, (id) => storage.getNode(accountId, id)),
+  });
+  if (result === undefined) {
+    return;
+  }
+  await storage.updateNode(accountId, {
+    ...node,
+    name: result.name.length > 0 ? result.name : node.name,
+    mcp: result.mcp,
+  });
+  onMutated();
+}
+
 async function editNode(
   accountId: string,
   node: TreeNode,
@@ -3381,12 +3415,7 @@ async function editNode(
   onMutated: () => void,
 ): Promise<void> {
   if (node.type === 'folder') {
-    const name = await promptFolderName(node.name);
-    if (name === undefined) {
-      return;
-    }
-    await storage.updateNode(accountId, { ...node, name });
-    onMutated();
+    await editFolder(accountId, node, storage, onMutated);
     return;
   }
 
@@ -3624,6 +3653,8 @@ function openRevisionViewer(node: TreeNode, revision: Revision): void {
       ...details,
       name: `${revision.name} — version replaced ${new Date(revision.at).toLocaleString()}`,
     },
+    // Only if this version decided for itself; what its folder said back then is not kept.
+    mcp: mcpAsOfVersion(details.mcp),
     hasPassword: password !== undefined,
     hasPrivateKey: privateKey !== undefined,
     hasVpnConfig: vpnConfig !== undefined,
@@ -3691,11 +3722,7 @@ async function openEntityViewer(
   const hasTotp = (await storage.getTotp(accountId, details.id)) !== undefined;
   showEntityView({
     details,
-    mcp: mcpSummary(
-      resolveMcpAccess(node, storage.getNode(accountId, node.parentId ?? ''), false),
-      storage.getNode(accountId, node.parentId ?? '')?.name,
-      false,
-    ),
+    mcp: mcpFor(node, (id) => storage.getNode(accountId, id), false),
     keySourceName,
     jumpHostName,
     hostKeyFingerprint: pinnedKey === undefined ? undefined : hostKeyFingerprint(pinnedKey),

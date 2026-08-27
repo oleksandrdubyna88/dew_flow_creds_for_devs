@@ -55,9 +55,38 @@ export function normalizeMcpAccess(raw: McpAccess | undefined): McpAccess {
  * <p>A record from a newer build could carry a word this one has never heard of. Refusing the
  * whole record would lose data it can still show; treating an unrecognised word as permission
  * would be worse than both.</p>
+ *
+ * <p>Takes `unknown` rather than the union, because both of its callers get their word from
+ * somewhere outside this program — a synced record, or a message from a webview.</p>
  */
-function deleteScope(raw: McpDeleteScope | undefined): McpDeleteScope | undefined {
+function deleteScope(raw: unknown): McpDeleteScope | undefined {
   return raw === 'any' || raw === 'own' ? raw : undefined;
+}
+
+/**
+ * The access an untrusted message claims, or `undefined` when it claims none.
+ *
+ * <p>Both forms post the same object — the entity form and the folder form share the page script
+ * that builds it — so they share the reader too. It briefly existed twice, once in each panel,
+ * which is a duplicate of a SECURITY decision: what a webview may assert about permissions. Two
+ * copies of that rule is one copy too many, and the second was already spelled differently.</p>
+ *
+ * <p>Absent is not the same as empty here, and the distinction survives on purpose: no object at
+ * all means "this record still has no answer of its own", while an object with everything off
+ * means "decided, and the answer is nothing".</p>
+ */
+export function readMcpAccess(raw: unknown): McpAccess | undefined {
+  if (typeof raw !== 'object' || raw === null) {
+    return undefined;
+  }
+  const r = raw as Record<string, unknown>;
+  return {
+    view: r.view === true,
+    use: r.use === true,
+    edit: r.edit === true,
+    create: r.create === true,
+    delete: deleteScope(r.delete),
+  };
 }
 
 /** Each rung turns on the one below it, and nothing turns on the one above. */

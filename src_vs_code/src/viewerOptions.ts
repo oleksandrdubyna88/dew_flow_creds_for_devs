@@ -1,9 +1,18 @@
 import { DB_DEFAULT_PORTS, DbConnParts, parseDbConnectionString } from './dbConnString';
 import { Revision } from './revisionHistory';
 import type { StorageManager } from './storageManager';
-import { DbType } from './types';
+import { DbType, TreeNode } from './types';
+import { isInTrash } from './trash';
 import { TotpSnapshot, totpSnapshot } from './totp';
-import { McpSource, ResolvedMcpAccess, accessMask, describeAccess } from './mcpAccess';
+import {
+  McpAccess,
+  McpSource,
+  ResolvedMcpAccess,
+  accessMask,
+  describeAccess,
+  normalizeMcpAccess,
+  resolveMcpAccess,
+} from './mcpAccess';
 
 /**
  * The shared half of the two entity viewers (audit 2026-08-25, A1).
@@ -145,6 +154,39 @@ export function mcpSummary(
     mask: accessMask(resolved.access),
     asOfVersion,
   };
+}
+
+/**
+ * The card's whole agent-access answer, from a node and a way to look ids up.
+ *
+ * <p>Here rather than at the call site because the call site got it wrong: it resolved with
+ * `inTrash: false` unconditionally, having nothing at hand to answer the question with, so a
+ * deleted entry's card advertised permissions the broker would have refused. Taking a lookup
+ * instead of a boolean makes the question unavoidable and the answer derived.</p>
+ */
+export function mcpFor(
+  node: TreeNode,
+  byId: (id: string) => TreeNode | undefined,
+  asOfVersion: boolean,
+): ReturnType<typeof mcpSummary> {
+  const folder = node.parentId === undefined || node.parentId === null ? undefined : byId(node.parentId);
+  return mcpSummary(resolveMcpAccess(node, folder, isInTrash(node, byId)), folder?.name, asOfVersion);
+}
+
+/**
+ * What a KEPT version said about agent access — and only when it said it itself.
+ *
+ * <p>A revision carries the entry's own setting as it was, and nothing about the FOLDER as it
+ * was. So a version that inherited its access cannot be reported honestly at all, and this
+ * returns nothing rather than borrowing today's folder to fill the gap: a card that answered a
+ * question about the past with a fact about the present would be worse than a card that stays
+ * quiet.</p>
+ */
+export function mcpAsOfVersion(mcp: McpAccess | undefined): ReturnType<typeof mcpSummary> | undefined {
+  if (mcp === undefined) {
+    return undefined;
+  }
+  return mcpSummary({ access: normalizeMcpAccess(mcp), source: 'entity' }, undefined, true);
 }
 
 /** Where the answer came from, in the words the card says out loud. */

@@ -397,6 +397,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Bounded on purpose: 256 KB of output per stream, 30 s per command (raisable to 120 s), 8 at a
   time, and every child killed when the window goes.
 
+## [0.67.0] — 2026-08-27
+
+### Added
+
+- **Folders have a form now, and it is where agent access is inherited from.** Editing a folder
+  used to be an input box with its name in it, because a folder had nothing else to say. It has
+  something else to say now: the same six Agent-access switches an entry has, applying to every
+  entry in the folder that has no answer of its own — *including entries created there
+  afterwards*, which is the whole reason folder settings exist.
+  - The form says how far the switches reach before you touch one: *"…each of the 12 entries in
+    this folder that has no answer of its own, and everything created here afterwards."* A folder
+    setting is the one place here where ticking a box grants something to entries nobody is
+    looking at.
+  - **Not set stays not set.** As on an entry, opening the form and pressing Save does not turn a
+    folder that follows nobody into one that has opted out.
+  - Inside the **Trash** the switches are replaced by a sentence, because there they would decide
+    nothing: a deleted entry is unreachable whatever it was granted before.
+  - What is deliberately NOT here: the folder's *type*. It dictates what kind of entity the folder
+    may hold, and changing it after the fact would strand contents the folder no longer admits —
+    a feature with a migration question of its own, not a field to slip into a form.
+
+- **A previous version's card shows the agent access it had at the time**, labelled as a snapshot
+  rather than as a current permission. Only when that version decided for itself: a revision keeps
+  the entry's own setting and nothing about the folder as it was, so an inherited one says nothing
+  rather than answering a question about the past with a fact about the present.
+
+### Fixed
+
+- **The permission bar drew six stripes and repainted five.** Six switches, five stripes — the two
+  delete scopes share one, because the bar answers "can an agent delete here" and the scope is a
+  question only the form asks. The markup was built from the switches and so drew one stripe too
+  many, while the script that repaints them on every click walked five: the extra stripe kept
+  whatever it was when the form opened and never moved again. It read as a duplicated red, one
+  half of which was always false. The bar now has one builder, shared by the form, the new folder
+  form and the card, and its length is pinned against the mask the tree icon is generated from.
+
+- **A deleted entry's card still advertised its permissions.** The Trash is an ordinary folder, so
+  a deleted entry can be clicked and looked at — and its card read *visible · usable · can delete
+  to Trash* while every actual agent request would have been refused. The card was resolving with
+  "not in the trash" hard-coded, having nothing at hand to answer with. It now asks the same
+  resolver the broker does, by the same road.
+
 ## [0.66.1] — 2026-08-26
 
 ### Added
