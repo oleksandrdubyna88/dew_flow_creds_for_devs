@@ -186,6 +186,7 @@ export function resolveShares(items: OwnedShare[], pins: readonly string[]): Res
  */
 export function shareableDetails(
   details: EntityMetadata | undefined,
+  includeTotp: boolean,
 ): EntityMetadata | undefined {
   if (details === undefined) {
     return undefined;
@@ -198,5 +199,10 @@ export function shareableDetails(
     mcp: undefined,
     mcpCreatedByAgent: undefined,
     configKeyHash: undefined,
+    // The seventh, and the only CONDITIONAL one: `hasTotp` is a claim about a secret that may or
+    // may not be travelling in this share, and the flag must say which. Sent with the seed left
+    // behind, it gives the recipient a tree row offering *Copy One-Time Code* on an entry that
+    // has no seed to compute one from — a promise the entry cannot keep.
+    hasTotp: includeTotp ? details.hasTotp : undefined,
   };
 }

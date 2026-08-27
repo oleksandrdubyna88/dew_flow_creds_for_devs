@@ -174,7 +174,7 @@ test('a shared copy carries no dependency of the vault it left', () => {
     depColor: 'depColor7',
     mcp: { delete: 'any' },
     mcpCreatedByAgent: true,
-  });
+  }, false);
 
   assert.notEqual(shared, undefined);
   const details = shared as EntityMetadata;
@@ -206,7 +206,7 @@ test('a shared config keeps its format and file name, and loses the key hash', (
     configFormat: 'json',
     configFileName: 'appsettings.Development.json',
     configKeyHash: 'Zm9vYmFyZm9vYmFyZm9vYmFyZm9vYmFyZm9vYmFyZm9vYmE=',
-  }) as EntityMetadata;
+  }, false) as EntityMetadata;
 
   assert.equal(shared.configKeyHash, undefined, 'the recipient cannot use or revoke this key');
   // Everything they CAN use survives — this is a strip, not a rewrite. Without the format the
@@ -217,5 +217,18 @@ test('a shared config keeps its format and file name, and loses the key hash', (
 });
 
 test('an entity with no metadata at all stays that way', () => {
-  assert.equal(shareableDetails(undefined), undefined);
+  assert.equal(shareableDetails(undefined, false), undefined);
+});
+
+test('the one-time-code flag travels only when the seed does', () => {
+  // The seventh stripped field, and the only conditional one. `hasTotp` is what the tree builds
+  // its `:totp` token from, so a copy carrying the flag without the seed shows a recipient a
+  // *Copy One-Time Code* action on an entry that cannot compute one — the same shape of
+  // half-delivery the config key hash was, in a different field.
+  const entry: EntityMetadata = { id: 'e3', name: 'GitHub', isSshEnabled: false, hasTotp: true };
+
+  assert.equal((shareableDetails(entry, true) as EntityMetadata).hasTotp, true);
+  assert.equal((shareableDetails(entry, false) as EntityMetadata).hasTotp, undefined);
+  // The entry itself is untouched either way — this is a copy, not an edit of the vault.
+  assert.equal(entry.hasTotp, true);
 });

@@ -176,14 +176,19 @@ export class ShareInbox {
   // The orchestration of four moved steps; each early exit counts against the limit.
   // eslint-disable-next-line complexity
   async shareNodes(accountId: string, nodes: TreeNode[]): Promise<void> {
+    // Asked BEFORE anything is read: a seed nobody chose to send is never fetched at all.
+    const includeTotp = await this.askIncludeTotp(countTotpEntries(this.deps.storage, accountId, nodes));
+    if (includeTotp === undefined) {
+      return;
+    }
     // One list of payloads across everything selected — delivery already batched, so
     // recipients and the share PIN are asked for once whatever the selection size.
     const payloads: SharePayload[] = [];
     for (const node of nodes) {
       payloads.push(
         ...(node.type === 'entity'
-          ? [await buildSharePayload(this.deps.storage, accountId, node)]
-          : await this.collectFolderPayloads(accountId, node)),
+          ? [await buildSharePayload(this.deps.storage, accountId, node, includeTotp)]
+          : await this.collectFolderPayloads(accountId, node, includeTotp)),
       );
     }
     if (payloads.length === 0) {
@@ -205,10 +210,43 @@ export class ShareInbox {
     await this.deliverBatch(accountId, payloads, recipients, pin);
   }
 
+  /**
+   * The one-time-code question, asked once per share and only when there is one to ask about.
+   *
+   * <p>A checkbox rather than a confirmation, because the honest default is <b>off</b>: not
+   * sending a seed leaves the recipient asking for it, while sending one they did not need hands
+   * over a second factor that keeps working. Cancelling the list cancels the share, like every
+   * other step of this conversation.</p>
+   */
+  private async askIncludeTotp(count: number): Promise<boolean | undefined> {
+    if (count === 0) {
+      return false;
+    }
+    const chosen = await vscode.window.showQuickPick(
+      [
+        {
+          label: 'Include the one-time code (TOTP) seed',
+          detail:
+            `${count} of the selected entr${count === 1 ? 'y carries' : 'ies carry'} one. ` +
+            'The recipient will be able to produce codes for that login until the seed is changed.',
+          picked: false,
+        },
+      ],
+      {
+        canPickMany: true,
+        ignoreFocusOut: true,
+        title: 'What travels with this share?',
+        placeHolder: 'Leave it unticked to share everything else and keep the second factor here',
+      },
+    );
+    return chosen === undefined ? undefined : chosen.length > 0;
+  }
+
   /** Collect every entity in a folder subtree, with its folder chain. */
   private async collectFolderPayloads(
     accountId: string,
     folder: TreeNode,
+    includeTotp: boolean,
   ): Promise<SharePayload[]> {
     const payloads: SharePayload[] = [];
     const walk = async (
@@ -217,7 +255,7 @@ export class ShareInbox {
     ): Promise<void> => {
       if (node.type === 'entity') {
         payloads.push({
-          ...(await buildSharePayload(this.deps.storage, accountId, node)),
+          ...(await buildSharePayload(this.deps.storage, accountId, node, includeTotp)),
           folderPath: path,
         });
         return;
@@ -512,14 +550,29 @@ function senderLocation(storage: StorageManager, accountId: string): string | un
   return account === undefined ? undefined : nasPathFor(account);
 }
 
-/** Everything an entity carries, packaged for a share. */
+/**
+ * Everything an entity carries, packaged for a share.
+ *
+ * <p><b>`includeTotp` is a parameter and not a default</b> because the one-time-code seed is the
+ * only secret here whose sharing is a separate decision. Every other field in this payload is
+ * something the recipient needs in order to use what they were given; a TOTP seed is the sender's
+ * <i>second factor</i>, and handing it over lets the recipient produce codes for that login for as
+ * long as the seed lives. Sometimes that is exactly the intent — a shared service account nobody
+ * owns personally — and sometimes it is the last thing the sender meant to do. So the caller asks,
+ * and passes the answer here.</p>
+ *
+ * <p>This used to read every secret except this one, while the accept side wrote
+ * `payload.secrets.totp` if it ever arrived — so a shared entry silently lost its second factor
+ * while its metadata still said it had one.</p>
+ */
 export async function buildSharePayload(
   storage: StorageManager,
   accountId: string,
   node: TreeNode,
+  includeTotp: boolean,
 ): Promise<SharePayload> {
   const note = (await storage.getNotes(accountId, node.id)) ?? node.details?.notes;
-  const sharedDetails = shareableDetails(node.details);
+  const sharedDetails = shareableDetails(node.details, includeTotp);
   return {
     node: { ...node, details: sharedDetails, parentId: null, children: undefined },
     secrets: {
@@ -528,8 +581,40 @@ export async function buildSharePayload(
       vpnConfig: await storage.getVpnConfig(accountId, node.id),
       dbConnection: await storage.getDbConnection(accountId, node.id),
       notes: note,
+      // Read only when it is going to travel: a seed nobody asked to send has no business being
+      // fetched out of the keychain, let alone sealed into a payload.
+      totp: includeTotp ? await storage.getTotp(accountId, node.id) : undefined,
       // Handing a colleague the document IS the feature. Sealed like every other secret here.
       config: await storage.getConfigBody(accountId, node.id),
     },
   };
+}
+
+/**
+ * How many of the selected entries carry a one-time-code seed.
+ *
+ * <p>Counted from the plaintext `hasTotp` flag, never by reading the keychain per row — the same
+ * reason the tree's `:totp` token is built from it (audit finding C1). Nothing is decrypted to
+ * decide whether to ask a question.</p>
+ */
+export function countTotpEntries(
+  storage: StorageManager,
+  accountId: string,
+  nodes: readonly TreeNode[],
+): number {
+  let count = 0;
+  const hasSeed = (node: TreeNode): boolean => node.details?.hasTotp === true;
+  const walk = (node: TreeNode): void => {
+    if (node.type === 'entity') {
+      count += hasSeed(node) ? 1 : 0;
+      return;
+    }
+    for (const child of storage.getChildren(accountId, node.id)) {
+      walk(child);
+    }
+  };
+  for (const node of nodes) {
+    walk(node);
+  }
+  return count;
 }
