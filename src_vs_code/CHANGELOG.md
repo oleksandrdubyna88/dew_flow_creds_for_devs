@@ -463,6 +463,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Bounded on purpose: 256 KB of output per stream, 30 s per command (raisable to 120 s), 8 at a
   time, and every child killed when the window goes.
 
+## [0.69.0] — 2026-08-27
+
+### Added
+
+- **An MCP server, so an agent can see what you opened to it — and nothing else.** `creds-mcp` is
+  a separate binary (Native AOT, Windows and Linux, x64 and arm64, its own `mcp-v*` release) that
+  an MCP client starts as its own process and speaks JSON-RPC to. Install it from the ⋯ menu:
+  **Install the MCP Server…** downloads it into this extension's own storage — not onto your
+  PATH — and puts the configuration block on your clipboard.
+  - Its one tool, `creds_list`, answers the first rung of the ladder: the **non-secret half** of
+    every entry whose *Visible to agents* switch is on. Name, kind, folder, host, user, port, and
+    for a database a connection string **with the password removed**. There is no field in the
+    shape a password, a private key, a VPN config or a one-time-code seed could travel in, and no
+    request that asks for one.
+  - **An empty list is a permission state, not an empty vault.** Nothing is visible until you turn
+    a switch on for that entry — including every entry that existed before this feature — so the
+    server is told to say that to the model rather than let it guess.
+  - It asks **every open window** and merges, because the same vault unlocked in two windows would
+    otherwise be listed twice and an agent would conclude there are two databases.
+  - "No CredsForDevs window is open" and "nothing has been opened to you" are told apart. They
+    call for opposite next moves, and an agent that could not tell them apart would confidently
+    give the wrong advice about whichever it guessed.
+  - Notes are **not** included — only that a note exists. Notes moved out of plaintext metadata
+    into the keychain in 0.20 and are stripped when you share an entry, so the product treats them
+    as a secret everywhere else; this is not the one place that stops being true.
+  - Nothing in the **Trash** is visible, whatever it was granted before it was deleted.
+
+- **Install `creds` (terminal CLI)…** in the same menu, from the same machinery. The decisions
+  behind it had been written and tested for months and never wired to anything.
+
+### Fixed
+
+- **A deleted entry's card no longer advertises its permissions** — carried over from 0.68.0's
+  fix, now also true of everything an agent can ask for: the read route resolves access through
+  the same road the tree row and the card take.
+
 ## [0.68.0] — 2026-08-27
 
 ### Added

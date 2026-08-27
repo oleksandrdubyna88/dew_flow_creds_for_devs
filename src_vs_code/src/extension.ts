@@ -140,6 +140,9 @@ import {
 import { EphemeralSweeper } from './ephemeralSweeper';
 import { maskEntriesFor } from './maskEntries';
 import { visibleMcpEntries } from './mcpEntries';
+import { CREDS_CLI, CREDS_MCP, CredsAction, CredsProduct, CredsRid } from './credsInstall';
+import { InstallHost, binaryPath, installMenu, performInstall, removeInstall } from './binaryInstaller';
+import { MCP_CLIENT_TARGETS, installedMessage, mcpServerBlock } from './mcpClientConfig';
 import { MaskEntry, buildMaskTable } from './secretMasker';
 import { describeScan, scanForSecrets } from './secretScan';
 import { RemoteState, buildDefaultFolders } from './defaultFolders';
@@ -3145,6 +3148,30 @@ ${detail}
     );
   });
 
+  /**
+   * Install one of the two published binaries — `creds` for a terminal, `creds-mcp` for an agent.
+   *
+   * <p>One command, two products, because the only differences are three strings and the
+   * decisions are all in `credsInstall.ts`. What it does after the download differs: a terminal
+   * binary is a path to copy, and an MCP server is a path plus the block that points a client
+   * at it.</p>
+   */
+  const offerInstall = async (product: CredsProduct): Promise<void> => {
+    const host = { storage: context.globalStorageUri, state: context.globalState };
+    const { rid, action, choices } = await installMenu(host, product);
+    const picked = await vscode.window.showInformationMessage(
+      describeInstall(product, action),
+      ...choices,
+    );
+    if (picked === undefined || rid === undefined) {
+      return;
+    }
+    await applyInstallChoice(host, product, rid, action, picked);
+  };
+
+  register('credSshManager.installMcpServer', () => offerInstall(CREDS_MCP));
+  register('credSshManager.installCli', () => offerInstall(CREDS_CLI));
+
   // ---------- sharing ----------
 
   // The whole sharing conversation — sealing, delivery, sender checks, the accept
@@ -4071,3 +4098,113 @@ async function accountFromTargetOrPick(
   return pickAccount(storage, placeHolder);
 }
 
+
+/**
+ * The sentence above the buttons, for one product on this machine.
+ *
+ * <p>Every branch is a different situation and deserves its own words. "There is no build for
+ * macOS" is not a failure to retry, and "the record says 0.1.0 but the file is gone" is not the
+ * same as "0.1.0 is installed" — a menu that said so would offer nothing while nothing runs.</p>
+ */
+function describeInstall(product: CredsProduct, action: CredsAction): string {
+  switch (action.kind) {
+    case 'unsupported':
+      return `There is no ${product.label} build for ${action.platform} yet — the release carries Windows and Linux, on x64 and arm64.`;
+    case 'unavailable':
+      return `Cannot tell what is published (${action.reason}). ${product.label} is not installed.`;
+    case 'install':
+      return `${product.label} ${action.version} is available. It goes into this extension's own storage, not onto your PATH.`;
+    case 'update':
+      return `${product.label} ${action.from} is installed; ${action.to} is published.`;
+    case 'reinstall':
+      return `${product.label} was installed but the file is gone — something removed it.`;
+    default:
+      return `${product.label} ${action.version} is installed.`;
+  }
+}
+
+/**
+ * Do what was clicked.
+ *
+ * <p>Separate from the menu so the offering and the doing can be read one at a time; the choice
+ * is matched by the string the person actually saw, which is what `choicesFor` produced.</p>
+ */
+async function applyInstallChoice(
+  host: InstallHost,
+  product: CredsProduct,
+  rid: CredsRid,
+  action: CredsAction,
+  picked: string,
+): Promise<void> {
+  if (picked.startsWith('Remove')) {
+    await removeInstall(host, product, rid);
+    void vscode.window.showInformationMessage(`${product.label} removed.`);
+    return;
+  }
+  if (picked === 'Forget it') {
+    await removeInstall(host, product, rid);
+    return;
+  }
+  if (picked === 'Copy the path') {
+    await copyInstalledPath(host, product, rid);
+    return;
+  }
+  await runInstall(host, product, rid, versionOf(action));
+}
+
+/** The version a chosen action installs — the published one in every branch that offers one. */
+function versionOf(action: CredsAction): string {
+  if (action.kind === 'update') {
+    return action.to;
+  }
+  return action.kind === 'install' || action.kind === 'reinstall' || action.kind === 'installed'
+    ? action.version
+    : '';
+}
+
+async function copyInstalledPath(
+  host: InstallHost,
+  product: CredsProduct,
+  rid: CredsRid,
+): Promise<void> {
+  const path = binaryPath(host, product, rid).fsPath;
+  await vscode.env.clipboard.writeText(path);
+  void vscode.window.showInformationMessage(`${path} — copied.`);
+}
+
+/**
+ * Download it, then say what to do next.
+ *
+ * <p>The MCP server gets one more step than the CLI does: the block that points a client at it,
+ * on the clipboard, with the file it belongs in named. It is offered rather than written —
+ * that config belongs to another program, and a credential manager silently editing the file
+ * that grants an agent access to itself is the wrong instinct in the wrong place.</p>
+ */
+async function runInstall(
+  host: InstallHost,
+  product: CredsProduct,
+  rid: CredsRid,
+  version: string,
+): Promise<void> {
+  if (version === '') {
+    return;
+  }
+  try {
+    const target = await vscode.window.withProgress(
+      { location: vscode.ProgressLocation.Notification, title: `Installing ${product.label} ${version}…` },
+      () => performInstall(host, product, rid, version),
+    );
+    if (product !== CREDS_MCP) {
+      await vscode.env.clipboard.writeText(target.fsPath);
+      void vscode.window.showInformationMessage(`${product.label} ${version} installed at ${target.fsPath} — path copied.`);
+      return;
+    }
+    await vscode.env.clipboard.writeText(mcpServerBlock(target.fsPath));
+    void vscode.window.showInformationMessage(
+      installedMessage(target.fsPath),
+      ...MCP_CLIENT_TARGETS.map((t) => t.path),
+    );
+  } catch (error) {
+    void vscode.window.showErrorMessage(`Could not install ${product.label}: ${describeError(error)}`);
+  }
+}

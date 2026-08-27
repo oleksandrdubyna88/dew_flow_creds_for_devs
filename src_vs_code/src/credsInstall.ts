@@ -24,6 +24,39 @@
 export type CredsRid = 'win-x64' | 'win-arm64' | 'linux-x64' | 'linux-arm64';
 
 /**
+ * One installable binary: what it is called, and which tag line carries it.
+ *
+ * <p>There are two, and there were nearly two copies of this module. Everything below is the
+ * same decision for both — which build this machine takes, what the asset is called, whether
+ * what is on disk is older than what is published — and the only differences are three strings.
+ * A second copy would have started identical and drifted at the first fix.</p>
+ *
+ * <p>They version independently, which is the whole reason each needs its own tag prefix: a
+ * person installs `creds` for their terminal and `creds-mcp` for their agent, and neither
+ * release should move the other.</p>
+ */
+export interface CredsProduct {
+  /** The release tag prefix, e.g. `cli-v`. */
+  readonly tagPrefix: string;
+  /** The binary's name, which is also the asset's base name — the workflow uses both. */
+  readonly binary: string;
+  /** What a menu item calls it. */
+  readonly label: string;
+}
+
+export const CREDS_CLI: CredsProduct = {
+  tagPrefix: 'cli-v',
+  binary: 'creds',
+  label: 'creds',
+};
+
+export const CREDS_MCP: CredsProduct = {
+  tagPrefix: 'mcp-v',
+  binary: 'creds-mcp',
+  label: 'the MCP server',
+};
+
+/**
  * The build for this machine, or `undefined` when the release matrix has none.
  *
  * <p><b>macOS returns `undefined` and that is not an oversight to paper over.</b> The release
@@ -55,23 +88,31 @@ function osOf(platform: string): 'win' | 'linux' | undefined {
 }
 
 /** The archive the release carries for one build — the name the workflow packages. */
-export function assetNameFor(rid: CredsRid, version: string): string {
-  return `creds-${version}-${rid}${rid.startsWith('win-') ? '.zip' : '.tar.gz'}`;
+export function assetNameFor(product: CredsProduct, rid: CredsRid, version: string): string {
+  return `${product.binary}-${version}-${rid}${rid.startsWith('win-') ? '.zip' : '.tar.gz'}`;
 }
 
 /** The file inside that archive: the workflow puts the binary in a directory of the same name. */
-export function entryPathIn(rid: CredsRid, version: string): string {
-  return `creds-${version}-${rid}/creds${rid.startsWith('win-') ? '.exe' : ''}`;
+export function entryPathIn(product: CredsProduct, rid: CredsRid, version: string): string {
+  return `${product.binary}-${version}-${rid}/${binaryNameFor(product, rid)}`;
 }
 
 /** What the installed binary is called once it is in place. */
-export function binaryNameFor(rid: CredsRid): string {
-  return rid.startsWith('win-') ? 'creds.exe' : 'creds';
+export function binaryNameFor(product: CredsProduct, rid: CredsRid): string {
+  return rid.startsWith('win-') ? `${product.binary}.exe` : product.binary;
 }
 
-/** `cli-v0.1.0` → `0.1.0`. A tag that is not ours yields nothing rather than a wrong version. */
-export function versionFromTag(tag: string): string | undefined {
-  return tag.startsWith('cli-v') && tag.length > 'cli-v'.length ? tag.slice('cli-v'.length) : undefined;
+/**
+ * `cli-v0.1.0` → `0.1.0`, for the product that owns that prefix.
+ *
+ * <p>A tag belonging to another product yields nothing rather than a wrong version, and that is
+ * load-bearing now that there are four tag lines: `mcp-v0.2.0` read as a `creds` release would
+ * offer an update that downloads an asset which does not exist.</p>
+ */
+export function versionFromTag(product: CredsProduct, tag: string): string | undefined {
+  return tag.startsWith(product.tagPrefix) && tag.length > product.tagPrefix.length
+    ? tag.slice(product.tagPrefix.length)
+    : undefined;
 }
 
 /**
@@ -152,16 +193,16 @@ export function actionFor(
 
 /** The choices offered for one action, in order; the first is the default a person expects. */
 // eslint-disable-next-line complexity
-export function choicesFor(action: CredsAction): string[] {
+export function choicesFor(product: CredsProduct, action: CredsAction): string[] {
   switch (action.kind) {
     case 'install':
-      return [`Install creds ${action.version}`];
+      return [`Install ${product.label} ${action.version}`];
     case 'update':
-      return [`Update to ${action.to}`, 'Remove creds'];
+      return [`Update to ${action.to}`, `Remove ${product.label}`];
     case 'reinstall':
-      return [`Install creds ${action.version} again`, 'Forget it'];
+      return [`Install ${product.label} ${action.version} again`, 'Forget it'];
     case 'installed':
-      return ['Copy the path', 'Remove creds'];
+      return ['Copy the path', `Remove ${product.label}`];
     // `unsupported` and `unavailable` offer nothing to click, on purpose: a menu whose every
     // option fails is worse than one sentence saying why there is nothing to do.
     default:
