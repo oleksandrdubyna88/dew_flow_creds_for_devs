@@ -1107,6 +1107,48 @@ Test: the built page carries `height: auto` and the zoom script no longer touche
 
 ---
 
+### T27. A stored file renders as a password, and neither page says what the file IS
+
+**The owner's report, verbatim in spirit:** *"я добавил файл — и какого хуя оно показывает это
+инпутом и паролем? что там, байты?"* The viewer's *Additional file* row is a masked `•` input with
+a copy/download button — the shape built for secrets, worn by a JSON export. And neither the
+viewer nor the form says anything ABOUT the file beyond its name.
+
+**Wanted, across both pages:**
+
+1. **The file row stops dressing as a secret.** No masked input; a proper row: the name, then
+   metadata — **size**, type, **last edited (when and by whom)**. Same for the image row.
+2. **The image gets the same metadata in the viewer**, beside the preview it already has.
+3. **The EDIT form shows an image preview** and the same metadata for both file and image —
+   today the form says only "A file is stored (name). Pick a new one to replace it", so *"хер
+   пойми, что там есть или нету"*.
+4. **Typography:** the file/image captions slightly larger; the file NAMES themselves
+   highlighted **dark orange** and slightly larger than the surrounding text — both pages, one
+   CSS rule each, so the two cannot drift.
+
+**What the data model has and what it lacks — the honest half of this item.** The name travels in
+metadata (`attachmentFileName`, `imageFileName`); the bytes sit in SecretStorage. Nothing records
+**size**, **when the attachment itself last changed**, or **who changed it** — `updatedAt` is the
+ENTITY's clock and moves on every edit, so showing it for the file would lie. So:
+
+- **Size** can be derived at save time and stamped into metadata (`attachmentSize`,
+  `imageSize`), and back-filled lazily: when the viewer resolves the blob anyway, measure and
+  stamp. For an image, decode width×height the same way (`imageWidth`/`imageHeight` — a
+  dimensions parse of PNG/JPEG headers is ~40 dependency-free lines).
+- **When/by whom** needs two new stamped fields at attachment write (`attachmentChangedAt`,
+  `attachmentChangedBy` ← the account email; same pair for the image). For every EXISTING entry
+  they are absent — show "not recorded", never a guess. Sync-safe: they ride the same metadata
+  the names already ride.
+
+**Tests.** The viewer: a file row carries no `password`-masked input and shows the stamped
+size/date/author when present, "not recorded" when absent; names wear the highlight class. The
+form: a stored image renders a preview; stored-file metadata lines match the viewer's (one
+formatter, two callers). The dimension parser: PNG and JPEG fixtures with known sizes; a
+truncated header returns undefined rather than throwing.
+
+
+---
+
 ## 4. Build order
 
 Ordered so that each step is verifiable on its own, and the two that need a person come last.
@@ -1191,6 +1233,9 @@ and both the failure and the pass are reported.
 - [ ] T9: the viewer's columns are as wide as the form's, proven by a test watched failing at 640 px.
 - [ ] T22: the tree no longer says the product name twice; the help mark sits in the title bar
       after the name, with the spacing question answered rather than assumed.
+- [ ] T27: a stored file is a described row, not a masked secret; size/type/when/by-whom on
+      both pages with "not recorded" for legacy entries; image preview in the form; names in
+      dark orange, slightly larger, via one shared rule per page.
 - [ ] T25: the tree marks MCP access with the five-edge pentagon in catalog colours, padlock
       gone; the five-vs-six question answered in writing.
 - [ ] T26: done — the zoom drives width only. (Recorded, test in entityViewPage.test.ts.)
@@ -1249,7 +1294,7 @@ and both the failure and the pass are reported.
 - [ ] T8: the server's console output is coloured under redirection (counted, not observed), a run
       crossing midnight segments, `logs/` has a named retention owner, and the obsolete mirror-list
       item is deleted with its reason.
-- [ ] `research/module_extension.md` and `research/module_server.md` updated for T1, T3, T4, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17, T18, T19, T20, T21, T22, T23, T24, T25, T26;
+- [ ] `research/module_extension.md` and `research/module_server.md` updated for T1, T3, T4, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17, T18, T19, T20, T21, T22, T23, T24, T25, T26, T27;
       `research/module_mcp.md` (or `module_extension.md`'s MCP section) for T10.
 - [ ] `node .claude/rules/shared/tools/plan-lifecycle.mjs` and `pin-check.mjs` pass.
 - [ ] This plan promoted to `research/` with its deviations recorded, and anything left extracted

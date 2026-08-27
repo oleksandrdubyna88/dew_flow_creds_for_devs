@@ -116,17 +116,13 @@ export function openSshProgram(
   exists: (candidate: string) => boolean = fs.existsSync,
   probe?: PathProbe,
 ): string {
-  if (!mustUseBuiltIn(needsAgent, platform)) {
-    return tool;
-  }
-  // The bare word is preferred whenever it would resolve to the built-in anyway: the command
-  // shown in the viewer is the command that runs, and `ssh …` is one a person can paste on any
-  // machine. The full path remains for the machine where an MSYS ssh shadows the built-in.
-  if (pathSshIsBuiltIn(platform, probe)) {
-    return tool;
-  }
+  // The bare word is preferred whenever it can serve: no agent needed, not Windows, or —
+  // since T20 — the PATH already resolves ssh to the built-in, so the command shown in the
+  // viewer is the one a person could have typed. The full path remains for the machine where
+  // an MSYS ssh shadows the built-in on a connection that must reach the agent's pipe.
+  const forced = mustUseBuiltIn(needsAgent, platform) && !pathSshIsBuiltIn(platform, probe);
   const builtIn = builtInOpenSsh(tool);
-  return exists(builtIn) ? builtIn : tool;
+  return forced && exists(builtIn) ? builtIn : tool;
 }
 
 /**
