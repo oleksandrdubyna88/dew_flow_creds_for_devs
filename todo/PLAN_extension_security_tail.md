@@ -1,20 +1,43 @@
 # PLAN — the extension's security tail
 
-> Status: **item 4 shipped; items 1, 2, 3 and 5 remain.** Scope: `src_vs_code/src/` — the medium
-> and low findings from the 2026-08-23 review that were not fixed in that task.
+> Status: **items 3, 4 and 5 shipped; item 1 is half shipped; item 2 remains.** Re-checked against
+> the code 2026-08-27 ([PLAN_tails.md](PLAN_tails.md), which owns the two tails this re-check found).
 >
-> **Item 4 (idle auto-lock) is done and this line lagged it.** Noticed 2026-08-24 while documenting
-> the listing, not by anyone re-reading this plan — `credSshManager.autoLockMinutes` (default 60,
-> `0` disables) has shipped, and it went further than the fix described below: `lockState.ts` is the
-> pure decision the plan asked for (`lockState.test.ts`), and a lock is not merely "forget the cached
-> key" but "refuse the stored PIN until a person says otherwise" — the weaker version would have let
-> the next background sync silently re-open the vault five minutes later. The plan's own instruction
-> to reset the timer on vault access rather than editor activity survived contact: a sync cycle
-> deliberately records nothing, because counting it as presence meant the window never elapsed.
+> **Item 5 (the `chmod 0600` comment) shipped, and went past what was asked.** The item wanted a
+> comment corrected. What exists is `lockToOwner` (`materializedKeys.ts:28`) over
+> `restrictToOwnerArgv` in `fileAcl.ts`, with `fileAcl.test.ts`: on Windows the inherited NTFS ACL —
+> which grants SYSTEM and local Administrators full control — is **broken** and the owner alone is
+> granted, best-effort, at all three sites that write secret material (`keyInstaller.ts:90,133,160`).
+> The askpass script is deliberately excluded and says why: it holds no secret.
 >
-> Source: [../research/SECURITY_REVIEW_2026-08-23.md](../research/SECURITY_REVIEW_2026-08-23.md),
-> findings 6, 7, 8, 10 and 14. The five HIGH findings are already fixed; nothing here is urgent, and
-> item 1 is the only one that changes a security property rather than tightening one.
+> **Item 3 (PIN policy) shipped its refusals.** `pinPolicy.ts` now rejects all-digit under twelve,
+> a single repeated character and a normalised blocklist that undoes leetspeak before matching, and
+> `estimateBits` is deliberately pessimistic about word-shaped runs. What did **not** ship is the
+> advisory half the item called *"the decision needed first"*: `describePinStrength` exists, its own
+> doc says it is *"shown live in the input box"*, and it is called by nothing but its own test. That
+> is **T1 of [PLAN_tails.md](PLAN_tails.md)**, not a reopening of this item.
+>
+> **Item 4 (idle auto-lock) is done and this line lagged it** — noticed 2026-08-24 while documenting
+> the listing, not by anyone re-reading this plan. `credSshManager.autoLockMinutes` (default 60, `0`
+> disables) went further than the fix described below: `lockState.ts` is the pure decision the plan
+> asked for (`lockState.test.ts`), and a lock is not merely "forget the cached key" but "refuse the
+> stored PIN until a person says otherwise" — the weaker version would have let the next background
+> sync silently re-open the vault five minutes later. The plan's own instruction to reset the timer
+> on vault access rather than editor activity survived contact: a sync cycle deliberately records
+> nothing, because counting it as presence meant the window never elapsed.
+>
+> **Item 1 is half shipped, and its other half is now contested.** `userVerification` is `'required'`
+> at both call sites (`webauthnPrf.ts:286,320`), with the reasoning recorded in `webauthnHint.ts`.
+> The RP ID is still the bare `localhost` — and `webauthnHint.ts:17-20` asserts it *"has to be"*,
+> which directly contradicts the `.localhost` route this plan proposes below. Neither claim has been
+> measured. **T2 of [PLAN_tails.md](PLAN_tails.md)** runs that probe; until it reports, the migration
+> below should not be started **or** declined.
+>
+> Scope: `src_vs_code/src/` — the medium and low findings from the 2026-08-23 review that were not
+> fixed in that task. Source:
+> [../research/SECURITY_REVIEW_2026-08-23.md](../research/SECURITY_REVIEW_2026-08-23.md), findings 6,
+> 7, 8, 10 and 14. The five HIGH findings are already fixed; nothing here is urgent, and item 1 is
+> the only one that changes a security property rather than tightening one.
 
 ## Why these were separated
 
@@ -106,7 +129,7 @@ sealing **fails to open**; a legacy share still opens and is flagged unverified.
 
 ---
 
-## 3. PIN policy is length-only (MEDIUM)
+## 3. ~~PIN policy is length-only~~ (MEDIUM) — **SHIPPED, bar the advisory (T1)**
 
 **Symptom.** `pinPolicy.ts:7` requires 8 characters and nothing else. The file's own comment says
 this PIN is *"the sole barrier protecting vault ciphertext that deliberately lives in shared/offline
@@ -132,7 +155,7 @@ the existing 8-character floor still holds for mixed-class input.
 
 ---
 
-## 4. No idle auto-lock (LOW)
+## 4. ~~No idle auto-lock~~ (LOW) — **SHIPPED**
 
 **Symptom.** `vaultKeys.ts:43` caches the master key for the window's lifetime. The only eviction is
 the manual `CredsForDevs: Lock Vaults` command (`extension.ts:766-771`). A laptop left open with VS Code
@@ -150,7 +173,7 @@ and unit-test it; the wiring itself is thin.
 
 ---
 
-## 5. `chmod 0600` is a no-op on Windows (LOW, documentation only)
+## 5. ~~`chmod 0600` is a no-op on Windows~~ (LOW) — **SHIPPED as a real ACL, not a comment**
 
 **Symptom.** `keyInstaller.ts:68-73,91-102` sets POSIX mode bits and the comments read as though a
 guarantee is being enforced. On NTFS they do not translate; the actual protection is that the file

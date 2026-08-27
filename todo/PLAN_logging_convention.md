@@ -1,8 +1,27 @@
 # PLAN — close the gap to the family logging convention
 
-> Status: **plan only, nothing implemented yet.** Scope: `src_minimalapi_server/src/Logging.cs` and
-> the shared rule's mirror list. Serilog with a file per run **has** shipped; what remains is the
-> coloured console sink and the mirror registration.
+> Status: **plan only for the code; item 2 is void.** Re-read against the shared rule 2026-08-27
+> ([PLAN_tails.md](PLAN_tails.md), T8) and the rule had moved underneath it. Scope:
+> `src_minimalapi_server/src/Logging.cs`. Serilog with a file per run **has** shipped; the coloured
+> console sink, the midnight segment and retention have not.
+>
+> **Item 2 no longer exists to be done.** It asked for a row in the shared rule's *Mirrors* table.
+> That table is gone: the rule moved into `.claude/rules/shared`, a submodule of
+> `dew_flow_conventions`, and now says *"A new repository **mounts the submodule** — it never copies
+> this file"* — which this repository already does (`.gitmodules`, and `pin-check.mjs` is green).
+> The mechanism the item named was replaced by the one it would have registered against. Kept below,
+> struck through, because deleting it outright would leave the next reader wondering whether the
+> registration was skipped or was never needed.
+>
+> **And the rule grew three DoD lines this plan predates**, all three of them open here: a run
+> crossing midnight must segment into the next day's folder with the same pid; every code path that
+> builds a container wires the same sinks; and the repository must **name its `logs/` retention
+> owner**. Item 3 below is that last one, written before the rule required it.
+>
+> Worth recording, because it decides the retention answer: **the extension already solved this.**
+> `diagnosticLog.ts` sweeps its own run files at `retainDays: 14`. The half of this product nobody
+> wrote a logging plan for is the half that meets the rule, so the server should adopt that number
+> rather than choose a second one.
 >
 > Source rule: `.claude/rules/shared/common/logging-serilog.md`.
 
@@ -54,17 +73,28 @@ repository named as a path.
 stream and assert the byte stream contains ESC (`0x1B`). That is the assertion that catches a future
 switch back to a theme.
 
-## 2. Register this repository in the mirror list
+## 2. ~~Register this repository in the mirror list~~ — **VOID: the list was replaced**
 
-`.claude/rules/shared/common/logging-serilog.md` ends with a *Mirrors* table naming every consuming
-repository, and says in as many words that adding a new repository to that list *"is the whole reason
-this is a rule and not a comment in one `Program.cs`"*.
+> The item as written, struck through. The *Mirrors* table it targets no longer exists in
+> `.claude/rules/shared/common/logging-serilog.md`; the rule is consumed through the submodule this
+> repository already mounts, and its Definition of Done now reads *"A new repository **mounts the
+> submodule** — it never copies this file"*. There is nothing to register and no pin to bump for it.
+>
+> ~~`.claude/rules/shared/common/logging-serilog.md` ends with a *Mirrors* table naming every
+> consuming repository. `dew_flow_creds_for_devs` is not in it. Add a row, then plain `mirrored`
+> once item 1 closes. This is a change to the shared conventions repository, so it is its own commit
+> there plus a submodule pin bump here.~~
 
-`dew_flow_creds_for_devs` is not in it. Add a row — `.NET, mirrored (console sink deviation recorded
-in Logging.cs)` while item 1 is open, then plain `mirrored` once it closes.
+## 2b. The midnight segment (new — the rule grew this after the plan was written)
 
-This is a change to the **shared conventions repository**, so it is its own commit there plus a
-submodule pin bump here, in one task — `pin-check.mjs` fails CI if the pin trails the remote.
+A run that crosses UTC midnight must continue into the next day's folder as `00-00-00-<pid>.log`,
+so that "a file per run" and "a folder per day" stop contradicting each other for a service that
+never restarts. `dew_flow_mcp/src/ServiceDefaults/DailyRunFileSink.cs` is the family's answer and is
+written to be ported: the segment is named for the **boundary**, not for the first event after it,
+so consecutive days line up instead of drifting.
+
+**Test.** A clock pushed past midnight produces the second file, in tomorrow's folder, with the same
+pid — asserted on the paths, not by waiting.
 
 ## 3. Log retention on disk
 
@@ -85,15 +115,19 @@ rest — a pure function over a listing, not a filesystem test.
 
 ## Build order
 
-1. Retention sweep — independent, smallest, closes a reliability clause.
+1. Retention sweep — independent, smallest, closes the reliability clause the rule now names.
 2. The `AnsiConsoleSink` port and its escape-byte test.
-3. The mirror-list row plus the pin bump, once 2 lands.
+3. The `DailyRunFileSink` port and its boundary test.
+4. Remove the deviation note in `Logging.cs` once 2 lands, and confirm every host path — the server
+   and any CLI entry point that builds a container — calls the one extension.
 
 ## Definition of Done
 
 - [ ] `AnsiConsoleSink` ported (not rewritten), with a test asserting escapes on a redirected stream.
 - [ ] The file sink is still uncoloured.
 - [ ] Run files past `Logging:RetentionDays` are swept at startup; the current run's file is never touched.
-- [ ] The shared rule's *Mirrors* table names this repository, and the submodule pin is bumped in the
-      same task (`pin-check.mjs` green).
+- [ ] A run crossing midnight segments into the next day's folder, same pid.
+- [ ] `logs/` has a named retention owner, and it is the same answer the extension gave (14 days).
+- [ ] Every code path that builds a container calls `AddDewFlowLogging` — CLI entry points included.
+- [ ] Item 2 is recorded as void with its reason, not silently dropped (`pin-check.mjs` green).
 - [ ] The deviation note in `Logging.cs` is removed once it is no longer true.
