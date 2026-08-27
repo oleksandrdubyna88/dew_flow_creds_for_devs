@@ -92,7 +92,7 @@ import { showRecoveryCodeView } from './recoveryCodeView';
 import { EscrowInvite, OrgRecoveryClient } from './orgRecoveryClient';
 import { judgeOrgRecovery, orgRecoveryNotice } from './orgRecoveryPinning';
 import { showOrgRecoveryView } from './orgRecoveryPanel';
-import { openSharePayload } from './orgShareEnvelope';
+import { SharePayload as EscrowShareShape, openSharePayload } from './orgShareEnvelope';
 import {
   openShareWithPin,
   sealShareWithPin,
@@ -3200,16 +3200,26 @@ ${detail}
     );
   }
 
-  /** Open an invite's sealed payload with the one-time PIN. */
+  /**
+   * Open an invite's sealed payload with the one-time PIN.
+   *
+   * <p>Returns the shape from INSIDE the blob, never the plaintext copies the invite carries
+   * beside it. The two agree on an honest invite; where they disagree the sealed one is the
+   * only one anything authenticated.</p>
+   */
   function openShareEnvelope(
     invite: EscrowInvite,
     recipientEmail: string,
     pin: string,
-  ): { bytes: Buffer; integrityTag: string } | undefined {
+  ): { bytes: Buffer; integrityTag: string; shape: EscrowShareShape } | undefined {
     const payload = openSharePayload(invite, recipientEmail, pin);
     return payload === undefined
       ? undefined
-      : { bytes: Buffer.from(payload.share, 'base64'), integrityTag: payload.integrityTag };
+      : {
+          bytes: Buffer.from(payload.share, 'base64'),
+          integrityTag: payload.integrityTag,
+          shape: payload,
+        };
   }
 
   register('credSshManager.showOrgRecovery', async (target) => {
@@ -3320,13 +3330,16 @@ ${detail}
       );
       return;
     }
+    // Every number here comes from the SEALED payload. The invite's plaintext copies are the
+    // server's, and a server that alters them seals a mislabelled share into this officer's own
+    // vault — invisible until the day the quorum cannot rebuild the key.
     const wrap = await sealShareWithPin(
       payload.bytes,
       {
         setupId: invite.setupId,
-        shareIndex: invite.shareIndex,
-        threshold: invite.threshold,
-        totalShares: invite.totalShares,
+        shareIndex: payload.shape.shareIndex,
+        threshold: payload.shape.threshold,
+        totalShares: payload.shape.totalShares,
         integrityTag: payload.integrityTag,
         orgPublicKeyFingerprint: config.orgPublicKeyFingerprint,
       },

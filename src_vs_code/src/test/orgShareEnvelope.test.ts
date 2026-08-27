@@ -76,3 +76,21 @@ test('the sealed blob carries no plaintext of the share', () => {
   assert.equal(wire.includes(original.share), false);
   assert.equal(wire.includes(String(original.shareIndex)) && wire.includes('shareIndex'), false);
 });
+
+test('the sealed payload is the authority on the split’s shape, not the server', () => {
+  // `shareIndex`, `threshold` and `totalShares` live INSIDE the GCM-authenticated blob, and the
+  // server relays an unauthenticated plaintext copy of each beside it. Trusting the copy lets
+  // the server label an officer's share with a wrong x or a wrong shape — sealed permanently
+  // into that officer's own vault under their own PIN, and surfacing years later at the
+  // break-glass as "the contributions do not rebuild this key". No confidentiality break;
+  // recoverability destroyed silently, which is worse to discover.
+  const original = payload({ shareIndex: 2, threshold: 2, totalShares: 3 });
+  const blob = sealSharePayload(original, RECIPIENT, PIN);
+
+  const opened = openSharePayload(blob, RECIPIENT, PIN);
+
+  assert.ok(opened !== undefined);
+  assert.equal(opened.shareIndex, 2, 'the x that reconstruction depends on');
+  assert.equal(opened.threshold, 2);
+  assert.equal(opened.totalShares, 3);
+});

@@ -957,6 +957,14 @@ Three properties of the client half worth carrying in the head:
   combination and not the recovery. Filtering also bounds the search: `combinations` materialises
   every C(n, t) subset before the first is tried, and n was whatever the server chose to post.
 
+**The sealed payload is the authority on a share's shape.** `shareIndex`, `threshold` and
+`totalShares` live inside the GCM-authenticated invite blob, and the server relays an
+unauthenticated plaintext copy of each beside it. Accepting a share takes all three from the
+sealed copy: a server that alters the plaintext ones would otherwise seal a mislabelled share
+into that officer's own vault, under their own PIN, invisibly — and it would surface years later
+at the break-glass as "the contributions do not rebuild this key". No confidentiality is at stake
+there, which is exactly why it is easy to miss: what it destroys is recoverability, silently.
+
 **Recovered key material is zeroed on every path, not only the happy one.** `recoverOrgKey` wipes
 the opened shares in a `finally` — `threshold` of them ARE the organisation's private key, they are
 copies it decrypted itself, and on the `noValidQuorum` path there is not even a key handed back for
