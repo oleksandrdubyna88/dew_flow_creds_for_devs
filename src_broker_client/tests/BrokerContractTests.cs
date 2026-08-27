@@ -102,15 +102,33 @@ public class BrokerContractTests
     }
 
     [Fact]
+    public void The_config_read_route_is_authenticated_and_is_not_filed_with_the_reads()
+    {
+        // The distinction this side must not get wrong. Everything under `Reads` answers without
+        // a credential; this one checks a key against a stored hash and returns a config file
+        // entire. A bare path in that dictionary would have told this binary it needs no bearer.
+        var contract = BrokerContract.Current;
+
+        contract.ConfigRead.Should().NotBeNull("this build's embedded contract carries the route");
+        contract.ConfigReadRoutePath().Should().Be("/v1/config/read");
+        contract.ConfigRead!.Authenticated.Should().BeTrue();
+        // A POST for something that reads: a GET is the shape caches, proxies and shell histories
+        // treat as safe to record, and the key would be in it.
+        contract.ConfigRead.Method.Should().Be("POST");
+        contract.Reads!.Values.Should().NotContain("/v1/config/read");
+    }
+
+    [Fact]
     public void A_contract_without_the_reads_section_degrades_to_the_path_this_build_knows()
     {
         // A copy written before that section existed is a real thing to meet. Falling back to
         // the value that used to be hard-coded keeps an old file working; throwing on a missing
         // key would turn an additive change into a breaking one.
         var older = new BrokerContract(1, "creds-for-devs-agent", BrokerContract.Current.Health,
-            [], [], null, null, null, null, null, [], []);
+            [], [], null, null, null, null, null, null, [], []);
 
         older.ReadRoute("aliases", "/v1/aliases").Should().Be("/v1/aliases");
+        older.ConfigReadRoutePath().Should().Be("/v1/config/read");
         older.DeleteRoute().Should().Be("/v1/mcp/delete");
         older.CreateRoute().Should().Be("/v1/mcp/create");
         older.McpUseRoute("exec").Should().Be("/v1/mcp/use/exec");

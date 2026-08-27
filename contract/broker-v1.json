@@ -29,6 +29,12 @@
     "aliases": "/v1/aliases",
     "mcpEntries": "/v1/mcp/entries"
   },
+  "configRead": {
+    "method": "POST",
+    "path": "/v1/config/read",
+    "authenticated": true,
+    "bearer": "config key"
+  },
   "mcpUsePrefix": "/v1/mcp/use/",
   "mcpDeleteRoute": "/v1/mcp/delete",
   "mcpCreateRoute": "/v1/mcp/create",

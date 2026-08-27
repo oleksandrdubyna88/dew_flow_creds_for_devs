@@ -223,6 +223,35 @@ export function isMcpEntriesRoute(pathname: string): boolean {
 }
 
 /**
+ * `POST /v1/config/read` — one config file, to the application that holds its key.
+ *
+ * <p><b>The one authenticated route on this server that is not a use.</b> The other two GETs
+ * disclose without a token because what they disclose is small or switch-gated; this one returns
+ * a config file, which is a secret in full. The key IS the authorization, and it is checked
+ * against a stored SHA-256 — see `configKey.ts`.</p>
+ *
+ * <p><b>A POST, deliberately, for something that reads.</b> A GET is the shape caches, proxies,
+ * server logs and shell histories all treat as safe to record, and the key would be in it. The
+ * verb is wrong on paper and right in practice, which is worth one paragraph rather than a
+ * recurring surprise.</p>
+ *
+ * <p><b>No consent modal, and that is the trade.</b> Every other door here ends in a human
+ * answering a dialog. An application reading its configuration at startup cannot answer one, and
+ * a dialog appearing on every `dotnet run` would be clicked through blind inside a day. What
+ * stands in its place: the switch is off by default and opt-in per entry, the key is revocable
+ * and rotatable, it names exactly one entry, and every use is written to the audit log.</p>
+ */
+export function isConfigReadRoute(pathname: string): boolean {
+  return pathname === '/v1/config/read';
+}
+
+/** What the route answers with — the document and what it claims to be. */
+export interface ConfigReadBody {
+  format: string;
+  body: string;
+}
+
+/**
  * `POST /v1/mcp/use/<action>` — an agent asking to USE an entry it can see.
  *
  * <p>A third prefix, and by now the pattern is the point: `/v1/use/` carries a bearer token a

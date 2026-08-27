@@ -20,6 +20,17 @@ internal abstract record Request
     /// empty fields. <c>Listen</c> is the WSL side, <c>Pipe</c> the Windows side it spawns.
     /// </remarks>
     internal sealed record Relay(bool Listen) : Request;
+
+    /// <summary>
+    /// Read one config file, with a config KEY rather than a grant token.
+    /// </summary>
+    /// <remarks>
+    /// Its own shape because a grant token carries the window's port in its text and this does
+    /// not: a config key outlives the window that minted it, so the window has to be found the
+    /// way <c>ls</c> finds it. Making it a <see cref="Use"/> would have hidden that difference
+    /// behind a field that happens to be parsed differently.
+    /// </remarks>
+    internal sealed record ReadConfig(string Key) : Request;
 }
 
 /// <summary>
@@ -67,6 +78,13 @@ internal static class CommandLine
             return argv.Count > 1
                 ? new Request.Failed($"`creds {verb}` takes no arguments.")
                 : new Request.Relay(verb == "relay");
+        }
+
+        if (verb == "config")
+        {
+            return argv.Count == 2
+                ? new Request.ReadConfig(argv[1])
+                : new Request.Failed("`creds config <key>` takes exactly one argument — the key you were given when you enabled code access.");
         }
 
         if (Tokenless.Contains(verb))
@@ -130,6 +148,7 @@ internal static class CommandLine
           creds script <token>               run the saved script
           creds db <token> -- "select 1"     run a query
           creds env <token>                  export the secret into new VS Code terminals
+          creds config <key>                 print one config file (for an app at startup)
           creds vpn-up <token>               bring the tunnel up
           creds vpn-down <token>             bring it down
           creds relay                        (WSL) serve the SSH agent on a unix socket

@@ -118,6 +118,30 @@ public sealed class BrokerClient(BrokerContract contract, HttpClient http) : IDi
         return new BrokerReply((int)response.StatusCode, body);
     }
 
+    /// <summary>
+    /// A config read: a bearer that is NOT a grant token.
+    /// </summary>
+    /// <remarks>
+    /// <para>Separate from <see cref="PostAsync"/> because a grant token carries the port in its
+    /// own text and this key does not — the caller has to have found the window some other way,
+    /// which is why the port is a parameter here and a property of the token there.</para>
+    /// <para>Empty body on purpose: the key identifies the entry, so there is nothing else to
+    /// say, and a body would be one more thing for two implementations to agree about.</para>
+    /// </remarks>
+    public async Task<BrokerReply> PostBearerAsync(int port, string route, string bearer)
+    {
+        using var cts = new CancellationTokenSource(CallTimeout);
+        using var request = new HttpRequestMessage(HttpMethod.Post, Url(port, route))
+        {
+            Content = new StringContent("{}", Encoding.UTF8, "application/json"),
+        };
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", bearer);
+
+        using var response = await http.SendAsync(request, cts.Token);
+        var body = await response.Content.ReadAsStringAsync(cts.Token);
+        return new BrokerReply((int)response.StatusCode, body);
+    }
+
     /// <summary>Read the names this window has enabled. No token, and none comes back.</summary>
     public async Task<BrokerReply> GetAsync(int port, string route)
     {

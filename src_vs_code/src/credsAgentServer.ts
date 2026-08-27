@@ -6,6 +6,7 @@ import {
   MAX_CONCURRENT_EXECS,
   MAX_REQUEST_BODY_BYTES,
   errorBody,
+  isConfigReadRoute,
   parseBearer,
   parseAliasRoute,
   parseJsonObject,
@@ -27,6 +28,7 @@ import {
 import { McpUseLookup, aliasTarget, readNamedBody } from './brokerRequests';
 import { describeLimits, expiredMessage, grantLimits } from './grantLimits';
 import { McpEntry } from './mcpEntries';
+import { ConfigRouteSources, answerConfigRead } from './brokerConfigRoute';
 import { Grant, GrantLookup, GrantRegistry } from './grantRegistry';
 import { UseActionRegistry } from './useActions';
 import { formatToken } from './grantToken';
@@ -180,6 +182,9 @@ export class CredsAgentServer implements vscode.Disposable {
      * questions about a vault, so they are answered on the other side of the wall.</p>
      */
     private readonly mcpCreate?: McpCreateHooks,
+    /** Where `/v1/config/read` gets its answer. Outside for the sixth time, same reason: this
+     *  class holds grants, and a config key is not one. Absent serves no config to anything. */
+    private readonly configRoute?: ConfigRouteSources,
   ) {}
 
   /** The signal every spawned child watches, so none outlives this window. */
@@ -321,6 +326,19 @@ export class CredsAgentServer implements vscode.Disposable {
     });
   }
 
+  /** The decision is `brokerConfigRoute.ts`; the audit sink is ours, so no door bypasses `log`. */
+  private async handleConfigRead(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+    const answer = await answerConfigRead(req.method, req.headers.authorization, {
+      ...(this.configRoute ?? {}),
+      audit: (line) => this.log({ grant: line.key, entityName: line.entityName, action: 'config', outcome: line.outcome, via: 'config' }),
+    });
+    if (answer.status !== 200) {
+      this.respondError(res, answer.status === 404 ? 'not_found' : 'unauthorized', answer.error);
+      return;
+    }
+    this.respond(res, 200, answer.body);
+  }
+
   private async handleAlias(
     req: http.IncomingMessage,
     res: http.ServerResponse,
@@ -449,6 +467,10 @@ export class CredsAgentServer implements vscode.Disposable {
     if (req.method === 'POST' && parseAliasRoute(url.pathname) !== undefined) {
       await this.handleAlias(req, res, parseAliasRoute(url.pathname) as string);
       return;
+    }
+
+    if (isConfigReadRoute(url.pathname)) {
+      return this.handleConfigRead(req, res);
     }
 
     const action = parseUseRoute(url.pathname);

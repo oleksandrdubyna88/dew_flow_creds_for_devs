@@ -11,6 +11,7 @@ import {
   MIN_EXEC_TIMEOUT_MS,
   SERVICE_NAME,
   isAliasListRoute,
+  isConfigReadRoute,
   isMcpEntriesRoute,
   parseAliasRoute,
   parseMcpUseRoute,
@@ -42,6 +43,7 @@ interface Contract {
   limits: Record<string, number>;
   routes: Record<string, string>;
   reads: Record<string, string>;
+  configRead: { method: string; path: string; authenticated: boolean; bearer: string };
   mcpUsePrefix: string;
   mcpActions: string[];
   errors: Record<string, number>;
@@ -127,6 +129,19 @@ test('the read routes travel in the contract, and the code agrees with what it s
   for (const route of Object.values(reads)) {
     assert.match(route, /^\/v1\//, route);
   }
+});
+
+test('the config read route travels too, and it is NOT one of the reads', () => {
+  // The distinction the contract has to carry, because a second implementation cannot infer it:
+  // everything under `reads` answers without a token and performs nothing, while this checks a
+  // key against a stored hash and returns a config file entire. Filing it with them would have
+  // told the other side it needs no credential.
+  const { configRead, reads } = load();
+
+  assert.equal(isConfigReadRoute(configRead.path), true);
+  assert.equal(configRead.method, 'POST', 'a GET would put the key somewhere caches record it');
+  assert.equal(configRead.authenticated, true);
+  assert.equal(Object.values(reads).includes(configRead.path), false, 'it is filed as unauthenticated');
 });
 
 test('the read routes are not use routes — nothing under them performs anything', () => {

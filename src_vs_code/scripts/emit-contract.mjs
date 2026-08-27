@@ -71,6 +71,13 @@ const reads = {
   mcpEntries: '/v1/mcp/entries',
 };
 
+// The one authenticated route here that is not a use, and the only POST that reads. It is NOT in
+// `reads` above: everything there answers without a token and performs nothing, while this checks
+// a key against a stored hash and returns a config file entire. A POST for something that reads
+// because a GET is the shape caches, proxies and shell histories treat as safe to record — and
+// the key would be in it. The second implementation cannot guess any of that, so it travels here.
+const configRead = { method: 'POST', path: '/v1/config/read', authenticated: true, bearer: 'config key' };
+
 // A route of its own rather than another verb under the use prefix, because deleting is not a
 // use of a credential: nothing is connected to, nothing is run, no secret is touched. It carries
 // the same body — an `entry` id — and the same gate one rung higher.
@@ -113,6 +120,7 @@ const contract = {
   },
   routes,
   reads,
+  configRead,
   mcpUsePrefix,
   mcpDeleteRoute,
   mcpCreateRoute,

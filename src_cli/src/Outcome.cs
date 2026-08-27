@@ -137,3 +137,35 @@ internal static class OutcomeReader
                 contract.Exit("refused"));
     }
 }
+
+/// <summary>
+/// The one field a config read answers with.
+/// </summary>
+/// <remarks>
+/// Its own reader rather than a case in <see cref="OutcomeReader"/>: that one interprets what
+/// HAPPENED — an exit code, a stream, a refusal — and this reply describes nothing that happened.
+/// It carries a document. Reading it through the outcome machinery would have meant teaching that
+/// machinery about a reply with no outcome in it.
+/// </remarks>
+internal static class ConfigBodyReader
+{
+    /// <summary>The document, or <c>null</c> when the reply is not one this build understands.</summary>
+    internal static string? Read(string json)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(json);
+            return document.RootElement.TryGetProperty("body", out var body)
+                && body.ValueKind == JsonValueKind.String
+                ? body.GetString()
+                : null;
+        }
+        catch (JsonException)
+        {
+            // A reply that is not JSON is a window speaking a protocol this binary does not know.
+            // Answering null lets the caller say so; throwing would print a stack trace at an
+            // application's startup, which is the worst possible place for one.
+            return null;
+        }
+    }
+}

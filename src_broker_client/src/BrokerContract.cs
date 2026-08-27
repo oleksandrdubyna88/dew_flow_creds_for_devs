@@ -27,6 +27,7 @@ public sealed record BrokerContract(
     [property: JsonPropertyName("mcpActions")] string[]? McpActions,
     [property: JsonPropertyName("mcpDeleteRoute")] string? McpDeleteRoute,
     [property: JsonPropertyName("mcpCreateRoute")] string? McpCreateRoute,
+    [property: JsonPropertyName("configRead")] ConfigReadRoute? ConfigRead,
     [property: JsonPropertyName("errors")] Dictionary<string, int> Errors,
     [property: JsonPropertyName("exitCodes")] Dictionary<string, int> ExitCodes)
 {
@@ -86,6 +87,19 @@ public sealed record BrokerContract(
     public string CreateRoute() => McpCreateRoute is { Length: > 0 } route ? route : "/v1/mcp/create";
 
     /// <summary>
+    /// Where an application reads one config file.
+    /// </summary>
+    /// <remarks>
+    /// The one authenticated route on that server which is not a use, and the only POST that
+    /// reads. It is deliberately NOT in <see cref="Reads"/>: everything there answers without a
+    /// credential, and filing this beside them would have told this side it needs none. The
+    /// bearer is a config key, which is not a grant token — it outlives the window and carries no
+    /// port. Nullable with a fallback for the same reason every route here is.
+    /// </remarks>
+    public string ConfigReadRoutePath() =>
+        ConfigRead is { Path.Length: > 0 } route ? route.Path : "/v1/config/read";
+
+    /// <summary>
     /// The exit code for a named mechanism failure.
     /// </summary>
     /// <remarks>
@@ -96,6 +110,20 @@ public sealed record BrokerContract(
     public int Exit(string name) =>
         ExitCodes.TryGetValue(name, out var code) ? code : ExitCodes.GetValueOrDefault("brokerFailure", 95);
 }
+
+/// <summary>
+/// One authenticated route, as the contract describes it.
+/// </summary>
+/// <remarks>
+/// Its own shape rather than another entry in <see cref="BrokerContract.Reads"/>, because the
+/// thing this side must not get wrong is that it needs a credential — and a bare path in a
+/// dictionary of unauthenticated routes says the opposite.
+/// </remarks>
+public sealed record ConfigReadRoute(
+    [property: JsonPropertyName("method")] string Method,
+    [property: JsonPropertyName("path")] string Path,
+    [property: JsonPropertyName("authenticated")] bool Authenticated,
+    [property: JsonPropertyName("bearer")] string? Bearer);
 
 public sealed record HealthRoute(
     [property: JsonPropertyName("method")] string Method,

@@ -60,6 +60,9 @@ internal static class Program
             case Request.Use use:
                 return await RunAsync(use, contract);
 
+            case Request.ReadConfig config:
+                return await ReadConfigAsync(config.Key, contract);
+
             case Request.Relay relay:
                 return relay.Listen
                     ? await AgentRelay.RunAsync(contract)
@@ -229,6 +232,70 @@ internal static class Program
     /// machine and cannot be read from disk. What it discloses is names and kinds, never an
     /// address or anything stored.</para>
     /// </remarks>
+    /// <summary>
+    /// Print one config file to stdout, for an application reading it at startup.
+    /// </summary>
+    /// <remarks>
+    /// <para>Every live window is tried, exactly as an alias call does and for the same reason: a
+    /// key is minted by the window holding the entry, and the person running the application need
+    /// not know which one that is. A window that does not have it answers 401, which is also what
+    /// it answers for a key that is not real — so this cannot be used to find out which keys
+    /// exist.</para>
+    /// <para>The body goes to stdout with NOTHING added: no trailing newline of ours, no banner,
+    /// no progress. Whatever is printed here is parsed by a program, and a friendly extra line is
+    /// a parse error somewhere else.</para>
+    /// </remarks>
+    private static async Task<int> ReadConfigAsync(string key, BrokerContract contract)
+    {
+        var endpoints = BrokerClient.SocketPath() is not null
+            ? [new Endpoint(0, 1, BrokerClient.SocketPath(), string.Empty)]
+            : Endpoints.Read(Endpoints.DirectoryHere());
+
+        if (endpoints.Count == 0)
+        {
+            Note(
+                "no CredsForDevs window is running, or none has been used yet this session. Open "
+                    + $"VS Code, or set {Endpoints.DirectoryOverrideVariable} if your install is not in the usual place.");
+            return contract.Exit("brokerUnreachable");
+        }
+
+        using var client = BrokerClient.Create(contract);
+        var route = contract.ConfigReadRoutePath();
+
+        foreach (var endpoint in endpoints)
+        {
+            if (!await client.IsOurBrokerAsync(endpoint.Port))
+            {
+                continue; // a note left by a window that has since closed
+            }
+
+            var reply = await client.PostBearerAsync(endpoint.Port, route, key);
+            if (reply.Status == 401)
+            {
+                continue; // this window does not hold that key; try the next
+            }
+
+            return reply.Status == 200 ? PrintConfig(reply.Body, contract) : ReportError(reply.Body, contract);
+        }
+
+        Note("no running VS Code window holds that config key. It may have been revoked, or the window that minted it may be closed.");
+        return contract.Exit("denied");
+    }
+
+    /// <summary>The document, and nothing else. A banner here is a parse error somewhere else.</summary>
+    private static int PrintConfig(string replyJson, BrokerContract contract)
+    {
+        var body = ConfigBodyReader.Read(replyJson);
+        if (body is null)
+        {
+            Note("the window answered something this build does not understand.");
+            return contract.Exit("brokerFailure");
+        }
+
+        Console.Out.Write(body);
+        return 0;
+    }
+
     private static async Task<int> ListAsync(BrokerContract contract)
     {
         var endpoints = BrokerClient.SocketPath() is not null
