@@ -3054,7 +3054,15 @@ ${detail}
       );
       return;
     }
-    const sent = await (transport as ServerTransport).listSent(account);
+    let sent;
+    try {
+      sent = await (transport as ServerTransport).listSent(account);
+    } catch (error) {
+      // The one that matters is a server too old to have the route: it answers 404, which would
+      // otherwise read as an empty outbox.
+      void vscode.window.showErrorMessage(`CredsForDevs: ${describeError(error)}`);
+      return;
+    }
     if (sent.length === 0) {
       void vscode.window.showInformationMessage('Nothing you sent is still waiting to be accepted.');
       return;

@@ -328,6 +328,15 @@ export class ServerTransport implements VaultTransport {
    */
   async listSent(account: StoredAccount): Promise<SentShare[]> {
     const response = await this.request(account, '/api/shares/sent');
+    if (response.status === 404) {
+      // A server older than this route, not an empty outbox — and the difference matters: an
+      // empty list would be read as "nothing of mine is pending", which is the opposite of
+      // true when the reason you looked was to take something back.
+      throw new Error(
+        `The vault server at ${this.location} is older than this feature — it cannot take a share `
+          + 'back yet. Update the server, then try again.',
+      );
+    }
     if (!response.ok) {
       return [];
     }

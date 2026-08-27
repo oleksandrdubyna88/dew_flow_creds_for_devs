@@ -326,3 +326,20 @@ test('a crafted id cannot walk out of the route it belongs to', async () => {
     `it asked for ${urls[0]}`,
   );
 });
+
+test('a server too old for the route is NOT reported as an empty outbox', async () => {
+  // The difference is the whole point: an empty list reads as "nothing of mine is pending", which
+  // is the opposite of true when the reason you looked was to take something back. The deployed
+  // server WILL be older than this feature until someone runs the deploy, so this is the ordinary
+  // case for a while, not an edge one.
+  installServer(404, '1', 'Not Found');
+
+  await assert.rejects(
+    () => transportFor().listSent(account),
+    (error: Error) => {
+      assert.match(error.message, /older than this feature/);
+      assert.match(error.message, /Update the server/);
+      return true;
+    },
+  );
+});
