@@ -8,6 +8,16 @@ import { DbConnParts } from './dbConnString';
 import { CommandArg, EntityMetadata } from './types';
 import { buildCommandLine, normalizeArgs } from './commandLine';
 import { highlightScript, resolveScriptEnv } from './scriptRender';
+import { configCodePanel, highlightSnippet } from './configCodePanel';
+import {
+  DEFAULT_SNIPPET_LANGUAGE,
+  SnippetContext,
+  SnippetVariant,
+  snippetFor,
+  snippetLanguage,
+} from './configSnippet';
+import { CONFIG_KEY_ENV } from './configAccess';
+import { configFileNameFor } from './configFile';
 import { Revision, summarizeRevision } from './revisionHistory';
 import { BINDABLE_FIELDS, BindableField } from './envBinding';
 import { TotpSnapshot } from './totp';
@@ -90,8 +100,63 @@ export interface EntityViewOptions {
 }
 
 interface CopyMessage {
-  type: 'copy' | 'download' | 'env' | 'envcheck' | 'close' | 'totp';
+  type: 'copy' | 'download' | 'env' | 'envcheck' | 'close' | 'totp' | 'snippet';
   field: string;
+}
+
+/**
+ * A language change, answered.
+ *
+ * <p>`field` carries `language|variant`, which is the shape the viewer's one message already has
+ * — adding a second payload field would have meant a wider message for every other button too.
+ * Both halves are untrusted input from a `<select>`; `snippetFor` falls back rather than
+ * throwing, which is why nothing here validates them first.</p>
+ */
+function snippetAnswer(options: EntityViewOptions, field: string): Record<string, unknown> {
+  const parts = field.split('|');
+  const snippet = snippetFor(parts[0], parts[1], snippetContextFor(options.details));
+  return {
+    type: 'snippet',
+    html: highlightSnippet(snippet),
+    where: snippet.where,
+    does: snippet.does,
+    variants: variantsOf(parts[0]),
+  };
+}
+
+/** Shared by the first render and every later change, so the two cannot describe different files. */
+function snippetContextFor(details: EntityMetadata): SnippetContext {
+  return {
+    envVar: CONFIG_KEY_ENV,
+    fileName: configFileNameFor(details.configFileName, details.configFormat ?? 'json', details.name),
+  };
+}
+
+function variantsOf(languageId: string): readonly SnippetVariant[] {
+  return snippetLanguage(languageId)?.variants ?? [];
+}
+
+/**
+ * The second column, for a config entry and nothing else.
+ *
+ * <p>Other kinds have no code story worth a column: an SSH host is used through the broker, a
+ * password is copied. A config is the one thing an application READS, so it is the one that needs
+ * to say how.</p>
+ */
+function codePanelFor(options: EntityViewOptions): string {
+  const details = options.details;
+  if (details.isConfig !== true) {
+    return '';
+  }
+  const language = DEFAULT_SNIPPET_LANGUAGE;
+  const variant = variantsOf(language)[0].id;
+  return configCodePanel({
+    snippet: snippetFor(language, variant, snippetContextFor(details)),
+    languageId: language,
+    variantId: variant,
+    hasKey: details.configKeyHash !== undefined,
+    envVar: CONFIG_KEY_ENV,
+  });
 }
 
 // eslint-disable-next-line max-lines-per-function
@@ -109,6 +174,12 @@ export function showEntityView(options: EntityViewOptions): void {
     const d = options.details;
     if (message.type === 'close') {
       panel.dispose();
+      return;
+    }
+    if (message.type === 'snippet') {
+      // The same round-trip the form's highlighter makes: one highlighter, host-side, rather
+      // than a second one living in a template string where nothing can check it.
+      void panel.webview.postMessage(snippetAnswer(options, message.field));
       return;
     }
     if (message.type === 'totp') {
@@ -512,6 +583,12 @@ function renderHtml(options: EntityViewOptions): string {
   .env { font-size: .72em; letter-spacing: .5px; }
   .envTag { opacity: .8; font-family: var(--vscode-editor-font-family); font-size: .9em; }
   .envLine { margin-top: 3px; align-items: center; }
+  /* The form's own rule, deliberately: two columns when there is room, stacked when there is
+     not, and the two pages then narrow the same way instead of nearly the same way. */
+  .viewGroups { display: grid; grid-template-columns: 1fr; gap: 0 24px; align-items: start; }
+  @media (min-width: 1000px) { .viewGroups { grid-template-columns: 1fr 1fr; } }
+  .codePanel h3 { margin: 0 0 8px; font-size: 1em; opacity: .9; }
+  .hint.bad { color: var(--vscode-editorWarning-foreground, #cca700); opacity: 1; }
   .code { flex: 1; margin: 0; padding: 6px 8px; max-height: 320px; overflow: auto;
     font-family: var(--vscode-editor-font-family, monospace); font-size: 13px; line-height: 1.45;
     white-space: pre-wrap; word-break: break-all;
@@ -546,12 +623,66 @@ function renderHtml(options: EntityViewOptions): string {
 </head>
 <body>
   <h2>${escapeHtml(d.name)}</h2>
-  ${rows}
+  <div class="viewGroups">
+    <div>${rows}</div>
+    ${codePanelFor(options)}
+  </div>
   <div class="footer">
     <button class="primary" data-field="all">${COPY_ICON} Copy All</button>
   </div>
 <script nonce="${nonce}">
   const vscode = acquireVsCodeApi();
+
+  // ---- the code panel: language and version, answered by the host ----
+  var languageSelect = document.getElementById('snippetLanguage');
+  function askForSnippet() {
+    var variant = document.getElementById('snippetVariant');
+    vscode.postMessage({
+      type: 'snippet',
+      field: languageSelect.value + '|' + (variant ? variant.value : ''),
+    });
+  }
+  if (languageSelect) {
+    languageSelect.addEventListener('change', askForSnippet);
+    document.addEventListener('change', function (event) {
+      if (event.target && event.target.id === 'snippetVariant') { askForSnippet(); }
+    });
+    window.addEventListener('message', function (event) {
+      var msg = event.data;
+      if (!msg || msg.type !== 'snippet') { return; }
+      document.getElementById('snippetCode').innerHTML = msg.html;
+      document.getElementById('snippetWhere').textContent = msg.where;
+      document.getElementById('snippetDoes').textContent = msg.does;
+      renderVariants(msg.variants);
+    });
+  }
+
+  // The Version picker exists only while the chosen language has more than one, so it is built
+  // and removed rather than merely refilled — a picker left behind with one entry is furniture
+  // that looks like a choice.
+  function renderVariants(variants) {
+    var existing = document.getElementById('snippetVariantRow');
+    if (existing) { existing.remove(); }
+    if (!variants || variants.length < 2) { return; }
+    var row = document.createElement('div');
+    row.className = 'row';
+    row.id = 'snippetVariantRow';
+    var label = document.createElement('label');
+    label.textContent = 'Version';
+    label.setAttribute('for', 'snippetVariant');
+    var select = document.createElement('select');
+    select.id = 'snippetVariant';
+    for (var i = 0; i < variants.length; i++) {
+      var option = document.createElement('option');
+      option.value = variants[i].id;
+      option.textContent = variants[i].label;
+      select.appendChild(option);
+    }
+    row.appendChild(label);
+    row.appendChild(select);
+    languageSelect.parentElement.insertAdjacentElement('afterend', row);
+  }
+
   for (const button of document.querySelectorAll('button[data-field]')) {
     button.addEventListener('click', () => {
       vscode.postMessage({

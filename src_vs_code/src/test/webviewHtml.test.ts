@@ -423,6 +423,65 @@ test('the viewer highlights the script AS IT RUNS too, not only the stored one',
   );
 });
 
+test('a config viewer carries the second column: language, snippet, and what it does', () => {
+  currentPanel = newPanel();
+  viewer.showEntityView({
+    details: { name: 'conf1', kind: 'config', isConfig: true, configFormat: 'json', isSshEnabled: false },
+    config: '{ "a": 1 }',
+    hasPassword: false, hasPrivateKey: false, hasVpnConfig: false, hasDbConnection: false,
+    dbPortIsDefault: false, dbHasPassword: false, hasAttachment: false, history: [],
+    resolveSecret: () => Promise.resolve(undefined), copyAllText: () => Promise.resolve(''),
+    saveVpnConfig: () => Promise.resolve(), saveAttachment: () => Promise.resolve(),
+    setEnv: () => Promise.resolve(true), checkEnv: () => {},
+  });
+  const html = currentPanel.webview.html;
+
+  assert.ok(html.includes('id="snippetLanguage"'), 'no language picker');
+  assert.ok(html.includes('id="snippetCode"'), 'no snippet block');
+  // C# is the default and it has two generations, so the Version picker is there from the start.
+  assert.ok(html.includes('id="snippetVariant"'), 'no version picker for the default language');
+  assert.ok(html.includes('Not open to code yet'), 'a config with no key must say so before the code');
+  assert.ok(html.includes('viewGroups'), 'the two-column wrapper is missing');
+});
+
+test('a config already open to code says that instead, and never shows a key', () => {
+  currentPanel = newPanel();
+  viewer.showEntityView({
+    details: {
+      name: 'conf1', kind: 'config', isConfig: true, configFormat: 'json', isSshEnabled: false,
+      configKeyHash: 'Zm9vYmFyZm9vYmFyZm9vYmFyZm9vYmFyZm9vYmFyZm9vYmE=',
+    },
+    config: '{ "a": 1 }',
+    hasPassword: false, hasPrivateKey: false, hasVpnConfig: false, hasDbConnection: false,
+    dbPortIsDefault: false, dbHasPassword: false, hasAttachment: false, history: [],
+    resolveSecret: () => Promise.resolve(undefined), copyAllText: () => Promise.resolve(''),
+    saveVpnConfig: () => Promise.resolve(), saveAttachment: () => Promise.resolve(),
+    setEnv: () => Promise.resolve(true), checkEnv: () => {},
+  });
+  const html = currentPanel.webview.html;
+
+  assert.ok(html.includes('Open to code'), 'an enabled config still says it is not open');
+  assert.equal(html.includes('cfgk_'), false, 'something key-shaped reached the page');
+  // The stored hash is not a secret, but it has no business being rendered either.
+  assert.equal(html.includes('Zm9vYmFyZm9v'), false, 'the stored hash reached the page');
+});
+
+test('nothing but a config gets the code column', () => {
+  // Other kinds have no code story worth a column: an SSH host is used through the broker, a
+  // password is copied. A config is the one thing an application READS.
+  currentPanel = newPanel();
+  viewer.showEntityView({
+    details: { name: 'prod', isSshEnabled: true, host: 'example.com' },
+    hasPassword: false, hasPrivateKey: false, hasVpnConfig: false, hasDbConnection: false,
+    dbPortIsDefault: false, dbHasPassword: false, hasAttachment: false, history: [],
+    resolveSecret: () => Promise.resolve(undefined), copyAllText: () => Promise.resolve(''),
+    saveVpnConfig: () => Promise.resolve(), saveAttachment: () => Promise.resolve(),
+    setEnv: () => Promise.resolve(true), checkEnv: () => {},
+  });
+
+  assert.equal(currentPanel.webview.html.includes('id="snippetLanguage"'), false);
+});
+
 test('the viewer closes on Esc', () => {
   currentPanel = newPanel();
   viewer.showEntityView({
