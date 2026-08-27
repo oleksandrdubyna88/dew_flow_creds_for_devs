@@ -984,6 +984,21 @@ Three properties of the client half worth carrying in the head:
   combination and not the recovery. Filtering also bounds the search: `combinations` materialises
   every C(n, t) subset before the first is tried, and n was whatever the server chose to post.
 
+**Who sees the corporate commands is decided per ACCOUNT, on the tree row.** All five were first
+contributed against `viewItem == account` — every account, every transport — so a vault syncing to
+a folder, or to a server with no roster, offered five entries whose only outcome was a refusal, and
+an ordinary employee was shown three actions that are not theirs to run. `orgRecoveryAccess` answers
+`none` / `enrolled` / `officer` and the row's `contextValue` carries it: the disclosure page needs
+`account-corp` (anyone enrolled — it is what tells a person their vault is recoverable by the people
+it names), the four actions need `account-corpOfficer`.
+
+Per account rather than a global `setContext`, because one person may hold an account on a corporate
+server and another on a plain folder and a global flag would light both rows or neither. Ordinary
+accounts keep the exact string `account`, since every other entry on that row is contributed against
+it — changing it would silently empty the menu, which is its own test. The gate is a **configured**
+roster, not a finished ceremony: accepting a share is how an unfinished one closes, so gating on
+`setupComplete` would hide the commands that complete it.
+
 **The session key is checked by a spoken code, because nothing else can check it.** An officer
 takes the break-glass session's public key from the server on trust — it is not signed, and there
 is nothing already shared between the initiator and the contributors to sign it with. A relay that
