@@ -1,6 +1,7 @@
 import * as http from 'node:http';
 import { ErrorCode } from './brokerProtocol';
 import { McpUseLookup, McpUseTarget, readMcpUse, readNamedBody } from './brokerRequests';
+import { NO_GENERATOR_OUTCOME } from './secretKinds';
 
 /**
  * The MCP door: what happens between an agent's request and the machinery behind it.
@@ -207,7 +208,7 @@ export async function handleMcpCreate(
   }
   const chosen = decide(create, read.body);
   if (!chosen.ok) {
-    door.refuse(res, chosen.code, chosen.message);
+    refuseCreation(door, res, chosen, String(read.body.name));
     return;
   }
   if (!door.admit(res)) {
@@ -217,6 +218,32 @@ export async function handleMcpCreate(
     await confirmAndCreate(door, res, chosen, create as McpCreateHooks, read.body);
   } finally {
     door.release();
+  }
+}
+
+/**
+ * A refused creation — and the one kind of refusal the journal counts by name.
+ *
+ * <p>"We cannot make that kind of secret" is not a rejection of the request; it is a map of where
+ * the generators stop, and where an agent's next move is to make the value itself. It is written
+ * to the audit even though nothing was performed, because a refusal nobody records is a gap
+ * nobody can see the shape of.</p>
+ */
+function refuseCreation(
+  door: BrokerDoor,
+  res: http.ServerResponse,
+  refusal: { code: ErrorCode; message: string; noGenerator?: boolean },
+  name: string,
+): void {
+  door.refuse(res, refusal.code, refusal.message);
+  if (refusal.noGenerator === true) {
+    door.note({
+      grant: '—',
+      entityName: name,
+      action: 'create',
+      outcome: NO_GENERATOR_OUTCOME,
+      detail: refusal.message,
+    });
   }
 }
 
@@ -238,7 +265,11 @@ export interface McpCreateHooks {
   ): Promise<{ id: string; name: string }>;
 }
 
-export type CreateDecision = CreateAccepted | { ok: false; code: ErrorCode; message: string };
+export type CreateDecision =
+  | CreateAccepted
+  // `noGenerator` marks the one refusal the journal counts by name: a kind of secret this
+  // extension does not make, which is where an agent is tempted to make it instead.
+  | { ok: false; code: ErrorCode; message: string; noGenerator?: boolean };
 
 export interface CreateAccepted {
   ok: true;

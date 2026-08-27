@@ -123,6 +123,48 @@ in a minute — download it and look before you run it on anything you care abou
 request to the VS Code window that minted the grant token, that window performs the action, and
 only the output comes back. There is no field in the protocol a secret could travel in.
 
+## Your agent, and what it may do
+
+An AI agent can reach this vault through MCP — and reaches **nothing** until you say so. Every
+entry is invisible to an agent until you turn a switch on for it, including every entry that
+existed before the feature.
+
+Six switches per entry, on a ladder, all off by default. Deleting implies creating implies
+replacing implies using implies seeing, so *"may change it but may not see it"* is not a state you
+can assemble by clicking. Set them on a folder and the entries in it inherit — including ones
+created there later.
+
+| Switch | What an agent may do |
+|---|---|
+| **Visible to agents** | see the entry's non-secret half — name, host, user, port, and a connection string with the password removed |
+| **Usable by agents** | ask to run a command, a query, a saved script; open a terminal or a VPN for you |
+| **Agents may replace the secret** | rotate it, without seeing the old value or the new one |
+| **Agents may create entries** | store a credential in a folder you opened for it |
+| **Agents may delete** | move an entry to the Trash — never permanently, and optionally only what it created itself |
+
+Two things hold at every level. **A secret is never handed over**: the window holds the value, uses
+it, and answers with the result — there is no field in the protocol one could travel in. And
+**the switch is not consent**: every single call still asks you, in your editor, showing the real
+entry and the real command.
+
+Rotation is the one that sounds impossible. To change a password somebody must know the new one —
+so the agent never writes it. It writes a placeholder:
+
+```sql
+ALTER USER app IDENTIFIED BY '{{creds:new}}'
+```
+
+The window generates the value, substitutes it, runs the statement, snapshots the old value into
+that entry's history, and stores the new one. Only a statement that **succeeded** updates the
+vault. You approve the statement with the placeholder still in it, which is what makes it safe to
+show you.
+
+There is exactly one call where a secret travels *toward* the vault: an agent that provisioned
+something and holds the key can store it. **⋯ → MCP logs** counts those by name — along with
+everything an agent asked for and did not get, and everything it asked this window to generate
+that it could not. Install the server from **⋯ → Install the MCP Server…**; it is a separate
+binary, and the extension still has zero runtime dependencies.
+
 ## Where the real documentation lives
 
 - [research/architecture.md](research/architecture.md) — how the two halves fit together, the trust

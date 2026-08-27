@@ -1825,6 +1825,75 @@ the **real** `out/agentCli.js`, and spawns a real `ssh` at an address that refus
 the surface, the consent gate, the CLI exit codes, the byte and time ceilings and the dispose path
 are all exercised without an SSH server. `npm run itest:agent`.
 
+### The MCP surface: five rungs, three routes and a journal (0.66.0–0.75.0)
+
+An AI agent reaches this vault through `creds-mcp`, a separate binary. What it may do is decided
+per entry by six switches on a ladder, all off by default — including for every entry that existed
+before the feature. The extension gained no runtime dependency: the MCP SDK lives in the binary.
+
+**Where each piece lives.**
+
+| Module | What it decides |
+|---|---|
+| `mcpAccess.ts` | the ladder, inheritance from a folder, and nothing at all inside the Trash |
+| `mcpEntries.ts` | what an agent may SEE, field by field; and which switch each action needs |
+| `mcpCreate.ts` | which folders are open to creation, and what a request becomes |
+| `secretRotation.ts` / `rotateAction.ts` | the placeholder, and the order a rotation happens in |
+| `secretKinds.ts` | what this extension can generate — and, named one at a time, what it cannot |
+| `brokerRequests.ts` / `brokerMcpDoor.ts` | the routes, the gate, the prompt, and the refusal wording |
+| `mcpLogRows.ts` / `mcpLogPage.ts` | the journal, as a view over the audit file |
+
+**Three routes, three authorization stories, told apart by their prefix** — the same reason
+`/v1/alias/` was a prefix rather than a flag. `/v1/use/` carries a bearer token a human copied;
+`/v1/mcp/use/<action>` carries an entry id and is gated by that entry's switch for that action;
+`/v1/mcp/delete` and `/v1/mcp/create` are their own routes because neither is a use of a
+credential. A test asserts no path parses as two of them.
+
+**The switch is not consent.** It says an agent *may ask*. Every call still raises the modal, goes
+through the same throttle, is masked by the same masker and written to the same audit file. An
+entry whose switch is off is refused *before anybody is asked* — a prompt raised for something the
+switches already forbid is how a person learns to click Allow without reading.
+
+**The gate is per action, not per call.** `switchForAction` maps `rotate` to `edit` and the use
+verbs to `use`, so a rotation cannot ride in on a permission granted for a read-only query; an
+action the table does not know asks for the top rung, so a verb added to the broker and forgotten
+there fails closed. Deleting is the one rung that is not a boolean: the narrow scope depends on
+the ENTRY as well as the switch, which is what `mayDelete` is for.
+
+**Rotation, and why the agent never sees a value.** The agent writes `{{creds:new}}`; the window
+generates, substitutes, runs, snapshots the old value into history and stores the new one. Three
+orderings carry the safety and two fail silently if reversed: the far side changes FIRST (else the
+vault holds a password the server never accepted); a non-zero exit code inside a successful call is
+a failure (a database refusing `ALTER USER` answers exactly that way); and the snapshot precedes
+the write. The placeholder is deliberately **not** `creds://…`, which already means "the value
+stored today" everywhere else here.
+
+**The one place a secret travels toward the vault** is `creds_create` with a supplied value — an
+agent that provisioned something and holds the key. It is not hidden: the entry is marked
+`mcpCreatedByAgent` (which the narrow delete scope keys on), and the audit line says the secret
+came from the agent so the journal can count them. The preferred path is `secretKind`, which has
+the window generate instead.
+
+**`secretKinds.ts` names what it cannot make**, one kind at a time with the reason — a certificate
+comes from an authority, a TOTP seed from the service, an SSH keypair needs its public half
+installed on the far side. Each refusal is written to the audit as `no generator`, because every
+one of them is a place where an agent's next move is to make the value itself. A run of those
+followed by agent-supplied secrets is the leak this product exists to avoid, visible before it
+happens.
+
+**The journal is a view, not a store.** The broker already writes one line per call — a file per
+run, a folder per day, swept after a fortnight — and every line now records which door the call
+came through. **⋯ → MCP logs** filters that file: everything, refused, secrets replaced, secrets
+from the agent, could not generate. Inventing a second store would have been exactly the drift the
+shared logging rule was written against.
+
+**Finding an entry by id.** An agent quoting an id is quoting the one thing that names an entry
+unambiguously — and the one thing the tree filter cannot find, because `nodeHaystack` searches
+what a row says out loud and an identifier is deliberately not among them. **⋯ → Show Entry by
+id…** resolves it across unlocked accounts and reveals the row, clearing the filter first: a
+filtered tree may not contain the row at all, and `reveal` on a row the provider is not offering
+does nothing, silently, which would read as the id being wrong.
+
 ### Diagnostics: one channel, and a file per run (audit A6)
 
 `logFormat.ts` (pure) fixes the shape and `diagnosticLog.ts` writes it. The path follows the

@@ -1,4 +1,5 @@
 import { AuditEntry, parseAuditLine } from './agentAuditLog';
+import { NO_GENERATOR_OUTCOME } from './secretKinds';
 
 /**
  * The MCP journal: what an agent asked this window for, and what it was told.
@@ -34,7 +35,7 @@ export function mcpRowsIn(text: string, day: string): McpLogRow[] {
 }
 
 /** What the view can narrow to. Each answers one question a person actually has. */
-export type McpLogFilter = 'all' | 'refused' | 'rotations' | 'agentSecrets';
+export type McpLogFilter = 'all' | 'refused' | 'rotations' | 'agentSecrets' | 'noGenerator';
 
 export const MCP_LOG_FILTERS: readonly { id: McpLogFilter; label: string; hint: string }[] = [
   { id: 'all', label: 'Everything', hint: 'Every call an agent made through MCP.' },
@@ -52,6 +53,11 @@ export const MCP_LOG_FILTERS: readonly { id: McpLogFilter; label: string; hint: 
     id: 'agentSecrets',
     label: 'Secrets from the agent',
     hint: 'Entries an agent created and supplied the secret for — the only calls where a value passed through its context. The price of that level, counted.',
+  },
+  {
+    id: 'noGenerator',
+    label: 'Could not generate',
+    hint: 'What an agent asked this window to make and it could not — the map of where the generators stop, and where an agent is next tempted to fill in for them.',
   },
 ];
 
@@ -98,6 +104,19 @@ export function isAgentSecret(row: AuditEntry): boolean {
   return row.outcome === 'created with agent secret';
 }
 
+/**
+ * A secret this window was asked for and could not make.
+ *
+ * <p>The other half of the same question, and the more useful half: every one of these is a place
+ * where an agent's next move is to generate the value itself and hand it over. Counting them is
+ * how the shape of that gap stays visible — a run of certificate refusals is a feature request
+ * with evidence attached, and a run of them followed by agent-supplied secrets is a leak of
+ * exactly the kind this product exists to avoid.</p>
+ */
+export function isNoGenerator(row: AuditEntry): boolean {
+  return row.outcome === NO_GENERATOR_OUTCOME;
+}
+
 export function applyFilter(rows: readonly McpLogRow[], filter: McpLogFilter): McpLogRow[] {
   const match = MATCHERS[filter];
   return match === undefined ? [...rows] : rows.filter((row) => match(row));
@@ -107,6 +126,7 @@ const MATCHERS: Partial<Record<McpLogFilter, (row: AuditEntry) => boolean>> = {
   refused: isRefusal,
   rotations: isRotation,
   agentSecrets: isAgentSecret,
+  noGenerator: isNoGenerator,
 };
 
 /**
@@ -120,10 +140,14 @@ export function emptyMessage(filter: McpLogFilter, totalRows: number): string {
   if (totalRows === 0) {
     return 'No agent has called this window yet. Entries are invisible to agents until you turn on Agent access for one.';
   }
-  if (filter === 'refused') {
-    return 'Nothing was refused — every call an agent made was allowed.';
-  }
-  return filter === 'agentSecrets'
-    ? 'No secret has reached the vault from an agent. Every value an agent used was held by this window.'
-    : 'No secrets have been replaced by an agent.';
+  return EMPTY[filter] ?? 'No secrets have been replaced by an agent.';
 }
+
+/** One sentence per filter, because "nothing here" means a different thing in each. */
+const EMPTY: Partial<Record<McpLogFilter, string>> = {
+  refused: 'Nothing was refused — every call an agent made was allowed.',
+  agentSecrets:
+    'No secret has reached the vault from an agent. Every value an agent used was held by this window.',
+  noGenerator:
+    'Nothing was asked for that this window could not make. The generators have covered everything an agent has wanted.',
+};

@@ -502,6 +502,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Bounded on purpose: 256 KB of output per stream, 30 s per command (raisable to 120 s), 8 at a
   time, and every child killed when the window goes.
 
+## [0.75.0] — 2026-08-27
+
+### Added
+
+- **Show Entry by id…**, in the ⋯ menu. An agent that lists your entries quotes an id with each,
+  and that id is the one thing that names an entry unambiguously — and the one thing the tree
+  filter cannot find, because the filter searches what a row says out loud and an identifier is
+  deliberately not among them. So this is not a search: it resolves the id across your unlocked
+  accounts and reveals the row. The filter is cleared first, because a filtered tree may not
+  contain the row at all and revealing one it is not offering does nothing, silently — which
+  would read as the id being wrong.
+
+- **An agent can ask this window to MAKE the secret**, rather than supplying one. `creds_create`
+  and `creds_rotate` both take a `secretKind` — *password* or *passphrase* — and the value is
+  drawn here, so it never enters the agent's context. That is how every other call in this
+  product works, and it is now the recommended path for creation too; supplying a value is for
+  the one case where the agent already holds it because it provisioned the thing.
+
+- **A fifth filter in the MCP logs: Could not generate.** The other half of the same question, and
+  the more useful half. Certificates, TOTP seeds and SSH key pairs are not made here — each is
+  refused by name, with the reason, and every refusal is recorded. Each one is a place where an
+  agent's next move is to make the value itself: a run of them followed by agent-supplied secrets
+  is the leak this product exists to avoid, visible before it happens rather than after.
+  - The refusals say what to do instead — a certificate comes from an authority, a one-time-code
+    seed from the service you are enrolling with, an SSH key pair needs its public half installed
+    on the far side, which is a different operation from a longer password.
+  - A word that is not a kind at all gets a different refusal listing the vocabulary. A typo and a
+    policy are different problems, and only one of them is worth explaining.
+
+### Changed
+
+- The README now describes what an agent may do and what it can never receive; the architecture
+  diagram carries `creds-mcp` and the agent; and `research/module_extension.md` documents the
+  whole MCP surface — the five rungs, the three route prefixes and why they are prefixes, the
+  three orderings a rotation depends on, and where the generators stop.
+
 ## [0.74.0] — 2026-08-27
 
 ### Added

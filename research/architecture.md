@@ -13,9 +13,12 @@ C4Container
     title CredsForDevs + Cred Vault Server
 
     Person(dev, "Developer", "Has SSH hosts, keys, VPN configs, DB connections")
+    System_Ext(agent, "AI agent", "Claude Code and other MCP clients. Receives no secret, ever")
 
     Container_Boundary(workstation, "The developer's machine") {
         Container(ext, "CredsForDevs", "VS Code extension, TypeScript", "Holds every secret. Does ALL cryptography. The only component that ever sees plaintext")
+        Container(cli, "creds", ".NET Native AOT", "Terminal client of the broker. Holds no secret")
+        Container(mcp, "creds-mcp", ".NET Native AOT", "MCP server. Relays an agent's request to a window; gated per entry by switches that are off by default")
         ContainerDb(secretstore, "VS Code SecretStorage", "OS keychain", "Passwords, private keys, VPN configs, notes, DB connection strings")
         ContainerDb(globalstate, "VS Code globalState", "JSON", "The node tree, tombstones, version vectors — metadata only")
     }
@@ -30,6 +33,9 @@ C4Container
     }
 
     Rel(dev, ext, "Uses")
+    Rel(agent, mcp, "Asks", "JSON-RPC over stdio")
+    Rel(mcp, ext, "Relays", "loopback HTTP, /v1/mcp/*, no token — the switches are the gate")
+    Rel(cli, ext, "Relays", "loopback HTTP, /v1/use/*, grant token")
     Rel(ext, secretstore, "Reads and writes plaintext secrets")
     Rel(ext, globalstate, "Reads and writes metadata")
     Rel(ext, idp, "Signs in", "OAuth 2.0 + PKCE")
@@ -276,10 +282,13 @@ still a placeholder**. A tag never ships both.
 | The server | [module_server.md](module_server.md) | The HTTP contract, authorization, storage |
 | The deployment | [module_deployment.md](module_deployment.md) | Containers, TLS, updates, backups |
 | The CLI | [../src_cli/README.md](../src_cli/README.md) | `creds` — the terminal client of the broker. A .NET Native AOT binary holding no secret: it relays a request to the VS Code window named by a grant token and prints what comes back |
+| The broker client | `src_broker_client/` | Discovery, the health probe, the wire contract and the WSL bridge — shared by both binaries, so a fix to any of it is made once |
+| The MCP server | `src_mcp/` | `creds-mcp` — what an AI agent talks to. Eight tools over the same broker, every one gated by a per-entry switch that is off by default and by the same consent prompt. Holds no secret and can obtain none |
 
 ## Where the contract lives
 
-**Two contracts now, and both are implemented twice.**
+**Two contracts now, and both are implemented twice.** (Three binaries share the second: the
+extension, `creds` and `creds-mcp` — which is why the C# half became a library rather than a copy.)
 
 The HTTP contract between the extension and the server is stated once, in
 [module_server.md](module_server.md), and implemented in `Program.cs` and

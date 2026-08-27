@@ -135,6 +135,10 @@ internal static class UseTools
             everything as it was. Needs the entry's "Agents may replace the secret" switch, which
             is a rung above using it, and the person approves the statement — they see it with
             {{creds:new}} still in it, which is what makes it safe to show them.
+
+            `secretKind` picks what gets made: "password" (the default) or "passphrase". Key pairs
+            and certificates are not made here — ask for one and you get a refusal saying why,
+            which you can pass on rather than guess at.
             """),
         new(
             "creds_delete",
@@ -166,10 +170,14 @@ internal static class UseTools
             if they opened more than one you name which in `folder` — creds_list shows the folders
             entries live in. If none is open, this refuses and says which switch to turn on.
 
-            This is the one call where a secret travels from you to the vault: everywhere else the
-            window holds the value and you never see it. The entry is marked as agent-created,
-            which is what the narrow delete permission keys on, and the person's journal records
-            that the secret came from you. They approve the creation.
+            PREFER `secretKind` over `secret`. Naming a kind — "password" or "passphrase" — has
+            the window make the value, so it never enters your context; that is how every other
+            call in this server works. Send `secret` only when you already hold the value because
+            you provisioned the thing yourself. When you do, the person's journal records that the
+            secret came from you, which is the honest cost of that path.
+
+            The entry is marked as agent-created, which is what the narrow delete permission keys
+            on. They approve the creation.
             """,
             OwnRoute: true),
         new(
@@ -238,6 +246,7 @@ internal static class UseTools
         UseTool tool,
         string name,
         string kind,
+        string? secretKind,
         string? secret,
         string? folder,
         string? host,
@@ -249,6 +258,7 @@ internal static class UseTools
         }
 
         var fields = new Dictionary<string, string> { ["name"] = name, ["kind"] = kind };
+        Put(fields, "secretKind", secretKind);
         Put(fields, "secret", secret);
         Put(fields, "folder", folder);
         Put(fields, "host", host);
@@ -263,6 +273,43 @@ internal static class UseTools
             return Failure(
                 "No CredsForDevs window answered.",
                 "Open the folder in VS Code with the CredsForDevs extension and unlock the vault.");
+        }
+        return reply.Status == 200 ? reply.Body : Refused(reply);
+    }
+
+    /// <summary>
+    /// Rotating: the statement, and optionally what kind of secret to make.
+    /// </summary>
+    /// <remarks>
+    /// Its own method only because the body carries two named fields rather than one. Everything
+    /// else — the gate, the prompt, the refusal in the window's own words — is
+    /// <see cref="InvokeAsync"/>'s, and the body is still built here rather than handed over by a
+    /// model.
+    /// </remarks>
+    internal static async Task<string> RotateAsync(
+        BrokerContract contract,
+        UseTool tool,
+        string entryId,
+        string statement,
+        string? secretKind)
+    {
+        if (string.IsNullOrWhiteSpace(entryId))
+        {
+            return Failure("No entry id was given.", "Call creds_list first and pass an entry's `id`.");
+        }
+
+        var fields = new Dictionary<string, string> { ["entry"] = entryId, ["statement"] = statement };
+        Put(fields, "secretKind", secretKind);
+
+        var reply = await Windows.PostAsync(
+            contract,
+            RouteFor(contract, tool),
+            JsonSerializer.Serialize(fields, McpJsonContext.Default.DictionaryStringString));
+        if (reply is null)
+        {
+            return Failure(
+                "No CredsForDevs window answered for that entry.",
+                "The entry id may be stale — call creds_list again.");
         }
         return reply.Status == 200 ? reply.Body : Refused(reply);
     }
@@ -310,7 +357,7 @@ internal static class UseTools
         {
             "denied" => "Ask the person to allow it, or to turn the switch on in the entry's Agent access section.",
             "not_found" => "Call creds_list again — the entry may have been deleted or the window closed.",
-            "not_supported" => "That action does not apply to this kind of entry. creds_list says each entry's kind.",
+            "not_supported" => "Either that action does not apply to this kind of entry, or the window cannot generate the kind of secret you asked for — the message says which. If it is the generator, you can offer to make the value yourself and let the person decide.",
             "too_many_requests" => "Too many prompts too quickly. Wait a moment and make one call, not several.",
             "consent_timeout" => "Nobody answered the prompt. Ask the person to look at their editor.",
             "tool_missing" => "The machine is missing a program this needs — the message says which.",

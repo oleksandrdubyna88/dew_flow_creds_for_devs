@@ -191,7 +191,10 @@ const HANDSHAKE = [
   const rotated = { recorded: 0, stored: [] };
   actions.register(
     rotateAction(actions.resolve('db', 'query'), 'query', {
-      generate: () => 'GENERATED-9f2c41ab',
+      generate: (kind) =>
+        kind === 'password'
+          ? { ok: true, value: 'GENERATED-9f2c41ab', kind: 'password' }
+          : { ok: false, kind, message: `${kind} is not generated here.` },
       entity: () => ({ id: 'e-1', name: 'orders-db', kind: 'db', isSshEnabled: false, dbType: 'mysql' }),
       current: () => Promise.resolve('mysql://app:old@db-01.example.internal:3306/orders'),
       snapshot: () => Promise.resolve({ at: 1, name: 'orders-db', details: {}, secrets: {} }),
@@ -249,7 +252,17 @@ const HANDSHAKE = [
     },
     // One folder open to creation, so the agent names none — and could not choose another.
     {
-      choose: (body) => ({
+      choose: (body) =>
+        // A kind this window does not make is refused before anybody is prompted, and recorded
+        // as the one outcome the journal's "could not generate" filter counts.
+        body.secretKind === 'x509'
+          ? {
+              ok: false,
+              code: 'not_supported',
+              message: 'Certificates come from a certificate authority.',
+              noGenerator: true,
+            }
+          : ({
         ok: true,
         target: { accountId: 'a-1', entityId: 'f-1', entityName: 'Servers', kind: 'ssh' },
         summary: `${String(body.name)} (ssh) in "Servers"`,
@@ -401,8 +414,13 @@ const HANDSHAKE = [
   check('it offers creds_rotate', rotate !== undefined, JSON.stringify(tools2.map((t) => t.name)));
   check(
     'the rotate schema asks for a statement, not a value',
-    Object.keys(rotate?.inputSchema?.properties ?? {}).sort().join(',') === 'entry,statement',
+    Object.keys(rotate?.inputSchema?.properties ?? {}).sort().join(',') === 'entry,secretKind,statement',
     JSON.stringify(rotate?.inputSchema?.properties),
+  );
+  check(
+    'and only the entry and the statement are required — the kind defaults to a password',
+    (rotate?.inputSchema?.required ?? []).sort().join(',') === 'entry,statement',
+    JSON.stringify(rotate?.inputSchema?.required),
   );
   check(
     'its description tells the model where to put the placeholder',
@@ -538,6 +556,38 @@ const HANDSHAKE = [
   check('an agent can store a credential it made', madeText.includes('"created":true'), madeText.slice(0, 200));
   check('the window received the secret it supplied', created.length === 1 && created[0].secret === 'AGENT-SUPPLIED-4f21', JSON.stringify(created.map((c) => c.name)));
   check('the human was asked', consent.asked === 1, String(consent.asked));
+
+  // ---- what this window cannot make ---------------------------------------
+  // The other half of the trade: an agent asking for a kind of secret the extension does not
+  // generate gets a reason it can pass on, rather than a silence it would fill in itself.
+  consent.answers = ['Allow'];
+  consent.asked = 0;
+  created.length = 0;
+  const cannot = await speak(env, [
+    ...HANDSHAKE,
+    {
+      jsonrpc: '2.0',
+      id: 14,
+      method: 'tools/call',
+      params: { name: 'creds_create', arguments: { name: 'gateway-cert', kind: 'credential', secretKind: 'x509' } },
+    },
+  ]);
+  const cannotText = cannot.byId.get(14)?.result?.content?.[0]?.text ?? '';
+  check(
+    'a kind this window cannot make is refused with the reason',
+    cannotText.includes('certificate authority'),
+    cannotText.slice(0, 240),
+  );
+  check('and nothing was created', created.length === 0, JSON.stringify(created));
+  check('and nobody was prompted about it', consent.asked === 0, String(consent.asked));
+
+  const askedKind = tools2.find((t) => t.name === 'creds_create');
+  check(
+    'creds_create offers secretKind, and prefers it to a supplied secret',
+    Object.keys(askedKind?.inputSchema?.properties ?? {}).includes('secretKind') &&
+      (askedKind?.description ?? '').includes('PREFER'),
+    JSON.stringify(Object.keys(askedKind?.inputSchema?.properties ?? {})),
+  );
 
   server.dispose();
   console.log(fails === 0 ? '\nall checks passed' : `\n${fails} check(s) failed`);

@@ -8,6 +8,7 @@ import {
   summarizeRotation,
 } from './secretRotation';
 import { EntityMetadata } from './types';
+import { GenerationOutcome, NO_GENERATOR_OUTCOME } from './secretKinds';
 import { Revision } from './revisionHistory';
 
 /**
@@ -35,8 +36,14 @@ import { Revision } from './revisionHistory';
  */
 
 export interface RotateDeps {
-  /** Draw a new secret. The extension's own generator; never the agent's. */
-  generate(): string;
+  /**
+   * Draw a new secret of this kind — the extension's own generator, never the agent's.
+   *
+   * <p>Answers a refusal rather than throwing for a kind it does not make. That refusal is not a
+   * failure of the request: it is the map of where an agent will be tempted to fill in for us,
+   * which is why the journal counts it.</p>
+   */
+  generate(kind: string): GenerationOutcome;
   /** The live entity, or undefined when it has gone. */
   entity(ctx: UseActionContext): EntityMetadata | undefined;
   /** The value in the slot right now — a password, or a connection string. */
@@ -67,13 +74,28 @@ export function rotateAction(
     kind: underlying.kind,
     action: 'rotate',
     verb: 'change the stored secret of',
-    describeOutcome: (result) => (result.status === 200 ? 'rotated' : String(result.status)),
+    describeOutcome: (result) => describeRotation(result),
     validate: (body) => validateBody(body, underlying.kind),
     // The placeholder stays. A prompt that showed the generated value would put it on a screen,
     // in a screenshot, and in this window's own audit line.
     summarize: (body) => summarizeRotation(statementOf(body)),
-    run: (ctx, body) => run(ctx, statementOf(body), underlying, field, deps),
+    run: (ctx, body) => run(ctx, statementOf(body), body, underlying, field, deps),
   };
+}
+
+/**
+ * What the audit line says happened.
+ *
+ * <p>`no generator` is its own word rather than a status number, because the journal greps for
+ * it: it is the count of what an agent asked us to make and we could not.</p>
+ */
+function describeRotation(result: UseActionResult): string {
+  if (result.status === 200) {
+    return 'rotated';
+  }
+  return (result.body as { noGenerator?: unknown }).noGenerator === true
+    ? NO_GENERATOR_OUTCOME
+    : String(result.status);
 }
 
 function statementOf(body: unknown): string {
@@ -100,13 +122,16 @@ function validateBody(body: unknown, kind: string): { ok: true } | { ok: false; 
 async function run(
   ctx: UseActionContext,
   statement: string,
+  body: unknown,
   underlying: UseAction,
   field: StatementField,
   deps: RotateDeps,
 ): Promise<UseActionResult> {
-  const ready = await prepare(ctx, statement, underlying.kind, deps);
+  const ready = await prepare(ctx, statement, underlying.kind, body, deps);
   if (!ready.ok) {
-    return refuse(ready.error);
+    // A kind we do not make is refused with its own outcome, because the journal counts those:
+    // they are the map of where an agent will be tempted to generate the value itself.
+    return ready.noGenerator === true ? refuseNoGenerator(ready.error) : refuse(ready.error);
   }
   const { details, checked, secret, stored } = ready;
 
@@ -128,11 +153,9 @@ async function prepare(
   ctx: UseActionContext,
   statement: string,
   kind: string,
+  body: unknown,
   deps: RotateDeps,
-): Promise<
-  | { ok: true; details: EntityMetadata; checked: { slot: RotationSlot }; secret: string; stored: string }
-  | { ok: false; error: string }
-> {
+): Promise<Prepared> {
   const details = deps.entity(ctx);
   if (details === undefined) {
     return { ok: false, error: `"${ctx.entityName}" no longer exists in the vault.` };
@@ -141,11 +164,40 @@ async function prepare(
   if (!checked.ok) {
     return { ok: false, error: checked.message };
   }
-  const secret = deps.generate();
-  const stored = storedValueFor(checked.slot, await deps.current(ctx, checked.slot), secret, details.dbType);
+  return draw(ctx, details, checked, body, deps);
+}
+
+/**
+ * Make the secret, and work out what would be stored.
+ *
+ * <p>Last of the checks, and deliberately so: a request that was malformed never gets this far,
+ * so a generated value is never left in a history nobody expected to grow.</p>
+ */
+async function draw(
+  ctx: UseActionContext,
+  details: EntityMetadata,
+  checked: { slot: RotationSlot },
+  body: unknown,
+  deps: RotateDeps,
+): Promise<Prepared> {
+  const drawn = deps.generate(kindOf(body));
+  if (!drawn.ok) {
+    return { ok: false, error: drawn.message, noGenerator: true };
+  }
+  const stored = storedValueFor(checked.slot, await deps.current(ctx, checked.slot), drawn.value, details.dbType);
   return stored.ok
-    ? { ok: true, details, checked, secret, stored: stored.value }
+    ? { ok: true, details, checked, secret: drawn.value, stored: stored.value }
     : { ok: false, error: stored.error };
+}
+
+type Prepared =
+  | { ok: true; details: EntityMetadata; checked: { slot: RotationSlot }; secret: string; stored: string }
+  | { ok: false; error: string; noGenerator?: boolean };
+
+/** The kind asked for, defaulting to a password — which is what a rotation almost always is. */
+function kindOf(body: unknown): string {
+  const value = (body as { secretKind?: unknown }).secretKind;
+  return typeof value === 'string' && value.length > 0 ? value : 'password';
 }
 
 /** History first, then the write, then the tree. Only ever reached by a far side that changed. */
@@ -185,6 +237,17 @@ function outputOf(result: UseActionResult): unknown {
 
 function refuse(message: string): UseActionResult {
   return { status: 400, body: { error: { code: 'invalid_request', message } } };
+}
+
+/**
+ * A refusal that says WHY it could not be made, and is recorded as one.
+ *
+ * <p>`not_supported` rather than `invalid_request`: the request was well formed and the entry was
+ * open — what is missing is a generator on this side. An agent reading the difference can offer
+ * to make the value itself, which is a trade for the person to weigh rather than a retry.</p>
+ */
+function refuseNoGenerator(message: string): UseActionResult {
+  return { status: 404, body: { error: { code: 'not_supported', message }, noGenerator: true } };
 }
 
 /** Re-exported so the tool description and the tests name the same string. */

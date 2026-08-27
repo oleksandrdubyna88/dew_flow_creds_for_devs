@@ -36,6 +36,15 @@ export interface CreateRequest {
   kind: string;
   /** The value the agent already holds. Optional: an entry may legitimately have no secret yet. */
   secret?: string;
+  /**
+   * Ask the window to MAKE the secret instead of supplying one.
+   *
+   * <p>The better half of this level, and the one to prefer: a value made here never enters the
+   * agent's context, which is the property every other level of this product is built on. It only
+   * cannot be used when the agent already holds the value — because it provisioned the thing —
+   * and that case is what `secret` is for.</p>
+   */
+  secretKind?: string;
   host?: string;
   user?: string;
   port?: number;

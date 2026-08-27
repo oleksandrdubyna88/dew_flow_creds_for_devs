@@ -151,8 +151,8 @@ internal static class Program
                 UseTools.InvokeAsync(contract, tool, entry, "query", query),
             // `delete` takes only the entry: there is no second argument, because there is no
             // second destination. That is the permission, not a default.
-            "rotate" => (string entry, string statement) =>
-                UseTools.InvokeAsync(contract, tool, entry, "statement", statement),
+            "rotate" => (string entry, string statement, string? secretKind = null) =>
+                UseTools.RotateAsync(contract, tool, entry, statement, secretKind),
             // The one shape with no entry id: there is no entry yet. The parameter names are
             // what a model fills in, so they are the words the broker's body uses.
             // Defaults, not just nullable types: a parameter with no default is REQUIRED in the
@@ -161,11 +161,12 @@ internal static class Program
             "create" => (
                     string name,
                     string kind,
+                    string? secretKind = null,
                     string? secret = null,
                     string? folder = null,
                     string? host = null,
                     string? user = null) =>
-                UseTools.CreateAsync(contract, tool, name, kind, secret, folder, host, user),
+                UseTools.CreateAsync(contract, tool, name, kind, secretKind, secret, folder, host, user),
             _ => (string entry) => UseTools.InvokeAsync(contract, tool, entry, null, null),
         };
 

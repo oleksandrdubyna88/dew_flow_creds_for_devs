@@ -56,7 +56,10 @@ function world(
     },
   };
   const deps: RotateDeps = {
-    generate: () => generated,
+    generate: (kind) =>
+      kind === 'x509'
+        ? { ok: false, kind: 'x509', message: 'Certificates come from a certificate authority.' }
+        : { ok: true, value: generated, kind: 'password' },
     entity: () =>
       ({ id: 'e1', name: 'orders-db', kind: 'db', isSshEnabled: false, dbType: 'mysql', ...overrides.details }) as EntityMetadata,
     current: () => Promise.resolve(overrides.current ?? CONN),
@@ -162,7 +165,7 @@ test('the entry going missing mid-flight is refused, not stored into', async () 
   // for five minutes. Nothing must be written into a vault position that no longer exists.
   const ran: string[] = [];
   const gone = rotateAction(underlyingThatRecords(ran), 'query', {
-    generate: () => 'x',
+    generate: () => ({ ok: true, value: 'x', kind: 'password' }),
     entity: () => undefined,
     current: () => Promise.resolve(CONN),
     snapshot: () => Promise.resolve({ at: 1, name: '', details: {} as EntityMetadata, secrets: {} }),
@@ -244,4 +247,39 @@ test('the rebuilt connection string keeps everything but the password', () => {
   assert.ok(value.includes('orders'));
   assert.ok(value.includes('NEW-secret'));
   assert.equal(value.includes(OLD), false, 'the old password is gone');
+});
+
+/**
+ * A kind this extension does not make.
+ *
+ * <p>The refusal is not a failure of the request — it is the map of where an agent will be
+ * tempted to generate the value itself, and the journal counts them for exactly that reason. So
+ * it carries its own outcome word rather than a status number, and nothing is stored.</p>
+ */
+test('a kind we do not generate is refused, with the reason, before anything runs', async () => {
+  const { action, log } = world();
+
+  const result = await action.run(CTX, { statement: STATEMENT, secretKind: 'x509' });
+
+  assert.equal(result.status, 404, 'the request was fine; the generator is what is missing');
+  assert.equal((result.body as { noGenerator?: boolean }).noGenerator, true);
+  assert.deepEqual(log.ran, [], 'nothing ran on the far side');
+  assert.equal(log.stored.length, 0);
+  assert.equal(log.recorded, 0);
+});
+
+test('and the audit says "no generator", which is the word the journal counts', async () => {
+  const { action } = world();
+
+  const result = await action.run(CTX, { statement: STATEMENT, secretKind: 'x509' });
+
+  assert.equal(action.describeOutcome(result), 'no generator');
+});
+
+test('a rotation with no kind named is a password, which is what one almost always is', async () => {
+  const { action, log, generated } = world();
+
+  await action.run(CTX, { statement: STATEMENT });
+
+  assert.ok(log.ran[0].includes(generated));
 });

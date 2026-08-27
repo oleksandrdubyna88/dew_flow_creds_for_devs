@@ -5,6 +5,7 @@ import {
   applyFilter,
   emptyMessage,
   isAgentSecret,
+  isNoGenerator,
   isRefusal,
   isRotation,
 } from './mcpLogRows';
@@ -125,22 +126,36 @@ function tableRow(row: McpLogRow): string {
  * reading of those two words that leaves the second one worth trusting.</p>
  */
 function kindsOf(row: McpLogRow): string[] {
-  if (isRefusal(row)) {
-    return ['refused'];
-  }
-  if (isRotation(row)) {
-    return ['rotations'];
-  }
-  return isAgentSecret(row) ? ['agentSecrets'] : [];
+  const kind = KINDS.find((candidate) => candidate.matches(row));
+  return kind === undefined ? [] : [kind.id];
 }
 
-/** The filter id is a filter id; these are the two that also colour a cell. */
+/**
+ * In order, first match wins.
+ *
+ * <p>The order carries a decision: a refusal is a refusal first. A rotation that was denied is
+ * not a replacement, and a creation refused for want of a generator is counted there rather than
+ * under refusals — which is why `noGenerator` sits above the general refusal and `refused` below
+ * it. Written as a list because that ordering is the thing to read.</p>
+ */
+const KINDS: readonly { id: string; matches: (row: McpLogRow) => boolean }[] = [
+  { id: 'noGenerator', matches: isNoGenerator },
+  { id: 'refused', matches: isRefusal },
+  { id: 'rotations', matches: isRotation },
+  { id: 'agentSecrets', matches: isAgentSecret },
+];
+
+/** The filter id is a filter id; this is the colour each one wears. */
 function outcomeClass(kind: string | undefined): string {
-  if (kind === 'rotations' || kind === 'agentSecrets') {
-    return 'rotated';
-  }
-  return kind ?? '';
+  return COLOURS[kind ?? ''] ?? '';
 }
+
+const COLOURS: Record<string, string> = {
+  refused: 'refused',
+  noGenerator: 'refused',
+  rotations: 'rotated',
+  agentSecrets: 'rotated',
+};
 
 function clockOf(row: McpLogRow): string {
   const two = (value: number): string => String(value).padStart(2, '0');

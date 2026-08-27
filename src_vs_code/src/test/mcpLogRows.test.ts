@@ -1,7 +1,16 @@
 import * as assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { formatAuditLine, parseAuditLine } from '../agentAuditLog';
-import { applyFilter, emptyMessage, isAgentSecret, isRefusal, isRotation, mcpRowsIn } from '../mcpLogRows';
+import {
+  MCP_LOG_FILTERS,
+  applyFilter,
+  emptyMessage,
+  isAgentSecret,
+  isNoGenerator,
+  isRefusal,
+  isRotation,
+  mcpRowsIn,
+} from '../mcpLogRows';
 import { renderMcpLog } from '../mcpLogPage';
 
 /**
@@ -175,4 +184,39 @@ test('the empty message tells the two silences apart', () => {
   assert.match(emptyMessage('agentSecrets', 3), /No secret has reached the vault from an agent/);
   assert.match(emptyMessage('rotations', 3), /No secrets have been replaced/);
   assert.match(emptyMessage('all', 0), /No agent has called this window yet/);
+});
+
+test('what could not be generated is counted, and is not lumped in with refusals', () => {
+  // The more useful of the two costs: every one of these is a place where an agent's next move
+  // is to make the value itself. A run of them followed by agent-supplied secrets is the leak
+  // this product exists to avoid, visible before it happens.
+  const rows = mcpRowsIn(
+    [
+      line({ action: 'create', outcome: 'no generator' }),
+      line({ action: 'rotate', outcome: 'no generator' }),
+      line({ action: 'query', outcome: 'denied' }),
+      line({ action: 'query', outcome: 'exit 0' }),
+    ].join('\n'),
+    '2026-08-27',
+  );
+
+  assert.equal(applyFilter(rows, 'noGenerator').length, 2);
+  assert.equal(applyFilter(rows, 'refused').length, 1, 'a missing generator is not a refusal');
+  assert.equal(isNoGenerator(rows[0]), true);
+  assert.equal(isNoGenerator(rows[3]), false);
+});
+
+test('a row that could not be generated is shown under its own filter, not under Refused', () => {
+  const html = renderMcpLog(mcpRowsIn(line({ action: 'create', outcome: 'no generator' }), '2026-08-27'));
+
+  assert.match(html, /data-kind="noGenerator"/);
+  assert.equal(html.includes('data-kind="refused"'), false);
+});
+
+test('every filter has a sentence for having nothing in it', () => {
+  // "Nothing here" means a different thing in each, and the reassuring ones are the point.
+  for (const filter of MCP_LOG_FILTERS) {
+    assert.ok(emptyMessage(filter.id, 3).length > 20, filter.id);
+  }
+  assert.match(emptyMessage('noGenerator', 3), /could not make/);
 });

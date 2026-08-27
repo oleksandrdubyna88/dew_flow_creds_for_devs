@@ -152,6 +152,7 @@ import { findUsableEntry, visibleMcpEntries } from './mcpEntries';
 import { RotateDeps, rotateAction } from './rotateAction';
 import { showMcpLog } from './mcpLogPanel';
 import { CreateRequest, chooseTarget, creatableFolders, detailsFor, summarizeCreate } from './mcpCreate';
+import { generateSecret } from './secretKinds';
 import type { EntityKind } from './types';
 import { CreateDecision, McpCreateHooks } from './brokerMcpDoor';
 import { McpUseLookup } from './brokerRequests';
@@ -709,7 +710,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // there is one implementation of "run a query against this database" and not two — the
   // rotating one adds the generate before it and the store after it, and nothing else.
   const rotateDeps: RotateDeps = {
-    generate: () => generatePassword(DEFAULT_PASSWORD).value,
+    generate: (kind) => generateSecret(kind),
     entity: (ctx) => storage.getNode(ctx.accountId, ctx.entityId)?.details,
     current: (ctx, slot) =>
       slot === 'password'
@@ -3464,6 +3465,35 @@ ${detail}
 
   register('credSshManager.showMcpLog', () => showMcpLog(storageDir));
 
+  /**
+   * Find an entry by the id an agent quoted, and show it.
+   *
+   * <p>An agent that lists your entries gets an id with each, and the id is the one thing it can
+   * hand back that names an entry unambiguously. It is also the one thing the tree filter cannot
+   * find: `nodeHaystack` searches name, host, user, port and tags, and an identifier is
+   * deliberately not among them — "if a row does not say it out loud, you cannot search for it".
+   * So this is not a search. It resolves the id and reveals the row.</p>
+   *
+   * <p>The filter is cleared first. A filtered tree may not contain the row at all, and
+   * `reveal` on a row the provider is not currently offering does nothing — silently, which
+   * would read as the id being wrong.</p>
+   */
+  register('credSshManager.revealById', async (...args: unknown[]) => {
+    const given = typeof args[0] === 'string' ? args[0] : await askForEntryId();
+    if (given === undefined) {
+      return;
+    }
+    const found = findById(storage, given.trim());
+    if (found === undefined) {
+      void vscode.window.showWarningMessage(
+        `No entry with id "${given.trim()}" is in any unlocked vault. Ids are per vault — check the right account is signed in.`,
+      );
+      return;
+    }
+    provider.setSearchQuery('');
+    await treeView.reveal(found, { select: true, focus: true, expand: true });
+  });
+
   register('credSshManager.installMcpServer', () => offerInstall(CREDS_MCP));
   register('credSshManager.installCli', () => offerInstall(CREDS_CLI));
 
@@ -4606,13 +4636,30 @@ function mcpCreateHooks(storage: StorageManager, onMade: () => void): McpCreateH
         parentId: decision.target.entityId,
         details: detailsFor(id, kind, request),
       });
-      if (request.secret !== undefined && request.secret.length > 0) {
-        await storage.setPassword(decision.target.accountId, id, request.secret);
+      const secret = request.secret ?? generatedFor(request);
+      if (secret !== undefined && secret.length > 0) {
+        await storage.setPassword(decision.target.accountId, id, secret);
       }
       onMade();
       return { id, name: request.name };
     },
   };
+}
+
+/**
+ * The secret for a new entry when the agent supplied none.
+ *
+ * <p>The better half of this level: an agent that does not already hold a value asks for one to
+ * be made, and it is made HERE. The value never enters its context, and the entry is usable
+ * immediately. A kind we cannot make was already refused at `choose`, so by this point the draw
+ * cannot fail.</p>
+ */
+function generatedFor(request: CreateRequest): string | undefined {
+  if (request.secretKind === undefined) {
+    return undefined;
+  }
+  const drawn = generateSecret(request.secretKind);
+  return drawn.ok ? drawn.value : undefined;
 }
 
 /**
@@ -4633,6 +4680,12 @@ function chooseCreateTarget(storage: StorageManager, body: Record<string, unknow
   const chosen = chooseTarget(targets, request);
   if (!chosen.ok) {
     return { ok: false, code: 'denied', message: chosen.message };
+  }
+  // Asked for a kind we do not make: refused here, before anybody is prompted, and recorded as
+  // the one outcome the journal's "could not generate" filter counts.
+  const drawable = checkGeneratable(request);
+  if (drawable !== undefined) {
+    return { ok: false, code: 'not_supported', message: drawable, noGenerator: true };
   }
   return {
     ok: true,
@@ -4659,5 +4712,43 @@ function readCreateRequest(body: Record<string, unknown>): CreateRequest {
     user: text('user'),
     port: typeof body.port === 'number' && Number.isInteger(body.port) ? body.port : undefined,
     folder: text('folder'),
+    secretKind: text('secretKind'),
   };
+}
+
+/** Whether this request asks for a secret we cannot make — the message, or nothing. */
+function checkGeneratable(request: CreateRequest): string | undefined {
+  if (request.secret !== undefined || request.secretKind === undefined) {
+    return undefined;
+  }
+  const drawn = generateSecret(request.secretKind);
+  return drawn.ok ? undefined : drawn.message;
+}
+
+/** The id an agent quoted, asked for as text — it is a uuid nobody types from memory. */
+function askForEntryId(): Thenable<string | undefined> {
+  return vscode.window.showInputBox({
+    title: 'Show entry by id',
+    prompt: 'Paste the id an agent gave you',
+    placeHolder: '8f3a…',
+    ignoreFocusOut: true,
+    validateInput: (value) => (value.trim().length === 0 ? 'Paste an id.' : undefined),
+  });
+}
+
+/**
+ * The tree element for one id, across every unlocked account.
+ *
+ * <p>Every account, because an agent's list already merged them and the id it quotes carries no
+ * account with it. Folders are findable too: an agent naming the folder an entry lives in is a
+ * reasonable thing to want to look at.</p>
+ */
+function findById(storage: StorageManager, id: string): TreeElement | undefined {
+  for (const account of storage.getAccounts()) {
+    const node = storage.getNode(account.accountId, id);
+    if (node !== undefined) {
+      return { kind: 'node', accountId: account.accountId, node };
+    }
+  }
+  return undefined;
 }
