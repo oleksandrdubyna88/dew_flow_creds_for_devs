@@ -101,6 +101,10 @@ export type CreateChoice =
  * exists, because whether it does is not something an agent may enumerate by guessing.</p>
  */
 export function chooseTarget(targets: readonly CreateTarget[], request: CreateRequest): CreateChoice {
+  const bad = malformed(request);
+  if (bad !== undefined) {
+    return { ok: false, message: bad };
+  }
   if (targets.length === 0) {
     return {
       ok: false,
@@ -108,18 +112,57 @@ export function chooseTarget(targets: readonly CreateTarget[], request: CreateRe
         'No folder is open to agents for creating entries. Turn on "Agents may create entries" on the folder this belongs in.',
     };
   }
-  const target = pick(targets, request.folder);
-  if (target === undefined) {
-    return { ok: false, message: describeChoice(targets, request.folder) };
+  const picked = pick(targets, request.folder);
+  if (!picked.ok) {
+    return { ok: false, message: picked.message };
   }
-  return kindFor(target, request);
+  return kindFor(picked.target, request);
 }
 
-function pick(targets: readonly CreateTarget[], folder: string | undefined): CreateTarget | undefined {
-  if (folder === undefined || folder === '') {
-    return targets.length === 1 ? targets[0] : undefined;
+/**
+ * The bounds on what an agent may say, checked before anything else.
+ *
+ * <p>The body is capped at 64 KB, which is a limit on the request and not on any field in it — so
+ * without this a name could be sixty thousand characters: a consent prompt whose buttons are off
+ * the screen, and a tree row that ruins the tree it lands in. The number matches the entity form's
+ * own comfort rather than any protocol limit; nobody names a credential in more than a line.</p>
+ */
+const MAX_NAME = 200;
+
+function malformed(request: CreateRequest): string | undefined {
+  if (request.name.trim().length === 0) {
+    return 'Give the new entry a name.';
   }
-  return targets.find((t) => t.folderName.toLowerCase() === folder.toLowerCase());
+  return request.name.length > MAX_NAME
+    ? `That name is too long (${MAX_NAME} characters maximum).`
+    : undefined;
+}
+
+/**
+ * The one folder this request means, or why it means none.
+ *
+ * <p><b>An ambiguous name is refused, never guessed between.</b> Folder names carry no uniqueness
+ * rule anywhere in this product — `secretRef.ts` says so in its own header and refuses for exactly
+ * this reason — so two accounts each with a "Servers" folder, or one account with two at different
+ * depths, would otherwise land a production credential in whichever the scan reached first. That
+ * works until the day it picks the other one, and nothing reports anything.</p>
+ */
+function pick(targets: readonly CreateTarget[], folder: string | undefined): Picked {
+  const named = folder === undefined || folder === '';
+  const matches = named
+    ? targets
+    : targets.filter((t) => t.folderName.toLowerCase() === folder.toLowerCase());
+  return matches.length === 1 ? { ok: true, target: matches[0] } : { ok: false, message: whyNot(targets, folder, matches.length) };
+}
+
+type Picked = { ok: true; target: CreateTarget } | { ok: false; message: string };
+
+/** Nothing matched, or too many did — and "too many by NAME" is its own sentence. */
+function whyNot(targets: readonly CreateTarget[], folder: string | undefined, matched: number): string {
+  if (matched > 1 && folder !== undefined && folder !== '') {
+    return `More than one open folder is called "${folder}". Rename one of them, or leave only one open to agents.`;
+  }
+  return describeChoice(targets, folder);
 }
 
 function describeChoice(targets: readonly CreateTarget[], folder: string | undefined): string {

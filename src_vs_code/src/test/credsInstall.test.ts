@@ -11,6 +11,7 @@ import {
   entryPathIn,
   ridFor,
   versionFromTag,
+  digestIn,
 } from '../credsInstall';
 
 /**
@@ -179,4 +180,32 @@ test('the menu calls each one by its own name', () => {
 
   assert.deepEqual(choicesFor(CREDS_MCP, install), ['Install the MCP server 0.1.0']);
   assert.deepEqual(choicesFor(CREDS_CLI, install), ['Install creds 0.1.0']);
+});
+
+/**
+ * The checksum, and the asymmetry a security pass found on 2026-08-27.
+ *
+ * <p>`install.sh` has verified every download since it was written and refuses a mismatch. The
+ * extension's own installer — the same binary, from the same release, for the same person — did
+ * not check at all. Two ways in, one of them trusting whatever arrived.</p>
+ *
+ * <p>The parser is what is testable without a network, and it is the half that decides. An HTML
+ * error page a proxy substituted, or a truncated file, must read as "no checksum published"
+ * rather than as a checksum that does not match: the first proceeds with a warning, the second
+ * refuses the install with a baffling message.</p>
+ */
+test('a sha256sum line yields its digest and nothing else', () => {
+  const digest = 'a'.repeat(64);
+
+  assert.equal(digestIn(`${digest}  creds-0.1.0-linux-x64.tar.gz\n`), digest);
+  assert.equal(digestIn(`${digest.toUpperCase()} *creds.zip`), digest, 'case-folded, as hex is');
+  assert.equal(digestIn(`  ${digest}\n`), digest);
+});
+
+test('anything that is not a digest reads as none published, not as a mismatch', () => {
+  assert.equal(digestIn('<html><body>404 Not Found</body></html>'), undefined);
+  assert.equal(digestIn(''), undefined);
+  assert.equal(digestIn('a'.repeat(63)), undefined, 'a truncated file is not a checksum');
+  assert.equal(digestIn('a'.repeat(65)), undefined);
+  assert.equal(digestIn('zzzz' + 'a'.repeat(60)), undefined, 'not hex');
 });

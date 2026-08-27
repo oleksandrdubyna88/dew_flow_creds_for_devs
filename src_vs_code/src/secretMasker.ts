@@ -119,8 +119,26 @@ export function maskText(text: string, table: MaskTable): MaskResult {
   return { text: out, hits };
 }
 
-/** The response fields that carry program output. Nothing else is text an agent reads. */
-const TEXT_FIELDS = ['stdout', 'stderr'] as const;
+/**
+ * Every string field is masked — not a list of the ones that carry program output.
+ *
+ * <p>It WAS such a list, `['stdout', 'stderr']`, on the reasoning that nothing else in a response
+ * is text an agent reads. That was true of every shape then in existence and stopped being true
+ * the moment `rotate` answered with the far side's output in a field called `output`: a statement
+ * composed to echo its own argument returned the freshly generated secret to the agent in
+ * plaintext (found 2026-08-27). The list had been forgotten by the person who wrote both halves
+ * in the same week, which is the argument against lists of this kind rather than against that
+ * person.</p>
+ *
+ * <p>Masking everything fails in the safe direction. The worst case is a non-secret field whose
+ * value happens to BE a secret — and that field wanted masking anyway. Non-strings are carried
+ * through untouched, so a number stays a number and an array stays an array.</p>
+ *
+ * <p><b>Not recursive, and that is deliberate.</b> No response shape in this protocol nests text
+ * inside an object, so a walk would be machinery for a case that does not exist — and one whose
+ * cost is unbounded on a body an action could make arbitrarily deep. If a nested shape ever
+ * appears, this is the line that has to change with it.</p>
+ */
 
 /**
  * Mask a response body in place of the caller.
@@ -136,7 +154,7 @@ export function maskResponseBody(body: unknown, table: MaskTable): { body: unkno
   }
   const source = body as Record<string, unknown>;
   const masked: Record<string, unknown> = { ...source };
-  const hits = TEXT_FIELDS.reduce((sum, field) => {
+  const hits = Object.keys(source).reduce((sum, field) => {
     const result = maskField(source[field], table);
     masked[field] = result.value;
     return sum + result.hits;

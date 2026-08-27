@@ -170,6 +170,8 @@ const HANDSHAKE = [
   const trashed = [];
   /** Entries an agent created, with the secret it supplied. */
   const created = [];
+  /** What the vault holds right now — what the masker builds its table from. */
+  const storedSecrets = [];
   // A stub action: no ssh, no network — what is under test is the wire from the tool to the
   // broker and the gate in front of it, not what an action does once it is reached.
   const actions = new UseActionRegistry();
@@ -181,8 +183,13 @@ const HANDSHAKE = [
     summarize: (body) => String(body.query ?? ''),
     describeOutcome: () => 'done',
     run: (_ctx, body) => {
-      ranQueries.push(String(body.query ?? ''));
-      return Promise.resolve({ status: 200, body: { exitCode: 0, rows: 1, stdout: 'ALTER ok' } });
+      const query = String(body.query ?? '');
+      ranQueries.push(query);
+      // ECHOES the statement, on purpose. A rotation's whole promise is that the new value does
+      // not reach the agent — and the one hole left in that is the far side's own output, since a
+      // statement can be composed to print what it was given. A stub that answered "ok" would
+      // pass this test without exercising the masker at all.
+      return Promise.resolve({ status: 200, body: { exitCode: 0, rows: 1, stdout: query } });
     },
   });
 
@@ -204,6 +211,8 @@ const HANDSHAKE = [
       },
       store: (_ctx, slot, value) => {
         rotated.stored.push({ slot, value });
+        // Stored before the response is masked, which is what puts the new value in the table.
+        storedSecrets.push('GENERATED-9f2c41ab');
         return Promise.resolve();
       },
     }),
@@ -213,7 +222,9 @@ const HANDSHAKE = [
     actions,
     () => {},
     storageDir,
-    undefined,
+    // The masker, reading what is STORED — which after a rotation is the new value. This is the
+    // last line between a statement that echoes its own argument and an agent that reads it.
+    () => Promise.resolve(storedSecrets.map((value) => ({ value, label: 'DB_PASSWORD' }))),
     undefined,
     undefined,
     undefined,
@@ -452,9 +463,14 @@ const HANDSHAKE = [
     JSON.stringify(ranQueries[0]),
   );
   check(
-    'and the new secret is NOT in what the agent received',
+    'and the new secret is NOT in what the agent received — even though the statement echoed it',
     !rotatedOut.out.includes('GENERATED-9f2c41ab'),
     'the generated value leaked into the tool answer',
+  );
+  check(
+    'it came back masked rather than merely absent',
+    rotatedOut.out.includes('CREDS_MASKED'),
+    'nothing was masked, so the check above proves only that nothing echoed',
   );
   check('the old value went into history before the write', rotated.recorded === 1, String(rotated.recorded));
   check(

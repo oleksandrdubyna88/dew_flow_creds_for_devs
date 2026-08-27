@@ -130,6 +130,30 @@ const MATCHERS: Partial<Record<McpLogFilter, (row: AuditEntry) => boolean>> = {
 };
 
 /**
+ * How many rows the page draws.
+ *
+ * <p>Measured on 2026-08-27: a fortnight of a busy agent is fourteen days × six windows × five
+ * hundred calls = 42,000 rows and <b>10.2 MB of HTML</b> in one string, with an in-page filter
+ * that walks every row on each of five buttons. Two thousand keeps the page under half a
+ * megabyte and the filter instant, and is far more than anybody scrolls.</p>
+ */
+export const MAX_ROWS_SHOWN = 2000;
+
+/**
+ * The rows to draw, and how many were left on the floor.
+ *
+ * <p><b>The cap is said out loud.</b> A truncated view that looks complete is worse than one
+ * honest about its horizon: somebody counting the secrets that came from an agent would otherwise
+ * be counting the ones that fit on a page. The rows arrive newest-first, so what is dropped is
+ * the oldest — and the file it came from is still on disk.</p>
+ */
+export function rowsToShow(rows: readonly McpLogRow[]): { rows: readonly McpLogRow[]; hidden: number } {
+  return rows.length <= MAX_ROWS_SHOWN
+    ? { rows, hidden: 0 }
+    : { rows: rows.slice(0, MAX_ROWS_SHOWN), hidden: rows.length - MAX_ROWS_SHOWN };
+}
+
+/**
  * What the view says when there is nothing to show.
  *
  * <p>Three different silences, and telling them apart is most of this feature's usefulness: a

@@ -9,7 +9,9 @@ import {
   isNoGenerator,
   isRefusal,
   isRotation,
+  MAX_ROWS_SHOWN,
   mcpRowsIn,
+  rowsToShow,
 } from '../mcpLogRows';
 import { renderMcpLog } from '../mcpLogPage';
 
@@ -219,4 +221,45 @@ test('every filter has a sentence for having nothing in it', () => {
     assert.ok(emptyMessage(filter.id, 3).length > 20, filter.id);
   }
   assert.match(emptyMessage('noGenerator', 3), /could not make/);
+});
+
+/**
+ * The journal is bounded, found by measurement in the security pass on 2026-08-27.
+ *
+ * <p>A fortnight of a busy agent is a real quantity: fourteen days × six windows × five hundred
+ * calls measured out at 42,000 rows and 10.2 MB of HTML, handed to a webview in one string — with
+ * an in-page filter that then walks every row on each of five buttons.</p>
+ *
+ * <p>Capped newest-first, and <b>the cap says so</b>. A truncated view that looks complete is
+ * worse than one honest about its horizon: somebody counting secrets that came from an agent
+ * would otherwise be counting the ones that fit on a page.</p>
+ */
+test('a very long history is capped, newest first', () => {
+  const many = Array.from({ length: MAX_ROWS_SHOWN + 500 }, (_, i) =>
+    line({ seq: i, entityName: `entry-${i}` }),
+  ).join('\n');
+
+  const shown = rowsToShow(mcpRowsIn(many, '2026-08-27'));
+
+  assert.equal(shown.rows.length, MAX_ROWS_SHOWN);
+  assert.equal(shown.hidden, 500);
+  assert.equal(shown.rows[0].entityName, 'entry-0', 'the caller hands them newest-first already');
+});
+
+test('a history that fits is not capped, and says nothing about it', () => {
+  const shown = rowsToShow(mcpRowsIn([line(), line()].join('\n'), '2026-08-27'));
+
+  assert.equal(shown.rows.length, 2);
+  assert.equal(shown.hidden, 0);
+});
+
+test('the page says how many it left out, rather than looking complete', () => {
+  // The rule this product keeps elsewhere: a silent truncation reads as "everything", and the one
+  // number in this view that must not be quietly wrong is a count of secrets.
+  const many = Array.from({ length: MAX_ROWS_SHOWN + 3 }, (_, i) => line({ seq: i })).join('\n');
+
+  const html = renderMcpLog(mcpRowsIn(many, '2026-08-27'));
+
+  assert.match(html, /3 older/);
+  assert.match(html, /still on disk/);
 });

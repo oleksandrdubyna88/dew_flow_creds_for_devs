@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { execFile } from 'node:child_process';
+import * as crypto from 'node:crypto';
 import {
   CredsAction,
   CredsProduct,
@@ -10,6 +11,7 @@ import {
   binaryNameFor,
   choicesFor,
   compareVersions,
+  digestIn,
   entryPathIn,
   ridFor,
   versionFromTag,
@@ -28,6 +30,14 @@ import { describeError } from './describeError';
  * directory on somebody's `PATH` is a change to their machine that outlives the extension and
  * that nothing here would ever clean up. The storage folder is ours: uninstalling the extension
  * removes it, and the full path is what gets copied into an MCP client's config anyway.</p>
+ *
+ * <p><b>The download is verified, the way `install.sh` verifies it.</b> Every release publishes a
+ * `.sha256` beside each asset, and the shell installer has refused a mismatch since it was
+ * written. This path did not check at all until a security pass found the asymmetry (2026-08-27):
+ * two ways to install the same binary, one of which trusted whatever arrived. A release cut before
+ * checksums existed has none, and that case is reported out loud rather than skipped silently — a
+ * quiet skip is indistinguishable from a check that passed, which is the failure mode the shell
+ * script already had a comment about.</p>
  *
  * <p><b>Extraction runs `tar`.</b> Node ships gzip but no zip reader, and this extension has
  * zero runtime dependencies — a constraint that has already cost it a file format. `tar` reads
@@ -134,11 +144,26 @@ async function download(
     throw new Error(`the release does not carry ${asset} (HTTP ${response.status})`);
   }
 
+  const bytes = new Uint8Array(await response.arrayBuffer());
+  const verdict = await verify(bytes, `${url}.sha256`);
+  if (verdict.kind === 'mismatch') {
+    throw new Error(
+      `the download does not match the checksum this release publishes — refusing to install it (expected ${verdict.expected}, got ${verdict.actual})`,
+    );
+  }
+  if (verdict.kind === 'unpublished') {
+    // Said out loud rather than skipped silently: a quiet skip is indistinguishable from a check
+    // that passed, which is the failure mode `install.sh` already carries a comment about.
+    void vscode.window.showWarningMessage(
+      `${product.label}: this release publishes no checksum, so the download was NOT verified.`,
+    );
+  }
+
   const scratch = vscode.Uri.joinPath(host.storage, `.download-${product.binary}`);
   await vscode.workspace.fs.createDirectory(scratch);
   try {
     const archive = vscode.Uri.joinPath(scratch, asset);
-    await vscode.workspace.fs.writeFile(archive, new Uint8Array(await response.arrayBuffer()));
+    await vscode.workspace.fs.writeFile(archive, bytes);
     await extract(archive, scratch);
 
     const extracted = vscode.Uri.joinPath(scratch, ...entryPathIn(product, rid, version).split('/'));
@@ -149,6 +174,39 @@ async function download(
     return target;
   } finally {
     await vscode.workspace.fs.delete(scratch, { recursive: true, useTrash: false });
+  }
+}
+
+/**
+ * Whether these bytes are what the release says they are.
+ *
+ * <p>Three outcomes and they are not the same. <b>Matched</b> is the ordinary one. <b>Mismatch</b>
+ * refuses the install. <b>Unpublished</b> — a release cut before checksums existed, or a network
+ * that answered the asset and not the sum — proceeds, because refusing would break installing a
+ * real release over a file that was never published; the caller says so out loud.</p>
+ */
+async function verify(
+  bytes: Uint8Array,
+  sumUrl: string,
+): Promise<{ kind: 'matched' | 'unpublished' } | { kind: 'mismatch'; expected: string; actual: string }> {
+  const expected = await publishedSum(sumUrl);
+  if (expected === undefined) {
+    return { kind: 'unpublished' };
+  }
+  const actual = crypto.createHash('sha256').update(bytes).digest('hex');
+  return actual === expected ? { kind: 'matched' } : { kind: 'mismatch', expected, actual };
+}
+
+/** The hex digest a `.sha256` file names, or nothing when the release publishes none. */
+async function publishedSum(sumUrl: string): Promise<string | undefined> {
+  try {
+    const response = await fetch(sumUrl, { headers: { 'User-Agent': 'creds-for-devs' } });
+    if (!response.ok) {
+      return undefined;
+    }
+    return digestIn(await response.text());
+  } catch {
+    return undefined;
   }
 }
 

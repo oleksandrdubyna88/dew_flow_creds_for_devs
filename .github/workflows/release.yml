@@ -328,6 +328,13 @@ jobs:
             echo "ASSET=$NAME.tar.gz" >> "$GITHUB_ENV"
           fi
 
+      # The same reason the CLI publishes one, and one more: this binary is installed by a button
+      # inside the extension, which verifies what it downloads. A release that publishes no
+      # checksum makes that verification a warning instead of a check.
+      - name: Checksum
+        shell: bash
+        run: sha256sum "$ASSET" > "$ASSET.sha256"
+
       - name: Attach to the release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -335,6 +342,7 @@ jobs:
         run: |
           gh release create "$GITHUB_REF_NAME" --title "creds-mcp ${GITHUB_REF_NAME#mcp-v}" --notes "Native AOT builds of the MCP server." 2>/dev/null || true
           gh release upload "$GITHUB_REF_NAME" "$ASSET" --clobber
+          gh release upload "$GITHUB_REF_NAME" "$ASSET.sha256" --clobber
 
   extension:
     name: publish extension

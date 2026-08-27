@@ -164,3 +164,51 @@ test('the prompt says what is being made and where', () => {
 
   assert.equal(summarizeCreate(REQUEST, target, 'ssh'), 'app-03 (ssh) in "Servers"');
 });
+
+/**
+ * Two folders with one name, found in a security pass on 2026-08-27.
+ *
+ * <p>Entity and folder names carry no uniqueness rule anywhere in this product — `secretRef.ts`
+ * says so in its own header and REFUSES an ambiguous reference for exactly this reason, naming
+ * both candidates. This picked the first match instead, silently. Two accounts each with a
+ * "Servers" folder open to creation, or one account with a folder of that name at two depths,
+ * and an agent's `folder: "Servers"` lands in whichever the scan reached first — which works
+ * until the day it chooses the other one, and the credential for a production host is filed
+ * under someone's scratch account.</p>
+ */
+
+test('two open folders sharing a name are refused, not guessed between', () => {
+  const nodes = [
+    folder('f1', 'Servers', { mcp: { create: true } }),
+    folder('f2', 'Servers', { mcp: { create: true } }),
+  ];
+
+  const chosen = chooseTarget(creatableFolders(...vaultOf(nodes)), { ...REQUEST, folder: 'Servers' });
+
+  assert.equal(chosen.ok, false);
+  assert.ok(!chosen.ok && chosen.message.includes('More than one'), chosen.ok ? '' : chosen.message);
+  assert.ok(!chosen.ok && chosen.message.includes('Servers'));
+});
+
+test('the ambiguity is by NAME, so a differently named pair still resolves', () => {
+  const nodes = [
+    folder('f1', 'Servers', { mcp: { create: true } }),
+    folder('f2', 'Databases', { mcp: { create: true } }),
+  ];
+
+  const chosen = chooseTarget(creatableFolders(...vaultOf(nodes)), { ...REQUEST, folder: 'Servers' });
+
+  assert.ok(chosen.ok);
+  assert.equal(chosen.ok && chosen.target.folderId, 'f1');
+});
+
+test('a name is bounded, because it reaches a consent prompt and a tree row', () => {
+  // The body is capped at 64 KB, so without this a name could be sixty thousand characters —
+  // a prompt nobody can read the buttons of, and a row that ruins the tree it lands in.
+  const nodes = [folder('f1', 'Servers', { mcp: { create: true } })];
+
+  const chosen = chooseTarget(creatableFolders(...vaultOf(nodes)), { ...REQUEST, name: 'x'.repeat(300) });
+
+  assert.equal(chosen.ok, false);
+  assert.ok(!chosen.ok && chosen.message.includes('too long'));
+});

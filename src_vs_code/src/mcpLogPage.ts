@@ -8,6 +8,7 @@ import {
   isNoGenerator,
   isRefusal,
   isRotation,
+  rowsToShow,
 } from './mcpLogRows';
 import { escapeHtml } from './webviewHtml';
 
@@ -26,8 +27,9 @@ import { escapeHtml } from './webviewHtml';
 /** The page. Pure, so what it shows — and does not show — is a test. */
 // One template literal, like the other pages here. No backticks inside it.
 // eslint-disable-next-line max-lines-per-function
-export function renderMcpLog(rows: readonly McpLogRow[]): string {
+export function renderMcpLog(all: readonly McpLogRow[]): string {
   const nonce = crypto.randomBytes(16).toString('base64url');
+  const { rows, hidden } = rowsToShow(all);
   return `<!DOCTYPE html>
 <html>
 <head>
@@ -67,6 +69,7 @@ export function renderMcpLog(rows: readonly McpLogRow[]): string {
   ).join('')}</div>
   <p class="hint" id="hint">${escapeHtml(MCP_LOG_FILTERS[0].hint)}</p>
   ${rows.length === 0 ? `<p class="empty">${escapeHtml(emptyMessage('all', 0))}</p>` : table(rows)}
+  ${hidden === 0 ? '' : `<p class="hint">Showing the most recent ${rows.length}. ${hidden} older call(s) are still on disk, in this window's audit files.</p>`}
 <script nonce="${nonce}">
   const hints = {};
   document.querySelectorAll('button[data-filter]').forEach((b) => { hints[b.dataset.filter] = b.dataset.hint; });

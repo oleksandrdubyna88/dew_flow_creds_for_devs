@@ -141,3 +141,48 @@ test('a body that is not an object survives untouched', () => {
   assert.equal(maskResponseBody(undefined, table).body, undefined);
   assert.equal(maskResponseBody('text', table).body, 'text');
 });
+
+/**
+ * The field-name trap, found in a security pass on 2026-08-27.
+ *
+ * <p>This masked exactly two fields — `stdout` and `stderr` — on the reasoning that nothing else
+ * in a response is text an agent reads. That was true of every shape that existed when it was
+ * written, and it stopped being true the moment `rotate` answered with the far side's output in a
+ * field it called `output`. A statement composed to echo its own argument then returned the
+ * freshly generated secret to the agent in plaintext: the one hole the rotation's design claims
+ * the masker closes.</p>
+ *
+ * <p>The fix is not a longer list. A list is a thing to forget, and this one was forgotten by the
+ * person who wrote both halves in the same week. Every string field is masked now, which fails in
+ * the safe direction: the worst case is a non-secret field whose value happens to BE a secret,
+ * and that field wanted masking anyway.</p>
+ */
+test('a response field this masker has never heard of is masked too', () => {
+  const table = buildMaskTable([{ value: 'GENERATED-9f2c41ab', label: 'DB_PASSWORD' }]);
+
+  const { body, hits } = maskResponseBody(
+    { rotated: true, entity: 'orders-db', output: "ALTER USER app IDENTIFIED BY 'GENERATED-9f2c41ab'" },
+    table,
+  );
+
+  assert.equal(hits, 1);
+  assert.equal(JSON.stringify(body).includes('GENERATED-9f2c41ab'), false);
+  assert.match(String((body as { output: string }).output), /CREDS_MASKED/);
+});
+
+test('non-string fields are carried through untouched, whatever they are', () => {
+  // Widening to every field must not start stringifying numbers, booleans or arrays.
+  const table = buildMaskTable([{ value: 'hunter2-secret', label: 'PASSWORD' }]);
+
+  const { body } = maskResponseBody(
+    { exitCode: 0, timedOut: false, written: ['A', 'B'], nested: { deep: 'hunter2-secret' } },
+    table,
+  );
+
+  const out = body as Record<string, unknown>;
+  assert.equal(out.exitCode, 0);
+  assert.equal(out.timedOut, false);
+  assert.deepEqual(out.written, ['A', 'B']);
+  // Not recursed into, and that is stated rather than assumed: no response shape nests text.
+  assert.deepEqual(out.nested, { deep: 'hunter2-secret' });
+});

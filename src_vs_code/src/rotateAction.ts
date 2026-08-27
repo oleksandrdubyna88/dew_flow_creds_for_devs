@@ -212,7 +212,10 @@ async function commit(
   await deps.record(ctx, await deps.snapshot(ctx, details));
   await deps.store(ctx, slot, value);
   deps.onRotated?.();
-  return { status: 200, body: { rotated: true, entity: ctx.entityName, output: outputOf(result) } };
+  // `stdout`, not `output`: it IS the far side's stdout, and calling it anything else was how
+  // this answer escaped the masker for one release (security pass, 2026-08-27). The masker
+  // covers every field now, and the honest name is still the right one.
+  return { status: 200, body: { rotated: true, entity: ctx.entityName, stdout: outputOf(result) } };
 }
 
 /**

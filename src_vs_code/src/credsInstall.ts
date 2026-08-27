@@ -209,3 +209,22 @@ export function choicesFor(product: CredsProduct, action: CredsAction): string[]
       return [];
   }
 }
+
+/**
+ * The digest out of a `.sha256` file: `<hex>  <filename>`, as sha256sum writes it.
+ *
+ * <p>Here rather than beside the download because it is a DECISION, and this is where the
+ * decisions live: it says whether what came back is a checksum at all. Only the first field, and
+ * only if it is 64 hex characters — anything else (an HTML error page a proxy substituted, a
+ * truncated file) reads as "this release publishes no checksum", which proceeds with a warning.
+ * Treating it as a checksum that does not match would refuse a real install with a baffling
+ * message.</p>
+ *
+ * <p>It exists at all because a security pass found the asymmetry: `install.sh` has verified every
+ * download since it was written, and the extension's own installer — same binary, same release,
+ * same person — checked nothing.</p>
+ */
+export function digestIn(text: string): string | undefined {
+  const first = text.trim().split(/\s+/)[0]?.toLowerCase() ?? '';
+  return /^[0-9a-f]{64}$/.test(first) ? first : undefined;
+}
