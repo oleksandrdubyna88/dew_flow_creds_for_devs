@@ -7,6 +7,7 @@ import { materializePrivateKey } from './keyInstaller';
 import { runBounded } from './sshExecRunner';
 import { GoogleAuthProvider } from './googleAuthProvider';
 import { nasPathFor } from './nasPaths';
+import { OrgRecoveryClient } from './orgRecoveryClient';
 import { ServerTransport } from './serverTransport';
 import { StorageManager } from './storageManager';
 import { StoredAccount } from './types';
@@ -35,6 +36,9 @@ export class TransportFactory {
 
   private readonly cache = new Map<string, VaultTransport>();
 
+  /** One corporate-recovery client per server location, cached like the transports are. */
+  private readonly orgClients = new Map<string, OrgRecoveryClient>();
+
   constructor(
     private readonly storage: StorageManager,
     private readonly googleAuth: GoogleAuthProvider,
@@ -57,6 +61,32 @@ export class TransportFactory {
   forAccount(account: StoredAccount): VaultTransport | undefined {
     const location = nasPathFor(account);
     return location === undefined ? undefined : this.forLocation(location);
+  }
+
+  /**
+   * The corporate-recovery client for this account's server, or `undefined` when it does not
+   * sync to one.
+   *
+   * <p>Here rather than in a factory of its own so it reuses `tokenFor` — the Microsoft scope
+   * negotiation, the Google id-token path, the fallbacks. A second place that resolves a token
+   * for the same server would be a second place to fix the day any of that changes.</p>
+   *
+   * <p>Corporate recovery exists on the server transport only, which is why this returns
+   * undefined for a folder or a git remote rather than a client that would fail on use: there
+   * is no server there to relay a share.</p>
+   */
+  orgRecoveryFor(account: StoredAccount): OrgRecoveryClient | undefined {
+    const location = nasPathFor(account);
+    if (location === undefined || !isServerLocation(location)) {
+      return undefined;
+    }
+    const existing = this.orgClients.get(location);
+    if (existing !== undefined) {
+      return existing;
+    }
+    const client = new OrgRecoveryClient(location, (a) => this.tokenFor(a));
+    this.orgClients.set(location, client);
+    return client;
   }
 
   forLocation(location: string): VaultTransport {

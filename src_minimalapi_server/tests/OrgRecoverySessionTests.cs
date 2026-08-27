@@ -36,8 +36,9 @@ public sealed class OrgRecoverySessionTests
     private static string B64(int bytes, byte fill = 3) =>
         Convert.ToBase64String(Enumerable.Repeat(fill, bytes).ToArray());
 
-    private static object Contribution(byte fill = 3) => new
+    private static object Contribution(byte fill = 3, int shareIndex = 1) => new
     {
+        shareIndex,
         ephemeralPublicKey = B64(32, fill),
         salt = B64(16),
         iv = B64(12),
@@ -99,11 +100,12 @@ public sealed class OrgRecoverySessionTests
         return parsed.RootElement.GetProperty("sessionId").GetString()!;
     }
 
-    private static async Task ContributeAsync(VaultServer server, string sessionId, string officer, byte fill)
+    private static async Task ContributeAsync(
+        VaultServer server, string sessionId, string officer, byte fill, int shareIndex = 1)
     {
         using var client = server.ClientFor(officer);
         var posted = await client.PostAsJsonAsync(
-            $"/api/org-recovery/sessions/{sessionId}/contribute", Contribution(fill), Ct);
+            $"/api/org-recovery/sessions/{sessionId}/contribute", Contribution(fill, shareIndex), Ct);
         posted.StatusCode.Should().Be(HttpStatusCode.NoContent, $"{officer} contributing");
     }
 

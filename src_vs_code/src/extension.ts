@@ -89,6 +89,27 @@ import {
 } from './securityKeyOps';
 import { generateRecoveryCode, isRecoveryCodeError } from './recoveryCode';
 import { showRecoveryCodeView } from './recoveryCodeView';
+import { EscrowInvite, OrgRecoveryClient } from './orgRecoveryClient';
+import { judgeOrgRecovery, orgRecoveryNotice } from './orgRecoveryPinning';
+import { showOrgRecoveryView } from './orgRecoveryPanel';
+import { openSharePayload } from './orgShareEnvelope';
+import {
+  openShareWithPin,
+  sealShareWithPin,
+  shareMatchesCurrentKey,
+} from './orgEscrowShareWrap';
+import {
+  Contribution,
+  RecoverySessionKeys,
+  keyMatchesPublished,
+  newSessionKeys,
+  recoverOrgKey,
+  sealShareToSession,
+  wipe as wipeRecovered,
+} from './breakGlass';
+import { unwrapWithOrgEscrow, orgEscrowWrap, isKeyWrap as isWrap } from './keyWrap';
+import { rekeyUnderPin } from './vaultRekey';
+import { decryptJsonWithMasterKey, readBackupAccount } from './cryptoUtils';
 import { validatePin } from './pinPolicy';
 import { CredTreeDataProvider, VIEW_ID } from './treeDataProvider';
 import { DepDecorationProvider } from './depDecorations';
@@ -149,6 +170,7 @@ import {
 import { EphemeralSweeper } from './ephemeralSweeper';
 import { maskEntriesFor } from './maskEntries';
 import { findUsableEntry, visibleMcpEntries } from './mcpEntries';
+import { McpEntriesCache } from './mcpEntriesCache';
 import { RotateDeps, rotateAction } from './rotateAction';
 import { showMcpLog } from './mcpLogPanel';
 import { CreateRequest, chooseTarget, creatableFolders, detailsFor, summarizeCreate } from './mcpCreate';
@@ -535,8 +557,20 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   void refreshReadiness();
 
   provider.onMutate = () => sync.notifyChange();
+  /**
+   * What an agent may see, held between calls.
+   *
+   * <p>Declared before `mutated` because that is what forgets it: building this answer costs five
+   * keychain reads per visible entry, and the route it serves raises no prompt and is therefore
+   * not throttled. Measured at 1000 reads for a vault with 200 entries opened to agents.</p>
+   */
+  const mcpEntries = new McpEntriesCache(() => visibleMcpEntries(storage));
+
   const mutated = () => {
     provider.refresh();
+    // The one moment the agent-visible answer stops being true. An event rather than a timer:
+    // a TTL would be a guess about how stale is acceptable, and this is the fact.
+    mcpEntries.forget();
     // `refresh()` threw the dependency index away; this makes VS Code come back and ask for
     // the decorations again. Both are needed: the tree repaints its rows, the decorations
     // repaint their labels, and they are two different notification channels.
@@ -593,7 +627,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // The eighth answers the MCP server's one read route: the non-secret half of the entries
     // somebody opened to agents. Nothing appears until a switch is on, which is what stands in
     // for a token there — see `isMcpEntriesRoute`.
-    () => visibleMcpEntries(storage),
+    () => mcpEntries.entries(),
     // The ninth is the same question one rung up: may an agent USE this entry. A single callback
     // because the lookup and the permission are one answer, and splitting them is how a route
     // ends up asking the first and forgetting the second.
@@ -3129,6 +3163,436 @@ ${detail}
         : `Removed "${picked.label}". Note: existing backups/snapshots remain openable by that key until the vault is re-keyed (remove all security keys to force a re-key under the PIN).`,
     );
   });
+
+  // ---------- corporate recovery (todo/PLAN_org_recovery.md) ----------
+
+  /**
+   * Session keypairs for recoveries THIS window started.
+   *
+   * <p>In memory only, and that is the design: the private half is what turns the collected
+   * contributions back into shares, and writing it anywhere would put the means to decrypt a
+   * quorum's worth of key material on disk beside them. Closing the window abandons the
+   * recovery, which is the correct trade — starting another one costs a click.</p>
+   */
+  const breakGlassSessions = new Map<string, RecoverySessionKeys>();
+
+  /** The `Memento` the TOFU pins live in — the same store shape share signing uses. */
+  function pinStore(ctx: vscode.ExtensionContext): {
+    get(key: string): Record<string, string> | undefined;
+    update(key: string, value: Record<string, string>): Thenable<void>;
+  } {
+    return {
+      get: (key) => ctx.globalState.get<Record<string, string>>(key),
+      update: (key, value) => ctx.globalState.update(key, value),
+    };
+  }
+
+  /** What a recovery could not do, in the words the officer needs to act on. */
+  function recoveryFailureText(outcome: { kind: string; have?: number; need?: number }): string {
+    if (outcome.kind === 'tooFew') {
+      return `Only ${outcome.have} of ${outcome.need} officers have contributed so far.`;
+    }
+    return (
+      'The contributions collected do not rebuild this organisation’s recovery key. Either a '
+      + 'share is from a superseded ceremony, or one of them is not what it claims to be. '
+      + 'Nothing was opened.'
+    );
+  }
+
+  /** Open an invite's sealed payload with the one-time PIN. */
+  function openShareEnvelope(
+    invite: EscrowInvite,
+    recipientEmail: string,
+    pin: string,
+  ): { bytes: Buffer; integrityTag: string } | undefined {
+    const payload = openSharePayload(invite, recipientEmail, pin);
+    return payload === undefined
+      ? undefined
+      : { bytes: Buffer.from(payload.share, 'base64'), integrityTag: payload.integrityTag };
+  }
+
+  register('credSshManager.showOrgRecovery', async (target) => {
+    const account = await accountFromTargetOrPick(target, storage, 'Corporate recovery for…');
+    if (account === undefined) {
+      return;
+    }
+    const client = transports.orgRecoveryFor(account);
+    if (client === undefined) {
+      void vscode.window.showInformationMessage(
+        `${account.email} does not sync to a vault server, so corporate recovery does not apply to it.`,
+      );
+      return;
+    }
+    try {
+      await showOrgRecoveryFor(account, client);
+    } catch (error) {
+      void vscode.window.showErrorMessage(
+        `Could not read corporate recovery: ${describeError(error)}`,
+      );
+    }
+  });
+
+  /** Read everything the page shows, judge the key, and render it. */
+  async function showOrgRecoveryFor(
+    account: StoredAccount,
+    client: OrgRecoveryClient,
+  ): Promise<void> {
+    const config = await client.readConfig(account);
+    const facts = {
+      enabled: config.enabled,
+      setupComplete: config.setupComplete,
+      orgPublicKeyFingerprint: config.orgPublicKeyFingerprint,
+      rosterFingerprint: config.rosterFingerprint,
+      location: client.location,
+    };
+    const verdict = judgeOrgRecovery(pinStore(context), account.accountId, facts);
+    const isOfficer = config.officerEmails.includes(account.email.toLowerCase());
+    const share = await storage.getOrgEscrowShare(account.accountId);
+    showOrgRecoveryView({
+      accountEmail: account.email,
+      location: client.location,
+      config,
+      notice: orgRecoveryNotice(verdict, facts),
+      isOfficer,
+      holdsShare:
+        share !== undefined && shareMatchesCurrentKey(share, config.orgPublicKeyFingerprint),
+      pendingInvites: isOfficer ? (await client.listInvites(account)).length : 0,
+      audit: isOfficer ? await client.readAudit(account) : [],
+    });
+  }
+
+  /**
+   * Accept a share of the organisation's recovery key.
+   *
+   * <p>The acknowledgement is sent only AFTER the share is durably in this officer's own vault.
+   * A crash in between leaves the invite safely pending; an ack sent first would let the
+   * initiator publish a key whose quorum cannot be assembled.</p>
+   */
+  register('credSshManager.acceptRecoveryShare', async (target) => {
+    const account = await accountFromTargetOrPick(target, storage, 'Accept a recovery share as…');
+    if (account === undefined) {
+      return;
+    }
+    const client = transports.orgRecoveryFor(account);
+    if (client === undefined) {
+      void vscode.window.showInformationMessage('That account does not sync to a vault server.');
+      return;
+    }
+    try {
+      const invites = await client.listInvites(account);
+      if (invites.length === 0) {
+        void vscode.window.showInformationMessage('No recovery shares are waiting for you.');
+        return;
+      }
+      const invite = invites[0];
+      const pin = await vscode.window.showInputBox({
+        title: `Recovery share from ${invite.fromEmail}`,
+        prompt: 'The one-time PIN they told you out of band.',
+        password: true,
+        ignoreFocusOut: true,
+      });
+      if (pin === undefined) {
+        return;
+      }
+      await acceptRecoveryShare(account, client, invite, pin);
+    } catch (error) {
+      void vscode.window.showErrorMessage(`Could not accept the share: ${describeError(error)}`);
+    }
+  });
+
+  async function acceptRecoveryShare(
+    account: StoredAccount,
+    client: OrgRecoveryClient,
+    invite: EscrowInvite,
+    pin: string,
+  ): Promise<void> {
+    const config = await client.readConfig(account);
+    const payload = openShareEnvelope(invite, account.email, pin);
+    if (payload === undefined) {
+      void vscode.window.showErrorMessage('That PIN does not open the share.');
+      return;
+    }
+    const vaultPin = await vaultKeys.storedPin(account);
+    if (vaultPin === undefined) {
+      void vscode.window.showErrorMessage(
+        'Set this account\'s vault PIN first — your share is sealed under it.',
+      );
+      return;
+    }
+    const wrap = await sealShareWithPin(
+      payload.bytes,
+      {
+        setupId: invite.setupId,
+        shareIndex: invite.shareIndex,
+        threshold: invite.threshold,
+        totalShares: invite.totalShares,
+        integrityTag: payload.integrityTag,
+        orgPublicKeyFingerprint: config.orgPublicKeyFingerprint,
+      },
+      account.accountId,
+      vaultPin,
+      Date.now(),
+    );
+    await storage.setOrgEscrowShare(account.accountId, wrap);
+    // Durable first, acknowledged second — never the other way round.
+    await client.acknowledgeInvite(account, invite.id);
+    void vscode.window.showInformationMessage(
+      `Recovery share stored. You are one of ${invite.totalShares} officers; ${invite.threshold} of you can open a colleague's vault together.`,
+    );
+  }
+
+  register('credSshManager.startBreakGlass', async (target) => {
+    const account = await accountFromTargetOrPick(target, storage, 'Start a recovery as…');
+    if (account === undefined) {
+      return;
+    }
+    const client = transports.orgRecoveryFor(account);
+    if (client === undefined) {
+      void vscode.window.showInformationMessage('That account does not sync to a vault server.');
+      return;
+    }
+    const targetEmail = await vscode.window.showInputBox({
+      title: 'Whose vault needs recovering?',
+      prompt: 'The email of the person whose vault must be opened without them.',
+      ignoreFocusOut: true,
+    });
+    if (targetEmail === undefined || targetEmail.trim().length === 0) {
+      return;
+    }
+    const confirmed = await vscode.window.showWarningMessage(
+      `Open ${targetEmail.trim()}'s vault using the corporate recovery key? This is recorded permanently, visible to every officer, and it re-keys their vault — they will need a new PIN from you afterwards.`,
+      { modal: true },
+      'Start recovery',
+    );
+    if (confirmed !== 'Start recovery') {
+      return;
+    }
+    try {
+      const keys = newSessionKeys();
+      const session = await client.startSession(
+        account,
+        targetEmail.trim(),
+        keys.publicKey.toString('base64'),
+      );
+      breakGlassSessions.set(session.sessionId, keys);
+      await copySecret(vscode.env.clipboard, session.sessionId);
+      void vscode.window.showInformationMessage(
+        `Recovery started. Session id copied — send it to ${session.threshold - 1} other officer(s), who run "Contribute to a Recovery…". Then run "Finish a Recovery…".`,
+      );
+    } catch (error) {
+      void vscode.window.showErrorMessage(`Could not start the recovery: ${describeError(error)}`);
+    }
+  });
+
+  register('credSshManager.contributeToRecovery', async (target) => {
+    const account = await accountFromTargetOrPick(target, storage, 'Contribute as…');
+    if (account === undefined) {
+      return;
+    }
+    const client = transports.orgRecoveryFor(account);
+    if (client === undefined) {
+      void vscode.window.showInformationMessage('That account does not sync to a vault server.');
+      return;
+    }
+    const sessionId = await vscode.window.showInputBox({
+      title: 'Contribute to a recovery',
+      prompt: 'The session id the initiating officer sent you.',
+      ignoreFocusOut: true,
+    });
+    if (sessionId === undefined || sessionId.trim().length === 0) {
+      return;
+    }
+    try {
+      await contributeToRecovery(account, client, sessionId.trim());
+    } catch (error) {
+      void vscode.window.showErrorMessage(`Could not contribute: ${describeError(error)}`);
+    }
+  });
+
+  async function contributeToRecovery(
+    account: StoredAccount,
+    client: OrgRecoveryClient,
+    sessionId: string,
+  ): Promise<void> {
+    const session = await client.readSession(account, sessionId);
+    const agreed = await vscode.window.showWarningMessage(
+      `${session.initiatorEmail} is asking to open ${session.targetEmail}'s vault. Contributing your share helps them do it, and your name is recorded against it. Continue?`,
+      { modal: true },
+      'Contribute my share',
+    );
+    if (agreed !== 'Contribute my share') {
+      return;
+    }
+    const wrap = await storage.getOrgEscrowShare(account.accountId);
+    if (wrap === undefined) {
+      void vscode.window.showErrorMessage('This machine holds no recovery share for you.');
+      return;
+    }
+    const vaultPin = await vaultKeys.storedPin(account);
+    if (vaultPin === undefined) {
+      void vscode.window.showErrorMessage('Enter this account\'s vault PIN first.');
+      return;
+    }
+    const share = await openShareWithPin(wrap, account.accountId, vaultPin);
+    const sealed = sealShareToSession(share, Buffer.from(session.sessionPublicKey, 'base64'));
+    await client.contribute(account, sessionId, {
+      shareIndex: sealed.shareIndex,
+      ephemeralPublicKey: sealed.ephemeralPublicKey,
+      salt: sealed.salt,
+      iv: sealed.iv,
+      tag: sealed.tag,
+      data: sealed.data,
+    });
+    wipeRecovered(share.bytes);
+    void vscode.window.showInformationMessage(
+      `Your share is with ${session.initiatorEmail}'s recovery of ${session.targetEmail}.`,
+    );
+  }
+
+  /**
+   * Finish a recovery: rebuild the key from the quorum, open the target's vault, re-key it.
+   *
+   * <p>The re-key is not optional and not a separate step. The whole point of opening somebody
+   * else's vault is that they are gone; leaving it sealed to a PIN and a security key nobody
+   * has would mean the next person to need it starts this ceremony again.</p>
+   */
+  register('credSshManager.finishBreakGlass', async (target) => {
+    const account = await accountFromTargetOrPick(target, storage, 'Finish a recovery as…');
+    if (account === undefined) {
+      return;
+    }
+    const client = transports.orgRecoveryFor(account);
+    if (client === undefined) {
+      void vscode.window.showInformationMessage('That account does not sync to a vault server.');
+      return;
+    }
+    const sessionId = await vscode.window.showInputBox({
+      title: 'Finish a recovery',
+      prompt: 'The session id you started.',
+      ignoreFocusOut: true,
+    });
+    if (sessionId === undefined || sessionId.trim().length === 0) {
+      return;
+    }
+    const keys = breakGlassSessions.get(sessionId.trim());
+    if (keys === undefined) {
+      void vscode.window.showErrorMessage(
+        'This window did not start that recovery. The session key lives only in the window that '
+          + 'began it — start a new recovery rather than trying to resume this one.',
+      );
+      return;
+    }
+    try {
+      await finishBreakGlass(account, client, sessionId.trim(), keys);
+    } catch (error) {
+      void vscode.window.showErrorMessage(`Recovery failed: ${describeError(error)}`);
+    }
+  });
+
+  async function finishBreakGlass(
+    account: StoredAccount,
+    client: OrgRecoveryClient,
+    sessionId: string,
+    keys: RecoverySessionKeys,
+  ): Promise<void> {
+    const config = await client.readConfig(account);
+    const session = await client.readSession(account, sessionId);
+    const share = await storage.getOrgEscrowShare(account.accountId);
+    if (share === undefined) {
+      void vscode.window.showErrorMessage(
+        'This machine holds no recovery share, so it cannot say what shape the split has — '
+          + 'accept your own share first.',
+      );
+      return;
+    }
+    // Each contribution carries its own x coordinate. It is not secret — a coordinate is not a
+    // value — and without it the shares are points on a curve with no x, which cannot be
+    // interpolated at all.
+    const contributions: Contribution[] = session.contributions.map((c) => ({
+      officerEmail: c.officerEmail,
+      shareIndex: c.shareIndex,
+      sealed: c,
+    }));
+    const outcome = recoverOrgKey(
+      contributions,
+      keys.privateKey,
+      share.threshold,
+      share.totalShares,
+      share.integrityTag,
+    );
+    if (outcome.kind !== 'recovered') {
+      void vscode.window.showErrorMessage(recoveryFailureText(outcome));
+      return;
+    }
+    if (!keyMatchesPublished(outcome.orgPrivateKey, Buffer.from(config.orgPublicKey, 'base64'))) {
+      wipeRecovered(outcome.orgPrivateKey);
+      void vscode.window.showErrorMessage(
+        'The reconstructed key is not the one this server publishes — the shares are from an '
+          + 'older ceremony. Nothing was opened.',
+      );
+      return;
+    }
+    await openAndRekey(account, client, session.sessionId, session.targetEmail, outcome.orgPrivateKey);
+    wipeRecovered(outcome.orgPrivateKey);
+    breakGlassSessions.delete(sessionId);
+  }
+
+  async function openAndRekey(
+    account: StoredAccount,
+    client: OrgRecoveryClient,
+    sessionId: string,
+    targetEmail: string,
+    orgPrivateKey: Buffer,
+  ): Promise<void> {
+    const { content, etag } = await client.readTargetVault(account, sessionId);
+    const escrow = orgEscrowWrap(readVaultWraps(content).filter(isWrap));
+    if (escrow === undefined) {
+      void vscode.window.showErrorMessage(
+        `${targetEmail}'s vault carries no corporate escrow wrap — it was written before `
+          + 'recovery was configured, or by a client that refused to trust this key.',
+      );
+      return;
+    }
+    const master = unwrapWithOrgEscrow(escrow, orgPrivateKey);
+    const payload = decryptJsonWithMasterKey(content, master);
+    const temporaryPin = await vscode.window.showInputBox({
+      title: `A temporary PIN for ${targetEmail}'s vault`,
+      prompt: 'The vault is re-keyed under this. Hand it over out of band; they replace it.',
+      password: true,
+      ignoreFocusOut: true,
+      validateInput: validatePin,
+    });
+    if (temporaryPin === undefined) {
+      wipeRecovered(master);
+      return;
+    }
+    // The PIN wrap binds to the OWNER's accountId, not the recovering officer's. It is in the
+    // envelope's plaintext header — which is exactly why that header is plaintext: a restore
+    // has to know whose vault it is holding before it can open anything.
+    const owner = readBackupAccount(content);
+    if (owner === undefined) {
+      wipeRecovered(master);
+      void vscode.window.showErrorMessage(
+        `${targetEmail}'s vault carries no account header, so a re-key could not be bound to them.`,
+      );
+      return;
+    }
+    const rotated = await rekeyUnderPin({
+      payload,
+      account: owner,
+      pin: temporaryPin,
+      now: Date.now(),
+      pendingShares: undefined,
+      previousWraps: readVaultWraps(content).filter(isWrap),
+    });
+    await client.writeTargetVault(account, sessionId, rotated.content, etag);
+    wipeRecovered(master, rotated.masterKey);
+    void vscode.window.showInformationMessage(
+      `${targetEmail}'s vault is recovered and re-keyed. Every previous PIN, security key and `
+        + 'recovery code for it is now dead; give them the temporary PIN out of band. This is '
+        + 'recorded where every officer can see it.',
+    );
+  }
 
   // ---------- the printed recovery code (roadmap D9) ----------
 

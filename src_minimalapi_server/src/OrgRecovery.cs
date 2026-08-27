@@ -88,21 +88,6 @@ public sealed record OrgRecoveryConfig
 }
 
 /// <summary>
-/// What a client reads to learn whether corporate recovery is on, and whose it is.
-///
-/// <para>Readable by any allowed caller, not only officers, and that is the transparency
-/// requirement rather than an oversight: every account on a server with this configured is
-/// automatically enrolled — its vault gains an escrow wrap on the next write — and a person
-/// whose secrets can be recovered by a quorum of named colleagues is entitled to know it, and
-/// to know which colleagues. A silent escrow is a backdoor by shape even when it is legitimate
-/// by intent.</para>
-///
-/// <para><c>OrgPublicKey</c> is a PUBLIC key and safe to serve: the security of the scheme is
-/// entirely in the private half, which this server never sees in any form.
-/// <c>SetupComplete</c> is false between "the operator listed officers" and "the officers
-/// finished the ceremony" — a window in which clients must not try to enrol.</para>
-/// </summary>
-/// <summary>
 /// One officer's Shamir share, sealed by the initiator and relayed by this server.
 ///
 /// <para><c>FromEmail</c> is stamped from the verified token and never accepted from the body —
@@ -234,6 +219,12 @@ public sealed record RecoverySession
 public sealed record SessionContribution
 {
     public string OfficerEmail { get; init; } = "";
+    /// <summary>
+    /// The share's x coordinate. Not secret — it is a coordinate, not a value — and without it
+    /// the initiator cannot interpolate at all: the shares are points on a curve, and a point
+    /// with no x is not a point.
+    /// </summary>
+    public int ShareIndex { get; init; }
     public long ContributedAt { get; init; }
     public string EphemeralPublicKey { get; init; } = "";
     public string Salt { get; init; } = "";
@@ -256,6 +247,7 @@ public sealed record StartSessionRequest
 
 public sealed record ContributeRequest
 {
+    public int ShareIndex { get; init; }
     public string EphemeralPublicKey { get; init; } = "";
     public string Salt { get; init; } = "";
     public string Iv { get; init; } = "";
@@ -263,7 +255,8 @@ public sealed record ContributeRequest
     public string Data { get; init; } = "";
 
     public bool IsValid() =>
-        IsBase64(EphemeralPublicKey) && IsBase64(Salt) && IsBase64(Iv) && IsBase64(Tag) && IsBase64(Data);
+        ShareIndex is >= 1 and <= 255
+        && IsBase64(EphemeralPublicKey) && IsBase64(Salt) && IsBase64(Iv) && IsBase64(Tag) && IsBase64(Data);
 
     private static bool IsBase64(string value) =>
         !string.IsNullOrWhiteSpace(value)
@@ -303,6 +296,21 @@ public sealed record AuditEntryDto(
     long StartedAt,
     long CompletedAt);
 
+/// <summary>
+/// What a client reads to learn whether corporate recovery is on, and whose it is.
+///
+/// <para>Readable by any allowed caller, not only officers, and that is the transparency
+/// requirement rather than an oversight: every account on a server with this configured is
+/// automatically enrolled — its vault gains an escrow wrap on the next write — and a person
+/// whose secrets can be recovered by a quorum of named colleagues is entitled to know it, and
+/// to know which colleagues. A silent escrow is a backdoor by shape even when it is legitimate
+/// by intent.</para>
+///
+/// <para><c>OrgPublicKey</c> is a PUBLIC key and safe to serve: the security of the scheme is
+/// entirely in the private half, which this server never sees in any form.
+/// <c>SetupComplete</c> is false between "the operator listed officers" and "the officers
+/// finished the ceremony" — a window in which clients must not try to enrol.</para>
+/// </summary>
 public sealed record OrgRecoveryConfigDto(
     bool Enabled,
     IReadOnlyList<string> OfficerEmails,

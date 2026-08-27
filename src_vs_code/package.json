@@ -2,7 +2,7 @@
   "name": "creds-for-devs",
   "displayName": "CredsForDevs",
   "description": "Zero-trust credential manager for developers: SSH hosts and keys, VPN configs, databases, scripts and the CLI commands nobody remembers — in VS Code. Secrets live in the OS keychain; sync and team sharing are end-to-end encrypted, so the self-hosted vault server never sees plaintext. An AI coding agent can use an SSH credential without ever receiving it.",
-  "version": "0.75.0",
+  "version": "0.76.0",
   "publisher": "remsoftdev",
   "license": "MIT",
   "icon": "media/icon.png",
@@ -706,6 +706,32 @@
         "category": "CredsForDevs"
       },
       {
+        "command": "credSshManager.showOrgRecovery",
+        "title": "Corporate Recovery…",
+        "category": "CredsForDevs",
+        "icon": "$(organization)"
+      },
+      {
+        "command": "credSshManager.acceptRecoveryShare",
+        "title": "Accept Recovery Share…",
+        "category": "CredsForDevs"
+      },
+      {
+        "command": "credSshManager.startBreakGlass",
+        "title": "Recover a Colleague’s Vault…",
+        "category": "CredsForDevs"
+      },
+      {
+        "command": "credSshManager.contributeToRecovery",
+        "title": "Contribute to a Recovery…",
+        "category": "CredsForDevs"
+      },
+      {
+        "command": "credSshManager.finishBreakGlass",
+        "title": "Finish a Recovery…",
+        "category": "CredsForDevs"
+      },
+      {
         "command": "credSshManager.lockVaults",
         "title": "Lock Vaults (clear cached keys)",
         "category": "CredsForDevs",
@@ -1116,6 +1142,31 @@
           "command": "credSshManager.removeRecoveryCode",
           "when": "view == credSshManagerView && viewItem == account",
           "group": "2_keys@8"
+        },
+        {
+          "command": "credSshManager.showOrgRecovery",
+          "when": "view == credSshManagerView && viewItem == account",
+          "group": "2_keys@9"
+        },
+        {
+          "command": "credSshManager.acceptRecoveryShare",
+          "when": "view == credSshManagerView && viewItem == account",
+          "group": "2_keys@10"
+        },
+        {
+          "command": "credSshManager.startBreakGlass",
+          "when": "view == credSshManagerView && viewItem == account",
+          "group": "2_keys@11"
+        },
+        {
+          "command": "credSshManager.contributeToRecovery",
+          "when": "view == credSshManagerView && viewItem == account",
+          "group": "2_keys@12"
+        },
+        {
+          "command": "credSshManager.finishBreakGlass",
+          "when": "view == credSshManagerView && viewItem == account",
+          "group": "2_keys@13"
         },
         {
           "command": "credSshManager.removeAccount",

@@ -922,6 +922,38 @@ bad share. The field multiply is branchless (a table indexed by secret-derived d
 cache-timing attack reads) and checked against an independent log/antilog implementation over all
 65 536 pairs.
 
+**The corporate-recovery client side**, in the order a person meets it. `orgRecoveryClient.ts`
+talks to the server's `/api/org-recovery/*` — a separate client from `ServerTransport` because that
+one implements `VaultTransport`, which a folder and a git remote also implement, and widening it
+with methods those two must stub would make them carry a concept they cannot mean.
+`orgRecoveryPinning.ts` is `senderPinning` one level up, pinning **two** fingerprints because the
+key changing (a new ceremony, or a swap) and the roster changing (the operator editing who may
+recover) mean different things and need different words. `orgEscrowOps.ts` decides what a write
+does about the wrap; `orgRecoveryPanel.ts` is the read-only page that exists because enrolment is
+automatic and unconsented. `breakGlass.ts` is the recovery arithmetic, `orgShareEnvelope.ts` the
+one-time-PIN envelope an invite travels in, and an officer's own share lives in **SecretStorage**
+(`storageManager.getOrgEscrowShare`) rather than the vault payload — a share that synced would sit
+beside the very escrow wraps it exists to open.
+
+Three properties of the client half worth carrying in the head:
+
+- **Not knowing changes nothing.** An unreachable server, an older one, or an offline laptop is
+  "we could not ask", and `escrowAction` answers `unchanged`. Treating it as "recovery is off"
+  would strip a wrap the company relies on, once per flaky network.
+- **An untrusted key REMOVES an existing wrap** rather than merely declining to add one: a wrap
+  sealed to a key somebody may have substituted keeps paying out on every version written before
+  the swap was noticed.
+- **The recovery combines SUBSETS, not the first `threshold` blobs that arrived.** Interpolation
+  over a wrong subset does not fail — it returns a well-formed key that is simply not the right
+  one — so each candidate is checked against the integrity tag, and a contribution that will not
+  even decrypt is dropped rather than fatal. One officer resealing to a stale session must not
+  stop the others from finishing.
+
+The break-glass session keypair lives in **memory only**, in the window that started the recovery.
+Writing it anywhere would put the means to decrypt a quorum's worth of key material on disk beside
+them; closing the window abandons the recovery, which is the correct trade because starting another
+costs a click.
+
 **Rotation lives in one place — `vaultRekey.rekeyUnderPin`.** It is the only operation that
 actually *revokes* an opener: a fresh master, the payload re-encrypted, a new wrap set.
 Everything else edits `wraps[]` around a master that stays put, which is why removing one of

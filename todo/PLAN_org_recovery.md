@@ -1,8 +1,13 @@
 # PLAN — corporate break-glass recovery of personal vaults (Shamir 2-of-N)
 
-> Status: **plan only, nothing implemented yet.** Scope: both halves — `src_vs_code` (escrow wrap,
-> Shamir, ceremonies, officer UI) and `src_minimalapi_server` (officer config, invite/session
-> endpoints, audit log). Owner decisions recorded 2026-08-27.
+>️ Status: **IMPLEMENTED, 2026-08-27** — steps 1–9 of the build order are built and tested on
+> both halves. Step 10 (a cheap officer-roster rotation that re-splits the existing key instead
+> of running a fresh ceremony) is deliberately not built and is extracted below as the open tail.
+> Owner decisions recorded 2026-08-27; every deviation is recorded against its step.
+>
+> **Not yet rehearsed end to end.** Every part has tests on its own side, but the DoD's live
+> three-machine rehearsal — three officers, one target, a real recovery — has not been run, and
+> until it has, this is a feature that passes its tests rather than one that is known to work.
 >
 > Related docs: [module_server.md](../research/module_server.md),
 > [module_extension.md](../research/module_extension.md),
@@ -223,7 +228,24 @@ signatures.
    - **Contributions are upserted by officer.** Retrying is a person retrying; counting it twice
      would let one officer alone satisfy a threshold of two, which is the most tempting way to
      defeat this and is now its own test.
-9. Extension: break-glass ceremony end-to-end.
+9. ~~Extension: break-glass ceremony end-to-end~~ — **shipped 2026-08-27**
+   (`breakGlass.ts`, `orgShareEnvelope.ts`, `orgRecoveryPanel.ts`, five commands, 9 tests).
+   Deviations:
+   - **The recovery combines SUBSETS, not the first `threshold` blobs.** Interpolation over a
+     wrong subset does not fail — it returns a well-formed key that is simply not the right one —
+     so each candidate is checked against the integrity tag. A contribution that will not even
+     decrypt is dropped rather than fatal: one officer resealing to a stale session must not stop
+     the others.
+   - **The contribution carries its share index.** The plan's wire shape had no place for it, and
+     without it the shares are points on a curve with no x — not interpolable at all. Not secret:
+     a coordinate is not a value.
+   - **The re-key binds to the TARGET's accountId**, read from the envelope's plaintext header,
+     not the recovering officer's — a PIN wrap is bound to its owner, and the header is plaintext
+     precisely so a restore knows whose vault it holds before opening anything.
+   - **The session keypair is memory-only**, in the window that started the recovery. Writing it
+     anywhere would put the means to decrypt a quorum's key material on disk beside it.
+   - An officer's share lives in **SecretStorage**, not the vault payload: a share that synced
+     would sit beside the very escrow wraps it exists to open.
 10. Follow-up plan extracted at the end: `sessionKind: 'key-rotation'` (cheap roster rotation).
 
 ## Test plan

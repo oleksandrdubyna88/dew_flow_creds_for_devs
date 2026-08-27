@@ -52,6 +52,41 @@ export interface SetupStatus {
   pending: string[];
 }
 
+/** A break-glass session as the server describes it. The contributions are opaque blobs. */
+export interface RecoverySessionView {
+  sessionId: string;
+  initiatorEmail: string;
+  targetEmail: string;
+  sessionPublicKey: string;
+  status: string;
+  threshold: number;
+  collected: number;
+  contributingOfficers: string[];
+  startedAt: number;
+  expiresAt: number;
+  contributions: {
+    officerEmail: string;
+    /** The share's x coordinate — not secret, and interpolation is impossible without it. */
+    shareIndex: number;
+    contributedAt: number;
+    ephemeralPublicKey: string;
+    salt: string;
+    iv: string;
+    tag: string;
+    data: string;
+  }[];
+}
+
+export interface AuditEntry {
+  sessionId: string;
+  kind: string;
+  initiatorEmail: string;
+  targetEmail: string;
+  contributingOfficers: string[];
+  startedAt: number;
+  completedAt: number;
+}
+
 /** Statuses that mean "you are not an officer of this server", including an older one. */
 const NOT_AN_OFFICER = new Set([403, 404]);
 
@@ -213,6 +248,97 @@ export class OrgRecoveryClient {
       throw new Error(`Could not read ceremony status: HTTP ${response.status}.`);
     }
     return (await response.json()) as SetupStatus;
+  }
+
+  // ---------- break-glass ----------
+
+  async startSession(
+    account: StoredAccount,
+    targetEmail: string,
+    sessionPublicKey: string,
+  ): Promise<RecoverySessionView> {
+    const response = await this.request(account, '/api/org-recovery/sessions', {
+      method: 'POST',
+      body: JSON.stringify({ targetEmail, sessionPublicKey }),
+    });
+    if (response.status !== 201) {
+      throw new Error(
+        `Could not start the recovery: ${(await response.text().catch(() => '')) || `HTTP ${response.status}`}`,
+      );
+    }
+    return (await response.json()) as RecoverySessionView;
+  }
+
+  async readSession(account: StoredAccount, sessionId: string): Promise<RecoverySessionView> {
+    const response = await this.request(
+      account, `/api/org-recovery/sessions/${encodeURIComponent(sessionId)}`);
+    if (!response.ok) {
+      throw new Error(`No such recovery session (HTTP ${response.status}).`);
+    }
+    return (await response.json()) as RecoverySessionView;
+  }
+
+  async contribute(
+    account: StoredAccount,
+    sessionId: string,
+    sealed: Record<string, string | number>,
+  ): Promise<void> {
+    const response = await this.request(
+      account,
+      `/api/org-recovery/sessions/${encodeURIComponent(sessionId)}/contribute`,
+      { method: 'POST', body: JSON.stringify(sealed) },
+    );
+    if (response.status !== 204) {
+      throw new Error(
+        `Could not contribute: ${(await response.text().catch(() => '')) || `HTTP ${response.status}`}`,
+      );
+    }
+  }
+
+  /** The target's ciphertext, and the version to write back against. */
+  async readTargetVault(
+    account: StoredAccount,
+    sessionId: string,
+  ): Promise<{ content: string; etag: string | undefined }> {
+    const response = await this.request(
+      account, `/api/org-recovery/sessions/${encodeURIComponent(sessionId)}/target-vault`);
+    if (!response.ok) {
+      throw new Error(
+        `Could not read that vault: ${(await response.text().catch(() => '')) || `HTTP ${response.status}`}`,
+      );
+    }
+    return { content: await response.text(), etag: response.headers.get('ETag') ?? undefined };
+  }
+
+  async writeTargetVault(
+    account: StoredAccount,
+    sessionId: string,
+    content: string,
+    etag: string | undefined,
+  ): Promise<void> {
+    const response = await this.request(
+      account,
+      `/api/org-recovery/sessions/${encodeURIComponent(sessionId)}/target-vault`,
+      {
+        method: 'PUT',
+        body: content,
+        headers: etag === undefined ? undefined : { 'If-Match': etag },
+      },
+    );
+    if (response.status !== 204) {
+      throw new Error(
+        `Could not write the re-keyed vault: ${(await response.text().catch(() => '')) || `HTTP ${response.status}`}`,
+      );
+    }
+  }
+
+  async readAudit(account: StoredAccount): Promise<AuditEntry[]> {
+    const response = await this.request(account, '/api/org-recovery/audit');
+    if (!response.ok) {
+      return [];
+    }
+    const parsed: unknown = await response.json();
+    return Array.isArray(parsed) ? (parsed as AuditEntry[]) : [];
   }
 
   /**

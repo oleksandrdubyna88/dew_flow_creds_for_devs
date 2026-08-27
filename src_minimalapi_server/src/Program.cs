@@ -934,6 +934,7 @@ app.MapPost("/api/org-recovery/sessions/{id}/contribute", async (HttpContext ctx
     others.Add(new SessionContribution
     {
         OfficerEmail = caller.Value.Email, // stamped, never from the body
+        ShareIndex = request.ShareIndex,
         ContributedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
         EphemeralPublicKey = request.EphemeralPublicKey,
         Salt = request.Salt,

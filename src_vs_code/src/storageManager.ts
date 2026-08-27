@@ -7,6 +7,7 @@ import * as vscode from 'vscode';
 import { ProfileSnapshot } from './syncMerge';
 import { quarantineUnsafeIds } from './idQuarantine';
 import { SigningKeypair, generateSigningKeypair } from './shareSignature';
+import { EscrowShareWrap, isEscrowShareWrap } from './orgEscrowShareWrap';
 import { RemoteState, buildDefaultFolders, shouldSeedDefaults } from './defaultFolders';
 import { Tombstone, VersionVector, bumpVector, mergeVectors, normalizeTombstone } from './versionVector';
 import { isSelfOrDescendantIn } from './selectionResolver';
@@ -86,6 +87,19 @@ function privateKeySecretKey(accountId: string, entityId: string): string {
  */
 function signingKeySecretKey(accountId: string): string {
   return `${accountId}:shareSigningKey`;
+}
+
+/**
+ * This officer's share of the organisation's recovery key.
+ *
+ * <p>Keyed by account like the signing identity, and in SecretStorage rather than in the vault
+ * payload for one reason worth stating: the payload syncs to a server, and a share that syncs
+ * is a share sitting beside the very escrow wraps it exists to open. On the OS keychain it
+ * stays on the machines its owner actually uses — which is also why accepting an invite is
+ * something an officer does once per machine rather than once.</p>
+ */
+function orgEscrowShareSecretKey(accountId: string): string {
+  return `${accountId}:orgEscrowShare`;
 }
 
 /** SecretStorage key for an entity's VPN config file content. */
@@ -819,6 +833,31 @@ export class StorageManager implements vscode.Disposable {
       await this.secrets.store(imageSecretKey(accountId, entityId), base64);
     }
     this.touch(accountId);
+  }
+
+  // ---------- the corporate-recovery share this officer holds ----------
+
+  async getOrgEscrowShare(accountId: string): Promise<EscrowShareWrap | undefined> {
+    const raw = await this.secrets.get(orgEscrowShareSecretKey(accountId));
+    if (raw === undefined) {
+      return undefined;
+    }
+    try {
+      const parsed: unknown = JSON.parse(raw);
+      return isEscrowShareWrap(parsed) ? parsed : undefined;
+    } catch {
+      // A share this build cannot read is one the officer must accept again — saying nothing
+      // and returning undefined is what makes the panel report "this machine holds no share".
+      return undefined;
+    }
+  }
+
+  async setOrgEscrowShare(accountId: string, wrap: EscrowShareWrap): Promise<void> {
+    await this.secrets.store(orgEscrowShareSecretKey(accountId), JSON.stringify(wrap));
+  }
+
+  async clearOrgEscrowShare(accountId: string): Promise<void> {
+    await this.secrets.delete(orgEscrowShareSecretKey(accountId));
   }
 
   // ---------- notes (SecretStorage, tenant-scoped) ----------

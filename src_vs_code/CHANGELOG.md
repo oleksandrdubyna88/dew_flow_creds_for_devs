@@ -8,6 +8,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Corporate recovery — a quorum of colleagues can open a vault whose owner is gone.** When the
+  operator of a Cred Vault Server names recovery officers (at least three, any two of them acting
+  together by default), every vault on that server also seals its key so that quorum can open it.
+  The organisation's recovery key is split with Shamir's scheme at setup and then destroyed: no
+  single person holds it, the server never sees it, and each officer's share lives sealed under
+  their own PIN or YubiKey in their own vault.
+
+  **You are told.** Enrolment happens automatically and without asking, which is exactly why the
+  extension is obliged to say so: a notice the first time, a *Corporate Recovery…* page listing the
+  officers, the key fingerprint and every recovery that has ever happened on that server, and a
+  refusal to seal anything to a key that is not the one this machine pinned. A silent escrow is a
+  backdoor by shape even when it is legitimate by intent, and this one is not silent.
+
+  A recovery re-keys the vault it opened — the point is that its owner is gone — and is written
+  into a record every officer can read.
+
+### Added
+
 - **A printable recovery code — the third way into a vault.** Until now a vault had two openers and
   both lived with one person: the PIN in a head, the security key in a pocket. Lose both and the
   data is gone, which is correct against an attacker and a disaster for the owner. *Set Up Recovery
@@ -501,6 +519,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
   Bounded on purpose: 256 KB of output per stream, 30 s per command (raisable to 120 s), 8 at a
   time, and every child killed when the window goes.
+
+## [0.76.0] — 2026-08-27
+
+> A security, leak and performance pass over everything the MCP work added. Six findings, one of
+> them serious, all fixed and each reproduced before it was. The full write-up is
+> [research/SECURITY_REVIEW_2026-08-27.md](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/blob/main/research/SECURITY_REVIEW_2026-08-27.md).
+
+### Fixed
+
+- **A rotation could return the new secret to the agent.** The whole design of rotation is that
+  nobody sees the value — and its last hole, named in its own design notes, is the far side's own
+  output, because a statement can be composed to print what it was given. The masker was supposed
+  to close that. It masked two fields *by name*, `stdout` and `stderr`, and the rotation answered
+  in a third one called `output`: a `SELECT '{{creds:new}}'` appended to an `ALTER USER` came back
+  in plaintext. Every string field is masked now, and the integration test's stub echoes what it
+  is given, so the check has teeth instead of proving that nothing echoed.
+
+- **Creating an entry could file it in the wrong folder, silently.** Folder names carry no
+  uniqueness rule here, and `creds_create` picked the first match — so two accounts each with a
+  "Servers" folder open to agents would put a production credential in whichever was reached
+  first, until the day it was the other one. It refuses now and names the collision.
+
+- **Listing what an agent may see cost 1000 keychain reads.** Measured on a vault with 200 entries
+  opened to agents: five cross-process reads each, most of a second per call, on a route that
+  raises no prompt and is therefore not rate-limited. It is cached now and forgotten the moment
+  anything in the vault changes — including, correctly, by a change that lands while the list is
+  being built.
+
+- **The Install button verified nothing.** `install.sh` has refused a checksum mismatch since it
+  was written; the button inside the extension, downloading the same binary from the same release
+  for the same person, did not check. It does now — and a release that publishes no checksum says
+  so out loud rather than skipping in silence. The MCP server's release publishes one.
+
+- **MCP logs could not open a long history.** A fortnight of a busy agent measured at 42,000 rows
+  and 10.2 MB of HTML. It shows the most recent 2000 and says how many older calls are still on
+  disk.
+
+- **An entry name from an agent had no length limit** beyond the request size, so a name could be
+  sixty thousand characters — a confirmation prompt with its buttons off the screen. 200 now.
 
 ## [0.75.0] — 2026-08-27
 
