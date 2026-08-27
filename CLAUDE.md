@@ -72,6 +72,48 @@ git submodule update --init .claude/rules/shared
 | `research/` | The system as it is — architecture, module docs, implemented plans |
 | `todo/` | Work not yet done |
 
+## Releasing and deploying — four artefacts, four tags
+
+Nothing here ships on merge. Each half is released by pushing its own **git tag**, and the server
+is then deployed by a **manual** dispatch. Written down because it is repeatedly re-derived from
+the workflows, and because "merged" reads like "shipped" until you check.
+
+| Tag | Releases | Where it lands |
+|---|---|---|
+| `server-v1.2.3` | the container image, tagged with that version | GHCR, ready for a deploy |
+| `extension-v0.70.0` | the `.vsix` | the Marketplace release |
+| `cli-v0.1.0` | the `creds` binaries | the GitHub release |
+| `mcp-v0.1.0` | the `creds-mcp` binaries | the GitHub release |
+
+All four are `.github/workflows/release.yml`, triggered on `tags:`.
+
+**A push to `main` publishes nothing deployable.** `ci · server` green triggers `docker image`,
+which pushes `edge` and `sha-<commit>` — useful for a probe, but the deploy takes a **version**,
+so those tags never reach the host on their own.
+
+**Deploying is a separate, manual step:** the `rsd server deploy` workflow (`workflow_dispatch`)
+takes a version — or `rollback` — and runs `deploy/update.sh` on the host, which rewrites
+`VAULT_IMAGE` in `.env` and recreates the containers. Data, certificates and logs are host bind
+mounts and are never touched; `down -v` appears nowhere in that script on purpose.
+
+### Before saying a server-side feature is live
+
+Check that the last `server-v*` tag **contains the commit**, not merely that CI was green:
+
+```bash
+git merge-base --is-ancestor <commit> $(git tag --list 'server-v*' --sort=-v:refname | head -1) && echo "in the last release" || echo "NOT in it"
+gh run list --workflow rsd-server-deploy.yml --limit 3   # and did a deploy run after it?
+```
+
+An image built from your commit is not a server running it. The general form of this trap is in
+the shared rules — *The other side ships on its own clock* in
+[development-workflow.md](.claude/rules/shared/common/development-workflow.md).
+
+**The two halves are independent and either may go first.** A new extension against an old server
+is told the server is older than the feature; an old extension against a new server is served
+normally, because a client that names no contract version is served by design. So no coordination
+is needed — only honesty about which half is live.
+
 ## Repository-specific rules
 
 1. **The server must never be able to decrypt.** `VaultStore` stores opaque bytes; `ShareItem.Data`
