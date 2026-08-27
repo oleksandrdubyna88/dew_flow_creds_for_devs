@@ -54,6 +54,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ssh, WireGuard, OpenVPN, the four DB CLIs and git; a machine without apt is told the command
   and that it needs adapting, never guessed at.
 
+### Changed
+
+- **The MCP tree icon is a pentagon now.** An entry opened to agents used to wear its kind glyph
+  over a five-stripe band — and on a credential that glyph is a padlock, which read as a lock
+  state, not a kind. Per the owner's design: a regular pentagon whose five edges are the five
+  switch colours, clockwise from the upper-left (green) edge, an unlit switch's edge grey; the
+  centre dot in the history blue keeps the "has previous versions" signal. Entries with no agent
+  access keep their normal codicons, untouched. The generated set shrank from 140 files to 20.
+
 ### Added
 
 - **Text zoom on every page.** Two magnifier buttons beside Save (the form) and Copy All (the

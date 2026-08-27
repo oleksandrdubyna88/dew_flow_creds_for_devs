@@ -1,4 +1,3 @@
-import { ENTITY_KINDS, EntityKind } from './types';
 import { McpAccess, accessMask } from './mcpAccess';
 
 /**
@@ -52,7 +51,6 @@ export function accessLevel(access: McpAccess): number {
 }
 
 export interface McpIconName {
-  kind: EntityKind;
   level: number;
   history: boolean;
   theme: IconTheme;
@@ -60,9 +58,24 @@ export interface McpIconName {
   file: string;
 }
 
-/** The name of one generated file. Level 0 has none — see the note above. */
+/**
+ * The name of one generated file. Level 0 has none — see the note above.
+ *
+ * <p><b>The pentagon (tails T25, owner 2026-08-27).</b> The composite used to be the kind glyph
+ * with a stripe band under it, and on a credential row the glyph is a padlock — which read as a
+ * LOCK STATE, not as a kind. The owner's redesign replaces the whole composite for MCP-active
+ * rows: a regular pentagon whose five edges are the five switch colours, clockwise from the
+ * upper-LEFT edge (the green one), an unlit switch's edge grey. The whole permission set in one
+ * glyph, in the same colours the switch bars already use; the kind stays readable from the
+ * row's description and the level-0 rows keep their codicons. The icon set shrank from
+ * 7 kinds x 5 levels to 5 levels — the file name no longer carries a kind.</p>
+ *
+ * <p><b>Five edges, six switches — recorded, not fudged:</b> the bar has always shown five
+ * segments because the two delete rungs share a slot (`accessMask`), and the pentagon shows
+ * exactly what the bar shows. The sixth switch's distinction (delete-own vs delete-any) lives
+ * in the form and the filter, not in a 16px glyph.</p>
+ */
 export function mcpIconFile(
-  kind: EntityKind,
   level: number,
   history: boolean,
   theme: IconTheme,
@@ -70,90 +83,52 @@ export function mcpIconFile(
   if (level <= 0 || level > 5) {
     return undefined;
   }
-  return `${MCP_ICON_DIR}/${kind}-${level}${history ? '-history' : ''}-${theme}.svg`;
+  return `${MCP_ICON_DIR}/pent-${level}${history ? '-history' : ''}-${theme}.svg`;
 }
 
 /** Every file the generator writes, and every file the extension can ask for. One list. */
-export const MCP_ICON_NAMES: readonly McpIconName[] = ENTITY_KINDS.flatMap((kind) =>
-  [1, 2, 3, 4, 5].flatMap((level) =>
-    [false, true].flatMap((history) =>
-      ICON_THEMES.map((theme) => ({
-        kind,
-        level,
-        history,
-        theme,
-        file: mcpIconFile(kind, level, history, theme) as string,
-      })),
-    ),
+export const MCP_ICON_NAMES: readonly McpIconName[] = [1, 2, 3, 4, 5].flatMap((level) =>
+  [false, true].flatMap((history) =>
+    ICON_THEMES.map((theme) => ({
+      level,
+      history,
+      theme,
+      file: mcpIconFile(level, history, theme) as string,
+    })),
   ),
 );
 
+/** One pentagon edge, drawable: from (x1,y1) to (x2,y2). */
+export interface PentagonEdge {
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+}
+
 /**
- * The glyphs, drawn in a 16x16 box and shrunk into the top twelve by the generator.
- *
- * <p>`{C}` is the one colour the glyph is painted in — the theme's foreground, or the history
- * blue when the entry keeps previous versions. Written as markup rather than as path data
- * because two of these want a stroke and two want a fill, and a table with a `filled` column
- * beside it would be a second thing to keep in step.</p>
- *
- * <p>Approximations of the codicons the tree uses at level 0 (`lock`, `key`, `remote`, `shield`,
- * `database`, `terminal`, `file-code`) — VS Code ships no source for those, so a row that grows
- * stripes also changes shape slightly. That is the visible cost of the one icon slot, and it is
- * why nothing below level 1 is drawn here.</p>
+ * The five edges, CLOCKWISE from the upper-left one — the order the switches wear them, so the
+ * first (green, view) is the left side, per the owner's spec. Top vertex up; centre (8, 8.4),
+ * radius 6.6, which fills the 16px box with room for the stroke.
  */
-export const KIND_GLYPHS: Record<EntityKind, string> = {
-  credential:
-    '<path d="M5 7.4V5.2a3 3 0 0 1 6 0v2.2" fill="none" stroke="{C}" stroke-width="1.5"/>' +
-    '<rect x="3" y="7.2" width="10" height="7" rx="1.3" fill="{C}"/>',
-  sshkey:
-    '<circle cx="5.2" cy="5.6" r="2.7" fill="none" stroke="{C}" stroke-width="1.5"/>' +
-    '<path d="M7.2 7.6l6.2 6.2M10 10.4l1.7-1.7M12 12.4l1.7-1.7" fill="none" stroke="{C}" ' +
-    'stroke-width="1.5" stroke-linecap="round"/>',
-  ssh:
-    '<rect x="1.8" y="2.6" width="12.4" height="8.4" rx="1.4" fill="none" stroke="{C}" stroke-width="1.5"/>' +
-    '<circle cx="8" cy="6.8" r="1.5" fill="{C}"/>' +
-    '<path d="M5.6 13.6h4.8" fill="none" stroke="{C}" stroke-width="1.5" stroke-linecap="round"/>',
-  vpn: '<path d="M8 1.8l5.2 2v4.1c0 3.1-2.2 5.4-5.2 6.3-3-.9-5.2-3.2-5.2-6.3V3.8z" fill="none" stroke="{C}" stroke-width="1.5"/>',
-  db:
-    '<ellipse cx="8" cy="3.5" rx="5.5" ry="2.2" fill="none" stroke="{C}" stroke-width="1.4"/>' +
-    '<path d="M2.5 3.5v9c0 1.2 2.5 2.2 5.5 2.2s5.5-1 5.5-2.2v-9" fill="none" stroke="{C}" stroke-width="1.4"/>' +
-    '<path d="M2.5 8c0 1.2 2.5 2.2 5.5 2.2s5.5-1 5.5-2.2" fill="none" stroke="{C}" stroke-width="1.4"/>',
-  terminal:
-    '<rect x="1.8" y="2.6" width="12.4" height="10.8" rx="1.4" fill="none" stroke="{C}" stroke-width="1.4"/>' +
-    '<path d="M4.6 6.4L6.9 8.2 4.6 10M8.4 10.4h3.2" fill="none" stroke="{C}" stroke-width="1.4" ' +
-    'stroke-linecap="round" stroke-linejoin="round"/>',
-  script:
-    '<path d="M3.6 1.8h5.2l3.6 3.6v8.8H3.6z" fill="none" stroke="{C}" stroke-width="1.4" stroke-linejoin="round"/>' +
-    '<path d="M8.8 1.8v3.6h3.6" fill="none" stroke="{C}" stroke-width="1.4" stroke-linejoin="round"/>' +
-    '<path d="M6.9 8.6L5.6 10l1.3 1.4M9.1 8.6L10.4 10l-1.3 1.4" fill="none" stroke="{C}" ' +
-    'stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>',
-  // The script's page and folded corner, with sliders where its chevrons are: a config IS a
-  // document, and what distinguishes it is that the values in it are meant to be turned. Two
-  // sliders rather than a gear, because a gear at sixteen pixels above a stripe band is a blob.
-  config:
-    '<path d="M3.6 1.8h5.2l3.6 3.6v8.8H3.6z" fill="none" stroke="{C}" stroke-width="1.4" stroke-linejoin="round"/>' +
-    '<path d="M8.8 1.8v3.6h3.6" fill="none" stroke="{C}" stroke-width="1.4" stroke-linejoin="round"/>' +
-    '<path d="M5.4 8.9h5.2M5.4 11.5h5.2" fill="none" stroke="{C}" stroke-width="1.3" stroke-linecap="round"/>' +
-    '<circle cx="7.1" cy="8.9" r="1.05" fill="{C}"/>' +
-    '<circle cx="8.9" cy="11.5" r="1.05" fill="{C}"/>',
-};
-
-/** The stripe band: five bars across the bottom, lit up to `level`. */
-export interface StripeGeometry {
-  x: number;
-  width: number;
+export function pentagonEdges(): readonly PentagonEdge[] {
+  const cx = 8;
+  const cy = 8.4;
+  const r = 6.6;
+  const vertex = (k: number): [number, number] => {
+    const angle = ((-90 + 72 * k) * Math.PI) / 180;
+    return [cx + r * Math.cos(angle), cy + r * Math.sin(angle)];
+  };
+  const [p0, p1, p2, p3, p4] = [0, 1, 2, 3, 4].map(vertex);
+  // upper-left, upper-right, lower-right, bottom, lower-left — clockwise from the left side.
+  const pairs: ReadonlyArray<[[number, number], [number, number]]> = [
+    [p4, p0],
+    [p0, p1],
+    [p1, p2],
+    [p2, p3],
+    [p3, p4],
+  ];
+  return pairs.map(([a, b]) => ({ x1: a[0], y1: a[1], x2: b[0], y2: b[1] }));
 }
 
-export const STRIPE_TOP = 12.9;
-export const STRIPE_HEIGHT = 2.6;
-export const STRIPE_RADIUS = 0.7;
 
-/** Five bars, edge to edge, with a gap between them. Stated once, drawn from here. */
-export function stripeGeometry(): readonly StripeGeometry[] {
-  const gap = 0.5;
-  const width = (16 - gap * 4) / 5;
-  return [0, 1, 2, 3, 4].map((i) => ({ x: i * (width + gap), width }));
-}
-
-/** The glyph occupies the top twelve of sixteen; the band has the rest. */
-export const GLYPH_TRANSFORM = 'translate(2 0) scale(0.75)';

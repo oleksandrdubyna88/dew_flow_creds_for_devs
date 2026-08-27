@@ -46,31 +46,31 @@ function colorOf(id, theme) {
 // foregrounds, which is what a codicon looks like in an untouched theme.
 const GLYPH_COLOR = { dark: '#CCCCCC', light: '#424242' };
 
-const stripes = icons.stripeGeometry();
-const stripeColors = switches.MCP_BAR_COLORS;
-if (stripes.length !== stripeColors.length) {
-  throw new Error(`${stripes.length} stripes but ${stripeColors.length} colours`);
+const edges = icons.pentagonEdges();
+const edgeColors = switches.MCP_BAR_COLORS;
+if (edges.length !== edgeColors.length) {
+  throw new Error(`${edges.length} edges but ${edgeColors.length} colours`);
 }
 
-function svg({ kind, level, history, theme }) {
-  const glyphColor = history ? colorOf('historyIcon', theme) : GLYPH_COLOR[theme];
-  const glyph = icons.KIND_GLYPHS[kind].split('{C}').join(glyphColor);
-  const bars = stripes
-    .map((bar, index) => {
+// The grey an unlit edge wears — visible in both themes, quiet next to a lit one.
+const OFF_COLOR = { dark: '#4d4d4d', light: '#c9c9c9' };
+
+function svg({ level, history, theme }) {
+  const lines = edges
+    .map((edge, index) => {
       const lit = index < level;
-      const fill = colorOf(stripeColors[index], theme);
-      // An unlit stripe is drawn faint rather than left out: five positions that stay put are
-      // readable at a glance, and four bars sliding along would not be.
+      const stroke = lit ? colorOf(edgeColors[index], theme) : OFF_COLOR[theme];
       return (
-        `<rect x="${round(bar.x)}" y="${icons.STRIPE_TOP}" width="${round(bar.width)}" ` +
-        `height="${icons.STRIPE_HEIGHT}" rx="${icons.STRIPE_RADIUS}" fill="${fill}" ` +
-        `opacity="${lit ? 1 : 0.22}"/>`
+        `<line x1="${round(edge.x1)}" y1="${round(edge.y1)}" x2="${round(edge.x2)}" ` +
+        `y2="${round(edge.y2)}" stroke="${stroke}" stroke-width="2" stroke-linecap="round"/>`
       );
     })
     .join('');
+  // History used to be the glyph's tint; the pentagon keeps it as the centre dot.
+  const dot = history ? `<circle cx="8" cy="8.4" r="1.8" fill="${colorOf('historyIcon', theme)}"/>` : '';
   return (
     `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">` +
-    `<g transform="${icons.GLYPH_TRANSFORM}">${glyph}</g>${bars}</svg>\n`
+    `${lines}${dot}</svg>\n`
   );
 }
 

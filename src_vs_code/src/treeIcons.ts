@@ -65,8 +65,10 @@ export function entityIcon(
   const kind = resolveKind(node.details);
   // Inheritance and the Trash included — a row must not claim more than the broker will give.
   const level = accessLevel(resolveMcpInTree(node, byId).access);
-  const light = mcpIconFile(kind, level, history, 'light');
-  const dark = mcpIconFile(kind, level, history, 'dark');
+  // The pentagon (T25): one glyph for every kind, edges lit up to the level. The kind's own
+  // codicon returns the moment the last switch goes off.
+  const light = mcpIconFile(level, history, 'light');
+  const dark = mcpIconFile(level, history, 'dark');
   if (light === undefined || dark === undefined) {
     return new vscode.ThemeIcon(kindIcon(kind), history ? HISTORY_COLOR : undefined);
   }
