@@ -183,7 +183,23 @@ signatures.
      three-officer minimum exists to refuse.
    - A configured roster logs at **Warning** on startup. It is the one setting that changes what
      happens to other people's vaults.
-5. Server phase 2: invites + setup + maintenance sweep.
+5. ~~Server phase 2: invites + setup + maintenance sweep~~ — **shipped 2026-08-27**
+   (`OrgRecoveryStore.cs`, `OrgRecoveryMaintenance.cs`, five endpoints, 15 tests). Deviations:
+   - **Republishing is idempotent, not refused.** The plan said `409` when `setupComplete` is
+     already true, which would have made a retry after a dropped response impossible and left
+     no route for a hard rotation. Same `setupId` + same key → `200`; same `setupId` + a
+     *different* key → `409`, because that is a swap rather than a retry.
+   - **Two refusals the plan did not name**, both found while writing the auth matrix: a
+     recipient outside the roster (an officer could otherwise seat a share with an accomplice
+     and turn 2-of-3 into something one person controls), and a split whose
+     threshold/total disagrees with the roster (clients pin a fingerprint saying "2 of 3";
+     shares minted 2-of-5 would implement another scheme behind that pin).
+   - **A stale published key reads as "setup not complete."** If the roster changes after a
+     ceremony, the officers holding shares are not the officers the server now names, so
+     clients must refuse to enrol rather than seal to a quorum that no longer exists.
+   - **AOT caught the streaming at build time** (`IL2026`/`IL3050`): the source generator has no
+     converter for `IAsyncEnumerable`. Both listings now go through one `WriteJsonArrayAsync`
+     instead of the share inbox's hand-rolled copy plus a second one.
 6. Extension: setup ceremony + officer panel + TOFU pinning + transparency UI.
 7. Extension: `ensureOrgEscrowWrap` on every sync write.
 8. Server phase 3: sessions + target-vault gate + audit.

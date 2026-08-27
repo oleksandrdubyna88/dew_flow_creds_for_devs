@@ -51,6 +51,9 @@ var shareMaxAgeDays = config.GetValue("Vault:ShareMaxAgeDays", 31);
 var orgRecovery = OrgRecoveryConfig.Read(
     SplitCsv(config["Vault:CorpRecovery:OfficerEmails"]),
     config.GetValue("Vault:CorpRecovery:Threshold", 2));
+// How long an unacknowledged setup invite lives. A ceremony that stalls must expire rather
+// than leave a sealed share somebody accepts a year later into a key never published.
+var orgSetupTtlHours = config.GetValue("Vault:CorpRecovery:SetupTtlHours", 72);
 var maintenanceMinutes = config.GetValue("Vault:MaintenanceIntervalMinutes", 60);
 // Raise this the day an older extension would MISREAD a response, never merely because a newer
 // one exists. Below it the server refuses with 426 instead of answering something the client
@@ -97,6 +100,18 @@ builder.Services.AddHostedService(sp => new ShareMaintenance(
     sp.GetRequiredService<ILoggerFactory>().CreateLogger<ShareMaintenance>(),
     TimeSpan.FromMinutes(Math.Max(1, maintenanceMinutes)),
     TimeSpan.FromDays(Math.Max(1, shareMaxAgeDays))));
+
+var orgStore = new OrgRecoveryStore(dataDir);
+if (orgRecovery.Enabled)
+{
+    // Only when the feature is on: an idle timer sweeping an empty directory every hour on
+    // every other deployment is noise with a cost, however small.
+    builder.Services.AddHostedService(sp => new OrgRecoveryMaintenance(
+        orgStore,
+        sp.GetRequiredService<ILoggerFactory>().CreateLogger<OrgRecoveryMaintenance>(),
+        TimeSpan.FromMinutes(Math.Max(1, maintenanceMinutes)),
+        TimeSpan.FromHours(Math.Max(1, orgSetupTtlHours))));
+}
 
 // Hard request-body ceiling (backstop; endpoints also check Content-Length).
 builder.WebHost.ConfigureKestrel(o => o.Limits.MaxRequestBodySize = maxVaultBytes + 64 * 1024);
@@ -394,6 +409,57 @@ app.UseRateLimiter();
     return (email, TokenIdentity.Name(ctx.User));
 }
 
+// The same status-plus-plain-text shape the older endpoints spell inline three lines at a
+// time. Extracted rather than repeated because the org-recovery endpoints below have eight
+// refusal paths between them, and eight copies is where one of them ends up saying something
+// slightly different from the rest.
+static async Task Fail(HttpContext ctx, int status, string message)
+{
+    ctx.Response.StatusCode = status;
+    await ctx.Response.WriteAsync(message, ctx.RequestAborted);
+}
+
+/// <summary>
+/// Stream a JSON array to the response, one element live at a time.
+/// </summary>
+/// <remarks>
+/// Written by hand rather than handed an <c>IAsyncEnumerable</c>, because the AOT source
+/// generator has no converter for one — a fact the build now enforces rather than leaves to be
+/// discovered at runtime. Materialising instead would put a whole inbox resident at once, which
+/// a 512 MiB container does not survive and which any caller can provoke.
+///
+/// Extracted when the org-recovery invites needed the same shape: both callers are edited here,
+/// so this is one implementation rather than a second copy of the share inbox's.
+/// </remarks>
+static async Task WriteJsonArrayAsync<T>(
+    HttpContext ctx,
+    IAsyncEnumerable<T> items,
+    System.Text.Json.Serialization.Metadata.JsonTypeInfo<T> typeInfo,
+    CancellationToken ct)
+{
+    ctx.Response.ContentType = "application/json";
+    var body = ctx.Response.Body;
+    await body.WriteAsync("["u8.ToArray(), ct);
+    var first = true;
+    await foreach (var item in items.WithCancellation(ct))
+    {
+        if (!first)
+        {
+            await body.WriteAsync(","u8.ToArray(), ct);
+        }
+        first = false;
+        await JsonSerializer.SerializeAsync(body, item, typeInfo, ct);
+    }
+    await body.WriteAsync("]"u8.ToArray(), ct);
+}
+
+/// <summary>The grouped-hex fingerprint clients compare a published key against.</summary>
+static string FingerprintOf(string keyBase64)
+{
+    var digest = System.Security.Cryptography.SHA256.HashData(Convert.FromBase64String(keyBase64));
+    return string.Join(' ', Convert.ToHexString(digest)[..32].Chunk(4).Select(c => new string(c)));
+}
+
 app.MapGet("/api/health", () =>
 {
     try
@@ -532,21 +598,200 @@ app.MapGet("/api/org-recovery/config", async (HttpContext ctx, CancellationToken
 {
     var caller = RequireCaller(ctx);
     if (caller is null) return;
+    // A published key from a ceremony run against a DIFFERENT roster is not usable: the
+    // officers who hold its shares are not the officers this server now names. Reported as
+    // "setup not complete" so clients refuse to enrol rather than sealing to a quorum that
+    // no longer exists — and the operator's own log line said the roster changed.
+    var setup = orgRecovery.Enabled ? await orgStore.ReadSetupAsync(ct) : null;
+    var current = setup is not null && setup.RosterFingerprint == orgRecovery.RosterFingerprint();
     await ctx.Response.WriteAsJsonAsync(
         new OrgRecoveryConfigDto(
             Enabled: orgRecovery.Enabled,
             OfficerEmails: orgRecovery.OfficerEmails,
             Threshold: orgRecovery.Threshold,
-            // The setup ceremony has not been built yet, so no key has been published and no
-            // client may enrol. Reported rather than implied: `enabled` says the operator
-            // asked for this, `setupComplete` says whether it can actually be used.
-            SetupComplete: false,
-            OrgPublicKey: "",
-            OrgPublicKeyFingerprint: "",
+            // Two facts, not one: `enabled` says the operator asked for this, `setupComplete`
+            // says the officers have actually run the ceremony and it still matches the roster.
+            SetupComplete: current,
+            OrgPublicKey: current ? setup!.OrgPublicKey : "",
+            OrgPublicKeyFingerprint: current ? setup!.OrgPublicKeyFingerprint : "",
             RosterFingerprint: orgRecovery.Enabled ? orgRecovery.RosterFingerprint() : "",
-            PublishedAt: 0),
+            PublishedAt: current ? setup!.PublishedAt : 0),
         AppJsonContext.Default.OrgRecoveryConfigDto,
         cancellationToken: ct);
+});
+
+// Every endpoint below is officer-only. Not because the payloads are readable — they are
+// opaque — but because these are the levers of the ceremony, and a stranger who can post an
+// invite can seat their own share where a real officer's belongs.
+(string Email, string? Name)? RequireOfficer(HttpContext ctx)
+{
+    var caller = RequireCaller(ctx);
+    if (caller is null) return null;
+    if (!orgRecovery.Enabled || !orgRecovery.IsOfficer(caller.Value.Email))
+    {
+        // One answer for "the feature is off here" and "you are not on the roster": telling a
+        // caller which of the two it is hands them the roster's shape for free.
+        ctx.Response.StatusCode = StatusCodes.Status403Forbidden;
+        return null;
+    }
+    return caller;
+}
+
+// ----- the setup ceremony: one sealed Shamir share per officer -----
+app.MapPost("/api/org-recovery/invites", async (HttpContext ctx, CancellationToken ct) =>
+{
+    var caller = RequireOfficer(ctx);
+    if (caller is null) return;
+    var request = await ctx.Request.ReadFromJsonAsync(
+        AppJsonContext.Default.EscrowInviteRequest, ct);
+    if (request is null || !request.IsValid())
+    {
+        await Fail(ctx, StatusCodes.Status400BadRequest, "Malformed escrow invite.");
+        return;
+    }
+    if (request.PayloadBytes() > maxShareBytes)
+    {
+        await Fail(ctx, StatusCodes.Status400BadRequest, "Escrow invite payload too large.");
+        return;
+    }
+    // A share may only be sent to somebody the OPERATOR put on the roster. Without this an
+    // officer could seat a share with an accomplice outside it and quietly lower the real
+    // threshold to one.
+    if (!orgRecovery.IsOfficer(request.ToEmail))
+    {
+        await Fail(ctx, StatusCodes.Status403Forbidden, "That recipient is not a recovery officer.");
+        return;
+    }
+    if (request.TotalShares != orgRecovery.OfficerEmails.Count
+        || request.Threshold != orgRecovery.Threshold)
+    {
+        // The split has to match the roster this server publishes, or clients would pin a
+        // fingerprint describing one scheme while the shares implement another.
+        await Fail(
+            ctx,
+            StatusCodes.Status409Conflict,
+            $"This server's roster is {orgRecovery.Threshold} of {orgRecovery.OfficerEmails.Count}.");
+        return;
+    }
+    await orgStore.AppendInviteAsync(
+        new EscrowInviteItem
+        {
+            SetupId = request.SetupId,
+            FromEmail = caller.Value.Email, // stamped, never accepted from the body
+            ToEmail = request.ToEmail.Trim().ToLowerInvariant(),
+            ShareIndex = request.ShareIndex,
+            Threshold = request.Threshold,
+            TotalShares = request.TotalShares,
+            CreatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+            Salt = request.Salt,
+            Iv = request.Iv,
+            Tag = request.Tag,
+            Data = request.Data,
+            KdfN = request.KdfN,
+            KdfR = request.KdfR,
+            KdfP = request.KdfP,
+        },
+        ct);
+    ctx.Response.StatusCode = StatusCodes.Status201Created;
+});
+
+app.MapGet("/api/org-recovery/invites", async (HttpContext ctx, CancellationToken ct) =>
+{
+    var caller = RequireOfficer(ctx);
+    if (caller is null) return;
+    await WriteJsonArrayAsync(
+        ctx, orgStore.ListInvitesAsync(caller.Value.Email, ct), AppJsonContext.Default.EscrowInviteItem, ct);
+});
+
+app.MapPost("/api/org-recovery/invites/{id}/ack", (HttpContext ctx, string id) =>
+{
+    var caller = RequireOfficer(ctx);
+    if (caller is null) return Task.CompletedTask;
+    if (!Guid.TryParse(id, out _))
+    {
+        return Fail(ctx, StatusCodes.Status400BadRequest, "Malformed invite id.");
+    }
+    // Only out of the CALLER's own inbox — the path names no owner, so a caller holding
+    // somebody else's invite id has nothing to reach it with.
+    ctx.Response.StatusCode = orgStore.AcknowledgeInvite(caller.Value.Email, id)
+        ? StatusCodes.Status204NoContent
+        : StatusCodes.Status404NotFound;
+    return Task.CompletedTask;
+});
+
+app.MapGet("/api/org-recovery/invites/status", async (HttpContext ctx, CancellationToken ct) =>
+{
+    var caller = RequireOfficer(ctx);
+    if (caller is null) return;
+    var setupId = ctx.Request.Query["setupId"].ToString();
+    if (!Guid.TryParse(setupId, out _))
+    {
+        await Fail(ctx, StatusCodes.Status400BadRequest, "Malformed setupId.");
+        return;
+    }
+    var pending = await orgStore.PendingOfficersAsync(setupId, orgRecovery.OfficerEmails, ct);
+    await ctx.Response.WriteAsJsonAsync(
+        new SetupStatusDto(setupId, orgRecovery.OfficerEmails.Count, pending),
+        AppJsonContext.Default.SetupStatusDto,
+        cancellationToken: ct);
+});
+
+// ----- publishing the key the ceremony produced -----
+app.MapPost("/api/org-recovery/setup", async (HttpContext ctx, CancellationToken ct) =>
+{
+    var caller = RequireOfficer(ctx);
+    if (caller is null) return;
+    var request = await ctx.Request.ReadFromJsonAsync(
+        AppJsonContext.Default.PublishSetupRequest, ct);
+    if (request is null || !request.IsValid())
+    {
+        await Fail(ctx, StatusCodes.Status400BadRequest, "Malformed setup publication.");
+        return;
+    }
+    var existing = await orgStore.ReadSetupAsync(ct);
+    if (existing is not null && existing.SetupId == request.SetupId)
+    {
+        // A retry after a dropped response is idempotent; the same ceremony offering a
+        // DIFFERENT key is a swap attempt and is refused.
+        if (existing.OrgPublicKey == request.OrgPublicKey)
+        {
+            ctx.Response.StatusCode = StatusCodes.Status200OK;
+            return;
+        }
+        await Fail(
+            ctx,
+            StatusCodes.Status409Conflict,
+            "That ceremony has already published a different key.");
+        return;
+    }
+    var pending = await orgStore.PendingOfficersAsync(request.SetupId, orgRecovery.OfficerEmails, ct);
+    if (pending.Count > 0)
+    {
+        // Publishing before everyone has stored their share would leave a key whose quorum
+        // cannot be assembled — recoverable-looking and not recoverable.
+        await Fail(
+            ctx,
+            StatusCodes.Status409Conflict,
+            $"{pending.Count} officer(s) have not acknowledged their share yet.");
+        return;
+    }
+    await orgStore.WriteSetupAsync(
+        new OrgRecoverySetup
+        {
+            SetupId = request.SetupId,
+            OrgPublicKey = request.OrgPublicKey,
+            OrgPublicKeyFingerprint = FingerprintOf(request.OrgPublicKey),
+            RosterFingerprint = orgRecovery.RosterFingerprint(),
+            PublishedBy = caller.Value.Email,
+            PublishedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+        },
+        ct);
+    log.LogWarning(
+        "CORPORATE RECOVERY KEY PUBLISHED by {Officer}, ceremony {SetupId}. Every vault on this "
+        + "server will seal its master key to it on the next write.",
+        caller.Value.Email,
+        request.SetupId);
+    ctx.Response.StatusCode = StatusCodes.Status200OK;
 });
 
 // ----- shares -----
@@ -620,26 +865,10 @@ app.MapGet("/api/shares", async (HttpContext ctx, CancellationToken ct) =>
 {
     var caller = RequireCaller(ctx);
     if (caller is null) return;
-    // You can read ONLY your own inbox, and one item is live at a time: the array
-    // is written to the response as it is read, never assembled in memory first.
-    // A List<ShareItem> here is the whole inbox resident at once, which a 512 MiB
-    // container does not survive — and the items are on disk, so the next read
-    // repeats it. Written by hand rather than through IAsyncEnumerable because the
-    // AOT source generator has no converter for one.
-    ctx.Response.ContentType = "application/json";
-    var body = ctx.Response.Body;
-    await body.WriteAsync("["u8.ToArray(), ct);
-    var first = true;
-    await foreach (var item in store.ListSharesAsync(caller.Value.Email, ct))
-    {
-        if (!first)
-        {
-            await body.WriteAsync(","u8.ToArray(), ct);
-        }
-        first = false;
-        await JsonSerializer.SerializeAsync(body, item, AppJsonContext.Default.ShareItem, ct);
-    }
-    await body.WriteAsync("]"u8.ToArray(), ct);
+    // You can read ONLY your own inbox, and one item is live at a time — see
+    // WriteJsonArrayAsync for why it is streamed by hand.
+    await WriteJsonArrayAsync(
+        ctx, store.ListSharesAsync(caller.Value.Email, ct), AppJsonContext.Default.ShareItem, ct);
 });
 
 // What YOU have sent and nobody has dealt with yet. Your own actions, told back to you — the

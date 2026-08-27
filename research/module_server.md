@@ -1,6 +1,6 @@
 # Module: Cred Vault Server
 
-`src_minimalapi_server/` — a .NET 10 minimal API, twelve source files, that stores ciphertext it
+`src_minimalapi_server/` — a .NET 10 minimal API, fourteen source files, that stores ciphertext it
 cannot read.
 
 > This document is the **single statement of the HTTP contract**. It is implemented twice: in
@@ -20,7 +20,7 @@ whole server is ~2,100 lines.
 
 | File | Role |
 |---|---|
-| `src/Program.cs` | Configuration, startup guards, the pipeline, and all thirteen endpoints |
+| `src/Program.cs` | Configuration, startup guards, the pipeline, and all eighteen endpoints |
 | `src/VaultStore.cs` | Filesystem storage: atomic writes, hashed paths, the crash sweep |
 | `src/VaultStoreOutbox.cs` | The sender's receipts, and the two sweeps that bound both sides |
 | `src/ShareMaintenance.cs` | The hourly pass: retire dealt-with receipts, prune what aged out |
@@ -28,6 +28,8 @@ whole server is ~2,100 lines.
 | `src/TokenIdentity.cs` | Reads the verified caller identity out of JWT claims |
 | `src/Models.cs` | `ShareItem`, `ShareRequest`, `SentShare`, `TeamMemberDto`, `WhoAmIDto` |
 | `src/OrgRecovery.cs` | The corporate-recovery roster, its quorum guard and its fingerprint |
+| `src/OrgRecoveryStore.cs` | Setup invites and the published org public key, on disk |
+| `src/OrgRecoveryMaintenance.cs` | Drops setup invites nobody acknowledged |
 | `src/Logging.cs` | Serilog: console + a file per run |
 | `src/InstanceFile.cs` | Publishes where this instance is listening, for the DewFlow editor panel |
 | `src/HealthProbe.cs` | The container healthcheck the binary runs against itself (no curl in the image) |
@@ -78,6 +80,11 @@ identifier**, so there is nothing to tamper with.
 | `DELETE` | `/api/vault` | token email | `204` | Deletes the vault, its `.email` sidecar, and the whole inbox |
 | `GET` | `/api/team` | any allowed caller | `200` | `[{email}]` — vault owners in the caller's own domain |
 | `GET` | `/api/org-recovery/config` | any allowed caller | `200` | The corporate-recovery roster this server runs under. See below |
+| `POST` | `/api/org-recovery/invites` | officer | `201` | One officer's sealed Shamir share; sender stamped |
+| `GET` | `/api/org-recovery/invites` | officer | `200` | Your own pending invites, **streamed** |
+| `POST` | `/api/org-recovery/invites/{id}/ack` | officer, own inbox | `204` / `404` | Stored durably — drop it |
+| `GET` | `/api/org-recovery/invites/status` | officer | `200` | `?setupId=` → who has not answered |
+| `POST` | `/api/org-recovery/setup` | officer | `200` / `409` | Publish the key once everyone has |
 | `POST` | `/api/shares` | sender = token email | `201` | Body below |
 | `GET` | `/api/shares` | recipient = token email | `200` | Your inbox, **streamed** |
 | `DELETE` | `/api/shares/{id}` | recipient = token email | `204` / `404` | `id` must parse as a GUID |
@@ -109,10 +116,15 @@ to post into a stranger's inbox on another tenant.
 
 ### `GET /api/shares` streams
 
-The handler returns an `IAsyncEnumerable<ShareItem>` rather than a list. With
-`MaxInboxItems=500` and `MaxShareBytes=1 MiB`, materialising the inbox first put roughly 700 MiB
-live — before JSON encoding doubled it — on a request any same-domain account could provoke by
-filling someone's inbox. Streaming keeps one item live at a time.
+The array is written to the response as the store reads it, never assembled first. With
+`MaxInboxItems=500` and `MaxShareBytes=1 MiB`, materialising the inbox put roughly 700 MiB live —
+before JSON encoding doubled it — on a request any same-domain account could provoke by filling
+someone's inbox. Streaming keeps one item live at a time.
+
+It is written by hand rather than by handing the framework an `IAsyncEnumerable`, because the AOT
+source generator has no converter for one — a fact the **build** enforces (`IL2026`/`IL3050`)
+rather than leaving to be found at runtime. The org-recovery invite listing needs the same shape,
+so both go through one `WriteJsonArrayAsync` helper instead of a second copy.
 
 ### The sender's side, and why it did not exist before
 
@@ -194,6 +206,42 @@ the ceremony exists) an X25519 **public** key. The private half lives only as Sh
 inside the officers' own vaults, and there is no code path here that could hold one — which is
 what keeps this feature on the right side of rule 1.
 
+### The setup ceremony
+
+One officer initiates: they mint the organisation's X25519 pair locally, split the **private**
+half into one Shamir share per officer, seal each under a one-time PIN told out of band, and
+`POST` them one at a time. Each officer then reads their own invite, stores the share in their own
+vault, and acknowledges — **after** the durable write, so a crash in between leaves the invite
+safely pending rather than acked-but-lost. When nobody is pending, the initiator publishes the
+public half and destroys the assembled private key.
+
+Four refusals, each for a way the ceremony could produce something that *looks* recoverable:
+
+- **Off the roster → `403`, for both "not an officer" and "the feature is off here."** One answer
+  for two states, because telling a caller which it is hands them the roster's shape for free.
+  These endpoints are gated not because the payloads are readable — they are opaque — but because
+  they are the levers: a stranger who can post an invite seats their own share where a real
+  officer's belongs.
+- **A recipient outside the roster → `403`.** Otherwise an officer could seat a share with an
+  accomplice the operator never named, and a 2-of-3 quietly becomes something one person controls.
+- **A split disagreeing with the roster → `409`.** Clients pin a fingerprint that says "2 of 3";
+  shares minted as 2-of-5 would implement a different scheme behind that same pin.
+- **Publishing while anyone is pending → `409`.** A key whose quorum cannot be assembled is
+  recoverable-looking and not recoverable, which is the worst of the three states to be in.
+
+Republishing the **same** `setupId` with the **same** key is `200` — a retry after a dropped
+response has to succeed. The same ceremony offering a *different* key is `409`: that is not a
+retry, it is a swap.
+
+`fromEmail` is stamped from the verified token, never read from the body — the same rule as
+`POST /api/shares` and for a stronger reason: an invite a stranger could attribute to the CTO is
+one an officer might accept into their own vault.
+
+`OrgRecoveryMaintenance` drops invites nobody acknowledged after
+`Vault:CorpRecovery:SetupTtlHours` (72). A published key has no TTL and is never swept — taking it
+would disable corporate recovery on a working server, silently. The timer is registered **only
+when a roster is configured**.
+
 ### `/api/client-config` — why an anonymous endpoint is the right shape
 
 A client cannot authenticate until it knows **which scope to ask the identity provider for**, so
@@ -268,6 +316,8 @@ crash, and is removed.
 ${DataDir}/vaults/<key>.bin      the ciphertext
 ${DataDir}/vaults/<key>.email    the plaintext email, for team discovery
 ${DataDir}/shares/<key>/<guid>.json
+${DataDir}/org-recovery/setup.json                    the published org PUBLIC key
+${DataDir}/org-recovery/invites/<key>/<guid>.json     one officer's sealed Shamir share
 ```
 
 `key = sha256(lowercased email) hex, first 32 chars` (128 bits). Hashed so a directory listing is
@@ -361,6 +411,7 @@ profile file inside a container reaches nobody.
 | `Vault:MaxInboxItems` | 500 | Pending shares per recipient |
 | `Vault:CorpRecovery:OfficerEmails` | *(empty — feature off)* | CSV of recovery officers; **min 3** when set |
 | `Vault:CorpRecovery:Threshold` | 2 | How many officers must act together; 2..roster size |
+| `Vault:CorpRecovery:SetupTtlHours` | 72 | How long an unacknowledged setup invite lives |
 | `Vault:RateLimit:PermitLimit` | 120 | Requests per window, per caller |
 | `Vault:RateLimit:WindowSeconds` | 10 | The window |
 | `Vault:RequireForwardedHttps` | `false` | Refuse anything not forwarded as https |

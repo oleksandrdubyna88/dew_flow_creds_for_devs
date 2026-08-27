@@ -102,6 +102,106 @@ public sealed record OrgRecoveryConfig
 /// <c>SetupComplete</c> is false between "the operator listed officers" and "the officers
 /// finished the ceremony" — a window in which clients must not try to enrol.</para>
 /// </summary>
+/// <summary>
+/// One officer's Shamir share, sealed by the initiator and relayed by this server.
+///
+/// <para><c>FromEmail</c> is stamped from the verified token and never accepted from the body —
+/// the same rule as <see cref="ShareItem"/>, and for a stronger reason: an invite a stranger
+/// could attribute to the CTO is one an officer might accept into their vault, which would seat
+/// an attacker's share where a real one belongs.</para>
+///
+/// <para>The four crypto fields are opaque. The share inside is sealed under
+/// <c>scrypt(recipientEmail + one-time PIN)</c>, and the PIN travels out of band.</para>
+/// </summary>
+public sealed record EscrowInviteItem
+{
+    public string Id { get; init; } = Guid.NewGuid().ToString();
+    /// <summary>Which ceremony this belongs to — one per generation of the org key.</summary>
+    public string SetupId { get; init; } = "";
+    public string FromEmail { get; init; } = "";
+    public string ToEmail { get; init; } = "";
+    /// <summary>The share's x coordinate, 1..255. Meaningless to the server; the client needs it.</summary>
+    public int ShareIndex { get; init; }
+    public int Threshold { get; init; }
+    public int TotalShares { get; init; }
+    public long CreatedAt { get; init; }
+    public string Salt { get; init; } = "";
+    public string Iv { get; init; } = "";
+    public string Tag { get; init; } = "";
+    public string Data { get; init; } = "";
+    public int? KdfN { get; init; }
+    public int? KdfR { get; init; }
+    public int? KdfP { get; init; }
+}
+
+/// <summary>What an initiating officer POSTs, once per fellow officer.</summary>
+public sealed record EscrowInviteRequest
+{
+    public string SetupId { get; init; } = "";
+    public string ToEmail { get; init; } = "";
+    public int ShareIndex { get; init; }
+    public int Threshold { get; init; }
+    public int TotalShares { get; init; }
+    public string Salt { get; init; } = "";
+    public string Iv { get; init; } = "";
+    public string Tag { get; init; } = "";
+    public string Data { get; init; } = "";
+    public int? KdfN { get; init; }
+    public int? KdfR { get; init; }
+    public int? KdfP { get; init; }
+
+    public bool IsValid() =>
+        Guid.TryParse(SetupId, out _)
+        && !string.IsNullOrWhiteSpace(ToEmail)
+        && ToEmail.Contains('@')
+        && ShareIndex is >= 1 and <= 255
+        && Threshold >= 2
+        && TotalShares >= OrgRecoveryConfig.MinimumOfficers
+        && Threshold <= TotalShares
+        && IsBase64(Salt)
+        && IsBase64(Iv)
+        && IsBase64(Tag)
+        && IsBase64(Data);
+
+    private static bool IsBase64(string value) =>
+        !string.IsNullOrWhiteSpace(value)
+        && Convert.TryFromBase64String(value, new byte[value.Length], out _);
+
+    public int PayloadBytes() => Salt.Length + Iv.Length + Tag.Length + Data.Length;
+}
+
+/// <summary>Where an initiator's ceremony has got to. Emails only — no ciphertext.</summary>
+public sealed record SetupStatusDto(
+    string SetupId,
+    int Total,
+    IReadOnlyList<string> Pending);
+
+/// <summary>What the initiator publishes once every officer has acknowledged.</summary>
+public sealed record PublishSetupRequest
+{
+    public string SetupId { get; init; } = "";
+    /// <summary>Raw X25519 public key, base64 — 32 bytes.</summary>
+    public string OrgPublicKey { get; init; } = "";
+    public string RosterFingerprint { get; init; } = "";
+
+    public bool IsValid() =>
+        Guid.TryParse(SetupId, out _)
+        && Convert.TryFromBase64String(OrgPublicKey, new byte[64], out var written)
+        && written == 32;
+}
+
+/// <summary>The published key, as it sits on disk.</summary>
+public sealed record OrgRecoverySetup
+{
+    public string SetupId { get; init; } = "";
+    public string OrgPublicKey { get; init; } = "";
+    public string OrgPublicKeyFingerprint { get; init; } = "";
+    /// <summary>The roster this ceremony was run against — a later change is then detectable.</summary>
+    public string RosterFingerprint { get; init; } = "";
+    public string PublishedBy { get; init; } = "";
+    public long PublishedAt { get; init; }
+}
+
 public sealed record OrgRecoveryConfigDto(
     bool Enabled,
     IReadOnlyList<string> OfficerEmails,
