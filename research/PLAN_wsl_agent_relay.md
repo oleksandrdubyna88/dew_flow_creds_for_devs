@@ -188,6 +188,35 @@ workspace-writable — a repository can ship a `.vscode/settings.json` — and t
 distribution names are spliced into `bash -lc`. The accepted character set is what those names
 actually need; nothing quotable is accepted, so there is nothing to quote correctly.
 
+## Found in review, 2026-08-26 — the socket was briefly world-connectable
+
+A unix socket takes its mode from the **umask at `bind`**, and the code set the mode a line
+afterwards. Measured under the ordinary umask of 0022: the socket comes out `rwxr-xr-x` at bind
+and is narrowed to `rw-------` a moment later. In between, any process on the machine can connect
+— and `SSH2_AGENTC_REQUEST_IDENTITIES` raises no dialog by design, so the window silently leaks
+the list of loaded public keys.
+
+`$XDG_RUNTIME_DIR` is itself 0700, so the default path was protected by its directory. The `/tmp`
+fallback was not, and neither is a path given through `CREDS_RELAY_SOCKET`.
+
+Fixed by setting `umask(077)` **before** the bind, which removes the window rather than shortening
+it and covers every path including an overridden one. Verified by removing the `chmod` and
+measuring again: the socket then comes out `700` instead of `755`. The `chmod` stays as belt and
+braces — a mode that disagreed with the mask would mean the mask did not take.
+
+It is a `DllImport` rather than the newer `LibraryImport` because the source-generated form
+requires `AllowUnsafeBlocks` for the whole project, which is a large guarantee to give up for one
+call into libc.
+
+**Also found:** the integration test stopped building the day the broker client became its own
+library — it copies the sources into `/tmp` and copied only `src_cli`. It did not fail; it
+**skipped**, which is a test quietly not running. It now copies both projects.
+
+**Checked and NOT a defect** (measured, because the reasoning went the other way first): the
+Windows child per connection does not leak. Closing the WSL side closes the child's stdin, it
+reads end-of-stream and exits — five real connections left zero processes behind and no log noise
+from the abandoned copy task.
+
 ## Definition of Done
 
 - [x] `creds relay` serves a unix socket in WSL that a real `ssh-add -l` lists the key through.

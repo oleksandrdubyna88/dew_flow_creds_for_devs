@@ -86,8 +86,12 @@ async function buildLinuxCli() {
   console.log('      building the Linux CLI inside WSL (once)…');
   const repoLinux = REPO.replace(/^([A-Za-z]):/, (_, d) => `/mnt/${d.toLowerCase()}`).replace(/\\/g, '/');
   const build = await wsl(
-    `rm -rf ${LINUX_BUILD} && mkdir -p ${LINUX_BUILD}/src_cli/src ${LINUX_BUILD}/contract && ` +
+    // Both projects: the CLI references src_broker_client, so copying src_cli alone stopped
+    // building the day that library was extracted — and this test then SKIPPED rather than
+    // failed, which is a test quietly not running.
+    `rm -rf ${LINUX_BUILD} && mkdir -p ${LINUX_BUILD}/src_cli/src ${LINUX_BUILD}/src_broker_client/src ${LINUX_BUILD}/contract && ` +
       `cp ${repoLinux}/src_cli/src/*.cs ${repoLinux}/src_cli/src/*.csproj ${LINUX_BUILD}/src_cli/src/ && ` +
+      `cp ${repoLinux}/src_broker_client/src/*.cs ${repoLinux}/src_broker_client/src/*.csproj ${LINUX_BUILD}/src_broker_client/src/ && ` +
       `cp ${repoLinux}/contract/broker-v1.json ${LINUX_BUILD}/contract/ && ` +
       `cp ${repoLinux}/Directory.Build.props ${LINUX_BUILD}/ && ` +
       // No AOT: the distribution has the SDK but not a native linker, and the code under test is

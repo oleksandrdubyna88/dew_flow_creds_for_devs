@@ -1,4 +1,5 @@
 using System.Net.Sockets;
+using System.Runtime.InteropServices;
 
 using CredsBroker;
 
@@ -28,6 +29,28 @@ namespace CredsCli;
 /// </remarks>
 internal static class AgentRelay
 {
+    /// <summary>
+    /// Set the file-creation mask so the socket is owner-only the moment it EXISTS.
+    /// </summary>
+    /// <remarks>
+    /// <para><b>Measured 2026-08-26, and it is why this exists.</b> A unix socket takes its mode
+    /// from the umask at <c>bind</c>. With the ordinary 0022 the socket comes out
+    /// <c>rwxr-xr-x</c> — world-connectable — and a <c>chmod</c> a line later leaves a window in
+    /// which any process on the machine can connect. That window is enough to ask the agent for
+    /// its identities, which raises no dialog by design.</para>
+    /// <para>Setting the mask BEFORE the bind removes the window instead of shortening it, and it
+    /// covers a path given through <c>CREDS_RELAY_SOCKET</c> too, where we do not control the
+    /// directory. Process-global, which is safe here: this process binds one socket at startup
+    /// and creates nothing else.</para>
+    /// </remarks>
+    // DllImport rather than LibraryImport: the source-generated form requires AllowUnsafeBlocks
+    // for the whole project, which is a large guarantee to give up for one call into libc.
+    [DllImport("libc", EntryPoint = "umask")]
+    private static extern uint SetUmask(uint mask);
+
+    /// <summary>Octal 077 — every group and other bit masked off. C# has no octal literal.</summary>
+    private const uint OwnerOnlyMask = 0b000_111_111;
+
     /// <summary>Overrides the socket path, for a second window or an unusual layout.</summary>
     internal const string SocketOverrideVariable = "CREDS_RELAY_SOCKET";
 
@@ -104,11 +127,15 @@ internal static class AgentRelay
             return claimed;
         }
 
+        // Owner-only from the instant the socket exists, not a line later. See SetUmask.
+        SetUmask(OwnerOnlyMask);
         using var listener = new Socket(AddressFamily.Unix, SocketType.Stream, ProtocolType.Unspecified);
         try
         {
             listener.Bind(new UnixDomainSocketEndPoint(path));
             listener.Listen(16);
+            // Belt and braces: the umask above already decided this, and a mode that disagreed
+            // with it would mean the mask did not take.
             File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite);
         }
         catch (Exception e) when (e is SocketException or IOException or UnauthorizedAccessException)
