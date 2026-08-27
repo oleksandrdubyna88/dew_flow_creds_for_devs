@@ -1,4 +1,4 @@
-import { EntityViewOptions, portableSshCommand } from './entityViewPage';
+import { EntityViewOptions, cliCommandFor, portableSshCommand } from './entityViewPage';
 import { DEFAULT_SNIPPET_LANGUAGE, snippetFor } from './configSnippet';
 import { CONFIG_KEY_ENV } from './configKey';
 import { configFileNameFor } from './configFile';
@@ -92,6 +92,12 @@ export async function copyValueFor(
           : undefined;
       break;
     default: {
+      const cli = /^cli(\d+)$/.exec(field);
+      if (cli !== null) {
+        const alias = (options.cliAliases ?? [])[Number(cli[1])];
+        value = alias === undefined ? undefined : cliCommandFor(d, alias);
+        break;
+      }
       const env = /^envname_(.+)$/.exec(field);
       if (env !== null) {
         value = d.envBindings?.[env[1]];

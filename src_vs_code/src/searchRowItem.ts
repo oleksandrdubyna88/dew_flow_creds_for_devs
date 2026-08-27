@@ -28,8 +28,11 @@ export function searchRowItem(
   terms: readonly string[],
   /** Deferred: the count is a scan of every entry, and an inactive filter must not pay for it. */
   countFound: () => number,
+  /** `has:`/`mcp:` tokens nobody recognises (T23b) — named on the row, never guessed about. */
+  unknownPredicates: readonly string[] = [],
 ): vscode.TreeItem {
-  const look = terms.length > 0 ? filtering(query, countFound()) : IDLE;
+  const active = terms.length > 0 || query.trim().length > 0;
+  const look = active ? filtering(query, countFound(), unknownPredicates) : IDLE;
   const item = new vscode.TreeItem(look.label, vscode.TreeItemCollapsibleState.None);
   item.id = 'search';
   item.contextValue = look.contextValue;
@@ -47,15 +50,19 @@ export function searchRowItem(
  * contributed as an inline action and an inline action cannot be conditional on anything but
  * this string.</p>
  */
-function filtering(query: string, found: number): RowLook {
+function filtering(query: string, found: number, unknownPredicates: readonly string[]): RowLook {
+  // An unrecognised predicate is NAMED, not silently matched as text — `has:ttop` treated as a
+  // word matches nothing and reads as an empty vault.
+  const unknown =
+    unknownPredicates.length === 0 ? '' : `  ·  unknown filter: ${unknownPredicates.join(', ')}`;
   return {
     label: `Search: ${query}`,
     contextValue: 'credSearchActive',
     icon: 'filter-filled',
     // "nothing matches" rather than "0 found": the empty case is the one worth spelling out,
     // because an empty tree and a broken tree look identical otherwise.
-    description: found === 0 ? 'nothing matches' : `${found} found`,
-    tooltip: `Filtering by "${query}" — click to change it, × to clear. Secrets are never searched.`,
+    description: (found === 0 ? 'nothing matches' : `${found} found`) + unknown,
+    tooltip: `Filtering by "${query}" — click to change it, × to clear. Secrets are never searched. Filters: has:totp, has:cli, has:env, has:code-access, has:deps, has:attachment, has:image, is:ephemeral, mcp:visible/usable/rotate/create/delete-own/delete-any.`,
   };
 }
 

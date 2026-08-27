@@ -2,6 +2,7 @@ import * as assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
   EntityViewOptions,
+  cliCommandFor,
   copyValueFor,
   portableSshCommand,
   renderEntityViewHtml,
@@ -250,4 +251,41 @@ test('a revision subtitle is its own line, never glued to the name', () => {
   );
   const plain = renderEntityViewHtml(options());
   assert.ok(!plain.includes('class="subtitle"'), 'no subtitle row when there is nothing to say');
+});
+
+// ---------------------------------------------------------------------------
+// T23a — "Enable CLI Access" finally leads somewhere you can see.
+// ---------------------------------------------------------------------------
+
+test('an entry with CLI aliases shows the copyable command, verb by kind', async () => {
+  const html = renderEntityViewHtml(
+    options({ details: metadata({ isDb: true } as never), cliAliases: ['prod-db'] }),
+  );
+  assert.ok(html.includes('CLI access'), 'the CLI row is missing');
+  assert.ok(html.includes('creds db prod-db'), 'the command must carry the kind verb');
+
+  const copied = await copyValueFor(
+    options({ details: metadata({ isDb: true } as never), cliAliases: ['prod-db'] }),
+    'cli0',
+  );
+  assert.equal(copied, 'creds db prod-db');
+});
+
+test('the verb follows the kind: ssh, run, script, vpn-up, config, env', () => {
+  const cases: ReadonlyArray<[Record<string, unknown>, string]> = [
+    [{ isSshEnabled: true, host: 'h' }, 'creds ssh a'],
+    [{ isTerminal: true }, 'creds run a'],
+    [{ isScript: true }, 'creds script a'],
+    [{ isVpn: true }, 'creds vpn-up a'],
+    [{ isConfig: true }, 'creds config a'],
+    [{}, 'creds env a'],
+  ];
+  for (const [details, expected] of cases) {
+    assert.equal(cliCommandFor(metadata(details as never), 'a'), expected, JSON.stringify(details));
+  }
+});
+
+test('no aliases, no row — a capability line about nothing is noise', () => {
+  const html = renderEntityViewHtml(options());
+  assert.ok(!html.includes('CLI access'));
 });

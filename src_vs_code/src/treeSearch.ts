@@ -58,6 +58,26 @@ export function matchesTerms(haystack: string, terms: readonly string[]): boolea
   return terms.every((term) => haystack.includes(term));
 }
 
+/**
+ * How a node is judged. `terms` drive the default text match and remain the memo's cache key
+ * ingredient; `matcher`, when present, REPLACES the judgement — the capability predicates
+ * (tails T23b) ride in this seat, already composed with the text terms by the provider. One
+ * seat rather than a parallel predicate parameter, so the walk below cannot apply half a
+ * query.
+ */
+export interface NodeJudge {
+  readonly terms: readonly string[];
+  readonly matcher?: (node: TreeNode) => boolean;
+  /** Distinguishes two matchers for the memo — the provider passes the raw query here. */
+  readonly matcherKey?: string;
+}
+
+function judgeNode(node: TreeNode, judge: NodeJudge): boolean {
+  return judge.matcher === undefined
+    ? matchesTerms(nodeHaystack(node), judge.terms)
+    : judge.matcher(node);
+}
+
 /** Just enough of the storage to walk one account's tree. Read-only: the walk never mutates. */
 export interface TreeSource {
   getChildren(accountId: string, parentId: string | null): readonly TreeNode[];
@@ -139,7 +159,7 @@ function subtreeMatches(
   source: TreeSource,
   accountId: string,
   node: TreeNode,
-  terms: readonly string[],
+  judge: NodeJudge,
   visited: Set<string>,
   memo: FilterMemo | undefined,
 ): boolean {
@@ -148,7 +168,7 @@ function subtreeMatches(
     // node enters `visited` only after its own haystack was checked and failed, so a node
     // re-reached through a cycle is by construction one that did not match — but this order
     // says out loud that the guard's only job is termination, never hiding a visible match.
-    if (matchesTerms(nodeHaystack(node), terms)) {
+    if (judgeNode(node, judge)) {
       return true;
     }
     if (node.type !== 'folder' || visited.has(node.id)) {
@@ -157,7 +177,7 @@ function subtreeMatches(
     visited.add(node.id);
     return source
       .getChildren(accountId, node.id)
-      .some((child) => subtreeMatches(source, accountId, child, terms, visited, memo));
+      .some((child) => subtreeMatches(source, accountId, child, judge, visited, memo));
   };
   return memo === undefined ? compute() : memo.subtree(accountId, node.id, compute);
 }
@@ -174,38 +194,52 @@ export function filterChildren(
   source: TreeSource,
   accountId: string,
   parentId: string | null,
-  terms: readonly string[],
+  judge: NodeJudge | readonly string[],
   parentMatched = false,
   memo?: FilterMemo,
 ): readonly TreeNode[] {
-  if (terms.length === 0 || parentMatched) {
+  const q: NodeJudge = Array.isArray(judge) ? { terms: judge } : (judge as NodeJudge);
+  // A matched FOLDER shows everything inside it — but only for a pure text search. With
+  // capability predicates in play the shortcut would be a lie: a folder matched by name does
+  // not make its children CLI-enabled.
+  if ((q.terms.length === 0 && q.matcher === undefined) || (parentMatched && q.matcher === undefined)) {
     return source.getChildren(accountId, parentId);
   }
-  memo?.tune(terms);
+  memo?.tune(memoKey(q));
   const compute = (): readonly TreeNode[] =>
     source
       .getChildren(accountId, parentId)
-      .filter((child) => subtreeMatches(source, accountId, child, terms, new Set<string>(), memo));
+      .filter((child) => subtreeMatches(source, accountId, child, q, new Set<string>(), memo));
   return memo === undefined ? compute() : memo.children(accountId, parentId, compute);
+}
+
+/** What the memo keys a judgement by. The matcher's identity is carried by `matcherKey`. */
+function memoKey(judge: NodeJudge): readonly string[] {
+  return judge.matcher === undefined ? judge.terms : [...judge.terms, judge.matcherKey ?? '#pred'];
 }
 
 /** Whether an account has anything to show at all — an empty account row is noise. */
 export function accountMatches(
   source: TreeSource,
   accountId: string,
-  terms: readonly string[],
+  judge: NodeJudge | readonly string[],
   memo?: FilterMemo,
 ): boolean {
-  return terms.length === 0 || filterChildren(source, accountId, null, terms, false, memo).length > 0;
+  const q: NodeJudge = Array.isArray(judge) ? { terms: judge } : (judge as NodeJudge);
+  return (
+    (q.terms.length === 0 && q.matcher === undefined) ||
+    filterChildren(source, accountId, null, q, false, memo).length > 0
+  );
 }
 
 /** How many entities (not folders) the filter keeps, so the row can say whether it found anything. */
 export function countMatches(
   source: TreeSource,
   accountIds: readonly string[],
-  terms: readonly string[],
+  judge: NodeJudge | readonly string[],
   memo?: FilterMemo,
 ): number {
+  const q: NodeJudge = Array.isArray(judge) ? { terms: judge } : (judge as NodeJudge);
   const walk = (
     accountId: string,
     parentId: string | null,
@@ -215,7 +249,10 @@ export function countMatches(
   ): number => {
     let total = 0;
     for (const node of source.getChildren(accountId, parentId)) {
-      const matched = inMatched || matchesTerms(nodeHaystack(node), terms);
+      // The matched-folder shortcut counts children for a pure text search only — with
+      // predicates, being inside a matched folder proves nothing about a child's capability.
+      const matched =
+        (inMatched && q.matcher === undefined) || judgeNode(node, q);
       if (node.type === 'folder') {
         if (!visited.has(node.id)) {
           visited.add(node.id);
@@ -232,6 +269,6 @@ export function countMatches(
       (sum, accountId) => sum + walk(accountId, null, false, new Set<string>()),
       0,
     );
-  memo?.tune(terms);
+  memo?.tune(memoKey(q));
   return memo === undefined ? compute() : memo.count(accountIds, compute);
 }

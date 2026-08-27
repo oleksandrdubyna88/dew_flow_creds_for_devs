@@ -54,6 +54,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ssh, WireGuard, OpenVPN, the four DB CLIs and git; a machine without apt is told the command
   and that it needs adapting, never guessed at.
 
+### Added
+
+- **"Enable CLI Access" finally leads somewhere you can see.** The viewer shows the entry's CLI
+  aliases as ready-to-copy commands — `creds ssh prod-db`, `creds db …`, the verb following the
+  kind — beside the Agent-access block, with a line saying what the command can and cannot
+  reach. Until now the mint succeeded and nothing anywhere showed the result.
+- **The filter understands capabilities.** `has:totp`, `has:cli`, `has:env`, `has:code-access`,
+  `has:deps`, `has:attachment`, `has:image`, `is:ephemeral`, and `mcp:visible` /
+  `usable` / `rotate` / `create` / `delete-own` / `delete-any` — combinable with each other and
+  with free text (`aws has:totp mcp:usable`). The MCP predicates answer through the same
+  resolver the tree badge uses, folder inheritance included, so the filter and the badge cannot
+  disagree. An unrecognised filter is NAMED on the search row rather than silently matched as
+  text, and the predicates read metadata only — the "secrets are never searched" rule extends to
+  them by construction. Inside a name-matched folder, text search still shows everything;
+  capability filters deliberately do not, because a folder's name proves nothing about a child's
+  capabilities.
+
 ### Fixed
 
 - **Clicking a search result no longer cancels the search.** The filter box hid the moment focus

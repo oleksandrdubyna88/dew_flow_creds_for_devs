@@ -11,8 +11,8 @@ import { dependentGroups, dependentsFolderItem, dependentsItem } from './depTree
 import { RevisionHead } from './revisionHistory';
 import {
   FilterMemo,
+  NodeJudge,
   accountMatches,
-  countMatches,
   filterChildren,
   matchesTerms,
   nodeHaystack,
@@ -28,7 +28,7 @@ import { FOLDER_COLOR, buildTooltip, entityIcon, folderIcon, kindIcon } from './
 import { parentOf } from './treeParent';
 import { describeRetention, isTrashFolder } from './trash';
 import { ExpansionMemory, expansionKey } from './treeExpansion';
-import { searchRowItem } from './searchRowItem';
+import { buildJudge, searchRowFor } from './providerSearch';
 import { revisionRowItem } from './revisionRowItem';
 import { depUri } from './depDecorations';
 
@@ -147,6 +147,8 @@ export class CredTreeDataProvider
    * every row is in until one is opened.</p>
    */
   isBridged: ((accountId: string, nodeId: string) => boolean) | undefined;
+  /** Whether a CLI alias points at this entry — filled by the extension (T23). */
+  hasCliAlias: ((accountId: string, nodeId: string) => boolean) | undefined;
 
   constructor(
     private readonly storage: StorageManager,
@@ -239,17 +241,14 @@ export class CredTreeDataProvider
     return searchTerms(this.query);
   }
 
-  /** The filter row — see `searchRowItem`, which owns everything about how it looks. */
+  /** The judged query for one account — lives in providerSearch.ts, where it is documented. */
+  private judge(accountId: string): NodeJudge {
+    return buildJudge(this.query, accountId, this.storage, this.hasCliAlias);
+  }
+
+  /** The filter row — built in providerSearch.ts, which owns everything about the query. */
   private searchItem(): vscode.TreeItem {
-    const terms = this.terms();
-    return searchRowItem(this.query, terms, () =>
-      countMatches(
-        this.storage,
-        this.storage.getAccounts().map((a) => a.accountId),
-        terms,
-        this.filterMemo,
-      ),
-    );
+    return searchRowFor(this.query, this.storage, this.filterMemo, (id) => this.judge(id));
   }
 
   /**
@@ -325,7 +324,7 @@ export class CredTreeDataProvider
       // is the one moment an invisible clear button would be unrecoverable.
       const roots: TreeElement[] = [{ kind: 'search' }];
       for (const account of this.storage.getAccounts()) {
-        if (accountMatches(this.storage, account.accountId, terms, this.filterMemo)) {
+        if (accountMatches(this.storage, account.accountId, this.judge(account.accountId), this.filterMemo)) {
           roots.push({ kind: 'account', account });
         }
       }
@@ -412,7 +411,7 @@ export class CredTreeDataProvider
       this.storage,
       accountId,
       parentId,
-      terms,
+      this.judge(accountId),
       parentMatched,
       this.filterMemo,
     ).map((node) => ({ kind: 'node' as const, accountId, node }));

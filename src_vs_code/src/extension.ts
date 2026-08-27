@@ -315,6 +315,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // carry names only this machine can act on.
   const ALIAS_KEY = 'credSshManager.cliAliases';
   const aliasMap = (): AliasMap => context.globalState.get<AliasMap>(ALIAS_KEY, {});
+  /** Every alias NAME pointing at one entry — the viewer's CLI row and has:cli share it (T23). */
+  const cliAliasesFor = (accountId: string, entityId: string): string[] =>
+    Object.entries(aliasMap())
+      .filter(([, alias]) => alias.accountId === accountId && alias.entityId === entityId)
+      .map(([name]) => name)
+      .sort();
   const setAliasMap = (next: AliasMap): Thenable<void> =>
     context.globalState.update(ALIAS_KEY, next);
   const storageDir = context.globalStorageUri.fsPath;
@@ -352,6 +358,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   );
   // Answered per row, never cached: the map is the truth and it changes underneath the tree.
   provider.isBridged = (accountId, nodeId) => bridges.isOpen(entityKey(accountId, nodeId));
+  // T23: the has:cli filter and the viewer's CLI row ask the SAME reverse lookup.
+  provider.hasCliAlias = (accountId, nodeId) =>
+    aliasFor(aliasMap(), accountId, nodeId) !== undefined;
   context.subscriptions.push({ dispose: () => bridges.dispose() });
 
 
@@ -2483,7 +2492,7 @@ ${detail}
     if (!isDouble) {
       return;
     }
-    await openEntityViewer(element.accountId, element.node, storage);
+    await openEntityViewer(element.accountId, element.node, storage, cliAliasesFor(element.accountId, element.node.id));
   });
 
   register('credSshManager.revisionClicked', async (target) => {
@@ -2503,7 +2512,7 @@ ${detail}
     }
     // The viewer, not the old QuickPick: that one knew only the SSH fields, so a VPN, database,
     // script or command entity opened as "Host —, Password not set" and read as broken.
-    await openEntityViewer(element.accountId, element.node, storage);
+    await openEntityViewer(element.accountId, element.node, storage, cliAliasesFor(element.accountId, element.node.id));
   });
 
   register('credSshManager.copyPassword', async (target) => {
@@ -2752,7 +2761,7 @@ ${detail}
     // Straight to the viewer rather than revealing the row: `TreeView.reveal` needs
     // `getParent` on the provider, which this one does not implement — and opening the thing
     // asked for is what the picker was for anyway.
-    await openEntityViewer(picked.accountId, node, storage);
+    await openEntityViewer(picked.accountId, node, storage, cliAliasesFor(picked.accountId, node.id));
   });
 
   /**
@@ -5339,6 +5348,8 @@ async function openEntityViewer(
   accountId: string,
   node: TreeNode,
   storage: StorageManager,
+  /** CLI aliases pointing at this entry (T23a) — resolved by the caller, which holds the map. */
+  cliAliases: readonly string[] = [],
 ): Promise<void> {
   const details = node.details;
   if (!details) {
@@ -5370,6 +5381,7 @@ async function openEntityViewer(
   const hasTotp = (await storage.getTotp(accountId, details.id)) !== undefined;
   showEntityView({
     details,
+    cliAliases,
     mcp: mcpFor(node, (id) => storage.getNode(accountId, id), false),
     keySourceName,
     jumpHostName,

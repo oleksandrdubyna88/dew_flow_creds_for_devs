@@ -9,16 +9,21 @@ import { sshClientPresent } from '../sshProgram';
  * unknown tool is a clean undefined rather than a guess.
  */
 
+// The launchers: ssh (connect), wg-quick/openvpn (VPN), psql/mysql/sqlcmd/mongosh (DB CLIs),
+// git (git-sync, config materialisation checks).
+const LAUNCHER_TOOLS = ['ssh', 'wg-quick', 'openvpn', 'psql', 'mysql', 'sqlcmd', 'mongosh', 'git'];
+
+function assertRecipe(tool: string, platform: 'win32' | 'linux'): void {
+  const recipe = installRecipe(tool, platform, true);
+  assert.ok(recipe !== undefined && recipe.command.length > 0, `${tool} on ${platform}`);
+  assert.ok(recipe.display.length > 0, `${tool} has no display name`);
+}
+
 test('every launcher-reachable tool has a recipe on both platforms', () => {
-  // The launchers: ssh (connect), wg-quick/openvpn (VPN), psql/mysql/sqlcmd/mongosh (DB CLIs),
-  // git (git-sync, config materialisation checks).
-  for (const tool of ['ssh', 'wg-quick', 'openvpn', 'psql', 'mysql', 'sqlcmd', 'mongosh', 'git']) {
+  for (const tool of LAUNCHER_TOOLS) {
     assert.ok(KNOWN_TOOLS.includes(tool), `${tool} has no recipe`);
-    for (const platform of ['win32', 'linux'] as const) {
-      const recipe = installRecipe(tool, platform, true);
-      assert.ok(recipe !== undefined && recipe.command.length > 0, `${tool} on ${platform}`);
-      assert.ok(recipe.display.length > 0, `${tool} has no display name`);
-    }
+    assertRecipe(tool, 'win32');
+    assertRecipe(tool, 'linux');
   }
 });
 
@@ -43,8 +48,9 @@ test('an unknown tool is undefined, never an invented recipe', () => {
 
 test('the Windows ssh recipe is the capability install and says it needs admin', () => {
   const recipe = installRecipe('ssh', 'win32', false);
-  assert.match(recipe?.command ?? '', /Add-WindowsCapability/);
-  assert.match(recipe?.note ?? '', /administrator/i);
+  assert.ok(recipe !== undefined);
+  assert.match(recipe.command, /Add-WindowsCapability/);
+  assert.match(recipe.note, /administrator/i);
 });
 
 test('the ssh presence probe: built-in wins on Windows; PATH decides elsewhere', () => {

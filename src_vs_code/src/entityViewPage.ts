@@ -49,6 +49,8 @@ export interface EntityViewOptions {
   keySourceName?: string;
   /** A second line under the title — the revision viewer's "version replaced at …". */
   subtitle?: string;
+  /** CLI aliases pointing at this entry (T23a) — the reverse of the alias map, caller-resolved. */
+  cliAliases?: readonly string[];
   hasPassword: boolean;
   hasPrivateKey: boolean;
   hasVpnConfig: boolean;
@@ -218,6 +220,30 @@ export function portableSshCommand(sshCommand: string | undefined): string | und
 
 export { copyValueFor } from './entityViewCopy';
 
+
+/**
+ * The command a terminal runs for this entry through its CLI alias (T23a).
+ *
+ * <p>The verb follows the kind, from the CLI's own usage text — `creds ssh` for a host,
+ * `creds db` for a database, `run`/`script` for commands, `env` for a bare secret, `vpn-up`
+ * for a tunnel. The owner's complaint was exact: *"я сделал enable in CLI — и что теперь? я
+ * даже скопировать это не могу"* — the mint succeeded and nothing anywhere showed the
+ * result.</p>
+ */
+export function cliCommandFor(details: EntityMetadata, alias: string): string {
+  // First hit wins, in the order the CLI's own usage text lists the verbs.
+  const rules: ReadonlyArray<[boolean, string]> = [
+    [details.isSshEnabled === true || details.host !== undefined, 'ssh'],
+    [details.isDb === true, 'db'],
+    [details.isTerminal === true, 'run'],
+    [details.isScript === true, 'script'],
+    [details.isVpn === true, 'vpn-up'],
+    [details.isConfig === true, 'config'],
+  ];
+  const verb = rules.find(([applies]) => applies)?.[1] ?? 'env';
+  return `creds ${verb} ${alias}`;
+}
+
 const COPY_ICON = SHARED_COPY_ICON;
 
 const DOWNLOAD_ICON =
@@ -331,8 +357,22 @@ export function renderEntityViewHtml(options: EntityViewOptions): string {
       <div class="note">${escapeHtml(describeMcpSource(options.mcp))}</div>
     </div>`;
 
+  // T23a: what the CLI can reach, said where agent access is already said — and the command
+  // to copy, because a capability nobody can see is a capability nobody uses.
+  const cliRow =
+    (options.cliAliases ?? []).length === 0
+      ? ''
+      : `<div class="row"><label>CLI access</label>${(options.cliAliases ?? [])
+          .map(
+            (alias, i) => `<div class="line"><input readonly value="${escapeHtml(cliCommandFor(d, alias))}">
+        <button data-field="cli${i}" data-action="copy" class="icon" title="Copy the CLI command" aria-label="Copy the CLI command">${COPY_ICON}</button>
+      </div>`,
+          )
+          .join('')}<div class="note">Runs in any terminal on this machine while this window is open — the secret itself never leaves the vault.</div></div>`;
+
   const mainRows = [
     mcpRow,
+    cliRow,
     row('Name', 'name', d.name),
     row('Host', 'host', d.host),
     row('User', 'user', d.user),
