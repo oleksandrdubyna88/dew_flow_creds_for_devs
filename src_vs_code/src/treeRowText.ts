@@ -118,3 +118,18 @@ function isShareable(details: EntityMetadata | undefined, hasPassword: boolean):
       hasPassword)
   );
 }
+
+/**
+ * A config whose body does not parse, said in the one channel a tree row has left.
+ *
+ * <p>`!!!` in front of the name. The icon already carries the agent-access ladder and the row
+ * decoration already carries dependency colour, and `depDecorations.ts` states the rule both of
+ * those follow: one channel carrying two meanings tells you neither. The label is what remains,
+ * and three marks read as an alarm at any width, in any theme, without a colour that a
+ * high-contrast theme might flatten.</p>
+ *
+ * <p>Pure, so what the row says is a unit test rather than something seen by clicking.</p>
+ */
+export function markInvalid(name: string, invalid: boolean): string {
+  return invalid ? `!!!-${name}` : name;
+}

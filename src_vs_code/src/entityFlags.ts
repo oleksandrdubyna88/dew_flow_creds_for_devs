@@ -1,4 +1,7 @@
 import { RevisionHead, revisionHead } from './revisionHistory';
+import { ConfigFormat, describeConfigProblem } from './configFormat';
+import { resolveKind } from './entityKind';
+import type { EntityMetadata } from './types';
 import type { StorageManager } from './storageManager';
 
 /**
@@ -25,16 +28,35 @@ export function entityKey(accountId: string, entityId: string): string {
 export interface EntityFlagTarget {
   readonly historyById: Map<string, RevisionHead[]>;
   readonly passwordIds: Set<string>;
+  /** Config entries whose stored body does not parse as what it claims to be. */
+  readonly invalidConfigIds: Set<string>;
   refresh(): void;
 }
 
 /** Just enough of the storage to walk every account's entities. */
 export interface EntityFlagSource {
   getAccounts(): readonly { accountId: string }[];
-  getNodes(accountId: string): readonly { id: string; type: 'folder' | 'entity' }[];
+  getNodes(
+    accountId: string,
+  ): readonly { id: string; type: 'folder' | 'entity'; details?: EntityMetadata }[];
   getHistory(accountId: string, entityId: string): Promise<{ secrets: unknown }[]>;
   getPassword(accountId: string, entityId: string): Thenable<string | undefined>;
+  getConfigBody(accountId: string, entityId: string): Thenable<string | undefined>;
 }
+
+/**
+ * The format an entry declares, or JSON.
+ *
+ * <p>Its own function only because the complexity ceiling is four and a `?.` plus a `??` is half
+ * of it. The default matters: a config with no format cannot be checked at all, and silently not
+ * checking is the one outcome worse than checking against the wrong grammar.</p>
+ */
+function formatOf(details: EntityMetadata | undefined): ConfigFormat {
+  return details?.configFormat ?? 'json';
+}
+
+/** One entity as the walk sees it — its id and whatever the tree stored about it. */
+type FlagNode = { id: string; type: 'folder' | 'entity'; details?: EntityMetadata };
 
 export class EntityFlagsRefresher {
   private running = false;
@@ -74,18 +96,46 @@ export class EntityFlagsRefresher {
   private async walk(): Promise<void> {
     const history = new Map<string, RevisionHead[]>();
     const withPassword = new Set<string>();
-    for (const [accountId, entityId] of this.entities()) {
-      await this.read(accountId, entityId, history, withPassword);
+    const invalidConfigs = new Set<string>();
+    for (const [accountId, node] of this.entities()) {
+      await this.read(accountId, node, history, withPassword);
+      await this.readConfigVerdict(accountId, node, invalidConfigs);
     }
-    this.swapIn(history, withPassword);
+    this.swapIn(history, withPassword, invalidConfigs);
   }
 
-  /** Every entity of every account, as (account, entity) pairs. */
-  private *entities(): Generator<[string, string]> {
+  /**
+   * Is this config's stored body still what it claims to be?
+   *
+   * <p><b>Recomputed here, never stored.</b> A body can change without this window editing it —
+   * a colleague's sync, an accepted share, a restore — and a verdict written down at save time
+   * would then describe a document that is no longer there. The walk already runs at exactly
+   * those moments.</p>
+   *
+   * <p>The keychain read happens ONLY for a config entry. Doing it for every entity would add a
+   * cross-process read per row to a vault where almost nothing is a config, and the tree's whole
+   * reason for having this cache is that it could not afford those.</p>
+   */
+  private async readConfigVerdict(
+    accountId: string,
+    node: FlagNode,
+    invalid: Set<string>,
+  ): Promise<void> {
+    if (resolveKind(node.details) !== 'config') {
+      return;
+    }
+    const body = await this.storage.getConfigBody(accountId, node.id);
+    if (describeConfigProblem(formatOf(node.details), body ?? '') !== undefined) {
+      invalid.add(entityKey(accountId, node.id));
+    }
+  }
+
+  /** Every entity of every account, with what the tree knows about it. */
+  private *entities(): Generator<[string, FlagNode]> {
     for (const account of this.storage.getAccounts()) {
       for (const node of this.storage.getNodes(account.accountId)) {
         if (node.type === 'entity') {
-          yield [account.accountId, node.id];
+          yield [account.accountId, node];
         }
       }
     }
@@ -93,7 +143,7 @@ export class EntityFlagsRefresher {
 
   private async read(
     accountId: string,
-    entityId: string,
+    { id: entityId }: FlagNode,
     history: Map<string, RevisionHead[]>,
     withPassword: Set<string>,
   ): Promise<void> {
@@ -117,7 +167,11 @@ export class EntityFlagsRefresher {
    * Publish both answers at once. Swapped at the end rather than cleared at the start, so a
    * repaint landing mid-walk never shows a tree with every flag briefly off.
    */
-  private swapIn(history: Map<string, RevisionHead[]>, withPassword: Set<string>): void {
+  private swapIn(
+    history: Map<string, RevisionHead[]>,
+    withPassword: Set<string>,
+    invalidConfigs: Set<string>,
+  ): void {
     this.target.historyById.clear();
     for (const [key, heads] of history) {
       this.target.historyById.set(key, heads);
@@ -125,6 +179,10 @@ export class EntityFlagsRefresher {
     this.target.passwordIds.clear();
     for (const key of withPassword) {
       this.target.passwordIds.add(key);
+    }
+    this.target.invalidConfigIds.clear();
+    for (const key of invalidConfigs) {
+      this.target.invalidConfigIds.add(key);
     }
     this.target.refresh();
   }

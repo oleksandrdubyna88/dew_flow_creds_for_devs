@@ -38,6 +38,7 @@ function fake(tree: Record<string, string[]>): Fake {
   const target = {
     historyById: new Map<string, RevisionHead[]>(),
     passwordIds: new Set<string>(),
+    invalidConfigIds: new Set<string>(),
     refreshes: 0,
     refresh(): void {
       target.refreshes += 1;
@@ -48,6 +49,9 @@ function fake(tree: Record<string, string[]>): Fake {
     target,
     source: {
       getAccounts: () => Object.keys(tree).map((accountId) => ({ accountId })),
+      // Nothing in this fixture is a config, so the walk never reaches the keychain for one —
+      // which is itself the behaviour `readConfigVerdict` promises and `configFlag.test.ts` pins.
+      getConfigBody: () => Promise.resolve(undefined),
       getNodes: (accountId) =>
         (tree[accountId] ?? []).map((id) => ({ id, type: 'entity' as const })),
       getHistory: async (accountId, id) => {

@@ -22,7 +22,7 @@ import { entityKey } from './entityFlags';
 import { describeRemaining } from './entityExpiry';
 import { resolveKind } from './entityKind';
 import { SyncReadiness } from './syncReadiness';
-import { describeTarget, entityContextValue } from './treeRowText';
+import { describeTarget, entityContextValue, markInvalid } from './treeRowText';
 import { FOLDER_COLOR, buildTooltip, entityIcon, folderIcon, kindIcon } from './treeIcons';
 import { parentOf } from './treeParent';
 import { describeRetention, isTrashFolder } from './trash';
@@ -111,6 +111,9 @@ export class CredTreeDataProvider
   hasPassword(accountId: string, entityId: string): boolean {
     return this.passwordIds.has(entityKey(accountId, entityId));
   }
+
+  /** Configs whose stored body does not parse. Why it marks the LABEL: `markInvalid` says. */
+  readonly invalidConfigIds = new Set<string>();
 
   /** Set by the extension: Team / Shared-with-me data source. */
   sharing: SharingManager | undefined;
@@ -615,7 +618,7 @@ export class CredTreeDataProvider
   private entityItem(accountId: string, node: TreeNode, id: string): vscode.TreeItem {
     const details = node.details;
     const item = new vscode.TreeItem(
-      node.name,
+      markInvalid(node.name, this.invalidConfigIds.has(entityKey(accountId, node.id))),
       this.entityCollapsible(accountId, node),
     );
     item.id = id;
