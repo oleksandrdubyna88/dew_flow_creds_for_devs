@@ -11,13 +11,7 @@ import { parseTotpSecret } from './totp';
 import { readPastedQr } from './qrPaste';
 import { withSteamEncoder } from './totpSteam';
 import { normalizeTags, parseForward } from './sshOptions';
-import {
-  DEFAULT_PASSPHRASE,
-  DEFAULT_PASSWORD,
-  generateEd25519,
-  generatePassphrase,
-  generatePassword,
-} from './secretGenerator';
+import { draw } from './formGenerate';
 import { parseSshPrivateKey } from './sshKeyParse';
 import { isDepColorKey } from './depColors';
 import { keepsPassword } from './entityKind';
@@ -205,6 +199,13 @@ interface FormMessage {
   value?: string;
   /** `generate` only: which kind of secret to draw. */
   kind?: 'password' | 'passphrase' | 'key';
+  /** `generate` only: the options the page's controls chose (T14). Absent = the defaults. */
+  genLength?: number;
+  genLower?: boolean;
+  genUpper?: boolean;
+  genDigits?: boolean;
+  genSymbols?: boolean;
+  genKeyType?: string;
   data?: Record<string, unknown>;
   text?: string;
   lang?: string;
@@ -267,34 +268,6 @@ async function splitAndDescribe(panel: vscode.WebviewPanel, text: string): Promi
   say(`Descriptions came from ${parsed.command} --help. Edit anything that is not what you meant.`, notes);
 }
 
-/**
- * One generated secret, addressed at the field it belongs in.
- *
- * <p>This is the one direction a secret legitimately travels INTO a webview, and it is worth
- * saying why it does not break the rule the viewer keeps: the form is where a person types a
- * password, so its inputs already hold secret values by design. The read-only viewer is the
- * panel that must never receive one. A generated value goes into the same input the user would
- * otherwise have typed into, and leaves by the same Save.</p>
- */
-function draw(kind: FormMessage['kind']): { target: string; value: string; note: string } {
-  if (kind === 'passphrase') {
-    const made = generatePassphrase(DEFAULT_PASSPHRASE);
-    return { target: 'password', value: made.value, note: made.description };
-  }
-  if (kind === 'key') {
-    const pair = generateEd25519();
-    const parsed = parseSshPrivateKey(pair.privateKey);
-    return {
-      target: 'privateKey',
-      value: pair.privateKey,
-      note: parsed.ok
-        ? `New Ed25519 key — ${parsed.key.fingerprint}. It has never been written to disk.`
-        : 'New Ed25519 key.',
-    };
-  }
-  const made = generatePassword(DEFAULT_PASSWORD);
-  return { target: 'password', value: made.value, note: made.description };
-}
 
 /** The public half of a freshly generated private key, for the form's Public key field. */
 function publicLineFor(privateKey: string): string {
@@ -302,13 +275,17 @@ function publicLineFor(privateKey: string): string {
   return parsed.ok ? parsed.key.publicLine : '';
 }
 
-export function showEntityForm(options: EntityFormOptions): Promise<EntityFormValues | undefined> {
-  const panel = vscode.window.createWebviewPanel(
+function formPanelFor(options: EntityFormOptions): vscode.WebviewPanel {
+  return vscode.window.createWebviewPanel(
     'credSshEntityForm',
     options.mode === 'create' ? 'New Entity' : `Edit: ${options.initial?.name ?? ''}`,
     vscode.ViewColumn.Active,
     FORM_WEBVIEW_OPTIONS,
   );
+}
+
+export function showEntityForm(options: EntityFormOptions): Promise<EntityFormValues | undefined> {
+  const panel = formPanelFor(options);
   // A filled-in form holds a plaintext secret for as long as it stays open, so locking the
   // vaults has to be able to reach it. Registered BEFORE the markup is built: rendering can
   // throw, and a panel already on screen must be closable whether or not it ever got a page.
@@ -329,7 +306,15 @@ export function showEntityForm(options: EntityFormOptions): Promise<EntityFormVa
       if (message.type === 'generate') {
         // Drawn HERE, not in the page: `crypto.randomInt` is a Node API, and a webview
         // reaching for `Math.random()` would produce something that merely looks random.
-        const made = draw(message.kind);
+        const made = draw({
+          kind: message.kind,
+          genLength: message.genLength,
+          genLower: message.genLower,
+          genUpper: message.genUpper,
+          genDigits: message.genDigits,
+          genSymbols: message.genSymbols,
+          genKeyType: message.genKeyType,
+        });
         void panel.webview.postMessage({
           type: 'generated',
           ...made,

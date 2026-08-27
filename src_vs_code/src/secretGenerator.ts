@@ -49,8 +49,13 @@ export interface GeneratedSecret {
   description: string;
 }
 
+/** The lengths the form offers. The owner's list, verbatim; 32 is the default. */
+export const PASSWORD_LENGTH_CHOICES: readonly number[] = [6, 8, 12, 16, 32, 64];
+
 export const DEFAULT_PASSWORD: PasswordOptions = {
-  length: 20,
+  // 32, deliberately (was 20): the owner's choice for what an unattended click produces —
+  // recorded in PLAN_tails T14a as a behaviour change, not a side effect.
+  length: 32,
   lower: true,
   upper: true,
   digits: true,
@@ -221,20 +226,69 @@ export interface GeneratedKeyPair {
   comment: string;
 }
 
+export type SshKeyTypeId =
+  | 'ed25519'
+  | 'ecdsa-p256'
+  | 'ecdsa-p384'
+  | 'ecdsa-p521'
+  | 'rsa-3072'
+  | 'rsa-4096';
+
+export interface SshKeyTypeChoice {
+  readonly id: SshKeyTypeId;
+  readonly label: string;
+  /** One honest line for the picker — the weaker options say so instead of posing as equals. */
+  readonly note: string;
+}
+
 /**
- * A fresh Ed25519 pair, in memory.
+ * The key types the form offers, in the order the picker shows them.
  *
- * <p>Ed25519 rather than a choice of algorithm: it is the modern default, the keys are short,
- * and offering RSA-2048 here would only let somebody pick the weaker option. A key that must be
- * RSA is one that already exists somewhere and is pasted in.</p>
+ * <p>This used to be no list at all — one button, Ed25519, with a comment arguing that offering
+ * RSA-2048 "would only let somebody pick the weaker option". The owner overruled the
+ * no-choice half (some hosts genuinely refuse Ed25519), and the comment's real point survives
+ * as two properties of this catalog: <b>Ed25519 stays first and default</b>, and the weaker
+ * options are labelled as what they are. RSA-2048 — the option the old comment was actually
+ * protecting people from — is still not offered (PLAN_tails T14b).</p>
+ */
+export const SSH_KEY_TYPES: readonly SshKeyTypeChoice[] = [
+  { id: 'ed25519', label: 'Ed25519 (recommended)', note: 'The modern default: short keys, fast, no parameters to get wrong.' },
+  { id: 'ecdsa-p256', label: 'ECDSA P-256', note: 'For hosts that require NIST curves.' },
+  { id: 'ecdsa-p384', label: 'ECDSA P-384', note: 'For hosts that require NIST curves.' },
+  { id: 'ecdsa-p521', label: 'ECDSA P-521', note: 'For hosts that require NIST curves.' },
+  { id: 'rsa-3072', label: 'RSA 3072', note: 'Larger and slower — compatibility with older servers only.' },
+  { id: 'rsa-4096', label: 'RSA 4096', note: 'Larger and slower — compatibility with older servers only.' },
+];
+
+/**
+ * A fresh key pair of the chosen type, in memory.
  *
  * <p>The public LINE is built by the caller through `sshKeyParse`, so there is exactly one
  * implementation of the SSH wire format in this codebase rather than a second one here.</p>
  */
-export function generateEd25519(): { privateKey: string; publicKeyPem: string } {
-  const pair = crypto.generateKeyPairSync('ed25519', {
+export function generateKeyPairOf(type: SshKeyTypeId): { privateKey: string; publicKeyPem: string } {
+  const pem = {
     privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
     publicKeyEncoding: { type: 'spki', format: 'pem' },
-  });
+  } as const;
+  const pair =
+    type === 'ed25519'
+      ? crypto.generateKeyPairSync('ed25519', { ...pem })
+      : type.startsWith('ecdsa-')
+        ? crypto.generateKeyPairSync('ec', {
+            namedCurve: { 'ecdsa-p256': 'prime256v1', 'ecdsa-p384': 'secp384r1', 'ecdsa-p521': 'secp521r1' }[
+              type as 'ecdsa-p256' | 'ecdsa-p384' | 'ecdsa-p521'
+            ],
+            ...pem,
+          })
+        : crypto.generateKeyPairSync('rsa', {
+            modulusLength: type === 'rsa-3072' ? 3072 : 4096,
+            ...pem,
+          });
   return { privateKey: pair.privateKey.toString(), publicKeyPem: pair.publicKey.toString() };
+}
+
+/** The old single-type entry point; kept so existing callers read unchanged. */
+export function generateEd25519(): { privateKey: string; publicKeyPem: string } {
+  return generateKeyPairOf('ed25519');
 }

@@ -47,6 +47,8 @@ import { normalizeForwards, normalizeTags, renderForward } from './sshOptions';
 export interface EntityViewOptions {
   details: EntityMetadata;
   keySourceName?: string;
+  /** A second line under the title — the revision viewer's "version replaced at …". */
+  subtitle?: string;
   hasPassword: boolean;
   hasPrivateKey: boolean;
   hasVpnConfig: boolean;
@@ -512,6 +514,9 @@ export function renderEntityViewHtml(options: EntityViewOptions): string {
   fieldset { border: 1px solid var(--vscode-widget-border, #4444); border-radius: 4px;
              margin: 0 0 14px; padding: 10px 12px; }
   legend { padding: 0 6px; opacity: .85; }
+  /* The native checkbox tinted by webview defaults is nearly invisible on dark themes
+     (tails T31) - the action colour is the one guaranteed to contrast with the panel. */
+  input[type=checkbox] { accent-color: var(--vscode-button-background); width: 15px; height: 15px; }
   .sec { border-color: currentColor; }
   ${FORM_SECTIONS.map(
     (section) =>
@@ -543,6 +548,7 @@ export function renderEntityViewHtml(options: EntityViewOptions): string {
      a button flung to the right of a 1280px page is as lost as one at the bottom was. */
   .pageHead { display: flex; align-items: center; gap: 16px; margin: 0 0 14px; flex-wrap: wrap; }
   .pageHead h2 { margin: 0; }
+  .subtitle { margin: -8px 0 12px; opacity: .7; }
 </style>
 </head>
 <body>
@@ -554,6 +560,7 @@ export function renderEntityViewHtml(options: EntityViewOptions): string {
     <h2>${escapeHtml(d.name)}</h2>
     <button class="primary" data-field="all">${COPY_ICON} Copy All</button>
   </div>
+  ${options.subtitle === undefined ? '' : `<p class="subtitle">${escapeHtml(options.subtitle)}</p>`}
   <div class="viewGroups">
     <div>
       ${viewFrame('generalSection', 'Main', mainRows)}

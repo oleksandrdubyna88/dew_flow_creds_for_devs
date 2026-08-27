@@ -1,6 +1,7 @@
 import * as crypto from 'node:crypto';
 import { normalizeTags } from './sshOptions';
 import { CONFIG_FORMATS, CONFIG_FORMAT_LABELS } from './configFormat';
+import { PASSWORD_LENGTH_CHOICES, SSH_KEY_TYPES } from './secretGenerator';
 import { PAGE_MAX_WIDTH_PX, TWO_COLUMN_AT, escapeHtml } from './webviewHtml';
 import { formPageScript } from './entityFormScript';
 import { initialDependencyRows } from './depGraph';
@@ -252,7 +253,7 @@ export function renderHtml(options: EntityFormOptions): string {
     }
     <label>Port forwarding</label>
     <div id="forwardRows"></div>
-    <button type="button" id="addForward" class="secondary">+ Add forward</button>
+    <button type="button" id="addForward">+ Add forward</button>
     <p class="hint">Local (<code>-L</code>) makes a port here reach a service there; remote (<code>-R</code>) is the reverse. Written as <code>port:host:hostport</code>.</p>
   </fieldset>`;
 
@@ -265,7 +266,7 @@ export function renderHtml(options: EntityFormOptions): string {
         ? `A seed is stored (${escapeHtml(options.storedTotpDescription ?? 'unreadable')}). Paste a new one to replace it.`
         : 'Most services offer this under "can&#39;t scan the QR code?". Kept in the OS keychain; the codes are computed here, so the second app can close.'
     }</p>
-    <button type="button" id="totpPasteQr" class="secondary">Paste a QR image (Ctrl+V)</button>
+    <button type="button" id="totpPasteQr">Paste a QR image (Ctrl+V)</button>
     <p class="hint" id="totpQrHint" aria-live="polite">Snip the QR with <kbd>Win</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd> and press <kbd>Ctrl</kbd>+<kbd>V</kbd> here — an enrolment code, or a whole Google Authenticator export (<em>Transfer accounts → Export accounts</em>).</p>
     <div id="totpQrChoices" class="qrChoices"></div>
     <div class="check"><input id="totpSteam" type="checkbox">
@@ -359,6 +360,11 @@ export function renderHtml(options: EntityFormOptions): string {
   fieldset { border: 1px solid var(--vscode-widget-border, #4444); border-radius: 4px;
              margin: 0 0 14px; padding: 10px 12px; }
   legend { padding: 0 6px; opacity: .85; }
+  /* The native checkbox tinted by webview defaults is nearly invisible on dark themes
+     (tails T31): checked gets the action colour, and the size raise is what helps the
+     UNCHECKED box, whose border the browser draws thicker at 15px than at the 13px default.
+     The per-switch mcpSwitch rules override the colour, deliberately. */
+  input[type=checkbox] { accent-color: var(--vscode-button-background); width: 15px; height: 15px; }
   label { display: block; margin: 8px 0 3px; }
   .check { display: flex; align-items: center; gap: 6px; margin: 6px 0; }
   .genRow { display: flex; gap: 8px; margin: 6px 0 0; flex-wrap: wrap; }
@@ -473,8 +479,14 @@ export function renderHtml(options: EntityFormOptions): string {
   .buttons { display: flex; gap: 10px; }
   button { padding: 6px 18px; border: none; border-radius: 3px; cursor: pointer;
            background: var(--vscode-button-background); color: var(--vscode-button-foreground); }
+  /* Secondary = DISMISS (Cancel), nothing else: the action buttons wear the primary palette,
+     because a control nobody recognises as a button is a missing control (tails T14c — the
+     owner read "+ Add argument" and "Generate password" as plain text). The border is what
+     keeps Cancel readable as a button on themes where the secondary fill sits within a few
+     percent of the panel background. */
   button.secondary { background: var(--vscode-button-secondaryBackground);
-                     color: var(--vscode-button-secondaryForeground); }
+                     color: var(--vscode-button-secondaryForeground);
+                     border: 1px solid var(--vscode-button-border, var(--vscode-widget-border, #666)); }
   .row { display: grid; grid-template-columns: 2fr 1fr; gap: 10px; }
   /* The accounts found in a pasted QR. Empty and invisible until there is more than one to
      choose between — an export picture holds every account at once. */
@@ -546,7 +558,15 @@ export function renderHtml(options: EntityFormOptions): string {
   ${openSection('keySection')}
     <label for="privateKey">Private key (content)</label>
     <textarea id="privateKey" rows="5" spellcheck="false" autocomplete="off"></textarea>
-    <button type="button" id="genKey" class="secondary">Generate Ed25519 key pair</button>
+    <!-- Ed25519 first and default; the weaker options carry their own labels (T14b — the
+         recorded no-choice decision was overruled by the owner, its point kept). -->
+    <div class="genRow genOptions">
+      <label for="genKeyType" class="inline">Type</label>
+      <select id="genKeyType">${SSH_KEY_TYPES.map(
+        (t) => `<option value="${t.id}" title="${escapeHtml(t.note)}">${escapeHtml(t.label)}</option>`,
+      ).join('')}</select>
+    </div>
+    <button type="button" id="genKey">Generate key pair</button>
     <p class="hint" id="genKeyHint">A key made here is drawn in the editor and saved straight to the keychain — unlike <code>ssh-keygen</code>, which writes it to disk by definition. With <i>Add to SSH Agent</i> it can then be used without ever becoming a file.</p>
     <p class="hint">${privateKeyHint}</p>
     ${
@@ -620,8 +640,8 @@ export function renderHtml(options: EntityFormOptions): string {
     <label>Arguments</label>
     <p class="hint">One per row. The note is what you will actually have forgotten in a week — which value belongs to which environment, and why. Untick a row to keep an argument without using it.</p>
     <div id="argRows"></div>
-    <button type="button" id="addArg" class="secondary">+ Add argument</button>
-    <button type="button" id="splitCmd" class="secondary">Split pasted command into rows</button>
+    <button type="button" id="addArg">+ Add argument</button>
+    <button type="button" id="splitCmd">Split pasted command into rows</button>
     <p class="hint" id="splitHint">Paste a whole command into <b>Command</b> and it is split here automatically. Descriptions are read by running <code>--help</code> on the tool itself, so they are right for your version — and for a private tool that has no help, the rows are still split and the notes are yours to write. Turn the help lookup off with <code>credSshManager.readCliHelp</code>.</p>
 
     <label for="commandPreview">Full command</label>
@@ -661,10 +681,23 @@ export function renderHtml(options: EntityFormOptions): string {
   ${openSection('passwordSection')}
     <label for="password">Password / secret value</label>
     <input id="password" type="password" autocomplete="off">
+    <!-- The generator takes orders now (T14a): length and classes used to be baked into a
+         default nothing could reach. All four classes on and 32 long by default — the
+         owner's numbers. -->
+    <div class="genRow genOptions">
+      <label for="genLength" class="inline">Length</label>
+      <select id="genLength">${PASSWORD_LENGTH_CHOICES.map(
+        (len) => `<option value="${len}"${len === 32 ? ' selected' : ''}>${len}</option>`,
+      ).join('')}</select>
+      <span class="check inline"><input id="genLower" type="checkbox" checked><label for="genLower">a-z</label></span>
+      <span class="check inline"><input id="genUpper" type="checkbox" checked><label for="genUpper">A-Z</label></span>
+      <span class="check inline"><input id="genDigits" type="checkbox" checked><label for="genDigits">0-9</label></span>
+      <span class="check inline"><input id="genSymbols" type="checkbox" checked><label for="genSymbols">!#%</label></span>
+    </div>
     <div class="genRow">
-      <button type="button" id="genPassword" class="secondary">Generate password</button>
-      <button type="button" id="genPassphrase" class="secondary">Generate passphrase</button>
-      <button type="button" id="revealPassword" class="secondary">Show</button>
+      <button type="button" id="genPassword">Generate password</button>
+      <button type="button" id="genPassphrase">Generate passphrase</button>
+      <button type="button" id="revealPassword">Show</button>
     </div>
     <p class="hint" id="genHint">${passwordHint}</p>
     ${envRow('password', d)}
@@ -688,7 +721,7 @@ export function renderHtml(options: EntityFormOptions): string {
     <p class="hint">Pull the changeable parts out as <code>${'${NAME}'}</code> and define them below — the body stays generic, the values live in rows you can edit one by one.</p>
     <label>Variables</label>
     <div id="scriptVarRows"></div>
-    <button type="button" id="addScriptVar" class="secondary">+ Add variable</button>
+    <button type="button" id="addScriptVar">+ Add variable</button>
   </fieldset>
 
   ${openSection('configSection')}

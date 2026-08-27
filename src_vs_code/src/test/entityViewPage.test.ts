@@ -238,3 +238,16 @@ test('an entry with an image shows the Additional frame on the right, before the
   const frames = [...html.matchAll(/<legend>([^<]*)<\/legend>/g)].map((m) => m[1]);
   assert.deepEqual(frames, ['Main', 'Dates &amp; history', 'Additional', 'Read this from code']);
 });
+
+test('a revision subtitle is its own line, never glued to the name', () => {
+  const html = renderEntityViewHtml(
+    options({ subtitle: 'version replaced at 8/27/2026, 8:43:32 PM' }),
+  );
+  assert.ok(html.includes('<p class="subtitle">version replaced at 8/27/2026'), 'the subtitle line is missing');
+  assert.ok(
+    !/<h2>[^<]*version replaced/.test(html),
+    'the date is inside the h2 — it reads as part of the name',
+  );
+  const plain = renderEntityViewHtml(options());
+  assert.ok(!plain.includes('class="subtitle"'), 'no subtitle row when there is nothing to say');
+});

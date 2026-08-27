@@ -5251,8 +5251,10 @@ function openRevisionViewer(node: TreeNode, revision: Revision): void {
   showEntityView({
     details: {
       ...details,
-      name: `${revision.name} — version replaced ${new Date(revision.at).toLocaleString()}`,
+      name: revision.name,
     },
+    // Its own line, not a suffix: glued to the name it read as part of it (owner, 2026-08-27).
+    subtitle: `version replaced at ${new Date(revision.at).toLocaleString()}`,
     // Only if this version decided for itself; what its folder said back then is not kept.
     mcp: mcpAsOfVersion(details.mcp),
     hasPassword: password !== undefined,

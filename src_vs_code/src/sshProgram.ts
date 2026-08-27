@@ -118,11 +118,22 @@ export function openSshProgram(
 ): string {
   // The bare word is preferred whenever it can serve: no agent needed, not Windows, or —
   // since T20 — the PATH already resolves ssh to the built-in, so the command shown in the
-  // viewer is the one a person could have typed. The full path remains for the machine where
-  // an MSYS ssh shadows the built-in on a connection that must reach the agent's pipe.
-  const forced = mustUseBuiltIn(needsAgent, platform) && !pathSshIsBuiltIn(platform, probe);
+  // viewer is the one a person could have typed.
+  return mustUseBuiltIn(needsAgent, platform) ? forcedProgram(tool, platform, exists, probe) : tool;
+}
+
+/** The full path remains only where an MSYS ssh shadows the built-in on the PATH. */
+function forcedProgram(
+  tool: OpenSshTool,
+  platform: NodeJS.Platform,
+  exists: (candidate: string) => boolean,
+  probe?: PathProbe,
+): string {
+  if (pathSshIsBuiltIn(platform, probe)) {
+    return tool;
+  }
   const builtIn = builtInOpenSsh(tool);
-  return forced && exists(builtIn) ? builtIn : tool;
+  return exists(builtIn) ? builtIn : tool;
 }
 
 /**

@@ -1149,6 +1149,122 @@ truncated header returns undefined rather than throwing.
 
 ---
 
+### T28. A text-zoom control on every page the extension draws
+
+**The ask.** *"С плохим зрением в студии в принципе беда."* Two magnifier buttons — plus and
+minus — in the header of **every** webview page: the edit form, the viewer, and T21's help page.
+Each press scales the page's text one step; **up to 5 steps from the base in either direction**;
+the current offset is shown beside the buttons (`+5`, `-3`); the value is **remembered and applied
+automatically to every page of this extension**.
+
+**Shape.** One mechanism, not one per page:
+
+- **The value** is a real setting, `credSshManager.uiScale` (integer −5…+5, default 0) — a
+  setting rather than `globalState` because settings sync between the owner's machines, and a
+  vision preference is exactly what should follow the person.
+- **The scale** applies as `font-size` on the page root: base 13px (`--vscode-font-size` where
+  available), each step ×1.1 — five steps ≈ ×1.61 up or ÷1.61 down, which brackets the useful
+  range without breaking layouts. Everything already sized in `em`/`%` follows for free; the
+  audit while wiring is to catch the few `px` font sizes (`entityViewPage`'s `.code` at 13px,
+  the hints) and convert them to `em` so they scale too.
+- **The control** is one shared snippet (`zoomControl.ts`, pure markup + a message contract):
+  `[−] n [+]` rendered in the page header next to T12's Copy All / the form's Save row; a press
+  posts `{ type: 'zoom', delta }`; the HOST clamps to ±5, writes the setting, and pushes the new
+  value back to every OPEN webview — so two open pages never show two sizes.
+- **Help included** (T21): the help page takes the same snippet — the owner named it explicitly.
+
+**Tests.** The clamp (a sixth press stays at +5, and the answer says so); the offset label
+formats as `+n`/`−n`/absent at 0; the scale factor per step; every page's rendered root carries
+the scale variable when the setting is non-zero; and the px-font audit is pinned — no `font-size:
+<n>px` outside the root declaration in any page module, so a future hint cannot opt out of zoom.
+
+
+---
+
+### T29. Accounts run into each other in the tree
+
+**The ask.** A grey separator line between accounts — *"или просто пустую строку на крайний
+случай"*.
+
+**The API reality, first.** VS Code's TreeView has no separators, no per-row borders and no row
+CSS. The nearest honest approximations, in order of preference:
+
+1. **A separator row**: a non-interactive `TreeItem` between accounts — empty label, no icon, no
+   command, `contextValue: 'separator'` so no menu attaches. That IS the owner's fallback ("пустая
+   строка"), and a thin one (label `""`) costs one row of height. A label of `"─".repeat(n)` looks
+   like a line but wobbles with the theme's font — try the empty row first.
+2. The account row itself can carry more visual weight (icon tint, bold label via
+   `TreeItemLabel.highlights` — which renders as a filter-match background, not true bold).
+
+**Where.** `treeDataProvider.ts` — `getChildren` at the root interleaves the separator rows;
+`getTreeItem` renders them inert. The separator must not confuse keyboard navigation more than a
+blank row inherently does, and reveal()/focus logic must skip it.
+
+**Tests.** Root children for two accounts contain exactly one separator, between them, none
+before the first or after the last; the separator's item has no command and no context value the
+menus match.
+
+---
+
+### T30. The tree's descriptions: right-aligned and, for folders, underlined — against an API that offers neither
+
+**The ask.** The grey descriptions (`db`, `sshkey`, `ubuntu@10.73.48.167`) should stick to the
+ROW'S RIGHT EDGE when they fit (truncate as today when not), and FOLDER descriptions should be
+underlined; entity descriptions stay as they are.
+
+**The API reality, recorded before anyone burns a day on it.** `TreeItem.description` is plain
+text rendered inline after the label — VS Code exposes **no alignment, no styling, no HTML** for
+it. So, honestly:
+
+- **Right alignment is not implementable** with the current API. The record here is the refusal
+  and its reason, plus the one workaround that exists — padding the LABEL to push the description
+  right — which is refused too: the tree's font is not monospace, so the padding wobbles per row
+  and theme, and it poisons filtering (`nodeHaystack` would carry the padding or need cleaning).
+- **Underline has one usable trick**: Unicode combining low line (U+0332) woven into the folder
+  description's characters — `дб` → `д̲б̲`. It renders as an underline in the editor fonts VS Code
+  uses, costs nothing, and is removable the day the API learns styling. It is a hack and should
+  ship behind the owner's explicit yes after seeing a screenshot — combining marks can render
+  ragged in some fonts.
+
+**Proposal to the owner:** ship the underline trick for folder descriptions (reversible, one
+formatting function used by the folder branch of `getTreeItem`), decline right-alignment with the
+reason above, and — if the visual weight is the real goal — consider the account-separator work
+(T29) plus folder-description underline together as one "the tree reads in layers" change.
+
+**Tests.** The folder description formatter interleaves the combining mark after every character
+and strips cleanly (a `plain()` inverse used by `nodeHaystack`, pinned so search never sees the
+marks); entity descriptions pass through untouched.
+
+---
+
+### T31. The MCP checkboxes are nearly invisible
+
+**The ask.** *"Эти галочки еле заметны — нужно больше контраста: или цветом, или галочкой."* The
+screenshot shows the Agent-access switches: an unchecked box and a checked one read almost the
+same at a glance in the dark theme.
+
+**Where.** The form's `.check input[type=checkbox]` styling (`entityFormPage.ts`) rides the
+browser's native checkbox tinted by VS Code's webview defaults, which in dark themes renders a
+low-contrast fill. Two honest options, combinable:
+
+1. **`accent-color`** — one CSS line: `input[type=checkbox] { accent-color:
+   var(--vscode-button-background); }` paints the checked state the theme's action blue; the
+   checkmark glyph comes with it. Cheapest, native, keyboard/focus behaviour untouched.
+2. If still weak on the owner's theme: a custom-drawn checkbox (border from
+   `--vscode-checkbox-border`, background `--vscode-checkbox-background`, an explicit ✓ path when
+   checked) — VS Code's own webview-ui-toolkit shape, hand-rolled since this repo takes no
+   dependencies.
+
+Start with 1; screenshot to the owner; escalate to 2 only if 1 reads weak. Applies to every
+webview page's checkboxes — the switch rows, *Clear the stored password*, the T14 class boxes —
+one rule in each page's shared style, not per checkbox.
+
+**Tests.** Style-level: the pages' CSS carries the `accent-color` rule (pinned so a restyle
+cannot silently drop it); the rest is a screenshot judgement, named as such.
+
+
+---
+
 ## 4. Build order
 
 Ordered so that each step is verifiable on its own, and the two that need a person come last.
@@ -1233,6 +1349,13 @@ and both the failure and the pass are reported.
 - [ ] T9: the viewer's columns are as wide as the form's, proven by a test watched failing at 640 px.
 - [ ] T22: the tree no longer says the product name twice; the help mark sits in the title bar
       after the name, with the spacing question answered rather than assumed.
+- [ ] T31: checkboxes read as checked/unchecked at a glance on the owner's theme — accent-color
+      first, the hand-drawn box only if the screenshot still reads weak.
+- [ ] T30: folder descriptions underlined (behind the owner's yes on the combining-mark trick),
+      right-alignment declined in writing with the API reason.
+- [ ] T29: a separator row between accounts, inert to menus, commands and reveal.
+- [ ] T28: every webview page carries the ± zoom with the offset shown, clamped at five steps,
+      stored in a synced setting and pushed to every open page; no stray px font survives.
 - [ ] T27: a stored file is a described row, not a masked secret; size/type/when/by-whom on
       both pages with "not recorded" for legacy entries; image preview in the form; names in
       dark orange, slightly larger, via one shared rule per page.
@@ -1294,7 +1417,7 @@ and both the failure and the pass are reported.
 - [ ] T8: the server's console output is coloured under redirection (counted, not observed), a run
       crossing midnight segments, `logs/` has a named retention owner, and the obsolete mirror-list
       item is deleted with its reason.
-- [ ] `research/module_extension.md` and `research/module_server.md` updated for T1, T3, T4, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17, T18, T19, T20, T21, T22, T23, T24, T25, T26, T27;
+- [ ] `research/module_extension.md` and `research/module_server.md` updated for T1, T3, T4, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17, T18, T19, T20, T21, T22, T23, T24, T25, T26, T27, T28, T29, T30, T31;
       `research/module_mcp.md` (or `module_extension.md`'s MCP section) for T10.
 - [ ] `node .claude/rules/shared/tools/plan-lifecycle.mjs` and `pin-check.mjs` pass.
 - [ ] This plan promoted to `research/` with its deviations recorded, and anything left extracted

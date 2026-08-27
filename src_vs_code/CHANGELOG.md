@@ -22,6 +22,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   same group wears the same colour on every kind and on both pages. A kind with no code story gets
   two frames, never an empty third.
 
+### Added (form)
+
+- **The generators take orders.** The password button used to draw 20 characters from all four
+  classes, and nothing could ask otherwise. Now: length 6 / 8 / 12 / 16 / 32 / 64 (default 32 —
+  a deliberate change to what an unattended click produces) and the four character classes as
+  checkboxes, all on by default; all four off is refused with a sentence, never an empty draw.
+  The key button offers Ed25519 (first, default), ECDSA P-256/384/521 and RSA 3072/4096 — the
+  weaker options labelled as what they are, and RSA-2048 still deliberately absent. Every offered
+  type round-trips through the extension's own SSH parser before it is called a key.
+- **Buttons look like buttons.** *Generate password*, *+ Add argument*, *Split pasted command*,
+  *Paste a QR image* and their siblings wore a secondary fill that sits within a few percent of
+  the panel background on dark themes — they read as plain text. Action buttons now wear the
+  primary palette; *Cancel* stays secondary and gains a visible border, because a dismiss action
+  should read differently from a do action, but never invisibly.
+- **Checkboxes you can see.** The native checkbox at webview defaults is nearly invisible on dark
+  themes: checked now paints the theme's action colour (`accent-color`), and the boxes grew to
+  15px, which is what thickens the border on the UNCHECKED state. The per-switch Agent-access
+  colours are untouched.
+- **A revision viewer names the version on its own line.** "version replaced at <date>" was glued
+  to the entry's name in the title and read as part of it; it is a subtitle now, with the "at".
+
 ### Fixed
 
 - **The SSH command row stopped naming `C:\Windows` when it does not have to.** On a forwarding

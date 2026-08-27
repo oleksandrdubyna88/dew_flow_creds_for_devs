@@ -7,6 +7,7 @@ import { dependencyPickerScript } from './depPickerScript';
 import { mcpSwitchScript } from './mcpSwitchScript';
 import { configTabsScript } from './configTabsScript';
 import { qrPasteScript } from './qrPasteScript';
+import { generateWiring } from './entityFormScriptGen';
 import { formVisibilityScript } from './formVisibilityScript';
 
 /** What the Depends-on picker needs, gathered once when the page is built. */
@@ -740,15 +741,7 @@ export function formPageScript(
   // ---- generating a secret -------------------------------------------------
   // The page asks; the host draws. Node's crypto is where unbiased randomness lives, and a
   // webview reaching for Math.random() would produce something that only looks random.
-  var askFor = function (kind) {
-    return function () { vscode.postMessage({ type: 'generate', kind: kind }); };
-  };
-  var genPassword = document.getElementById('genPassword');
-  if (genPassword) { genPassword.addEventListener('click', askFor('password')); }
-  var genPassphrase = document.getElementById('genPassphrase');
-  if (genPassphrase) { genPassphrase.addEventListener('click', askFor('passphrase')); }
-  var genKey = document.getElementById('genKey');
-  if (genKey) { genKey.addEventListener('click', askFor('key')); }
+  ${generateWiring()}
 
   // A generated value nobody can see is a value nobody will trust; the toggle is per click and
   // never persisted, and the field goes back to a password box on save either way.

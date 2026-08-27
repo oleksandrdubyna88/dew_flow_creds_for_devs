@@ -52,6 +52,7 @@ export function renderFolderHtml(options: FolderFormOptions): string {
   fieldset { border: 1px solid var(--vscode-widget-border, #4444); border-radius: 4px;
              margin: 0 0 14px; padding: 10px 12px; }
   legend { padding: 0 6px; opacity: .85; }
+  input[type=checkbox] { accent-color: var(--vscode-button-background); width: 15px; height: 15px; }
   label { display: block; margin: 8px 0 3px; }
   .check { display: flex; align-items: center; gap: 6px; margin: 6px 0; }
   .check label { margin: 0; }

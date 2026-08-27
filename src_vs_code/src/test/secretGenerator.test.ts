@@ -13,6 +13,9 @@ import {
   generateEd25519,
   generatePassphrase,
   generatePassword,
+  PASSWORD_LENGTH_CHOICES,
+  SSH_KEY_TYPES,
+  generateKeyPairOf,
 } from '../secretGenerator';
 import { parseSshPrivateKey } from '../sshKeyParse';
 
@@ -174,4 +177,55 @@ test('the generated private key is a PEM — never a path, never a file', () => 
   const { privateKey } = generateEd25519();
   assert.match(privateKey, /^-----BEGIN PRIVATE KEY-----/);
   assert.match(privateKey, /-----END PRIVATE KEY-----/);
+});
+
+// ---------------------------------------------------------------------------
+// T14 (PLAN_tails) — the generator learns to take orders: lengths, classes,
+// key types. The defaults move deliberately: 32 is the owner's choice for an
+// unattended click, and Ed25519 stays first with the weaker options labelled.
+// ---------------------------------------------------------------------------
+
+test('the offered lengths are exactly the six the owner named, defaulting to 32', () => {
+  assert.deepEqual([...PASSWORD_LENGTH_CHOICES], [6, 8, 12, 16, 32, 64]);
+  assert.equal(DEFAULT_PASSWORD.length, 32);
+});
+
+test('every offered length is honoured exactly', () => {
+  for (const length of PASSWORD_LENGTH_CHOICES) {
+    const made = generatePassword({ ...DEFAULT_PASSWORD, length });
+    assert.equal(made.value.length, length);
+  }
+});
+
+test('a class switched off never appears, over many draws', () => {
+  for (let i = 0; i < 200; i += 1) {
+    const made = generatePassword({ ...DEFAULT_PASSWORD, length: 32, symbols: false, digits: false });
+    assert.doesNotMatch(made.value, /[0-9]/, 'digits were off');
+    assert.doesNotMatch(made.value, /[!#%*+\-=?@^_~]/, 'symbols were off');
+  }
+});
+
+test('all four classes off is refused with an explanation, never an empty alphabet draw', () => {
+  const made = generatePassword({
+    length: 32, lower: false, upper: false, digits: false, symbols: false, avoidAmbiguous: false,
+  });
+  assert.equal(made.value, '');
+  assert.match(made.description, /at least one/);
+});
+
+test('the key-type catalog leads with Ed25519 and labels the weaker options as weaker', () => {
+  assert.equal(SSH_KEY_TYPES[0].id, 'ed25519');
+  assert.ok(SSH_KEY_TYPES.length >= 4, 'a choice of one is not a choice');
+  const rsa = SSH_KEY_TYPES.filter((t) => t.id.startsWith('rsa-'));
+  assert.ok(rsa.length > 0 && rsa.every((t) => /compat|older|slower|legacy/i.test(t.note)),
+    'RSA offered as an equal is the case the old comment was protecting people from');
+  assert.ok(!SSH_KEY_TYPES.some((t) => (t.id as string) === 'rsa-2048'), 'rsa-2048 must not be offered');
+});
+
+test('every offered key type generates a pair the SSH parser round-trips', () => {
+  for (const type of SSH_KEY_TYPES) {
+    const pair = generateKeyPairOf(type.id);
+    const parsed = parseSshPrivateKey(pair.privateKey, 'generated');
+    assert.ok(parsed.ok, `${type.id}: the generated key did not parse: ${parsed.ok ? '' : parsed.reason}`);
+  }
 });
