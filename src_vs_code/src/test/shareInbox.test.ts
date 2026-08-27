@@ -48,6 +48,7 @@ const loaded = ((): {
     shareNodes(accountId: string, nodes: TreeNode[]): Promise<void>;
   };
   sealShare: typeof import('../shareFormat').sealShare;
+  openShare: typeof import('../shareFormat').openShare;
   buildSharePayload: typeof import('../shareInbox').buildSharePayload;
 } => {
   const loader = Module as unknown as { _load(request: string, ...rest: unknown[]): unknown };
@@ -91,10 +92,11 @@ const loaded = ((): {
   };
   try {
     const inbox = require('../shareInbox') as { ShareInbox: never; buildSharePayload: never };
-    const fmt = require('../shareFormat') as { sealShare: never };
+    const fmt = require('../shareFormat') as { sealShare: never; openShare: never };
     return {
       ShareInbox: inbox.ShareInbox,
       sealShare: fmt.sealShare,
+      openShare: fmt.openShare,
       buildSharePayload: inbox.buildSharePayload,
     } as never;
   } finally {
@@ -167,7 +169,18 @@ interface World {
   state: ReturnType<typeof memento>;
   mutations: () => number;
   removed: OwnedShare[];
+  /** Every ShareItem handed to the transport, in order. */
+  delivered: unknown[];
 }
+
+/** One colleague to share with, so the conversation can reach its end. */
+const TEAM_MEMBER = {
+  account: SENDER,
+  location: 'https://vault.corp.com',
+  shareKeyId: KEY_ID,
+  isSelf: false,
+};
+const team = [TEAM_MEMBER];
 
 function world(): World {
   resetUi();
@@ -179,9 +192,13 @@ function world(): World {
   void storage.upsertAccount(RECIPIENT);
   let mutated = 0;
   const removed: OwnedShare[] = [];
+  const delivered: unknown[] = [];
   const sharing = {
-    teamFor: () => [],
-    appendShares: () => Promise.resolve(),
+    teamFor: () => team,
+    appendShares: (_sender: unknown, _recipient: unknown, items: unknown[]) => {
+      delivered.push(...items);
+      return Promise.resolve();
+    },
     reload: () => Promise.resolve(),
     removeOwnShare: (share: OwnedShare) => {
       removed.push(share);
@@ -197,7 +214,7 @@ function world(): World {
       mutated += 1;
     },
   });
-  return { inbox, storage, state, mutations: () => mutated, removed };
+  return { inbox, storage, state, mutations: () => mutated, removed, delivered };
 }
 
 test('an accepted share gets a FRESH local id — a sender cannot address our entries', async () => {
@@ -472,4 +489,84 @@ test('an entry with no seed is never asked about', async () => {
 
   // One quick pick only — the recipients, which this world has none of.
   assert.equal(ui.quickPickTitles.includes('What travels with this share?'), false);
+});
+
+/** What a full share conversation actually put on the wire, decrypted. */
+async function shareAndOpen(w: World, node: TreeNode, tick: boolean): Promise<SharePayload[]> {
+  // The three answers the conversation asks for, in order: the checkbox, the recipients, the PIN.
+  ui.quickPickAnswers = [
+    tick ? [{ label: 'Include the one-time code (TOTP) seed' }] : [],
+    [{ label: SENDER.email, member: TEAM_MEMBER }],
+  ];
+  ui.inputs = [PIN, PIN];
+
+  await w.inbox.shareNodes(RECIPIENT.accountId, [node]);
+
+  assert.equal(w.delivered.length, 1, 'exactly one item should have been delivered');
+  return w.delivered.map((item) => loaded.openShare(item as never, KEY_ID, PIN));
+}
+
+test('ticking the box puts the seed on the wire — the whole conversation, end to end', async () => {
+  // The payload-level tests prove buildSharePayload obeys its parameter. This one proves the
+  // ANSWER reaches it: an inverted condition between the checkbox and the builder would pass
+  // every other test in this file.
+  const w = world();
+  const node = await entryWithTotp(w.storage);
+
+  const [payload] = await shareAndOpen(w, node, true);
+
+  assert.equal(payload.secrets.totp, SEED);
+  assert.equal(payload.node.details?.hasTotp, true);
+  assert.equal(payload.secrets.password, 'pw', 'everything else still travels');
+});
+
+test('leaving it unticked delivers the entry without the seed and without the claim', async () => {
+  const w = world();
+  const node = await entryWithTotp(w.storage);
+
+  const [payload] = await shareAndOpen(w, node, false);
+
+  assert.equal(payload.secrets.totp, undefined);
+  assert.equal(payload.node.details?.hasTotp, undefined);
+  assert.equal(payload.secrets.password, 'pw', 'the rest of the entry is unaffected');
+});
+
+test('an entry whose flag never got set is still asked about', async () => {
+  // `hasTotp` is a plaintext convenience the tree reads per row; the seed in the keychain is the
+  // truth. They can disagree — an older write, a metadata edit, an import — and when they do, a
+  // question gated on the flag alone never gets asked, so the seed can never be opted IN. That is
+  // the same silent "no" this whole fix exists to remove, arriving through another door.
+  const w = world();
+  const node: TreeNode = {
+    id: 'flagless',
+    name: 'VPN with a seed and no flag',
+    type: 'entity',
+    parentId: null,
+    details: { id: 'flagless', name: 'VPN with a seed and no flag', isSshEnabled: false },
+  };
+  await w.storage.addNode(RECIPIENT.accountId, node);
+  await w.storage.setTotp(RECIPIENT.accountId, node.id, SEED);
+
+  await w.inbox.shareNodes(RECIPIENT.accountId, [node]);
+
+  assert.equal(ui.quickPickTitles[0], 'What travels with this share?');
+});
+
+test('a flag with no seed behind it never becomes a claim on the other side', async () => {
+  // The mirror case: metadata says there is a one-time code and the keychain has none. Sending
+  // the flag would put a *Copy One-Time Code* row in somebody else's tree over nothing at all.
+  const w = world();
+  const node: TreeNode = {
+    id: 'claims-one',
+    name: 'says it has a code',
+    type: 'entity',
+    parentId: null,
+    details: { id: 'claims-one', name: 'says it has a code', isSshEnabled: false, hasTotp: true },
+  };
+  await w.storage.addNode(RECIPIENT.accountId, node);
+
+  const payload = await loaded.buildSharePayload(w.storage, RECIPIENT.accountId, node, true);
+
+  assert.equal(payload.secrets.totp, undefined);
+  assert.equal(payload.node.details?.hasTotp, undefined, 'the flag travels only with a seed');
 });

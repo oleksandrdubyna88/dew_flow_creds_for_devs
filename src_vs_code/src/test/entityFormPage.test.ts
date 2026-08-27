@@ -222,3 +222,42 @@ test('an entity with no details at all still renders a usable form', () => {
   assert.doesNotThrow(() => renderHtml(options()));
   assert.ok(renderHtml(options()).length > 1000);
 });
+
+test('the form says WHICH entity it is editing, not just that it is editing one', () => {
+  // "Edit entity" over a form with forty fields answers a question nobody asked. Two windows
+  // open on two entries of the same kind were told apart only by the tab title.
+  const html = renderHtml(
+    options({
+      mode: 'edit',
+      entityId: 'e9',
+      initial: {
+        id: 'e9',
+        name: 'project-tools',
+        isSshEnabled: true,
+        host: '10.120.39.139',
+        user: 'ubuntu',
+      },
+    }),
+  );
+
+  assert.match(html, /<h2>Edit: project-tools/);
+  // The kind, because two entries can share a name and differ in what they are.
+  assert.match(html, /class="kindChip">ssh</);
+  // A new entity has nothing to name yet.
+  assert.match(renderHtml(options({ mode: 'create' })), /<h2>New entity<\/h2>/);
+});
+
+test('an entity name is escaped in the heading, like everywhere else it is shown', () => {
+  // A name is text somebody typed, and it reaches this page as markup. The rest of the form
+  // escapes; a heading that did not would be the one hole in it.
+  const html = renderHtml(
+    options({
+      mode: 'edit',
+      entityId: 'e10',
+      initial: { id: 'e10', name: '<img src=x onerror=alert(1)>', isSshEnabled: false },
+    }),
+  );
+
+  assert.doesNotMatch(html, /<img src=x/);
+  assert.match(html, /&lt;img src=x/);
+});

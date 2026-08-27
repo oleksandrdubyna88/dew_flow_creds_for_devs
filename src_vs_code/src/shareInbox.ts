@@ -177,7 +177,7 @@ export class ShareInbox {
   // eslint-disable-next-line complexity
   async shareNodes(accountId: string, nodes: TreeNode[]): Promise<void> {
     // Asked BEFORE anything is read: a seed nobody chose to send is never fetched at all.
-    const includeTotp = await this.askIncludeTotp(countTotpEntries(this.deps.storage, accountId, nodes));
+    const includeTotp = await this.askIncludeTotp(await countTotpEntries(this.deps.storage, accountId, nodes));
     if (includeTotp === undefined) {
       return;
     }
@@ -227,7 +227,7 @@ export class ShareInbox {
         {
           label: 'Include the one-time code (TOTP) seed',
           detail:
-            `${count} of the selected entr${count === 1 ? 'y carries' : 'ies carry'} one. ` +
+            `${count === 1 ? 'One selected entry carries' : `${count} selected entries carry`} one. ` +
             'The recipient will be able to produce codes for that login until the seed is changed.',
           picked: false,
         },
@@ -572,7 +572,14 @@ export async function buildSharePayload(
   includeTotp: boolean,
 ): Promise<SharePayload> {
   const note = (await storage.getNotes(accountId, node.id)) ?? node.details?.notes;
-  const sharedDetails = shareableDetails(node.details, includeTotp);
+  // Read only when it is going to travel: a seed nobody asked to send has no business being
+  // fetched out of the keychain, let alone sealed into a payload.
+  const seed = includeTotp ? await storage.getTotp(accountId, node.id) : undefined;
+  // The flag follows the SEED, not the request and not the stored metadata. `hasTotp` is a
+  // plaintext convenience that can outlive what it describes, and a copy carrying it over an
+  // empty keychain shows the recipient a *Copy One-Time Code* row with nothing behind it. Derived
+  // here rather than trusted, so "the flag travels exactly when the seed does" is structural.
+  const sharedDetails = shareableDetails(node.details, seed !== undefined);
   return {
     node: { ...node, details: sharedDetails, parentId: null, children: undefined },
     secrets: {
@@ -581,9 +588,7 @@ export async function buildSharePayload(
       vpnConfig: await storage.getVpnConfig(accountId, node.id),
       dbConnection: await storage.getDbConnection(accountId, node.id),
       notes: note,
-      // Read only when it is going to travel: a seed nobody asked to send has no business being
-      // fetched out of the keychain, let alone sealed into a payload.
-      totp: includeTotp ? await storage.getTotp(accountId, node.id) : undefined,
+      totp: seed,
       // Handing a colleague the document IS the feature. Sealed like every other secret here.
       config: await storage.getConfigBody(accountId, node.id),
     },
@@ -593,20 +598,39 @@ export async function buildSharePayload(
 /**
  * How many of the selected entries carry a one-time-code seed.
  *
- * <p>Counted from the plaintext `hasTotp` flag, never by reading the keychain per row — the same
- * reason the tree's `:totp` token is built from it (audit finding C1). Nothing is decrypted to
- * decide whether to ask a question.</p>
+ * <p><b>The flag first, then the keychain.</b> `hasTotp` is a plaintext convenience the tree reads
+ * once per row, and it is right almost always — but it is a description of a secret, not the
+ * secret, and the two can disagree: an entry written by an older build, an import, an edit to the
+ * metadata. A question gated on the flag alone is therefore a question that sometimes never gets
+ * asked, and an unasked question is a silent "no": the seed could never be opted IN.</p>
+ *
+ * <p>So an entry the flag does not vouch for is checked against the keychain. That is a real read
+ * per unflagged entry, and it is affordable here for the reason it is not affordable in the tree
+ * (audit finding C1): this runs once, on an explicit action, over the handful of rows somebody
+ * selected — not on every row of every folder every time one is expanded.</p>
  */
-export function countTotpEntries(
+export async function countTotpEntries(
   storage: StorageManager,
   accountId: string,
   nodes: readonly TreeNode[],
-): number {
+): Promise<number> {
   let count = 0;
-  const hasSeed = (node: TreeNode): boolean => node.details?.hasTotp === true;
+  for (const entity of entitiesIn(storage, accountId, nodes)) {
+    count += (await carriesSeed(storage, accountId, entity)) ? 1 : 0;
+  }
+  return count;
+}
+
+/** Every entity in the selection, folders walked through. */
+function entitiesIn(
+  storage: StorageManager,
+  accountId: string,
+  nodes: readonly TreeNode[],
+): TreeNode[] {
+  const entities: TreeNode[] = [];
   const walk = (node: TreeNode): void => {
     if (node.type === 'entity') {
-      count += hasSeed(node) ? 1 : 0;
+      entities.push(node);
       return;
     }
     for (const child of storage.getChildren(accountId, node.id)) {
@@ -616,5 +640,13 @@ export function countTotpEntries(
   for (const node of nodes) {
     walk(node);
   }
-  return count;
+  return entities;
+}
+
+/** The flag if it vouches for one; otherwise the keychain, which is the truth. */
+async function carriesSeed(storage: StorageManager, accountId: string, entity: TreeNode): Promise<boolean> {
+  if (entity.details?.hasTotp === true) {
+    return true;
+  }
+  return (await storage.getTotp(accountId, entity.id)) !== undefined;
 }

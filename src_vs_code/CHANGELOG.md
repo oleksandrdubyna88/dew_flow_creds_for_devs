@@ -70,6 +70,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The entry form now says which entry it is editing.** The heading read *Edit entity* over forty
+  fields; two windows open on two entries of the same kind were told apart only by the tab title,
+  which is the first thing a wide editor group truncates. It now names the entry and shows its kind.
+
+- **A one-time code could still be missed when the metadata and the keychain disagreed.** The
+  question about sharing a seed was raised from the plaintext "this entry has one" flag, so an entry
+  whose seed was stored but whose flag never got set was never asked about — and a question that is
+  never asked is a silent *no*. The flag is now believed where it vouches for a seed and checked
+  against the keychain where it does not. The mirror case is closed too: a flag with nothing behind
+  it can no longer travel as a claim, because what is sent is derived from the seed actually read.
+
 - **A shared entry left its one-time code behind — and claimed it had not.** The sending half never
   read the TOTP seed, while the receiving half had always been ready to store one, so sharing an
   entry with a second factor delivered everything except the second factor. Worse, the "this entry

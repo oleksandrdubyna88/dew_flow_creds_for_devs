@@ -1989,6 +1989,19 @@ and `shareableDetails` drops `hasTotp` so the copy makes no claim it cannot keep
 `shareableDetails` therefore has a **seventh** field and its first conditional one: six are always
 stripped, `hasTotp` travels exactly when the seed does.
 
+**Two edges the first cut got wrong**, both found by asking what happens when the flag and the
+keychain disagree — they can, through an older write, an import, or an edit to the metadata:
+
+- **A missing flag made the question unaskable.** The count was taken from `hasTotp` alone, so an
+  entry whose seed is stored but whose flag never got set was never asked about — and an unasked
+  question is a silent *no*: that seed could not be opted in at all. The count now takes the flag
+  where it vouches for a seed and asks the keychain where it does not. That read is affordable here
+  and not in the tree (finding C1) for the same reason a share is not a render: it happens once, on
+  an explicit action, over the rows somebody selected.
+- **A stale flag became a claim.** Metadata saying `hasTotp` over an empty keychain travelled as a
+  promise. `buildSharePayload` now derives the flag from **the seed it actually read**, so "the flag
+  travels exactly when the seed does" is structural rather than a rule two call sites must remember.
+
 ## Generating, importing, and the health report (0.57.0)
 
 Three features that share one property: they are the reasons somebody starts using this, or stops.

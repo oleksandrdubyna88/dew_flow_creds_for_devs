@@ -352,6 +352,9 @@ export function renderHtml(options: EntityFormOptions): string {
   body { font-family: var(--vscode-font-family); color: var(--vscode-foreground);
          background: var(--vscode-editor-background); padding: 16px 24px; max-width: 1280px; }
   h2 { margin: 0 0 12px; font-size: 1.2em; }
+  /* The kind beside the name: two entries can share a name and be different things. */
+  .kindChip { margin-left: 10px; font-size: .62em; letter-spacing: .08em;
+              text-transform: uppercase; opacity: .55; vertical-align: middle; }
   fieldset { border: 1px solid var(--vscode-widget-border, #4444); border-radius: 4px;
              margin: 0 0 14px; padding: 10px 12px; }
   legend { padding: 0 6px; opacity: .85; }
@@ -494,7 +497,14 @@ export function renderHtml(options: EntityFormOptions): string {
          find a red line. -->
     <div class="error" id="error" role="alert" aria-live="assertive"></div>
   </div>
-  <h2>${isEdit ? 'Edit entity' : 'New entity'}</h2>
+  <!-- Which entity, not merely that it is one: two windows on two entries of the same kind
+       were told apart only by the tab title, and the tab title is the first thing a wide
+       editor group truncates. The name is escaped like every other value on this page. -->
+  <h2>${
+    isEdit
+      ? `Edit: ${escapeHtml(d?.name?.trim() || 'entity')}<span class="kindChip">${escapeHtml(kind)}</span>`
+      : 'New entity'
+  }</h2>
 
   <div class="formGroups">
 
