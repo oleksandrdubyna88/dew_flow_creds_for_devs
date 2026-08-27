@@ -1,0 +1,10 @@
+# Shell scripts must reach a remote host with LF endings.
+#
+# `install.sh` is fetched with curl and piped straight into `sh`. A single CR at the end of the
+# shebang makes that fail with `bad interpreter: /bin/sh^M` — on someone else's machine, in a
+# one-line command with nothing to debug. Nothing here is checked in with CRLF today; this is so
+# a commit from a Windows checkout with different settings cannot change that quietly.
+#
+# Deliberately narrow: no `* text=auto`, which would renormalize the whole repository in one
+# commit and bury real changes under thousands of line-ending diffs.
+*.sh text eol=lf
