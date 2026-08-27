@@ -20,7 +20,7 @@ whole server is ~2,100 lines.
 
 | File | Role |
 |---|---|
-| `src/Program.cs` | Configuration, startup guards, the pipeline, and all eighteen endpoints |
+| `src/Program.cs` | Configuration, startup guards, the pipeline, and all twenty-five endpoints |
 | `src/VaultStore.cs` | Filesystem storage: atomic writes, hashed paths, the crash sweep |
 | `src/VaultStoreOutbox.cs` | The sender's receipts, and the two sweeps that bound both sides |
 | `src/ShareMaintenance.cs` | The hourly pass: retire dealt-with receipts, prune what aged out |
@@ -85,6 +85,13 @@ identifier**, so there is nothing to tamper with.
 | `POST` | `/api/org-recovery/invites/{id}/ack` | officer, own inbox | `204` / `404` | Stored durably — drop it |
 | `GET` | `/api/org-recovery/invites/status` | officer | `200` | `?setupId=` → who has not answered |
 | `POST` | `/api/org-recovery/setup` | officer | `200` / `409` | Publish the key once everyone has |
+| `POST` | `/api/org-recovery/sessions` | officer | `201` | Start a break-glass for one target |
+| `GET` | `/api/org-recovery/sessions/{id}` | officer | `200` | Status and the collected (opaque) contributions |
+| `POST` | `/api/org-recovery/sessions/{id}/contribute` | officer | `204` | Your share, resealed to the session key |
+| `GET` | `/api/org-recovery/sessions/{id}/target-vault` | **initiator, at quorum** | `200` / `409` | The one cross-owner read |
+| `PUT` | `/api/org-recovery/sessions/{id}/target-vault` | **initiator, at quorum** | `204` / `412` | The re-keyed vault, written back once |
+| `DELETE` | `/api/org-recovery/sessions/{id}` | initiator | `204` / `404` | Call it off |
+| `GET` | `/api/org-recovery/audit` | officer | `200` | Who opened whose vault, **streamed** |
 | `POST` | `/api/shares` | sender = token email | `201` | Body below |
 | `GET` | `/api/shares` | recipient = token email | `200` | Your inbox, **streamed** |
 | `DELETE` | `/api/shares/{id}` | recipient = token email | `204` / `404` | `id` must parse as a GUID |
@@ -242,6 +249,42 @@ one an officer might accept into their own vault.
 would disable corporate recovery on a working server, silently. The timer is registered **only
 when a roster is configured**.
 
+### Break-glass — the one place a vault crosses an owner boundary
+
+An officer starts a session naming the target and an **ephemeral session public key** minted for
+that session alone. Each contributing officer unlocks their own vault as usual, opens their share,
+and reseals it to that key — so a share crosses this server encrypted to a private half that exists
+only in the initiator's memory. At quorum the initiator reads the target's ciphertext, reconstructs
+the org key locally, opens the escrow wrap, re-keys the vault and writes it back. One audit line is
+appended and the session is spent.
+
+**The threshold gate here is a courtesy, not a security boundary**, and a maintainer who assumes
+otherwise will be assuming something this server structurally cannot do. It counts contributions
+and refuses to serve the ciphertext below the threshold — but it cannot tell a genuine contribution
+from a random blob, because they are opaque to it. The real gate is on the initiator's machine:
+Shamir interpolation only reconstructs the true key from a correct subset, and the integrity tag
+minted with the shares is what proves it did.
+
+Four conditions on that gate, all necessary:
+
+- **The caller is the officer who STARTED this session**, not merely an officer — and the refusal
+  is `404`, not `403`: somebody who did not start it has no business learning that it exists or
+  whose vault it concerns.
+- **The quorum has actually contributed.** Below it, `409` naming the count.
+- **The session is still open.** A completed session is not a standing licence to read that vault
+  again, so its contributions are purged the moment the recovery lands.
+- **One officer counts once.** Contributions are upserted by officer, because retrying is a person
+  retrying and counting it twice would let one officer alone satisfy a threshold of two.
+
+The write-back is **conditional** like an ordinary `PUT /api/vault`: the target may still have a
+machine online and syncing, and break-glass is not a licence to clobber a write that happened while
+the quorum was being assembled. `412` says so.
+
+The audit log is NDJSON — a crash mid-append can cost the line being written, never the readability
+of every line before it — carries **metadata only**, and is readable by every officer rather than
+only initiators. A recovery nobody else can see is a recovery nobody else can question, and being
+witnessed is the point of a quorum. It is never swept.
+
 ### `/api/client-config` — why an anonymous endpoint is the right shape
 
 A client cannot authenticate until it knows **which scope to ask the identity provider for**, so
@@ -318,6 +361,8 @@ ${DataDir}/vaults/<key>.email    the plaintext email, for team discovery
 ${DataDir}/shares/<key>/<guid>.json
 ${DataDir}/org-recovery/setup.json                    the published org PUBLIC key
 ${DataDir}/org-recovery/invites/<key>/<guid>.json     one officer's sealed Shamir share
+${DataDir}/org-recovery/sessions/<guid>.json          a live break-glass and its contributions
+${DataDir}/org-recovery/audit.log                     NDJSON: who opened whose vault, never swept
 ```
 
 `key = sha256(lowercased email) hex, first 32 chars` (128 bits). Hashed so a directory listing is

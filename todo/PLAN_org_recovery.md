@@ -201,8 +201,28 @@ signatures.
      converter for `IAsyncEnumerable`. Both listings now go through one `WriteJsonArrayAsync`
      instead of the share inbox's hand-rolled copy plus a second one.
 6. Extension: setup ceremony + officer panel + TOFU pinning + transparency UI.
-7. Extension: `ensureOrgEscrowWrap` on every sync write.
-8. Server phase 3: sessions + target-vault gate + audit.
+7. ~~Extension: the escrow wrap on every sync write~~ — **shipped 2026-08-27**
+   (`orgEscrowOps.ts`, `orgRecoveryClient.ts`, 23 tests). Deviations:
+   - The function is `escrowAction`/`applyEscrowAction`, not one `ensureOrgEscrowWrap`: the
+     caller shows a different sentence per reason, so the DECISION is worth reading on its own
+     and the mechanical half must not be able to disagree with it.
+   - **An untrusted key REMOVES an existing wrap**, which the plan did not say. Declining to
+     add is not enough — a wrap already sealed to a substituted key keeps paying out on every
+     version written before the swap was noticed.
+   - `VaultKeys.encrypt` took an optional wrap list rather than the caller editing `key.wraps`:
+     `detachVaultKey` shares that array with the cached key, so an in-place edit would rewrite
+     the cache under whoever else holds it.
+   - A resolver that throws cannot stop a sync. Corporate recovery being unreachable is a
+     reason to leave the wraps alone, never a reason for somebody's own secrets to stop syncing.
+8. ~~Server phase 3: sessions + target-vault gate + audit~~ — **shipped 2026-08-27**
+   (7 endpoints, 10 tests, session expiry folded into the maintenance pass). Deviations:
+   - **The write-back is conditional** (`If-Match` → `412`). The target may still have a machine
+     online; break-glass is not a licence to clobber a write made while the quorum gathered.
+   - **A non-initiator officer gets `404`, not `403`** — somebody who did not start a session has
+     no business learning it exists or whose vault it concerns.
+   - **Contributions are upserted by officer.** Retrying is a person retrying; counting it twice
+     would let one officer alone satisfy a threshold of two, which is the most tempting way to
+     defeat this and is now its own test.
 9. Extension: break-glass ceremony end-to-end.
 10. Follow-up plan extracted at the end: `sessionKind: 'key-rotation'` (cheap roster rotation).
 

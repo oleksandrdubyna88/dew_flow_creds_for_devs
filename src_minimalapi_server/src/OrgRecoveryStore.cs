@@ -21,14 +21,19 @@ public sealed class OrgRecoveryStore
 {
     private readonly string _root;
     private readonly string _invitesDir;
+    private readonly string _sessionsDir;
     private readonly string _setupPath;
+    private readonly string _auditPath;
 
     public OrgRecoveryStore(string dataDir)
     {
         _root = Path.Combine(dataDir, "org-recovery");
         _invitesDir = Path.Combine(_root, "invites");
+        _sessionsDir = Path.Combine(_root, "sessions");
         _setupPath = Path.Combine(_root, "setup.json");
+        _auditPath = Path.Combine(_root, "audit.log");
         Directory.CreateDirectory(_invitesDir);
+        Directory.CreateDirectory(_sessionsDir);
     }
 
     private string InboxFor(string officerEmail) =>
@@ -176,6 +181,116 @@ public sealed class OrgRecoveryStore
             _setupPath,
             JsonSerializer.SerializeToUtf8Bytes(setup, AppJsonContext.Default.OrgRecoverySetup),
             ct);
+
+    // ---------- break-glass sessions ----------
+
+    private string SessionPath(string sessionId) =>
+        Path.Combine(_sessionsDir, sessionId + ".json");
+
+    public async Task WriteSessionAsync(RecoverySession session, CancellationToken ct)
+    {
+        Directory.CreateDirectory(_sessionsDir);
+        await AtomicWriteAsync(
+            SessionPath(session.SessionId),
+            JsonSerializer.SerializeToUtf8Bytes(session, AppJsonContext.Default.RecoverySession),
+            ct);
+    }
+
+    public async Task<RecoverySession?> ReadSessionAsync(string sessionId, CancellationToken ct)
+    {
+        var path = SessionPath(sessionId);
+        if (!File.Exists(path))
+        {
+            return null;
+        }
+        try
+        {
+            await using var stream = File.OpenRead(path);
+            return await JsonSerializer.DeserializeAsync(
+                stream, AppJsonContext.Default.RecoverySession, ct);
+        }
+        catch (Exception e) when (e is JsonException or IOException)
+        {
+            return null;
+        }
+    }
+
+    public void DeleteSession(string sessionId)
+    {
+        var path = SessionPath(sessionId);
+        if (File.Exists(path))
+        {
+            File.Delete(path);
+        }
+    }
+
+    /// <summary>Expire sessions past their deadline, contributions and all.</summary>
+    public async Task<int> PruneExpiredSessionsAsync(long nowMs, CancellationToken ct)
+    {
+        if (!Directory.Exists(_sessionsDir))
+        {
+            return 0;
+        }
+        var pruned = 0;
+        foreach (var path in Directory.EnumerateFiles(_sessionsDir, "*.json"))
+        {
+            var session = await ReadSessionAsync(Path.GetFileNameWithoutExtension(path), ct);
+            if (session is not null && session.ExpiresAt < nowMs)
+            {
+                File.Delete(path);
+                pruned++;
+            }
+        }
+        return pruned;
+    }
+
+    // ---------- the audit log ----------
+
+    /// <summary>
+    /// Append one line. NDJSON rather than a JSON array so a crash mid-write can cost at most
+    /// the line being written, never the readability of every line before it.
+    /// </summary>
+    public async Task AppendAuditAsync(AuditEntryDto entry, CancellationToken ct)
+    {
+        Directory.CreateDirectory(_root);
+        var line = JsonSerializer.Serialize(entry, AppJsonContext.Default.AuditEntryDto) + "\n";
+        await File.AppendAllTextAsync(_auditPath, line, ct);
+    }
+
+    /// <summary>Every recorded recovery, newest last. Never pruned — see the maintenance note.</summary>
+    public async IAsyncEnumerable<AuditEntryDto> ReadAuditAsync(
+        [EnumeratorCancellation] CancellationToken ct)
+    {
+        if (!File.Exists(_auditPath))
+        {
+            yield break;
+        }
+        foreach (var line in await File.ReadAllLinesAsync(_auditPath, ct))
+        {
+            var entry = TryParseAudit(line);
+            if (entry is not null)
+            {
+                yield return entry;
+            }
+        }
+    }
+
+    private static AuditEntryDto? TryParseAudit(string line)
+    {
+        if (line.Trim().Length == 0)
+        {
+            return null;
+        }
+        try
+        {
+            return JsonSerializer.Deserialize(line, AppJsonContext.Default.AuditEntryDto);
+        }
+        catch (JsonException)
+        {
+            // A torn last line from a crash mid-append. Skipping it must not hide the rest.
+            return null;
+        }
+    }
 
     // ---------- helpers ----------
 

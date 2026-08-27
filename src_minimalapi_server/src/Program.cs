@@ -794,6 +794,245 @@ app.MapPost("/api/org-recovery/setup", async (HttpContext ctx, CancellationToken
     ctx.Response.StatusCode = StatusCodes.Status200OK;
 });
 
+// ----- break-glass: a quorum opening one vault whose owner is gone -----
+
+/// <summary>
+/// The gate on the ONE place this server hands somebody a vault that is not theirs.
+///
+/// <para>Three conditions, all of them necessary: the caller is the officer who STARTED this
+/// session (not merely an officer), the session is still open, and the quorum has actually
+/// contributed. Read and write share the gate because a recovery that may read must also be
+/// the one that writes the re-keyed result back — splitting them would let one caller open a
+/// vault and another replace it.</para>
+/// </summary>
+async Task<RecoverySession?> RequireReadySession(HttpContext ctx, string id, CancellationToken ct)
+{
+    var caller = RequireOfficer(ctx);
+    if (caller is null) return null;
+    var session = await orgStore.ReadSessionAsync(id, ct);
+    if (session is null || session.InitiatorEmail != caller.Value.Email)
+    {
+        // Not "403 you are not the initiator": an officer who is not this session's initiator
+        // has no business learning that this session exists, or whose vault it is about.
+        await Fail(ctx, StatusCodes.Status404NotFound, "No such recovery session.");
+        return null;
+    }
+    if (session.Status != "open")
+    {
+        await Fail(ctx, StatusCodes.Status409Conflict, "That recovery session is finished.");
+        return null;
+    }
+    if (session.Contributions.Count < orgRecovery.Threshold)
+    {
+        await Fail(
+            ctx,
+            StatusCodes.Status409Conflict,
+            $"{session.Contributions.Count} of {orgRecovery.Threshold} officers have contributed.");
+        return null;
+    }
+    return session;
+}
+
+static RecoverySessionDto SessionView(RecoverySession session, int threshold) =>
+    new(
+        session.SessionId,
+        session.InitiatorEmail,
+        session.TargetEmail,
+        session.SessionPublicKey,
+        session.Status,
+        threshold,
+        session.Contributions.Count,
+        [.. session.Contributions.Select(c => c.OfficerEmail)],
+        session.StartedAt,
+        session.ExpiresAt,
+        session.Contributions);
+
+app.MapPost("/api/org-recovery/sessions", async (HttpContext ctx, CancellationToken ct) =>
+{
+    var caller = RequireOfficer(ctx);
+    if (caller is null) return;
+    var setup = await orgStore.ReadSetupAsync(ct);
+    if (setup is null)
+    {
+        await Fail(ctx, StatusCodes.Status409Conflict, "No corporate recovery key has been published.");
+        return;
+    }
+    var request = await ctx.Request.ReadFromJsonAsync(AppJsonContext.Default.StartSessionRequest, ct);
+    if (request is null || !request.IsValid())
+    {
+        await Fail(ctx, StatusCodes.Status400BadRequest, "Malformed recovery session request.");
+        return;
+    }
+    // Recovering somebody on another tenant is not a thing this server can be asked to do.
+    if (!allowAnyDomain && DomainOf(request.TargetEmail) != DomainOf(caller.Value.Email))
+    {
+        await Fail(ctx, StatusCodes.Status403Forbidden, "That account is outside your domain.");
+        return;
+    }
+    var now = DateTimeOffset.UtcNow;
+    var session = new RecoverySession
+    {
+        InitiatorEmail = caller.Value.Email,
+        TargetEmail = request.TargetEmail.Trim().ToLowerInvariant(),
+        SessionPublicKey = request.SessionPublicKey,
+        StartedAt = now.ToUnixTimeMilliseconds(),
+        ExpiresAt = now.AddHours(Math.Max(1, orgSetupTtlHours)).ToUnixTimeMilliseconds(),
+    };
+    await orgStore.WriteSessionAsync(session, ct);
+    log.LogWarning(
+        "BREAK-GLASS STARTED by {Initiator} for {Target}, session {SessionId}.",
+        session.InitiatorEmail,
+        session.TargetEmail,
+        session.SessionId);
+    ctx.Response.StatusCode = StatusCodes.Status201Created;
+    await ctx.Response.WriteAsJsonAsync(
+        SessionView(session, orgRecovery.Threshold),
+        AppJsonContext.Default.RecoverySessionDto,
+        cancellationToken: ct);
+});
+
+app.MapGet("/api/org-recovery/sessions/{id}", async (HttpContext ctx, string id, CancellationToken ct) =>
+{
+    var caller = RequireOfficer(ctx);
+    if (caller is null) return;
+    var session = await orgStore.ReadSessionAsync(id, ct);
+    if (session is null)
+    {
+        await Fail(ctx, StatusCodes.Status404NotFound, "No such recovery session.");
+        return;
+    }
+    await ctx.Response.WriteAsJsonAsync(
+        SessionView(session, orgRecovery.Threshold),
+        AppJsonContext.Default.RecoverySessionDto,
+        cancellationToken: ct);
+});
+
+app.MapPost("/api/org-recovery/sessions/{id}/contribute", async (HttpContext ctx, string id, CancellationToken ct) =>
+{
+    var caller = RequireOfficer(ctx);
+    if (caller is null) return;
+    var session = await orgStore.ReadSessionAsync(id, ct);
+    if (session is null || session.ExpiresAt < DateTimeOffset.UtcNow.ToUnixTimeMilliseconds())
+    {
+        await Fail(ctx, StatusCodes.Status404NotFound, "No such recovery session, or it has expired.");
+        return;
+    }
+    if (session.Status != "open")
+    {
+        await Fail(ctx, StatusCodes.Status409Conflict, "That recovery session is finished.");
+        return;
+    }
+    var request = await ctx.Request.ReadFromJsonAsync(AppJsonContext.Default.ContributeRequest, ct);
+    if (request is null || !request.IsValid() || request.PayloadBytes() > maxShareBytes)
+    {
+        await Fail(ctx, StatusCodes.Status400BadRequest, "Malformed contribution.");
+        return;
+    }
+    // Upsert by officer: contributing twice is a person retrying, not a second vote, and
+    // counting it twice would let one officer alone satisfy a threshold of two.
+    var others = session.Contributions.Where(c => c.OfficerEmail != caller.Value.Email).ToList();
+    others.Add(new SessionContribution
+    {
+        OfficerEmail = caller.Value.Email, // stamped, never from the body
+        ContributedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+        EphemeralPublicKey = request.EphemeralPublicKey,
+        Salt = request.Salt,
+        Iv = request.Iv,
+        Tag = request.Tag,
+        Data = request.Data,
+    });
+    await orgStore.WriteSessionAsync(session with { Contributions = others }, ct);
+    ctx.Response.StatusCode = StatusCodes.Status204NoContent;
+});
+
+app.MapGet("/api/org-recovery/sessions/{id}/target-vault", async (HttpContext ctx, string id, CancellationToken ct) =>
+{
+    var session = await RequireReadySession(ctx, id, ct);
+    if (session is null) return;
+    var content = await store.ReadVaultAsync(session.TargetEmail, ct);
+    if (content is null)
+    {
+        await Fail(ctx, StatusCodes.Status404NotFound, "That account has no stored vault.");
+        return;
+    }
+    ctx.Response.ContentType = "application/octet-stream";
+    ctx.Response.Headers.ETag = VaultStore.ETagFor(content);
+    await ctx.Response.Body.WriteAsync(content, ct);
+});
+
+app.MapPut("/api/org-recovery/sessions/{id}/target-vault", async (HttpContext ctx, string id, CancellationToken ct) =>
+{
+    var session = await RequireReadySession(ctx, id, ct);
+    if (session is null) return;
+    using var buffer = new MemoryStream();
+    await ctx.Request.Body.CopyToAsync(buffer, ct);
+    var content = buffer.ToArray();
+    if (content.Length == 0 || content.Length > maxVaultBytes)
+    {
+        await Fail(ctx, StatusCodes.Status400BadRequest, "Re-keyed vault is empty or too large.");
+        return;
+    }
+    // Conditional, exactly like an ordinary PUT: the target may still have a machine online
+    // and syncing. Break-glass is not a licence to clobber a write that happened while the
+    // quorum was being assembled.
+    var wrote = await store.TryWriteVaultAsync(
+        session.TargetEmail,
+        content,
+        VaultPrecondition.FromHeaders(ctx.Request.Headers.IfMatch, ctx.Request.Headers.IfNoneMatch),
+        ct);
+    if (!wrote)
+    {
+        await Fail(
+            ctx,
+            StatusCodes.Status412PreconditionFailed,
+            "That vault changed while the quorum was being collected — re-read it and re-key again.");
+        return;
+    }
+    // Single-use: the contributions are purged the moment the recovery lands, so a session
+    // left lying around is not a standing licence to read that vault again.
+    await orgStore.WriteSessionAsync(session with { Status = "completed", Contributions = [] }, ct);
+    await orgStore.AppendAuditAsync(
+        new AuditEntryDto(
+            session.SessionId,
+            "vault-recovery",
+            session.InitiatorEmail,
+            session.TargetEmail,
+            [.. session.Contributions.Select(c => c.OfficerEmail)],
+            session.StartedAt,
+            DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()),
+        ct);
+    log.LogWarning(
+        "BREAK-GLASS COMPLETED: {Target} recovered by {Initiator} with {Officers}, session {SessionId}.",
+        session.TargetEmail,
+        session.InitiatorEmail,
+        string.Join(", ", session.Contributions.Select(c => c.OfficerEmail)),
+        session.SessionId);
+    ctx.Response.StatusCode = StatusCodes.Status204NoContent;
+});
+
+app.MapDelete("/api/org-recovery/sessions/{id}", async (HttpContext ctx, string id, CancellationToken ct) =>
+{
+    var caller = RequireOfficer(ctx);
+    if (caller is null) return;
+    var session = await orgStore.ReadSessionAsync(id, ct);
+    if (session is null || session.InitiatorEmail != caller.Value.Email)
+    {
+        await Fail(ctx, StatusCodes.Status404NotFound, "No such recovery session.");
+        return;
+    }
+    orgStore.DeleteSession(id);
+    ctx.Response.StatusCode = StatusCodes.Status204NoContent;
+});
+
+app.MapGet("/api/org-recovery/audit", async (HttpContext ctx, CancellationToken ct) =>
+{
+    var caller = RequireOfficer(ctx);
+    if (caller is null) return;
+    // Every officer, not only initiators: a recovery nobody else can see is a recovery nobody
+    // else can question, and being witnessed is the whole point of a quorum.
+    await WriteJsonArrayAsync(ctx, orgStore.ReadAuditAsync(ct), AppJsonContext.Default.AuditEntryDto, ct);
+});
+
 // ----- shares -----
 app.MapPost("/api/shares", async (HttpContext ctx, CancellationToken ct) =>
 {

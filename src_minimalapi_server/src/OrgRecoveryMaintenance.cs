@@ -43,12 +43,20 @@ public sealed class OrgRecoveryMaintenance(
         try
         {
             var pruned = await store.PruneInvitesOlderThanAsync(maxAge, ct).ConfigureAwait(false);
-            if (pruned > 0)
+            // Sessions carry their own deadline rather than being aged like invites: a session
+            // is a live authorisation to read one person's vault, and how long that stands is a
+            // decision made when it starts, not one derived later from a file's timestamp.
+            var expired = await store
+                .PruneExpiredSessionsAsync(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), ct)
+                .ConfigureAwait(false);
+            if (pruned > 0 || expired > 0)
             {
                 log.LogInformation(
-                    "org-recovery maintenance: {Pruned} unacknowledged invite(s) older than {Hours}h dropped",
+                    "org-recovery maintenance: {Pruned} unacknowledged invite(s) older than {Hours}h dropped, "
+                    + "{Expired} expired session(s) closed",
                     pruned,
-                    (int)maxAge.TotalHours);
+                    (int)maxAge.TotalHours,
+                    expired);
             }
         }
         catch (OperationCanceledException)

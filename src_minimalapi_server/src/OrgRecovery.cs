@@ -202,6 +202,107 @@ public sealed record OrgRecoverySetup
     public long PublishedAt { get; init; }
 }
 
+/// <summary>
+/// A break-glass session: one officer asking the others to help open one vault.
+///
+/// <para><c>SessionPublicKey</c> is an ephemeral X25519 public key the initiator minted for
+/// this session alone. Contributing officers reseal their shares to it, so a share crosses
+/// this server encrypted to a key whose private half exists only in the initiator's memory —
+/// the server relays partial shares it could not use even if it kept them.</para>
+///
+/// <para><b>The threshold gate here is a courtesy, not a security boundary.</b> This server
+/// counts contributions and only serves the target's ciphertext once the count is reached, but
+/// it cannot verify that a single contribution is genuine — they are opaque. The real gate is
+/// on the initiator's machine: Shamir interpolation only reconstructs the true key from a
+/// genuinely correct subset, and the integrity tag is what proves it. A maintainer who assumes
+/// this server enforces the quorum will be assuming something it structurally cannot.</para>
+/// </summary>
+public sealed record RecoverySession
+{
+    public string SessionId { get; init; } = Guid.NewGuid().ToString();
+    public string InitiatorEmail { get; init; } = "";
+    public string TargetEmail { get; init; } = "";
+    public string SessionPublicKey { get; init; } = "";
+    public long StartedAt { get; init; }
+    public long ExpiresAt { get; init; }
+    /// <summary>`open` while collecting, `completed` once the target vault was written back.</summary>
+    public string Status { get; init; } = "open";
+    public List<SessionContribution> Contributions { get; init; } = [];
+}
+
+/// <summary>One officer's share, resealed to the session key. Opaque to this server.</summary>
+public sealed record SessionContribution
+{
+    public string OfficerEmail { get; init; } = "";
+    public long ContributedAt { get; init; }
+    public string EphemeralPublicKey { get; init; } = "";
+    public string Salt { get; init; } = "";
+    public string Iv { get; init; } = "";
+    public string Tag { get; init; } = "";
+    public string Data { get; init; } = "";
+}
+
+public sealed record StartSessionRequest
+{
+    public string TargetEmail { get; init; } = "";
+    public string SessionPublicKey { get; init; } = "";
+
+    public bool IsValid() =>
+        !string.IsNullOrWhiteSpace(TargetEmail)
+        && TargetEmail.Contains('@')
+        && Convert.TryFromBase64String(SessionPublicKey, new byte[64], out var written)
+        && written == 32;
+}
+
+public sealed record ContributeRequest
+{
+    public string EphemeralPublicKey { get; init; } = "";
+    public string Salt { get; init; } = "";
+    public string Iv { get; init; } = "";
+    public string Tag { get; init; } = "";
+    public string Data { get; init; } = "";
+
+    public bool IsValid() =>
+        IsBase64(EphemeralPublicKey) && IsBase64(Salt) && IsBase64(Iv) && IsBase64(Tag) && IsBase64(Data);
+
+    private static bool IsBase64(string value) =>
+        !string.IsNullOrWhiteSpace(value)
+        && Convert.TryFromBase64String(value, new byte[value.Length], out _);
+
+    public int PayloadBytes() =>
+        EphemeralPublicKey.Length + Salt.Length + Iv.Length + Tag.Length + Data.Length;
+}
+
+/// <summary>What an officer sees of a session. Never the target's ciphertext.</summary>
+public sealed record RecoverySessionDto(
+    string SessionId,
+    string InitiatorEmail,
+    string TargetEmail,
+    string SessionPublicKey,
+    string Status,
+    int Threshold,
+    int Collected,
+    IReadOnlyList<string> ContributingOfficers,
+    long StartedAt,
+    long ExpiresAt,
+    IReadOnlyList<SessionContribution> Contributions);
+
+/// <summary>
+/// One line of the append-only record of who opened whose vault.
+///
+/// <para>Plaintext metadata only — emails, times, a session id. It is readable by every
+/// officer, not only the initiator, because a recovery nobody else can see is a recovery
+/// nobody else can question, and the whole point of a quorum is that it is witnessed.</para>
+/// </summary>
+public sealed record AuditEntryDto(
+    string SessionId,
+    string Kind,
+    string InitiatorEmail,
+    string TargetEmail,
+    IReadOnlyList<string> ContributingOfficers,
+    long StartedAt,
+    long CompletedAt);
+
 public sealed record OrgRecoveryConfigDto(
     bool Enabled,
     IReadOnlyList<string> OfficerEmails,
