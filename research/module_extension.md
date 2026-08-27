@@ -957,6 +957,21 @@ Three properties of the client half worth carrying in the head:
   combination and not the recovery. Filtering also bounds the search: `combinations` materialises
   every C(n, t) subset before the first is tried, and n was whatever the server chose to post.
 
+**Both halves of the feature are wired in `activate()`, and a test scans for it.** Corporate
+recovery shipped with two controls that existed in source and were never called: `pinOrgRecovery`
+had no caller, so the TOFU pin was never written and `judgeOrgRecovery` answered `firstContact`
+forever — a substituted organisation key would have been re-sealed to with a reassuring message;
+and `SyncManager.resolveEscrow` was never assigned, so no vault gained an escrow wrap at all. Both
+suites were green throughout, because the unit tests supply those dependencies themselves. A
+control that exists and is never called is worse than a missing one: the code reads correctly and
+the review that finds it has to be looking for *absence*. `orgRecoveryWiring.test.ts` now scans the
+production sources the way `commandsRegistered` scans the manifest.
+
+**Pinning is a person's act, not a side effect of opening the page.** "Somebody viewed this once"
+is not the claim the pin makes; the claim is "a human compared this fingerprint with an officer".
+So the panel shows the fingerprint and a modal beside it asks for that confirmation, and declining
+leaves the verdict where it was.
+
 **A recovery checks that the ciphertext it was handed is the target's.** Every vault on a server
 is sealed to the *same* organisation key, so the reconstructed key opens all of them — a quorum
 convened for one person is, cryptographically, a quorum able to open anybody, and

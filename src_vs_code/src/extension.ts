@@ -90,8 +90,15 @@ import {
 import { generateRecoveryCode, isRecoveryCodeError } from './recoveryCode';
 import { showRecoveryCodeView } from './recoveryCodeView';
 import { EscrowInvite, OrgRecoveryClient } from './orgRecoveryClient';
-import { judgeOrgRecovery, orgRecoveryNotice } from './orgRecoveryPinning';
+import {
+  OrgRecoveryFacts,
+  OrgRecoveryVerdict,
+  judgeOrgRecovery,
+  orgRecoveryNotice,
+  pinOrgRecovery,
+} from './orgRecoveryPinning';
 import { showOrgRecoveryView } from './orgRecoveryPanel';
+import { EscrowEnrolment } from './orgEscrowOps';
 import { SharePayload as EscrowShareShape, openSharePayload } from './orgShareEnvelope';
 import {
   openShareWithPin,
@@ -397,6 +404,40 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     log,
   );
   context.subscriptions.push(sync);
+
+  /**
+   * Corporate escrow, attached to the sync cycle.
+   *
+   * <p>Assigned here rather than passed to the constructor because the transports have to exist
+   * first, and because a `SyncManager` built without it must behave exactly as it did before
+   * this feature — which is what every deployment with no corporate recovery is.</p>
+   *
+   * <p>What it answers is a TRUST decision as much as a configuration one: `judgeOrgRecovery`
+   * turns the server's answer into a verdict against what this machine pinned, and
+   * `escrowAction` refuses to seal anything to a key the verdict rejects. Returning `undefined`
+   * means "could not ask" — an unreachable server, an older one, a folder transport — and the
+   * cycle then leaves the wraps exactly as they are.</p>
+   */
+  sync.resolveEscrow = async (account): Promise<EscrowEnrolment | undefined> => {
+    const client = transports.orgRecoveryFor(account);
+    if (client === undefined) {
+      return undefined;
+    }
+    const config = await client.readConfig(account);
+    const facts = {
+      enabled: config.enabled,
+      setupComplete: config.setupComplete,
+      orgPublicKeyFingerprint: config.orgPublicKeyFingerprint,
+      rosterFingerprint: config.rosterFingerprint,
+      location: client.location,
+    };
+    sync.escrowOfficers = config.officerEmails;
+    return {
+      orgPublicKey: Buffer.from(config.orgPublicKey, 'base64'),
+      orgPublicKeyFingerprint: config.orgPublicKeyFingerprint,
+      verdict: judgeOrgRecovery(pinStore(context), account.accountId, facts),
+    };
+  };
 
   // Dated snapshots, separately from sync. Constructed AFTER the sync manager because a
   // snapshot is a copy of what sync maintains — with no sync location there is nothing to
@@ -3271,6 +3312,41 @@ ${detail}
       pendingInvites: isOfficer ? (await client.listInvites(account)).length : 0,
       audit: isOfficer ? await client.readAudit(account) : [],
     });
+    await offerToTrust(account, verdict, facts);
+  }
+
+  /**
+   * Turn a person's look at the fingerprint into the pin.
+   *
+   * <p>Pinning is deliberately NOT a side effect of opening the page: "somebody viewed this once"
+   * is not the claim the pin makes. The claim is "a human compared this fingerprint with an
+   * officer", and only a person can make it — so it is a modal beside the page that shows the
+   * fingerprint, and declining leaves the verdict exactly where it was.</p>
+   *
+   * <p>Until this runs, `judgeOrgRecovery` answers `firstContact` forever and a substituted
+   * organisation key cannot be told from a legitimate rotation.</p>
+   */
+  async function offerToTrust(
+    account: StoredAccount,
+    verdict: OrgRecoveryVerdict,
+    facts: OrgRecoveryFacts,
+  ): Promise<void> {
+    const notice = orgRecoveryNotice(verdict, facts);
+    if (notice.length === 0) {
+      return; // verified, off, or not ready — nothing to decide
+    }
+    const answer = await vscode.window.showWarningMessage(
+      notice,
+      { modal: true },
+      'I have checked this fingerprint',
+    );
+    if (answer === 'I have checked this fingerprint') {
+      await pinOrgRecovery(pinStore(context), account.accountId, facts);
+      void vscode.window.showInformationMessage(
+        `Recovery key pinned for ${account.email}. A different one will be refused from now on, `
+          + 'not merely reported.',
+      );
+    }
   }
 
   /**
