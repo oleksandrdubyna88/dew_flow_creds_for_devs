@@ -1,6 +1,12 @@
 import * as assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { McpVaultSource, capabilitiesOf, mcpEntryFor, visibleMcpEntries } from '../mcpEntries';
+import {
+  McpVaultSource,
+  capabilitiesOf,
+  findUsableEntry,
+  mcpEntryFor,
+  visibleMcpEntries,
+} from '../mcpEntries';
 import { normalizeMcpAccess, resolveMcpInTree } from '../mcpAccess';
 import type { TreeNode } from '../types';
 
@@ -256,4 +262,52 @@ test('the keychain is not read for entries nobody opened', async () => {
   await visibleMcpEntries(counted);
 
   assert.equal(reads, 0);
+});
+
+/**
+ * The delete rung, where a boolean is not enough.
+ *
+ * <p>Four of the five switches answer "is it on". Deleting has two settings, and the narrower one
+ * — "only what the agent created itself" — depends on the ENTRY as well as the switch. Reading it
+ * as a boolean would let an agent bin a production key on a permission somebody granted for
+ * tidying up after itself.</p>
+ */
+
+test('the own-only delete scope covers what an agent created and nothing else', () => {
+  const nodes = [
+    folder('f1', 'F'),
+    entity('mine', 'agent made this', { kind: 'ssh', mcp: { delete: 'own' }, mcpCreatedByAgent: true }),
+    entity('yours', 'you made this', { kind: 'ssh', mcp: { delete: 'own' } }),
+  ];
+  const source = vault(nodes);
+
+  assert.equal(findUsableEntry(source, 'mine', 'delete')?.kind, 'usable');
+  assert.equal(findUsableEntry(source, 'yours', 'delete')?.kind, 'closed');
+});
+
+test('the any scope covers both, because that is what the wider switch says', () => {
+  const nodes = [
+    folder('f1', 'F'),
+    entity('yours', 'you made this', { kind: 'ssh', mcp: { delete: 'any' } }),
+  ];
+
+  assert.equal(findUsableEntry(vault(nodes), 'yours', 'delete')?.kind, 'usable');
+});
+
+test('an entry an agent may USE is not one it may delete', () => {
+  // The ladder at the rung that matters most: a permission to run a query is not a permission to
+  // make the entry disappear.
+  const nodes = [folder('f1', 'F'), entity('e1', 'prod', { kind: 'ssh', mcp: { use: true } })];
+  const source = vault(nodes);
+
+  assert.equal(findUsableEntry(source, 'e1', 'exec')?.kind, 'usable');
+  assert.equal(findUsableEntry(source, 'e1', 'delete')?.kind, 'closed');
+});
+
+test('a closed verdict says WHICH switch was wanted, so the refusal can name it', () => {
+  const nodes = [folder('f1', 'F'), entity('e1', 'prod', { kind: 'ssh', mcp: { use: true } })];
+  const found = findUsableEntry(vault(nodes), 'e1', 'rotate');
+
+  assert.equal(found?.kind, 'closed');
+  assert.equal(found?.kind === 'closed' && found.needed, 'edit');
 });

@@ -95,6 +95,9 @@ public class BrokerContractTests
         // agent asks for with a placeholder and not a shape a terminal command has.
         contract.McpActions.Should().Contain("rotate");
         contract.McpActions.Should().Contain("exec");
+        contract.DeleteRoute().Should().Be("/v1/mcp/delete");
+        // Not an action under the use prefix: deleting is not a use of a credential.
+        contract.McpActions.Should().NotContain("delete");
     }
 
     [Fact]
@@ -104,9 +107,10 @@ public class BrokerContractTests
         // the value that used to be hard-coded keeps an old file working; throwing on a missing
         // key would turn an additive change into a breaking one.
         var older = new BrokerContract(1, "creds-for-devs-agent", BrokerContract.Current.Health,
-            [], [], null, null, null, [], []);
+            [], [], null, null, null, null, [], []);
 
         older.ReadRoute("aliases", "/v1/aliases").Should().Be("/v1/aliases");
+        older.DeleteRoute().Should().Be("/v1/mcp/delete");
         older.McpUseRoute("exec").Should().Be("/v1/mcp/use/exec");
     }
 }

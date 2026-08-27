@@ -211,3 +211,107 @@ test('a GET to the action route is not the entries route', async () => {
     w.server.dispose();
   }
 });
+
+/**
+ * `POST /v1/mcp/delete` — an agent moving an entry to the Trash.
+ *
+ * <p>Its own route because deleting is not a use of a credential: nothing is connected to,
+ * nothing is run, no secret is touched. What it shares with the use route is everything that
+ * matters — the same body, the same gate one rung higher, the same throttle, the same prompt.</p>
+ *
+ * <p><b>The Trash is the whole permission, not an option within it.</b> There is no argument that
+ * would delete permanently, which is what made this grantable at all: the objection was that
+ * deletion has no undo and travels by sync to every machine, carrying the version history with
+ * it, and a destination that is a folder answers all of it.</p>
+ */
+test('an agent may move an entry to the Trash, and the human is still asked', async () => {
+  const w = world({ mcpUse: 'usable', trash: true });
+  try {
+    const { port } = await share(w);
+
+    const answer = await call(port, '/v1/mcp/delete', { body: { entry: 'e1' } });
+
+    assert.equal(answer.status, 200, JSON.stringify(answer.body));
+    assert.equal(answer.body.deleted, true);
+    assert.equal(answer.body.restorable, true, 'the answer says it can be undone');
+    assert.deepEqual(w.trashed, ['e1']);
+    assert.equal(w.dialogs.length, 1);
+  } finally {
+    w.server.dispose();
+  }
+});
+
+test('the prompt says the Trash, not "delete" — they are different promises', async () => {
+  const w = world({ mcpUse: 'usable', trash: true });
+  try {
+    const { port } = await share(w);
+
+    await call(port, '/v1/mcp/delete', { body: { entry: 'e1' } });
+
+    assert.ok(w.dialogs[0].includes('move to the Trash'), w.dialogs[0]);
+  } finally {
+    w.server.dispose();
+  }
+});
+
+test('a Deny leaves the entry where it was', async () => {
+  const w = world({ mcpUse: 'usable', trash: true, answers: ['Deny'] });
+  try {
+    const { port } = await share(w);
+
+    assert.equal(code(await call(port, '/v1/mcp/delete', { body: { entry: 'e1' } })), 'denied');
+    assert.deepEqual(w.trashed, []);
+  } finally {
+    w.server.dispose();
+  }
+});
+
+test('an entry whose delete switch is off is refused before anybody is asked', async () => {
+  const w = world({ mcpUse: 'closed', trash: true });
+  try {
+    const { port } = await share(w);
+
+    assert.equal(code(await call(port, '/v1/mcp/delete', { body: { entry: 'e1' } })), 'denied');
+    assert.equal(w.dialogs.length, 0);
+    assert.deepEqual(w.trashed, []);
+  } finally {
+    w.server.dispose();
+  }
+});
+
+test('a window with no Trash refuses rather than deleting some other way', async () => {
+  // The refusal that must never become "well, delete it properly then".
+  const w = world({ mcpUse: 'usable' });
+  try {
+    const { port } = await share(w);
+
+    assert.equal(code(await call(port, '/v1/mcp/delete', { body: { entry: 'e1' } })), 'not_supported');
+    assert.equal(w.dialogs.length, 0);
+  } finally {
+    w.server.dispose();
+  }
+});
+
+test('an id this window does not serve is not found', async () => {
+  const w = world({ mcpUse: 'usable', trash: true });
+  try {
+    const { port } = await share(w);
+
+    assert.equal(code(await call(port, '/v1/mcp/delete', { body: { entry: 'e-nope' } })), 'not_found');
+    assert.deepEqual(w.trashed, []);
+  } finally {
+    w.server.dispose();
+  }
+});
+
+test('the delete route is a POST with an entry, like every other MCP call', async () => {
+  const w = world({ mcpUse: 'usable', trash: true });
+  try {
+    const { port } = await share(w);
+
+    assert.equal(code(await call(port, '/v1/mcp/delete', { method: 'GET' })), 'not_found');
+    assert.equal(code(await call(port, '/v1/mcp/delete', { body: {} })), 'invalid_request');
+  } finally {
+    w.server.dispose();
+  }
+});

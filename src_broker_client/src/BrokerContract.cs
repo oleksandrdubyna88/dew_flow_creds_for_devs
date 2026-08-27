@@ -25,6 +25,7 @@ public sealed record BrokerContract(
     [property: JsonPropertyName("reads")] Dictionary<string, string>? Reads,
     [property: JsonPropertyName("mcpUsePrefix")] string? McpUsePrefix,
     [property: JsonPropertyName("mcpActions")] string[]? McpActions,
+    [property: JsonPropertyName("mcpDeleteRoute")] string? McpDeleteRoute,
     [property: JsonPropertyName("errors")] Dictionary<string, int> Errors,
     [property: JsonPropertyName("exitCodes")] Dictionary<string, int> ExitCodes)
 {
@@ -69,6 +70,16 @@ public sealed record BrokerContract(
     /// </remarks>
     public string McpUseRoute(string action) =>
         (McpUsePrefix is { Length: > 0 } prefix ? prefix : "/v1/mcp/use/") + action;
+
+    /// <summary>
+    /// Where an agent posts a deletion.
+    /// </summary>
+    /// <remarks>
+    /// A route rather than an action under the use prefix, because deleting is not a use of a
+    /// credential. Nullable with a fallback for the same reason the others are: a contract file
+    /// written before this line existed must degrade to the path this build knows.
+    /// </remarks>
+    public string DeleteRoute() => McpDeleteRoute is { Length: > 0 } route ? route : "/v1/mcp/delete";
 
     /// <summary>
     /// The exit code for a named mechanism failure.

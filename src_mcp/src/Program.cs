@@ -149,6 +149,8 @@ internal static class Program
                 UseTools.InvokeAsync(contract, tool, entry, "command", command),
             "query" => (string entry, string query) =>
                 UseTools.InvokeAsync(contract, tool, entry, "query", query),
+            // `delete` takes only the entry: there is no second argument, because there is no
+            // second destination. That is the permission, not a default.
             "rotate" => (string entry, string statement) =>
                 UseTools.InvokeAsync(contract, tool, entry, "statement", statement),
             _ => (string entry) => UseTools.InvokeAsync(contract, tool, entry, null, null),

@@ -239,6 +239,23 @@ export function isMcpEntriesRoute(pathname: string): boolean {
  * <p>Same action vocabulary as the other two, deliberately, so a verb never means one thing on
  * one route and something else on another.</p>
  */
+/**
+ * `POST /v1/mcp/delete` — an agent moving an entry to the Trash.
+ *
+ * <p>Its own route rather than another verb under `/v1/mcp/use/`, because it is not a use of a
+ * credential: nothing is connected to, nothing is run, no secret is touched. It carries the same
+ * body — an `entry` id — and is gated by the same ladder, one rung higher.</p>
+ *
+ * <p><b>The Trash is the whole permission, not an option within it.</b> A person deleting gets a
+ * choice between the Trash and permanently; an agent gets one destination and no way to say
+ * otherwise. That is what made "agents may delete" grantable at all: the objection was that
+ * deletion has no undo and travels by sync to every machine, carrying the version history with
+ * it, and a destination that is a folder answers all of it.</p>
+ */
+export function isMcpDeleteRoute(pathname: string): boolean {
+  return pathname === '/v1/mcp/delete';
+}
+
 export function parseMcpUseRoute(pathname: string): string | undefined {
   const prefix = '/v1/mcp/use/';
   if (!pathname.startsWith(prefix)) {

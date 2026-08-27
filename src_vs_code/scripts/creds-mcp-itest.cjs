@@ -166,6 +166,8 @@ const HANDSHAKE = [
   const storageDir = fs.mkdtempSync(path.join(os.tmpdir(), 'creds-mcp-itest-'));
   /** Every statement the far side was actually handed — the proof that substitution happened. */
   const ranQueries = [];
+  /** Entity ids an agent moved to the Trash. */
+  const trashed = [];
   // A stub action: no ssh, no network — what is under test is the wire from the tool to the
   // broker and the gate in front of it, not what an action does once it is reached.
   const actions = new UseActionRegistry();
@@ -217,14 +219,31 @@ const HANDSHAKE = [
     (id, action) => {
       const target = (name) => ({ accountId: 'a-1', entityId: id, entityName: name, kind: 'db' });
       if (id === 'e-1') {
-        return { kind: 'usable', target: target('orders-db') };
+        // Used and rotated, NOT deleted: an entry whose `edit` switch is on and whose delete
+        // switch is off. The pair `e-1`/`e-bin` is what makes the ladder checks below real
+        // rather than a fixture agreeing with itself.
+        return action === 'delete'
+          ? { kind: 'closed', entityName: 'orders-db', needed: 'delete' }
+          : { kind: 'usable', target: target('orders-db') };
       }
       if (id === 'e-use-only') {
         return action === 'rotate'
           ? { kind: 'closed', entityName: 'staging-db', needed: 'edit' }
           : { kind: 'usable', target: target('staging-db') };
       }
-      return id === 'e-shut' ? { kind: 'closed', entityName: 'prod-db', needed: 'use' } : undefined;
+      if (id === 'e-shut') {
+        return { kind: 'closed', entityName: 'prod-db', needed: 'use' };
+      }
+      // Deletable only because this fixture says so; `e-1` is not, which is the pair the ladder
+      // check below rests on.
+      return id === 'e-bin' && action === 'delete'
+        ? { kind: 'usable', target: target('scratch-db') }
+        : undefined;
+    },
+    // Moving to the Trash, recorded. Never `deleteNodeRecursive` — an agent has no route to it.
+    (_accountId, entityId) => {
+      trashed.push(entityId);
+      return Promise.resolve(true);
     },
   );
   // Starting the broker is what writes the announcement the binary discovers. `share` is the
@@ -433,6 +452,43 @@ const HANDSHAKE = [
     notAllowedText.slice(0, 240),
   );
   check('and nothing ran for it', ranQueries.length === 0, JSON.stringify(ranQueries));
+
+  // ---- level 5: deletion ---------------------------------------------------
+  const del = tools2.find((t) => t.name === 'creds_delete');
+  check('it offers creds_delete', del !== undefined, JSON.stringify(tools2.map((t) => t.name)));
+  check(
+    'and it takes ONLY the entry — there is no second destination to ask for',
+    Object.keys(del?.inputSchema?.properties ?? {}).join(',') === 'entry',
+    JSON.stringify(del?.inputSchema?.properties),
+  );
+
+  consent.answers = ['Allow'];
+  consent.asked = 0;
+  const binned = await speak(env, [
+    ...HANDSHAKE,
+    { jsonrpc: '2.0', id: 11, method: 'tools/call', params: { name: 'creds_delete', arguments: { entry: 'e-bin' } } },
+  ]);
+  const binnedText = binned.byId.get(11)?.result?.content?.[0]?.text ?? '';
+  check('an entry it may delete goes to the Trash', binnedText.includes('"deleted":true'), binnedText.slice(0, 200));
+  check('and the answer says it can be undone', binnedText.includes('"restorable":true'), binnedText.slice(0, 200));
+  check('the window moved it', trashed.length === 1 && trashed[0] === 'e-bin', JSON.stringify(trashed));
+  check('the human was asked', consent.asked === 1, String(consent.asked));
+
+  consent.answers = ['Allow'];
+  consent.asked = 0;
+  trashed.length = 0;
+  const kept = await speak(env, [
+    ...HANDSHAKE,
+    { jsonrpc: '2.0', id: 12, method: 'tools/call', params: { name: 'creds_delete', arguments: { entry: 'e-1' } } },
+  ]);
+  const keptText = kept.byId.get(12)?.result?.content?.[0]?.text ?? '';
+  check(
+    'an entry it may USE it may not delete — the ladder again',
+    keptText.includes('"error"') && !keptText.includes('"deleted":true'),
+    keptText.slice(0, 240),
+  );
+  check('and nothing was moved', trashed.length === 0, JSON.stringify(trashed));
+  check('and nobody was asked', consent.asked === 0, String(consent.asked));
 
   server.dispose();
   console.log(fails === 0 ? '\nall checks passed' : `\n${fails} check(s) failed`);

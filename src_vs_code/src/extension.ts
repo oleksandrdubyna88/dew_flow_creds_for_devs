@@ -594,6 +594,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // because the lookup and the permission are one answer, and splitting them is how a route
     // ends up asking the first and forgetting the second.
     (entryId, action) => mcpUseLookup(storage, entryId, action),
+    // The tenth: an agent deleting. To the Trash, always — `deleteNodeRecursive` is the one real
+    // deletion path and an agent never reaches it, which is what made this permission grantable.
+    async (accountId, entityId) => {
+      const moved = await moveEntryToTrash(storage, accountId, entityId);
+      if (moved) {
+        mutated();
+      }
+      return moved;
+    },
   );
   // The SSH agent: keys served from memory, every use confirmed, SSH_AUTH_SOCK injected into
   // new terminals. Nothing starts until a key is actually loaded.
@@ -4547,4 +4556,24 @@ function mcpUseLookup(storage: StorageManager, entryId: string, action: string):
       kind: resolveKind(found.node.details),
     },
   };
+}
+
+/**
+ * An agent's deletion: to the Trash, and nothing else.
+ *
+ * <p>Answers whether there was still something to move. An entry deleted between the consent
+ * prompt and this call is not an error — the prompt can sit for five minutes — and reporting it
+ * as one would have an agent tell somebody a deletion failed when the entry is exactly as gone
+ * as they wanted.</p>
+ */
+async function moveEntryToTrash(
+  storage: StorageManager,
+  accountId: string,
+  entityId: string,
+): Promise<boolean> {
+  if (storage.getNode(accountId, entityId) === undefined) {
+    return false;
+  }
+  await storage.moveToTrash(accountId, entityId);
+  return true;
 }

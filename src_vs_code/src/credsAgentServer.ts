@@ -9,12 +9,14 @@ import {
   parseBearer,
   parseAliasRoute,
   parseJsonObject,
+  isMcpDeleteRoute,
   parseMcpUseRoute,
   parseUseRoute,
   statusForErrorCode,
 } from './brokerProtocol';
 import { ReadRouteSources, readRouteBody } from './brokerReadRoutes';
-import { McpUseLookup, aliasTarget, readMcpUse, readNamedBody } from './brokerRequests';
+import { BrokerDoor, handleMcpDelete, handleMcpUse, mcpDoor } from './brokerMcpDoor';
+import { McpUseLookup, aliasTarget, readNamedBody } from './brokerRequests';
 import { describeLimits, expiredMessage, grantLimits } from './grantLimits';
 import { McpEntry } from './mcpEntries';
 import { Grant, GrantLookup, GrantRegistry } from './grantRegistry';
@@ -152,6 +154,15 @@ export class CredsAgentServer implements vscode.Disposable {
      * resolved against a folder and against the Trash — questions about a vault.</p>
      */
     private readonly resolveMcpUse?: (entryId: string, action: string) => McpUseLookup,
+    /**
+     * Move an entry to the Trash, answering whether it was still there to move.
+     *
+     * <p>Outside for the fifth time, and for the fifth time because this class holds grants and
+     * not stored records. Deliberately NOT `deleteNodeRecursive`: that is the one real deletion
+     * path, and an agent never reaches it — what makes "agents may delete" grantable at all is
+     * that the destination is a folder and not oblivion.</p>
+     */
+    private readonly moveToTrash?: (accountId: string, entityId: string) => Promise<boolean>,
   ) {}
 
   /** The signal every spawned child watches, so none outlives this window. */
@@ -255,46 +266,38 @@ export class CredsAgentServer implements vscode.Disposable {
     return false;
   }
 
-  /**
-   * An agent asking to use an entry it can see.
-   *
-   * <p>The same shape as an alias call and deliberately so — throttle, mint, consent, perform,
-   * mask, audit, burn — with one gate in front of it: that entry's own <b>Usable by agents</b>
-   * switch. The switch says "you may ask"; the modal is still what says yes. The gate, the body
-   * and the refusal wording live in `brokerRequests.ts`.</p>
-   */
-  private async handleMcpUse(
+  /** The two routes an MCP client posts to — one door, two verbs. See `brokerMcpDoor.ts`. */
+  private async answerMcp(
     req: http.IncomingMessage,
     res: http.ServerResponse,
-    action: string,
-  ): Promise<void> {
-    const read = await readMcpUse(readBody, req, this.resolveMcpUse, action);
-    if (!read.ok) {
-      this.respondError(res, read.code, read.message);
-      return;
+    pathname: string,
+  ): Promise<boolean> {
+    if (isMcpDeleteRoute(pathname)) {
+      await handleMcpDelete(this.door, readBody, req, res, this.resolveMcpUse, this.moveToTrash);
+      return true;
     }
-
-    // The same throttle as the alias route, and for the same reason: everything below this line
-    // can make the window ask a human, and the rate of prompts is what stops a local process
-    // turning that into an attack on the person's patience.
-    if (!this.admitAliasCall(res)) {
-      return;
+    const action = parseMcpUseRoute(pathname);
+    if (action === undefined) {
+      return false;
     }
+    await handleMcpUse(this.door, readBody, req, res, action, this.resolveMcpUse);
+    return true;
+  }
 
-    const target = read.target;
-    const grant = this.grants.mint(target.accountId, target.entityId, target.entityName, target.kind);
-    this.log({
-      grant: GrantRegistry.describe(grant),
-      entityName: target.entityName,
-      action: 'mcp',
-      outcome: 'minted',
-      detail: `${target.entityName} · ${target.kind}`,
+  /** The pieces the MCP door needs, and nothing else — see `brokerMcpDoor.ts`. */
+  private get door(): BrokerDoor {
+    return mcpDoor({
+      refuse: (res, code, message, grant, action, detail) =>
+        this.respondError(res, code, message, grant as Grant | undefined, action, detail, 'mcp'),
+      admit: (res) => this.admitAliasCall(res),
+      release: () => this.aliasThrottle.release(),
+      mint: (t) => this.grants.mint(t.accountId, t.entityId, t.entityName, t.kind),
+      describe: (grant) => GrantRegistry.describe(grant as Grant),
+      note: (entry) => this.log(entry),
+      perform: (res, grant, action, body) => this.perform(res, grant as Grant, action, body, 'mcp'),
+      consent: (grant, action, verb, summary) => this.consent(grant as Grant, action, verb, summary),
+      respond: (res, status, body) => this.respond(res, status, body),
     });
-    try {
-      await this.perform(res, grant, action, read.body, 'mcp');
-    } finally {
-      this.aliasThrottle.release();
-    }
   }
 
   private async handleAlias(
@@ -402,11 +405,6 @@ export class CredsAgentServer implements vscode.Disposable {
     }
   }
 
-  /** The GET routes' suppliers, gathered so `brokerReadRoutes` can answer without this class. */
-  private get readSources(): ReadRouteSources {
-    return { aliases: this.listAliases, mcpEntries: this.listMcpEntries };
-  }
-
   // eslint-disable-next-line complexity
   private async handle(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
     const url = new URL(req.url ?? '/', 'http://127.0.0.1');
@@ -414,15 +412,16 @@ export class CredsAgentServer implements vscode.Disposable {
     // Health, the alias listing and the entries an agent may see — one kind of route, described
     // once in `brokerReadRoutes.ts`: none authenticates, none performs anything, none is
     // throttled. Everything below this line needs a token or raises a modal.
-    const read = req.method === 'GET' ? await readRouteBody(url.pathname, this.readSources) : undefined;
+    // The suppliers inline: `brokerReadRoutes` answers all three GET routes from them, and a
+    // getter holding two field references was a name for something that reads better as one.
+    const sources: ReadRouteSources = { aliases: this.listAliases, mcpEntries: this.listMcpEntries };
+    const read = req.method === 'GET' ? await readRouteBody(url.pathname, sources) : undefined;
     if (read !== undefined) {
       this.respond(res, 200, read);
       return;
     }
 
-    const mcpAction = req.method === 'POST' ? parseMcpUseRoute(url.pathname) : undefined;
-    if (mcpAction !== undefined) {
-      await this.handleMcpUse(req, res, mcpAction);
+    if (req.method === 'POST' && (await this.answerMcp(req, res, url.pathname))) {
       return;
     }
 

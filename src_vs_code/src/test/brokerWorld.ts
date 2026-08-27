@@ -32,6 +32,8 @@ interface World {
   ran: Ran[];
   audit: string[];
   burned: string[];
+  /** Entity ids moved to the Trash by an agent. */
+  trashed: string[];
   presence: number;
   /** Set by the run() stub to whatever the action should answer. */
   result: { status: number; body: Record<string, unknown> };
@@ -48,6 +50,8 @@ function world(options: {
   mcpEntries?: Record<string, unknown>[];
   /** How an entry id resolves for an MCP use call. Absent means this window serves none. */
   mcpUse?: 'usable' | 'closed';
+  /** Whether this window can move entries to the Trash. Absent means it cannot. */
+  trash?: boolean;
   supports?: string[];
 }): World {
   const w: World = {
@@ -58,6 +62,7 @@ function world(options: {
     ran: [],
     audit: [],
     burned: [],
+    trashed: [],
     presence: 0,
     result: { status: 200, body: { exitCode: 0, stdout: 'ok\n', stderr: '' } },
   };
@@ -111,6 +116,7 @@ function world(options: {
     options.aliasList === undefined ? undefined : () => options.aliasList ?? [],
     mcpEntriesFor(options.mcpEntries),
     mcpUseFor(options.mcpUse),
+    trashFor(w, options.trash),
   );
   return w;
 }
@@ -173,6 +179,25 @@ function mcpUseFor(
     return verdict === 'closed'
       ? { kind: 'closed', entityName: 'prod', needed: action === 'rotate' ? 'edit' : 'use' }
       : { kind: 'usable', target: { accountId: 'a1', entityId: 'e1', entityName: 'prod', kind: 'ssh' } };
+  };
+}
+
+/**
+ * Moving to the Trash, recorded.
+ *
+ * <p>Absent means this window has no Trash to move to, which is a real configuration and one of
+ * the refusals under test — a build without storage must answer rather than crash.</p>
+ */
+function trashFor(
+  w: World,
+  enabled: boolean | undefined,
+): ((accountId: string, entityId: string) => Promise<boolean>) | undefined {
+  if (enabled !== true) {
+    return undefined;
+  }
+  return (_a: string, entityId: string): Promise<boolean> => {
+    w.trashed.push(entityId);
+    return Promise.resolve(true);
   };
 }
 

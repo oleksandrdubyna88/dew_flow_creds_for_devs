@@ -23,10 +23,13 @@ public sealed class UseToolsTests
     {
         var contract = BrokerContract.Current;
 
-        foreach (var tool in UseTools.All)
+        foreach (var tool in UseTools.All.Where(t => !t.OwnRoute))
         {
             contract.McpUseRoute(tool.Action).Should().Be($"/v1/mcp/use/{tool.Action}");
         }
+        // The one exception, and it is in the contract too: deleting is not a use of a credential.
+        UseTools.All.Where(t => t.OwnRoute).Select(t => t.Name).Should().Equal("creds_delete");
+        contract.DeleteRoute().Should().Be("/v1/mcp/delete");
     }
 
     [Fact]
@@ -37,7 +40,7 @@ public sealed class UseToolsTests
         // `McpActions` and not `Routes`: the CLI's verb table has no `rotate`.
         var known = (BrokerContract.Current.McpActions ?? []).ToHashSet(StringComparer.Ordinal);
 
-        foreach (var tool in UseTools.All)
+        foreach (var tool in UseTools.All.Where(t => !t.OwnRoute))
         {
             known.Should().Contain(tool.Action, $"{tool.Name} posts {tool.Action}");
         }
@@ -57,13 +60,14 @@ public sealed class UseToolsTests
     {
         // The fact that changes a plan most. Without it a model batches calls and turns one
         // approval into twenty prompts, which is how a person learns to click Allow without reading.
+        // On the WORD, not on four hand-listed phrasings. The first version of this listed the
+        // exact sentences in use and went red on a fifth that said the same thing — an assertion
+        // about wording where the claim is about a fact.
         foreach (var tool in UseTools.All)
         {
-            var says = tool.Description.Contains("person approves", StringComparison.OrdinalIgnoreCase)
-                || tool.Description.Contains("must approve", StringComparison.OrdinalIgnoreCase)
-                || tool.Description.Contains("still approves", StringComparison.OrdinalIgnoreCase)
-                || tool.Description.Contains("approve it", StringComparison.OrdinalIgnoreCase);
-            says.Should().BeTrue($"{tool.Name} must tell the model a human is asked");
+            tool.Description
+                .Should()
+                .Contain("approve", $"{tool.Name} must tell the model a human is asked");
         }
     }
 

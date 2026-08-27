@@ -502,6 +502,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Bounded on purpose: 256 KB of output per stream, 30 s per command (raisable to 120 s), 8 at a
   time, and every child killed when the window goes.
 
+## [0.73.0] — 2026-08-27
+
+### Added
+
+- **An agent can delete — to the Trash, and nowhere else.** `creds_delete` moves an entry out of
+  the vault and into the Trash; there is no argument that would delete permanently, and no way to
+  ask for one. That is what made this permission grantable at all: the objection to letting an
+  agent delete was that deletion has no undo and travels by sync to every machine, carrying the
+  version history with it — and a destination that is a folder answers all of it.
+  - **The narrow scope means what it says.** *Agents may delete what they created* covers exactly
+    that: an entry you made yourself is refused, and the entry has to carry the mark this product
+    puts on agent-created records. Reading that switch as a plain yes/no would have let an agent
+    bin a production key on a permission you granted for tidying up after itself.
+  - **An entry an agent may USE is not one it may delete.** Different rungs, checked per action —
+    the same rule that keeps a rotation off a permission granted for a read-only query.
+  - The prompt says **move to the Trash**, not "delete". They are different promises and you are
+    approving the second one. The answer to the agent says `restorable: true`, so it can tell you
+    the same thing.
+  - It is a route of its own rather than another verb under the use prefix, because deleting is
+    not a use of a credential: nothing is connected to, nothing is run, no secret is touched.
+
 ## [0.72.0] — 2026-08-27
 
 ### Added

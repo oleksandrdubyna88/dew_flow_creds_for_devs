@@ -23,7 +23,11 @@ namespace CredsMcp;
 internal static class UseTools
 {
     /// <summary>One tool: what it is called, what it posts to, and what to tell the model.</summary>
-    internal sealed record UseTool(string Name, string Action, string Title, string Description);
+    /// <remarks>
+    /// <c>Route</c> is set only for the one tool that does not live under the use prefix.
+    /// Deleting is not a use of a credential, so it has a route of its own.
+    /// </remarks>
+    internal sealed record UseTool(string Name, string Action, string Title, string Description, bool OwnRoute = false);
 
     /// <summary>
     /// The catalog, as data.
@@ -124,6 +128,23 @@ internal static class UseTools
             {{creds:new}} still in it, which is what makes it safe to show them.
             """),
         new(
+            "creds_delete",
+            "delete",
+            "Move an entry to the Trash",
+            """
+            Move an entry from the person's vault to the Trash. Give the entry's `id` from
+            creds_list.
+
+            It goes to the Trash and nowhere else — you cannot delete permanently, and there is no
+            argument that would let you. Restoring is dragging it back out, so this is reversible
+            until the Trash empties on the timer they chose.
+
+            Needs the entry's delete switch, which may be set to only what an agent created
+            itself; on that setting this refuses for anything the person made. They approve each
+            deletion, and the prompt says the Trash rather than the word "delete".
+            """,
+            OwnRoute: true),
+        new(
             "creds_export_env",
             "exportEnv",
             "Put a credential into the person's terminals",
@@ -162,7 +183,7 @@ internal static class UseTools
             return Failure("No entry id was given.", "Call creds_list first and pass an entry's `id`.");
         }
 
-        var route = contract.McpUseRoute(tool.Action);
+        var route = tool.OwnRoute ? contract.DeleteRoute() : contract.McpUseRoute(tool.Action);
         var reply = await Windows.PostAsync(contract, route, Body(entryId, extraName, extraValue));
         if (reply is null)
         {

@@ -71,6 +71,11 @@ const reads = {
   mcpEntries: '/v1/mcp/entries',
 };
 
+// A route of its own rather than another verb under the use prefix, because deleting is not a
+// use of a credential: nothing is connected to, nothing is run, no secret is touched. It carries
+// the same body — an `entry` id — and the same gate one rung higher.
+const mcpDeleteRoute = '/v1/mcp/delete';
+
 // The prefix an MCP client posts an action to. A prefix rather than a route per verb, because
 // the verb vocabulary is the `routes` table above and repeating it here would be two lists to
 // keep in step; what a second implementation cannot guess is where the prefix lives.
@@ -105,6 +110,7 @@ const contract = {
   routes,
   reads,
   mcpUsePrefix,
+  mcpDeleteRoute,
   mcpActions,
   errors,
   // The band a client uses to report failures of the mechanism itself. A remote command's own

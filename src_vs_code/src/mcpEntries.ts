@@ -1,4 +1,4 @@
-import { McpAccess, ResolvedMcpAccess, accessMask, resolveMcpInTree } from './mcpAccess';
+import { McpAccess, ResolvedMcpAccess, accessMask, mayDelete, resolveMcpInTree } from './mcpAccess';
 import { EntityMetadata, TreeNode } from './types';
 import { resolveKind } from './entityKind';
 import { withoutPassword } from './dbConnString';
@@ -319,8 +319,22 @@ function verdictFor(
 ): UsableEntry {
   const access = resolveMcpInTree(node, byId).access;
   const needed = switchForAction(action);
-  const granted = needed === 'delete' ? access.delete !== undefined : access[needed] === true;
-  return granted ? { kind: 'usable', accountId, node } : { kind: 'closed', node, needed };
+  return granted(access, needed, node) ? { kind: 'usable', accountId, node } : { kind: 'closed', node, needed };
+}
+
+/**
+ * Is this rung on for this entry?
+ *
+ * <p>Four of the five are a boolean. Deleting is not: the `own` scope means "only what the agent
+ * itself created", so the answer depends on the ENTRY as well as the switch — which is what
+ * `mayDelete` is for, and why a plain `access.delete !== undefined` would have let an agent bin
+ * a production key on a permission granted for tidying up after itself.</p>
+ */
+function granted(access: McpAccess, needed: keyof McpAccess, node: TreeNode): boolean {
+  if (needed !== 'delete') {
+    return access[needed] === true;
+  }
+  return mayDelete(access, node.details?.mcpCreatedByAgent === true);
 }
 
 /**
