@@ -1,4 +1,5 @@
 using System.Text.Json;
+using CredsBroker;
 using CredsCli;
 using FluentAssertions;
 

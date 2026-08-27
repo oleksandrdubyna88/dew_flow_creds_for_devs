@@ -1,5 +1,7 @@
 using System.Net.Sockets;
 
+using CredsBroker;
+
 namespace CredsCli;
 
 /// <summary>
@@ -174,7 +176,7 @@ internal static class AgentRelay
         await using var stream = new NetworkStream(connection, ownsSocket: false);
         try
         {
-            using var child = WslInterop.StartPiped(["relay-pipe"]);
+            using var child = WslInterop.Creds.StartPiped(["relay-pipe"]);
             var toWindows = stream.CopyToAsync(child.StandardInput.BaseStream);
             var fromWindows = child.StandardOutput.BaseStream.CopyToAsync(stream);
             await Task.WhenAny(toWindows, fromWindows).ConfigureAwait(false);

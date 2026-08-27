@@ -1,7 +1,7 @@
-using CredsCli;
+using CredsBroker;
 using FluentAssertions;
 
-namespace CredsCli.Tests;
+namespace CredsBroker.Tests;
 
 /// <summary>
 /// The WSL decision, which has to be right in both directions: relaying when we should not
@@ -89,10 +89,10 @@ public class WslInteropTests
         try
         {
             Environment.SetEnvironmentVariable(WslInterop.BinaryOverrideVariable, null);
-            WslInterop.WindowsBinary().Should().Be("creds.exe");
+            WslInterop.Creds.WindowsBinary().Should().Be("creds.exe");
 
             Environment.SetEnvironmentVariable(WslInterop.BinaryOverrideVariable, "/mnt/c/tools/creds.exe");
-            WslInterop.WindowsBinary().Should().Be("/mnt/c/tools/creds.exe");
+            WslInterop.Creds.WindowsBinary().Should().Be("/mnt/c/tools/creds.exe");
         }
         finally
         {
@@ -107,7 +107,7 @@ public class WslInteropTests
         try
         {
             Environment.SetEnvironmentVariable(WslInterop.BinaryOverrideVariable, "");
-            WslInterop.WindowsBinary().Should().Be("creds.exe");
+            WslInterop.Creds.WindowsBinary().Should().Be("creds.exe");
         }
         finally
         {

@@ -1,8 +1,8 @@
 using System.Text.Json;
-using CredsCli;
+using CredsBroker;
 using FluentAssertions;
 
-namespace CredsCli.Tests;
+namespace CredsBroker.Tests;
 
 /// <summary>
 /// Finding a window by its announcement, and the alias grammar that decides whether the second
@@ -21,7 +21,7 @@ public class EndpointsTests
     {
         var json = JsonSerializer.Serialize(
             new Endpoint(pid, port, socket, startedAt),
-            CredsJsonContext.Default.Endpoint);
+            BrokerJsonContext.Default.Endpoint);
         File.WriteAllText(Path.Combine(dir, $"window-{pid}.json"), json);
     }
 
@@ -107,39 +107,4 @@ public class EndpointsTests
         Endpoints.DirectoryFor("   ", appData: null, home: null, isWindows: false).Should().BeNull();
     }
 
-    [Theory]
-    [InlineData("prod-db")]
-    [InlineData("a")]
-    [InlineData("srv_01")]
-    [InlineData("x9")]
-    public void A_valid_alias_is_accepted(string name) => AliasName.IsValid(name).Should().BeTrue();
-
-    [Theory]
-    [InlineData("")]
-    [InlineData("Prod-DB")]
-    [InlineData("-leading")]
-    [InlineData("has space")]
-    [InlineData("semi;colon")]
-    [InlineData("dollar$sign")]
-    [InlineData("../escape")]
-    [InlineData("star*")]
-    [InlineData("pipe|")]
-    public void An_alias_that_a_shell_could_misread_is_refused(string name) =>
-        AliasName.IsValid(name).Should().BeFalse();
-
-    [Fact]
-    public void An_alias_never_contains_a_dot_so_it_can_never_be_read_as_a_token()
-    {
-        // This is what lets `creds ssh <token>` and `creds ssh <alias>` share one argument
-        // position: the two grammars cannot overlap.
-        AliasName.IsValid("4242.abcdef").Should().BeFalse();
-        GrantToken.Parse("prod-db").Should().BeNull();
-    }
-
-    [Fact]
-    public void An_over_long_alias_is_refused()
-    {
-        AliasName.IsValid(new string('a', AliasName.MaxLength)).Should().BeTrue();
-        AliasName.IsValid(new string('a', AliasName.MaxLength + 1)).Should().BeFalse();
-    }
 }

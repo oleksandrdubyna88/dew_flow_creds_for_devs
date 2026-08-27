@@ -1,4 +1,4 @@
-namespace CredsCli;
+namespace CredsBroker;
 
 /// <summary>
 /// The <c>&lt;port&gt;.&lt;secret&gt;</c> a share hands out, parsed.
@@ -16,12 +16,12 @@ namespace CredsCli;
 /// kind the generated contract exists to prevent, in the one field that decides where a bearer
 /// secret gets sent.</para>
 /// </remarks>
-internal sealed record GrantToken(int Port, string Secret)
+public sealed record GrantToken(int Port, string Secret)
 {
     private const int MinPort = 1;
     private const int MaxPort = 65535;
 
-    internal static GrantToken? Parse(string? raw)
+    public static GrantToken? Parse(string? raw)
     {
         if (raw is null)
         {

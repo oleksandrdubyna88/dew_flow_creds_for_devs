@@ -1,6 +1,8 @@
 using System.IO.Pipes;
 using System.Net.Sockets;
 
+using CredsBroker;
+
 namespace CredsCli;
 
 /// <summary>

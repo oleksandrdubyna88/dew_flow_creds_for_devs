@@ -1,8 +1,8 @@
 using System.Text.Json;
-using CredsCli;
+using CredsBroker;
 using FluentAssertions;
 
-namespace CredsCli.Tests;
+namespace CredsBroker.Tests;
 
 /// <summary>
 /// The C# side of the two-sided contract check.
@@ -58,18 +58,6 @@ public class BrokerContractTests
     }
 
     [Fact]
-    public void Every_verb_this_binary_offers_has_a_route_in_the_contract()
-    {
-        var contract = BrokerContract.Current;
-
-        foreach (var spoken in new[] { "ssh", "terminal", "run", "script", "db", "env", "vpn-up", "vpn-down" })
-        {
-            var wire = CommandLine.WireVerb(spoken);
-            contract.RouteFor(wire).Should().NotBeNull($"`creds {spoken}` posts to the {wire} route");
-        }
-    }
-
-    [Fact]
     public void Health_is_unauthenticated_because_the_probe_happens_before_the_token_is_sent()
     {
         var health = BrokerContract.Current.Health;
@@ -77,24 +65,6 @@ public class BrokerContractTests
         health.Authenticated.Should().BeFalse();
         health.Path.Should().Be("/v1/health");
         health.Method.Should().Be("GET");
-    }
-
-    [Fact]
-    public void Every_exit_code_this_binary_names_exists_in_the_contract()
-    {
-        // `Exit` falls back to brokerFailure for an unknown name, which is right at runtime and
-        // wrong to rely on: a typo would silently report every refusal as 95.
-        var contract = BrokerContract.Current;
-        var used = new[]
-        {
-            "usage", "brokerUnreachable", "unknownToken", "denied", "entityGone",
-            "busy", "brokerFailure", "consentTimeout", "remoteTimeout", "toolMissing", "refused",
-        };
-
-        foreach (var name in used)
-        {
-            contract.ExitCodes.Should().ContainKey(name);
-        }
     }
 
     [Fact]

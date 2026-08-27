@@ -1,3 +1,4 @@
+using CredsBroker;
 using CredsCli;
 using FluentAssertions;
 

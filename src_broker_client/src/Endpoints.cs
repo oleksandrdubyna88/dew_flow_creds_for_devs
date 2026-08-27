@@ -1,10 +1,10 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
-namespace CredsCli;
+namespace CredsBroker;
 
 /// <summary>One VS Code window, as it announced itself.</summary>
-internal sealed record Endpoint(
+public sealed record Endpoint(
     [property: JsonPropertyName("pid")] int Pid,
     [property: JsonPropertyName("port")] int Port,
     [property: JsonPropertyName("socket")] string? Socket,
@@ -29,7 +29,7 @@ internal sealed record Endpoint(
 /// decides is the unauthenticated health probe, exactly as it does for a token — the OS reissues
 /// port numbers, and a freed port can belong to anything by the time we dial it.</para>
 /// </remarks>
-internal static class Endpoints
+public static class Endpoints
 {
     /// <summary>
     /// Where the extension keeps its per-window notes.
@@ -39,9 +39,9 @@ internal static class Endpoints
     /// VSCodium), so an override exists and is documented rather than a guess being buried. The
     /// defaults cover the ordinary install of stable VS Code, which is what most people have.
     /// </remarks>
-    internal const string DirectoryOverrideVariable = "CREDS_ENDPOINT_DIR";
+    public const string DirectoryOverrideVariable = "CREDS_ENDPOINT_DIR";
 
-    internal static string? DirectoryFor(
+    public static string? DirectoryFor(
         string? overrideValue,
         string? appData,
         string? home,
@@ -61,7 +61,7 @@ internal static class Endpoints
             : Path.Combine(root, "Code", "User", "globalStorage", "remsoftdev.creds-for-devs", "endpoints");
     }
 
-    internal static string? DirectoryHere() =>
+    public static string? DirectoryHere() =>
         DirectoryFor(
             Environment.GetEnvironmentVariable(DirectoryOverrideVariable),
             Environment.GetEnvironmentVariable("APPDATA"),
@@ -69,7 +69,7 @@ internal static class Endpoints
             OperatingSystem.IsWindows());
 
     /// <summary>Every announcement that parses, newest first. Never throws.</summary>
-    internal static IReadOnlyList<Endpoint> Read(string? directory)
+    public static IReadOnlyList<Endpoint> Read(string? directory)
     {
         if (directory is null || !Directory.Exists(directory))
         {
@@ -112,7 +112,7 @@ internal static class Endpoints
         try
         {
             // A half-written file from a window killed mid-announce is normal, not an error.
-            var endpoint = JsonSerializer.Deserialize(File.ReadAllText(file), CredsJsonContext.Default.Endpoint);
+            var endpoint = JsonSerializer.Deserialize(File.ReadAllText(file), BrokerJsonContext.Default.Endpoint);
             return endpoint is { Port: > 0 and <= 65535, Pid: > 0 } ? endpoint : null;
         }
         catch (Exception e) when (e is JsonException or IOException or UnauthorizedAccessException)

@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <UseMicrosoftTestingPlatformRunner>true</UseMicrosoftTestingPlatformRunner>
+    <AssemblyName>CredsBroker.Tests</AssemblyName>
+    <RootNamespace>CredsBroker.Tests</RootNamespace>
+    <!-- The library forbids reflection-based JSON so AOT failures surface at compile time. The
+         test project deserializes the same payloads through the same source-generated context,
+         so it inherits the rule rather than testing a laxer configuration than ships. -->
+    <JsonSerializerIsReflectionEnabledByDefault>false</JsonSerializerIsReflectionEnabledByDefault>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- xunit.v3 does not contribute an implicit using of its own. -->
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="xunit.v3" />
+    <PackageReference Include="FluentAssertions" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\src\BrokerClient.csproj" />
+  </ItemGroup>
+
+</Project>

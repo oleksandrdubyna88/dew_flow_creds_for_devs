@@ -1,5 +1,7 @@
 using System.Text.Json;
 
+using CredsBroker;
+
 namespace CredsCli;
 
 /// <summary>
@@ -34,7 +36,7 @@ internal static class Program
         {
             try
             {
-                return WslInterop.Relay(args);
+                return WslInterop.Creds.Relay(args);
             }
             catch (Exception e) when (e is System.ComponentModel.Win32Exception or InvalidOperationException)
             {

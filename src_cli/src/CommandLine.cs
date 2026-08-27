@@ -1,3 +1,5 @@
+using CredsBroker;
+
 namespace CredsCli;
 
 /// <summary>What the user asked for, or why the arguments could not be read.</summary>

@@ -1,5 +1,7 @@
 using System.Text.Json;
 
+using CredsBroker;
+
 namespace CredsCli;
 
 /// <summary>What this process prints, and what it exits with, once the broker answered 200.</summary>

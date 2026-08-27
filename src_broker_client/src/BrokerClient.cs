@@ -3,10 +3,10 @@ using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
 
-namespace CredsCli;
+namespace CredsBroker;
 
 /// <summary>The broker's answer: the HTTP status, and the raw body for the verb to interpret.</summary>
-internal sealed record BrokerReply(int Status, string Body);
+public sealed record BrokerReply(int Status, string Body);
 
 /// <summary>
 /// Talks to the broker in a VS Code window over its loopback port.
@@ -21,7 +21,7 @@ internal sealed record BrokerReply(int Status, string Body);
 /// another machine, and the socket transport the broker also listens on is reached by the WSL
 /// bridge rather than by this path.</para>
 /// </remarks>
-internal sealed class BrokerClient(BrokerContract contract, HttpClient http) : IDisposable
+public sealed class BrokerClient(BrokerContract contract, HttpClient http) : IDisposable
 {
     private static readonly TimeSpan HealthTimeout = TimeSpan.FromSeconds(2);
 
@@ -36,14 +36,14 @@ internal sealed class BrokerClient(BrokerContract contract, HttpClient http) : I
     /// other end of an <c>ssh -R</c>. The token's port half is simply unused there; the secret
     /// half still authorizes, and the consent modal still appears on the laptop.
     /// </remarks>
-    internal const string SocketVariable = "CREDS_BROKER_SOCKET";
+    public const string SocketVariable = "CREDS_BROKER_SOCKET";
 
-    internal static string? SocketPath() =>
+    public static string? SocketPath() =>
         Environment.GetEnvironmentVariable(SocketVariable) is { Length: > 0 } p ? p : null;
 
-    internal static BrokerClient Create(BrokerContract contract) => Create(contract, SocketPath());
+    public static BrokerClient Create(BrokerContract contract) => Create(contract, SocketPath());
 
-    internal static BrokerClient Create(BrokerContract contract, string? socketPath)
+    public static BrokerClient Create(BrokerContract contract, string? socketPath)
     {
         var handler = new SocketsHttpHandler();
         if (socketPath is not null)
@@ -66,7 +66,7 @@ internal sealed class BrokerClient(BrokerContract contract, HttpClient http) : I
     }
 
     /// <summary>Whether a CredsForDevs broker is still listening on this port.</summary>
-    internal async Task<bool> IsOurBrokerAsync(int port)
+    public async Task<bool> IsOurBrokerAsync(int port)
     {
         try
         {
@@ -78,7 +78,7 @@ internal sealed class BrokerClient(BrokerContract contract, HttpClient http) : I
             }
 
             var json = await response.Content.ReadAsStringAsync(cts.Token);
-            var health = JsonSerializer.Deserialize(json, CredsJsonContext.Default.HealthResponse);
+            var health = JsonSerializer.Deserialize(json, BrokerJsonContext.Default.HealthResponse);
             return health?.Service == contract.Service;
         }
         catch (Exception e) when (e is HttpRequestException or TaskCanceledException or JsonException)
@@ -87,7 +87,7 @@ internal sealed class BrokerClient(BrokerContract contract, HttpClient http) : I
         }
     }
 
-    internal async Task<BrokerReply> PostAsync(GrantToken token, string route, string requestJson)
+    public async Task<BrokerReply> PostAsync(GrantToken token, string route, string requestJson)
     {
         using var cts = new CancellationTokenSource(CallTimeout);
         using var request = new HttpRequestMessage(HttpMethod.Post, Url(token.Port, route))
@@ -109,7 +109,7 @@ internal sealed class BrokerClient(BrokerContract contract, HttpClient http) : I
     /// prefix rather than the same one with an optional field: a reader of either side can tell
     /// at a glance which calls carry a copied secret and which lean on the consent modal.
     /// </remarks>
-    internal async Task<BrokerReply> PostAliasAsync(int port, string route, string requestJson)
+    public async Task<BrokerReply> PostAliasAsync(int port, string route, string requestJson)
     {
         using var cts = new CancellationTokenSource(CallTimeout);
         using var content = new StringContent(requestJson, Encoding.UTF8, "application/json");
@@ -119,7 +119,7 @@ internal sealed class BrokerClient(BrokerContract contract, HttpClient http) : I
     }
 
     /// <summary>Read the names this window has enabled. No token, and none comes back.</summary>
-    internal async Task<BrokerReply> GetAsync(int port, string route)
+    public async Task<BrokerReply> GetAsync(int port, string route)
     {
         using var cts = new CancellationTokenSource(HealthTimeout);
         using var response = await http.GetAsync(Url(port, route), cts.Token);

@@ -1,22 +1,24 @@
 using System.Text.Json.Serialization;
 
+using CredsBroker;
+
 namespace CredsCli;
 
 /// <summary>
-/// Every type that crosses the wire or comes out of the contract file, declared for the
-/// source generator.
+/// Every type this binary sends or reads, declared for the source generator.
 /// </summary>
 /// <remarks>
-/// Native AOT has no reflection-based <c>JsonSerializer</c>, and the project sets
+/// <para>Native AOT has no reflection-based <c>JsonSerializer</c>, and the project sets
 /// <c>JsonSerializerIsReflectionEnabledByDefault=false</c> so that reaching for one is a
 /// compile-time error rather than a crash on a user's machine. Every payload here is small and
 /// known, which is what makes that requirement cheap — but it has to be remembered from the
-/// first line, not retrofitted.
+/// first line, not retrofitted.</para>
+/// <para>The contract file, the health probe and a window's announcement are NOT here: they
+/// belong to the broker client library, which is what deserializes them, and each binary keeps
+/// its own context for the verbs only it sends. Adding a verb to <c>creds-mcp</c> therefore
+/// cannot make this binary any larger.</para>
 /// </remarks>
 [JsonSourceGenerationOptions(PropertyNameCaseInsensitive = false)]
-[JsonSerializable(typeof(BrokerContract))]
-[JsonSerializable(typeof(HealthRoute))]
-[JsonSerializable(typeof(HealthResponse))]
 [JsonSerializable(typeof(ErrorEnvelope))]
 [JsonSerializable(typeof(ErrorDetail))]
 [JsonSerializable(typeof(ExecResponse))]
@@ -25,20 +27,12 @@ namespace CredsCli;
 [JsonSerializable(typeof(ExecRequest))]
 [JsonSerializable(typeof(QueryRequest))]
 [JsonSerializable(typeof(EmptyRequest))]
-[JsonSerializable(typeof(Endpoint))]
 [JsonSerializable(typeof(AliasRequest))]
 [JsonSerializable(typeof(AliasExecRequest))]
 [JsonSerializable(typeof(AliasQueryRequest))]
 [JsonSerializable(typeof(AliasListResponse))]
 [JsonSerializable(typeof(AliasListEntry))]
-[JsonSerializable(typeof(Dictionary<string, int>))]
-[JsonSerializable(typeof(Dictionary<string, string>))]
 internal sealed partial class CredsJsonContext : JsonSerializerContext;
-
-/// <summary>The unauthenticated probe the CLI makes before a token ever leaves the process.</summary>
-internal sealed record HealthResponse(
-    [property: JsonPropertyName("ok")] bool Ok,
-    [property: JsonPropertyName("service")] string? Service);
 
 internal sealed record ErrorEnvelope([property: JsonPropertyName("error")] ErrorDetail? Error);
 

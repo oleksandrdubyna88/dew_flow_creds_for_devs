@@ -194,8 +194,17 @@ jobs:
 
       # Never ship a binary that has not passed its own tests — and these include the contract
       # check that stops this implementation drifting from the extension's.
+      #
+      # Two suites since the broker client became a library shared with `creds-mcp`: the
+      # library's own tests assert what the CONTRACT says, and the CLI's assert that THIS
+      # binary's verbs and exit codes are all in it. Building the CLI compiles the library but
+      # runs none of its tests, which is exactly the gap a shared component is prone to.
       - name: Test
-        run: dotnet build src_cli/tests/CredsCli.Tests.csproj -c Release && ./src_cli/tests/bin/Release/net10.0/CredsCli.Tests${{ runner.os == 'Windows' && '.exe' || '' }}
+        run: |
+          dotnet build src_broker_client/tests/BrokerClient.Tests.csproj -c Release
+          ./src_broker_client/tests/bin/Release/net10.0/CredsBroker.Tests${{ runner.os == 'Windows' && '.exe' || '' }}
+          dotnet build src_cli/tests/CredsCli.Tests.csproj -c Release
+          ./src_cli/tests/bin/Release/net10.0/CredsCli.Tests${{ runner.os == 'Windows' && '.exe' || '' }}
         shell: bash
 
       - name: Publish

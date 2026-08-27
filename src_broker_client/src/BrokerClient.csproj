@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <AssemblyName>CredsBroker</AssemblyName>
+    <RootNamespace>CredsBroker</RootNamespace>
+    <!-- A library, so it does not publish anything itself — but both binaries that reference it
+         are Native AOT, and the analyzers only see what they can reach. Declaring the two
+         properties here makes an AOT-hostile pattern fail while building THIS project, at the
+         moment it is written, rather than in whichever binary happens to be published next. -->
+    <IsAotCompatible>true</IsAotCompatible>
+    <JsonSerializerIsReflectionEnabledByDefault>false</JsonSerializerIsReflectionEnabledByDefault>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- The wire contract, generated from brokerProtocol.ts by
+         src_vs_code/scripts/emit-contract.mjs. It lives here rather than in each binary for the
+         reason this project exists at all: two implementations reading two copies of a
+         specification is the drift the generated file was invented to prevent, and a second
+         embedded copy would be exactly that with extra steps. -->
+    <EmbeddedResource Include="..\..\contract\broker-v1.json" LogicalName="broker-v1.json" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="CredsCli.Tests" />
+    <InternalsVisibleTo Include="CredsMcp.Tests" />
+  </ItemGroup>
+
+</Project>

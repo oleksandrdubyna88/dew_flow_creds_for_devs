@@ -1,5 +1,7 @@
 using System.Text.RegularExpressions;
 
+using CredsBroker;
+
 namespace CredsCli;
 
 /// <summary>
