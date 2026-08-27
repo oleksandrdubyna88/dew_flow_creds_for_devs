@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { copySecret } from './secretClipboard';
+import { applyZoomDelta, currentUiScale, pushUiScaleTo } from './uiScaleHost';
 import { BINDABLE_FIELDS, BindableField } from './envBinding';
 import {
   CopyMessage,
@@ -31,13 +32,20 @@ export function showEntityView(options: EntityViewOptions): void {
     vscode.ViewColumn.Active,
     { enableScripts: true, localResourceRoots: [] },
   );
-  panel.webview.html = renderEntityViewHtml(options);
+  panel.webview.html = renderEntityViewHtml({ ...options, uiScale: currentUiScale() });
+  // T28: this page follows the shared setting for as long as it lives.
+  const zoomHook = pushUiScaleTo(panel.webview);
+  panel.onDidDispose(() => zoomHook.dispose());
 
   // eslint-disable-next-line complexity, max-lines-per-function
   panel.webview.onDidReceiveMessage(async (message: CopyMessage) => {
     const d = options.details;
     if (message.type === 'close') {
       panel.dispose();
+      return;
+    }
+    if ((message as { type: string }).type === 'zoom') {
+      await applyZoomDelta((message as unknown as { delta: number }).delta);
       return;
     }
     if (message.type === 'snippet') {

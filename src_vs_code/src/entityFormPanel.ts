@@ -12,6 +12,7 @@ import { readPastedQr } from './qrPaste';
 import { withSteamEncoder } from './totpSteam';
 import { normalizeTags, parseForward } from './sshOptions';
 import { draw } from './formGenerate';
+import { applyZoomDelta, currentUiScale, pushUiScaleTo } from './uiScaleHost';
 import { parseSshPrivateKey } from './sshKeyParse';
 import { isDepColorKey } from './depColors';
 import { keepsPassword } from './entityKind';
@@ -56,6 +57,8 @@ export interface KeyCandidate {
 
 export interface EntityFormOptions {
   mode: 'create' | 'edit';
+  /** The text-zoom offset (T28), from `credSshManager.uiScale`. */
+  uiScale?: number;
   entityId: string;
   initial?: EntityMetadata;
   hasStoredPassword: boolean;
@@ -184,6 +187,7 @@ interface FormMessage {
   type:
     | 'save'
     | 'cancel'
+    | 'zoom'
     | 'splitCommand'
     | 'highlight'
     | 'generate'
@@ -197,6 +201,8 @@ interface FormMessage {
   /** `configFieldEdit` only: which row was changed, and to what. */
   path?: string;
   value?: string;
+  /** `zoom` only (T28): which way the press went. */
+  zoomDelta?: number;
   /** `generate` only: which kind of secret to draw. */
   kind?: 'password' | 'passphrase' | 'key';
   /** `generate` only: the options the page's controls chose (T14). Absent = the defaults. */
@@ -290,7 +296,10 @@ export function showEntityForm(options: EntityFormOptions): Promise<EntityFormVa
   // vaults has to be able to reach it. Registered BEFORE the markup is built: rendering can
   // throw, and a panel already on screen must be closable whether or not it ever got a page.
   const unregister = formPanels.register(panel);
-  panel.webview.html = renderHtml(options);
+  panel.webview.html = renderHtml({ ...options, uiScale: currentUiScale() });
+  // T28: this page follows the shared setting for as long as it lives.
+  const zoomHook = pushUiScaleTo(panel.webview);
+  panel.onDidDispose(() => zoomHook.dispose());
 
   return new Promise((resolve) => {
     let settled = false;
@@ -301,6 +310,10 @@ export function showEntityForm(options: EntityFormOptions): Promise<EntityFormVa
       }
       if (message.type === 'splitCommand') {
         void splitAndDescribe(panel, message.text ?? '');
+        return;
+      }
+      if (message.type === 'zoom') {
+        await applyZoomDelta(message.zoomDelta ?? 0);
         return;
       }
       if (message.type === 'generate') {

@@ -72,7 +72,10 @@ export interface ConfigStub {
   values: Record<string, unknown>;
   /** Every `update(key, value, target)` this run performed, in order. */
   updates: { key: string; value: unknown; target: unknown }[];
-  workspace: { getConfiguration(section: string): unknown };
+  workspace: {
+    getConfiguration(section: string): unknown;
+    onDidChangeConfiguration(listener: (e: unknown) => void): { dispose(): void };
+  };
   /** The section names asked for, so a test can prove a module reads its own. */
   sections: string[];
 }
@@ -102,6 +105,10 @@ export function configStub(values: Record<string, unknown> = {}): ConfigStub {
             return Promise.resolve();
           },
         };
+      },
+      // T28 subscribes pages to setting changes; tests need only a disposable.
+      onDidChangeConfiguration(): { dispose(): void } {
+        return { dispose: (): void => undefined };
       },
     },
   };

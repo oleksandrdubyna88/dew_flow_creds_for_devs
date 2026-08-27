@@ -75,7 +75,10 @@ function withVscodeStub<T>(load: () => T): T {
         },
         Uri: { joinPath: (): object => ({}) },
         ViewColumn: { Active: 1 },
-        workspace: { getConfiguration: () => ({ get: (_k: string, d: unknown) => d }) },
+        workspace: {
+          getConfiguration: () => ({ get: (_k: string, d: unknown) => d }),
+          onDidChangeConfiguration: () => ({ dispose: () => undefined }),
+        },
       };
     }
     return original.call(this, request, ...rest);

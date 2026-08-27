@@ -2,6 +2,7 @@ import * as crypto from 'node:crypto';
 import { normalizeTags } from './sshOptions';
 import { CONFIG_FORMATS, CONFIG_FORMAT_LABELS } from './configFormat';
 import { PASSWORD_LENGTH_CHOICES, SSH_KEY_TYPES } from './secretGenerator';
+import { ZOOM_CSS, zoomControlHtml, zoomStyle } from './zoomControl';
 import { PAGE_MAX_WIDTH_PX, TWO_COLUMN_AT, escapeHtml } from './webviewHtml';
 import { formPageScript } from './entityFormScript';
 import { initialDependencyRows } from './depGraph';
@@ -352,7 +353,7 @@ export function renderHtml(options: EntityFormOptions): string {
 <style>
   body { font-family: var(--vscode-font-family); color: var(--vscode-foreground);
          background: var(--vscode-editor-background); padding: 16px 24px;
-         max-width: ${PAGE_MAX_WIDTH_PX}px; }
+         max-width: ${PAGE_MAX_WIDTH_PX}px; ${zoomStyle(options.uiScale ?? 0)} }
   h2 { margin: 0 0 12px; font-size: 1.2em; }
   /* The kind beside the name: two entries can share a name and be different things. */
   .kindChip { margin-left: 10px; font-size: .62em; letter-spacing: .08em;
@@ -360,6 +361,7 @@ export function renderHtml(options: EntityFormOptions): string {
   fieldset { border: 1px solid var(--vscode-widget-border, #4444); border-radius: 4px;
              margin: 0 0 14px; padding: 10px 12px; }
   legend { padding: 0 6px; opacity: .85; }
+  ${ZOOM_CSS}
   /* The native checkbox tinted by webview defaults is nearly invisible on dark themes
      (tails T31): checked gets the action colour, and the size raise is what helps the
      UNCHECKED box, whose border the browser draws thicker at 15px than at the 13px default.
@@ -426,13 +428,13 @@ export function renderHtml(options: EntityFormOptions): string {
   .fieldRow label { margin: 0; overflow-wrap: anywhere; opacity: .85; }
   .codeWrap { position: relative; }
   .codeWrap pre { position: absolute; inset: 0; margin: 0; padding: 5px 7px; overflow: auto;
-    font-family: var(--vscode-editor-font-family, monospace); font-size: 13px; line-height: 1.45;
+    font-family: var(--vscode-editor-font-family, monospace); font-size: 1em; line-height: 1.45;
     white-space: pre-wrap; word-break: break-all; pointer-events: none;
     color: var(--vscode-editor-foreground); }
   .codeWrap textarea { position: relative; background: transparent;
     color: var(--vscode-editor-foreground);
     caret-color: var(--vscode-editor-foreground);
-    font-family: var(--vscode-editor-font-family, monospace); font-size: 13px; line-height: 1.45;
+    font-family: var(--vscode-editor-font-family, monospace); font-size: 1em; line-height: 1.45;
     white-space: pre-wrap; word-break: break-all; }
   /* The textarea's own glyphs disappear ONLY once the overlay has actually painted the
      same text underneath — the class is added by the page script when a highlight
@@ -503,6 +505,7 @@ export function renderHtml(options: EntityFormOptions): string {
     <div class="buttons">
       <button id="save">Save</button>
       <button id="cancel" class="secondary">Cancel</button>
+      ${zoomControlHtml(options.uiScale ?? 0)}
     </div>
     <!-- The validation message rides with the buttons. Below them it would scroll out of
          sight, and "I pressed Save and nothing happened" is exactly what it exists to

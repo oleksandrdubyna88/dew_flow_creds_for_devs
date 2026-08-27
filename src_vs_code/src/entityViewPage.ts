@@ -1,3 +1,4 @@
+import { ZOOM_CSS, zoomControlHtml, zoomScript, zoomStyle } from './zoomControl';
 import {
   COPY_ICON as SHARED_COPY_ICON,
   PAGE_MAX_WIDTH_PX,
@@ -51,6 +52,8 @@ export interface EntityViewOptions {
   subtitle?: string;
   /** CLI aliases pointing at this entry (T23a) — the reverse of the alias map, caller-resolved. */
   cliAliases?: readonly string[];
+  /** The text-zoom offset (T28), from `credSshManager.uiScale`. */
+  uiScale?: number;
   hasPassword: boolean;
   hasPrivateKey: boolean;
   hasVpnConfig: boolean;
@@ -520,7 +523,7 @@ export function renderEntityViewHtml(options: EntityViewOptions): string {
      exactly where it had no room. Sharing them makes the two pages unable to disagree. */
   body { font-family: var(--vscode-font-family); color: var(--vscode-foreground);
          background: var(--vscode-editor-background); padding: 16px 24px;
-         max-width: ${PAGE_MAX_WIDTH_PX}px; }
+         max-width: ${PAGE_MAX_WIDTH_PX}px; ${zoomStyle(options.uiScale ?? 0)} }
   h2 { font-size: 1.2em; }
   .row { margin-bottom: 10px; }
   .note { opacity: .75; font-style: italic; }
@@ -541,7 +544,7 @@ export function renderEntityViewHtml(options: EntityViewOptions): string {
   @media (min-width: ${TWO_COLUMN_AT}px) { .viewGroups { grid-template-columns: 1fr 1fr; } }
   .hint.bad { color: var(--vscode-editorWarning-foreground, #cca700); opacity: 1; }
   .code { flex: 1; margin: 0; padding: 6px 8px; max-height: 320px; overflow: auto;
-    font-family: var(--vscode-editor-font-family, monospace); font-size: 13px; line-height: 1.45;
+    font-family: var(--vscode-editor-font-family, monospace); font-size: 1em; line-height: 1.45;
     white-space: pre-wrap; word-break: break-all;
     border: 1px solid var(--vscode-widget-border, #3c3c3c); border-radius: 4px; }
   .tok-comment { color: var(--vscode-descriptionForeground); font-style: italic; }
@@ -589,6 +592,7 @@ export function renderEntityViewHtml(options: EntityViewOptions): string {
   .pageHead { display: flex; align-items: center; gap: 16px; margin: 0 0 14px; flex-wrap: wrap; }
   .pageHead h2 { margin: 0; }
   .subtitle { margin: -8px 0 12px; opacity: .7; }
+  ${ZOOM_CSS}
 </style>
 </head>
 <body>
@@ -599,6 +603,7 @@ export function renderEntityViewHtml(options: EntityViewOptions): string {
   <div class="pageHead">
     <h2>${escapeHtml(d.name)}</h2>
     <button class="primary" data-field="all">${COPY_ICON} Copy All</button>
+    ${zoomControlHtml(options.uiScale ?? 0)}
   </div>
   ${options.subtitle === undefined ? '' : `<p class="subtitle">${escapeHtml(options.subtitle)}</p>`}
   <div class="viewGroups">
@@ -699,6 +704,7 @@ export function renderEntityViewHtml(options: EntityViewOptions): string {
       preview.style.cursor = zoom === 2 ? 'zoom-out' : 'zoom-in';
     });
   }
+  ${zoomScript()}
   window.addEventListener('message', (event) => {
     if (event.data?.type !== 'copied') { return; }
     const button = document.querySelector('button[data-field="' + event.data.field + '"]');

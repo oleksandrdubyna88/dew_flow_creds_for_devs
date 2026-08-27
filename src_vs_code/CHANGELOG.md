@@ -56,6 +56,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Text zoom on every page.** Two magnifier buttons beside Save (the form) and Copy All (the
+  viewer): each press scales the page's text 10%, up to five steps either way, with the offset
+  shown (`+3`). The value is the setting `credSshManager.uiScale`, so it syncs to your other
+  machines and every open CredsForDevs page follows it at once — the press is reported, the
+  setting is the truth, and no two pages can show two sizes.
+
 - **The tree reads in layers.** A blank separator row now sits between accounts (VS Code's tree
   offers no real separators — the row is inert: no menu, no command, never at an edge). The
   account row's inline plus is gone; in its place the row counts what lives there:

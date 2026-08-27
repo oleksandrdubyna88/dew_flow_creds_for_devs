@@ -222,6 +222,13 @@
             "type": "string"
           },
           "markdownDescription": "Which stored SSH key each git remote authenticates with: `{ \"git@github.com:me/vault.git\": \"<entity id>\" }`.\n\nThe key is an ordinary **SSH key** entry in your vault — it is written to the same private `keys/` folder the SSH features already use and purge, so no copy of it is left behind. Leave a remote out and git uses whatever your machine is already configured to do (an agent, a credential helper, an existing deploy key), which is usually what you want."
+        },
+        "credSshManager.uiScale": {
+          "type": "integer",
+          "default": 0,
+          "minimum": -5,
+          "maximum": 5,
+          "markdownDescription": "Text size on every CredsForDevs page (the entry form, the viewer, help), in steps of 10% from the base — `5` is about ×1.6, `-5` about ÷1.6. The ± buttons on each page write this same setting, and it syncs with your other machines."
         }
       }
     },
