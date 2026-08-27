@@ -22,6 +22,7 @@ import { entityKey } from './entityFlags';
 import { describeRemaining } from './entityExpiry';
 import { resolveKind } from './entityKind';
 import { SyncReadiness } from './syncReadiness';
+import { OrgRecoveryAccess, accountContextValue } from './orgRecoveryAccess';
 import { describeTarget, entityContextValue, markInvalid } from './treeRowText';
 import { FOLDER_COLOR, buildTooltip, entityIcon, folderIcon, kindIcon } from './treeIcons';
 import { parentOf } from './treeParent';
@@ -75,6 +76,17 @@ export class CredTreeDataProvider
    * or flicker.
    */
   readonly readiness = new Map<string, SyncReadiness>();
+
+  /**
+   * What each account may see of corporate recovery, refreshed by the extension alongside
+   * `readiness` and cached for the same reason: answering needs a network read of the server's
+   * roster, and a tree item is built synchronously.
+   *
+   * <p>Absent means "not asked yet", which resolves to `none` — the menu is then what it was
+   * before corporate recovery existed. Erring towards hiding is right here: a command that is
+   * missing for a moment is a smaller fault than four an ordinary user cannot run.</p>
+   */
+  readonly orgAccess = new Map<string, OrgRecoveryAccess>();
 
   /**
    * Kept previous versions, per entity id.
@@ -514,7 +526,11 @@ export class CredTreeDataProvider
         this.collapsible(element, true),
       );
       item.id = `account:${element.account.accountId}`;
-      item.contextValue = 'account';
+      // The menu a row offers is chosen HERE, by the value the `when` clauses match. Ordinary
+      // accounts keep the exact string every other entry was contributed against.
+      item.contextValue = accountContextValue(
+        this.orgAccess.get(element.account.accountId) ?? 'none',
+      );
       const ready = this.readiness.get(element.account.accountId);
       // An SVG file, not a ThemeIcon with a colour: VS Code repaints themed icons in the
       // selection colour the moment the row is selected, which made a signed-in account

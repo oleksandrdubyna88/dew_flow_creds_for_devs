@@ -99,6 +99,7 @@ import {
 } from './orgRecoveryPinning';
 import { showOrgRecoveryView } from './orgRecoveryPanel';
 import { EscrowEnrolment } from './orgEscrowOps';
+import { orgRecoveryAccess } from './orgRecoveryAccess';
 import { SharePayload as EscrowShareShape, openSharePayload } from './orgShareEnvelope';
 import {
   openShareWithPin,
@@ -579,9 +580,39 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     { dispose: () => clearTimeout(secretsSettle) },
   );
 
+  /**
+   * What this account may see of corporate recovery, cached on the provider so the tree can
+   * choose a menu synchronously.
+   *
+   * <p>A failure answers `none` rather than throwing: an unreachable server must hide four
+   * commands for a cycle, never break the repaint that draws every other row.</p>
+   */
+  const refreshOrgAccess = async (account: StoredAccount): Promise<void> => {
+    const client = transports.orgRecoveryFor(account);
+    if (client === undefined) {
+      provider.orgAccess.set(account.accountId, 'none');
+      return;
+    }
+    try {
+      const config = await client.readConfig(account);
+      provider.orgAccess.set(
+        account.accountId,
+        orgRecoveryAccess({
+          onServer: true,
+          enabled: config.enabled,
+          officerEmails: config.officerEmails,
+          accountEmail: account.email,
+        }),
+      );
+    } catch {
+      provider.orgAccess.set(account.accountId, 'none');
+    }
+  };
+
   const refreshReadiness = async (): Promise<Map<string, SyncReadiness>> => {
     const locked = vaultKeys.isLocked();
     for (const account of storage.getAccounts()) {
+      await refreshOrgAccess(account);
       const pin = await vaultKeys.storedPin(account);
       provider.readiness.set(
         account.accountId,

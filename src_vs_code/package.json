@@ -1149,31 +1149,6 @@
           "group": "2_keys@8"
         },
         {
-          "command": "credSshManager.showOrgRecovery",
-          "when": "view == credSshManagerView && viewItem == account",
-          "group": "2_keys@9"
-        },
-        {
-          "command": "credSshManager.acceptRecoveryShare",
-          "when": "view == credSshManagerView && viewItem == account",
-          "group": "2_keys@10"
-        },
-        {
-          "command": "credSshManager.startBreakGlass",
-          "when": "view == credSshManagerView && viewItem == account",
-          "group": "2_keys@11"
-        },
-        {
-          "command": "credSshManager.contributeToRecovery",
-          "when": "view == credSshManagerView && viewItem == account",
-          "group": "2_keys@12"
-        },
-        {
-          "command": "credSshManager.finishBreakGlass",
-          "when": "view == credSshManagerView && viewItem == account",
-          "group": "2_keys@13"
-        },
-        {
           "command": "credSshManager.removeAccount",
           "when": "view == credSshManagerView && viewItem == account",
           "group": "3_manage@5"
@@ -1477,6 +1452,31 @@
           "command": "credSshManager.writeConfigFile",
           "when": "view == credSshManagerView && viewItem =~ /:config/",
           "group": "2_actions@13"
+        },
+        {
+          "command": "credSshManager.showOrgRecovery",
+          "when": "view == credSshManagerView && viewItem =~ /^account-corp/",
+          "group": "4_corp@1"
+        },
+        {
+          "command": "credSshManager.acceptRecoveryShare",
+          "when": "view == credSshManagerView && viewItem == account-corpOfficer",
+          "group": "4_corp@2"
+        },
+        {
+          "command": "credSshManager.startBreakGlass",
+          "when": "view == credSshManagerView && viewItem == account-corpOfficer",
+          "group": "4_corp@3"
+        },
+        {
+          "command": "credSshManager.contributeToRecovery",
+          "when": "view == credSshManagerView && viewItem == account-corpOfficer",
+          "group": "4_corp@4"
+        },
+        {
+          "command": "credSshManager.finishBreakGlass",
+          "when": "view == credSshManagerView && viewItem == account-corpOfficer",
+          "group": "4_corp@5"
         }
       ]
     }
