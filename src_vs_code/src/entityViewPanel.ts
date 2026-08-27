@@ -30,6 +30,16 @@ export interface EntityViewOptions {
   hasDbConnection: boolean;
   /** Resolved note (from SecretStorage), shown read-only with copy. */
   notes?: string;
+  /**
+   * The config file's contents (from SecretStorage), shown read-only with copy.
+   *
+   * <p>A secret, and it reaches the viewer the same way `notes` does. That is a deliberate
+   * exception to "the read-only viewer never receives a secret value", and it is the same
+   * exception notes already are: this entry's whole content IS the thing somebody opened it to
+   * look at, and a viewer that showed a config entry as a name and two dates — which is what it
+   * did — is a viewer that cannot view the one kind it was opened for.</p>
+   */
+  config?: string;
   /** Parsed parts of the stored connection string (password not included). */
   dbParts?: DbConnParts;
   /** The shown port is the type's default, not explicit in the string. */
@@ -157,6 +167,7 @@ export function showEntityView(options: EntityViewOptions): void {
       case 'sshKeyPath': value = d.sshKeyPath; break;
       case 'publicKey': value = d.publicKey; break;
       case 'notes': value = options.notes ?? d.notes; break;
+      case 'config': value = options.config; break;
       case 'vpnType': value = d.vpnType; break;
       case 'dbType': value = d.dbType; break;
       case 'dbHost': value = options.dbParts?.host; break;
@@ -430,6 +441,7 @@ function renderHtml(options: EntityViewOptions): string {
         ? resolveScriptEnv(d.script, d.scriptVars, d.scriptLanguage ?? 'other').body
         : undefined,
     ),
+    row('Config file', 'config', options.config),
     row('Notes', 'notes', options.notes),
     row('Created', 'createdAt', options.createdAt === undefined ? undefined : new Date(options.createdAt).toLocaleString()),
     row('Last changed', 'updatedAt', options.updatedAt === undefined ? undefined : new Date(options.updatedAt).toLocaleString()),

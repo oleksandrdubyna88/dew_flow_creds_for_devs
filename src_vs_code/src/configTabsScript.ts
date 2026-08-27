@@ -57,31 +57,63 @@ export function configTabsScript(): string {
     return row;
   }
 
-  function renderConfigFields(fields) {
+  // Three answers, not two. A JSON body with one missing brace used to report "no field view for
+  // this format", which is false about JSON and silent about the brace.
+  function renderConfigFields(msg) {
     var host = document.getElementById('configFieldRows');
     var note = document.getElementById('configFieldsNote');
     host.textContent = '';
-    if (fields === null) {
+    if (msg.kind === 'noView') {
       note.textContent = 'No field view for this format — edit it in Raw. Building rows from a hand-written reader would rewrite your document the first time you used them.';
       return;
     }
-    note.textContent = fields.length === 0
+    if (msg.kind === 'unparsable') {
+      note.textContent = 'Fix it in Raw first — the rows cannot be read from a document that does not parse. ' + describeConfigProblemText(msg.problem);
+      return;
+    }
+    note.textContent = msg.rows.length === 0
       ? 'Nothing to show yet. Type the document in Raw and its values appear here.'
-      : 'Editing a row changes that one value in the document and nothing else — the formatting and the comments stay exactly as they are.';
-    for (var i = 0; i < fields.length; i++) { host.appendChild(configFieldRow(fields[i])); }
+      : 'Editing a row changes that one value and nothing else — the formatting and the comments stay exactly as they are.';
+    for (var i = 0; i < msg.rows.length; i++) { host.appendChild(configFieldRow(msg.rows[i])); }
+  }
+
+  function describeConfigProblemText(problem) {
+    if (!problem) { return ''; }
+    return (problem.line ? 'Line ' + problem.line + ': ' : '') + problem.message;
+  }
+
+  // Shown beside the Contents box on BOTH tabs, and refreshed as you type: a body that does not
+  // parse has to say so while you are looking at the text, not only once you go hunting for rows.
+  function renderConfigStatus(problem) {
+    var status = document.getElementById('configStatus');
+    status.textContent = problem ? describeConfigProblemText(problem) : '';
+    status.className = problem ? 'hint bad' : 'hint';
   }
 
   window.addEventListener('message', function (event) {
     var msg = event.data;
-    if (msg.type === 'configFieldsResult') { renderConfigFields(msg.fields); }
+    if (msg.type === 'configFieldsResult') {
+      renderConfigStatus(msg.problem);
+      renderConfigFields(msg);
+    }
     if (msg.type === 'configBody') {
       document.getElementById('configBody').value = msg.text;
       requestConfigFields();
     }
   });
 
+  // Debounced, because validating on every keystroke of a two-hundred-line appsettings is work
+  // nobody asked for; 400ms is long enough to finish a word and short enough to feel immediate.
+  var configTimer;
+  document.getElementById('configBody').addEventListener('input', function () {
+    clearTimeout(configTimer);
+    configTimer = setTimeout(requestConfigFields, 400);
+  });
+  document.getElementById('configFormat').addEventListener('change', requestConfigFields);
+
   document.getElementById('configTabRaw').addEventListener('click', function () { showConfigTab('raw'); });
   document.getElementById('configTabFields').addEventListener('click', function () { showConfigTab('fields'); });
   showConfigTab('raw');
+  requestConfigFields();
 `;
 }

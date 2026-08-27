@@ -330,21 +330,31 @@ function withoutXmlNoise(body: string): string {
 // ---------- what to say about it ----------
 
 /**
- * What to tell somebody who just saved a config that does not parse.
+ * What to ask somebody about to save a config that does not parse.
  *
- * <p>A save is never refused. A config is often pasted in halves, and a vault that will not hold
- * work in progress is a vault people keep a copy of on the side — which is the exact habit this
- * whole feature exists to end. So the body is stored, the person is told, and the row carries the
- * mark until it parses.</p>
+ * <p>Asked BEFORE the write, not reported after it. The first shape of this told the person their
+ * config had been saved and was invalid, in a toast, after the form had already closed — by which
+ * point the only thing they could do about it was open the entry again. A question they can answer
+ * with Cancel, while the form is still in front of them and the cursor is still where they left
+ * it, is worth more than a correct sentence delivered too late.</p>
  *
- * <p>The line is included only when a checker knew one. "Line undefined" would be worse than
- * silence, and a guessed line worse still.</p>
+ * <p>Saving anyway stays available, and the wording says so plainly: a config is often pasted in
+ * halves, and a vault that refuses unfinished work is a vault people keep a copy of on the side.
+ * What follows a Save anyway is the `!!!` on the row, which is the durable half of the same
+ * signal.</p>
+ *
+ * <p>The line is included only when a checker knew one. "Line undefined" is worse than silence,
+ * and a guessed line worse still.</p>
  */
-export function savedButInvalidNotice(
+export function invalidSaveConfirmation(
   name: string,
   format: ConfigFormat,
   problem: ConfigProblem,
 ): string {
   const where = problem.line === undefined ? '' : ` on line ${problem.line}`;
-  return `"${name}" was saved, but it is not valid ${CONFIG_FORMAT_LABELS[format].label}${where}. ${problem.message} The entry stays marked !!! until it parses.`;
+  return `"${name}" is not valid ${CONFIG_FORMAT_LABELS[format].label}${where}.
+
+${problem.message}
+
+Save it anyway? The entry will be marked !!! until it parses.`;
 }

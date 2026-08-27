@@ -403,6 +403,7 @@ export function renderHtml(options: EntityFormOptions): string {
   .envRow label { opacity: .85; }
   /* The config section's Raw / Fields tabs. Coloured from the editor's own tokens rather than
      from fixed values, so a high-contrast theme is legible without a second rule. */
+  .hint.bad { color: var(--vscode-editorWarning-foreground, #cca700); opacity: 1; }
   .tabs { display: flex; gap: 2px; margin: 8px 0 6px; }
   .tab { background: transparent; color: var(--vscode-foreground); opacity: .7;
          border: none; border-bottom: 2px solid transparent; padding: 4px 10px; cursor: pointer; }
@@ -676,6 +677,7 @@ export function renderHtml(options: EntityFormOptions): string {
            placeholder="appsettings.Development.json"
            value="${escapeHtml(d?.configFileName ?? '')}">
     <p class="hint">What "Write config file here…" saves it as. It is not a path — you choose the folder when you write it.</p>
+    <p class="hint" id="configStatus" role="status" aria-live="polite"></p>
     <div class="tabs" role="tablist">
       <button type="button" id="configTabRaw" class="tab on" role="tab">Raw</button>
       <button type="button" id="configTabFields" class="tab" role="tab">Fields</button>

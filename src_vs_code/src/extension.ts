@@ -131,7 +131,6 @@ import { formPanels, lockNotice } from './formPanels';
 import { configFileNameFor } from './configFile';
 import { runBounded } from './sshExecRunner';
 import { writeConfigFile } from './configWrite';
-import { describeConfigProblem, savedButInvalidNotice } from './configFormat';
 import { mcpAsOfVersion, mcpFor } from './viewerOptions';
 import { buildDependencyCandidates, buildDependencyColorMap } from './depGraph';
 import { EntityFlagsRefresher, entityFlagSource } from './entityFlags';
@@ -4528,23 +4527,6 @@ async function importEntities(
 }
 
 /** Persist the password/private-key changes coming out of the form. */
-/**
- * The "saved, but not valid" warning, or nothing at all.
- *
- * <p>Returns a string rather than showing it, so the decision is a pure function and the one
- * side effect stays at the call site.</p>
- */
-function configNoticeFor(result: EntityFormValues): string | undefined {
-  const format = result.details.configFormat;
-  if (result.newConfigBody === undefined || format === undefined) {
-    return undefined;
-  }
-  const problem = describeConfigProblem(format, result.newConfigBody);
-  return problem === undefined
-    ? undefined
-    : savedButInvalidNotice(result.details.name, format, problem);
-}
-
 async function applySecrets(
   storage: StorageManager,
   accountId: string,
@@ -4576,12 +4558,6 @@ async function applySecrets(
   // scrubbing the form does to every other kind's fields when the type changes. An entity turned
   // from a config into something else must not keep a config body nothing can reach or edit.
   await storage.setConfigBody(accountId, entityId, result.newConfigBody);
-  // Told here rather than at the two call sites: this is where the body is written, and a notice
-  // that has to be remembered in two places is a notice one of them will eventually lose.
-  const configNotice = configNoticeFor(result);
-  if (configNotice !== undefined) {
-    void vscode.window.showWarningMessage(configNotice);
-  }
   if (result.clearAttachment) {
     await storage.setAttachment(accountId, entityId, undefined);
   } else if (result.newAttachment !== undefined) {
@@ -4889,6 +4865,7 @@ function openRevisionViewer(node: TreeNode, revision: Revision): void {
     hasVpnConfig: vpnConfig !== undefined,
     hasDbConnection: dbConnection !== undefined,
     notes,
+    config: revision.secrets.config,
     ...db,
     sshCommand: buildSshCommand(details),
     resolveSecret: secretResolver(revisionSecretReader(revision)),
@@ -4960,6 +4937,7 @@ async function openEntityViewer(
     hasVpnConfig,
     hasDbConnection: dbConnection !== undefined,
     notes,
+    config: await storage.getConfigBody(accountId, details.id),
     ...db,
     sshCommand: buildSshCommand(details),
     resolveSecret: secretResolver(totpReader),

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { describeConfigProblem, savedButInvalidNotice } from '../configFormat';
+import { describeConfigProblem, invalidSaveConfirmation } from '../configFormat';
 
 /**
  * Whether a config body is what it claims to be.
@@ -152,23 +152,24 @@ test('the structural checkers accept things a real parser would not — recorded
   );
 });
 
-test('the notice says it was saved, names the format, and says what the mark means', () => {
-  // A save is never refused, so the notice has three jobs at once: reassure that nothing was
-  // lost, say what is wrong, and explain the `!!!` that just appeared in the tree.
+test('the question names the format, says what is wrong, and offers to save anyway', () => {
+  // Asked before the write, while the form is still open and the cursor is still where it was —
+  // the first shape of this reported the same fact in a toast after the form had closed, by which
+  // point the only thing to do about it was open the entry again.
   const problem = describeConfigProblem('json', '{\n"a": 1\n');
   assert.notEqual(problem, undefined);
 
-  const notice = savedButInvalidNotice('appsettings.Development.json', 'json', problem!);
+  const notice = invalidSaveConfirmation('appsettings.Development.json', 'json', problem!);
 
-  assert.match(notice, /was saved/);
+  assert.match(notice, /Save it anyway/);
   assert.match(notice, /not valid JSON/);
   assert.match(notice, /!!!/);
   assert.match(notice, /appsettings\.Development\.json/);
 });
 
-test('the notice names a line only when one is known', () => {
-  const withLine = savedButInvalidNotice('a', 'env', { message: 'Nope.', line: 7 });
-  const without = savedButInvalidNotice('a', 'env', { message: 'Nope.' });
+test('the question names a line only when one is known', () => {
+  const withLine = invalidSaveConfirmation('a', 'env', { message: 'Nope.', line: 7 });
+  const without = invalidSaveConfirmation('a', 'env', { message: 'Nope.' });
 
   assert.match(withLine, /line 7/);
   assert.equal(/line/.test(without), false, 'a guessed line is worse than no line');

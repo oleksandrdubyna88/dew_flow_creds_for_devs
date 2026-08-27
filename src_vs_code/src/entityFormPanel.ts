@@ -18,8 +18,14 @@ import {
 } from './secretGenerator';
 import { parseSshPrivateKey } from './sshKeyParse';
 import { isDepColorKey } from './depColors';
-import { isConfigFormat } from './configFormat';
-import { ConfigField, configFields, withFieldValues } from './configFields';
+import {
+  ConfigFormat,
+  ConfigProblem,
+  describeConfigProblem,
+  invalidSaveConfirmation,
+  isConfigFormat,
+} from './configFormat';
+import { ConfigField, configFields, fieldsOutcome, withFieldValues } from './configFields';
 import { FORM_WEBVIEW_OPTIONS, formPanels } from './formPanels';
 import { readMcpAccess } from './mcpAccess';
 import { DependencyFolderCandidate, normalizeDependsOn } from './depGraph';
@@ -304,7 +310,7 @@ export function showEntityForm(options: EntityFormOptions): Promise<EntityFormVa
   return new Promise((resolve) => {
     let settled = false;
     // eslint-disable-next-line complexity
-    panel.webview.onDidReceiveMessage((message: FormMessage) => {
+    panel.webview.onDidReceiveMessage(async (message: FormMessage) => {
       if (answerRoundTrip(panel, message)) {
         return;
       }
@@ -327,7 +333,7 @@ export function showEntityForm(options: EntityFormOptions): Promise<EntityFormVa
         panel.dispose();
         return;
       }
-      if (message.type === 'save' && message.data !== undefined) {
+      if (message.type === 'save' && message.data !== undefined && (await confirmInvalidSave(message.data, options))) {
         settled = true;
         resolve(toValues(message.data, options));
         panel.dispose();
@@ -359,7 +365,7 @@ function answerRoundTrip(panel: vscode.WebviewPanel, message: FormMessage): bool
     return true;
   }
   if (message.type === 'configFields') {
-    void panel.webview.postMessage({ type: 'configFieldsResult', fields: fieldRowsFor(message) });
+    void panel.webview.postMessage({ type: 'configFieldsResult', ...fieldsAnswer(message) });
     return true;
   }
   if (message.type === 'configFieldEdit') {
@@ -375,19 +381,90 @@ function highlighted(message: FormMessage): { type: string; html: string } {
 }
 
 /**
- * The rows for whatever the page is currently holding, or `null`.
+ * Ask before saving a config that does not parse — and let Cancel mean Cancel.
  *
- * <p>Spans are deliberately NOT sent. The page would then be holding offsets into a document it
- * can go on editing in the Raw tab, and a stale offset splices into the wrong place — silently,
- * and in a file of secrets. Recomputing from the text the page just sent is always consistent
- * with what the page has.</p>
+ * <p>The first shape of this reported the fact AFTERWARDS, in a toast, once the form had closed:
+ * correct, and useless, because by then the only thing to do about it was reopen the entry. Asked
+ * here the form is still open and the cursor is still where it was.</p>
  *
- * <p>`null` rather than `undefined` because this crosses a `postMessage` boundary, where
- * `undefined` does not survive JSON and would arrive as a missing property.</p>
+ * <p>Returning `false` simply does not settle the promise, so the panel stays exactly as it was.
+ * Nothing is written and nothing is lost.</p>
  */
-function fieldRowsFor(message: FormMessage): { path: string; value: string }[] | null {
-  const fields = fieldsOf(message, message.text ?? '');
-  return fields === undefined ? null : fields.map(({ path, value }) => ({ path, value }));
+async function confirmInvalidSave(
+  data: Record<string, unknown>,
+  options: EntityFormOptions,
+): Promise<boolean> {
+  const found = unsavedConfigProblem(data, options);
+  if (found === undefined) {
+    return true;
+  }
+  const answer = await vscode.window.showWarningMessage(
+    invalidSaveConfirmation(str(data, 'name').trim(), found.format, found.problem),
+    { modal: true },
+    'Save anyway',
+  );
+  return answer === 'Save anyway';
+}
+
+function unsavedConfigProblem(
+  data: Record<string, unknown>,
+  options: EntityFormOptions,
+): { format: ConfigFormat; problem: ConfigProblem } | undefined {
+  const format = str(data, 'configFormat');
+  if (!isConfigForm(data, options) || !isConfigFormat(format)) {
+    return undefined;
+  }
+  const problem = describeConfigProblem(format, str(data, 'configBody'));
+  return problem === undefined ? undefined : { format, problem };
+}
+
+/** The form's kind, from the locked kind or the selector — the same answer `toValues` reaches. */
+function isConfigForm(data: Record<string, unknown>, options: EntityFormOptions): boolean {
+  return (options.lockedKind ?? str(data, 'entityType')) === 'config';
+}
+
+/**
+ * What the page should show: the rows, or WHY there are none.
+ *
+ * <p>Three answers, not two. Returning a bare "no rows" made a JSON config with one missing brace
+ * report "No field view for this format" — false about JSON, and silent about the brace. The
+ * problem travels with the answer so the tab can name the line instead of the format.</p>
+ *
+ * <p>Spans are deliberately NOT sent. The page would then hold offsets into a document it can go
+ * on editing in the Raw tab, and a stale offset splices into the wrong place — silently, and in a
+ * file of secrets. Recomputing from the text the page just sent is always consistent with it.</p>
+ *
+ * <p>`null` rather than `undefined` throughout: this crosses a `postMessage` boundary, where
+ * `undefined` does not survive JSON and arrives as a missing property.</p>
+ */
+interface FieldsAnswer {
+  kind: string;
+  rows: { path: string; value: string }[] | null;
+  problem: ConfigProblem | null;
+}
+
+function fieldsAnswer(message: FormMessage): FieldsAnswer {
+  const format = message.lang ?? '';
+  const body = message.text ?? '';
+  return isConfigFormat(format)
+    ? answerFor(format, body)
+    : { kind: 'noView', rows: null, problem: null };
+}
+
+function answerFor(format: ConfigFormat, body: string): FieldsAnswer {
+  const outcome = fieldsOutcome(format, body);
+  return {
+    kind: outcome.kind,
+    rows: outcome.kind === 'rows' ? rowsOf(outcome.fields) : null,
+    // Sent whatever the outcome, because the page shows it beside the Contents box on BOTH tabs:
+    // a body that does not parse must say so while you are looking at the text, not only after
+    // you go looking for the rows.
+    problem: describeConfigProblem(format, body) ?? null,
+  };
+}
+
+function rowsOf(fields: readonly ConfigField[]): { path: string; value: string }[] {
+  return fields.map(({ path, value }) => ({ path, value }));
 }
 
 /** The rows for one message's format and body, or nothing when that format has no field view. */

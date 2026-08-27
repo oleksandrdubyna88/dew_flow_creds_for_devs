@@ -31,6 +31,8 @@ export interface RevisionSecrets {
   notes?: string;
   /** The canonical `otpauth://` URI — a replaced seed is still a seed. */
   totp?: string;
+  /** The config file's previous contents — an edit that breaks a config must be undoable. */
+  config?: string;
 }
 
 export interface Revision {

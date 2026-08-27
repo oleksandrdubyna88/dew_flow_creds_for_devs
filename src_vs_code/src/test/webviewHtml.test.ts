@@ -361,6 +361,32 @@ test('a form panel is created so that hiding it does not destroy what was typed'
   );
 });
 
+test('the viewer SHOWS a config file, which is the one thing it was opened for', () => {
+  // Reported from a live window: opening a config entry showed its name and two dates and
+  // nothing else. A config entry whose contents cannot be viewed is a viewer that fails at the
+  // only job that entry has.
+  //
+  // The body is a secret and reaches the viewer the same way `notes` does — a deliberate
+  // exception to "the read-only viewer never receives a secret value", and the same exception
+  // notes already are: here the secret IS the document somebody opened it to read.
+  currentPanel = newPanel();
+  viewer.showEntityView({
+    details: { name: 'conf1', kind: 'config', isConfig: true, configFormat: 'json', isSshEnabled: false },
+    config: '{ "ConnectionStrings": { "Default": "Server=localhost" } }',
+    hasPassword: false, hasPrivateKey: false, hasVpnConfig: false, hasDbConnection: false,
+    dbPortIsDefault: false, dbHasPassword: false, hasAttachment: false, history: [],
+    resolveSecret: () => Promise.resolve(undefined), copyAllText: () => Promise.resolve(''),
+    saveVpnConfig: () => Promise.resolve(), saveAttachment: () => Promise.resolve(),
+    setEnv: () => Promise.resolve(true), checkEnv: () => {},
+  });
+
+  assert.ok(currentPanel.webview.html.includes('Config file'), 'no Config file row is rendered');
+  assert.ok(
+    currentPanel.webview.html.includes('Server=localhost'),
+    'the row is there but empty — which is what the defect looked like',
+  );
+});
+
 test('the viewer closes on Esc', () => {
   currentPanel = newPanel();
   viewer.showEntityView({

@@ -1,4 +1,4 @@
-import { ConfigFormat } from './configFormat';
+import { ConfigFormat, ConfigProblem, describeConfigProblem } from './configFormat';
 
 /**
  * Every value in a config as an editable row — a VIEW over the raw text, never a second copy of
@@ -48,12 +48,42 @@ export interface FieldEdit {
 }
 
 /**
- * The rows for a body, or `undefined` when this body has no field view.
+ * Why there is nothing to show — three answers, not two.
  *
- * <p>`undefined` means "the raw tab is the only honest one", and it is returned for two different
- * reasons that read the same to the caller: a format whose round-trip cannot be exact, and a body
- * that does not parse. Offering rows in either case would mean a tab that silently rewrites
- * somebody's document the first time it is opened.</p>
+ * <p>This shape exists because of a defect that reached a person. `configFields` answers
+ * `undefined` for two unrelated reasons, and the comment on it used to call them "two different
+ * reasons that read the same to the caller" as though that were a simplification. It is not: a
+ * JSON config with one missing brace showed "No field view for this format", which is false about
+ * JSON, sends the reader to check the Format selector, and never mentions the brace.</p>
+ *
+ * <p>An unparsable body knows what is wrong and on which line. Saying so is the difference between
+ * a tab that looks broken and one that tells you what to fix.</p>
+ */
+export type FieldsOutcome =
+  | { readonly kind: 'rows'; readonly fields: readonly ConfigField[] }
+  | { readonly kind: 'unparsable'; readonly problem: ConfigProblem }
+  | { readonly kind: 'noView' };
+
+export function fieldsOutcome(format: ConfigFormat, body: string): FieldsOutcome {
+  const fields = configFields(format, body);
+  if (fields !== undefined) {
+    return { kind: 'rows', fields };
+  }
+  // Order matters: a format with no field view is answered as such even when its body is also
+  // broken, because there would be no rows however well it parsed — pointing at the syntax would
+  // send somebody off to fix the wrong thing.
+  const problem = FORMATS_WITH_FIELDS.has(format) ? describeConfigProblem(format, body) : undefined;
+  return problem === undefined ? { kind: 'noView' } : { kind: 'unparsable', problem };
+}
+
+/** The formats whose round-trip is exact enough to edit through rows. */
+const FORMATS_WITH_FIELDS: ReadonlySet<ConfigFormat> = new Set<ConfigFormat>(['json', 'env']);
+
+/**
+ * The rows for a body, or `undefined` when there are none to show.
+ *
+ * <p>The primitive. Callers that have to EXPLAIN the absence use `fieldsOutcome` above, which
+ * separates the two reasons this cannot.</p>
  */
 export function configFields(format: ConfigFormat, body: string): readonly ConfigField[] | undefined {
   if (format === 'env') {
