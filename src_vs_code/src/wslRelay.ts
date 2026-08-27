@@ -42,10 +42,45 @@ export function isSafeShellWord(value: string): boolean {
  * then the process the parent holds, and killing the child kills the relay rather than a shell
  * that owns it — measured, the relay does die with `wsl.exe`, and the socket it leaves behind is
  * reclaimed by the next start.</p>
+ * <p><b>It also tells the relay where the Windows half is, and that is not a nicety.</b> A relay
+ * spawns `creds.exe relay-pipe` for every connection it accepts, and finds it on the PATH. The
+ * extension installs that binary into its own global storage, which is on nobody's PATH — so a
+ * person could install both halves through the buttons provided and still get "communication with
+ * agent failed" from `ssh-add`, with the real reason only in a log. Passing the path removes the
+ * question rather than documenting it.</p>
  */
-export function relayArgv(command: string, distro: string): string[] {
+export function relayArgv(command: string, distro: string, windowsBinary = ''): string[] {
   const distroArgv = distro.length > 0 ? ['-d', distro] : [];
-  return [...distroArgv, '-e', 'bash', '-lc', `exec ${command} relay`];
+  return [...distroArgv, '-e', 'bash', '-lc', `exec ${binaryPrefix(windowsBinary)}${command} relay`];
+}
+
+/**
+ * `env VAR='…' ` in front of the command, or nothing when we have no path to give.
+ *
+ * <p>`env` rather than a bare `VAR=value` assignment, because `exec` takes a COMMAND and an
+ * assignment prefix is not one — measured in a real shell before it was written this way.</p>
+ *
+ * <p>A path holding a single quote cannot be single-quoted, and building a shell line out of one
+ * would be the escaping question this file refuses everywhere else. It is dropped instead: the
+ * relay then falls back to the PATH, which is exactly where it was before.</p>
+ */
+function binaryPrefix(windowsBinary: string): string {
+  const usable = windowsBinary.length > 0 && !windowsBinary.includes("'");
+  return usable ? `env CREDS_WINDOWS_BINARY='${windowsBinary}' ` : '';
+}
+
+/**
+ * A Windows path as WSL sees it: `C:\a\b` becomes `/mnt/c/a/b`.
+ *
+ * <p>Only the drive-letter form, and anything else is handed back untouched — a UNC path or a
+ * path that is already `/mnt/...` has no translation to make, and guessing at one would produce a
+ * path that exists nowhere.</p>
+ */
+export function toWslPath(windowsPath: string): string {
+  const match = /^([A-Za-z]):[\\/](.*)$/.exec(windowsPath);
+  return match === null
+    ? windowsPath
+    : `/mnt/${match[1].toLowerCase()}/${match[2].replace(/\\/g, '/')}`;
 }
 
 /** The path out of the relay's own first line, or empty when that is not what it said. */

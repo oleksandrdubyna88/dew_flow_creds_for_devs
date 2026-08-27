@@ -8,6 +8,7 @@ import {
   rcSnippet,
   relayArgv,
   socketFromExportLine,
+  toWslPath,
 } from '../wslRelay';
 import { MAX_QUICK_FAILURES, QUICK_FAILURE_MS, RelayProcess, WslRelayManager } from '../wslRelayManager';
 
@@ -288,4 +289,54 @@ test('an unsafe distribution name never reaches a shell, and nothing starts', ()
 
   assert.equal(result.ok, false);
   assert.equal(started.length, 0, 'not even the safe one was spawned');
+});
+
+// --- telling the relay where the Windows half is (0.79.0) -----------------------------------
+//
+// A relay spawns `creds.exe relay-pipe` per connection and looks on the PATH; the installer puts
+// that binary in the extension's global storage, which is on nobody's PATH. Someone could install
+// both halves through the buttons and still be told only "communication with agent failed".
+
+test('the Windows binary is named on the command line, not hoped for on the PATH', () => {
+  const argv = relayArgv('creds', 'Ubuntu', '/mnt/c/Users/me/creds.exe');
+
+  assert.equal(argv[argv.length - 1], "exec env CREDS_WINDOWS_BINARY='/mnt/c/Users/me/creds.exe' creds relay");
+});
+
+test('without one it behaves exactly as before — the PATH decides', () => {
+  const argv = relayArgv('creds', '');
+  assert.equal(argv[argv.length - 1], 'exec creds relay');
+});
+
+test('a path that cannot be quoted is dropped rather than escaped', () => {
+  // The same rule as everywhere else in this file: nothing quotable is accepted, so there is
+  // nothing to quote correctly. Falling back to the PATH is where it was before.
+  const argv = relayArgv('creds', '', "/mnt/c/it's here/creds.exe");
+
+  assert.equal(argv[argv.length - 1], 'exec creds relay');
+});
+
+test('a Windows path becomes the one WSL can open', () => {
+  const win = ['C:', 'Users', 'me', 'AppData', 'bin', 'creds.exe'].join(String.fromCharCode(92));
+  assert.equal(toWslPath(win), '/mnt/c/Users/me/AppData/bin/creds.exe');
+  assert.equal(toWslPath('D:/rsd/x.exe'), '/mnt/d/rsd/x.exe');
+});
+
+test('anything without a drive letter is handed back untouched', () => {
+  // A UNC path or one already in /mnt has no translation to make, and inventing one would
+  // produce a path that exists nowhere.
+  assert.equal(toWslPath('/mnt/c/already/creds.exe'), '/mnt/c/already/creds.exe');
+  const unc = String.fromCharCode(92).repeat(2) + 'server' + String.fromCharCode(92) + 'creds.exe';
+  assert.equal(toWslPath(unc), unc);
+});
+
+test('every distribution is told the same path', () => {
+  const { spawner, argv } = fakes();
+  const manager = new WslRelayManager(spawner, () => undefined);
+
+  manager.start('creds', ['Ubuntu', 'Ubuntu-26.04'], '/mnt/c/bin/creds.exe');
+
+  assert.ok(argv[0].join(' ').includes("CREDS_WINDOWS_BINARY='/mnt/c/bin/creds.exe'"));
+  assert.ok(argv[1].join(' ').includes("CREDS_WINDOWS_BINARY='/mnt/c/bin/creds.exe'"));
+  manager.dispose();
 });

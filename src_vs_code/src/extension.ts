@@ -170,7 +170,7 @@ import { ServerTransport } from './serverTransport';
 import { withdrawalMessage } from './commandTargets';
 import { runSshExec } from './sshExecRunner';
 import { InstallTarget, Machine, installScript } from './installCommand';
-import { parseDistros, rcAlreadyHasIt, rcSnippet } from './wslRelay';
+import { parseDistros, rcAlreadyHasIt, rcSnippet, toWslPath } from './wslRelay';
 import { DEFAULT_DISTRO, WslRelayManager, spawnWslRelay } from './wslRelayManager';
 import {
   AliasMap,
@@ -192,7 +192,7 @@ import { generateSecret } from './secretKinds';
 import type { EntityKind } from './types';
 import { CreateDecision, McpCreateHooks } from './brokerMcpDoor';
 import { McpUseLookup } from './brokerRequests';
-import { CREDS_CLI, CREDS_MCP, CredsAction, CredsProduct, CredsRid } from './credsInstall';
+import { CREDS_CLI, CREDS_MCP, CredsAction, CredsProduct, CredsRid, ridFor } from './credsInstall';
 import { InstallHost, binaryPath, installMenu, performInstall, removeInstall } from './binaryInstaller';
 import { MCP_CLIENT_TARGETS, installedMessage, mcpServerBlock } from './mcpClientConfig';
 import { MaskEntry, buildMaskTable } from './secretMasker';
@@ -768,6 +768,28 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   );
   context.subscriptions.push(wslRelay);
 
+  /**
+   * Where the Windows half lives, as WSL sees it — or nothing when it is not installed.
+   *
+   * <p>Not a convenience. A relay spawns `creds.exe relay-pipe` per connection and looks on the
+   * PATH; the installer puts it in this extension's global storage, which is on nobody's PATH.
+   * Someone could install both halves through the buttons here and still be told only
+   * "communication with agent failed" by `ssh-add`. The path comes from the SAME function the
+   * installer writes to, so the two cannot drift apart.</p>
+   */
+  function windowsCredsForWsl(): string {
+    const rid = ridFor(process.platform, process.arch);
+    if (rid === undefined) {
+      return '';
+    }
+    const installed = binaryPath(
+      { storage: context.globalStorageUri, state: context.globalState },
+      CREDS_CLI,
+      rid,
+    );
+    return fs.existsSync(installed.fsPath) ? toWslPath(installed.fsPath) : '';
+  }
+
   function relaySettings(): { enabled: boolean; command: string; distros: string[] } {
     const config = vscode.workspace.getConfiguration('credSshManager');
     const chosen = config.get<string[]>('wslRelayDistros', []);
@@ -786,7 +808,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       wslRelay.stop();
       return;
     }
-    const started = wslRelay.start(command, distros);
+    const started = wslRelay.start(command, distros, windowsCredsForWsl());
     if (!started.ok) {
       log.warn('wsl-relay', started.reason);
       void vscode.window.showWarningMessage(`CredsForDevs: ${started.reason}`);
@@ -947,7 +969,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     await config.update('wslAgentRelay', true, vscode.ConfigurationTarget.Global);
 
     const { command } = relaySettings();
-    const started = wslRelay.start(command, chosen);
+    const started = wslRelay.start(command, chosen, windowsCredsForWsl());
     if (!started.ok) {
       void vscode.window.showErrorMessage(`CredsForDevs: ${started.reason}`);
       return;

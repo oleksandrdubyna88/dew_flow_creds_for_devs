@@ -67,7 +67,7 @@ export class WslRelayManager {
   private readonly failures = new Map<string, number>();
 
   /** What the caller asked for, so a relay that dies on its own can be brought back. */
-  private wanted: { command: string; distros: readonly string[] } | undefined;
+  private wanted: { command: string; distros: readonly string[]; windowsBinary: string } | undefined;
 
   constructor(
     private readonly spawn: RelaySpawner,
@@ -95,14 +95,14 @@ export class WslRelayManager {
    * <p>Replacing rather than merging: the caller has just chosen, and a distribution they left out
    * of that choice should stop being served rather than linger because it was picked last time.</p>
    */
-  start(command: string, distros: readonly string[]): { ok: true } | RelayStartRefusal {
+  start(command: string, distros: readonly string[], windowsBinary = ''): { ok: true } | RelayStartRefusal {
     const refusal = refuse(command, distros);
     if (refusal !== undefined) {
       return { ok: false, reason: refusal };
     }
     this.stop();
     this.failures.clear();
-    this.wanted = { command, distros: [...distros] };
+    this.wanted = { command, distros: [...distros], windowsBinary };
     distros.forEach((distro) => this.launch(distro));
     return { ok: true };
   }
@@ -123,7 +123,7 @@ export class WslRelayManager {
     if (wanted === undefined) {
       return;
     }
-    const child = this.spawn(relayArgv(wanted.command, distro));
+    const child = this.spawn(relayArgv(wanted.command, distro, wanted.windowsBinary));
     this.open.set(distro, { child, socket: '', startedAt: this.now() });
     child.onLine((line) => this.readSocket(distro, child, line));
     void child.exited.then((code) => this.onExit(distro, child, code));
