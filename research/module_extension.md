@@ -1754,8 +1754,12 @@ column answers "how do I read this from code?" in twenty languages instead, and 
 depth — three plug into their platform's configuration system, seventeen hand you a parsed
 document. No snippet contains a key and none could; a test walks all twenty-two.
 
-**What is NOT built:** sharing does not carry the body. Left out rather than half-built, because a
-body added to the sending end alone delivers an entry that arrives EMPTY —
+**What is NOT built: a config cannot be SHARED at all.** Not a broken share — no menu item.
+`isShareable` (`treeRowText.ts:126`) asks for a host, a database, a startable VPN, a terminal
+command, a script, or a stored password, and a config is none of those and has none: its body IS
+the secret, and the password slot is hidden on its form. Fixing it is one line there and must be the
+LAST one, because the share payload does not carry `config` — a shareable row without a travelling
+body delivers an entry that arrives empty. Order and both halves:
 [../todo/PLAN_config_sharing.md](../todo/PLAN_config_sharing.md).
 
 ### The per-entity flag caches, and the three rules that keep them honest

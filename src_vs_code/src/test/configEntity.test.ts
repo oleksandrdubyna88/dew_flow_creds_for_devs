@@ -8,6 +8,7 @@ import {
 } from '../configFormat';
 import { ENTITY_KIND_LABELS, EntityMetadata, isEntityMetadata } from '../types';
 import { canBurnOnAgentUse, kindOf, resolveKind, stampKind } from '../entityKind';
+import { entityContextValue } from '../treeRowText';
 
 /**
  * The `config` kind: a configuration file kept in the vault instead of passed between developers
@@ -117,4 +118,22 @@ test('the body is not a metadata field — there is nowhere in the record for it
   assert.equal(JSON.stringify(stamped).includes('ConnectionStrings'), false);
   assert.equal('config' in stamped, false, 'no `config` property may exist on the record');
   assert.equal('configBody' in stamped, false, 'nor under any other spelling');
+});
+
+test('a config is NOT shareable today, and that is recorded rather than rediscovered', () => {
+  // Not a decision — a consequence. `isShareable` asks for a host, a database, a startable VPN, a
+  // terminal command, a script, or a stored password. A config is none of those and has none: its
+  // BODY is the secret, and the password slot is hidden on its form. So no `:shareable` token, and
+  // no Share item in the menu.
+  //
+  // Pinned so that whoever adds the token has to come here and read why the order matters: the
+  // share payload does not carry `config`, so a shareable row on its own delivers an entry that
+  // arrives EMPTY. See todo/PLAN_config_sharing.md.
+  const config = details({ kind: 'config', isConfig: true, configFormat: 'json' });
+
+  assert.equal(entityContextValue(config, false).includes(':shareable'), false);
+  assert.ok(entityContextValue(config, false).includes(':config'));
+  // The neighbours it is being compared against, so a change to the RULE fails here too.
+  assert.ok(entityContextValue(details({ kind: 'script', isScript: true }), false).includes(':shareable'));
+  assert.ok(entityContextValue(details(), true).includes(':shareable'), 'a stored password is shareable');
 });

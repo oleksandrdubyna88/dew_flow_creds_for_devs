@@ -39,7 +39,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   of the same name is still tracked in your repository, saving says so: storing it here does not
   remove it from git, and believing otherwise is the failure this feature exists to prevent.
 
-  Not yet: sharing an entry does not carry its contents. Use *Write config file here…* meanwhile.
+  Not yet: a config cannot be shared with a colleague — the menu item is absent, because sharing keys
+  off a host or a stored password and a config has neither. Use *Write config file here…* meanwhile.
 
 ### Fixed
 

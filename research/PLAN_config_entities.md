@@ -5,8 +5,8 @@
 > package this plan called for, a per-language snippet panel in the viewer. The deviations are at
 > the bottom and the largest of them is that one.
 >
-> Open tail extracted: [PLAN_config_sharing.md](../todo/PLAN_config_sharing.md) — sharing does not
-> carry the body yet.
+> Open tail extracted: [PLAN_config_sharing.md](../todo/PLAN_config_sharing.md) — a config cannot be
+> shared at all: `isShareable` never gives it the token, so the menu item does not appear.
 >
 > Related docs: [module_extension.md](module_extension.md), [module_server.md](module_server.md),
 > [architecture.md](architecture.md).
