@@ -67,3 +67,49 @@ test('unparseable content is refused, never treated as a match', () => {
   assert.equal(recoveredVaultIsTheTarget('', 'departed@corp.com'), false);
   assert.equal(recoveredVaultIsTheTarget(crypto.randomBytes(64).toString('hex'), 'x@y.z'), false);
 });
+
+// ---------------------------------------------------------------- the session key
+
+import { newSessionKeys, sessionKeyFingerprint } from '../breakGlass';
+
+/**
+ * The session public key is the one piece of key-agreement material an officer takes from the
+ * server on trust. If it can be substituted, a compromised relay harvests a quorum's shares and
+ * reconstructs the organisation's key permanently — which opens every vault on that server.
+ * Nothing else in the design defends this: the org key is pinned, the session key was not.
+ */
+
+test('a session key has a fingerprint short enough to read aloud and long enough to matter', () => {
+  const keys = newSessionKeys();
+  const printed = sessionKeyFingerprint(keys.publicKey.toString('base64'));
+
+  assert.match(printed, /^[0-9A-F]{4}( [0-9A-F]{4}){3}$/, 'four groups of four hex');
+});
+
+test('two different session keys print differently, and the same key prints the same', () => {
+  const a = newSessionKeys();
+  const b = newSessionKeys();
+
+  assert.notEqual(
+    sessionKeyFingerprint(a.publicKey.toString('base64')),
+    sessionKeyFingerprint(b.publicKey.toString('base64')),
+  );
+  assert.equal(
+    sessionKeyFingerprint(a.publicKey.toString('base64')),
+    sessionKeyFingerprint(a.publicKey.toString('base64')),
+    'the initiator and the contributor must compute the same string',
+  );
+});
+
+test('the fingerprint is of the KEY, so a substituted one cannot keep the same print', () => {
+  // The whole point: the initiator reads their fingerprint aloud with the session id, and a
+  // contributing officer compares it against what the server served them. A relay that swapped
+  // the key would have to find a second X25519 public key with the same SHA-256 prefix.
+  const honest = newSessionKeys();
+  const attacker = newSessionKeys();
+
+  assert.notEqual(
+    sessionKeyFingerprint(honest.publicKey.toString('base64')),
+    sessionKeyFingerprint(attacker.publicKey.toString('base64')),
+  );
+});

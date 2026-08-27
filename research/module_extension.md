@@ -957,6 +957,18 @@ Three properties of the client half worth carrying in the head:
   combination and not the recovery. Filtering also bounds the search: `combinations` materialises
   every C(n, t) subset before the first is tried, and n was whatever the server chose to post.
 
+**The session key is checked by a spoken code, because nothing else can check it.** An officer
+takes the break-glass session's public key from the server on trust — it is not signed, and there
+is nothing already shared between the initiator and the contributors to sign it with. A relay that
+substitutes its own key harvests every share the quorum posts, each sealed to a key the attacker
+holds, and reconstructs the organisation's private key permanently; the real initiator sees only
+`noValidQuorum`, which reads as a glitch and invites a retry. So the initiator's window prints a
+short fingerprint beside the session id and tells them to read it aloud, and the contributor's
+consent modal shows the fingerprint of the key the server actually served them, with the
+instruction to stop if the two differ. It is deliberately shorter than the organisation key's
+print: this one is read over a phone call during an incident, once, and a fingerprint people skip
+is worth less than a shorter one they finish.
+
 **Both halves of the feature are wired in `activate()`, and a test scans for it.** Corporate
 recovery shipped with two controls that existed in source and were never called: `pinOrgRecovery`
 had no caller, so the TOFU pin was never written and `judgeOrgRecovery` answered `firstContact`

@@ -45,6 +45,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A security review of corporate recovery, and the seven things it found.** The cryptography
+  itself came through clean — the field arithmetic was checked exhaustively, the secret sharing's
+  secrecy measured, no key or nonce reuse, no weak randomness. Every defect was in the wiring
+  around it, and two mattered enough to say plainly: the feature's central defence (pinning the
+  organisation's recovery key, so a substituted one is refused rather than trusted) existed in the
+  source and was never called, and the break-glass session key was taken from the server on trust,
+  so a compromised server could have collected a quorum's shares and rebuilt the organisation's
+  key. Both are closed, along with five others: a key could be published for a ceremony that never
+  happened, a recovery never checked the vault it opened belonged to the person it authorised, an
+  accepted share took its shape from the server's plaintext instead of the sealed copy, one
+  malformed contribution could abort a recovery that had a real quorum in it, and reconstructed key
+  material survived every failure path instead of being wiped.
+
 - **Removing your last security key retired the printed recovery code without saying so.** The
   removal re-keys the vault — that is the whole point, so the removed key stops opening future
   copies — and a re-key mints a fresh master key. A registered recovery code cannot come along:

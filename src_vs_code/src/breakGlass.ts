@@ -8,6 +8,7 @@ import {
 } from './orgEscrowCrypto';
 import { MAX_SHARES, ShamirShare, combineShares, verifyRecombined } from './shamir';
 import { readBackupAccount } from './cryptoUtils';
+import { keyFingerprint } from './shareSignature';
 
 /**
  * The arithmetic of a break-glass recovery, with no server and no `vscode` in sight.
@@ -24,6 +25,25 @@ export interface RecoverySessionKeys {
   publicKey: Buffer;
   /** Never leaves this process. Zeroed when the recovery ends. */
   privateKey: Buffer;
+}
+
+/**
+ * The fingerprint of a session's public key, for a human to read aloud with the session id.
+ *
+ * <p><b>This is the only defence the session key has.</b> An officer takes it from the server on
+ * trust: it is not signed, and there is nothing already shared between the initiator and the
+ * contributors to sign it with. A relay that substitutes its own key harvests every share the
+ * quorum posts — each one sealed to a key the attacker holds — and reconstructs the
+ * organisation's private key permanently, which opens every vault on that server. The real
+ * initiator would see only `noValidQuorum`, which reads as a glitch and invites a retry.</p>
+ *
+ * <p>Shorter than the organisation key's print on purpose: this one is read over a phone call
+ * during an emergency, once, and a fingerprint people skip is worth less than a shorter one they
+ * finish. Sixteen hex characters is not collision-resistance, it is enough that a substituted
+ * key cannot keep the same print without a second-preimage search nobody is doing mid-incident.</p>
+ */
+export function sessionKeyFingerprint(sessionPublicKeyBase64: string): string {
+  return keyFingerprint(sessionPublicKeyBase64).split(' ').slice(0, 4).join(' ');
 }
 
 export function newSessionKeys(): RecoverySessionKeys {

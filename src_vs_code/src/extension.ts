@@ -112,6 +112,7 @@ import {
   keyMatchesPublished,
   newSessionKeys,
   recoveredVaultIsTheTarget,
+  sessionKeyFingerprint,
   recoverOrgKey,
   sealShareToSession,
   wipe as wipeRecovered,
@@ -3466,9 +3467,14 @@ ${detail}
         keys.publicKey.toString('base64'),
       );
       breakGlassSessions.set(session.sessionId, keys);
-      await copySecret(vscode.env.clipboard, session.sessionId);
+      // Id AND fingerprint. The id routes the other officers to this session; the fingerprint is
+      // the only thing that tells them the key they are handed is the one this window minted.
+      const print = sessionKeyFingerprint(keys.publicKey.toString('base64'));
+      await copySecret(vscode.env.clipboard, `${session.sessionId}  ${print}`);
       void vscode.window.showInformationMessage(
-        `Recovery started. Session id copied — send it to ${session.threshold - 1} other officer(s), who run "Contribute to a Recovery…". Then run "Finish a Recovery…".`,
+        `Recovery started. Session id and check-code copied — send them to ${session.threshold - 1} other officer(s), `
+          + `who run "Contribute to a Recovery…". READ THE CHECK-CODE ALOUD (${print}): if their screen shows a `
+          + 'different one, the server substituted the key and their share would go to whoever did it.',
       );
     } catch (error) {
       void vscode.window.showErrorMessage(`Could not start the recovery: ${describeError(error)}`);
@@ -3506,12 +3512,19 @@ ${detail}
     sessionId: string,
   ): Promise<void> {
     const session = await client.readSession(account, sessionId);
+    // The fingerprint of the key this share will actually be sealed to — computed from what the
+    // server served, so a substitution shows up here or nowhere.
+    const print = sessionKeyFingerprint(session.sessionPublicKey);
     const agreed = await vscode.window.showWarningMessage(
-      `${session.initiatorEmail} is asking to open ${session.targetEmail}'s vault. Contributing your share helps them do it, and your name is recorded against it. Continue?`,
+      `${session.initiatorEmail} is asking to open ${session.targetEmail}'s vault. Contributing your share `
+        + 'helps them do it, and your name is recorded against it.\n\n'
+        + `Check-code: ${print}\n\n`
+        + 'This must match what they read to you. If it does not, STOP: the server has substituted '
+        + 'the key and your share would go to whoever did it, not to them.',
       { modal: true },
-      'Contribute my share',
+      'The code matches — contribute my share',
     );
-    if (agreed !== 'Contribute my share') {
+    if (agreed !== 'The code matches — contribute my share') {
       return;
     }
     const wrap = await storage.getOrgEscrowShare(account.accountId);
