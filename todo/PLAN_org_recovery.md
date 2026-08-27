@@ -146,9 +146,17 @@ signatures.
 2. ~~**R2**: `vaultRekey.ts` extraction~~ — **shipped 2026-08-27** (`199c12f`), brought forward
    because the recovery-code work needed it: `rekeyUnderPin` is the one place a master key
    rotates, both former branches repointed, and it reports a recovery code it could not carry.
-3. **Extension pure crypto** — **`shamir.ts` and `orgEscrowCrypto.ts` shipped 2026-08-27.**
-   Still open in this step: the `'org-escrow'` `KeyWrap` kind and the forward-compat wrap
-   filtering. What the two modules landed with, worth keeping:
+3. ~~**Extension pure crypto**~~ — **step complete 2026-08-27**: `shamir.ts`,
+   `orgEscrowCrypto.ts`, the `'org-escrow'` `KeyWrap` kind, and the forward-compat wrap
+   filtering. What it landed with, worth keeping:
+   - **Forward compat was a live defect, not a precaution.** Red first: registering a security
+     key on a vault holding an unknown wrap kind deleted that wrap and re-signed the envelope —
+     `actual: undefined`. `KeyWrap.kind` is now a plain `string`, the guard is structural, and
+     routing goes through `isKnownWrapKind`. A wrap this build cannot USE is one it must CARRY;
+     a malformed one is still refused.
+   - The escrow wrap is the only kind nobody can open when it is written, so it must never be
+     an unlock option — `UnlockFacts` has no field for it, asserted **structurally** by a test,
+     because the failure mode is a later contributor helpfully adding one.
    - Shamir is **not authenticated** by construction, and too few shares return a well-formed
      WRONG secret rather than an error — pinned by test. `mintShareSet`/`verifyRecombined` carry
      an HKDF-HMAC tag bound to the roster shape; that tag, never the server's count, is the gate.

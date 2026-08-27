@@ -867,6 +867,7 @@ pin-only v3 file (a `pin`-wrap with no key-wrap → `silentPin` → `unwrapWithP
 | Cipher | AES-256-GCM, 128-bit tag |
 | WebAuthn wrap | HKDF over the PRF secret, `info="cred-ssh-manager/webauthn"` |
 | Recovery-code wrap | HKDF over the printed code's 30-symbol core, `info="cred-ssh-manager/recovery-code"` |
+| Org-escrow wrap | X25519-ECDH to the org recovery public key → HKDF, `info="creds-for-devs/org-escrow-wrap"` |
 | Envelope MAC | HMAC-SHA256, `info="cred-ssh-manager/envelope-mac"`, compared with `timingSafeEqual` |
 
 **The third wrap kind — the printed recovery code** (`recoveryCode.ts`, roadmap D9). A vault has two
@@ -888,6 +889,38 @@ otherwise — and that upgrade **requires the PIN**, so a vault openable by a pi
 a shape the code cannot create. `envelopeWithoutRecoveryCode` drops the slot and re-signs; it does
 not re-key, and the caller says out loud that an older copy stays openable by that printout — the
 same honesty `removeSecurityKey` practises.
+
+**A wrap this build cannot USE is still a wrap it must CARRY.** `isKeyWrap` was an allowlist of
+kinds, and *every* site that rewrites the wrap array filters through it — so the day a later build
+introduced a kind, an older build doing anything at all to its own wraps would delete somebody's
+opener and re-sign the envelope so the file looked healthy. `KeyWrap.kind` is therefore a plain
+`string`, the guard is **structural**, and routing goes through `isKnownWrapKind` or an explicit
+comparison, never through the type. Carrying the unknown is not carrying the broken: a value
+missing the sealed-blob fields, or with an empty kind, is still rejected — that is a damaged file
+rather than a newer one. Pinned end-to-end: registering a security key on a vault holding a
+`quantum-yubikey-2031` wrap must return it byte for byte.
+
+**The fourth kind — `org-escrow`** (`orgEscrowCrypto.ts`, `shamir.ts`;
+[PLAN_org_recovery.md](../todo/PLAN_org_recovery.md)). The master key sealed to an organisation's
+recovery *public* key: X25519 + HKDF + AES-256-GCM, a fresh ephemeral keypair per seal, at most one
+slot, carrying the fingerprint of the org key generation it was sealed to so a client can tell
+"current" from "stale" without holding either half.
+
+It is the only wrap **nobody can open at the moment it is written** — the private half exists only
+as Shamir shares in the officers' own vaults — and therefore the only one that must never become an
+unlock option. `UnlockFacts` has no field for it, asserted structurally by a test, because the
+failure mode is somebody helpfully adding one: a picker offering it would advertise a way in that
+needs two colleagues and a ceremony.
+
+Two properties of the pure halves worth carrying in the head. The **raw-key route is DER, not JWK**
+— measured before the module was written: exporting works either way, but importing a private JWK
+is refused (`Invalid JWK OKP key`) without the public member, which a bare share holder does not
+have. And **classic Shamir is not authenticated**: too few shares return a well-formed *wrong*
+secret rather than an error, so `mintShareSet`/`verifyRecombined` carry an HKDF-HMAC tag bound to
+the roster shape, and that tag — never a server-side count — is what separates a real quorum from a
+bad share. The field multiply is branchless (a table indexed by secret-derived data is what a
+cache-timing attack reads) and checked against an independent log/antilog implementation over all
+65 536 pairs.
 
 **Rotation lives in one place — `vaultRekey.rekeyUnderPin`.** It is the only operation that
 actually *revokes* an opener: a fresh master, the payload re-encrypted, a new wrap set.

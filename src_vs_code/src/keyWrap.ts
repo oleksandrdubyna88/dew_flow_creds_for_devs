@@ -9,6 +9,7 @@ import {
   sealBlob,
   sealBlobAsync,
 } from './cryptoUtils';
+import { ESCROW_WRAP_INFO, openWithPrivateKey, sealToPublicKey } from './orgEscrowCrypto';
 
 /**
  * Multi-unlock key wrapping.
@@ -21,6 +22,9 @@ import {
  *                  security key) — one wrap per registered YubiKey
  *   - `recovery` : AES-256-GCM(masterKey) under HKDF(printed recovery code) —
  *                  at most one, replaced wholesale on regenerate
+ *   - `org-escrow`: AES-256-GCM(masterKey) under X25519-ECDH to the organisation's
+ *                  recovery public key — at most one, and the ONLY kind nobody can
+ *                  open at the moment it is written
  *
  * Any single wrap yields the master key, so several YubiKeys and the PIN all
  * open the same vault, and adding/removing a key never re-encrypts the data.
@@ -29,19 +33,51 @@ import {
 
 export const MASTER_KEY_BYTES = 32;
 
-export type KeyWrapKind = 'pin' | 'webauthn' | 'recovery';
+/** The kinds this build can WRITE. Reading is deliberately not limited to these — see below. */
+export type KeyWrapKind = 'pin' | 'webauthn' | 'recovery' | 'org-escrow';
+
+const KNOWN_KINDS: readonly string[] = ['pin', 'webauthn', 'recovery', 'org-escrow'];
+
+export function isKnownWrapKind(kind: string): kind is KeyWrapKind {
+  return KNOWN_KINDS.includes(kind);
+}
 
 export interface KeyWrap extends SealedBlob {
-  kind: KeyWrapKind;
+  /**
+   * The unlock method this wrap belongs to — a plain `string`, not the union above, and that
+   * is the forward-compatibility rule rather than sloppiness.
+   *
+   * <p>A vault is written by whichever build touched it last, and the kinds only ever grow.
+   * Typing this as the union would push every reader into treating an unrecognised kind as
+   * malformed — which is exactly what {@link isKeyWrap} used to do, and every site that
+   * rewrites the array filters through it. The result was a build silently DELETING an opener
+   * it merely did not understand, then re-signing the envelope so the file looked healthy.</p>
+   *
+   * <p>A wrap this build cannot USE is still a wrap it must CARRY. Route on the kind with
+   * {@link isKnownWrapKind} or an explicit comparison; never on the type.</p>
+   */
+  kind: string;
   /** Stable id: 'pin' for the PIN wrap, the credential id for a key. */
   id: string;
   /** Human label shown in the UI (e.g. "YubiKey 5C — work"). */
   label?: string;
   /** WebAuthn only: the PRF input this credential was wrapped with. */
   prfSalt?: string;
+  /** Org-escrow only: the per-seal ephemeral X25519 public key, base64. */
+  ephemeralPublicKey?: string;
+  /** Org-escrow only: which generation of the org recovery key this wrap is sealed to. */
+  orgPublicKeyFingerprint?: string;
   createdAt: number;
 }
 
+/**
+ * Whether this is a well-formed wrap — **structurally**, whatever its kind claims to be.
+ *
+ * <p>Not an allowlist of kinds: see the note on {@link KeyWrap.kind}. Carrying the unknown is
+ * not the same as carrying the broken, though — a value missing the sealed-blob fields, or
+ * with an empty kind, is still rejected, because that is a damaged file rather than a newer
+ * one.</p>
+ */
 // eslint-disable-next-line complexity
 export function isKeyWrap(value: unknown): value is KeyWrap {
   if (typeof value !== 'object' || value === null) {
@@ -49,7 +85,8 @@ export function isKeyWrap(value: unknown): value is KeyWrap {
   }
   const v = value as Record<string, unknown>;
   return (
-    (v.kind === 'pin' || v.kind === 'webauthn' || v.kind === 'recovery') &&
+    typeof v.kind === 'string' &&
+    v.kind.length > 0 &&
     typeof v.id === 'string' &&
     typeof v.salt === 'string' &&
     typeof v.iv === 'string' &&
@@ -315,6 +352,73 @@ export function webauthnWraps(wraps: readonly KeyWrap[]): KeyWrap[] {
 /** The vault's one recovery-code wrap, when a code has been set up. */
 export function recoveryWrap(wraps: readonly KeyWrap[]): KeyWrap | undefined {
   return wraps.find((w) => w.kind === 'recovery');
+}
+
+/** The vault's one corporate-escrow wrap, when the server has recovery configured. */
+export function orgEscrowWrap(wraps: readonly KeyWrap[]): KeyWrap | undefined {
+  return wraps.find((w) => w.kind === 'org-escrow');
+}
+
+/**
+ * Wrap the master key to the organisation's recovery PUBLIC key.
+ *
+ * <p>The one wrap nobody can open at the moment it is written — the private half exists only
+ * as Shamir shares in the officers' own vaults. It is therefore never an unlock OPTION:
+ * `unlockPlan` must not learn about it, or a picker would offer a way in that needs two other
+ * people and a ceremony.</p>
+ *
+ * <p>The fingerprint rides along so a client can tell "sealed to the key currently published"
+ * from "sealed to the one before it" without holding either — which is what makes refreshing
+ * the wrap after an org key rotation a comparison rather than a guess.</p>
+ */
+export function wrapWithOrgEscrow(
+  masterKey: Buffer,
+  orgPublicKey: Buffer,
+  orgPublicKeyFingerprint: string,
+  createdAt: number,
+): KeyWrap {
+  const sealed = sealToPublicKey(masterKey, orgPublicKey, ESCROW_WRAP_INFO);
+  return {
+    kind: 'org-escrow',
+    id: 'org-escrow',
+    createdAt,
+    orgPublicKeyFingerprint,
+    ephemeralPublicKey: sealed.ephemeralPublicKey,
+    salt: sealed.salt,
+    iv: sealed.iv,
+    tag: sealed.tag,
+    data: sealed.data,
+  };
+}
+
+/**
+ * Recover the master key from the escrow wrap — the break-glass step, and the only caller is
+ * an officer's client holding a private key just reconstructed from a quorum of shares.
+ */
+function openedEscrow(wrap: KeyWrap, ephemeralPublicKey: string, orgPrivateKey: Buffer): Buffer {
+  const master = openWithPrivateKey({ ...wrap, ephemeralPublicKey }, orgPrivateKey, ESCROW_WRAP_INFO);
+  if (master.length !== MASTER_KEY_BYTES) {
+    throw new BackupError('corrupted', 'Escrow wrap holds a malformed master key.');
+  }
+  return master;
+}
+
+export function unwrapWithOrgEscrow(wrap: KeyWrap, orgPrivateKey: Buffer): Buffer {
+  const ephemeral = wrap.ephemeralPublicKey;
+  if (ephemeral === undefined) {
+    throw new BackupError('corrupted', 'Escrow wrap carries no ephemeral key.');
+  }
+  try {
+    return openedEscrow(wrap, ephemeral, orgPrivateKey);
+  } catch (error) {
+    if (error instanceof BackupError) {
+      throw error;
+    }
+    throw new BackupError(
+      'wrong-password',
+      'This organisation key does not open the vault (a different key, or the wrap was refreshed since).',
+    );
+  }
 }
 
 /**

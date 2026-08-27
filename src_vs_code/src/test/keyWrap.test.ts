@@ -15,9 +15,13 @@ import {
 import {
   hasVaultKeyedWrap,
   isKeyWrap,
+  isKnownWrapKind,
   newMasterKey,
   newPrfSalt,
+  orgEscrowWrap,
   recoveryWrap,
+  unwrapWithOrgEscrow,
+  wrapWithOrgEscrow,
   removeWrap,
   unwrapWithPin,
   unwrapWithPrf,
@@ -32,6 +36,8 @@ import {
   wrapPinVault,
 } from '../keyWrap';
 import { generateRecoveryCode } from '../recoveryCode';
+import { generateOrgRecoveryKeypair } from '../orgEscrowCrypto';
+import { keyFingerprint } from '../shareSignature';
 
 const NOW = 1_800_000_000_000;
 const ACCOUNT = 'acct-1';
@@ -165,6 +171,92 @@ test('upsertWrap keeps exactly one recovery slot — regenerating replaces it', 
   const wrap = recoveryWrap(wraps)!;
   assert.deepEqual(unwrapWithRecoveryCode(wrap, second.secret), master);
   assert.throws(() => unwrapWithRecoveryCode(wrap, first.secret), BackupError);
+});
+
+test('an escrow wrap opens with the org private key, and with nothing else', () => {
+  const master = newMasterKey();
+  const org = generateOrgRecoveryKeypair();
+  const other = generateOrgRecoveryKeypair();
+  const fingerprint = keyFingerprint(org.publicKey.toString('base64'));
+
+  const wrap = wrapWithOrgEscrow(master, org.publicKey, fingerprint, NOW);
+
+  assert.ok(isKeyWrap(wrap));
+  assert.equal(wrap.id, 'org-escrow');
+  assert.equal(wrap.orgPublicKeyFingerprint, fingerprint);
+  assert.deepEqual(unwrapWithOrgEscrow(wrap, org.privateKey), master);
+  assert.throws(() => unwrapWithOrgEscrow(wrap, other.privateKey), BackupError);
+  // A wrap that lost its ephemeral key is corrupted, not "wrong key" — the two send a
+  // reader looking in completely different places.
+  assert.throws(
+    () => unwrapWithOrgEscrow({ ...wrap, ephemeralPublicKey: undefined }, org.privateKey),
+    /no ephemeral key/,
+  );
+});
+
+test('the escrow wrap sits beside the others and is never an unlock option', () => {
+  // It is the one wrap nobody can open at the moment it is written: the private half exists
+  // only as Shamir shares in other people's vaults. Offering it in a picker would advertise a
+  // way in that needs two colleagues and a ceremony.
+  const master = newMasterKey();
+  const org = generateOrgRecoveryKeypair();
+  const wraps = [
+    wrapWithPin(master, ACCOUNT, 'pin', NOW),
+    wrapWithPrf(master, 'k', newPrfSalt(), crypto.randomBytes(32), 'K', NOW),
+    wrapWithOrgEscrow(master, org.publicKey, 'fp', NOW),
+  ];
+
+  assert.equal(orgEscrowWrap(wraps)?.kind, 'org-escrow');
+  assert.equal(webauthnWraps(wraps).length, 1, 'not a security key');
+  assert.equal(recoveryWrap(wraps), undefined, 'not a recovery code');
+  // And every ordinary opener still reaches the same master.
+  const vault = encryptJsonWrapped(payload, master.toString('base64'), wraps, undefined, []);
+  assert.deepEqual(decryptJsonWithMasterKey(vault, unwrapWithPin(wraps[0], ACCOUNT, 'pin')), payload);
+  assert.deepEqual(decryptJsonWithMasterKey(vault, unwrapWithOrgEscrow(wraps[2], org.privateKey)), payload);
+});
+
+test('isKnownWrapKind names exactly the four this build writes', () => {
+  for (const kind of ['pin', 'webauthn', 'recovery', 'org-escrow']) {
+    assert.equal(isKnownWrapKind(kind), true, kind);
+  }
+  assert.equal(isKnownWrapKind('quantum-yubikey-2031'), false);
+  assert.equal(isKnownWrapKind(''), false);
+});
+
+test('a wrap of a kind this build has never heard of survives, it is not filtered away', () => {
+  // The forward-compatibility trap, and it is not hypothetical: `isKeyWrap` is an allowlist,
+  // and EVERY site that rewrites the wrap array runs `readVaultWraps(raw).filter(isKeyWrap)`
+  // first. So the day a later build introduces a kind — the corporate escrow wrap is the next
+  // one — an older build doing anything at all to its own wraps would silently delete
+  // somebody's opener and re-sign the file as if nothing had happened.
+  //
+  // A wrap this build cannot USE is still a wrap it must CARRY.
+  const master = newMasterKey();
+  const future = {
+    kind: 'quantum-yubikey-2031',
+    id: 'q1',
+    createdAt: NOW,
+    salt: crypto.randomBytes(16).toString('base64'),
+    iv: crypto.randomBytes(12).toString('base64'),
+    tag: crypto.randomBytes(16).toString('base64'),
+    data: crypto.randomBytes(48).toString('base64'),
+  };
+
+  assert.ok(isKeyWrap(future), 'a well-formed wrap is a wrap, whatever its kind says');
+
+  // …and the helpers that route by kind still ignore it, which is the other half: carrying it
+  // must not mean offering it as a way in.
+  const wraps = [wrapWithPin(master, ACCOUNT, 'pin', NOW), future as never];
+  assert.equal(webauthnWraps(wraps).length, 0);
+  assert.equal(recoveryWrap(wraps), undefined);
+  assert.equal(hasVaultKeyedWrap(wraps), true, 'unknown means "not the PIN", so it is vault-keyed');
+});
+
+test('a malformed wrap is still rejected — carrying the unknown is not carrying the broken', () => {
+  assert.equal(isKeyWrap({ kind: 'x', id: 'y' }), false, 'no sealed-blob fields');
+  assert.equal(isKeyWrap({ kind: '', id: 'y', salt: 'a', iv: 'b', tag: 'c', data: 'd' }), false);
+  assert.equal(isKeyWrap({ id: 'y', salt: 'a', iv: 'b', tag: 'c', data: 'd' }), false, 'no kind');
+  assert.equal(isKeyWrap(null), false);
 });
 
 test('hasVaultKeyedWrap: any non-pin wrap counts, a pin alone does not', () => {

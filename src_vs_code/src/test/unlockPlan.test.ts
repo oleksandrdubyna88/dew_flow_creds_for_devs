@@ -58,6 +58,27 @@ test('no way in at all is refused, not an invented prompt', () => {
   );
 });
 
+test('the plan has no fact for corporate escrow, and must never grow one', () => {
+  // The escrow wrap is the one opener nobody can present: its private half exists only as
+  // Shamir shares in other people's vaults, so a picker offering it would advertise a way in
+  // that needs two colleagues and a ceremony. `UnlockFacts` therefore has no field for it —
+  // asserted structurally, because the failure mode is somebody helpfully adding one.
+  const facts = Object.keys(base).sort();
+  assert.deepEqual(facts, [
+    'hasKeyWrap',
+    'hasPinWrap',
+    'hasRecoveryWrap',
+    'hasStoredPin',
+    'interactive',
+    'needsGesture',
+  ]);
+  assert.equal(
+    facts.some((f) => /escrow|org/i.test(f)),
+    false,
+    'corporate escrow is not an unlock method and must not become one',
+  );
+});
+
 test('a printed code is named only when nothing ordinary is left', () => {
   // The degenerate vault: no PIN wrap, no key wrap, a recovery code registered. Saying
   // "refused" there would be true and useless — the factor for exactly this day exists.

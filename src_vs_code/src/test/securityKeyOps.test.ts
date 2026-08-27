@@ -308,6 +308,38 @@ test('a re-key with no recovery code registered does not claim one was retired',
   assert.equal(next.recoveryCodeRetired, false, 'nothing was retired, so nothing is claimed');
 });
 
+test('adding a key carries an unknown wrap kind through untouched', async () => {
+  // The end-to-end shape of the forward-compat rule: a vault written by a LATER build holds a
+  // wrap this one cannot use. Registering a security key here must leave it exactly as found —
+  // same bytes, same id — because deleting it would revoke a factor its owner still relies on,
+  // and the re-signed envelope would look perfectly healthy afterwards.
+  const master = newMasterKey();
+  const raw = await wrappedVault(master);
+  const envelope = JSON.parse(raw) as { wraps: unknown[] };
+  const future = {
+    kind: 'quantum-yubikey-2031',
+    id: 'q1',
+    createdAt: NOW,
+    salt: crypto.randomBytes(16).toString('base64'),
+    iv: crypto.randomBytes(12).toString('base64'),
+    tag: crypto.randomBytes(16).toString('base64'),
+    data: crypto.randomBytes(48).toString('base64'),
+  };
+  envelope.wraps.push(future);
+  const withFuture = JSON.stringify(envelope);
+
+  const next = await envelopeWithAddedKey(
+    argsFor(withFuture, wrappedKey(withFuture, master)),
+    prf('cred-a'),
+    'K',
+  );
+
+  assert.ok(!isSecurityKeyRefusal(next));
+  const carried = vaultKeyWraps(next.content).find((w) => w.id === 'q1');
+  assert.deepEqual(carried, future, 'the unknown wrap must come through byte for byte');
+  assert.equal(webauthnWraps(vaultKeyWraps(next.content)).length, 1, 'and the new key is there');
+});
+
 test('removalWouldRekey: last key + PIN → yes; other keys left or no PIN → no', async () => {
   const master = newMasterKey();
   let raw = await wrappedVault(master);
