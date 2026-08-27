@@ -68,6 +68,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **The listing is complete again — and this time a test keeps it that way.** The README had
+  drifted three release lines behind the extension: zero mentions of MCP or config entities, a
+  command section written when there were 47 commands (there are 90+), 13 of 23 settings. New
+  sections cover config file entities, agents over MCP, the CLI/bridge/WSL commands, recovery
+  (the printed code and the corporate break-glass), the capability filters, the Trash and the
+  scans; the settings tables gained their eight missing rows. And because this exact drift was
+  fixed once before (2026-08-24) and recurred, `listingCoverage.test.ts` now fails the build on
+  the commit that ships a command or setting past the README — naming exactly what is missing.
+
 - **Agent access gets its own column when the screen affords one.** On a wide window (1500px+)
   the edit form is three columns — Main, Additional, Agent access; at two columns the MCP block
   sits under Additional exactly as before; in one column the order is Main, then Additional,

@@ -60,7 +60,15 @@ machines; add the optional self-hosted server when a team needs to share.
 | **Auto-lock** | Locks after an idle window measured in *your* actions, not mouse movement and not background sync |
 | **Masked agent output** | A secret this extension supplied to run a command cannot come back out in that command's output: the broker replaces it with `<CREDS_MASKED:NAME>` on the way out. Exact values only — never a guess about what looks like a token, because a wrong guess corrupts the diff or the JSON the agent then acts on. It covers commands run **through** CredsForDevs, and says so rather than implying it guards every channel. Three limits stated plainly, because a security feature that overstates its reach is worse than one you understand: it does **not** watch the clipboard continuously (VS Code exposes no clipboard-change event — there are two on-demand commands instead, *Check Clipboard for Secrets* and *Scan File for Vault Secrets*), it does **not** see a file the agent opened by itself, and it cannot help against Windows **Clipboard History**, which captures at copy time before anything of ours runs |
 | **Filter the tree** | The first row of the sidebar is a search box: type and the tree narrows live, folders holding a hit open themselves, accounts with nothing matching drop out, and the row says how many entries survived. It matches what a row already shows you — name, user, host, port, command — and **never a secret**: a filter over passwords would confirm one a keystroke at a time to anyone at an unlocked window |
-| **Several accounts** | Microsoft and Google profiles side by side, each with its own tree, its own vault location, and its own team |
+| **Config files as entries** | `appsettings.Development.json` or a `.env` lives in the vault instead of being passed between developers by hand: the body is a secret, validation saves anyway and marks the row until it parses, a Fields tab edits one value without touching your formatting, and *Write Config File Here…* materialises it to disk — refusing a path git tracks. *Enable Code Access…* mints a long-lived key (shown once; the vault keeps only its hash) and the viewer answers "how do I read this from code?" in twenty languages, naming the exact file the snippet goes into |
+| **Agents over MCP** | `creds-mcp` — a separate binary an MCP client starts — shows an agent exactly what you opened to it: six switches per entry on a ladder, all off by default, inherited from the folder. An agent can list, use, **rotate** (through a `{{creds:new}}` placeholder, so no value ever enters its context), create into open folders, delete to the Trash only — and ask *how code reads a config* (`creds_config_snippet`, the same twenty-language catalog the viewer renders). Every action still raises the consent modal; **MCP logs** is the journal |
+| **Capability filters** | The tree filter understands what an entry CAN DO, not just what is written on it: `has:totp`, `has:cli`, `has:env`, `has:code-access`, `has:deps`, `has:attachment`, `has:image`, `is:ephemeral`, and `mcp:visible` / `usable` / `rotate` / `create` / `delete-own` / `delete-any` — combinable with free text (`aws has:totp mcp:usable`). Predicates read metadata only; an unrecognised one is named on the search row rather than silently matched as text |
+| **A missing tool becomes an offer** | Connect over SSH on a machine with no ssh client, or start a VPN with no WireGuard, and instead of a dead terminal you get a modal naming what is missing and — on Yes — a visible terminal running the platform's own install recipe |
+| **Remote Bridge** | On a Remote-SSH host the local window is unreachable by definition; *Open Remote Bridge…* holds an `ssh -R` tunnel so `creds` on the host reaches the window that holds the vault. *Install `creds` on the Host…* puts the binary there from the entity's own context menu |
+| **Inside WSL** | `creds` hands calls to the Windows binary through interop — nothing new listens anywhere. *Set Up the WSL Agent Relay* serves the SSH agent on a unix socket inside the distribution, so `ssh` and `git` in WSL can use vault keys with a confirmation dialog per signature |
+| **Text zoom** | ± buttons on every CredsForDevs page scale the text up to five steps either way; the offset is shown (`+3`), stored in a synced setting, and every open page follows it at once |
+| **Diagnostics you can attach** | *Show Diagnostics* opens the one output channel and names the per-run log file on disk — sync, backup, transport and unlock failures land there, and no secret can, by construction |
+| **Several accounts** | Microsoft and Google profiles side by side, each with its own tree, its own vault location, and its own team — separated by a blank row, each account row counting `entries / in the Trash / shared` |
 
 Screenshots: see the tree, the entity form and the share flow on the
 [repository page](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs).
@@ -415,6 +423,28 @@ next month" problem, one size larger.
   materialized SSH keys use, and purged on both activate and deactivate. Nothing of it
   outlives the session.
 
+## Config file entities
+
+A `config` entry holds a whole configuration file — the `appsettings.Development.json` that must
+never reach git and was being passed between developers by hand. The body is a secret like a
+password: never in plain metadata, never in a share's label, never handed to an agent.
+
+- **Raw and Fields.** The Raw tab is the file, highlighted as you type in its own format (JSON,
+  YAML, TOML, INI, .env). The Fields tab is a **view** over the same text: it splices one value's
+  span, so it structurally cannot lose your indentation or comments. A body that does not parse
+  is still saved — the row is marked until it does, because losing a paste is worse than holding
+  a draft.
+- ***Write Config File Here…*** materialises the body into the workspace, **refusing a path git
+  tracks** and asking about one it does not ignore. ***Show What Changed*** is a key-level diff
+  against the file on disk, so a colleague's edit is readable before it is taken.
+- ***Enable Code Access…*** mints a long-lived key for applications: shown **once**, copied to
+  the clipboard, and the vault keeps only a SHA-256 of it. The app reads the config through
+  `POST /v1/config/read` or `creds config <key>`; the key travels in `CREDSFORDEVS_KEY`. ***Revoke
+  Code Access…*** retires it. The viewer's *Read this from code* panel gives the exact snippet in
+  twenty languages — and names the file it goes into ("Program.cs, before builder.Build().").
+- **Sharing carries the document.** A shared config arrives with its body; the code-access key
+  deliberately does not travel — it is minted per vault, and the recipient mints their own.
+
 ## Export / Import externally
 
 *Share with…* is for people on your team — it needs them to have the extension, an
@@ -520,6 +550,28 @@ protocol has a field a secret could ride in.
 Honest about the boundary: an agent that can run commands on a host can do anything that host
 lets it do. What this removes is the plaintext credential, not the access — the access is the
 point.
+
+## Agents over MCP — `creds-mcp`
+
+*Share with Claude Code…* (above) opens ONE entry to one agent for one task. The MCP server is
+the standing version: **Install the MCP Server…** puts a separate `creds-mcp` binary on PATH and
+writes the client config; the extension itself keeps its zero runtime dependencies.
+
+- **Six switches per entry, all off by default** — visible / usable / may replace the secret /
+  may create / may delete what it created / may delete anything here — set in the entity form's
+  *Agent access* section or inherited from the folder. The tree marks an opened entry with a
+  pentagon whose edges light per switch. Nothing in the Trash answers, whatever its switches say.
+- **The switch is not consent.** It says an agent *may ask*; every action still raises the
+  modal with the real entry and the real command.
+- **Rotation without disclosure:** an agent writes `{{creds:new}}`, the extension generates the
+  value, and neither the old nor the new secret ever enters the agent's context.
+- **`creds_config_snippet`** answers "how does code read this config?" from the same catalog the
+  viewer renders — languages first, then the snippet, its target file, and the `CREDSFORDEVS_KEY`
+  environment variable. The listing's `codeAccessEnabled` tells the agent whether the key exists;
+  minting one is yours alone.
+- **MCP logs** (the `…` menu) is the journal: every ask, every refusal, and the two costs worth
+  counting — secrets that came FROM an agent, and requests we could not serve. **Show Entry by
+  id…** jumps from a journal line to the entry it names.
 
 ## Selecting several at once
 
@@ -681,6 +733,17 @@ A vault can be opened by **several security keys plus the PIN**, in the
   working. Credentials are registered against the RP id `localhost`, so the
   same physical key works on every machine.
 
+## Recovery — the printed code, and the corporate break-glass
+
+- ***Set Up Recovery Code…*** shows a 150-bit code **once**, with Print and deliberately no Copy;
+  ***Unlock Vault (Recovery Code)…*** opens the vault with it and offers a new PIN; ***Remove
+  Recovery Code…*** retires it.
+- ***Corporate Recovery…*** is the operator's panel on a self-hosted server: name the officers,
+  set the quorum. ***Accept Recovery Share…*** is each officer taking their share (per machine —
+  shares live in this machine's keychain); ***Recover a Colleague's Vault…*** starts the
+  break-glass, ***Contribute to a Recovery…*** is an officer's half, ***Finish a Recovery…***
+  re-keys the vault under a temporary PIN told to the target out of band.
+
 ## NAS backup & automatic multi-PC sync
 
 Everything travels as **one AES-256-GCM encrypted file per profile**
@@ -730,6 +793,19 @@ strings, tombstones) is ciphertext.
   rename; a file that fails to decrypt (wrong PIN / corrupted) is reported
   once and **never overwritten** — mismatched PINs pause sync, they cannot
   destroy data.
+
+### The `creds` CLI, bridges and WSL — the commands
+
+- ***Enable CLI Access…*** on an entry mints a **named grant**: `creds ssh prod-db` instead of a
+  pasted token. The entry's viewer lists its CLI aliases with the exact command ready to copy.
+- ***Install `creds` (terminal CLI)…*** installs the binary locally; ***Copy install command for
+  another machine...*** puts a one-line installer on the clipboard; ***Install `creds` on the
+  Host…*** installs it on a Remote-SSH host from the entity's own menu.
+- ***Open Remote Bridge…*** / ***Close Remote Bridge*** hold the `ssh -R` tunnel that lets the
+  host's `creds` reach this window; the menu item says which state it is in.
+- ***Set Up the WSL Agent Relay*** turns on the agent relay inside your distributions
+  (`wslAgentRelay`, `wslRelayCommand`, `wslRelayDistros` are its settings — which distros, and
+  what the relay runs).
 
 ### Per-machine setup (WSL example)
 
@@ -798,6 +874,26 @@ Two rules govern how they combine:
 | `accountBackupIntervals` | `{}` | Per-account schedule, in hours. **From the UI:** account right-click → *Set Backup Schedule…* (hourly / 6h / daily / weekly / off / custom) |
 | `backupRetainDays` | `30` | Delete snapshots older than this; `0` keeps them forever. The **newest is never deleted** whatever its age — a laptop closed for a year must not come back to an empty backup folder |
 
+### Agents, the CLI and WSL
+
+| Setting | Default | What it does |
+|---|---|---|
+| `agentGrantIdleMinutes` | `60` | A *Share with Claude Code* token dies after this long unused. `0` disables the idle timeout — the token still dies with the window |
+| `agentGrantMaxCalls` | `0` | The most calls one token may make before it expires; `0` is no cap. Useful for a one-off task: share, let the agent make its handful of calls, and know the token is spent |
+| `maskAgentOutput` | `true` | Replace every secret this extension supplied with `<CREDS_MASKED:NAME>` in what a brokered command prints, before an agent sees it |
+| `wslAgentRelay` | `false` | Serve the SSH agent on a unix socket inside WSL distributions, so `ssh` and `git` there use vault keys with a dialog per signature. **From the UI:** *Set Up the WSL Agent Relay* |
+| `wslRelayCommand` | *(auto)* | What the relay runs inside the distribution — override only if `creds` is not on the default path there |
+| `wslRelayDistros` | `[]` | Which distributions get the relay; empty means the default distribution |
+| `gitDeployKeys` | `{}` | Per-repository SSH key for the **git sync** transport: maps a repo URL to the entity whose key pushes it |
+
+### Everything else
+
+| Setting | Default | What it does |
+|---|---|---|
+| `uiScale` | `0` | Text size on every CredsForDevs page, in steps of 10% (−5…5). The ± buttons on each page write this same setting, and it syncs |
+| `secretClipboardTtlSeconds` | `45` | How long a copied secret stays on the clipboard before the extension clears it — if the clipboard still holds exactly what was copied |
+| `microsoftApiScope` | *(default scope)* | The OAuth scope requested for the vault server sign-in; set it when your server's app registration names its own |
+
 ### Locking
 
 | Setting | Default | What it does |
@@ -859,7 +955,27 @@ also on the right-click menu where it applies.
   Accept All Shared…
 - **Outside the team** — Export / Share Externally… · Import from External…
 - **Sync & backup** — Sync Now (NAS) · Backup to NAS · Import / Restore · Snapshot Vault Now
-  (the original spec's `extension.exportSecrets` / `extension.importSecrets` still work)
+  (the original spec's *Export Secrets (backup to NAS)* / *Import Secrets (restore backup)* —
+  `extension.exportSecrets` / `extension.importSecrets` — still work)
+- **Find and filter** — Filter Credentials… (with the `has:` / `mcp:` capability filters) ·
+  Clear Filter (reveals and briefly tints the row you had selected) · Show Entry by id… · Go to the Original Folder
+- **Config entries** — Write Config File Here… · Show What Changed · Enable Code Access… ·
+  Revoke Code Access…
+- **CLI, bridge and WSL** — Enable CLI Access… · Install `creds` (terminal CLI)… ·
+  Copy install command for another machine... · Install `creds` on the Host… · Open Remote Bridge… · Close
+  Remote Bridge · Set Up the WSL Agent Relay
+- **Agents (MCP)** — Install the MCP Server… · MCP logs
+- **Recovery** — Set Up Recovery Code… · Unlock Vault (Recovery Code)… · Remove Recovery Code… ·
+  Corporate Recovery… · Accept Recovery Share… · Recover a Colleague’s Vault… · Contribute to a
+  Recovery… · Finish a Recovery…
+- **Keys on disk** — Install SSH Key to System (~/.ssh) · Remove Installed Key… · Add to SSH Agent (confirm every use) · Remove from SSH Agent
+- **Scans** — Health Report (weak, reused, exposed) · Check Clipboard for Vault Secrets ·
+  Scan This File for Vault Secrets · Show Diagnostics
+- **Sharing, cont.** — Withdraw a Share You Sent…
+- **Databases, cont.** — Copy Connection String (no password)
+- **Secrets in a run** — Run with Secrets (creds:// references, output masked)
+- **The Trash** — Empty the Trash Now · Empty the Trash Automatically… (each account's own
+  retention, travelling with the vault)
 
 ## Security notes
 
