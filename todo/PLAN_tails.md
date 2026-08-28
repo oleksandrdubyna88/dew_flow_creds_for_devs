@@ -156,6 +156,8 @@ text is byte-identical to `validatePin`'s, so the two paths cannot drift.
 > fix is **viable**, and its cost — the re-registration migration — is now a scoped decision for the
 > owner rather than a guess. Chromium-only evidence: Edge and Chrome share the WebAuthn stack, Firefox
 > was not measured.
+>
+> **And then the owner said "делай": item 1 shipped in 0.81.0 the same day** — see the security-tail plan.
 
 **Symptom.** [PLAN_extension_security_tail.md](PLAN_extension_security_tail.md) item 1 proposes
 binding the loopback listener to `creds-for-devs.localhost` and using that as the WebAuthn RP ID,

@@ -50,6 +50,16 @@ same-day fixes.
 
 ## 1. WebAuthn RP ID is the bare `localhost` (MEDIUM)
 
+> **IMPLEMENTED 2026-08-28 (extension 0.81.0)** — after the owner's "делай" on the T2 measurement.
+> As planned: `KeyWrap.rpId` (absent = legacy `localhost`), the page under
+> `creds-for-devs.localhost`, `userVerification: 'required'` (already there since 0.79). Deviations:
+> the legacy wrap is removed **in the same envelope** the new wrap is written (`envelopeWithMigratedKey`),
+> which satisfies steps 3–4 by construction rather than by a later sweep; the prompt is a
+> notification with *Re-register now*, once per window and account, never a modal; the unlock asks
+> per RP ID (`keyAssertionPlan`) and falls back from current to legacy only on a browser refusal, not
+> on a cancel. Tests: `keyWrap.test.ts`, `securityKeyOps.test.ts`, `webauthnPrf.test.ts`,
+> `webauthnRp.test.ts`. Firefox unmeasured.
+
 **Symptom.** `webauthnPrf.ts:20` sets `RP_ID = 'localhost'`. WebAuthn scopes a credential by RP ID
 *string*, not by origin and port — so any local page whose host is `localhost`, on any port, can ask
 for the same credential. The `credentialId` and `prfSalt` needed to do so are stored in **plaintext**

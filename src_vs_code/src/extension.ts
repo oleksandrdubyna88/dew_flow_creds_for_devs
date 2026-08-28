@@ -69,9 +69,9 @@ import { ShareInbox } from './shareInbox';
 import { SharingManager } from './sharingManager';
 import { TransportFactory } from './transportFactory';
 import { VaultKeys } from './vaultKeys';
-import { isKeyWrap, newPrfSalt, webauthnWraps } from './keyWrap';
+import { isKeyWrap, webauthnWraps } from './keyWrap';
 import { decryptJson, encryptJson, readVaultWraps } from './cryptoUtils';
-import { registerSecurityKey } from './webauthnPrf';
+import { KeyAddHost, addSecurityKey, offerKeyMigration } from './securityKeyAdd';
 import {
   dbDisplay,
   revisionSecretReader,
@@ -81,7 +81,6 @@ import {
 } from './viewerOptions';
 import { snapshotForRevision } from './revisionSnapshot';
 import {
-  envelopeWithAddedKey,
   envelopeWithRecoveryCode,
   envelopeWithRemovedKey,
   envelopeWithoutRecoveryCode,
@@ -3453,85 +3452,28 @@ ${detail}
 
   // ---------- security keys (YubiKey / FIDO2) ----------
 
-  /**
-   * Register a security key for an account. A v1 (PIN-only) vault is
-   * upgraded to v2 in the same step: its payload is re-encrypted under a
-   * fresh master key, which is then wrapped for the PIN and for the key.
-   */
+  // The add / re-register flow lives in securityKeyAdd.ts; the host is this scope, by interface.
+  const keyHost: KeyAddHost = {
+    transportFor: (account) => transports.forAccount(account),
+    vaultKeys,
+    notifyChange: () => sync.notifyChange(),
+    refreshReadiness: () => refreshReadiness(),
+  };
   register('credSshManager.addSecurityKey', async (target) => {
     const account = await accountFromTargetOrPick(target, storage, 'Add a security key to…');
-    if (account === undefined) {
-      return;
-    }
-    const transport = transports.forAccount(account);
-    if (transport === undefined) {
-      void vscode.window.showErrorMessage(
-        `Set a sync location for ${account.email} first — security keys are stored in its vault.`,
-      );
-      return;
-    }
-    const raw = await transport.readVault(account);
-    if (raw === undefined) {
-      void vscode.window.showErrorMessage(
-        `${account.email} has no vault yet — run "Sync Now" once, then add the key.`,
-      );
-      return;
-    }
-
-    // Unlocking first proves we can re-wrap the very same master key.
-    const key = await vaultKeys.unlock(account, raw, { interactive: true });
-    if (key === undefined) {
-      void vscode.window.showErrorMessage('Could not unlock the vault — key not added.');
-      return;
-    }
-    const label = await vscode.window.showInputBox({
-      title: 'Name this security key',
-      prompt: 'Shown when the vault asks for a touch (e.g. "YubiKey 5C — work")',
-      value: 'YubiKey',
-      ignoreFocusOut: true,
-    });
-    if (label === undefined) {
-      return;
-    }
-
-    try {
-      const prfSalt = newPrfSalt();
-      const prf = await registerSecurityKey(account.email, prfSalt);
-      // The re-wrap/re-key arithmetic lives in securityKeyOps (audit A1); this handler
-      // holds only the ceremony and the conversation.
-      const next = await envelopeWithAddedKey(
-        {
-          raw,
-          key,
-          account,
-          storedPin: await vaultKeys.storedPin(account),
-          now: Date.now(),
-          pendingShares: transport.embedsShares ? sharesFromEnvelope(raw) : undefined,
-          decrypt: (r, k) => vaultKeys.decrypt(r, k),
-        },
-        { credentialId: prf.credentialId, prfSalt, secret: prf.secret },
-        label,
-      );
-      if (isSecurityKeyRefusal(next)) {
-        // The add path can only refuse for a missing PIN (the v1 upgrade needs it).
-        void vscode.window.showErrorMessage('A vault PIN is required before adding a key.');
-        return;
-      }
-      await transport.writeVault(account, next.content, []);
-      vaultKeys.clearCache(account.accountId);
-      void vscode.window.showInformationMessage(
-        `"${label.trim()}" can now unlock ${account.email}. The PIN keeps working as a fallback.`,
-      );
-      sync.notifyChange();
-      // The account row's icon and reason come from the readiness cache, which nothing
-      // else refreshes here — the sync cycle repaints the tree from the STALE map.
-      await refreshReadiness();
-    } catch (error) {
-      void vscode.window.showErrorMessage(
-        `Adding the security key failed: ${describeError(error)}`,
-      );
+    if (account !== undefined) {
+      await addSecurityKey(keyHost, account);
     }
   });
+  // Security-tail item 1: a key that opened the vault under the bare `localhost` RP ID is
+  // offered a re-registration — once per window and account, as a notification.
+  const migrationOffered = new Set<string>();
+  vaultKeys.onLegacyKeyUsed = (account, wrap) => {
+    if (!migrationOffered.has(account.accountId)) {
+      migrationOffered.add(account.accountId);
+      void offerKeyMigration(keyHost, account, wrap);
+    }
+  };
 
   register('credSshManager.removeSecurityKey', async (target) => {
     const account = await accountFromTargetOrPick(target, storage, 'Remove a security key from…');

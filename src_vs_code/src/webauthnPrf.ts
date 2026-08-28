@@ -5,23 +5,27 @@ import { webauthnUserHandle } from './cryptoUtils';
 import { startLoopbackServer } from './loopbackServer';
 import { browserErrorHint } from './webauthnHint';
 import { jsonForScript } from './webviewHtml';
+import { CURRENT_RP_ID } from './webauthnRp';
 
 /**
  * Security-key unlock via WebAuthn + the **PRF** extension.
  *
  * The extension host has no WebAuthn API, so the flow runs in the user's
  * browser exactly like our Google sign-in: a one-shot loopback page is
- * opened on `http://localhost:<port>` (a secure context, so WebAuthn is
- * allowed and `localhost` is a valid RP id on every machine), the page asks
- * the platform for the key — the OS shows its native "touch your security
- * key" dialog — and posts the PRF output back.
+ * opened on `http://creds-for-devs.localhost:<port>` — loopback per RFC 6761
+ * with no DNS setup, a secure context, and an RP ID no other local page can
+ * claim (see `webauthnRp.ts`) — the page asks the platform for the key — the
+ * OS shows its native "touch your security key" dialog — and posts the PRF
+ * output back. Credentials registered before 0.81 are bound to the bare
+ * `localhost`; `authenticateSecurityKey` takes the RP ID so those still open.
  *
  * The PRF output is a stable 32-byte secret per (credential, salt) pair, so
  * the same physical key derives the same wrapping key on any machine.
  */
 
-const RP_ID = 'localhost';
 const RP_NAME = 'CredsForDevs';
+/** Parsing base for request paths only — never where the browser is sent. */
+const PATH_BASE = 'http://localhost';
 const TIMEOUT_MS = 2 * 60_000;
 
 export interface PrfResult {
@@ -32,7 +36,11 @@ export interface PrfResult {
 }
 
 export class WebAuthnError extends Error {
-  constructor(message: string) {
+  constructor(
+    message: string,
+    /** The person ended it (cancel, timeout): no other RP ID is tried after this. */
+    readonly final: boolean = false,
+  ) {
     super(message);
     this.name = 'WebAuthnError';
   }
@@ -47,7 +55,7 @@ export function registerSecurityKey(
   userLabel: string,
   prfSalt: string,
 ): Promise<PrfResult> {
-  return runFlow('register', userLabel, prfSalt, []);
+  return runFlow('register', userLabel, prfSalt, [], undefined, CURRENT_RP_ID);
 }
 
 /**
@@ -57,8 +65,10 @@ export function registerSecurityKey(
 export function authenticateSecurityKey(
   userLabel: string,
   saltsByCredential: Readonly<Record<string, string>>,
+  /** The RP ID these credentials were created under — legacy wraps answer only under `localhost`. */
+  rpId: string = CURRENT_RP_ID,
 ): Promise<PrfResult> {
-  return runFlow('authenticate', userLabel, '', Object.keys(saltsByCredential), saltsByCredential);
+  return runFlow('authenticate', userLabel, '', Object.keys(saltsByCredential), saltsByCredential, rpId);
 }
 
 interface FlowPayload {
@@ -73,7 +83,8 @@ async function runFlow(
   userLabel: string,
   prfSalt: string,
   credentialIds: readonly string[],
-  saltsByCredential?: Readonly<Record<string, string>>,
+  saltsByCredential: Readonly<Record<string, string>> | undefined,
+  rpId: string,
 ): Promise<PrfResult> {
   const nonce = crypto.randomBytes(16).toString('hex');
   // Unguessable path segment: another local process cannot even fetch the
@@ -82,6 +93,7 @@ async function runFlow(
   const challenge = crypto.randomBytes(32).toString('base64url');
   const page = renderPage({
     op,
+    rpId,
     nonce,
     pathToken,
     challenge,
@@ -97,9 +109,10 @@ async function runFlow(
     ),
   });
 
-  // Bound to loopback only; the browser reaches it through `localhost`.
+  // Bound to loopback only; the browser reaches it through the RP ID's name, which resolves
+  // to loopback without touching DNS (`.localhost`, RFC 6761) — the name IS the credential scope.
   const { server, port } = await startLoopbackServer();
-  const url = `http://${RP_ID}:${port}/${pathToken}`;
+  const url = `http://${rpId}:${port}/${pathToken}`;
 
   try {
     const resultPromise = waitForResult(server, nonce, pathToken, page);
@@ -142,15 +155,15 @@ function waitForResult(
 ): Promise<FlowPayload> {
   return new Promise((resolve, reject) => {
     const timeout = setTimeout(() => {
-      reject(new WebAuthnError('Timed out waiting for the security key (2 minutes).'));
+      reject(new WebAuthnError('Timed out waiting for the security key (2 minutes).', true));
     }, TIMEOUT_MS);
     server.on('close', () => {
       clearTimeout(timeout);
-      reject(new WebAuthnError('Security-key flow cancelled.'));
+      reject(new WebAuthnError('Security-key flow cancelled.', true));
     });
     // eslint-disable-next-line complexity
     server.on('request', (req, res) => {
-      const url = new URL(req.url ?? '/', `http://${RP_ID}`);
+      const url = new URL(req.url ?? '/', PATH_BASE);
       // Everything is gated behind the secret path token.
       if (url.pathname !== `/${pathToken}` && url.pathname !== `/${pathToken}/result`) {
         res.writeHead(404).end();
@@ -183,6 +196,8 @@ function waitForResult(
 
 interface PageOptions {
   op: 'register' | 'authenticate';
+  /** The relying-party id for both `create` and `get` — see `webauthnRp.ts`. */
+  rpId: string;
   nonce: string;
   pathToken: string;
   challenge: string;
@@ -269,7 +284,7 @@ function renderPage(options: PageOptions): string {
         const created = await navigator.credentials.create({
           publicKey: {
             challenge: challenge,
-            rp: { id: ${jsonForScript(RP_ID)}, name: ${jsonForScript(RP_NAME)} },
+            rp: { id: CONFIG.rpId, name: ${jsonForScript(RP_NAME)} },
             user: {
               // Stable, NOT random. A resident credential is keyed by (rp.id, user.id),
               // so a fresh id every time claimed another of the key's ~25 slots instead
@@ -314,7 +329,7 @@ function renderPage(options: PageOptions): string {
       const assertion = await navigator.credentials.get({
         publicKey: {
           challenge: challenge,
-          rpId: ${jsonForScript(RP_ID)},
+          rpId: CONFIG.rpId,
           allowCredentials: allow,
           // 'required' — a touch alone is not enough; see browserErrorHint.
           userVerification: 'required',

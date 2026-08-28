@@ -6,6 +6,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.81.0] — 2026-08-28
+
+### Security
+
+- **Security keys are now bound to `creds-for-devs.localhost`, not to every local page.**
+  WebAuthn scopes a credential by RP ID; under the bare `localhost` any local page on any port
+  could ask a registered key for this vault's PRF secret. New registrations use the extension's
+  own `.localhost` name — loopback by RFC 6761, no DNS setup, measured in Edge 151 with a
+  YubiKey. A key registered earlier keeps unlocking under the old name; the first time it does,
+  a notification offers a one-touch re-registration, and the old wrap is retired in the same
+  envelope write that adds the new one — the vault never has fewer openers, and the PIN works
+  throughout. Cancelling a key prompt is final; a refusal lets the unlock try the other name.
+
 ## [0.80.7] — 2026-08-28
 
 ### Added

@@ -14,19 +14,16 @@
  * purpose — distinguishing them would let a page fingerprint the authenticator.
  * So this cannot say which happened, and must not pretend to: it names both.</p>
  *
- * <p><b>Why `userVerification: 'required'` is worth that cost.</b> The RP ID here
- * is the bare `localhost` — not because it has to be: measured on 2026-08-28
- * (Edge 151, Windows 11, YubiKey), `creds-for-devs.localhost` resolves to loopback,
- * is a secure context and works as an RP ID with PRF, so a distinguishing name is
- * possible and is `todo/PLAN_extension_security_tail.md` item 1, whose cost is the
- * re-registration of every key. Until that ships, any other local page on any
- * `localhost` port can ask for the same credential, and `credentialId` and
- * `prfSalt` sit in the vault envelope in plaintext by design. Under `'preferred'`
+ * <p><b>Why `userVerification: 'required'` is worth that cost.</b> Since 0.81 the
+ * RP ID is `creds-for-devs.localhost` (`webauthnRp.ts`), so no other local page
+ * can ask the key for this vault's credential — but a key registered before
+ * that is bound to the bare `localhost` until it is re-registered, and while it
+ * is, any page on any `localhost` port can ask, with `credentialId` and
+ * `prfSalt` sitting in the envelope in plaintext by design. Under `'preferred'`
  * a touch was the whole barrier, and a person who does not read the origin in
  * the browser's own dialog gives away the PRF secret that unwraps the master
- * key. Under `'required'` the key demands its PIN or a biometric as well. It
- * does not close the hole — the RP ID change would — but it stops a stolen
- * prompt from costing a fingertip.</p>
+ * key. Under `'required'` the key demands its PIN or a biometric as well — the
+ * floor that holds for legacy and current registrations alike.</p>
  */
 export function browserErrorHint(error: string): string {
   if (/prf/i.test(error) || /not supported/i.test(error)) {

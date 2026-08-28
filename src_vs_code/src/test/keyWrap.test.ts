@@ -32,12 +32,14 @@ import {
   wrapWithPrf,
   wrapWithRecoveryCode,
   prfSaltsByCredential,
+  keyAssertionPlan,
   wrapForCredential,
   wrapPinVault,
 } from '../keyWrap';
 import { generateRecoveryCode } from '../recoveryCode';
 import { generateOrgRecoveryKeypair } from '../orgEscrowCrypto';
 import { keyFingerprint } from '../shareSignature';
+import { CURRENT_RP_ID, LEGACY_RP_ID, isLegacyKeyWrap, wrapRpId } from '../webauthnRp';
 
 const NOW = 1_800_000_000_000;
 const ACCOUNT = 'acct-1';
@@ -471,4 +473,41 @@ test('migrating a v1 PIN-only vault to v3 preserves the data and the SAME PIN op
   // The legacy v1 file still reads too — the upgrade is lazy, not a forced rewrite of
   // files we might not be able to write.
   assert.deepEqual(decryptJson(v1, ACCOUNT + pin), payload);
+});
+
+// ---- security-tail item 1: the RP ID a key wrap was created under ----
+
+test('a key wrap records the RP ID it was created under; one without is the legacy localhost — and still opens', () => {
+  const master = newMasterKey();
+  const secret = crypto.randomBytes(32);
+  const wrap = wrapWithPrf(master, 'cred', newPrfSalt(), secret, 'k', NOW);
+  assert.equal(wrap.rpId, CURRENT_RP_ID, 'every new registration is under the current RP');
+  assert.equal(isLegacyKeyWrap(wrap), false);
+  const legacy = JSON.parse(JSON.stringify({ ...wrap, rpId: undefined })) as typeof wrap; // as 0.80 wrote it
+  assert.ok(isKeyWrap(legacy), 'a pre-0.81 wrap is still well-formed');
+  assert.equal(isLegacyKeyWrap(legacy), true);
+  assert.equal(wrapRpId(legacy), LEGACY_RP_ID);
+  assert.ok(unwrapWithPrf(legacy, secret).equals(master), 'and it still opens the vault');
+});
+
+test('the assertion plan asks the current RP first and the legacy one second, each with only its own credentials', () => {
+  const master = newMasterKey();
+  const current = wrapWithPrf(master, 'cred-new', newPrfSalt(), crypto.randomBytes(32), 'a', NOW);
+  const legacy = { ...wrapWithPrf(master, 'cred-old', newPrfSalt(), crypto.randomBytes(32), 'b', NOW), rpId: undefined };
+  const pin = wrapWithPin(master, ACCOUNT, 'pin-1234', NOW);
+  assert.deepEqual(
+    keyAssertionPlan([pin, legacy, current]).map((step) => [step.rpId, Object.keys(step.salts)]),
+    [
+      [CURRENT_RP_ID, ['cred-new']],
+      [LEGACY_RP_ID, ['cred-old']],
+    ],
+  );
+  assert.deepEqual(keyAssertionPlan([pin, current]).map((step) => step.rpId), [CURRENT_RP_ID], 'no legacy wrap, no legacy page');
+  assert.deepEqual(keyAssertionPlan([pin, legacy]).map((step) => step.rpId), [LEGACY_RP_ID]);
+  assert.deepEqual(keyAssertionPlan([pin]), [], 'a PIN-only vault asks no key');
+  assert.deepEqual(
+    prfSaltsByCredential([current, legacy]),
+    { 'cred-new': current.prfSalt, 'cred-old': legacy.prfSalt },
+    'with no RP given every key is listed, as before',
+  );
 });

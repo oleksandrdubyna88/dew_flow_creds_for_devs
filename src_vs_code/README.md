@@ -708,7 +708,8 @@ A vault can be opened by **several security keys plus the PIN**, in the
 "touch your key" style of a Microsoft sign-in — no typed password.
 
 - **Add**: account row → **Add Security Key (YubiKey)…**. The browser opens a
-  local `http://localhost` page, the OS shows its native security-key prompt,
+  local `http://creds-for-devs.localhost` page (loopback by RFC 6761 — a name no
+  other local page can claim), the OS shows its native security-key prompt,
   and the key's **WebAuthn PRF** secret becomes a wrapping key.
 - **How it is stored**: a v2 vault encrypts its payload with a random master
   key, and that master key is wrapped once per unlock method — the PIN wrap
@@ -741,8 +742,12 @@ A vault can be opened by **several security keys plus the PIN**, in the
 - Requirements & limits: PRF needs **Chrome or Edge** as the default browser
   and a **FIDO2 key with hmac-secret** (YubiKey 5 or newer). Firefox/Safari
   currently return no PRF result — the flow reports that and the PIN keeps
-  working. Credentials are registered against the RP id `localhost`, so the
-  same physical key works on every machine.
+  working. Credentials are registered against the RP id `creds-for-devs.localhost`
+  (0.81+), so the same physical key works on every machine — and no other local
+  page can ask the key for this vault's secret. A key registered before 0.81 is
+  bound to the bare `localhost`: it keeps unlocking, and the first time it does
+  you are offered a one-touch re-registration; the old registration is retired
+  only once the new one is in the vault, and the PIN works throughout.
 
 ## Recovery — the printed code, and the corporate break-glass
 

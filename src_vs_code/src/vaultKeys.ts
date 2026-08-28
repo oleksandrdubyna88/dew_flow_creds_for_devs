@@ -18,6 +18,8 @@ import {
   unwrapWithPrf,
   unwrapWithRecoveryCode,
   wrapPinVaultAsync,
+  AssertionStep,
+  keyAssertionPlan,
 } from './keyWrap';
 import {
   RecoveryCodeError,
@@ -25,7 +27,8 @@ import {
   isRecoveryCodeError,
   parseRecoveryCode,
 } from './recoveryCode';
-import { authenticateSecurityKey } from './webauthnPrf';
+import { PrfResult, WebAuthnError, authenticateSecurityKey } from './webauthnPrf';
+import { isLegacyKeyWrap } from './webauthnRp';
 import { pinValidator } from './pinInput';
 import { StoredAccount } from './types';
 import { unlockPlan } from './unlockPlan';
@@ -57,7 +60,42 @@ export type VaultKey =
 // vscode-free module so the anti-aliasing rule is a unit test — see vaultKeyLifetime.ts.
 const wipe = wipeVaultKey;
 
+/** The credential that answered and the wrap it opens. */
+interface KeyAnswer {
+  readonly result: PrfResult;
+  readonly used: KeyWrap;
+}
+
+/** One `get` under one RP ID; a WebAuthn refusal is returned, anything else thrown. */
+async function assertUnder(email: string, wraps: readonly KeyWrap[], step: AssertionStep): Promise<KeyAnswer | WebAuthnError> {
+  try {
+    const result = await authenticateSecurityKey(email, step.salts, step.rpId);
+    const used = wrapForCredential(wraps, result.credentialId);
+    if (used === undefined) {
+      // A leftover registration that never reached the vault. Unwrapping any OTHER
+      // wrap with its secret can only fail; say what is wrong instead.
+      throw new BackupError(
+        'corrupted',
+        'The security key answered with a credential this vault does not hold. ' +
+          'Remove unused resident credentials from the key (ykman fido credentials list / delete) or re-register it.',
+      );
+    }
+    return { result, used };
+  } catch (error) {
+    if (error instanceof WebAuthnError) {
+      return error;
+    }
+    throw error;
+  }
+}
+
 export class VaultKeys {
+  /**
+   * Told when a legacy (bare-`localhost`) credential opened a vault, so the host can offer the
+   * re-registration — after the caller's own work, never inside it (security-tail item 1).
+   */
+  onLegacyKeyUsed?: (account: StoredAccount, wrap: KeyWrap) => void;
+
   private readonly cache = new Map<string, VaultKey>();
 
   /** Locked-ness and the idle clock. Kept out of this class so its rules are testable
@@ -336,19 +374,15 @@ export class VaultKeys {
     }
 
     if (way === 'key') {
-      const result = await authenticateSecurityKey(account.email, salts);
-      const used = wrapForCredential(wraps, result.credentialId);
-      if (used === undefined) {
-        // A leftover registration that never reached the vault. Unwrapping any OTHER
-        // wrap with its secret can only fail; say what is wrong instead.
-        throw new BackupError(
-          'corrupted',
-          'The security key answered with a credential this vault does not hold. ' +
-            'Remove unused resident credentials from the key (ykman fido credentials list / delete) or re-register it.',
-        );
-      }
+      const { result, used } = await this.assertKey(account, wraps);
       const master = unwrapWithPrf(used, result.secret);
-      return this.remember(account, master, wraps);
+      const vaultKey = this.remember(account, master, wraps);
+      if (isLegacyKeyWrap(used)) {
+        // Opened by a credential bound to the bare `localhost` (pre-0.81). Said, not done: the
+        // re-registration rewrites the envelope, and this unlock's caller may be about to as well.
+        this.onLegacyKeyUsed?.(account, used);
+      }
+      return vaultKey;
     }
 
     const pin = await this.promptPin(account, 'Unlock vault');
@@ -414,6 +448,26 @@ export class VaultKeys {
       wraps: init.wraps,
     });
     return init.content;
+  }
+
+  /**
+   * Which credential answered — asked per RP ID, the current one first and the legacy one only
+   * as a fallback (`keyAssertionPlan`). A refusal the person did not cause (wrong RP for the key
+   * in hand, no matching credential) moves on to the next step; a cancel or a timeout ends it.
+   */
+  private async assertKey(account: StoredAccount, wraps: KeyWrap[]): Promise<KeyAnswer> {
+    let refusal: Error = new BackupError('corrupted', 'This vault has no security-key wrap to ask.');
+    for (const step of keyAssertionPlan(wraps)) {
+      const answer = await assertUnder(account.email, wraps, step);
+      if (!(answer instanceof WebAuthnError)) {
+        return answer;
+      }
+      refusal = answer;
+      if (answer.final) {
+        break;
+      }
+    }
+    throw refusal;
   }
 
   private remember(account: StoredAccount, masterKey: Buffer, wraps: KeyWrap[]): VaultKey {

@@ -1,6 +1,7 @@
 import * as assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { loadWithVscode } from './vscodeStub';
+import { CURRENT_RP_ID, LEGACY_RP_ID } from '../webauthnRp';
 
 /**
  * The security-key flow, driven by a stand-in browser (audit A3).
@@ -46,7 +47,7 @@ function world(browser: Browser, options: { cancel?: boolean } = {}): World {
       openExternal: (uri: { toString(): string }): Promise<boolean> => {
         const url = uri.toString();
         w.opened.push(url);
-        void browser.visit(url);
+        void browser.visit(reachable(url));
         return Promise.resolve(true);
       },
     },
@@ -74,6 +75,16 @@ function world(browser: Browser, options: { cancel?: boolean } = {}): World {
 }
 
 /** Read the page the module serves at a URL, as a browser would. */
+/**
+ * The stub browser reaches the page by address: a real browser resolves `.localhost` to loopback
+ * by itself (RFC 6761, and measured in Edge), the OS resolver under Node's fetch may not.
+ */
+function reachable(url: string): string {
+  const u = new URL(url);
+  u.hostname = '127.0.0.1';
+  return u.toString();
+}
+
 async function fetchPage(url: string): Promise<{ status: number; body: string }> {
   const response = await fetch(url);
   return { status: response.status, body: await response.text() };
@@ -243,14 +254,41 @@ test('the page carries a FRESH challenge and nonce every time', async () => {
   assert.notEqual(first.nonce, second.nonce);
 });
 
-test('the URL opened is loopback, and carries the path token', async () => {
-  const w = world(goodBrowser(() => ({ credentialId: 'c', prf: SECRET32 })));
+test('the URL opened names the RP ID — our own .localhost name, never a routable host — and carries the path token', async () => {
+  const captured: { data?: Record<string, unknown> } = {};
+  const w = world(goodBrowser(() => ({ credentialId: 'c', prf: SECRET32 }), captured));
 
   await w.mod.registerSecurityKey('me@corp.com', Buffer.alloc(32, 1).toString('base64'));
 
   const url = new URL(w.opened[0]);
-  assert.equal(url.hostname, 'localhost', 'never a routable host');
+  assert.equal(url.hostname, CURRENT_RP_ID, 'the page is served under the RP ID, loopback per RFC 6761');
   assert.ok(url.pathname.length > 20, `the path token is the gate: ${url.pathname}`);
+  assert.equal(captured.data?.rpId, CURRENT_RP_ID, 'and the page registers under that same RP ID');
+});
+
+test('a legacy credential is asked for under the bare localhost it was created for', async () => {
+  // A credential is scoped by the RP it was created under; a pre-0.81 wrap can only answer
+  // there. The caller says which, the page follows — and nothing here defaults to legacy.
+  const captured: { data?: Record<string, unknown> } = {};
+  const w = world(goodBrowser(() => ({ credentialId: 'cred-old', prf: SECRET32 }), captured));
+
+  await w.mod.authenticateSecurityKey('me@corp.com', { 'cred-old': Buffer.alloc(32, 1).toString('base64') }, LEGACY_RP_ID);
+
+  assert.equal(new URL(w.opened[0]).hostname, LEGACY_RP_ID);
+  assert.equal(captured.data?.rpId, LEGACY_RP_ID);
+});
+
+test('a cancel is final, a browser refusal is not — that is what lets the unlock try the other RP ID', async () => {
+  const refused = world(goodBrowser(() => ({ error: 'NotAllowedError: the operation was refused' })));
+  await assert.rejects(
+    refused.mod.authenticateSecurityKey('me@corp.com', { c: SECRET32 }),
+    (error: unknown) => error instanceof refused.mod.WebAuthnError && error.final === false,
+  );
+  const cancelled = world({ visit: () => Promise.resolve() }, { cancel: true });
+  await assert.rejects(
+    cancelled.mod.authenticateSecurityKey('me@corp.com', { c: SECRET32 }),
+    (error: unknown) => error instanceof cancelled.mod.WebAuthnError && error.final === true,
+  );
 });
 
 test('authenticate narrows the prompt to the credentials this vault knows, each with its own salt', async () => {

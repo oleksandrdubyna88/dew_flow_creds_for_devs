@@ -149,6 +149,30 @@ async function envelopeWithAddedWrap(
 }
 
 /** The wraps currently on a vault file, typed. */
+/**
+ * Re-register a key under the current RP ID (security-tail item 1): the new wrap goes IN and
+ * the legacy wrap of the credential that just unlocked comes OUT, in one envelope — so there is
+ * no written state with neither, and the PIN wrap is never touched. A v1 vault has no wraps to
+ * migrate; `envelopeWithAddedKey` is the upgrade path there.
+ */
+export function envelopeWithMigratedKey(
+  args: EnvelopeArgs,
+  legacyCredentialId: string,
+  prf: RegisteredPrf,
+  label: string | undefined,
+): NextEnvelope | SecurityKeyRefusal {
+  const { raw, key, now } = args;
+  if (key.version !== 2) {
+    return 'not-wrapped';
+  }
+  const added = upsertWrap(
+    vaultKeyWraps(raw),
+    wrapWithPrf(key.masterKey, prf.credentialId, prf.prfSalt, prf.secret, label, now),
+  );
+  const wraps = removeWrap(added, 'webauthn', legacyCredentialId);
+  return { content: resignEnvelopeWraps(raw, wraps, key.masterKey), rekeyed: false, recoveryCodeRetired: false };
+}
+
 export function vaultKeyWraps(raw: string): KeyWrap[] {
   return readVaultWraps(raw).filter(isKeyWrap);
 }

@@ -1,4 +1,5 @@
 import * as crypto from 'node:crypto';
+import { CURRENT_RP_ID, LEGACY_RP_ID, wrapRpId } from './webauthnRp';
 import type { StoredAccount } from './types';
 import {
   BackupError,
@@ -63,6 +64,11 @@ export interface KeyWrap extends SealedBlob {
   label?: string;
   /** WebAuthn only: the PRF input this credential was wrapped with. */
   prfSalt?: string;
+  /**
+   * WebAuthn only: the RP ID the credential was created under. Absent on wraps written before
+   * 0.81 — the bare `localhost` — which still open the vault and are offered a re-registration.
+   */
+  rpId?: string;
   /** Org-escrow only: the per-seal ephemeral X25519 public key, base64. */
   ephemeralPublicKey?: string;
   /** Org-escrow only: which generation of the org recovery key this wrap is sealed to. */
@@ -94,6 +100,7 @@ export function isKeyWrap(value: unknown): value is KeyWrap {
     typeof v.data === 'string' &&
     (v.label === undefined || typeof v.label === 'string') &&
     (v.prfSalt === undefined || typeof v.prfSalt === 'string') &&
+    (v.rpId === undefined || typeof v.rpId === 'string') &&
     (v.createdAt === undefined || typeof v.createdAt === 'number')
   );
 }
@@ -172,6 +179,8 @@ export function wrapWithPrf(
   prfSecret: Buffer,
   label: string | undefined,
   createdAt: number,
+  /** The RP ID the credential was created under — every new registration is the current one. */
+  rpId: string = CURRENT_RP_ID,
 ): KeyWrap {
   const salt = crypto.randomBytes(16);
   const key = prfWrappingKey(prfSecret, salt);
@@ -183,6 +192,7 @@ export function wrapWithPrf(
     id: credentialId,
     label,
     prfSalt,
+    rpId,
     createdAt,
     salt: salt.toString('base64'),
     iv: iv.toString('base64'),
@@ -444,14 +454,32 @@ export function hasVaultKeyedWrap(wraps: readonly KeyWrap[]): boolean {
  * picked, unless it was wrap[0]'s, the PRF came back computed over a foreign salt and
  * the unwrap failed as "try again" — forever, on any vault holding more than one wrap.</p>
  */
-export function prfSaltsByCredential(wraps: readonly KeyWrap[]): Record<string, string> {
+export function prfSaltsByCredential(wraps: readonly KeyWrap[], rpId?: string): Record<string, string> {
   const salts: Record<string, string> = {};
-  for (const wrap of webauthnWraps(wraps)) {
+  const underRp = (wrap: KeyWrap): boolean => rpId === undefined || wrapRpId(wrap) === rpId;
+  for (const wrap of webauthnWraps(wraps).filter(underRp)) {
     if (wrap.prfSalt !== undefined) {
       salts[wrap.id] = wrap.prfSalt;
     }
   }
   return salts;
+}
+
+/** One `get` under one RP ID, with the credentials that RP can answer for. */
+export interface AssertionStep {
+  readonly rpId: string;
+  readonly salts: Record<string, string>;
+}
+
+/**
+ * How to ask the key: the current RP ID first, the legacy one as a fallback — each step only
+ * with its own credentials, because an authenticator refuses a credential under the wrong RP.
+ * A vault with no legacy wraps never opens the legacy page.
+ */
+export function keyAssertionPlan(wraps: readonly KeyWrap[]): AssertionStep[] {
+  return [CURRENT_RP_ID, LEGACY_RP_ID]
+    .map((rpId) => ({ rpId, salts: prfSaltsByCredential(wraps, rpId) }))
+    .filter((step) => Object.keys(step.salts).length > 0);
 }
 
 /**

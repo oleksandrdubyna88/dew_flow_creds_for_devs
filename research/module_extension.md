@@ -369,6 +369,25 @@ holding its wrap stop opening future versions; remove-one-of-many drops the slot
 around the same master, and reports `rekeyed: false` so the caller says out loud that existing
 copies stay openable.
 
+### Security keys: the RP ID is ours, not every local page's (0.81, security-tail item 1)
+
+WebAuthn scopes a credential by RP ID *string*. Under the bare `localhost` every local page on
+every port could ask the key for this vault's PRF secret, with the `credentialId` and `prfSalt`
+sitting in the envelope in plaintext by design. Since 0.81 the loopback page is served as
+`http://creds-for-devs.localhost:<port>` — loopback per RFC 6761 with no DNS setup, measured in Edge
+151 with a YubiKey on 2026-08-28 (secure context, `create` and `get` with PRF) — and that name is
+the RP ID (`webauthnRp.ts`: `CURRENT_RP_ID`, `LEGACY_RP_ID`).
+
+An existing credential cannot follow, so a wrap carries `rpId` and one WITHOUT it is legacy.
+`keyAssertionPlan` (`keyWrap.ts`) asks per RP — the current one first, the legacy one only when
+legacy wraps exist and the first ask was refused rather than cancelled (`WebAuthnError.final`).
+When a legacy wrap opened the vault, `VaultKeys.onLegacyKeyUsed` tells the host, and the host offers
+a re-registration as a notification (`securityKeyAdd.ts`): the same flow as *Add Security Key*,
+ending in `envelopeWithMigratedKey` — the new wrap goes in and the legacy one comes out in ONE
+envelope, so no written state has fewer openers, and the PIN wrap is never touched. The old
+credential stays on the key (an authenticator cannot be told to drop one from here) and simply
+opens nothing.
+
 ### Security keys: the user handle must be stable
 
 A discoverable ("resident") credential is keyed by `(RP ID, user.id)`. `RP_ID` is fixed, so `user.id`

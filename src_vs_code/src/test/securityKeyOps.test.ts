@@ -3,6 +3,7 @@ import * as crypto from 'node:crypto';
 import { test } from 'node:test';
 import {
   envelopeWithAddedKey,
+  envelopeWithMigratedKey,
   envelopeWithRecoveryCode,
   envelopeWithRemovedKey,
   envelopeWithoutRecoveryCode,
@@ -15,14 +16,16 @@ import {
   newMasterKey,
   recoveryWrap,
   unwrapWithPinAsync,
+  unwrapWithPrf,
   unwrapWithRecoveryCode,
   webauthnWraps,
   wrapWithPinAsync,
 } from '../keyWrap';
 import { generateRecoveryCode } from '../recoveryCode';
-import { decryptJsonWithMasterKey, encryptJsonWrapped } from '../cryptoUtils';
+import { decryptJsonWithMasterKey, encryptJsonWrapped, resignEnvelopeWraps } from '../cryptoUtils';
 import type { VaultKey } from '../vaultKeys';
 import { StoredAccount } from '../types';
+import { CURRENT_RP_ID, isLegacyKeyWrap } from '../webauthnRp';
 
 /**
  * The four regimes of Add/Remove Security Key (audit 2026-08-25, A1), against the REAL
@@ -352,4 +355,66 @@ test('removalWouldRekey: last key + PIN → yes; other keys left or no PIN → n
   assert.equal(removalWouldRekey(wraps, keyId, PIN), true);
   assert.equal(removalWouldRekey(wraps, keyId, undefined), false);
   assert.equal(removalWouldRekey(wraps, 'some-other-id', PIN), false, 'a key remains');
+});
+
+// ---- security-tail item 1: re-registering a legacy key under the current RP ID ----
+
+/** A vault with one security key as 0.80 wrote it: a wrap carrying no `rpId`. */
+async function vaultWithLegacyKey(master: Buffer, legacy: ReturnType<typeof prf>): Promise<string> {
+  const raw = await wrappedVault(master);
+  const added = await envelopeWithAddedKey(argsFor(raw, wrappedKey(raw, master)), legacy, 'YubiKey');
+  assert.ok(!isSecurityKeyRefusal(added));
+  const stripped = vaultKeyWraps(added.content).map((w) => (w.kind === 'webauthn' ? { ...w, rpId: undefined } : w));
+  return resignEnvelopeWraps(added.content, stripped, master);
+}
+
+test('re-registering puts the new wrap IN and the legacy wrap OUT, in one envelope, around the SAME master', async () => {
+  const master = newMasterKey();
+  const legacy = prf('cred-old');
+  const raw = await vaultWithLegacyKey(master, legacy);
+  assert.ok(isLegacyKeyWrap(webauthnWraps(vaultKeyWraps(raw))[0]), 'the fixture is a pre-0.81 wrap');
+
+  const fresh = prf('cred-new');
+  const next = envelopeWithMigratedKey(argsFor(raw, wrappedKey(raw, master)), 'cred-old', fresh, 'YubiKey');
+  assert.ok(!isSecurityKeyRefusal(next));
+  assert.equal(next.rekeyed, false, 'no rotation: the master is the same');
+
+  const keys = webauthnWraps(vaultKeyWraps(next.content));
+  assert.deepEqual(keys.map((k) => [k.id, k.rpId]), [['cred-new', CURRENT_RP_ID]], 'exactly the new one, under the current RP');
+  assert.ok(unwrapWithPrf(keys[0], fresh.secret).equals(master), 'and it opens the same master');
+  const pinWrap = vaultKeyWraps(next.content).find((w) => w.kind === 'pin');
+  assert.ok(pinWrap, 'the PIN wrap is untouched');
+  assert.ok((await unwrapWithPinAsync(pinWrap, ACCOUNT.accountId, PIN)).equals(master));
+  assert.deepEqual(await decryptJsonWithMasterKey(next.content, master), PAYLOAD, 'the payload was never re-encrypted');
+});
+
+test('re-registering never leaves the vault with fewer openers — the new wrap is in before the old one is out', async () => {
+  const master = newMasterKey();
+  const raw = await vaultWithLegacyKey(master, prf('cred-old'));
+  const next = envelopeWithMigratedKey(argsFor(raw, wrappedKey(raw, master)), 'cred-old', prf('cred-new'), undefined);
+  assert.ok(!isSecurityKeyRefusal(next));
+  assert.equal(vaultKeyWraps(next.content).length, vaultKeyWraps(raw).length, 'one out, one in');
+});
+
+test('a second, not-yet-migrated key is left alone when the first one is re-registered', async () => {
+  const master = newMasterKey();
+  const raw = await vaultWithLegacyKey(master, prf('cred-a'));
+  const withB = await envelopeWithAddedKey(argsFor(raw, wrappedKey(raw, master)), prf('cred-b'), 'second');
+  assert.ok(!isSecurityKeyRefusal(withB));
+  const bothLegacy = resignEnvelopeWraps(
+    withB.content,
+    vaultKeyWraps(withB.content).map((w) => (w.kind === 'webauthn' ? { ...w, rpId: undefined } : w)),
+    master,
+  );
+  const next = envelopeWithMigratedKey(argsFor(bothLegacy, wrappedKey(bothLegacy, master)), 'cred-a', prf('cred-a2'), 'first');
+  assert.ok(!isSecurityKeyRefusal(next));
+  const keys = webauthnWraps(vaultKeyWraps(next.content));
+  assert.deepEqual(keys.map((k) => [k.id, isLegacyKeyWrap(k)]).sort(), [['cred-a2', false], ['cred-b', true]]);
+});
+
+test('a v1 (unwrapped) vault has nothing to migrate — refused as not-wrapped, never rewritten', async () => {
+  const master = newMasterKey();
+  const raw = await vaultWithLegacyKey(master, prf('cred-old'));
+  const legacyKey: VaultKey = { version: 1, passphrase: 'x', pin: 'x' };
+  assert.equal(envelopeWithMigratedKey(argsFor(raw, legacyKey), 'cred-old', prf('cred-new'), 'k'), 'not-wrapped');
 });
