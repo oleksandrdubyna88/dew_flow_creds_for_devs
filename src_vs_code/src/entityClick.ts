@@ -9,7 +9,8 @@ export interface EntityClickDeps {
   readonly isOpen: (key: string | undefined) => boolean;
   readonly setOpen: (key: string | undefined, open: boolean) => void;
   readonly collapsible: (accountId: string, entityId: string) => boolean;
-  readonly repaint: (element: TreeElement) => void;
+  /** Re-creates the row so its remembered state is read again, and keeps it selected. */
+  readonly repaint: (element: TreeElement) => void | Promise<void>;
   readonly open: (element: EntityElement) => Promise<void>;
   /** Injected in tests so the post-toggle check does not wait on a real timer. */
   readonly later?: (fn: () => void) => void;
@@ -17,7 +18,9 @@ export interface EntityClickDeps {
 
 /**
  * The entity row's click: select on one, open on two — and after opening, put the twisty back
- * where the workbench's own double-click toggle moved it (tails T11). Pure but for the
+ * where the workbench's own double-click toggle moved it (tails T11). The toggle cannot be
+ * prevented (`expandOnDoubleClick` is not the extension's to set), only undone — and undoing
+ * it means re-creating the row, because a refresh keeps an existing node's expansion. Pure but for the
  * injected deps, so the whole sequence is a test rather than a mouse.
  */
 export class EntityClicks {
@@ -31,8 +34,9 @@ export class EntityClicks {
     provider: {
       hasHistory(accountId: string, entityId: string): boolean;
       dependencies: { hasDependents(accountId: string, entityId: string): boolean };
-      refreshElement(element: TreeElement): void;
+      reincarnate(element: TreeElement): void;
     },
+    treeView: { reveal(element: TreeElement, options: { select: boolean; focus: boolean }): Thenable<void> },
     open: (element: EntityElement) => Promise<void>,
   ): EntityClicks {
     return new EntityClicks({
@@ -40,7 +44,12 @@ export class EntityClicks {
       setOpen: (key, isOpen) => void expansion.set(key, isOpen),
       collapsible: (accountId, id) =>
         provider.hasHistory(accountId, id) || provider.dependencies.hasDependents(accountId, id),
-      repaint: (element) => provider.refreshElement(element),
+      // A new node is an unselected node; the reveal puts the selection back without taking
+      // focus from the viewer that just opened.
+      repaint: async (element) => {
+        provider.reincarnate(element);
+        await treeView.reveal(element, { select: true, focus: false });
+      },
       open,
     });
   }
@@ -64,7 +73,7 @@ export class EntityClicks {
       const collapsible = this.deps.collapsible(element.accountId, element.node.id);
       if (restoreNeeded(wasOpen, this.deps.isOpen(key), collapsible)) {
         this.deps.setOpen(key, wasOpen);
-        this.deps.repaint(element);
+        void this.deps.repaint(element);
       }
     });
   }

@@ -41,8 +41,53 @@ export const PAGE_MAX_WIDTH_PX = 1280;
 /** The window width at which a two-column page stops stacking. */
 export const TWO_COLUMN_AT = 1000;
 
-/** Where the form grows its THIRD column — the Agent access group (tails T24a). */
-export const THREE_COLUMN_AT = 1500;
+/** The gap between group columns, and the page's side padding — the grid arithmetic below. */
+export const GROUP_GAP_PX = 24;
+export const PAGE_PADDING_PX = 24;
+
+/** What one column measures on a full-width two-column page: the width a column always keeps. */
+export const COLUMN_MAX_PX = (PAGE_MAX_WIDTH_PX - GROUP_GAP_PX) / 2;
+
+/**
+ * The page's cap once it has three columns — three FULL columns, not three squeezed into the
+ * two-column cap. The owner's first look at the three-column form was "far too narrow — you
+ * ran three into the same width" (2026-08-28): a column must measure what it measured before
+ * the third one came, so the page grows by exactly one column and one gap.
+ */
+export const THREE_COLUMN_PAGE_MAX_PX = COLUMN_MAX_PX * 3 + GROUP_GAP_PX * 2;
+
+/**
+ * Where a page grows its THIRD column — the Agent access group (tails T24a). Derived, not
+ * chosen: the window must hold three full columns plus the page padding, or the third column
+ * would be paid for by the other two. Below this the agent group sits under Additional.
+ */
+export const THREE_COLUMN_AT = THREE_COLUMN_PAGE_MAX_PX + PAGE_PADDING_PX * 2;
+
+/**
+ * The group grid both two-column pages share (form and viewer): one column stacks
+ * main → additional → agent; two columns put the agent group under Additional; a window wide
+ * enough for three FULL columns gives Agent access its own. CSS order + grid placement, so the
+ * markup stays one source order — and the body widens with the third column (see
+ * `THREE_COLUMN_PAGE_MAX_PX`).
+ */
+export function groupsGridCss(className: string): string {
+  return `
+  .${className} { display: grid; grid-template-columns: 1fr; gap: 0 ${GROUP_GAP_PX}px; align-items: start; }
+  #agentGroup { order: 3; }
+  @media (min-width: ${TWO_COLUMN_AT}px) {
+    .${className} { grid-template-columns: 1fr 1fr; }
+    #mainGroup { grid-column: 1; grid-row: 1 / span 2; }
+    #additionalGroup { grid-column: 2; grid-row: 1; }
+    #agentGroup { grid-column: 2; grid-row: 2; order: 0; }
+  }
+  @media (min-width: ${THREE_COLUMN_AT}px) {
+    body { max-width: ${THREE_COLUMN_PAGE_MAX_PX}px; }
+    .${className} { grid-template-columns: 1fr 1fr 1fr; }
+    #mainGroup { grid-row: 1; }
+    #additionalGroup { grid-row: 1; }
+    #agentGroup { grid-column: 3; grid-row: 1; }
+  }`;
+}
 
 /**
  * Escape a value for interpolation into HTML **text or a double-quoted attribute**.

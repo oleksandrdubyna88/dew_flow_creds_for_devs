@@ -1,10 +1,10 @@
 import * as vscode from 'vscode';
 import { StorageManager } from './storageManager';
-import { nasPathFor } from './nasPaths';
-import { senderIsVerified } from './shareSender';
+import { RowGenerations } from './rowIdentity';
+import { ShareSources, sharedMatches, unverifiedSender } from './shareRows';
 import { diagnoseTeamFailure } from './teamDiagnosis';
 import type { SharingManager } from './sharingManager';
-import { OwnedShare, TreeElement, TreeNode } from './types';
+import { TreeElement, TreeNode } from './types';
 
 import { DepIndexCache } from './depIndexCache';
 import { dependentGroups, dependentsFolderItem, dependentsItem } from './depTreeItems';
@@ -178,18 +178,9 @@ export class CredTreeDataProvider
     this.onDidChangeTreeDataEmitter.dispose();
   }
 
-  /**
-   * Whether ANY share under this sender arrived somewhere its sender could be
-   * written by hand. One unverifiable share is enough to make the name a claim,
-   * so the group is marked on "any", never on "most".
-   */
-  private unverifiedSender(email: string): boolean {
-    return (this.sharing?.ownShares ?? [])
-      .filter((share) => share.item.fromEmail === email)
-      .some((share) => {
-        const account = this.storage.getAccount(share.accountId);
-        return !senderIsVerified(account === undefined ? undefined : nasPathFor(account));
-      });
+  /** The shares and the account lookup the share helpers read (`shareRows.ts`). */
+  private shareSources(): ShareSources {
+    return { ownShares: this.sharing?.ownShares ?? [], accountFor: (id) => this.storage.getAccount(id) };
   }
 
   /**
@@ -266,23 +257,6 @@ export class CredTreeDataProvider
   }
 
   /**
-   * Shares the filter keeps — matched on what their row shows: the entity's name, its kind,
-   * and who sent it. Never on the payload, which is still encrypted anyway.
-   */
-  private sharedMatches(terms: readonly string[]): OwnedShare[] {
-    const shares = this.sharing?.ownShares ?? [];
-    if (terms.length === 0) {
-      return [...shares];
-    }
-    return shares.filter((share) =>
-      matchesTerms(
-        `${share.item.entityName} ${share.item.entityKind} ${share.item.fromEmail}`.toLowerCase(),
-        terms,
-      ),
-    );
-  }
-
-  /**
    * Repaint now. Every mutation arrives here, so this is also where the filter's memoized
    * answers become void — and a repaint a keystroke was still waiting on is absorbed, since
    * this one carries the current term already.
@@ -294,11 +268,19 @@ export class CredTreeDataProvider
    */
   readonly dependencies: DepIndexCache;
 
+  /** Rows re-created by `reincarnate` (T11) — the count rides the id, so VS Code sees a NEW node. */
+  private readonly generations = new RowGenerations();
+
   /**
-   * Repaint ONE row, so its `collapsibleState` is re-applied (T11): the workbench toggles a
-   * command-bearing row on double click and nothing else would put the remembered state back.
+   * Re-create ONE entity row so its `collapsibleState` is read again (T11): a refresh under the
+   * same id keeps the node's expansion (see `RowGenerations`), so the id changes, the workbench
+   * refreshes the PARENT, and the row comes back as the expansion memory says.
    */
-  refreshElement(element: TreeElement): void {
+  reincarnate(element: TreeElement): void {
+    if (element.kind !== 'node' || element.node.type !== 'entity') {
+      return;
+    }
+    this.generations.bump(entityKey(element.accountId, element.node.id));
     this.onDidChangeTreeDataEmitter.fire(element);
   }
 
@@ -343,7 +325,7 @@ export class CredTreeDataProvider
           roots.push({ kind: 'account', account });
         }
       }
-      if ((this.sharing?.ownShares.length ?? 0) > 0 && this.sharedMatches(terms).length > 0) {
+      if ((this.sharing?.ownShares.length ?? 0) > 0 && sharedMatches(this.sharing?.ownShares ?? [], terms).length > 0) {
         roots.push({ kind: 'sharedRoot' });
       }
       return roots;
@@ -362,11 +344,11 @@ export class CredTreeDataProvider
             viaAccountId: element.account.accountId,
           }));
       case 'sharedRoot': {
-        const emails = [...new Set(this.sharedMatches(terms).map((s) => s.item.fromEmail))].sort();
+        const emails = [...new Set(sharedMatches(this.sharing?.ownShares ?? [], terms).map((s) => s.item.fromEmail))].sort();
         return emails.map((email) => ({ kind: 'sharedSender' as const, email }));
       }
       case 'sharedSender':
-        return this.sharedMatches(terms)
+        return sharedMatches(this.sharing?.ownShares ?? [], terms)
           .filter((s) => s.item.fromEmail === element.email)
           .map((share) => ({ kind: 'sharedItem' as const, share }));
       case 'teamMember':
@@ -504,7 +486,7 @@ export class CredTreeDataProvider
       // string the writer chose rather than an identity anyone checked. The accept
       // dialog says so too, but by then the reader has already decided who this is
       // from.
-      const unverified = this.unverifiedSender(element.email);
+      const unverified = unverifiedSender(this.shareSources(), element.email);
       item.iconPath = unverified
         ? new vscode.ThemeIcon('unverified', new vscode.ThemeColor('problemsWarningIcon.foreground'))
         : new vscode.ThemeIcon('account', TEAM_COLOR);
@@ -599,7 +581,7 @@ export class CredTreeDataProvider
       return item;
     }
 
-    return this.entityItem(accountId, node, `${accountId}:${node.id}`);
+    return this.entityItem(accountId, node, this.generations.idFor(`${accountId}:${node.id}`, entityKey(accountId, node.id)));
   }
 
   /**

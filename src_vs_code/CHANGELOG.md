@@ -6,6 +6,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.80.2] — 2026-08-28
+
+### Fixed
+
+- **Double-clicking an entry really leaves its twisty alone now** (tails T11, second attempt).
+  0.80.1 put the remembered state back by refreshing the row — and the owner's tree showed it
+  restoring nothing. Verified in VS Code's source: a refresh keeps an existing node's expansion
+  (`PreserveOrCollapsed`) and the `collapsibleState` is read only for a NEW node. The row is
+  therefore *re-created* — its id carries a generation count, the workbench refreshes the parent,
+  and the row comes back as the memory says, still selected. The toggle cannot be prevented
+  (`expandOnDoubleClick` is not an extension's to set), only undone.
+- **Three columns no longer squeeze into the two-column width** (the owner, 2026-08-28: "far too
+  narrow — you ran three into the same width"). A column keeps the width it has on a full
+  two-column page (628 px); the page widens by exactly one column and one gap when the third
+  one comes, and the third column appears only when the window can hold three full ones —
+  below that, Agent access sits under Additional, as before.
+
+### Changed
+
+- **The viewer's agent access is its own frame** — the same colour as the form's Agent access
+  section — in the agent column: the switches' summary, the CLI command rows (T23a) and, read-only,
+  every other live door (T24b: code-access key, open Remote Bridge, WSL relay). It used to be the
+  first rows of Main. The form and the viewer now share one group grid (`groupsGridCss`).
+
 ## [0.80.1] — 2026-08-28
 
 ### Added

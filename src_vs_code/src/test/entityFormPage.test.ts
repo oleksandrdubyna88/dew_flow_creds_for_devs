@@ -1,6 +1,14 @@
 import * as assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { renderHtml } from '../entityFormPage';
+import {
+  COLUMN_MAX_PX,
+  GROUP_GAP_PX,
+  PAGE_MAX_WIDTH_PX,
+  THREE_COLUMN_AT,
+  THREE_COLUMN_PAGE_MAX_PX,
+  TWO_COLUMN_AT,
+} from '../webviewHtml';
 import { ENTITY_KINDS, EntityMetadata } from '../types';
 import type { EntityFormOptions } from '../entityFormPanel';
 
@@ -271,5 +279,16 @@ test('the agent group is its own third column slot, last in one-column order (T2
   const agentBlock = html.slice(agent, html.indexOf('</div>', html.indexOf('mcpSection')));
   assert.ok(agentBlock.includes('mcpSection'), 'the MCP section lives in the agent group');
   assert.ok(html.includes('#agentGroup { grid-column: 3;'), 'the third column exists at width');
-  assert.ok(html.includes("min-width: 1500px"), 'the three-column breakpoint is the shared constant');
+  assert.ok(html.includes(`min-width: ${THREE_COLUMN_AT}px`), 'the three-column breakpoint is the shared constant');
+  assert.ok(
+    html.includes(`body { max-width: ${THREE_COLUMN_PAGE_MAX_PX}px; }`),
+    'the page widens with its third column — three FULL columns, not three squeezed into two (owner, 2026-08-28)',
+  );
+});
+
+test('a column keeps its two-column width when the third one comes — the page grows by a column and a gap', () => {
+  assert.equal(COLUMN_MAX_PX, (PAGE_MAX_WIDTH_PX - GROUP_GAP_PX) / 2);
+  assert.equal(THREE_COLUMN_PAGE_MAX_PX, COLUMN_MAX_PX * 3 + GROUP_GAP_PX * 2);
+  assert.ok(THREE_COLUMN_AT >= THREE_COLUMN_PAGE_MAX_PX, 'no third column before the window can hold three full ones');
+  assert.ok(THREE_COLUMN_AT > TWO_COLUMN_AT && PAGE_MAX_WIDTH_PX >= TWO_COLUMN_AT);
 });

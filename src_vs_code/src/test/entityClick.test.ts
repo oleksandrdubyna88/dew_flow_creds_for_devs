@@ -20,7 +20,7 @@ function world(opts: { open: boolean; toggles: boolean; collapsible?: boolean })
     isOpen: () => state.open,
     setOpen: (_key, open) => { state.open = open; log.push(`set:${open}`); },
     collapsible: () => opts.collapsible ?? true,
-    repaint: () => log.push('repaint'),
+    repaint: () => { log.push('repaint'); },
     open: async () => {
       log.push('viewer');
       if (opts.toggles) { state.open = !state.open; } // the workbench's own double-click toggle

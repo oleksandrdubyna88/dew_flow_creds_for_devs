@@ -2,7 +2,7 @@ import { ZOOM_CSS, zoomControlHtml, zoomScript, zoomStyle } from './zoomControl'
 import {
   COPY_ICON as SHARED_COPY_ICON,
   PAGE_MAX_WIDTH_PX,
-  TWO_COLUMN_AT,
+  groupsGridCss,
   escapeHtml,
   jsonForScript,
 } from './webviewHtml';
@@ -24,6 +24,7 @@ import {
 import { CONFIG_KEY_ENV } from './configKey';
 import { configFileNameFor } from './configFile';
 import { FORM_SECTIONS } from './formSections';
+import { AgentDoors, agentDoorRows } from './agentDoors';
 import { WINDOWS_OPENSSH_DIR } from './sshProgram';
 import { describeAttachment } from './attachmentMeta';
 import { Revision, summarizeRevision } from './revisionHistory';
@@ -53,6 +54,8 @@ export interface EntityViewOptions {
   subtitle?: string;
   /** CLI aliases pointing at this entry (T23a) — the reverse of the alias map, caller-resolved. */
   cliAliases?: readonly string[];
+  /** Every other door an agent has to this entry (T24b) — shown beside the switches' summary. */
+  agentDoors?: AgentDoors;
   /** The text-zoom offset (T28), from `credSshManager.uiScale`. */
   uiScale?: number;
   hasPassword: boolean;
@@ -192,6 +195,8 @@ function codePanelFor(options: EntityViewOptions): string {
  * the same colour as the form's General section on every kind, and a colour renamed in
  * `formSections.ts` fails this file's tests instead of silently unframing the page.</p>
  */
+const NO_DOORS: AgentDoors = { cliAliases: [], codeAccess: false, bridgeOpen: false, wslRelay: false };
+
 function viewFrame(sectionId: string, legend: string, body: string): string {
   if (body.trim().length === 0) {
     return '';
@@ -374,9 +379,16 @@ export function renderEntityViewHtml(options: EntityViewOptions): string {
           )
           .join('')}<div class="note">Runs in any terminal on this machine while this window is open — the secret itself never leaves the vault.</div></div>`;
 
+  // T24b: the doors the switches do not show, read-only here — the form is where they are managed.
+  const doorRows = agentDoorRows({ ...(options.agentDoors ?? NO_DOORS), cliAliases: [] })
+    .map(
+      (door) => `<div class="row"><label>${escapeHtml(door.label)}</label>
+      <div class="note">${escapeHtml(door.detail)}</div></div>`,
+    )
+    .join('');
+  const agentRows = [mcpRow, cliRow, doorRows].join('');
+
   const mainRows = [
-    mcpRow,
-    cliRow,
     row('Name', 'name', d.name),
     row('Host', 'host', d.host),
     row('User', 'user', d.user),
@@ -550,8 +562,7 @@ export function renderEntityViewHtml(options: EntityViewOptions): string {
   .envLine { margin-top: 3px; align-items: center; }
   /* The form's own rule, deliberately: two columns when there is room, stacked when there is
      not, and the two pages then narrow the same way instead of nearly the same way. */
-  .viewGroups { display: grid; grid-template-columns: 1fr; gap: 0 24px; align-items: start; }
-  @media (min-width: ${TWO_COLUMN_AT}px) { .viewGroups { grid-template-columns: 1fr 1fr; } }
+  ${groupsGridCss('viewGroups')}
   .hint.bad { color: var(--vscode-editorWarning-foreground, #cca700); opacity: 1; }
   .code { flex: 1; margin: 0; padding: 6px 8px; max-height: 320px; overflow: auto;
     font-family: var(--vscode-editor-font-family, monospace); font-size: 1em; line-height: 1.45;
@@ -623,13 +634,16 @@ export function renderEntityViewHtml(options: EntityViewOptions): string {
   </div>
   ${options.subtitle === undefined ? '' : `<p class="subtitle">${escapeHtml(options.subtitle)}</p>`}
   <div class="viewGroups">
-    <div>
+    <div id="mainGroup">
       ${viewFrame('generalSection', 'Main', mainRows)}
       ${viewFrame('datesSection', 'Dates & history', datesRows)}
     </div>
-    <div>
+    <div id="additionalGroup">
       ${viewFrame('attachmentsSection', 'Additional', additionalRows)}
       ${viewFrame('configSection', 'Read this from code', codePanelFor(options))}
+    </div>
+    <div id="agentGroup">
+      ${viewFrame('mcpSection', 'Agent access', agentRows)}
     </div>
   </div>
 <script nonce="${nonce}">

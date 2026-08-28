@@ -445,13 +445,22 @@ that keeps the two surfaces from drifting.
 
 ### T11. A double click both opens the viewer and toggles the twisty (DEFECT, found by the owner 2026-08-27)
 
-> **Shipped 2026-08-28 (0.80.1).** The workbench's double-click toggle cannot be switched off for a
-> row that has a command, so the handler UNDOES it: `entityClick.ts` (`EntityClicks`) records the
-> row's expansion on the first click and, after the viewer opens on the second, puts it back through
-> `ExpansionMemory` + `refreshElement`; `treeClicks.ts` holds the two pure decisions (the 500 ms
-> window, when a restore is needed). A row with no twisty is never touched. The owner's question —
-> "keep double-click-to-open but not expand?" — is answered yes, by restoration rather than
-> prevention; he verifies the feel after a window reload.
+> **Shipped 2026-08-28 — 0.80.1, corrected in 0.80.2.** The workbench's double-click toggle cannot
+> be switched off for a row that has a command (`expandOnDoubleClick` is a tree option the
+> workbench never exposes), so the handler UNDOES it: `entityClick.ts` (`EntityClicks`) records the
+> row's expansion on the first click and, after the viewer opens on the second, puts it back;
+> `treeClicks.ts` holds the two pure decisions (the 500 ms window, when a restore is needed).
+>
+> **What 0.80.1 got wrong, measured by the owner:** "no restore — one double click opened the entry
+> and expanded the tree; the next opened another and collapsed it." The restore refreshed the row
+> under the same id, and VS Code keeps an existing node's expansion across a refresh
+> (`asyncDataTree.ts`: `PreserveOrCollapsed` / `PreserveOrExpanded` — the `collapsibleState` is read
+> only for a NEW node). 0.80.2 re-creates the row instead: `RowGenerations` (`rowIdentity.ts`)
+> counts the re-creations and the count rides the row's id; a changed handle makes the workbench
+> refresh the PARENT (`mainThreadTreeViews.ts`: "Update maps when handle is changed and refresh
+> parent"), the new node reads the memory, and `treeView.reveal(select, no focus)` puts the
+> selection back. The shadow row under a dependency and folders are untouched
+> (`treeProviderReincarnate.test.ts`).
 
 **Symptom.** Double-clicking an entity that has kept versions, or that something depends on, opens
 the read-only viewer **and** expands or collapses its History / *Depended on by* sub-tree — so the
@@ -1075,6 +1084,14 @@ placement is decided in markup.
 > door — code-access key, CLI aliases, open Remote Bridge, WSL relay — with a *manage…* link that
 > runs the owning command (`entityFormPanel.ts` accepts only the four door commands). Nothing live,
 > no footer.
+>
+> **0.80.2 — the viewer too, after the owner asked "T24b, is this how it should look?" at a viewer
+> whose agent line was the first row of Main.** The viewer now has its own *Agent access* frame
+> (`mcpSection` colour) in the agent column: the summary, the CLI rows, and the other live doors
+> read-only. And the three-column form was corrected the same day: it had run three columns into
+> the two-column width; a column now keeps its 628 px and the page widens by one column and one
+> gap (`COLUMN_MAX_PX`, `THREE_COLUMN_PAGE_MAX_PX`, `groupsGridCss` in `webviewHtml.ts`), so the
+> third column appears at 1980 px and below that Agent access sits under Additional.
 
 **T24b. The block under-reports what agents can actually reach — study and propose.** The six
 switches cover the broker's entry-level actions. Since they were written, the agent surface grew,
@@ -1256,7 +1273,8 @@ menus match.
 
 ### T30. The tree's descriptions: right-aligned and, for folders, underlined — against an API that offers neither
 
-> **Shipped 2026-08-28 (0.80.1), the underline half — the owner's yes.** `treeDescriptions.ts`
+> **Shipped 2026-08-28 (0.80.1), the underline half — the owner's yes; seen and kept ("хорошо,
+> оставь так").** `treeDescriptions.ts`
 > `underlined()` weaves U+0332 after every character at render time; `plain()` is the inverse, and
 > a test pins that `nodeHaystack` never sees the marks. Entity descriptions untouched.
 > Right-alignment stays impossible (inline description, no API) and is recorded as such.

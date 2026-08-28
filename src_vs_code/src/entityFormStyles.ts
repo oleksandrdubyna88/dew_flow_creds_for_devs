@@ -1,4 +1,4 @@
-import { PAGE_MAX_WIDTH_PX, THREE_COLUMN_AT, TWO_COLUMN_AT } from './webviewHtml';
+import { PAGE_MAX_WIDTH_PX, groupsGridCss } from './webviewHtml';
 import { ZOOM_CSS, zoomStyle } from './zoomControl';
 import { FORM_SECTIONS } from './formSections';
 import { mcpSwitchStyles } from './mcpSwitches';
@@ -56,23 +56,7 @@ export function formStyleSheet(uiScale: number): string {
      Below the breakpoint the grid collapses to one column and Main simply sits above Additional.
      align-items: start, so the shorter column does not stretch to match the taller one.
      No backticks in here: one inside a CSS comment ends the template literal this page is. */
-  /* T24a: one column stacks main -> additional -> agent; two columns put the agent group under
-     Additional (exactly the old layout); a screen wide enough gives Agent access its OWN third
-     column. CSS order + grid placement, so the MARKUP stays one source order. */
-  .formGroups { display: grid; grid-template-columns: 1fr; gap: 0 24px; align-items: start; }
-  #agentGroup { order: 3; }
-  @media (min-width: ${TWO_COLUMN_AT}px) {
-    .formGroups { grid-template-columns: 1fr 1fr; }
-    #mainGroup { grid-column: 1; grid-row: 1 / span 2; }
-    #additionalGroup { grid-column: 2; grid-row: 1; }
-    #agentGroup { grid-column: 2; grid-row: 2; order: 0; }
-  }
-  @media (min-width: ${THREE_COLUMN_AT}px) {
-    .formGroups { grid-template-columns: 1fr 1fr 1fr; }
-    #mainGroup { grid-row: 1; }
-    #additionalGroup { grid-row: 1; }
-    #agentGroup { grid-column: 3; grid-row: 1; }
-  }
+  ${groupsGridCss('formGroups')}
   .groupTitle { margin: 18px 0 8px; font-size: .95em; text-transform: uppercase;
                 letter-spacing: .08em; opacity: .6; }
   /* The legend keeps the default foreground on purpose - only the border carries the colour, so

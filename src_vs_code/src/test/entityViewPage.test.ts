@@ -285,6 +285,25 @@ test('the verb follows the kind: ssh, run, script, vpn-up, config, env', () => {
   }
 });
 
+test('agent access is its own frame in the agent column — with the CLI row and the other live doors (T24/T24b)', () => {
+  const html = renderEntityViewHtml(
+    options({
+      cliAliases: ['prod-db'],
+      agentDoors: { cliAliases: ['prod-db'], codeAccess: false, bridgeOpen: true, wslRelay: false },
+    }),
+  );
+  const agent = html.indexOf('id="agentGroup"');
+  const main = html.indexOf('id="mainGroup"');
+  assert.ok(agent > main && main !== -1, 'the agent group follows main and additional in source order');
+  const frame = html.slice(agent);
+  assert.ok(frame.includes('<legend>Agent access</legend>'), 'the frame carries the agent legend');
+  assert.ok(frame.includes('CLI access'), 'the CLI row moved into the agent frame');
+  assert.ok(frame.includes('Remote Bridge open'), 'the live door is listed');
+  assert.ok(!frame.includes('Code access key'), 'a door that is not live is not listed');
+  assert.ok(!html.slice(main, agent).includes('CLI access'), 'and it left Main');
+  assert.ok(html.includes("#agentGroup { grid-column: 3;"), 'the viewer shares the three-column grid');
+});
+
 test('no aliases, no row — a capability line about nothing is noise', () => {
   const html = renderEntityViewHtml(options());
   assert.ok(!html.includes('CLI access'));

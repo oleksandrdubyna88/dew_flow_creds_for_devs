@@ -130,7 +130,7 @@ import type { EntityFormOptions } from './entityFormPanel';
 import { EntityClicks } from './entityClick';
 import { warnIfKeyringMissing } from './keyringWarningHost';
 import { saveTextAs } from './saveTextAs';
-import { DoorSources, doorsOf } from './agentDoors';
+import { AgentDoors, DoorSources, doorsOf } from './agentDoors';
 import { offerToInstall } from './toolEnsure';
 import { ARRIVAL_WINDOW_MS } from './arrivalHighlight';
 import { DepDecorationProvider } from './depDecorations';
@@ -371,10 +371,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     wslRelayOn: () => vscode.workspace.getConfiguration('credSshManager').get<boolean>('wslAgentRelay', false),
     isKeyEntity: (details) => resolveKind(details as never) === 'sshkey',
   };
-  const doorsFor: DoorsFor = (accountId, node) => ({
-    agentDoors: doorsOf(doorSources, accountId, node.id, node.details),
-    entityTarget: { kind: 'node', accountId, node },
-  });
+  const doorsAt = (accountId: string, node: TreeNode): AgentDoors => doorsOf(doorSources, accountId, node.id, node.details);
+  const doorsFor: DoorsFor = (accountId, node) => ({ agentDoors: doorsAt(accountId, node), entityTarget: { kind: 'node', accountId, node } });
   // T23: the has:cli filter and the viewer's CLI row ask the SAME reverse lookup.
   provider.hasCliAlias = (accountId, nodeId) =>
     aliasFor(aliasMap(), accountId, nodeId) !== undefined;
@@ -2512,8 +2510,8 @@ ${detail}
   // within 500ms) = open the read-only viewer with copy buttons.
   // Single click selects; a double click opens the viewer — and puts the twisty back where the
   // workbench's own double-click toggle moved it (T11). The decisions live in entityClick.ts.
-  const entityClicks = EntityClicks.forTree(expansion, provider, (element) =>
-    openEntityViewer(element.accountId, element.node, storage, cliAliasesFor(element.accountId, element.node.id)),
+  const entityClicks = EntityClicks.forTree(expansion, provider, treeView, (element) =>
+    openEntityViewer(element.accountId, element.node, storage, doorsAt(element.accountId, element.node)),
   );
   register('credSshManager.itemClicked', async (target) => {
     const element = asElement(target);
@@ -2540,7 +2538,7 @@ ${detail}
     }
     // The viewer, not the old QuickPick: that one knew only the SSH fields, so a VPN, database,
     // script or command entity opened as "Host —, Password not set" and read as broken.
-    await openEntityViewer(element.accountId, element.node, storage, cliAliasesFor(element.accountId, element.node.id));
+    await openEntityViewer(element.accountId, element.node, storage, doorsAt(element.accountId, element.node));
   });
 
   register('credSshManager.copyPassword', async (target) => {
@@ -2789,7 +2787,7 @@ ${detail}
     // Straight to the viewer rather than revealing the row: `TreeView.reveal` needs
     // `getParent` on the provider, which this one does not implement — and opening the thing
     // asked for is what the picker was for anyway.
-    await openEntityViewer(picked.accountId, node, storage, cliAliasesFor(picked.accountId, node.id));
+    await openEntityViewer(picked.accountId, node, storage, doorsAt(picked.accountId, node));
   });
 
   /**
@@ -5378,8 +5376,8 @@ async function openEntityViewer(
   accountId: string,
   node: TreeNode,
   storage: StorageManager,
-  /** CLI aliases pointing at this entry (T23a) — resolved by the caller, which holds the map. */
-  cliAliases: readonly string[] = [],
+  /** Every agent door to this entry (T23a/T24b) — resolved by the caller, which holds the sources. */
+  doors: AgentDoors,
 ): Promise<void> {
   const details = node.details;
   if (!details) {
@@ -5411,7 +5409,8 @@ async function openEntityViewer(
   const hasTotp = (await storage.getTotp(accountId, details.id)) !== undefined;
   showEntityView({
     details,
-    cliAliases,
+    cliAliases: doors.cliAliases,
+    agentDoors: doors,
     mcp: mcpFor(node, (id) => storage.getNode(accountId, id), false),
     keySourceName,
     jumpHostName,
