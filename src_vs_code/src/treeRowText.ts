@@ -46,6 +46,11 @@ export function describeTarget(node: TreeNode): string {
   return [baseTarget(node), tagLabel(node)].filter((part) => part.length > 0).join('  ');
 }
 
+/** A folder row's context value: `folder`, or `folder:trashed` inside the Trash (Restore leads). */
+export function folderContextValue(trashed: boolean): string {
+  return trashed ? 'folder:trashed' : 'folder';
+}
+
 /**
  * The colon-joined capability tokens a row's context menu is keyed on — `entity:ssh:pwd`,
  * `entity:vpn:vpnrun:shareable`, and so on. Every `viewItem` regex in `package.json` reads this

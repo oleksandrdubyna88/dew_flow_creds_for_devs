@@ -22,7 +22,7 @@ import { describeRemaining } from './entityExpiry';
 import { resolveKind } from './entityKind';
 import { SyncReadiness } from './syncReadiness';
 import { OrgRecoveryAccess } from './orgRecoveryAccess';
-import { describeTarget, entityContextValue, markInvalid } from './treeRowText';
+import { describeTarget, entityContextValue, markInvalid, folderContextValue } from './treeRowText';
 import { FOLDER_COLOR, buildTooltip, entityIcon, folderIcon, kindIcon } from './treeIcons';
 import { parentOf } from './treeParent';
 import { describeRetention, isInTrash, isTrashFolder } from './trash';
@@ -551,10 +551,19 @@ export class CredTreeDataProvider
       // The trash says what it is and when it empties, in the place a folder says its type —
       // "kept until emptied" beside a folder full of deleted secrets is the fact that matters.
       const trash = isTrashFolder(node);
-      item.contextValue = trash ? 'trashFolder' : 'folder';
+      // A folder INSIDE the trash says so, and by that loses the exact-match items (new entity,
+      // reorder, change type) while keeping the prefix-matched ones (delete, move, export) —
+      // and gains Restore, first (the owner, 2026-08-28).
+      item.contextValue = trash
+        ? 'trashFolder'
+        : folderContextValue(isInTrash(node, (id) => this.storage.getNode(accountId, id)));
       item.iconPath = trash
         ? new vscode.ThemeIcon('trash', FOLDER_COLOR)
         : folderIcon(node.folderType);
+      // The same synthetic address the entity rows carry, so a restored or newly created folder
+      // gets the arrival tint too — the decoration provider answers by id, and a folder id has
+      // no dependency colour, so nothing else changes.
+      item.resourceUri = depUri(accountId, node.id);
       if (trash) {
         item.description = describeRetention(node);
       } else if (node.folderType !== undefined && node.folderType !== 'any') {

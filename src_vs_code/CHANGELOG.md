@@ -6,6 +6,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.80.7] — 2026-08-28
+
+### Added
+
+- **Restore for folders in the Trash, too** (the owner, 2026-08-28): first on a trashed folder's
+  menu, back to where it was deleted from with everything inside it; the creation, reorder and
+  change-type items stay off a folder while it is in the Trash. After any restore the tree
+  reveals, selects and focuses what came back — expanded, so the place it returned to is seen.
+
 ## [0.80.6] — 2026-08-28
 
 ### Added
