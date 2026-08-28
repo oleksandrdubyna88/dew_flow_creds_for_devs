@@ -574,6 +574,12 @@ writes the client config; the extension itself keeps its zero runtime dependenci
   answers to everything inside it — so moving one is a permission change for its contents.
 - **The switch is not consent.** It says an agent *may ask*; every action still raises the
   modal with the real entry and the real command.
+- **The agent may shape a generated secret, never see it.** `length`, the four character sets and
+  `avoidAmbiguous` for a password; `words` and `separator` for a passphrase. It matters because the
+  alternative to "this system caps passwords at 16" is an agent generating the value itself, and
+  then the secret is in its context. Asking for a password with no character sets is refused rather
+  than drawn — the generator answers with an empty string, and an empty secret stored as if it were
+  one is a working-looking entry that is not.
 - **Rotation without disclosure:** an agent writes `{{creds:new}}`, the extension generates the
   value, and neither the old nor the new secret ever enters the agent's context.
 - **`creds_config_snippet`** answers "how does code read this config?" from the same catalog the

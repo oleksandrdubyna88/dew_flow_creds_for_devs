@@ -1,4 +1,11 @@
-import { DEFAULT_PASSPHRASE, DEFAULT_PASSWORD, generatePassphrase, generatePassword } from './secretGenerator';
+import {
+  DEFAULT_PASSPHRASE,
+  DEFAULT_PASSWORD,
+  PassphraseOptions,
+  PasswordOptions,
+  generatePassphrase,
+  generatePassword,
+} from './secretGenerator';
 
 /**
  * What this extension can make, and what it knows it cannot.
@@ -34,9 +41,26 @@ export function isSecretKind(value: string): value is SecretKind {
  * side, which is a different operation with a different failure mode, not a longer password.
  * Promising it here and half-doing it would be worse than saying no.</p>
  */
-const GENERATORS: Partial<Record<SecretKind, () => string>> = {
-  password: () => generatePassword(DEFAULT_PASSWORD).value,
-  passphrase: () => generatePassphrase(DEFAULT_PASSPHRASE).value,
+const GENERATORS: Partial<Record<SecretKind, (options: DrawOptions) => string>> = {
+  password: (options) => generatePassword(options.password).value,
+  passphrase: (options) => generatePassphrase(options.passphrase).value,
+};
+
+/**
+ * What the draw is allowed to be told.
+ *
+ * <p>Constraints only. There is no option here that returns the value, names it, or touches the
+ * random source — a caller says how long and out of what, and the window does the rest.</p>
+ */
+export interface DrawOptions {
+  password: PasswordOptions;
+  passphrase: PassphraseOptions;
+}
+
+/** What an unattended call gets, and what every caller starts from. */
+export const DEFAULT_DRAW: DrawOptions = {
+  password: DEFAULT_PASSWORD,
+  passphrase: DEFAULT_PASSPHRASE,
 };
 
 /**
@@ -67,19 +91,22 @@ export type GenerationOutcome =
  * all is a different refusal: it is a typo, and telling somebody the vocabulary is more useful
  * than explaining a policy they did not run into.</p>
  */
-export function generateSecret(kind: string): GenerationOutcome {
+export function generateSecret(kind: string, options: DrawOptions = DEFAULT_DRAW): GenerationOutcome {
   if (!isSecretKind(kind)) {
-    return {
-      ok: false,
-      kind: undefined,
-      message: `"${kind}" is not a kind of secret. One of: ${SECRET_KINDS.join(', ')}.`,
-    };
+    return { ok: false, kind: undefined, message: notAKind(kind) };
   }
   const draw = GENERATORS[kind];
-  if (draw === undefined) {
-    return { ok: false, kind, message: NOT_GENERATED[kind] ?? `${kind} is not generated here.` };
-  }
-  return { ok: true, value: draw(), kind };
+  return draw === undefined
+    ? { ok: false, kind, message: whyNot(kind) }
+    : { ok: true, value: draw(options), kind };
+}
+
+function notAKind(kind: string): string {
+  return `"${kind}" is not a kind of secret. One of: ${SECRET_KINDS.join(', ')}.`;
+}
+
+function whyNot(kind: SecretKind): string {
+  return NOT_GENERATED[kind] ?? `${kind} is not generated here.`;
 }
 
 /** Can this kind be drawn here? For a tool description that lists them honestly. */

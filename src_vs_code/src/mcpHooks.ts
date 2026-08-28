@@ -12,7 +12,8 @@ import { McpUseLookup } from './brokerRequests';
 import { findUsableEntry } from './mcpEntries';
 import { resolveKind } from './entityKind';
 import { CreateRequest } from './mcpCreate';
-import { generateSecret } from './secretKinds';
+import { readSecretOptions } from './mcpSecretOptions';
+import { DEFAULT_DRAW, generateSecret } from './secretKinds';
 import * as vscode from 'vscode';
 /**
  * What the broker asks the vault when an agent wants to create an entry.
@@ -122,7 +123,19 @@ export function readCreateRequest(body: Record<string, unknown>): CreateRequest 
     port: typeof body.port === 'number' && Number.isInteger(body.port) ? body.port : undefined,
     folder: text('folder'),
     secretKind: text('secretKind'),
+    ...drawFrom(body),
   };
+}
+
+/**
+ * The generation options, or the reason they were refused.
+ *
+ * <p>Carried on the request rather than thrown, because a refusal here is an answer an agent can
+ * act on — "that length is out of range" is a thing it can retry, and a thrown error is not.</p>
+ */
+function drawFrom(body: Record<string, unknown>): Pick<CreateRequest, 'draw' | 'optionsRefusal'> {
+  const read = readSecretOptions(body);
+  return read.ok ? { draw: { password: read.password, passphrase: read.passphrase } } : { optionsRefusal: read.message };
 }
 
 /**
@@ -137,7 +150,7 @@ export function generatedFor(request: CreateRequest): string | undefined {
   if (request.secretKind === undefined) {
     return undefined;
   }
-  const drawn = generateSecret(request.secretKind);
+  const drawn = generateSecret(request.secretKind, request.draw ?? DEFAULT_DRAW);
   return drawn.ok ? drawn.value : undefined;
 }
 
@@ -174,9 +187,12 @@ export async function moveEntryToTrash(
 
 /** Whether this request asks for a secret we cannot make — the message, or nothing. */
 export function checkGeneratable(request: CreateRequest): string | undefined {
+  if (request.optionsRefusal !== undefined) {
+    return request.optionsRefusal;
+  }
   if (request.secret !== undefined || request.secretKind === undefined) {
     return undefined;
   }
-  const drawn = generateSecret(request.secretKind);
+  const drawn = generateSecret(request.secretKind, request.draw ?? DEFAULT_DRAW);
   return drawn.ok ? undefined : drawn.message;
 }

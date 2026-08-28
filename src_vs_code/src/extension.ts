@@ -720,7 +720,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // there is one implementation of "run a query against this database" and not two — the
   // rotating one adds the generate before it and the store after it, and nothing else.
   const rotateDeps: RotateDeps = {
-    generate: (kind) => generateSecret(kind),
+    generate: (kind, options) => generateSecret(kind, options),
     entity: (ctx) => storage.getNode(ctx.accountId, ctx.entityId)?.details,
     current: (ctx, slot) =>
       slot === 'password'

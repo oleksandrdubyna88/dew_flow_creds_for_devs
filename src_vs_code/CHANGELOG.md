@@ -6,6 +6,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.86.0] — 2026-08-28
+
+### Added
+
+- **An agent can say what a generated secret should look like.** It could name a kind and nothing
+  else, so every value the window drew for it was the default 32 characters of everything — a good
+  default and a bad only option, because plenty of systems cap the length or forbid symbols. Now
+  `creds_create` and `creds_rotate` also take `length`, `lower`, `upper`, `digits`, `symbols`,
+  `avoidAmbiguous` for a password and `words`, `separator` for a passphrase. It says what it wants
+  and still never learns what it gets: the draw happens in the window, and the consent prompt shows
+  you what was asked for.
+- **`creds_create` finally takes `port`** — its own description had promised it since the tool
+  shipped, and the schema did not offer it.
+
+### Fixed
+
+- **A password with every character set turned off would have been stored as an empty string.**
+  The generator answers with `''` when there is nothing to draw from, and nothing above it looked;
+  an entry holding "" looks exactly like a working one until somebody uses it. Options are now
+  validated before anything is drawn — bounds on the length and the word count, an offered
+  separator, and at least one character set — with a sentence an agent can act on rather than a
+  silent substitution.
+
 ## [0.85.0] — 2026-08-28
 
 ### Added

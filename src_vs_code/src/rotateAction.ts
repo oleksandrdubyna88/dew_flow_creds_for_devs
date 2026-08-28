@@ -8,7 +8,8 @@ import {
   summarizeRotation,
 } from './secretRotation';
 import { EntityMetadata } from './types';
-import { GenerationOutcome, NO_GENERATOR_OUTCOME } from './secretKinds';
+import { DrawOptions, GenerationOutcome, NO_GENERATOR_OUTCOME } from './secretKinds';
+import { readSecretOptions } from './mcpSecretOptions';
 import { Revision } from './revisionHistory';
 
 /**
@@ -43,7 +44,7 @@ export interface RotateDeps {
    * failure of the request: it is the map of where an agent will be tempted to fill in for us,
    * which is why the journal counts it.</p>
    */
-  generate(kind: string): GenerationOutcome;
+  generate(kind: string, options?: DrawOptions): GenerationOutcome;
   /** The live entity, or undefined when it has gone. */
   entity(ctx: UseActionContext): EntityMetadata | undefined;
   /** The value in the slot right now — a password, or a connection string. */
@@ -180,7 +181,14 @@ async function draw(
   body: unknown,
   deps: RotateDeps,
 ): Promise<Prepared> {
-  const drawn = deps.generate(kindOf(body));
+  // The same constraints a creation may ask for. A system that caps the password length caps it
+  // for the rotation too, and an agent that could not say so would have to generate the value
+  // itself — which is the one path this whole level exists to avoid.
+  const options = readSecretOptions(body as Record<string, unknown>);
+  if (!options.ok) {
+    return { ok: false, error: options.message };
+  }
+  const drawn = deps.generate(kindOf(body), { password: options.password, passphrase: options.passphrase });
   if (!drawn.ok) {
     return { ok: false, error: drawn.message, noGenerator: true };
   }

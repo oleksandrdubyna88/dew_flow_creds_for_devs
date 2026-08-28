@@ -139,6 +139,13 @@ internal static class UseTools
             `secretKind` picks what gets made: "password" (the default) or "passphrase". Key pairs
             and certificates are not made here — ask for one and you get a refusal saying why,
             which you can pass on rather than guess at.
+
+            You can also say WHAT the value should look like, which matters when the far side caps
+            the length or forbids symbols: `length` (8-128), `lower`, `upper`, `digits`, `symbols`,
+            `avoidAmbiguous` for a password; `words` (3-24) and `separator` (one of - _ . a space,
+            or empty) for a passphrase. Anything you leave out stays as it normally would. Asking
+            for a password with every character set off is refused rather than drawn, and the
+            person sees what you asked for in the prompt.
             """),
         new(
             "creds_delete",
@@ -175,6 +182,13 @@ internal static class UseTools
             call in this server works. Send `secret` only when you already hold the value because
             you provisioned the thing yourself. When you do, the person's journal records that the
             secret came from you, which is the honest cost of that path.
+
+            You can shape what gets made instead of taking the default 32 characters of
+            everything: `length` (8-128), `lower`, `upper`, `digits`, `symbols`, `avoidAmbiguous`
+            for a password; `words` (3-24) and `separator` for a passphrase. Use them when the
+            system you are provisioning has rules — a length cap or no symbols is exactly the case
+            where an agent would otherwise generate the value itself and put it in its context.
+            Anything omitted stays as it normally would.
 
             The entry is marked as agent-created, which is what the narrow delete permission keys
             on. They approve the creation.
@@ -250,7 +264,9 @@ internal static class UseTools
         string? secret,
         string? folder,
         string? host,
-        string? user)
+        string? user,
+        int? port = null,
+        IReadOnlyList<(string Key, string? Value)>? draw = null)
     {
         if (string.IsNullOrWhiteSpace(name))
         {
@@ -263,6 +279,8 @@ internal static class UseTools
         Put(fields, "folder", folder);
         Put(fields, "host", host);
         Put(fields, "user", user);
+        Put(fields, "port", port?.ToString());
+        PutAll(fields, draw);
 
         var reply = await Windows.PostAsync(
             contract,
@@ -291,7 +309,8 @@ internal static class UseTools
         UseTool tool,
         string entryId,
         string statement,
-        string? secretKind)
+        string? secretKind,
+        IReadOnlyList<(string Key, string? Value)>? draw = null)
     {
         if (string.IsNullOrWhiteSpace(entryId))
         {
@@ -300,6 +319,7 @@ internal static class UseTools
 
         var fields = new Dictionary<string, string> { ["entry"] = entryId, ["statement"] = statement };
         Put(fields, "secretKind", secretKind);
+        PutAll(fields, draw);
 
         var reply = await Windows.PostAsync(
             contract,
@@ -312,6 +332,27 @@ internal static class UseTools
                 "The entry id may be stale — call creds_list again.");
         }
         return reply.Status == 200 ? reply.Body : Refused(reply);
+    }
+
+    /// <summary>
+    /// The generation options, each left out when it was not asked for.
+    /// </summary>
+    /// <remarks>
+    /// A null list is no options at all, which is the ordinary case. The separator is the one
+    /// field whose EMPTY value is meaningful ("join the words with nothing"), so it travels when
+    /// it is non-null rather than when it is non-empty — everything else uses <see cref="Put"/>.
+    /// </remarks>
+    private static void PutAll(
+        Dictionary<string, string> fields,
+        IReadOnlyList<(string Key, string? Value)>? draw)
+    {
+        foreach (var (key, value) in draw ?? [])
+        {
+            if (value is not null && (key == "separator" || value.Length > 0))
+            {
+                fields[key] = value;
+            }
+        }
     }
 
     /// <summary>An absent optional field is left out rather than sent as an empty string.</summary>

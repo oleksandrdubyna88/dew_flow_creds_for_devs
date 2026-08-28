@@ -282,6 +282,43 @@ internal static class Program
             OpenWorld = true,
         };
 
+    /// <summary>
+    /// The generation options, as the fields the broker reads.
+    /// </summary>
+    /// <remarks>
+    /// <para>Built here, one named parameter at a time, rather than taken as an object: a tool
+    /// that accepted a settings blob would be a tool letting a model decide which fields this
+    /// program sends, which is the thing every body on this surface is built to avoid.</para>
+    /// <para>An option left null is left OUT, never sent as a default. Absent means "as you
+    /// normally would" on the far side, and sending a default would turn every call into an
+    /// explicit instruction — including the one that asked for nothing.</para>
+    /// </remarks>
+    private static IReadOnlyList<(string, string?)> Draw(
+        int? length,
+        bool? lower,
+        bool? upper,
+        bool? digits,
+        bool? symbols,
+        bool? avoidAmbiguous,
+        int? words,
+        string? separator) =>
+    [
+        ("length", length?.ToString()),
+        ("lower", Word(lower)),
+        ("upper", Word(upper)),
+        ("digits", Word(digits)),
+        ("symbols", Word(symbols)),
+        ("avoidAmbiguous", Word(avoidAmbiguous)),
+        ("words", words?.ToString()),
+        // A separator may legitimately be the EMPTY string ("join the words"), which every other
+        // field here treats as absent — so it is passed through as it came and the far side
+        // decides, rather than being silently turned into a dash.
+        ("separator", separator),
+    ];
+
+    /// <summary>`true`/`false` as the words the broker's reader accepts, or nothing.</summary>
+    private static string? Word(bool? flag) => flag is null ? null : (flag.Value ? "true" : "false");
+
     private static McpServerTool UseTool(BrokerContract contract, UseTools.UseTool tool) =>
         McpServerTool.Create(
             ArgumentsFor(contract, tool),
@@ -313,8 +350,27 @@ internal static class Program
                 UseTools.InvokeAsync(contract, tool, entry, "query", query),
             // `delete` takes only the entry: there is no second argument, because there is no
             // second destination. That is the permission, not a default.
-            "rotate" => (string entry, string statement, string? secretKind = null) =>
-                UseTools.RotateAsync(contract, tool, entry, statement, secretKind),
+            // The generation options ride along, named one by one. A model cannot add a field to
+            // a body it does not compose, which is the same rule the window keeps on its side.
+            "rotate" => (
+                    string entry,
+                    string statement,
+                    string? secretKind = null,
+                    int? length = null,
+                    bool? lower = null,
+                    bool? upper = null,
+                    bool? digits = null,
+                    bool? symbols = null,
+                    bool? avoidAmbiguous = null,
+                    int? words = null,
+                    string? separator = null) =>
+                UseTools.RotateAsync(
+                    contract,
+                    tool,
+                    entry,
+                    statement,
+                    secretKind,
+                    Draw(length, lower, upper, digits, symbols, avoidAmbiguous, words, separator)),
             // The one shape with no entry id: there is no entry yet. The parameter names are
             // what a model fills in, so they are the words the broker's body uses.
             // Defaults, not just nullable types: a parameter with no default is REQUIRED in the
@@ -327,8 +383,28 @@ internal static class Program
                     string? secret = null,
                     string? folder = null,
                     string? host = null,
-                    string? user = null) =>
-                UseTools.CreateAsync(contract, tool, name, kind, secretKind, secret, folder, host, user),
+                    string? user = null,
+                    int? port = null,
+                    int? length = null,
+                    bool? lower = null,
+                    bool? upper = null,
+                    bool? digits = null,
+                    bool? symbols = null,
+                    bool? avoidAmbiguous = null,
+                    int? words = null,
+                    string? separator = null) =>
+                UseTools.CreateAsync(
+                    contract,
+                    tool,
+                    name,
+                    kind,
+                    secretKind,
+                    secret,
+                    folder,
+                    host,
+                    user,
+                    port,
+                    Draw(length, lower, upper, digits, symbols, avoidAmbiguous, words, separator)),
             _ => (string entry) => UseTools.InvokeAsync(contract, tool, entry, null, null),
         };
 

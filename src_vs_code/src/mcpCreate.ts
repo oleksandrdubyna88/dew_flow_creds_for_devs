@@ -1,4 +1,5 @@
 import { McpAccess, resolveMcpInTree } from './mcpAccess';
+import { DrawOptions } from './secretKinds';
 import { ENTITY_KINDS, EntityKind, EntityMetadata, TreeNode } from './types';
 import { isTrashFolder } from './trash';
 
@@ -50,6 +51,17 @@ export interface CreateRequest {
   port?: number;
   /** Which open folder, when there is more than one. Never a free choice — see above. */
   folder?: string;
+  /**
+   * What the draw should be, when the window is making the value.
+   *
+   * <p>Constraints only — a length, which character sets, how many words. Nothing here names the
+   * value or reaches the random source; the whole point of asking for a kind is that the value is
+   * made on this side, and widening what may be ASKED is what keeps it there when a system caps
+   * the length or forbids symbols.</p>
+   */
+  draw?: DrawOptions;
+  /** Why the options were refused, when they were. Carried so the refusal reaches the agent. */
+  optionsRefusal?: string;
 }
 
 /**
