@@ -2338,10 +2338,13 @@ this section says where the code went, so a reader of the module can find it.
 | Help (T21/T22) | `helpContent.ts` (the catalog — the type IS the style), `helpPage.ts`, `helpPanel.ts`; `credSshManager.helpLanguage` | English required, Russian complete, the rest fall back visibly; the view is named once and the mark sits first in its title bar |
 | The listing cannot drift (T4) | `test/listingCoverage.test.ts` | Every command title and setting key must appear in `README.md` |
 | The ratchet (T3) | `sizeRatchet.ts`, `scripts/size-ratchet.mjs`, `.size-baseline.json`, CI | An exempted file may shrink, never grow |
+| A double click opens, never toggles (T11) | `treeClicks.ts` (the decisions), `entityClick.ts` (`EntityClicks`, restores through `ExpansionMemory` + `refreshElement`) | The workbench's toggle is undone, not prevented — a row with no twisty is never touched |
+| Folder descriptions underlined (T30) | `treeDescriptions.ts` `underlined()` / `plain()` | Marks are woven at render time only; search reads `folderType`, never the marks |
+| The agent-doors footer (T24b) | `agentDoors.ts` (`agentDoorRows`, `doorsOf`), `agentDoorsHtml()` in `entityFormPage.ts`, `runDoorCommand` in `entityFormHost.ts` | Doors have one owner each — the form lists the live ones and links to the owning command; nothing live, no footer |
 
-Left for a person, recorded in the plan: T2 (the `.localhost` RP-ID probe needs a browser and a
-key), T5 (release tags are the owner's), T11 (the double-click/twisty measurement needs a live
-window), T24b and T30 (proposals awaiting a yes), and the Marketplace screenshots.
+Left for a person, recorded in the plan: T2 (the `.localhost` RP-ID probe — Edge + YubiKey, the
+owner runs it) and the Marketplace screenshots. T5 (tags), T11, T24b and T30 closed on 2026-08-28
+after the owner's answers; T25 stays as shipped in 0.80.0 by his choice.
 
 ## Security hardening (2026-08-25 review)
 

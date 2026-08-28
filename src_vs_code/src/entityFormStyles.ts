@@ -23,6 +23,10 @@ export function formStyleSheet(uiScale: number): string {
              margin: 0 0 14px; padding: 10px 12px; }
   legend { padding: 0 6px; opacity: .85; }
   ${ZOOM_CSS}
+  .agentDoors { margin-top: 10px; border-top: 1px solid var(--vscode-widget-border, #3c3c3c); padding-top: 8px; }
+  .agentDoorsHead { font-weight: 600; opacity: .9; }
+  .agentDoor { margin: 6px 0; font-size: .92em; }
+  .doorLink { cursor: pointer; text-decoration: underline; margin-left: 6px; }
   /* T27: the same treatment the viewer gives — captions a notch up, names dark orange. */
   .fileName { color: var(--vscode-credSshManager-fileName, #d98a3d); font-size: 1.08em;
               font-family: var(--vscode-editor-font-family, monospace); margin: 4px 0 2px; }

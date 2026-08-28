@@ -20,7 +20,6 @@ import { EntityFormValues, KeyCandidate, showEntityForm } from './entityFormPane
 import { showEntityView } from './entityViewPanel';
 import { GoogleAuthProvider } from './googleAuthProvider';
 import { nasPathFor, setAccountNasPath } from './nasPaths';
-import { keyringMayBeUnprotected, keyringWarningMessage } from './keyringWarning';
 import { confirmCommandMessage, isCommandTrusted, trustCommand } from './commandTrust';
 import { keyFingerprint } from './shareSignature';
 import { diagnoseTeamFailure, teamFailureIsActionable } from './teamDiagnosis';
@@ -127,6 +126,11 @@ import { ArrivalHighlights } from './arrivalHighlight';
 import { carryThroughDetails } from './attachmentMeta';
 import { wireSearchBox } from './searchBox';
 import { showHelp } from './helpPanel';
+import type { EntityFormOptions } from './entityFormPanel';
+import { EntityClicks } from './entityClick';
+import { warnIfKeyringMissing } from './keyringWarningHost';
+import { saveTextAs } from './saveTextAs';
+import { DoorSources, doorsOf } from './agentDoors';
 import { offerToInstall } from './toolEnsure';
 import { ARRIVAL_WINDOW_MS } from './arrivalHighlight';
 import { DepDecorationProvider } from './depDecorations';
@@ -360,6 +364,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   );
   // Answered per row, never cached: the map is the truth and it changes underneath the tree.
   provider.isBridged = (accountId, nodeId) => bridges.isOpen(entityKey(accountId, nodeId));
+  // T24b: the doors the MCP switches do not show, read here where the sources live.
+  const doorSources: DoorSources = {
+    aliasesFor: cliAliasesFor,
+    bridgeOpen: (accountId, id) => bridges.isOpen(entityKey(accountId, id)),
+    wslRelayOn: () => vscode.workspace.getConfiguration('credSshManager').get<boolean>('wslAgentRelay', false),
+    isKeyEntity: (details) => resolveKind(details as never) === 'sshkey',
+  };
+  const doorsFor: DoorsFor = (accountId, node) => ({
+    agentDoors: doorsOf(doorSources, accountId, node.id, node.details),
+    entityTarget: { kind: 'node', accountId, node },
+  });
   // T23: the has:cli filter and the viewer's CLI row ask the SAME reverse lookup.
   provider.hasCliAlias = (accountId, nodeId) =>
     aliasFor(aliasMap(), accountId, nodeId) !== undefined;
@@ -2415,7 +2430,7 @@ ${detail}
     if (element?.kind !== 'node') {
       return;
     }
-    await editNode(element.accountId, element.node, storage, mutated);
+    await editNode(element.accountId, element.node, storage, mutated, doorsFor);
   });
 
   register('credSshManager.deleteNode', async (target, selected) => {
@@ -2495,19 +2510,17 @@ ${detail}
 
   // Single click = select only; double click (two clicks on the same row
   // within 500ms) = open the read-only viewer with copy buttons.
-  let lastClick = { id: '', time: 0 };
+  // Single click selects; a double click opens the viewer — and puts the twisty back where the
+  // workbench's own double-click toggle moved it (T11). The decisions live in entityClick.ts.
+  const entityClicks = EntityClicks.forTree(expansion, provider, (element) =>
+    openEntityViewer(element.accountId, element.node, storage, cliAliasesFor(element.accountId, element.node.id)),
+  );
   register('credSshManager.itemClicked', async (target) => {
     const element = asElement(target);
     if (element?.kind !== 'node' || element.node.type !== 'entity' || !element.node.details) {
       return;
     }
-    const now = Date.now();
-    const isDouble = lastClick.id === element.node.id && now - lastClick.time < 500;
-    lastClick = { id: element.node.id, time: now };
-    if (!isDouble) {
-      return;
-    }
-    await openEntityViewer(element.accountId, element.node, storage, cliAliasesFor(element.accountId, element.node.id));
+    await entityClicks.click(element, Date.now());
   });
 
   register('credSshManager.revisionClicked', async (target) => {
@@ -5074,11 +5087,14 @@ async function editFolder(
   onMutated();
 }
 
+type DoorsFor = (accountId: string, node: TreeNode) => Partial<Pick<EntityFormOptions, 'agentDoors' | 'entityTarget'>>;
+
 async function editNode(
   accountId: string,
   node: TreeNode,
   storage: StorageManager,
   onMutated: () => void,
+  doorsFor: DoorsFor = () => ({}),
 ): Promise<void> {
   if (node.type === 'folder') {
     await editFolder(accountId, node, storage, onMutated);
@@ -5126,6 +5142,7 @@ async function editNode(
     jumpCandidates: collectJumpCandidates(storage, accountId, node.id),
     hasStoredHostKey: storedHostKey !== undefined,
     hostKeyFingerprint: storedHostKey === undefined ? undefined : hostKeyFingerprint(storedHostKey),
+    ...doorsFor(accountId, node),
   });
   if (result === undefined) {
     return;
@@ -5294,19 +5311,6 @@ async function saveVpnConfigToFile(
     return;
   }
   await saveTextAs('Save VPN config', details.vpnConfigFileName ?? `${details.name}.ovpn`, content);
-}
-
-/** Save-As for a text secret the caller already holds. */
-async function saveTextAs(title: string, suggestedName: string, content: string): Promise<void> {
-  const uri = await vscode.window.showSaveDialog({
-    title,
-    defaultUri: vscode.Uri.file(path.join(os.homedir(), suggestedName)),
-  });
-  if (uri === undefined) {
-    return;
-  }
-  await vscode.workspace.fs.writeFile(uri, Buffer.from(content, 'utf8'));
-  void vscode.window.showInformationMessage(`Saved to ${uri.fsPath}.`);
 }
 
 /**
@@ -5487,41 +5491,6 @@ async function openEntityViewer(
 }
 
 // ---------- helpers ----------
-
-/**
- * Say so, once, when this machine may have no keychain behind SecretStorage.
- *
- * <p>Once per machine, not once per window: VS Code says nothing about the
- * fallback itself, so the person has to hear it — but a security warning that
- * arrives every morning is one people learn to dismiss, and then the one that
- * matters arrives after the habit is formed. The flag is deliberately in
- * `globalState` rather than a setting: it is a "you have been told", not a
- * preference anybody should have to find.</p>
- */
-function warnIfKeyringMissing(context: vscode.ExtensionContext): void {
-  const KEY = 'credSshManager.keyringWarningShown';
-  if (context.globalState.get<boolean>(KEY) === true) {
-    return;
-  }
-  const unprotected = keyringMayBeUnprotected({
-    platform: process.platform,
-    dbusAddress: process.env.DBUS_SESSION_BUS_ADDRESS,
-    remoteName: vscode.env.remoteName,
-  });
-  if (!unprotected) {
-    return;
-  }
-  void context.globalState.update(KEY, true);
-  void vscode.window
-    .showWarningMessage(keyringWarningMessage(), 'How to fix this')
-    .then((choice) => {
-      if (choice === 'How to fix this') {
-        void vscode.env.openExternal(
-          vscode.Uri.parse('https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs#readme'),
-        );
-      }
-    });
-}
 
 /**
  * The entity a row stands for — the current one, or the version it was at a point in time.

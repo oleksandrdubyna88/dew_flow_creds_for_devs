@@ -29,6 +29,7 @@ import { parentOf } from './treeParent';
 import { describeRetention, isTrashFolder } from './trash';
 import { ExpansionMemory, expansionKey } from './treeExpansion';
 import { accountItem, separatorItem } from './accountItem';
+import { underlined } from './treeDescriptions';
 import { buildJudge, searchRowFor } from './providerSearch';
 import { revisionRowItem } from './revisionRowItem';
 import { depUri } from './depDecorations';
@@ -292,6 +293,14 @@ export class CredTreeDataProvider
    * memo rather than a background walk.
    */
   readonly dependencies: DepIndexCache;
+
+  /**
+   * Repaint ONE row, so its `collapsibleState` is re-applied (T11): the workbench toggles a
+   * command-bearing row on double click and nothing else would put the remembered state back.
+   */
+  refreshElement(element: TreeElement): void {
+    this.onDidChangeTreeDataEmitter.fire(element);
+  }
 
   refresh(): void {
     this.filterMemo.clear();
@@ -584,7 +593,8 @@ export class CredTreeDataProvider
       if (trash) {
         item.description = describeRetention(node);
       } else if (node.folderType !== undefined && node.folderType !== 'any') {
-        item.description = node.folderType;
+        // Underlined at RENDER time only (T30): `nodeHaystack` reads folderType off the node.
+        item.description = underlined(node.folderType);
       }
       return item;
     }

@@ -8,6 +8,13 @@
  */
 export function generateWiring(): string {
   return `
+  // T24b: the agent-doors footer's "manage…" links ask the host for the named command.
+  for (const doorLink of document.querySelectorAll('a.doorLink')) {
+    doorLink.addEventListener('click', function () {
+      vscode.postMessage({ type: 'command', command: this.dataset.command });
+    });
+  }
+
   var genChecked = function (id) {
     var box = document.getElementById(id);
     return !box || box.checked;

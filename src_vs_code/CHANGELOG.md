@@ -6,6 +6,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.80.1] — 2026-08-28
+
+### Added
+
+- **The MCP section's footer names every OTHER door an agent has to this entry** (tails T24b).
+  The six switches cover the broker's own actions; a CLI alias, an open Remote Bridge, the WSL
+  agent relay and a config's code-access key are doors with their own lifecycles, and until now
+  the one place a person reasons about agent access did not mention them. The form now lists
+  whichever are live, each with a *manage…* link to the command that owns it — and shows
+  nothing when none is, so the footer never becomes noise.
+
+### Changed
+
+- **Double-clicking an entry no longer flips its twisty** (tails T11). VS Code's own
+  double-click toggle expanded or collapsed the history/dependency rows under the entry every
+  second open. The click handler now remembers the row's state on the first click and puts it
+  back after the viewer opens; the arrow is the only thing that expands a row.
+- **Folder descriptions are underlined** (tails T30, the owner's yes). A tree description is
+  plain text with no styling API, so the underline is written into the text itself (a combining
+  low line after each character); entity descriptions — hosts and users a person copies by eye —
+  are untouched, and search never sees the marks. Right-alignment is not possible: the API
+  places descriptions inline after the label.
+
+### Internal
+
+- `extension.ts` shed the keyring warning and Save-As helper into `keyringWarningHost.ts` and
+  `saveTextAs.ts`; the form's host half (mount, generate, door commands) moved to
+  `entityFormHost.ts`. The size ratchet tightened to 5845 lines.
+
 ## [0.80.0] — 2026-08-27
 
 ### Added

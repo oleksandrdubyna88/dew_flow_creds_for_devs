@@ -1,7 +1,6 @@
 import * as vscode from 'vscode';
 import { applyLifetime } from './entityExpiry';
 import { normalizeArgs } from './commandLine';
-import { renderHtml } from './entityFormPage';
 import { flagOf, parseCommandLine } from './commandParse';
 import { highlightScript } from './scriptRender';
 import { describeFlag, isProbeSafe } from './helpText';
@@ -11,9 +10,9 @@ import { parseTotpSecret } from './totp';
 import { readPastedQr } from './qrPaste';
 import { withSteamEncoder } from './totpSteam';
 import { normalizeTags, parseForward } from './sshOptions';
-import { draw } from './formGenerate';
-import { applyZoomDelta, currentUiScale, pushUiScaleTo } from './uiScaleHost';
-import { parseSshPrivateKey } from './sshKeyParse';
+import { answerGenerate, formPanelFor, mountForm, runDoorCommand } from './entityFormHost';
+import { AgentDoors } from './agentDoors';
+import { applyZoomDelta } from './uiScaleHost';
 import { isDepColorKey } from './depColors';
 import { keepsPassword } from './entityKind';
 import {
@@ -24,7 +23,6 @@ import {
   isConfigFormat,
 } from './configFormat';
 import { ConfigField, configFields, fieldsOutcome, withFieldValues } from './configFields';
-import { FORM_WEBVIEW_OPTIONS, formPanels } from './formPanels';
 import { readMcpAccess } from './mcpAccess';
 import { DependencyFolderCandidate, normalizeDependsOn } from './depGraph';
 import {
@@ -61,6 +59,10 @@ export interface EntityFormOptions {
   uiScale?: number;
   /** The stored image as a data: URI (T27) — shown as a preview beside its metadata. */
   imageDataUri?: string;
+  /** The other ways an agent can reach this entry, for the MCP section's footer (T24b). */
+  agentDoors?: AgentDoors;
+  /** The tree element the footer's commands act on — the same argument the context menu passes. */
+  entityTarget?: unknown;
   entityId: string;
   initial?: EntityMetadata;
   hasStoredPassword: boolean;
@@ -185,11 +187,12 @@ function readArgRows(data: Record<string, unknown>): CommandArg[] {
   return rows;
 }
 
-interface FormMessage {
+export interface FormMessage {
   type:
     | 'save'
     | 'cancel'
     | 'zoom'
+    | 'command'
     | 'splitCommand'
     | 'highlight'
     | 'generate'
@@ -205,6 +208,8 @@ interface FormMessage {
   value?: string;
   /** `highlight` only (T17): which overlay asked, echoed back with the answer. */
   hlTarget?: string;
+  /** `command` only (T24b): a footer link asking the host to run a command on this entry. */
+  command?: string;
   /** `zoom` only (T28): which way the press went. */
   zoomDelta?: number;
   /** `generate` only: which kind of secret to draw. */
@@ -275,59 +280,6 @@ async function splitAndDescribe(panel: vscode.WebviewPanel, text: string): Promi
 }
 
 
-/** The public half of a freshly generated private key, for the form's Public key field. */
-function publicLineFor(privateKey: string): string {
-  const parsed = parseSshPrivateKey(privateKey);
-  return parsed.ok ? parsed.key.publicLine : '';
-}
-
-function formPanelFor(options: EntityFormOptions): vscode.WebviewPanel {
-  return vscode.window.createWebviewPanel(
-    'credSshEntityForm',
-    options.mode === 'create' ? 'New Entity' : `Edit: ${options.initial?.name ?? ''}`,
-    vscode.ViewColumn.Active,
-    FORM_WEBVIEW_OPTIONS,
-  );
-}
-
-/**
- * Register, render, and hook the zoom — everything a panel needs before its message loop.
- *
- * <p>Registered BEFORE the markup is built, because a filled-in form holds a plaintext secret
- * for as long as it stays open and locking the vaults has to be able to reach it: rendering
- * can throw, and a panel already on screen must be closable whether or not it got a page.</p>
- */
-function mountForm(panel: vscode.WebviewPanel, options: EntityFormOptions): () => void {
-  const unregister = formPanels.register(panel);
-  panel.webview.html = renderHtml({ ...options, uiScale: currentUiScale() });
-  // T28: this page follows the shared setting for as long as it lives.
-  const zoomHook = pushUiScaleTo(panel.webview);
-  panel.onDidDispose(() => zoomHook.dispose());
-  return unregister;
-}
-
-/**
- * Drawn HERE, not in the page: `crypto.randomInt` is a Node API, and a webview reaching for
- * `Math.random()` would produce something that merely looks random.
- */
-function answerGenerate(panel: vscode.WebviewPanel, message: FormMessage): void {
-  const made = draw({
-    kind: message.kind,
-    genLength: message.genLength,
-    genLower: message.genLower,
-    genUpper: message.genUpper,
-    genDigits: message.genDigits,
-    genSymbols: message.genSymbols,
-    genKeyType: message.genKeyType,
-    genWords: message.genWords,
-  });
-  void panel.webview.postMessage({
-    type: 'generated',
-    ...made,
-    publicLine: made.target === 'privateKey' ? publicLineFor(made.value) : '',
-  });
-}
-
 export function showEntityForm(options: EntityFormOptions): Promise<EntityFormValues | undefined> {
   const panel = formPanelFor(options);
   const unregister = mountForm(panel, options);
@@ -345,6 +297,12 @@ export function showEntityForm(options: EntityFormOptions): Promise<EntityFormVa
       }
       if (message.type === 'zoom') {
         await applyZoomDelta(message.zoomDelta ?? 0);
+        return;
+      }
+      if (message.type === 'command') {
+        // Only the commands the footer itself offers — a page cannot ask the host to run
+        // anything else. The form stays open; the command works on the same entry.
+        await runDoorCommand(message.command ?? '', options);
         return;
       }
       if (message.type === 'generate') {

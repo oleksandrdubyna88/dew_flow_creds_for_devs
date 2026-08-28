@@ -4,6 +4,7 @@ import { CONFIG_FORMATS, CONFIG_FORMAT_LABELS } from './configFormat';
 import { PASSPHRASE_WORD_CHOICES, PASSWORD_LENGTH_CHOICES, SSH_KEY_TYPES } from './secretGenerator';
 import { zoomControlHtml } from './zoomControl';
 import { formStyleSheet } from './entityFormStyles';
+import { AgentDoors, agentDoorRows } from './agentDoors';
 import { describeAttachment } from './attachmentMeta';
 import { escapeHtml } from './webviewHtml';
 import { formPageScript } from './entityFormScript';
@@ -11,6 +12,28 @@ import { initialDependencyRows } from './depGraph';
 import { accessMask, normalizeMcpAccess } from './mcpAccess';
 import { MCP_SWITCHES, mcpBarHtml } from './mcpSwitches';
 import { FORM_SECTIONS } from './formSections';
+
+/**
+ * The read-only footer under the MCP switches (T24b): every OTHER way an agent can reach this
+ * entry that is live right now, each with the command that manages it. Nothing when nothing
+ * is live — a footer saying "no other doors" on every entry would be the noise that hides the
+ * one that matters.
+ */
+function agentDoorsHtml(doors: AgentDoors | undefined): string {
+  const rows = doors === undefined ? [] : agentDoorRows(doors);
+  if (rows.length === 0) {
+    return '';
+  }
+  return `<div class="agentDoors">
+      <p class="hint agentDoorsHead">Other ways agents can reach this entry</p>
+      ${rows
+        .map(
+          (row) => `<div class="agentDoor"><b>${escapeHtml(row.label)}</b> — ${escapeHtml(row.detail)}
+        <a class="doorLink" data-command="${escapeHtml(row.command)}">manage…</a></div>`,
+        )
+        .join('')}
+    </div>`;
+}
 
 /**
  * A fieldset's opening tag, from the catalog.
@@ -336,6 +359,7 @@ export function renderHtml(options: EntityFormOptions): string {
     </div>
     <p class="hint mcpWhy">${escapeHtml(s.why)}</p>`,
     ).join('')}
+    ${agentDoorsHtml(options.agentDoors)}
   </fieldset>`;
 
   const dependsOnHtml = `${openSection('dependsOnSection')}

@@ -258,6 +258,11 @@ a test people disable.
 
 ### T5. Nothing is tagged, so "released" and "on main" have quietly become the same word
 
+> **Done 2026-08-28 — "делай сама" (the owner).** Tags pushed one at a time (GitHub skips the
+> push event when more than three tags arrive at once — four together produced no runs): `server-v0.3.2`
+> (image built, deployed by `rsd-server-deploy.yml` run 33160784899 → success), `extension-v0.80.0`,
+> `cli-v0.1.1`, `mcp-v0.1.0` — all four release runs succeeded. `extension-v0.80.1` follows this pass.
+
 > **Prepared 2026-08-27 — the owner's decision is the only thing left.** What is on `main` and
 > not in any release, and the exact command that would release each, in the order they should go:
 >
@@ -439,6 +444,14 @@ that keeps the two surfaces from drifting.
 ---
 
 ### T11. A double click both opens the viewer and toggles the twisty (DEFECT, found by the owner 2026-08-27)
+
+> **Shipped 2026-08-28 (0.80.1).** The workbench's double-click toggle cannot be switched off for a
+> row that has a command, so the handler UNDOES it: `entityClick.ts` (`EntityClicks`) records the
+> row's expansion on the first click and, after the viewer opens on the second, puts it back through
+> `ExpansionMemory` + `refreshElement`; `treeClicks.ts` holds the two pure decisions (the 500 ms
+> window, when a restore is needed). A row with no twisty is never touched. The owner's question —
+> "keep double-click-to-open but not expand?" — is answered yes, by restoration rather than
+> prevention; he verifies the feel after a window reload.
 
 **Symptom.** Double-clicking an entity that has kept versions, or that something depends on, opens
 the read-only viewer **and** expands or collapses its History / *Depended on by* sub-tree — so the
@@ -1057,6 +1070,12 @@ in `.formGroups` behind a wider breakpoint (`TWO_COLUMN_AT` has a sibling, `THRE
 single-column case. The section catalog keeps being the one source: nothing about a section's
 placement is decided in markup.
 
+> **T24b shipped 2026-08-28 (0.80.1) — "согласен, добавляй".** The footer under the switches
+> (`agentDoors.ts`: `AgentDoors` → `agentDoorRows`; `doorsOf` reads the sources) lists every live
+> door — code-access key, CLI aliases, open Remote Bridge, WSL relay — with a *manage…* link that
+> runs the owning command (`entityFormPanel.ts` accepts only the four door commands). Nothing live,
+> no footer.
+
 **T24b. The block under-reports what agents can actually reach — study and propose.** The six
 switches cover the broker's entry-level actions. Since they were written, the agent surface grew,
 and none of it is visible or controllable per entry:
@@ -1098,6 +1117,9 @@ snippets and the existing "list answers match the mask" tests.
 ---
 
 ### T25. The tree's MCP mark: a pentagon of edges, not a padlock
+
+> **Closed 2026-08-28 — "leave it as it is" (the owner, after seeing 0.80.0).** The pentagon
+> shipped in 0.80.0 for the MCP icon set only; the other icons were never changed.
 
 **The ask.** When an entry has MCP access on, the tree overlays a padlock icon — the owner wants it
 gone, replaced by **a regular pentagon whose five edges are the five switch colours**: the left
@@ -1233,6 +1255,11 @@ menus match.
 ---
 
 ### T30. The tree's descriptions: right-aligned and, for folders, underlined — against an API that offers neither
+
+> **Shipped 2026-08-28 (0.80.1), the underline half — the owner's yes.** `treeDescriptions.ts`
+> `underlined()` weaves U+0332 after every character at render time; `plain()` is the inverse, and
+> a test pins that `nodeHaystack` never sees the marks. Entity descriptions untouched.
+> Right-alignment stays impossible (inline description, no API) and is recorded as such.
 
 **The ask.** The grey descriptions (`db`, `sshkey`, `ubuntu@10.73.48.167`) should stick to the
 ROW'S RIGHT EDGE when they fit (truncate as today when not), and FOLDER descriptions should be
@@ -1446,7 +1473,7 @@ and both the failure and the pass are reported.
       `entries / trash / shared` with zeros written out, and the colour limit is recorded.
 - [ ] T31: checkboxes read as checked/unchecked at a glance on the owner's theme — accent-color
       first, the hand-drawn box only if the screenshot still reads weak.
-- [ ] T30: folder descriptions underlined (behind the owner's yes on the combining-mark trick),
+- [x] T30: folder descriptions underlined (behind the owner's yes on the combining-mark trick),
       right-alignment declined in writing with the API reason.
 - [ ] T29: a separator row between accounts, inert to menus, commands and reveal.
 - [ ] T28: every webview page carries the ± zoom with the offset shown, clamped at five steps,
@@ -1454,7 +1481,7 @@ and both the failure and the pass are reported.
 - [ ] T27: a stored file is a described row, not a masked secret; size/type/when/by-whom on
       both pages with "not recorded" for legacy entries; image preview in the form; names in
       dark orange, slightly larger, via one shared rule per page.
-- [ ] T25: the tree marks MCP access with the five-edge pentagon in catalog colours, padlock
+- [x] T25: the tree marks MCP access with the five-edge pentagon in catalog colours, padlock
       gone; the five-vs-six question answered in writing.
 - [ ] T26: done — the zoom drives width only. (Recorded, test in entityViewPage.test.ts.)
 - [ ] T24: the MCP section is its own column at three-column width and last in one column; the
@@ -1491,18 +1518,18 @@ and both the failure and the pass are reported.
       decoration provider that already exists — not a second one; the tint's real capability
       (row colour, not a border) is stated.
 - [ ] T12: *Copy All* is at the top-left, beside the title, and the dead `.footer` rule is gone.
-- [ ] T11: a double click opens the viewer and leaves expansion alone; the chosen candidate and the
+- [x] T11: a double click opens the viewer and leaves expansion alone; the chosen candidate and the
       measurement that ruled out the others are recorded.
 - [ ] T1: no exported function in `pinPolicy.ts` is unreachable from production code, and the
       advisory appears only where a PIN is being chosen.
-- [ ] T2: the probe was run against a named browser version, the result is recorded, and
+- [ ] T2 (owner 2026-08-28: browser Edge, key YubiKey; the probe script is prepared, its output is awaited): the probe was run against a named browser version, the result is recorded, and
       `webauthnHint.ts` and the security tail agree with each other.
 - [ ] T3: `npm run ratchet` runs in CI; `extension.ts` and `storageManager.ts` cannot grow.
 - [ ] T10: `creds_list` names a config entry and its code-access state; `creds_config_snippet`
       returns the catalog, and a snippet identical to the viewer's, with its target file.
 - [ ] T4: every `contributes.commands` id and `contributes.configuration` key appears in
       `README.md`, enforced by a test that was watched failing first.
-- [ ] T5: the four tag commands are written down with what each publishes, and the owner's decision
+- [x] T5: the four tag commands are written down with what each publishes, and the owner's decision
       is recorded here.
 - [ ] T6: `todo/README.md`'s *Promoted* table matches `research/`; the manual MCP pass names the
       current version; the CHANGELOG's `[Unreleased]` block is cut into the dated sections the
