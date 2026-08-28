@@ -30,21 +30,11 @@ export function accountCounts(
   ownShares: readonly OwnedShare[],
   accountId: string,
 ): AccountCounts {
-  const trashFolder = findTrash(nodes);
-  let entries = 0;
-  let trash = 0;
-  for (const node of nodes) {
-    if (node.type !== 'entity') {
-      continue;
-    }
-    if (trashFolder !== undefined && isInTrash(node, byId)) {
-      trash += 1;
-    } else {
-      entries += 1;
-    }
-  }
+  const hasTrash = findTrash(nodes) !== undefined;
+  const entities = nodes.filter((node) => node.type === 'entity');
+  const trash = hasTrash ? entities.filter((node) => isInTrash(node, byId)).length : 0;
   const shared = ownShares.filter((share) => share.accountId === accountId).length;
-  return { entries, trash, shared };
+  return { entries: entities.length - trash, trash, shared };
 }
 
 /** `12 / 3 / 2` — the order the owner wrote them in, zeros written out. */

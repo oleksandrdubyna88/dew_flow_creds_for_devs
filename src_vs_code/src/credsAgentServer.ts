@@ -448,6 +448,11 @@ export class CredsAgentServer implements vscode.Disposable {
     }
   }
 
+  /** The GET routes' suppliers — every read route answers from these three. */
+  private readSources(): ReadRouteSources {
+    return { aliases: this.listAliases, mcpEntries: this.listMcpEntries, visibleConfig: this.visibleConfig };
+  }
+
   // eslint-disable-next-line complexity
   private async handle(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
     const url = new URL(req.url ?? '/', 'http://127.0.0.1');
@@ -457,12 +462,7 @@ export class CredsAgentServer implements vscode.Disposable {
     // throttled. Everything below this line needs a token or raises a modal.
     // The suppliers inline: `brokerReadRoutes` answers all three GET routes from them, and a
     // getter holding two field references was a name for something that reads better as one.
-    const sources: ReadRouteSources = {
-      aliases: this.listAliases,
-      mcpEntries: this.listMcpEntries,
-      visibleConfig: this.visibleConfig,
-    };
-    const read = req.method === 'GET' ? await readRouteBody(url.pathname, sources, url.searchParams) : undefined;
+    const read = req.method === 'GET' ? await readRouteBody(url.pathname, this.readSources(), url.searchParams) : undefined;
     if (read !== undefined) {
       this.respond(res, 200, read);
       return;

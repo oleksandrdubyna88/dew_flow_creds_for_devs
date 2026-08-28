@@ -126,6 +126,7 @@ import { CredTreeDataProvider, VIEW_ID } from './treeDataProvider';
 import { ArrivalHighlights } from './arrivalHighlight';
 import { carryThroughDetails } from './attachmentMeta';
 import { wireSearchBox } from './searchBox';
+import { showHelp } from './helpPanel';
 import { offerToInstall } from './toolEnsure';
 import { ARRIVAL_WINDOW_MS } from './arrivalHighlight';
 import { DepDecorationProvider } from './depDecorations';
@@ -1607,6 +1608,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
    * what makes it filter as you type; Escape puts back whatever was filtered before, so a
    * cancelled search is not a lost one.</p>
    */
+  // T21/T22: the help page — the yellow question mark in the view's title bar.
+  register('credSshManager.help', () => showHelp());
+
   register('credSshManager.search', () => {
     vaultKeys.noteUserActivity(); // the user is here: postpone auto-lock
     // Wiring in searchBox.ts, where it is tested — including the T15 flag that lets a person

@@ -68,6 +68,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Built-in help — the yellow question mark.** In the view's title bar (which now says just
+  *CredsForDevs* instead of the name twice). Every feature as an article in one fixed shape —
+  *what it is, why, how to set it up, how to use it, what can go wrong* — with the least
+  self-explanatory ones first: *MCP logs*, *Install…*, agents over MCP, config entities, the
+  CLI, the Remote Bridge, the WSL relay, corporate recovery, the printed code… A search box at
+  the top, breadcrumbs and Back, the ± zoom, and a language switch (English, Russian, Ukrainian,
+  German, Spanish) remembered for the help pages only — untranslated articles show English with
+  a note rather than disappearing. English and Russian ship complete; pictures come later, the
+  slots are there.
+
 - **The listing is complete again — and this time a test keeps it that way.** The README had
   drifted three release lines behind the extension: zero mentions of MCP or config entities, a
   command section written when there were 47 commands (there are 90+), 13 of 23 settings. New

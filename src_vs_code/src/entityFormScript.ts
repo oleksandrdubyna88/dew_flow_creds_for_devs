@@ -7,7 +7,7 @@ import { dependencyPickerScript } from './depPickerScript';
 import { mcpSwitchScript } from './mcpSwitchScript';
 import { configTabsScript } from './configTabsScript';
 import { qrPasteScript } from './qrPasteScript';
-import { generateWiring } from './entityFormScriptGen';
+import { generateWiring, overlayEditorWiring } from './entityFormScriptGen';
 import { formVisibilityScript } from './formVisibilityScript';
 
 /** What the Depends-on picker needs, gathered once when the page is built. */
@@ -510,66 +510,8 @@ export function formPageScript(
     imageContent = b64; imageName = name;
   });
 
-  // ---- overlay-highlighted editors: the script body and the config body (T17) ----
-  // One wiring for both: the highlighter runs in the extension host, answers are routed by
-  // hlTarget, and the textarea keeps painting its own glyphs until the overlay demonstrably
-  // holds the same content (the lit class + watchdog below).
   var scriptVarRows = INITIAL_SCRIPT_VARS.slice();
-  function wireOverlayEditor(bodyId, hlId, langOf) {
-    var body = document.getElementById(bodyId);
-    var hl = document.getElementById(hlId);
-    if (!body || !hl) { return; }
-    var wrap = body.parentElement;
-    var timer;
-    var watchdog;
-    // The highlighter runs in the extension host, so the overlay is always one round trip
-    // behind what was just typed. One frame of debounce keeps that imperceptible; the old
-    // 120 ms was long enough to see, because the textarea's own text is hidden while the
-    // overlay is the thing being read.
-    function ask() {
-      clearTimeout(timer);
-      timer = setTimeout(function () {
-        vscode.postMessage({ type: 'highlight', text: body.value, lang: langOf(), hlTarget: hlId });
-        // If nothing answers — a handler that threw, a host that went away — stop hiding
-        // the textarea's glyphs. An editor showing nothing is worse than an unhighlighted
-        // one, and this is the state the user actually hit.
-        clearTimeout(watchdog);
-        watchdog = setTimeout(function () {
-          if (wrap) { wrap.classList.remove('lit'); }
-        }, 400);
-      }, 16);
-    }
-    body.addEventListener('input', ask);
-    body.addEventListener('scroll', function () {
-      hl.scrollTop = body.scrollTop; hl.scrollLeft = body.scrollLeft;
-    });
-    window.addEventListener('message', function (event) {
-      var msg = event.data || {};
-      if (msg.type === 'highlighted' && msg.hlTarget === hlId) {
-        clearTimeout(watchdog);
-        hl.innerHTML = msg.html + String.fromCharCode(10);
-        hl.scrollTop = body.scrollTop;
-        // Only now is it safe for the textarea to stop painting its own text: the overlay
-        // demonstrably holds the same content.
-        if (wrap) { wrap.classList.add('lit'); }
-      }
-    });
-    ask();
-    return ask;
-  }
-  (function wireScript() {
-    var langSel = document.getElementById('scriptLanguage');
-    if (!langSel) { return; }
-    var ask = wireOverlayEditor('scriptBody', 'scriptHl', function () { return langSel.value; });
-    if (ask) { langSel.addEventListener('change', ask); }
-  })();
-  (function wireConfig() {
-    var formatSel = document.getElementById('configFormat');
-    if (!formatSel) { return; }
-    // The FORMAT is the language — json/yaml/toml/ini/env all have highlighter grammars.
-    var ask = wireOverlayEditor('configBody', 'configHl', function () { return formatSel.value; });
-    if (ask) { formatSel.addEventListener('change', ask); }
-  })();
+  ${overlayEditorWiring()}
 
   function renderScriptVars() {
     var host = document.getElementById('scriptVarRows');

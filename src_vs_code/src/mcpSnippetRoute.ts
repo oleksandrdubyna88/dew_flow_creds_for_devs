@@ -81,27 +81,35 @@ export function configSnippetResult(
   language: string | undefined,
   variant: string | undefined,
 ): ConfigSnippetBody {
-  if (details === undefined || details.isConfig !== true) {
+  if (!isVisibleConfig(details)) {
     return { error: 'no such config is open to agents', envVar: CONFIG_KEY_ENV, languages: [] };
   }
-  const catalog = snippetCatalog();
-  if (language === undefined || language === '') {
-    return { envVar: CONFIG_KEY_ENV, languages: catalog };
-  }
+  return withSnippet({ envVar: CONFIG_KEY_ENV, languages: snippetCatalog() }, details, language, variant);
+}
+
+/** The catalog alone when no language was asked for; the catalog plus the snippet when one was. */
+function withSnippet(
+  base: ConfigSnippetBody,
+  details: EntityMetadata,
+  language: string | undefined,
+  variant: string | undefined,
+): ConfigSnippetBody {
+  return language ? { ...base, snippet: snippetPart(details, language, variant ?? '') } : base;
+}
+
+function isVisibleConfig(details: EntityMetadata | undefined): details is EntityMetadata {
+  return details !== undefined && details.isConfig === true;
+}
+
+function snippetPart(
+  details: EntityMetadata,
+  language: string,
+  variant: string,
+): NonNullable<ConfigSnippetBody['snippet']> {
   const resolvedLanguage = snippetLanguage(language)?.id ?? DEFAULT_SNIPPET_LANGUAGE;
-  const snippet = snippetFor(resolvedLanguage, variant ?? '', {
+  const snippet = snippetFor(resolvedLanguage, variant, {
     envVar: CONFIG_KEY_ENV,
     fileName: configFileNameFor(details.configFileName, details.configFormat ?? 'json', details.name),
   });
-  return {
-    envVar: CONFIG_KEY_ENV,
-    languages: catalog,
-    snippet: {
-      language: resolvedLanguage,
-      variant: variant ?? '',
-      code: snippet.code,
-      where: snippet.where,
-      does: snippet.does,
-    },
-  };
+  return { language: resolvedLanguage, variant, code: snippet.code, where: snippet.where, does: snippet.does };
 }

@@ -40,15 +40,20 @@ export interface GenerateRequest {
  * otherwise have typed into, and leaves by the same Save.</p>
  */
 export function draw(message: GenerateRequest): { target: string; value: string; note: string } {
-  if (message.kind === 'passphrase') {
-    // The word count is clamped to the offered list, like the password length.
-    const words = PASSPHRASE_WORD_CHOICES.includes(message.genWords ?? -1)
-      ? (message.genWords as number)
-      : DEFAULT_PASSPHRASE.words;
-    const made = generatePassphrase({ ...DEFAULT_PASSPHRASE, words });
-    return { target: 'password', value: made.value, note: made.description };
-  }
-  return message.kind === 'key' ? drawKey(message) : drawPassword(message);
+  const drawers: Record<string, (m: GenerateRequest) => { target: string; value: string; note: string }> = {
+    passphrase: drawPassphrase,
+    key: drawKey,
+  };
+  return (drawers[message.kind ?? ''] ?? drawPassword)(message);
+}
+
+/** The word count is clamped to the offered list, like the password length. */
+function drawPassphrase(message: GenerateRequest): { target: string; value: string; note: string } {
+  const words = PASSPHRASE_WORD_CHOICES.includes(message.genWords ?? -1)
+    ? (message.genWords as number)
+    : DEFAULT_PASSPHRASE.words;
+  const made = generatePassphrase({ ...DEFAULT_PASSPHRASE, words });
+  return { target: 'password', value: made.value, note: made.description };
 }
 
 /** The page's select is untrusted input; an unknown id falls back rather than throwing. */

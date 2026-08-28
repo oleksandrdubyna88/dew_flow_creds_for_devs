@@ -152,17 +152,10 @@ export interface EntityMetadata {
   envBindings?: Record<string, string>;
   /** Display name of the encrypted attachment (content in SecretStorage). */
   attachmentFileName?: string;
-  /** Write-time stamps (T27). The entity's own `updatedAt` moves on every edit, so showing it
-   * for the file would lie; these move only when the FILE does. Absent on entries stored
-   * before the stamps existed — shown as "not recorded", never guessed. */
-  attachmentSize?: number;
-  attachmentChangedAt?: number;
-  attachmentChangedBy?: string;
-  imageSize?: number;
-  imageWidth?: number;
-  imageHeight?: number;
-  imageChangedAt?: number;
-  imageChangedBy?: string;
+  /** Write-time stamps (T27) — they move only when the FILE does; see attachmentMeta.ts. */
+  attachmentSize?: number; attachmentChangedAt?: number; attachmentChangedBy?: string;
+  imageSize?: number; imageWidth?: number; imageHeight?: number;
+  imageChangedAt?: number; imageChangedBy?: string;
   /** Display name of the encrypted image (content in SecretStorage). */
   imageFileName?: string;
   /**
@@ -377,9 +370,7 @@ export type TreeElement =
   /** The filter row, pinned above the first account. Carries no data — the term lives on
    *  the provider, so typing does not rebuild the element identity. */
   | { kind: 'search' }
-  /** A blank, inert row between two accounts (tails T29): VS Code's tree has no separators and
-   *  no row CSS, so the owner's fallback — "просто пустую строку" — is the implementable half.
-   *  Carries the account ABOVE it so its identity is stable across repaints. */
+  /** A blank, inert row between two accounts (T29) — VS Code's tree has no real separators. */
   | { kind: 'separator'; afterAccountId: string }
   | { kind: 'account'; account: StoredAccount }
   | { kind: 'node'; accountId: string; node: TreeNode }

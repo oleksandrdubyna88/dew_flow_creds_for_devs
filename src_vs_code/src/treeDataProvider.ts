@@ -22,13 +22,13 @@ import { entityKey } from './entityFlags';
 import { describeRemaining } from './entityExpiry';
 import { resolveKind } from './entityKind';
 import { SyncReadiness } from './syncReadiness';
-import { OrgRecoveryAccess, accountContextValue } from './orgRecoveryAccess';
+import { OrgRecoveryAccess } from './orgRecoveryAccess';
 import { describeTarget, entityContextValue, markInvalid } from './treeRowText';
 import { FOLDER_COLOR, buildTooltip, entityIcon, folderIcon, kindIcon } from './treeIcons';
 import { parentOf } from './treeParent';
 import { describeRetention, isTrashFolder } from './trash';
 import { ExpansionMemory, expansionKey } from './treeExpansion';
-import { accountCounts, formatAccountCounts } from './accountCounts';
+import { accountItem, separatorItem } from './accountItem';
 import { buildJudge, searchRowFor } from './providerSearch';
 import { revisionRowItem } from './revisionRowItem';
 import { depUri } from './depDecorations';
@@ -523,57 +523,20 @@ export class CredTreeDataProvider
       return item;
     }
     if (element.kind === 'separator') {
-      // Inert on purpose: no command, no icon, and a contextValue no menu contribution
-      // matches — a separator that grows a right-click menu has stopped separating.
-      const item = new vscode.TreeItem('', vscode.TreeItemCollapsibleState.None);
-      item.id = `separator:${element.afterAccountId}`;
-      item.contextValue = 'separator';
-      return item;
+      return separatorItem(element.afterAccountId);
     }
 
     if (element.kind === 'account') {
-      const item = new vscode.TreeItem(
-        element.account.email,
-        // Open unless the person shut it. It used to be `Expanded` unconditionally, which meant
-        // a collapsed account re-opened on the next repaint — and a repaint happens on every
-        // edit, every pulled sync and every keystroke in the filter.
-        this.collapsible(element, true),
-      );
-      item.id = `account:${element.account.accountId}`;
-      // The menu a row offers is chosen HERE, by the value the `when` clauses match. Ordinary
-      // accounts keep the exact string every other entry was contributed against.
-      item.contextValue = accountContextValue(
-        this.orgAccess.get(element.account.accountId) ?? 'none',
-      );
-      const ready = this.readiness.get(element.account.accountId);
-      // An SVG file, not a ThemeIcon with a colour: VS Code repaints themed icons in the
-      // selection colour the moment the row is selected, which made a signed-in account
-      // look signed-out exactly while you were looking at it.
-      item.iconPath = vscode.Uri.joinPath(
-        this.extensionUri,
-        'media',
-        ready?.ready === true ? 'account-green.svg' : 'account-grey.svg',
-      );
-      // The reason belongs on the row itself: a grey icon that does not say why is a
-      // riddle — and it used to be overwritten by the provider name one line later.
-      // The three counts (T32) replace the row's plus: entries / trash / shared, zeros
-      // written out. Colours for the numbers are not expressible in a description — the
-      // limit is recorded in accountCounts.ts.
-      const counts = accountCounts(
-        this.storage.getNodes(element.account.accountId),
-        (id) => this.storage.getNode(element.account.accountId, id),
-        this.sharing?.ownShares ?? [],
-        element.account.accountId,
-      );
-      item.description = [
-        element.account.provider,
-        formatAccountCounts(counts),
-        ready !== undefined && !ready.ready ? ready.reason : undefined,
-      ]
-        .filter(Boolean)
-        .join('  ·  ');
-      item.tooltip = `${counts.entries} entries · ${counts.trash} in the Trash · ${counts.shared} shared with this account`;
-      return item;
+      return accountItem({
+        account: element.account,
+        collapsibleState: this.collapsible(element, true),
+        orgAccess: this.orgAccess.get(element.account.accountId) ?? 'none',
+        readiness: this.readiness.get(element.account.accountId),
+        extensionUri: this.extensionUri,
+        nodes: this.storage.getNodes(element.account.accountId),
+        byId: (id) => this.storage.getNode(element.account.accountId, id),
+        ownShares: this.sharing?.ownShares ?? [],
+      });
     }
 
     if (element.kind === 'dependents') {

@@ -31,7 +31,8 @@ test('with no language, the catalog — ids, labels, variants — so the agent p
   assert.equal(body.languages.length, SNIPPET_LANGUAGES.length);
   assert.equal(body.snippet, undefined);
   const csharp = body.languages.find((l) => l.id === 'csharp');
-  assert.ok(csharp !== undefined && csharp.variants.length > 0);
+  assert.ok(csharp !== undefined, 'C# is in the catalog');
+  assert.ok(csharp.variants.length > 0, 'C# offers its variants');
 });
 
 test('the snippet is byte-identical to what the viewer renders for the same entry', () => {
@@ -41,9 +42,10 @@ test('the snippet is byte-identical to what the viewer renders for the same entr
     envVar: CONFIG_KEY_ENV,
     fileName: configFileNameFor(details.configFileName, details.configFormat ?? 'json', details.name),
   });
-  assert.equal(body.snippet?.code, viewer.code, 'two surfaces, one catalog — or they drift');
-  assert.equal(body.snippet?.where, viewer.where, 'the target file is the field an agent needs most');
-  assert.equal(body.snippet?.does, viewer.does);
+  assert.ok(body.snippet !== undefined, 'a language was asked for, so a snippet must come back');
+  assert.equal(body.snippet.code, viewer.code, 'two surfaces, one catalog — or they drift');
+  assert.equal(body.snippet.where, viewer.where, 'the target file is the field an agent needs most');
+  assert.equal(body.snippet.does, viewer.does);
 });
 
 test('an unknown language falls back to the default instead of erroring at a select value', () => {
@@ -74,6 +76,7 @@ test('nothing in the answer can carry a secret — the body has no field for one
 
 test('the catalog is stable and secret-free', () => {
   for (const language of snippetCatalog()) {
-    assert.ok(language.id.length > 0 && language.label.length > 0);
+    assert.ok(language.id.length > 0, 'a language without an id');
+    assert.ok(language.label.length > 0, `${language.id} has no label`);
   }
 });

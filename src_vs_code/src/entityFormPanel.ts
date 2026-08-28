@@ -210,12 +210,8 @@ interface FormMessage {
   /** `generate` only: which kind of secret to draw. */
   kind?: 'password' | 'passphrase' | 'key';
   /** `generate` only: the options the page's controls chose (T14). Absent = the defaults. */
-  genLength?: number;
-  genLower?: boolean;
-  genUpper?: boolean;
-  genDigits?: boolean;
-  genSymbols?: boolean;
-  genKeyType?: string;
+  genLength?: number; genLower?: boolean; genUpper?: boolean; genDigits?: boolean;
+  genSymbols?: boolean; genKeyType?: string; genWords?: number;
   data?: Record<string, unknown>;
   text?: string;
   lang?: string;
@@ -294,16 +290,47 @@ function formPanelFor(options: EntityFormOptions): vscode.WebviewPanel {
   );
 }
 
-export function showEntityForm(options: EntityFormOptions): Promise<EntityFormValues | undefined> {
-  const panel = formPanelFor(options);
-  // A filled-in form holds a plaintext secret for as long as it stays open, so locking the
-  // vaults has to be able to reach it. Registered BEFORE the markup is built: rendering can
-  // throw, and a panel already on screen must be closable whether or not it ever got a page.
+/**
+ * Register, render, and hook the zoom — everything a panel needs before its message loop.
+ *
+ * <p>Registered BEFORE the markup is built, because a filled-in form holds a plaintext secret
+ * for as long as it stays open and locking the vaults has to be able to reach it: rendering
+ * can throw, and a panel already on screen must be closable whether or not it got a page.</p>
+ */
+function mountForm(panel: vscode.WebviewPanel, options: EntityFormOptions): () => void {
   const unregister = formPanels.register(panel);
   panel.webview.html = renderHtml({ ...options, uiScale: currentUiScale() });
   // T28: this page follows the shared setting for as long as it lives.
   const zoomHook = pushUiScaleTo(panel.webview);
   panel.onDidDispose(() => zoomHook.dispose());
+  return unregister;
+}
+
+/**
+ * Drawn HERE, not in the page: `crypto.randomInt` is a Node API, and a webview reaching for
+ * `Math.random()` would produce something that merely looks random.
+ */
+function answerGenerate(panel: vscode.WebviewPanel, message: FormMessage): void {
+  const made = draw({
+    kind: message.kind,
+    genLength: message.genLength,
+    genLower: message.genLower,
+    genUpper: message.genUpper,
+    genDigits: message.genDigits,
+    genSymbols: message.genSymbols,
+    genKeyType: message.genKeyType,
+    genWords: message.genWords,
+  });
+  void panel.webview.postMessage({
+    type: 'generated',
+    ...made,
+    publicLine: made.target === 'privateKey' ? publicLineFor(made.value) : '',
+  });
+}
+
+export function showEntityForm(options: EntityFormOptions): Promise<EntityFormValues | undefined> {
+  const panel = formPanelFor(options);
+  const unregister = mountForm(panel, options);
 
   return new Promise((resolve) => {
     let settled = false;
@@ -321,22 +348,7 @@ export function showEntityForm(options: EntityFormOptions): Promise<EntityFormVa
         return;
       }
       if (message.type === 'generate') {
-        // Drawn HERE, not in the page: `crypto.randomInt` is a Node API, and a webview
-        // reaching for `Math.random()` would produce something that merely looks random.
-        const made = draw({
-          kind: message.kind,
-          genLength: message.genLength,
-          genLower: message.genLower,
-          genUpper: message.genUpper,
-          genDigits: message.genDigits,
-          genSymbols: message.genSymbols,
-          genKeyType: message.genKeyType,
-        });
-        void panel.webview.postMessage({
-          type: 'generated',
-          ...made,
-          publicLine: made.target === 'privateKey' ? publicLineFor(made.value) : '',
-        });
+        answerGenerate(panel, message);
         return;
       }
       if (message.type === 'cancel') {

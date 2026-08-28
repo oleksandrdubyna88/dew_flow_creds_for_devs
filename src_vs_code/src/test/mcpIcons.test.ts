@@ -67,10 +67,11 @@ test('a regular pentagon: five edges, closed, clockwise from the upper-left one'
   const edges = pentagonEdges();
   assert.equal(edges.length, 5);
   // Closed: each edge ends where the next begins.
-  for (let i = 0; i < edges.length; i += 1) {
+  edges.forEach((edge, i) => {
     const next = edges[(i + 1) % edges.length];
-    assert.ok(Math.abs(edges[i].x2 - next.x1) < 1e-9 && Math.abs(edges[i].y2 - next.y1) < 1e-9);
-  }
+    assert.ok(Math.abs(edge.x2 - next.x1) < 1e-9, `edge ${i} x`);
+    assert.ok(Math.abs(edge.y2 - next.y1) < 1e-9, `edge ${i} y`);
+  });
   // The FIRST edge is the left side — both its ends left of centre — because the owner said
   // "левая сторона — это зелёный", and green is the first switch colour.
   assert.ok(edges[0].x1 < 8 && edges[0].x2 <= 8, 'the first (green) edge must be the left side');
@@ -89,8 +90,8 @@ test('the drawing lights exactly as many edges as the level, and the rest go gre
     assert.equal(strokes.length, 5);
     const palette = MCP_BAR_COLORS.map((color) => colorOf(color, 'dark'));
     assert.deepEqual(strokes.slice(0, level), palette.slice(0, level), `level ${level} lit edges`);
-    assert.ok(strokes.slice(level).every((stroke) => stroke === strokes[5 - 1] || !palette.includes(stroke)),
-      'an unlit edge must wear the grey, not a switch colour');
+    const unlit = strokes.slice(level);
+    assert.ok(unlit.every((stroke) => !palette.includes(stroke)), 'an unlit edge must wear the grey, not a switch colour');
   }
 });
 

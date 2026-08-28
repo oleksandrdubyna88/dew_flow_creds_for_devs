@@ -121,10 +121,15 @@ export function mcpEntryFor(node: TreeNode, context: McpEntryContext): McpEntry 
     hasPrivateKey: context.hasPrivateKey,
     hasNotes: context.hasNotes,
     hasTotp: context.hasTotp,
-    codeAccessEnabled: details.isConfig === true ? details.configKeyHash !== undefined : undefined,
+    codeAccessEnabled: codeAccessOf(details),
     dependsOn: [...context.dependsOn],
     can: capabilitiesOf(context.resolved.access),
   };
+}
+
+/** Config entries only: whether a code-access key was minted. Other kinds say nothing. */
+function codeAccessOf(details: EntityMetadata): boolean | undefined {
+  return details.isConfig === true ? details.configKeyHash !== undefined : undefined;
 }
 
 /**
@@ -208,13 +213,16 @@ export function visibleConfigDetails(
 ): EntityMetadata | undefined {
   for (const { accountId } of source.getAccounts()) {
     const node = source.getNode(accountId, entityId);
-    if (node === undefined) {
-      continue;
+    if (node !== undefined) {
+      return visibleConfigOf(node, (id) => source.getNode(accountId, id));
     }
-    const resolved = resolveMcpInTree(node, (id) => source.getNode(accountId, id));
-    return shown(node, resolved) && node.details?.isConfig === true ? node.details : undefined;
   }
   return undefined;
+}
+
+function visibleConfigOf(node: TreeNode, byId: (id: string) => TreeNode | undefined): EntityMetadata | undefined {
+  const resolved = resolveMcpInTree(node, byId);
+  return shown(node, resolved) && node.details?.isConfig === true ? node.details : undefined;
 }
 
 async function entryIfVisible(

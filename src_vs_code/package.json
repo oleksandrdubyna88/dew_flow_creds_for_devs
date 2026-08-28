@@ -229,6 +229,25 @@
           "minimum": -5,
           "maximum": 5,
           "markdownDescription": "Text size on every CredsForDevs page (the entry form, the viewer, help), in steps of 10% from the base — `5` is about ×1.6, `-5` about ÷1.6. The ± buttons on each page write this same setting, and it syncs with your other machines."
+        },
+        "credSshManager.helpLanguage": {
+          "type": "string",
+          "default": "en",
+          "enum": [
+            "en",
+            "ru",
+            "uk",
+            "de",
+            "es"
+          ],
+          "enumDescriptions": [
+            "English",
+            "Русский",
+            "Українська",
+            "Deutsch",
+            "Español"
+          ],
+          "markdownDescription": "The language of the **Help** pages only. Articles not yet translated show English with a note. The switch at the top of the help page writes this same setting."
         }
       }
     },
@@ -427,7 +446,7 @@
       "credSshManager": [
         {
           "id": "credSshManagerView",
-          "name": "Credentials",
+          "name": "CredsForDevs",
           "icon": "media/icon.svg"
         }
       ]
@@ -439,6 +458,12 @@
       }
     ],
     "commands": [
+      {
+        "command": "credSshManager.help",
+        "title": "Help",
+        "category": "CredsForDevs",
+        "icon": "$(question)"
+      },
       {
         "command": "credSshManager.copyInstallCommand",
         "title": "Copy install command for another machine...",
@@ -1087,6 +1112,11 @@
         }
       ],
       "view/title": [
+        {
+          "command": "credSshManager.help",
+          "when": "view == credSshManagerView",
+          "group": "navigation@0"
+        },
         {
           "command": "credSshManager.addAccount",
           "when": "view == credSshManagerView",

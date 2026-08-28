@@ -18,14 +18,13 @@ export function humanBytes(bytes: number): string {
   if (!Number.isFinite(bytes) || bytes < 0) {
     return '';
   }
-  if (bytes < 1024) {
-    return `${bytes} B`;
-  }
   const kb = bytes / 1024;
-  if (kb < 1024) {
-    return `${kb >= 100 ? Math.round(kb) : kb.toFixed(1)} KB`;
-  }
-  return `${(kb / 1024).toFixed(1)} MB`;
+  const scales: ReadonlyArray<[boolean, () => string]> = [
+    [bytes < 1024, () => `${bytes} B`],
+    [kb < 1024, () => `${kb >= 100 ? Math.round(kb) : kb.toFixed(1)} KB`],
+  ];
+  const hit = scales.find(([applies]) => applies);
+  return hit === undefined ? `${(kb / 1024).toFixed(1)} MB` : hit[1]();
 }
 
 /** The stored blob's byte size, from its base64 length — no decode needed. */
@@ -47,39 +46,47 @@ export interface ImageSize {
  * whatever an import brought in.</p>
  */
 export function imageDimensions(bytes: Uint8Array): ImageSize | undefined {
-  if (bytes.length > 24 && bytes[0] === 0x89 && bytes[1] === 0x50) {
-    // PNG: IHDR is always first; width/height at offsets 16 and 20, big-endian.
-    return { width: readU32(bytes, 16), height: readU32(bytes, 20) };
-  }
-  if (bytes.length > 10 && bytes[0] === 0x47 && bytes[1] === 0x49 && bytes[2] === 0x46) {
-    // GIF: logical screen size at 6, little-endian u16s.
-    return { width: bytes[6] + (bytes[7] << 8), height: bytes[8] + (bytes[9] << 8) };
-  }
-  if (bytes.length > 4 && bytes[0] === 0xff && bytes[1] === 0xd8) {
-    return jpegDimensions(bytes);
-  }
-  return undefined;
+  const sniffer = SNIFFERS.find(({ minLength, magic }) => bytes.length > minLength && startsWith(bytes, magic));
+  return sniffer?.read(bytes);
+}
+
+interface Sniffer {
+  readonly magic: readonly number[];
+  readonly minLength: number;
+  readonly read: (bytes: Uint8Array) => ImageSize | undefined;
+}
+
+/** One entry per format, tried in order; the magic bytes decide, never the file name. */
+const SNIFFERS: readonly Sniffer[] = [
+  // PNG: IHDR is always first; width/height at offsets 16 and 20, big-endian.
+  { magic: [0x89, 0x50], minLength: 24, read: (b) => ({ width: readU32(b, 16), height: readU32(b, 20) }) },
+  // GIF: logical screen size at 6, little-endian u16s.
+  { magic: [0x47, 0x49, 0x46], minLength: 10, read: (b) => ({ width: b[6] + (b[7] << 8), height: b[8] + (b[9] << 8) }) },
+  { magic: [0xff, 0xd8], minLength: 4, read: jpegDimensions },
+];
+
+function startsWith(bytes: Uint8Array, magic: readonly number[]): boolean {
+  return magic.every((value, index) => bytes[index] === value);
+}
+
+/** SOF0–SOF15 minus the three markers in that range that are not frames (DHT, JPG, DAC). */
+function isFrameMarker(marker: number): boolean {
+  return marker >= 0xc0 && marker <= 0xcf && ![0xc4, 0xc8, 0xcc].includes(marker);
 }
 
 /** Walk JPEG segments to the first SOF frame, which carries the size. */
 function jpegDimensions(bytes: Uint8Array): ImageSize | undefined {
   let offset = 2;
-  while (offset + 9 < bytes.length) {
-    if (bytes[offset] !== 0xff) {
-      return undefined; // lost sync — a truncated or lying file
-    }
-    const marker = bytes[offset + 1];
-    const length = (bytes[offset + 2] << 8) + bytes[offset + 3];
-    const isFrame = marker >= 0xc0 && marker <= 0xcf && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc;
-    if (isFrame) {
+  while (offset + 9 < bytes.length && bytes[offset] === 0xff) {
+    if (isFrameMarker(bytes[offset + 1])) {
       return {
         height: (bytes[offset + 5] << 8) + bytes[offset + 6],
         width: (bytes[offset + 7] << 8) + bytes[offset + 8],
       };
     }
-    offset += 2 + length;
+    offset += 2 + (bytes[offset + 2] << 8) + bytes[offset + 3];
   }
-  return undefined;
+  return undefined; // lost sync, or no frame before the data ran out — a truncated or lying file
 }
 
 function readU32(bytes: Uint8Array, at: number): number {
@@ -109,9 +116,34 @@ export function stampFor(
   if (base64 === undefined) {
     return undefined; // untouched: keep whatever is stamped
   }
-  const size = base64Bytes(base64);
   const dims = withDimensions ? imageDimensions(Buffer.from(base64, 'base64')) : undefined;
-  return { size, changedAt: nowMs, changedBy: byEmail, width: dims?.width, height: dims?.height };
+  return { size: base64Bytes(base64), changedAt: nowMs, changedBy: byEmail, ...dims };
+}
+
+/** Which record fields hold each slot's stamps — one table, read and written through it. */
+const SLOT_FIELDS: Readonly<Record<'attachment' | 'image', Readonly<Record<keyof AttachmentStamp, keyof EntityMetadata | undefined>>>> = {
+  attachment: {
+    size: 'attachmentSize', changedAt: 'attachmentChangedAt', changedBy: 'attachmentChangedBy',
+    width: undefined, height: undefined,
+  },
+  image: {
+    size: 'imageSize', changedAt: 'imageChangedAt', changedBy: 'imageChangedBy',
+    width: 'imageWidth', height: 'imageHeight',
+  },
+};
+
+/** One slot's stamps, read off the record — the same fields whichever page asks. */
+function slotStamps(details: EntityMetadata | undefined, slot: 'attachment' | 'image'): AttachmentStamp {
+  const fields = SLOT_FIELDS[slot];
+  const read = (key: keyof AttachmentStamp): unknown =>
+    fields[key] === undefined || details === undefined ? undefined : details[fields[key] as keyof EntityMetadata];
+  return {
+    size: read('size') as number | undefined,
+    changedAt: read('changedAt') as number | undefined,
+    changedBy: read('changedBy') as string | undefined,
+    width: read('width') as number | undefined,
+    height: read('height') as number | undefined,
+  };
 }
 
 /**
@@ -122,23 +154,27 @@ export function describeAttachment(
   details: EntityMetadata,
   slot: 'attachment' | 'image',
 ): string {
-  const size = slot === 'attachment' ? details.attachmentSize : details.imageSize;
-  const at = slot === 'attachment' ? details.attachmentChangedAt : details.imageChangedAt;
-  const by = slot === 'attachment' ? details.attachmentChangedBy : details.imageChangedBy;
-  const parts: string[] = [size === undefined ? 'size not recorded' : humanBytes(size)];
+  const stamp = slotStamps(details, slot);
+  const parts: string[] = [stamp.size === undefined ? 'size not recorded' : humanBytes(stamp.size)];
   if (slot === 'image') {
-    parts.push(
-      details.imageWidth !== undefined && details.imageHeight !== undefined
-        ? `${details.imageWidth}×${details.imageHeight}`
-        : 'dimensions not recorded',
-    );
+    parts.push(describeDimensions(stamp));
   }
-  parts.push(
-    at === undefined
-      ? 'last change not recorded'
-      : `changed ${new Date(at).toLocaleString()}${by === undefined ? '' : ` by ${by}`}`,
-  );
+  parts.push(describeChange(stamp));
   return parts.join(' · ');
+}
+
+function describeDimensions(stamp: AttachmentStamp): string {
+  return stamp.width !== undefined && stamp.height !== undefined
+    ? `${stamp.width}×${stamp.height}`
+    : 'dimensions not recorded';
+}
+
+function describeChange(stamp: AttachmentStamp): string {
+  if (stamp.changedAt === undefined) {
+    return 'last change not recorded';
+  }
+  const by = stamp.changedBy === undefined ? '' : ` by ${stamp.changedBy}`;
+  return `changed ${new Date(stamp.changedAt).toLocaleString()}${by}`;
 }
 
 /** The slice of the form's result this seam needs — the panel's full type imports vscode. */
@@ -182,22 +218,11 @@ function applySlot(
   stamp: AttachmentStamp | undefined,
   oldDetails: EntityMetadata | undefined,
 ): void {
-  const source = stamp ?? {
-    size: slot === 'attachment' ? oldDetails?.attachmentSize : oldDetails?.imageSize,
-    changedAt: slot === 'attachment' ? oldDetails?.attachmentChangedAt : oldDetails?.imageChangedAt,
-    changedBy: slot === 'attachment' ? oldDetails?.attachmentChangedBy : oldDetails?.imageChangedBy,
-    width: slot === 'attachment' ? undefined : oldDetails?.imageWidth,
-    height: slot === 'attachment' ? undefined : oldDetails?.imageHeight,
-  };
-  if (slot === 'attachment') {
-    details.attachmentSize = source.size;
-    details.attachmentChangedAt = source.changedAt;
-    details.attachmentChangedBy = source.changedBy;
-  } else {
-    details.imageSize = source.size;
-    details.imageWidth = source.width;
-    details.imageHeight = source.height;
-    details.imageChangedAt = source.changedAt;
-    details.imageChangedBy = source.changedBy;
+  const source = stamp ?? slotStamps(oldDetails, slot);
+  const target = details as unknown as Record<string, unknown>;
+  for (const [stampKey, field] of Object.entries(SLOT_FIELDS[slot])) {
+    if (field !== undefined) {
+      target[field] = source[stampKey as keyof AttachmentStamp];
+    }
   }
 }

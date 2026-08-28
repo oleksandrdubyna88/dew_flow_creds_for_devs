@@ -45,22 +45,27 @@ export async function readRouteBody(
   sources: ReadRouteSources,
   query: URLSearchParams = new URLSearchParams(),
 ): Promise<HealthBody | AliasListBody | McpEntriesBody | ConfigSnippetBody | undefined> {
-  if (pathname === '/v1/health') {
-    return { ok: true, service: SERVICE_NAME };
-  }
-  if (isAliasListRoute(pathname)) {
-    return { aliases: aliasesFrom(sources) };
-  }
-  if (isMcpConfigSnippetRoute(pathname)) {
-    // Always 200; a refusal travels as `error` IN the body. The tool reads the JSON either
-    // way, and "which ids exist" is the entries route's disclosure, not this one's.
-    return configSnippetResult(
-      sources.visibleConfig?.(query.get('id') ?? ''),
-      query.get('language') ?? undefined,
-      query.get('variant') ?? undefined,
-    );
-  }
-  return isMcpEntriesRoute(pathname) ? { entries: await entriesFrom(sources) } : undefined;
+  const routes: ReadonlyArray<[boolean, () => Promise<HealthBody | AliasListBody | McpEntriesBody | ConfigSnippetBody>]> = [
+    [pathname === '/v1/health', async () => ({ ok: true, service: SERVICE_NAME })],
+    [isAliasListRoute(pathname), async () => ({ aliases: aliasesFrom(sources) })],
+    [isMcpConfigSnippetRoute(pathname), async () => snippetBody(sources, query)],
+    [isMcpEntriesRoute(pathname), async () => ({ entries: await entriesFrom(sources) })],
+  ];
+  const hit = routes.find(([matches]) => matches);
+  return hit === undefined ? undefined : hit[1]();
+}
+
+/**
+ * Always 200; a refusal travels as `error` IN the body. The tool reads the JSON either way,
+ * and "which ids exist" is the entries route's disclosure, not this one's.
+ */
+function snippetBody(sources: ReadRouteSources, query: URLSearchParams): ConfigSnippetBody {
+  const param = (name: string): string | undefined => query.get(name) ?? undefined;
+  return configSnippetResult(
+    sources.visibleConfig?.(param('id') ?? ''),
+    param('language'),
+    param('variant'),
+  );
 }
 
 /**

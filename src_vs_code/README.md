@@ -573,6 +573,14 @@ writes the client config; the extension itself keeps its zero runtime dependenci
   counting — secrets that came FROM an agent, and requests we could not serve. **Show Entry by
   id…** jumps from a journal line to the entry it names.
 
+## Help — the yellow question mark
+
+The question mark in the view's title bar opens the built-in help: every feature as an article in
+one fixed shape — *what it is, why, how to set it up, how to use it, what can go wrong* — with the
+least self-explanatory ones first (*MCP logs*, *Install…*), a search box, breadcrumbs and Back,
+and a language switch (English, Russian, Ukrainian, German, Spanish) that remembers your choice
+for the help pages only. Pictures come later; the slots are there.
+
 ## Selecting several at once
 
 Ctrl-click or Shift-click in the tree, then **Delete**, **Export / Share Externally…** or
@@ -890,6 +898,7 @@ Two rules govern how they combine:
 
 | Setting | Default | What it does |
 |---|---|---|
+| `helpLanguage` | `en` | The language of the **Help** pages only (`en`, `ru`, `uk`, `de`, `es`); articles not yet translated show English with a note. The switch at the top of the help page writes this same setting |
 | `uiScale` | `0` | Text size on every CredsForDevs page, in steps of 10% (−5…5). The ± buttons on each page write this same setting, and it syncs |
 | `secretClipboardTtlSeconds` | `45` | How long a copied secret stays on the clipboard before the extension clears it — if the clipboard still holds exactly what was copied |
 | `microsoftApiScope` | *(default scope)* | The OAuth scope requested for the vault server sign-in; set it when your server's app registration names its own |

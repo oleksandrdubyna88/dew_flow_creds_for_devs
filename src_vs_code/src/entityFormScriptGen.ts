@@ -40,3 +40,76 @@ export function generateWiring(): string {
   if (genKey) { genKey.addEventListener('click', askFor('key')); }
 `;
 }
+
+/**
+ * The overlay-highlighted editors (T17) — the script body and the config body — as a script
+ * fragment, for the same reason as the generator wiring above: the page script crossed the
+ * 800-line ceiling. One wiring for both boxes; answers are routed by hlTarget.
+ */
+// One template literal, so it is one "function" only in the way TypeScript counts.
+// eslint-disable-next-line max-lines-per-function
+export function overlayEditorWiring(): string {
+  return `
+  // ---- overlay-highlighted editors: the script body and the config body (T17) ----
+  // One wiring for both: the highlighter runs in the extension host, answers are routed by
+  // hlTarget, and the textarea keeps painting its own glyphs until the overlay demonstrably
+  // holds the same content (the lit class + watchdog below).
+  function wireOverlayEditor(bodyId, hlId, langOf) {
+    var body = document.getElementById(bodyId);
+    var hl = document.getElementById(hlId);
+    if (!body || !hl) { return; }
+    var wrap = body.parentElement;
+    var timer;
+    var watchdog;
+    // The highlighter runs in the extension host, so the overlay is always one round trip
+    // behind what was just typed. One frame of debounce keeps that imperceptible; the old
+    // 120 ms was long enough to see, because the textarea's own text is hidden while the
+    // overlay is the thing being read.
+    function ask() {
+      clearTimeout(timer);
+      timer = setTimeout(function () {
+        vscode.postMessage({ type: 'highlight', text: body.value, lang: langOf(), hlTarget: hlId });
+        // If nothing answers — a handler that threw, a host that went away — stop hiding
+        // the textarea's glyphs. An editor showing nothing is worse than an unhighlighted
+        // one, and this is the state the user actually hit.
+        clearTimeout(watchdog);
+        watchdog = setTimeout(function () {
+          if (wrap) { wrap.classList.remove('lit'); }
+        }, 400);
+      }, 16);
+    }
+    body.addEventListener('input', ask);
+    body.addEventListener('scroll', function () {
+      hl.scrollTop = body.scrollTop; hl.scrollLeft = body.scrollLeft;
+    });
+    window.addEventListener('message', function (event) {
+      var msg = event.data || {};
+      if (msg.type === 'highlighted' && msg.hlTarget === hlId) {
+        clearTimeout(watchdog);
+        hl.innerHTML = msg.html + String.fromCharCode(10);
+        hl.scrollTop = body.scrollTop;
+        // Only now is it safe for the textarea to stop painting its own text: the overlay
+        // demonstrably holds the same content.
+        if (wrap) { wrap.classList.add('lit'); }
+      }
+    });
+    ask();
+    return ask;
+  }
+  (function wireScript() {
+    var langSel = document.getElementById('scriptLanguage');
+    if (!langSel) { return; }
+    var ask = wireOverlayEditor('scriptBody', 'scriptHl', function () { return langSel.value; });
+    if (ask) { langSel.addEventListener('change', ask); }
+  })();
+  (function wireConfig() {
+    var formatSel = document.getElementById('configFormat');
+    if (!formatSel) { return; }
+    // The FORMAT is the language — json/yaml/toml/ini/env all have highlighter grammars.
+    var ask = wireOverlayEditor('configBody', 'configHl', function () { return formatSel.value; });
+    if (ask) { formatSel.addEventListener('change', ask); }
+  })();
+
+
+`;
+}

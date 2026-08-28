@@ -895,7 +895,7 @@ is thin wiring over these.
 
 ---
 
-### T21. A Help surface — because the features nobody can decode are the ones nobody uses
+### T21. ~~A Help surface~~ — **SHIPPED 2026-08-27** (EN + RU complete; uk/de/es fall back visibly; pictures deferred by design)
 
 **The ask, in the owner's shape.** An unobtrusive entry point at the bottom of the tree — a status
 bar item with a yellow question mark — opening a **Help page**: search at the top centre; every
@@ -954,7 +954,7 @@ existing.
 
 ---
 
-### T22. The view title says the product name twice, and the help mark moves into it
+### T22. ~~The view title says the product name twice~~ — **SHIPPED 2026-08-27** (view renamed; `$(question)` first in the title bar; the spacing ask is answered by VS Code's own group separator — no spacer no-op)
 
 **The ask.** The tree's title renders as *CREDSFORDEVS: CREDENTIALS* — the container is already
 named CredsForDevs, so the view's own `"name": "Credentials"` (`package.json:403`) makes the bar
@@ -1331,6 +1331,15 @@ missing glyph).
 
 
 ---
+
+### A lesson this session paid for, recorded so the next one does not
+
+Eleven commits went in with `npm run lint | tail -1` as their lint check — and eslint's last
+output line is BLANK, so a run with twenty-three errors printed the same empty line a clean run
+does. The commits that claimed "lint clean" from T27 through T24a were wrong about it; the debt
+(complexities, four files over 800 lines, a stray disable) was found and cleared in one sweep
+before T21 landed. The check that cannot lie is `grep -c error` on the output, or the exit code
+of `npm run lint` itself — never the tail of a log.
 
 ## 4. Build order
 
