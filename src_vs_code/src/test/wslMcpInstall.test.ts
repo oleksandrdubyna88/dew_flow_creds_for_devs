@@ -2,9 +2,12 @@ import * as assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
   WINDOWS_BINARY_VARIABLE,
+  helpArgv,
   installArgv,
   installFailure,
   installedPathFrom,
+  knowsTheBridge,
+  staleBinaryWarning,
   wslInstalledMessage,
   wslPathArgv,
   wslServerBlock,
@@ -109,4 +112,34 @@ test('both messages name the distribution, because a person may have several', (
 test('an unnamed distribution still reads as a sentence rather than a gap', () => {
   assert.ok(wslInstalledMessage('', '/home/ada/.local/bin/creds-mcp').includes('your WSL distribution'));
   assert.ok(installFailure('', '').includes('your WSL distribution'));
+});
+
+test('a published release that predates the bridge is caught, not left to fail silently', () => {
+  // Measured 2026-08-28 against the real mcp-v0.1.0, cut hours before the bridge: the config was
+  // right, the window was open and healthy, and the agent was told the vault was unreachable —
+  // the same sentence a CLOSED window produces. The binary's own help is the signal.
+  const oldHelp = 'creds-mcp — the MCP server for CredsForDevs.\n\nTools: creds_list, creds_exec…';
+  const newHelp = 'creds-mcp — the MCP server.\n\nSet CREDS_MCP_WINDOWS_BINARY to the full path…';
+
+  assert.equal(knowsTheBridge(oldHelp), false);
+  assert.equal(knowsTheBridge(newHelp), true);
+  assert.equal(knowsTheBridge(''), false, 'a binary that said nothing is not a binary that knows');
+});
+
+test('the stale warning says it is the RELEASE that is old, not their configuration', () => {
+  const said = staleBinaryWarning('Ubuntu', '/home/ada/.local/bin/creds-mcp');
+
+  assert.ok(said.includes('predates the WSL bridge'));
+  assert.ok(said.includes('still on your clipboard'), 'the block is not wasted work');
+  assert.ok(said.includes('Ubuntu'));
+});
+
+test('the help probe runs the binary directly, with no shell to quote for', () => {
+  assert.deepEqual(helpArgv('Ubuntu', '/home/ada/.local/bin/creds-mcp'), [
+    '-d',
+    'Ubuntu',
+    '-e',
+    '/home/ada/.local/bin/creds-mcp',
+    '--help',
+  ]);
 });

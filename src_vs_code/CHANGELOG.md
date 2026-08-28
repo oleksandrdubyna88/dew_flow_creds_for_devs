@@ -6,6 +6,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Install the MCP Server… asks where the agent runs.** It had one answer for a machine with two
+  places an MCP client can live: on Windows it was right, and inside WSL it handed over a config
+  block naming a `.exe` a Linux shell cannot start — a failure that surfaces later, in another
+  program, as "server exited". Pick a distribution and it installs both halves, the Linux one with
+  the same published one-liner the *Copy install command…* item hands out, and the block it copies
+  names the Linux binary with the Windows one in `env`. Where the binary landed is read from the
+  installer's own output rather than recomputed, and the Windows path is translated by asking the
+  distribution (`wslpath`) rather than composed as `/mnt/c/...`, which is a default and not a rule.
+- The help article **"Running the MCP server from inside WSL"** now walks that flow.
+
 ## [0.82.1] — 2026-08-28
 
 ### Security

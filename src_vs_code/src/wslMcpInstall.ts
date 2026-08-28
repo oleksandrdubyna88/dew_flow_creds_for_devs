@@ -80,6 +80,41 @@ export function wslServerBlock(linuxBinary: string, windowsBinaryInWsl: string):
   return mcpServerBlock(linuxBinary, { [WINDOWS_BINARY_VARIABLE]: windowsBinaryInWsl });
 }
 
+/** The argv that asks the freshly installed binary to describe itself. */
+export function helpArgv(distro: string, linuxBinary: string): string[] {
+  return [...distroArgv(distro), '-e', linuxBinary, '--help'];
+}
+
+/**
+ * Does the binary we just installed know how to cross the bridge at all?
+ *
+ * <p><b>This check exists because the failure without it is silent and misattributed.</b> A
+ * `creds-mcp` published before the WSL bridge ignores the variable this install writes and dials
+ * `127.0.0.1` inside the distribution, where nothing of ours listens — so it answers "No
+ * CredsForDevs window answered", which is exactly what a CLOSED window says. Measured on
+ * 2026-08-28 against the real `mcp-v0.1.0`, cut hours before the bridge: the config was correct,
+ * the window was open and healthy, and the agent was told the vault was unreachable.</p>
+ *
+ * <p>The binary's own help is the signal because it is the one this build controls and the one a
+ * person can check by hand. The word looked for is the variable we are about to write into their
+ * client's config: if the binary has never heard of it, the block would name something it will
+ * not read.</p>
+ */
+export function knowsTheBridge(helpText: string): boolean {
+  return helpText.includes(WINDOWS_BINARY_VARIABLE);
+}
+
+/** What to say when the published release predates the bridge. */
+export function staleBinaryWarning(distro: string, linuxBinary: string): string {
+  const where = distro.length > 0 ? distro : 'your WSL distribution';
+  return (
+    `Installed ${linuxBinary} in ${where}, but that published release predates the WSL bridge: it ` +
+    'cannot reach a window on Windows and will report that none answered, however healthy yours ' +
+    'is. The configuration is still on your clipboard — it becomes correct as soon as a newer ' +
+    'creds-mcp release is published and you run this again.'
+  );
+}
+
 /** What the person is told once both halves are in place. */
 export function wslInstalledMessage(distro: string, linuxBinary: string): string {
   const where = distro.length > 0 ? distro : 'your WSL distribution';

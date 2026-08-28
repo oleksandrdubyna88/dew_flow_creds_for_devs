@@ -4,9 +4,12 @@ import { MCP_CLIENT_TARGETS, installedMessage, mcpServerBlock } from './mcpClien
 import { parseDistros } from './wslRelay';
 import { runWsl, runWslRaw } from './wslProcess';
 import {
+  helpArgv,
   installArgv,
   installFailure,
   installedPathFrom,
+  knowsTheBridge,
+  staleBinaryWarning,
   wslInstalledMessage,
   wslPathArgv,
   wslServerBlock,
@@ -103,6 +106,14 @@ async function installIntoWsl(distro: string, windowsBinary: string): Promise<vo
   }
 
   await vscode.env.clipboard.writeText(wslServerBlock(linuxBinary, translated));
+
+  // Asked of the binary itself, because the alternative failure is silent: a release published
+  // before the bridge answers "no window answered" — word for word what a closed window says.
+  if (!knowsTheBridge(await runWsl(helpArgv(distro, linuxBinary)))) {
+    void vscode.window.showWarningMessage(staleBinaryWarning(distro, linuxBinary));
+    return;
+  }
+
   void vscode.window.showInformationMessage(
     wslInstalledMessage(distro, linuxBinary),
     ...MCP_CLIENT_TARGETS.map((target) => target.path),
