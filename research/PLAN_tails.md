@@ -46,9 +46,9 @@ plan. Listed so that a reader of *this* plan does not conclude the audit missed 
 
 | item | owner | verified how |
 |---|---|---|
-| `/api/health` writes `.health-probe` on every request | [PLAN_server_ops.md](../todo/PLAN_server_ops.md) item 6 | `src_minimalapi_server/src/Program.cs:472-489` — still write-then-delete per call, no cache |
-| No `/metrics` surface, no .NET LTS cadence | [PLAN_server_ops.md](../todo/PLAN_server_ops.md) item 5 | no route matches `metrics` in `Program.cs` |
-| `DataDir` atomic-rename requirement undocumented | [PLAN_server_ops.md](../todo/PLAN_server_ops.md) item 2 | no `atomic`/`SMB`/`NFS` mention in `src_minimalapi_server/**` or `deploy/**.md` |
+| `/api/health` writes `.health-probe` on every request | [PLAN_server_ops.md](PLAN_server_ops.md) item 6 | `src_minimalapi_server/src/Program.cs:472-489` — still write-then-delete per call, no cache |
+| No `/metrics` surface, no .NET LTS cadence | [PLAN_server_ops.md](PLAN_server_ops.md) item 5 | no route matches `metrics` in `Program.cs` |
+| `DataDir` atomic-rename requirement undocumented | [PLAN_server_ops.md](PLAN_server_ops.md) item 2 | no `atomic`/`SMB`/`NFS` mention in `src_minimalapi_server/**` or `deploy/**.md` |
 | WebAuthn RP ID is bare `localhost` | [PLAN_extension_security_tail.md](PLAN_extension_security_tail.md) item 1 | `src_vs_code/src/webauthnPrf.ts:23` — see T2 below, which settles a contradiction the item created |
 | Share metadata unauthenticated (no AAD) | [PLAN_extension_security_tail.md](PLAN_extension_security_tail.md) item 2 | no `setAAD` in `src_vs_code/src/shareFormat.ts` |
 | `Burn Now…`, viewer lifetime, cross-machine burn test | [PLAN_ephemeral_secrets_tail.md](PLAN_ephemeral_secrets_tail.md) 2.1–2.4 | no `burn` command among the 94 in `package.json`; `entityViewPanel.ts` names no expiry |
@@ -351,7 +351,7 @@ fourteen-line status block. Against the code:
 | D9 — open | **mostly shipped**: the printed recovery code (`research/PLAN_recovery_code_wrap.md`) and emergency access through the server (`research/PLAN_org_recovery.md`). Only 2SKD — a second device secret — is unbuilt |
 | D10 — open | **shipped** as `research/PLAN_ephemeral_secrets.md`. [PLAN_ephemeral_secrets_tail.md](PLAN_ephemeral_secrets_tail.md) §2.5 exists solely to record this and is itself unticked |
 | E2 — open | **shipped**: `deploy/README.md:32-54` makes `MS_AUDIENCES` an explicit, named setup step |
-| E3 — open | **shipped** as `X-Creds-Contract` (see [PLAN_server_ops.md](../todo/PLAN_server_ops.md) item 7) |
+| E3 — open | **shipped** as `X-Creds-Contract` (see [PLAN_server_ops.md](PLAN_server_ops.md) item 7) |
 
 **Fix.** Rewrite the status block to what is true, closing A3, A6, D8, D9-bar-2SKD, D10, E2, E3, and
 deleting the "skip D1 and D8" sentence that two shipped plans have already overruled. Record T3's

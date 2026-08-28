@@ -29,6 +29,7 @@ keys). PINs, passwords, keys, and VPN configs never leave the machines.
 | GET | `/api/health` | liveness | public |
 | GET | `/api/client-config` | what a client must know before it can sign in — currently the Microsoft scope to request | public |
 | GET | `/api/whoami` | resolved caller + whether a vault exists | any allowed caller |
+| GET | `/api/metrics` | the officers' page: version, runtime support, uptime, requests by outcome, vault traffic, what the data directory holds — one JSON document for a human, read through the extension | recovery officers only (403 for everyone else, whether or not the ceremony has run) |
 | GET | `/api/vault` | download **your** vault blob | token email only |
 | PUT | `/api/vault` | upload **your** vault blob (`application/octet-stream`) | token email only |
 | DELETE | `/api/vault` | delete **your** vault and inbox (account removal) | token email only |
@@ -70,6 +71,10 @@ Environment variables (double underscore = section separator) or
 | `Vault__PublishInstanceFile` | publish this instance for the DewFlow editor panel (default `true`; the container sets `false`) |
 | `Vault__RateLimit__PermitLimit` | requests per window, per caller (default 120) |
 | `Vault__RateLimit__WindowSeconds` | the window (default 10) |
+| `Vault__RateLimit__BytesPerWindow` | bytes a caller may write to their vault per byte window (default 64 MiB — eight full vaults); the write over it is `429` with `Retry-After` |
+| `Vault__RateLimit__ByteWindowSeconds` | that window (default 600) |
+| `Vault__HealthCacheSeconds` | how long a good `/api/health` verdict is served from memory (default 5); a bad one is never cached |
+| `Vault__AllowNetworkDataDir` | `true` to run with `DataDir` on a UNC path or a network mount (nfs, cifs, sshfs…). Refused by default: the store's durability is atomic rename, which network filesystems do not promise |
 | `Logging__Directory` | root of the per-run log files (default `<app>/logs`) |
 | `Serilog__MinimumLevel__Default` | verbosity (default `Information`) |
 

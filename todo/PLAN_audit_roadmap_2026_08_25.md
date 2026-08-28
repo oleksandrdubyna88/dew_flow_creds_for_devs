@@ -44,7 +44,7 @@
 > [SECURITY_REVIEW_2026-08-25.md](../research/SECURITY_REVIEW_2026-08-25.md).
 > Открытые хвосты, которые этот план **не** дублирует: [PLAN_tails.md](../research/PLAN_tails.md),
 > [PLAN_extension_security_tail.md](../research/PLAN_extension_security_tail.md)
-> (RP ID WebAuthn), [PLAN_server_ops.md](PLAN_server_ops.md), [PLAN_marketplace_listing.md](../research/PLAN_marketplace_listing.md).
+> (RP ID WebAuthn), [PLAN_server_ops.md](../research/PLAN_server_ops.md), [PLAN_marketplace_listing.md](../research/PLAN_marketplace_listing.md).
 
 ---
 
@@ -278,8 +278,8 @@ read-only SQL (регекс/парсер), регекс на SSH-команду,
 
 ### E. Сервер (короткий хвост, не дублирует PLAN_server_ops)
 
-- **E1.** Rate limit не взвешен по байтам: `PUT /api/vault` (до 8 MiB) стоит столько же, сколько
-  `GET /api/health`. Добавить лимит байт/окно на аккаунт.
+- ~~**E1.** Rate limit не взвешен по байтам~~ — **ВЫПУЩЕНО 2026-08-28** (сервер 0.4.0): `ByteBudget.cs`,
+  64 MiB за 10 минут на аккаунт по умолчанию, `429` с `Retry-After`; отказ ничего не тратит.
 - **E2.** Проверка audience — opt-in с громким логом при выключении (`Program.cs:256-263`). Оставить, но в
   `deploy/README` — шаг «включить после регистрации приложения» как обязательный пункт чеклиста.
 - **E3.** Версионирование контракта extension↔server — уже в PLAN_server_ops (п. 7); здесь только

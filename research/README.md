@@ -32,6 +32,7 @@ Newest first.
 
 | Plan | Landed | What it delivered |
 |---|---|---|
+| [PLAN_server_ops.md](PLAN_server_ops.md) | 2026-08-28 | The server's operational hardening, all nine items — the last three (network-FS refusal, officers' metrics + runtime line, cached health) and the byte budget shipped as server 0.4.0. |
 | [PLAN_share_metadata_aad.md](PLAN_share_metadata_aad.md) | 2026-08-28 | A share's label bound to its ciphertext as GCM AAD; legacy shares open, marked unbound, until 0.85.0. |
 | [PLAN_ephemeral_secrets_tail.md](PLAN_ephemeral_secrets_tail.md) | 2026-08-28 | The ephemeral-secrets tail: *Burn Now…*, the lifetime on the card, and the cross-machine burn proven by test. |
 | [PLAN_tails.md](PLAN_tails.md) | 2026-08-28 | The 2026-08-27 audit of every open plan plus the owner's asks — 34 tails shipped as 0.80.0 → 0.81.0; each item records what shipped and how it deviated. |

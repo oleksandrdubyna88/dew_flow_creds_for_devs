@@ -62,6 +62,27 @@ var minimumClientContract = config.GetValue("Vault:MinimumClientContract", Contr
 var requireHttps = config.GetValue("Vault:RequireForwardedHttps", false);
 var rateLimitPermits = config.GetValue("Vault:RateLimit:PermitLimit", 120);
 var rateLimitWindow = TimeSpan.FromSeconds(config.GetValue("Vault:RateLimit:WindowSeconds", 10));
+// Bytes, not requests (roadmap E1): a full vault costs as much as it weighs. Eight of them per
+// ten minutes per caller by default; the ninth waits for the window.
+var byteBudget = new ByteBudget(
+    config.GetValue("Vault:RateLimit:BytesPerWindow", 64L * 1024 * 1024),
+    TimeSpan.FromSeconds(config.GetValue("Vault:RateLimit:ByteWindowSeconds", 600)));
+// A good health verdict is served from memory this long; a bad one is never cached (item 6).
+var healthCache = new HealthCache(TimeSpan.FromSeconds(config.GetValue("Vault:HealthCacheSeconds", 5)));
+var allowNetworkDataDir = config.GetValue(DataDirCheck.OverrideKey, false);
+// Process-lifetime counters for the officers' metrics page (item 5).
+var metrics = new ServerMetrics(DateTimeOffset.UtcNow);
+
+// Writable is not enough: the store's durability is atomic rename, which a network filesystem
+// does not promise (item 2). Refused here, before a single blob depends on it.
+var networkRefusal = DataDirCheck.Judge(
+    dataDir,
+    allowNetworkDataDir,
+    () => File.Exists("/proc/mounts") ? File.ReadAllText("/proc/mounts") : null);
+if (networkRefusal is not null)
+{
+    throw new InvalidOperationException(networkRefusal);
+}
 
 // Probe BEFORE constructing the store. VaultStore's constructor creates its two
 // subdirectories, so an unwritable DataDir used to surface as a raw
@@ -260,8 +281,27 @@ var app = builder.Build();
 
 // Before anything reads the remote address — the limiter partitions on it.
 app.UseForwardedHeaders();
+// Counted once the status is known, whatever produced it — the limiter's 429 included.
+app.Use(async (ctx, next) =>
+{
+    await next();
+    metrics.Record(ctx.Response.StatusCode, ctx.Request.Method, ctx.Request.Path);
+});
 
 var log = app.Logger;
+var runtimeSupport = RuntimeSupport.Describe(Environment.Version, DateOnly.FromDateTime(DateTime.UtcNow));
+if (runtimeSupport.Urgent)
+{
+    log.LogWarning("runtime: {Line}", runtimeSupport.Line);
+}
+else
+{
+    log.LogInformation("runtime: {Line}", runtimeSupport.Line);
+}
+var serverVersion = typeof(Program).Assembly
+    .GetCustomAttributes(typeof(System.Reflection.AssemblyInformationalVersionAttribute), false)
+    .OfType<System.Reflection.AssemblyInformationalVersionAttribute>()
+    .FirstOrDefault()?.InformationalVersion ?? typeof(Program).Assembly.GetName().Version?.ToString(3) ?? "unknown";
 
 // The contract version, decided before authentication so a client too old to be served is told
 // THAT rather than being handed a 401 about a token that was never the problem. Every response
@@ -471,21 +511,30 @@ static string FingerprintOf(string keyBase64)
 
 app.MapGet("/api/health", () =>
 {
-    try
+    // Still a real probe — a health check that cannot see a full or detached volume is the
+    // constant the reliability rule warns against — but a good verdict is served from memory for
+    // a few seconds, and a bad one is re-probed on every call (item 6).
+    var ok = healthCache.Check(() =>
     {
-        var probe = Path.Combine(dataDir, ".health-probe");
-        File.WriteAllText(probe, "ok");
-        File.Delete(probe);
-        return Results.Json(new HealthDto("ok", "cred-vault-server", "writable"), AppJsonContext.Default.HealthDto);
-    }
-    catch (Exception ex)
-    {
-        log.LogError(ex, "Health probe failed writing to DataDir");
-        return Results.Json(
+        try
+        {
+            var probe = Path.Combine(dataDir, ".health-probe");
+            File.WriteAllText(probe, "ok");
+            File.Delete(probe);
+            return true;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            log.LogError(ex, "Health probe failed writing to DataDir");
+            return false;
+        }
+    }, DateTimeOffset.UtcNow);
+    return ok
+        ? Results.Json(new HealthDto("ok", "cred-vault-server", "writable"), AppJsonContext.Default.HealthDto)
+        : Results.Json(
             new HealthDto("unhealthy", "cred-vault-server", "unwritable"),
             AppJsonContext.Default.HealthDto,
             statusCode: StatusCodes.Status503ServiceUnavailable);
-    }
 });
 
 // What a client needs before it can authenticate. Anonymous by necessity — the
@@ -543,6 +592,17 @@ app.MapPut("/api/vault", async (HttpContext ctx, CancellationToken ct) =>
         await ctx.Response.WriteAsync($"Vault must be 1..{maxVaultBytes} bytes.", ct);
         return;
     }
+    // The byte budget (E1): charged only when the write goes ahead, so a refusal costs nothing.
+    var (allowed, retryAfter) = byteBudget.TryConsume(caller.Value.Email, ms.Length, DateTimeOffset.UtcNow);
+    if (!allowed)
+    {
+        metrics.RateLimited();
+        ctx.Response.Headers.RetryAfter = retryAfter.ToString();
+        ctx.Response.StatusCode = StatusCodes.Status429TooManyRequests;
+        await ctx.Response.WriteAsync(
+            $"Vault writes are limited to {byteBudget.BytesPerWindow} bytes per {byteBudget.Window.TotalSeconds:0} seconds; try again in {retryAfter} s.", ct);
+        return;
+    }
     // Optimistic concurrency. Two of one person's machines syncing at once is ordinary,
     // and without this the second write silently discards the first at the blob level.
     // Opt-in by design: a client that sends neither header keeps the old behaviour.
@@ -564,6 +624,7 @@ app.MapPut("/api/vault", async (HttpContext ctx, CancellationToken ct) =>
     }
 
     log.LogInformation("vault write by {Email} ({Bytes} bytes)", caller.Value.Email, ms.Length);
+    metrics.VaultWritten(ms.Length);
     await store.RecordOwnerAsync(caller.Value.Email, ct);
     ctx.Response.Headers.ETag = VaultStore.ETagFor(content);
     ctx.Response.StatusCode = StatusCodes.Status204NoContent;
@@ -645,6 +706,20 @@ app.MapGet("/api/org-recovery/config", async (HttpContext ctx, CancellationToken
     }
     return caller;
 }
+
+// The officers' metrics page (item 5, the owner's shape): one JSON document for a human, read
+// through the extension, for whoever is on the recovery roster — whether or not the ceremony
+// has run. Officer-only for the same reason the ceremony is: whoever can read the server's
+// load and disk is whoever the operator named.
+app.MapGet("/api/metrics", async (HttpContext ctx, CancellationToken ct) =>
+{
+    var caller = RequireOfficer(ctx);
+    if (caller is null) return;
+    await ctx.Response.WriteAsJsonAsync(
+        metrics.Snapshot(store, dataDir, DateTimeOffset.UtcNow, serverVersion, runtimeSupport),
+        AppJsonContext.Default.MetricsDto,
+        cancellationToken: ct);
+});
 
 // ----- the setup ceremony: one sealed Shamir share per officer -----
 app.MapPost("/api/org-recovery/invites", async (HttpContext ctx, CancellationToken ct) =>

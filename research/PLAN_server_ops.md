@@ -1,16 +1,18 @@
 # PLAN — cred-vault-server operational hardening
 
-> Status: **items 1, 3, 4, 7, 8 and 9 shipped; items 2, 5 and 6 remain.** (1, 4, 8 on 2026-08-23;
-> 3, 7 and 9 on 2026-08-26, after re-reviewing this plan against the client that grew past it.)
-> Scope: deployment/runtime of the `cred-vault-server` .NET service — not code changes to the
-> extension. This plan stays in `todo/` because most of its value is still ahead of it.
+> Status: **IMPLEMENTED, 2026-08-28** — every item. 1, 4, 8 on 2026-08-23; 3, 7, 9 on 2026-08-26;
+> 2, 5 and 6 on 2026-08-28 as server 0.4.0 (plus roadmap E1, the byte budget, in the same release).
+> Deviations: item 5's metrics are a JSON page for the recovery officers read through the extension,
+> not a Prometheus endpoint (the owner's shape); the LTS cadence is a startup log line, not a CI
+> check (the owner: "just write it to the log"). Scope: deployment/runtime of the `cred-vault-server`
+> .NET service, and the one extension command that reads the metrics.
 >
 > Extracted from the audit follow-ups (the code items shipped; see
-> [research/PLAN_audit_followups.md](../research/PLAN_audit_followups.md)).
+> [research/PLAN_audit_followups.md](PLAN_audit_followups.md)).
 > These are infrastructure/deployment decisions or small server features that
 > need an owner call, so they are parked here rather than silently actioned.
 >
-> Items 6-8 come from [../research/SECURITY_REVIEW_2026-08-23.md](../research/SECURITY_REVIEW_2026-08-23.md)
+> Items 6-8 come from [../research/SECURITY_REVIEW_2026-08-23.md](SECURITY_REVIEW_2026-08-23.md)
 > (findings 9, 11, 12) and its architecture note on contract versioning.
 
 ## Goal
@@ -32,10 +34,10 @@ between a user's two machines.
    being true, and a security review copied it. A summary that contradicts its own body is worse
    than no summary.
 
-2. **`DataDir` must be a local / atomic-rename-capable FS.** `VaultStore`'s
-   durability relies on `File.Move` being atomic; on SMB/old NFS it is not.
-   Document the requirement and, optionally, probe at startup and refuse a
-   non-local `Vault__DataDir`.
+2. ~~**`DataDir` must be a local / atomic-rename-capable FS.**~~ **SHIPPED 2026-08-28** (server
+   0.4.0). Owner's decision: refuse, with an override. `DataDirCheck.cs` refuses a UNC path or a
+   mount `/proc/mounts` names as remote before the writable probe runs; `Vault:AllowNetworkDataDir=true`
+   overrides. Documented in `deploy/README.md` (*Persistence*). Pure; unit-tested on a mount table.
 
 3. ~~**Inbox age-based pruning.**~~ **SHIPPED 2026-08-26.** Owner decision: **31 days**.
    `ShareMaintenance` (a `BackgroundService` on a `PeriodicTimer`) runs at startup and then every
@@ -64,16 +66,16 @@ between a user's two machines.
    **version-vector** merge (v0.22.0) already prevents *content* loss on the
    next sync; this is about the raw blob write race.
 
-5. **Metrics endpoint + .NET LTS upgrade cadence.** A `/metrics` (or health
-   detail) surface for monitoring, and a documented cadence for moving off an
-   EOL .NET runtime.
+5. ~~**Metrics endpoint + .NET LTS upgrade cadence.**~~ **SHIPPED 2026-08-28** (server 0.4.0,
+   extension 0.83.0). Owner's shape: not a scrape target — `GET /api/metrics` answers the recovery
+   officers only (whether or not the ceremony has run) with one JSON document, and the extension
+   shows it in a tab (*Server Metrics…* on an officer's account row). The LTS cadence is a startup
+   log line (`RuntimeSupport.cs`): the runtime, its support end, days left; a warning inside the
+   last 90 days. Policy in `deploy/README.md`.
 
-6. **`/api/health` writes to disk on every call** (review finding 11). The probe creates and
-   deletes `.health-probe` per request, and the endpoint is public. With a 30-second container
-   healthcheck plus an nginx probe that is thousands of writes a day, and the reliability rule says
-   health must do no blocking work inline. *Fix:* cache the probe result for a few seconds and serve
-   the cached verdict. Keep probing — a health check that cannot see a full or detached volume is
-   the constant the rule warns against.
+6. ~~**`/api/health` writes to disk on every call**~~ **SHIPPED 2026-08-28** (server 0.4.0).
+   `HealthCache.cs`: a good verdict is served from memory for 5 s (`Vault:HealthCacheSeconds`), a bad
+   one is never cached — re-probed on every call, the owner's choice. The probe still writes the disk.
 
 7. ~~**The HTTP contract carries no version**~~ **SHIPPED 2026-08-26.** Answer: a header both
    sides send, `X-Creds-Contract`. Below `Vault:MinimumClientContract` the server answers **426
@@ -182,9 +184,9 @@ then 5.
 
 ## Definition of Done
 
-- [ ] Each item is either implemented **or** carries the owner's explicit decision to defer.
-- [ ] Every shipped server feature has a test in `src_minimalapi_server/tests/` and the suite is green.
-- [ ] `DataDir`/restart/backup expectations are documented in [../deploy/README.md](../deploy/README.md).
-- [ ] A restore has actually been performed, and the runbook records how long it took.
-- [ ] The open-findings table in [../research/SECURITY_REVIEW_2026-08-23.md](../research/SECURITY_REVIEW_2026-08-23.md)
+- [x] Each item is either implemented **or** carries the owner's explicit decision to defer.
+- [x] Every shipped server feature has a test in `src_minimalapi_server/tests/` and the suite is green.
+- [x] `DataDir`/restart/backup expectations are documented in [../deploy/README.md](../deploy/README.md).
+- [x] A restore has actually been performed, and the runbook records how long it took.
+- [x] The open-findings table in [../research/SECURITY_REVIEW_2026-08-23.md](SECURITY_REVIEW_2026-08-23.md)
       is updated as items 4, 6 and 3 close.

@@ -25,7 +25,9 @@ RUN dotnet restore src_minimalapi_server/src/CredVaultServer.csproj -a $TARGETAR
 
 COPY src_minimalapi_server/src/ src_minimalapi_server/src/
 RUN mkdir /empty
-RUN dotnet publish src_minimalapi_server/src/CredVaultServer.csproj         -c Release         -a $TARGETARCH         -o /app         --no-restore
+# The version the release tag names — /api/metrics and the log report it. A local build says so.
+ARG VERSION=0.0.0-local
+RUN dotnet publish src_minimalapi_server/src/CredVaultServer.csproj         -c Release         -a $TARGETARCH         -o /app         --no-restore         -p:Version=$VERSION
 
 # ---------------------------------------------------------------------------
 # runtime — chiseled: no shell, no package manager, no .NET, ~13 MB of Ubuntu.

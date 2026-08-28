@@ -295,6 +295,25 @@ of every line before it — carries **metadata only**, and is readable by every 
 only initiators. A recovery nobody else can see is a recovery nobody else can question, and being
 witnessed is the point of a quorum. It is never swept.
 
+### `/api/metrics` — one document, for the officers (2026-08-28)
+
+`ServerMetrics.cs` keeps process-lifetime counters — requests by outcome (4xx, 5xx, 429), vault
+reads and writes with bytes — fed by one middleware that records every response once its status is
+known, and by the vault PUT for the bytes. The endpoint snapshots them together with what the data
+directory holds (`VaultStore.VaultFootprint` / `ShareFootprint`), the free space on that disk, the
+binary's version (stamped by the release tag through `-p:Version`) and the runtime's support window
+(`RuntimeSupport.cs`, the same line the server logs at startup — a warning inside the last 90 days).
+Officer-only through `RequireOfficer`, whether or not the ceremony has run: the owner's rule is
+that whoever may read the server's load is whoever the operator named. Read by a human through the
+extension's *Server Metrics…*; not a scrape target.
+
+Two more shipped the same day. **The byte budget** (`ByteBudget.cs`, roadmap E1): the request
+limiter counted a full vault as one request, so `PUT /api/vault` now spends a per-caller byte budget
+— 64 MiB per ten minutes by default — and the write over it is `429` with `Retry-After`; a refused
+write spends nothing. **The health cache** (`HealthCache.cs`): a good `/api/health` verdict is served
+from memory for five seconds, a bad one is never cached — the probe still writes the disk, it just
+does not do so thousands of times a day for the same answer.
+
 ### `/api/client-config` — why an anonymous endpoint is the right shape
 
 A client cannot authenticate until it knows **which scope to ask the identity provider for**, so
@@ -349,6 +368,11 @@ The server refuses to start rather than run in a state that looks like a network
    verified account on earth, by omission.
 3. **`DataDir` not writable** → checked *before* `VaultStore` is constructed, with a message that
    names the usual cause (a root-owned bind mount against an unprivileged container) and the fix.
+4. **`DataDir` on a network filesystem** (`DataDirCheck.cs`, 2026-08-28) → a UNC path, or a mount
+   whose type `/proc/mounts` names as remote (nfs, cifs, sshfs, …), is refused before the writable
+   probe even runs: the store's durability is atomic rename, which those do not promise. Pure — the
+   mount table is text, so the decision is a unit test. `Vault:AllowNetworkDataDir=true` overrides,
+   in writing.
 The corporate-recovery roster is deliberately **not** on that list. It used to be, and that was
 the wrong lever: corporate recovery is one optional feature among many, and a typo in its roster
 stopped ordinary vault sync for everybody — an outage caused by the safety check, on a server

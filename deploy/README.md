@@ -162,6 +162,14 @@ Three host directories, all bind mounts, all outside every container:
 Nothing in `update.sh` touches them, and the stack uses no anonymous volumes. Point them at storage
 you actually back up.
 
+**`DATA_DIR` must be a local disk.** The vault store writes a new blob beside the old one and renames
+over it, and that rename is what makes a crash leave either the old vault or the new — never half
+of one. SMB and older NFS do not promise an atomic rename, so the server **refuses to start** when
+`DATA_DIR` is a UNC path or sits on a mount whose filesystem is known to be remote (nfs, nfs4, cifs,
+smb3, sshfs, 9p, ceph, glusterfs, davfs, rclone), and says so in its first log line. Back the
+directory up to the network instead (see *Backups*). If you really must run on a network mount, set
+`Vault__AllowNetworkDataDir=true` and own the risk in writing.
+
 ## Where the image comes from
 
 CI publishes to the **GitHub Container Registry** (`ghcr.io`) — GitHub's own registry, so there is
@@ -345,6 +353,26 @@ curl -sf https://vault.example.com/api/health
 
 The vault's own logs are also on the host, one file per run: `LOG_DIR/<utc-date>/cred-vault-server-<time>-<pid>.log` —
 `docker compose logs` disappearing with a recreated container is exactly what these survive.
+
+A good health verdict is served from memory for five seconds (`Vault__HealthCacheSeconds`) — the
+container healthcheck and an nginx probe used to write the data directory thousands of times a day
+for an answer that does not change between them. A bad verdict is never cached: a volume that just
+came back is seen on the next call.
+
+**Metrics for the recovery officers.** `GET /api/metrics` answers whoever is on the corporate-recovery
+roster (`Vault__CorpRecovery__OfficerEmails`), whether or not the ceremony has run, and nobody else:
+version, runtime and its support window, uptime, requests by outcome (4xx / 5xx / rate-limited), vault
+reads and writes with the bytes written, how many vaults and pending shares the data directory holds
+and their size, and the free space on that disk. It is one JSON document for a human — in VS Code,
+an officer opens it from the account's menu (*Server Metrics…*). Not a Prometheus scrape target, on
+purpose: the people who may read the server's load are the people the operator named.
+
+**The runtime's support window is a log line.** At startup the server writes
+`runtime: .NET 10.0.x (LTS) — supported until 2028-11-14, N days left`, as a warning inside the last
+90 days and as `PAST end of support` after them. The policy behind the line: a .NET LTS is supported
+three years from release; this server moves to the next LTS within three months of its release and
+never runs past end of support. When the warning appears, the upgrade is the next thing on the
+list, not a ticket.
 
 ## Troubleshooting
 

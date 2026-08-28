@@ -33,6 +33,7 @@ public sealed record ClientConfigDto(string MicrosoftScope);
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
 [JsonSerializable(typeof(ErrorDto))]
 [JsonSerializable(typeof(HealthDto))]
+[JsonSerializable(typeof(MetricsDto))]
 [JsonSerializable(typeof(ClientConfigDto))]
 [JsonSerializable(typeof(WhoAmIDto))]
 [JsonSerializable(typeof(List<TeamMemberDto>))]

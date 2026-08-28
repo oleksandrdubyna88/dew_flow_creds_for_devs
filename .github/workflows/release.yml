@@ -59,11 +59,21 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - id: ver
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/server-v* ]]; then
+            echo "version=${GITHUB_REF_NAME#server-v}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=0.0.0-manual" >> "$GITHUB_OUTPUT"
+          fi
+
       - id: build
         uses: docker/build-push-action@v6
         with:
           context: .
           file: src_minimalapi_server/Dockerfile
+          build-args: VERSION=${{ steps.ver.outputs.version }}
           push: true
           tags: ghcr.io/${{ github.repository_owner }}/cred-vault-server
           outputs: type=image,push-by-digest=true,name-canonical=true
@@ -133,7 +143,8 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends clang zlib1g-dev
 
       - name: Publish
-        run: dotnet publish src_minimalapi_server/src/CredVaultServer.csproj -c Release -r ${{ matrix.rid }} -o out
+        shell: bash
+        run: dotnet publish src_minimalapi_server/src/CredVaultServer.csproj -c Release -r ${{ matrix.rid }} -o out -p:Version="${GITHUB_REF_NAME#server-v}"
 
       - name: Package
         shell: bash

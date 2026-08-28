@@ -119,6 +119,27 @@ public sealed partial class VaultStore
         Gates[(int)(uint.Parse(key[..8], System.Globalization.NumberStyles.HexNumber) % Gates.Length)];
 
     /// <summary>Emails of everyone with a stored vault (for team discovery).</summary>
+    /// <summary>How many vaults are stored and how many bytes they take — the officers' metrics.</summary>
+    public (int Count, long Bytes) VaultFootprint() =>
+        Footprint(Directory.EnumerateFiles(_vaultsDir, "*.bin"));
+
+    /// <summary>Pending shares across every inbox, and their bytes.</summary>
+    public (int Count, long Bytes) ShareFootprint() =>
+        Footprint(Directory.EnumerateFiles(_sharesDir, "*.json", SearchOption.AllDirectories));
+
+    private static (int Count, long Bytes) Footprint(IEnumerable<string> files)
+    {
+        var count = 0;
+        long bytes = 0;
+        foreach (var file in files)
+        {
+            count++;
+            try { bytes += new FileInfo(file).Length; }
+            catch (IOException) { /* deleted between the listing and the stat — not worth a miscount */ }
+        }
+        return (count, bytes);
+    }
+
     public IReadOnlyList<string> ListVaultOwners()
     {
         var emails = new List<string>();

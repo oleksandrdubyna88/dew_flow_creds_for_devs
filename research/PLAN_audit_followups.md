@@ -14,7 +14,7 @@
 > key (full method-wide revocation left unshipped).
 >
 > The audit's **server operational items** (not code-fixable here) were the one
-> unfinished phase and were extracted to [todo/PLAN_server_ops.md](../todo/PLAN_server_ops.md).
+> unfinished phase and were extracted to [PLAN_server_ops.md](PLAN_server_ops.md).
 
 ## 1. KDF cost — DONE (2026-08-21, v0.19.0)
 Every sealed blob now records `kdfN`/`kdfR`/`kdfP` in its header
@@ -89,5 +89,5 @@ on import. The viewer and Copy-All resolve the note from SecretStorage.
 
 ## Server operational items
 
-Extracted to [todo/PLAN_server_ops.md](../todo/PLAN_server_ops.md) — they are
+Extracted to [PLAN_server_ops.md](PLAN_server_ops.md) — they are
 infrastructure/deployment decisions for `cred-vault-server`, still open.
