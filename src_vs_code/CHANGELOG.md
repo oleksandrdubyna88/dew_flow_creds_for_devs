@@ -6,6 +6,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.80.4] — 2026-08-28
+
+### Fixed
+
+- **The viewer's Agent access frame no longer floats mid-column.** With nothing in Additional
+  the two grid rows split Main's height between them and parked the frame halfway down; the
+  first row is now Additional's own height and the second takes the rest, so the frame sits right
+  under Additional — and at the top when there is nothing above it (the owner, 2026-08-28).
+
 ## [0.80.3] — 2026-08-28
 
 ### Changed

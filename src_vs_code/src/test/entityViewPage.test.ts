@@ -303,6 +303,10 @@ test('agent access is its own frame in the agent column — with the CLI row and
   assert.ok(!html.slice(main, agent).includes('CLI access'), 'and it left Main');
   assert.ok(html.includes('#agentGroup { grid-column: 2; grid-row: 2;'), 'in the SECOND column, under Additional');
   assert.ok(!html.includes('#agentGroup { grid-column: 3;'), 'the viewer never grows a third column (owner, 2026-08-28)');
+  assert.ok(
+    html.includes('grid-template-columns: 1fr 1fr; grid-template-rows: auto 1fr;'),
+    "row 1 is Additional's own height - the agent frame sits right under it, at the top when it is empty",
+  );
 });
 
 test('no aliases, no row — a capability line about nothing is noise', () => {

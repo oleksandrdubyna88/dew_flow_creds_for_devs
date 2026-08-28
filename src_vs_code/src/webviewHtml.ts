@@ -77,7 +77,7 @@ export function groupsGridCss(className: string, thirdColumn = true): string {
     : `
   @media (min-width: ${THREE_COLUMN_AT}px) {
     body { max-width: ${THREE_COLUMN_PAGE_MAX_PX}px; }
-    .${className} { grid-template-columns: 1fr 1fr 1fr; }
+    .${className} { grid-template-columns: 1fr 1fr 1fr; grid-template-rows: auto; }
     #mainGroup { grid-row: 1; }
     #additionalGroup { grid-row: 1; }
     #agentGroup { grid-column: 3; grid-row: 1; }
@@ -86,7 +86,11 @@ export function groupsGridCss(className: string, thirdColumn = true): string {
   .${className} { display: grid; grid-template-columns: 1fr; gap: 0 ${GROUP_GAP_PX}px; align-items: start; }
   #agentGroup { order: 3; }
   @media (min-width: ${TWO_COLUMN_AT}px) {
-    .${className} { grid-template-columns: 1fr 1fr; }
+    /* Row 1 is Additional's own height, row 2 takes the rest: the agent group sits right under
+       Additional, and at the TOP when Additional is empty. Plain auto rows would split Main's
+       spanned height between the two rows and park the agent group mid-column (the owner,
+       2026-08-28). */
+    .${className} { grid-template-columns: 1fr 1fr; grid-template-rows: auto 1fr; }
     #mainGroup { grid-column: 1; grid-row: 1 / span 2; }
     #additionalGroup { grid-column: 2; grid-row: 1; }
     #agentGroup { grid-column: 2; grid-row: 2; order: 0; }
