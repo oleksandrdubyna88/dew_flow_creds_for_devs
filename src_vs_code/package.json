@@ -2,7 +2,7 @@
   "name": "creds-for-devs",
   "displayName": "CredsForDevs",
   "description": "Zero-trust credential manager for developers: SSH hosts and keys, VPN configs, databases, scripts and the CLI commands nobody remembers — in VS Code. Secrets live in the OS keychain; sync and team sharing are end-to-end encrypted, so the self-hosted vault server never sees plaintext. An AI coding agent can use an SSH credential without ever receiving it.",
-  "version": "0.81.0",
+  "version": "0.81.1",
   "publisher": "remsoftdev",
   "license": "MIT",
   "icon": "media/icon.png",
@@ -67,6 +67,7 @@
     "contract": "npm run compile && node scripts/emit-contract.mjs",
     "itest:cli": "npm run compile && node scripts/creds-cli-itest.cjs",
     "itest:mcp": "npm run compile && node scripts/creds-mcp-itest.cjs",
+    "itest:mcp-wsl": "npm run compile && node scripts/creds-mcp-wsl-itest.cjs",
     "itest:wsl-relay": "npm run compile && node scripts/wsl-agent-relay-itest.cjs",
     "ratchet": "npm run compile && node scripts/size-ratchet.mjs"
   },
@@ -577,6 +578,12 @@
         "title": "Edit",
         "category": "CredsForDevs",
         "icon": "$(edit)"
+      },
+      {
+        "command": "credSshManager.burnNow",
+        "title": "Burn Now…",
+        "category": "CredsForDevs",
+        "icon": "$(flame)"
       },
       {
         "command": "credSshManager.deleteNode",
@@ -1420,9 +1427,14 @@
           "group": "3_manage@2"
         },
         {
+          "command": "credSshManager.burnNow",
+          "when": "view == credSshManagerView && viewItem =~ /^entity.*:burnable/",
+          "group": "3_manage@4"
+        },
+        {
           "command": "credSshManager.deleteNode",
           "when": "view == credSshManagerView && viewItem =~ /^(folder|entity)/",
-          "group": "3_manage@4"
+          "group": "3_manage@5"
         },
         {
           "command": "credSshManager.runCommand",
@@ -1487,7 +1499,7 @@
         {
           "command": "credSshManager.exportExternal",
           "when": "view == credSshManagerView && viewItem =~ /^(folder|entity)/",
-          "group": "3_manage@5"
+          "group": "3_manage@6"
         },
         {
           "command": "credSshManager.importExternal",

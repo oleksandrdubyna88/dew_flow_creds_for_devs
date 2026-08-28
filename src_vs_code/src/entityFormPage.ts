@@ -645,6 +645,7 @@ ${formStyleSheet(options.uiScale ?? 0)}
       <div id="configFieldRows"></div>
     </div>
     <p class="hint">Stored as a secret, like a password — never in plain metadata, never in a share, never handed to an agent. A body that does not parse is still saved; the row is marked until it does.</p>
+  </fieldset>
 
   ${
     options.createdAt === undefined && options.updatedAt === undefined

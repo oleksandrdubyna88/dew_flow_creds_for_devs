@@ -16,7 +16,7 @@
 > [PLAN_extension_security_tail.md](PLAN_extension_security_tail.md),
 > [PLAN_logging_convention.md](PLAN_logging_convention.md) (now promoted),
 > [PLAN_marketplace_listing.md](PLAN_marketplace_listing.md),
-> [PLAN_ephemeral_secrets_tail.md](../todo/PLAN_ephemeral_secrets_tail.md).
+> [PLAN_ephemeral_secrets_tail.md](PLAN_ephemeral_secrets_tail.md).
 
 ---
 
@@ -51,8 +51,8 @@ plan. Listed so that a reader of *this* plan does not conclude the audit missed 
 | `DataDir` atomic-rename requirement undocumented | [PLAN_server_ops.md](../todo/PLAN_server_ops.md) item 2 | no `atomic`/`SMB`/`NFS` mention in `src_minimalapi_server/**` or `deploy/**.md` |
 | WebAuthn RP ID is bare `localhost` | [PLAN_extension_security_tail.md](PLAN_extension_security_tail.md) item 1 | `src_vs_code/src/webauthnPrf.ts:23` — see T2 below, which settles a contradiction the item created |
 | Share metadata unauthenticated (no AAD) | [PLAN_extension_security_tail.md](PLAN_extension_security_tail.md) item 2 | no `setAAD` in `src_vs_code/src/shareFormat.ts` |
-| `Burn Now…`, viewer lifetime, cross-machine burn test | [PLAN_ephemeral_secrets_tail.md](../todo/PLAN_ephemeral_secrets_tail.md) 2.1–2.4 | no `burn` command among the 94 in `package.json`; `entityViewPanel.ts` names no expiry |
-| MCP from inside WSL | [PLAN_mcp_wsl_bridge.md](../todo/PLAN_mcp_wsl_bridge.md) | `WindowsBridge.Creds` is the only instance (`src_broker_client/src/WslInterop.cs:41`); no `CREDS_MCP_WINDOWS_BINARY` anywhere |
+| `Burn Now…`, viewer lifetime, cross-machine burn test | [PLAN_ephemeral_secrets_tail.md](PLAN_ephemeral_secrets_tail.md) 2.1–2.4 | no `burn` command among the 94 in `package.json`; `entityViewPanel.ts` names no expiry |
+| MCP from inside WSL | [PLAN_mcp_wsl_bridge.md](PLAN_mcp_wsl_bridge.md) | **Closed 2026-08-28.** `WslInterop.CredsMcp` is the second instance, `CREDS_MCP_WINDOWS_BINARY` is its own variable, and `WslPump` carries the session; verified against a real Claude Code inside WSL |
 | Live three-machine recovery rehearsal, roster rotation | [PLAN_org_recovery_tail.md](../todo/PLAN_org_recovery_tail.md) | no re-split path in `src_vs_code/src` or `OrgRecovery*.cs` |
 | Marketplace screenshots | [ЗАДАЧА_скриншоты_для_маркетплейса.md](../todo/ЗАДАЧА_скриншоты_для_маркетплейса.md) | `src_vs_code/media/docs/` does not exist |
 | `extension.ts` split (A1), `EntityMetadata` union (A4), envelope AAD (A5), 2SKD (D9), byte-weighted rate limit (E1) | [PLAN_audit_roadmap_2026_08_25.md](../todo/PLAN_audit_roadmap_2026_08_25.md) | see T3, which measures how far A1 moved — the wrong way |
@@ -349,7 +349,7 @@ fourteen-line status block. Against the code:
 | A6 — not mentioned at all | **shipped complete**: `src_vs_code/src/diagnosticLog.ts` + `logFormat.ts`, one `CredsForDevs` channel, a file per run under `globalStorageUri`, a 14-day sweep, and the "no secret in the log" grep test A6 specified |
 | A3 — *"ждёт исполнителя"* | **effectively done**: 16 of the 18 named modules have their own test file; `vaultKeys`/`backupPaths`/`nasPaths` are covered by `securityKeyOps.test.ts`, `backupPlan.test.ts`, `vaultPaths.test.ts`; 229 test files in `src/test/`. Its CI half is closed too — `itest:agent`, `itest:git` and `itest:cli` all run in `ci-extension.yml`, with `itest:server` excluded for a written reason. What remains is "handlers in `extension.ts`", which is A1's dependency, not A3's |
 | D9 — open | **mostly shipped**: the printed recovery code (`research/PLAN_recovery_code_wrap.md`) and emergency access through the server (`research/PLAN_org_recovery.md`). Only 2SKD — a second device secret — is unbuilt |
-| D10 — open | **shipped** as `research/PLAN_ephemeral_secrets.md`. [PLAN_ephemeral_secrets_tail.md](../todo/PLAN_ephemeral_secrets_tail.md) §2.5 exists solely to record this and is itself unticked |
+| D10 — open | **shipped** as `research/PLAN_ephemeral_secrets.md`. [PLAN_ephemeral_secrets_tail.md](PLAN_ephemeral_secrets_tail.md) §2.5 exists solely to record this and is itself unticked |
 | E2 — open | **shipped**: `deploy/README.md:32-54` makes `MS_AUDIENCES` an explicit, named setup step |
 | E3 — open | **shipped** as `X-Creds-Contract` (see [PLAN_server_ops.md](../todo/PLAN_server_ops.md) item 7) |
 

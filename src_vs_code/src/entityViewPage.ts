@@ -52,6 +52,8 @@ export interface EntityViewOptions {
   keySourceName?: string;
   /** A second line under the title — the revision viewer's "version replaced at …". */
   subtitle?: string;
+  /** The tree's own words for a short-lived entry — "expires in 3 h", "until VS Code closes". */
+  lifetime?: string;
   /** CLI aliases pointing at this entry (T23a) — the reverse of the alias map, caller-resolved. */
   cliAliases?: readonly string[];
   /** Every other door an agent has to this entry (T24b) — shown beside the switches' summary. */
@@ -388,8 +390,15 @@ export function renderEntityViewHtml(options: EntityViewOptions): string {
     .join('');
   const agentRows = [mcpRow, cliRow, doorRows].join('');
 
+  // The card is where a person decides whether to extend — the tree already says it, the
+  // card did not (ephemeral tail 2.2). Same words, from the same function.
+  const lifetimeRow =
+    options.lifetime === undefined || options.lifetime.length === 0
+      ? ''
+      : `<div class="row"><label>Lifetime</label><div class="value">${escapeHtml(options.lifetime)}</div></div>`;
   const mainRows = [
     row('Name', 'name', d.name),
+    lifetimeRow,
     row('Host', 'host', d.host),
     row('User', 'user', d.user),
     row('Port', 'port', d.port !== undefined ? String(d.port) : undefined),

@@ -18,7 +18,9 @@ import {
 } from './dialogs';
 import { EntityFormValues, KeyCandidate, showEntityForm } from './entityFormPanel';
 import { pinPreview, showEntityView } from './entityViewPanel';
-import { restoreEntries } from './restoreCommand';
+import { runRestoreFromTrash } from './restoreCommandHost';
+import { runBurnNow } from './burnNowCommand';
+import { describeRemaining } from './entityExpiry';
 import { describeInstall } from './installWords';
 import { isTrackedHere } from './gitTracked';
 import { GoogleAuthProvider } from './googleAuthProvider';
@@ -2521,16 +2523,11 @@ ${detail}
     );
   });
 
-  register('credSshManager.restoreFromTrash', async (target, selected) => {
-    const { targets } = resolveBulkTargets(storage, target, selected);
-    const said = await restoreEntries(
-      { restore: (a, id) => storage.restoreFromTrash(a, id), announce: async (a, id) => { mutated(); await announceArrival(a, id); } },
-      targets,
-    );
-    if (said !== '') {
-      void vscode.window.showInformationMessage(said);
-    }
-  });
+  register('credSshManager.burnNow', (target) => runBurnNow(asElement(target), storage, mutated));
+
+  register('credSshManager.restoreFromTrash', (target, selected) =>
+    runRestoreFromTrash(resolveBulkTargets(storage, target, selected).targets, storage, async (a, id) => { mutated(); await announceArrival(a, id); }),
+  );
 
   register('credSshManager.revisionClicked', async (target) => {
     vaultKeys.noteUserActivity(); // the user is here: postpone auto-lock
@@ -5358,6 +5355,7 @@ async function openEntityViewer(
     cliAliases: doors.cliAliases,
     agentDoors: doors,
     mcp: mcpFor(node, (id) => storage.getNode(accountId, id), false),
+    lifetime: node === undefined ? undefined : describeRemaining(node, Date.now()),
     keySourceName,
     jumpHostName,
     hostKeyFingerprint: pinnedKey === undefined ? undefined : hostKeyFingerprint(pinnedKey),

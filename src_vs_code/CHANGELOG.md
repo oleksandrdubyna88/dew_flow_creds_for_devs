@@ -6,6 +6,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.81.1] — 2026-08-28
+
+### Added
+
+- **Burn Now…** on an entry that carries a lifetime: burn it before its time. Not the Trash —
+  the modal says so — the secret, its kept versions and, by tombstone, every synced copy go for
+  good, through the feature's one delete path.
+- **The viewer shows the lifetime** ("expires in 3 h", "until VS Code closes") in the tree's own
+  words — the card is where a person decides whether to extend.
+- **The cross-machine burn is now a test, not an argument:** a burn on machine A removes the
+  entry, its history and every secret on machine B after a sync, and a machine restoring a backup
+  taken before the burn does not bring it back. Plus the burn path itself: no history, no key of
+  any kind left.
+
+### Fixed
+
+- **Notes is back on every kind of entry.** The config section's fieldset was never closed
+  (since 0.77), so the Notes section rendered INSIDE it — and the page hides the config section
+  for every kind but config. A structural test now checks that every fieldset closes and that
+  Notes is nobody's child, for all eight kinds in both modes.
+- **Edit folder says which folder** — the heading carries the folder's name.
+
 ## [0.81.0] — 2026-08-28
 
 ### Security

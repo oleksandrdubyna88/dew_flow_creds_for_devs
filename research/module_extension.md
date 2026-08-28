@@ -1516,7 +1516,7 @@ pushes inside a millisecond, which is a flaky test for a path already pinned exa
 
 Design record: [PLAN_ephemeral_secrets.md](PLAN_ephemeral_secrets.md) — including why the
 close-handler was rejected for a lease. The unbuilt tail (the `Burn Now…` command, the lifetime in
-the viewer, and the cross-machine burn test) is [../todo/PLAN_ephemeral_secrets_tail.md](../todo/PLAN_ephemeral_secrets_tail.md).
+the viewer, and the cross-machine burn test) is [../todo/PLAN_ephemeral_secrets_tail.md](PLAN_ephemeral_secrets_tail.md).
 
 `entityExpiry.ts` is the pure rule — `isExpired`, `burnsOnClose`, `burnsOnAgentUse`,
 `describeRemaining`, and the preset table the form renders. It answers *whether*, never *does*:
@@ -2198,6 +2198,21 @@ came through. **⋯ → MCP logs** filters that file: everything, refused, secre
 from the agent, could not generate. Inventing a second store would have been exactly the drift the
 shared logging rule was written against.
 
+**And it works from inside WSL (2026-08-28).** The agent usually runs in the distribution, where
+`127.0.0.1` is the virtual machine's loopback and the announcement files are on a Windows disk. The
+extension side needed nothing: the Linux `creds-mcp` re-executes `creds-mcp.exe` through WSL interop
+and becomes its stdio, so the window, the switches, the modal and the journal are the same ones as
+ever — the call simply arrives through a second process. `CREDS_MCP_WINDOWS_BINARY` names that
+executable when it is not on the interop PATH, which is the ordinary case because the install puts
+it in the extension's own storage. Design record, including a prediction that was measured and
+refuted: [PLAN_mcp_wsl_bridge.md](PLAN_mcp_wsl_bridge.md).
+
+**One thing the install button still does not know.** `ridFor(process.platform, ...)` always resolves
+to Windows -- the extension is `extensionKind: ["ui"]`, so its host is on Windows even in a
+Remote-WSL window -- and the clipboard config names that `.exe`, which a shell inside the
+distribution cannot run. Nothing is broken while there is no `mcp-v*` release to install; when there
+is one, the button needs a second mode.
+
 **Finding an entry by id.** An agent quoting an id is quoting the one thing that names an entry
 unambiguously — and the one thing the tree filter cannot find, because `nodeHaystack` searches
 what a row says out loud and an identifier is deliberately not among them. **⋯ → Show Entry by
@@ -2366,6 +2381,14 @@ this section says where the code went, so a reader of the module can find it.
 Left for a person, recorded in the plan: T2 (the `.localhost` RP-ID probe — Edge + YubiKey, the
 owner runs it) and the Marketplace screenshots. T5 (tags), T11, T24b and T30 closed on 2026-08-28
 after the owner's answers; T25 stays as shipped in 0.80.0 by his choice.
+
+## The ephemeral tail (2026-08-28, `PLAN_ephemeral_secrets_tail.md`)
+
+| What | Where | The rule it left behind |
+|---|---|---|
+| *Burn Now…* | `burnNow.ts` (the decision, pure), `burnNowCommand.ts` (the modal), `:burnable` in `treeRowText.ts` | Only on an entry with a lifetime; the one delete path (`deleteNodeRecursive`) — no second way to burn |
+| The lifetime on the card | `lifetime` in `EntityViewOptions`, from `describeRemaining` | The tree and the card say it in the same words, from the same function |
+| The burn across machines | `burnAcrossMachines.test.ts`, `burnPath.test.ts` | A burn on A is gone on B after a sync — node, history, every key; an old backup does not resurrect it (tombstone + horizon) |
 
 ## Security hardening (2026-08-25 review)
 

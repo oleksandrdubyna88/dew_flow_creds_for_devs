@@ -79,7 +79,7 @@ export function renderFolderHtml(options: FolderFormOptions): string {
     <button type="button" id="save">Save</button>
     <button type="button" id="cancel" class="secondary">Cancel</button>
   </div>
-  <h2>Edit folder</h2>
+  <h2>Edit folder: ${escapeHtml(options.name)}</h2>
 
   <fieldset>
     <legend>General</legend>

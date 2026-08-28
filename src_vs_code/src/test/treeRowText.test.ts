@@ -121,3 +121,9 @@ test('an entry in the Trash says so first, so Restore can lead its menu (the own
   assert.ok(entityContextValue(SSH, false, false, true).startsWith('entity:trashed'));
   assert.ok(entityContextValue(SSH, false, false).startsWith('entity:ssh'), 'a live entry is unchanged');
 });
+
+test('an entry with a lifetime is :burnable — Burn Now… is offered there and nowhere else', () => {
+  const ttl = { ...SSH, expiresAt: 1_800_000_000_000, burnPolicy: 'ttl' } as typeof SSH;
+  assert.ok(entityContextValue(ttl, false, false).includes(':burnable'));
+  assert.ok(!entityContextValue(SSH, false, false).includes(':burnable'));
+});

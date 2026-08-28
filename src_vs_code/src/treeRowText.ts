@@ -1,4 +1,5 @@
 import { DEFAULT_SSH_PORT } from './sshCommand';
+import { hasLifetime } from './entityExpiry';
 import { normalizeTags } from './sshOptions';
 import { EntityMetadata, TreeNode } from './types';
 import { canConnectSsh } from './entityKind';
@@ -121,6 +122,10 @@ export function entityContextValue(
   // the seed is not.
   if (details?.hasTotp === true) {
     contextValue += ':totp';
+  }
+  if (hasLifetime(details ?? {})) {
+    // Burn Now… is offered on exactly these rows (the owner, 2026-08-28).
+    contextValue += ':burnable';
   }
   return isShareable(details, hasPassword) ? `${contextValue}:shareable` : contextValue;
 }

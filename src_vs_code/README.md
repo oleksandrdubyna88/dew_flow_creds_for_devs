@@ -575,6 +575,12 @@ writes the client config; the extension itself keeps its zero runtime dependenci
 - **MCP logs** (the `…` menu) is the journal: every ask, every refusal, and the two costs worth
   counting — secrets that came FROM an agent, and requests we could not serve. **Show Entry by
   id…** jumps from a journal line to the entry it names.
+- **It works from inside WSL**, where the agent usually lives. The window is on Windows and
+  `127.0.0.1` inside a distribution is that virtual machine's loopback, so the Linux `creds-mcp`
+  hands the whole session to `creds-mcp.exe` through WSL interop and carries its stdio — nothing
+  new listens anywhere, and the consent modal still appears on Windows. Point
+  `CREDS_MCP_WINDOWS_BINARY` at that executable when it is not on the interop PATH, which is the
+  ordinary case since the install puts it in the extension's own storage.
 
 ## Help — the yellow question mark
 
@@ -991,6 +997,8 @@ also on the right-click menu where it applies.
 - **Sharing, cont.** — Withdraw a Share You Sent…
 - **Databases, cont.** — Copy Connection String (no password)
 - **Secrets in a run** — Run with Secrets (creds:// references, output masked)
+- **Short-lived entries** — Burn Now… (only on an entry that carries a lifetime; not the Trash:
+  the secret, its history and every synced copy are gone for good, after a modal that says so)
 - **The Trash** — Restore (first on a deleted entry's or folder's menu: back to where it was deleted
   from, or the root when that folder is gone) · Empty the Trash Now ·
   Empty the Trash Automatically… (each account's own retention, travelling with the vault)

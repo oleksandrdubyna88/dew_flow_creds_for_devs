@@ -309,6 +309,12 @@ test('agent access is its own frame in the agent column — with the CLI row and
   );
 });
 
+test('a short-lived entry shows its lifetime on the card, in the tree\'s words; an ordinary one shows no such row', () => {
+  const withLifetime = renderEntityViewHtml(options({ lifetime: 'expires in 3 h' }));
+  assert.ok(withLifetime.includes('<label>Lifetime</label>') && withLifetime.includes('expires in 3 h'));
+  assert.ok(!renderEntityViewHtml(options({})).includes('<label>Lifetime</label>'));
+});
+
 test('no aliases, no row — a capability line about nothing is noise', () => {
   const html = renderEntityViewHtml(options());
   assert.ok(!html.includes('CLI access'));
