@@ -6,6 +6,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.80.6] — 2026-08-28
+
+### Added
+
+- **Restore, first on a deleted entry's menu** (the owner, 2026-08-28). Moving to the Trash now
+  remembers the folder the entry was in; *Restore* puts it back there — or in the account root
+  when that folder has since been deleted or is in the Trash itself — and reveals it with the
+  green arrival tint. Entries trashed before this version restore to the root. Works on a
+  multi-selection, in order.
+
 ## [0.80.5] — 2026-08-28
 
 ### Changed

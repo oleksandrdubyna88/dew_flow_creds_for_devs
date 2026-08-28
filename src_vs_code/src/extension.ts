@@ -18,6 +18,9 @@ import {
 } from './dialogs';
 import { EntityFormValues, KeyCandidate, showEntityForm } from './entityFormPanel';
 import { pinPreview, showEntityView } from './entityViewPanel';
+import { restoreEntries } from './restoreCommand';
+import { describeInstall } from './installWords';
+import { isTrackedHere } from './gitTracked';
 import { GoogleAuthProvider } from './googleAuthProvider';
 import { nasPathFor, setAccountNasPath } from './nasPaths';
 import { confirmCommandMessage, isCommandTrusted, trustCommand } from './commandTrust';
@@ -138,7 +141,7 @@ import { ExpansionMemory, expansionKey } from './treeExpansion';
 import { TRASH_RETENTION_CHOICES, isInTrash } from './trash';
 import { showFolderForm } from './folderFormPanel';
 import { formPanels, lockNotice } from './formPanels';
-import { configFileNameFor, trackedArgv, trackedCopyWarning } from './configFile';
+import { configFileNameFor, trackedCopyWarning } from './configFile';
 import { describeChanges, diffConfigs, summarizeChanges } from './configDiff';
 import { ConfigHolder, ConfigRouteSources } from './brokerConfigRoute';
 import { enableConfigAccess, revokeConfigAccess } from './configAccess';
@@ -2517,6 +2520,17 @@ ${detail}
     await clickToView(clicks, key, Date.now(), () => pinPreview(key), (tab) =>
       openEntityViewer(element.accountId, element.node, storage, doorsAt(element.accountId, element.node), tab),
     );
+  });
+
+  register('credSshManager.restoreFromTrash', async (target, selected) => {
+    const { targets } = resolveBulkTargets(storage, target, selected);
+    const said = await restoreEntries(
+      { restore: (a, id) => storage.restoreFromTrash(a, id), announce: async (a, id) => { mutated(); await announceArrival(a, id); } },
+      targets,
+    );
+    if (said !== '') {
+      void vscode.window.showInformationMessage(said);
+    }
   });
 
   register('credSshManager.revisionClicked', async (target) => {
@@ -4958,16 +4972,6 @@ async function warnIfTrackedCopy(details: EntityMetadata): Promise<void> {
   }
 }
 
-/** Exit 0 from `git ls-files --error-unmatch`. Anything else — including no git — is "no". */
-async function isTrackedHere(fileName: string, cwd: string): Promise<boolean> {
-  const outcome = await runBounded('git', [...trackedArgv(fileName)], false, {
-    cwd,
-    env: process.env,
-    timeoutMs: 10_000,
-  });
-  return outcome.exitCode === 0;
-}
-
 /**
  * What changed since the previous version of this config, by KEY.
  *
@@ -5548,30 +5552,6 @@ async function accountFromTargetOrPick(
   return pickAccount(storage, placeHolder);
 }
 
-
-/**
- * The sentence above the buttons, for one product on this machine.
- *
- * <p>Every branch is a different situation and deserves its own words. "There is no build for
- * macOS" is not a failure to retry, and "the record says 0.1.0 but the file is gone" is not the
- * same as "0.1.0 is installed" — a menu that said so would offer nothing while nothing runs.</p>
- */
-function describeInstall(product: CredsProduct, action: CredsAction): string {
-  switch (action.kind) {
-    case 'unsupported':
-      return `There is no ${product.label} build for ${action.platform} yet — the release carries Windows and Linux, on x64 and arm64.`;
-    case 'unavailable':
-      return `Cannot tell what is published (${action.reason}). ${product.label} is not installed.`;
-    case 'install':
-      return `${product.label} ${action.version} is available. It goes into this extension's own storage, not onto your PATH.`;
-    case 'update':
-      return `${product.label} ${action.from} is installed; ${action.to} is published.`;
-    case 'reinstall':
-      return `${product.label} was installed but the file is gone — something removed it.`;
-    default:
-      return `${product.label} ${action.version} is installed.`;
-  }
-}
 
 /**
  * Do what was clicked.

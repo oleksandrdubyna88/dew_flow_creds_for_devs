@@ -25,7 +25,7 @@ import { OrgRecoveryAccess } from './orgRecoveryAccess';
 import { describeTarget, entityContextValue, markInvalid } from './treeRowText';
 import { FOLDER_COLOR, buildTooltip, entityIcon, folderIcon, kindIcon } from './treeIcons';
 import { parentOf } from './treeParent';
-import { describeRetention, isTrashFolder } from './trash';
+import { describeRetention, isInTrash, isTrashFolder } from './trash';
 import { ExpansionMemory, expansionKey } from './treeExpansion';
 import { accountItem, separatorItem } from './accountItem';
 import { underlined } from './treeDescriptions';
@@ -595,6 +595,7 @@ export class CredTreeDataProvider
       details,
       this.hasPassword(accountId, node.id),
       this.isBridged?.(accountId, node.id) ?? false,
+      isInTrash(node, (id) => this.storage.getNode(accountId, id)),
     );
     // Both the kind glyph and — where an agent may reach this entry — the access ladder, because
     // a row has exactly one icon slot. See `entityIcon` for what that costs and why.

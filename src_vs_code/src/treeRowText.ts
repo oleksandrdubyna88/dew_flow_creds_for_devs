@@ -64,8 +64,10 @@ export function entityContextValue(
   hasPassword: boolean,
   /** Whether a bridge is open to this entry right now — see the `:bridged` pair below. */
   bridged: boolean = false,
+  /** In the Trash: *Restore* leads the menu (the owner, 2026-08-28). */
+  trashed: boolean = false,
 ): string {
-  let contextValue = 'entity';
+  let contextValue = trashed ? 'entity:trashed' : 'entity';
   // One named predicate instead of two spellings of "is this SSH?" — the tree used to ask
   // `details.host` here while `kindOf` asked `isSshEnabled` (audit S5).
   if (canConnectSsh(details)) {

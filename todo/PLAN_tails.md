@@ -1417,6 +1417,23 @@ does. The commits that claimed "lint clean" from T27 through T24a were wrong abo
 before T21 landed. The check that cannot lie is `grep -c error` on the output, or the exit code
 of `npm run lint` itself — never the tail of a log.
 
+### T34. Restore, first on a deleted entry's menu (the owner, 2026-08-28)
+
+**The ask.** "For entries in the Trash the first right-click item must be *Restore* — it puts the
+entry back where it was deleted from." The menu of a trashed entry was the ordinary entity menu
+(View Details, Install key, Share…, Edit, Delete) with no way back except dragging.
+
+**Shipped 2026-08-28 (0.80.6).** `moveToTrash` now writes `trashedFrom` (the parent at deletion,
+`null` = root) in the same write as the move; `restoreFromTrash` moves back to `restoreTarget()`
+(`trash.ts`): that folder when it still exists and is not itself in the Trash, otherwise the root —
+never "nowhere", never into the Trash again. Entries trashed before 0.80.6 carry no memory and go
+to the root. The row's context value leads with `entity:trashed`, so *Restore* (`0_restore@1`) is
+the first item on exactly those rows; the command works on a multi-selection, in order, and reveals
+the last restored row with the arrival tint. Tests: `trash.test.ts` (the target), `trashRestore.test.ts`
+(through the real storage), `restoreCommand.test.ts` (the command), `treeRowText.test.ts` (the token).
+Folders in the Trash keep their old menu — a trashed folder's *Restore* is a separate decision, since
+`viewItem == folder` guards every folder item today.
+
 ## 4. Build order
 
 Ordered so that each step is verifiable on its own, and the two that need a person come last.
@@ -1507,6 +1524,7 @@ and both the failure and the pass are reported.
       `entries / trash / shared` with zeros written out, and the colour limit is recorded.
 - [ ] T31: checkboxes read as checked/unchecked at a glance on the owner's theme — accent-color
       first, the hand-drawn box only if the screenshot still reads weak.
+- [x] T34: *Restore* leads a trashed entry's menu and returns it to the folder it was deleted from, or the root when that folder is gone (storage, command and token tests).
 - [x] T30: folder descriptions underlined (behind the owner's yes on the combining-mark trick),
       right-alignment declined in writing with the API reason.
 - [ ] T29: a separator row between accounts, inert to menus, commands and reveal.

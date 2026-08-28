@@ -80,6 +80,22 @@ function parentOf(
  * folder that silently emptied itself the first time somebody looked away would be worse than
  * one that grows.</p>
  */
+/**
+ * Where *Restore* puts a trashed node: the folder it was deleted from, if that folder still
+ * exists and is not itself in the trash — otherwise the account root, which always exists.
+ * Never into the trash again, and never into a folder that has since been deleted for real.
+ */
+export function restoreTarget(node: TreeNode, byId: (id: string) => TreeNode | undefined): string | null {
+  const origin = originFolder(node, byId);
+  return origin !== undefined && !isInTrash(origin, byId) ? origin.id : null;
+}
+
+/** The folder a trashed node remembers, if it still exists as a folder. */
+function originFolder(node: TreeNode, byId: (id: string) => TreeNode | undefined): TreeNode | undefined {
+  const found = typeof node.trashedFrom === 'string' ? byId(node.trashedFrom) : undefined;
+  return found?.type === 'folder' ? found : undefined;
+}
+
 export function expiredInTrash(
   nodes: readonly TreeNode[],
   now: number,

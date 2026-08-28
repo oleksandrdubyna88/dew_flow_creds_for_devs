@@ -986,8 +986,9 @@ also on the right-click menu where it applies.
 - **Sharing, cont.** — Withdraw a Share You Sent…
 - **Databases, cont.** — Copy Connection String (no password)
 - **Secrets in a run** — Run with Secrets (creds:// references, output masked)
-- **The Trash** — Empty the Trash Now · Empty the Trash Automatically… (each account's own
-  retention, travelling with the vault)
+- **The Trash** — Restore (first on a deleted entry's menu: back to the folder it was deleted
+  from, or the root when that folder is gone) · Empty the Trash Now ·
+  Empty the Trash Automatically… (each account's own retention, travelling with the vault)
 
 ## Security notes
 

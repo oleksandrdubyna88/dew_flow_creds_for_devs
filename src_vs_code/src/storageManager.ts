@@ -9,13 +9,14 @@ import { quarantineUnsafeIds } from './idQuarantine';
 import { SigningKeypair, generateSigningKeypair } from './shareSignature';
 import { EscrowShareWrap, isEscrowShareWrap } from './orgEscrowShareWrap';
 import { RemoteState, buildDefaultFolders, shouldSeedDefaults } from './defaultFolders';
-import { Tombstone, VersionVector, bumpVector, mergeVectors, normalizeTombstone } from './versionVector';
+import { Tombstone, VersionVector, bumpVector, mergeVectors, normalizeTombstone, parseTombstones } from './versionVector';
 import { isSelfOrDescendantIn } from './selectionResolver';
 import { Revision, isRevisionList, pushRevision } from './revisionHistory';
 import { MetadataError, isSealedMetadata, newMetadataKey, openMetadata, sealMetadata } from './metadataCipher';
 import { ExternalSecrets } from './externalBundle';
 import { stampKind } from './entityKind';
-import { TRASH_FOLDER_NAME, findTrash } from './trash';
+import { TRASH_FOLDER_NAME, findTrash, restoreTarget } from './trash';
+import { exportSecretsFor } from './exportSecrets';
 import {
   BackupBundle,
   StoredAccount,
@@ -527,11 +528,14 @@ export class StorageManager implements vscode.Disposable {
 
   /** Move a node under a new parent (null = root). Caller validates cycles. */
   async moveNode(accountId: string, id: string, newParentId: string | null): Promise<void> {
+    await this.relocate(accountId, id, { parentId: newParentId });
+  }
+
+  /** One write: the node with `patch` applied and stamped, then the horizon bumped. */
+  private async relocate(accountId: string, id: string, patch: Partial<TreeNode>): Promise<void> {
     await this.saveNodes(
       accountId,
-      this.getNodes(accountId).map((n) =>
-        n.id === id ? this.stampVector({ ...n, parentId: newParentId }) : n,
-      ),
+      this.getNodes(accountId).map((n) => (n.id === id ? this.stampVector({ ...n, ...patch }) : n)),
     );
     await this.bumpHorizonToSeq(accountId);
   }
@@ -552,9 +556,27 @@ export class StorageManager implements vscode.Disposable {
     // Moving the trash into itself, or a folder into its own descendant, is refused by leaving
     // it where it is: `deleteNodeRecursive` is the only way to remove the trash itself.
     if (id !== trash.id) {
-      await this.moveNode(accountId, id, trash.id);
+      // One write for the move AND where it came from — a crash between two could not leave
+      // an entry in the trash that has forgotten its folder.
+      const from = this.getNode(accountId, id)?.parentId ?? null;
+      await this.relocate(accountId, id, { trashedFrom: from, parentId: trash.id });
     }
     return trash;
+  }
+
+  /**
+   * *Restore*: back to the folder it was deleted from (`restoreTarget` — the root when that
+   * folder is gone or is itself in the trash). Returns the folder it went to, `undefined` when
+   * there is nothing to restore.
+   */
+  async restoreFromTrash(accountId: string, id: string): Promise<TreeNode | null | undefined> {
+    const node = this.getNode(accountId, id);
+    if (node === undefined) {
+      return undefined;
+    }
+    const target = restoreTarget(node, (nodeId) => this.getNode(accountId, nodeId));
+    await this.relocate(accountId, id, { trashedFrom: undefined, parentId: target });
+    return target === null ? null : this.getNode(accountId, target);
   }
 
   /** The account's trash, made on the first delete rather than seeded into every new vault. */
@@ -638,21 +660,8 @@ export class StorageManager implements vscode.Disposable {
 
   // ---------- deletion tombstones (for sync merge) ----------
 
-  // eslint-disable-next-line complexity
   getTombstones(accountId: string): Record<string, Tombstone> {
-    const raw = this.globalState.get<unknown>(tombstonesKey(accountId), {});
-    if (typeof raw !== 'object' || raw === null) {
-      return {};
-    }
-    const out: Record<string, Tombstone> = {};
-    for (const [id, value] of Object.entries(raw as Record<string, unknown>)) {
-      if (typeof value === 'number') {
-        out[id] = { deletedAt: value, v: {} };
-      } else if (typeof value === 'object' && value !== null) {
-        out[id] = normalizeTombstone(value as Tombstone);
-      }
-    }
-    return out;
+    return parseTombstones(this.globalState.get<unknown>(tombstonesKey(accountId), {}));
   }
 
   async setTombstones(
@@ -923,36 +932,9 @@ export class StorageManager implements vscode.Disposable {
 
   // ---------- backup ----------
 
-  /**
-   * Every stored secret of the given entities, keyed by entity id — a kind an entity does
-   * not have is simply absent. The external-export path used to walk the seven kinds by
-   * hand right beside `exportBundle`'s own walk (audit 2026-08-25, A1); a kind added to
-   * one loop and not the other would have exported silently incomplete files.
-   */
-  async exportSecretsFor(
-    accountId: string,
-    entityIds: readonly string[],
-  ): Promise<Record<string, ExternalSecrets>> {
-    const out: Record<string, ExternalSecrets> = {};
-    for (const id of entityIds) {
-      const s: ExternalSecrets = {};
-      const put = <K extends keyof ExternalSecrets>(key: K, value: string | undefined): void => {
-        if (value !== undefined) {
-          s[key] = value;
-        }
-      };
-      put('password', await this.getPassword(accountId, id));
-      put('privateKey', await this.getPrivateKey(accountId, id));
-      put('vpnConfig', await this.getVpnConfig(accountId, id));
-      put('dbConnection', await this.getDbConnection(accountId, id));
-      put('notes', await this.getNotes(accountId, id));
-      put('attachment', await this.getAttachment(accountId, id));
-      put('image', await this.getImage(accountId, id));
-      put('totp', await this.getTotp(accountId, id));
-      put('config', await this.getConfigBody(accountId, id));
-      out[id] = s;
-    }
-    return out;
+  /** Every stored secret of the given entities, keyed by entity id — see `exportSecrets.ts`. */
+  exportSecretsFor(accountId: string, entityIds: readonly string[]): Promise<Record<string, ExternalSecrets>> {
+    return exportSecretsFor(this, accountId, entityIds);
   }
 
   /** Pair every entity of one profile with its stored secrets. */

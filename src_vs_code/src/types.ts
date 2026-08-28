@@ -288,13 +288,13 @@ export interface TreeNode {
   /**
    * This folder is the account's trash. One per account, created on the first delete rather
    * than seeded up front — an empty Trash in a brand-new vault is a question nobody asked.
-   *
-   * <p>A flag rather than a `folderType`, deliberately: `folderType` dictates what kind of
-   * entity a folder may hold, and the trash holds whatever was deleted. Teaching the kind
-   * machinery about a folder that accepts everything would touch the picker, the form's locked
-   * kind and `folderKindOf` for no gain.</p>
+   * A flag rather than a `folderType`, deliberately: `folderType` dictates what kind of entity a
+   * folder may hold, and the trash holds whatever was deleted; teaching the kind machinery about
+   * a folder that accepts everything would touch the picker, the locked kind and `folderKindOf`.
    */
   isTrash?: boolean;
+  /** Where it was when moved to the Trash (`null` = root) — *Restore* goes back there. Absent pre-0.80.6. */
+  trashedFrom?: string | null;
   /**
    * Days after which an entry in the trash is deleted for real. Absent means kept until
    * emptied by hand. Lives on the folder rather than in VS Code settings because each account

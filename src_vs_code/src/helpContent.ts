@@ -405,7 +405,7 @@ export const HELP_ARTICLES: readonly HelpArticle[] = [
       whatItIs: 'Accounts hold typed folders; folders hold entries — SSH hosts, keys, databases, VPNs, terminal commands, scripts, configs, plain credentials. The account row counts entries / Trash / shared.',
       why: 'A vault you cannot navigate is a vault you stop using; types are what keep a hundred entries readable.',
       setup: 'A new account seeds the typed folders. A project folder scaffolds the same set inside itself.',
-      usage: 'A single click shows the entry in the read-only viewer, in one shared preview tab the next click reuses; a double click pins it into a tab of its own. Edit is on the right-click. New arrivals — created, imported or accepted — are revealed and briefly tinted green so “it worked” and “here it is” are one event. Deleted entries go to the Trash, which can empty itself on a timer.',
+      usage: 'A single click shows the entry in the read-only viewer, in one shared preview tab the next click reuses; a double click pins it into a tab of its own. Edit is on the right-click. New arrivals — created, imported or accepted — are revealed and briefly tinted green so “it worked” and “here it is” are one event. Deleted entries go to the Trash, which can empty itself on a timer; Restore — first on a trashed entry’s menu — puts it back where it was deleted from.',
       whatCanGoWrong: 'The Trash is a delay, not a veto — a retention timer really deletes. An entry’s kind is fixed by its folder’s type; move it rather than fighting the form.',
     },
     ru: {
@@ -413,7 +413,7 @@ export const HELP_ARTICLES: readonly HelpArticle[] = [
       whatItIs: 'Аккаунты держат типизированные папки; папки — записи: SSH-хосты, ключи, базы, VPN, терминальные команды, скрипты, конфиги, простые учётки. Строка аккаунта считает записи / корзину / шары.',
       why: 'Сейф, по которому нельзя ориентироваться, перестают использовать; типы — то, что держит сотню записей читаемой.',
       setup: 'Новый аккаунт получает набор типизированных папок. Папка-проект разворачивает такой же набор внутри себя.',
-      usage: 'Один клик показывает запись во вьюере — в одной общей вкладке-превью, которую следующий клик переиспользует; двойной клик закрепляет её в отдельную вкладку. Edit — по правому клику. Новые строки — созданные, импортированные, принятые — показываются и коротко подсвечиваются зелёным: «получилось» и «вот оно» — одно событие. Удалённое уходит в корзину, которая умеет чиститься по таймеру.',
+      usage: 'Один клик показывает запись во вьюере — в одной общей вкладке-превью, которую следующий клик переиспользует; двойной клик закрепляет её в отдельную вкладку. Edit — по правому клику. Новые строки — созданные, импортированные, принятые — показываются и коротко подсвечиваются зелёным: «получилось» и «вот оно» — одно событие. Удалённое уходит в корзину, которая умеет чиститься по таймеру; Restore — первый пункт меню удалённой записи — возвращает её туда, откуда удалили.',
       whatCanGoWrong: 'Корзина — отсрочка, не вето: таймер удаляет по-настоящему. Вид записи фиксирован типом папки; переносите запись, а не боритесь с формой.',
     },
   },

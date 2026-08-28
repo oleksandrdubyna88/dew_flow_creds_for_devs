@@ -87,3 +87,23 @@ export function lastWriter(v: VersionVector): string {
 export function normalizeTombstone(value: Tombstone | number): Tombstone {
   return typeof value === 'number' ? { deletedAt: value, v: {} } : value;
 }
+
+/**
+ * Tombstones as stored: a bare number (the pre-vector format, `deletedAt` only) or a record,
+ * either way normalized; anything else is no tombstones at all.
+ */
+// eslint-disable-next-line complexity
+export function parseTombstones(raw: unknown): Record<string, Tombstone> {
+  if (typeof raw !== 'object' || raw === null) {
+    return {};
+  }
+  const out: Record<string, Tombstone> = {};
+  for (const [id, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (typeof value === 'number') {
+      out[id] = { deletedAt: value, v: {} };
+    } else if (typeof value === 'object' && value !== null) {
+      out[id] = normalizeTombstone(value as Tombstone);
+    }
+  }
+  return out;
+}

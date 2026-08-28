@@ -7,6 +7,7 @@ import {
   findTrash,
   isInTrash,
   isTrashFolder,
+  restoreTarget,
 } from '../trash';
 import { TreeNode } from '../types';
 
@@ -131,4 +132,27 @@ test('every offered retention is a real number of days, and the row says which',
     describeRetention(folder('t', { isTrash: true, trashRetentionDays: 1 })),
     'emptied after 1 day',
   );
+});
+
+// ---- Restore (the owner, 2026-08-28): back to where it was deleted from ----
+
+function vaultWith(nodes: TreeNode[]): (id: string) => TreeNode | undefined {
+  return (id) => nodes.find((n) => n.id === id);
+}
+
+test('a trashed entry restores to the folder it was deleted from', () => {
+  const trash: TreeNode = { id: 't', name: 'Trash', type: 'folder', parentId: null, isTrash: true };
+  const ssh: TreeNode = { id: 'f', name: 'ssh', type: 'folder', parentId: null };
+  const gone: TreeNode = { id: 'e', name: 'www', type: 'entity', parentId: 't', trashedFrom: 'f' };
+  assert.equal(restoreTarget(gone, vaultWith([trash, ssh, gone])), 'f');
+});
+
+test('when that folder was deleted for real, or is itself in the trash, the root takes it', () => {
+  const trash: TreeNode = { id: 't', name: 'Trash', type: 'folder', parentId: null, isTrash: true };
+  const trashedFolder: TreeNode = { id: 'f', name: 'ssh', type: 'folder', parentId: 't' };
+  const gone: TreeNode = { id: 'e', name: 'www', type: 'entity', parentId: 't', trashedFrom: 'f' };
+  assert.equal(restoreTarget(gone, vaultWith([trash, gone])), null, 'folder gone → root');
+  assert.equal(restoreTarget(gone, vaultWith([trash, trashedFolder, gone])), null, 'folder in trash → root');
+  const legacy: TreeNode = { id: 'e2', name: 'old', type: 'entity', parentId: 't' };
+  assert.equal(restoreTarget(legacy, vaultWith([trash, legacy])), null, 'trashed before 0.80.6 → root');
 });

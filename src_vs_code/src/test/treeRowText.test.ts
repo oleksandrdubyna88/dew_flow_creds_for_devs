@@ -116,3 +116,8 @@ test('a non-ssh entry carries no bridge token at all', () => {
 
   assert.equal(/bridge/.test(value), false, value);
 });
+
+test('an entry in the Trash says so first, so Restore can lead its menu (the owner, 2026-08-28)', () => {
+  assert.ok(entityContextValue(SSH, false, false, true).startsWith('entity:trashed'));
+  assert.ok(entityContextValue(SSH, false, false).startsWith('entity:ssh'), 'a live entry is unchanged');
+});
