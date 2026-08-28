@@ -441,6 +441,11 @@ export class SyncManager implements vscode.Disposable {
           dbConnections: payload.dbConnections ?? {},
           notes: payload.notes ?? {},
           configs: payload.configs ?? {},
+          // Forgotten when `fields` was added in 0.82, and the omission is not cosmetic. What is
+          // read here is the whole of what the merge knows about the remote: a missing slot reads
+          // as "the remote has none", so the merge drops the far side's logins and URLs, the
+          // fingerprint never matches, and EVERY cycle pushes — which is how it was noticed.
+          fields: payload.fields ?? {},
           attachments: payload.attachments ?? {},
           images: payload.images ?? {},
           totps: payload.totps ?? {},

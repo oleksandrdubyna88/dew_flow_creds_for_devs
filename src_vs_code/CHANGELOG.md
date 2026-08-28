@@ -6,6 +6,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.83.2] — 2026-08-28
+
+### Fixed
+
+- **Sync pushed the vault on every press, and a credential's login/URL never reached your other
+  machines.** One slot — `fields`, added in 0.82 — was missing from the place that reads a stored
+  vault back, so the merge was told the remote had no logins or URLs at all. Two consequences from
+  the one line: the merged result never matched the remote, so every cycle rewrote and re-uploaded
+  the whole vault (the visible "pushed 1" with nothing changed), and the far side's values were
+  dropped on arrival — a field written by one machine was erased by the next machine to sync, and
+  never appeared on it. Both are covered by tests that were watched failing first, and the slot
+  list is now derived from the snapshot itself, so forgetting the next one turns a test red.
+
 ## [0.83.1] — 2026-08-28
 
 ### Internal

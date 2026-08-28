@@ -78,6 +78,8 @@ interface World {
   logs: string[];
   /** The wrap list `encrypt` was handed, when the cycle passed one. Undefined = it did not. */
   escrowWraps?: unknown[];
+  /** What the cycle wrote back into local storage, when it applied anything. */
+  appliedSnapshot?: unknown;
 }
 
 interface Parts {
@@ -89,6 +91,11 @@ interface Parts {
   metadataFault?: string;
   embedsShares?: boolean;
   changeToken?: string;
+  /** entityId -> login/URL JSON, as the SLOT the 0.82 fields feature writes. */
+  remoteFields?: Record<string, string>;
+  localFields?: Record<string, string>;
+  /** Any other secret slot, by name — what the per-slot guard below varies. */
+  remoteExtra?: Record<string, unknown>;
 }
 
 function world(): World {
@@ -119,13 +126,18 @@ function world(): World {
 }
 
 function manager(w: World, parts: Parts): InstanceType<Sync['SyncManager']> {
-  const localSnapshot = { ...emptySnapshot(), nodes: parts.localNodes ?? [] };
+  const localSnapshot = {
+    ...emptySnapshot(),
+    nodes: parts.localNodes ?? [],
+    fields: parts.localFields ?? {},
+  };
   const storage = {
     getAccounts: (): StoredAccount[] => [A],
     changeToken: (): string => parts.changeToken ?? 'token-1',
     getSnapshot: (): Promise<unknown> => Promise.resolve(localSnapshot),
-    applySnapshot: (): Promise<void> => {
+    applySnapshot: (_id: string, snapshot: unknown): Promise<void> => {
       w.applied += 1;
+      w.appliedSnapshot = snapshot;
       return Promise.resolve();
     },
     get metadataFault(): string | undefined {
@@ -135,7 +147,14 @@ function manager(w: World, parts: Parts): InstanceType<Sync['SyncManager']> {
   const keys = {
     unlock: (): Promise<unknown> => Promise.resolve(parts.key),
     decrypt: (): Promise<unknown> =>
-      Promise.resolve({ ...emptySnapshot(), nodes: parts.remoteNodes ?? [], version: 1, accountId: 'a1' }),
+      Promise.resolve({
+        ...emptySnapshot(),
+        nodes: parts.remoteNodes ?? [],
+        fields: parts.remoteFields ?? {},
+        ...(parts.remoteExtra ?? {}),
+        version: 1,
+        accountId: 'a1',
+      }),
     encrypt: (bundle: unknown, _k: unknown, _a: unknown, _s: unknown, wraps?: unknown[]): Promise<string> => {
       // Recorded rather than ignored: whether a cycle changed the wrap list is the whole
       // question the corporate-escrow tests below ask, and it is invisible in the ciphertext.
@@ -507,3 +526,102 @@ test('an untrusted key does not enrol, and says why', async () => {
 
   assert.equal(wrapsWritten(w).length, 0, 'nothing was sealed to a key this machine distrusts');
 });
+
+test('a vault identical on both sides is NOT pushed, fields and all', async () => {
+  // The symptom reported from the UI: "Sync finished: pulled changes for 0 profile(s), pushed 1"
+  // on every press, with nothing changed. A push every cycle is not only noise — it re-encrypts
+  // and rewrites the whole vault, and on the server transport that is a network write per tick.
+  const w = world();
+  const both = [node('n1', 'same')];
+  const field = { n1: '{"login":"ada"}' };
+  const sync = manager(w, {
+    raw: envelope(),
+    key: KEY,
+    localNodes: both,
+    remoteNodes: both,
+    localFields: field,
+    remoteFields: field,
+  });
+
+  try {
+    await sync.syncNow();
+  } finally {
+    sync.dispose();
+  }
+
+  assert.deepEqual(w.writes, [], 'nothing changed on either side, so nothing should be written');
+});
+
+test('a login/URL that exists only on the remote is not dropped on the way in', async () => {
+  // The costly half of the same defect. The snapshot read back from the vault decides what the
+  // merge sees, so a slot missing there is a slot the merge cannot preserve: the field would be
+  // written out by the machine that owns it and erased by the next machine to sync.
+  const w = world();
+  const both = [node('n1', 'same')];
+  const sync = manager(w, {
+    raw: envelope(),
+    key: KEY,
+    localNodes: both,
+    remoteNodes: both,
+    remoteFields: { n1: '{"login":"ada"}' },
+  });
+
+  try {
+    await sync.syncNow();
+  } finally {
+    sync.dispose();
+  }
+
+  const applied = w.appliedSnapshot as { fields?: Record<string, string> } | undefined;
+  assert.equal(applied?.fields?.n1, '{"login":"ada"}', 'the remote field never reached this machine');
+});
+
+/**
+ * Every secret slot a profile has, read off `emptySnapshot()` at run time.
+ *
+ * <p>Derived rather than listed, and that is the whole value: a list written here would have to
+ * be remembered too, which is precisely the thing that was not. `nodes` is an array, and
+ * `tombstones`/`horizon` are structural rather than per-entity secrets, so they are excluded and
+ * everything else is covered by construction.</p>
+ */
+/** Structural, not per-entity secrets — merged by their own rules and covered elsewhere. */
+const STRUCTURAL_SLOTS = new Set(['tombstones', 'horizon']);
+
+function isSecretRecord(value: unknown): boolean {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+const SECRET_SLOTS = Object.entries(emptySnapshot())
+  .filter(([name, value]) => !STRUCTURAL_SLOTS.has(name) && isSecretRecord(value))
+  .map(([name]) => name);
+
+for (const slot of SECRET_SLOTS) {
+  test(`a remote-only ${slot} entry survives being read back`, async () => {
+    // The guard for the NEXT slot, not this one. `fields` was added to the snapshot, to the
+    // bundle and to the merge, and missed in the one place that reads a stored vault back — so
+    // the far side's values were dropped on arrival and every cycle pushed. Adding a slot and
+    // forgetting that reader now turns this red instead of shipping.
+    const w = world();
+    const both = [node('n1', 'same')];
+    const sync = manager(w, {
+      raw: envelope(),
+      key: KEY,
+      localNodes: both,
+      remoteNodes: both,
+      remoteExtra: { [slot]: { n1: `remote-${slot}` } },
+    });
+
+    try {
+      await sync.syncNow();
+    } finally {
+      sync.dispose();
+    }
+
+    const applied = w.appliedSnapshot as Record<string, Record<string, string>> | undefined;
+    assert.equal(
+      applied?.[slot]?.n1,
+      `remote-${slot}`,
+      `the remote's ${slot} was dropped when the vault was read back`,
+    );
+  });
+}
