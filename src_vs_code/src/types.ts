@@ -287,6 +287,13 @@ export interface TreeNode {
   /** Manual position among siblings (folders); lower comes first. */
   sortOrder?: number;
   /**
+   * Folders only: an agent made this one.
+   *
+   * <p>The mark the narrow delete scope keys on, exactly as `mcpCreatedByAgent` on an entry's
+   * metadata does. It lives on the node because a folder has no metadata record to carry it.</p>
+   */
+  mcpCreatedByAgent?: boolean;
+  /**
    * This folder is the account's trash. One per account, created on the first delete rather
    * than seeded up front — an empty Trash in a brand-new vault is a question nobody asked.
    * A flag rather than a `folderType`, deliberately: `folderType` dictates what kind of entity a
