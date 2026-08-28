@@ -1431,8 +1431,12 @@ to the root. The row's context value leads with `entity:trashed`, so *Restore* (
 the first item on exactly those rows; the command works on a multi-selection, in order, and reveals
 the last restored row with the arrival tint. Tests: `trash.test.ts` (the target), `trashRestore.test.ts`
 (through the real storage), `restoreCommand.test.ts` (the command), `treeRowText.test.ts` (the token).
-Folders in the Trash keep their old menu — a trashed folder's *Restore* is a separate decision, since
-`viewItem == folder` guards every folder item today.
+**0.80.7 — folders too (the owner, same day: "restore for folders as well, and focus on what came
+back").** A folder inside the Trash is `folder:trashed`: the exact-match items (new entity/folder,
+reorder, change type) fall away while it is there, the prefix-matched ones (delete, move, export) stay,
+and *Restore* leads. Every restore reveals, selects and focuses what came back — expanded — and folder
+rows now carry the same `credsdep:` address as entries, so the arrival tint reaches them
+(`treeProviderTrash.test.ts`).
 
 ## 4. Build order
 
