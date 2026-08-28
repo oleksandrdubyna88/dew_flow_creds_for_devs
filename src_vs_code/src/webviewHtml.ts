@@ -65,12 +65,23 @@ export const THREE_COLUMN_AT = THREE_COLUMN_PAGE_MAX_PX + PAGE_PADDING_PX * 2;
 
 /**
  * The group grid both two-column pages share (form and viewer): one column stacks
- * main → additional → agent; two columns put the agent group under Additional; a window wide
- * enough for three FULL columns gives Agent access its own. CSS order + grid placement, so the
- * markup stays one source order — and the body widens with the third column (see
- * `THREE_COLUMN_PAGE_MAX_PX`).
+ * main → additional → agent; two columns put the agent group under Additional; with
+ * `thirdColumn` (the form), a window wide enough for three FULL columns gives Agent access its
+ * own, and the body widens with it (see `THREE_COLUMN_PAGE_MAX_PX`). The viewer stays at two —
+ * its agent frame belongs in the second column (the owner, 2026-08-28). CSS order + grid
+ * placement, so the markup stays one source order.
  */
-export function groupsGridCss(className: string): string {
+export function groupsGridCss(className: string, thirdColumn = true): string {
+  const third = !thirdColumn
+    ? ''
+    : `
+  @media (min-width: ${THREE_COLUMN_AT}px) {
+    body { max-width: ${THREE_COLUMN_PAGE_MAX_PX}px; }
+    .${className} { grid-template-columns: 1fr 1fr 1fr; }
+    #mainGroup { grid-row: 1; }
+    #additionalGroup { grid-row: 1; }
+    #agentGroup { grid-column: 3; grid-row: 1; }
+  }`;
   return `
   .${className} { display: grid; grid-template-columns: 1fr; gap: 0 ${GROUP_GAP_PX}px; align-items: start; }
   #agentGroup { order: 3; }
@@ -79,14 +90,7 @@ export function groupsGridCss(className: string): string {
     #mainGroup { grid-column: 1; grid-row: 1 / span 2; }
     #additionalGroup { grid-column: 2; grid-row: 1; }
     #agentGroup { grid-column: 2; grid-row: 2; order: 0; }
-  }
-  @media (min-width: ${THREE_COLUMN_AT}px) {
-    body { max-width: ${THREE_COLUMN_PAGE_MAX_PX}px; }
-    .${className} { grid-template-columns: 1fr 1fr 1fr; }
-    #mainGroup { grid-row: 1; }
-    #additionalGroup { grid-row: 1; }
-    #agentGroup { grid-column: 3; grid-row: 1; }
-  }`;
+  }${third}`;
 }
 
 /**

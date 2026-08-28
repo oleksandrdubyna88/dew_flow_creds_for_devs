@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { copySecret } from './secretClipboard';
 import { applyZoomDelta, currentUiScale, pushUiScaleTo } from './uiScaleHost';
+import { ViewerTab } from './viewerClicks';
 import { BINDABLE_FIELDS, BindableField } from './envBinding';
 import {
   CopyMessage,
@@ -13,7 +14,7 @@ import {
 export { EntityViewOptions } from './entityViewPage';
 
 /**
- * Read-only entity viewer (opened by double-click): the edit form's layout with nothing
+ * Read-only entity viewer (a single click previews it, a double click pins it): the edit form's layout with nothing
  * editable and no Save — just values and a Copy button per field. Secrets are shown masked and
  * are NEVER sent into the webview; their Copy buttons round-trip through the extension host,
  * which reads the value and writes it to the clipboard.
@@ -22,23 +23,94 @@ export { EntityViewOptions } from './entityViewPage';
  * testable — this file is the panel, its message loop and the clipboard.</p>
  */
 
+/**
+ * The ONE preview tab single clicks share (the owner's model, 2026-08-28 — see
+ * `viewerClicks.ts`): which entry it shows, and how to make it show another.
+ */
+let preview: { panel: vscode.WebviewPanel; key: string; show: (options: EntityViewOptions) => void } | undefined;
+
+/**
+ * A double click on the entry the preview shows: that tab becomes an ordinary one and takes
+ * focus, and the next single click will open a fresh preview. False when no preview shows it.
+ */
+export function pinPreview(key: string): boolean {
+  if (preview === undefined || preview.key !== key) {
+    return false;
+  }
+  const { panel } = preview;
+  preview = undefined;
+  panel.reveal(undefined, false);
+  return true;
+}
+
+/** The loaded entry into the shared preview tab — reusing it when it exists. */
+function showPreview(options: EntityViewOptions, key: string): void {
+  if (preview !== undefined) {
+    preview.key = key;
+    preview.show(options);
+    preview.panel.reveal(undefined, true);
+    return;
+  }
+  const { panel, show } = mountEntityView(options, true);
+  preview = { panel, key, show };
+  panel.onDidDispose(() => {
+    if (preview?.panel === panel) {
+      preview = undefined;
+    }
+  });
+}
+
+/**
+ * Show a loaded entry. `tab` is asked AFTER the load — a click that was superseded while the
+ * keychain answered shows nothing (`stale`); the rest go to the shared preview or to a tab of
+ * their own (a double click, or every other route: the quick pick, a command).
+ */
+/** Where a loaded entry goes, asked after the load, and the key the preview remembers it by. */
+export interface ViewerPlacement {
+  readonly tab: () => ViewerTab | 'stale';
+  readonly key: string;
+}
+
+const OWN_TAB: ViewerPlacement = { tab: () => 'pinned', key: '' };
+
+export function showEntityView(options: EntityViewOptions, placement: ViewerPlacement = OWN_TAB): void {
+  const where = placement.tab();
+  if (where === 'preview') {
+    showPreview(options, placement.key);
+  } else if (where === 'pinned') {
+    mountEntityView(options, false);
+  }
+}
+
 // One webview's wiring: the panel, its message loop and the clipboard; the logic it used to
-// hold moved to entityViewPage.ts, where it is tested.
+// hold moved to entityViewPage.ts, where it is tested. `show` re-renders the same panel for
+// another entry — the preview tab's whole trick — and the message loop reads the CURRENT
+// options, never the ones it was created with.
 // eslint-disable-next-line max-lines-per-function
-export function showEntityView(options: EntityViewOptions): void {
+function mountEntityView(
+  first: EntityViewOptions,
+  preserveFocus: boolean,
+): { panel: vscode.WebviewPanel; show: (options: EntityViewOptions) => void } {
   const panel = vscode.window.createWebviewPanel(
     'credSshEntityView',
-    options.details.name,
-    vscode.ViewColumn.Active,
+    first.details.name,
+    { viewColumn: vscode.ViewColumn.Active, preserveFocus },
     { enableScripts: true, localResourceRoots: [] },
   );
-  panel.webview.html = renderEntityViewHtml({ ...options, uiScale: currentUiScale() });
+  const state = { options: first };
+  const show = (options: EntityViewOptions): void => {
+    state.options = options;
+    panel.title = options.details.name;
+    panel.webview.html = renderEntityViewHtml({ ...options, uiScale: currentUiScale() });
+  };
+  show(first);
   // T28: this page follows the shared setting for as long as it lives.
   const zoomHook = pushUiScaleTo(panel.webview);
   panel.onDidDispose(() => zoomHook.dispose());
 
   // eslint-disable-next-line complexity, max-lines-per-function
   panel.webview.onDidReceiveMessage(async (message: CopyMessage) => {
+    const options = state.options;
     const d = options.details;
     if (message.type === 'close') {
       panel.dispose();
@@ -98,4 +170,5 @@ export function showEntityView(options: EntityViewOptions): void {
     await copySecret(vscode.env.clipboard, value);
     void panel.webview.postMessage({ type: 'copied', field: message.field });
   });
+  return { panel, show };
 }

@@ -1,6 +1,5 @@
 import * as vscode from 'vscode';
 import { StorageManager } from './storageManager';
-import { RowGenerations } from './rowIdentity';
 import { ShareSources, sharedMatches, unverifiedSender } from './shareRows';
 import { diagnoseTeamFailure } from './teamDiagnosis';
 import type { SharingManager } from './sharingManager';
@@ -267,22 +266,6 @@ export class CredTreeDataProvider
    * memo rather than a background walk.
    */
   readonly dependencies: DepIndexCache;
-
-  /** Rows re-created by `reincarnate` (T11) — the count rides the id, so VS Code sees a NEW node. */
-  private readonly generations = new RowGenerations();
-
-  /**
-   * Re-create ONE entity row so its `collapsibleState` is read again (T11): a refresh under the
-   * same id keeps the node's expansion (see `RowGenerations`), so the id changes, the workbench
-   * refreshes the PARENT, and the row comes back as the expansion memory says.
-   */
-  reincarnate(element: TreeElement): void {
-    if (element.kind !== 'node' || element.node.type !== 'entity') {
-      return;
-    }
-    this.generations.bump(entityKey(element.accountId, element.node.id));
-    this.onDidChangeTreeDataEmitter.fire(element);
-  }
 
   refresh(): void {
     this.filterMemo.clear();
@@ -581,7 +564,7 @@ export class CredTreeDataProvider
       return item;
     }
 
-    return this.entityItem(accountId, node, this.generations.idFor(`${accountId}:${node.id}`, entityKey(accountId, node.id)));
+    return this.entityItem(accountId, node, `${accountId}:${node.id}`);
   }
 
   /**

@@ -17,7 +17,7 @@ import {
   promptFolderName,
 } from './dialogs';
 import { EntityFormValues, KeyCandidate, showEntityForm } from './entityFormPanel';
-import { showEntityView } from './entityViewPanel';
+import { pinPreview, showEntityView } from './entityViewPanel';
 import { GoogleAuthProvider } from './googleAuthProvider';
 import { nasPathFor, setAccountNasPath } from './nasPaths';
 import { confirmCommandMessage, isCommandTrusted, trustCommand } from './commandTrust';
@@ -127,7 +127,7 @@ import { carryThroughDetails } from './attachmentMeta';
 import { wireSearchBox } from './searchBox';
 import { showHelp } from './helpPanel';
 import type { EntityFormOptions } from './entityFormPanel';
-import { EntityClicks } from './entityClick';
+import { ViewerClicks, ViewerTab, clickToView } from './viewerClicks';
 import { warnIfKeyringMissing } from './keyringWarningHost';
 import { saveTextAs } from './saveTextAs';
 import { AgentDoors, DoorSources, doorsOf } from './agentDoors';
@@ -2506,19 +2506,17 @@ ${detail}
 
   // ---------- entity actions ----------
 
-  // Single click = select only; double click (two clicks on the same row
-  // within 500ms) = open the read-only viewer with copy buttons.
-  // Single click selects; a double click opens the viewer — and puts the twisty back where the
-  // workbench's own double-click toggle moved it (T11). The decisions live in entityClick.ts.
-  const entityClicks = EntityClicks.forTree(expansion, provider, treeView, (element) =>
-    openEntityViewer(element.accountId, element.node, storage, doorsAt(element.accountId, element.node)),
-  );
+  // One click selects and previews in the shared tab; a double click pins it (viewerClicks.ts).
+  const clicks = new ViewerClicks();
   register('credSshManager.itemClicked', async (target) => {
     const element = asElement(target);
     if (element?.kind !== 'node' || element.node.type !== 'entity' || !element.node.details) {
       return;
     }
-    await entityClicks.click(element, Date.now());
+    const key = entityKey(element.accountId, element.node.id);
+    await clickToView(clicks, key, Date.now(), () => pinPreview(key), (tab) =>
+      openEntityViewer(element.accountId, element.node, storage, doorsAt(element.accountId, element.node), tab),
+    );
   });
 
   register('credSshManager.revisionClicked', async (target) => {
@@ -5378,6 +5376,8 @@ async function openEntityViewer(
   storage: StorageManager,
   /** Every agent door to this entry (T23a/T24b) — resolved by the caller, which holds the sources. */
   doors: AgentDoors,
+  /** Asked once the entry is loaded: the shared preview tab, a tab of its own, or nothing (superseded). */
+  tab: () => ViewerTab | 'stale' = () => 'pinned',
 ): Promise<void> {
   const details = node.details;
   if (!details) {
@@ -5486,7 +5486,7 @@ async function openEntityViewer(
       );
       return true;
     },
-  });
+  }, { tab, key: entityKey(accountId, details.id) });
 }
 
 // ---------- helpers ----------

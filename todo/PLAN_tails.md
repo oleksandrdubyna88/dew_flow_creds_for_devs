@@ -445,22 +445,21 @@ that keeps the two surfaces from drifting.
 
 ### T11. A double click both opens the viewer and toggles the twisty (DEFECT, found by the owner 2026-08-27)
 
-> **Shipped 2026-08-28 — 0.80.1, corrected in 0.80.2.** The workbench's double-click toggle cannot
-> be switched off for a row that has a command (`expandOnDoubleClick` is a tree option the
-> workbench never exposes), so the handler UNDOES it: `entityClick.ts` (`EntityClicks`) records the
-> row's expansion on the first click and, after the viewer opens on the second, puts it back;
-> `treeClicks.ts` holds the two pure decisions (the 500 ms window, when a restore is needed).
+> **Closed 2026-08-28 in 0.80.3 — by changing the model, after two restore attempts failed the
+> owner's measurement.** 0.80.1 refreshed the row under the same id (VS Code keeps an existing
+> node's expansion across a refresh — `PreserveOrCollapsed`; nothing restored). 0.80.2 re-created
+> the row under a new id, which worked on paper and, on the owner's tree, "brakes — two seconds to
+> open — and remembers every other time". The toggle itself cannot be prevented:
+> `expandOnDoubleClick` is a tree option the workbench never exposes to extensions.
 >
-> **What 0.80.1 got wrong, measured by the owner:** "no restore — one double click opened the entry
-> and expanded the tree; the next opened another and collapsed it." The restore refreshed the row
-> under the same id, and VS Code keeps an existing node's expansion across a refresh
-> (`asyncDataTree.ts`: `PreserveOrCollapsed` / `PreserveOrExpanded` — the `collapsibleState` is read
-> only for a NEW node). 0.80.2 re-creates the row instead: `RowGenerations` (`rowIdentity.ts`)
-> counts the re-creations and the count rides the row's id; a changed handle makes the workbench
-> refresh the PARENT (`mainThreadTreeViews.ts`: "Update maps when handle is changed and refresh
-> parent"), the new node reads the memory, and `treeView.reveal(select, no focus)` puts the
-> selection back. The shadow row under a dependency and folders are untouched
-> (`treeProviderReincarnate.test.ts`).
+> **What shipped instead (the owner's model, the editor's own):** a single click selects and shows
+> the entry in ONE shared preview tab the next single click reuses; a double click pins that
+> preview into a tab of its own (or opens one when nothing is previewed). `viewerClicks.ts` is the
+> state machine — clicks are synchronous, loads are not, so a superseded load shows nothing and a
+> double click that lands mid-load arrives pinned (six tests, every ordering); `entityViewPanel.ts`
+> holds the one preview panel (`showPreview` re-renders it, `pinPreview` detaches it). The
+> workbench's double-click toggle on a row with a twisty is left alone, as in every tree. All the
+> restore code — `entityClick.ts`, `treeClicks.ts`, `rowIdentity.ts`, `reincarnate()` — is deleted.
 
 **Symptom.** Double-clicking an entity that has kept versions, or that something depends on, opens
 the read-only viewer **and** expands or collapses its History / *Depended on by* sub-tree — so the
@@ -1092,6 +1091,8 @@ placement is decided in markup.
 > the two-column width; a column now keeps its 628 px and the page widens by one column and one
 > gap (`COLUMN_MAX_PX`, `THREE_COLUMN_PAGE_MAX_PX`, `groupsGridCss` in `webviewHtml.ts`), so the
 > third column appears at 1980 px and below that Agent access sits under Additional.
+> 0.80.3: the viewer keeps two columns — its Agent access frame goes in the SECOND column, under
+> Additional, never a third (the owner).
 
 **T24b. The block under-reports what agents can actually reach — study and propose.** The six
 switches cover the broker's entry-level actions. Since they were written, the agent surface grew,

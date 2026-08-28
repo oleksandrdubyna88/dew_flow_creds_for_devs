@@ -6,6 +6,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.80.3] — 2026-08-28
+
+### Changed
+
+- **One click previews, a double click pins — the editor's own model** (the owner's call after
+  0.80.2: the restore "brakes — two seconds to open — and remembers every other time"). The
+  twisty-restore machinery of 0.80.1/0.80.2 is gone entirely: no re-created rows, no reveal, no
+  timer. A single click selects the row and shows the entry in ONE shared preview tab that the
+  next single click reuses (ten clicks on ten entries leave one tab); a double click pins that
+  preview into a tab of its own, or opens one when nothing is previewed. The preview keeps focus
+  in the tree, so keyboard navigation and the second click of a double click land where they
+  should. A click superseded while the keychain answers shows nothing; a double click that lands
+  while the first click is still loading arrives pinned. The workbench's double-click toggle on a
+  row with a twisty is left as it is in every tree.
+- **The viewer's Agent access frame sits in the second column**, under Additional — the viewer
+  never grows a third column (the owner, 2026-08-28). The form keeps its third column at
+  three-full-column width.
+
 ## [0.80.2] — 2026-08-28
 
 ### Fixed

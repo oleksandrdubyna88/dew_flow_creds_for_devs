@@ -562,7 +562,7 @@ export function renderEntityViewHtml(options: EntityViewOptions): string {
   .envLine { margin-top: 3px; align-items: center; }
   /* The form's own rule, deliberately: two columns when there is room, stacked when there is
      not, and the two pages then narrow the same way instead of nearly the same way. */
-  ${groupsGridCss('viewGroups')}
+  ${groupsGridCss('viewGroups', false)}
   .hint.bad { color: var(--vscode-editorWarning-foreground, #cca700); opacity: 1; }
   .code { flex: 1; margin: 0; padding: 6px 8px; max-height: 320px; overflow: auto;
     font-family: var(--vscode-editor-font-family, monospace); font-size: 1em; line-height: 1.45;

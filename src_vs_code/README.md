@@ -80,12 +80,15 @@ the VS Code Authentication API (Microsoft is built-in; Google via the
 extension's own OAuth provider — see below). Inside a profile: folders and
 entities.
 
-- **Single click** on a row only selects it.
-- **Double click** on an entity opens the **read-only viewer**: only the
-  fields that actually hold a value, each with a copy-icon button (secrets
-  stay masked; copying goes through SecretStorage, never through the page),
-  a download icon on the VPN config row (Save As), plus a kind-aware
-  **Copy All**.
+- **Single click** on an entity selects it and shows it in the **read-only viewer** — in one
+  shared *preview* tab that the next single click reuses, the way the editor previews files:
+  ten clicks on ten entries leave one tab. The viewer shows only the fields that actually hold
+  a value, each with a copy-icon button (secrets stay masked; copying goes through
+  SecretStorage, never through the page), a download icon on the VPN config row (Save As),
+  plus a kind-aware **Copy All**.
+- **Double click** pins that preview into a tab of its own (and opens one when nothing is
+  previewed), so two entries can be compared side by side. The twisty of a row with history or
+  dependants is the workbench's: a double click still toggles it, as it does in every tree.
 - **Green ▶** (hover, SSH entities) connects SSH; **green database icon**
   (DB entities) opens the entity in a DB extension. Nothing ever runs on a
   plain click.

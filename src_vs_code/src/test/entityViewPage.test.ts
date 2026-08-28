@@ -301,7 +301,8 @@ test('agent access is its own frame in the agent column — with the CLI row and
   assert.ok(frame.includes('Remote Bridge open'), 'the live door is listed');
   assert.ok(!frame.includes('Code access key'), 'a door that is not live is not listed');
   assert.ok(!html.slice(main, agent).includes('CLI access'), 'and it left Main');
-  assert.ok(html.includes("#agentGroup { grid-column: 3;"), 'the viewer shares the three-column grid');
+  assert.ok(html.includes('#agentGroup { grid-column: 2; grid-row: 2;'), 'in the SECOND column, under Additional');
+  assert.ok(!html.includes('#agentGroup { grid-column: 3;'), 'the viewer never grows a third column (owner, 2026-08-28)');
 });
 
 test('no aliases, no row — a capability line about nothing is noise', () => {
