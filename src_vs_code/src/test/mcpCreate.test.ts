@@ -50,12 +50,31 @@ test('a folder opened to creation is offered, and nothing else is', () => {
   assert.equal(targets[0].folderName, 'Servers');
 });
 
-test('creation does not inherit down the tree', () => {
-  // A person opening one folder to an agent has said one thing; reading it as "and everything
-  // under it" says another. Inheritance stops at one level everywhere else here too.
+test('creation DOES inherit down the tree, like everything else', () => {
+  // Reversed deliberately, on the owner's decision of 2026-08-28. It used to stop at one level,
+  // with the reasoning that opening one folder says one thing and "everything under it" says
+  // another. What that produced was two rules on one screen: `creds_list` handed an agent an
+  // entry with `can.create: true` — resolved by climbing — and `creds_create` then refused it,
+  // because the destination set was not. One rule now: an answer given above applies below until
+  // a folder gives its own.
   const nodes = [
     folder('f1', 'Servers', { mcp: { create: true } }),
     { ...folder('f2', 'EU'), parentId: 'f1' },
+  ];
+
+  assert.deepEqual(
+    creatableFolders(...vaultOf(nodes)).map((t) => t.folderName),
+    ['Servers', 'EU'],
+  );
+});
+
+test('a sub-folder closed on purpose is not offered, however open its parent is', () => {
+  // The other half of the same rule, and what makes the reversal safe: an explicit empty object
+  // is an ANSWER, and answers stop the climb.
+  const nodes = [
+    folder('f1', 'Servers', { mcp: { create: true } }),
+    { ...folder('f2', 'EU', { mcp: {} }), parentId: 'f1' },
+    { ...folder('f3', 'Frankfurt'), parentId: 'f2' },
   ];
 
   assert.deepEqual(

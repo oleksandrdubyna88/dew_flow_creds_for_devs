@@ -70,7 +70,15 @@ export type McpUseLookup =
  * secret and asks for <b>edit</b>, while running a command asks for <b>use</b> — so a rotation
  * cannot ride in on a permission somebody granted for a read-only query.</p>
  */
-export type NeededSwitch = 'view' | 'use' | 'edit' | 'create' | 'delete';
+export type NeededSwitch =
+  | 'view'
+  | 'use'
+  | 'edit'
+  | 'create'
+  | 'delete'
+  | 'folderCreate'
+  | 'folderEdit'
+  | 'folderDelete';
 
 export interface McpUseTarget {
   accountId: string;
@@ -158,7 +166,22 @@ export function refusalFor(found: McpUseLookup): { code: ErrorCode; message: str
  * would be a credential manager recommending the bigger grant.</p>
  */
 function labelFor(needed: NeededSwitch): string {
-  const id = `mcp${needed.charAt(0).toUpperCase()}${needed.slice(1)}`;
-  const wanted = needed === 'delete' ? 'mcpDeleteOwn' : id;
-  return MCP_SWITCHES.find((s) => s.id === wanted)?.label ?? needed;
+  return MCP_SWITCHES.find((s) => s.id === switchIdFor(needed))?.label ?? needed;
+}
+
+/**
+ * Where a scope has two controls, name the NARROWER one.
+ *
+ * <p>Told to turn on the smaller permission a person can always choose the wider; the reverse
+ * advice would be a credential manager recommending the bigger grant.</p>
+ */
+const NARROWER_CONTROL: Readonly<Record<string, string>> = {
+  delete: 'mcpDeleteOwn',
+  folderDelete: 'mcpFolderDeleteOwn',
+};
+
+function switchIdFor(needed: NeededSwitch): string {
+  return (
+    NARROWER_CONTROL[needed] ?? `mcp${needed.charAt(0).toUpperCase()}${needed.slice(1)}`
+  );
 }

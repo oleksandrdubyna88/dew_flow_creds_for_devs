@@ -23,6 +23,19 @@ export interface McpAccess {
   create?: boolean;
   /** `'own'` restricts deletion to entries the agent itself created. Absent means no deleting. */
   delete?: McpDeleteScope;
+  /** Folders: may make one. */
+  folderCreate?: boolean;
+  /**
+   * Folders: may rename, move and retype one — never its Agent access.
+   *
+   * <p>That exclusion is structural rather than checked: the route that edits a folder reads
+   * `name`, `parent` and `folderType` and does not read `mcp` at all. A permission that could
+   * change permissions is a permission to grant itself every other one, and the ladder would
+   * stop meaning anything.</p>
+   */
+  folderEdit?: boolean;
+  /** Folders: to the Trash. `'own'` is only the ones the agent made itself. */
+  folderDelete?: McpDeleteScope;
 }
 
 /** Nothing allowed — what an entry with no setting anywhere resolves to. */
@@ -47,7 +60,7 @@ export function normalizeMcpAccess(raw: McpAccess | undefined): McpAccess {
   if (raw === undefined) {
     return NO_MCP_ACCESS;
   }
-  return climb(raw, deleteScope(raw.delete));
+  return climb(raw, deleteScope(raw.delete), deleteScope(raw.folderDelete));
 }
 
 /**
@@ -87,16 +100,45 @@ export function readMcpAccess(raw: unknown): McpAccess | undefined {
     edit: r.edit === true,
     create: r.create === true,
     delete: deleteScope(r.delete),
+    folderCreate: r.folderCreate === true,
+    folderEdit: r.folderEdit === true,
+    folderDelete: deleteScope(r.folderDelete),
   };
 }
 
-/** Each rung turns on the one below it, and nothing turns on the one above. */
-function climb(raw: McpAccess, del: McpDeleteScope | undefined): McpAccess {
+/**
+ * Each rung turns on the one below it, and nothing turns on the one above.
+ *
+ * <p><b>Two ladders over two objects, meeting at the bottom.</b> Entries climb
+ * delete -> create -> edit -> use -> view; folders climb folderDelete -> folderCreate ->
+ * folderEdit -> view. They share the lowest rung because every one of these actions is about
+ * something an agent must be able to SEE, which keeps "may rename it but may not see it" as
+ * unrepresentable as its entry-side twin.</p>
+ *
+ * <p>They do not otherwise imply each other: making folders is not permission to store a
+ * credential in one, and neither is the reverse.</p>
+ */
+function climb(
+  raw: McpAccess,
+  del: McpDeleteScope | undefined,
+  folderDel: McpDeleteScope | undefined,
+): McpAccess {
   const on = (flag: boolean | undefined, below: boolean): boolean => flag === true || below;
   const create = on(raw.create, del !== undefined);
   const edit = on(raw.edit, create);
   const use = on(raw.use, edit);
-  return { view: on(raw.view, use), use, edit, create, delete: del };
+  const folderCreate = on(raw.folderCreate, folderDel !== undefined);
+  const folderEdit = on(raw.folderEdit, folderCreate);
+  return {
+    view: on(raw.view, use) || folderEdit,
+    use,
+    edit,
+    create,
+    delete: del,
+    folderCreate,
+    folderEdit,
+    folderDelete: folderDel,
+  };
 }
 
 /** Is anything at all allowed? Used to tell "set to nothing" from "not set". */
@@ -214,10 +256,22 @@ function inheritedFrom(folder: TreeNode | undefined): ResolvedMcpAccess {
 
 /** May the agent delete THIS entry — taking the own-only scope into account. */
 export function mayDelete(access: McpAccess, createdByAgent: boolean): boolean {
-  if (access.delete === 'any') {
-    return true;
-  }
-  return access.delete === 'own' && createdByAgent;
+  return inScope(access.delete, createdByAgent);
+}
+
+/**
+ * May the agent send THIS folder to the Trash?
+ *
+ * <p>Its own scope rather than the entry one, because the blast radius is not the same: a folder
+ * takes its whole subtree with it. Somebody may reasonably let an agent tidy up entries and never
+ * let it remove a folder.</p>
+ */
+export function mayDeleteFolder(access: McpAccess, createdByAgent: boolean): boolean {
+  return inScope(access.folderDelete, createdByAgent);
+}
+
+function inScope(scope: McpDeleteScope | undefined, createdByAgent: boolean): boolean {
+  return scope === 'any' || (scope === 'own' && createdByAgent);
 }
 
 /**
@@ -226,6 +280,11 @@ export function mayDelete(access: McpAccess, createdByAgent: boolean): boolean {
  * <p>Five, not six: the two delete scopes share one stripe and one colour, because the tree
  * answers "can an agent delete here" and the scope is a question for the form. The order is the
  * ladder's own, which is what makes a glance at the stripes read as an escalation.</p>
+ *
+ * <p><b>Still five once folders arrived, deliberately.</b> Every extra bit doubles the generated
+ * glyph set — five bits is 32 icons, eight would be 256 — and the badge answers a question about
+ * THIS row's credential, which is what a person is looking at when they glance at the tree. The
+ * folder rungs are shown where they are decided: in the form.</p>
  */
 export function accessMask(access: McpAccess): boolean[] {
   return [

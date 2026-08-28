@@ -54,6 +54,10 @@ const MCP_PREDICATE_NAMES: Readonly<Record<string, string>> = {
   mcpCreate: 'create',
   mcpDeleteOwn: 'delete-own',
   mcpDeleteAny: 'delete-any',
+  mcpFolderEdit: 'folder-edit',
+  mcpFolderCreate: 'folder-create',
+  mcpFolderDeleteOwn: 'folder-delete-own',
+  mcpFolderDeleteAny: 'folder-delete-any',
 };
 
 const MCP_NAMES: ReadonlyMap<string, number> = new Map(

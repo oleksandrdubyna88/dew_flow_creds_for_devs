@@ -8,6 +8,7 @@ import {
   grantsAnything,
   maskKey,
   mayDelete,
+  mayDeleteFolder,
   normalizeMcpAccess,
   resolveMcpAccess,
   resolveMcpInTree,
@@ -51,6 +52,9 @@ test('the ladder fills in everything a switch implies', () => {
     edit: true,
     create: true,
     delete: 'any',
+    folderCreate: false,
+    folderEdit: false,
+    folderDelete: undefined,
   });
   assert.deepEqual(normalizeMcpAccess({ edit: true }), {
     view: true,
@@ -58,7 +62,52 @@ test('the ladder fills in everything a switch implies', () => {
     edit: true,
     create: false,
     delete: undefined,
+    folderCreate: false,
+    folderEdit: false,
+    folderDelete: undefined,
   });
+});
+
+test('the folder ladder fills in the same way, and stops at the rung they share', () => {
+  // Two ladders over two objects. They meet at `view` — every folder action is about something
+  // an agent must be able to see — and nowhere else: making folders is not permission to store a
+  // credential in one.
+  assert.deepEqual(normalizeMcpAccess({ folderDelete: 'own' }), {
+    view: true,
+    use: false,
+    edit: false,
+    create: false,
+    delete: undefined,
+    folderCreate: true,
+    folderEdit: true,
+    folderDelete: 'own',
+  });
+});
+
+test('renaming folders lights the bottom rung and nothing on the entry ladder', () => {
+  const access = normalizeMcpAccess({ folderEdit: true });
+
+  assert.equal(access.view, true, '"may rename it but may not see it" must stay unrepresentable');
+  assert.equal(access.use, false);
+  assert.equal(access.create, false, 'folders and entries are separate objects');
+  assert.equal(access.folderCreate, false, 'the ladder only ever fills downwards');
+});
+
+test('an unknown folder delete scope reads as no deleting, exactly like the entry one', () => {
+  assert.equal(normalizeMcpAccess({ folderDelete: 'everything' as never }).folderDelete, undefined);
+  assert.equal(normalizeMcpAccess({ folderDelete: 'everything' as never }).folderCreate, false);
+});
+
+test('folder deletion honours its own scope, not the entry one', () => {
+  // The blast radius is not the same: a folder takes its whole subtree. Somebody may reasonably
+  // let an agent tidy up entries and never let it remove a folder.
+  const entriesOnly = normalizeMcpAccess({ delete: 'any' });
+  assert.equal(mayDelete(entriesOnly, false), true);
+  assert.equal(mayDeleteFolder(entriesOnly, false), false, 'entry deletion leaked into folders');
+
+  const own = normalizeMcpAccess({ folderDelete: 'own' });
+  assert.equal(mayDeleteFolder(own, true), true);
+  assert.equal(mayDeleteFolder(own, false), false);
 });
 
 test('a lone view stays a lone view — the ladder only ever fills DOWNWARDS', () => {
@@ -68,6 +117,9 @@ test('a lone view stays a lone view — the ladder only ever fills DOWNWARDS', (
     edit: false,
     create: false,
     delete: undefined,
+    folderCreate: false,
+    folderEdit: false,
+    folderDelete: undefined,
   });
 });
 

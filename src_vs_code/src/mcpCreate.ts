@@ -1,6 +1,6 @@
-import { McpAccess, normalizeMcpAccess } from './mcpAccess';
+import { McpAccess, resolveMcpInTree } from './mcpAccess';
 import { ENTITY_KINDS, EntityKind, EntityMetadata, TreeNode } from './types';
-import { isInTrash, isTrashFolder } from './trash';
+import { isTrashFolder } from './trash';
 
 /**
  * Level 4: an agent storing a credential it just made.
@@ -55,9 +55,13 @@ export interface CreateRequest {
 /**
  * The folders an agent may create in.
  *
- * <p>A folder's own switch only: a folder does not inherit creation from its parent, for the same
- * reason inheritance stops at one level everywhere else here — a person opening one folder to an
- * agent has said one thing, and reading it as "and everything under it" says another.</p>
+ * <p><b>Resolved by climbing, like everything else</b> (owner's decision, 2026-08-28). This used
+ * to read a folder's own switch and nothing above it, on the reasoning that opening one folder
+ * says one thing and "everything under it" says another. What that produced was two rules on one
+ * screen: `creds_list` handed an agent an entry whose `can.create` was resolved by climbing, and
+ * `creds_create` then refused it because the destination set was not — one wasted call and a
+ * field that lied. A sub-folder can still be closed on its own: an explicit empty object is an
+ * answer, and answers stop the climb.</p>
  *
  * <p>Nothing in the Trash is offered, whatever its switch says. Creating inside the Trash would
  * make an entry that is invisible the moment it exists.</p>
@@ -80,10 +84,12 @@ export function creatableFolders(
 }
 
 function opensToCreation(node: TreeNode, byId: (id: string) => TreeNode | undefined): boolean {
-  if (node.type !== 'folder' || isTrashFolder(node) || isInTrash(node, byId)) {
+  if (node.type !== 'folder' || isTrashFolder(node)) {
     return false;
   }
-  return normalizeMcpAccess(node.mcp).create === true;
+  // `resolveMcpInTree` already refuses everything inside the Trash, so that check is not repeated
+  // here — a second implementation of it is a second thing to keep true.
+  return resolveMcpInTree(node, byId).access.create === true;
 }
 
 /** What went wrong, or the one folder this request lands in. */

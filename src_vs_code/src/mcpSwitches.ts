@@ -20,6 +20,15 @@ export interface McpSwitch {
   color: DepColorKey;
   /** Is this switch on, for an access already run through the ladder? */
   on(access: McpAccess): boolean;
+  /**
+   * Does this switch get a stripe in the bar? Default yes.
+   *
+   * <p>The folder rungs do not. Every bit doubles the generated glyph set — five bits is 32
+   * icons, eight would be 256 — and the badge answers a question about the row a person is
+   * looking at, which for an entry is its credential. The folder rungs are shown where they are
+   * decided: in the form.</p>
+   */
+  inBar?: boolean;
 }
 
 export const MCP_SWITCHES: readonly McpSwitch[] = [
@@ -65,6 +74,38 @@ export const MCP_SWITCHES: readonly McpSwitch[] = [
     color: 'depColor3',
     on: (a) => a.delete === 'any',
   },
+  {
+    id: 'mcpFolderEdit',
+    label: 'Agents may rename and move folders',
+    why: 'Renaming, moving and retyping a folder — never its Agent access switches. A permission that could change permissions would be a permission to grant itself every other one. A folder can only be moved somewhere the same grant already reaches.',
+    color: 'depColor2',
+    inBar: false,
+    on: (a) => a.folderEdit === true,
+  },
+  {
+    id: 'mcpFolderCreate',
+    label: 'Agents may create folders',
+    why: 'For an agent putting what it provisioned somewhere sensible instead of dropping it in the first folder you left open.',
+    color: 'depColor7',
+    inBar: false,
+    on: (a) => a.folderCreate === true,
+  },
+  {
+    id: 'mcpFolderDeleteOwn',
+    label: 'Agents may delete folders they created',
+    why: 'Tidying up after itself. To the Trash, so it is reversible — but a folder takes its whole contents with it.',
+    color: 'depColor3',
+    inBar: false,
+    on: (a) => a.folderDelete === 'own',
+  },
+  {
+    id: 'mcpFolderDeleteAny',
+    label: 'Agents may delete any folder here',
+    why: 'Including folders you made yourself, and everything inside them. The widest grant on this page: read it twice.',
+    color: 'depColor3',
+    inBar: false,
+    on: (a) => a.folderDelete === 'any',
+  },
 ];
 
 /**
@@ -75,7 +116,9 @@ export const MCP_SWITCHES: readonly McpSwitch[] = [
  * `accessMask`, which is what the tree icon and the viewer are generated from — the number five
  * is stated once, in the shape of the ladder, and never typed again.</p>
  */
-export const MCP_BAR_COLORS: readonly DepColorKey[] = [...new Set(MCP_SWITCHES.map((s) => s.color))];
+export const MCP_BAR_COLORS: readonly DepColorKey[] = [
+  ...new Set(MCP_SWITCHES.filter((s) => s.inBar !== false).map((s) => s.color)),
+];
 
 /**
  * The bar, from a mask.

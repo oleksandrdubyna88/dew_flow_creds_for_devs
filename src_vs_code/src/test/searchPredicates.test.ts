@@ -53,9 +53,20 @@ test('has:cli asks the alias map, not the node', () => {
 });
 
 test('every switch in the catalog has an mcp: predicate, answered by the same on()', () => {
-  // Completeness against the catalog: a seventh switch without a predicate name throws at
-  // module load; this pins that the six that exist all parse and all answer.
-  for (const name of ['visible', 'usable', 'rotate', 'create', 'delete-own', 'delete-any']) {
+  // Completeness against the catalog: a switch without a predicate name throws at module load;
+  // this pins that every one that exists parses and answers.
+  for (const name of [
+    'visible',
+    'usable',
+    'rotate',
+    'create',
+    'delete-own',
+    'delete-any',
+    'folder-edit',
+    'folder-create',
+    'folder-delete-own',
+    'folder-delete-any',
+  ]) {
     const { predicates, unknown } = parseQuery(`mcp:${name}`);
     assert.deepEqual(unknown, [], `mcp:${name} went unrecognised`);
     assert.equal(predicates.length, 1);
@@ -69,7 +80,20 @@ test('every switch in the catalog has an mcp: predicate, answered by the same on
     matchesPredicates(entity(), usable, caps({ mcpAccess: () => ({ view: true }) })),
     false,
   );
-  assert.equal(MCP_SWITCHES.length, 6, 'a new switch needs a predicate name and a test row');
+  assert.equal(MCP_SWITCHES.length, 10, 'a new switch needs a predicate name and a test row');
+
+  // The folder rungs answer from their own fields, not from the entry ones — the whole point of
+  // giving folders a second ladder rather than widening the first.
+  const folderEdit = parseQuery('mcp:folder-edit').predicates;
+  assert.equal(
+    matchesPredicates(entity(), folderEdit, caps({ mcpAccess: () => ({ folderEdit: true }) })),
+    true,
+  );
+  assert.equal(
+    matchesPredicates(entity(), folderEdit, caps({ mcpAccess: () => ({ edit: true }) })),
+    false,
+    'the entry rotate switch answered a folder question',
+  );
 });
 
 test('predicates AND together, and a folder satisfies none of them', () => {

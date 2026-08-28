@@ -19,31 +19,53 @@
 export function mcpSwitchScript(decidedHere: boolean): string {
   return `
   // ---- agent access ------------------------------------------------------
-  // A ladder: ticking a rung turns on everything below it and locks those, so the state
-  // "may change it but may not see it" cannot be assembled by clicking.
+  // TWO ladders over two objects, meeting at the bottom rung. Ticking a rung turns on everything
+  // below it and locks those, so "may rename it but may not see it" cannot be assembled by
+  // clicking any more than its entry-side twin can.
   var MCP_RUNGS = ['mcpView', 'mcpUse', 'mcpEdit', 'mcpCreate'];
-  function mcpApplyLadder(changedId) {
+  var MCP_FOLDER_RUNGS = ['mcpView', 'mcpFolderEdit', 'mcpFolderCreate'];
+  var MCP_DELETES = ['mcpDeleteAny', 'mcpDeleteOwn'];
+  var MCP_FOLDER_DELETES = ['mcpFolderDeleteAny', 'mcpFolderDeleteOwn'];
+
+  function mcpHighest(rungs, deletes) {
     var highest = -1;
-    for (var i = 0; i < MCP_RUNGS.length; i++) {
-      if (chk(MCP_RUNGS[i])) { highest = i; }
+    for (var i = 0; i < rungs.length; i++) { if (chk(rungs[i])) { highest = i; } }
+    for (var d = 0; d < deletes.length; d++) { if (chk(deletes[d])) { highest = rungs.length; } }
+    return highest;
+  }
+  // Only ever ADDS a constraint. mcpView belongs to both ladders, and a pass that re-enabled it
+  // would undo the other ladder's lock — every rung is freed once, up front, instead.
+  function mcpLock(rungs, highest) {
+    for (var j = 0; j < rungs.length; j++) {
+      var el = document.getElementById(rungs[j]);
+      if (el && j < highest) { el.checked = true; el.disabled = true; }
     }
-    if (chk('mcpDeleteAny') || chk('mcpDeleteOwn')) { highest = MCP_RUNGS.length; }
-    for (var j = 0; j < MCP_RUNGS.length; j++) {
-      var el = document.getElementById(MCP_RUNGS[j]);
-      if (!el) { continue; }
-      if (j < highest) { el.checked = true; el.disabled = true; } else { el.disabled = false; }
+  }
+  // The two scopes of one delete are exclusive: "anything" already includes "what it created".
+  function mcpExclusive(changedId, wide, narrow) {
+    if (changedId === wide && chk(wide)) {
+      var n = document.getElementById(narrow);
+      if (n) { n.checked = false; }
     }
-    // The two delete scopes are exclusive: "anything" already includes "what it created".
-    if (changedId === 'mcpDeleteAny' && chk('mcpDeleteAny')) {
-      var own = document.getElementById('mcpDeleteOwn');
-      if (own) { own.checked = false; }
+    if (changedId === narrow && chk(narrow)) {
+      var w = document.getElementById(wide);
+      if (w) { w.checked = false; }
     }
-    if (changedId === 'mcpDeleteOwn' && chk('mcpDeleteOwn')) {
-      var any = document.getElementById('mcpDeleteAny');
-      if (any) { any.checked = false; }
+  }
+  function mcpApplyLadder(changedId) {
+    var every = MCP_RUNGS.concat(['mcpFolderEdit', 'mcpFolderCreate']);
+    for (var i = 0; i < every.length; i++) {
+      var el = document.getElementById(every[i]);
+      if (el) { el.disabled = false; }
     }
+    mcpLock(MCP_RUNGS, mcpHighest(MCP_RUNGS, MCP_DELETES));
+    mcpLock(MCP_FOLDER_RUNGS, mcpHighest(MCP_FOLDER_RUNGS, MCP_FOLDER_DELETES));
+    mcpExclusive(changedId, 'mcpDeleteAny', 'mcpDeleteOwn');
+    mcpExclusive(changedId, 'mcpFolderDeleteAny', 'mcpFolderDeleteOwn');
     mcpPaintBar();
   }
+  // Five stripes, the entry ladder's. The folder rungs are not in the bar — every bit doubles the
+  // generated glyph set, and the badge answers a question about this row's credential.
   function mcpPaintBar() {
     var on = [chk('mcpView'), chk('mcpUse'), chk('mcpEdit'), chk('mcpCreate'),
               chk('mcpDeleteAny') || chk('mcpDeleteOwn')];
@@ -58,11 +80,15 @@ export function mcpSwitchScript(decidedHere: boolean): string {
   function collectMcp() {
     if (!mcpTouched && !${decidedHere}) { return undefined; }
     var scope = chk('mcpDeleteAny') ? 'any' : (chk('mcpDeleteOwn') ? 'own' : undefined);
+    var folderScope = chk('mcpFolderDeleteAny') ? 'any'
+                    : (chk('mcpFolderDeleteOwn') ? 'own' : undefined);
     return { view: chk('mcpView'), use: chk('mcpUse'), edit: chk('mcpEdit'),
-             create: chk('mcpCreate'), delete: scope };
+             create: chk('mcpCreate'), delete: scope,
+             folderEdit: chk('mcpFolderEdit'), folderCreate: chk('mcpFolderCreate'),
+             folderDelete: folderScope };
   }
   (function () {
-    var ids = MCP_RUNGS.concat(['mcpDeleteOwn', 'mcpDeleteAny']);
+    var ids = MCP_RUNGS.concat(MCP_DELETES, ['mcpFolderEdit', 'mcpFolderCreate'], MCP_FOLDER_DELETES);
     for (var i = 0; i < ids.length; i++) {
       (function (id) {
         var el = document.getElementById(id);
