@@ -2405,6 +2405,25 @@ Left for a person, recorded in the plan: T2 (the `.localhost` RP-ID probe — Ed
 owner runs it) and the Marketplace screenshots. T5 (tags), T11, T24b and T30 closed on 2026-08-28
 after the owner's answers; T25 stays as shipped in 0.80.0 by his choice.
 
+## The split of `extension.ts` (roadmap A1, in progress) and the shapes union (A4)
+
+Stage 1 (2026-08-28) moved every module-level helper out of `extension.ts` — 5689 → 4661 lines —
+into seven feature modules: `entityViewerCommands.ts`, `entityEditCommands.ts`, `vpnRun.ts`,
+`importCommands.ts`, `mcpHooks.ts`, `installFlow.ts`, `configCommands.ts`. Moved verbatim, as the
+roadmap asked; each module's imports were resolved by the compiler from `extension.ts`'s own import
+table, and the window's environment collection became `envCollectionRef.ts` so a moved function can
+reach it. The complexity and function-length ceilings are a per-file disable on the moved code
+(the A2 pattern), naming only the rules each file breaks — a boundary for new code there. Stage 2,
+the command registrations inside `activate`, is the rest of A1.
+
+`entityShape.ts` (A4) is the union of the eight shapes — `ssh`, `sshkey`, `db`, `vpn`, `terminal`,
+`script`, `config`, `credential` — each with the fields that belong to it. `shapeOf` is the one door
+from the on-disk record to the union (a pre-0.54 record's kind resolves the way every reader
+resolves it), `shapeAs` serves a reader of one kind, and a `Record<EntityKind, …>` makes a ninth
+kind without a shape a compile error. `EntityMetadata` itself stays one interface: it is the record
+in every vault, share and backup, and its readers are not rewritten — the deviation from the
+roadmap's original wording, recorded there.
+
 ## A share's label is bound to its ciphertext (0.82.1)
 
 `sealShare` passes the four label fields — `fromEmail`, `entityName`, `entityKind`, `createdAt` —

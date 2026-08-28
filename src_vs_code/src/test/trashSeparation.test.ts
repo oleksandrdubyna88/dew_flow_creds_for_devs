@@ -81,7 +81,8 @@ test('the trash is a move, and never a delete in disguise', () => {
 test('only the places that should may move things to the trash', () => {
   // A short allow-list rather than a blanket permission: a new caller is a decision somebody
   // should make deliberately, and adding it here is how they say so.
-  const allowed = new Set(['storageManager.ts', 'extension.ts']);
+  // mcpHooks.ts: the broker's delete verb — moveEntryToTrash, moved out of extension.ts (A1, 2026-08-28).
+  const allowed = new Set(['storageManager.ts', 'extension.ts', 'mcpHooks.ts']);
   const offenders = fs
     .readdirSync(SRC)
     .filter((name) => name.endsWith('.ts'))

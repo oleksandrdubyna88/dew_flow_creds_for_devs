@@ -10,15 +10,13 @@ import * as vscode from 'vscode';
 import { copiedMessage, copySecret, setSecretClipboardTtl } from './secretClipboard';
 import { AuthError, signIn } from './authManager';
 import { backupToNas, restoreFromBackup } from './backupManager';
-import { formatEntityBlock, pickFolderType, pickTargetFolder, promptFolderName, pickAccount } from './dialogs';
-import { KeyCandidate, showEntityForm } from './entityFormPanel';
-import { pinPreview, showEntityView } from './entityViewPanel';
+import { pickFolderType, pickTargetFolder, promptFolderName, pickAccount } from './dialogs';
+import { showEntityForm } from './entityFormPanel';
+import { pinPreview } from './entityViewPanel';
 import { runRestoreFromTrash } from './restoreCommandHost';
 import { runBurnNow } from './burnNowCommand';
 import { runServerMetrics } from './serverMetricsCommand';
-import { describeRemaining } from './entityExpiry';
 import { describeInstall } from './installWords';
-import { isTrackedHere } from './gitTracked';
 import { GoogleAuthProvider } from './googleAuthProvider';
 import { nasPathFor, setAccountNasPath } from './nasPaths';
 import { confirmCommandMessage, isCommandTrusted, trustCommand } from './commandTrust';
@@ -35,27 +33,10 @@ import { buildCommandLine, describeCommand } from './commandLine';
 import { SyncReadiness, syncReadiness } from './syncReadiness';
 import { BackupScheduler } from './backupScheduler';
 import { VaultTransport, isServerLocation } from './vaultTransport';
-import {
-  installKeyToSystem,
-  lockToOwner,
-  removeInstalledKey,
-  materializeVpnConfig,
-  materializedKeyPath,
-  purgeMaterializedKeys,
-  safeFileComponent,
-} from './keyInstaller';
-import {
-  VpnPlatform,
-  isVpnStartable,
-  vpnConfigFileName,
-  vpnStartCommand,
-  vpnStopCommand,
-  vpnTunnelName,
-} from './vpnCommand';
+import { installKeyToSystem, lockToOwner, removeInstalledKey, materializedKeyPath, purgeMaterializedKeys, safeFileComponent } from './keyInstaller';
 import { StorageManager } from './storageManager';
-import { Revision } from './revisionHistory';
 import { SyncManager } from './syncManager';
-import { buildSshCommand, describeSshTarget } from './terminalManager';
+import { describeSshTarget } from './terminalManager';
 import { connectEntity } from './sshConnect';
 import { CredsAgentServer } from './credsAgentServer';
 import { UseActionRegistry } from './useActions';
@@ -70,13 +51,6 @@ import { VaultKeys } from './vaultKeys';
 import { isKeyWrap, webauthnWraps } from './keyWrap';
 import { decryptJson, encryptJson, readVaultWraps } from './cryptoUtils';
 import { KeyAddHost, addSecurityKey, offerKeyMigration } from './securityKeyAdd';
-import {
-  dbDisplay,
-  revisionSecretReader,
-  totpViewFor,
-  secretResolver,
-  storageSecretReader,
-} from './viewerOptions';
 import { snapshotForRevision } from './revisionSnapshot';
 import {
   envelopeWithRecoveryCode,
@@ -126,25 +100,19 @@ import { ArrivalHighlights } from './arrivalHighlight';
 import { carryThroughDetails } from './attachmentMeta';
 import { wireSearchBox } from './searchBox';
 import { showHelp } from './helpPanel';
-import type { EntityFormOptions } from './entityFormPanel';
-import { ViewerClicks, ViewerTab, clickToView } from './viewerClicks';
+import { ViewerClicks, clickToView } from './viewerClicks';
 import { warnIfKeyringMissing } from './keyringWarningHost';
-import { saveTextAs } from './saveTextAs';
 import { AgentDoors, DoorSources, doorsOf } from './agentDoors';
-import { offerToInstall } from './toolEnsure';
 import { ARRIVAL_WINDOW_MS } from './arrivalHighlight';
 import { DepDecorationProvider } from './depDecorations';
 import { ExpansionMemory, expansionKey } from './treeExpansion';
-import { TRASH_RETENTION_CHOICES, isInTrash } from './trash';
-import { showFolderForm } from './folderFormPanel';
+import { TRASH_RETENTION_CHOICES } from './trash';
 import { formPanels, lockNotice } from './formPanels';
-import { configFileNameFor, trackedCopyWarning } from './configFile';
-import { describeChanges, diffConfigs, summarizeChanges } from './configDiff';
-import { ConfigHolder, ConfigRouteSources } from './brokerConfigRoute';
+import { configFileNameFor } from './configFile';
+import { ConfigRouteSources } from './brokerConfigRoute';
 import { enableConfigAccess, revokeConfigAccess } from './configAccess';
 import { runBounded } from './sshExecRunner';
 import { writeConfigFile } from './configWrite';
-import { mcpAsOfVersion, mcpFor } from './viewerOptions';
 import { buildDependencyCandidates, buildDependencyColorMap } from './depGraph';
 import { EntityFlagsRefresher, entityFlagSource } from './entityFlags';
 import { createDiagnosticLog } from './diagnosticLog';
@@ -200,35 +168,26 @@ import {
 } from './cliAliases';
 import { EphemeralSweeper } from './ephemeralSweeper';
 import { maskEntriesFor } from './maskEntries';
-import { findUsableEntry, visibleConfigDetails, visibleMcpEntries } from './mcpEntries';
+import { visibleConfigDetails, visibleMcpEntries } from './mcpEntries';
 import { McpEntriesCache } from './mcpEntriesCache';
 import { RotateDeps, rotateAction } from './rotateAction';
 import { showMcpLog } from './mcpLogPanel';
-import { CreateRequest, chooseTarget, creatableFolders, detailsFor, summarizeCreate } from './mcpCreate';
 import { generateSecret } from './secretKinds';
-import type { EntityKind } from './types';
-import { CreateDecision, McpCreateHooks } from './brokerMcpDoor';
-import { McpUseLookup } from './brokerRequests';
-import { CREDS_CLI, CREDS_MCP, CredsAction, CredsProduct, CredsRid, ridFor } from './credsInstall';
-import { InstallHost, binaryPath, installMenu, performInstall, removeInstall } from './binaryInstaller';
-import { offerMcpClientConfig } from './mcpInstallTarget';
+import { CREDS_CLI, CREDS_MCP, CredsProduct, ridFor } from './credsInstall';
+import { binaryPath, installMenu } from './binaryInstaller';
 import { runWsl, runWslRaw } from './wslProcess';
 import { MaskEntry, buildMaskTable } from './secretMasker';
 import { describeScan, scanForSecrets } from './secretScan';
-import { RemoteState, buildDefaultFolders } from './defaultFolders';
+import { buildDefaultFolders } from './defaultFolders';
 import * as childProcess from 'node:child_process';
 import * as fs from 'node:fs';
-import { resolveVpnLauncher } from './vpnExec';
 import { applyEnvBindings, bindableFieldValue } from './envApply';
-import { envProbeCommand } from './envProbe';
-import { imageMime } from './attachment';
 import { syncReminderDue } from './syncReminder';
 import { detectSecretPrints, resolveScriptEnv } from './scriptRender';
 import { scriptRunPlan } from './scriptRun';
 import { buildExternalBundle, isExternalBundle, remapExternalIds } from './externalBundle';
 import { withoutPassword } from './dbConnString';
-import { describeTotp, parseTotpSecret, totpSnapshot } from './totp';
-import { hostKeyFingerprint, parseHostKey } from './hostKeyPin';
+import { totpSnapshot } from './totp';
 import { RefSource, resolveSecretRefs } from './secretRef';
 import {
   buildCommandLineWithRefs,
@@ -249,7 +208,7 @@ import {
 } from './secretGenerator';
 import { folderPath, quickOpenItems } from './quickOpen';
 import { runHygieneScan } from './hygieneScan';
-import { ImportedEntity, parseImport, toTreeNodes } from './importFormats';
+import { parseImport } from './importFormats';
 import { LockStatusBar } from './statusBar';
 import {
   asElement,
@@ -273,12 +232,34 @@ import {
   TreeElement,
   TreeNode,
 } from './types';
-import { parseFields, serializeFields } from './entityFields';
+import { serializeFields } from './entityFields';
 import { applySecrets } from './applyFormSecrets';
-
+import { mcpUseLookup } from './mcpHooks';
+import { moveEntryToTrash } from './mcpHooks';
+import { mcpCreateHooks } from './mcpHooks';
+import { runVpn } from './vpnRun';
+import { probeRemote } from './installFlow';
+import { nodeAt } from './entityViewerCommands';
+import { resolveLocation } from './importCommands';
+import { collectKeyCandidates } from './entityEditCommands';
+import { warnIfTrackedCopy } from './configCommands';
+import { applyDependencyColors } from './entityEditCommands';
+import { editNode } from './entityEditCommands';
+import { openEntityViewer } from './entityViewerCommands';
+import { openRevisionViewer } from './entityViewerCommands';
+import { importEntities } from './importCommands';
+import { saveVpnConfigToFile } from './vpnRun';
+import { updateConfigDetails } from './entityEditCommands';
+import { showConfigChanges } from './configCommands';
+import { applyInstallChoice } from './installFlow';
+import { askForEntryId } from './mcpHooks';
+import { collectConfigHolders } from './configCommands';
+import { onPath } from './installFlow';
+import { setEnvCollection } from './envCollectionRef';
+import { DoorsFor } from './entityEditCommands';
+import { envCollection } from './envCollectionRef';
 
 /** Set in activate(); the module-level slot keeps editNode's signature unchanged. */
-let envCollection: vscode.GlobalEnvironmentVariableCollection;
 
 /**
  * How long the keychain must be quiet before a foreign write triggers a flag refresh.
@@ -286,10 +267,8 @@ let envCollection: vscode.GlobalEnvironmentVariableCollection;
  */
 const SECRETS_SETTLE_MS = 400;
 
-
-
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
-  envCollection = context.environmentVariableCollection;
+  setEnvCollection(context.environmentVariableCollection);
 
   // One place decides how long a copied secret lingers; see secretClipboard.ts for why
   // it is a settable default rather than an argument at every copy site.
@@ -316,7 +295,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     void vscode.window.showWarningMessage(`CredsForDevs: ${storage.metadataFault}`);
   }
   const provider = new CredTreeDataProvider(storage, context.extensionUri);
-
 
   // CLI aliases: name → which entry, and nothing else. Kept in globalState rather than in the
   // vault because a name is machine-local by nature — the terminal that types it is on this
@@ -380,7 +358,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   provider.hasCliAlias = (accountId, nodeId) =>
     aliasFor(aliasMap(), accountId, nodeId) !== undefined;
   context.subscriptions.push({ dispose: () => bridges.dispose() });
-
 
   // Never let decrypted SSH key material outlive a session: clear any that a
   // crash left behind, and clear again on shutdown (see deactivate()).
@@ -785,7 +762,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const sshAgent = new SshAgentManager(
     storage,
     storageDir,
-    envCollection,
+    envCollection(),
     () => vaultKeys.noteUserActivity(),
     // Published in the endpoint file so a relay inside WSL can find this agent without a pid,
     // and — when the setting is on — used to raise and lower the relay with the agent itself.
@@ -878,7 +855,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     ...sshDeps,
     trustStore: context.globalState,
     applyEnv: (details: EntityMetadata, accountId: string) =>
-      applyEnvBindings(envCollection, storage, accountId, details),
+      applyEnvBindings(envCollection(), storage, accountId, details),
     onPath,
     // The grant carries the account, so the tree element runVpn expects can be rebuilt
     // exactly — the same function the human Start button calls, so an agent-opened
@@ -1304,7 +1281,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       log.info('bridge', `socket check did not complete: ${describeError(error)}`);
     }
   }
-
 
   /**
    * Install `creds` on the host this entity points at.
@@ -2390,7 +2366,7 @@ ${detail}
     await applySecrets(storage, location.accountId, id, result);
     void warnIfTrackedCopy(result.details);
     await applyDependencyColors(storage, location.accountId, result.dependsOnColors);
-    await applyEnvBindings(envCollection, storage, location.accountId, result.details);
+    await applyEnvBindings(envCollection(), storage, location.accountId, result.details);
     mutated();
     await announceArrival(location.accountId, id);
   });
@@ -4619,106 +4595,7 @@ export function deactivate(): void {
 
 // ---------- command bodies ----------
 
-interface NodeLocation {
-  accountId: string;
-  parentId: string | null;
-}
-
-
-/**
- * What is waiting for this account at its sync location, as far as we can tell.
- *
- * <p>Deliberately does NOT try to decrypt: a vault file that exists is proof the account
- * has a structure somewhere, and that is the whole question. Being unable to open it yet
- * is the normal state of a machine that has just signed in.</p>
- */
-async function probeRemote(
-  account: StoredAccount,
-  transports: TransportFactory,
-): Promise<RemoteState> {
-  const transport = transports.forAccount(account);
-  if (transport === undefined) {
-    return 'no-location';
-  }
-  try {
-    return (await transport.readVault(account)) === undefined ? 'empty' : 'unknown';
-  } catch {
-    // Unreachable is not empty. Treating it as empty is exactly the mistake.
-    return 'unknown';
-  }
-}
-
-
-/** Where a new node goes, based on what the command was invoked on. */
-async function resolveLocation(
-  element: TreeElement | undefined,
-  storage: StorageManager,
-  accountPlaceholder: string,
-): Promise<NodeLocation | undefined> {
-  if (element?.kind === 'account') {
-    return { accountId: element.account.accountId, parentId: null };
-  }
-  if (element?.kind === 'node') {
-    return {
-      accountId: element.accountId,
-      parentId: element.node.type === 'folder' ? element.node.id : (element.node.parentId ?? null),
-    };
-  }
-  const account = await pickAccount(storage, accountPlaceholder);
-  return account === undefined ? undefined : { accountId: account.accountId, parentId: null };
-}
-
 /** Other entities of the account that can serve as an SSH key source. */
-
-/**
- * Stamp the picked colour onto the entities this one now depends ON.
- *
- * <p>A write to a DIFFERENT record than the one being saved, and deliberately so: the colour
- * belongs to the target, which is what makes "change it once and every dependent follows" true
- * with no propagation code anywhere — the dependents do not store a colour to update. The cost
- * is this one extra write, and a crash between the two leaves the colour unset, which the next
- * save re-picks. Self-healing, and the same single-node-at-a-time shape every other mutator
- * here has.</p>
- *
- * <p>Unchanged colours are skipped rather than rewritten: a rewrite would bump the target's
- * version vector and make an untouched entity look edited to every other machine.</p>
- */
-async function applyDependencyColors(
-  storage: StorageManager,
-  accountId: string,
-  picks: readonly { targetId: string; color: string }[],
-): Promise<void> {
-  for (const pick of picks) {
-    const target = storage.getNode(accountId, pick.targetId);
-    if (target?.details !== undefined && target.details.depColor !== pick.color) {
-      await storage.updateNode(accountId, {
-        ...target,
-        details: { ...target.details, depColor: pick.color },
-      });
-    }
-  }
-}
-
-async function collectKeyCandidates(
-  storage: StorageManager,
-  accountId: string,
-  excludeEntityId: string,
-): Promise<KeyCandidate[]> {
-  const candidates: KeyCandidate[] = [];
-  for (const node of storage.getNodes(accountId)) {
-    if (node.type !== 'entity' || node.id === excludeEntityId || !node.details) {
-      continue;
-    }
-    const hasKey =
-      node.details.isSshKey === true ||
-      node.details.sshKeyPath !== undefined ||
-      (await storage.getPrivateKey(accountId, node.id)) !== undefined;
-    if (hasKey) {
-      candidates.push({ id: node.id, name: node.name });
-    }
-  }
-  return candidates;
-}
 
 /**
  * What the terminal says about masking, told truthfully.
@@ -4743,86 +4620,6 @@ export function maskingBanner(secrets: readonly { value: string; label: string }
 }
 
 /**
- * Land an import: the folders it asked for, then the nodes, then their secrets.
- *
- * <p>Folders are created once and reused, so a hundred rows from one Bitwarden folder produce
- * one folder here rather than a hundred. Secrets go through `StorageManager`, which puts them
- * in the keychain — never into the node metadata that syncs in plaintext.</p>
- */
-async function importEntities(
-  storage: StorageManager,
-  location: NodeLocation,
-  entities: readonly ImportedEntity[],
-): Promise<number> {
-  const folders = new Map<string, string>();
-  const folderFor = async (name: string | undefined): Promise<string | null> => {
-    if (name === undefined || name.length === 0) {
-      return location.parentId;
-    }
-    const existing = folders.get(name);
-    if (existing !== undefined) {
-      return existing;
-    }
-    const id = StorageManager.newId();
-    await storage.addNode(location.accountId, {
-      id,
-      name,
-      type: 'folder',
-      parentId: location.parentId,
-      folderType: 'any',
-    });
-    folders.set(name, id);
-    return id;
-  };
-
-  // Resolved up front so `toTreeNodes` stays pure and synchronous.
-  const parents = new Map<string, string | null>();
-  for (const entity of entities) {
-    const key = entity.folder ?? '';
-    if (!parents.has(key)) {
-      parents.set(key, await folderFor(entity.folder));
-    }
-  }
-
-  const made = toTreeNodes(entities, () => StorageManager.newId(), (folder) => parents.get(folder ?? '') ?? null);
-  for (const { node, secrets } of made) {
-    await storage.addNode(location.accountId, node);
-    await storage.setPassword(location.accountId, node.id, secrets.password);
-    await storage.setNotes(location.accountId, node.id, secrets.notes);
-    if (secrets.privateKey !== undefined) {
-      await storage.setPrivateKey(location.accountId, node.id, secrets.privateKey);
-    }
-    if (secrets.dbConnection !== undefined) {
-      await storage.setDbConnection(location.accountId, node.id, secrets.dbConnection);
-    }
-    if (secrets.totp !== undefined) {
-      await storage.setTotp(location.accountId, node.id, secrets.totp);
-    }
-  }
-  return made.length;
-}
-
-/** Persist the password/private-key changes coming out of the form. */
-/**
- * Change one config-only field on an entity, leaving everything else exactly as it was.
- *
- * <p>A read-modify-write rather than a targeted setter, because `updateNode` takes a whole node —
- * and spelling the spread at both call sites is how one of them eventually drops a field nobody
- * was thinking about.</p>
- */
-async function updateConfigDetails(
-  storage: StorageManager,
-  element: { accountId: string; node: TreeNode },
-  change: Partial<EntityMetadata>,
-): Promise<void> {
-  const details = element.node.details;
-  if (details === undefined) {
-    return;
-  }
-  await storage.updateNode(element.accountId, { ...element.node, details: { ...details, ...change } });
-}
-
-/**
  * What the config read route needs: which entries carry a key hash, and how to read one.
  *
  * <p>The walk stays here rather than in the route because it is a question about a VAULT — the
@@ -4838,815 +4635,13 @@ function configRouteSources(storage: StorageManager): ConfigRouteSources {
   };
 }
 
-function collectConfigHolders(storage: StorageManager): ConfigHolder[] {
-  const found: ConfigHolder[] = [];
-  for (const { accountId } of storage.getAccounts()) {
-    const byId = (id: string): TreeNode | undefined => storage.getNode(accountId, id);
-    for (const node of storage.getNodes(accountId)) {
-      addConfigHolder(found, accountId, node, byId);
-    }
-  }
-  return found;
-}
-
-function addConfigHolder(
-  found: ConfigHolder[],
-  accountId: string,
-  node: TreeNode,
-  byId: (id: string) => TreeNode | undefined,
-): void {
-  const details = node.details;
-  if (details?.configKeyHash === undefined || isInTrash(node, byId)) {
-    return;
-  }
-  found.push({
-    accountId,
-    entityId: node.id,
-    entityName: node.name,
-    format: details.configFormat ?? 'json',
-    configKeyHash: details.configKeyHash,
-  });
-}
-
-/**
- * Say something when the file this config describes is ALSO in the repository.
- *
- * <p>Fire-and-forget on purpose: it runs `git` and a save must not wait on that. The failure it
- * catches is quiet — the vault becomes a second place to keep the secrets rather than the place —
- * so a warning that arrives a moment late is still the whole value.</p>
- */
-async function warnIfTrackedCopy(details: EntityMetadata): Promise<void> {
-  const folder = vscode.workspace.workspaceFolders?.[0];
-  if (details.isConfig !== true || folder === undefined) {
-    return;
-  }
-  const name = configFileNameFor(details.configFileName, details.configFormat ?? 'json', details.name);
-  if (await isTrackedHere(name, folder.uri.fsPath)) {
-    void vscode.window.showWarningMessage(trackedCopyWarning(name));
-  }
-}
-
-/**
- * What changed since the previous version of this config, by KEY.
- *
- * <p>Against the newest revision rather than against a sync event, deliberately: a body arrives
- * from a colleague's sync, an accepted share, a restore, or the person's own edit, and all four
- * put the previous one into history. Asking history covers every route with one answer instead of
- * instrumenting each of them.</p>
- *
- * <p>Shown as a modal list of KEY NAMES and no values. A config holds connection strings and
- * passwords; which keys moved is the reviewable half and carries neither.</p>
- */
-async function showConfigChanges(
-  storage: StorageManager,
-  accountId: string,
-  node: TreeNode,
-): Promise<void> {
-  const details = node.details;
-  const history = await storage.getHistory(accountId, node.id);
-  const previous = history[0]?.secrets.config;
-  if (details === undefined || previous === undefined) {
-    void vscode.window.showInformationMessage(`"${node.name}" has no previous version to compare with.`);
-    return;
-  }
-  const current = (await storage.getConfigBody(accountId, node.id)) ?? '';
-  const changes = diffConfigs(details.configFormat ?? 'json', previous, current);
-  void vscode.window.showInformationMessage(
-    `"${node.name}": ${summarizeChanges(changes)} since ${new Date(history[0].at).toLocaleString()}.`,
-    { modal: true, detail: describeChanges(changes) },
-  );
-}
-
-/**
- * A folder's own form — its name, and the agent access its contents inherit.
- *
- * <p>This used to be `promptFolderName`, an input box with one field in it, because a folder had
- * nothing else to say. Agent access is inherited from the folder, so there is now a second thing,
- * and five permissions do not fit in a text prompt.</p>
- *
- * <p>An empty name leaves the folder alone rather than blanking it: the box comes back empty when
- * somebody clears it and saves, and a nameless folder is not a thing anyone asked for.</p>
- */
-async function editFolder(
-  accountId: string,
-  node: TreeNode,
-  storage: StorageManager,
-  onMutated: () => void,
-): Promise<void> {
-  const nodes = storage.getNodes(accountId);
-  const result = await showFolderForm({
-    name: node.name,
-    mcp: node.mcp,
-    entryCount: nodes.filter((n) => n.parentId === node.id && n.type === 'entity').length,
-    inTrash: isInTrash(node, (id) => storage.getNode(accountId, id)),
-  });
-  if (result === undefined) {
-    return;
-  }
-  await storage.updateNode(accountId, {
-    ...node,
-    name: result.name.length > 0 ? result.name : node.name,
-    mcp: result.mcp,
-  });
-  onMutated();
-}
-
-type DoorsFor = (accountId: string, node: TreeNode) => Partial<Pick<EntityFormOptions, 'agentDoors' | 'entityTarget'>>;
-
-async function editNode(
-  accountId: string,
-  node: TreeNode,
-  storage: StorageManager,
-  onMutated: () => void,
-  doorsFor: DoorsFor = () => ({}),
-): Promise<void> {
-  if (node.type === 'folder') {
-    await editFolder(accountId, node, storage, onMutated);
-    return;
-  }
-
-  if (!node.details) {
-    return;
-  }
-  const storedHostKey = parseHostKey(node.details.hostKey);
-  // The form is told a seed exists and how it is configured — never the seed itself.
-  const storedTotp = await storage.getTotp(accountId, node.id);
-  const storedTotpParsed = storedTotp === undefined ? undefined : parseTotpSecret(storedTotp);
-  const storedTotpDescription =
-    storedTotpParsed === undefined ? undefined : describeTotp(storedTotpParsed.config);
-  const result = await showEntityForm({
-    mode: 'edit',
-    entityId: node.id,
-    initial: node.details,
-    lockedKind: folderKindOf(storage, accountId, node.parentId ?? null),
-    hasStoredPassword: (await storage.getPassword(accountId, node.id)) !== undefined,
-    hasStoredPrivateKey: (await storage.getPrivateKey(accountId, node.id)) !== undefined,
-    hasStoredAttachment: (await storage.getAttachment(accountId, node.id)) !== undefined,
-    createdAt: node.createdAt,
-    updatedAt: node.updatedAt,
-    hasStoredImage: (await storage.getImage(accountId, node.id)) !== undefined,
-    // T27: the edit form shows WHAT is stored, not only that something is.
-    imageDataUri: await (async () => {
-      const b64 = await storage.getImage(accountId, node.id);
-      const mime = node.details?.imageFileName === undefined ? undefined : imageMime(node.details.imageFileName);
-      return b64 !== undefined && mime !== undefined ? `data:${mime};base64,${b64}` : undefined;
-    })(),
-    hasStoredVpnConfig: (await storage.getVpnConfig(accountId, node.id)) !== undefined,
-    hasStoredDbConnection: (await storage.getDbConnection(accountId, node.id)) !== undefined,
-    initialDbConnection: await storage.getDbConnection(accountId, node.id),
-    initialNotes: (await storage.getNotes(accountId, node.id)) ?? node.details?.notes,
-    initialFields: await storage.getFields(accountId, node.id),
-    // Prefilled, unlike the password and the key: a config is a document somebody opens Edit to
-    // change one line of, and a blank box would make every edit a retype from memory.
-    initialConfigBody: await storage.getConfigBody(accountId, node.id),
-    hasStoredTotp: storedTotpDescription !== undefined,
-    storedTotpDescription,
-    keyCandidates: await collectKeyCandidates(storage, accountId, node.id),
-    dependencyFolders: buildDependencyCandidates(storage.getNodes(accountId), node.id),
-    dependencyColors: buildDependencyColorMap(storage.getNodes(accountId)),
-    jumpCandidates: collectJumpCandidates(storage, accountId, node.id),
-    hasStoredHostKey: storedHostKey !== undefined,
-    hostKeyFingerprint: storedHostKey === undefined ? undefined : hostKeyFingerprint(storedHostKey),
-    ...doorsFor(accountId, node),
-  });
-  if (result === undefined) {
-    return;
-  }
-  // Snapshot what is there before it is replaced — the whole point of history is being
-  // able to see what a change changed, which is only knowable from the old state.
-  await storage.recordRevision(
-    accountId,
-    node.id,
-    await snapshotForRevision(storage, accountId, {
-      id: node.id,
-      name: node.name,
-      details: node.details,
-    }),
-  );
-  await storage.updateNode(accountId, {
-    ...node,
-    name: result.details.name,
-    details: carryThroughDetails(
-      result,
-      node.details,
-      storage.getAccount(accountId)?.email,
-      Date.now(),
-    ),
-  });
-  await applySecrets(storage, accountId, node.id, result);
-  void warnIfTrackedCopy(result.details);
-  await applyDependencyColors(storage, accountId, result.dependsOnColors);
-  // AFTER the secrets land, so the values written are the ones just saved. The old
-  // bindings are passed so a renamed or switched-off variable is deleted, not orphaned.
-  await applyEnvBindings(envCollection, storage, accountId, result.details, node.details.envBindings);
-  onMutated();
-}
-
 /**
  * Connect over SSH resolving the key source: a referenced key entity wins,
  * then this entity's stored private key (materialized to a 0600 file),
  * then its plain key path.
  */
 
-/**
- * Bring a VPN tunnel up or down.
- *
- * <p>The config is materialized into the extension's private storage under the file name
- * the tool expects, and the command is shown in a terminal so the elevation prompt — UAC
- * on Windows, sudo on POSIX — is the operating system's own. Nothing is elevated
- * silently, and the line that will run is on screen before it runs.</p>
- */
-async function runVpn(
-  target: unknown,
-  action: 'start' | 'stop',
-  storage: StorageManager,
-  storageDir: string,
-  vaultKeys: VaultKeys,
-): Promise<void> {
-  vaultKeys.noteUserActivity(); // the user is here: postpone auto-lock
-  const element = asElement(target);
-  if (element?.kind !== 'node' || !element.node.details) {
-    return;
-  }
-  const details = element.node.details;
-  const type = details.vpnType;
-  if (!isVpnStartable(type) || type === undefined) {
-    void vscode.window.showWarningMessage(
-      `"${details.name}" is a ${details.vpnType ?? 'VPN'} entry. Only WireGuard and OpenVPN can be started from here — use Save Config and import it where your OS expects it.`,
-    );
-    return;
-  }
-
-  const platform = process.platform === 'win32' ? 'win32' : process.platform === 'darwin' ? 'darwin' : 'linux';
-  const tunnel = vpnTunnelName(details.name);
-  const fileName = vpnConfigFileName(type, details.name);
-  const configPath = materializedKeyPath(storageDir, fileName);
-
-  // Stop does not need the config re-written; start does. Asking for the vault on a Stop
-  // would mean a locked vault could leave a tunnel up with no way to bring it down.
-  if (action === 'start') {
-    const config = await storage.getVpnConfig(element.accountId, details.id);
-    if (config === undefined || config.trim().length === 0) {
-      void vscode.window.showWarningMessage(
-        `"${details.name}" has no stored VPN config — open Edit and upload the file first.`,
-      );
-      return;
-    }
-    materializeVpnConfig(storageDir, fileName, config);
-  }
-
-  // Find the binary BEFORE composing a command around it. `openvpn.exe` is not on
-  // PATH on a default install, and "OpenVPN on this machine" is often OpenVPN Connect —
-  // a GUI that neither takes --config nor belongs on a command line.
-  const launcher = resolveVpnLauncher(type, process.platform, process.env, onPath, fs.existsSync);
-  if (launcher.kind === 'missing') {
-    // T20: an offer instead of a dead end — the modal names what is missing and, on Yes, opens
-    // a terminal running the platform's install recipe (visible, so sudo can ask).
-    await offerToInstall(type === 'wireguard' ? 'wg-quick' : 'openvpn');
-    return;
-  }
-  if (launcher.kind === 'openvpn-connect') {
-    if (action === 'stop') {
-      void vscode.window.showInformationMessage(
-        'This machine uses OpenVPN Connect — disconnect from its own window.',
-      );
-      return;
-    }
-    // The GUI can IMPORT a profile; it cannot be driven like the CLI. Importing is the
-    // honest half we can do — connecting stays in its window, where the tunnel may in
-    // fact already be up.
-    const open = await vscode.window.showInformationMessage(
-      'This machine has OpenVPN Connect (the GUI), not the OpenVPN command line. Import this profile into it? If this VPN is already connected there, there is nothing to start.',
-      'Import profile',
-    );
-    if (open === 'Import profile') {
-      const terminal = vpnTerminal(details.name);
-      terminal.sendText(`& "${launcher.exe}" --import-profile="${configPath}"`, true);
-    }
-    return;
-  }
-
-  const launch =
-    action === 'start'
-      ? vpnStartCommand(type, platform as VpnPlatform, configPath, launcher.exe)
-      : vpnStopCommand(type, platform as VpnPlatform, tunnel, configPath);
-
-  if (launch.kind === 'unsupported') {
-    void vscode.window.showInformationMessage(launch.reason);
-    return;
-  }
-
-  const terminal = vpnTerminal(details.name);
-  terminal.sendText(launch.command, true);
-  void vscode.window.showInformationMessage(launch.note);
-}
-
-function vpnTerminal(entryName: string): vscode.Terminal {
-  const name = `CredsForDevs VPN: ${entryName}`;
-  const existing = vscode.window.terminals.find((t) => t.name === name);
-  const terminal = existing ?? vscode.window.createTerminal({ name });
-  terminal.show();
-  return terminal;
-}
-
-/** Whether `name` resolves on PATH — `where` on Windows, `command -v` elsewhere. */
-function onPath(name: string): boolean {
-  try {
-    childProcess.execFileSync(
-      process.platform === 'win32' ? 'where' : 'which',
-      [name],
-      { stdio: 'ignore', timeout: 3_000 },
-    );
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-/** Save-As flow for a stored VPN config (context menu + viewer download). */
-async function saveVpnConfigToFile(
-  accountId: string,
-  details: EntityMetadata,
-  storage: StorageManager,
-): Promise<void> {
-  const content = await storage.getVpnConfig(accountId, details.id);
-  if (content === undefined) {
-    void vscode.window.showWarningMessage(
-      `"${details.name}" has no stored VPN config — open Edit and upload the file first.`,
-    );
-    return;
-  }
-  await saveTextAs('Save VPN config', details.vpnConfigFileName ?? `${details.name}.ovpn`, content);
-}
-
-/**
- * The read-only viewer, on a PREVIOUS version.
- *
- * <p>Every secret comes from the revision itself, never from the current entry — that is the
- * whole point of looking. Two things the current entry's viewer offers are refused here:
- * writing the value into a terminal variable (an old password into a live variable is a
- * trap with a plausible name), and the history list (a version has no history of its own).
- * Attachments are not kept in revisions, so none are shown.</p>
- */
-function openRevisionViewer(node: TreeNode, revision: Revision): void {
-  const details = revision.details;
-  const { password, privateKey, vpnConfig, dbConnection, notes } = revision.secrets;
-  const db = dbDisplay(dbConnection, details.dbType);
-  const refuseEnv = (): Promise<boolean> => {
-    void vscode.window.showWarningMessage(
-      'This is a previous version. Set terminal variables from the current entry, not from history.',
-    );
-    return Promise.resolve(false);
-  };
-  showEntityView({
-    details: {
-      ...details,
-      name: revision.name,
-    },
-    // Its own line, not a suffix: glued to the name it read as part of it (owner, 2026-08-27).
-    subtitle: `version replaced at ${new Date(revision.at).toLocaleString()}`,
-    // Only if this version decided for itself; what its folder said back then is not kept.
-    mcp: mcpAsOfVersion(details.mcp),
-    hasPassword: password !== undefined,
-    hasPrivateKey: privateKey !== undefined,
-    hasVpnConfig: vpnConfig !== undefined,
-    hasDbConnection: dbConnection !== undefined,
-    notes,
-    fields: parseFields(revision.secrets.fields),
-    config: revision.secrets.config,
-    ...db,
-    sshCommand: buildSshCommand(details),
-    resolveSecret: secretResolver(revisionSecretReader(revision)),
-    totp:
-      revision.secrets.totp === undefined
-        ? undefined
-        : totpViewFor(revisionSecretReader(revision)),
-    copyAllText: () => Promise.resolve(formatEntityBlock(details, password, dbConnection, notes)),
-    saveVpnConfig: () =>
-      vpnConfig === undefined
-        ? Promise.resolve()
-        : saveTextAs(
-            'Save VPN config (previous version)',
-            details.vpnConfigFileName ?? `${revision.name}.ovpn`,
-            vpnConfig,
-          ),
-    hasAttachment: false,
-    createdAt: node.createdAt,
-    updatedAt: revision.at,
-    history: [],
-    saveAttachment: () => Promise.resolve(),
-    setEnv: refuseEnv,
-    checkEnv: () => void refuseEnv(),
-  });
-}
-
-/** Double-click target: the read-only viewer with per-field Copy buttons. */
-async function openEntityViewer(
-  accountId: string,
-  node: TreeNode,
-  storage: StorageManager,
-  /** Every agent door to this entry (T23a/T24b) — resolved by the caller, which holds the sources. */
-  doors: AgentDoors,
-  /** Asked once the entry is loaded: the shared preview tab, a tab of its own, or nothing (superseded). */
-  tab: () => ViewerTab | 'stale' = () => 'pinned',
-): Promise<void> {
-  const details = node.details;
-  if (!details) {
-    return;
-  }
-  const hasPassword = (await storage.getPassword(accountId, details.id)) !== undefined;
-  const hasPrivateKey = (await storage.getPrivateKey(accountId, details.id)) !== undefined;
-  const hasVpnConfig = (await storage.getVpnConfig(accountId, details.id)) !== undefined;
-  const dbConnection = await storage.getDbConnection(accountId, details.id);
-  const notes = (await storage.getNotes(accountId, details.id)) ?? details.notes;
-  const fields = await storage.getFields(accountId, details.id);
-  // Always show a port for DB entities — the type's default when not explicit.
-  const db = dbDisplay(dbConnection, details.dbType);
-  const keySourceName =
-    details.sshKeyEntityId !== undefined
-      ? (storage.getNode(accountId, details.sshKeyEntityId)?.name ?? '(missing entity)')
-      : undefined;
-  // Resolved for the reader: an id names nothing, and a raw host key is a wall of base64 that
-  // cannot be compared with anything. A name and a SHA256 fingerprint can.
-  const jumpHostName =
-    details.jumpHostEntityId !== undefined
-      ? (storage.getNode(accountId, details.jumpHostEntityId)?.name ?? '(missing entity)')
-      : undefined;
-  const pinnedKey = parseHostKey(details.hostKey);
-  const imageB64 = await storage.getImage(accountId, details.id);
-  const imageMimeType = details.imageFileName !== undefined ? imageMime(details.imageFileName) : undefined;
-  // The seed can be edited while the panel is open, so the code is derived per request — and
-  // the webview only ever receives that code, never the seed it came from.
-  const totpReader = storageSecretReader(storage, accountId, details.id);
-  const hasTotp = (await storage.getTotp(accountId, details.id)) !== undefined;
-  showEntityView({
-    details,
-    cliAliases: doors.cliAliases,
-    agentDoors: doors,
-    mcp: mcpFor(node, (id) => storage.getNode(accountId, id), false),
-    lifetime: node === undefined ? undefined : describeRemaining(node, Date.now()),
-    keySourceName,
-    jumpHostName,
-    hostKeyFingerprint: pinnedKey === undefined ? undefined : hostKeyFingerprint(pinnedKey),
-    hasPassword,
-    hasPrivateKey,
-    hasVpnConfig,
-    hasDbConnection: dbConnection !== undefined,
-    notes,
-    fields,
-    config: await storage.getConfigBody(accountId, details.id),
-    ...db,
-    sshCommand: buildSshCommand(details),
-    resolveSecret: secretResolver(totpReader),
-    totp: hasTotp ? totpViewFor(totpReader) : undefined,
-    copyAllText: async () =>
-      formatEntityBlock(
-        details,
-        await storage.getPassword(accountId, details.id),
-        await storage.getDbConnection(accountId, details.id),
-        notes,
-        fields,
-      ),
-    saveVpnConfig: () => saveVpnConfigToFile(accountId, details, storage),
-    hasAttachment: (await storage.getAttachment(accountId, details.id)) !== undefined,
-    createdAt: node?.createdAt,
-    updatedAt: node?.updatedAt,
-    history: await storage.getHistory(accountId, details.id),
-    imageDataUri:
-      imageB64 !== undefined && imageMimeType !== undefined
-        ? `data:${imageMimeType};base64,${imageB64}`
-        : undefined,
-    saveAttachment: async (which) => {
-      const base64 =
-        which === 'image'
-          ? await storage.getImage(accountId, details.id)
-          : await storage.getAttachment(accountId, details.id);
-      if (base64 === undefined) {
-        return;
-      }
-      const suggested =
-        which === 'image'
-          ? (details.imageFileName ?? `${details.name}.png`)
-          : (details.attachmentFileName ?? `${details.name}.bin`);
-      const target = await vscode.window.showSaveDialog({
-        title: which === 'image' ? 'Save image' : 'Save file',
-        defaultUri: vscode.Uri.file(path.join(os.homedir(), suggested)),
-      });
-      if (target === undefined) {
-        return;
-      }
-      await vscode.workspace.fs.writeFile(target, Buffer.from(base64, 'base64'));
-      void vscode.window.showInformationMessage(`Saved to ${target.fsPath}.`);
-    },
-    // The manual half of env bindings: the automatic write happens on save, but the
-    // collection can be lost with the extension's storage — this button re-sets one
-    // variable from the CURRENT stored value, on this machine, right now.
-    // A FRESH terminal every time: the collection applies to terminals created after
-    // the write, so probing in an old one would "prove" the variable is missing.
-    checkEnv: (name) => {
-      const terminal = vscode.window.createTerminal({ name: `env check: ${name}` });
-      terminal.show();
-      terminal.sendText(envProbeCommand(vscode.env.shell, name), true);
-    },
-    setEnv: async (field, name) => {
-      const value = await bindableFieldValue(storage, accountId, details, field);
-      if (value === undefined || value.length === 0) {
-        void vscode.window.showWarningMessage('Nothing stored in that field — nothing was set.');
-        return false;
-      }
-      envCollection.replace(name, value);
-      envCollection.description = 'CredsForDevs: secrets exposed as terminal variables';
-      void vscode.window.showInformationMessage(
-        `$${name} is set for NEW integrated terminals. Already-open terminals keep their old environment.`,
-      );
-      return true;
-    },
-  }, { tab, key: entityKey(accountId, details.id) });
-}
-
 // ---------- helpers ----------
-
-/**
- * The entity a row stands for — the current one, or the version it was at a point in time.
- *
- * <p>A revision row resolves to a node element carrying THAT version's name and metadata, so
- * Run, Copy Command, Show Command and Clone need no second code path: they act on "the
- * entity as it was" through the same shape they already take. The revision itself is read
- * from SecretStorage here rather than carried on the element — the tree caches heads only,
- * so an old password is never resident in the extension host longer than one action.</p>
- */
-async function nodeAt(
-  element: TreeElement | undefined,
-  storage: StorageManager,
-): Promise<(Extract<TreeElement, { kind: 'node' }> & { revision?: Revision }) | undefined> {
-  if (element?.kind === 'node') {
-    return element;
-  }
-  if (element?.kind !== 'revision') {
-    return undefined;
-  }
-  const revision = (await storage.getHistory(element.accountId, element.node.id))[element.index];
-  if (revision === undefined) {
-    void vscode.window.showWarningMessage('That version is no longer kept.');
-    return undefined;
-  }
-  return {
-    kind: 'node',
-    accountId: element.accountId,
-    node: { ...element.node, name: revision.name, details: revision.details, children: undefined },
-    revision,
-  };
-}
-
-
-/**
- * Do what was clicked.
- *
- * <p>Separate from the menu so the offering and the doing can be read one at a time; the choice
- * is matched by the string the person actually saw, which is what `choicesFor` produced.</p>
- */
-async function applyInstallChoice(
-  host: InstallHost,
-  product: CredsProduct,
-  rid: CredsRid,
-  action: CredsAction,
-  picked: string,
-): Promise<void> {
-  if (picked.startsWith('Remove')) {
-    await removeInstall(host, product, rid);
-    void vscode.window.showInformationMessage(`${product.label} removed.`);
-    return;
-  }
-  if (picked === 'Forget it') {
-    await removeInstall(host, product, rid);
-    return;
-  }
-  if (picked === 'Copy the path') {
-    await copyInstalledPath(host, product, rid);
-    return;
-  }
-  await runInstall(host, product, rid, versionOf(action));
-}
-
-/** The version a chosen action installs — the published one in every branch that offers one. */
-function versionOf(action: CredsAction): string {
-  if (action.kind === 'update') {
-    return action.to;
-  }
-  return action.kind === 'install' || action.kind === 'reinstall' || action.kind === 'installed'
-    ? action.version
-    : '';
-}
-
-async function copyInstalledPath(
-  host: InstallHost,
-  product: CredsProduct,
-  rid: CredsRid,
-): Promise<void> {
-  const path = binaryPath(host, product, rid).fsPath;
-  await vscode.env.clipboard.writeText(path);
-  void vscode.window.showInformationMessage(`${path} — copied.`);
-}
-
-/**
- * Download it, then say what to do next.
- *
- * <p>The MCP server gets one more step than the CLI does: the block that points a client at it,
- * on the clipboard, with the file it belongs in named. It is offered rather than written —
- * that config belongs to another program, and a credential manager silently editing the file
- * that grants an agent access to itself is the wrong instinct in the wrong place.</p>
- */
-async function runInstall(
-  host: InstallHost,
-  product: CredsProduct,
-  rid: CredsRid,
-  version: string,
-): Promise<void> {
-  if (version === '') {
-    return;
-  }
-  try {
-    const target = await vscode.window.withProgress(
-      { location: vscode.ProgressLocation.Notification, title: `Installing ${product.label} ${version}…` },
-      () => performInstall(host, product, rid, version),
-    );
-    if (product !== CREDS_MCP) {
-      await vscode.env.clipboard.writeText(target.fsPath);
-      void vscode.window.showInformationMessage(`${product.label} ${version} installed at ${target.fsPath} — path copied.`);
-      return;
-    }
-    await offerMcpClientConfig(target.fsPath);
-  } catch (error) {
-    void vscode.window.showErrorMessage(`Could not install ${product.label}: ${describeError(error)}`);
-  }
-}
-
-/**
- * What an entry id means to the broker's MCP use route.
- *
- * <p>The vault's answer, in the broker's vocabulary. Here rather than in `mcpEntries.ts` because
- * the shapes belong to two different sides of the wall: that module knows about switches and
- * folders, the broker knows about grants, and this line is where one becomes the other.</p>
- */
-function mcpUseLookup(storage: StorageManager, entryId: string, action: string): McpUseLookup {
-  const found = findUsableEntry(storage, entryId, action);
-  if (found === undefined) {
-    return undefined;
-  }
-  if (found.kind === 'closed') {
-    return { kind: 'closed', entityName: found.node.name, needed: found.needed };
-  }
-  return {
-    kind: 'usable',
-    target: {
-      accountId: found.accountId,
-      entityId: found.node.id,
-      entityName: found.node.name,
-      kind: resolveKind(found.node.details),
-    },
-  };
-}
-
-/**
- * An agent's deletion: to the Trash, and nothing else.
- *
- * <p>Answers whether there was still something to move. An entry deleted between the consent
- * prompt and this call is not an error — the prompt can sit for five minutes — and reporting it
- * as one would have an agent tell somebody a deletion failed when the entry is exactly as gone
- * as they wanted.</p>
- */
-async function moveEntryToTrash(
-  storage: StorageManager,
-  accountId: string,
-  entityId: string,
-): Promise<boolean> {
-  if (storage.getNode(accountId, entityId) === undefined) {
-    return false;
-  }
-  await storage.moveToTrash(accountId, entityId);
-  return true;
-}
-
-/**
- * What the broker asks the vault when an agent wants to create an entry.
- *
- * <p>Two questions, deliberately split by the consent prompt between them: <b>where does this
- * go</b> is answered before anybody is asked, so a request that fits nowhere is refused without
- * raising a modal; <b>make it</b> happens only after the answer is yes.</p>
- */
-function mcpCreateHooks(storage: StorageManager, onMade: () => void): McpCreateHooks {
-  return {
-    choose: (body) => chooseCreateTarget(storage, body),
-    make: async (decision, body) => {
-      const request = readCreateRequest(body);
-      const id = StorageManager.newId();
-      const kind = decision.target.kind as EntityKind;
-      await storage.addNode(decision.target.accountId, {
-        id,
-        name: request.name,
-        type: 'entity',
-        parentId: decision.target.entityId,
-        details: detailsFor(id, kind, request),
-      });
-      const secret = request.secret ?? generatedFor(request);
-      if (secret !== undefined && secret.length > 0) {
-        await storage.setPassword(decision.target.accountId, id, secret);
-      }
-      onMade();
-      return { id, name: request.name };
-    },
-  };
-}
-
-/**
- * The secret for a new entry when the agent supplied none.
- *
- * <p>The better half of this level: an agent that does not already hold a value asks for one to
- * be made, and it is made HERE. The value never enters its context, and the entry is usable
- * immediately. A kind we cannot make was already refused at `choose`, so by this point the draw
- * cannot fail.</p>
- */
-function generatedFor(request: CreateRequest): string | undefined {
-  if (request.secretKind === undefined) {
-    return undefined;
-  }
-  const drawn = generateSecret(request.secretKind);
-  return drawn.ok ? drawn.value : undefined;
-}
-
-/**
- * Where a create request lands.
- *
- * <p>The `target` it answers with is shaped like a use target because that is what the door mints
- * a grant against — and here the "entity" it names is the FOLDER, because there is no entity yet.
- * That is the one place in this product where those two words point at the same field, and it is
- * worth saying out loud rather than leaving to be discovered.</p>
- */
-function chooseCreateTarget(storage: StorageManager, body: Record<string, unknown>): CreateDecision {
-  const request = readCreateRequest(body);
-  const targets = creatableFolders(
-    storage.getAccounts(),
-    (accountId) => storage.getNodes(accountId),
-    (accountId, id) => storage.getNode(accountId, id),
-  );
-  const chosen = chooseTarget(targets, request);
-  if (!chosen.ok) {
-    return { ok: false, code: 'denied', message: chosen.message };
-  }
-  // Asked for a kind we do not make: refused here, before anybody is prompted, and recorded as
-  // the one outcome the journal's "could not generate" filter counts.
-  const drawable = checkGeneratable(request);
-  if (drawable !== undefined) {
-    return { ok: false, code: 'not_supported', message: drawable, noGenerator: true };
-  }
-  return {
-    ok: true,
-    target: {
-      accountId: chosen.target.accountId,
-      entityId: chosen.target.folderId,
-      entityName: chosen.target.folderName,
-      kind: chosen.kind,
-    },
-    summary: summarizeCreate(request, chosen.target, chosen.kind),
-    withSecret: typeof body.secret === 'string' && body.secret.length > 0,
-  };
-}
-
-/** Everything from a webview or a broker body is untrusted, and this one crosses two processes. */
-function readCreateRequest(body: Record<string, unknown>): CreateRequest {
-  const text = (key: string): string | undefined =>
-    typeof body[key] === 'string' && (body[key] as string).length > 0 ? (body[key] as string) : undefined;
-  return {
-    name: text('name') ?? '',
-    kind: text('kind') ?? 'credential',
-    secret: text('secret'),
-    host: text('host'),
-    user: text('user'),
-    port: typeof body.port === 'number' && Number.isInteger(body.port) ? body.port : undefined,
-    folder: text('folder'),
-    secretKind: text('secretKind'),
-  };
-}
-
-/** Whether this request asks for a secret we cannot make — the message, or nothing. */
-function checkGeneratable(request: CreateRequest): string | undefined {
-  if (request.secret !== undefined || request.secretKind === undefined) {
-    return undefined;
-  }
-  const drawn = generateSecret(request.secretKind);
-  return drawn.ok ? undefined : drawn.message;
-}
-
-/** The id an agent quoted, asked for as text — it is a uuid nobody types from memory. */
-function askForEntryId(): Thenable<string | undefined> {
-  return vscode.window.showInputBox({
-    title: 'Show entry by id',
-    prompt: 'Paste the id an agent gave you',
-    placeHolder: '8f3a…',
-    ignoreFocusOut: true,
-    validateInput: (value) => (value.trim().length === 0 ? 'Paste an id.' : undefined),
-  });
-}
 
 /**
  * The tree element for one id, across every unlocked account.
