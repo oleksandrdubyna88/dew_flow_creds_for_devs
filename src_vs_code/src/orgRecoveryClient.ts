@@ -1,4 +1,5 @@
 import { CLIENT_CONTRACT_VERSION, CONTRACT_HEADER } from './contractVersion';
+import { ServerMetrics, isServerMetrics } from './serverMetricsPage';
 import { describeError } from './describeError';
 import { StoredAccount } from './types';
 import { DEFAULT_REQUEST_TIMEOUT_MS } from './serverTransport';
@@ -185,6 +186,22 @@ export class OrgRecoveryClient {
    * roster nobody configured: no corporate recovery here. Treating it as an error would make
    * every sync against an older server report a failure about a feature nobody asked for.</p>
    */
+  /** The officers' metrics page (server-ops item 5): the server's one JSON document, checked. */
+  async readMetrics(account: StoredAccount): Promise<ServerMetrics> {
+    const response = await this.request(account, '/api/metrics');
+    if (response.status === 403) {
+      throw new Error(`${account.email} is not a recovery officer on ${this.location} — the metrics page is theirs.`);
+    }
+    if (!response.ok) {
+      throw new Error(`Could not read server metrics: HTTP ${response.status}.`);
+    }
+    const parsed: unknown = await response.json();
+    if (!isServerMetrics(parsed)) {
+      throw new Error('The server answered metrics in a shape this build cannot read.');
+    }
+    return parsed;
+  }
+
   async readConfig(account: StoredAccount): Promise<OrgRecoveryConfigResponse> {
     const response = await this.request(account, '/api/org-recovery/config');
     if (response.status === 404) {

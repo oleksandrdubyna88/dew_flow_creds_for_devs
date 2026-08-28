@@ -3,23 +3,19 @@
    modules, each of which lints clean; a marker per violation here would be deleted within
    days. Remove this header as the LAST step of A1, when the file is a thin composition. */
 import { describeError } from './describeError';
+import { accountFromTargetOrPick } from './accountPick';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { copiedMessage, copySecret, setSecretClipboardTtl } from './secretClipboard';
 import { AuthError, signIn } from './authManager';
 import { backupToNas, restoreFromBackup } from './backupManager';
-import {
-  formatEntityBlock,
-  pickAccount,
-  pickFolderType,
-  pickTargetFolder,
-  promptFolderName,
-} from './dialogs';
+import { formatEntityBlock, pickFolderType, pickTargetFolder, promptFolderName, pickAccount } from './dialogs';
 import { KeyCandidate, showEntityForm } from './entityFormPanel';
 import { pinPreview, showEntityView } from './entityViewPanel';
 import { runRestoreFromTrash } from './restoreCommandHost';
 import { runBurnNow } from './burnNowCommand';
+import { runServerMetrics } from './serverMetricsCommand';
 import { describeRemaining } from './entityExpiry';
 import { describeInstall } from './installWords';
 import { isTrackedHere } from './gitTracked';
@@ -2497,6 +2493,12 @@ ${detail}
   });
 
   register('credSshManager.burnNow', (target) => runBurnNow(asElement(target), storage, mutated));
+  register('credSshManager.serverMetrics', async (target) => {
+    const account = await accountFromTargetOrPick(target, storage, 'Server metrics for…');
+    if (account !== undefined) {
+      await runServerMetrics(account, (a) => transports.orgRecoveryFor(a));
+    }
+  });
 
   register('credSshManager.restoreFromTrash', (target, selected) =>
     runRestoreFromTrash(resolveBulkTargets(storage, target, selected).targets, storage, async (a, id) => { mutated(); await announceArrival(a, id); }),
@@ -5394,31 +5396,6 @@ async function nodeAt(
     node: { ...element.node, name: revision.name, details: revision.details, children: undefined },
     revision,
   };
-}
-
-
-/** The account a command was invoked on, or a picked one. */
-async function accountFromTargetOrPick(
-  target: unknown,
-  storage: StorageManager,
-  placeHolder: string,
-): Promise<StoredAccount | undefined> {
-  const element = asElement(target);
-  if (element?.kind === 'account') {
-    return element.account;
-  }
-  if (element?.kind === 'teamScope') {
-    return element.account;
-  }
-  if (
-    typeof target === 'object' &&
-    target !== null &&
-    typeof (target as StoredAccount).accountId === 'string' &&
-    typeof (target as StoredAccount).email === 'string'
-  ) {
-    return target as StoredAccount;
-  }
-  return pickAccount(storage, placeHolder);
 }
 
 

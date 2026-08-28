@@ -1005,6 +1005,10 @@ also on the right-click menu where it applies.
 - **Secrets in a run** — Run with Secrets (creds:// references, output masked)
 - **Short-lived entries** — Burn Now… (only on an entry that carries a lifetime; not the Trash:
   the secret, its history and every synced copy are gone for good, after a modal that says so)
+- **The server, for recovery officers** — Server Metrics… (on an officer's account row: the
+  server's version and runtime support window, uptime, requests by outcome, vault traffic, what the
+  data directory holds and the free space on its disk — one page, read from `GET /api/metrics`, which
+  answers the recovery roster and nobody else)
 - **The Trash** — Restore (first on a deleted entry's or folder's menu: back to where it was deleted
   from, or the root when that folder is gone) · Empty the Trash Now ·
   Empty the Trash Automatically… (each account's own retention, travelling with the vault)

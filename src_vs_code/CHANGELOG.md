@@ -6,6 +6,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.83.0] — 2026-08-28
+
+### Added
+
+- **Server Metrics…** on a recovery officer's account row (server 0.4.0's `/api/metrics`): the
+  server's version and runtime with its support window, uptime, requests by outcome (4xx / 5xx /
+  rate-limited), vault reads and writes with the bytes written, how many vaults and pending shares
+  the data directory holds and their size, and the free space on that disk — one page, a snapshot,
+  for whoever the operator named on the corporate-recovery roster and nobody else.
+
 ### Added
 
 - **Install the MCP Server… asks where the agent runs.** It had one answer for a machine with two
