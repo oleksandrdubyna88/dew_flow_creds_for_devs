@@ -1441,6 +1441,23 @@ and *Restore* leads. Every restore reveals, selects and focuses what came back �
 rows now carry the same `credsdep:` address as entries, so the arrival tint reaches them
 (`treeProviderTrash.test.ts`).
 
+### T35. Notes had vanished from seven kinds of entry (DEFECT, found by the owner 2026-08-28)
+
+**Symptom.** A credential's form had General, Secret, Lifetime… and no Notes, on every kind but
+config. **Mechanism.** The config section's `</fieldset>` was missing since 0.77, so the Notes
+fieldset rendered INSIDE the config fieldset, and the visibility script hides the config section
+for every other kind. **Shipped 0.81.1:** closed, and `formStructure.test.ts` asserts for all eight
+kinds in both modes that every fieldset closes and Notes is nobody's child.
+
+### T36. A credential's login and URL — encrypted, shown in clear (the owner, 2026-08-28)
+
+**The ask.** "Add secrets — encrypted in the file — but on the card readable, not dots: login, URL."
+**Shipped 0.82.0:** an *Account* section on the form (credential only), two readable rows with
+copy buttons on the card; stored as one JSON record under a keychain key of its own
+(`entityFields.ts`), carried by bundle, snapshot, merge, share and revision, deleted with the entry;
+external export writes `login`/`url`. Not masked in agent output and never listed to an agent.
+`storageManager.ts` now walks a table of secret kinds instead of ten hand-written blocks per site.
+
 ## 4. Build order
 
 Ordered so that each step is verifiable on its own, and the two that need a person come last.

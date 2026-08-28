@@ -6,6 +6,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.82.0] — 2026-08-28
+
+### Added
+
+- **A credential carries a login and a URL** (the owner, 2026-08-28): an *Account* section on the
+  form, two readable, copyable rows on the card. Stored **encrypted** — a keychain key of their
+  own here, sealed in the vault, the share, the backup and the kept versions, merged across
+  machines like every other secret — and never in plain metadata nor in an agent's listing. Shown
+  in clear, unlike the password: they are identifiers, so an agent's output is not masked for them.
+  The external export writes them as `login` / `url`.
+
 ## [0.81.1] — 2026-08-28
 
 ### Added

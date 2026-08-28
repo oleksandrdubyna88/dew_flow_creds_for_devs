@@ -116,7 +116,7 @@ test('dbDisplay never carries the password inline, but says one exists', () => {
   assert.deepEqual(none, { dbParts: undefined, dbPortIsDefault: false, dbHasPassword: false });
 });
 
-test('snapshotForRevision captures all seven secrets of the given entity, as it is now', async () => {
+test('snapshotForRevision captures all eight secrets of the given entity, as it is now', async () => {
   const reads: string[] = [];
   const value = (name: string) => (_a: string, id: string) => {
     reads.push(`${name}:${id}`);
@@ -130,6 +130,7 @@ test('snapshotForRevision captures all seven secrets of the given entity, as it 
     getNotes: value('notes'),
     getTotp: value('totp'),
     getConfigBody: value('config'),
+    getFieldsRaw: value('fields'),
   };
   const details: EntityMetadata = { id: 'e9', name: 'renamed already', isSshEnabled: false };
 
@@ -155,8 +156,10 @@ test('snapshotForRevision captures all seven secrets of the given entity, as it 
     // one and forgotten in the other falls out of history silently. An edit that breaks a config
     // has to be undoable from the previous version, like every other secret here.
     config: 'config-of-e9',
+    // Eighth since the login/URL fields (0.82).
+    fields: 'fields-of-e9',
   });
-  assert.equal(reads.length, 7, 'every secret kind was read exactly once');
+  assert.equal(reads.length, 8, 'every secret kind was read exactly once');
 });
 
 test('the totp field resolves to the CODE, never to the seed it came from', async () => {

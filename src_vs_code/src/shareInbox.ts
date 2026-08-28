@@ -545,6 +545,9 @@ After this, a share signed by any other key is refused.`,
     if (payload.secrets.config !== undefined) {
       await this.deps.storage.setConfigBody(share.accountId, node.id, payload.secrets.config);
     }
+    if (payload.secrets.fields !== undefined) {
+      await this.deps.storage.setFieldsRaw(share.accountId, node.id, payload.secrets.fields);
+    }
     await this.deps.sharing.removeOwnShare(share);
     this.deps.onArrived?.(share.accountId, node.id);
   }
@@ -600,6 +603,7 @@ export async function buildSharePayload(
       totp: seed,
       // Handing a colleague the document IS the feature. Sealed like every other secret here.
       config: await storage.getConfigBody(accountId, node.id),
+      fields: await storage.getFieldsRaw(accountId, node.id),
     },
   };
 }

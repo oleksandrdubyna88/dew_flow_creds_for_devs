@@ -567,6 +567,14 @@ ${formStyleSheet(options.uiScale ?? 0)}
     ${envRow('dbPassword', d)}
   </fieldset>
 
+  ${openSection('accountSection')}
+    <label for="login">Login</label>
+    <input id="login" type="text" autocomplete="off" spellcheck="false" value="${escapeHtml(options.initialFields?.login ?? '')}">
+    <label for="url">URL</label>
+    <input id="url" type="text" autocomplete="off" spellcheck="false" placeholder="https://" value="${escapeHtml(options.initialFields?.url ?? '')}">
+    <p class="hint">Stored encrypted, like the password — never in plain metadata, never listed to an agent — and shown in clear on the card.</p>
+  </fieldset>
+
   ${openSection('passwordSection')}
     <label for="password">Password / secret value</label>
     <input id="password" type="password" autocomplete="off">

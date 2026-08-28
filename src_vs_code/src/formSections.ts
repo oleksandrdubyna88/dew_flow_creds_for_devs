@@ -111,6 +111,10 @@ export const FORM_SECTIONS: readonly FormSection[] = [
     optional: true,
   },
   { id: 'notesSection', legend: 'Notes', group: 'main', color: 'depColor8', kinds: EVERY_KIND },
+  // The owner's login/URL (2026-08-28): a credential's own section, encrypted like the password,
+  // shown in clear on the card. depColor9 is free on a credential — its other users are kinds
+  // this one is never on screen with.
+  { id: 'accountSection', legend: 'Account', group: 'main', color: 'depColor9', kinds: ['credential'] },
 
   // --- the three that appear TOGETHER on an SSH connection, so all three must differ ---
   {

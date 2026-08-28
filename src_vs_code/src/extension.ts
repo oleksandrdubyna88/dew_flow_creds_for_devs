@@ -16,7 +16,7 @@ import {
   pickTargetFolder,
   promptFolderName,
 } from './dialogs';
-import { EntityFormValues, KeyCandidate, showEntityForm } from './entityFormPanel';
+import { KeyCandidate, showEntityForm } from './entityFormPanel';
 import { pinPreview, showEntityView } from './entityViewPanel';
 import { runRestoreFromTrash } from './restoreCommandHost';
 import { runBurnNow } from './burnNowCommand';
@@ -276,6 +276,8 @@ import {
   TreeElement,
   TreeNode,
 } from './types';
+import { parseFields, serializeFields } from './entityFields';
+import { applySecrets } from './applyFormSecrets';
 
 
 /** Set in activate(); the module-level slot keeps editNode's signature unchanged. */
@@ -2420,6 +2422,7 @@ ${detail}
       ),
     });
     await applySecrets(storage, location.accountId, id, result);
+    void warnIfTrackedCopy(result.details);
     await applyDependencyColors(storage, location.accountId, result.dependsOnColors);
     await applyEnvBindings(envCollection, storage, location.accountId, result.details);
     mutated();
@@ -3084,6 +3087,9 @@ ${detail}
         await storage.setDbConnection(location.accountId, id, s.dbConnection);
       }
       await storage.setNotes(location.accountId, id, s.notes);
+      if (s.login !== undefined || s.url !== undefined) {
+        await storage.setFields(location.accountId, id, { login: s.login, url: s.url });
+      }
       if (s.attachment !== undefined) {
         await storage.setAttachment(location.accountId, id, s.attachment);
       }
@@ -4552,6 +4558,7 @@ ${detail}
         notes: result.newNotes,
         totp: result.newTotp,
         config: result.newConfigBody,
+        fields: serializeFields(result.newFields),
       },
     };
     await shareInbox.deliver(sender.accountId, payload, recipients, pin);
@@ -4942,56 +4949,6 @@ async function showConfigChanges(
   );
 }
 
-async function applySecrets(
-  storage: StorageManager,
-  accountId: string,
-  entityId: string,
-  result: EntityFormValues,
-): Promise<void> {
-  if (result.clearPassword) {
-    await storage.deletePassword(accountId, entityId);
-  } else {
-    await storage.setPassword(accountId, entityId, result.newPassword);
-  }
-  if (result.clearPrivateKey) {
-    await storage.deletePrivateKey(accountId, entityId);
-  } else if (result.newPrivateKey !== undefined) {
-    await storage.setPrivateKey(accountId, entityId, result.newPrivateKey);
-  }
-  if (result.clearVpnConfig) {
-    await storage.deleteVpnConfig(accountId, entityId);
-  } else if (result.newVpnConfig !== undefined) {
-    await storage.setVpnConfig(accountId, entityId, result.newVpnConfig);
-  }
-  if (result.clearDbConnection) {
-    await storage.deleteDbConnection(accountId, entityId);
-  } else if (result.newDbConnection !== undefined) {
-    await storage.setDbConnection(accountId, entityId, result.newDbConnection);
-  }
-  await storage.setNotes(accountId, entityId, result.newNotes);
-  // `undefined` for every kind that is not a config, which DELETES — deliberately, and the same
-  // scrubbing the form does to every other kind's fields when the type changes. An entity turned
-  // from a config into something else must not keep a config body nothing can reach or edit.
-  await storage.setConfigBody(accountId, entityId, result.newConfigBody);
-  void warnIfTrackedCopy(result.details);
-  if (result.clearAttachment) {
-    await storage.setAttachment(accountId, entityId, undefined);
-  } else if (result.newAttachment !== undefined) {
-    await storage.setAttachment(accountId, entityId, result.newAttachment);
-  }
-  if (result.clearImage) {
-    await storage.setImage(accountId, entityId, undefined);
-  } else if (result.newImage !== undefined) {
-    await storage.setImage(accountId, entityId, result.newImage);
-  }
-  // The form already canonicalised the seed (`toValues`), so this is a store, not a parse.
-  if (result.clearTotp) {
-    await storage.deleteTotp(accountId, entityId);
-  } else if (result.newTotp !== undefined) {
-    await storage.setTotp(accountId, entityId, result.newTotp);
-  }
-}
-
 /**
  * A folder's own form — its name, and the agent access its contents inherit.
  *
@@ -5070,6 +5027,7 @@ async function editNode(
     hasStoredDbConnection: (await storage.getDbConnection(accountId, node.id)) !== undefined,
     initialDbConnection: await storage.getDbConnection(accountId, node.id),
     initialNotes: (await storage.getNotes(accountId, node.id)) ?? node.details?.notes,
+    initialFields: await storage.getFields(accountId, node.id),
     // Prefilled, unlike the password and the key: a config is a document somebody opens Edit to
     // change one line of, and a blank box would make every edit a retype from memory.
     initialConfigBody: await storage.getConfigBody(accountId, node.id),
@@ -5108,6 +5066,7 @@ async function editNode(
     ),
   });
   await applySecrets(storage, accountId, node.id, result);
+  void warnIfTrackedCopy(result.details);
   await applyDependencyColors(storage, accountId, result.dependsOnColors);
   // AFTER the secrets land, so the values written are the ones just saved. The old
   // bindings are passed so a renamed or switched-off variable is deleted, not orphaned.
@@ -5285,6 +5244,7 @@ function openRevisionViewer(node: TreeNode, revision: Revision): void {
     hasVpnConfig: vpnConfig !== undefined,
     hasDbConnection: dbConnection !== undefined,
     notes,
+    fields: parseFields(revision.secrets.fields),
     config: revision.secrets.config,
     ...db,
     sshCommand: buildSshCommand(details),
@@ -5331,6 +5291,7 @@ async function openEntityViewer(
   const hasVpnConfig = (await storage.getVpnConfig(accountId, details.id)) !== undefined;
   const dbConnection = await storage.getDbConnection(accountId, details.id);
   const notes = (await storage.getNotes(accountId, details.id)) ?? details.notes;
+  const fields = await storage.getFields(accountId, details.id);
   // Always show a port for DB entities — the type's default when not explicit.
   const db = dbDisplay(dbConnection, details.dbType);
   const keySourceName =
@@ -5364,6 +5325,7 @@ async function openEntityViewer(
     hasVpnConfig,
     hasDbConnection: dbConnection !== undefined,
     notes,
+    fields,
     config: await storage.getConfigBody(accountId, details.id),
     ...db,
     sshCommand: buildSshCommand(details),
@@ -5375,6 +5337,7 @@ async function openEntityViewer(
         await storage.getPassword(accountId, details.id),
         await storage.getDbConnection(accountId, details.id),
         notes,
+        fields,
       ),
     saveVpnConfig: () => saveVpnConfigToFile(accountId, details, storage),
     hasAttachment: (await storage.getAttachment(accountId, details.id)) !== undefined,

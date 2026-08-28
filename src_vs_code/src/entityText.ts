@@ -11,6 +11,7 @@ import { buildSshCommand } from './sshCommand';
 import { describeCommand } from './commandLine';
 import { resolveScriptEnv } from './scriptRender';
 import { EntityMetadata } from './types';
+import { EntityFields } from './entityFields';
 
 // eslint-disable-next-line complexity, max-lines-per-function
 export function formatEntityBlock(
@@ -18,8 +19,15 @@ export function formatEntityBlock(
   password: string | undefined,
   dbConnection?: string,
   notes?: string,
+  fields?: EntityFields,
 ): string {
   const lines = [`Name: ${details.name}`];
+  if (fields?.login !== undefined) {
+    lines.push(`Login: ${fields.login}`);
+  }
+  if (fields?.url !== undefined) {
+    lines.push(`URL: ${fields.url}`);
+  }
 
   // A command entry has none of the other flags, and describeCommand already renders
   // exactly what this block wants — the line, what it is for, and what each argument

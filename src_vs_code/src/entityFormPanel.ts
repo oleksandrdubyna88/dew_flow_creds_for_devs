@@ -35,6 +35,7 @@ import {
   VPN_TYPES,
   VpnType,
 } from './types';
+import { EntityFields, pickFields } from './entityFields';
 
 /**
  * A single-window entity form (Webview panel). The entity KIND is chosen
@@ -77,6 +78,8 @@ export interface EntityFormOptions {
   initialDbConnection?: string;
   /** Prefilled note (its own secret now, not plaintext metadata). */
   initialNotes?: string;
+  /** A credential's login and URL, prefilled like the notes. */
+  initialFields?: EntityFields;
   /**
    * Prefilled config body — a secret, and one of the two the form deliberately sends INTO the
    * webview.
@@ -128,6 +131,8 @@ export interface EntityFormValues {
   newDbConnection?: string;
   clearDbConnection: boolean;
   newNotes?: string;
+  /** A credential's login/URL; `undefined` for every other kind, which DELETES — the same scrubbing a config gets. */
+  newFields?: EntityFields;
   /**
    * The config body as the form last held it — sent whole, not as a delta.
    *
@@ -673,6 +678,7 @@ function toValues(data: Record<string, unknown>, options: EntityFormOptions): En
     newImage: str(data, 'imageContent') || undefined,
     clearImage: bool(data, 'clearImage'),
     newNotes: str(data, 'notes'),
+    newFields: kind === 'credential' ? pickFields({ login: str(data, 'login'), url: str(data, 'url') }) : undefined,
     // Sent whole and unconditionally for a config, so that emptying the box empties the document.
     // Every other secret here treats blank as "keep what is stored"; this one cannot, because the
     // form was prefilled with the stored text and blank is therefore a deliberate edit.

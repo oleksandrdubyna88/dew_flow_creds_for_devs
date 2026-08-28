@@ -24,6 +24,7 @@ import {
   isStoredAccount,
   isTreeNode,
 } from './types';
+import { EntityFields, parseFields, serializeFields } from './entityFields';
 
 const ACCOUNTS_KEY = 'credSshManager.accounts';
 /** Account ids that already received their one-time default folder set. */
@@ -113,6 +114,71 @@ function notesSecretKey(accountId: string, entityId: string): string {
   return `${accountId}_${keyPart(entityId)}:notes`;
 }
 
+/**
+ * Every per-entity secret kept as ONE string under ONE key, by the bundle field that carries it.
+ *
+ * <p>Export, import, snapshot and the delete-with-the-entry all walk THIS list. It used to be
+ * ten hand-written blocks per site — the audit's "seven kinds walked by hand" — and a kind added
+ * to one site and forgotten in another exported silently incomplete files. Now a kind is a row.</p>
+ */
+type SecretMapKey = 'passwords' | 'privateKeys' | 'vpnConfigs' | 'dbConnections' | 'notes' | 'attachments' | 'images' | 'totps' | 'configs' | 'fields';
+type SecretMaps = Record<SecretMapKey, Record<string, string>>;
+
+const SECRET_KINDS: ReadonlyArray<{ bundleKey: SecretMapKey; key: (accountId: string, entityId: string) => string }> = [
+  { bundleKey: 'passwords', key: (a, e) => secretKey(a, e) },
+  { bundleKey: 'privateKeys', key: (a, e) => privateKeySecretKey(a, e) },
+  { bundleKey: 'vpnConfigs', key: (a, e) => vpnConfigSecretKey(a, e) },
+  { bundleKey: 'dbConnections', key: (a, e) => dbConnSecretKey(a, e) },
+  { bundleKey: 'notes', key: (a, e) => notesSecretKey(a, e) },
+  { bundleKey: 'attachments', key: (a, e) => attachmentSecretKey(a, e) },
+  { bundleKey: 'images', key: (a, e) => imageSecretKey(a, e) },
+  { bundleKey: 'totps', key: (a, e) => totpSecretKey(a, e) },
+  { bundleKey: 'configs', key: (a, e) => configSecretKey(a, e) },
+  { bundleKey: 'fields', key: (a, e) => fieldsSecretKey(a, e) },
+];
+
+/** A pre-0.20 note still sitting in plaintext metadata, when no stored note has replaced it. */
+function legacyNoteOf(node: TreeNode, maps: SecretMaps): string | undefined {
+  if (maps.notes[node.id] !== undefined) {
+    return undefined;
+  }
+  const note = plainNote(node);
+  return note !== undefined && note.length > 0 ? note : undefined;
+}
+
+function plainNote(node: TreeNode): string | undefined {
+  return node.details?.notes;
+}
+
+function emptySecretMaps(): SecretMaps {
+  return {
+    passwords: {},
+    privateKeys: {},
+    vpnConfigs: {},
+    dbConnections: {},
+    notes: {},
+    attachments: {},
+    images: {},
+    totps: {},
+    configs: {},
+    fields: {},
+  };
+}
+
+/** The bundle's maps with every absent one an empty record — a pre-0.57 file has no totps at all. */
+function secretMapsOf(bundle: Partial<Record<SecretMapKey, Record<string, string>>>): SecretMaps {
+  const maps = emptySecretMaps();
+  for (const kind of SECRET_KINDS) {
+    maps[kind.bundleKey] = bundle[kind.bundleKey] ?? {};
+  }
+  return maps;
+}
+
+/** SecretStorage key for a credential's login and URL (JSON) — a secret, exactly like the notes. */
+function fieldsSecretKey(accountId: string, entityId: string): string {
+  return `${accountId}_${keyPart(entityId)}:fields`;
+}
+
 /** SecretStorage key for a config entity's file contents — a secret, exactly like the notes. */
 function configSecretKey(accountId: string, entityId: string): string {
   return `${accountId}_${keyPart(entityId)}:config`;
@@ -131,18 +197,7 @@ function configSecretKey(accountId: string, entityId: string): string {
  * <p>The history key is included: previous versions of a secret are secrets.</p>
  */
 function entitySecretKeys(accountId: string, entityId: string): readonly string[] {
-  return [
-    secretKey(accountId, entityId),
-    privateKeySecretKey(accountId, entityId),
-    vpnConfigSecretKey(accountId, entityId),
-    dbConnSecretKey(accountId, entityId),
-    notesSecretKey(accountId, entityId),
-    attachmentSecretKey(accountId, entityId),
-    historySecretKey(accountId, entityId),
-    imageSecretKey(accountId, entityId),
-    totpSecretKey(accountId, entityId),
-    configSecretKey(accountId, entityId),
-  ];
+  return [...SECRET_KINDS.map((kind) => kind.key(accountId, entityId)), historySecretKey(accountId, entityId)];
 }
 
 function historySecretKey(accountId: string, entityId: string): string {
@@ -886,6 +941,31 @@ export class StorageManager implements vscode.Disposable {
 
   // ---------- config bodies (SecretStorage, tenant-scoped) ----------
 
+  // ---------- login / URL (SecretStorage, tenant-scoped, JSON) ----------
+
+  /** The stored JSON as it is — what bundles, snapshots, shares and revisions carry. */
+  getFieldsRaw(accountId: string, entityId: string): Thenable<string | undefined> {
+    return this.secrets.get(fieldsSecretKey(accountId, entityId));
+  }
+
+  async setFieldsRaw(accountId: string, entityId: string, value: string | undefined): Promise<void> {
+    if (value === undefined || value.length === 0) {
+      await this.secrets.delete(fieldsSecretKey(accountId, entityId));
+    } else {
+      await this.secrets.store(fieldsSecretKey(accountId, entityId), value);
+    }
+    this.touch(accountId);
+  }
+
+  async getFields(accountId: string, entityId: string): Promise<EntityFields> {
+    return parseFields(await this.getFieldsRaw(accountId, entityId));
+  }
+
+  /** Typed write: an empty record deletes, so a credential that lost both fields holds no key. */
+  setFields(accountId: string, entityId: string, fields: EntityFields | undefined): Promise<void> {
+    return this.setFieldsRaw(accountId, entityId, serializeFields(fields));
+  }
+
   getConfigBody(accountId: string, entityId: string): Thenable<string | undefined> {
     return this.secrets.get(configSecretKey(accountId, entityId));
   }
@@ -938,94 +1018,48 @@ export class StorageManager implements vscode.Disposable {
   }
 
   /** Pair every entity of one profile with its stored secrets. */
-  // eslint-disable-next-line complexity, max-lines-per-function
   async exportBundle(accountId: string): Promise<BackupBundle> {
     const nodes = this.getNodes(accountId);
-    const passwords: Record<string, string> = {};
-    const privateKeys: Record<string, string> = {};
-    const vpnConfigs: Record<string, string> = {};
-    const dbConnections: Record<string, string> = {};
-    const notes: Record<string, string> = {};
-    const attachments: Record<string, string> = {};
-    const images: Record<string, string> = {};
-    const totps: Record<string, string> = {};
-    const configs: Record<string, string> = {};
-    for (const node of nodes) {
-      if (node.type !== 'entity') {
-        continue;
-      }
-      const totp = await this.secrets.get(totpSecretKey(accountId, node.id));
-      if (totp !== undefined) {
-        totps[node.id] = totp;
-      }
-      const configBody = await this.secrets.get(configSecretKey(accountId, node.id));
-      if (configBody !== undefined) {
-        configs[node.id] = configBody;
-      }
-      const password = await this.secrets.get(secretKey(accountId, node.id));
-      if (password !== undefined) {
-        passwords[node.id] = password;
-      }
-      const privateKey = await this.secrets.get(privateKeySecretKey(accountId, node.id));
-      if (privateKey !== undefined) {
-        privateKeys[node.id] = privateKey;
-      }
-      const vpnConfig = await this.secrets.get(vpnConfigSecretKey(accountId, node.id));
-      if (vpnConfig !== undefined) {
-        vpnConfigs[node.id] = vpnConfig;
-      }
-      const dbConn = await this.secrets.get(dbConnSecretKey(accountId, node.id));
-      if (dbConn !== undefined) {
-        dbConnections[node.id] = dbConn;
-      }
-      const attachment = await this.secrets.get(attachmentSecretKey(accountId, node.id));
-      if (attachment !== undefined) {
-        attachments[node.id] = attachment;
-      }
-      const image = await this.secrets.get(imageSecretKey(accountId, node.id));
-      if (image !== undefined) {
-        images[node.id] = image;
-      }
-      // Migrate any legacy plaintext note (globalState) into the secret map.
-      const note =
-        (await this.secrets.get(notesSecretKey(accountId, node.id))) ?? node.details?.notes;
-      if (note !== undefined && note.length > 0) {
-        notes[node.id] = note;
-      }
-    }
+    const maps = await this.readSecretMaps(accountId, nodes);
     return {
       // A copy: the cached array is frozen and shared, and a bundle is the caller's to shape.
       nodes: [...nodes],
-      passwords,
-      privateKeys,
-      vpnConfigs,
-      dbConnections,
-      notes,
-      attachments,
-      images,
-      totps,
-      configs,
+      ...maps,
       tombstones: this.getTombstones(accountId),
       horizon: this.getHorizon(accountId),
       exportedAt: Date.now(),
     };
   }
 
+  /** Every entity's secrets, kind by kind — plus any legacy plaintext note, migrated into the map. */
+  private async readSecretMaps(accountId: string, nodes: readonly TreeNode[]): Promise<SecretMaps> {
+    const maps = emptySecretMaps();
+    for (const node of nodes.filter((n) => n.type === 'entity')) {
+      await this.readKindsInto(accountId, node.id, maps);
+      const legacyNote = legacyNoteOf(node, maps);
+      if (legacyNote !== undefined) {
+        maps.notes[node.id] = legacyNote;
+      }
+    }
+    return maps;
+  }
+
+  /** One entity's secrets, kind by kind, into the maps — absent kinds leave no entry. */
+  private async readKindsInto(accountId: string, entityId: string, maps: SecretMaps): Promise<void> {
+    for (const kind of SECRET_KINDS) {
+      const value = await this.secrets.get(kind.key(accountId, entityId));
+      if (value !== undefined) {
+        maps[kind.bundleKey][entityId] = value;
+      }
+    }
+  }
+
   /** The full profile state as the sync merge consumes it. */
-  // eslint-disable-next-line complexity
   async getSnapshot(accountId: string): Promise<ProfileSnapshot> {
     const bundle = await this.exportBundle(accountId);
     return {
       nodes: bundle.nodes,
-      passwords: bundle.passwords,
-      privateKeys: bundle.privateKeys ?? {},
-      vpnConfigs: bundle.vpnConfigs ?? {},
-      dbConnections: bundle.dbConnections ?? {},
-      notes: bundle.notes ?? {},
-      attachments: bundle.attachments ?? {},
-      images: bundle.images ?? {},
-      totps: bundle.totps ?? {},
-      configs: bundle.configs ?? {},
+      ...secretMapsOf(bundle),
       tombstones: bundle.tombstones ?? {},
       horizon: bundle.horizon ?? {},
     };
@@ -1033,24 +1067,10 @@ export class StorageManager implements vscode.Disposable {
 
   /** Replace the whole profile state with a merged snapshot. */
   async applySnapshot(accountId: string, snapshot: ProfileSnapshot): Promise<void> {
-    await this.importBundle(accountId, {
-      nodes: snapshot.nodes,
-      passwords: snapshot.passwords,
-      privateKeys: snapshot.privateKeys,
-      vpnConfigs: snapshot.vpnConfigs,
-      dbConnections: snapshot.dbConnections,
-      notes: snapshot.notes,
-      attachments: snapshot.attachments,
-      images: snapshot.images,
-      totps: snapshot.totps,
-      configs: snapshot.configs,
-      tombstones: snapshot.tombstones,
-      horizon: snapshot.horizon,
-    });
+    await this.importBundle(accountId, { ...snapshot });
   }
 
   /** Replace one profile's whole tree and batch-restore its secrets. */
-  // eslint-disable-next-line complexity, max-lines-per-function
   async importBundle(accountId: string, incoming: BackupBundle): Promise<void> {
     // The trust boundary. Every id in this bundle came from OUTSIDE — a restored backup file,
     // or whatever can write the sync location — and an id is concatenated into a SecretStorage
@@ -1058,79 +1078,13 @@ export class StorageManager implements vscode.Disposable {
     // vault; an ordinary uuid is passed through untouched, which is what keeps a sync cycle
     // from renaming a whole tree every time it runs.
     const bundle = await this.quarantine(accountId, incoming);
-    const privateKeys = bundle.privateKeys ?? {};
-    const vpnConfigs = bundle.vpnConfigs ?? {};
-    const dbConnections = bundle.dbConnections ?? {};
-    const notes = bundle.notes ?? {};
-    const attachments = bundle.attachments ?? {};
-    const images = bundle.images ?? {};
-    const totps = bundle.totps ?? {};
-    const configs = bundle.configs ?? {};
-    // Drop secrets of entities that will disappear with the replaced tree.
-    for (const node of this.getNodes(accountId)) {
-      if (node.type !== 'entity') {
-        continue;
-      }
-      if (totps[node.id] === undefined) {
-        await this.secrets.delete(totpSecretKey(accountId, node.id));
-      }
-      if (configs[node.id] === undefined) {
-        await this.secrets.delete(configSecretKey(accountId, node.id));
-      }
-      if (bundle.passwords[node.id] === undefined) {
-        await this.secrets.delete(secretKey(accountId, node.id));
-      }
-      if (privateKeys[node.id] === undefined) {
-        await this.secrets.delete(privateKeySecretKey(accountId, node.id));
-      }
-      if (vpnConfigs[node.id] === undefined) {
-        await this.secrets.delete(vpnConfigSecretKey(accountId, node.id));
-      }
-      if (dbConnections[node.id] === undefined) {
-        await this.secrets.delete(dbConnSecretKey(accountId, node.id));
-      }
-      if (notes[node.id] === undefined) {
-        await this.secrets.delete(notesSecretKey(accountId, node.id));
-      }
-      if (attachments[node.id] === undefined) {
-        await this.secrets.delete(attachmentSecretKey(accountId, node.id));
-        await this.secrets.delete(historySecretKey(accountId, node.id));
-      }
-      if (images[node.id] === undefined) {
-        await this.secrets.delete(imageSecretKey(accountId, node.id));
-      }
-    }
+    const maps = secretMapsOf(bundle);
+    await this.dropVanishedSecrets(accountId, maps);
     await this.saveNodes(
       accountId,
       bundle.nodes.map((n) => ({ ...n, children: undefined })),
     );
-    for (const [entityId, password] of Object.entries(bundle.passwords)) {
-      await this.secrets.store(secretKey(accountId, entityId), password);
-    }
-    for (const [entityId, content] of Object.entries(privateKeys)) {
-      await this.secrets.store(privateKeySecretKey(accountId, entityId), content);
-    }
-    for (const [entityId, content] of Object.entries(vpnConfigs)) {
-      await this.secrets.store(vpnConfigSecretKey(accountId, entityId), content);
-    }
-    for (const [entityId, content] of Object.entries(dbConnections)) {
-      await this.secrets.store(dbConnSecretKey(accountId, entityId), content);
-    }
-    for (const [entityId, content] of Object.entries(notes)) {
-      await this.secrets.store(notesSecretKey(accountId, entityId), content);
-    }
-    for (const [entityId, content] of Object.entries(attachments)) {
-      await this.secrets.store(attachmentSecretKey(accountId, entityId), content);
-    }
-    for (const [entityId, content] of Object.entries(images)) {
-      await this.secrets.store(imageSecretKey(accountId, entityId), content);
-    }
-    for (const [entityId, uri] of Object.entries(totps)) {
-      await this.secrets.store(totpSecretKey(accountId, entityId), uri);
-    }
-    for (const [entityId, body] of Object.entries(configs)) {
-      await this.secrets.store(configSecretKey(accountId, entityId), body);
-    }
+    await this.storeSecretMaps(accountId, maps);
     // Stored notes are authoritative; drop any legacy plaintext copy.
     await this.saveNodes(
       accountId,
@@ -1142,6 +1096,35 @@ export class StorageManager implements vscode.Disposable {
     );
     await this.setTombstones(accountId, bundle.tombstones ?? {});
     await this.setHorizon(accountId, bundle.horizon ?? {});
+  }
+
+  /** Every map's entries into the keychain, kind by kind. */
+  private async storeSecretMaps(accountId: string, maps: SecretMaps): Promise<void> {
+    for (const kind of SECRET_KINDS) {
+      for (const [entityId, value] of Object.entries(maps[kind.bundleKey])) {
+        await this.secrets.store(kind.key(accountId, entityId), value);
+      }
+    }
+  }
+
+  /** Drop the secrets of entities that will disappear with the replaced tree. */
+  private async dropVanishedSecrets(accountId: string, maps: SecretMaps): Promise<void> {
+    for (const node of this.getNodes(accountId).filter((n) => n.type === 'entity')) {
+      await this.dropAbsentKinds(accountId, node.id, maps);
+      // As it has always been: the kept versions go with the attachment map's silence.
+      if (maps.attachments[node.id] === undefined) {
+        await this.secrets.delete(historySecretKey(accountId, node.id));
+      }
+    }
+  }
+
+  /** The kinds the incoming maps do not carry for this entity are gone from the keychain. */
+  private async dropAbsentKinds(accountId: string, entityId: string, maps: SecretMaps): Promise<void> {
+    for (const kind of SECRET_KINDS) {
+      if (maps[kind.bundleKey][entityId] === undefined) {
+        await this.secrets.delete(kind.key(accountId, entityId));
+      }
+    }
   }
 
   // ---------- helpers ----------

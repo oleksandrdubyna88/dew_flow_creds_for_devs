@@ -668,6 +668,7 @@ export function formPageScript(
       port: currentKind() === 'vpn' ? val('vpnPort') : val('port'),
       sshKeyPath: val('sshKeyPath'), publicKey: val('publicKey'),
       sshKeyEntityId: val('sshKeyEntityId'), notes: val('notes'),
+      login: val('login'), url: val('url'),
       password: val('password'),
       privateKey: currentKind() === 'vpn' ? val('vpnKey') : val('privateKey'),
       clearVpnKey: chk('clearVpnKey'),

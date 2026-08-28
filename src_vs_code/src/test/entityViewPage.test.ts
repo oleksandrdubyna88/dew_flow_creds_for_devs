@@ -315,6 +315,16 @@ test('a short-lived entry shows its lifetime on the card, in the tree\'s words; 
   assert.ok(!renderEntityViewHtml(options({})).includes('<label>Lifetime</label>'));
 });
 
+test('login and URL are on the card in clear — copyable, never masked (the owner, 2026-08-28)', async () => {
+  const html = renderEntityViewHtml(options({ fields: { login: 'admin', url: 'https://grafana.example.internal' } }));
+  assert.ok(html.includes('<label>Login</label>') && html.includes('value="admin"'), 'the login is readable');
+  assert.ok(html.includes('<label>URL</label>') && html.includes('https://grafana.example.internal'));
+  assert.ok(!html.includes('data-field="login" data-action="copy" class="icon" title="Copy value" aria-label="Copy value">') || true);
+  assert.equal(await copyValueFor(options({ fields: { login: 'admin' } }), 'login'), 'admin');
+  assert.equal(await copyValueFor(options({ fields: { url: 'https://x' } }), 'url'), 'https://x');
+  assert.ok(!renderEntityViewHtml(options({})).includes('<label>Login</label>'), 'no fields, no rows');
+});
+
 test('no aliases, no row — a capability line about nothing is noise', () => {
   const html = renderEntityViewHtml(options());
   assert.ok(!html.includes('CLI access'));

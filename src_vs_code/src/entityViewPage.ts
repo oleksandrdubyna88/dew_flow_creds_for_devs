@@ -31,6 +31,7 @@ import { Revision, summarizeRevision } from './revisionHistory';
 import { BINDABLE_FIELDS, BindableField } from './envBinding';
 import { TotpSnapshot } from './totp';
 import { normalizeForwards, normalizeTags, renderForward } from './sshOptions';
+import { EntityFields } from './entityFields';
 
 /**
  * The read-only entity viewer as PURE markup: options in, one HTML string out.
@@ -52,6 +53,8 @@ export interface EntityViewOptions {
   keySourceName?: string;
   /** A second line under the title — the revision viewer's "version replaced at …". */
   subtitle?: string;
+  /** A credential's login and URL — encrypted at rest, in clear here (the owner, 2026-08-28). */
+  fields?: EntityFields;
   /** The tree's own words for a short-lived entry — "expires in 3 h", "until VS Code closes". */
   lifetime?: string;
   /** CLI aliases pointing at this entry (T23a) — the reverse of the alias map, caller-resolved. */
@@ -399,6 +402,8 @@ export function renderEntityViewHtml(options: EntityViewOptions): string {
   const mainRows = [
     row('Name', 'name', d.name),
     lifetimeRow,
+    row('Login', 'login', options.fields?.login),
+    row('URL', 'url', options.fields?.url),
     row('Host', 'host', d.host),
     row('User', 'user', d.user),
     row('Port', 'port', d.port !== undefined ? String(d.port) : undefined),

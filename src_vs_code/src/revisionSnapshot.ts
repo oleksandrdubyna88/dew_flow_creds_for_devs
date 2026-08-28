@@ -25,6 +25,7 @@ export async function snapshotForRevision(
       notes: await storage.getNotes(accountId, entity.id),
       totp: await storage.getTotp(accountId, entity.id),
       config: await storage.getConfigBody(accountId, entity.id),
+      fields: await storage.getFieldsRaw(accountId, entity.id),
     },
   };
 }

@@ -50,3 +50,10 @@ for (const kind of KINDS) {
     }
   });
 }
+
+test('a credential has an Account section with login and URL; the visibility script shows it for credentials only', () => {
+  const html = renderHtml(form('credential'));
+  assert.ok(html.includes('<fieldset id="accountSection"'), 'the section exists');
+  assert.ok(html.includes('id="login"') && html.includes('id="url"'));
+  assert.ok(html.includes("show('accountSection', kind === 'credential');"), 'shown for the credential kind and no other');
+});

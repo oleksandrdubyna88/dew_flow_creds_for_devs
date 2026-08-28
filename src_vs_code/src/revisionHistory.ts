@@ -33,6 +33,8 @@ export interface RevisionSecrets {
   totp?: string;
   /** The config file's previous contents — an edit that breaks a config must be undoable. */
   config?: string;
+  /** The login/URL JSON as it was. */
+  fields?: string;
 }
 
 export interface Revision {
@@ -59,7 +61,7 @@ export function revisionHead(revision: Revision): RevisionHead {
   return head;
 }
 
-const SMALL_FIELDS = ['password', 'privateKey', 'vpnConfig', 'dbConnection', 'notes', 'totp'] as const;
+const SMALL_FIELDS = ['password', 'privateKey', 'vpnConfig', 'dbConnection', 'notes', 'totp', 'config', 'fields'] as const;
 
 /** A copy of the list with `revision` newest-first, capped, attachments stripped. */
 export function pushRevision(list: readonly Revision[], revision: Revision): Revision[] {

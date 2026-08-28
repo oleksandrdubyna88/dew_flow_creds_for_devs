@@ -62,6 +62,8 @@ export async function copyValueFor(
     case 'sshKeyPath': value = d.sshKeyPath; break;
     case 'publicKey': value = d.publicKey; break;
     case 'notes': value = options.notes ?? d.notes; break;
+    case 'login': value = options.fields?.login; break;
+    case 'url': value = options.fields?.url; break;
     case 'config': value = options.config; break;
     case 'vpnType': value = d.vpnType; break;
     case 'dbType': value = d.dbType; break;

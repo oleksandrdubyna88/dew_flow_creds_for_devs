@@ -22,6 +22,9 @@ export interface ExternalSecrets {
   totp?: string;
   /** The config file's contents — a secret, like the notes above it. */
   config?: string;
+  /** A credential's login and URL — encrypted in the vault, plain here like everything else. */
+  login?: string;
+  url?: string;
 }
 
 export interface ExternalBundle {

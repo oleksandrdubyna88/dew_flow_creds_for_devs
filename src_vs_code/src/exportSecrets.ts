@@ -1,4 +1,5 @@
 import { ExternalSecrets } from './externalBundle';
+import { parseFields } from './entityFields';
 
 /** The nine secret readers the export walks — the storage, by the part of it this needs. */
 export interface SecretReader {
@@ -11,6 +12,7 @@ export interface SecretReader {
   getImage(accountId: string, id: string): Thenable<string | undefined>;
   getTotp(accountId: string, id: string): Thenable<string | undefined>;
   getConfigBody(accountId: string, id: string): Thenable<string | undefined>;
+  getFieldsRaw(accountId: string, id: string): Thenable<string | undefined>;
 }
 
 /**
@@ -41,6 +43,9 @@ entityIds: readonly string[],
     put('image', await vault.getImage(accountId, id));
     put('totp', await vault.getTotp(accountId, id));
     put('config', await vault.getConfigBody(accountId, id));
+    const fields = parseFields(await vault.getFieldsRaw(accountId, id));
+    put('login', fields.login);
+    put('url', fields.url);
     out[id] = s;
   }
   return out;

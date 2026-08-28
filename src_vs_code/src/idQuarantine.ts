@@ -132,6 +132,7 @@ function remapBundle(bundle: BackupBundle, renamed: Readonly<Record<string, stri
     vpnConfigs: rekey(bundle.vpnConfigs, renamed),
     dbConnections: rekey(bundle.dbConnections, renamed),
     notes: rekey(bundle.notes, renamed),
+    fields: rekey(bundle.fields, renamed),
     attachments: rekey(bundle.attachments, renamed),
     images: rekey(bundle.images, renamed),
     totps: rekey(bundle.totps, renamed),

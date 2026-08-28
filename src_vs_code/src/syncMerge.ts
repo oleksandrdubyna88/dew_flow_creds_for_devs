@@ -49,6 +49,8 @@ export interface ProfileSnapshot {
   totps: Record<string, string>;
   /** entityId -> config file contents. A secret, merged exactly like the notes. */
   configs: Record<string, string>;
+  /** entityId -> login/URL JSON. A secret, merged exactly like the notes; absent before 0.82. */
+  fields?: Record<string, string>;
   /** id -> soft-delete record (object form; legacy number is normalized in). */
   tombstones: Record<string, Tombstone | number>;
   /** Element-wise max of every vector ever observed for this profile. */
@@ -75,6 +77,7 @@ export function emptySnapshot(): ProfileSnapshot {
     images: {},
     totps: {},
     configs: {},
+    fields: {},
     tombstones: {},
     horizon: {},
   };
@@ -133,6 +136,7 @@ function fingerprint(snapshot: ProfileSnapshot): string {
     images: sortRecord(snapshot.images),
     totps: sortRecord(snapshot.totps ?? {}),
     configs: sortRecord(snapshot.configs ?? {}),
+    fields: sortRecord(snapshot.fields ?? {}),
     tombstones: sortRecord(
       Object.fromEntries(
         Object.entries(normalizeTombstones(snapshot.tombstones)).map(([id, t]) => [
@@ -182,6 +186,7 @@ export function mergeProfiles(
   const images: Record<string, string> = {};
   const totps: Record<string, string> = {};
   const configs: Record<string, string> = {};
+  const fields: Record<string, string> = {};
   const nodes: TreeNode[] = [];
   const allIds = new Set([...localById.keys(), ...remoteById.keys()]);
 
@@ -238,6 +243,7 @@ export function mergeProfiles(
     // `?? {}` for the same reason the line above needs one: a snapshot decoded from a vault
     // written before the `config` kind carries no configs record at all.
     copySecret(configs, id, primary.configs ?? {}, fallback.configs ?? {});
+    copySecret(fields, id, primary.fields ?? {}, fallback.fields ?? {});
   }
 
   // Re-parent children whose parent did not survive the merge.
@@ -274,6 +280,7 @@ export function mergeProfiles(
     images,
     totps,
     configs,
+    fields,
     tombstones,
     horizon,
   };
