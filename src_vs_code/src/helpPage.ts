@@ -54,6 +54,55 @@ export function searchIndex(language: HelpLanguage): ReadonlyArray<{ id: string;
   });
 }
 
+/**
+ * One section's text, as paragraphs, bullets and emphasis.
+ *
+ * <p><b>Escaped first, marked up second, and the order is the whole safety of it.</b> Every
+ * character that could open a tag is gone before any tag of ours is added, so the markup below
+ * can only ever produce the four elements it names.</p>
+ *
+ * <p>It exists because the catalog had been written as though it were supported: twelve places
+ * carried `**emphasis**` that reached the reader as literal asterisks, and no article could
+ * express a list at all — which is what a page describing ten switches and sixteen tools needs
+ * most. Three constructs, deliberately: a blank line starts a paragraph, a line beginning "- "
+ * is a bullet, and `**text**` is emphasis. Anything more would be a markdown parser, and this
+ * is a help page.</p>
+ */
+export function bodyHtml(text: string): string {
+  return blocks(text)
+    .map((block) => (block.bullets ? list(block.lines) : `<p>${inline(block.lines.join(' '))}</p>`))
+    .join('\n');
+}
+
+interface Block {
+  bullets: boolean;
+  lines: string[];
+}
+
+/** Blank lines separate blocks; a block of "- " lines is a list, anything else a paragraph. */
+function blocks(text: string): Block[] {
+  const found: Block[] = [];
+  for (const raw of text.split(/\n\s*\n/)) {
+    const lines = raw
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0);
+    if (lines.length > 0) {
+      found.push({ bullets: lines.every((line) => line.startsWith('- ')), lines });
+    }
+  }
+  return found;
+}
+
+function list(lines: readonly string[]): string {
+  return `<ul>${lines.map((line) => `<li>${inline(line.slice(2))}</li>`).join('')}</ul>`;
+}
+
+/** Escaped, then the one inline construct. Nothing here can widen what the escape allowed. */
+function inline(text: string): string {
+  return escapeHtml(text).replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+}
+
 /** The article markup: five labelled sections in the fixed order, plus the fallback note. */
 export function articleHtml(id: string, language: HelpLanguage): string {
   const article = HELP_ARTICLES.find((candidate) => candidate.id === id);
@@ -73,7 +122,7 @@ export function articleHtml(id: string, language: HelpLanguage): string {
     <h2>${escapeHtml(body.title)}</h2>
     ${fallback ? `<p class="fallback">${escapeHtml(UI[language].fallback)}</p>` : ''}
     ${sections
-      .map(([key, text]) => `<h3>${escapeHtml(labels[key])}</h3><p>${escapeHtml(text)}</p>`)
+      .map(([key, text]) => `<h3>${escapeHtml(labels[key])}</h3>${bodyHtml(text)}`)
       .join('\n')}
   </article>`;
 }

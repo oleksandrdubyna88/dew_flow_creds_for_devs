@@ -6,6 +6,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.87.0] — 2026-08-29
+
+### Added
+
+- **Help: "What an agent can and cannot do"** — the map of the agent surface, taken from the code
+  rather than from memory: which of the 16 tools exist, what an agent gets *implicitly* as a
+  consequence of another call, and what it will run into and cannot do. The asymmetry it leads
+  with: an agent can create an entry and delete it, and cannot rename one.
+
+### Fixed
+
+- **The help could not render a list, and printed `**emphasis**` as literal asterisks** — twelve
+  places had been written as though markup were supported. Three constructs now work, escaped
+  first and marked up second so the markup can only ever produce the four elements it names: a
+  blank line starts a paragraph, a line beginning `- ` is a bullet, and `**text**` is emphasis.
+
 ## [0.86.0] — 2026-08-28
 
 ### Added
