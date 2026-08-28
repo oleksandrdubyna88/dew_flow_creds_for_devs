@@ -67,7 +67,8 @@
     "contract": "npm run compile && node scripts/emit-contract.mjs",
     "itest:cli": "npm run compile && node scripts/creds-cli-itest.cjs",
     "itest:mcp": "npm run compile && node scripts/creds-mcp-itest.cjs",
-    "itest:wsl-relay": "npm run compile && node scripts/wsl-agent-relay-itest.cjs"
+    "itest:wsl-relay": "npm run compile && node scripts/wsl-agent-relay-itest.cjs",
+    "ratchet": "npm run compile && node scripts/size-ratchet.mjs"
   },
   "devDependencies": {
     "@types/node": "^20.11.0",

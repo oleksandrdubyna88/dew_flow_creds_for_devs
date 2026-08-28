@@ -176,7 +176,8 @@ The `userVerification: 'required'` half of item 1 has already shipped
 
 ---
 
-### T3. The 800-line ceiling exists, is enforced, and is losing
+### T3. ~~The 800-line ceiling exists, is enforced, and is losing~~ — **SHIPPED 2026-08-27** (ratchet in CI; baseline 5,876 / 1,203; the first run caught its own off-by-one — `split('
+').length` counts a trailing newline, `wc -l` does not — fixed to count newlines)
 
 **Symptom.** Audit item A1 was written against a 3,078-line `extension.ts`. Measured today:
 

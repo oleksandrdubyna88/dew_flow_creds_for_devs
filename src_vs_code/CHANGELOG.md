@@ -68,6 +68,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **The two files exempted from the 800-line ceiling can no longer grow.** `extension.ts` had
+  gone from 3,078 lines to 5,876 behind its own `eslint-disable` — the rule written to stop the
+  next 3,000-line file blessed the file it was written about. `npm run ratchet` (now in CI)
+  compares each exempted file against a checked-in baseline and fails when it grew; the baseline
+  moves only downward, and only through `--update`.
+
 - **Built-in help — the yellow question mark.** In the view's title bar (which now says just
   *CredsForDevs* instead of the name twice). Every feature as an article in one fixed shape —
   *what it is, why, how to set it up, how to use it, what can go wrong* — with the least

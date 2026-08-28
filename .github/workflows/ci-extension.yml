@@ -53,6 +53,12 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      # The size ratchet (tails T3): the two files exempted from the 800-line ceiling may
+      # shrink, never grow. .size-baseline.json is the number; `npm run ratchet -- --update`
+      # is the only way it moves, and only downward.
+      - name: Size ratchet
+        run: node scripts/size-ratchet.mjs
+
       # node:test over the compiled out/. Every module that needs a unit test is
       # written free of `vscode`, which is why no VS Code test harness is needed.
       - name: Test

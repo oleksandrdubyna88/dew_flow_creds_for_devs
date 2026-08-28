@@ -17,7 +17,7 @@ import { ENTITY_KINDS } from '../types';
  * ever scaffolded, had nowhere typed to put one. A count agrees with whatever the list happens to
  * say; this asks the question the seed exists to answer.</p>
  */
-test('every kind an entity can be has a default folder to land in', () => {
+test('every kind an entity can be has a default folder to land in (T16)', () => {
   const seeded = new Set(DEFAULT_FOLDERS.map((f) => f.folderType));
   const missing = ENTITY_KINDS.filter((kind) => !seeded.has(kind));
   assert.deepEqual(

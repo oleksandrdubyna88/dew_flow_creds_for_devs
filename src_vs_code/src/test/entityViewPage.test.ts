@@ -62,7 +62,7 @@ function bodyMaxWidth(html: string): number {
   return Number(width[1]);
 }
 
-test('the viewer takes its width from the shared constant, not a number of its own', () => {
+test('the viewer takes its width from the shared constant, not a number of its own (T9)', () => {
   const viewer = bodyMaxWidth(renderEntityViewHtml(options()));
   assert.equal(
     viewer,
@@ -334,4 +334,10 @@ test('an image carries its dimensions when stamped, and its metadata line', () =
   );
   assert.ok(html.includes('1920×1080'));
   assert.ok(html.includes('class="fileName">shot.png<'));
+});
+
+// T31 — the checkbox contrast rule is pinned so a restyle cannot silently drop it.
+test('every page paints checkboxes with the action colour (T31)', () => {
+  const html = renderEntityViewHtml(options());
+  assert.ok(html.includes('input[type=checkbox] { accent-color: var(--vscode-button-background)'));
 });
