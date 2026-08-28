@@ -27,6 +27,15 @@ export interface FolderFormOptions {
   mcp?: McpAccess;
   /** How many entries the switches would reach, said out loud so the blast radius is visible. */
   entryCount: number;
+  /**
+   * What this folder is subject to from ABOVE, when it has no answer of its own.
+   *
+   * <p>Present only when an ancestor decided. The boxes are then pre-filled with it and the hint
+   * names the folder, because a form that says "Not set. Nothing here is reachable" under an open
+   * parent is not merely unhelpful — it is false, and it is the screen somebody checks before
+   * trusting the switch.</p>
+   */
+  inherited?: { access: McpAccess; from: string };
   /** The Trash, or anything inside it: nothing there is reachable, whatever a switch says. */
   inTrash: boolean;
 }
@@ -37,8 +46,9 @@ export interface FolderFormOptions {
 // eslint-disable-next-line max-lines-per-function
 export function renderFolderHtml(options: FolderFormOptions): string {
   const nonce = crypto.randomBytes(16).toString('base64url');
-  const mcp = normalizeMcpAccess(options.mcp);
   const decided = options.mcp !== undefined;
+  const mcp = shownAccess(options);
+  const inheritedFrom = inheritedName(options);
   return `<!DOCTYPE html>
 <html>
 <head>
@@ -88,7 +98,7 @@ export function renderFolderHtml(options: FolderFormOptions): string {
            value="${escapeHtml(options.name)}">
   </fieldset>
 
-  ${options.inTrash ? trashNotice() : accessFieldset(mcp, decided, options.entryCount)}
+  ${options.inTrash ? trashNotice() : accessFieldset(mcp, decided, options.entryCount, inheritedFrom)}
 
 <script nonce="${nonce}">
   const vscode = acquireVsCodeApi();
@@ -122,11 +132,41 @@ export function renderFolderHtml(options: FolderFormOptions): string {
  * ticking a box grants something to entries nobody is looking at — including entries that do
  * not exist yet.</p>
  */
-function accessFieldset(mcp: McpAccess, decided: boolean, entryCount: number): string {
+/** Its own answer when it has one, otherwise whatever is in force from above. */
+function shownAccess(options: FolderFormOptions): McpAccess {
+  return normalizeMcpAccess(options.mcp ?? options.inherited?.access);
+}
+
+function inheritedName(options: FolderFormOptions): string | undefined {
+  return options.inherited?.from;
+}
+
+/**
+ * Which of the three things is true here, in one sentence.
+ *
+ * <p>Three, not two: "set here", "not set anywhere" and "set above and in force here" are
+ * different situations with different next moves, and the third used to be told it was the
+ * second.</p>
+ */
+function accessSentence(decided: boolean, inheritedFrom: string | undefined, covers: string): string {
+  if (decided) {
+    return `Applies to ${covers}.`;
+  }
+  if (inheritedFrom !== undefined) {
+    return `Inherited from "${inheritedFrom}" — these answers are in force here already. Ticking or clearing anything gives this folder an answer of its own, which then applies to ${covers}.`;
+  }
+  return `Not set. Nothing in this folder is reachable by an agent unless an entry says so itself. Setting it here would cover ${covers}.`;
+}
+
+function accessFieldset(
+  mcp: McpAccess,
+  decided: boolean,
+  entryCount: number,
+  inheritedFrom: string | undefined,
+): string {
   const reach = entryCount === 1 ? '1 entry' : `${entryCount} entries`;
-  const said = decided
-    ? `Applies to each of the ${reach} in this folder that has no answer of its own, and to everything created here afterwards.`
-    : `Not set. Nothing in this folder is reachable by an agent unless an entry says so itself. Setting it here would cover each of the ${reach} that has no answer of its own, and everything created here afterwards.`;
+  const covers = `each of the ${reach} in this folder and the folders inside it that has no answer of its own, and everything created here afterwards`;
+  const said = accessSentence(decided, inheritedFrom, covers);
   return `<fieldset class="sec">
     <legend>Agent access (MCP)</legend>
     ${mcpBarHtml(accessMask(mcp))}

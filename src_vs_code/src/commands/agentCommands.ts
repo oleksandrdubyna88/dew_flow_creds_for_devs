@@ -2,6 +2,7 @@
    (roadmap A1 stage 2, 2026-08-28): one function that registers a family of closures, each the size it
    was. The ceilings are a boundary for NEW code here; a handler meets them when it is next touched. */
 import { Machine } from '../installCommand';
+import { anyAgentAccess } from '../mcpAccess';
 import { CredsAgentServer } from '../credsAgentServer';
 import { AliasMap } from '../cliAliases';
 import { SshBridgeManager } from '../sshBridgeManager';
@@ -96,6 +97,12 @@ export function registerAgentCommands(host: AgentCommandsHost): void {
    * newest release itself and verifies the checksum, so what gets pasted stays correct after this
    * extension has moved on: see `installCommand.ts`.</p>
    */
+  // A window with entries open to agents must be FINDABLE by one. The listener used to open on
+  // the first `share()`, which is a door nobody uses when the agent arrives over MCP: it starts
+  // `creds-mcp` itself and looks for the announcement this listener writes. So a reload left the
+  // switches on, the vault unlocked, and every agent told no window answered.
+  void openAgentDoorIfAsked(agentServer, storage);
+
   register('credSshManager.copyInstallCommand', () => copyInstallScript());
 
   async function copyInstallScript(): Promise<void> {
@@ -652,4 +659,31 @@ export function registerAgentCommands(host: AgentCommandsHost): void {
   register('credSshManager.installMcpServer', () => offerInstall(CREDS_MCP));
 
   register('credSshManager.installCli', () => offerInstall(CREDS_CLI));
+}
+
+/**
+ * Open the broker's listener when — and only when — something is open to agents.
+ *
+ * <p>Guarded rather than unconditional: this binds a loopback listener, and a person who has
+ * opened nothing to an agent has not asked for one. `anyAgentAccess` asks about answers somebody
+ * GAVE, so a folder deliberately set to nothing keeps the door shut.</p>
+ *
+ * <p>Never throws at the caller. A listener that could not bind is a degraded window, not a
+ * broken one — everything except the agent surface still works, and the failure is already
+ * written to the agent-access channel.</p>
+ */
+async function openAgentDoorIfAsked(
+  agentServer: AgentCommandsHost['agentServer'],
+  storage: AgentCommandsHost['storage'],
+): Promise<void> {
+  try {
+    const opened = storage
+      .getAccounts()
+      .some((account) => anyAgentAccess(storage.getNodes(account.accountId)));
+    if (opened) {
+      await agentServer.ensureStarted();
+    }
+  } catch {
+    // Reported by the server's own channel; a window must not fail to activate over this.
+  }
 }

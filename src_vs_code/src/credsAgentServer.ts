@@ -248,7 +248,7 @@ export class CredsAgentServer implements vscode.Disposable {
    * two listeners and leaking the one that loses the assignment — with tokens
    * already handed out naming its port.
    */
-  private ensureStarted(): Promise<void> {
+  ensureStarted(): Promise<void> {
     return this.beginStart(async () => {
       this.output ??= vscode.window.createOutputChannel('CredsForDevs: Agent Access');
       this.audit.open(this.storageDir, new Date(), process.pid);

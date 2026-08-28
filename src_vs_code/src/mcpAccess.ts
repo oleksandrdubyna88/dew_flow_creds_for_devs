@@ -141,9 +141,68 @@ export function resolveMcpInTree(
   node: TreeNode,
   byId: (id: string) => TreeNode | undefined,
 ): ResolvedMcpAccess & { folder: TreeNode | undefined } {
-  const folder = node.parentId === undefined || node.parentId === null ? undefined : byId(node.parentId);
-  return { ...resolveMcpAccess(node, folder, isInTrash(node, byId)), folder };
+  const parent = parentOf(node, byId);
+  if (isInTrash(node, byId)) {
+    return { access: NO_MCP_ACCESS, source: 'none', folder: parent };
+  }
+  const own = ownAccess(node);
+  if (own !== undefined) {
+    return { access: normalizeMcpAccess(own), source: 'entity', folder: parent };
+  }
+  const decided = nearestAnswer(parent, byId);
+  if (decided === undefined) {
+    return { access: NO_MCP_ACCESS, source: 'none', folder: parent };
+  }
+  // The folder returned is the one that ANSWERED, not the one directly above: the viewer says
+  // "inherited from X" with this name, and naming a silent folder would send somebody to a form
+  // whose boxes are all clear looking for the setting they are subject to.
+  return { access: normalizeMcpAccess(decided.mcp), source: 'folder', folder: decided };
 }
+
+/**
+ * A node's own answer — an entry's from its details, a folder's from itself.
+ *
+ * <p>A folder carries `mcp` at the top level and an entry inside `details`, and reading only the
+ * latter is how a sub-folder's own setting used to be ignored when the sub-folder was the node
+ * being asked about.</p>
+ */
+function ownAccess(node: TreeNode): McpAccess | undefined {
+  return node.type === 'entity' ? node.details?.mcp : node.mcp;
+}
+
+function parentOf(node: TreeNode, byId: (id: string) => TreeNode | undefined): TreeNode | undefined {
+  return node.parentId === undefined || node.parentId === null ? undefined : byId(node.parentId);
+}
+
+/**
+ * The nearest folder above that has an answer of its own.
+ *
+ * <p><b>The whole chain, not one step.</b> Resolving against the immediate parent alone meant a
+ * project folder opened to agents granted nothing to the entries inside its sub-folders — which
+ * is the shape everybody's vault actually has, and it made the switch look broken rather than
+ * narrow. Inheritance now walks up until something answers, so opening a folder opens what is
+ * under it and closing a sub-folder still closes that branch: an explicit empty object is an
+ * answer, and answers stop the walk.</p>
+ *
+ * <p>The step limit is not defensive dressing. `parentId` comes off a synced record, and a cycle
+ * there — two folders each other's parent after a bad merge — would hang the tree renderer rather
+ * than draw a wrong badge. Depth in a real vault is single digits.</p>
+ */
+function nearestAnswer(
+  from: TreeNode | undefined,
+  byId: (id: string) => TreeNode | undefined,
+): (TreeNode & { mcp: McpAccess }) | undefined {
+  let current = from;
+  for (let step = 0; current !== undefined && step < MAX_TREE_DEPTH; step += 1) {
+    if (current.mcp !== undefined) {
+      return current as TreeNode & { mcp: McpAccess };
+    }
+    current = parentOf(current, byId);
+  }
+  return undefined;
+}
+
+const MAX_TREE_DEPTH = 64;
 
 function inheritedFrom(folder: TreeNode | undefined): ResolvedMcpAccess {
   const inherited = folder === undefined ? undefined : folder.mcp;
@@ -201,4 +260,61 @@ function deleteLabel(scope: McpDeleteScope | undefined): string {
     return 'can delete to Trash';
   }
   return scope === 'own' ? 'can delete what it created' : '';
+}
+
+/**
+ * How many entries a folder's answer would actually reach.
+ *
+ * <p>The whole subtree, not the direct children. The form says this number out loud so the blast
+ * radius of a switch is visible, and counting one level made it say "0 entries" for a project
+ * folder whose entries all live in sub-folders — the most reassuring possible wording for the
+ * most far-reaching possible click.</p>
+ *
+ * <p>An entry with an answer of its own is still counted: the sentence is about what the folder
+ * covers, and an entry can have its own setting removed later. The walk carries a visited set
+ * because `parentId` comes off a synced record and a cycle must not hang a form.</p>
+ */
+export function entriesUnder(folderId: string, nodes: readonly TreeNode[]): number {
+  const children = childrenByParent(nodes);
+  const seen = new Set<string>([folderId]);
+  const queue = [folderId];
+  let found = 0;
+  while (queue.length > 0) {
+    found += countInto(children.get(queue.pop() as string) ?? [], seen, queue);
+  }
+  return found;
+}
+
+/** Every node grouped under its parent id; a root's parent is the empty string. */
+function childrenByParent(nodes: readonly TreeNode[]): Map<string, TreeNode[]> {
+  const map = new Map<string, TreeNode[]>();
+  for (const node of nodes) {
+    const parent = node.parentId ?? '';
+    map.set(parent, [...(map.get(parent) ?? []), node]);
+  }
+  return map;
+}
+
+/** One level of the walk: count the entries, queue the folders, and never revisit a node. */
+function countInto(children: readonly TreeNode[], seen: Set<string>, queue: string[]): number {
+  let found = 0;
+  for (const child of children) {
+    if (!seen.has(child.id)) {
+      seen.add(child.id);
+      found += child.type === 'entity' ? 1 : 0;
+      queue.push(child.id);
+    }
+  }
+  return found;
+}
+
+/**
+ * Has anybody opened anything to agents in this vault?
+ *
+ * <p>The trigger for opening the broker's listener at all. It asks about answers a person GAVE,
+ * not about what resolves where: a folder set to nothing is an opt-out and must not start a
+ * listener, and an entry that merely inherits is already covered by the folder that answered.</p>
+ */
+export function anyAgentAccess(nodes: readonly TreeNode[]): boolean {
+  return nodes.some((node) => grantsAnything(normalizeMcpAccess(ownAccess(node))));
 }

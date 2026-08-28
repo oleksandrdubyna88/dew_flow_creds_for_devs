@@ -2,12 +2,15 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
   accessMask,
+  anyAgentAccess,
   describeAccess,
+  entriesUnder,
   grantsAnything,
   maskKey,
   mayDelete,
   normalizeMcpAccess,
   resolveMcpAccess,
+  resolveMcpInTree,
 } from '../mcpAccess';
 import { TreeNode } from '../types';
 
@@ -130,4 +133,106 @@ test('the words the viewer says distinguish the two delete scopes', () => {
   assert.match(describeAccess(normalizeMcpAccess({ delete: 'own' })), /created/);
   assert.match(describeAccess(normalizeMcpAccess({ delete: 'any' })), /to Trash/);
   assert.equal(describeAccess(normalizeMcpAccess({ view: true })), 'visible');
+});
+
+/** A tree as a lookup, so the resolver can walk it the way the real one does. */
+function tree(...nodes: TreeNode[]): (id: string) => TreeNode | undefined {
+  const byId = new Map(nodes.map((n) => [n.id, n]));
+  return (id: string) => byId.get(id);
+}
+
+function child(id: string, parentId: string, mcp?: TreeNode['mcp']): TreeNode {
+  return { id, name: id, type: 'folder', parentId, mcp };
+}
+
+test('a grant on a folder reaches entries in the folders NESTED inside it', () => {
+  // What the owner expects and says out loud: "I opened the root folder, so everything inside is
+  // open; I can close a part of it afterwards." Resolving only against the immediate parent means
+  // a project folder with sub-folders grants nothing at all, which is the opposite.
+  const root = folder('root', { view: true, use: true });
+  const mid = child('mid', 'root');
+  const leaf = entity('e1', 'mid');
+
+  const resolved = resolveMcpInTree(leaf, tree(root, mid, leaf));
+
+  assert.equal(resolved.access.use, true, 'the grandparent grant did not reach a nested entry');
+  assert.equal(resolved.source, 'folder');
+});
+
+test('a nested FOLDER answers with what it inherits, so its form can say so', () => {
+  const root = folder('root', { view: true, use: true });
+  const mid = child('mid', 'root');
+
+  const resolved = resolveMcpInTree(mid, tree(root, mid));
+
+  assert.equal(resolved.access.use, true, 'a sub-folder showed "not set" under an open parent');
+  assert.equal(resolved.source, 'folder');
+});
+
+test('a folder closed on purpose blocks what its parent opened', () => {
+  // The other half, and the reason presence is what carries the answer: an explicit empty object
+  // means "decided, and the answer is nothing", and it must beat an ancestor that says yes.
+  const root = folder('root', { view: true, use: true });
+  const mid = child('mid', 'root', {});
+  const leaf = entity('e1', 'mid');
+
+  const resolved = resolveMcpInTree(leaf, tree(root, mid, leaf));
+
+  assert.equal(
+    grantsAnything(resolved.access),
+    false,
+    'a deliberately closed sub-folder still let the grant through',
+  );
+});
+
+test('an entry still beats every folder above it', () => {
+  const root = folder('root', { view: true, use: true, edit: true });
+  const mid = child('mid', 'root');
+  const leaf = entity('e1', 'mid', {});
+  const resolved = resolveMcpInTree(leaf, tree(root, mid, leaf));
+
+  assert.equal(resolved.source, 'entity');
+  assert.equal(grantsAnything(resolved.access), false);
+});
+
+test('the blast radius counts the whole subtree, not the direct children', () => {
+  // The form says this number out loud. Counting one level made a project folder whose entries
+  // all live in sub-folders read "0 entries" — the most reassuring possible wording for the most
+  // far-reaching possible click.
+  const nodes: TreeNode[] = [
+    folder('root'),
+    child('db', 'root'),
+    child('ssh', 'root'),
+    entity('e1', 'db'),
+    entity('e2', 'db'),
+    entity('e3', 'ssh'),
+    entity('elsewhere', null),
+  ];
+
+  assert.equal(entriesUnder('root', nodes), 3);
+  assert.equal(entriesUnder('db', nodes), 2);
+  assert.equal(entriesUnder('ssh', nodes), 1);
+});
+
+test('a cycle in the parent chain cannot hang the form', () => {
+  // parentId comes off a synced record; a bad merge can make two folders each other's parent.
+  const a = child('a', 'b');
+  const b = child('b', 'a');
+
+  assert.equal(entriesUnder('a', [a, b, entity('e1', 'b')]), 1);
+});
+
+test('the agent door opens only when somebody actually opened something', () => {
+  // The trigger for binding a loopback listener at all, so it must key on an answer a person
+  // GAVE. A folder set to nothing is an opt-OUT and must leave the door shut.
+  assert.equal(anyAgentAccess([folder('root'), entity('e1', 'root')]), false, 'nothing set');
+  assert.equal(anyAgentAccess([folder('root', {}), entity('e1', 'root')]), false, 'closed on purpose');
+  assert.equal(anyAgentAccess([folder('root', { view: true })]), true, 'a folder was opened');
+  assert.equal(anyAgentAccess([entity('e1', null, { use: true })]), true, 'an entry was opened');
+});
+
+test('a folder that only INHERITS does not itself open the door', () => {
+  // It is already covered by the folder that answered; counting it would make the door depend on
+  // where in the tree you look rather than on what anybody decided.
+  assert.equal(anyAgentAccess([child('mid', 'root')]), false);
 });

@@ -3,6 +3,7 @@
 export type DoorsFor = (accountId: string, node: TreeNode) => Partial<Pick<EntityFormOptions, 'agentDoors' | 'entityTarget'>>;
 
 import { TreeNode } from './types';
+import { entriesUnder, resolveMcpInTree } from './mcpAccess';
 import { StorageManager } from './storageManager';
 import { parseHostKey } from './hostKeyPin';
 import { parseTotpSecret } from './totp';
@@ -131,11 +132,19 @@ export async function editFolder(
   onMutated: () => void,
 ): Promise<void> {
   const nodes = storage.getNodes(accountId);
+  const byId = (id: string): TreeNode | undefined => storage.getNode(accountId, id);
+  // What this folder is subject to from above, so the form can say so instead of claiming
+  // nothing here is reachable while an open parent says otherwise.
+  const resolved = resolveMcpInTree(node, byId);
   const result = await showFolderForm({
     name: node.name,
     mcp: node.mcp,
-    entryCount: nodes.filter((n) => n.parentId === node.id && n.type === 'entity').length,
-    inTrash: isInTrash(node, (id) => storage.getNode(accountId, id)),
+    entryCount: entriesUnder(node.id, nodes),
+    inherited:
+      node.mcp === undefined && resolved.source === 'folder' && resolved.folder !== undefined
+        ? { access: resolved.access, from: resolved.folder.name }
+        : undefined,
+    inTrash: isInTrash(node, byId),
   });
   if (result === undefined) {
     return;

@@ -6,6 +6,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.84.0] — 2026-08-28
+
+### Fixed
+
+- **Agent access now really is inherited by everything inside a folder.** It was resolved against
+  the immediate parent only, so a project folder opened to agents granted nothing to the entries
+  in its sub-folders — which is the shape most vaults have, and it made the switch look broken
+  rather than narrow. Inheritance walks up until something answers, so opening a folder opens what
+  is under it; a sub-folder set to nothing still closes that branch, and an entry still overrides
+  everything above it.
+- **A sub-folder's form no longer claims nothing is reachable while its parent says otherwise.**
+  It shows what it inherits, ticked, and names the folder the answer came from.
+- **The "blast radius" count told you the reassuring number.** It counted direct entries only, so a
+  project folder whose entries all live in sub-folders read "0 entries" next to the switch that
+  opens all of them. It counts the whole subtree now.
+- **An MCP agent could not find this window after a reload.** The broker's listener opened on the
+  first *Share with Claude Code...*, a door nobody uses when the agent arrives over MCP — it starts
+  `creds-mcp` itself and looks for the announcement that listener writes. A window with entries
+  open to agents now opens it at startup; a vault with nothing opened still opens nothing.
+
 ## [0.83.2] — 2026-08-28
 
 ### Fixed

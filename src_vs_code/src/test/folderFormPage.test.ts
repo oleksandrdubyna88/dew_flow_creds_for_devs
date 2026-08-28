@@ -121,3 +121,31 @@ test('what the form claims about the Trash is what the resolver actually does', 
 test('one entry is counted in words, not as "1 entries"', () => {
   assert.match(renderFolderHtml(options({ mcp: {}, entryCount: 1 })), /each of the 1 entry in this folder/);
 });
+
+test('a folder under an open parent says what it inherits, and shows it ticked', () => {
+  // It used to read "Not set. Nothing in this folder is reachable by an agent" while the folder
+  // above had granted everything below it — false, on the one screen somebody checks before
+  // trusting the switch.
+  const html = renderFolderHtml(
+    options({ inherited: { access: normalizeMcpAccess({ use: true }), from: 'project' } }),
+  );
+
+  assert.match(html, /Inherited from &quot;project&quot;/);
+  assert.doesNotMatch(html, /Nothing in this folder is reachable/);
+  // Ticked, not merely described: the boxes are the thing people read.
+  assert.match(html, /id="mcpUse"[^>]*checked/);
+});
+
+test('with nothing above it, the folder still says plainly that nothing is reachable', () => {
+  const html = renderFolderHtml(options());
+
+  assert.match(html, /Nothing in this folder is reachable/);
+  assert.doesNotMatch(html, /Inherited from/);
+});
+
+test('the blast radius sentence counts the folders inside, not just the entries here', () => {
+  assert.match(
+    renderFolderHtml(options({ mcp: {}, entryCount: 7 })),
+    /each of the 7 entries in this folder and the folders inside it/,
+  );
+});
