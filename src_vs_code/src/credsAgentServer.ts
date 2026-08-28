@@ -10,21 +10,13 @@ import {
   parseBearer,
   parseAliasRoute,
   parseJsonObject,
-  isMcpCreateRoute,
-  isMcpDeleteRoute,
-  parseMcpUseRoute,
   parseUseRoute,
   statusForErrorCode,
 } from './brokerProtocol';
 import { ReadRouteSources, readRouteBody } from './brokerReadRoutes';
-import {
-  BrokerDoor,
-  McpCreateHooks,
-  handleMcpCreate,
-  handleMcpDelete,
-  handleMcpUse,
-  mcpDoor,
-} from './brokerMcpDoor';
+import { BrokerDoor, McpCreateHooks, mcpDoor } from './brokerMcpDoor';
+import { McpFolderHooks } from './brokerFolderDoor';
+import { answerMcpRoute } from './brokerMcpRoutes';
 import { McpUseLookup, aliasTarget, readNamedBody } from './brokerRequests';
 import { describeLimits, expiredMessage, grantLimits } from './grantLimits';
 import { McpEntry } from './mcpEntries';
@@ -292,27 +284,33 @@ export class CredsAgentServer implements vscode.Disposable {
     return false;
   }
 
-  /** The routes an MCP client posts to — one door, several verbs. See `brokerMcpDoor.ts`. */
-  private async answerMcp(
+  /** The routes an MCP client posts to — the dispatch lives in `brokerMcpRoutes.ts`. */
+  private answerMcp(
     req: http.IncomingMessage,
     res: http.ServerResponse,
     pathname: string,
   ): Promise<boolean> {
-    const action = parseMcpUseRoute(pathname);
-    if (action !== undefined) {
-      await handleMcpUse(this.door, readBody, req, res, action, this.resolveMcpUse);
-      return true;
-    }
-    if (isMcpDeleteRoute(pathname)) {
-      await handleMcpDelete(this.door, readBody, req, res, this.resolveMcpUse, this.moveToTrash);
-      return true;
-    }
-    if (!isMcpCreateRoute(pathname)) {
-      return false;
-    }
-    await handleMcpCreate(this.door, readBody, req, res, this.mcpCreate);
-    return true;
+    return answerMcpRoute(
+      {
+        door: this.door,
+        readBody,
+        resolveUse: this.resolveMcpUse,
+        moveToTrash: this.moveToTrash,
+        create: this.mcpCreate,
+        folders: this.folderHooks,
+      },
+      req,
+      res,
+      pathname,
+    );
   }
+
+  /** The folder verbs, supplied after construction; absent = this window serves no folder route. */
+  setFolderHooks(hooks: McpFolderHooks): void {
+    this.folderHooks = hooks;
+  }
+
+  private folderHooks: McpFolderHooks | undefined;
 
   /** The pieces the MCP door needs, and nothing else — see `brokerMcpDoor.ts`. */
   private get door(): BrokerDoor {

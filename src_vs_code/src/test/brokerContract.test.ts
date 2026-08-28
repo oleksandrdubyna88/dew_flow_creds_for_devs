@@ -124,7 +124,12 @@ test('the read routes travel in the contract, and the code agrees with what it s
   // route renamed in `brokerProtocol.ts` and not regenerated fails here.
   const { reads } = load();
 
-  assert.deepEqual(Object.keys(reads).sort(), ['aliases', 'mcpConfigSnippet', 'mcpEntries']);
+  assert.deepEqual(Object.keys(reads).sort(), [
+    'aliases',
+    'mcpConfigSnippet',
+    'mcpEntries',
+    'mcpFolders',
+  ]);
   assert.equal(isAliasListRoute(reads.aliases), true);
   assert.equal(isMcpEntriesRoute(reads.mcpEntries), true);
   assert.equal(isMcpConfigSnippetRoute(reads.mcpConfigSnippet), true);

@@ -316,6 +316,28 @@ export function isMcpCreateRoute(pathname: string): boolean {
   return pathname === '/v1/mcp/create';
 }
 
+/**
+ * `GET /v1/mcp/folders`, `POST /v1/mcp/folder/<verb>` — the second object on the agent surface.
+ *
+ * <p>A prefix plus the verb, like the use routes, rather than a route written out per verb: the
+ * vocabulary lives in one place and repeating it here would be a second list to keep in step.</p>
+ */
+export function isMcpFoldersRoute(pathname: string): boolean {
+  return pathname === '/v1/mcp/folders';
+}
+
+export function parseMcpFolderRoute(pathname: string): string | undefined {
+  const prefix = '/v1/mcp/folder/';
+  if (!pathname.startsWith(prefix)) {
+    return undefined;
+  }
+  const action = pathname.slice(prefix.length);
+  return FOLDER_ACTIONS.has(action) ? action : undefined;
+}
+
+/** Written out, so a verb this build does not serve is not routed to a door that cannot answer. */
+const FOLDER_ACTIONS: ReadonlySet<string> = new Set(['create', 'edit', 'delete']);
+
 export function parseMcpUseRoute(pathname: string): string | undefined {
   const prefix = '/v1/mcp/use/';
   if (!pathname.startsWith(prefix)) {

@@ -3,6 +3,7 @@
    was. The ceilings are a boundary for NEW code here; a handler meets them when it is next touched. */
 import { Machine } from '../installCommand';
 import { anyAgentAccess } from '../mcpAccess';
+import { folderHooks } from '../mcpFolderHooks';
 import { CredsAgentServer } from '../credsAgentServer';
 import { AliasMap } from '../cliAliases';
 import { SshBridgeManager } from '../sshBridgeManager';
@@ -101,6 +102,10 @@ export function registerAgentCommands(host: AgentCommandsHost): void {
   // the first `share()`, which is a door nobody uses when the agent arrives over MCP: it starts
   // `creds-mcp` itself and looks for the announcement this listener writes. So a reload left the
   // switches on, the vault unlocked, and every agent told no window answered.
+  // The folder verbs, which the server has no way to build for itself: they reach storage, and
+  // it deliberately knows nothing about a vault.
+  agentServer.setFolderHooks(folderHooks(storage, mutated));
+
   void openAgentDoorIfAsked(agentServer, storage);
 
   register('credSshManager.copyInstallCommand', () => copyInstallScript());

@@ -28,7 +28,8 @@
   "reads": {
     "aliases": "/v1/aliases",
     "mcpEntries": "/v1/mcp/entries",
-    "mcpConfigSnippet": "/v1/mcp/config-snippet"
+    "mcpConfigSnippet": "/v1/mcp/config-snippet",
+    "mcpFolders": "/v1/mcp/folders"
   },
   "configRead": {
     "method": "POST",
@@ -48,6 +49,12 @@
     "up",
     "down",
     "rotate"
+  ],
+  "mcpFolderPrefix": "/v1/mcp/folder/",
+  "mcpFolderActions": [
+    "create",
+    "edit",
+    "delete"
   ],
   "errors": {
     "invalid_request": 400,

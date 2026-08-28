@@ -69,6 +69,13 @@ const routes = {
 const reads = {
   aliases: '/v1/aliases',
   mcpEntries: '/v1/mcp/entries',
+  // Added to the JSON when the config snippet shipped and never added HERE — so the next
+  // regeneration silently dropped it, and the C# that reads the route by this name would have
+  // fallen back to a hard-coded path. Found by the contract test, which is what it is for.
+  mcpConfigSnippet: '/v1/mcp/config-snippet',
+  // The folder listing belongs with them by the same definition: a GET that performs nothing,
+  // raises no prompt and carries no token.
+  mcpFolders: '/v1/mcp/folders',
 };
 
 // The one authenticated route here that is not a use, and the only POST that reads. It is NOT in
@@ -86,6 +93,15 @@ const mcpDeleteRoute = '/v1/mcp/delete';
 // The only MCP route whose body does not name an entry, because there is not one yet. It names a
 // folder instead — and only one somebody opened to creation.
 const mcpCreateRoute = '/v1/mcp/create';
+
+// The second object on the agent surface. A listing that performs nothing and raises no prompt,
+// and a prefix plus a verb for the three that do — the same shape as the use routes, and for the
+// same reason: one vocabulary rather than a route written out per verb.
+const mcpFolderPrefix = '/v1/mcp/folder/';
+
+// What a folder verb may be. Written out because a word here that no handler serves would 404 at
+// the far end and read to a person as "the folder is gone".
+const mcpFolderActions = ['create', 'edit', 'delete'];
 
 // The prefix an MCP client posts an action to. A prefix rather than a route per verb, because
 // the verb vocabulary is the `routes` table above and repeating it here would be two lists to
@@ -125,6 +141,8 @@ const contract = {
   mcpDeleteRoute,
   mcpCreateRoute,
   mcpActions,
+  mcpFolderPrefix,
+  mcpFolderActions,
   errors,
   // The band a client uses to report failures of the mechanism itself. A remote command's own
   // code passes through untouched, so these are deliberately high and documented as reserved.
