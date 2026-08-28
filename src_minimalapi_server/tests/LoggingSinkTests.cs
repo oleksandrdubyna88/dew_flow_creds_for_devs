@@ -5,7 +5,7 @@ using Serilog.Parsing;
 namespace CredVaultServer.Tests;
 
 /// <summary>
-/// The ported logging sinks (todo/PLAN_tails.md T8 → research/PLAN_logging_convention.md).
+/// The ported logging sinks (research/PLAN_tails.md T8 → research/PLAN_logging_convention.md).
 ///
 /// <para>The escape-count test repeats the family rule's own measurement shape, control
 /// included: the rule exists because Serilog's console theme wrote ZERO escapes to a redirected

@@ -163,7 +163,7 @@ Ordered by what I would do first. None is a reason to hold tomorrow's launch.
 
 ### O-4 · WebAuthn credentials are scoped to bare `localhost` (MEDIUM, pre-existing)
 
-Already item 1 of [../todo/PLAN_extension_security_tail.md](../todo/PLAN_extension_security_tail.md).
+Already item 1 of [PLAN_extension_security_tail.md](PLAN_extension_security_tail.md).
 WebAuthn scopes a credential by RP-ID **string**, not by origin and port, so any local page on any
 `localhost:<port>` can ask for the same credential — and `credentialId` and `prfSalt` sit in
 plaintext in the vault envelope, on shared storage by design. It needs a local page, a physical

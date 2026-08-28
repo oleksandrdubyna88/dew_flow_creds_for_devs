@@ -157,15 +157,15 @@ Ranked. Each has a plan; none is a reason to hold the release.
 
 | # | Severity | Finding | Plan |
 |---|---|---|---|
-| 6 | MEDIUM | WebAuthn RP ID is the bare `localhost`, shared with every other local web app | `todo/PLAN_extension_security_tail.md` |
-| 7 | MEDIUM | Share metadata (`fromEmail`, `entityName`) is unauthenticated on the folder transport | `todo/PLAN_extension_security_tail.md` |
-| 8 | MEDIUM | PIN policy is length-only (8 chars) for a secret guarding offline ciphertext | `todo/PLAN_extension_security_tail.md` |
+| 6 | MEDIUM | WebAuthn RP ID is the bare `localhost`, shared with every other local web app | `PLAN_extension_security_tail.md` |
+| 7 | MEDIUM | Share metadata (`fromEmail`, `entityName`) is unauthenticated on the folder transport | `PLAN_extension_security_tail.md` |
+| 8 | MEDIUM | PIN policy is length-only (8 chars) for a secret guarding offline ciphertext | `PLAN_extension_security_tail.md` |
 | 9 | MEDIUM | No optimistic concurrency on `PUT /api/vault` — a lost update is possible | `todo/PLAN_server_ops.md` |
-| 10 | LOW | The master key is cached for the window's lifetime with no idle timeout | `todo/PLAN_extension_security_tail.md` |
+| 10 | LOW | The master key is cached for the window's lifetime with no idle timeout | `PLAN_extension_security_tail.md` |
 | 11 | LOW | `/api/health` writes a probe file on every call | `todo/PLAN_server_ops.md` |
 | 12 | LOW | No inbox TTL — an unaccepted share sits until deleted | `todo/PLAN_server_ops.md` |
 | 13 | INFO | `/api/team` lets any authenticated caller enumerate colleagues' emails | by design; documented |
-| 14 | INFO | `chmod 0600` is a no-op on Windows; the comment implies a guarantee it does not make | `todo/PLAN_extension_security_tail.md` |
+| 14 | INFO | `chmod 0600` is a no-op on Windows; the comment implies a guarantee it does not make | `PLAN_extension_security_tail.md` |
 
 ### On finding 6, the one worth understanding
 

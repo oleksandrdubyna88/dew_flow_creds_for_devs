@@ -1,6 +1,6 @@
 # PLAN — Дорожная карта по итогам аудита 2026-08-25
 
-> Status: **перепроверено против кода 2026-08-27 ([PLAN_tails.md](PLAN_tails.md), T7). Предыдущая
+> Status: **перепроверено против кода 2026-08-27 ([PLAN_tails.md](../research/PLAN_tails.md), T7). Предыдущая
 > редакция этой строки была неверна в обе стороны — часть сделанного не была записана, часть
 > записанного не сделана.** Ниже — то, что подтверждено чтением кода, а не памятью сессии.
 >
@@ -34,7 +34,7 @@
 > на 2026-08-27 в нём **5 684**, в `storageManager.ts` — 1 203, явных `eslint-disable` в `src/` вне
 > тестов стало **230** против 178. Потолок в 800 строк существует и работает
 > (`eslint.config.mjs:28`) — он просто выключен первой строкой того самого файла, ради которого
-> написан. Ограничитель роста — T3 в [PLAN_tails.md](PLAN_tails.md); сам разбор остаётся здесь.
+> написан. Ограничитель роста — T3 в [PLAN_tails.md](../research/PLAN_tails.md); сам разбор остаётся здесь.
 >
 > **Осталось:** A1, вторая половина A4, 2SKD из D9, E1. Scope: расширение `src_vs_code` и, в двух
 > пунктах, сервер `src_minimalapi_server`.
@@ -42,9 +42,9 @@
 > Related docs: [module_extension.md](../research/module_extension.md),
 > [module_server.md](../research/module_server.md), [architecture.md](../research/architecture.md),
 > [SECURITY_REVIEW_2026-08-25.md](../research/SECURITY_REVIEW_2026-08-25.md).
-> Открытые хвосты, которые этот план **не** дублирует: [PLAN_tails.md](PLAN_tails.md),
-> [PLAN_extension_security_tail.md](PLAN_extension_security_tail.md)
-> (RP ID WebAuthn), [PLAN_server_ops.md](PLAN_server_ops.md), [PLAN_marketplace_listing.md](PLAN_marketplace_listing.md).
+> Открытые хвосты, которые этот план **не** дублирует: [PLAN_tails.md](../research/PLAN_tails.md),
+> [PLAN_extension_security_tail.md](../research/PLAN_extension_security_tail.md)
+> (RP ID WebAuthn), [PLAN_server_ops.md](PLAN_server_ops.md), [PLAN_marketplace_listing.md](../research/PLAN_marketplace_listing.md).
 
 ---
 

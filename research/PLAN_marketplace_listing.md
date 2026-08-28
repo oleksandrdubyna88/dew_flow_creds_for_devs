@@ -1,10 +1,12 @@
 # PLAN — make the Marketplace listing worth finding
 
-> Status: **items 2 and 3 done 2026-08-24; item 1 — the screenshots — is what remains,** and the
+> Status: **IMPLEMENTED, 2026-08-24** — items 2 and 3, the listing text and metadata. Item 1, the
+> screenshots, is a human task with its own file,
+> [../todo/ЗАДАЧА_скриншоты_для_маркетплейса.md](../todo/ЗАДАЧА_скриншоты_для_маркетплейса.md), and the
 > plan's own verdict on it stands: it is the item that matters. Scope: `src_vs_code/README.md`,
 > `media/`, and the `package.json` listing metadata. Everything *mechanically* required to publish
 > is already done — see
-> [../research/PLAN_monorepo_consolidation.md](../research/PLAN_monorepo_consolidation.md) §6 and
+> [../research/PLAN_monorepo_consolidation.md](PLAN_monorepo_consolidation.md) §6 and
 > `src_vs_code/docs/PUBLISHING.md`. This plan is about the listing being persuasive, not valid.
 >
 > **Done:** the README's first screen is now *Everything it does* — a table of every feature, before

@@ -138,7 +138,7 @@ repository, which is the right audience — but check that:
 - every relative link resolves (the Marketplace rewrites them against the `repository` +
   `directory` fields, which is why both are set);
 - there is at least one screenshot or GIF. There is none today, and it is the biggest gap in the
-  listing — see [todo/PLAN_marketplace_listing.md](../../todo/PLAN_marketplace_listing.md).
+  listing — see [research/PLAN_marketplace_listing.md](../../research/PLAN_marketplace_listing.md).
 
 ## Verifying what you are about to ship
 

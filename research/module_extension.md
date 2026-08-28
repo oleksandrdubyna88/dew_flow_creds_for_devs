@@ -2332,7 +2332,7 @@ What is left in `extension.ts` is registration, whose manifest↔handler corresp
 one file, because handlers keep moving out of it. That check and this extraction are the same
 argument from two directions.
 
-## The tails pass (2026-08-27, `todo/PLAN_tails.md`)
+## The tails pass (2026-08-27, `PLAN_tails.md`)
 
 One session re-read every open plan against the code and then closed what it found, plus what the
 owner found while watching. Each item's record — symptom, mechanism, deviation — is in the plan;

@@ -1,21 +1,22 @@
 # PLAN — the tails a re-read of every open plan found
 
-> Status: **plan only, nothing implemented yet.** Scope: the findings of the 2026-08-27 audit that
-> re-read all eleven open plans against the code they describe. Three of them were describing a
-> world that no longer exists. Plus the defects and asks the owner
-> raised in the same session: T9, T11, T12 (viewer and tree), T13, T14 (arrival feedback and the
-> generators), T15 (the filter cancels itself when you click a result), and T10 (the MCP surface
-> does not know configs exist).
+> Status: **IMPLEMENTED, 2026-08-28.** All 34 tails — the 2026-08-27 audit's findings (T1–T8) and
+> everything the owner raised while watching (T9–T34) — shipped between 2026-08-27 and 2026-08-28,
+> extension 0.80.0 → 0.81.0; each item records what shipped and how it deviated. What this plan
+> leaves is not build work: the Marketplace screenshots
+> ([../todo/ЗАДАЧА_скриншоты_для_маркетплейса.md](../todo/ЗАДАЧА_скриншоты_для_маркетплейса.md))
+> and the two manual passes, all human tasks with their own files. T2's measurement turned into
+> security-tail item 1, shipped the same day (0.81.0).
 >
-> Related docs: [../research/module_extension.md](../research/module_extension.md),
-> [../research/module_server.md](../research/module_server.md),
-> [../research/architecture.md](../research/architecture.md).
+> Related docs: [../research/module_extension.md](module_extension.md),
+> [../research/module_server.md](module_server.md),
+> [../research/architecture.md](architecture.md).
 >
-> Plans this one corrects rather than duplicates: [PLAN_audit_roadmap_2026_08_25.md](PLAN_audit_roadmap_2026_08_25.md),
+> Plans this one corrects rather than duplicates: [PLAN_audit_roadmap_2026_08_25.md](../todo/PLAN_audit_roadmap_2026_08_25.md),
 > [PLAN_extension_security_tail.md](PLAN_extension_security_tail.md),
-> [PLAN_logging_convention.md](../research/PLAN_logging_convention.md) (now promoted),
+> [PLAN_logging_convention.md](PLAN_logging_convention.md) (now promoted),
 > [PLAN_marketplace_listing.md](PLAN_marketplace_listing.md),
-> [PLAN_ephemeral_secrets_tail.md](PLAN_ephemeral_secrets_tail.md).
+> [PLAN_ephemeral_secrets_tail.md](../todo/PLAN_ephemeral_secrets_tail.md).
 
 ---
 
@@ -45,16 +46,16 @@ plan. Listed so that a reader of *this* plan does not conclude the audit missed 
 
 | item | owner | verified how |
 |---|---|---|
-| `/api/health` writes `.health-probe` on every request | [PLAN_server_ops.md](PLAN_server_ops.md) item 6 | `src_minimalapi_server/src/Program.cs:472-489` — still write-then-delete per call, no cache |
-| No `/metrics` surface, no .NET LTS cadence | [PLAN_server_ops.md](PLAN_server_ops.md) item 5 | no route matches `metrics` in `Program.cs` |
-| `DataDir` atomic-rename requirement undocumented | [PLAN_server_ops.md](PLAN_server_ops.md) item 2 | no `atomic`/`SMB`/`NFS` mention in `src_minimalapi_server/**` or `deploy/**.md` |
+| `/api/health` writes `.health-probe` on every request | [PLAN_server_ops.md](../todo/PLAN_server_ops.md) item 6 | `src_minimalapi_server/src/Program.cs:472-489` — still write-then-delete per call, no cache |
+| No `/metrics` surface, no .NET LTS cadence | [PLAN_server_ops.md](../todo/PLAN_server_ops.md) item 5 | no route matches `metrics` in `Program.cs` |
+| `DataDir` atomic-rename requirement undocumented | [PLAN_server_ops.md](../todo/PLAN_server_ops.md) item 2 | no `atomic`/`SMB`/`NFS` mention in `src_minimalapi_server/**` or `deploy/**.md` |
 | WebAuthn RP ID is bare `localhost` | [PLAN_extension_security_tail.md](PLAN_extension_security_tail.md) item 1 | `src_vs_code/src/webauthnPrf.ts:23` — see T2 below, which settles a contradiction the item created |
 | Share metadata unauthenticated (no AAD) | [PLAN_extension_security_tail.md](PLAN_extension_security_tail.md) item 2 | no `setAAD` in `src_vs_code/src/shareFormat.ts` |
-| `Burn Now…`, viewer lifetime, cross-machine burn test | [PLAN_ephemeral_secrets_tail.md](PLAN_ephemeral_secrets_tail.md) 2.1–2.4 | no `burn` command among the 94 in `package.json`; `entityViewPanel.ts` names no expiry |
-| MCP from inside WSL | [PLAN_mcp_wsl_bridge.md](PLAN_mcp_wsl_bridge.md) | `WindowsBridge.Creds` is the only instance (`src_broker_client/src/WslInterop.cs:41`); no `CREDS_MCP_WINDOWS_BINARY` anywhere |
-| Live three-machine recovery rehearsal, roster rotation | [PLAN_org_recovery_tail.md](PLAN_org_recovery_tail.md) | no re-split path in `src_vs_code/src` or `OrgRecovery*.cs` |
-| Marketplace screenshots | [ЗАДАЧА_скриншоты_для_маркетплейса.md](ЗАДАЧА_скриншоты_для_маркетплейса.md) | `src_vs_code/media/docs/` does not exist |
-| `extension.ts` split (A1), `EntityMetadata` union (A4), envelope AAD (A5), 2SKD (D9), byte-weighted rate limit (E1) | [PLAN_audit_roadmap_2026_08_25.md](PLAN_audit_roadmap_2026_08_25.md) | see T3, which measures how far A1 moved — the wrong way |
+| `Burn Now…`, viewer lifetime, cross-machine burn test | [PLAN_ephemeral_secrets_tail.md](../todo/PLAN_ephemeral_secrets_tail.md) 2.1–2.4 | no `burn` command among the 94 in `package.json`; `entityViewPanel.ts` names no expiry |
+| MCP from inside WSL | [PLAN_mcp_wsl_bridge.md](../todo/PLAN_mcp_wsl_bridge.md) | `WindowsBridge.Creds` is the only instance (`src_broker_client/src/WslInterop.cs:41`); no `CREDS_MCP_WINDOWS_BINARY` anywhere |
+| Live three-machine recovery rehearsal, roster rotation | [PLAN_org_recovery_tail.md](../todo/PLAN_org_recovery_tail.md) | no re-split path in `src_vs_code/src` or `OrgRecovery*.cs` |
+| Marketplace screenshots | [ЗАДАЧА_скриншоты_для_маркетплейса.md](../todo/ЗАДАЧА_скриншоты_для_маркетплейса.md) | `src_vs_code/media/docs/` does not exist |
+| `extension.ts` split (A1), `EntityMetadata` union (A4), envelope AAD (A5), 2SKD (D9), byte-weighted rate limit (E1) | [PLAN_audit_roadmap_2026_08_25.md](../todo/PLAN_audit_roadmap_2026_08_25.md) | see T3, which measures how far A1 moved — the wrong way |
 
 ---
 
@@ -302,7 +303,7 @@ CLAUDE.md states the rule this violates in its own words — *"A push to `main` 
 deployable"*, four artefacts, four tags — and `release.yml:19,267` is ready for `mcp-v*` and carries
 a `workflow_dispatch` with an `mcp` target. So nothing is broken; nothing has been asked.
 
-**What this blocks.** Item 11 of [ЗАДАЧА_проверка_mcp_вручную.md](ЗАДАЧА_проверка_mcp_вручную.md)
+**What this blocks.** Item 11 of [ЗАДАЧА_проверка_mcp_вручную.md](../todo/ЗАДАЧА_проверка_mcp_вручную.md)
 is written as waiting for a release that has not been cut, so the install button it checks cannot be
 checked. It is not blocked on work.
 
@@ -330,7 +331,7 @@ directly by `[0.76.0]`, so everything shipped in 0.77.0, 0.78.0, 0.78.1 and 0.79
 mechanical — cut the accumulated block into dated sections matching the release commits — and the
 lesson is T4's again: a record nothing checks is a record that drifts.
 
-**T6b.** [ЗАДАЧА_проверка_mcp_вручную.md](ЗАДАЧА_проверка_mcp_вручную.md) tells the tester to
+**T6b.** [ЗАДАЧА_проверка_mcp_вручную.md](../todo/ЗАДАЧА_проверка_mcp_вручную.md) tells the tester to
 confirm version **0.76.0** in three places. The current version is 0.78.1, and two of the releases
 in between (0.77.0 config entities, 0.78.0 QR paste) touch surfaces the pass walks through. A manual
 script whose first step is already wrong is a script people stop trusting at step one.
@@ -339,7 +340,7 @@ script whose first step is already wrong is a script people stop trusting at ste
 
 ### T7. The roadmap's status line is false in both directions
 
-**Symptom.** [PLAN_audit_roadmap_2026_08_25.md](PLAN_audit_roadmap_2026_08_25.md) carries a
+**Symptom.** [PLAN_audit_roadmap_2026_08_25.md](../todo/PLAN_audit_roadmap_2026_08_25.md) carries a
 fourteen-line status block. Against the code:
 
 | the status says | the code says |
@@ -348,9 +349,9 @@ fourteen-line status block. Against the code:
 | A6 — not mentioned at all | **shipped complete**: `src_vs_code/src/diagnosticLog.ts` + `logFormat.ts`, one `CredsForDevs` channel, a file per run under `globalStorageUri`, a 14-day sweep, and the "no secret in the log" grep test A6 specified |
 | A3 — *"ждёт исполнителя"* | **effectively done**: 16 of the 18 named modules have their own test file; `vaultKeys`/`backupPaths`/`nasPaths` are covered by `securityKeyOps.test.ts`, `backupPlan.test.ts`, `vaultPaths.test.ts`; 229 test files in `src/test/`. Its CI half is closed too — `itest:agent`, `itest:git` and `itest:cli` all run in `ci-extension.yml`, with `itest:server` excluded for a written reason. What remains is "handlers in `extension.ts`", which is A1's dependency, not A3's |
 | D9 — open | **mostly shipped**: the printed recovery code (`research/PLAN_recovery_code_wrap.md`) and emergency access through the server (`research/PLAN_org_recovery.md`). Only 2SKD — a second device secret — is unbuilt |
-| D10 — open | **shipped** as `research/PLAN_ephemeral_secrets.md`. [PLAN_ephemeral_secrets_tail.md](PLAN_ephemeral_secrets_tail.md) §2.5 exists solely to record this and is itself unticked |
+| D10 — open | **shipped** as `research/PLAN_ephemeral_secrets.md`. [PLAN_ephemeral_secrets_tail.md](../todo/PLAN_ephemeral_secrets_tail.md) §2.5 exists solely to record this and is itself unticked |
 | E2 — open | **shipped**: `deploy/README.md:32-54` makes `MS_AUDIENCES` an explicit, named setup step |
-| E3 — open | **shipped** as `X-Creds-Contract` (see [PLAN_server_ops.md](PLAN_server_ops.md) item 7) |
+| E3 — open | **shipped** as `X-Creds-Contract` (see [PLAN_server_ops.md](../todo/PLAN_server_ops.md) item 7) |
 
 **Fix.** Rewrite the status block to what is true, closing A3, A6, D8, D9-bar-2SKD, D10, E2, E3, and
 deleting the "skip D1 and D8" sentence that two shipped plans have already overruled. Record T3's
@@ -361,7 +362,7 @@ direction should say so where the item is, not only here.
 
 ### T8. ~~The logging plan asks for something that no longer exists~~ — **DONE 2026-08-27, plan promoted**
 
-**Symptom.** [PLAN_logging_convention.md](../research/PLAN_logging_convention.md) has three items. Item 2 is
+**Symptom.** [PLAN_logging_convention.md](PLAN_logging_convention.md) has three items. Item 2 is
 *"Register this repository in the mirror list"* — and the shared rule has no mirror list any more.
 It moved into `.claude/rules/shared` (a submodule of `dew_flow_conventions`) and now ends with
 *"A new repository **mounts the submodule** — it never copies this file"*, which this repository
@@ -1521,84 +1522,84 @@ and both the failure and the pass are reported.
 
 ## 6. Definition of Done
 
-- [ ] T9: the viewer's columns are as wide as the form's, proven by a test watched failing at 640 px.
-- [ ] T22: the tree no longer says the product name twice; the help mark sits in the title bar
+- [x] T9: the viewer's columns are as wide as the form's, proven by a test watched failing at 640 px.
+- [x] T22: the tree no longer says the product name twice; the help mark sits in the title bar
       after the name, with the spacing question answered rather than assumed.
-- [ ] T33: the obvious-verb commands carry codicon icons; the menu-rendering and colour
+- [x] T33: the obvious-verb commands carry codicon icons; the menu-rendering and colour
       limits are recorded, not fought.
-- [ ] T32: the title bar's New Entity / New Folder are gone, the account plus is replaced by
+- [x] T32: the title bar's New Entity / New Folder are gone, the account plus is replaced by
       `entries / trash / shared` with zeros written out, and the colour limit is recorded.
-- [ ] T31: checkboxes read as checked/unchecked at a glance on the owner's theme — accent-color
+- [x] T31: checkboxes read as checked/unchecked at a glance on the owner's theme — accent-color
       first, the hand-drawn box only if the screenshot still reads weak.
 - [x] T34: *Restore* leads a trashed entry's menu and returns it to the folder it was deleted from, or the root when that folder is gone (storage, command and token tests).
 - [x] T30: folder descriptions underlined (behind the owner's yes on the combining-mark trick),
       right-alignment declined in writing with the API reason.
-- [ ] T29: a separator row between accounts, inert to menus, commands and reveal.
-- [ ] T28: every webview page carries the ± zoom with the offset shown, clamped at five steps,
+- [x] T29: a separator row between accounts, inert to menus, commands and reveal.
+- [x] T28: every webview page carries the ± zoom with the offset shown, clamped at five steps,
       stored in a synced setting and pushed to every open page; no stray px font survives.
-- [ ] T27: a stored file is a described row, not a masked secret; size/type/when/by-whom on
+- [x] T27: a stored file is a described row, not a masked secret; size/type/when/by-whom on
       both pages with "not recorded" for legacy entries; image preview in the form; names in
       dark orange, slightly larger, via one shared rule per page.
 - [x] T25: the tree marks MCP access with the five-edge pentagon in catalog colours, padlock
       gone; the five-vs-six question answered in writing.
-- [ ] T26: done — the zoom drives width only. (Recorded, test in entityViewPage.test.ts.)
-- [ ] T24: the MCP section is its own column at three-column width and last in one column; the
+- [x] T26: done — the zoom drives width only. (Recorded, test in entityViewPage.test.ts.)
+- [x] T24: the MCP section is its own column at three-column width and last in one column; the
       agent-reachability footer proposal is put to the owner; every MCP tool description says
       when, how and why in the register the instructions block set.
-- [ ] T23: the viewer shows this entry's CLI aliases with a copyable `creds <verb> <alias>` row;
+- [x] T23: the viewer shows this entry's CLI aliases with a copyable `creds <verb> <alias>` row;
       the filter understands the capability predicates, combinable, metadata-only.
-- [ ] T21: the help entry point exists with a yellow question mark (title bar per T22, status bar
+- [x] T21: the help entry point exists with a yellow question mark (title bar per T22, status bar
       as fallback); every article
       carries what/why/setup/usage/what-can-go-wrong; the hard-to-guess features lead the index;
       search, breadcrumbs and Back work; the language choice persists and falls back to English
       visibly; media slots exist and are empty.
-- [ ] T20: the viewer shows bare `ssh` wherever PATH's client can serve the connection, a
+- [x] T20: the viewer shows bare `ssh` wherever PATH's client can serve the connection, a
       second line only when the two differ, and every external-tool launch checks the binary
       and offers its install recipe — Linux recipes opening with update-upgrade.
-- [ ] T14: password length and character classes are choosable (default 32, all four on); SSH key
+- [x] T14: password length and character classes are choosable (default 32, all four on); SSH key
       type and size are choosable with Ed25519 first and the weaker options labelled; the
       recorded "no algorithm choice" comment is updated rather than left contradicting the UI;
       the generate buttons read as buttons; the other generators are swept and findings listed.
-- [ ] T15: clicking a filtered result no longer cancels the filter; Escape still restores the
+- [x] T15: clicking a filtered result no longer cancels the filter; Escape still restores the
       previous term; closing the search reveals and tints the selected row, after the clear.
-- [ ] T19: the viewer groups its rows into the owner's three frames, coloured from the form's
+- [x] T19: the viewer groups its rows into the owner's three frames, coloured from the form's
       section catalog, consistent across kinds.
-- [ ] T18: the snippet copy button copies the snippet as shown, uses the shared icon, and its
+- [x] T18: the snippet copy button copies the snippet as shown, uses the shared icon, and its
       hover names it; the "reuses the viewer's icon" comment is finally true.
-- [ ] T17: the form's config and script bodies are highlighted for every format the select
+- [x] T17: the form's config and script bodies are highlighted for every format the select
       offers, with unsupported formats falling back to plain text; the round-trip test proves
       colouring cannot change what is saved; the overlay's four alignment properties are pinned.
-- [ ] T16: a config folder is seeded for new accounts and new project folders, asserted over the
+- [x] T16: a config folder is seeded for new accounts and new project folders, asserted over the
       folder-type list rather than a count; the once-only seeding rule is left intact and the
       existing-account question is answered in writing.
-- [ ] T13: an accepted share, an import, and a newly created entity or folder reveal and briefly
+- [x] T13: an accepted share, an import, and a newly created entity or folder reveal and briefly
       tint their new row, through the
       decoration provider that already exists — not a second one; the tint's real capability
       (row colour, not a border) is stated.
-- [ ] T12: *Copy All* is at the top-left, beside the title, and the dead `.footer` rule is gone.
+- [x] T12: *Copy All* is at the top-left, beside the title, and the dead `.footer` rule is gone.
 - [x] T11: a double click opens the viewer and leaves expansion alone; the chosen candidate and the
       measurement that ruled out the others are recorded.
-- [ ] T1: no exported function in `pinPolicy.ts` is unreachable from production code, and the
+- [x] T1: no exported function in `pinPolicy.ts` is unreachable from production code, and the
       advisory appears only where a PIN is being chosen.
 - [x] T2 (measured 2026-08-28 in Edge 151.0.4129.107 with a YubiKey — `.localhost` works with PRF): the probe was run against a named browser version, the result is recorded, and
       `webauthnHint.ts` and the security tail agree with each other.
-- [ ] T3: `npm run ratchet` runs in CI; `extension.ts` and `storageManager.ts` cannot grow.
-- [ ] T10: `creds_list` names a config entry and its code-access state; `creds_config_snippet`
+- [x] T3: `npm run ratchet` runs in CI; `extension.ts` and `storageManager.ts` cannot grow.
+- [x] T10: `creds_list` names a config entry and its code-access state; `creds_config_snippet`
       returns the catalog, and a snippet identical to the viewer's, with its target file.
-- [ ] T4: every `contributes.commands` id and `contributes.configuration` key appears in
+- [x] T4: every `contributes.commands` id and `contributes.configuration` key appears in
       `README.md`, enforced by a test that was watched failing first.
 - [x] T5: the four tag commands are written down with what each publishes, and the owner's decision
       is recorded here.
-- [ ] T6: `todo/README.md`'s *Promoted* table matches `research/`; the manual MCP pass names the
+- [x] T6: `todo/README.md`'s *Promoted* table matches `research/`; the manual MCP pass names the
       current version; the CHANGELOG's `[Unreleased]` block is cut into the dated sections the
       release commits claim.
-- [ ] T7: the roadmap's status line states only what the code supports, and A1 carries its
+- [x] T7: the roadmap's status line states only what the code supports, and A1 carries its
       measurement.
-- [ ] T8: the server's console output is coloured under redirection (counted, not observed), a run
+- [x] T8: the server's console output is coloured under redirection (counted, not observed), a run
       crossing midnight segments, `logs/` has a named retention owner, and the obsolete mirror-list
       item is deleted with its reason.
-- [ ] `research/module_extension.md` and `research/module_server.md` updated for T1, T3, T4, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17, T18, T19, T20, T21, T22, T23, T24, T25, T26, T27, T28, T29, T30, T31, T32, T33;
+- [x] `research/module_extension.md` and `research/module_server.md` updated for T1, T3, T4, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17, T18, T19, T20, T21, T22, T23, T24, T25, T26, T27, T28, T29, T30, T31, T32, T33;
       `research/module_mcp.md` (or `module_extension.md`'s MCP section) for T10.
-- [ ] `node .claude/rules/shared/tools/plan-lifecycle.mjs` and `pin-check.mjs` pass.
-- [ ] This plan promoted to `research/` with its deviations recorded, and anything left extracted
+- [x] `node .claude/rules/shared/tools/plan-lifecycle.mjs` and `pin-check.mjs` pass.
+- [x] This plan promoted to `research/` with its deviations recorded, and anything left extracted
       into a fresh `todo/` plan rather than left behind in it.

@@ -1,6 +1,9 @@
 # PLAN — the extension's security tail
 
-> Status: **items 3, 4 and 5 shipped; item 1 is half shipped; item 2 remains.** Re-checked against
+> Status: **IMPLEMENTED, 2026-08-28** — items 1, 3, 4 and 5 shipped (1 as extension 0.81.0 on
+> 2026-08-28; 3, 4 and 5 by 2026-08-27). Item 2 — share metadata as GCM additional authenticated
+> data — is extracted to [../todo/PLAN_share_metadata_aad.md](../todo/PLAN_share_metadata_aad.md)
+> and is the one finding of the 2026-08-23 review still open. Re-checked against
 > the code 2026-08-27 ([PLAN_tails.md](PLAN_tails.md), which owns the two tails this re-check found).
 >
 > **Item 5 (the `chmod 0600` comment) shipped, and went past what was asked.** The item wanted a
@@ -35,7 +38,7 @@
 >
 > Scope: `src_vs_code/src/` — the medium and low findings from the 2026-08-23 review that were not
 > fixed in that task. Source:
-> [../research/SECURITY_REVIEW_2026-08-23.md](../research/SECURITY_REVIEW_2026-08-23.md), findings 6,
+> [../research/SECURITY_REVIEW_2026-08-23.md](SECURITY_REVIEW_2026-08-23.md), findings 6,
 > 7, 8, 10 and 14. The five HIGH findings are already fixed; nothing here is urgent, and item 1 is
 > the only one that changes a security property rather than tightening one.
 
