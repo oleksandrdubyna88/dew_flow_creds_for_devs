@@ -73,6 +73,12 @@ identical 32-byte PRF secret this extension uses to unwrap the master key.
 and the prompt does disclose the requesting origin. But the hardware second factor is not actually
 scoped to this extension, which is what it is sold as.
 
+> **Viability measured 2026-08-28 (tails T2):** Edge 151.0.4129.107 / Chromium 151 on Windows 11
+> resolves `creds-for-devs.localhost` to loopback with no setup, treats `http://creds-for-devs.localhost:<port>`
+> as a secure context, and accepts it as the RP ID for both `create` and `get` with the PRF extension
+> (32-byte output, YubiKey). The fix below is therefore possible; what remains is the migration cost,
+> which is the owner's call. Firefox was not measured.
+
 **Fix.** Bind the loopback listener to a distinguishing host under the `.localhost` TLD —
 `creds-for-devs.localhost`, which browsers resolve to loopback per RFC 6761 with no DNS setup — and
 use that as the RP ID. Also raise `userVerification` from `'preferred'` to `'required'`

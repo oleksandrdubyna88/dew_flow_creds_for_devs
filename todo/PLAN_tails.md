@@ -142,6 +142,21 @@ text is byte-identical to `validatePin`'s, so the two paths cannot drift.
 
 ### T2. Two documents disagree about whether the RP ID can be fixed, and neither is checked
 
+> **Measured 2026-08-28 — it works.** The owner ran the probe (scratchpad `probe-rpid.mjs`: one page
+> on 127.0.0.1, opened as `http://creds-for-devs.localhost:61613/`) in **Microsoft Edge
+> 151.0.4129.107 (Chromium 151.0.7922.174), Windows 11 25H2 (build 26200.8653)**, with a YubiKey:
+>
+> - the name resolved to loopback with no DNS or hosts entry, and `window.isSecureContext` was `true`;
+> - `navigator.credentials.create` with `rp.id = 'creds-for-devs.localhost'`, `userVerification:
+>   'required'` and the PRF extension → **CREATE OK**, `prf: {enabled: true}`;
+> - `navigator.credentials.get` with the same RP ID and the same salt → **GET OK, a 32-byte PRF
+>   output**.
+>
+> So `webauthnHint.ts`'s "it has to be `localhost`" was wrong and is corrected; security-tail item 1's
+> fix is **viable**, and its cost — the re-registration migration — is now a scoped decision for the
+> owner rather than a guess. Chromium-only evidence: Edge and Chrome share the WebAuthn stack, Firefox
+> was not measured.
+
 **Symptom.** [PLAN_extension_security_tail.md](PLAN_extension_security_tail.md) item 1 proposes
 binding the loopback listener to `creds-for-devs.localhost` and using that as the WebAuthn RP ID,
 citing RFC 6761. `src_vs_code/src/webauthnHint.ts:17-20` says the opposite as settled fact:
@@ -1541,7 +1556,7 @@ and both the failure and the pass are reported.
       measurement that ruled out the others are recorded.
 - [ ] T1: no exported function in `pinPolicy.ts` is unreachable from production code, and the
       advisory appears only where a PIN is being chosen.
-- [ ] T2 (owner 2026-08-28: browser Edge, key YubiKey; the probe script is prepared, its output is awaited): the probe was run against a named browser version, the result is recorded, and
+- [x] T2 (measured 2026-08-28 in Edge 151.0.4129.107 with a YubiKey — `.localhost` works with PRF): the probe was run against a named browser version, the result is recorded, and
       `webauthnHint.ts` and the security tail agree with each other.
 - [ ] T3: `npm run ratchet` runs in CI; `extension.ts` and `storageManager.ts` cannot grow.
 - [ ] T10: `creds_list` names a config entry and its code-access state; `creds_config_snippet`

@@ -85,7 +85,7 @@ test('an article renders its five sections in the fixed order, escaped', () => {
 test('the manifest carries the help command in the title bar and the help-only language setting (T22)', () => {
   const manifest = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', 'package.json'), 'utf8')) as {
     contributes: {
-      commands: Array<{ command: string; icon?: string }>;
+      commands: Array<{ command: string; icon?: { light: string; dark: string } }>;
       menus: { 'view/title': Array<{ command?: string; group?: string }> };
       views: Record<string, Array<{ id: string; name: string }>>;
       configuration: { properties: Record<string, { enum?: string[] }> };
@@ -93,7 +93,11 @@ test('the manifest carries the help command in the title bar and the help-only l
   };
   const help = manifest.contributes.commands.find((c) => c.command === 'credSshManager.help');
   assert.ok(help !== undefined, 'the help command is contributed');
-  assert.equal(help.icon, '$(question)');
+  // The owner's yellow question mark (T21/T22): a codicon cannot be coloured, so an SVG pair.
+  assert.deepEqual(help.icon, { light: 'media/help-yellow-light.svg', dark: 'media/help-yellow.svg' });
+  for (const file of [help.icon.light, help.icon.dark]) {
+    assert.ok(fs.existsSync(path.join(__dirname, '..', '..', file)), `${file} is missing`);
+  }
   const inTitle = manifest.contributes.menus['view/title'].find((e) => e.command === 'credSshManager.help');
   assert.ok(inTitle !== undefined, 'the mark sits in the title bar');
   assert.ok((inTitle.group ?? '').startsWith('navigation'), 'in the navigation group, beside the name');

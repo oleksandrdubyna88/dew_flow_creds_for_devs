@@ -6,6 +6,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.80.5] — 2026-08-28
+
+### Changed
+
+- **The help mark in the title bar is yellow** (tails T21/T22 — the owner asked for a yellow
+  question mark; a codicon cannot be coloured there, so it is an SVG of its own, in a dark-theme
+  and a light-theme shade, the way the green Connect and DB icons already are).
+- **The RP ID claim in the code is corrected** after the tails T2 measurement: on Edge 151 with a
+  YubiKey, creds-for-devs.localhost resolves to loopback, is a secure context and works as a WebAuthn
+  RP ID with the PRF extension. The bare localhost RP ID stays for now; its replacement is
+  security-tail item 1, whose cost is re-registering every key, and that is the owner's decision.
+
 ## [0.80.4] — 2026-08-28
 
 ### Fixed
