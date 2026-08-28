@@ -258,6 +258,20 @@ a test people disable.
 
 ### T5. Nothing is tagged, so "released" and "on main" have quietly become the same word
 
+> **Prepared 2026-08-27 — the owner's decision is the only thing left.** What is on `main` and
+> not in any release, and the exact command that would release each, in the order they should go:
+>
+> | artefact | last tag | what is unreleased | command |
+> |---|---|---|---|
+> | server image | `server-v0.3.1` | the family logging port (coloured console, midnight segment, `logs/` retention) — `src_minimalapi_server/src` changed after the tag | `git tag server-v0.3.2 && git push origin server-v0.3.2`, then **rsd server deploy** with `0.3.2` |
+> | extension | `extension-v0.57.1` | twenty-three versions, 0.58.0 → 0.80.0 | `git tag extension-v0.80.0 && git push origin extension-v0.80.0` (release.yml checks the tag against the manifest — it matches) |
+> | `creds` CLI | `cli-v0.1.0` | the embedded broker contract gained `reads.mcpConfigSnippet` (the CLI does not use it; the binary is otherwise unchanged) | optional: `git tag cli-v0.1.1 && git push origin cli-v0.1.1` |
+> | `creds-mcp` | *(never tagged)* | everything, including `creds_config_snippet` | `git tag mcp-v0.1.0 && git push origin mcp-v0.1.0` — unblocks item 11 of the manual MCP pass |
+>
+> Not pushed by this session: a tag publishes under the owner's name and a deploy touches their
+> host, and the rule here is that those are the owner's gestures. Everything up to them is done.
+
+
 **Symptom.** The last extension tag is `extension-v0.57.1`. `src_vs_code/package.json` says
 **0.78.1** — twenty-one releases with no tag. `mcp-v*` does not exist at all, so the `creds-mcp`
 binaries have never been built by the release workflow.
