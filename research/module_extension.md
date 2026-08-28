@@ -2210,8 +2210,16 @@ refuted: [PLAN_mcp_wsl_bridge.md](PLAN_mcp_wsl_bridge.md).
 **One thing the install button still does not know.** `ridFor(process.platform, ...)` always resolves
 to Windows -- the extension is `extensionKind: ["ui"]`, so its host is on Windows even in a
 Remote-WSL window -- and the clipboard config names that `.exe`, which a shell inside the
-distribution cannot run. Nothing is broken while there is no `mcp-v*` release to install; when there
-is one, the button needs a second mode.
+distribution cannot run. `mcp-v0.1.0` shipped on 2026-08-28, so this is a live gap rather than a
+future one.
+
+**Two Windows routes, and only one of them needs the override.** WSL inherits the Windows user PATH
+(measured: an exe under `%LOCALAPPDATA%\Programs\...` resolves by bare name in bash), and *Copy
+install command for another machine...* -> `creds-mcp` -> Windows installs exactly there and appends
+that folder to the user PATH -- after which the bridge finds `creds-mcp.exe` on its own and
+`CREDS_MCP_WINDOWS_BINARY` is not needed at all. *Install the MCP Server...* puts it in the
+extension's storage, deliberately off the PATH, and then the variable is required. Neither menu item
+says which of the two you are choosing.
 
 **Finding an entry by id.** An agent quoting an id is quoting the one thing that names an entry
 unambiguously — and the one thing the tree filter cannot find, because `nodeHaystack` searches
@@ -2381,6 +2389,21 @@ this section says where the code went, so a reader of the module can find it.
 Left for a person, recorded in the plan: T2 (the `.localhost` RP-ID probe — Edge + YubiKey, the
 owner runs it) and the Marketplace screenshots. T5 (tags), T11, T24b and T30 closed on 2026-08-28
 after the owner's answers; T25 stays as shipped in 0.80.0 by his choice.
+
+## Login and URL on a credential (0.82.0)
+
+A credential carries a **login** and a **URL** — the owner's ask of 2026-08-28. They are a secret
+kind: one JSON record under one keychain key (`:fields`, `entityFields.ts`), sealed in the vault,
+the share, the backup and the kept versions, merged across machines like the notes, and never in
+plain metadata nor in an agent's listing. Unlike the password they are shown in CLEAR on the card
+and copied without a round-trip: identifiers, not credentials, so an agent's output is not masked
+for them either.
+
+The plumbing lesson: adding the tenth per-entity secret kind was the moment `storageManager.ts`
+stopped walking the kinds by hand. `SECRET_KINDS` is the table; export, import, snapshot and the
+delete-with-the-entry walk it, and a kind is a row (the audit's "seven kinds walked by hand",
+closed). `revisionSnapshot.ts`, `shareInbox.ts`, `exportSecrets.ts` and `syncMerge.ts` each carry the
+one line the new kind costs there.
 
 ## The ephemeral tail (2026-08-28, `PLAN_ephemeral_secrets_tail.md`)
 
