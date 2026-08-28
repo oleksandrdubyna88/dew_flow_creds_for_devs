@@ -2121,11 +2121,39 @@ the **real** `out/agentCli.js`, and spawns a real `ssh` at an address that refus
 the surface, the consent gate, the CLI exit codes, the byte and time ceilings and the dispose path
 are all exercised without an SSH server. `npm run itest:agent`.
 
-### The MCP surface: five rungs, three routes and a journal (0.66.0–0.75.0)
+### The MCP surface: two ladders, sixteen tools and a journal (0.66.0–0.86.0)
 
 An AI agent reaches this vault through `creds-mcp`, a separate binary. What it may do is decided
-per entry by six switches on a ladder, all off by default — including for every entry that existed
-before the feature. The extension gained no runtime dependency: the MCP SDK lives in the binary.
+by **two ladders of switches over two objects** — six over an entry, four over a folder — all off
+by default, including for everything that existed before each feature. The extension gained no
+runtime dependency: the MCP SDK lives in the binary.
+
+**Folders became the second object in 0.85.0** (`PLAN_agent_folder_ops.md`). Four tools —
+`creds_folders`, `creds_create_folder`, `creds_edit_folder`, `creds_delete_folder` — with the
+decisions in `mcpFolders.ts` (pure: what is visible, which verb needs which switch, and whether a
+move is allowed), the vault half in `mcpFolderHooks.ts`, and the http half in
+`brokerFolderDoor.ts`. Two properties are worth carrying in the head. **An agent can never change
+a permission, and that is the SHAPE rather than a check**: `FolderEdit` carries `name`, `parent`
+and `folderType`, both sides compose the body one named field at a time, and nothing spreads a
+request onto a node — so there is no request that reaches `mcp`. And **a move needs the grant at
+both ends**, because a folder passes its answers to everything inside it: moving one is a
+permission change for its contents.
+
+**Inheritance became one rule in the same release.** `creatableFolders` used to read a folder's own
+switch while `resolveMcpInTree` climbed the tree, which is why `creds_list` could hand back an entry
+whose `can.create` was true and the create call would then refuse it. Both climb now; an explicit
+empty object is an answer and stops the climb, which is how a branch is closed inside an open tree.
+
+**0.86.0 let an agent shape what the window generates** (`mcpSecretOptions.ts`): length, the four
+character sets, `avoidAmbiguous`, and words/separator for a passphrase, validated *before* anything
+is drawn — `generatePassword` answers with an empty string when no class is selected, and an entry
+holding `""` looks exactly like a working one. It says what it wants and still never learns what it
+gets.
+
+**Two modules exist only to keep files under their ceilings**, and both are honest seams rather than
+arbitrary cuts: `brokerMcpRoutes.ts` holds the dispatch that `credsAgentServer.ts` (800-line ceiling)
+can no longer carry, and `wslProcess.ts` holds `runWsl`/`runWslRaw` — extracted from `extension.ts`
+when the MCP install needed them, one of which carries a measured UTF-16LE rule.
 
 **Where each piece lives.**
 
