@@ -197,7 +197,7 @@ function helpScript(nonce: string, language: HelpLanguage, index: ReturnType<typ
     searchRow.classList.add('hidden');
     noHits.classList.add('hidden');
     back.classList.remove('hidden');
-    crumbs.innerHTML = '<a data-nav="home">' + HOME + '</a> › <span>' + title.replace(/</g, '&lt;') + '</span>';
+    crumbs.innerHTML = '<a data-nav="home">' + HOME + '</a> › <span>' + title.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]) + '</span>';
     window.scrollTo(0, 0);
   }
   function applyFilter() {

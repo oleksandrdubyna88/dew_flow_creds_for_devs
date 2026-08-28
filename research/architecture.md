@@ -283,7 +283,7 @@ still a placeholder**. A tag never ships both.
 | The deployment | [module_deployment.md](module_deployment.md) | Containers, TLS, updates, backups |
 | The CLI | [../src_cli/README.md](../src_cli/README.md) | `creds` — the terminal client of the broker. A .NET Native AOT binary holding no secret: it relays a request to the VS Code window named by a grant token and prints what comes back |
 | The broker client | `src_broker_client/` | Discovery, the health probe, the wire contract and the WSL bridge — shared by both binaries, so a fix to any of it is made once |
-| The MCP server | `src_mcp/` | `creds-mcp` — what an AI agent talks to. Eight tools over the same broker, every one gated by a per-entry switch that is off by default and by the same consent prompt. Holds no secret and can obtain none |
+| The MCP server | `src_mcp/` | `creds-mcp` — what an AI agent talks to. Nine tools over the same broker (the ninth, `creds_config_snippet`, is read-only public text — how code reads a config, from the viewer's own catalog), every one gated by a per-entry switch that is off by default and by the same consent prompt. Holds no secret and can obtain none |
 
 ## Where the contract lives
 

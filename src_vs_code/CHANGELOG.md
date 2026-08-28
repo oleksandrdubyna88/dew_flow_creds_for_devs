@@ -6,6 +6,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.80.0] — 2026-08-27
+
 ### Added
 
 - **A `config` folder in the default set.** Config entities shipped in 0.77.0 and the starter

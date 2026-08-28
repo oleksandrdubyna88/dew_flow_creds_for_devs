@@ -2313,6 +2313,36 @@ What is left in `extension.ts` is registration, whose manifest↔handler corresp
 one file, because handlers keep moving out of it. That check and this extraction are the same
 argument from two directions.
 
+## The tails pass (2026-08-27, `todo/PLAN_tails.md`)
+
+One session re-read every open plan against the code and then closed what it found, plus what the
+owner found while watching. Each item's record — symptom, mechanism, deviation — is in the plan;
+this section says where the code went, so a reader of the module can find it.
+
+| What | Where | The rule it left behind |
+|---|---|---|
+| The viewer's markup is pure (T9/T12) | `entityViewPage.ts` (markup), `entityViewCopy.ts` (the copy switch), `entityViewPanel.ts` (the panel only) | Both two-column pages take `PAGE_MAX_WIDTH_PX` / `TWO_COLUMN_AT` / `THREE_COLUMN_AT` from `webviewHtml.ts`; a test fails if either page gets a private number |
+| Framed groups in the viewer (T19) | `viewFrame()` in `entityViewPage.ts` over `FORM_SECTIONS` | Colours by section **id** from the form's catalog — one colour per group on every kind and both pages |
+| The PIN advisory reaches an input box (T1) | `pinPolicy.ts pinFeedback(value, mode)`, `pinInput.ts` | `choosing` gets the crack-time estimate, `entering` gets refusals only; the refusal text is byte-identical to `validatePin`'s |
+| New rows glow (T13/T15) | `arrivalHighlight.ts`, merged INTO `DepDecorationProvider`; `announceArrival()` in `extension.ts`; `searchBox.ts` | One decoration provider, never two; the filter box sets `ignoreFocusOut` so clicking a result cannot read as Escape |
+| Capability filters (T23b) | `searchPredicates.ts`, `providerSearch.ts`, `NodeJudge` in `treeSearch.ts` | Predicates read metadata only; `mcp:` answers through `resolveMcpInTree`, the badge's own resolver; unknown predicates are named on the search row |
+| CLI access on the entry (T23a) | `cliCommandFor()` in `entityViewPage.ts`; `cliAliasesFor()` in `extension.ts` | The verb follows the kind from the CLI's own usage text |
+| Agents learn configs (T10) | `mcpSnippetRoute.ts`, `visibleConfigDetails` in `mcpEntries.ts`, `creds_config_snippet` in `src_mcp` | Same `configSnippet.ts` catalog as the viewer, byte-identical by test; the response shape has no field a secret could travel in |
+| Missing tools become offers (T20) | `toolCheck.ts` (recipes), `toolEnsure.ts` (modal + terminal), `sshClientPresent`/`pathSshIsBuiltIn` in `sshProgram.ts` | The bare `ssh` is kept wherever PATH's client can serve; the full System32 path only where an MSYS ssh shadows it |
+| Generators take orders (T14) | `formGenerate.ts`, `PASSWORD_LENGTH_CHOICES` / `SSH_KEY_TYPES` / `PASSPHRASE_WORD_CHOICES` in `secretGenerator.ts` | Every value off the page is clamped host-side; Ed25519 first, RSA-2048 never offered |
+| Text zoom (T28) | `zoomControl.ts` (pure), `uiScaleHost.ts` (the setting + push to every panel) | The press is reported, the setting is the truth, every open page follows |
+| File metadata, and the config-key bug (T27) | `attachmentMeta.ts` — stamps, `carryThroughDetails()` as the single write seam | An ordinary edit used to drop `configKeyHash`; the seam carries it while the entry stays a config |
+| The pentagon (T25) | `pentagonEdges()` in `mcpIcons.ts`, `scripts/generate-mcp-icons.mjs` | Five edges clockwise from the upper-left (green); the set is kind-less, 20 files |
+| The tree in layers (T29/T32/T33) | `accountItem.ts` (row + separator), `accountCounts.ts` | Separators only BETWEEN accounts; counts `entries / trash / shared` with zeros written; colours per number declined — a description is plain text |
+| One highlighter, four surfaces (T17) | `tok-key` in `scriptRender.ts`; `overlayEditorWiring()` in `entityFormScriptGen.ts` | Stripping the spans re-yields exactly the escaped input, per language |
+| Help (T21/T22) | `helpContent.ts` (the catalog — the type IS the style), `helpPage.ts`, `helpPanel.ts`; `credSshManager.helpLanguage` | English required, Russian complete, the rest fall back visibly; the view is named once and the mark sits first in its title bar |
+| The listing cannot drift (T4) | `test/listingCoverage.test.ts` | Every command title and setting key must appear in `README.md` |
+| The ratchet (T3) | `sizeRatchet.ts`, `scripts/size-ratchet.mjs`, `.size-baseline.json`, CI | An exempted file may shrink, never grow |
+
+Left for a person, recorded in the plan: T2 (the `.localhost` RP-ID probe needs a browser and a
+key), T5 (release tags are the owner's), T11 (the double-click/twisty measurement needs a live
+window), T24b and T30 (proposals awaiting a yes), and the Marketplace screenshots.
+
 ## Security hardening (2026-08-25 review)
 
 The coverage pass that followed it ([SECURITY_REVIEW_2026-08-26.md](SECURITY_REVIEW_2026-08-26.md))
