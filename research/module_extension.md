@@ -2207,7 +2207,21 @@ executable when it is not on the interop PATH, which is the ordinary case becaus
 it in the extension's own storage. Design record, including a prediction that was measured and
 refuted: [PLAN_mcp_wsl_bridge.md](PLAN_mcp_wsl_bridge.md).
 
-**One thing the install button still does not know.** `ridFor(process.platform, ...)` always resolves
+**The install button now asks where the agent runs (2026-08-28).** It had one answer for a
+machine with two places an MCP client can live, and on the WSL side the answer was wrong in a way
+that surfaces later and elsewhere — a config block naming a `.exe` a Linux shell cannot start, so
+the client reports "server exited" and nothing points back here. `mcpInstallTarget.ts` asks the
+question only when there is a choice (`parseDistros` found something), and the WSL branch installs
+the Linux half with the SAME published one-liner the *Copy install command…* item hands out —
+having the button run a different installer would be two things to keep correct. Two decisions
+worth keeping: the landing path is READ from the script's own `installed: …` line rather than
+recomputed from `$HOME` (the rule the SSH relay already follows for its socket), and the Windows
+path is translated by asking the distribution (`wslpath -a`, passed as an argument so no shell sees
+it) rather than composed as `/mnt/c/...`, which is the default automount root and not a rule.
+`mcpServerBlock` gained an optional `env`, used for exactly one thing: telling the Linux half where
+the Windows one is, since the extension installs it off the PATH on purpose.
+
+**The history, kept because the reasoning is not obvious from the code.** `ridFor(process.platform, ...)` always resolves
 to Windows -- the extension is `extensionKind: ["ui"]`, so its host is on Windows even in a
 Remote-WSL window -- and the clipboard config names that `.exe`, which a shell inside the
 distribution cannot run. `mcp-v0.1.0` shipped on 2026-08-28, so this is a live gap rather than a
@@ -2389,6 +2403,16 @@ this section says where the code went, so a reader of the module can find it.
 Left for a person, recorded in the plan: T2 (the `.localhost` RP-ID probe — Edge + YubiKey, the
 owner runs it) and the Marketplace screenshots. T5 (tags), T11, T24b and T30 closed on 2026-08-28
 after the owner's answers; T25 stays as shipped in 0.80.0 by his choice.
+
+## A share's label is bound to its ciphertext (0.82.1)
+
+`sealShare` passes the four label fields — `fromEmail`, `entityName`, `entityKind`, `createdAt` —
+as GCM additional authenticated data (`shareLabelAad`, `shareFormat.ts`) and stamps `format: 2`;
+`openShare` opens a bound item with the same AAD, so a label edited after sealing fails exactly as
+a wrong PIN does. A legacy item (no `format`) opens without AAD while `legacyShareAllowed(version)`
+holds — until `LEGACY_SHARES_UNTIL = '0.85.0'` — and is marked *label not bound* in the inbox and on
+the PIN prompt; from the cutoff it is refused with a request to update the sender. Together with
+the Ed25519 sender signature this closes the 2026-08-23 review's finding 7.
 
 ## Login and URL on a credential (0.82.0)
 

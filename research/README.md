@@ -32,6 +32,7 @@ Newest first.
 
 | Plan | Landed | What it delivered |
 |---|---|---|
+| [PLAN_share_metadata_aad.md](PLAN_share_metadata_aad.md) | 2026-08-28 | A share's label bound to its ciphertext as GCM AAD; legacy shares open, marked unbound, until 0.85.0. |
 | [PLAN_ephemeral_secrets_tail.md](PLAN_ephemeral_secrets_tail.md) | 2026-08-28 | The ephemeral-secrets tail: *Burn Now…*, the lifetime on the card, and the cross-machine burn proven by test. |
 | [PLAN_tails.md](PLAN_tails.md) | 2026-08-28 | The 2026-08-27 audit of every open plan plus the owner's asks — 34 tails shipped as 0.80.0 → 0.81.0; each item records what shipped and how it deviated. |
 | [PLAN_extension_security_tail.md](PLAN_extension_security_tail.md) | 2026-08-28 | The 2026-08-23 review's extension findings: PIN policy, idle auto-lock, owner-only ACL, and the WebAuthn RP ID moved to `creds-for-devs.localhost` with legacy keys re-registered on first use. Finding 7 extracted to `todo/PLAN_share_metadata_aad.md`. |

@@ -215,7 +215,8 @@ import { CreateDecision, McpCreateHooks } from './brokerMcpDoor';
 import { McpUseLookup } from './brokerRequests';
 import { CREDS_CLI, CREDS_MCP, CredsAction, CredsProduct, CredsRid, ridFor } from './credsInstall';
 import { InstallHost, binaryPath, installMenu, performInstall, removeInstall } from './binaryInstaller';
-import { MCP_CLIENT_TARGETS, installedMessage, mcpServerBlock } from './mcpClientConfig';
+import { offerMcpClientConfig } from './mcpInstallTarget';
+import { runWsl, runWslRaw } from './wslProcess';
 import { MaskEntry, buildMaskTable } from './secretMasker';
 import { describeScan, scanForSecrets } from './secretScan';
 import { RemoteState, buildDefaultFolders } from './defaultFolders';
@@ -1194,37 +1195,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     void vscode.window.showInformationMessage(
       'CredsForDevs: added to ~/.bashrc. Open a NEW WSL terminal, then `ssh-add -l` should list your key.',
     );
-  }
-
-  /**
-   * The same child, but handing back BYTES.
-   *
-   * <p>`wsl -l -q` answers in UTF-16LE — measured, the bytes begin `55 00 62 00`. Decoding it as
-   * UTF-8 gives names interleaved with NULs that match nothing, and the symptom is "no
-   * distributions found" rather than anything that points at an encoding.</p>
-   */
-  function runWslRaw(args: readonly string[]): Promise<Buffer> {
-    return new Promise((resolve) => {
-      const child = childProcess.spawn('wsl.exe', [...args], { stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true });
-      const chunks: Buffer[] = [];
-      child.stdout.on('data', (chunk: Buffer) => chunks.push(chunk));
-      child.on('error', () => resolve(Buffer.alloc(0)));
-      child.on('close', () => resolve(Buffer.concat(chunks)));
-    });
-  }
-
-  function runWsl(args: readonly string[], stdin?: string): Promise<string> {
-    return new Promise((resolve) => {
-      const child = childProcess.spawn('wsl.exe', [...args], { stdio: ['pipe', 'pipe', 'ignore'], windowsHide: true });
-      let out = '';
-      child.stdout.setEncoding('utf8');
-      child.stdout.on('data', (chunk: string) => {
-        out += chunk;
-      });
-      child.on('error', () => resolve(''));
-      child.on('close', () => resolve(out));
-      child.stdin.end(stdin ?? '');
-    });
   }
 
   /**
@@ -3456,12 +3426,7 @@ ${detail}
   // ---------- security keys (YubiKey / FIDO2) ----------
 
   // The add / re-register flow lives in securityKeyAdd.ts; the host is this scope, by interface.
-  const keyHost: KeyAddHost = {
-    transportFor: (account) => transports.forAccount(account),
-    vaultKeys,
-    notifyChange: () => sync.notifyChange(),
-    refreshReadiness: () => refreshReadiness(),
-  };
+  const keyHost: KeyAddHost = { transportFor: (a) => transports.forAccount(a), vaultKeys, notifyChange: () => sync.notifyChange(), refreshReadiness: () => refreshReadiness() };
   register('credSshManager.addSecurityKey', async (target) => {
     const account = await accountFromTargetOrPick(target, storage, 'Add a security key to…');
     if (account !== undefined) {
@@ -4478,6 +4443,7 @@ ${detail}
     storage,
     sharing,
     state: context.globalState,
+    extensionVersion: String((context.extension.packageJSON as { version?: string }).version ?? '0.0.0'),
     onMutated: mutated,
     // Fire-and-forget: the tint and reveal must never fail an accept.
     onArrived: (accountId, entityId) => void announceArrival(accountId, entityId),
@@ -5532,11 +5498,7 @@ async function runInstall(
       void vscode.window.showInformationMessage(`${product.label} ${version} installed at ${target.fsPath} — path copied.`);
       return;
     }
-    await vscode.env.clipboard.writeText(mcpServerBlock(target.fsPath));
-    void vscode.window.showInformationMessage(
-      installedMessage(target.fsPath),
-      ...MCP_CLIENT_TARGETS.map((t) => t.path),
-    );
+    await offerMcpClientConfig(target.fsPath);
   } catch (error) {
     void vscode.window.showErrorMessage(`Could not install ${product.label}: ${describeError(error)}`);
   }

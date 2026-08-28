@@ -1,5 +1,6 @@
 import { describeError } from './describeError';
 import * as vscode from 'vscode';
+import { BackupError } from './cryptoUtils';
 import { StorageManager } from './storageManager';
 import type { SharingManager } from './sharingManager';
 import { nasPathFor } from './nasPaths';
@@ -12,8 +13,7 @@ import {
   resolveShares,
   sealShare,
   shareTranscript,
-  shareableDetails,
-} from './shareFormat';
+  shareableDetails, shareLabelBound } from './shareFormat';
 import { recordOrigin, resolveOrigin } from './shareOrigin';
 import { snapshotForRevision } from './revisionSnapshot';
 import { pinValidator } from './pinInput';
@@ -43,6 +43,8 @@ export interface ShareInboxDeps {
   readonly onArrived?: (accountId: string, entityId: string) => void;
   /** Called after an accepted share changed the tree, so caches refresh and sync runs. */
   readonly onMutated: () => void;
+  /** This build's version — legacy (unbound) shares stop opening at `LEGACY_SHARES_UNTIL`. */
+  readonly extensionVersion?: string;
 }
 
 export class ShareInbox {
@@ -289,7 +291,9 @@ export class ShareInbox {
         share.item.fromEmail,
         senderLocation(this.deps.storage, share.accountId),
       )} — into ${this.deps.storage.getAccount(share.accountId)?.email ?? 'this account'}`,
-      prompt: 'Enter the share PIN',
+      prompt: shareLabelBound(share.item)
+        ? 'Enter the share PIN'
+        : 'Enter the share PIN — sent by an extension older than 0.82: its label is not bound to its contents',
       password: true,
       ignoreFocusOut: true,
     });
@@ -302,10 +306,12 @@ export class ShareInbox {
     // import had already half-changed — with the real error never shown anywhere.
     let payload: SharePayload;
     try {
-      payload = openShare(share.item, share.shareKeyId, pin);
-    } catch {
+      payload = openShare(share.item, share.shareKeyId, pin, this.deps.extensionVersion);
+    } catch (error) {
       void vscode.window.showErrorMessage(
-        `"${share.item.entityName}" does not decrypt with that PIN.`,
+        error instanceof BackupError && error.kind === 'unsupported-version'
+          ? error.message
+          : `"${share.item.entityName}" does not decrypt with that PIN — or its label was edited after it was sealed.`,
       );
       return;
     }
@@ -355,7 +361,7 @@ export class ShareInbox {
       // re-trying them is pure waste: each retry is a full scrypt (~1s), and the old
       // O(items × PINs-so-far) cost froze the editor for tens of seconds on a handful of
       // shares. openShare is deterministic, so a PIN that did not open an item never will.
-      const { opened, remaining: rest } = resolveShares(remaining, [pin]);
+      const { opened, remaining: rest } = resolveShares(remaining, [pin], this.deps.extensionVersion);
       for (const o of opened) {
         await this.importShared(o, o.payload);
         imported++;

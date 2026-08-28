@@ -578,9 +578,10 @@ writes the client config; the extension itself keeps its zero runtime dependenci
 - **It works from inside WSL**, where the agent usually lives. The window is on Windows and
   `127.0.0.1` inside a distribution is that virtual machine's loopback, so the Linux `creds-mcp`
   hands the whole session to `creds-mcp.exe` through WSL interop and carries its stdio — nothing
-  new listens anywhere, and the consent modal still appears on Windows. Point
-  `CREDS_MCP_WINDOWS_BINARY` at that executable when it is not on the interop PATH, which is the
-  ordinary case since the install puts it in the extension's own storage.
+  new listens anywhere, and the consent modal still appears on Windows. **Install the MCP
+  Server…** asks where the agent runs and installs both halves: the Linux one into the
+  distribution you pick, and a config block naming it, with the Windows binary's path in `env`
+  — asked of the distribution through `wslpath` rather than composed here.
 
 ## Help — the yellow question mark
 
@@ -699,6 +700,11 @@ server enforces) — the transport handles this transparently.
   forgery-resistant, not forgery-proof, and should never be described as the
   latter.
 
+  Since 0.82 a share's label — sender, name, kind, date — is bound to its ciphertext as
+  GCM additional authenticated data: a label edited after sealing breaks decryption instead of
+  changing what you are shown. A share from an older build is unbound, says so in the inbox and
+  on the PIN prompt, and opens until 0.85.0; from then on it is refused with a request to update
+  the sender.
   A share from an older build carries no signature and is shown as unsigned rather
   than refused. A sender who **has** signed before and suddenly does not is a
   different matter and is refused: that is what stripping a signature looks like.

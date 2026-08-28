@@ -48,6 +48,59 @@ export function shareTranscript(item: ShareItem, toEmail: string): ShareTranscri
   };
 }
 
+/**
+ * The share format that binds the label to the ciphertext (security-review finding 7, shipped
+ * 2026-08-28). `fromEmail`, `entityName`, `entityKind` and `createdAt` sit beside the ciphertext
+ * in plaintext — a recipient is shown "Accept X from Y" before anything is decrypted — and until
+ * this format nothing tied them to what was sealed: a label could be edited after the fact and
+ * the item would still open. Now they are GCM additional authenticated data: an edited label
+ * breaks decryption instead of changing what the person is shown.
+ */
+export const SHARE_FORMAT_BOUND = 2;
+
+/**
+ * Shares sealed before the bound format carry no AAD and open as they always did, marked as
+ * such — until this version, from which they are refused with a request to update the sender
+ * (the owner, 2026-08-28: "after N versions, stop opening them").
+ */
+export const LEGACY_SHARES_UNTIL = '0.85.0';
+
+/** The four label fields, in one canonical byte string — the same on both ends by construction. */
+export function shareLabelAad(label: { fromEmail: string; entityName: string; entityKind: string; createdAt: number }): Buffer {
+  return Buffer.from(
+    JSON.stringify({
+      fromEmail: label.fromEmail,
+      entityName: label.entityName,
+      entityKind: label.entityKind,
+      createdAt: label.createdAt,
+    }),
+    'utf8',
+  );
+}
+
+/** Whether this item's label is bound to its ciphertext — false for a share from an older build. */
+export function shareLabelBound(item: Pick<ShareItem, 'format'>): boolean {
+  return item.format === SHARE_FORMAT_BOUND;
+}
+
+/** Whether a build of `version` still opens legacy (unbound) shares. */
+export function legacyShareAllowed(version: string): boolean {
+  return compareVersions(version, LEGACY_SHARES_UNTIL) < 0;
+}
+
+/** `major.minor.patch` as three numbers — a missing or unparsable part counts as 0. */
+function versionParts(version: string): [number, number, number] {
+  const parts = version.split('.').map((part) => Number.parseInt(part, 10));
+  return [parts[0] || 0, parts[1] || 0, parts[2] || 0];
+}
+
+function compareVersions(a: string, b: string): number {
+  const pa = versionParts(a);
+  const pb = versionParts(b);
+  const first = [0, 1, 2].find((i) => pa[i] !== pb[i]);
+  return first === undefined ? 0 : pa[first] - pb[first];
+}
+
 export function sealShare(
   payload: SharePayload,
   recipientKeyId: string,
@@ -57,14 +110,18 @@ export function sealShare(
   signing?: SigningKeypair,
   toEmail?: string,
 ): ShareItem {
-  const blob = sealBlob(payload, recipientKeyId + pin);
-  const item: ShareItem = {
-    id: crypto.randomUUID(),
+  const label = {
     fromEmail: from.email,
-    from: { accountId: from.accountId, email: from.email, provider: from.provider },
     entityName: payload.node.name,
     entityKind: resolveKind(payload.node.details),
     createdAt,
+  };
+  const blob = sealBlob(payload, recipientKeyId + pin, shareLabelAad(label));
+  const item: ShareItem = {
+    id: crypto.randomUUID(),
+    ...label,
+    from: { accountId: from.accountId, email: from.email, provider: from.provider },
+    format: SHARE_FORMAT_BOUND,
     ...blob,
   };
   // Unsigned when there is no keypair or no addressee to bind to — the server
@@ -77,16 +134,37 @@ export function sealShare(
 }
 
 /** Decrypt a share item. Throws BackupError; validates the payload shape. */
+/**
+ * Open a share. A bound item is opened with its label as AAD — an edited label fails here, as a
+ * wrong PIN does. A legacy item opens without, while `currentVersion` still allows it.
+ */
 export function openShare(
   item: ShareItem,
   recipientKeyId: string,
   pin: string,
+  currentVersion: string = '0.0.0',
 ): SharePayload {
-  const payload = openBlob(item, recipientKeyId + pin);
+  refuseStaleLegacy(item, currentVersion);
+  const payload = openBlob(item, recipientKeyId + pin, aadFor(item));
   if (!isSharePayload(payload)) {
     throw new BackupError('corrupted', 'The shared item does not match the expected schema.');
   }
   return payload;
+}
+
+/** The AAD a bound item was sealed with; nothing for a legacy one. */
+function aadFor(item: ShareItem): Buffer | undefined {
+  return shareLabelBound(item) ? shareLabelAad(item) : undefined;
+}
+
+/** A legacy share past `LEGACY_SHARES_UNTIL` is refused with the one useful sentence. */
+function refuseStaleLegacy(item: ShareItem, currentVersion: string): void {
+  if (!shareLabelBound(item) && !legacyShareAllowed(currentVersion)) {
+    throw new BackupError(
+      'unsupported-version',
+      'This share was sent by an extension older than 0.82 and can no longer be opened — ask the sender to update CredsForDevs and share again.',
+    );
+  }
 }
 
 /** Read + validate the shares array of a vault file (no decryption). */
@@ -133,14 +211,14 @@ export interface ResolveResult {
  * `remaining[0]` and calls again, until done or the user gives up.
  */
 // eslint-disable-next-line complexity
-export function resolveShares(items: OwnedShare[], pins: readonly string[]): ResolveResult {
+export function resolveShares(items: OwnedShare[], pins: readonly string[], currentVersion = '0.0.0'): ResolveResult {
   const opened: ResolveResult['opened'] = [];
   const remaining: OwnedShare[] = [];
   for (const owned of items) {
     let payload: SharePayload | undefined;
     for (const pin of pins) {
       try {
-        payload = openShare(owned.item, owned.shareKeyId, pin);
+        payload = openShare(owned.item, owned.shareKeyId, pin, currentVersion);
         break;
       } catch {
         // wrong pin for this item — try the next one

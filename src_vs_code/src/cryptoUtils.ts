@@ -274,9 +274,9 @@ function withKdf(blob: SealedBlob, params: ScryptParams): SealedBlob {
   return { ...blob, kdfN: params.N, kdfR: params.r, kdfP: params.p };
 }
 
-export function sealBlob(payload: unknown, passphrase: Passphrase): SealedBlob {
+export function sealBlob(payload: unknown, passphrase: Passphrase, aad?: Buffer): SealedBlob {
   const salt = crypto.randomBytes(SALT_LENGTH);
-  return withKdf(sealWithKey(payload, deriveKey(passphrase, salt, DEFAULT_PARAMS), salt), DEFAULT_PARAMS);
+  return withKdf(sealWithKey(payload, deriveKey(passphrase, salt, DEFAULT_PARAMS), salt, aad), DEFAULT_PARAMS);
 }
 
 /**
@@ -310,9 +310,9 @@ function checkedSalt(blob: SealedBlob): Buffer {
  * Decrypt a sealed blob. Throws {@link BackupError}: 'wrong-password' when
  * GCM authentication fails, 'corrupted' for malformed pieces.
  */
-export function openBlob(blob: SealedBlob, passphrase: Passphrase): unknown {
+export function openBlob(blob: SealedBlob, passphrase: Passphrase, aad?: Buffer): unknown {
   const salt = checkedSalt(blob);
-  return openWithKey(blob, deriveKey(passphrase, salt, paramsOf(blob)));
+  return openWithKey(blob, deriveKey(passphrase, salt, paramsOf(blob)), aad);
 }
 
 /**

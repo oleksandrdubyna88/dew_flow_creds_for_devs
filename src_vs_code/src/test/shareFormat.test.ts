@@ -2,17 +2,20 @@ import { generateSigningKeypair, verifyShare } from '../shareSignature';
 import { judgeSender } from '../senderPinning';
 import * as assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { BackupError, encryptJson } from '../cryptoUtils';
+import { BackupError, encryptJson, sealBlob } from '../cryptoUtils';
 import {
+  LEGACY_SHARES_UNTIL,
   envelopeWithShares,
+  legacyShareAllowed,
   openShare,
+  shareLabelBound,
   resolveShares,
   sealShare,
   shareTranscript,
   shareableDetails,
   sharesFromEnvelope,
 } from '../shareFormat';
-import { EntityMetadata, SharePayload, StoredAccount } from '../types';
+import { EntityMetadata, ShareItem, SharePayload, StoredAccount } from '../types';
 
 const NOW = 1_800_000_000_000;
 const admin: StoredAccount = { accountId: 'admin-1', email: 'admin@x', provider: 'microsoft' };
@@ -232,3 +235,47 @@ test('the one-time-code flag travels only when the seed does', () => {
   // The entry itself is untouched either way — this is a copy, not an edit of the vault.
   assert.equal(entry.hasTotp, true);
 });
+
+// ---- the label is bound to the ciphertext (security-review finding 7, 2026-08-28) ----
+
+test('a sealed share opens; the same share with its fromEmail edited afterwards does NOT', () => {
+  const item = sealShare(payload('orders-db'), user.accountId, admin, '1234', NOW);
+  assert.equal(shareLabelBound(item), true, 'a new share is bound');
+  assert.equal(openShare(item, user.accountId, '1234').node.name, 'orders-db');
+  const relabelled = { ...item, fromEmail: 'colleague@x' };
+  assert.throws(() => openShare(relabelled, user.accountId, '1234'), BackupError, 'an edited sender breaks decryption');
+  const renamed = { ...item, entityName: 'production-db' };
+  assert.throws(() => openShare(renamed, user.accountId, '1234'), BackupError, 'an edited name breaks decryption');
+  const redated = { ...item, createdAt: NOW + 1 };
+  assert.throws(() => openShare(redated, user.accountId, '1234'), BackupError);
+});
+
+test('a legacy share — no format, no AAD — still opens, is reported unbound, and is refused from the cutoff version', () => {
+  // As 0.81 wrote it: sealed without AAD, carrying no `format`.
+  const legacyBlob = sealShareLegacy(payload('old'), user.accountId, admin, '1234', NOW);
+  assert.equal(shareLabelBound(legacyBlob), false);
+  assert.equal(openShare(legacyBlob, user.accountId, '1234', '0.82.0').node.name, 'old', 'opens on 0.82');
+  assert.equal(openShare(legacyBlob, user.accountId, '1234', '0.84.9').node.name, 'old', 'opens right before the cutoff');
+  assert.throws(
+    () => openShare(legacyBlob, user.accountId, '1234', LEGACY_SHARES_UNTIL),
+    (error: unknown) => error instanceof BackupError && /older than/.test(error.message),
+    'refused from the cutoff on, with a sentence about updating the sender',
+  );
+  assert.equal(legacyShareAllowed('0.82.0'), true);
+  assert.equal(legacyShareAllowed('0.85.0'), false);
+  assert.equal(legacyShareAllowed('1.0.0'), false);
+});
+
+/** A share as pre-0.82 builds sealed it: no AAD, no `format`. */
+function sealShareLegacy(p: SharePayload, recipientKeyId: string, from: StoredAccount, pin: string, createdAt: number): ShareItem {
+  const blob = sealBlob(p, recipientKeyId + pin);
+  return {
+    id: 'legacy-1',
+    fromEmail: from.email,
+    from,
+    entityName: p.node.name,
+    entityKind: 'db',
+    createdAt,
+    ...blob,
+  };
+}

@@ -2,7 +2,7 @@
 
 > Status: **IMPLEMENTED, 2026-08-28** — items 1, 3, 4 and 5 shipped (1 as extension 0.81.0 on
 > 2026-08-28; 3, 4 and 5 by 2026-08-27). Item 2 — share metadata as GCM additional authenticated
-> data — is extracted to [../todo/PLAN_share_metadata_aad.md](../todo/PLAN_share_metadata_aad.md)
+> data — is extracted to [PLAN_share_metadata_aad.md](PLAN_share_metadata_aad.md) (shipped 0.82.1)
 > and is the one finding of the 2026-08-23 review still open. Re-checked against
 > the code 2026-08-27 ([PLAN_tails.md](PLAN_tails.md), which owns the two tails this re-check found).
 >

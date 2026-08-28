@@ -426,6 +426,8 @@ export interface ShareItem {
   kdfN?: number;
   kdfR?: number;
   kdfP?: number;
+  /** 2 = the label is GCM additional authenticated data (0.82); absent = a legacy, unbound share. */
+  format?: number;
   /**
    * Ed25519 signature over the share's transcript, and the key that made it.
    *
@@ -511,6 +513,7 @@ export function isShareItem(value: unknown): value is ShareItem {
   }
   return (
     typeof v.id === 'string' &&
+    (v.format === undefined || typeof v.format === 'number') &&
     typeof v.entityName === 'string' &&
     typeof v.entityKind === 'string' &&
     (ENTITY_KINDS as readonly string[]).includes(v.entityKind) &&

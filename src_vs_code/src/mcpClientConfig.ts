@@ -33,10 +33,17 @@ export const MCP_CLIENT_TARGETS: readonly McpClientTarget[] = [
  * storage and is deliberately NOT put on the `PATH`, so a client told `"command": "creds-mcp"`
  * would report that it cannot find it.</p>
  */
-export function mcpServerBlock(binaryPath: string): string {
+export function mcpServerBlock(
+  binaryPath: string,
+  env?: Readonly<Record<string, string>>,
+): string {
   const config = {
     mcpServers: {
-      creds: { command: binaryPath },
+      // `env` is omitted rather than written empty: a client reading `"env": {}` is told nothing,
+      // and a block with a field that does nothing invites the question of what it is for. It is
+      // present for exactly one case — a server inside WSL, which must be told where the Windows
+      // binary it relays through lives (see `wslMcpInstall.ts`).
+      creds: env === undefined ? { command: binaryPath } : { command: binaryPath, env },
     },
   };
   return JSON.stringify(config, null, 2);

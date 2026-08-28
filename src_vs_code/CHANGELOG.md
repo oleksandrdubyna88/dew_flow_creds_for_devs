@@ -6,6 +6,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.82.1] — 2026-08-28
+
+### Security
+
+- **A share's label is bound to its ciphertext** (the 2026-08-23 review's last open finding). The
+  sender, name, kind and date shown *before* you decrypt are now GCM additional authenticated
+  data: edit any of them after sealing and the share no longer opens. A share from an older build
+  is unbound — the inbox row and the PIN prompt say so — and opens until 0.85.0; from then on it is
+  refused with a request to update the sender.
+
 ## [0.82.0] — 2026-08-28
 
 ### Added

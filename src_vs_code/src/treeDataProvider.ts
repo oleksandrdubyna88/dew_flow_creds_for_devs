@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { shareLabelBound } from './shareFormat';
 import { StorageManager } from './storageManager';
 import { ShareSources, sharedMatches, unverifiedSender } from './shareRows';
 import { diagnoseTeamFailure } from './teamDiagnosis';
@@ -483,6 +484,10 @@ export class CredTreeDataProvider
       const { item: share } = element.share;
       const item = new vscode.TreeItem(share.entityName, vscode.TreeItemCollapsibleState.None);
       item.id = `share:${share.id}`;
+      if (!shareLabelBound(share)) {
+        // A share from a build older than 0.82: its label is not bound to its ciphertext.
+        item.description = 'label not bound';
+      }
       item.contextValue = 'sharedItem';
       item.iconPath = new vscode.ThemeIcon(kindIcon(share.entityKind));
       // WHERE it arrived matters as much as who sent it: with several accounts, the
