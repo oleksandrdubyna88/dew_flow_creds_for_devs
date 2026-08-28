@@ -19,6 +19,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   entry, its history and every secret on machine B after a sync, and a machine restoring a backup
   taken before the burn does not bring it back. Plus the burn path itself: no history, no key of
   any kind left.
+- **The MCP server works from inside WSL, with no configuration.** An agent usually runs in a
+  distribution, where `127.0.0.1` is that virtual machine's loopback and the window's announcement
+  files are on a Windows disk — so it used to be told "no CredsForDevs window answered" while the
+  window was open on the same computer. The Linux `creds-mcp` now hands the whole session to
+  `creds-mcp.exe` through WSL interop and carries its stdio. Nothing new listens anywhere, and the
+  consent modal still appears on Windows.
+- **Help: "Running the MCP server from inside WSL"** — the new article says what to install on
+  each side and in what order, and what each failure sentence actually means.
 
 ### Fixed
 

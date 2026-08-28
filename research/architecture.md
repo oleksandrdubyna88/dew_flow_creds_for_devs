@@ -282,8 +282,36 @@ still a placeholder**. A tag never ships both.
 | The server | [module_server.md](module_server.md) | The HTTP contract, authorization, storage |
 | The deployment | [module_deployment.md](module_deployment.md) | Containers, TLS, updates, backups |
 | The CLI | [../src_cli/README.md](../src_cli/README.md) | `creds` — the terminal client of the broker. A .NET Native AOT binary holding no secret: it relays a request to the VS Code window named by a grant token and prints what comes back |
-| The broker client | `src_broker_client/` | Discovery, the health probe, the wire contract and the WSL bridge — shared by both binaries, so a fix to any of it is made once |
-| The MCP server | `src_mcp/` | `creds-mcp` — what an AI agent talks to. Nine tools over the same broker (the ninth, `creds_config_snippet`, is read-only public text — how code reads a config, from the viewer's own catalog), every one gated by a per-entry switch that is off by default and by the same consent prompt. Holds no secret and can obtain none |
+| The broker client | `src_broker_client/` | Discovery, the health probe, the wire contract and the WSL bridge — shared by both binaries, so a fix to any of it is made once. The bridge is an instance per binary (`WslInterop.Creds`, `WslInterop.CredsMcp`), each with its own override variable, because one shared `creds.exe` would have sent an MCP handshake to the CLI |
+| The MCP server | `src_mcp/` | `creds-mcp` — what an AI agent talks to. Nine tools over the same broker (the ninth, `creds_config_snippet`, is read-only public text — how code reads a config, from the viewer's own catalog), every one gated by a per-entry switch that is off by default and by the same consent prompt. Holds no secret and can obtain none. **Inside WSL it carries the session rather than serving it** — see below |
+
+### The MCP server inside WSL (2026-08-28)
+
+An MCP client usually runs inside the distribution and starts `creds-mcp` as its own child, which
+puts the server in a Linux kernel while the window it must reach listens on the **Windows**
+loopback — and `127.0.0.1` there is the virtual machine's own. The announcement files are on
+Windows too, at a `globalStorage` path whose shape depends on the VS Code edition.
+
+So the Linux binary does not try to reach the window at all. It re-executes `creds-mcp.exe`
+through WSL interop and becomes its stdio:
+
+```
+MCP client ──stdin──► creds-mcp (Linux) ──pipe──► creds-mcp.exe (Windows) ──loopback──► window
+           ◄─stdout──                   ◄─pipe──
+```
+
+Three consequences worth stating, because each was a decision:
+
+- **Nothing new listens anywhere.** The bridge is a process boundary, not a socket, so the broker
+  stays exactly as loopback-only as it was — the same argument `creds` makes for the same trick.
+- **A session is carried, not relayed.** `creds` uses `WindowsBridge.Relay` (one call, streams
+  inherited, an exit code back); MCP is a long-lived JSON-RPC conversation in both directions, so
+  this uses `StartPiped` and a pump that closes both halves together.
+- **The Windows half does the finding.** No Linux-side guess at `/mnt/c/Users/…`, which breaks on
+  the first machine whose disk is not `C:`.
+
+`CREDS_MCP_WINDOWS_BINARY` overrides the executable — its own variable, never the CLI's. Design
+record and what the build taught: [PLAN_mcp_wsl_bridge.md](PLAN_mcp_wsl_bridge.md).
 
 ## Where the contract lives
 

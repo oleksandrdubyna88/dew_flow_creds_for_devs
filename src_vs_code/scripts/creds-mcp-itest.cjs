@@ -229,6 +229,12 @@ const HANDSHAKE = [
     undefined,
     undefined,
     () => Promise.resolve(ENTRIES),
+    // `visibleConfig` — no config entries in this fixture. It is spelled out rather than left to
+    // the end of the list because these arguments are POSITIONAL: when this parameter was added
+    // (32d8f01, 2026-08-27) every lambda after it silently shifted one place, the gate became the
+    // config supplier, and nineteen checks here failed with "no window answered" — for a month,
+    // unseen, because this script is not in CI. If a parameter is added again, count from here.
+    undefined,
     // The gate the whole route exists for, and it is PER ACTION: `e-1` may be used, and may be
     // rotated only because this fixture says its `edit` switch is on too; `e-use-only` may be
     // used and NOT rotated, which is the rung the ladder exists to keep apart.

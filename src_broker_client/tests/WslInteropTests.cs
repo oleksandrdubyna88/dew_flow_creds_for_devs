@@ -114,4 +114,43 @@ public class WslInteropTests
             Environment.SetEnvironmentVariable(WslInterop.BinaryOverrideVariable, previous);
         }
     }
+
+    [Fact]
+    public void The_mcp_server_crosses_as_itself_rather_than_as_the_cli()
+    {
+        // The failure this prevents is silent and total: a single shared "creds.exe" would send
+        // an MCP client's JSON-RPC handshake to the CLI, which answers a usage error on stderr
+        // and nothing at all on stdout — so the client simply waits.
+        WslInterop.CredsMcp.DefaultBinary.Should().Be("creds-mcp.exe");
+        WslInterop.Creds.DefaultBinary.Should().Be("creds.exe");
+    }
+
+    [Fact]
+    public void Pointing_one_binary_at_a_custom_path_never_redirects_the_other()
+    {
+        // Two variables rather than one, which is the whole reason WindowsBridge is an instance.
+        var cli = Environment.GetEnvironmentVariable(WslInterop.BinaryOverrideVariable);
+        var mcp = Environment.GetEnvironmentVariable(WslInterop.McpBinaryOverrideVariable);
+        try
+        {
+            Environment.SetEnvironmentVariable(WslInterop.BinaryOverrideVariable, "/mnt/c/tools/creds.exe");
+            Environment.SetEnvironmentVariable(WslInterop.McpBinaryOverrideVariable, null);
+            WslInterop.CredsMcp.WindowsBinary().Should().Be("creds-mcp.exe");
+
+            Environment.SetEnvironmentVariable(WslInterop.McpBinaryOverrideVariable, "/mnt/c/tools/creds-mcp.exe");
+            WslInterop.CredsMcp.WindowsBinary().Should().Be("/mnt/c/tools/creds-mcp.exe");
+            WslInterop.Creds.WindowsBinary().Should().Be("/mnt/c/tools/creds.exe");
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(WslInterop.BinaryOverrideVariable, cli);
+            Environment.SetEnvironmentVariable(WslInterop.McpBinaryOverrideVariable, mcp);
+        }
+    }
+
+    [Fact]
+    public void The_two_override_variables_are_not_the_same_name()
+    {
+        WslInterop.McpBinaryOverrideVariable.Should().NotBe(WslInterop.BinaryOverrideVariable);
+    }
 }

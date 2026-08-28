@@ -118,6 +118,26 @@ export const HELP_ARTICLES: readonly HelpArticle[] = [
     },
   },
   {
+    id: 'mcp-in-wsl',
+    mediaSlots: [],
+    en: {
+      title: 'Running the MCP server from inside WSL',
+      whatItIs: 'The Linux `creds-mcp` inside your distribution does not talk to the vault itself: it re-launches `creds-mcp.exe` on Windows through WSL interop and carries its stdio, so an agent living in WSL reaches the window living on Windows.',
+      why: 'Your editor and every secret are on Windows, and `127.0.0.1` inside WSL2 is the virtual machine’s own loopback — nothing of ours listens there, and the window’s announcement files are on a Windows disk. Without this an agent is told “no CredsForDevs window answered” while the window is open on the same computer. Nothing new listens anywhere: the bridge is a process, not a socket.',
+      setup: 'In this order. **On Windows:** keep a VS Code window open with the vault unlocked, and have `creds-mcp.exe` on disk — Install… → Install the MCP Server, or a local build at `src_mcp/src/bin/Debug/net10.0/creds-mcp.exe`. It does NOT need to be on the PATH. **Inside the distribution:** install the Linux `creds-mcp` (the .NET 10 runtime is enough for a framework-dependent build), then register it with your client, naming the Windows binary: `claude mcp add -s user creds -e CREDS_MCP_WINDOWS_BINARY=/mnt/c/path/to/creds-mcp.exe -- ~/.local/share/creds-mcp/creds-mcp`.',
+      usage: '`claude mcp list` inside WSL should say “creds ✔ Connected”. Then use it exactly as on Windows — the entries, the switches, the consent modal and the journal are the same ones, because the call simply arrives through a second process. The modal still appears on Windows, which is the point.',
+      whatCanGoWrong: '“creds-mcp.exe could not be started” means the Windows binary is not where the bridge looked — set `CREDS_MCP_WINDOWS_BINARY` to its full `/mnt/...` path. “No CredsForDevs window answered” now really means what it says: no window is open, or the vault is locked. Each distribution needs its own copy of the Linux binary and its own registration. If your VS Code lives somewhere unusual and you set `CREDS_ENDPOINT_DIR`, name it in `WSLENV` (`export WSLENV=CREDS_ENDPOINT_DIR/p`) — environment variables do not cross into a Windows child on their own.',
+    },
+    ru: {
+      title: 'Как запускать MCP-сервер из WSL',
+      whatItIs: 'Linux-бинарь `creds-mcp` внутри дистрибутива не разговаривает с сейфом сам: он перезапускает `creds-mcp.exe` на Windows через WSL-interop и работает его stdio — так агент, живущий в WSL, дотягивается до окна, живущего на Windows.',
+      why: 'Редактор и все секреты — на Windows, а `127.0.0.1` внутри WSL2 — это loopback виртуальной машины: там ничего нашего не слушает, и файлы-объявления окна лежат на виндовом диске. Без моста агент говорит «нет открытого окна CredsForDevs», хотя окно открыто на том же компьютере. Ничего нового нигде не начинает слушать: мост — это процесс, а не сокет.',
+      setup: 'Строго в таком порядке. **На Windows:** держите открытым окно VS Code с разблокированным сейфом и положите на диск `creds-mcp.exe` — через Install… → Install the MCP Server или локальной сборкой в `src_mcp/src/bin/Debug/net10.0/creds-mcp.exe`. В PATH его класть НЕ нужно. **Внутри дистрибутива:** поставьте Linux-бинарь `creds-mcp` (для framework-dependent сборки достаточно рантайма .NET 10) и зарегистрируйте его в клиенте, назвав виндовый бинарь: `claude mcp add -s user creds -e CREDS_MCP_WINDOWS_BINARY=/mnt/c/путь/creds-mcp.exe -- ~/.local/share/creds-mcp/creds-mcp`.',
+      usage: '`claude mcp list` внутри WSL должен показать «creds ✔ Connected». Дальше всё как на Windows — те же записи, те же переключатели, тот же модал согласия и тот же журнал: вызов просто приходит через второй процесс. Модал по-прежнему всплывает на Windows, в этом и смысл.',
+      whatCanGoWrong: '«creds-mcp.exe could not be started» — виндового бинаря нет там, где мост его искал: пропишите полный `/mnt/...` путь в `CREDS_MCP_WINDOWS_BINARY`. «No CredsForDevs window answered» теперь значит ровно то, что написано: окно закрыто или сейф заблокирован. Каждому дистрибутиву нужен свой Linux-бинарь и своя регистрация. Если VS Code стоит нестандартно и вы задали `CREDS_ENDPOINT_DIR`, назовите его в `WSLENV` (`export WSLENV=CREDS_ENDPOINT_DIR/p`) — переменные окружения сами в виндовый дочерний процесс не переходят.',
+    },
+  },
+  {
     id: 'config-entities',
     mediaSlots: [],
     en: {

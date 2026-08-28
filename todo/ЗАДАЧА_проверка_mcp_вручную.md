@@ -205,6 +205,37 @@ D:\rsd\dew_flow_creds_for_devs\src_mcp\src\bin\Debug\net10.0\creds-mcp.exe
 
 ---
 
+## 12. Из WSL — пройдено 2026-08-28
+
+Мост реализован ([../research/PLAN_mcp_wsl_bridge.md](../research/PLAN_mcp_wsl_bridge.md)), и этот
+проход сделан на настоящем Claude Code внутри дистрибутива Ubuntu против окна VS Code 0.80.7 на
+Windows. Как подключено:
+
+```bash
+# Linux-бинарь (framework-dependent, dotnet 10 в дистрибутиве уже есть)
+dotnet publish -c Release -r linux-x64 --self-contained false -p:PublishAot=false   -o ~/.local/share/creds-mcp                      # из чистой копии исходников в /tmp
+
+claude mcp add -s user creds   -e CREDS_MCP_WINDOWS_BINARY=/mnt/d/rsd/dew_flow_creds_for_devs/src_mcp/src/bin/Debug/net10.0/creds-mcp.exe   -- ~/.local/share/creds-mcp/creds-mcp
+```
+
+| Проверено | Результат |
+|---|---|
+| `claude mcp list` | `creds ✔ Connected` |
+| `creds_list` через настоящего агента | вернул запись из хранилища на Windows, с `can`, без секрета |
+| `creds_create` (оба пути: `secretKind` и свой `secret`) | **отказ до всякого окна согласия** — см. находку ниже |
+
+**Находка, требующая решения владельца.** `creds_list` отдаёт записи `can.create: true`, а
+`creds_create` отвечает *«No folder is open to agents for creating entries»* и никого не спрашивает.
+Противоречия в коде нет: `capabilitiesOf` строит `can.create` из переключателя **записи** (своего или
+унаследованного от папки), а `creatableFolders` требует переключатель **самой папки**
+(`opensToCreation`, папки создание не наследуют — это записано намеренно). Но агенту это читается как
+разрешение, которого нет: он планирует создание, тратит вызов и получает отказ. Отказ хороший и
+называет переключатель. Варианты: считать `can.create` от папки, а не от записи; или убрать поле из
+листинга записей, раз оно про папку. Не трогал — это изменение видимого агентам контракта.
+
+**Чтобы пройти пункт 5 из WSL**, нужно включить *Agents may create entries* на самой папке
+(правый клик по папке → Edit → Agent access), а не только на записи.
+
 ## Что записать по итогам
 
 Для каждого пункта — «ок» или что именно разошлось с ожиданием. Особо:

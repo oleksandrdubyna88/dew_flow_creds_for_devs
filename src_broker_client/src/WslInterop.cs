@@ -37,8 +37,22 @@ public static class WslInterop
     /// </remarks>
     public const string BinaryOverrideVariable = "CREDS_WINDOWS_BINARY";
 
+    /// <summary>
+    /// The MCP server's own override, deliberately not shared with the CLI's.
+    /// </summary>
+    /// <remarks>
+    /// The reason is the one written above <see cref="BinaryOverrideVariable"/> and it is not
+    /// hypothetical: a person who points <c>creds</c> at a build in a custom folder would
+    /// otherwise send their MCP client's stdio to the same place, and a CLI answering a JSON-RPC
+    /// handshake says nothing at all — the client simply waits.
+    /// </remarks>
+    public const string McpBinaryOverrideVariable = "CREDS_MCP_WINDOWS_BINARY";
+
     /// <summary>The CLI's side of the bridge — the original, and still the only caller here.</summary>
     public static WindowsBridge Creds { get; } = new("creds.exe", BinaryOverrideVariable);
+
+    /// <summary>The MCP server's side of the bridge: a different binary, a different variable.</summary>
+    public static WindowsBridge CredsMcp { get; } = new("creds-mcp.exe", McpBinaryOverrideVariable);
 
     /// <summary>Set by us before re-executing, so the Windows side can never bounce back.</summary>
     public const string RelayedVariable = "CREDS_RELAYED_FROM_WSL";

@@ -29,22 +29,67 @@ internal static class Program
 
     private static void Note(string message) => Console.Error.WriteLine($"[creds-for-devs] {message}");
 
+    /// <summary>What this process was started to do, before any of it happens.</summary>
+    internal enum Startup
+    {
+        /// <summary>Print the help and leave.</summary>
+        Help,
+
+        /// <summary>An argument this binary does not take.</summary>
+        Usage,
+
+        /// <summary>Speak the protocol — here, or through the Windows half.</summary>
+        Serve,
+    }
+
+    /// <summary>
+    /// Which of the three this invocation is.
+    /// </summary>
+    /// <remarks>
+    /// Pure, and separate from <see cref="Main"/>, because one of its consequences is not obvious:
+    /// help and a usage error are answered on THIS side even inside WSL. Both are the same
+    /// sentence from either half, and launching a Windows process to print a line a person asked
+    /// for by hand — which is exactly what the release smoke check does — buys nothing.
+    /// </remarks>
+    internal static Startup Classify(string[] args) =>
+        args.Length == 0
+            ? Startup.Serve
+            : args[0] is "--help" or "-h" or "help" ? Startup.Help : Startup.Usage;
+
     private static async Task<int> Main(string[] args)
     {
         var contract = BrokerContract.Current;
 
-        // `--help` before anything else, and on stdout: a person running this by hand to see
-        // whether it works is not speaking the protocol, and the release smoke check is exactly
-        // that person. Nothing after this line writes to stdout except the transport.
-        if (args.Length > 0 && (args[0] == "--help" || args[0] == "-h" || args[0] == "help"))
+        // `--help` on stdout: a person running this by hand to see whether it works is not
+        // speaking the protocol. Nothing after this line writes to stdout except the transport.
+        switch (Classify(args))
         {
-            Console.Out.WriteLine(HelpText);
-            return 0;
+            case Startup.Help:
+                Console.Out.WriteLine(HelpText);
+                return 0;
+
+            case Startup.Usage:
+                Note($"unknown argument '{args[0]}' — this binary takes none; an MCP client speaks to it over stdin.");
+                return contract.Exit("usage");
+
+            default:
+                return await ServeAsync(contract);
         }
-        if (args.Length > 0)
+    }
+
+    /// <summary>
+    /// Answer the protocol — from here, or from the Windows binary when we are inside WSL.
+    /// </summary>
+    /// <remarks>
+    /// The decision is the CLI's, unchanged and shared: two independent signals for "this is
+    /// WSL", plus a guard against a Windows binary that is secretly a Linux one. What differs is
+    /// what follows it — a session to carry rather than a call to relay.
+    /// </remarks>
+    private static async Task<int> ServeAsync(BrokerContract contract)
+    {
+        if (WslInterop.ShouldRelayHere())
         {
-            Note($"unknown argument '{args[0]}' — this binary takes none; an MCP client speaks to it over stdin.");
-            return contract.Exit("usage");
+            return await RelayAsync(contract);
         }
 
         try
@@ -56,6 +101,35 @@ internal static class Program
         {
             // The client went away mid-stream. Not a failure of ours, and not worth a stack
             // trace in somebody's editor log.
+            Note("the MCP client closed the connection.");
+            return 0;
+        }
+    }
+
+    /// <summary>
+    /// Inside WSL: become the stdio of the Windows binary, which can reach the window.
+    /// </summary>
+    /// <remarks>
+    /// The one failure worth a sentence is a missing Windows binary, because it is the one a
+    /// person can fix — and the message has to name the variable, since <c>creds-mcp.exe</c> is
+    /// installed into the extension's own storage and deliberately not put on the PATH.
+    /// </remarks>
+    private static async Task<int> RelayAsync(BrokerContract contract)
+    {
+        try
+        {
+            return await WslPump.RunAsync();
+        }
+        catch (Exception e) when (e is System.ComponentModel.Win32Exception or InvalidOperationException)
+        {
+            Note(
+                $"this looks like WSL, but creds-mcp.exe could not be started ({e.Message}). Set "
+                    + $"{WslInterop.McpBinaryOverrideVariable} to its full path — \"Install the MCP Server…\" "
+                    + "puts it in the extension's storage rather than on the PATH.");
+            return contract.Exit("toolMissing");
+        }
+        catch (Exception e) when (e is IOException or ObjectDisposedException)
+        {
             Note("the MCP client closed the connection.");
             return 0;
         }
@@ -236,6 +310,11 @@ internal static class Program
 
         Or use "CredsForDevs: Install the MCP Server" from the extension's menu, which puts the
         binary somewhere on PATH and writes that block for you.
+
+        Inside WSL it needs no configuration either: the window is on Windows, so this binary
+        hands the whole session to creds-mcp.exe through WSL interop and carries its stdio. Set
+        CREDS_MCP_WINDOWS_BINARY to the full path when that executable is not on the interop PATH
+        — which is the ordinary case, since the extension installs it into its own storage.
 
         Tools: creds_list, then creds_exec / creds_query / creds_run / creds_open_terminal /
         creds_vpn_up / creds_vpn_down / creds_export_env — each gated by that entry's own switch
