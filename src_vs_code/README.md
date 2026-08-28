@@ -560,10 +560,18 @@ point.
 the standing version: **Install the MCP Server…** puts a separate `creds-mcp` binary on PATH and
 writes the client config; the extension itself keeps its zero runtime dependencies.
 
-- **Six switches per entry, all off by default** — visible / usable / may replace the secret /
-  may create / may delete what it created / may delete anything here — set in the entity form's
-  *Agent access* section or inherited from the folder. The tree marks an opened entry with a
-  pentagon whose edges light per switch. Nothing in the Trash answers, whatever its switches say.
+- **Two ladders, ten switches, all off by default.** Over ENTRIES: visible / usable / may replace
+  the secret / may create / may delete what it created / may delete anything here. Over FOLDERS:
+  may create folders / may rename and move them / may delete the ones it made / may delete any.
+  Set them in the *Agent access* section of an entry or a folder; **everything below a folder
+  inherits them** until something inside gives its own answer, and an empty object is an answer —
+  that is how you close one branch of an open tree. The tree marks an opened entry with a pentagon
+  whose edges light per switch of the entry ladder. Nothing in the Trash answers, whatever its
+  switches say.
+- **An agent can never change a switch.** Not on an entry, not on a folder, not by any route:
+  there is no field in any request it can make that carries them. Folder editing means the name,
+  the place and the type. A move needs the grant at *both* ends, because a folder passes its
+  answers to everything inside it — so moving one is a permission change for its contents.
 - **The switch is not consent.** It says an agent *may ask*; every action still raises the
   modal with the real entry and the real command.
 - **Rotation without disclosure:** an agent writes `{{creds:new}}`, the extension generates the

@@ -125,12 +125,16 @@ public class BrokerContractTests
         // the value that used to be hard-coded keeps an old file working; throwing on a missing
         // key would turn an additive change into a breaking one.
         var older = new BrokerContract(1, "creds-for-devs-agent", BrokerContract.Current.Health,
-            [], [], null, null, null, null, null, null, [], []);
+            [], [], null, null, null, null, null, null, null, null, [], []);
 
         older.ReadRoute("aliases", "/v1/aliases").Should().Be("/v1/aliases");
         older.ConfigReadRoutePath().Should().Be("/v1/config/read");
         older.DeleteRoute().Should().Be("/v1/mcp/delete");
         older.CreateRoute().Should().Be("/v1/mcp/create");
         older.McpUseRoute("exec").Should().Be("/v1/mcp/use/exec");
+        // The newest section degrades the same way, which is the point of the test rather than a
+        // detail of it: every route this side reads has a fallback, so a contract file older than
+        // the feature keeps working instead of turning an additive change into a breaking one.
+        older.FolderRoute("create").Should().Be("/v1/mcp/folder/create");
     }
 }

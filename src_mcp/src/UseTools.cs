@@ -342,7 +342,7 @@ internal static class UseTools
     /// declined, that this kind of entry has no such action. Rewriting it here would be a second
     /// place to keep those sentences correct, and the second copy is always the vague one.
     /// </remarks>
-    private static string Refused(BrokerReply reply)
+    internal static string Refused(BrokerReply reply)
     {
         var envelope = Windows.Parse(reply.Body, McpJsonContext.Default.BrokerErrorEnvelope);
         var message = envelope?.Error?.Message;
@@ -364,6 +364,6 @@ internal static class UseTools
             _ => "Tell the person what you were trying to do; the window's own log has the detail.",
         };
 
-    private static string Failure(string error, string hint) =>
+    internal static string Failure(string error, string hint) =>
         JsonSerializer.Serialize(new ToolFailure(error, hint), McpJsonContext.Default.ToolFailure);
 }

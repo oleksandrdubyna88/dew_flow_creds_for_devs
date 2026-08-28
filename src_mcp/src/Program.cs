@@ -149,6 +149,11 @@ internal static class Program
         options.ToolCollection ??= [];
         options.ToolCollection.Add(ListTool(contract));
         options.ToolCollection.Add(ConfigSnippetTool(contract));
+        options.ToolCollection.Add(FolderListTool(contract));
+        foreach (var tool in FolderTool(contract))
+        {
+            options.ToolCollection.Add(tool);
+        }
         foreach (var tool in UseTools.All)
         {
             options.ToolCollection.Add(UseTool(contract, tool));
@@ -214,6 +219,68 @@ internal static class Program
                 Destructive = false,
                 OpenWorld = false,
             });
+
+    /// <summary>
+    /// The folder listing: read-only and idempotent, honestly.
+    /// </summary>
+    /// <remarks>
+    /// It reads a list, raises no modal and changes nothing. Folders hold no secret, so unlike
+    /// every other read here there is no half to leave out — what limits the answer is only what
+    /// somebody opened.
+    /// </remarks>
+    private static McpServerTool FolderListTool(BrokerContract contract) =>
+        McpServerTool.Create(
+            () => FolderTools.ListAsync(contract),
+            new McpServerToolCreateOptions
+            {
+                Name = FolderTools.ListName,
+                Title = "List folders opened to agents",
+                Description = FolderTools.ListDescription,
+                ReadOnly = true,
+                Idempotent = true,
+                Destructive = false,
+                OpenWorld = false,
+            });
+
+    /// <summary>
+    /// The three folder verbs.
+    /// </summary>
+    /// <remarks>
+    /// <para>None is read-only and none is idempotent, and the hints say so: each changes the
+    /// person's tree. `Destructive` is true for all three because a client may use these to skip
+    /// a confirmation of its own, and a rename that reappears somewhere unexpected is not a thing
+    /// to be optimistic about — a move carries a folder's agent-access answers to its whole
+    /// contents.</para>
+    /// <para>The parameter names are the broker's own, and the SET of them is the whole
+    /// no-escalation rule on this side: there is no parameter a model could put the switches in,
+    /// because the delegates below declare every field that travels.</para>
+    /// </remarks>
+    private static IEnumerable<McpServerTool> FolderTool(BrokerContract contract) =>
+    [
+        McpServerTool.Create(
+            (string name, string parent, string? folderType = null) =>
+                FolderTools.InvokeAsync(contract, "create", [("name", name), ("parent", parent), ("folderType", folderType)]),
+            FolderOptions(FolderTools.CreateName, "Create a folder", FolderTools.CreateDescription)),
+        McpServerTool.Create(
+            (string folder, string? name = null, string? parent = null, string? folderType = null) =>
+                FolderTools.InvokeAsync(contract, "edit", [("folder", folder), ("name", name), ("parent", parent), ("folderType", folderType)]),
+            FolderOptions(FolderTools.EditName, "Rename, move or retype a folder", FolderTools.EditDescription)),
+        McpServerTool.Create(
+            (string folder) => FolderTools.InvokeAsync(contract, "delete", [("folder", folder)]),
+            FolderOptions(FolderTools.DeleteName, "Move a folder to the Trash", FolderTools.DeleteDescription)),
+    ];
+
+    private static McpServerToolCreateOptions FolderOptions(string name, string title, string description) =>
+        new()
+        {
+            Name = name,
+            Title = title,
+            Description = description,
+            ReadOnly = false,
+            Idempotent = false,
+            Destructive = true,
+            OpenWorld = true,
+        };
 
     private static McpServerTool UseTool(BrokerContract contract, UseTools.UseTool tool) =>
         McpServerTool.Create(
@@ -316,8 +383,9 @@ internal static class Program
         CREDS_MCP_WINDOWS_BINARY to the full path when that executable is not on the interop PATH
         — which is the ordinary case, since the extension installs it into its own storage.
 
-        Tools: creds_list, then creds_exec / creds_query / creds_run / creds_open_terminal /
-        creds_vpn_up / creds_vpn_down / creds_export_env — each gated by that entry's own switch
-        and by the person's approval, every call.
+        Tools: creds_list and creds_folders, then creds_exec / creds_query / creds_run /
+        creds_open_terminal / creds_vpn_up / creds_vpn_down / creds_export_env, and the folder
+        verbs creds_create_folder / creds_edit_folder / creds_delete_folder — each gated by that
+        entry or folder's own switch and by the person's approval, every call.
         """;
 }

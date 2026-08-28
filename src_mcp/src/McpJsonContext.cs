@@ -19,6 +19,10 @@ namespace CredsMcp;
 [JsonSerializable(typeof(McpEntry))]
 [JsonSerializable(typeof(McpCapabilities))]
 [JsonSerializable(typeof(McpEntry[]))]
+[JsonSerializable(typeof(McpFoldersResponse))]
+[JsonSerializable(typeof(McpFolder))]
+[JsonSerializable(typeof(McpFolderCapabilities))]
+[JsonSerializable(typeof(McpFolder[]))]
 [JsonSerializable(typeof(ToolFailure))]
 [JsonSerializable(typeof(BrokerErrorEnvelope))]
 [JsonSerializable(typeof(BrokerErrorDetail))]
@@ -90,3 +94,27 @@ internal sealed record BrokerErrorEnvelope(
 internal sealed record BrokerErrorDetail(
     [property: JsonPropertyName("code")] string? Code,
     [property: JsonPropertyName("message")] string? Message);
+
+/// <summary>What <c>GET /v1/mcp/folders</c> answers with.</summary>
+internal sealed record McpFoldersResponse(
+    [property: JsonPropertyName("folders")] McpFolder[]? Folders);
+
+/// <summary>
+/// One folder a person opened to agents.
+/// </summary>
+/// <remarks>
+/// No secret half to leave out: a folder holds none. What limits this list is only what somebody
+/// opened, which is why every field here is present unconditionally.
+/// </remarks>
+internal sealed record McpFolder(
+    [property: JsonPropertyName("id")] string Id,
+    [property: JsonPropertyName("name")] string Name,
+    [property: JsonPropertyName("parent")] string? Parent,
+    [property: JsonPropertyName("folderType")] string? FolderType,
+    [property: JsonPropertyName("can")] McpFolderCapabilities? Can);
+
+/// <summary>What may be done to a folder beyond seeing that it exists.</summary>
+internal sealed record McpFolderCapabilities(
+    [property: JsonPropertyName("create")] bool Create,
+    [property: JsonPropertyName("edit")] bool Edit,
+    [property: JsonPropertyName("delete")] bool Delete);

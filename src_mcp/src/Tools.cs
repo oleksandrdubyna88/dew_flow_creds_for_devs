@@ -156,7 +156,7 @@ internal static class Tools
     /// opened to you" call for completely different next moves, and an agent that cannot tell
     /// them apart will confidently give the wrong advice about whichever one it guessed.
     /// </remarks>
-    private static string NoWindow()
+    internal static string NoWindow()
     {
         var announced = Windows.Announced();
         var failure = new ToolFailure(

@@ -25,6 +25,8 @@ public sealed record BrokerContract(
     [property: JsonPropertyName("reads")] Dictionary<string, string>? Reads,
     [property: JsonPropertyName("mcpUsePrefix")] string? McpUsePrefix,
     [property: JsonPropertyName("mcpActions")] string[]? McpActions,
+    [property: JsonPropertyName("mcpFolderPrefix")] string? McpFolderPrefix,
+    [property: JsonPropertyName("mcpFolderActions")] string[]? McpFolderActions,
     [property: JsonPropertyName("mcpDeleteRoute")] string? McpDeleteRoute,
     [property: JsonPropertyName("mcpCreateRoute")] string? McpCreateRoute,
     [property: JsonPropertyName("configRead")] ConfigReadRoute? ConfigRead,
@@ -85,6 +87,17 @@ public sealed record BrokerContract(
 
     /// <summary>Where an agent posts a new entry. The only body that names no entry.</summary>
     public string CreateRoute() => McpCreateRoute is { Length: > 0 } route ? route : "/v1/mcp/create";
+
+    /// <summary>
+    /// Where an agent posts one folder verb.
+    /// </summary>
+    /// <remarks>
+    /// A prefix plus the verb, exactly as the use routes are, and nullable with a fallback for
+    /// the same reason every route here is: a contract file written before this line existed
+    /// must degrade to the path this build knows rather than throwing on a missing key.
+    /// </remarks>
+    public string FolderRoute(string action) =>
+        (McpFolderPrefix is { Length: > 0 } prefix ? prefix : "/v1/mcp/folder/") + action;
 
     /// <summary>
     /// Where an application reads one config file.

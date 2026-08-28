@@ -6,6 +6,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.85.0] — 2026-08-28
+
+### Added
+
+- **Folders are now something an agent can be given.** Four new switches beside the six that
+  existed: *create folders*, *rename and move folders*, *delete folders they created*, *delete any
+  folder here* — a second ladder over a second object, meeting the first only at "visible". An
+  agent lists them with `creds_folders` and acts with `creds_create_folder`,
+  `creds_edit_folder` and `creds_delete_folder`. Everything is off until you say otherwise, every
+  call still raises the consent modal, and a folder goes to the Trash and nowhere else.
+- **An agent can never change a permission**, and that is kept by the shape of the code rather
+  than by a check: no request it can make has a field the switches could arrive in. Folder editing
+  is the name, the place and the type. A move needs the grant at *both* ends — a folder passes its
+  answers to everything inside it, so moving one is a permission change for its contents.
+
+### Fixed
+
+- **Agent access is inherited by one rule now.** Creating was resolved against a folder's own
+  switch while everything else climbed the tree, so `creds_list` could hand an agent an entry
+  marked creatable and the create call would then refuse it. One rule: an answer given above
+  applies below until something gives its own.
+- **The contract had quietly lost a route.** `mcpConfigSnippet` was in the generated JSON but not
+  in the generator, so the next regeneration would have dropped it — and the binary that reads it
+  by name would have fallen back to a hard-coded path without saying so. Restored, with the folder
+  listing filed beside it.
+
 ## [0.84.0] — 2026-08-28
 
 ### Fixed
