@@ -12,7 +12,7 @@
 > [../research/module_server.md](module_server.md),
 > [../research/architecture.md](architecture.md).
 >
-> Plans this one corrects rather than duplicates: [PLAN_audit_roadmap_2026_08_25.md](../todo/PLAN_audit_roadmap_2026_08_25.md),
+> Plans this one corrects rather than duplicates: [PLAN_audit_roadmap_2026_08_25.md](PLAN_audit_roadmap_2026_08_25.md),
 > [PLAN_extension_security_tail.md](PLAN_extension_security_tail.md),
 > [PLAN_logging_convention.md](PLAN_logging_convention.md) (now promoted),
 > [PLAN_marketplace_listing.md](PLAN_marketplace_listing.md),
@@ -55,7 +55,7 @@ plan. Listed so that a reader of *this* plan does not conclude the audit missed 
 | MCP from inside WSL | [PLAN_mcp_wsl_bridge.md](PLAN_mcp_wsl_bridge.md) | **Closed 2026-08-28.** `WslInterop.CredsMcp` is the second instance, `CREDS_MCP_WINDOWS_BINARY` is its own variable, and `WslPump` carries the session; verified against a real Claude Code inside WSL |
 | Live three-machine recovery rehearsal, roster rotation | [PLAN_org_recovery_tail.md](../todo/PLAN_org_recovery_tail.md) | no re-split path in `src_vs_code/src` or `OrgRecovery*.cs` |
 | Marketplace screenshots | [ЗАДАЧА_скриншоты_для_маркетплейса.md](../todo/ЗАДАЧА_скриншоты_для_маркетплейса.md) | `src_vs_code/media/docs/` does not exist |
-| `extension.ts` split (A1), `EntityMetadata` union (A4), envelope AAD (A5), 2SKD (D9), byte-weighted rate limit (E1) | [PLAN_audit_roadmap_2026_08_25.md](../todo/PLAN_audit_roadmap_2026_08_25.md) | see T3, which measures how far A1 moved — the wrong way |
+| `extension.ts` split (A1), `EntityMetadata` union (A4), envelope AAD (A5), 2SKD (D9), byte-weighted rate limit (E1) | [PLAN_audit_roadmap_2026_08_25.md](PLAN_audit_roadmap_2026_08_25.md) | see T3, which measures how far A1 moved — the wrong way |
 
 ---
 
@@ -340,7 +340,7 @@ script whose first step is already wrong is a script people stop trusting at ste
 
 ### T7. The roadmap's status line is false in both directions
 
-**Symptom.** [PLAN_audit_roadmap_2026_08_25.md](../todo/PLAN_audit_roadmap_2026_08_25.md) carries a
+**Symptom.** [PLAN_audit_roadmap_2026_08_25.md](PLAN_audit_roadmap_2026_08_25.md) carries a
 fourteen-line status block. Against the code:
 
 | the status says | the code says |

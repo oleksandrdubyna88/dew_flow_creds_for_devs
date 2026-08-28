@@ -5,7 +5,7 @@
 > secret-field set.
 >
 > Related docs: [module_extension.md](module_extension.md),
-> [PLAN_audit_roadmap_2026_08_25.md](../todo/PLAN_audit_roadmap_2026_08_25.md) (item **D2**).
+> [PLAN_audit_roadmap_2026_08_25.md](PLAN_audit_roadmap_2026_08_25.md) (item **D2**).
 >
 > **Deviations from the plan, and what they cost.**
 >

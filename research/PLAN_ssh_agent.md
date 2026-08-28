@@ -4,7 +4,7 @@
 > agent-protocol server, the terminal environment, the Connect path, and one clipboard helper for Git.
 >
 > Related docs: [module_extension.md](module_extension.md),
-> [PLAN_audit_roadmap_2026_08_25.md](../todo/PLAN_audit_roadmap_2026_08_25.md) (item **D1**, owner decision §7.5).
+> [PLAN_audit_roadmap_2026_08_25.md](PLAN_audit_roadmap_2026_08_25.md) (item **D1**, owner decision §7.5).
 >
 > **Deviations from the plan, and what they cost.**
 >

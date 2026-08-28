@@ -39,7 +39,7 @@
 > **включая историю ревизий** и пишет причинный tombstone.
 >
 > Related docs: [module_extension.md](module_extension.md),
-> [../todo/PLAN_audit_roadmap_2026_08_25.md](../todo/PLAN_audit_roadmap_2026_08_25.md),
+> [../todo/PLAN_audit_roadmap_2026_08_25.md](PLAN_audit_roadmap_2026_08_25.md),
 > [../todo/PLAN_ephemeral_secrets_tail.md](PLAN_ephemeral_secrets_tail.md).
 > **Этот план ПОГЛОЩАЕТ пункт D10 дорожной карты** (сроки годности + напоминания) — его половина
 > «expiry» здесь целиком; отдельного плана D10 быть не должно.

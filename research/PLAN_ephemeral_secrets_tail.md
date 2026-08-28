@@ -11,7 +11,7 @@
 >
 > Related docs: [../research/module_extension.md](module_extension.md),
 > [../research/PLAN_ephemeral_secrets.md](PLAN_ephemeral_secrets.md),
-> [PLAN_audit_roadmap_2026_08_25.md](../todo/PLAN_audit_roadmap_2026_08_25.md).
+> [PLAN_audit_roadmap_2026_08_25.md](PLAN_audit_roadmap_2026_08_25.md).
 
 ---
 

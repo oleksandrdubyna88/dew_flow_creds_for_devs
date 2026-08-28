@@ -24,7 +24,7 @@
 >
 > Related docs: [PLAN_headless_cli.md](PLAN_headless_cli.md),
 > [PLAN_remote_broker_bridge.md](PLAN_remote_broker_bridge.md),
-> [PLAN_audit_roadmap_2026_08_25.md](../todo/PLAN_audit_roadmap_2026_08_25.md).
+> [PLAN_audit_roadmap_2026_08_25.md](PLAN_audit_roadmap_2026_08_25.md).
 
 ---
 

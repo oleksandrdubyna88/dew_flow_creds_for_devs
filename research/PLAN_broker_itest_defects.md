@@ -5,7 +5,7 @@
 > исправлять не потребовалось: починка была уже в коде, сломан был тест.
 >
 > Related docs: [PLAN_agent_ssh_broker.md](PLAN_agent_ssh_broker.md),
-> [PLAN_audit_roadmap_2026_08_25.md](../todo/PLAN_audit_roadmap_2026_08_25.md) (пункт A3 — интеграционные
+> [PLAN_audit_roadmap_2026_08_25.md](PLAN_audit_roadmap_2026_08_25.md) (пункт A3 — интеграционные
 > тесты в CI; этот план — конкретная причина, почему A3 не косметика).
 
 ---

@@ -32,6 +32,7 @@ Newest first.
 
 | Plan | Landed | What it delivered |
 |---|---|---|
+| [PLAN_audit_roadmap_2026_08_25.md](PLAN_audit_roadmap_2026_08_25.md) | 2026-08-28 | The 2026-08-25 audit's roadmap — every block closed or decided; the last two, A1 (`extension.ts` 5689 → 1105) and A4 (the shapes union), on the day it was promoted. |
 | [PLAN_server_ops.md](PLAN_server_ops.md) | 2026-08-28 | The server's operational hardening, all nine items — the last three (network-FS refusal, officers' metrics + runtime line, cached health) and the byte budget shipped as server 0.4.0. |
 | [PLAN_share_metadata_aad.md](PLAN_share_metadata_aad.md) | 2026-08-28 | A share's label bound to its ciphertext as GCM AAD; legacy shares open, marked unbound, until 0.85.0. |
 | [PLAN_ephemeral_secrets_tail.md](PLAN_ephemeral_secrets_tail.md) | 2026-08-28 | The ephemeral-secrets tail: *Burn Now…*, the lifetime on the card, and the cross-machine burn proven by test. |

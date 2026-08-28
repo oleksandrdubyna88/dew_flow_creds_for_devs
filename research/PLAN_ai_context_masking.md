@@ -28,7 +28,7 @@
 >   назначения, а не на границе хранилища — vault обязан показывать имя, которое реально прислали.
 >
 > Related docs: [module_extension.md](module_extension.md),
-> [../todo/PLAN_audit_roadmap_2026_08_25.md](../todo/PLAN_audit_roadmap_2026_08_25.md) (D3 — ссылки на
+> [../todo/PLAN_audit_roadmap_2026_08_25.md](PLAN_audit_roadmap_2026_08_25.md) (D3 — ссылки на
 > секреты и маскирующий `run`; этот план — его половина про маскирование, они должны сойтись в одной
 > реализации маскера).
 

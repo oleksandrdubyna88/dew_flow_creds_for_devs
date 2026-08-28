@@ -2407,14 +2407,29 @@ after the owner's answers; T25 stays as shipped in 0.80.0 by his choice.
 
 ## The split of `extension.ts` (roadmap A1, in progress) and the shapes union (A4)
 
-Stage 1 (2026-08-28) moved every module-level helper out of `extension.ts` — 5689 → 4661 lines —
-into seven feature modules: `entityViewerCommands.ts`, `entityEditCommands.ts`, `vpnRun.ts`,
-`importCommands.ts`, `mcpHooks.ts`, `installFlow.ts`, `configCommands.ts`. Moved verbatim, as the
-roadmap asked; each module's imports were resolved by the compiler from `extension.ts`'s own import
-table, and the window's environment collection became `envCollectionRef.ts` so a moved function can
-reach it. The complexity and function-length ceilings are a per-file disable on the moved code
-(the A2 pattern), naming only the rules each file breaks — a boundary for new code there. Stage 2,
-the command registrations inside `activate`, is the rest of A1.
+`extension.ts` went from 5689 lines to **1105** on 2026-08-28, in two stages, both verbatim moves —
+the roadmap's rule was "move what is written, do not rewrite it", and the compiler resolved every
+module's imports from `extension.ts`'s own import table.
+
+Stage 1 took the module-level helpers into seven feature modules: `entityViewerCommands.ts`,
+`entityEditCommands.ts`, `vpnRun.ts`, `importCommands.ts`, `mcpHooks.ts`, `installFlow.ts`,
+`configCommands.ts`; the window's environment collection became `envCollectionRef.ts` so a moved
+function can reach it. Stage 2 took the 96 command registrations out of `activate` into
+`src/commands/`: `entityCommands` (copy, show, connect), `treeMutationCommands` (add, edit, delete,
+move, trash, import/export, configs), `runCommands` (run, script, run-with-secrets),
+`recoveryCommands` (corporate recovery), `keyCommands` (security keys, the recovery code, locking),
+`agentCommands` (CLI access, the bridges, the SSH agent, installs), `wslRelayCommands`,
+`accountCommands` (sync, backups, accounts), `shareCommands`, `viewCommands`. Each exports
+`register…Commands(host)` with an explicit `…Host` interface — the locals of `activate` the family
+uses, and nothing else — and `activate` builds each host where its last registration used to stand,
+so no closure captures a `const` before it is defined. The registration order changed by family;
+nothing in `activate` executes a command before it is registered.
+
+What stays in `extension.ts`: the wiring — construction, the sync/backup/lock timers, readiness,
+the arrival highlight, the hosts. The complexity and function-length ceilings are a per-file
+disable on the moved code (the A2 pattern): a boundary for new code there, met by each handler when
+it is next touched for a reason of its own. `extension.ts` keeps its `max-lines` exemption and its
+ratchet baseline (1105), and can only shrink.
 
 `entityShape.ts` (A4) is the union of the eight shapes — `ssh`, `sshkey`, `db`, `vpn`, `terminal`,
 `script`, `config`, `credential` — each with the fields that belong to it. `shapeOf` is the one door

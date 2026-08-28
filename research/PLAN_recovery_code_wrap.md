@@ -11,7 +11,7 @@
 > first needed.
 >
 > Related docs: [module_extension.md](module_extension.md),
-> [PLAN_audit_roadmap_2026_08_25.md](../todo/PLAN_audit_roadmap_2026_08_25.md) (item **D9**),
+> [PLAN_audit_roadmap_2026_08_25.md](PLAN_audit_roadmap_2026_08_25.md) (item **D9**),
 > [PLAN_org_recovery.md](PLAN_org_recovery.md) (the corporate tier built on top of this).
 
 ## The symptom
@@ -21,7 +21,7 @@ forgotten PIN after a holiday, a YubiKey through a washing machine — and the v
 cryptographically gone, which is correct behaviour for an attacker and a disaster for the owner.
 Every serious credential manager ships a third, offline factor for exactly this: a printed
 high-entropy code in a drawer. Roadmap D9 named it
-([PLAN_audit_roadmap_2026_08_25.md:233-235](../todo/PLAN_audit_roadmap_2026_08_25.md)); the wrap slots it
+([PLAN_audit_roadmap_2026_08_25.md:233-235](PLAN_audit_roadmap_2026_08_25.md)); the wrap slots it
 needs have existed since v2 (`keyWrap.ts`).
 
 ## The design

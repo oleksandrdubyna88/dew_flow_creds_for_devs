@@ -4,7 +4,7 @@
 > `lockStatus.ts`, `statusBar.ts`.
 >
 > Related docs: [module_extension.md](module_extension.md),
-> [PLAN_audit_roadmap_2026_08_25.md](../todo/PLAN_audit_roadmap_2026_08_25.md) (item **D11**).
+> [PLAN_audit_roadmap_2026_08_25.md](PLAN_audit_roadmap_2026_08_25.md) (item **D11**).
 
 ## Symptom
 

@@ -4,7 +4,7 @@
 > `hygieneScan.ts` (the reading half) + `credSshManager.healthReport`.
 >
 > Related docs: [module_extension.md](module_extension.md),
-> [PLAN_audit_roadmap_2026_08_25.md](../todo/PLAN_audit_roadmap_2026_08_25.md) (item **D6**).
+> [PLAN_audit_roadmap_2026_08_25.md](PLAN_audit_roadmap_2026_08_25.md) (item **D6**).
 
 ## Symptom
 

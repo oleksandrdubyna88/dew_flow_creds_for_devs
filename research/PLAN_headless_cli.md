@@ -36,7 +36,7 @@
 > Related docs: [module_extension.md](module_extension.md#the-agent-broker--using-a-credential-without-handing-it-over),
 > [module_server.md](module_server.md) (образец AOT-проекта и его job'а в релизе),
 > [PLAN_remote_broker_bridge.md](PLAN_remote_broker_bridge.md) (общий транспорт и WSL-путь),
-> [PLAN_audit_roadmap_2026_08_25.md](../todo/PLAN_audit_roadmap_2026_08_25.md).
+> [PLAN_audit_roadmap_2026_08_25.md](PLAN_audit_roadmap_2026_08_25.md).
 > Это **не** пункт D8 дорожной карты (MCP-сервер) — D8 отложен владельцем.
 
 ---

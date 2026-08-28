@@ -6,10 +6,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.83.1] — 2026-08-28
+
 ### Internal
 
-- `extension.ts` split, stage 1 (roadmap A1): seven feature modules hold its former helpers
-  (5689 → 4661 lines). `entityShape.ts` (A4): the eight entry shapes as a discriminated union.
+- **`extension.ts` is 1105 lines, from 5689** (roadmap A1, closed): its helpers live in seven
+  feature modules and its 96 command registrations in ten `src/commands/` modules, each behind an
+  explicit host interface. Moved verbatim; nothing a command does changed. `entityShape.ts`
+  (A4): the eight entry shapes as a discriminated union.
 
 ## [0.83.0] — 2026-08-28
 

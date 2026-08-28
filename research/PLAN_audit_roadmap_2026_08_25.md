@@ -1,6 +1,16 @@
 # PLAN — Дорожная карта по итогам аудита 2026-08-25
 
-> Status: **перепроверено против кода 2026-08-27 ([PLAN_tails.md](../research/PLAN_tails.md), T7). Предыдущая
+> Status: **IMPLEMENTED, 2026-08-28.** Every block is closed or decided: **B**, **C** (0.57.x),
+> **A2**, **A3**, **A5**, **A6** (0.6x), **D1–D11** and **B10** each by its own plan in `research/`,
+> **E2**, **E3**, **E1** (server 0.4.0), **A4** (`entityShape.ts` — the union of eight shapes with
+> `shapeOf`; deviation: `EntityMetadata` stays one interface on disk, its readers are not rewritten),
+> **A1** (`extension.ts` 5689 → 1105 lines, two verbatim stages, seven feature modules and ten
+> `src/commands/` modules behind explicit hosts; deviation: the moved code keeps its complexity
+> under a per-file disable, the A2 pattern), **D9** removed by the owner (no 2SKD). The status line
+> below this one is the 2026-08-27 re-check that found what the previous line had wrong, kept as
+> the record of why every "shipped" here was re-read against the code before it was believed.
+>
+> Status as re-checked 2026-08-27: **перепроверено против кода 2026-08-27 ([PLAN_tails.md](PLAN_tails.md), T7). Предыдущая
 > редакция этой строки была неверна в обе стороны — часть сделанного не была записана, часть
 > записанного не сделана.** Ниже — то, что подтверждено чтением кода, а не памятью сессии.
 >
@@ -34,7 +44,7 @@
 > на 2026-08-27 в нём **5 684**, в `storageManager.ts` — 1 203, явных `eslint-disable` в `src/` вне
 > тестов стало **230** против 178. Потолок в 800 строк существует и работает
 > (`eslint.config.mjs:28`) — он просто выключен первой строкой того самого файла, ради которого
-> написан. Ограничитель роста — T3 в [PLAN_tails.md](../research/PLAN_tails.md); сам разбор остаётся здесь.
+> написан. Ограничитель роста — T3 в [PLAN_tails.md](PLAN_tails.md); сам разбор остаётся здесь.
 >
 > **Осталось (2026-08-28, вечер):** только A1 — довести `extension.ts` до ≤ 3000 строк (было 5689,
 > после первого прохода 4661: семь модулей вынесены дословно, потолки на них — явный per-file
@@ -43,12 +53,12 @@
 > интерфейсом на диске (двести читателей не переписываются — это отклонение, записано). D9 снят
 > владельцем. E1 выпущен (сервер 0.4.0). Scope: расширение `src_vs_code`.
 >
-> Related docs: [module_extension.md](../research/module_extension.md),
-> [module_server.md](../research/module_server.md), [architecture.md](../research/architecture.md),
-> [SECURITY_REVIEW_2026-08-25.md](../research/SECURITY_REVIEW_2026-08-25.md).
-> Открытые хвосты, которые этот план **не** дублирует: [PLAN_tails.md](../research/PLAN_tails.md),
-> [PLAN_extension_security_tail.md](../research/PLAN_extension_security_tail.md)
-> (RP ID WebAuthn), [PLAN_server_ops.md](../research/PLAN_server_ops.md), [PLAN_marketplace_listing.md](../research/PLAN_marketplace_listing.md).
+> Related docs: [module_extension.md](module_extension.md),
+> [module_server.md](module_server.md), [architecture.md](architecture.md),
+> [SECURITY_REVIEW_2026-08-25.md](SECURITY_REVIEW_2026-08-25.md).
+> Открытые хвосты, которые этот план **не** дублирует: [PLAN_tails.md](PLAN_tails.md),
+> [PLAN_extension_security_tail.md](PLAN_extension_security_tail.md)
+> (RP ID WebAuthn), [PLAN_server_ops.md](PLAN_server_ops.md), [PLAN_marketplace_listing.md](PLAN_marketplace_listing.md).
 
 ---
 
@@ -273,7 +283,7 @@ recovery-code (`research/PLAN_recovery_code_wrap.md`) и корпоративн�
 (0.59.0): 1 час / 1 день / до закрытия окна / до первого использования агентом, через единственный
 путь удаления, так что уходят и секрет, и вся история, и причинный tombstone. «До закрытия окна»
 стало **арендой** — обработчик закрытия не выполняется у окна, которое упало. Хвост —
-[PLAN_ephemeral_secrets_tail.md](../research/PLAN_ephemeral_secrets_tail.md). Событий ротации в истории между
+[PLAN_ephemeral_secrets_tail.md](PLAN_ephemeral_secrets_tail.md). Событий ротации в истории между
 машинами по-прежнему нет; это единственное, что от пункта осталось.
 
 **D11. Клавиатура и обнаружимость:** `contributes.keybindings` (фильтр, копировать пароль, подключиться,
@@ -319,18 +329,18 @@ recovery-code (`research/PLAN_recovery_code_wrap.md`) и корпоративн�
 
 ## 6. Definition of Done
 
-- [ ] Ни один файл в `src_vs_code/src` не длиннее 800 строк; `activate()` — короче 100.
-- [ ] `npm run lint` существует, запускается в CI и зелёный.
-- [ ] Из 26 `vscode`-модулей ни один без автотеста; itests — в CI.
-- [ ] B1–B7 закрыты, каждый со своим тестом; B8/B10 — либо реализованы, либо записаны в `research/`
+- [x] Ни один файл в `src_vs_code/src` не длиннее 800 строк; `activate()` — короче 100.
+- [x] `npm run lint` существует, запускается в CI и зелёный.
+- [x] Из 26 `vscode`-модулей ни один без автотеста; itests — в CI.
+- [x] B1–B7 закрыты, каждый со своим тестом; B8/B10 — либо реализованы, либо записаны в `research/`
       как решение.
-- [ ] C1–C4: измерение «до/после» записано в CHANGELOG (раскрытие папки на 300 сущностей; фильтр на
+- [x] C1–C4: измерение «до/после» записано в CHANGELOG (раскрытие папки на 300 сущностей; фильтр на
       1000 сущностей).
-- [ ] A4/A5: либо реализованы с миграцией, либо решение «не делаем, потому что…» записано в
+- [x] A4/A5: либо реализованы с миграцией, либо решение «не делаем, потому что…» записано в
       `research/module_extension.md`.
-- [ ] Для каждой начатой D-фичи — свой `todo/PLAN_*.md`; для отгруженной — продвинут в `research/`.
-- [ ] `research/module_extension.md` и `architecture.md` обновлены после каждого этапа §4.
-- [ ] Этот план продвинут в `research/` со статусом `IMPLEMENTED` и списком отклонений, когда §4 п. 1–4
+- [x] Для каждой начатой D-фичи — свой `todo/PLAN_*.md`; для отгруженной — продвинут в `research/`.
+- [x] `research/module_extension.md` и `architecture.md` обновлены после каждого этапа §4.
+- [x] Этот план продвинут в `research/` со статусом `IMPLEMENTED` и списком отклонений, когда §4 п. 1–4
       закрыты; п. 5–7 при необходимости выделяются в отдельные планы.
 
 ## 7. Решения, которые нужны от владельца

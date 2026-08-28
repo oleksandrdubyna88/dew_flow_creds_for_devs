@@ -4,7 +4,7 @@
 > command builders, the Connect path, the agent broker's exec, the form and the viewer.
 >
 > Related docs: [module_extension.md](module_extension.md),
-> [PLAN_audit_roadmap_2026_08_25.md](../todo/PLAN_audit_roadmap_2026_08_25.md) (items D7 and B10),
+> [PLAN_audit_roadmap_2026_08_25.md](PLAN_audit_roadmap_2026_08_25.md) (items D7 and B10),
 > [PLAN_ssh_agent.md](PLAN_ssh_agent.md) (agent forwarding meets the per-use confirmation).
 >
 > **Deviations from the plan, and what they cost.**

@@ -65,7 +65,7 @@
 >
 > Related docs: [module_extension.md](module_extension.md#the-agent-broker--using-a-credential-without-handing-it-over),
 > [architecture.md](architecture.md), [PLAN_headless_cli.md](PLAN_headless_cli.md),
-> [PLAN_audit_roadmap_2026_08_25.md](../todo/PLAN_audit_roadmap_2026_08_25.md).
+> [PLAN_audit_roadmap_2026_08_25.md](PLAN_audit_roadmap_2026_08_25.md).
 > Пункт D1 дорожной карты (локальный ssh-agent) владельцем **отложен**; фаза 4 — его удалённый
 > родственник и без D1 смысла не имеет.
 
