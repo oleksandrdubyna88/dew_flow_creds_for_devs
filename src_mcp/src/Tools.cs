@@ -89,6 +89,10 @@ internal static class Tools
         Everything is invisible until the person turns a switch on for that entry, so an empty
         list means nothing has been opened to you — not that the vault is empty. Each entry's
         `can` says what is allowed beyond looking.
+
+        The answer is a JSON array. Each `id` is opaque and belongs to THIS vault: quote it back
+        exactly, and call this again rather than reusing one from earlier in a long session — an
+        id does not survive its entry being deleted and re-created.
         """;
 
     /// <summary>

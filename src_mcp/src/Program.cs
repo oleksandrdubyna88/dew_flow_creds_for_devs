@@ -439,6 +439,13 @@ internal static class Program
         can only be moved somewhere the same grant already reaches, because a folder passes its answers
         down to everything inside it.
 
+        Every answer here is JSON, as text. **Read it before believing a call worked**: a refusal
+        arrives as an ordinary successful result whose body is {"error": "...", "hint": "..."} —
+        the person declining, a switch being off, a stale id and a prompt nobody answered all look
+        like that, and none of them raises a protocol error. `error` says what happened, `hint`
+        says what to do about it, and both are meant to be passed on to the person rather than
+        summarised away.
+
         A `config` entry is a whole config file the vault keeps out of git — the app reads it at
         startup through a key only the person can mint. creds_config_snippet gives you the exact
         code to paste, per language, and the file it goes into; `codeAccessEnabled` on the list
