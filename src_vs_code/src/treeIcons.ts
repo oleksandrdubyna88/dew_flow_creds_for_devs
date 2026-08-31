@@ -114,8 +114,24 @@ function folderIconId(folderType: FolderType | undefined): string {
   if (folderType === 'project') {
     return 'project';
   }
-  return isEntityKind(folderType) ? kindIcon(folderType) : 'folder';
+  return isEntityKind(folderType) ? kindIcon(folderType) : UNTYPED_FOLDER_ICON;
 }
+
+/**
+ * The glyph for a folder whose type we do not know — and NOT `'folder'`.
+ *
+ * <p>`new ThemeIcon('folder')` is `ThemeIcon.Folder`, which VS Code does not paint as a codicon:
+ * it hands the row's `resourceUri` to the active FILE ICON THEME and draws whatever that answers.
+ * Folder rows carry a synthetic `dep:` URI — they need one for the dependency colour and the
+ * arrival tint — and no theme knows that scheme, so the answer is nothing and the row renders
+ * with a blank where its icon belongs. Confirmed on a real tree (the owner, 2026-08-31): an
+ * untyped folder had no icon at all, which is the state every hand-made folder starts in.</p>
+ *
+ * <p>Any codicon that is not `folder` or `file` escapes the special case; `folder-opened` is the
+ * one that still reads as a plain folder and adds no second meaning, which `folder-library` and
+ * `root-folder` both would.</p>
+ */
+const UNTYPED_FOLDER_ICON = 'folder-opened';
 
 // eslint-disable-next-line complexity
 export function buildTooltip(node: TreeNode): vscode.MarkdownString {

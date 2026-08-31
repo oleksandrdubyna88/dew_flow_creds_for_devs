@@ -6,6 +6,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.91.2] — 2026-08-31
+
+### Fixed
+
+- **A folder with no type had no icon either** — which is the state every folder you create by
+  hand starts in, and the second half of the blank icons 0.91.1 fixed for `scripts` and `config`.
+
+  The fallback drew `folder`, and that id is not a glyph: VS Code treats it as *"ask the active
+  file icon theme"* and hands it the row's address to resolve. Folder rows carry a synthetic
+  `dep:` address — they need one for the dependency colour and the arrival tint — which no icon
+  theme knows, so the answer was nothing and the row rendered blank. It is a plain codicon now.
+
+  The test that covered the fallback was titled *still gets a folder icon* and asserted the id
+  was exactly `folder`, so it pinned the defect in place while reading as though it checked a
+  glyph. It now asserts what it always meant: that the icon is one this extension draws itself.
+  The same guard is on the entity icons, where the identical mistake would blank a row too.
+
 ## [0.91.1] — 2026-08-31
 
 ### Fixed

@@ -96,6 +96,12 @@ test('no two kinds share an icon — the icon is what tells a row apart at a gla
   const icons = ENTITY_KINDS.map((k) => w.mod.kindIcon(k));
 
   assert.equal(new Set(icons).size, icons.length, icons.join());
+  // And none of them is one of the two ids VS Code resolves through the file icon theme instead
+  // of drawing. An entity row carries a `dep:` resourceUri no theme knows, so either would paint
+  // nothing at all — the defect the folder fallback had until 0.91.2, one row type over.
+  for (const id of icons) {
+    assert.ok(id !== 'file' && id !== 'folder', `${id} is drawn by the file icon theme, not by us`);
+  }
 });
 
 test('an unknown kind throws rather than quietly painting a padlock', () => {
@@ -127,10 +133,36 @@ test('a folder with NO type, or a type this build does not know, still gets a fo
   const w = world();
 
   const untyped = w.mod.folderIcon(undefined) as unknown as { id: string };
+  const any = w.mod.folderIcon('any' as never) as unknown as { id: string };
   const unknown = w.mod.folderIcon('from-a-newer-build' as never) as unknown as { id: string };
 
-  assert.equal(untyped.id, 'folder');
-  assert.equal(unknown.id, 'folder');
+  // One fallback, not three: "we do not know what this holds" has a single answer.
+  assert.equal(untyped.id, any.id);
+  assert.equal(untyped.id, unknown.id);
+});
+
+test('the fallback DRAWS — it is a codicon, not the id VS Code defers to the file icon theme', () => {
+  // `new ThemeIcon('folder')` is `ThemeIcon.Folder`, and VS Code does not paint a codicon for
+  // it: it asks the active FILE ICON THEME to resolve the row's `resourceUri`. Folder rows carry
+  // a synthetic `dep:` URI (for the dependency colour and the arrival tint) that no theme knows,
+  // so the answer is nothing and the row renders with a blank where its icon should be.
+  //
+  // Confirmed by the owner, 2026-08-31: an untyped folder had no icon at all — the same symptom
+  // as the `script` folder an hour earlier, and a different cause. The previous test asserted
+  // the id was exactly `'folder'`, which pinned the defect in place: it read as "still gets a
+  // folder icon" and meant "still gets nothing".
+  //
+  // `file` is named too. It is the other half of the same special case, and a future edit
+  // reaching for a generic glyph is as likely to pick it.
+  const w = world();
+
+  for (const type of [undefined, 'any', 'from-a-newer-build']) {
+    const icon = w.mod.folderIcon(type as never) as unknown as { id: string; color?: { id: string } };
+
+    assert.notEqual(icon.id, 'folder', `folderIcon(${String(type)}) defers to the file icon theme`);
+    assert.notEqual(icon.id, 'file', `folderIcon(${String(type)}) defers to the file icon theme`);
+    assert.equal(icon.color?.id, 'credSshManager.folderIcon', 'the fallback is coloured like every other folder');
+  }
 });
 
 test('the tooltip is never trusted, and never renders theme icons', () => {

@@ -167,11 +167,18 @@ test('the ACCOUNT ROOT group carries a different one — there is no folder to g
 test('a group keeps the GENERIC folder icon, so it never reads as the folder itself', () => {
   // These are groupings inside a sub-tree, not the folders they are named after. Wearing the
   // real folder's type icon would invite people to act on them as if they were.
+  //
+  // Asserted as "not any TYPE's icon" rather than as one literal id. It used to pin `'folder'`,
+  // and that literal turned out to be the id VS Code hands to the file icon theme instead of
+  // drawing — so this test was pinning a blank row while reading as though it checked a glyph
+  // (0.91.2). What it means is the generic one, whatever the generic one currently is.
   const mod = world();
 
   const item = mod.dependentsFolderItem(folderElement('f1', 'Databases') as never) as unknown as Item;
 
-  assert.equal(item.iconPath?.id, 'folder');
+  assert.equal(item.iconPath?.id, 'folder-opened', 'the generic fallback, not a type icon');
+  assert.notEqual(item.iconPath?.id, 'database', 'a group named after a db folder is not that folder');
+  assert.notEqual(item.iconPath?.id, 'folder', 'that id is drawn by the file icon theme, not by us');
 });
 
 test('the group id distinguishes the account, the target AND the folder', () => {
