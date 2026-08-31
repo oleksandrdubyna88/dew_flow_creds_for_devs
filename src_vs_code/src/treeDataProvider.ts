@@ -291,6 +291,19 @@ export class CredTreeDataProvider
     return parentOf(element, this.storage);
   }
 
+  /**
+   * The separator that precedes an account row, or nothing at all.
+   *
+   * <p>One rule covers both boundaries (T29/T35): a separator goes in when something is already
+   * above this account and is not the filter row — another account, or the shared root. That is
+   * why the shared root did not need a case of its own; it is simply the first thing that can
+   * stand above an account.</p>
+   */
+  private static separatorBefore(roots: readonly TreeElement[], accountId: string): TreeElement[] {
+    const separable = roots.some((row) => row.kind === 'account' || row.kind === 'sharedRoot');
+    return separable ? [{ kind: 'separator', beforeRowId: accountId }] : [];
+  }
+
   // eslint-disable-next-line complexity, max-lines-per-function
   getChildren(element?: TreeElement): TreeElement[] {
     if (element === undefined) {
@@ -299,18 +312,21 @@ export class CredTreeDataProvider
       // be to be found — and it stays visible when the filter hides every account, which
       // is the one moment an invisible clear button would be unrecoverable.
       const roots: TreeElement[] = [{ kind: 'search' }];
-      for (const account of this.storage.getAccounts()) {
-        if (accountMatches(this.storage, account.accountId, this.judge(account.accountId), this.filterMemo)) {
-          // BETWEEN accounts only (T29): never before the first, never after the last — a
-          // separator at an edge separates nothing.
-          if (roots.some((existing) => existing.kind === 'account')) {
-            roots.push({ kind: 'separator', afterAccountId: account.accountId });
-          }
-          roots.push({ kind: 'account', account });
-        }
-      }
+      // What somebody else put there comes FIRST (T35). It was built last, under every account,
+      // which with three accounts and forty entries is a place nobody scrolls to — and it is the
+      // one root whose contents another person decides, so an arrival has to be visible without
+      // being looked for.
       if ((this.sharing?.ownShares.length ?? 0) > 0 && sharedMatches(this.sharing?.ownShares ?? [], terms).length > 0) {
         roots.push({ kind: 'sharedRoot' });
+      }
+      for (const account of this.storage.getAccounts()) {
+        if (accountMatches(this.storage, account.accountId, this.judge(account.accountId), this.filterMemo)) {
+          // BETWEEN roots only (T29): never before the first, never after the last — a separator
+          // at an edge separates nothing. The first account is preceded by one exactly when the
+          // shared root is above it, which is the same rule, not an exception to it.
+          roots.push(...CredTreeDataProvider.separatorBefore(roots, account.accountId));
+          roots.push({ kind: 'account', account });
+        }
       }
       return roots;
     }
@@ -508,7 +524,7 @@ export class CredTreeDataProvider
       return item;
     }
     if (element.kind === 'separator') {
-      return separatorItem(element.afterAccountId);
+      return separatorItem(element.beforeRowId);
     }
 
     if (element.kind === 'account') {

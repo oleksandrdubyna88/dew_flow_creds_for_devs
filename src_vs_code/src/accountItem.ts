@@ -60,9 +60,9 @@ function describeAccount(
  * Inert on purpose (T29): no command, no icon, and a contextValue no menu contribution
  * matches — a separator that grows a right-click menu has stopped separating.
  */
-export function separatorItem(afterAccountId: string): vscode.TreeItem {
+export function separatorItem(beforeRowId: string): vscode.TreeItem {
   const item = new vscode.TreeItem('', vscode.TreeItemCollapsibleState.None);
-  item.id = `separator:${afterAccountId}`;
+  item.id = `separator:${beforeRowId}`;
   item.contextValue = 'separator';
   return item;
 }

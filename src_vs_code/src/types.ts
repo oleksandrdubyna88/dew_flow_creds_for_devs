@@ -378,8 +378,11 @@ export type TreeElement =
   /** The filter row, pinned above the first account. Carries no data — the term lives on
    *  the provider, so typing does not rebuild the element identity. */
   | { kind: 'search' }
-  /** A blank, inert row between two accounts (T29) — VS Code's tree has no real separators. */
-  | { kind: 'separator'; afterAccountId: string }
+  /** A blank, inert row between two roots (T29/T35) — VS Code's tree has no real separators.
+   *  `beforeRowId` is the account it sits ABOVE — whether the row above it is another account
+   *  or the shared root — and it exists to make the row's id unique. Two separators sharing an
+   *  id would collapse into one row, because VS Code keys a row on its id. */
+  | { kind: 'separator'; beforeRowId: string }
   | { kind: 'account'; account: StoredAccount }
   | { kind: 'node'; accountId: string; node: TreeNode }
   /** One kept previous version of an entity, addressed by its POSITION in that

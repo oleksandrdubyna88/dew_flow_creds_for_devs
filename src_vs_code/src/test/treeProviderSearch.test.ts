@@ -173,3 +173,76 @@ test('the row shows the term, the count, and the context value the × hangs off'
   const empty = await tree.getTreeItem({ kind: 'search' });
   assert.equal(empty.description, 'nothing matches', 'an empty tree must say why it is empty');
 });
+
+/**
+ * Shared-with-me at the TOP, and separated like an account.
+ *
+ * <p>The row was built last, after every account, which is where a person with three accounts
+ * and forty entries never scrolls to — the owner's words were that you simply cannot see it.
+ * It is also the one root whose contents somebody else decides, so a share arriving is exactly
+ * the event that should be visible without looking for it.</p>
+ */
+
+/** The shape the provider reads off `sharing`, and nothing more. */
+function fakeShare(fromEmail: string, entityName: string): unknown {
+  return { accountId: 'a1', shareKeyId: 'k1', item: { fromEmail, entityName, entityKind: 'credential' } };
+}
+
+function withShares(...shares: unknown[]): ReturnType<typeof build> {
+  const tree = build();
+  (tree as unknown as { sharing: unknown }).sharing = { ownShares: shares };
+  return tree;
+}
+
+test('what somebody shared with you is the first thing under the filter, not the last', () => {
+  const roots = withShares(fakeShare('lead@example.com', 'Prod DB')).getChildren();
+
+  assert.deepEqual(
+    roots.map((r) => (r.kind === 'account' ? r.account.email : r.kind)),
+    ['search', 'sharedRoot', 'separator', 'one@example.com', 'separator', 'two@example.com'],
+  );
+});
+
+test('the shared root is separated from the accounts by the same row that separates accounts', async () => {
+  const tree = withShares(fakeShare('lead@example.com', 'Prod DB'));
+  const roots = tree.getChildren();
+
+  // Anchored to the shared row, not to a position: an earlier draft of this test read
+  // roots[2] and passed against the OLD order by landing on the separator between the two
+  // accounts — green while the feature did not exist.
+  const boundary = roots[roots.findIndex((r) => r.kind === 'sharedRoot') + 1];
+  assert.equal(boundary?.kind, 'separator', 'shared and owned are different things and read as one list without it');
+  const item = await tree.getTreeItem(boundary);
+  assert.equal(item.contextValue, 'separator');
+  assert.equal(item.command, undefined, 'a separator with a command is a button in disguise');
+  assert.equal(item.label, '');
+  const betweenAccounts = roots.filter((r) => r.kind === 'separator');
+  assert.equal(betweenAccounts.length, 2, 'one boundary above the accounts, one between them');
+  const ids = await Promise.all(betweenAccounts.map(async (r) => (await tree.getTreeItem(r)).id));
+  assert.equal(new Set(ids).size, 2, 'VS Code keys a row on its id: two separators sharing one collapse into one row');
+});
+
+test('no shares, no separator — the edge rule holds at the top as it does at the bottom', () => {
+  const roots = build().getChildren();
+  assert.equal(roots[1]?.kind, 'account', 'nothing above the accounts means nothing to separate them from');
+  assert.equal(roots.filter((r) => r.kind === 'separator').length, 1, 'only the one between the two accounts');
+});
+
+test('a filter that hides every account leaves the shared root with no separator under it', () => {
+  const tree = withShares(fakeShare('lead@example.com', 'Prod DB'));
+  tree.setSearchQuery('nothing-matches-this');
+  const roots = tree.getChildren();
+
+  assert.deepEqual(
+    roots.map((r) => r.kind),
+    ['search'],
+    'the filter matches neither the accounts nor the share, so only the filter row stays',
+  );
+
+  tree.setSearchQuery('prod db');
+  assert.deepEqual(
+    tree.getChildren().map((r) => r.kind),
+    ['search', 'sharedRoot'],
+    'a separator below the last row separates nothing',
+  );
+});
