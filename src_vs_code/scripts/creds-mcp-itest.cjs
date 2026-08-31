@@ -60,6 +60,26 @@ const { StorageManager } = require(path.join(OUT, 'storageManager.js'));
 const { folderHooks } = require(path.join(OUT, 'mcpFolderHooks.js'));
 
 /** An in-memory Memento and SecretStorage — the two things a StorageManager needs. */
+/** One POST at the broker, bypassing the binary — what a local process can do unaided. */
+function postJson(port, route, body) {
+  return new Promise((resolve) => {
+    const payload = JSON.stringify(body);
+    const req = require('http').request(
+      { host: '127.0.0.1', port, path: route, method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) } },
+      (res) => {
+        let text = '';
+        res.on('data', (d) => {
+          text += d;
+        });
+        res.on('end', () => resolve({ status: res.statusCode, body: text }));
+      },
+    );
+    req.on('error', (e) => resolve({ status: 0, body: String(e) }));
+    req.end(payload);
+  });
+}
+
 function memento() {
   const map = new Map();
   return {
@@ -709,17 +729,21 @@ const HANDSHAKE = [
     { jsonrpc: '2.0', id: 20, method: 'tools/call', params: { name: 'creds_folders', arguments: {} } },
   ]);
   const foldersText = folders.byId.get(20)?.result?.content?.[0]?.text ?? '';
+  let parsedFolders;
+  try {
+    parsedFolders = JSON.parse(foldersText);
+  } catch {
+    /* reported by the check below */
+  }
+  // An ARRAY, not merely "some sentence is absent". Written the other way first, and the sabotage
+  // run showed why that is worthless: the refusal's wording changed in the same release, so a
+  // check for the old sentence passed against a window that served nothing at all.
   check(
-    'creds_folders reaches the window at all',
-    !foldersText.includes('No CredsForDevs window answered'),
+    'creds_folders reaches the window and answers a LIST, not a refusal',
+    Array.isArray(parsedFolders),
     foldersText.slice(0, 240),
   );
-  let listedFolders = [];
-  try {
-    listedFolders = JSON.parse(foldersText);
-  } catch {
-    /* reported by the checks below */
-  }
+  const listedFolders = Array.isArray(parsedFolders) ? parsedFolders : [];
   const ids = listedFolders.map((f) => f.id).sort();
   check('only the folders opened to it are listed', ids.join(',') === 'f-look,f-open', JSON.stringify(ids));
   const openFolder = listedFolders.find((f) => f.id === 'f-open') ?? {};
@@ -777,11 +801,25 @@ const HANDSHAKE = [
   );
   check('and nobody was asked about it', consent.asked === 0, String(consent.asked));
 
-  // 5. THE CHECK WITH TEETH. `mcp` in the body must not reach the node. This is the only
-  //    difference between "may edit a folder" and "may grant itself every permission there is",
-  //    and it is kept structurally: `readEdit` names three fields. Replace that with a spread of
-  //    the body and this check must go red.
-  consent.answers = ['Allow'];
+  // 5. THE CHECK WITH TEETH — self-granted permissions, at BOTH layers that stop them.
+  //
+  //    `research/PLAN_agent_folder_ops_itest.md` predicted one seam and named `readEdit`. Sabotage says
+  //    there are THREE, in series, and the plan named the weakest:
+  //      - the tool's delegate declares `folder`, `name`, `parent`, `folderType` and nothing
+  //        else, so the MCP SDK never hands `mcp` to the binary. A model is stopped here and
+  //        never reaches the rest — which is why spreading BOTH window-side narrowings leaves
+  //        the first check below green.
+  //      - `readEdit` narrows the request body to three fields;
+  //      - `changesOf` narrows again on the way into the node.
+  //    Measured: spreading `readEdit` alone stays green (`changesOf` catches it), spreading
+  //    `changesOf` alone stays green (`readEdit` already dropped it), spreading BOTH goes red —
+  //    with the folder holding the `delete: "any"` it granted itself.
+  //
+  //    So the level is checked twice, because the layers stop different callers. A MODEL is
+  //    stopped by the schema. A hostile LOCAL PROCESS does not use the schema — it posts at the
+  //    broker route it read out of the announcement file, and only the window's own narrowing is
+  //    between it and the switches.
+  consent.answers = ['Allow', 'Allow'];
   consent.asked = 0;
   const before = JSON.stringify(storage.getNode('a-1', inTree?.id ?? 'x')?.mcp ?? null);
   await speak(folderEnv, [
@@ -792,7 +830,6 @@ const HANDSHAKE = [
       method: 'tools/call',
       params: {
         name: 'creds_edit_folder',
-        // `mcp` is not a parameter of the tool at all — sent the way a hostile client would.
         arguments: {
           folder: inTree?.id ?? 'x',
           name: 'staging-2',
@@ -801,12 +838,34 @@ const HANDSHAKE = [
       },
     },
   ]);
-  const after = storage.getNode('a-1', inTree?.id ?? 'x');
-  check('a rename lands', after?.name === 'staging-2', JSON.stringify(after?.name));
+  const afterTool = storage.getNode('a-1', inTree?.id ?? 'x');
+  check('a rename lands', afterTool?.name === 'staging-2', JSON.stringify(afterTool?.name));
   check(
-    'and the folder\'s Agent access is untouched — a spread here would be self-granted permissions',
-    JSON.stringify(after?.mcp ?? null) === before,
-    `${before} -> ${JSON.stringify(after?.mcp ?? null)}`,
+    'a model cannot even send `mcp` — the tool schema has no such field',
+    JSON.stringify(afterTool?.mcp ?? null) === before,
+    `${before} -> ${JSON.stringify(afterTool?.mcp ?? null)}`,
+  );
+
+  // The same request, posted straight at the broker with no binary in the way — which is what a
+  // local process that read the announcement file can do, and the case the window's own
+  // field-by-field narrowing is the only defence against.
+  const announced = JSON.parse(
+    fs.readFileSync(
+      path.join(folderEnv.CREDS_ENDPOINT_DIR, fs.readdirSync(folderEnv.CREDS_ENDPOINT_DIR)[0]),
+      'utf8',
+    ),
+  );
+  const posted = await postJson(announced.port, '/v1/mcp/folder/edit', {
+    folder: inTree?.id ?? 'x',
+    name: 'staging-3',
+    mcp: { view: true, use: true, edit: true, create: true, delete: 'any', folderDelete: 'any' },
+  });
+  const afterPost = storage.getNode('a-1', inTree?.id ?? 'x');
+  check('the raw route accepts the rename', afterPost?.name === 'staging-3', `${posted.status} ${posted.body.slice(0, 160)}`);
+  check(
+    'and the folder\'s Agent access is untouched — spreading BOTH narrowings lands HERE',
+    JSON.stringify(afterPost?.mcp ?? null) === before,
+    `${before} -> ${JSON.stringify(afterPost?.mcp ?? null)}`,
   );
 
   // 6. Deleting: what it made goes to the Trash; what it did not, does not.
@@ -849,6 +908,10 @@ const HANDSHAKE = [
   console.log(fails === 0 ? '\nall checks passed' : `\n${fails} check(s) failed`);
   process.exitCode = fails === 0 ? 0 : 1;
 })().catch((error) => {
+  // Dispose before reporting. A throw used to leave both brokers listening, and a Node process
+  // with an open server never exits — so a crashed check looked exactly like a hung test, which
+  // is four minutes of watching nothing before anyone reads the stack.
   console.error(error);
   process.exitCode = 1;
+  process.exit(1);
 });

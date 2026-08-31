@@ -5,7 +5,7 @@
 > нельзя ответить кодом**, и один пункт, где продукт обещает больше, чем делает.
 >
 > Опора: карта агентской поверхности (28.08.2026, снята с кода) — она же теперь статья справки
-> `agent-surface`. Отдельные планы: [PLAN_agent_folder_ops_itest.md](PLAN_agent_folder_ops_itest.md).
+> `agent-surface`. Отдельные планы: [PLAN_agent_folder_ops_itest.md](../research/PLAN_agent_folder_ops_itest.md).
 
 ## Часть 1. Три решения, которые блокируют работу
 

@@ -6,6 +6,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.90.0] — 2026-08-31
+
+### Fixed
+
+- **The whole folder surface was dead in every release that shipped it.** `creds_folders` answered
+  `404` from 0.85.0 through 0.89.0, so an agent could not list the folders opened to it — and since
+  the ids the other three tools take come from that listing and nowhere else, `creds_create_folder`,
+  `creds_edit_folder` and `creds_delete_folder` were unreachable with it.
+
+  The listing was registered in the MCP dispatch, which the window reaches only under `POST`, while
+  `contract/broker-v1.json` files `/v1/mcp/folders` under `reads` beside health, aliases and
+  entries — so every client GETs it, exactly as the contract says, and every GET fell through to
+  404. Both sides carried a test asserting they meant the same PATH; neither could assert the
+  METHOD, because the contract has no field for one. The listing now lives with the other reads,
+  where it belongs on its own merits: no token, no body, nothing performed, and no secret to reveal
+  since a folder holds none. `brokerContract.test.ts` now walks the contract's own `reads` table
+  through the read router, so the fifth read added tomorrow is covered on the day it is added.
+
+- **A window that declined a route reported itself as a closed window.** The binary treated "failed
+  the health probe" and "passed the probe, then refused the route" as one empty answer, so the
+  message was *"No CredsForDevs window answered — N window(s) announced themselves but none is
+  listening now, they were probably closed"* about a window that was open, unlocked, and serving
+  `creds_list` in the same second. It now says which of the two happened: a window that answers and
+  has no such route is a version mismatch, and the sentence asks you to update the extension rather
+  than to reopen something that was never shut.
+
+### Added
+
+- **The folder verbs are now driven end to end by `creds-mcp-itest.cjs`** — the real binary, the
+  real broker, the real consent modal, and a real `StorageManager` rather than a recording stub.
+  Six steps: what the listing shows and what it hides, a folder that reaches the tree under the
+  parent it named, a move into a closed branch refused with nothing moved, a rename that lands, and
+  the two delete scopes. This is the check that found the 404 above, on its first run.
+
+- **A folder's Agent access cannot be reached by an edit — proven by sabotage, at both layers.**
+  The plan for this test predicted one seam. There are three, in series: the tool's schema declares
+  four fields and no `mcp`, so a model cannot send one at all; the window narrows the request body
+  to three fields; and it narrows again on the way into the node. Breaking either window-side
+  narrowing alone stays green because the other catches it — breaking both turns the test red with
+  the folder holding the `delete: "any"` it granted itself. The test therefore posts at the broker
+  route directly as well as through the binary, because the two layers stop different callers: the
+  schema stops a model, and only the window's own narrowing stops a local process.
+
 ## [0.89.0] — 2026-08-31
 
 ### Added
