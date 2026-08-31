@@ -432,6 +432,13 @@ internal static class Program
         credentials. Tell them they can open one in VS Code: right-click the entry, Edit, and the
         Agent access section.
 
+        Folders are the second thing you may be given, and they have their own switches: creds_folders
+        lists the ones opened to you, and creds_create_folder / creds_edit_folder / creds_delete_folder
+        act on them. Use them when you are provisioning and want what you store to land somewhere
+        sensible. You can never change a switch — no request here has a field for one — and a folder
+        can only be moved somewhere the same grant already reaches, because a folder passes its answers
+        down to everything inside it.
+
         A `config` entry is a whole config file the vault keeps out of git — the app reads it at
         startup through a key only the person can mint. creds_config_snippet gives you the exact
         code to paste, per language, and the file it goes into; `codeAccessEnabled` on the list
