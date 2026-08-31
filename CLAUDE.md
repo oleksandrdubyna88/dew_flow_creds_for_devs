@@ -114,6 +114,41 @@ is told the server is older than the feature; an old extension against a new ser
 normally, because a client that names no contract version is served by design. So no coordination
 is needed — only honesty about which half is live.
 
+## Multi-model review gate (ConnectOtherAIs)
+
+This repository is reviewed by OTHER vendors' models before and after implementation, through the
+`coai` MCP server. The tools are `mcp__coai__providers`, `mcp__coai__open`,
+`mcp__coai__review_plan`, `mcp__coai__review_code`, `mcp__coai__resolve`, `mcp__coai__status` and
+`mcp__coai__ask_human`.
+
+**The order is a contract, and the server enforces it — `review_code` REFUSES until a plan round
+has reached `proceed`.**
+
+1. **Before implementing anything non-trivial**, call `open` with THIS checkout's path
+   (`git rev-parse --show-toplevel`) and `branch` from `git branch --show-current`.
+2. Call `review_plan` with your plan document verbatim as `planText`. You get merged findings, a
+   gating count against the threshold, and a verdict.
+3. Call `resolve` with a decision for EVERY finding — `accept` or `reject`, and a rejection needs
+   a reason. A reasoned rejection is discounted in later rounds unless a reviewer raises it again
+   with a genuinely new argument, so disagreeing honestly is cheap and disagreeing silently is
+   impossible.
+4. Verdict `revise` → fix the accepted findings, run `review_plan` again. Verdict `proceed` →
+   implement.
+5. **When the branch is written**, call `review_code` with the same `planText` and the `baseRef`
+   you branched from. Three independent reviewers per vendor read the diff. Same `resolve` duty,
+   same loop.
+6. Verdict `call_human` → surface the open findings to the person and stop. **Do not proceed on
+   your own judgement.** Verdict `escalated` → apply the named step and run a fresh round.
+
+**Report the verdicts and the reviewer counts in your summary.** A round that ran with four of six
+reviewers says so — pass that on rather than implying a full panel agreed.
+
+**Where this bites in the existing rules.** It sits between *Plan first* and *TDD* in
+[development-workflow.md](.claude/rules/shared/common/development-workflow.md): a plan in `todo/`
+is written, then reviewed here, and only a `proceed` starts the tests. And it is a second reader
+for the same reason `/security-review` is — this repository is public, MIT, and holds other
+people's credentials, so a defect here is not a defect in a toy.
+
 ## Repository-specific rules
 
 1. **The server must never be able to decrypt.** `VaultStore` stores opaque bytes; `ShareItem.Data`
@@ -147,3 +182,7 @@ is needed — only honesty about which half is live.
 - [ ] Any plan the work finished was promoted with its deviations recorded
       (`node .claude/rules/shared/tools/plan-lifecycle.mjs` is CI's check).
 - [ ] `node .claude/rules/shared/tools/pin-check.mjs` passes.
+- [ ] Non-trivial work went through the `coai` gate: a `review_plan` round reached `proceed`
+      before implementation, a `review_code` round ran on the finished branch, every finding was
+      resolved with `accept` or a reasoned `reject`, and the summary reports the verdicts **and**
+      how many reviewers actually answered.
