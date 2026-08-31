@@ -22,12 +22,32 @@ test('every article carries every field, non-empty, in English — the style is 
   }
 });
 
-test('ids are unique and the index order names the hard-to-guess features first', () => {
+test('the order is the path a new person walks, not a ranking of obscurity', () => {
+  // REVERSED on the owner's decision of 2026-08-31. The catalog used to lead with the features
+  // hardest to guess from a menu entry — MCP logs, Install… — on the reasoning that somebody
+  // reading help is looking for the thing they cannot name. What that produced was a first
+  // screen about agent journals for a person who had not yet made an account. The order is now
+  // the sequence of doing: get in, protect it, keep a copy, learn how to get it back, install
+  // the doors, then the things themselves, then everything else.
   const ids = HELP_ARTICLES.map((a) => a.id);
+  const at = (id: string): number => ids.indexOf(id);
   assert.equal(new Set(ids).size, ids.length, 'duplicate article id');
-  // The owner's own examples of "what on earth is this": MCP logs, Install…
-  assert.deepEqual(ids.slice(0, 2), ['mcp-logs', 'install-menu']);
-  assert.ok(ids.indexOf('basics') > ids.indexOf('agents-mcp'), 'the obvious comes last');
+
+  assert.equal(ids[0], 'getting-started', 'the first screen is the first thing somebody does');
+  for (const [earlier, later] of [
+    ['getting-started', 'protection'],
+    ['protection', 'backup'],
+    ['backup', 'restore'],
+    ['restore', 'install-menu'],
+    ['install-menu', 'git-storage'],
+    ['git-storage', 'basics'],
+    ['basics', 'project-folders'],
+    ['project-folders', 'share-with-agent'],
+    // The reversal itself, pinned: what a thing IS comes before what an agent may do with it.
+    ['basics', 'agents-mcp'],
+  ] as const) {
+    assert.ok(at(earlier) < at(later), `${earlier} must come before ${later}`);
+  }
 });
 
 test('a missing translation falls back to English VISIBLY — never hides an article', () => {
