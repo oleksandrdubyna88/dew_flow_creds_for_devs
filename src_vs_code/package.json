@@ -65,6 +65,7 @@
     "publish": "vsce publish",
     "itest:git": "npm run compile && node scripts/git-transport-itest.cjs",
     "contract": "npm run compile && node scripts/emit-contract.mjs",
+    "contract:mcp": "node scripts/emit-mcp-tools.mjs",
     "itest:cli": "npm run compile && node scripts/creds-cli-itest.cjs",
     "itest:mcp": "npm run compile && node scripts/creds-mcp-itest.cjs",
     "itest:mcp-wsl": "npm run compile && node scripts/creds-mcp-wsl-itest.cjs",

@@ -2150,6 +2150,19 @@ is drawn — `generatePassword` answers with an empty string when no class is se
 holding `""` looks exactly like a working one. It says what it wants and still never learns what it
 gets.
 
+**The surface itself is now a file** (2026-08-29). MCP has no manifest: a server declares its
+tools at run time in its `tools/list` reply, built by the SDK from the C# delegates — so nothing
+anywhere said what the surface IS, and reviewing it meant running a process. `contract/mcp-tools-v1.json`
+is emitted from the built binary by `src_vs_code/scripts/emit-mcp-tools.mjs` (`npm run contract:mcp`,
+`--check` to fail on drift) and carries the instructions plus every tool's name, title, description,
+input schema and behaviour hints — all of it text a model acts on, so a change to any of it is a
+change to the product. The assembly version is deliberately excluded: it moves on every build, and
+a file that churns is a file nobody reads the diff of.
+
+**It is not `broker-v1.json`, and the two are easy to confuse.** That one describes the HTTP routes
+between `creds-mcp` and this window and contains the string `creds_` zero times; this one describes
+what an AGENT is offered. Different wire, different readers.
+
 **Two modules exist only to keep files under their ceilings**, and both are honest seams rather than
 arbitrary cuts: `brokerMcpRoutes.ts` holds the dispatch that `credsAgentServer.ts` (800-line ceiling)
 can no longer carry, and `wslProcess.ts` holds `runWsl`/`runWslRaw` — extracted from `extension.ts`
