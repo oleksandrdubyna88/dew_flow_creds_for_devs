@@ -175,7 +175,7 @@ internal static class Program
     /// </remarks>
     private static McpServerTool ListTool(BrokerContract contract) =>
         McpServerTool.Create(
-            () => Tools.ListAsync(contract),
+            async () => Answer.From(await Tools.ListAsync(contract)),
             new McpServerToolCreateOptions
             {
                 Name = Tools.ListName,
@@ -207,8 +207,8 @@ internal static class Program
     /// </summary>
     private static McpServerTool ConfigSnippetTool(BrokerContract contract) =>
         McpServerTool.Create(
-            (string entry, string? language, string? variant) =>
-                Tools.ConfigSnippetAsync(contract, entry, language, variant),
+            async (string entry, string? language, string? variant) =>
+                Answer.From(await Tools.ConfigSnippetAsync(contract, entry, language, variant)),
             new McpServerToolCreateOptions
             {
                 Name = Tools.ConfigSnippetName,
@@ -230,7 +230,7 @@ internal static class Program
     /// </remarks>
     private static McpServerTool FolderListTool(BrokerContract contract) =>
         McpServerTool.Create(
-            () => FolderTools.ListAsync(contract),
+            async () => Answer.From(await FolderTools.ListAsync(contract)),
             new McpServerToolCreateOptions
             {
                 Name = FolderTools.ListName,
@@ -258,15 +258,15 @@ internal static class Program
     private static IEnumerable<McpServerTool> FolderTool(BrokerContract contract) =>
     [
         McpServerTool.Create(
-            (string name, string parent, string? folderType = null) =>
-                FolderTools.InvokeAsync(contract, "create", [("name", name), ("parent", parent), ("folderType", folderType)]),
+            async (string name, string parent, string? folderType = null) =>
+                Answer.From(await FolderTools.InvokeAsync(contract, "create", [("name", name), ("parent", parent), ("folderType", folderType)])),
             FolderOptions(FolderTools.CreateName, "Create a folder", FolderTools.CreateDescription)),
         McpServerTool.Create(
-            (string folder, string? name = null, string? parent = null, string? folderType = null) =>
-                FolderTools.InvokeAsync(contract, "edit", [("folder", folder), ("name", name), ("parent", parent), ("folderType", folderType)]),
+            async (string folder, string? name = null, string? parent = null, string? folderType = null) =>
+                Answer.From(await FolderTools.InvokeAsync(contract, "edit", [("folder", folder), ("name", name), ("parent", parent), ("folderType", folderType)])),
             FolderOptions(FolderTools.EditName, "Rename, move or retype a folder", FolderTools.EditDescription)),
         McpServerTool.Create(
-            (string folder) => FolderTools.InvokeAsync(contract, "delete", [("folder", folder)]),
+            async (string folder) => Answer.From(await FolderTools.InvokeAsync(contract, "delete", [("folder", folder)])),
             FolderOptions(FolderTools.DeleteName, "Move a folder to the Trash", FolderTools.DeleteDescription)),
     ];
 
@@ -344,15 +344,15 @@ internal static class Program
     private static Delegate ArgumentsFor(BrokerContract contract, UseTools.UseTool tool) =>
         tool.Action switch
         {
-            "exec" => (string entry, string command) =>
-                UseTools.InvokeAsync(contract, tool, entry, "command", command),
-            "query" => (string entry, string query) =>
-                UseTools.InvokeAsync(contract, tool, entry, "query", query),
+            "exec" => async (string entry, string command) =>
+                Answer.From(await UseTools.InvokeAsync(contract, tool, entry, "command", command)),
+            "query" => async (string entry, string query) =>
+                Answer.From(await UseTools.InvokeAsync(contract, tool, entry, "query", query)),
             // `delete` takes only the entry: there is no second argument, because there is no
             // second destination. That is the permission, not a default.
             // The generation options ride along, named one by one. A model cannot add a field to
             // a body it does not compose, which is the same rule the window keeps on its side.
-            "rotate" => (
+            "rotate" => async (
                     string entry,
                     string statement,
                     string? secretKind = null,
@@ -364,19 +364,19 @@ internal static class Program
                     bool? avoidAmbiguous = null,
                     int? words = null,
                     string? separator = null) =>
-                UseTools.RotateAsync(
+                Answer.From(await UseTools.RotateAsync(
                     contract,
                     tool,
                     entry,
                     statement,
                     secretKind,
-                    Draw(length, lower, upper, digits, symbols, avoidAmbiguous, words, separator)),
+                    Draw(length, lower, upper, digits, symbols, avoidAmbiguous, words, separator))),
             // The one shape with no entry id: there is no entry yet. The parameter names are
             // what a model fills in, so they are the words the broker's body uses.
             // Defaults, not just nullable types: a parameter with no default is REQUIRED in the
             // generated schema, so a call that left `folder` out — the ordinary case, when only
             // one folder is open — failed to bind and reached the model as "an error occurred".
-            "create" => (
+            "create" => async (
                     string name,
                     string kind,
                     string? secretKind = null,
@@ -393,7 +393,7 @@ internal static class Program
                     bool? avoidAmbiguous = null,
                     int? words = null,
                     string? separator = null) =>
-                UseTools.CreateAsync(
+                Answer.From(await UseTools.CreateAsync(
                     contract,
                     tool,
                     name,
@@ -404,8 +404,8 @@ internal static class Program
                     host,
                     user,
                     port,
-                    Draw(length, lower, upper, digits, symbols, avoidAmbiguous, words, separator)),
-            _ => (string entry) => UseTools.InvokeAsync(contract, tool, entry, null, null),
+                    Draw(length, lower, upper, digits, symbols, avoidAmbiguous, words, separator))),
+            _ => async (string entry) => Answer.From(await UseTools.InvokeAsync(contract, tool, entry, null, null)),
         };
 
     /// <summary>

@@ -429,10 +429,16 @@ const HANDSHAKE = [
   // must have substituted a real value into the statement before running it.
   const rotate = tools2.find((t) => t.name === 'creds_rotate');
   check('it offers creds_rotate', rotate !== undefined, JSON.stringify(tools2.map((t) => t.name)));
+  // By what the schema must NOT offer, rather than by an exact list of what it does. The list
+  // form broke the day rotation learned the generation options (0.86.0) — it was asserting the
+  // shape of one release rather than the property that matters, which is that there is nowhere
+  // for a caller to put a secret VALUE. That property is what makes rotation safe to expose.
+  const rotateProps = Object.keys(rotate?.inputSchema?.properties ?? {});
   check(
     'the rotate schema asks for a statement, not a value',
-    Object.keys(rotate?.inputSchema?.properties ?? {}).sort().join(',') === 'entry,secretKind,statement',
-    JSON.stringify(rotate?.inputSchema?.properties),
+    rotateProps.includes('statement') &&
+      !rotateProps.some((name) => /^(secret|value|password|newSecret)$/i.test(name)),
+    JSON.stringify(rotateProps),
   );
   check(
     'and only the entry and the statement are required — the kind defaults to a password',
