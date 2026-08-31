@@ -26,10 +26,26 @@
     "vpn-down": "/v1/use/down"
   },
   "reads": {
-    "aliases": "/v1/aliases",
-    "mcpEntries": "/v1/mcp/entries",
-    "mcpConfigSnippet": "/v1/mcp/config-snippet",
-    "mcpFolders": "/v1/mcp/folders"
+    "aliases": {
+      "method": "GET",
+      "path": "/v1/aliases",
+      "authenticated": false
+    },
+    "mcpEntries": {
+      "method": "GET",
+      "path": "/v1/mcp/entries",
+      "authenticated": false
+    },
+    "mcpConfigSnippet": {
+      "method": "GET",
+      "path": "/v1/mcp/config-snippet",
+      "authenticated": false
+    },
+    "mcpFolders": {
+      "method": "GET",
+      "path": "/v1/mcp/folders",
+      "authenticated": false
+    }
   },
   "configRead": {
     "method": "POST",

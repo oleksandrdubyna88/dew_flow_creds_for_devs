@@ -115,7 +115,33 @@ public class BrokerContractTests
         // A POST for something that reads: a GET is the shape caches, proxies and shell histories
         // treat as safe to record, and the key would be in it.
         contract.ConfigRead.Method.Should().Be("POST");
-        contract.Reads!.Values.Should().NotContain("/v1/config/read");
+        contract.Reads!.Values.Select(r => r.Path).Should().NotContain("/v1/config/read");
+    }
+
+    [Fact]
+    public void Every_read_states_the_verb_this_binary_uses_to_fetch_it()
+    {
+        // The field that did not exist until 0.91.0, and the reason it does now. `Windows` GETs
+        // every route it reads by name; that was a correct assumption and an assumption all the
+        // same. `mcpFolders` was filed here and served by the window under POST alone, so it
+        // answered 404 for five releases while both sides' tests agreed on its path.
+        //
+        // Asserted over the whole dictionary rather than route by route: a fifth read added
+        // tomorrow is covered the day it is added, which a fifth hand-written line is not.
+        var reads = BrokerContract.Current.Reads;
+
+        reads.Should().NotBeNull();
+        foreach (var (name, route) in reads!)
+        {
+            route.Method.Should().Be("GET", $"{name} is read with an HTTP GET by Windows.ReadAllAsync");
+            route.Authenticated.Should().BeFalse($"{name} is in `reads`, and nothing there carries a token");
+            route.Path.Should().StartWith("/v1/", name);
+        }
+
+        BrokerContract.Current.ReadMethod("mcpFolders").Should().Be("GET");
+        // A name nobody filed degrades to what this build does, rather than throwing — the same
+        // rule every other accessor here follows.
+        BrokerContract.Current.ReadMethod("nothing-by-this-name").Should().Be("GET");
     }
 
     [Fact]

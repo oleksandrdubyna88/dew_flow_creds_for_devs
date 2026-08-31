@@ -18,6 +18,8 @@ namespace CredsBroker;
 [JsonSourceGenerationOptions(PropertyNameCaseInsensitive = false)]
 [JsonSerializable(typeof(BrokerContract))]
 [JsonSerializable(typeof(HealthRoute))]
+[JsonSerializable(typeof(ReadEndpoint))]
+[JsonSerializable(typeof(Dictionary<string, ReadEndpoint>))]
 [JsonSerializable(typeof(ConfigReadRoute))]
 [JsonSerializable(typeof(HealthResponse))]
 [JsonSerializable(typeof(Endpoint))]

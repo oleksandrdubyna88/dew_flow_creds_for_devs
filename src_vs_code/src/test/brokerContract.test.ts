@@ -45,10 +45,13 @@ interface Contract {
   health: { method: string; path: string; authenticated: boolean };
   limits: Record<string, number>;
   routes: Record<string, string>;
-  reads: Record<string, string>;
+  reads: Record<string, { method: string; path: string; authenticated: boolean }>;
   configRead: { method: string; path: string; authenticated: boolean; bearer: string };
   mcpUsePrefix: string;
   mcpActions: string[];
+  mcpDeleteRoute: string;
+  mcpCreateRoute: string;
+  mcpFolderPrefix: string;
   errors: Record<string, number>;
   exitCodes: Record<string, number>;
 }
@@ -132,12 +135,26 @@ test('the read routes travel in the contract, and the code agrees with what it s
     'mcpEntries',
     'mcpFolders',
   ]);
-  assert.equal(isAliasListRoute(reads.aliases), true);
-  assert.equal(isMcpEntriesRoute(reads.mcpEntries), true);
-  assert.equal(isMcpConfigSnippetRoute(reads.mcpConfigSnippet), true);
-  assert.equal(isMcpFoldersRoute(reads.mcpFolders), true);
+  assert.equal(isAliasListRoute(reads.aliases.path), true);
+  assert.equal(isMcpEntriesRoute(reads.mcpEntries.path), true);
+  assert.equal(isMcpConfigSnippetRoute(reads.mcpConfigSnippet.path), true);
+  assert.equal(isMcpFoldersRoute(reads.mcpFolders.path), true);
   for (const route of Object.values(reads)) {
-    assert.match(route, /^\/v1\//, route);
+    assert.match(route.path, /^\/v1\//, route.path);
+  }
+});
+
+test('a read states its VERB, which is the field whose absence cost five releases', () => {
+  // `health` and `configRead` carried a method from the beginning; the reads were bare paths, so
+  // the verb was inferred — and `mcpFolders` could be filed here, where every client GETs, while
+  // the window served it under POST alone. Both sides asserted the same PATH and neither could
+  // say anything about the verb. Asserted over the whole table so the fifth read added tomorrow
+  // is covered the day it is added.
+  const { reads } = load();
+
+  for (const [name, route] of Object.entries(reads)) {
+    assert.equal(route.method, 'GET', `${name} is fetched with a GET by every client`);
+    assert.equal(route.authenticated, false, `${name} is in \`reads\`, where nothing carries a token`);
   }
 });
 
@@ -159,8 +176,35 @@ test('every route the contract files under `reads` is actually ANSWERED as a rea
   };
 
   for (const [name, route] of Object.entries(reads)) {
+    const body = await readRouteBody(route.path, sources);
+    assert.notEqual(body, undefined, `${name} (${route.path}) is filed as a read and answers nothing`);
+  }
+});
+
+test('and nothing that PERFORMS is answered as one — the same mistake in the other direction', async () => {
+  // The pair matters. A route filed under `reads` and served behind POST is dead (that was
+  // `mcpFolders`); a route that performs something and is served as an unauthenticated GET is
+  // worse than dead, because the read router answers before any token or modal is reached. Both
+  // are classification errors and neither is visible in a table of paths.
+  const contract = load();
+  const sources = {
+    aliases: () => [],
+    mcpEntries: () => Promise.resolve([]),
+    visibleConfig: () => undefined,
+    folders: () => [],
+  };
+  const performing = [
+    contract.configRead.path,
+    contract.mcpDeleteRoute,
+    contract.mcpCreateRoute,
+    `${contract.mcpUsePrefix}exec`,
+    `${contract.mcpFolderPrefix}create`,
+    ...Object.values(contract.routes),
+  ];
+
+  for (const route of performing) {
     const body = await readRouteBody(route, sources);
-    assert.notEqual(body, undefined, `${name} (${route}) is filed as a read and answers nothing`);
+    assert.equal(body, undefined, `${route} performs something and must never answer as a read`);
   }
 });
 
@@ -174,15 +218,19 @@ test('the config read route travels too, and it is NOT one of the reads', () => 
   assert.equal(isConfigReadRoute(configRead.path), true);
   assert.equal(configRead.method, 'POST', 'a GET would put the key somewhere caches record it');
   assert.equal(configRead.authenticated, true);
-  assert.equal(Object.values(reads).includes(configRead.path), false, 'it is filed as unauthenticated');
+  assert.equal(
+    Object.values(reads).some((route) => route.path === configRead.path),
+    false,
+    'it is filed as unauthenticated',
+  );
 });
 
 test('the read routes are not use routes — nothing under them performs anything', () => {
   const { reads } = load();
 
   for (const route of Object.values(reads)) {
-    assert.equal(parseUseRoute(route), undefined, route);
-    assert.equal(parseAliasRoute(route), undefined, route);
+    assert.equal(parseUseRoute(route.path), undefined, route.path);
+    assert.equal(parseAliasRoute(route.path), undefined, route.path);
   }
 });
 

@@ -22,7 +22,7 @@ public sealed record BrokerContract(
     [property: JsonPropertyName("health")] HealthRoute Health,
     [property: JsonPropertyName("limits")] Dictionary<string, int> Limits,
     [property: JsonPropertyName("routes")] Dictionary<string, string> Routes,
-    [property: JsonPropertyName("reads")] Dictionary<string, string>? Reads,
+    [property: JsonPropertyName("reads")] Dictionary<string, ReadEndpoint>? Reads,
     [property: JsonPropertyName("mcpUsePrefix")] string? McpUsePrefix,
     [property: JsonPropertyName("mcpActions")] string[]? McpActions,
     [property: JsonPropertyName("mcpFolderPrefix")] string? McpFolderPrefix,
@@ -61,7 +61,24 @@ public sealed record BrokerContract(
     /// throwing on a missing key. The fallback is the value that was hard-coded before.
     /// </remarks>
     public string ReadRoute(string name, string fallback) =>
-        Reads is not null && Reads.TryGetValue(name, out var route) ? route : fallback;
+        Reads is not null && Reads.TryGetValue(name, out var route) ? route.Path : fallback;
+
+    /// <summary>
+    /// The verb a read is served with.
+    /// </summary>
+    /// <remarks>
+    /// <para>It exists because inferring it cost five releases. `mcpFolders` was filed under
+    /// <see cref="Reads"/>, where every client GETs, and served by the window under POST alone —
+    /// so it answered 404 from extension 0.85.0 to 0.89.0 and the whole folder surface with it.
+    /// Both sides had a test asserting they meant the same PATH and neither could assert the
+    /// verb, because the contract had no field for one.</para>
+    /// <para>Defaults to GET rather than throwing, like every other accessor here: a contract
+    /// file written before this field existed must degrade to what this build knows.</para>
+    /// </remarks>
+    public string ReadMethod(string name) =>
+        Reads is not null && Reads.TryGetValue(name, out var route) && route.Method is { Length: > 0 }
+            ? route.Method
+            : "GET";
 
     /// <summary>
     /// Where an MCP client posts one action.
@@ -137,6 +154,19 @@ public sealed record ConfigReadRoute(
     [property: JsonPropertyName("path")] string Path,
     [property: JsonPropertyName("authenticated")] bool Authenticated,
     [property: JsonPropertyName("bearer")] string? Bearer);
+
+/// <summary>
+/// One route that answers without a credential and performs nothing.
+/// </summary>
+/// <remarks>
+/// The same three fields as <see cref="HealthRoute"/>, and for the same reason: a second
+/// implementation must be able to READ what verb to use rather than assume one. A bare path was
+/// what let a listing be filed as a read and served as a POST.
+/// </remarks>
+public sealed record ReadEndpoint(
+    [property: JsonPropertyName("method")] string Method,
+    [property: JsonPropertyName("path")] string Path,
+    [property: JsonPropertyName("authenticated")] bool Authenticated);
 
 public sealed record HealthRoute(
     [property: JsonPropertyName("method")] string Method,

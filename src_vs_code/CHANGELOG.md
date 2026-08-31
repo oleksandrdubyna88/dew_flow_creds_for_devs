@@ -6,6 +6,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.91.0] — 2026-08-31
+
+### Changed
+
+- **The wire contract now states each route's HTTP method, and both sides check it.** The file
+  that keeps the extension and the two binaries in step recorded a route's PATH and left its VERB
+  to be inferred — for everything except `health` and `configRead`, which had carried theirs from
+  the start. That inconsistency is what let the folder listing be filed under `reads`, where every
+  client GETs, while the window served it under POST alone: it answered 404 for five releases with
+  both sides' tests green, because they could assert they meant the same path and could not say
+  anything about the verb.
+
+  Each read now travels as `{ method, path, authenticated }`, like its two siblings. The check is
+  on both sides and over the whole table rather than route by route, so the fifth read added
+  tomorrow is covered on the day it is added: the extension asserts every read declares `GET`, is
+  unauthenticated, and is actually answered by the read router — and, in the other direction, that
+  nothing which performs something is. The binary asserts the same declaration against the verb it
+  fetches with.
+
+  Nothing on the wire moved: the same paths, the same verbs, the same codes. The contract's own
+  `version` therefore stays 1 — what changed is that the file now says what it always meant.
+
 ## [0.90.0] — 2026-08-31
 
 ### Fixed

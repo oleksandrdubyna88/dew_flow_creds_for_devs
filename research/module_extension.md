@@ -2143,8 +2143,14 @@ permission change for its contents.
 `creds_folders` answered `404` from 0.85.0 to 0.89.0, so the whole folder surface was unusable: the
 listing sat in `brokerMcpRoutes.answerFolderRoute`, which is reached only under POST, while
 `contract/broker-v1.json` files the route under `reads` and every client therefore GETs it. Both
-sides asserted they meant the same PATH and neither could assert the METHOD — the contract has no
-field for it. The listing now lives in `brokerReadRoutes.ts` beside health, aliases and entries,
+sides asserted they meant the same PATH and neither could assert the METHOD — the contract had no
+field for it, which was fixed in 0.91.0: a read now travels as `{ method, path, authenticated }`
+like `health` and `configRead` always did, and both sides assert the declaration over the whole
+table rather than route by route. The extension additionally checks the classification in **both**
+directions — every read is answered by `readRouteBody`, and nothing that performs anything is —
+because a route filed as a read and served behind POST is dead, while a route that performs and is
+served as an unauthenticated GET answers before any token or modal is reached. Nothing on the wire
+moved, so the contract's own `version` stays 1; the file now says what it always meant. The listing now lives in `brokerReadRoutes.ts` beside health, aliases and entries,
 and `brokerContract.test.ts` walks the contract's own `reads` table through `readRouteBody`, so a
 fifth read added tomorrow is covered on the day it is added. The second half was the diagnosis:
 `Windows.ReadAllAsync` treated "the window failed the health probe" and "the window passed the
