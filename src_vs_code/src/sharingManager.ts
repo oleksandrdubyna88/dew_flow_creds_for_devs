@@ -4,6 +4,8 @@ import { TransportFactory } from './transportFactory';
 import { StorageManager } from './storageManager';
 import { TeamFailure } from './teamDiagnosis';
 import { ServerTransport } from './serverTransport';
+import { ShareForm } from './shareFormat';
+import { VaultTransport } from './vaultTransport';
 
 /**
  * Team discovery and pending shares, per account, over whatever transport
@@ -106,6 +108,57 @@ export class SharingManager {
       vscode.workspace.getConfiguration('credSshManager').get<string>('microsoftApiScope', '').trim()
         .length > 0
     );
+  }
+
+  /**
+   * Which binding form a share leaving this account must be sealed in.
+   *
+   * <p>A property of the TRANSPORT, and knowable only here: a folder or a git remote writes the
+   * item verbatim and takes the bound form, while a vault server rewrites the sender and the time
+   * the bound form's AAD covers — and only carries the `format` that says so from contract 2.
+   * Below that, unbound is the only form that can be opened at the other end.</p>
+   */
+  shareFormFor(sender: StoredAccount): ShareForm {
+    const transport = this.transportFor(sender);
+    if (!(transport instanceof ServerTransport)) {
+      return 'bound';
+    }
+    return transport.carriesShareFormat ? 'server' : 'legacy';
+  }
+
+  /**
+   * Whether a pending share arrived somewhere that stamps its sender — the one thing the item
+   * itself cannot say, and what decides whether its label may be believed.
+   *
+   * <p>Asked of the TRANSPORT, never of the location string. `isServerLocation` is a test for
+   * `http(s)://` and a git remote is routinely `https://host/team/vault.git`, so answering from
+   * the URL would call a git share server-stamped — and a git share is written verbatim by
+   * whoever can push, which is exactly the case the stamp is supposed to exclude. The factory
+   * asks git first, so its answer is the one the share actually travelled through.</p>
+   */
+  serverStamped(share: OwnedShare): boolean {
+    const account = this.storage.getAccount(share.accountId);
+    if (account === undefined) {
+      return false;
+    }
+    return this.transportFor(account) instanceof ServerTransport;
+  }
+
+  /**
+   * The transport for an account, or nothing — never a throw.
+   *
+   * <p>`forAccount` refuses a location it cannot build (a git remote in a build without git
+   * sync). That is the right answer for a caller about to USE it, and the wrong one for the two
+   * questions above, which are asked while deciding how to seal and how much to believe: a
+   * throw there would abort a delivery before the error that explains it, and would make
+   * "is this a server" answerable only by exception.</p>
+   */
+  private transportFor(account: StoredAccount): VaultTransport | undefined {
+    try {
+      return this.transports.forAccount(account);
+    } catch {
+      return undefined;
+    }
   }
 
   /** Deliver share items, authorized as the sending account. */

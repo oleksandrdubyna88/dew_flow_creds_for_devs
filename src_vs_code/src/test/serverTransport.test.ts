@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { afterEach, test } from 'node:test';
 import { ServerTransport } from '../serverTransport';
+import { CLIENT_CONTRACT_VERSION } from '../contractVersion';
 import { StoredAccount } from '../types';
 
 const account: StoredAccount = {
@@ -206,7 +207,9 @@ test('every request says which contract this extension speaks', async () => {
 
   await transportFor().listShares(account);
 
-  assert.equal(sent[0].get('X-Creds-Contract'), '1');
+  // Against the constant, not a literal: this header exists to say what THIS build speaks, so
+  // a bump that forgot to update the request would pass a test pinned to the old number.
+  assert.equal(sent[0].get('X-Creds-Contract'), String(CLIENT_CONTRACT_VERSION));
 });
 
 test('a server that refuses this version says so in words, not as an auth problem', async () => {

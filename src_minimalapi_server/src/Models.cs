@@ -27,6 +27,27 @@ public sealed record ShareItem
     [JsonPropertyName("kdfN")] public int? KdfN { get; init; }
     [JsonPropertyName("kdfR")] public int? KdfR { get; init; }
     [JsonPropertyName("kdfP")] public int? KdfP { get; init; }
+
+    /// <summary>
+    /// Which fields the client bound into the payload's GCM additional authenticated data.
+    /// </summary>
+    /// <remarks>
+    /// <para>Carried verbatim and never read: like the scrypt parameters above, it is a number the
+    /// sender needs the recipient to see and the server has no opinion about. Dropping it is not a
+    /// harmless omission — the recipient cannot choose the right AAD without it, and until contract
+    /// 2 this field did not exist, so every share posted here between extension 0.82.1 and 0.87
+    /// arrived unopenable and was reported as sent by an extension that was too old.</para>
+    /// <para><b>Omitted rather than written as <c>null</c>, and that is not cosmetic.</b> A client
+    /// older than contract 2 sends no format, and its own <c>isShareItem</c> guard accepts the
+    /// field as a number or as ABSENT — a JSON <c>null</c> is neither, so it drops the whole item
+    /// and the recipient's inbox reads as empty rather than as unopenable. Every released
+    /// extension is such a client, so a server that wrote the null would hide their shares on the
+    /// day it was deployed. The wire shape for a client that sends nothing stays byte-identical to
+    /// contract 1.</para>
+    /// </remarks>
+    [JsonPropertyName("format")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? Format { get; init; }
 }
 
 /// <summary>What a client POSTs to share one entity with one person.</summary>
@@ -42,6 +63,9 @@ public sealed record ShareRequest
     public int? KdfN { get; init; }
     public int? KdfR { get; init; }
     public int? KdfP { get; init; }
+
+    /// <summary>Which fields the client bound as AAD — carried through, never interpreted.</summary>
+    public int? Format { get; init; }
 
     public bool IsValid() =>
         !string.IsNullOrWhiteSpace(ToEmail)

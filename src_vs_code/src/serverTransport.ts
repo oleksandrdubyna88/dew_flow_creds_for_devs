@@ -1,6 +1,7 @@
 import {
   CLIENT_CONTRACT_VERSION,
   CONTRACT_HEADER,
+  SHARE_FORMAT_CONTRACT,
   UPGRADE_REQUIRED,
   serverAheadMessage,
   serverContractFrom,
@@ -95,6 +96,18 @@ export class ServerTransport implements VaultTransport {
 
   /** The contract version the server last reported, or 0 if it has never said. */
   serverContract = 0;
+
+  /**
+   * Whether this server carries a share's `format` field through.
+   *
+   * <p>Read before sealing, never after: a bound share whose `format` the server drops is
+   * unopenable, so a sender that cannot confirm the field survives must seal unbound instead.
+   * A server that has never answered yet reads as 0 and therefore as "old", which is the safe
+   * direction — the fallback still works, the optimistic guess would not.</p>
+   */
+  get carriesShareFormat(): boolean {
+    return this.serverContract >= SHARE_FORMAT_CONTRACT;
+  }
 
   private warnedAboutVersion = false;
 
@@ -303,6 +316,11 @@ export class ServerTransport implements VaultTransport {
           kdfN: item.kdfN,
           kdfR: item.kdfR,
           kdfP: item.kdfP,
+          // Without this the recipient cannot know which fields the AAD covered, and every
+          // bound share posted here between 0.82.1 and 0.87 arrived unopenable. A server
+          // below `SHARE_FORMAT_CONTRACT` ignores it — which is why the sender only seals
+          // a bound form when `carriesShareFormat` says the field will survive.
+          format: item.format,
         }),
       });
       if (!response.ok) {

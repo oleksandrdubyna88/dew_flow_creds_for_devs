@@ -1197,6 +1197,9 @@ app.MapPost("/api/shares", async (HttpContext ctx, CancellationToken ct) =>
         KdfN = req.KdfN,
         KdfR = req.KdfR,
         KdfP = req.KdfP,
+        // Opaque, and carried for the same reason the scrypt parameters are: the recipient cannot
+        // reconstruct the AAD without knowing which fields went into it. Contract 2.
+        Format = req.Format,
     };
     await store.AppendShareAsync(item.ToEmail, item, ct);
     // The sender's own receipt — no ciphertext, just enough to name what they sent. Without it

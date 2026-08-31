@@ -159,7 +159,7 @@ function sealedShare(payload: SharePayload, pin: string): OwnedShare {
   return {
     accountId: RECIPIENT.accountId,
     shareKeyId: KEY_ID,
-    item: loaded.sealShare(payload, KEY_ID, SENDER, pin, 1_756_000_000_000, undefined, RECIPIENT.email),
+    item: loaded.sealShare(payload, KEY_ID, SENDER, pin, 1_756_000_000_000, { toEmail: RECIPIENT.email }),
   };
 }
 
@@ -205,6 +205,11 @@ function world(): World {
       return Promise.resolve();
     },
     ownShares: [] as OwnedShare[],
+    // This world has no vault server: a folder account seals the bound form and its shares
+    // are never treated as server-stamped. The server side of both is proven in
+    // shareFormat.test.ts, which can reach it without a transport.
+    shareFormFor: () => 'bound' as const,
+    serverStamped: () => false,
   };
   const inbox = new loaded.ShareInbox({
     storage,

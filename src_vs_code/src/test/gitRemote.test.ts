@@ -12,6 +12,7 @@ import {
   parseGitRemote,
   pushArgv,
 } from '../gitRemote';
+import { isServerLocation } from '../vaultTransport';
 
 /**
  * Everything decidable about git without running it. Two things here are security
@@ -115,4 +116,21 @@ test('an unknown failure carries git own first line, bounded', () => {
   const long = 'fatal: ' + 'x'.repeat(500);
   const message = describeGitFailure('other', 'r', long);
   assert.ok(message.length < 300, `message was ${message.length} chars`);
+});
+
+test('an https git remote also satisfies isServerLocation — which is why trust is asked of the transport', () => {
+  // Not a defect in either predicate: `isServerLocation` tests for http(s), and a git remote
+  // over https is http(s). It is the reason nothing security-bearing may ask the URL. A share's
+  // sender is stamped only by a vault SERVER, and a git remote is written verbatim by whoever
+  // can push — so answering "was this stamped?" from the location would hand a git share the one
+  // transport's trust it must never inherit. `SharingManager.serverStamped` asks the factory,
+  // which (see TransportFactory.build) resolves git FIRST.
+  const remote = 'https://git.example.com/team/vault.git';
+
+  assert.equal(parseGitRemote(remote)?.scheme, 'https', 'the factory routes this to GitTransport');
+  assert.equal(isServerLocation(remote), true, 'and the location predicate cannot tell');
+
+  // The server locations the two predicates do agree about.
+  assert.equal(parseGitRemote('https://vault.example.com'), undefined);
+  assert.equal(isServerLocation('https://vault.example.com'), true);
 });

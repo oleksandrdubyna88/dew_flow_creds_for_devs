@@ -22,6 +22,9 @@ Module._resolveFilename = (req, ...a) => (req === 'vscode' ? stub : orig.call(Mo
 const EXT = path.join(__dirname, '..', 'out');
 const { ServerTransport } = require(path.join(EXT, 'serverTransport.js'));
 const { sealShare, openShare, resolveShares } = require(path.join(EXT, 'shareFormat.js'));
+// The recipient's own build. Past LEGACY_SHARES_UNTIL an unbound FOLDER share is refused, so
+// running this at 0.0.0 would hide exactly the refusal the user hit.
+const EXT_VERSION = require(path.join(__dirname, '..', 'package.json')).version;
 
 // Sign local-scheme JWTs (same shape the server validates).
 const KEY = 'itest-key-itest-key-itest-key-32x';
@@ -73,7 +76,12 @@ const check = (what, ok) => { console.log(`${ok ? '  ok' : 'FAIL'}  ${what}`); i
             details: { id: 'e1', name: 'prod db', isSshEnabled: false, isDb: true, dbType: 'mysql' } },
     secrets: { dbConnection: 'mysql://u:secret@h/db' },
   };
-  const item = sealShare(payload, bobMember.shareKeyId, alice, 'PIN-9', Date.now());
+  // Which form to seal in is the SERVER's answer, exactly as ShareInbox.deliverBatch asks it:
+  // a server below contract 2 drops `format`, so a bound share would arrive unopenable.
+  const form = t.carriesShareFormat ? 'server' : 'legacy';
+  check('server states its contract version', t.serverContract > 0);
+  console.log(`  ..  server contract ${t.serverContract} -> sealing in the '${form}' form`);
+  const item = sealShare(payload, bobMember.shareKeyId, alice, 'PIN-9', Date.now(), { form });
   await t.appendShares(alice, bobMember, [item]);
 
   check("sender's own inbox stays empty", (await t.listShares(alice)).length === 0);
@@ -81,16 +89,28 @@ const check = (what, ok) => { console.log(`${ok ? '  ok' : 'FAIL'}  ${what}`); i
   check('recipient sees exactly one share', inbox.length === 1);
   check('sender identity is server-stamped', inbox[0].item.fromEmail === alice.email);
   check('binding routes decryption to the email', inbox[0].shareKeyId === bob.email);
+  // The check this whole script existed to make and could not: the AAD form has to survive the
+  // trip, or the recipient cannot choose it. Dropped between 0.82.1 and 0.87.
+  check('the AAD form survives the round trip', inbox[0].item.format === item.format);
+  // The server stamps these two itself, which is why the server form does not bind them.
+  check('the server stamps its own createdAt', inbox[0].item.createdAt !== item.createdAt);
 
-  // The recipient opens it with the PIN; a wrong PIN must fail.
-  const opened = openShare(inbox[0].item, inbox[0].shareKeyId, 'PIN-9');
+  // The recipient opens it with the PIN; a wrong PIN must fail. `true` = came off a vault
+  // server, which is what ShareInbox passes and what makes the server form honourable.
+  const opened = openShare(inbox[0].item, inbox[0].shareKeyId, 'PIN-9', EXT_VERSION, true);
   check('payload decrypts with the right PIN', opened.secrets.dbConnection === 'mysql://u:secret@h/db');
   let threw = false;
-  try { openShare(inbox[0].item, inbox[0].shareKeyId, 'nope'); } catch { threw = true; }
+  try { openShare(inbox[0].item, inbox[0].shareKeyId, 'nope', EXT_VERSION, true); } catch { threw = true; }
   check('wrong PIN is rejected', threw);
 
+  // The same item off a folder must NOT open: the server form leaves `fromEmail` unbound, and
+  // only a server can stamp it.
+  let refused = false;
+  try { openShare(inbox[0].item, inbox[0].shareKeyId, 'PIN-9', EXT_VERSION); } catch { refused = true; }
+  check('the server form is refused when it did not come from a server', refused || form === 'legacy');
+
   // resolveShares (the accept-all engine) works over server-sourced items.
-  const r = resolveShares(inbox, ['PIN-9']);
+  const r = resolveShares(inbox, ['PIN-9'], EXT_VERSION, () => true);
   check('resolveShares opens server items', r.opened.length === 1 && r.remaining.length === 0);
 
   await t.removeShare(bob, inbox[0]);

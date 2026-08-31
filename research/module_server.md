@@ -109,13 +109,28 @@ identifier**, so there is nothing to tamper with.
   "entityName":  "prod db",
   "entityKind":  "db",
   "salt": "base64", "iv": "base64", "tag": "base64", "data": "base64",
-  "kdfN": 131072, "kdfR": 8, "kdfP": 1
+  "kdfN": 131072, "kdfR": 8, "kdfP": 1,
+  "format": 3
 }
 ```
 
 The server validates only the *shape*: that the four crypto fields are base64, that the payload is
 under `MaxShareBytes`, that `entityName` is under 512 characters, and that the recipient's inbox is
 under `MaxInboxItems`.
+
+**`format` is carried verbatim and never read** (contract 2). It names which fields the client
+bound into the payload's GCM additional authenticated data, and the recipient cannot choose the
+right AAD without it — exactly as `kdfN`/`kdfR`/`kdfP` name the scrypt cost. Until contract 2 the
+field did not exist here, so every share posted by extension 0.82.1 through 0.87 arrived with its
+binding unnamed, could not be decrypted at all, and was reported to the recipient as *"sent by an
+extension older than 0.82"*. The extension's side of the same rule is that it seals a **bound**
+form only when the response header says the server is contract 2 or higher; below that it seals
+unbound, because a binding the recipient cannot reconstruct is worse than none.
+
+A client that sends no `format` gets an item with **no `format` property at all** — never
+`"format": null`. Every released extension's `isShareItem` guard accepts the field as a number or
+as absent and drops an item carrying a null, which would empty those recipients' inboxes rather
+than explain anything; the wire shape for such a client is byte-identical to contract 1.
 
 **`fromEmail` and `fromName` are not accepted from the body.** They are stamped from the verified
 token. This is the single most important line in the file — it is the difference between this
@@ -158,6 +173,10 @@ means the secret is now somewhere the sender cannot reach.
 only signal there is, because nothing tells the sender.
 
 ### The contract version
+
+**Current: 2** — a share carries its `format` (above). Version 1 dropped it, which is why the bump
+is the first one the mechanism was actually built for: a client must know which version it is
+talking to *before* it seals, not after it fails.
 
 Every response carries `X-Creds-Contract: <server version>`; a client sends the same header.
 Below `Vault:MinimumClientContract` the middleware answers **`426` before authentication**, so an

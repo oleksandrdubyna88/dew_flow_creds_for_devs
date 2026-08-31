@@ -16,7 +16,17 @@
  */
 
 /** What this build speaks. Bump when the extension can no longer read an older server. */
-export const CLIENT_CONTRACT_VERSION = 1;
+export const CLIENT_CONTRACT_VERSION = 2;
+
+/**
+ * The first contract that carries a share's `format` through `/api/shares`.
+ *
+ * <p>A sender must know this BEFORE it seals: against an older server the `format` field is
+ * dropped, so an AAD-bound share arrives with no way to say which fields the AAD covered, and
+ * the recipient cannot open it at all. Below this version the sender seals unbound instead —
+ * which is what every build before 0.82.1 did, and works.</p>
+ */
+export const SHARE_FORMAT_CONTRACT = 2;
 
 /** Sent on every request, and read off every response. Must match the server's constant. */
 export const CONTRACT_HEADER = 'X-Creds-Contract';

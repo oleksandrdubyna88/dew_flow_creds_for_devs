@@ -26,6 +26,26 @@ public sealed class SharingTests
             data = data ?? Convert.ToBase64String(Encoding.UTF8.GetBytes("sealed-payload")),
         };
 
+    /// <summary>The same envelope, plus the AAD form the client sealed it in (contract 2).</summary>
+    private static object EnvelopeWithFormat(string toEmail, int format) =>
+        new
+        {
+            toEmail,
+            entityName = "prod db",
+            entityKind = "db",
+            salt = Convert.ToBase64String(new byte[16]),
+            iv = Convert.ToBase64String(new byte[12]),
+            tag = Convert.ToBase64String(new byte[16]),
+            data = Convert.ToBase64String(Encoding.UTF8.GetBytes("sealed-payload")),
+            format,
+        };
+
+    private static async Task<JsonElement> FirstShare(HttpClient recipient, CancellationToken ct)
+    {
+        var inbox = await recipient.GetStringAsync("/api/shares", ct);
+        return JsonDocument.Parse(inbox).RootElement[0].Clone();
+    }
+
     private static async Task<string> FirstShareId(HttpClient recipient, CancellationToken ct)
     {
         var inbox = await recipient.GetStringAsync("/api/shares", ct);
@@ -49,6 +69,44 @@ public sealed class SharingTests
 
         bobsInbox.Should().Contain("prod db");
         alicesInbox.Should().NotContain("prod db");
+    }
+
+    [Fact]
+    public async Task TheShareFormatReachesTheRecipientUntouched()
+    {
+        // The field the recipient cannot open a bound share without. It was missing until
+        // contract 2, so every share posted here by extension 0.82.1..0.87 arrived with no way
+        // to say which fields its AAD covered — and was reported as sent by a build too old.
+        using var server = new VaultServer();
+        using var alice = server.ClientFor(Alice, "Alice");
+        using var bob = server.ClientFor(Bob);
+        var ct = TestContext.Current.CancellationToken;
+
+        await alice.PostAsJsonAsync("/api/shares", EnvelopeWithFormat(Bob, 3), ct);
+
+        var share = await FirstShare(bob, ct);
+        share.GetProperty("format").ValueKind.Should().Be(
+            JsonValueKind.Number,
+            "a dropped format leaves the recipient unable to know which fields the AAD covered");
+        share.GetProperty("format").GetInt32().Should().Be(3);
+    }
+
+    [Fact]
+    public async Task AShareWithNoFormatKeepsNoneRatherThanGainingOne()
+    {
+        // A client older than contract 2 sends no `format`, and an invented default would be
+        // read as a binding it never applied.
+        using var server = new VaultServer();
+        using var alice = server.ClientFor(Alice, "Alice");
+        using var bob = server.ClientFor(Bob);
+        var ct = TestContext.Current.CancellationToken;
+
+        await alice.PostAsJsonAsync("/api/shares", Envelope(Bob), ct);
+
+        var share = await FirstShare(bob, ct);
+        // ABSENT, never `null`: a released extension's isShareItem accepts a number or nothing,
+        // and drops any item carrying a null — which empties the inbox instead of explaining it.
+        share.TryGetProperty("format", out _).Should().BeFalse();
     }
 
     [Fact]

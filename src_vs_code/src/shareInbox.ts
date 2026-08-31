@@ -13,7 +13,7 @@ import {
   resolveShares,
   sealShare,
   shareTranscript,
-  shareableDetails, shareLabelBound } from './shareFormat';
+  shareableDetails, shareLabelTrusted } from './shareFormat';
 import { recordOrigin, resolveOrigin } from './shareOrigin';
 import { snapshotForRevision } from './revisionSnapshot';
 import { pinValidator } from './pinInput';
@@ -113,7 +113,7 @@ export class ShareInbox {
   }
 
   // Moved as written (A1 moves, it does not rewrite); the complexity is pre-existing debt.
-  // eslint-disable-next-line complexity, max-lines-per-function
+  // eslint-disable-next-line complexity
   async deliverBatch(
     senderAccountId: string,
     payloads: SharePayload[],
@@ -134,18 +134,17 @@ export class ShareInbox {
       location !== undefined && !isServerLocation(location)
         ? await this.deps.storage.ensureSigningKeypair(sender.accountId)
         : undefined;
+    // Which fields the AAD may cover is the transport's answer, not this method's — a server
+    // rewrites two of the four the folder form binds.
+    const form = this.deps.sharing.shareFormFor(sender);
     for (const recipient of recipients) {
       try {
         const items = payloads.map((p) =>
-          sealShare(
-            p,
-            recipient.shareKeyId,
-            sender,
-            pin,
-            Date.now(),
+          sealShare(p, recipient.shareKeyId, sender, pin, Date.now(), {
+            form,
             signing,
-            recipient.account.email,
-          ),
+            toEmail: recipient.account.email,
+          }),
         );
         await this.deps.sharing.appendShares(sender, recipient, items);
         delivered.push(recipient.account.email);
@@ -291,7 +290,7 @@ export class ShareInbox {
         share.item.fromEmail,
         senderLocation(this.deps.storage, share.accountId),
       )} — into ${this.deps.storage.getAccount(share.accountId)?.email ?? 'this account'}`,
-      prompt: shareLabelBound(share.item)
+      prompt: shareLabelTrusted(share.item, this.deps.sharing.serverStamped(share))
         ? 'Enter the share PIN'
         : 'Enter the share PIN — sent by an extension older than 0.82: its label is not bound to its contents',
       password: true,
@@ -306,7 +305,13 @@ export class ShareInbox {
     // import had already half-changed — with the real error never shown anywhere.
     let payload: SharePayload;
     try {
-      payload = openShare(share.item, share.shareKeyId, pin, this.deps.extensionVersion);
+      payload = openShare(
+        share.item,
+        share.shareKeyId,
+        pin,
+        this.deps.extensionVersion,
+        this.deps.sharing.serverStamped(share),
+      );
     } catch (error) {
       void vscode.window.showErrorMessage(
         error instanceof BackupError && error.kind === 'unsupported-version'
@@ -361,7 +366,12 @@ export class ShareInbox {
       // re-trying them is pure waste: each retry is a full scrypt (~1s), and the old
       // O(items × PINs-so-far) cost froze the editor for tens of seconds on a handful of
       // shares. openShare is deterministic, so a PIN that did not open an item never will.
-      const { opened, remaining: rest } = resolveShares(remaining, [pin], this.deps.extensionVersion);
+      const { opened, remaining: rest } = resolveShares(
+        remaining,
+        [pin],
+        this.deps.extensionVersion,
+        (owned) => this.deps.sharing.serverStamped(owned),
+      );
       for (const o of opened) {
         await this.importShared(o, o.payload);
         imported++;

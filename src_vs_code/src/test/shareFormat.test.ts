@@ -5,17 +5,20 @@ import { test } from 'node:test';
 import { BackupError, encryptJson, sealBlob } from '../cryptoUtils';
 import {
   LEGACY_SHARES_UNTIL,
+  SHARE_FORMAT_SERVER,
   envelopeWithShares,
   legacyShareAllowed,
   openShare,
+  shareFormOf,
   shareLabelBound,
+  shareLabelTrusted,
   resolveShares,
   sealShare,
   shareTranscript,
   shareableDetails,
   sharesFromEnvelope,
 } from '../shareFormat';
-import { EntityMetadata, ShareItem, SharePayload, StoredAccount } from '../types';
+import { EntityMetadata, ShareItem, SharePayload, StoredAccount, isShareItem } from '../types';
 
 const NOW = 1_800_000_000_000;
 const admin: StoredAccount = { accountId: 'admin-1', email: 'admin@x', provider: 'microsoft' };
@@ -115,8 +118,7 @@ function sealed(toEmail: string) {
     bob,
     'a-good-share-pin',
     1_756_000_000_000,
-    signer,
-    toEmail,
+    { signing: signer, toEmail },
   );
 }
 
@@ -279,3 +281,101 @@ function sealShareLegacy(p: SharePayload, recipientKeyId: string, from: StoredAc
     ...blob,
   };
 }
+
+// ---- the vault server transport (research/PLAN_server_share_format.md) ----
+
+/**
+ * What `POST /api/shares` followed by `GET /api/shares` does to an item.
+ *
+ * <p>Only the fields the request body names survive (`serverTransport.ts:293`), and the server
+ * stamps the two the AAD depends on itself: `fromEmail` from the verified token, lower-cased
+ * (`TokenIdentity.cs:33`), and `createdAt` from its own clock (`Program.cs:1190`). This is the
+ * whole reason the folder form cannot travel here.</p>
+ */
+function throughServer(item: ShareItem): ShareItem {
+  return {
+    id: 'stamped-by-the-server',
+    fromEmail: item.fromEmail.toLowerCase(),
+    entityName: item.entityName,
+    entityKind: item.entityKind,
+    createdAt: item.createdAt + 137,
+    salt: item.salt,
+    iv: item.iv,
+    tag: item.tag,
+    data: item.data,
+    kdfN: item.kdfN,
+    kdfR: item.kdfR,
+    kdfP: item.kdfP,
+    // Contract 2 and up. Below it the field is dropped, which is the whole defect — see the
+    // "a server older than contract 2" test for what a sender must do about that.
+    format: item.format,
+  };
+}
+
+test('a share sent through the vault server opens on the recipient side', () => {
+  const sent = sealShare(payload('prod db'), user.email, admin, 'PIN-9', NOW, { form: 'server' });
+  assert.equal(sent.format, SHARE_FORMAT_SERVER);
+  const delivered = throughServer(sent);
+  // The regression this test exists for: sealed by a current sender, delivered by a current
+  // server, and refused on a current recipient as "sent by an extension older than 0.82".
+  assert.equal(openShare(delivered, user.email, 'PIN-9', '0.87.0', true).node.name, 'prod db');
+});
+
+test('the server form binds the two fields the server does NOT rewrite', () => {
+  const sent = sealShare(payload('prod db'), user.email, admin, 'PIN-9', NOW, { form: 'server' });
+  const delivered = throughServer(sent);
+  // fromEmail and createdAt are stamped by the server, so they are outside the AAD by
+  // construction — the item still opens although both changed on the way.
+  assert.notEqual(delivered.createdAt, sent.createdAt);
+  assert.equal(openShare(delivered, user.email, 'PIN-9', '0.87.0', true).node.name, 'prod db');
+  // What IS bound still is: rename the entity after sealing and decryption fails.
+  const renamed = { ...delivered, entityName: 'staging db' };
+  assert.throws(() => openShare(renamed, user.email, 'PIN-9', '0.87.0', true), BackupError);
+  const rekinded = { ...delivered, entityKind: 'ssh' as const };
+  assert.throws(() => openShare(rekinded, user.email, 'PIN-9', '0.87.0', true), BackupError);
+});
+
+test('the server form is refused off a vault server — a folder could forge the sender it leaves unbound', () => {
+  // Security-review finding 7 in its second shape: this AAD does not cover `fromEmail`, so
+  // honouring the form on a folder would hand back exactly the relabelling 0.82.1 closed.
+  const item = sealShare(payload('x'), user.accountId, admin, '1234', NOW, { form: 'server' });
+  const relabelled = { ...item, fromEmail: 'ceo@x' };
+  assert.throws(
+    () => openShare(relabelled, user.accountId, '1234', '0.87.0'),
+    (error: unknown) => error instanceof BackupError && /did not come from a vault server/.test(error.message),
+  );
+});
+
+test('a server older than contract 2 carries no format, and its shares still open', () => {
+  // The rollout case: an updated extension against a server nobody has deployed yet. It seals
+  // unbound (`legacy`), because a binding the recipient cannot reconstruct is worse than none.
+  const sent = sealShare(payload('old server'), user.email, admin, 'PIN', NOW, { form: 'legacy' });
+  assert.equal(sent.format, undefined);
+  const delivered = throughServer(sent);
+  assert.equal(openShare(delivered, user.email, 'PIN', '0.87.0', true).node.name, 'old server');
+  // The same unbound item off a FOLDER is still refused past the cutoff — the refusal exists
+  // for a label nobody stamped, which is what a folder item has and a server item never had.
+  assert.throws(
+    () => openShare(delivered, user.email, 'PIN', '0.87.0'),
+    (error: unknown) => error instanceof BackupError && /older than 0.82/.test(error.message),
+  );
+});
+
+test('a null format is read as absent, not as a malformed item', () => {
+  // JSON has no `undefined`. A serializer that writes `"format": null` for a client that sent
+  // none must not make the whole share vanish from the inbox — which is what the guard did, so
+  // the recipient saw nothing at all rather than an item they could ask about.
+  const item = sealShare(payload('nulled'), user.email, admin, 'PIN', NOW, { form: 'legacy' });
+  const onTheWire = JSON.parse(JSON.stringify({ ...item, format: null })) as unknown;
+
+  assert.equal(isShareItem(onTheWire), true, 'null is absent, not invalid');
+  assert.equal(shareFormOf(onTheWire as ShareItem), 'legacy');
+  assert.equal(openShare(onTheWire as ShareItem, user.email, 'PIN', '0.87.0', true).node.name, 'nulled');
+});
+
+test('shareLabelTrusted: a server share is not reported as unbound', () => {
+  const server = sealShare(payload('a'), user.email, admin, 'p', NOW, { form: 'legacy' });
+  assert.equal(shareLabelTrusted(server, true), true, 'the server stamped its label');
+  assert.equal(shareLabelTrusted(server, false), false, 'the same bytes off a folder are a claim');
+  assert.equal(shareLabelTrusted(sealShare(payload('b'), user.accountId, admin, 'p', NOW), false), true);
+});

@@ -6,6 +6,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.88.0] — 2026-08-31
+
+### Fixed
+
+- **Nothing shared through a vault server could be opened, and the message blamed the sender.** A
+  recipient was told *"This share was sent by an extension older than 0.82 and can no longer be
+  opened — ask the sender to update CredsForDevs and share again"* for a share sent minutes earlier
+  by a sender on the same current build. Updating changed nothing and re-sharing produced the same
+  refusal, because the sentence was false in every part.
+
+  0.82.1 began binding a share's label into its ciphertext as GCM additional authenticated data —
+  over `fromEmail`, `entityName`, `entityKind` and `createdAt` — and applied it to **every**
+  transport. Two of those four are precisely the fields `POST /api/shares` does not take from a
+  client: the server stamps the sender from a verified token and the time from its own clock, which
+  is the difference between that transport and a shared folder. The recipient therefore recomputed
+  a different AAD, and the `format` field that would have said which fields were bound was not
+  carried by the server at all. **Server sharing has been broken since 0.82.1 (2026-08-28), not
+  since 0.85.0** — before the cutoff the same share failed one line later as *"wrong master
+  PIN/password"*, a wrong-PIN message for a right PIN. Folder and git sharing were never affected.
+
+  A share now takes its binding form from the transport: `format: 2` over a folder as before, and a
+  new `format: 3` over a vault server that binds only what the server carries verbatim — the two it
+  stamps need no tag from the sender, a verified token being the stronger claim. The server form is
+  honoured **only** for an item that came off a vault server; off one it would be an AAD that leaves
+  `fromEmail` free on the one transport where anyone with write access can choose it. Against a
+  server older than contract 2 the sender seals unbound instead, as builds before 0.82 did, so an
+  extension updated ahead of its deployment still shares.
+
+  **Shares already sitting in an inbox cannot be rescued** — their AAD includes a `createdAt` that
+  no longer exists anywhere. Ask the sender to share them again from 0.88.0.
+
+- **A share arriving with `"format": null` vanished from the inbox** instead of appearing. JSON has
+  no `undefined`, and the guard that reads an incoming share accepted the field only as a number or
+  as absent, so a serialized null dropped the whole item and the recipient saw an empty inbox with
+  nothing to ask about. The server now omits the property rather than writing the null, and the
+  guard reads a null as absent.
+
+- **The *label not bound* marker had never appeared on any row.** The tree set it and overwrote the
+  same description two lines below. It renders now — and no longer appears on a vault-server share,
+  whose label is stamped from a verified sign-in and needs no binding.
+
+### Changed
+
+- **HTTP contract version 2.** A share carries its `format` through `/api/shares`. An extension
+  reads the version off the response header it was already receiving and decides how to seal
+  before it seals. An old extension is served exactly as before: a client that names no version is
+  served by design, and a share it posts comes back in the byte-identical shape it always did.
+
 ## [0.87.0] — 2026-08-29
 
 ### Added

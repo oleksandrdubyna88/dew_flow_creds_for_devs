@@ -32,6 +32,7 @@ Newest first.
 
 | Plan | Landed | What it delivered |
 |---|---|---|
+| [PLAN_server_share_format.md](PLAN_server_share_format.md) | 2026-08-31 | Sharing through a vault server, which had been impossible since 0.82.1 and said so in the sender's name. A share's binding form now comes from its transport, and the server carries the `format` that names it (contract 2). The deviation is the part to read: the fix's own nullable field would have emptied every un-updated client's inbox, and the hand-run integration test nobody had run in six days is what caught it. |
 | [PLAN_audit_roadmap_2026_08_25.md](PLAN_audit_roadmap_2026_08_25.md) | 2026-08-28 | The 2026-08-25 audit's roadmap — every block closed or decided; the last two, A1 (`extension.ts` 5689 → 1105) and A4 (the shapes union), on the day it was promoted. |
 | [PLAN_server_ops.md](PLAN_server_ops.md) | 2026-08-28 | The server's operational hardening, all nine items — the last three (network-FS refusal, officers' metrics + runtime line, cached health) and the byte budget shipped as server 0.4.0. |
 | [PLAN_share_metadata_aad.md](PLAN_share_metadata_aad.md) | 2026-08-28 | A share's label bound to its ciphertext as GCM AAD; legacy shares open, marked unbound, until 0.85.0. |

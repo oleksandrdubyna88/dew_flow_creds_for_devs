@@ -3,6 +3,7 @@ import * as crypto from 'node:crypto';
 import { BackupError, openBlob, readBackupShares, sealBlob } from './cryptoUtils';
 import { ShareTranscript, SigningKeypair, signShare } from './shareSignature';
 import {
+  EntityKind,
   EntityMetadata,
   OwnedShare,
   ShareItem,
@@ -59,28 +60,89 @@ export function shareTranscript(item: ShareItem, toEmail: string): ShareTranscri
 export const SHARE_FORMAT_BOUND = 2;
 
 /**
+ * The form a share takes over the **vault server** (0.88.0).
+ *
+ * <p>The bound form cannot travel here, and finding that out cost the server transport six days
+ * of total breakage. Its AAD covers `fromEmail` and `createdAt`, and those are precisely the two
+ * fields `POST /api/shares` does not accept from a client: the server stamps the sender from the
+ * verified token and the time from its own clock, which is the difference between this transport
+ * and a shared folder. An AAD over fields the transport rewrites is an AAD the recipient can
+ * never recompute — every server share sealed between 0.82.1 and 0.87 is unopenable.</p>
+ *
+ * <p>So this form binds only what the sender controls AND the server carries verbatim:
+ * `entityName` and `entityKind`. The other two lose nothing by leaving — a token stamp is a
+ * stronger claim about the sender than a tag the sender computed itself.</p>
+ *
+ * <p><b>Only ever honoured for an item that came from a vault server.</b> Off one, it is the
+ * shape of security-review finding 7: an AAD that does not cover `fromEmail`, on a transport
+ * where anyone with write access can choose one.</p>
+ */
+export const SHARE_FORMAT_SERVER = 3;
+
+/**
  * Shares sealed before the bound format carry no AAD and open as they always did, marked as
  * such — until this version, from which they are refused with a request to update the sender
  * (the owner, 2026-08-28: "after N versions, stop opening them").
  */
 export const LEGACY_SHARES_UNTIL = '0.85.0';
 
-/** The four label fields, in one canonical byte string — the same on both ends by construction. */
-export function shareLabelAad(label: { fromEmail: string; entityName: string; entityKind: string; createdAt: number }): Buffer {
-  return Buffer.from(
-    JSON.stringify({
-      fromEmail: label.fromEmail,
-      entityName: label.entityName,
-      entityKind: label.entityKind,
-      createdAt: label.createdAt,
-    }),
-    'utf8',
-  );
+/**
+ * Which fields a share's AAD covers. A property of the TRANSPORT the share is going through,
+ * never of the payload — see `SHARE_FORMAT_SERVER` for why the two cannot share one answer.
+ */
+export type ShareForm = 'bound' | 'server' | 'legacy';
+
+/** The plaintext a recipient is shown before anything is decrypted. */
+export interface ShareLabel {
+  fromEmail: string;
+  entityName: string;
+  entityKind: EntityKind;
+  createdAt: number;
+}
+
+/**
+ * The label fields this form binds, in one canonical byte string — the same on both ends by
+ * construction. `legacy` binds nothing, which is what makes it legacy.
+ */
+export function shareLabelAad(label: ShareLabel, form: ShareForm = 'bound'): Buffer | undefined {
+  if (form === 'legacy') {
+    return undefined;
+  }
+  const bound =
+    form === 'server'
+      ? { entityName: label.entityName, entityKind: label.entityKind }
+      : {
+          fromEmail: label.fromEmail,
+          entityName: label.entityName,
+          entityKind: label.entityKind,
+          createdAt: label.createdAt,
+        };
+  return Buffer.from(JSON.stringify(bound), 'utf8');
 }
 
 /** Whether this item's label is bound to its ciphertext — false for a share from an older build. */
 export function shareLabelBound(item: Pick<ShareItem, 'format'>): boolean {
   return item.format === SHARE_FORMAT_BOUND;
+}
+
+/**
+ * Whether the label a recipient is SHOWN is backed by anything at all.
+ *
+ * <p>Two different things can back it, and the UI must not confuse "unbound" with "unverified".
+ * A folder share is backed by its AAD; a server share is backed by the token the server stamped
+ * it from — and calling the second one *label not bound* would put a warning on the transport
+ * that needs it least.</p>
+ */
+export function shareLabelTrusted(item: Pick<ShareItem, 'format'>, serverStamped: boolean): boolean {
+  return serverStamped || shareLabelBound(item);
+}
+
+/** The form an item on the wire was sealed in. */
+export function shareFormOf(item: Pick<ShareItem, 'format'>): ShareForm {
+  if (item.format === SHARE_FORMAT_BOUND) {
+    return 'bound';
+  }
+  return item.format === SHARE_FORMAT_SERVER ? 'server' : 'legacy';
 }
 
 /** Whether a build of `version` still opens legacy (unbound) shares. */
@@ -101,31 +163,48 @@ function compareVersions(a: string, b: string): number {
   return first === undefined ? 0 : pa[first] - pb[first];
 }
 
+/** Everything about sealing a share that the TRANSPORT decides rather than the payload. */
+export interface SealOptions {
+  /** Which binding form to seal in. Defaults to the folder form. */
+  readonly form?: ShareForm;
+  readonly signing?: SigningKeypair;
+  readonly toEmail?: string;
+}
+
 export function sealShare(
   payload: SharePayload,
   recipientKeyId: string,
   from: StoredAccount,
   pin: string,
   createdAt: number,
-  signing?: SigningKeypair,
-  toEmail?: string,
+  options: SealOptions = {},
 ): ShareItem {
-  const label = {
+  const form = options.form ?? 'bound';
+  const label: ShareLabel = {
     fromEmail: from.email,
     entityName: payload.node.name,
     entityKind: resolveKind(payload.node.details),
     createdAt,
   };
-  const blob = sealBlob(payload, recipientKeyId + pin, shareLabelAad(label));
+  const blob = sealBlob(payload, recipientKeyId + pin, shareLabelAad(label, form));
   const item: ShareItem = {
     id: crypto.randomUUID(),
     ...label,
     from: { accountId: from.accountId, email: from.email, provider: from.provider },
-    format: SHARE_FORMAT_BOUND,
+    ...formatFieldOf(form),
     ...blob,
   };
-  // Unsigned when there is no keypair or no addressee to bind to — the server
-  // transport supplies neither, and stamps the sender itself, which is stronger.
+  return signedIfPossible(item, options);
+}
+
+/**
+ * The item with its sender signature, where one can be made.
+ *
+ * <p>Unsigned when there is no keypair or no addressee to bind to — the server transport supplies
+ * neither, and stamps the sender itself, which is stronger.</p>
+ */
+function signedIfPossible(item: ShareItem, options: SealOptions): ShareItem {
+  const { signing, toEmail } = options;
   if (signing === undefined || toEmail === undefined) {
     return item;
   }
@@ -133,33 +212,54 @@ export function sealShare(
   return { ...signed, signature: signShare(signing.privateKey, shareTranscript(signed, toEmail)) };
 }
 
+/** The `format` field a form writes. `legacy` writes none — that absence IS the legacy marker. */
+function formatFieldOf(form: ShareForm): { format?: number } {
+  if (form === 'bound') {
+    return { format: SHARE_FORMAT_BOUND };
+  }
+  return form === 'server' ? { format: SHARE_FORMAT_SERVER } : {};
+}
+
 /** Decrypt a share item. Throws BackupError; validates the payload shape. */
 /**
  * Open a share. A bound item is opened with its label as AAD — an edited label fails here, as a
  * wrong PIN does. A legacy item opens without, while `currentVersion` still allows it.
+ *
+ * <p>`serverStamped` says the item was read out of a vault server's inbox, which decides two
+ * things nothing in the item itself can: the server form is honoured only there, and the legacy
+ * refusal is never applied there — a token-stamped label is not the unverifiable claim that
+ * refusal exists to stop, and a server older than contract 2 carries no `format` at all.</p>
  */
 export function openShare(
   item: ShareItem,
   recipientKeyId: string,
   pin: string,
   currentVersion: string = '0.0.0',
+  serverStamped: boolean = false,
 ): SharePayload {
-  refuseStaleLegacy(item, currentVersion);
-  const payload = openBlob(item, recipientKeyId + pin, aadFor(item));
+  refuseUnopenable(item, currentVersion, serverStamped);
+  const payload = openBlob(item, recipientKeyId + pin, shareLabelAad(item, shareFormOf(item)));
   if (!isSharePayload(payload)) {
     throw new BackupError('corrupted', 'The shared item does not match the expected schema.');
   }
   return payload;
 }
 
-/** The AAD a bound item was sealed with; nothing for a legacy one. */
-function aadFor(item: ShareItem): Buffer | undefined {
-  return shareLabelBound(item) ? shareLabelAad(item) : undefined;
+/** The two refusals that happen before any key is derived. */
+function refuseUnopenable(item: ShareItem, currentVersion: string, serverStamped: boolean): void {
+  if (item.format === SHARE_FORMAT_SERVER && !serverStamped) {
+    throw new BackupError(
+      'unsupported-version',
+      'This share is in the vault-server form but did not come from a vault server. Only a server can stamp the sender it leaves unbound, so it is refused.',
+    );
+  }
+  refuseStaleLegacy(item, currentVersion, serverStamped);
 }
 
 /** A legacy share past `LEGACY_SHARES_UNTIL` is refused with the one useful sentence. */
-function refuseStaleLegacy(item: ShareItem, currentVersion: string): void {
-  if (!shareLabelBound(item) && !legacyShareAllowed(currentVersion)) {
+function refuseStaleLegacy(item: ShareItem, currentVersion: string, serverStamped: boolean): void {
+  const openable = serverStamped || shareLabelBound(item) || legacyShareAllowed(currentVersion);
+  if (!openable) {
     throw new BackupError(
       'unsupported-version',
       'This share was sent by an extension older than 0.82 and can no longer be opened — ask the sender to update CredsForDevs and share again.',
@@ -211,14 +311,20 @@ export interface ResolveResult {
  * `remaining[0]` and calls again, until done or the user gives up.
  */
 // eslint-disable-next-line complexity
-export function resolveShares(items: OwnedShare[], pins: readonly string[], currentVersion = '0.0.0'): ResolveResult {
+export function resolveShares(
+  items: OwnedShare[],
+  pins: readonly string[],
+  currentVersion = '0.0.0',
+  /** Per ITEM, because one round can span a folder account and a server account at once. */
+  serverStamped: (share: OwnedShare) => boolean = () => false,
+): ResolveResult {
   const opened: ResolveResult['opened'] = [];
   const remaining: OwnedShare[] = [];
   for (const owned of items) {
     let payload: SharePayload | undefined;
     for (const pin of pins) {
       try {
-        payload = openShare(owned.item, owned.shareKeyId, pin, currentVersion);
+        payload = openShare(owned.item, owned.shareKeyId, pin, currentVersion, serverStamped(owned));
         break;
       } catch {
         // wrong pin for this item — try the next one

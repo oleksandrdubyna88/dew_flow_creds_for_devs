@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { shareLabelBound } from './shareFormat';
+import { shareLabelTrusted } from './shareFormat';
 import { StorageManager } from './storageManager';
 import { ShareSources, sharedMatches, unverifiedSender } from './shareRows';
 import { diagnoseTeamFailure } from './teamDiagnosis';
@@ -484,17 +484,23 @@ export class CredTreeDataProvider
       const { item: share } = element.share;
       const item = new vscode.TreeItem(share.entityName, vscode.TreeItemCollapsibleState.None);
       item.id = `share:${share.id}`;
-      if (!shareLabelBound(share)) {
-        // A share from a build older than 0.82: its label is not bound to its ciphertext.
-        item.description = 'label not bound';
-      }
       item.contextValue = 'sharedItem';
       item.iconPath = new vscode.ThemeIcon(kindIcon(share.entityKind));
       // WHERE it arrived matters as much as who sent it: with several accounts, the
       // sender alone leaves you guessing which vault (and which sync PIN) accepting
       // will involve.
-      const toEmail = this.storage.getAccount(element.share.accountId)?.email;
-      item.description = toEmail !== undefined ? `${share.entityKind} → ${toEmail}` : share.entityKind;
+      const account = this.storage.getAccount(element.share.accountId);
+      const toEmail = account?.email;
+      // A share from a build older than 0.82 carries no binding between its label and its
+      // ciphertext. A share from a vault server needs none — the label is stamped from a
+      // verified token — so the warning belongs only on the transport that can be written by
+      // hand. (Until 0.88 this was set two lines above and overwritten unread by the line
+      // below, so it had never appeared on any row.)
+      const unbound = shareLabelTrusted(share, this.sharing?.serverStamped(element.share) === true)
+        ? ''
+        : ' · label not bound';
+      item.description =
+        (toEmail !== undefined ? `${share.entityKind} → ${toEmail}` : share.entityKind) + unbound;
       item.tooltip =
         `Shared by ${share.fromEmail}` +
         (toEmail !== undefined ? ` → to your account ${toEmail}` : '') +

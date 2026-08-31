@@ -2490,6 +2490,42 @@ holds — until `LEGACY_SHARES_UNTIL = '0.85.0'` — and is marked *label not bo
 the PIN prompt; from the cutoff it is refused with a request to update the sender. Together with
 the Ed25519 sender signature this closes the 2026-08-23 review's finding 7.
 
+## The server share form, and why one AAD could not serve both transports (0.88.0)
+
+`sealShare` takes the **form** from the transport, because a share's AAD can only cover fields that
+survive the trip. Three forms, in `shareFormat.ts`:
+
+| form | `format` | AAD covers | transport |
+|---|---|---|---|
+| `bound` | `2` | `fromEmail`, `entityName`, `entityKind`, `createdAt` | folder, git |
+| `server` | `3` | `entityName`, `entityKind` | vault server, contract ≥ 2 |
+| `legacy` | *(absent)* | nothing | pre-0.82 senders, and a vault server below contract 2 |
+
+**Why the bound form cannot travel over the server.** `POST /api/shares` deliberately does not
+accept `fromEmail` or `createdAt` from a client — the server stamps both, the sender from a
+verified token, which is the whole difference between that transport and a shared folder. Those are
+two of the four fields the bound AAD covers, so the recipient recomputes a different AAD and
+decryption fails. 0.82.1 sealed every transport in the bound form and shipped; between then and
+0.87 **no share sent through a vault server could be opened**, first as *"wrong master
+PIN/password"* and, from 0.85.0, as *"sent by an extension older than 0.82"* — a sentence that was
+false in every part when the sender was current.
+
+The server form therefore binds only what the sender controls and the server copies verbatim. The
+two omitted fields lose nothing: a token stamp is a stronger claim than a tag the sender computed
+about itself.
+
+**`format: 3` is honoured only for an item that came off a vault server.** Off one it is
+security-review finding 7 in a second shape — an AAD that does not cover `fromEmail`, on a
+transport where anyone with write access can choose one. `openShare` takes that as a parameter;
+`SharingManager.serverStamped(share)` answers it from `senderIsVerified(location)`, the same pure
+predicate the *unverified sender* row already used. For the same reason the legacy refusal is never
+applied to a server item: the refusal exists for a label nobody stamped.
+
+`shareLabelTrusted(item, serverStamped)` is what the UI asks instead of `shareLabelBound` — a
+server share must not be labelled *label not bound* when its label is the one thing that was
+verified. (Fixing that also revealed the marker had never rendered: the tree set it and overwrote
+the same `description` two lines later.)
+
 ## Login and URL on a credential (0.82.0)
 
 A credential carries a **login** and a **URL** — the owner's ask of 2026-08-28. They are a secret

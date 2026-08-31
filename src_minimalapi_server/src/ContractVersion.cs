@@ -30,7 +30,14 @@ namespace CredVaultServer;
 public static class ContractVersion
 {
     /// <summary>What this build speaks. Bump on any change a current client could misread.</summary>
-    public const int Current = 1;
+    /// <remarks>
+    /// <para><b>2 — a share carries its <c>format</c>.</b> Version 1 dropped the field, so a
+    /// sender could not tell a recipient which fields its AAD covered. A client must know which
+    /// version it is talking to BEFORE it seals: against a version-1 server it seals with no AAD
+    /// at all, because a binding the recipient cannot reconstruct is worse than none. That makes
+    /// this the first bump the mechanism was actually built for.</para>
+    /// </remarks>
+    public const int Current = 2;
 
     /// <summary>
     /// The default oldest a client may be and still be served.
