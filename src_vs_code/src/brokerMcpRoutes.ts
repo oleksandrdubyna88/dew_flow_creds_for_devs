@@ -3,7 +3,6 @@ import {
   handleFolderCreate,
   handleFolderDelete,
   handleFolderEdit,
-  handleMcpFolders,
   McpFolderHooks,
 } from './brokerFolderDoor';
 import {
@@ -18,7 +17,6 @@ import {
 import {
   isMcpCreateRoute,
   isMcpDeleteRoute,
-  isMcpFoldersRoute,
   parseMcpFolderRoute,
   parseMcpUseRoute,
 } from './brokerProtocol';
@@ -78,7 +76,12 @@ async function answerEntryRoute(
 }
 
 /**
- * The listing and the three verbs.
+ * The three folder verbs.
+ *
+ * <p>The LISTING is deliberately not here. It is a read — no token, no body, nothing performed —
+ * and this dispatch is reached only under POST, so filing it here made it answer 404 to the only
+ * client that asks for it (0.85.0 through 0.89.0). It lives in `brokerReadRoutes.ts` with the
+ * other three routes the contract files under `reads`.</p>
  *
  * <p>Returns a PROMISE of the boolean rather than awaiting inside the caller's `||`, so a folder
  * route still answers when the entry routes did not — the two chains are alternatives, not a
@@ -90,10 +93,6 @@ async function answerFolderRoute(
   res: http.ServerResponse,
   pathname: string,
 ): Promise<boolean> {
-  if (isMcpFoldersRoute(pathname)) {
-    handleMcpFolders(deps.door, res, deps.folders);
-    return true;
-  }
   const verb = parseMcpFolderRoute(pathname);
   if (verb === undefined) {
     return false;

@@ -20,43 +20,65 @@ namespace CredsMcp;
 internal static class Windows
 {
     /// <summary>
+    /// What reading one route from every live window found.
+    /// </summary>
+    /// <remarks>
+    /// <para><b><c>RouteRefused</c> is not a detail.</b> A window that fails the health probe is
+    /// gone, and skipping it in silence is right — it is not an error that a window closed
+    /// between writing its announcement and this call. A window that PASSES the probe and then
+    /// answers something other than 200 is a completely different fact: it is open, listening
+    /// and ours, and it simply has no such route. Collapsing the two into "no body" is what let
+    /// <c>creds_folders</c> report "No CredsForDevs window answered" for five releases while the
+    /// window was answering everything else — the diagnosis sent people to reopen a window that
+    /// was never closed.</para>
+    /// </remarks>
+    internal readonly record struct WindowRead(IReadOnlyList<string> Bodies, int RouteRefused);
+
+    /// <summary>
     /// Read one route from every live window and hand back the raw bodies, newest window first.
     /// </summary>
     /// <remarks>
     /// Bodies rather than parsed objects: the caller knows what shape it asked for, and this
-    /// stays the one place that knows how to find a window. A window that fails the probe, or
-    /// answers anything but 200, is skipped in silence — it is not an error that a window closed
-    /// between the announcement being written and this call being made.
+    /// stays the one place that knows how to find a window.
     /// </remarks>
-    internal static async Task<IReadOnlyList<string>> ReadAllAsync(BrokerContract contract, string route)
+    internal static async Task<WindowRead> ReadAllAsync(BrokerContract contract, string route)
     {
         var endpoints = Endpoints.Read(Endpoints.DirectoryHere());
         if (endpoints.Count == 0)
         {
-            return [];
+            return new WindowRead([], 0);
         }
 
         using var client = BrokerClient.Create(contract);
         var bodies = new List<string>();
+        var refused = 0;
         foreach (var endpoint in endpoints)
         {
-            var body = await ReadOneAsync(client, endpoint, route);
+            var body = await ReadOneAsync(client, endpoint, route, () => refused++);
             if (body is not null)
             {
                 bodies.Add(body);
             }
         }
-        return bodies;
+        return new WindowRead(bodies, refused);
     }
 
-    private static async Task<string?> ReadOneAsync(BrokerClient client, Endpoint endpoint, string route)
+    private static async Task<string?> ReadOneAsync(
+        BrokerClient client, Endpoint endpoint, string route, Action onRouteRefused)
     {
         if (!await client.IsOurBrokerAsync(endpoint.Port))
         {
             return null;
         }
         var reply = await client.GetAsync(endpoint.Port, route);
-        return reply.Status == 200 ? reply.Body : null;
+        if (reply.Status == 200)
+        {
+            return reply.Body;
+        }
+        // The probe above already proved this port is ours, so this is our window declining the
+        // route rather than a window that went away.
+        onRouteRefused();
+        return null;
     }
 
     /// <summary>How many windows announced themselves, live or not — for a diagnostic.</summary>

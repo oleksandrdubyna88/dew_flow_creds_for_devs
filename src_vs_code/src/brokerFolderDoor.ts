@@ -45,21 +45,6 @@ export interface FolderAccepted {
   edit: FolderEdit;
 }
 
-/**
- * The folders an agent may see.
- *
- * <p>A read, so no prompt and no grant: it performs nothing and reveals nothing secret — a folder
- * holds none. It is the listing an agent needs before it can name one, exactly as
- * `/v1/mcp/entries` is for entries.</p>
- */
-export function handleMcpFolders(
-  door: BrokerDoor,
-  res: http.ServerResponse,
-  hooks: McpFolderHooks | undefined,
-): void {
-  door.respond(res, 200, { folders: hooks === undefined ? [] : hooks.list() });
-}
-
 /** An agent making a folder inside one somebody opened to it. */
 export async function handleFolderCreate(
   door: BrokerDoor,

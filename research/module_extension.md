@@ -2139,6 +2139,20 @@ request onto a node — so there is no request that reaches `mcp`. And **a move 
 both ends**, because a folder passes its answers to everything inside it: moving one is a
 permission change for its contents.
 
+**The listing was wired behind the wrong verb, and the error blamed the wrong thing (0.90.0).**
+`creds_folders` answered `404` from 0.85.0 to 0.89.0, so the whole folder surface was unusable: the
+listing sat in `brokerMcpRoutes.answerFolderRoute`, which is reached only under POST, while
+`contract/broker-v1.json` files the route under `reads` and every client therefore GETs it. Both
+sides asserted they meant the same PATH and neither could assert the METHOD — the contract has no
+field for it. The listing now lives in `brokerReadRoutes.ts` beside health, aliases and entries,
+and `brokerContract.test.ts` walks the contract's own `reads` table through `readRouteBody`, so a
+fifth read added tomorrow is covered on the day it is added. The second half was the diagnosis:
+`Windows.ReadAllAsync` treated "the window failed the health probe" and "the window passed the
+probe and declined the route" as one empty answer, so a healthy window reported itself as
+*"No CredsForDevs window answered"* while serving `creds_list` in the same second. `WindowRead`
+now carries `RouteRefused` and `Tools.NoAnswer` says which of the two happened — the version
+mismatch it really is, rather than sending somebody to reopen a window that was never shut.
+
 **Inheritance became one rule in the same release.** `creatableFolders` used to read a folder's own
 switch while `resolveMcpInTree` climbed the tree, which is why `creds_list` could hand back an entry
 whose `can.create` was true and the create call would then refuse it. Both climb now; an explicit

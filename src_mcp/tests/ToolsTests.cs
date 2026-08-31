@@ -136,3 +136,42 @@ public sealed class ConfigSnippetToolTests
         Tools.ConfigSnippetName.Should().Be("creds_config_snippet");
     }
 }
+
+/// <summary>
+/// Which of the two empty answers a read gets — the one defect here that costs an afternoon.
+/// </summary>
+/// <remarks>
+/// <para>Reading no body has two causes and one of them used to be unspeakable. "No window
+/// answered" is true when every announced window is gone. It is FALSE when a window passed our
+/// health probe and then declined the route, and that is the case <c>creds_folders</c> lived in
+/// from 0.85.0 to 0.89.0: the listing sat behind POST while every client GETs it, so a 404 from
+/// a perfectly healthy window arrived at the person as a closed one — and the hint invented a
+/// number of windows that had "probably been closed" while the same window answered
+/// <c>creds_list</c> in the same second.</para>
+/// </remarks>
+public sealed class NoAnswerTests
+{
+    [Fact]
+    public void NothingAnswered_ReadsAsNoWindow()
+    {
+        var answer = Tools.NoAnswer(0);
+
+        Answer.IsRefusal(answer).Should().BeTrue();
+        answer.Should().Contain("No CredsForDevs window answered");
+    }
+
+    [Fact]
+    public void AWindowThatDeclinedTheRoute_IsNotReportedAsAClosedWindow()
+    {
+        // The whole point: it answered. Telling someone to open a window they are looking at is
+        // worse than saying nothing, because it is a direction they can follow and it goes nowhere.
+        var answer = Tools.NoAnswer(1);
+
+        Answer.IsRefusal(answer).Should().BeTrue();
+        answer.Should().NotContain("No CredsForDevs window answered");
+        answer.Should().NotContain("probably been closed");
+        answer.Should().Contain("does not serve that request");
+        answer.Should().Contain("it is open and listening");
+        answer.Should().Contain("update the CredsForDevs");
+    }
+}

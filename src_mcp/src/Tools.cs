@@ -57,14 +57,14 @@ internal static class Tools
         var query = $"{route}?id={Uri.EscapeDataString(entry)}"
             + (string.IsNullOrEmpty(language) ? "" : $"&language={Uri.EscapeDataString(language)}")
             + (string.IsNullOrEmpty(variant) ? "" : $"&variant={Uri.EscapeDataString(variant)}");
-        var bodies = await Windows.ReadAllAsync(contract, query);
-        if (bodies.Count == 0)
+        var read = await Windows.ReadAllAsync(contract, query);
+        if (read.Bodies.Count == 0)
         {
-            return NoWindow();
+            return NoAnswer(read.RouteRefused);
         }
 
         string? refusal = null;
-        foreach (var body in bodies)
+        foreach (var body in read.Bodies)
         {
             if (!body.Contains("\"error\"", StringComparison.Ordinal))
             {
@@ -109,13 +109,13 @@ internal static class Tools
     internal static async Task<string> ListAsync(BrokerContract contract)
     {
         var route = contract.ReadRoute("mcpEntries", "/v1/mcp/entries");
-        var bodies = await Windows.ReadAllAsync(contract, route);
-        if (bodies.Count == 0)
+        var read = await Windows.ReadAllAsync(contract, route);
+        if (read.Bodies.Count == 0)
         {
-            return NoWindow();
+            return NoAnswer(read.RouteRefused);
         }
 
-        return JsonSerializer.Serialize(Merge(bodies), McpJsonContext.Default.McpEntryArray);
+        return JsonSerializer.Serialize(Merge(read.Bodies), McpJsonContext.Default.McpEntryArray);
     }
 
     /// <summary>
@@ -168,6 +168,33 @@ internal static class Tools
             announced == 0
                 ? "Open the folder in VS Code with the CredsForDevs extension installed and unlock the vault. Nothing is readable until a window is running."
                 : $"{announced} window(s) announced themselves but none is listening now — they were probably closed. Open one and try again.");
+        return JsonSerializer.Serialize(failure, McpJsonContext.Default.ToolFailure);
+    }
+
+    /// <summary>
+    /// Why a read of every window came back with nothing — in the words the cause deserves.
+    /// </summary>
+    /// <remarks>
+    /// <para>Two causes, and telling a person the wrong one costs them the afternoon. No window
+    /// answered at all is <see cref="NoWindow"/>. A window that answered our health probe and
+    /// then declined the route is OPEN — reporting that as a closed window sends somebody
+    /// reopening a window that was never shut, which is exactly what happened to
+    /// <c>creds_folders</c> from 0.85.0 to 0.89.0: the listing was wired behind POST while every
+    /// client GETs it, so the 404 arrived at the person as "no window answered" while the same
+    /// window was serving <c>creds_list</c> in the same second.</para>
+    /// <para>Pure, and separate from the reading, so the sentence is a test rather than a hope.</para>
+    /// </remarks>
+    internal static string NoAnswer(int routeRefused)
+    {
+        if (routeRefused == 0)
+        {
+            return NoWindow();
+        }
+        var failure = new ToolFailure(
+            "This CredsForDevs window does not serve that request.",
+            "The window answered, so it is open and listening — it has no such route. The "
+                + "extension and creds-mcp are different versions: update the CredsForDevs "
+                + "extension in VS Code, reload the window, and try again.");
         return JsonSerializer.Serialize(failure, McpJsonContext.Default.ToolFailure);
     }
 }

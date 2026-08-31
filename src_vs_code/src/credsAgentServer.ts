@@ -448,18 +448,22 @@ export class CredsAgentServer implements vscode.Disposable {
 
   /** The GET routes' suppliers — every read route answers from these three. */
   private readSources(): ReadRouteSources {
-    return { aliases: this.listAliases, mcpEntries: this.listMcpEntries, visibleConfig: this.visibleConfig };
+    return {
+      aliases: this.listAliases,
+      mcpEntries: this.listMcpEntries,
+      visibleConfig: this.visibleConfig,
+      // A closure, because the hooks arrive after construction and `list` needs its receiver.
+      folders: () => this.folderHooks?.list() ?? [],
+    };
   }
 
   // eslint-disable-next-line complexity
   private async handle(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
     const url = new URL(req.url ?? '/', 'http://127.0.0.1');
 
-    // Health, the alias listing and the entries an agent may see — one kind of route, described
-    // once in `brokerReadRoutes.ts`: none authenticates, none performs anything, none is
-    // throttled. Everything below this line needs a token or raises a modal.
-    // The suppliers inline: `brokerReadRoutes` answers all three GET routes from them, and a
-    // getter holding two field references was a name for something that reads better as one.
+    // Health, aliases, the entries an agent may see and the folders opened to it — one kind of
+    // route, described once in `brokerReadRoutes.ts`: none authenticates, none performs
+    // anything, none is throttled. Everything below needs a token or raises a modal.
     const read = req.method === 'GET' ? await readRouteBody(url.pathname, this.readSources(), url.searchParams) : undefined;
     if (read !== undefined) {
       this.respond(res, 200, read);

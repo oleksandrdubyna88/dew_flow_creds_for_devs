@@ -13,12 +13,14 @@ import {
   isAliasListRoute,
   isConfigReadRoute,
   isMcpEntriesRoute,
+  isMcpFoldersRoute,
   parseAliasRoute,
   parseMcpUseRoute,
   parseUseRoute,
   isMcpConfigSnippetRoute,
   statusForErrorCode,
 } from '../brokerProtocol';
+import { readRouteBody } from '../brokerReadRoutes';
 import { EXIT } from '../agentCliOutcome';
 import { switchForAction } from '../mcpEntries';
 
@@ -133,8 +135,32 @@ test('the read routes travel in the contract, and the code agrees with what it s
   assert.equal(isAliasListRoute(reads.aliases), true);
   assert.equal(isMcpEntriesRoute(reads.mcpEntries), true);
   assert.equal(isMcpConfigSnippetRoute(reads.mcpConfigSnippet), true);
+  assert.equal(isMcpFoldersRoute(reads.mcpFolders), true);
   for (const route of Object.values(reads)) {
     assert.match(route, /^\/v1\//, route);
+  }
+});
+
+test('every route the contract files under `reads` is actually ANSWERED as a read', async () => {
+  // The check the two agreeing tables could not make, and the reason `creds_folders` was dead in
+  // 0.85.0 through 0.89.0. The contract records a route's PATH; it has no field for its METHOD.
+  // Both sides asserted they meant the same path and neither asserted the window answers it on
+  // GET — so a listing filed here and wired into the POST-only MCP dispatch was green on both
+  // sides and 404 in the field, reported to the agent as "No CredsForDevs window answered".
+  //
+  // Iterating the contract rather than naming four routes is the point: a fifth read added
+  // tomorrow is covered on the day it is added, which a fourth hand-written assertion is not.
+  const { reads } = load();
+  const sources = {
+    aliases: () => [],
+    mcpEntries: () => Promise.resolve([]),
+    visibleConfig: () => undefined,
+    folders: () => [],
+  };
+
+  for (const [name, route] of Object.entries(reads)) {
+    const body = await readRouteBody(route, sources);
+    assert.notEqual(body, undefined, `${name} (${route}) is filed as a read and answers nothing`);
   }
 });
 

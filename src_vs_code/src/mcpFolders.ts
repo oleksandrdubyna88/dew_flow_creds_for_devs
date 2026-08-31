@@ -19,6 +19,11 @@ import { FolderType, TreeNode } from './types';
  * than things discovered in somebody's vault.</p>
  */
 
+/** What `GET /v1/mcp/folders` answers with. */
+export interface FoldersBody {
+  folders: FolderView[];
+}
+
 /** One folder, as an agent is told about it. Nothing here is a secret; folders hold none. */
 export interface FolderView {
   id: string;

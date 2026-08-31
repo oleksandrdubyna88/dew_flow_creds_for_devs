@@ -53,6 +53,39 @@ const OUT = path.join(__dirname, '..', 'out');
 const { CredsAgentServer } = require(path.join(OUT, 'credsAgentServer.js'));
 const { UseActionRegistry } = require(path.join(OUT, 'useActions.js'));
 const { rotateAction } = require(path.join(OUT, 'rotateAction.js'));
+// The folder level runs against the REAL hooks over a REAL StorageManager, not a stub. A stub
+// would prove the wire and nothing else, and the one check here with teeth — that `mcp` in a
+// request body cannot reach the tree — lives inside `readEdit`, which a stub never calls.
+const { StorageManager } = require(path.join(OUT, 'storageManager.js'));
+const { folderHooks } = require(path.join(OUT, 'mcpFolderHooks.js'));
+
+/** An in-memory Memento and SecretStorage — the two things a StorageManager needs. */
+function memento() {
+  const map = new Map();
+  return {
+    get: (key, fallback) => (map.has(key) ? map.get(key) : fallback),
+    update: (key, value) => {
+      map.set(key, value !== null && typeof value === 'object' ? JSON.parse(JSON.stringify(value)) : value);
+      return Promise.resolve();
+    },
+  };
+}
+
+function secretStore() {
+  const map = new Map();
+  return {
+    get: (k) => Promise.resolve(map.get(k)),
+    store: (k, v) => {
+      map.set(k, v);
+      return Promise.resolve();
+    },
+    delete: (k) => {
+      map.delete(k);
+      return Promise.resolve();
+    },
+    onDidChange: () => ({ dispose() {} }),
+  };
+}
 
 
 
@@ -617,6 +650,201 @@ const HANDSHAKE = [
     JSON.stringify(Object.keys(askedKind?.inputSchema?.properties ?? {})),
   );
 
+  // ---- level 5: folders (research/PLAN_agent_folder_ops_itest.md) ----------
+  //
+  // The seam this whole script exists for, over the SECOND object. Until 0.90.0 the folder
+  // surface had never been driven end to end, and it did not work in a single release that
+  // shipped it: the listing was wired into the POST-only MCP dispatch while every client GETs
+  // it, so `creds_folders` answered "No CredsForDevs window answered" from a window that was
+  // answering `creds_list` in the same second. Unit tests on both halves were green throughout.
+  //
+  // Real StorageManager, real `folderHooks` — a stub here would have proved the wire and missed
+  // the one check with teeth (step 5).
+  const storage = new StorageManager(memento(), secretStore());
+  await storage.upsertAccount({ accountId: 'a-1', email: 'me@corp.com', provider: 'google' });
+  // Open to everything an agent may do to a folder.
+  await storage.addNode('a-1', {
+    id: 'f-open',
+    name: 'Servers',
+    type: 'folder',
+    parentId: null,
+    mcp: { view: true, folderCreate: true, folderEdit: true, folderDelete: 'own' },
+  });
+  // Visible and nothing more — the rung the ladder exists to keep apart.
+  await storage.addNode('a-1', {
+    id: 'f-look',
+    name: 'Readonly',
+    type: 'folder',
+    parentId: null,
+    mcp: { view: true },
+  });
+  // Opened to nobody: it must not appear in the listing, and must not be a destination.
+  await storage.addNode('a-1', { id: 'f-shut', name: 'Private', type: 'folder', parentId: null });
+
+  // Its OWN window, and that is not tidiness. An unauthenticated caller may make a window prompt
+  // five times a minute (`aliasThrottle.ts`) — a real defence against consent fatigue, and the
+  // levels above have already spent that budget. A second window has its own, which is exactly
+  // what a person opening one would get. Raising the limit for the test would have deleted the
+  // property being relied on everywhere else in this file.
+  const folderStorageDir = fs.mkdtempSync(path.join(os.tmpdir(), 'creds-mcp-itest-folders-'));
+  const folderServer = new CredsAgentServer(new UseActionRegistry(), () => {}, folderStorageDir);
+  folderServer.setFolderHooks(folderHooks(storage, () => {}));
+  await folderServer.ensureStarted();
+  const folderEnv = { CREDS_ENDPOINT_DIR: path.join(folderStorageDir, 'endpoints') };
+  check(
+    'the folder window announced itself',
+    fs.existsSync(folderEnv.CREDS_ENDPOINT_DIR) && fs.readdirSync(folderEnv.CREDS_ENDPOINT_DIR).length > 0,
+  );
+
+  const folderTools = tools2.filter((t) => t.name.includes('folder')).map((t) => t.name).sort();
+  check(
+    'all four folder tools are offered',
+    folderTools.join(',') === 'creds_create_folder,creds_delete_folder,creds_edit_folder,creds_folders',
+    JSON.stringify(folderTools),
+  );
+
+  // 2. The listing — the call that was dead in 0.85.0 through 0.89.0.
+  const folders = await speak(folderEnv, [
+    ...HANDSHAKE,
+    { jsonrpc: '2.0', id: 20, method: 'tools/call', params: { name: 'creds_folders', arguments: {} } },
+  ]);
+  const foldersText = folders.byId.get(20)?.result?.content?.[0]?.text ?? '';
+  check(
+    'creds_folders reaches the window at all',
+    !foldersText.includes('No CredsForDevs window answered'),
+    foldersText.slice(0, 240),
+  );
+  let listedFolders = [];
+  try {
+    listedFolders = JSON.parse(foldersText);
+  } catch {
+    /* reported by the checks below */
+  }
+  const ids = listedFolders.map((f) => f.id).sort();
+  check('only the folders opened to it are listed', ids.join(',') === 'f-look,f-open', JSON.stringify(ids));
+  const openFolder = listedFolders.find((f) => f.id === 'f-open') ?? {};
+  const lookFolder = listedFolders.find((f) => f.id === 'f-look') ?? {};
+  check(
+    'and `can` is what the switches say, per folder',
+    openFolder.can?.create === true &&
+      openFolder.can?.edit === true &&
+      lookFolder.can?.create === false &&
+      lookFolder.can?.edit === false,
+    JSON.stringify([openFolder.can, lookFolder.can]),
+  );
+
+  // 3. Creating — it must reach the TREE, not a recording stub.
+  consent.answers = ['Allow'];
+  consent.asked = 0;
+  const madeFolder = await speak(folderEnv, [
+    ...HANDSHAKE,
+    {
+      jsonrpc: '2.0',
+      id: 21,
+      method: 'tools/call',
+      params: { name: 'creds_create_folder', arguments: { name: 'staging', parent: 'f-open' } },
+    },
+  ]);
+  const madeFolderText = madeFolder.byId.get(21)?.result?.content?.[0]?.text ?? '';
+  check('creds_create_folder answers that it made one', madeFolderText.includes('"created":true'), madeFolderText.slice(0, 240));
+  const inTree = storage.getNodes('a-1').find((n) => n.name === 'staging');
+  check('and the folder is in the tree, under the parent it named', inTree?.parentId === 'f-open', JSON.stringify(inTree));
+  check(
+    'marked as the agent\'s own, which is what the narrow delete scope keys on',
+    inTree?.mcpCreatedByAgent === true,
+    JSON.stringify(inTree?.mcpCreatedByAgent),
+  );
+  check('the human was asked exactly once', consent.asked === 1, String(consent.asked));
+
+  // 4. A move into a part of the tree nobody opened — refused, and nothing moves.
+  consent.answers = ['Allow'];
+  consent.asked = 0;
+  const moved = await speak(folderEnv, [
+    ...HANDSHAKE,
+    {
+      jsonrpc: '2.0',
+      id: 22,
+      method: 'tools/call',
+      params: { name: 'creds_edit_folder', arguments: { folder: inTree?.id ?? 'x', parent: 'f-shut' } },
+    },
+  ]);
+  const movedText = moved.byId.get(22)?.result?.content?.[0]?.text ?? '';
+  check('a move into a closed folder is refused', movedText.includes('"error"'), movedText.slice(0, 240));
+  check(
+    'and nothing moved',
+    storage.getNode('a-1', inTree?.id ?? 'x')?.parentId === 'f-open',
+    String(storage.getNode('a-1', inTree?.id ?? 'x')?.parentId),
+  );
+  check('and nobody was asked about it', consent.asked === 0, String(consent.asked));
+
+  // 5. THE CHECK WITH TEETH. `mcp` in the body must not reach the node. This is the only
+  //    difference between "may edit a folder" and "may grant itself every permission there is",
+  //    and it is kept structurally: `readEdit` names three fields. Replace that with a spread of
+  //    the body and this check must go red.
+  consent.answers = ['Allow'];
+  consent.asked = 0;
+  const before = JSON.stringify(storage.getNode('a-1', inTree?.id ?? 'x')?.mcp ?? null);
+  await speak(folderEnv, [
+    ...HANDSHAKE,
+    {
+      jsonrpc: '2.0',
+      id: 23,
+      method: 'tools/call',
+      params: {
+        name: 'creds_edit_folder',
+        // `mcp` is not a parameter of the tool at all — sent the way a hostile client would.
+        arguments: {
+          folder: inTree?.id ?? 'x',
+          name: 'staging-2',
+          mcp: { view: true, use: true, edit: true, create: true, delete: 'any', folderDelete: 'any' },
+        },
+      },
+    },
+  ]);
+  const after = storage.getNode('a-1', inTree?.id ?? 'x');
+  check('a rename lands', after?.name === 'staging-2', JSON.stringify(after?.name));
+  check(
+    'and the folder\'s Agent access is untouched — a spread here would be self-granted permissions',
+    JSON.stringify(after?.mcp ?? null) === before,
+    `${before} -> ${JSON.stringify(after?.mcp ?? null)}`,
+  );
+
+  // 6. Deleting: what it made goes to the Trash; what it did not, does not.
+  consent.answers = ['Allow'];
+  consent.asked = 0;
+  const removed = await speak(folderEnv, [
+    ...HANDSHAKE,
+    {
+      jsonrpc: '2.0',
+      id: 24,
+      method: 'tools/call',
+      params: { name: 'creds_delete_folder', arguments: { folder: inTree?.id ?? 'x' } },
+    },
+  ]);
+  const removedText = removed.byId.get(24)?.result?.content?.[0]?.text ?? '';
+  check('a folder the agent made goes to the Trash', removedText.includes('"deleted":true'), removedText.slice(0, 240));
+  check('and the answer says it can be undone', removedText.includes('"restorable":true'), removedText.slice(0, 240));
+
+  consent.answers = ['Allow'];
+  consent.asked = 0;
+  const keptFolder = await speak(folderEnv, [
+    ...HANDSHAKE,
+    {
+      jsonrpc: '2.0',
+      id: 25,
+      method: 'tools/call',
+      params: { name: 'creds_delete_folder', arguments: { folder: 'f-open' } },
+    },
+  ]);
+  const keptFolderText = keptFolder.byId.get(25)?.result?.content?.[0]?.text ?? '';
+  check(
+    'a folder it did NOT make is refused under the `own` scope',
+    keptFolderText.includes('"error"') && !keptFolderText.includes('"deleted":true'),
+    keptFolderText.slice(0, 240),
+  );
+  check('and it is still in the tree', storage.getNode('a-1', 'f-open') !== undefined);
+
+  folderServer.dispose();
   server.dispose();
   console.log(fails === 0 ? '\nall checks passed' : `\n${fails} check(s) failed`);
   process.exitCode = fails === 0 ? 0 : 1;

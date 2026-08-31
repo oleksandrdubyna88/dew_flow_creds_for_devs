@@ -91,13 +91,13 @@ internal static class FolderTools
     internal static async Task<string> ListAsync(BrokerContract contract)
     {
         var route = contract.ReadRoute("mcpFolders", "/v1/mcp/folders");
-        var bodies = await Windows.ReadAllAsync(contract, route);
-        if (bodies.Count == 0)
+        var read = await Windows.ReadAllAsync(contract, route);
+        if (read.Bodies.Count == 0)
         {
-            return Tools.NoWindow();
+            return Tools.NoAnswer(read.RouteRefused);
         }
 
-        return JsonSerializer.Serialize(Merge(bodies), McpJsonContext.Default.McpFolderArray);
+        return JsonSerializer.Serialize(Merge(read.Bodies), McpJsonContext.Default.McpFolderArray);
     }
 
     /// <summary>Several windows' answers, as one list. Separate so it is testable without one.</summary>
