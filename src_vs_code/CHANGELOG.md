@@ -6,6 +6,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.89.0] — 2026-08-31
+
+### Added
+
+- **Every button in the UI now has a sentence in the help.** An audit walked all 98 contributed
+  commands and all 25 settings against the help corpus. Six had never been described anywhere:
+  *Sign Out / Remove Account*, *Reset Google OAuth*, *Server Metrics…*, *Show Signing
+  Fingerprint…*, *Accept All from Sender… / Accept All Shared…*, and *Show What Changed* /
+  *Revoke Code Access…*. Four more had shipped into articles nobody updated for them: *Burn
+  Now…*, *Install SSH Key to System* and *Remove Installed Key…*, *Go to Credential…*, and the
+  masking every agent answer passes through — one choke point that replaces an entry's own stored
+  values before the response leaves the window, which is the strongest guarantee on that page and
+  was not on it.
+
+- **Four articles the catalog was missing** — the Trash (what delete really does, and getting it
+  back), bringing in what you already have (`~/.ssh/config`, Bitwarden, KeePass, LastPass,
+  Termius, 1Password), checking whether a secret escaped, and copying a secret with the clipboard
+  clearing itself.
+
+- **The two grant limits are documented where the token is handed out.** `agentGrantIdleMinutes`
+  and `agentGrantMaxCalls` are the only settings that shorten a *Share with Claude Code* token's
+  life, and the article that explains the token said nothing about either.
+
+### Changed
+
+- **The help cannot fall behind the menus again.** A new test gives every command a forced choice
+  with no default: the help names it verbatim, an alias declares the words the help uses instead,
+  or a written sentence declares why it needs no article. The next command added to the manifest
+  fails the suite until somebody decides which of the three it is. An alias is itself an
+  assertion — rewrite an article and drop the phrase, and it goes red. The same choice is applied
+  to every setting, where there is no button to explore in the first place.
+
 ## [0.88.0] — 2026-08-31
 
 ### Fixed
