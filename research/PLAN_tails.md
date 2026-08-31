@@ -303,7 +303,7 @@ CLAUDE.md states the rule this violates in its own words — *"A push to `main` 
 deployable"*, four artefacts, four tags — and `release.yml:19,267` is ready for `mcp-v*` and carries
 a `workflow_dispatch` with an `mcp` target. So nothing is broken; nothing has been asked.
 
-**What this blocks.** Item 11 of [ЗАДАЧА_проверка_mcp_вручную.md](../todo/ЗАДАЧА_проверка_mcp_вручную.md)
+**What this blocks.** Item 11 of [ЗАДАЧА_проверка_mcp_вручную.md](ЗАДАЧА_проверка_mcp_вручную.md)
 is written as waiting for a release that has not been cut, so the install button it checks cannot be
 checked. It is not blocked on work.
 
@@ -331,7 +331,7 @@ directly by `[0.76.0]`, so everything shipped in 0.77.0, 0.78.0, 0.78.1 and 0.79
 mechanical — cut the accumulated block into dated sections matching the release commits — and the
 lesson is T4's again: a record nothing checks is a record that drifts.
 
-**T6b.** [ЗАДАЧА_проверка_mcp_вручную.md](../todo/ЗАДАЧА_проверка_mcp_вручную.md) tells the tester to
+**T6b.** [ЗАДАЧА_проверка_mcp_вручную.md](ЗАДАЧА_проверка_mcp_вручную.md) tells the tester to
 confirm version **0.76.0** in three places. The current version is 0.78.1, and two of the releases
 in between (0.77.0 config entities, 0.78.0 QR paste) touch surfaces the pass walks through. A manual
 script whose first step is already wrong is a script people stop trusting at step one.
