@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { EntityKind, FolderType, TreeNode } from './types';
-import { assertNever, resolveKind } from './entityKind';
+import { assertNever, isEntityKind, resolveKind } from './entityKind';
 import { accessLevel, mcpIconFile } from './mcpIcons';
 import { resolveMcpInTree } from './mcpAccess';
 
@@ -89,26 +89,32 @@ const HISTORY_COLOR = new vscode.ThemeColor('credSshManager.historyIcon');
 /** Folders are painted dark orange so they never blend in with items. */
 export const FOLDER_COLOR = new vscode.ThemeColor('credSshManager.folderIcon');
 
-// eslint-disable-next-line complexity
 export function folderIcon(folderType: FolderType | undefined): vscode.ThemeIcon {
-  switch (folderType) {
-    case 'project':
-      return new vscode.ThemeIcon('project', FOLDER_COLOR);
-    case 'db':
-      return new vscode.ThemeIcon('database', FOLDER_COLOR);
-    case 'vpn':
-      return new vscode.ThemeIcon('shield', FOLDER_COLOR);
-    case 'sshkey':
-      return new vscode.ThemeIcon('key', FOLDER_COLOR);
-    case 'ssh':
-      return new vscode.ThemeIcon('remote', FOLDER_COLOR);
-    case 'credential':
-      return new vscode.ThemeIcon('lock', FOLDER_COLOR);
-    case 'terminal':
-      return new vscode.ThemeIcon('terminal', FOLDER_COLOR);
-    default:
-      return new vscode.ThemeIcon('folder', FOLDER_COLOR);
+  return new vscode.ThemeIcon(folderIconId(folderType), FOLDER_COLOR);
+}
+
+/**
+ * A folder's glyph: the icon of the kind it holds.
+ *
+ * <p><b>Asked of `kindIcon` rather than listed again here</b>, and that is the whole fix. This
+ * used to be a second switch over the same union with a `default` at the bottom, so a kind added
+ * to `ENTITY_KINDS` was a compile error in `kindIcon` and silence here — it just started falling
+ * through. `script` and `config` did exactly that, and they are not obscure: `defaultFolders.ts`
+ * SEEDS a folder of each, so every vault this product has ever created carried two folders with
+ * a fallback icon on them. Now the ninth kind is a compile error for folders too, because there
+ * is one table.</p>
+ *
+ * <p>`project` is not an entity kind — nothing is OF that kind, it is a folder that holds
+ * anything about one project — so it is the one case named here.</p>
+ *
+ * <p>The fallback stays for a type this build does not know: a vault written by a newer build
+ * can carry one, and a row that refuses to draw hides its contents entirely.</p>
+ */
+function folderIconId(folderType: FolderType | undefined): string {
+  if (folderType === 'project') {
+    return 'project';
   }
+  return isEntityKind(folderType) ? kindIcon(folderType) : 'folder';
 }
 
 // eslint-disable-next-line complexity

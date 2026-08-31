@@ -107,12 +107,17 @@ test('an unknown kind throws rather than quietly painting a padlock', () => {
 });
 
 test('a folder of each type gets that type’s icon, always coloured', () => {
-  // The colour is what stops a folder blending into the items inside it.
+  // The colour is what stops a folder blending into the items inside it — and the ICON is what
+  // the title of this test always promised and never checked. It asserted the colour alone, so
+  // `script` and `config` folders fell through to the generic fallback and passed: the two types
+  // `defaultFolders.ts` SEEDS, which is why every vault this product ever created had two
+  // folders with no icon on them.
   const w = world();
 
   for (const kind of ENTITY_KINDS) {
     const icon = w.mod.folderIcon(kind) as unknown as { id: string; color?: { id: string } };
     assert.equal(icon.color?.id, 'credSshManager.folderIcon', `${kind} folder is uncoloured`);
+    assert.equal(icon.id, w.mod.kindIcon(kind), `a ${kind} folder does not wear the ${kind} icon`);
   }
 });
 

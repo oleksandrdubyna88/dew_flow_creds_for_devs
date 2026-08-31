@@ -189,6 +189,14 @@ but is reachable only from there; nothing else in `src/` calls it any more.
   errors, one of them *"Argument of type `'totp'` is not assignable to parameter of type
   `never`"*. That is the guarantee S5 asked for — `terminal` in 0.26.0 and the missing
   `script` selector entry were both this defect.
+  **`folderIcon` was outside that guarantee until 0.91.1**, and it is the clearest case yet of
+  what the guarantee is worth: it was a SECOND switch over the same union with a `default` at
+  the bottom, so `script` and `config` — added to `ENTITY_KINDS` later — simply started falling
+  through to the generic folder glyph. Not obscure either, because `defaultFolders.ts` seeds a
+  folder of each kind: every vault this product has ever created had two of them. It now asks
+  `kindIcon` instead of listing the kinds again, so there is one table and the ninth kind is a
+  compile error for folders too; `project` stays named there because nothing is OF that kind,
+  and the `default` stays for a type a NEWER build wrote, which a row must still draw.
 - **`oneUse` cannot be set on a kind the broker never serves.** A burn fires only through the
   broker and the broker does not serve `sshkey`, so `{kind: 'sshkey', burnPolicy: 'oneUse'}`
   would be a promise nothing could keep — the entry living forever while the UI said it would

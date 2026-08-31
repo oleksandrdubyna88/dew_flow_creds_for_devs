@@ -6,6 +6,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.91.1] — 2026-08-31
+
+### Fixed
+
+- **The `scripts` and `config` folders had no icon** — the two folders every new vault is seeded
+  with. A folder's glyph came from a second switch over the entity kinds, written beside the
+  first and with a `default` at the bottom, so the two kinds added after it was written fell
+  through it in silence. The entity rows inside those folders had their icons all along; only the
+  folder was blank.
+
+  It now asks the entity table for the kind's icon instead of listing the kinds again, which is
+  what makes the fix permanent rather than a third entry: the entity table ends in `assertNever`,
+  so a ninth kind is a compile error for folders too. Verified by adding one.
+
+  The test that should have caught it was titled *a folder of each type gets that type's icon* and
+  asserted only the colour. It asserts the icon now.
+
 ## [0.91.0] — 2026-08-31
 
 ### Changed
