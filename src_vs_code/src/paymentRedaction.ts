@@ -52,7 +52,7 @@ import { PaymentFieldKey, parsePaymentFields, serializePaymentFields } from './p
  * column held a second real key, a leak of two keys at once. Recorded as an open product question in
  * the plan rather than decided quietly here — the safe behaviour ships in the meantime.</p>
  */
-const SHARE_SAFE: readonly PaymentFieldKey[] = [
+const SHARE_SAFE = [
   // Card — what an invoice or a payment page asks for.
   'number',
   'expiry',
@@ -72,7 +72,7 @@ const SHARE_SAFE: readonly PaymentFieldKey[] = [
   // Metadata, not a value: which of the surviving fields are stored woven. `pickPaymentFields` prunes
   // any name whose field did not survive, so this cannot describe something that is not there.
   'shuffledFields',
-];
+] as const satisfies readonly PaymentFieldKey[];
 
 /**
  * The record as it should be SHARED, or `undefined` when nothing is left to send.
@@ -101,6 +101,22 @@ export function redactPaymentForShare(raw: string | undefined): string | undefin
   return serializePaymentFields(keepOnlyShareSafe(raw));
 }
 
+/**
+ * The fields a share WITHHELD, by name, so the SENDER can be told what did not go.
+ *
+ * <p>Accepted from the review as a Minor, and the sender is the side that needed it rather than the
+ * recipient: somebody sharing a hidden phrase would otherwise watch a success notification and believe
+ * the phrase arrived. It cannot have — the recipient gets tokens they cannot unweave, because the
+ * method is a code the person remembers and nothing transmits.</p>
+ *
+ * <p>Names only, never values: this reaches a notification, and several UI layers log those.</p>
+ */
+export function withheldFromShare(raw: string | undefined): readonly string[] {
+  const stored = parsePaymentFields(raw) as Record<string, unknown>;
+  const safe = new Set<string>(SHARE_SAFE);
+  return Object.keys(stored).filter((key) => !safe.has(key));
+}
+
 /** A record that EXISTS and yields no fields — corrupt, as distinct from simply absent. */
 function isUnreadable(raw: string | undefined): boolean {
   return raw !== undefined && raw.length > 0 && Object.keys(parsePaymentFields(raw)).length === 0;
@@ -126,7 +142,24 @@ function keepOnlyShareSafe(raw: string | undefined): Record<string, unknown> {
  * person's own file, and the woven form is what they store anyway. What deserves a sentence is the
  * pair a share removes and an export does not, because that asymmetry is the surprise.</p>
  */
-const WITHHELD_FROM_SHARE: readonly PaymentFieldKey[] = ['cvv', 'pin'];
+const WITHHELD_FROM_SHARE = ['cvv', 'pin'] as const satisfies readonly PaymentFieldKey[];
+
+/**
+ * The two lists cannot contradict each other, and the compiler says so.
+ *
+ * <p>Raised by my own reviewer, and the point is precedent rather than risk: the neighbouring module
+ * ties BOTH of its closed lists to the key space structurally (`satisfies`, plus an exactness
+ * assertion that names an unlisted field), because a second hand-maintained list beside a first is the
+ * drift shape S1.1 was bitten by three times. `WITHHELD_FROM_SHARE` had no such tie.</p>
+ *
+ * <p>Exactness is the wrong test for it — the two lists are deliberately NOT complements, since the
+ * complement also holds the phrase fields and an export legitimately carries those. What must never be
+ * true is that a field is on BOTH: warning that an export includes something a share also sends would
+ * be a sentence that misinforms. Disjointness is the invariant, so disjointness is what is checked.</p>
+ */
+type SharedAndWithheld = Extract<(typeof WITHHELD_FROM_SHARE)[number], (typeof SHARE_SAFE)[number]>;
+const LISTS_DO_NOT_CONTRADICT: SharedAndWithheld extends never ? true : SharedAndWithheld = true;
+void LISTS_DO_NOT_CONTRADICT;
 
 /**
  * How many of these exported records carry a field a SHARE would have removed.

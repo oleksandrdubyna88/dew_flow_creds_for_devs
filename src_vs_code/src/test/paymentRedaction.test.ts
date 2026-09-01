@@ -7,6 +7,7 @@ import {
   paymentFieldsInExport,
   redactArrivedPayment,
   redactPaymentForShare,
+  withheldFromShare,
 } from '../paymentRedaction';
 
 /**
@@ -190,4 +191,32 @@ test('the redacted record is still a valid payment record', () => {
   assert.notEqual(shared, undefined);
   assert.equal(parsePaymentFields(shared).number, CARD.number);
   assert.equal(serializePaymentFields(parsePaymentFields(shared)), shared, 'and it round-trips unchanged');
+});
+
+test('the sender is told which fields a share withheld, by name and never by value', () => {
+  // Accepted from the review as a Minor, and it is the SENDER who needed it: somebody sharing a
+  // hidden phrase would otherwise watch a success notification and believe the phrase arrived. It
+  // cannot have — the recipient gets tokens they cannot unweave.
+  const card = serializePaymentFields({ number: '4111111111111111', cvv: '123', pin: '4321' });
+  assert.deepEqual([...withheldFromShare(card)].sort(), ['cvv', 'pin']);
+
+  const phrase = serializePaymentFields({
+    mixed: ['alpha', 'mike', 'bravo', 'november'],
+    wordlistFirst: 'bip39-en',
+    layout: 'vertical',
+  });
+  assert.deepEqual([...withheldFromShare(phrase)].sort(), ['layout', 'mixed', 'wordlistFirst']);
+
+  const shareable = serializePaymentFields({ number: '4111111111111111', expiry: '12/29' });
+  assert.deepEqual(withheldFromShare(shareable), [], 'nothing withheld, nothing to say');
+  assert.deepEqual(withheldFromShare(undefined), []);
+});
+
+test('what the sender is told contains no value, only field names', () => {
+  // It reaches a notification, and several UI layers log those.
+  const card = serializePaymentFields({ number: '4111111111111111', cvv: '123', pin: '4321' });
+  const said = withheldFromShare(card).join(' ');
+  assert.equal(said.includes('123'), false);
+  assert.equal(said.includes('4321'), false);
+  assert.equal(said.includes('4111'), false);
 });
