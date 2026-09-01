@@ -134,10 +134,11 @@ seams, 5 needs 4's viewer. Inside an epic the order is also fixed unless a story
    The alternative is to refuse to share a phrase record at all, which is arguably clearer. Raised by
    the S1.3 review; **decided conservatively and left open**, because "a card is shareable and a phrase
    is not" is a product statement rather than a redaction detail.
-2. **`types.ts` is at exactly 800 of 800 lines.** The next story touching it needs an extraction, not
-   another trimmed comment. `isBackupBundle` is the obvious cut — it belongs beside
-   `backupBundleType.ts` — and one attempt during S1.3 mis-detected its closing brace and was reverted,
-   so it wants doing deliberately rather than in passing.
+2. ~~`types.ts` is at exactly 800 of 800 lines.~~ **DONE in S1.3** — the code review quoted this very line
+   back, because the story that touched the file trimmed two comments instead. `isBackupBundle` moved to
+   `backupBundleType.ts`, beside the type it validates, and both comments were restored in full.
+   `types.ts` is 762 with real headroom. The earlier attempt that mis-detected the closing brace is why
+   the second one asserted its boundaries before writing and refused on CRLF endings until handled.
 
 ## Story contract — what every one of them owes
 

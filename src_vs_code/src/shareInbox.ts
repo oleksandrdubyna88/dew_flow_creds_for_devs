@@ -138,6 +138,16 @@ export class ShareInbox {
     // Which fields the AAD may cover is the transport's answer, not this method's — a server
     // rewrites two of the four the folder form binds.
     const form = this.deps.sharing.shareFormFor(sender);
+    // BEFORE the first delivery, and that ordering is the fix for a defect the review found in my own
+    // previous version: the note was computed inside the success message, AFTER `appendShares` had
+    // succeeded. A keychain read that rejected there rejected the whole method — so recipients held
+    // the share while the sender saw no success at all, and a retry would deliver it twice. Post-
+    // delivery enrichment must never decide the outcome of an operation that already happened.
+    //
+    // Computed once here rather than per recipient, and available to BOTH terminal messages, which is
+    // the other thing the old placement got wrong: a partial failure reported counts and never
+    // mentioned that the recipient who DID receive the entry got it without its CVV.
+    const withheld = await this.withheldNote(senderAccountId, payloads);
     for (const recipient of recipients) {
       try {
         const items = payloads.map((p) =>
@@ -159,7 +169,7 @@ export class ShareInbox {
       payloads.length === 1 ? `"${payloads[0].node.name}"` : `${payloads.length} entities`;
     if (failed.length > 0) {
       void vscode.window.showErrorMessage(
-        `Share finished with errors — delivered: ${delivered.length}, failed: ${failed.join('; ')}`,
+        `Share finished with errors — delivered: ${delivered.length}, failed: ${failed.join('; ')}${delivered.length > 0 ? withheld : ''}`,
       );
     } else {
       // What the redaction removed, said out loud. `withheldFromShare` existed and was tested and was
@@ -168,7 +178,7 @@ export class ShareInbox {
       // hidden phrase reads "Shared …" and believes the phrase arrived; it cannot have, because
       // unweaving needs a code the person remembers and nothing transmits.
       void vscode.window.showInformationMessage(
-        `Shared ${what} with ${delivered.join(', ')}. Tell them the PIN out-of-band.${await this.withheldNote(senderAccountId, payloads)}`,
+        `Shared ${what} with ${delivered.join(', ')}. Tell them the PIN out-of-band.${withheld}`,
       );
     }
     void this.deps.sharing.reload();
@@ -567,6 +577,8 @@ After this, a share signed by any other key is refused.`,
       recordOrigin(origins, share.item.fromEmail, payload.node.id, node.id),
     );
     const { password, privateKey, vpnConfig, dbConnection } = payload.secrets;
+    /** A payment record arrived that this build cannot read — decides whether the share is kept. */
+    let unreadablePayment = false;
     await this.deps.storage.setPassword(share.accountId, node.id, password);
     if (privateKey !== undefined) {
       await this.deps.storage.setPrivateKey(share.accountId, node.id, privateKey);
@@ -598,17 +610,24 @@ After this, a share signed by any other key is refused.`,
       // body. Accepted from the S1.3 code review, which overturned the opposite decision.
       const arrived = redactArrivedPayment(payload.secrets.payment);
       await this.deps.storage.setPaymentRaw(share.accountId, node.id, arrived.raw);
-      if (arrived.unreadable) {
-        // Reported, never silent. Both reviewers rejected the silent drop independently and were
-        // right about the half I had wrong: keeping the ENTRY is justified, being quiet about a
-        // dropped card is not. Somebody told the entry arrived would act on it believing it complete,
-        // with no way to know a re-send is worth asking for.
-        void vscode.window.showWarningMessage(
-          `"${node.name}" arrived, but its payment details are in a format this version cannot read, so they were not saved. The rest of the entry is here. A re-send will not help if the sender is on a newer build — check for an update first.`,
-        );
-      }
+      unreadablePayment = arrived.unreadable;
     }
-    await this.deps.sharing.removeOwnShare(share);
+    if (unreadablePayment) {
+      // Reported, never silent. Both reviewers rejected the silent drop independently and were right
+      // about the half I had wrong: keeping the ENTRY is justified, being quiet about a dropped card
+      // is not. Somebody told the entry arrived would act on it believing it complete, with no way to
+      // know a re-send is worth asking for.
+      //
+      // And the QUEUED COPY IS KEPT, which the first version of this got wrong: it advised checking
+      // for an update while `removeOwnShare` had already discarded the only copy, so there was
+      // nothing left to accept again after updating. Advice the code makes impossible is worse than
+      // no advice. The share stays pending, so accepting it on a newer build is a real option.
+      void vscode.window.showWarningMessage(
+        `"${node.name}" arrived, but its payment details are in a format this version cannot read, so they were not saved. The rest of the entry is here, and the share is KEPT — check for an update and accept it again.`,
+      );
+    } else {
+      await this.deps.sharing.removeOwnShare(share);
+    }
     this.deps.onArrived?.(share.accountId, node.id);
   }
 }
