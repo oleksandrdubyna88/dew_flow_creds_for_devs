@@ -17,7 +17,7 @@ import {
 import { recordOrigin, resolveOrigin } from './shareOrigin';
 import { snapshotForRevision } from './revisionSnapshot';
 import { pinValidator } from './pinInput';
-import { redactPaymentForShare } from './paymentRedaction';
+import { redactArrivedPayment, redactPaymentForShare } from './paymentRedaction';
 import { OwnedShare, SharePayload, TeamMember, TreeNode } from './types';
 
 /**
@@ -566,10 +566,17 @@ After this, a share signed by any other key is refused.`,
       await this.deps.storage.setFieldsRaw(share.accountId, node.id, payload.secrets.fields);
     }
     if (payload.secrets.payment !== undefined) {
-      // Stored as it arrived. It was redacted by the SENDER (`buildSharePayload`), which is the only
-      // side that has the CVV to remove — redacting again here would be a second opinion about the
-      // same rule, and the receiving side must not be the place that decides what a share may carry.
-      await this.deps.storage.setPaymentRaw(share.accountId, node.id, payload.secrets.payment);
+      // Redacted AGAIN on arrival, through the same function the sender used. This is a trust
+      // boundary: everything here was written by somebody else's process, so "a share cannot carry a
+      // CVV" has to be true of what ARRIVES and not merely of what we send. One function called at
+      // both ends is one opinion applied twice, not two opinions — the shape this repository already
+      // uses for sender identity, which is stamped from a verified token and never accepted from the
+      // body. Accepted from the S1.3 code review, which overturned the opposite decision.
+      await this.deps.storage.setPaymentRaw(
+        share.accountId,
+        node.id,
+        redactArrivedPayment(payload.secrets.payment),
+      );
     }
     await this.deps.sharing.removeOwnShare(share);
     this.deps.onArrived?.(share.accountId, node.id);

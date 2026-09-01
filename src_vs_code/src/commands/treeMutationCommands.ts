@@ -39,6 +39,7 @@ import * as os from 'node:os';
 import { parseImport } from '../importFormats';
 import { importEntities } from '../importCommands';
 import { buildExternalBundle } from '../externalBundle';
+import { paymentFieldsInExport } from '../paymentRedaction';
 import { pinValidator } from '../pinInput';
 import { encryptJson } from '../cryptoUtils';
 import { decryptJson } from '../cryptoUtils';
@@ -460,6 +461,17 @@ export function registerTreeMutationCommands(host: TreeMutationCommandsHost): vo
     );
     const bundle = buildExternalBundle(picked, secrets);
 
+    // An export carries a card's CVV and PIN; a SHARE removes them. That asymmetry is deliberate —
+    // an export is a full copy the person made once — and it is exactly the thing somebody who just
+    // watched a share leave the CVV behind would assume applies here too. So it is said, when there
+    // is something to say. Counted, never printed: a CVV must not reach a notification, which
+    // several UI layers log.
+    const cardCount = paymentFieldsInExport(Object.values(secrets));
+    const cardNote =
+      cardCount === 0
+        ? ''
+        : ` Includes the CVV and PIN of ${cardCount} payment ${cardCount === 1 ? 'record' : 'records'} — a share removes those, an export does not.`;
+
     const mode = await vscode.window.showQuickPick(
       [
         {
@@ -473,7 +485,7 @@ export function registerTreeMutationCommands(host: TreeMutationCommandsHost): vo
           plain: true,
         },
       ],
-      { title: `Export "${exportName}" for someone outside the organisation`, ignoreFocusOut: true },
+      { title: `Export "${exportName}" for someone outside the organisation.${cardNote}`, ignoreFocusOut: true },
     );
     if (mode === undefined) {
       return;
@@ -483,7 +495,7 @@ export function registerTreeMutationCommands(host: TreeMutationCommandsHost): vo
     let ext: string;
     if (mode.plain) {
       const sure = await vscode.window.showWarningMessage(
-        `The plain JSON file will contain ${Object.keys(secrets).length} entities' secrets readable by ANYONE. Continue?`,
+        `The plain JSON file will contain ${Object.keys(secrets).length} entities' secrets readable by ANYONE.${cardNote} Continue?`,
         { modal: true },
         'Write plain JSON',
       );

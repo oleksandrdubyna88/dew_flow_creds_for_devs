@@ -1,7 +1,12 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { parsePaymentFields, serializePaymentFields } from '../paymentFields';
-import { redactPaymentForShare } from '../paymentRedaction';
+import {
+  PaymentRecordUnreadableError,
+  paymentFieldsInExport,
+  redactArrivedPayment,
+  redactPaymentForShare,
+} from '../paymentRedaction';
 
 /**
  * S1.3 — where a payment record's CVV and PIN go, direction by direction.
@@ -74,10 +79,51 @@ test('bank details share whole, because nothing in them is a CVV', () => {
   assert.deepEqual(parsePaymentFields(redactPaymentForShare(serializePaymentFields(bank))), bank);
 });
 
-test('an absent or unreadable record redacts to nothing rather than throwing', () => {
-  assert.equal(redactPaymentForShare(undefined), undefined);
+test('an ABSENT record shares as nothing, and an UNREADABLE one refuses loudly', () => {
+  // This test asserted the opposite until the code review overturned it, and the distinction is the
+  // whole finding: "no card stored" and "a card is stored and cannot be read" are different facts,
+  // and collapsing them means a person is told the entry was shared while the card was quietly left
+  // out — with a retry indistinguishable from a first success.
+  assert.equal(redactPaymentForShare(undefined), undefined, 'nothing stored, nothing to send');
   assert.equal(redactPaymentForShare(''), undefined);
-  assert.equal(redactPaymentForShare('{not json'), undefined);
+
+  assert.throws(
+    () => redactPaymentForShare('{not json'),
+    PaymentRecordUnreadableError,
+    'a record that exists and yields nothing must not pass silently as an empty card',
+  );
+  assert.throws(() => redactPaymentForShare('{"cvv":123}'), PaymentRecordUnreadableError, 'wrong types too');
+});
+
+test('an ARRIVING record is redacted again, because a share is a trust boundary', () => {
+  // Overturns my own decision, on the reviewer's argument: everything reaching the accept path was
+  // written by somebody else's process, so "a share cannot carry a CVV" has to be true of what
+  // ARRIVES. One function called at both ends is one opinion applied twice, not two opinions.
+  const crafted = '{"number":"4111111111111111","cvv":"123","pin":"4321"}';
+  const stored = parsePaymentFields(redactArrivedPayment(crafted));
+  assert.equal(stored.number, '4111111111111111', 'the card still arrives');
+  assert.equal(stored.cvv, undefined, 'a crafted or replayed payload cannot put a CVV in my vault');
+  assert.equal(stored.pin, undefined);
+});
+
+test('an unreadable ARRIVAL yields nothing instead of refusing the whole share', () => {
+  // Deliberately unlike the sending side. A share that reached a person is theirs, and refusing to
+  // store the readable half of it would lose more than it protects.
+  assert.equal(redactArrivedPayment('{not json'), undefined);
+  assert.equal(redactArrivedPayment(undefined), undefined);
+});
+
+test('the export warning counts the records whose CVV or PIN is going with them', () => {
+  // Counted, never printed: the warning must name the risk without putting a CVV into a
+  // notification, which several UI layers log.
+  const withCvv = { payment: serializePaymentFields({ number: '4111', cvv: '123' }) };
+  const withPin = { payment: serializePaymentFields({ number: '5555', pin: '4321' }) };
+  const plain = { payment: serializePaymentFields({ number: '6666' }) };
+  const none = {};
+
+  assert.equal(paymentFieldsInExport([withCvv, withPin, plain, none]), 2);
+  assert.equal(paymentFieldsInExport([plain, none]), 0, 'no warning when there is nothing to warn about');
+  assert.equal(paymentFieldsInExport([]), 0);
 });
 
 test('redaction is idempotent, so a re-share cannot restore what a share removed', () => {
