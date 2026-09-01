@@ -767,6 +767,10 @@ export function isBackupBundle(value: unknown): value is BackupBundle {
   if (v.totps !== undefined && !allStrings(v.totps)) {
     return false;
   }
+  // NOT exhaustive: `notes`, `configs` and `fields` have no clause and are admitted unvalidated.
+  if (v.payments !== undefined && !allStrings(v.payments)) {
+    return false;
+  }
   if (v.exportedAt !== undefined && typeof v.exportedAt !== 'number') {
     return false;
   }

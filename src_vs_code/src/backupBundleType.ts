@@ -24,6 +24,17 @@ export interface BackupBundle {
   /** entityId -> config file contents. A secret, like `notes`. Absent before the `config` kind. */
   configs?: Record<string, string>;
   /**
+   * entityId -> a payment instrument's fields as JSON. A secret, like `notes`. Absent before the
+   * `payment` kind.
+   *
+   * <p><b>This CARRIES the CVV and the PIN, deliberately.</b> A backup is your own encrypted vault,
+   * and scrubbing them here would mean losing them at restore — a card that comes back without half
+   * its fields. The direction that strips them is a SHARE, where the value leaves your vault and
+   * lives on in somebody else's; see `paymentRedaction.ts`. The asymmetry is a decision, recorded so
+   * it does not later read as an oversight.</p>
+   */
+  payments?: Record<string, string>;
+  /**
    * nodeId -> tombstone. Since 0.22 an object `{ deletedAt, v }`; pre-0.22
    * backups carry a bare ms-epoch number, normalized in on read.
    */

@@ -17,6 +17,23 @@ import { ExternalSecrets } from './externalBundle';
 import { stampKind } from './entityKind';
 import { TRASH_FOLDER_NAME, findTrash, restoreTarget } from './trash';
 import { exportSecretsFor } from './exportSecrets';
+import { PaymentFields, parsePaymentFields, serializePaymentFields } from './paymentFields';
+import {
+  attachmentSecretKey,
+  configSecretKey,
+  dbConnSecretKey,
+  fieldsSecretKey,
+  historySecretKey,
+  imageSecretKey,
+  notesSecretKey,
+  orgEscrowShareSecretKey,
+  paymentSecretKey,
+  privateKeySecretKey,
+  secretKey,
+  signingKeySecretKey,
+  totpSecretKey,
+  vpnConfigSecretKey,
+} from './secretKeys';
 import {
   BackupBundle,
   StoredAccount,
@@ -51,68 +68,6 @@ const DEVICE_SEQ_KEY = 'credSshManager.deviceSeq';
 /** Per account: the id an imported entity ARRIVED with -> the id it was given here. */
 const IMPORTED_IDS_KEY = 'credSshManager.importedIds';
 
-/**
- * The entity-id part of a SecretStorage key.
- *
- * <p>These keys are built by concatenation — `${accountId}_${entityId}`, with a `:sshPrivateKey`
- * / `:vpnConfig` / `:notes` / … suffix for every kind but the password — and concatenation
- * without an escape is ambiguous. The ambiguity was reachable: an entity whose id is
- * `x:sshPrivateKey` produced exactly the key that holds entity `x`'s PRIVATE KEY, so saving the
- * crafted entity's password destroyed a real key and reading that key back returned the
- * attacker's password, with no error anywhere.</p>
- *
- * <p>Ordinary ids are uuids, so accepting a share cannot reach this (`shareInbox` mints a fresh
- * local id) — but import and restore write an envelope's nodes with their own ids.</p>
- *
- * <p><b>Only the three separator characters are escaped, and a uuid contains none of them</b>,
- * so every key an installed build already wrote is unchanged. `%` is escaped first and for that
- * exact reason: without it an entity literally named `x%3AsshPrivateKey` would encode onto the
- * same key as one named `x:sshPrivateKey`, trading one collision for another.</p>
- */
-function keyPart(entityId: string): string {
-  return entityId.replace(/%/g, '%25').replace(/:/g, '%3A').replace(/_/g, '%5F');
-}
-
-/** Tenant-scoped SecretStorage key: `${accountId}_${entityId}`. */
-function secretKey(accountId: string, entityId: string): string {
-  return `${accountId}_${keyPart(entityId)}`;
-}
-
-/** SecretStorage key for an entity's SSH private key content. */
-function privateKeySecretKey(accountId: string, entityId: string): string {
-  return `${accountId}_${keyPart(entityId)}:sshPrivateKey`;
-}
-
-/**
- * The account's own Ed25519 signing identity for shares on the folder transport.
- * Keyed by account, not by entity — it identifies the signer, not a credential.
- */
-function signingKeySecretKey(accountId: string): string {
-  return `${accountId}:shareSigningKey`;
-}
-
-/**
- * This officer's share of the organisation's recovery key.
- *
- * <p>Keyed by account like the signing identity, and in SecretStorage rather than in the vault
- * payload for one reason worth stating: the payload syncs to a server, and a share that syncs
- * is a share sitting beside the very escrow wraps it exists to open. On the OS keychain it
- * stays on the machines its owner actually uses — which is also why accepting an invite is
- * something an officer does once per machine rather than once.</p>
- */
-function orgEscrowShareSecretKey(accountId: string): string {
-  return `${accountId}:orgEscrowShare`;
-}
-
-/** SecretStorage key for an entity's VPN config file content. */
-function vpnConfigSecretKey(accountId: string, entityId: string): string {
-  return `${accountId}_${keyPart(entityId)}:vpnConfig`;
-}
-
-/** SecretStorage key for an entity's notes (kept out of plaintext globalState). */
-function notesSecretKey(accountId: string, entityId: string): string {
-  return `${accountId}_${keyPart(entityId)}:notes`;
-}
 
 /**
  * Every per-entity secret kept as ONE string under ONE key, by the bundle field that carries it.
@@ -121,7 +76,7 @@ function notesSecretKey(accountId: string, entityId: string): string {
  * ten hand-written blocks per site — the audit's "seven kinds walked by hand" — and a kind added
  * to one site and forgotten in another exported silently incomplete files. Now a kind is a row.</p>
  */
-type SecretMapKey = 'passwords' | 'privateKeys' | 'vpnConfigs' | 'dbConnections' | 'notes' | 'attachments' | 'images' | 'totps' | 'configs' | 'fields';
+type SecretMapKey = 'passwords' | 'privateKeys' | 'vpnConfigs' | 'dbConnections' | 'notes' | 'attachments' | 'images' | 'totps' | 'configs' | 'fields' | 'payments';
 type SecretMaps = Record<SecretMapKey, Record<string, string>>;
 
 const SECRET_KINDS: ReadonlyArray<{ bundleKey: SecretMapKey; key: (accountId: string, entityId: string) => string }> = [
@@ -135,6 +90,10 @@ const SECRET_KINDS: ReadonlyArray<{ bundleKey: SecretMapKey; key: (accountId: st
   { bundleKey: 'totps', key: (a, e) => totpSecretKey(a, e) },
   { bundleKey: 'configs', key: (a, e) => configSecretKey(a, e) },
   { bundleKey: 'fields', key: (a, e) => fieldsSecretKey(a, e) },
+  // ONE row is the whole of a new secret kind's storage: export, import, snapshot and
+  // delete-with-the-entry all walk this list, so a payment record reaches the backup, the restore
+  // and the keychain cleanup without a line being written at any of those four sites.
+  { bundleKey: 'payments', key: (a, e) => paymentSecretKey(a, e) },
 ];
 
 /** A pre-0.20 note still sitting in plaintext metadata, when no stored note has replaced it. */
@@ -162,6 +121,7 @@ function emptySecretMaps(): SecretMaps {
     totps: {},
     configs: {},
     fields: {},
+    payments: {},
   };
 }
 
@@ -172,16 +132,6 @@ function secretMapsOf(bundle: Partial<Record<SecretMapKey, Record<string, string
     maps[kind.bundleKey] = bundle[kind.bundleKey] ?? {};
   }
   return maps;
-}
-
-/** SecretStorage key for a credential's login and URL (JSON) — a secret, exactly like the notes. */
-function fieldsSecretKey(accountId: string, entityId: string): string {
-  return `${accountId}_${keyPart(entityId)}:fields`;
-}
-
-/** SecretStorage key for a config entity's file contents — a secret, exactly like the notes. */
-function configSecretKey(accountId: string, entityId: string): string {
-  return `${accountId}_${keyPart(entityId)}:config`;
 }
 
 /**
@@ -198,28 +148,6 @@ function configSecretKey(accountId: string, entityId: string): string {
  */
 function entitySecretKeys(accountId: string, entityId: string): readonly string[] {
   return [...SECRET_KINDS.map((kind) => kind.key(accountId, entityId)), historySecretKey(accountId, entityId)];
-}
-
-function historySecretKey(accountId: string, entityId: string): string {
-  return `${accountId}_${keyPart(entityId)}:history`;
-}
-
-function attachmentSecretKey(accountId: string, entityId: string): string {
-  return `${accountId}_${keyPart(entityId)}:attachment`;
-}
-
-function imageSecretKey(accountId: string, entityId: string): string {
-  return `${accountId}_${keyPart(entityId)}:image`;
-}
-
-/** SecretStorage key for an entity's DB connection string. */
-function dbConnSecretKey(accountId: string, entityId: string): string {
-  return `${accountId}_${keyPart(entityId)}:dbConn`;
-}
-
-/** SecretStorage key for an entity's TOTP seed (the canonical `otpauth://` URI). */
-function totpSecretKey(accountId: string, entityId: string): string {
-  return `${accountId}_${keyPart(entityId)}:totp`;
 }
 
 /**
@@ -964,6 +892,31 @@ export class StorageManager implements vscode.Disposable {
   /** Typed write: an empty record deletes, so a credential that lost both fields holds no key. */
   setFields(accountId: string, entityId: string, fields: EntityFields | undefined): Promise<void> {
     return this.setFieldsRaw(accountId, entityId, serializeFields(fields));
+  }
+
+  // ---------- payment instruments (SecretStorage, tenant-scoped, JSON) ----------
+
+  /** The stored JSON as it is — what bundles, snapshots, shares and revisions carry. */
+  getPaymentRaw(accountId: string, entityId: string): Thenable<string | undefined> {
+    return this.secrets.get(paymentSecretKey(accountId, entityId));
+  }
+
+  async setPaymentRaw(accountId: string, entityId: string, value: string | undefined): Promise<void> {
+    if (value === undefined || value.length === 0) {
+      await this.secrets.delete(paymentSecretKey(accountId, entityId));
+    } else {
+      await this.secrets.store(paymentSecretKey(accountId, entityId), value);
+    }
+    this.touch(accountId);
+  }
+
+  async getPayment(accountId: string, entityId: string): Promise<PaymentFields> {
+    return parsePaymentFields(await this.getPaymentRaw(accountId, entityId));
+  }
+
+  /** Typed write: an empty record deletes, so a payment instrument stripped bare holds no key. */
+  setPayment(accountId: string, entityId: string, fields: PaymentFields | undefined): Promise<void> {
+    return this.setPaymentRaw(accountId, entityId, serializePaymentFields(fields));
   }
 
   getConfigBody(accountId: string, entityId: string): Thenable<string | undefined> {

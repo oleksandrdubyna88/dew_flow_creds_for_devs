@@ -252,10 +252,14 @@ export function formPageScript(
       // covers typing the line out by hand. Rows the user already filled in are never
       // replaced without asking.
       command.addEventListener('paste', function () { setTimeout(askSplit, 0); });
-      command.addEventListener('change', function () {
-        if (argRows.some(function (r) { return (r.value || '').trim().length > 0; })) { return; }
-        askSplit();
-      });
+      // No guard on filled rows here. It used to bail out when ANY argument row had text, which
+      // is precisely the case this feature is for: a person duplicates an entry, replaces the
+      // command line, and the arguments of the ORIGINAL stay behind. Reported from a real clone -
+      // an Antigravity Windows entry duplicated for Linux kept install.ps1, the pipe and iex under
+      // a curl-to-bash command, and the Full command preview showed the line that would have run.
+      // Asking is the right answer, not silence: the confirm in splitResult protects filled rows.
+      // (No backticks in this comment: the whole script is a template literal.)
+      command.addEventListener('change', askSplit);
     }
     var split = document.getElementById('splitCmd');
     if (split) {
