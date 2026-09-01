@@ -1,16 +1,18 @@
-import { CredsAction, CredsProduct } from './credsInstall';
+import { CREDS_RIDS, CredsAction, CredsProduct } from './credsInstall';
 
 /**
  * The sentence above the buttons, for one product on this machine.
  *
  * <p>Every branch is a different situation and deserves its own words. "There is no build for
- * macOS" is not a failure to retry, and "the record says 0.1.0 but the file is gone" is not the
+ * your platform" is not a failure to retry, and "the record says 0.1.0 but the file is gone" is not the
  * same as "0.1.0 is installed" — a menu that said so would offer nothing while nothing runs.
  * One sentence per situation, in a table rather than a switch, so adding a situation is a row.</p>
  */
 const WORDS: { [K in CredsAction['kind']]: (product: CredsProduct, action: Extract<CredsAction, { kind: K }>) => string } = {
+  // The list is BUILT from the RIDs, never typed: a sentence that spells the matrix out by hand
+  // goes stale the day the matrix changes, and macOS spent months being named as absent here.
   unsupported: (product, action) =>
-    `There is no ${product.label} build for ${action.platform} yet — the release carries Windows and Linux, on x64 and arm64.`,
+    `There is no ${product.label} build for ${action.platform} yet — the release carries ${CREDS_RIDS.join(', ')}.`,
   unavailable: (product, action) =>
     `Cannot tell what is published (${action.reason}). ${product.label} is not installed.`,
   install: (product, action) =>

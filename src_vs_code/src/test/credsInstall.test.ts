@@ -1,6 +1,8 @@
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import * as assert from 'node:assert/strict';
 import { test } from 'node:test';
-import {
+import { CREDS_RIDS,
   CREDS_CLI,
   CREDS_MCP,
   actionFor,
@@ -33,11 +35,25 @@ test('this machine gets the build the release actually carries', () => {
   assert.equal(ridFor('linux', 'arm64'), 'linux-arm64');
 });
 
-test('macOS has NO build, and says so rather than guessing a near one', () => {
-  // The release workflow has no `osx-*` job. Guessing would download something that cannot
-  // execute, and reporting a download failure would send someone hunting a network problem.
-  assert.equal(ridFor('darwin', 'arm64'), undefined);
-  assert.equal(ridFor('darwin', 'x64'), undefined);
+test('a Mac gets its own build — node calls it darwin, .NET calls it osx', () => {
+  // This test used to assert the opposite, correctly: there was no `osx-*` job. There is now,
+  // for all three binaries, and the mapping is where a missing line had told a Mac there was no
+  // build while the runtime had supported one all along.
+  assert.equal(ridFor('darwin', 'arm64'), 'osx-arm64');
+  assert.equal(ridFor('darwin', 'x64'), 'osx-x64');
+});
+
+test('every RID the release workflow builds is one the extension will install', () => {
+  // Three matrices in one file, one list in another language. A build in the workflow the
+  // extension does not know is a download nobody can start; one the extension knows and the
+  // workflow does not build is a 404 at install time.
+  const workflow = fs.readFileSync(
+    path.join(__dirname, '..', '..', '..', '.github', 'workflows', 'release.yml'),
+    'utf8',
+  );
+  const built = new Set([...workflow.matchAll(/^\s+- rid:\s*(\S+)\s*$/gm)].map((m) => m[1]!));
+
+  assert.deepEqual([...built].sort(), [...CREDS_RIDS].sort());
 });
 
 test('an architecture the matrix does not build is refused, not approximated', () => {

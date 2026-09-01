@@ -20,8 +20,24 @@
  * when a download half-works on somebody's laptop.</p>
  */
 
-/** The four builds the release workflow produces. macOS is deliberately absent — see `ridFor`. */
-export type CredsRid = 'win-x64' | 'win-arm64' | 'linux-x64' | 'linux-arm64';
+/** Every build the release workflow produces, for all three binaries. */
+export type CredsRid = 'win-x64' | 'win-arm64' | 'linux-x64' | 'linux-arm64' | 'osx-x64' | 'osx-arm64';
+
+/**
+ * The RIDs, as a list.
+ *
+ * <p>It exists so the "no build for your platform" sentence is BUILT rather than typed: a message
+ * that spells the matrix out by hand goes stale on the day the matrix changes, and the reader has
+ * no way to tell a stale sentence from a true one.</p>
+ */
+export const CREDS_RIDS: readonly CredsRid[] = [
+  'win-x64',
+  'win-arm64',
+  'linux-x64',
+  'linux-arm64',
+  'osx-x64',
+  'osx-arm64',
+];
 
 /**
  * One installable binary: what it is called, and which tag line carries it.
@@ -59,11 +75,13 @@ export const CREDS_MCP: CredsProduct = {
 /**
  * The build for this machine, or `undefined` when the release matrix has none.
  *
- * <p><b>macOS returns `undefined` and that is not an oversight to paper over.</b> The release
- * workflow builds `win-x64`, `win-arm64`, `linux-x64` and `linux-arm64` — there is no `osx-*`
- * job. Guessing a nearby RID would download a binary that cannot execute, and reporting a
- * download failure would send someone hunting a network problem. So the menu says plainly that
- * there is no build for this platform yet.</p>
+ * <p><b>A platform the matrix does not build is refused BY NAME rather than approximated.</b>
+ * Guessing a nearby RID downloads a binary that cannot execute, and the resulting failure sends
+ * someone hunting a network problem that does not exist.</p>
+ *
+ * <p>macOS used to be that platform, and the mapping is where it was decided: node calls it
+ * `darwin` and .NET calls it `osx`, so a missing line here told a Mac there was no build while
+ * the runtime had supported one all along.</p>
  */
 export function ridFor(platform: string, arch: string): CredsRid | undefined {
   const cpu = cpuOf(arch);
@@ -80,9 +98,12 @@ function cpuOf(arch: string): 'x64' | 'arm64' | undefined {
 }
 
 /** Only the two operating systems the matrix builds — `darwin` deliberately among the absent. */
-function osOf(platform: string): 'win' | 'linux' | undefined {
+function osOf(platform: string): 'win' | 'linux' | 'osx' | undefined {
   if (platform === 'win32') {
     return 'win';
+  }
+  if (platform === 'darwin') {
+    return 'osx';
   }
   return platform === 'linux' ? 'linux' : undefined;
 }

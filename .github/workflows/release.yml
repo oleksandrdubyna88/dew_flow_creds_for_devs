@@ -128,6 +128,13 @@ jobs:
             runner: windows-latest
           - rid: win-arm64
             runner: windows-11-arm
+          # macOS needs no toolchain step: Native AOT uses the Xcode command line tools the
+          # runners already carry. It cannot be cross-compiled, which is why each of these is
+          # its OWN runner rather than another `-r` on an existing one.
+          - rid: osx-arm64
+            runner: macos-latest
+          - rid: osx-x64
+            runner: macos-13
     runs-on: ${{ matrix.runner }}
     permissions:
       contents: write   # attach binaries to the release
@@ -191,6 +198,13 @@ jobs:
             runner: windows-latest
           - rid: win-arm64
             runner: windows-11-arm
+          # macOS needs no toolchain step: Native AOT uses the Xcode command line tools the
+          # runners already carry. It cannot be cross-compiled, which is why each of these is
+          # its OWN runner rather than another `-r` on an existing one.
+          - rid: osx-arm64
+            runner: macos-latest
+          - rid: osx-x64
+            runner: macos-13
     runs-on: ${{ matrix.runner }}
     permissions:
       contents: write
@@ -288,6 +302,13 @@ jobs:
             runner: windows-latest
           - rid: win-arm64
             runner: windows-11-arm
+          # macOS needs no toolchain step: Native AOT uses the Xcode command line tools the
+          # runners already carry. It cannot be cross-compiled, which is why each of these is
+          # its OWN runner rather than another `-r` on an existing one.
+          - rid: osx-arm64
+            runner: macos-latest
+          - rid: osx-x64
+            runner: macos-13
     runs-on: ${{ matrix.runner }}
     permissions:
       contents: write
