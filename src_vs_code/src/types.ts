@@ -1,8 +1,10 @@
 import { BurnPolicy, isBurnPolicy } from './entityExpiry';
 import type { BackupBundle } from './backupBundleType';
 import { ConfigFormat, hasValidConfigFields } from './configFormat';
+import { PaymentForm, hasValidPaymentFields } from './paymentForm';
 import { McpAccess } from './mcpAccess';
 import {
+  hasValidKindFlags,
   isCommandArgArray,
   isEnvBindings,
   isMcpAccess,
@@ -134,6 +136,11 @@ export interface EntityMetadata {
    * it to code. Never the key itself — see `configKey.ts` for why only the hash is kept.
    */
   configKeyHash?: string;
+  /** Marks this entity as a payment instrument (the `payment` kind). */
+  isPayment?: boolean;
+  /** Which of the three field sets it shows — a field of the record, like `dbType`. Never a value:
+   * the card number and the rest are one JSON secret. See `paymentForm.ts` for both reasons. */
+  paymentForm?: PaymentForm;
   /** The base command, e.g. `aws sso login`. Arguments live in `commandArgs`. */
   command?: string;
   /** Arguments, one per row, each with an optional explanation. */
@@ -214,7 +221,7 @@ export type VpnType = 'openvpn' | 'wireguard' | 'ikev2' | 'l2tp' | 'other';
 
 /** The entity kinds the form's Type selector offers. Adding one is a compile error in every
  * switch that must handle it — see `assertNever` in entityKind.ts. */
-export type EntityKind = 'credential' | 'ssh' | 'sshkey' | 'vpn' | 'db' | 'terminal' | 'script' | 'config';
+export type EntityKind = 'credential' | 'ssh' | 'sshkey' | 'vpn' | 'db' | 'terminal' | 'script' | 'config' | 'payment';
 
 export const ENTITY_KINDS: readonly EntityKind[] = [
   'credential',
@@ -225,7 +232,9 @@ export const ENTITY_KINDS: readonly EntityKind[] = [
   'terminal',
   'script',
   'config',
+  'payment',
 ];
+
 
 /**
  * How each kind is named and iconed in the UI.
@@ -245,6 +254,7 @@ export const ENTITY_KIND_LABELS: Readonly<Record<EntityKind, { label: string; ic
   terminal: { label: 'Terminal command', icon: 'terminal' },
   script: { label: 'Script', icon: 'file-code' },
   config: { label: 'Config file', icon: 'settings-gear' },
+  payment: { label: 'Payment instrument', icon: 'credit-card' },
 };
 
 /** A folder's declared content type; 'any' = unrestricted. */
@@ -627,18 +637,15 @@ export function isEntityMetadata(value: unknown): value is EntityMetadata {
     (v.agentForward === undefined || typeof v.agentForward === 'boolean') &&
     (v.hostKey === undefined || typeof v.hostKey === 'string') &&
     (v.tags === undefined || (Array.isArray(v.tags) && v.tags.every((t) => typeof t === 'string'))) &&
-    (v.isSshKey === undefined || typeof v.isSshKey === 'boolean') &&
-    (v.isVpn === undefined || typeof v.isVpn === 'boolean') &&
-    (v.isDb === undefined || typeof v.isDb === 'boolean') &&
+    hasValidKindFlags(v) &&
     (v.dbType === undefined ||
       (typeof v.dbType === 'string' && (DB_TYPES as readonly string[]).includes(v.dbType))) &&
     (v.vpnType === undefined ||
       (typeof v.vpnType === 'string' && (VPN_TYPES as readonly string[]).includes(v.vpnType))) &&
     (v.vpnConfigFileName === undefined || typeof v.vpnConfigFileName === 'string') &&
-    (v.isTerminal === undefined || typeof v.isTerminal === 'boolean') &&
-    (v.isScript === undefined || typeof v.isScript === 'boolean') &&
     hasValidConfigFields(v) &&
     (v.configKeyHash === undefined || typeof v.configKeyHash === 'string') &&
+    hasValidPaymentFields(v) &&
     (v.scriptLanguage === undefined || typeof v.scriptLanguage === 'string') &&
     (v.script === undefined || typeof v.script === 'string') &&
     (v.scriptVars === undefined || isCommandArgArray(v.scriptVars)) &&

@@ -2,7 +2,7 @@ import { EntityKind, EntityMetadata } from './types';
 import { resolveKind } from './entityKind';
 
 /**
- * The eight shapes an entry can have, as a discriminated union (roadmap A4, 2026-08-28).
+ * The nine shapes an entry can have, as a discriminated union (roadmap A4, 2026-08-28).
  *
  * <p>`EntityMetadata` stays one interface with optional fields — it is the record on disk, in
  * the vault, in every share and backup, and two hundred readers take it as it is. What was
@@ -56,6 +56,10 @@ export type ConfigShape = EntityBase & {
   configFileName?: string;
   configKeyHash?: string;
 };
+export type PaymentShape = EntityBase & {
+  kind: 'payment';
+  paymentForm?: EntityMetadata['paymentForm'];
+};
 export type CredentialShape = EntityBase & { kind: 'credential' };
 
 export type EntityShape =
@@ -66,6 +70,7 @@ export type EntityShape =
   | TerminalShape
   | ScriptShape
   | ConfigShape
+  | PaymentShape
   | CredentialShape;
 
 /** The compile-time guarantee: every kind in the union, and nothing in the union that is not a kind. */
@@ -79,6 +84,7 @@ const EVERY_KIND_HAS_A_SHAPE: Record<EntityKind, ShapeKinds> = {
   terminal: 'terminal',
   script: 'script',
   config: 'config',
+  payment: 'payment',
 };
 void EVERY_KIND_HAS_A_SHAPE;
 

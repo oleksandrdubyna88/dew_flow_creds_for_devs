@@ -113,3 +113,22 @@ export function isMcpAccess(value: unknown): boolean {
     (v.delete === undefined || v.delete === 'any' || v.delete === 'own')
   );
 }
+
+const KIND_FLAGS = ['isSshKey', 'isVpn', 'isDb', 'isTerminal', 'isScript'] as const;
+
+/**
+ * The legacy kind flags that have no feature module of their own, checked together.
+ *
+ * <p>Five independent optional booleans that `isEntityMetadata` listed one per line. `isConfig`
+ * and `isPayment` are absent on purpose: each travels with the rest of its feature's fields, in
+ * `hasValidConfigFields` and `hasValidPaymentFields` — the better unit once a feature owns more
+ * than a flag.</p>
+ *
+ * <p>Extracted while the `payment` kind was being added, for exactly the reason this file exists:
+ * one more clause put `isEntityMetadata` at 51 lines against a 50-line limit and `types.ts` at 815
+ * against 800. The ceiling is not raised — `sizeRatchet.ts` says why a limit that can be raised is
+ * advice.</p>
+ */
+export function hasValidKindFlags(v: Record<string, unknown>): boolean {
+  return KIND_FLAGS.every((flag) => v[flag] === undefined || typeof v[flag] === 'boolean');
+}

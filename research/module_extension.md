@@ -233,6 +233,34 @@ looked present in testing and absent in use.
 | `vpn` | `isVpn` | Start / Stop (WireGuard, OpenVPN — green triangle), copy config |
 | `db` | `isDb` | open in a DB extension |
 | `terminal` | `isTerminal` | Run in Terminal (green triangle), Copy Command |
+| `script` | `isScript` | Run, Copy, materialise |
+| `config` | `isConfig` | write the file, diff it, open it to code |
+| `payment` | `isPayment` | card, bank details or a hidden phrase — see below |
+
+#### `payment`, and the two predicates that default to the wrong answer
+
+Added with [PLAN_payment_instruments.md](../todo/PLAN_payment_instruments.md). Three FORMS in one
+kind — `paymentForm: 'card' | 'bank' | 'phrase'` (`paymentForm.ts`) — because the three differ only
+in their fields while the tree, the folder types, the sharing, the backup and the trash treat them
+identically. Making them three kinds would have tripled nine per-kind seams to buy nothing.
+
+Two things about adding a ninth kind are worth keeping, because neither is visible in a diff:
+
+**The compiler demands four maps and misses everything else.** `ENTITY_KIND_LABELS`
+(`types.ts`), `EVERY_KIND_HAS_A_SHAPE` (`entityShape.ts`), `kindIcon`'s `assertNever` switch
+(`treeIcons.ts`) and `KIND_HINT` (`entityFormPage.ts`) all fail the build. The flag ladder
+(`kindOf`), the legacy flags (`legacyFlags`), the context token (`treeRowText.ts`) and the seeded
+folder (`defaultFolders.ts`) do not — they compile perfectly while doing nothing.
+
+**Worse: three lists are written BY EXCLUSION, so a new kind defaults to `true` in each.**
+`keepsPassword`, `canBurnOnAgentUse` and `formSections.ts`'s `passwordSection` are all
+`allBut(...)` / `kind !== 'x'`. Left alone, a payment instrument would have had an invisible,
+uneditable password slot **and** a Secret section offering it **and** a burn-after-first-use that
+nothing in the product can fire, since the broker serves no payment field. All three now name
+`payment`. The `passwordSection` one is the same defect class as the 0.92.0 config/TOTP drift, so
+`formSections.test.ts` no longer asserts a fixed list for it — it asserts the rule: *a kind
+`keepsPassword` refuses is never shown the Secret section.* That test caught `payment` on the
+commit that added it.
 
 ### Terminal commands
 

@@ -133,7 +133,12 @@ test('a config holds no password, so switching an entity to one scrubs a stored 
   // The same rule TOTP already follows: a second factor belongs to a login, so switching to a kind
   // that cannot hold one scrubs the seed.
   assert.equal(keepsPassword('config'), false);
-  for (const kind of ENTITY_KINDS.filter((one) => one !== 'config')) {
+  // `payment` refuses one too, for the same shape of reason: its values are one JSON record under
+  // one keychain key, the form shows no slot, so a stored password there would be invisible and
+  // uneditable. Named here rather than only in `paymentKind.test.ts` so this list stays the whole
+  // truth about which kinds refuse a password.
+  assert.equal(keepsPassword('payment'), false);
+  for (const kind of ENTITY_KINDS.filter((one) => one !== 'config' && one !== 'payment')) {
     assert.equal(keepsPassword(kind), true, kind);
   }
 });

@@ -3,6 +3,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { test } from 'node:test';
 import { DEP_COLOR_KEYS } from '../depColors';
+import { keepsPassword } from '../entityKind';
 import {
   FORM_SECTIONS,
   colorCollisionsForKind,
@@ -106,6 +107,22 @@ test('the kind-specific sections appear for their kind and no other', () => {
     ENTITY_KINDS.filter((k) => sectionsForKind(k).some((s) => s.id === 'totpSection')).sort(),
     [...ENTITY_KINDS].sort(),
   );
+});
+
+test('a kind that cannot keep a password is never shown the Secret section', () => {
+  // The 0.92.0 defect, generalised into a rule instead of a fixed list. `passwordSection` is
+  // declared by EXCLUSION (`allBut(...)`), so every new kind defaults INTO it — that is how a
+  // config came to be offered a slot the save path scrubbed. The two lists are legitimately
+  // different (a database keeps a password and shows it in its own section), so this asserts the
+  // only direction that can never be right: offering a password to a kind that refuses to hold
+  // one. It caught `payment` on the commit that added it.
+  for (const kind of ENTITY_KINDS.filter((k) => !keepsPassword(k))) {
+    assert.equal(
+      sectionsForKind(kind).some((s) => s.id === 'passwordSection'),
+      false,
+      `${kind} cannot keep a password, so the form must not offer it one`,
+    );
+  }
 });
 
 test('the save path and the form agree about which kinds carry a one-time code', () => {

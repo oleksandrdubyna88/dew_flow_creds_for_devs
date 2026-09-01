@@ -27,6 +27,9 @@ import { ENTITY_KINDS, EntityKind, EntityMetadata } from './types';
 /** The kind an entity's flags map to (priority: terminal > db > vpn > key > ssh). */
 // eslint-disable-next-line complexity
 export function kindOf(d: EntityMetadata | undefined): EntityKind {
+  if (d?.isPayment) {
+    return 'payment';
+  }
   if (d?.isConfig) {
     return 'config';
   }
@@ -97,6 +100,7 @@ function legacyFlags(kind: EntityKind, wasSshEnabled: boolean): Partial<EntityMe
     isTerminal: on('terminal'),
     isScript: on('script'),
     isConfig: on('config'),
+    isPayment: on('payment'),
   };
 }
 
@@ -123,7 +127,7 @@ export function canConnectSsh(details: EntityMetadata | undefined): boolean {
  * <p>`sshkey` is deliberately absent: the broker never serves a key pair, so nothing about a
  * key pair can ever pass through the one place a one-use burn fires.</p>
  */
-export type BrokerServedKind = Exclude<EntityKind, 'sshkey' | 'config'>;
+export type BrokerServedKind = Exclude<EntityKind, 'sshkey' | 'config' | 'payment'>;
 
 /**
  * Whether a one-use burn could ever fire for this kind.
@@ -139,9 +143,15 @@ export type BrokerServedKind = Exclude<EntityKind, 'sshkey' | 'config'>;
  * configuration at every start. A config that destroyed itself the first time it worked is not a
  * short-lived secret; it is a broken one, and the second `dotnet run` is where you would find
  * out.</p>
+ *
+ * <p>`payment` is excluded for the first reason rather than the second: the broker serves no
+ * payment field and the agent surface carries none, so there is no path on which a one-use burn
+ * could ever fire. Written down explicitly because this predicate is a `kind !== 'x'` list, and a
+ * new kind therefore defaults to TRUE — a payment instrument would have offered a burn-after-first-use
+ * that nothing in the product can trigger, which is a promise, not a feature.</p>
  */
 export function canBurnOnAgentUse(kind: EntityKind): kind is BrokerServedKind {
-  return kind !== 'sshkey' && kind !== 'config';
+  return kind !== 'sshkey' && kind !== 'config' && kind !== 'payment';
 }
 
 /**
@@ -172,9 +182,15 @@ export function permittedBurnPolicy(
  * <p>The rule TOTP already follows, and for the same shape of reason: a second factor belongs to a
  * login, so switching to a kind that cannot hold one scrubs the seed. Applied on WRITE, in
  * `toValues`, so the impossible state cannot reach the vault.</p>
+ *
+ * <p>A payment instrument cannot either, and for the same shape of reason: its values are ONE JSON
+ * record under one keychain key (`paymentFields.ts`), the form shows no password slot, and so a
+ * stored password on one would be invisible AND uneditable — the exact state that made a converted
+ * config shareable while delivering the password and leaving the body behind. This predicate is a
+ * `kind !== 'x'` list, so payment had to be named or it would have defaulted to true.</p>
  */
 export function keepsPassword(kind: EntityKind): boolean {
-  return kind !== 'config';
+  return kind !== 'config' && kind !== 'payment';
 }
 
 /**

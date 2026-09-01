@@ -6,6 +6,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **A ninth kind of entry: a payment instrument.** A bank card, a set of bank details or a hidden
+  phrase — three forms of one kind, because they differ only in their fields while the tree, the
+  folders, the sharing and the trash treat them identically. A `payments` folder is seeded for new
+  accounts, and a folder can be typed to it. This first change registers the kind only; the fields,
+  the forms and the viewer follow.
+
+  Until now a card or a seed phrase had nowhere to go but the **notes** of some other entry, where it
+  is encrypted but not masked, reaches search, and travels into a share as ordinary text. The data
+  was already in the vault — just with nothing handling it as what it is.
+
+### Fixed
+
+- **A new kind of entry silently inherited three permissions written as exclusions.**
+  `keepsPassword`, `canBurnOnAgentUse` and the form's Secret section are each spelled "every kind
+  except these", so a kind added to the list gets all three by default. A payment instrument would
+  have carried an invisible, uneditable password slot, been offered a Secret field for it, and shown
+  a burn-after-first-use that nothing can trigger — the broker serves no payment field. This is the
+  same shape as the config/one-time-code drift fixed in 0.92.0, so the test no longer checks a fixed
+  list of kinds against the Secret section; it checks the rule that cannot ever be wrong — a kind
+  that refuses to hold a password is never offered one. It caught this on the commit that added the
+  kind.
+
 ## [0.92.0] — 2026-08-31
 
 ### Added

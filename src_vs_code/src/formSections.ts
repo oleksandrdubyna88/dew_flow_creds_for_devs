@@ -92,7 +92,14 @@ export const FORM_SECTIONS: readonly FormSection[] = [
     legend: 'Secret',
     group: 'main',
     color: 'depColor4',
-    kinds: allBut('db', 'terminal', 'script', 'config'),
+    // `payment` added with the kind itself: its values are one JSON record under one keychain key,
+    // so a Secret slot beside them would be a password no form can show and no user can edit — the
+    // state `keepsPassword` refuses on write. This list is declared BY EXCLUSION, so a new kind
+    // defaults IN, which is how 0.92.0's config drift happened; `formSections.test.ts` now pins the
+    // one direction that must always hold — a kind `keepsPassword` refuses is never shown this
+    // section. Note the two lists are NOT the same and must not be merged: a database, a terminal
+    // command and a script all keep a password and simply carry it in a section of their own.
+    kinds: allBut('db', 'terminal', 'script', 'config', 'payment'),
   },
   {
     id: 'totpSection',

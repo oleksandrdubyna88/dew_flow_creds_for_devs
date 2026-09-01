@@ -29,6 +29,8 @@ export function kindIcon(kind: EntityKind): string {
       return 'file-code';
     case 'config':
       return 'settings-gear';
+    case 'payment':
+      return 'credit-card';
     case 'db':
       return 'database';
     case 'vpn':

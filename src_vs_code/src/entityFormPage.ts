@@ -125,6 +125,7 @@ const KIND_HINT: Record<EntityKind, string> = {
   terminal: '',
   script: '',
   config: ' — a file your app reads, kept out of git',
+  payment: ' — card, bank details or a hidden phrase',
 };
 
 /**

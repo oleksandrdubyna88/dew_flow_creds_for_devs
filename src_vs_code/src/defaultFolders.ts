@@ -27,6 +27,10 @@ export const DEFAULT_FOLDERS: readonly DefaultFolderSpec[] = [
   // both take this list verbatim — had nowhere typed to put one. Last, beside `scripts`,
   // because both hold file-shaped entries; the index IS the display order.
   { name: 'config', folderType: 'config' },
+  // Added with the `payment` kind itself, in the same story — the comment above is the reason
+  // why: `config` shipped as a kind and waited two releases for its folder, so every account
+  // seeded in between had nowhere typed to put one.
+  { name: 'payments', folderType: 'payment' },
 ];
 
 /**

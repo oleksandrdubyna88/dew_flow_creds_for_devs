@@ -92,7 +92,9 @@ test('a config cannot burn on agent use either, for the opposite reason', () => 
 });
 
 test('every other kind may burn on agent use, and keeps the policy through a write', () => {
-  for (const kind of ENTITY_KINDS.filter((k) => k !== 'sshkey' && k !== 'config')) {
+  // `payment` joined the exclusion list with the kind itself: the broker serves no payment field
+  // and the agent surface carries none, so there is no path on which a one-use burn could fire.
+  for (const kind of ENTITY_KINDS.filter((k) => !['sshkey', 'config', 'payment'].includes(k))) {
     assert.equal(canBurnOnAgentUse(kind), true, kind);
     assert.equal(stampKind(details({ kind, burnPolicy: 'oneUse' })).burnPolicy, 'oneUse', kind);
   }

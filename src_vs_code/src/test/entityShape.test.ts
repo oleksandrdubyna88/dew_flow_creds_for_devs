@@ -23,13 +23,14 @@ const LEGACY_FLAG: Record<EntityKind, Partial<EntityMetadata>> = {
   terminal: { isTerminal: true },
   script: { isScript: true },
   config: { isConfig: true },
+  payment: { isPayment: true },
   credential: {},
 };
 function legacy(kind: EntityKind): EntityMetadata {
   return { id: kind, name: kind, isSshEnabled: false, ...LEGACY_FLAG[kind] };
 }
 
-/** Exhaustive by construction: a ninth kind makes this switch a compile error at `assertNever`. */
+/** Exhaustive by construction: a tenth kind makes this switch a compile error at `assertNever`. */
 // eslint-disable-next-line complexity -- the exhaustive switch IS the test
 function describe(shape: EntityShape): string {
   switch (shape.kind) {
@@ -47,6 +48,8 @@ function describe(shape: EntityShape): string {
       return `script ${shape.scriptLanguage ?? ''}`;
     case 'config':
       return `config ${shape.configFormat ?? ''}`;
+    case 'payment':
+      return `payment ${shape.paymentForm ?? ''}`;
     case 'credential':
       return 'credential';
     default:

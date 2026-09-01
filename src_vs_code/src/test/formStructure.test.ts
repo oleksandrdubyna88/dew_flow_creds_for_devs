@@ -10,7 +10,11 @@ import type { EntityFormOptions } from '../entityFormPanel';
  * until the owner did (2026-08-28). A structural test, so the next unclosed tag fails here.
  */
 
-const KINDS = ['ssh', 'sshkey', 'db', 'vpn', 'credential', 'terminal', 'script', 'config'] as const;
+// This tuple is declared rather than taken from `ENTITY_KINDS`, so a new kind is NOT covered here
+// for free — it has to be added by hand, which is exactly what was done for `payment`. Left as a
+// tuple on purpose: the `form()` helper below builds a kind-shaped options object, and deriving the
+// list would make a missing kind silently untested instead of visibly absent.
+const KINDS = ['ssh', 'sshkey', 'db', 'vpn', 'credential', 'terminal', 'script', 'config', 'payment'] as const;
 
 function form(kind: string, mode: 'create' | 'edit' = 'create'): EntityFormOptions {
   return {

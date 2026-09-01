@@ -39,6 +39,7 @@ test('the default set covers every kind, each folder with its own type', () => {
       ['terminal', 'terminal'],
       ['scripts', 'script'],
       ['config', 'config'],
+      ['payments', 'payment'],
     ],
   );
 });

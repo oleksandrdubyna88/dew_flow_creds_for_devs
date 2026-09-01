@@ -115,6 +115,9 @@ export function entityContextValue(
     // something — the same shape the SSH-agent and VPN start/stop pairs use.
     contextValue += details.configKeyHash === undefined ? ':codeoff' : ':codeon';
   }
+  if (details?.isPayment) {
+    contextValue += ':payment';
+  }
   if (hasPassword) {
     contextValue += ':pwd';
   }
@@ -148,6 +151,11 @@ function isShareable(details: EntityMetadata | undefined, hasPassword: boolean):
       // and until the body travelled, an entry that became shareable through a leftover one
       // delivered the password and left the document behind.
       details.isConfig === true ||
+      // Named for the same reason `config` is: a payment instrument HAS no password
+      // (`keepsPassword` refuses one), so it would never become shareable through `hasPassword`
+      // — and a card is exactly the thing somebody sends a colleague. The CVV and the PIN are
+      // stripped on the way out; that is `paymentRedaction.ts`'s job, not this predicate's.
+      details.isPayment === true ||
       hasPassword)
   );
 }
