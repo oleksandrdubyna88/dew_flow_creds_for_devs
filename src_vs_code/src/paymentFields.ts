@@ -46,6 +46,25 @@ export const PAYMENT_FIELD_KEYS = [...STRING_KEYS, ...FLAG_KEYS, ...TOKEN_LIST_K
 export type PaymentFieldKey = (typeof PAYMENT_FIELD_KEYS)[number];
 
 /**
+ * EXACTNESS, in the direction `satisfies` cannot check.
+ *
+ * <p>Accepted from the code review, which found the half I had missed.
+ * `satisfies readonly (keyof PaymentFields)[]` proves every listed name EXISTS on the interface. It
+ * says nothing about the reverse — that every field on the interface is listed — and the reverse is
+ * the one that loses data: add `routingNumber` to `PaymentFields`, write it into a record, forget it
+ * in `PAYMENT_FIELD_KEYS`, and `pickPaymentFields` drops it on read while `serializePaymentFields`
+ * persists the reduced record. The only stored copy is gone, silently, with a green build.</p>
+ *
+ * <p>So the assertion runs the other way: anything on `PaymentFields` that the key list does not name
+ * resolves to a type error here. It is the same shape as `EVERY_KIND_HAS_A_SHAPE` in
+ * `entityShape.ts` — a total map used for nothing but the compile error it produces when it stops
+ * being total.</p>
+ */
+type UnlistedPaymentField = Exclude<keyof PaymentFields, PaymentFieldKey>;
+const EVERY_FIELD_IS_LISTED: UnlistedPaymentField extends never ? true : UnlistedPaymentField = true;
+void EVERY_FIELD_IS_LISTED;
+
+/**
  * The only fields that may be stored woven with a decoy half — plan §3a names exactly these.
  *
  * <p>Accepted from the code review of S1.2. `shuffledFields` was filtered against the full key list,
@@ -63,9 +82,24 @@ export type PaymentFieldKey = (typeof PAYMENT_FIELD_KEYS)[number];
  * a field on `PaymentFields` without renaming it here would silently stop that field being weavable,
  * and a runtime filter cannot complain. Now it is a compile error.</p>
  */
-export const SHUFFLEABLE_KEYS = ['number', 'cvv', 'pin', 'iban', 'accountNumber'] as const satisfies readonly (keyof PaymentFields)[];
+export const SHUFFLEABLE_KEYS = ['number', 'cvv', 'pin', 'iban', 'accountNumber'] as const satisfies readonly PaymentFieldKey[];
 
 export type ShuffleableKey = (typeof SHUFFLEABLE_KEYS)[number];
+
+/**
+ * The policy check for the shuffleable list, since exactness is the wrong test for it.
+ *
+ * <p>`SHUFFLEABLE_KEYS` is a deliberate SUBSET — a holder's name and a bank's address are not woven —
+ * so asserting it covers every field would be asserting the opposite of the design. What CAN be
+ * asserted is the rule that makes a field weavable at all: it must hold a single string. Weaving
+ * permutes the characters of one value; a boolean has none to permute and a token array is already a
+ * list, so either in this list would be a runtime failure the compiler could have named.</p>
+ */
+type NonStringShuffleable = {
+  [K in ShuffleableKey]: PaymentFields[K] extends string | undefined ? never : K;
+}[ShuffleableKey];
+const EVERY_SHUFFLEABLE_HOLDS_A_STRING: NonStringShuffleable extends never ? true : NonStringShuffleable = true;
+void EVERY_SHUFFLEABLE_HOLDS_A_STRING;
 
 export interface PaymentFields {
   // Card

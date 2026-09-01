@@ -62,6 +62,21 @@ test('a round trip preserves every key the record can hold', () => {
   assert.deepEqual(parsePaymentFields(serializePaymentFields(full)), full);
 });
 
+test('every shuffleable key is a real payment key', () => {
+  // The compiler already enforces this (`satisfies readonly PaymentFieldKey[]`, plus an exactness
+  // assertion in the module that a field missing from the key list is a type error naming it). Kept
+  // as a runtime test as well, because the compile-time half disappears the moment somebody widens a
+  // type to silence it, and the two closed lists parting company is the drift shape that bit S1.1
+  // three times.
+  for (const key of SHUFFLEABLE_KEYS) {
+    assert.ok(
+      (PAYMENT_FIELD_KEYS as readonly string[]).includes(key),
+      `${key} can be woven but is not a payment field — pickPaymentFields would drop its value`,
+    );
+  }
+  assert.ok(SHUFFLEABLE_KEYS.length < PAYMENT_FIELD_KEYS.length, 'it is a deliberate subset, not a copy');
+});
+
 test('every key is labelled, and every label belongs to a key', () => {
   for (const key of PAYMENT_FIELD_KEYS) {
     assert.ok(PAYMENT_FIELD_LABELS[key], `${key} has no label, so a form cannot draw it`);
