@@ -18,6 +18,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   is encrypted but not masked, reaches search, and travels into a share as ordinary text. The data
   was already in the vault — just with nothing handling it as what it is.
 
+- **A payment instrument's values are stored as one encrypted record.** The card number, expiry,
+  holder, CVV, PIN and billing details — or the beneficiary, bank, IBAN, account number and SWIFT —
+  live in a single JSON record under a single OS-keychain key, exactly as a credential's login and
+  URL have since 0.82. It is encrypted at rest, carried by a backup and a restore, and deleted with
+  the entry. Nothing reaches plaintext metadata.
+
+  One record rather than one per field, and it is not a shortcut: a card has nine fields and bank
+  details seven, and as separate secret kinds that would be sixteen passes through the nine files a
+  secret kind touches. Every seam sees one opaque secret; the difference between a card number and a
+  CVV is enforced where it has to be observed — the form, the card, the share, the agent filter.
+
+  A value of the wrong type is dropped rather than converted. Turning `4111` into `"4111"` would
+  invent a card number, and records arrive from imports, syncs and shares written by other builds.
+
+### Changed
+
+- **Every SecretStorage key now lives in one module.** The key grammar and the escape that makes it
+  unambiguous moved out of the storage manager into `secretKeys.ts`. No key changed — that is now a
+  test with hardcoded literals of every key an installed build has ever written, deliberately not
+  composed the way the code composes them, because a test that builds its expectation the same way
+  cannot fail. A separator changed by one character would otherwise leave every stored secret
+  orphaned in the keychain with a green build, which is the worst outcome a tidying change can have.
+
+  The escape exists for a real defect: an entry whose id was `x:sshPrivateKey` once produced exactly
+  the key holding entry `x`'s private key, so saving the first one's password destroyed a real key and
+  reading it back returned the password. Auditing that boundary now means reading one 120-line file
+  instead of a 1100-line class.
+
 ### Fixed
 
 - **A stray payment flag could take an established entry's kind away from it — and its password with it.**

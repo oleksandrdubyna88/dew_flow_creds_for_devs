@@ -45,6 +45,23 @@ export const PAYMENT_FIELD_KEYS = [...STRING_KEYS, ...FLAG_KEYS, ...TOKEN_LIST_K
 
 export type PaymentFieldKey = (typeof PAYMENT_FIELD_KEYS)[number];
 
+/**
+ * The only fields that may be stored woven with a decoy half — plan §3a names exactly these.
+ *
+ * <p>Accepted from the code review of S1.2. `shuffledFields` was filtered against the full key list,
+ * which admitted two nonsense entries: `shuffledFields: ['shuffledFields']` (a method picker drawn
+ * over the metadata property itself) and any label or wordlist name. Filtering against the fields
+ * that can ACTUALLY be woven is both tighter and the honest rule — §3a is a closed list, not a
+ * suggestion, because each of these five has a decoy generator written for its structure and nothing
+ * else does.</p>
+ *
+ * <p>`mixed` is deliberately absent: it is not a field that gets woven, it IS the woven phrase, and
+ * its presence is the mark for a phrase record.</p>
+ */
+export const SHUFFLEABLE_KEYS = ['number', 'cvv', 'pin', 'iban', 'accountNumber'] as const;
+
+export type ShuffleableKey = (typeof SHUFFLEABLE_KEYS)[number];
+
 export interface PaymentFields {
   // Card
   number?: string;
@@ -195,11 +212,11 @@ function cleanTokens(value: unknown, fieldNamesOnly: boolean): string[] {
     const clean = cleanString(item);
     return clean === undefined ? [] : [clean];
   });
-  return fieldNamesOnly ? cleaned.filter(isPaymentFieldKey) : cleaned;
+  return fieldNamesOnly ? cleaned.filter(isShuffleableKey) : cleaned;
 }
 
-function isPaymentFieldKey(value: string): value is PaymentFieldKey {
-  return (PAYMENT_FIELD_KEYS as readonly string[]).includes(value);
+function isShuffleableKey(value: string): value is ShuffleableKey {
+  return (SHUFFLEABLE_KEYS as readonly string[]).includes(value);
 }
 
 // Nothing is copied by iterating the SOURCE — the loops walk the known key lists instead — so an
@@ -212,8 +229,43 @@ function cleanString(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined;
 }
 
-/** The JSON to store — `undefined` when there is nothing to store, so an empty record DELETES. */
+/**
+ * The JSON to store — `undefined` when there is nothing to store, so an empty record DELETES.
+ *
+ * <p><b>"Nothing" means no VALUE, not no key.</b> Accepted from the code review of S1.2: a record left
+ * holding only `shuffledFields` — a card whose fields were all cleared, or one switched to another
+ * form — is not an empty object, so it used to serialize and leave a keychain entry behind holding
+ * nothing but the names of fields that no longer exist. Nobody would ever look for it again, which is
+ * the same species of orphan the write-order invariant (S1.4) exists to avoid, arriving by a much
+ * duller route.</p>
+ *
+ * <p>So the emptiness test reads the value fields only. `shuffledFields` describes a record; it cannot
+ * BE one.</p>
+ */
 export function serializePaymentFields(fields: PaymentFields | undefined): string | undefined {
   const picked = pickPaymentFields(fields);
-  return Object.keys(picked).length === 0 ? undefined : JSON.stringify(picked);
+  return hasAnyValue(picked) ? JSON.stringify(picked) : undefined;
+}
+
+const META_KEYS: readonly string[] = ['shuffledFields'];
+
+function hasAnyValue(picked: PaymentFields): boolean {
+  return Object.keys(picked).some((key) => !META_KEYS.includes(key));
+}
+
+/**
+ * The record as it should be after a switch to `form` — every key the OLD form owned is gone, and
+ * `shuffledFields` keeps only names that still exist (plan §3e, applied by S2.4).
+ *
+ * <p>Accepted from the code review of S1.2, which found the gap by walking a real sequence: a card
+ * with `shuffledFields: ['number', 'cvv']` switched to bank details kept both names, because
+ * `shuffledFields` belongs to no form and so no switch cleared it. The card's viewer would then draw
+ * a method picker over two fields the bank form does not have. Filtering it here rather than in the
+ * switch means the rule cannot be forgotten by the story that performs the switch.</p>
+ */
+export function clearForForm(fields: PaymentFields, form: PaymentForm): PaymentFields {
+  const keep = new Set<string>(keysForForm(form));
+  const kept = Object.entries(pickPaymentFields(fields)).filter(([key]) => keep.has(key));
+  const survivors = (fields.shuffledFields ?? []).filter((name) => keep.has(name));
+  return pickPaymentFields({ ...Object.fromEntries(kept), shuffledFields: survivors });
 }

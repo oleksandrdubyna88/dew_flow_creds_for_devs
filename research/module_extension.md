@@ -252,6 +252,43 @@ Two things about adding a ninth kind are worth keeping, because neither is visib
 (`kindOf`), the legacy flags (`legacyFlags`), the context token (`treeRowText.ts`) and the seeded
 folder (`defaultFolders.ts`) do not — they compile perfectly while doing nothing.
 
+**The values are one JSON record under one keychain key** (`paymentFields.ts`, suffix `:payment`),
+following `entityFields.ts` and its stated reason: a field added later is a key in that object rather
+than another pass through the nine files a secret kind touches. Twenty-two keys across the three
+forms. Four rules, each a test: an unparseable string is no fields rather than a throw; an all-empty
+record serializes to `undefined`, which DELETES the key; a wrong-typed value is dropped rather than
+coerced (turning `4111` into `"4111"` would invent a card number, and records arrive from imports and
+foreign builds); and `shuffledFields` is filtered to the five fields §3a allows to be woven.
+
+Two of those came out of the code review. **`shuffledFields` describes the record, not a form** — a
+card with a woven PIN keeps it — so emptiness is measured over the VALUE fields only; otherwise a card
+whose fields were all cleared left a keychain entry holding nothing but the names of fields that no
+longer existed, which nobody would ever look for again. And `clearForForm` drops the names whose
+fields do not survive a form switch, so the viewer cannot draw a method picker over an absent field.
+
+**Storage is one `SECRET_KINDS` row** (`storageManager.ts`) plus four typed accessors. The row is the
+whole of it: export, import, snapshot and delete-with-the-entry all walk that list, so the record
+reaches the backup, the restore and the keychain cleanup with no line written at any of those sites —
+asserted, not assumed. Sync and revision history are NOT table-driven and are still to come.
+
+**The backup carries the CVV and the PIN, deliberately.** It is the person's own encrypted vault, and
+scrubbing them would mean losing them at restore. The direction that strips them is a share.
+
+#### `secretKeys.ts` — an extraction the ratchet forced, and the test that made it safe
+
+`storageManager.ts` sat at exactly its checked-in ratchet baseline, and the ratchet lets an exempted
+file shrink but never grow — so a new secret kind could not add a line to it. The `SecretStorage` key
+builders moved out: pure, `vscode`-free, reading nothing off the manager. 1168 → 1121 lines, baseline
+lowered so it cannot grow back.
+
+The record worth keeping is what the review said about it. Eleven builders were moved and rewritten
+through one `suffixed()` helper, and **nothing checked that the strings survived**. A separator changed
+by one character would pass the build, the typecheck and every payment test, and orphan every secret a
+person already had — reported to them as simply missing. `secretKeys.test.ts` now holds the literal key
+each builder must produce, hardcoded and deliberately not composed the way the code composes them: a
+test that agrees with itself cannot fail. Proven with teeth — `:` changed to `_` reddens three of its
+seven tests, including the one guarding the `x:sshPrivateKey` collision the escape exists for.
+
 **Worse: three lists are written BY EXCLUSION, so a new kind defaults to `true` in each.**
 `keepsPassword`, `canBurnOnAgentUse` and `formSections.ts`'s `passwordSection` are all
 `allBut(...)` / `kind !== 'x'`. Left alone, a payment instrument would have had an invisible,
