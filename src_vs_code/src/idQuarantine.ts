@@ -136,6 +136,11 @@ function remapBundle(bundle: BackupBundle, renamed: Readonly<Record<string, stri
     attachments: rekey(bundle.attachments, renamed),
     images: rekey(bundle.images, renamed),
     totps: rekey(bundle.totps, renamed),
+    // Missing since the `config` kind shipped in 0.77.0, and found only because `payment` met the
+    // identical bug in review. A config document left behind is the whole file the entry exists to
+    // hold: the restored entry reads as an empty config, the next export omits it, and the only copy
+    // becomes an unreachable keychain orphan.
+    configs: rekey(bundle.configs, renamed),
     payments: rekey(bundle.payments, renamed),
     // Tombstones are keyed by node id and must follow, or a renamed entity's deletion would
     // stop applying. `horizon` is keyed by DEVICE, not by node, and deliberately does not.

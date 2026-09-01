@@ -32,6 +32,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   A value of the wrong type is dropped rather than converted. Turning `4111` into `"4111"` would
   invent a card number, and records arrive from imports, syncs and shares written by other builds.
 
+- **Restoring a backup whose entry id needed sanitising lost the config document.** Present since
+  config entries shipped in 0.77.0, and found only because a payment record met the identical bug in
+  review. The entry was renamed to a safe id and its document stayed under the old one, so the restored
+  config read as empty while the only copy of the file became unreachable. Every other secret already
+  followed the rename; the config body was the one omission in a list of nine written out by hand.
+
 - **A payment instrument now survives a sync, and an import that renames its entry.** Two ways it
   could have been destroyed, both caught by review before release:
 
