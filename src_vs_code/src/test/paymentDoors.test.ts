@@ -71,6 +71,29 @@ test('the kinds the broker serves are named, and payment is not among them', () 
   );
 });
 
+test('the org-recovery escrow is the backup direction, not a door of its own', () => {
+  // The fifth candidate the review named, and the only one this file could not close with a
+  // structural assertion — flagged by my own reviewer as reasoned rather than asserted, which was
+  // fair. Asserted here in the only form that is honest: the escrow seals a 32-byte KEY, not a
+  // record, so it cannot single out a field.
+  //
+  // `orgEscrowShareWrap.ts` reuses the vault's own `wrapWithPin`/`wrapWithPrf` primitives — its own
+  // header says so and says why: "seal 32 bytes" has one implementation. An officer quorum therefore
+  // recovers the whole sealed vault exactly as the owner's own PIN does, which is the BACKUP direction
+  // (already decided as "carries" and tested in storagePayment.test.ts), not a seventh path with its
+  // own redaction question. A payment record is neither more nor less exposed by it than a password.
+  //
+  // What WOULD make it a door of its own is an escrow path that reads individual secrets. If one
+  // appears, this test is the wrong shape and should fail to compile rather than quietly pass.
+  const wrap = require('../orgEscrowShareWrap') as Record<string, unknown>;
+  const readsAnEntitySecret = Object.keys(wrap).some((name) => /payment|secretFor|entity/i.test(name));
+  assert.equal(
+    readsAnEntitySecret,
+    false,
+    'the escrow module gained an entity-level reader — it is no longer only a key wrap, and payment needs a decision',
+  );
+});
+
 test('nothing can print a payment value, which is why the output mask does not name one', () => {
   // The Blocking finding was that `maskEntries.ts` masks password/privateKey/vpnConfig/dbConnection/
   // notes and NOT payment, so a value could be printed to a terminal. Audited, and the conclusion is

@@ -282,7 +282,7 @@ the code review of S1.2 found three of them missing while the tests were green:
 | `syncMerge.ts` — `ProfileSnapshot`, `emptySnapshot`, `fingerprint`, the `copySecret` line, the `merged` literal | **DELETES.** The row already puts the kind into the snapshot `getSnapshot` builds, so a merged snapshot returning without it reads as an absence and `dropAbsentKinds` deletes that key for every entity. Save a card, let any ordinary change arrive from another machine, lose the card |
 | `syncManager.ts` — the vault read-back (`payload.x ?? {}`) | Drops the FAR side's values on arrival, so the fingerprint never matches and every cycle pushes. Its own comment records `fields` being forgotten here in 0.82 |
 | `idQuarantine.ts` — `remapBundle`'s `rekey` list | Strands the record. An unsafe imported id is renamed, the value stays under the old key, the restored entry reads empty and the only copy becomes an unreachable keychain orphan |
-| `revisionHistory.ts` — `RevisionSecrets`, `SMALL_FIELDS`, `revisionSnapshot.ts` | A rollback returns the entry without that field. Still outstanding, tracked in S1.3 |
+| `revisionHistory.ts` — `RevisionSecrets`, `SMALL_FIELDS`, `revisionSnapshot.ts` | A rollback returns the entry without that field. **Closed for `payment`** — all four lists now carry it |
 
 Only one of these is caught by a test today, and it is worth copying rather than admiring:
 `syncManager.test.ts` derives its slot list from `emptySnapshot()` **at run time**, so a new slot is
