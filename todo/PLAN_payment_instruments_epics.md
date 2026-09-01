@@ -252,25 +252,54 @@ per-operation and reads as global. What it actually protects is one thing:
 > allowed to exist. It is invisible, harmless and collectable. A node that claims a record which is
 > not there is visible, broken, and it **syncs**.
 
-That invariant gives *opposite* orders for the two operations, which is why writing it as one order
-produced a defect:
+That invariant gives *opposite* orders depending on the operation, which is why writing it as one
+order produced a defect. Round 8 then showed that "create/update versus delete" is still too coarse —
+an *edit that removes a field* is a deletion wearing an update's clothes. So the invariant resolves
+into **two rules**, and between them they cover every case:
+
+> **Rule A — the referrer is written on the safe side of its referent.** The node's metadata *refers
+> to* a secret; the secret is the thing referred to. **Adding** a reference writes the referent first
+> (secret, then node). **Removing** a reference writes the referrer first (node, then secret). Either
+> way the only reachable-crash state is a secret nobody points at.
+>
+> **Rule B — a durable record naming what is about to become unreachable exists BEFORE it becomes
+> unreachable.** For a deletion that record is the tombstone, so the order is tombstone, then node,
+> then secrets.
 
 | operation | order | what a crash mid-way leaves |
 |---|---|---|
-| create / update | **secret, then node** | a secret nothing points at — an orphan |
-| delete | **node, then secret** | a secret nothing points at — an orphan |
+| create, or an edit that ADDS a field | **secret, then node** | a secret nothing points at — an orphan |
+| an edit that REMOVES a field | **node, then secret** | an orphan. Reversed, it leaves the old node still claiming a payload that is already gone |
+| delete a node | **tombstone, then node, then secrets** | an orphan **that the tombstone names** |
+
+Rule A's second row is the round-8 finding and it is not a corner case: `applySecrets` already
+*deletes* secrets when a `clearX` checkbox is set (`applyFormSecrets.ts:9-20` `applyOptional` — its
+three-way clear/set/leave-alone shape is exactly where this lives). So a single save can both add and
+remove, and it cannot be ordered as one unit: **the additions go before `updateNode`, the removals
+after it.** That splits `applySecrets` into two calls around the node write, which is the real change
+this story makes and the reason it is not a one-line reorder.
+
+Rule B is why the tombstone moves ahead of the node write and not merely ahead of the secret loop. The
+round-8 finding: with `saveNodes` → `setTombstones` → secrets, a kill between the first two leaves the
+node durably gone and no tombstone written — an orphan named by nothing, which no sweep can ever
+collect. With the tombstone first, the worst interruption leaves a node that is **both live and
+tombstoned**, and the sweep already refuses that pair (a re-created id wins over its own tombstone),
+so the deletion is simply not finished and can be re-run — nothing is lost and nothing is
+unreachable.
 
 **Change**
 
 | file:line | today | after | why |
 |---|---|---|---|
-| `entityEditCommands.ts:99` then `:109` | `updateNode` → `applySecrets` | **`applySecrets` → `updateNode`** | today a crash between them leaves a node claiming a payload that was never written |
-| `commands/treeMutationCommands.ts:250` then `:264` | `addNode` → `applySecrets` | **`applySecrets` → `addNode`** | same |
-| `storageManager.ts:693` then `:706-709` | `saveNodes` → delete secrets | **unchanged** | already correct. Inverting it — as the first draft of this story proposed — deletes the secret, then fails to persist the tree, and the node returns on next start with its data permanently gone |
-| `storageManager.ts:706-709` then `:711` | delete secrets → `setTombstones` | **`setTombstones` → delete secrets** | so that every orphan the sweep must find is already named by a durable record |
+| `entityEditCommands.ts:99` / `:109` | `updateNode` → `applySecrets` | **`applySecrets`(additions) → `updateNode` → `applySecrets`(removals)** | Rule A both ways. A save that adds a field must write it before the node claims it; a save that clears one must stop the node claiming it before the value goes |
+| `commands/treeMutationCommands.ts:250` / `:264` | `addNode` → `applySecrets` | **`applySecrets` → `addNode`** | Rule A. A create has no removals, so it stays one call |
+| `applyFormSecrets.ts:9-20` | one `applyOptional` pass doing set **and** delete | **split into an additions pass and a removals pass** | the two halves belong on opposite sides of the node write, so they cannot stay one call |
+| `storageManager.ts:693` / `:706-709` / `:711` | `saveNodes` → secrets → `setTombstones` | **`setTombstones` → `saveNodes` → secrets** | Rule B. The tombstone is the recovery record; it must be durable before the node stops being derivable |
 
-The third row is written down as *unchanged and why* rather than omitted, because the obvious reading
-of §3d says to change it and the next person to read the parent plan will reach for exactly that.
+The third and fourth rows are the round-8 findings. Note what the fourth one is *not*: the first draft
+of this story proposed inverting `saveNodes` and the secret loop, which deletes the secret and then
+fails to persist the tree, returning the node on next start with its data permanently gone. That
+inversion is still wrong; what moves is the **tombstone**, to the front.
 
 **New: a startup orphan sweep, driven by tombstones — not by enumeration.**
 `vscode.SecretStorage` offers `get`/`store`/`delete` on a **known** key and no listing, and every
@@ -291,15 +320,33 @@ no key path reaches — invisible and harmless, which is precisely the state the
 is not a leak and it is not silently ignored: it is the tolerated case.
 
 **Tests** — `entityWriteOrder.test.ts` (named for all kinds, not `paymentWrite`, because that is what
-it covers): the fake `secrets` store throws on the nth call and no node is ever left claiming a
-secret that is absent; **and the case the reviewers named** — `saveNodes` fails *after* a successful
-secret deletion, which must be impossible to reach because the node was persisted first. A keychain
-refusal leaves the form open with the words on screen and the error shown.
+it covers). The fake `secrets` store throws on the nth call, and at **every** boundary the surviving
+state is checked against the invariant rather than against a snapshot:
+
+- a create interrupted at each boundary never leaves a node claiming an absent secret;
+- **an edit that REMOVES a field** — the round-8 case — interrupted after the removal: the persisted
+  node must already have stopped claiming it. This is the test that fails against a single-pass
+  `applySecrets`, which is what makes it worth writing;
+- `saveNodes` fails *after* a successful secret deletion — unreachable by construction, because the
+  node is persisted first;
+- **a deletion interrupted between the tombstone and `saveNodes`** — the other round-8 case: the node
+  is still live and also tombstoned, and the sweep must leave it alone;
+- a keychain refusal leaves the form open with the words on screen and the error shown.
+
 `orphanSweep.test.ts`: a tombstoned id's secret is dropped; a live id's secret is not; an id that is
 both tombstoned and live is not; a tombstone with nothing in the keychain is a no-op rather than an
-error. Because this changes all kinds, the existing `entityEditCommands.test.ts` and tree-mutation
-tests must stay green **unmodified** — if one needs editing to pass, that is a behaviour change to
-report, not a test to adjust.
+error.
+
+**One question round 8 asked that this story must answer before it is written, not during:** the
+invariant was audited against create, update and delete only. The other paths that write nodes and
+secrets — `importBundle`/restore, the sync merge's apply, a revision rollback, Restore from the Trash
+— are **not** yet checked against Rule A, and the reviewer was right to ask. The story starts by
+auditing those four and reports what it found; if any of them orders the pair wrongly, that is part of
+this story, because a second write path with the opposite order makes the invariant a comment.
+
+Because this changes all kinds, the existing `entityEditCommands.test.ts` and tree-mutation tests must
+stay green **unmodified** — if one needs editing to pass, that is a behaviour change to report, not a
+test to adjust.
 
 **DoD** — the story contract, plus: the invariant is written into `storageManager.ts`'s own header in
 the two-row form above, so the next reader cannot re-derive "secret first" as a global rule; the
