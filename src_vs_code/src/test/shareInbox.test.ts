@@ -671,3 +671,23 @@ test('an accepted card arrives with its number, and with no CVV to arrive with',
   assert.equal(arrived.expiry, '12/29');
   assert.equal(arrived.cvv, undefined);
 });
+
+test('a keychain that refuses fails the whole share instead of omitting the card', async () => {
+  // Accepted from the review as a Minor: the claim was that a rejected read already fails the build,
+  // because `secrets.get` REJECTS rather than resolving undefined and nothing on the share path
+  // catches it — but nothing ASSERTED it. A later caller-level catch that turned the rejection into a
+  // cheerful "shared" would recreate exactly the ambiguity the loud-refusal finding removed, and no
+  // existing test would notice.
+  const w = world();
+  const node = await cardEntry(w.storage);
+
+  const boom = new Error('keychain unavailable');
+  (w.storage as unknown as { getPaymentRaw: () => Promise<string> }).getPaymentRaw = () =>
+    Promise.reject(boom);
+
+  await assert.rejects(
+    () => loaded.buildSharePayload(w.storage, RECIPIENT.accountId, node, false),
+    /keychain unavailable/,
+    'the build must fail, so nothing is sealed and nothing is delivered',
+  );
+});

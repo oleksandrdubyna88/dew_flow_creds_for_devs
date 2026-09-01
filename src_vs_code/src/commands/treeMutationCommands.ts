@@ -39,7 +39,7 @@ import * as os from 'node:os';
 import { parseImport } from '../importFormats';
 import { importEntities } from '../importCommands';
 import { buildExternalBundle } from '../externalBundle';
-import { paymentFieldsInExport } from '../paymentRedaction';
+import { exportSensitiveNote, paymentFieldsInExport } from '../paymentRedaction';
 import { pinValidator } from '../pinInput';
 import { encryptJson } from '../cryptoUtils';
 import { decryptJson } from '../cryptoUtils';
@@ -466,11 +466,10 @@ export function registerTreeMutationCommands(host: TreeMutationCommandsHost): vo
     // watched a share leave the CVV behind would assume applies here too. So it is said, when there
     // is something to say. Counted, never printed: a CVV must not reach a notification, which
     // several UI layers log.
-    const cardCount = paymentFieldsInExport(Object.values(secrets));
-    const cardNote =
-      cardCount === 0
-        ? ''
-        : ` Includes the CVV and PIN of ${cardCount} payment ${cardCount === 1 ? 'record' : 'records'} — a share removes those, an export does not.`;
+    // The sentence lives beside the rule it describes, not here: both reviewers pointed out that
+    // "the CVV and PIN of N records" implies both values exist in each, and they asked for different
+    // metrics — one for records, one for occurrences — which is what made the ambiguity visible.
+    const cardNote = exportSensitiveNote(paymentFieldsInExport(Object.values(secrets)));
 
     const mode = await vscode.window.showQuickPick(
       [

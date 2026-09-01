@@ -28,13 +28,51 @@ import { PaymentFieldKey, parsePaymentFields, serializePaymentFields } from './p
  */
 
 /**
- * The fields that do not travel in a share.
+ * The fields that MAY travel in a share. An allowlist, and that inversion is the point.
  *
- * <p>A CVV and a PIN are the two things on a card that are ONLY ever proof that the holder is
- * present. Everything else — the number, the expiry, the holder's name, the billing address — is
- * something the holder routinely tells other people in order to be paid.</p>
+ * <p>This was `NOT_SHARED = ['cvv', 'pin']` — an exclusion list — until the code review pointed out
+ * that it is the same defect class this very feature was bitten by three times in S1.1, where
+ * `keepsPassword`, `canBurnOnAgentUse` and the form's password section were each written as "every
+ * kind except these" and silently granted a new kind all three. An exclusion list leaks BY DEFAULT:
+ * the next sensitive field added to `PaymentFields` — a one-time token, a full magnetic track, a
+ * second phrase — travels to somebody else's vault because nobody remembered to add it here.</p>
+ *
+ * <p>An allowlist fails the other way: a new field is WITHHELD until somebody decides it is safe to
+ * send, and the worst outcome of forgetting is a recipient missing a field they can ask for. That is
+ * the asymmetry worth having when the mistake is irreversible in one direction.</p>
+ *
+ * <p><b>What is on it, and why.</b> Everything a person routinely tells others IN ORDER TO BE PAID:
+ * the card number, its expiry, the holder's name, the billing address and phone, the country, the
+ * payment system; and every bank-details field, because reciprocity is what bank details are FOR.</p>
+ *
+ * <p><b>What is deliberately absent.</b> `cvv` and `pin` — the only two fields that are purely proof
+ * the holder is present. And every PHRASE field, including `mixed`: a woven phrase in someone else's
+ * vault is tokens they cannot unweave, because the method is a code the person remembers and nothing
+ * transmits (parent plan §4.4). Sending it is either useless to them or, if the sender's second
+ * column held a second real key, a leak of two keys at once. Recorded as an open product question in
+ * the plan rather than decided quietly here — the safe behaviour ships in the meantime.</p>
  */
-const NOT_SHARED: readonly PaymentFieldKey[] = ['cvv', 'pin'];
+const SHARE_SAFE: readonly PaymentFieldKey[] = [
+  // Card — what an invoice or a payment page asks for.
+  'number',
+  'expiry',
+  'holder',
+  'address',
+  'phone',
+  'country',
+  'brand',
+  // Bank details — every field, because they exist to be told to people.
+  'beneficiary',
+  'bank',
+  'iban',
+  'accountNumber',
+  'swift',
+  'intermediary',
+  'bankAddress',
+  // Metadata, not a value: which of the surviving fields are stored woven. `pickPaymentFields` prunes
+  // any name whose field did not survive, so this cannot describe something that is not there.
+  'shuffledFields',
+];
 
 /**
  * The record as it should be SHARED, or `undefined` when nothing is left to send.
@@ -60,17 +98,35 @@ export function redactPaymentForShare(raw: string | undefined): string | undefin
     // whole build. This is the parse half, which did fall through.
     throw new PaymentRecordUnreadableError();
   }
-  const fields: Record<string, unknown> = { ...parsePaymentFields(raw) };
-  for (const key of NOT_SHARED) {
-    delete fields[key];
-  }
-  return serializePaymentFields(fields);
+  return serializePaymentFields(keepOnlyShareSafe(raw));
 }
 
 /** A record that EXISTS and yields no fields — corrupt, as distinct from simply absent. */
 function isUnreadable(raw: string | undefined): boolean {
   return raw !== undefined && raw.length > 0 && Object.keys(parsePaymentFields(raw)).length === 0;
 }
+
+/** The allowlist applied: only a named field survives, everything else is dropped by DEFAULT. */
+function keepOnlyShareSafe(raw: string | undefined): Record<string, unknown> {
+  const stored = parsePaymentFields(raw) as Record<string, unknown>;
+  const out: Record<string, unknown> = {};
+  for (const key of SHARE_SAFE) {
+    if (stored[key] !== undefined) {
+      out[key] = stored[key];
+    }
+  }
+  return out;
+}
+
+/**
+ * The two fields whose presence in an EXPORT is worth warning about.
+ *
+ * <p>Not the complement of `SHARE_SAFE`, and the difference is deliberate. The complement also holds
+ * the phrase fields, and a woven phrase in an export is the ONLY place it is useful — it is the
+ * person's own file, and the woven form is what they store anyway. What deserves a sentence is the
+ * pair a share removes and an export does not, because that asymmetry is the surprise.</p>
+ */
+const WITHHELD_FROM_SHARE: readonly PaymentFieldKey[] = ['cvv', 'pin'];
 
 /**
  * How many of these exported records carry a field a SHARE would have removed.
@@ -83,16 +139,40 @@ function isUnreadable(raw: string | undefined): boolean {
  *
  * <p>Counting rather than listing the values: the warning must name the RISK without printing a CVV
  * into a notification, which several UI layers log.</p>
+ *
+ * <p><b>BOTH numbers, because one of them alone misleads — and the two reviewers asked for different
+ * ones, which is what made the ambiguity visible.</b> Counting RECORDS and saying "the CVV and PIN of
+ * 2 records" implies both values exist in each, when one may hold only a CVV and the other only a PIN.
+ * Counting FIELDS and saying "2 fields" hides how many cards are involved. So the caller gets both and
+ * says something that is true either way.</p>
  */
-export function paymentFieldsInExport(records: Iterable<{ payment?: string }>): number {
-  let count = 0;
+export interface ExportedSensitiveFields {
+  /** How many payment records carry at least one of them. */
+  readonly records: number;
+  /** How many such fields in total — a record holding both counts twice. */
+  readonly fields: number;
+}
+
+export function paymentFieldsInExport(records: Iterable<{ payment?: string }>): ExportedSensitiveFields {
+  let recordCount = 0;
+  let fieldCount = 0;
   for (const record of records) {
-    const fields = parsePaymentFields(record.payment) as Record<string, unknown>;
-    if (NOT_SHARED.some((key) => fields[key] !== undefined)) {
-      count++;
-    }
+    const stored = parsePaymentFields(record.payment) as Record<string, unknown>;
+    const found = WITHHELD_FROM_SHARE.filter((key) => stored[key] !== undefined).length;
+    fieldCount += found;
+    recordCount += found > 0 ? 1 : 0;
   }
-  return count;
+  return { records: recordCount, fields: fieldCount };
+}
+
+/** The warning sentence, or '' when there is nothing to warn about. */
+export function exportSensitiveNote(counts: ExportedSensitiveFields): string {
+  if (counts.fields === 0) {
+    return '';
+  }
+  const fields = counts.fields === 1 ? '1 CVV or PIN' : `${counts.fields} CVV/PIN values`;
+  const across = counts.records === 1 ? '1 payment record' : `${counts.records} payment records`;
+  return ` Includes ${fields} across ${across} — a share removes those, an export does not.`;
 }
 
 /**
@@ -123,14 +203,28 @@ export class PaymentRecordUnreadableError extends Error {
  * putting a CVV into the recipient's vault while the product claims a share cannot carry one. The
  * claim has to be true of what ARRIVES, not merely of what we send.</p>
  *
- * <p>It cannot throw on a corrupt arriving record the way the sending side does: a share that reached
- * a person is theirs, and refusing to store the readable half of it would lose more than it protects.
- * An unreadable arrival yields nothing, and the entry lands without a payment record.</p>
+ * <p><b>A corrupt arrival is REPORTED, not silently dropped.</b> I had made this side silently keep the
+ * readable half, on the argument that a share which reached a person is theirs and refusing it would
+ * lose more than it protects. Both reviewers rejected that independently, and they were right about
+ * the part I had wrong: the argument justifies keeping the entry, and nothing about it justifies being
+ * SILENT. A recipient told the entry arrived, whose card was dropped because the payload was malformed
+ * or written to a newer schema, acts on an entry they believe is complete — and has no way to ask for
+ * a re-send, because nothing says anything happened.</p>
+ *
+ * <p>So the outcome is a THREE-way answer rather than a string: the entry still lands (the sending side
+ * refuses instead, which is where a refusal costs nothing), and the caller is told when a payment
+ * record was present and unreadable so it can say so.</p>
  */
-export function redactArrivedPayment(raw: string | undefined): string | undefined {
-  const fields: Record<string, unknown> = { ...parsePaymentFields(raw) };
-  for (const key of NOT_SHARED) {
-    delete fields[key];
+export interface ArrivedPayment {
+  /** What to store, or `undefined` when there is nothing to store. */
+  readonly raw: string | undefined;
+  /** A payment record arrived and could not be read. The entry is still imported. */
+  readonly unreadable: boolean;
+}
+
+export function redactArrivedPayment(raw: string | undefined): ArrivedPayment {
+  if (isUnreadable(raw)) {
+    return { raw: undefined, unreadable: true };
   }
-  return serializePaymentFields(fields);
+  return { raw: serializePaymentFields(keepOnlyShareSafe(raw)), unreadable: false };
 }

@@ -572,11 +572,17 @@ After this, a share signed by any other key is refused.`,
       // both ends is one opinion applied twice, not two opinions — the shape this repository already
       // uses for sender identity, which is stamped from a verified token and never accepted from the
       // body. Accepted from the S1.3 code review, which overturned the opposite decision.
-      await this.deps.storage.setPaymentRaw(
-        share.accountId,
-        node.id,
-        redactArrivedPayment(payload.secrets.payment),
-      );
+      const arrived = redactArrivedPayment(payload.secrets.payment);
+      await this.deps.storage.setPaymentRaw(share.accountId, node.id, arrived.raw);
+      if (arrived.unreadable) {
+        // Reported, never silent. Both reviewers rejected the silent drop independently and were
+        // right about the half I had wrong: keeping the ENTRY is justified, being quiet about a
+        // dropped card is not. Somebody told the entry arrived would act on it believing it complete,
+        // with no way to know a re-send is worth asking for.
+        void vscode.window.showWarningMessage(
+          `"${node.name}" arrived, but its payment details could not be read and were not saved. Ask the sender to share it again.`,
+        );
+      }
     }
     await this.deps.sharing.removeOwnShare(share);
     this.deps.onArrived?.(share.accountId, node.id);

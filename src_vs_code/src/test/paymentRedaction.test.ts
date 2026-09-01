@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import { parsePaymentFields, serializePaymentFields } from '../paymentFields';
 import {
   PaymentRecordUnreadableError,
+  exportSensitiveNote,
   paymentFieldsInExport,
   redactArrivedPayment,
   redactPaymentForShare,
@@ -100,30 +101,81 @@ test('an ARRIVING record is redacted again, because a share is a trust boundary'
   // written by somebody else's process, so "a share cannot carry a CVV" has to be true of what
   // ARRIVES. One function called at both ends is one opinion applied twice, not two opinions.
   const crafted = '{"number":"4111111111111111","cvv":"123","pin":"4321"}';
-  const stored = parsePaymentFields(redactArrivedPayment(crafted));
+  const arrived = redactArrivedPayment(crafted);
+  const stored = parsePaymentFields(arrived.raw);
   assert.equal(stored.number, '4111111111111111', 'the card still arrives');
   assert.equal(stored.cvv, undefined, 'a crafted or replayed payload cannot put a CVV in my vault');
   assert.equal(stored.pin, undefined);
+  assert.equal(arrived.unreadable, false);
 });
 
-test('an unreadable ARRIVAL yields nothing instead of refusing the whole share', () => {
-  // Deliberately unlike the sending side. A share that reached a person is theirs, and refusing to
-  // store the readable half of it would lose more than it protects.
-  assert.equal(redactArrivedPayment('{not json'), undefined);
-  assert.equal(redactArrivedPayment(undefined), undefined);
+test('an unreadable ARRIVAL is REPORTED, not silently dropped', () => {
+  // I had this side keep the readable half in silence, arguing that a share which reached a person is
+  // theirs. Both reviewers rejected that independently and were right about the half I had wrong: the
+  // argument justifies keeping the ENTRY, and nothing about it justifies being silent. Somebody told
+  // the entry arrived would act on it believing it complete, with no way to know a re-send is worth
+  // asking for.
+  const bad = redactArrivedPayment('{not json');
+  assert.equal(bad.raw, undefined, 'nothing unreadable is stored');
+  assert.equal(bad.unreadable, true, 'and the caller is told, so it can say so');
+
+  const absent = redactArrivedPayment(undefined);
+  assert.equal(absent.raw, undefined);
+  assert.equal(absent.unreadable, false, 'no record is not a broken record — the distinction is the point');
 });
 
-test('the export warning counts the records whose CVV or PIN is going with them', () => {
-  // Counted, never printed: the warning must name the risk without putting a CVV into a
-  // notification, which several UI layers log.
-  const withCvv = { payment: serializePaymentFields({ number: '4111', cvv: '123' }) };
-  const withPin = { payment: serializePaymentFields({ number: '5555', pin: '4321' }) };
+test('a share that carries ONLY withheld fields arrives as nothing, and is not called unreadable', () => {
+  const onlyCvv = redactArrivedPayment('{"cvv":"123","pin":"4321"}');
+  assert.equal(onlyCvv.raw, undefined);
+  assert.equal(onlyCvv.unreadable, false, 'it parsed fine; there was simply nothing left to keep');
+});
+
+test('a NEW sensitive field is withheld by default, because the list is an allowlist', () => {
+  // The finding that mattered most in this round, and it is the same defect class that bit S1.1 three
+  // times: an exclusion list leaks BY DEFAULT. The next sensitive field added to PaymentFields would
+  // have travelled to somebody else's vault because nobody remembered to exclude it.
+  //
+  // `mixed` is the case that already exists: a woven phrase in someone else's vault is tokens they
+  // cannot unweave, because the method is a code the person remembers and nothing transmits.
+  const withPhrase = serializePaymentFields({
+    number: '4111111111111111',
+    mixed: ['alpha', 'mike', 'bravo', 'november'],
+    wordlistFirst: 'bip39-en',
+    layout: 'vertical',
+    ownWords: true,
+  });
+  const shared = parsePaymentFields(redactPaymentForShare(withPhrase));
+  assert.equal(shared.number, '4111111111111111', 'the allowlisted field still travels');
+  assert.equal(shared.mixed, undefined, 'a woven phrase is useless to a recipient and may be two real keys');
+  assert.equal(shared.wordlistFirst, undefined);
+  assert.equal(shared.layout, undefined);
+  assert.equal(shared.ownWords, undefined);
+});
+
+test('the export warning says how many FIELDS across how many RECORDS, because either alone misleads', () => {
+  // Both reviewers raised this and asked for DIFFERENT metrics, which is what made the ambiguity
+  // visible: "the CVV and PIN of 2 records" implies both values exist in each, and "2 fields" hides
+  // how many cards are involved. Counted, never printed — a CVV must not reach a notification, which
+  // several UI layers log.
+  const both = { payment: serializePaymentFields({ number: '4111', cvv: '123', pin: '4321' }) };
+  const cvvOnly = { payment: serializePaymentFields({ number: '5555', cvv: '999' }) };
   const plain = { payment: serializePaymentFields({ number: '6666' }) };
   const none = {};
 
-  assert.equal(paymentFieldsInExport([withCvv, withPin, plain, none]), 2);
-  assert.equal(paymentFieldsInExport([plain, none]), 0, 'no warning when there is nothing to warn about');
-  assert.equal(paymentFieldsInExport([]), 0);
+  assert.deepEqual(paymentFieldsInExport([both, cvvOnly, plain, none]), { records: 2, fields: 3 });
+  assert.deepEqual(paymentFieldsInExport([plain, none]), { records: 0, fields: 0 });
+  assert.deepEqual(paymentFieldsInExport([]), { records: 0, fields: 0 });
+});
+
+test('the export note is silent when there is nothing to warn about, and precise when there is', () => {
+  assert.equal(exportSensitiveNote({ records: 0, fields: 0 }), '', 'no sentence at all rather than a reassuring one');
+  assert.match(exportSensitiveNote({ records: 1, fields: 1 }), /1 CVV or PIN across 1 payment record\b/);
+  assert.match(exportSensitiveNote({ records: 2, fields: 3 }), /3 CVV\/PIN values across 2 payment records/);
+  assert.match(
+    exportSensitiveNote({ records: 1, fields: 1 }),
+    /a share removes those, an export does not/,
+    'the asymmetry is the whole reason the sentence exists',
+  );
 });
 
 test('redaction is idempotent, so a re-share cannot restore what a share removed', () => {
