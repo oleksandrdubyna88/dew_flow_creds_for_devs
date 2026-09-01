@@ -92,7 +92,7 @@ seams, 5 needs 4's viewer. Inside an epic the order is also fixed unless a story
 |---|---|---|
 | S1.1 | **landed** | 1 code round, 4 of 6 reviewers. Two findings, both accepted: the flag ladder's precedence could take a config's password away. Three exclusion-shaped permission lists named `payment` |
 | S1.2 | **landed** | 3 plan rounds + 1 code round, 5 of 6 reviewers on the code. Ten findings accepted, two rejected with reasons. **Two BLOCKING data-loss paths**, both reproduced as failing tests first: a sync deleted every payment record, and an import that renamed an unsafe id stranded it. Also found a pre-existing config-body version of the second, fixed in its own commit |
-| S1.3 | open | **narrowed** — see the deviation below |
+| S1.3 | **landed** | 3 plan rounds, both reviewers on two of them. 15 findings accepted, 2 rejected with reasons. The best of the feature: my share list was an EXCLUSION list — the same shape that bit S1.1 three times — and is now an allowlist. Also answered a question I asked three times: the plan's six directions are not all of them, and the other five are audited and pinned in `paymentDoors.test.ts` |
 | S1.4 | open | |
 | S2.1 – S5.4 | open | |
 
@@ -113,6 +113,31 @@ seams, 5 needs 4's viewer. Inside an epic the order is also fixed unless a story
 4. **S2.4 inherits an obligation from S1.2**: `clearForForm` exists with no caller. S2.4 must call it
    BEFORE persisting and add an integration test that switches a PERSISTED card to bank details and
    reads back neither a card value nor a card name.
+5. **S1.3's share list is an ALLOWLIST, not the exclusion list the plan implied.** §2.5 reads as "CVV
+   and PIN are stripped", which is an exclusion. It is now `SHARE_SAFE` — a field absent from that list
+   does not travel. The next story adding a payment field must decide whether it is share-safe, and
+   the compiler will not remind it; the plan is the reminder.
+6. **The plan's SIX directions were not all of them.** Five more carry entity secrets and none had been
+   audited: the masked-terminal path, the broker's `use` route, the headless CLI, terminal env bindings
+   and the org-recovery escrow. All five are closed to payment and now asserted
+   (`paymentDoors.test.ts`). The masked-output one is closed by UNREACHABILITY rather than by masking,
+   and that is deliberate — see the test's own comment for why masking a JSON blob would be worse than
+   nothing.
+
+## Open product questions — for the owner, not for a story to decide quietly
+
+1. **Should a payment instrument with a hidden PHRASE be shareable at all?** Today it is shareable and
+   the phrase does not travel: a recipient would get tokens they cannot unweave, because the method is
+   a code the person remembers and nothing transmits (parent plan §4.4) — and if the sender's second
+   column held a second real key, sending it would leak two keys at once. So the safe behaviour ships:
+   the entry arrives, the phrase does not, and the SENDER is told by name which fields were withheld.
+   The alternative is to refuse to share a phrase record at all, which is arguably clearer. Raised by
+   the S1.3 review; **decided conservatively and left open**, because "a card is shareable and a phrase
+   is not" is a product statement rather than a redaction detail.
+2. **`types.ts` is at exactly 800 of 800 lines.** The next story touching it needs an extraction, not
+   another trimmed comment. `isBackupBundle` is the obvious cut — it belongs beside
+   `backupBundleType.ts` — and one attempt during S1.3 mis-detected its closing brace and was reverted,
+   so it wants doing deliberately rather than in passing.
 
 ## Story contract — what every one of them owes
 
