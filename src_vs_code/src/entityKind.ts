@@ -27,9 +27,6 @@ import { ENTITY_KINDS, EntityKind, EntityMetadata } from './types';
 /** The kind an entity's flags map to (priority: terminal > db > vpn > key > ssh). */
 // eslint-disable-next-line complexity
 export function kindOf(d: EntityMetadata | undefined): EntityKind {
-  if (d?.isPayment) {
-    return 'payment';
-  }
   if (d?.isConfig) {
     return 'config';
   }
@@ -52,6 +49,24 @@ export function kindOf(d: EntityMetadata | undefined): EntityKind {
   }
   if (d?.isSshEnabled) {
     return 'ssh';
+  }
+  // LAST of the flags, nearest the `credential` fallback, and this position is load-bearing rather
+  // than arbitrary — it was put FIRST and the code review caught the consequence.
+  //
+  // `isEntityMetadata` admits every kind flag independently, so a record carrying both `isConfig`
+  // and `isPayment` — from an import, an external metadata merge, or a sync with a build that wrote
+  // one of them — is a valid record. Read from the top, such a record stops being a config and
+  // becomes a payment instrument; and because `keepsPassword('payment')` is false, the next save
+  // SCRUBS its password. A working config silently loses its secret, by way of a flag nobody set on
+  // purpose.
+  //
+  // Last means every established kind keeps precedence over a stray payment flag, which is the
+  // behaviour those records had before this kind existed. The general rule for the tenth kind:
+  // a new flag joins the BOTTOM of this ladder, because adding one anywhere else is a change that
+  // can reclassify stored data. `stampKind` clears stale flags for anything this build rewrites, so
+  // the exposure is only ever records written elsewhere.
+  if (d?.isPayment) {
+    return 'payment';
   }
   return 'credential';
 }

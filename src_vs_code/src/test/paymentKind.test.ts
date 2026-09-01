@@ -59,6 +59,38 @@ test('a record written by an older build resolves to payment from its flag alone
   assert.equal(resolveKind(legacy), 'payment');
 });
 
+test('a stray isPayment flag never takes an established kind away from a record', () => {
+  // The code review's finding on this story, and it is a data-loss path rather than a tidiness
+  // one. `isEntityMetadata` admits every kind flag independently, so a record carrying BOTH
+  // `isConfig` and `isPayment` is valid — an import, an external metadata merge, or a sync with a
+  // build that wrote one of them all produce it. With `isPayment` read FIRST, that record stops
+  // being a config and becomes a payment instrument; and because `keepsPassword('payment')` is
+  // false, the next save SCRUBS its password. A working config loses its secret through a flag
+  // nobody set on purpose.
+  //
+  // So the assertion is about PRECEDENCE, not about payment: every kind that existed before
+  // payment keeps its identity when a payment flag is also present.
+  const conflicted: Record<string, Partial<EntityMetadata>> = {
+    config: { isConfig: true },
+    script: { isScript: true },
+    terminal: { isTerminal: true },
+    db: { isDb: true },
+    vpn: { isVpn: true },
+    sshkey: { isSshKey: true },
+    ssh: { isSshEnabled: true },
+  };
+  for (const [kind, flags] of Object.entries(conflicted)) {
+    const record: EntityMetadata = { id: kind, name: kind, isSshEnabled: false, ...flags, isPayment: true };
+    assert.equal(
+      kindOf(record),
+      kind,
+      `a ${kind} record with a stray isPayment flag must stay a ${kind} — otherwise its next save scrubs what it holds`,
+    );
+  }
+  // And with no other flag it IS a payment instrument — otherwise the branch is unreachable.
+  assert.equal(kindOf({ id: 'p', name: 'p', isSshEnabled: false, isPayment: true }), 'payment');
+});
+
 test('stamping a payment record writes the compatibility flag and no other kind flag', () => {
   const stamped = stampKind(payment);
   assert.equal(stamped.kind, 'payment');

@@ -20,6 +20,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A stray payment flag could take an established entry's kind away from it — and its password with it.**
+  Every kind flag is admitted independently, so a record carrying both `isConfig` and `isPayment` is
+  valid and arrives in real life through an import, an external metadata merge, or a sync with a build
+  that wrote one of them. Because the new flag was read FIRST, such a record stopped being a config and
+  became a payment instrument — and since a payment instrument holds no password, the next save scrubbed
+  the one it had. A working config losing its secret through a flag nobody set on purpose. The new flag
+  now sits at the BOTTOM of the ladder, so every kind that existed before it keeps precedence, and the
+  rule for the tenth kind is written down beside it: a new flag joins the bottom, because adding one
+  anywhere else can reclassify stored data.
+
 - **A new kind of entry silently inherited three permissions written as exclusions.**
   `keepsPassword`, `canBurnOnAgentUse` and the form's Secret section are each spelled "every kind
   except these", so a kind added to the list gets all three by default. A payment instrument would
