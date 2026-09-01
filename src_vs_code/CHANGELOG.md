@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.93.0 — 2026-09-01
+
+**A replaced command line re-splits its arguments.** Duplicate a terminal entry, rename it, paste a
+different command — and the argument rows kept the ORIGINAL's. An Antigravity Windows entry cloned
+for Linux held `install.ps1`, a pipe and `iex` under a `curl … | bash` command, and the Full command
+preview showed a line that was neither the old one nor the new one. It is the line that would have
+run.
+
+The defect was a guard, not a missing feature: the change handler bailed out whenever any argument
+row had text — which is every cloned entry, the exact case splitting exists for. It reaches the split
+unconditionally now, and the confirm that already protected filled rows decides.
+
+**The New-entity heading names the kind.** It said only "New entity". A new entry has nothing to be
+named yet, but it always has a kind, and when the folder fixes that kind there is no choice to make
+anywhere on the form — so the heading was the only place it could register, and it did not. Adding
+six terminal commands in a row now says what each one is.
+
+**The sync summary says what its numbers count.** "pushed 1" after adding six entities reads as a
+count of entities; it counts profiles, and one account's vault is one push however much changed
+inside it. Both numbers name their unit now.
+
 All notable changes to **CredsForDevs** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).

@@ -368,7 +368,10 @@ export class SyncManager implements vscode.Disposable {
     this.onCycleEnd?.();
     if (verbose) {
       void vscode.window.showInformationMessage(
-        `Sync finished: pulled changes for ${applied} profile(s), pushed ${pushed}.`,
+        // Both numbers name their unit. The second one did not, and it counts PROFILES: somebody who
+        // had just added six entities read "pushed 1" as a count of entities and asked whether five
+        // had been lost. One account's vault is one push however much changed inside it.
+        `Sync finished: pulled changes for ${applied} profile(s), pushed the vault for ${pushed} profile(s).`,
       );
     }
   }

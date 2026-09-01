@@ -1,3 +1,5 @@
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import * as assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { configStub, loadWithVscode } from './vscodeStub';
@@ -625,3 +627,19 @@ for (const slot of SECRET_SLOTS) {
     );
   });
 }
+
+test('the sync summary says what its numbers count', () => {
+  // Reported: six entities added under one account, and the summary read "pushed 1". Somebody
+  // reasonably read that as a count of ENTITIES and asked whether five had been lost. It counts
+  // profiles — one account's vault is one push however much changed inside it — and a number
+  // without a unit beside a number with one invites exactly that reading.
+  const summary = (applied: number, pushed: number): string =>
+    `Sync finished: pulled changes for ${applied} profile(s), pushed the vault for ${pushed} profile(s).`;
+
+  const source = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'syncManager.ts'), 'utf8');
+  assert.ok(
+    source.includes('pushed the vault for ${pushed} profile(s)'),
+    'the pushed count must name its unit, like the pulled one does',
+  );
+  assert.match(summary(0, 1), /pushed the vault for 1 profile\(s\)/);
+});
