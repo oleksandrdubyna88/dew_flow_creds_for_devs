@@ -266,10 +266,28 @@ whose fields were all cleared left a keychain entry holding nothing but the name
 longer existed, which nobody would ever look for again. And `clearForForm` drops the names whose
 fields do not survive a form switch, so the viewer cannot draw a method picker over an absent field.
 
-**Storage is one `SECRET_KINDS` row** (`storageManager.ts`) plus four typed accessors. The row is the
-whole of it: export, import, snapshot and delete-with-the-entry all walk that list, so the record
-reaches the backup, the restore and the keychain cleanup with no line written at any of those sites —
-asserted, not assumed. Sync and revision history are NOT table-driven and are still to come.
+**Storage is one `SECRET_KINDS` row** (`storageManager.ts`) plus four typed accessors — for the
+TABLE-DRIVEN seams. Export, import, snapshot and delete-with-the-entry all walk that list, so the
+record reaches the backup, the restore and the keychain cleanup with no line written at any of those
+sites, asserted rather than assumed.
+
+##### The row is half the job, and the other half deletes if you forget it
+
+Adding a secret kind to `SECRET_KINDS` is free for everything that walks the table and **actively
+destructive** for everything that does not. Four lists are hand-maintained and must agree with it, and
+the code review of S1.2 found three of them missing while the tests were green:
+
+| hand-maintained list | what forgetting it does |
+|---|---|
+| `syncMerge.ts` — `ProfileSnapshot`, `emptySnapshot`, `fingerprint`, the `copySecret` line, the `merged` literal | **DELETES.** The row already puts the kind into the snapshot `getSnapshot` builds, so a merged snapshot returning without it reads as an absence and `dropAbsentKinds` deletes that key for every entity. Save a card, let any ordinary change arrive from another machine, lose the card |
+| `syncManager.ts` — the vault read-back (`payload.x ?? {}`) | Drops the FAR side's values on arrival, so the fingerprint never matches and every cycle pushes. Its own comment records `fields` being forgotten here in 0.82 |
+| `idQuarantine.ts` — `remapBundle`'s `rekey` list | Strands the record. An unsafe imported id is renamed, the value stays under the old key, the restored entry reads empty and the only copy becomes an unreachable keychain orphan |
+| `revisionHistory.ts` — `RevisionSecrets`, `SMALL_FIELDS`, `revisionSnapshot.ts` | A rollback returns the entry without that field. Still outstanding, tracked in S1.3 |
+
+Only one of these is caught by a test today, and it is worth copying rather than admiring:
+`syncManager.test.ts` derives its slot list from `emptySnapshot()` **at run time**, so a new slot is
+covered by construction — that test is the only reason the vault read-back was noticed, and its own
+comment says it was written for exactly this. The other three needed a reviewer.
 
 **The backup carries the CVV and the PIN, deliberately.** It is the person's own encrypted vault, and
 scrubbing them would mean losing them at restore. The direction that strips them is a share.

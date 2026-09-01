@@ -136,6 +136,7 @@ function remapBundle(bundle: BackupBundle, renamed: Readonly<Record<string, stri
     attachments: rekey(bundle.attachments, renamed),
     images: rekey(bundle.images, renamed),
     totps: rekey(bundle.totps, renamed),
+    payments: rekey(bundle.payments, renamed),
     // Tombstones are keyed by node id and must follow, or a renamed entity's deletion would
     // stop applying. `horizon` is keyed by DEVICE, not by node, and deliberately does not.
     tombstones: rekey(bundle.tombstones, renamed),

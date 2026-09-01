@@ -32,6 +32,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   A value of the wrong type is dropped rather than converted. Turning `4111` into `"4111"` would
   invent a card number, and records arrive from imports, syncs and shares written by other builds.
 
+- **A payment instrument now survives a sync, and an import that renames its entry.** Two ways it
+  could have been destroyed, both caught by review before release:
+
+  A sync would have **deleted every payment record**. Adding a secret kind to the table that drives
+  export and import carries it through those for free — and the sync merge is a separate, hand-written
+  list. A snapshot that came back from a merge without payments read as *"there are none"*, and the
+  import path then deleted the key for every entry. Saving a card and letting any ordinary change
+  arrive from another machine would have lost the card, the CVV and the PIN, which exist nowhere else.
+  Payments are carried through the merge now, including the case where the other side runs a build
+  that has never heard of them.
+
+  And restoring a backup whose entry id needed sanitising **stranded the record**: the entry was
+  renamed, its values stayed under the old name, so the restored card read as empty and the only copy
+  became unreachable.
+
+  Both are the same shape, and it is worth stating because the next secret kind will meet it: four
+  lists have to agree about a kind, and forgetting one does not fail to sync — it deletes. Only one of
+  the four is guarded by a test that notices automatically, because that test builds its list of slots
+  at run time instead of naming them. It is the reason a third omission was found at all.
+
 ### Changed
 
 - **Every SecretStorage key now lives in one module.** The key grammar and the escape that makes it

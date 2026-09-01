@@ -446,6 +446,12 @@ export class SyncManager implements vscode.Disposable {
           // as "the remote has none", so the merge drops the far side's logins and URLs, the
           // fingerprint never matches, and EVERY cycle pushes — which is how it was noticed.
           fields: payload.fields ?? {},
+          // And forgotten again when `payment` was added, in exactly the way the comment above
+          // predicted — caught only because `syncManager.test.ts` derives its slot list from
+          // `emptySnapshot()` at run time instead of listing the slots by hand. That test is the
+          // reason this line exists; four hand-maintained lists now have to agree about a secret
+          // kind, and this is the fourth.
+          payments: payload.payments ?? {},
           attachments: payload.attachments ?? {},
           images: payload.images ?? {},
           totps: payload.totps ?? {},

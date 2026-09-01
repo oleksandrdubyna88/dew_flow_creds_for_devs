@@ -51,6 +51,21 @@ export interface ProfileSnapshot {
   configs: Record<string, string>;
   /** entityId -> login/URL JSON. A secret, merged exactly like the notes; absent before 0.82. */
   fields?: Record<string, string>;
+  /**
+   * entityId -> a payment instrument's fields as JSON. A secret, merged exactly like the notes;
+   * absent before the `payment` kind.
+   *
+   * <p>Carried here by the story that ADDED the kind, not the later one that planned to, and the code
+   * review found why it could not wait: the `SECRET_KINDS` row already put payments into the snapshot
+   * `getSnapshot` builds, so a snapshot returning from a merge WITHOUT them read as an absence, and
+   * `dropAbsentKinds` deleted the `:payment` key of every entity. Save a card, let any ordinary change
+   * arrive from another machine, lose the card — CVV and PIN included, which exist nowhere else.</p>
+   *
+   * <p>This list is hand-maintained rather than driven from `SecretMapKey`, which is exactly how the
+   * two came to disagree. A kind added to that table and not to this interface does not fail to sync;
+   * it DELETES.</p>
+   */
+  payments?: Record<string, string>;
   /** id -> soft-delete record (object form; legacy number is normalized in). */
   tombstones: Record<string, Tombstone | number>;
   /** Element-wise max of every vector ever observed for this profile. */
@@ -78,6 +93,7 @@ export function emptySnapshot(): ProfileSnapshot {
     totps: {},
     configs: {},
     fields: {},
+    payments: {},
     tombstones: {},
     horizon: {},
   };
@@ -137,6 +153,7 @@ function fingerprint(snapshot: ProfileSnapshot): string {
     totps: sortRecord(snapshot.totps ?? {}),
     configs: sortRecord(snapshot.configs ?? {}),
     fields: sortRecord(snapshot.fields ?? {}),
+    payments: sortRecord(snapshot.payments ?? {}),
     tombstones: sortRecord(
       Object.fromEntries(
         Object.entries(normalizeTombstones(snapshot.tombstones)).map(([id, t]) => [
@@ -187,6 +204,7 @@ export function mergeProfiles(
   const totps: Record<string, string> = {};
   const configs: Record<string, string> = {};
   const fields: Record<string, string> = {};
+  const payments: Record<string, string> = {};
   const nodes: TreeNode[] = [];
   const allIds = new Set([...localById.keys(), ...remoteById.keys()]);
 
@@ -244,6 +262,9 @@ export function mergeProfiles(
     // written before the `config` kind carries no configs record at all.
     copySecret(configs, id, primary.configs ?? {}, fallback.configs ?? {});
     copySecret(fields, id, primary.fields ?? {}, fallback.fields ?? {});
+    // The same guard the two lines above need: a snapshot from a vault written before the payment
+    // kind carries no payments record at all, and must not delete the other side's.
+    copySecret(payments, id, primary.payments ?? {}, fallback.payments ?? {});
   }
 
   // Re-parent children whose parent did not survive the merge.
@@ -281,6 +302,7 @@ export function mergeProfiles(
     totps,
     configs,
     fields,
+    payments,
     tombstones,
     horizon,
   };
