@@ -6,6 +6,7 @@ import { DEP_COLOR_KEYS } from '../depColors';
 import {
   FORM_SECTIONS,
   colorCollisionsForKind,
+  kindCarriesTotp,
   sectionsForKind,
   sectionsOf,
 } from '../formSections';
@@ -100,8 +101,23 @@ test('the kind-specific sections appear for their kind and no other', () => {
     ENTITY_KINDS.filter((k) => sectionsForKind(k).some((s) => s.id === 'passwordSection')).sort(),
     ['credential', 'ssh', 'sshkey', 'vpn'],
   );
+  // Every kind since 0.92: a second factor is not the property of a login.
   assert.deepEqual(
     ENTITY_KINDS.filter((k) => sectionsForKind(k).some((s) => s.id === 'totpSection')).sort(),
-    ['credential', 'db', 'ssh', 'vpn'],
+    [...ENTITY_KINDS].sort(),
   );
+});
+
+test('the save path and the form agree about which kinds carry a one-time code', () => {
+  // The check that could not exist while the rule was written twice. `entityFormPanel.ts` used to
+  // decide this itself with `!isKey && !isTerminal && !isScript`, which admitted `config` while
+  // this table hid its section — so a seed could be accepted for an entry that had nowhere to
+  // type one. Both now read `kindCarriesTotp`, and this is what says so.
+  for (const kind of ENTITY_KINDS) {
+    assert.equal(
+      kindCarriesTotp(kind),
+      sectionsForKind(kind).some((s) => s.id === 'totpSection'),
+      `${kind}: the predicate and the section table disagree`,
+    );
+  }
 });

@@ -24,6 +24,19 @@ import { ENTITY_KINDS, EntityKind } from './types';
 
 export type SectionGroup = 'main' | 'additional';
 
+/**
+ * Whether an entry of this kind may carry a one-time-code seed.
+ *
+ * <p><b>Read by the form panel as well as by the form.</b> This rule existed twice until 0.92 —
+ * as `totpSection.kinds` here and as a hand-written `!isKey && !isTerminal && !isScript` in
+ * `entityFormPanel.ts` — and the two had already drifted: a `config` entry passed the save gate
+ * while the form showed it no section to type into. One fact, one place, exactly as this file's
+ * header argues for every other fact about a section.</p>
+ */
+export function kindCarriesTotp(kind: EntityKind): boolean {
+  return sectionsForKind(kind).some((section) => section.id === 'totpSection');
+}
+
 export interface FormSection {
   /** The fieldset's element id — also what the visibility switch toggles. */
   id: string;
@@ -86,7 +99,10 @@ export const FORM_SECTIONS: readonly FormSection[] = [
     legend: 'One-time code (TOTP)',
     group: 'additional',
     color: 'depColor5',
-    kinds: allBut('sshkey', 'terminal', 'script', 'config'),
+    // Every kind, since 0.92. It used to exclude keys, commands, scripts and configs on the
+    // reasoning that a second factor belongs to a login — but a saved `aws sso login`, a deploy
+    // script and a key behind a hardware token all have one, and the person had nowhere to put it.
+    kinds: EVERY_KIND,
   },
   {
     id: 'attachmentsSection',

@@ -7,6 +7,7 @@ import { describeFlag, isProbeSafe } from './helpText';
 import { readHelpText } from './helpLookup';
 import { BINDABLE_FIELDS, isValidEnvName } from './envBinding';
 import { parseTotpSecret } from './totp';
+import { kindCarriesTotp } from './formSections';
 import { readPastedQr } from './qrPaste';
 import { withSteamEncoder } from './totpSteam';
 import { normalizeTags, parseForward } from './sshOptions';
@@ -547,8 +548,17 @@ function readEnvBindings(data: Record<string, unknown>): Record<string, string> 
   return Object.keys(out).length > 0 ? out : undefined;
 }
 
+/**
+ * The webview's posted form into the values the caller stores.
+ *
+ * <p>Exported for its test: this is where a field is kept or scrubbed by kind, and the one-time
+ * code gate lived here untested until 0.92 while a second, disagreeing copy of the same rule sat
+ * in `formSections.ts`. The size and complexity below are pre-existing debt the directive has
+ * always covered — it stays ADJACENT to the function, because a doc block between the two
+ * detaches it and surfaces 108 lines of it at once.</p>
+ */
 // eslint-disable-next-line complexity, max-lines-per-function
-function toValues(data: Record<string, unknown>, options: EntityFormOptions): EntityFormValues {
+export function toValues(data: Record<string, unknown>, options: EntityFormOptions): EntityFormValues {
   const kind = (options.lockedKind ?? str(data, 'entityType')) as EntityKind;
   const envBindings = readEnvBindings(data);
   // `keep` and anything unrecognised leave the existing lifetime exactly as it was: renaming
@@ -586,9 +596,11 @@ function toValues(data: Record<string, unknown>, options: EntityFormOptions): En
   // webview posts is data, and `sshOptions.ts` is where "is this usable" is decided.
   const forwards = readForwardRows(data);
   const tags = normalizeTags(str(data, 'tags').split(/\s+/));
-  // A second factor belongs to a login: keys, commands and scripts have none. Switching an
-  // entity to one of those kinds scrubs a stored seed, as every other kind's fields are.
-  const isTotpKind = !isKey && !isTerminal && !isScript;
+  // Asked of `formSections.ts` rather than decided again here. The two used to be separate
+  // rules that agreed by habit and had already stopped agreeing — a `config` passed this one and
+  // had no section in the form. Since 0.92 every kind carries a seed, so nothing is scrubbed by a
+  // change of kind any more; the explicit "Remove the stored seed" box is the only way out.
+  const isTotpKind = kindCarriesTotp(kind);
   const totpParsed = isTotpKind ? parseTotpSecret(withSteamEncoder(str(data, 'totp'), bool(data, 'totpSteam'))) : undefined;
   const clearTotp = isTotpKind ? bool(data, 'clearTotp') : options.hasStoredTotp;
   const hasTotp = totpParsed !== undefined || (isTotpKind && options.hasStoredTotp && !clearTotp);
