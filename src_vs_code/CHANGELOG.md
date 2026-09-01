@@ -6,6 +6,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.92.0] — 2026-08-31
+
+### Added
+
+- **A one-time code can now be attached to any entry, not just a login.** Keys, terminal commands,
+  scripts and config files refused to hold a seed until now, on the reasoning that a second factor
+  belongs to a login. It does not: a saved `aws sso login`, a deploy script and an SSH key behind a
+  hardware token each have one, and there was nowhere in the product to put it.
+
+### Fixed
+
+- **A config entry could have a seed accepted that it had no field to type into.** The rule about
+  which kinds carry a one-time code was written in two places — the form's section table and the
+  save path — and the two had drifted apart: the save path admitted `config`, the form showed it no
+  section. Nothing could catch it, because of the pair only the section table had a test; the module
+  that actually decided had none at all. There is now one predicate, read by both, and a test that
+  they cannot part company again.
+
+### Changed
+
+- **Retyping an entry to another kind no longer destroys its one-time-code seed.** That scrubbing
+  was deliberate while four kinds could not hold a seed, and silent — switch a credential to a
+  script and the seed was gone with no warning. Now nothing drops it, and the explicit *Remove the
+  stored seed* box is the only way out.
+
 ## [0.91.2] — 2026-08-31
 
 ### Fixed
