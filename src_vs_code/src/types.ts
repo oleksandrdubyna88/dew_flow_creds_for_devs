@@ -138,7 +138,20 @@ export interface EntityMetadata {
   configKeyHash?: string;
   /** Marks this entity as a payment instrument (the `payment` kind). */
   isPayment?: boolean;
-  /** Which of the three field sets it shows — never a value; see `paymentForm.ts`. */
+  /**
+   * Which set of fields this payment instrument shows. A field of the RECORD rather than a kind of
+   * its own — the three forms differ only in their fields, while the tree, the folders, the sharing
+   * and the trash are identical. The same shape as `dbType` on a database.
+   *
+   * <p>The values themselves are ONE JSON secret under one keychain key (`paymentFields.ts`), so
+   * nothing here is the card number. This says which form to DRAW, and it is plaintext metadata on
+   * purpose: somebody reading it learns that you keep a card, which they knew when they opened the
+   * folder called `payments`.</p>
+   *
+   * <p>This comment was cut to one line when the file was at its 800-line ceiling, and the code
+   * review quoted the plan's own rule back — the next story touching this file needed an EXTRACTION,
+   * not a trimmed comment. `isBackupBundle` moved to `backupBundleType.ts`, and the words came back.</p>
+   */
   paymentForm?: PaymentForm;
   /** The base command, e.g. `aws sso login`. Arguments live in `commandArgs`. */
   command?: string;
@@ -477,8 +490,20 @@ export interface SharePayload {
     config?: string;
     /** A credential's login/URL, as the JSON the vault stores. */
     fields?: string;
-    /** A payment instrument's fields as JSON, **CVV and PIN removed** — `paymentRedaction.ts` owns
-     *  that list and the reason a share is the only stripping direction. */
+    /**
+     * A payment instrument's fields, as the JSON the vault stores — **carrying only what
+     * `SHARE_SAFE` names**. `paymentRedaction.ts` owns that allowlist and the reason a share is the
+     * only stripping direction of the six.
+     *
+     * <p>An ALLOWLIST rather than "minus the CVV and the PIN", because an exclusion list leaks by
+     * default: the next sensitive field added to a payment record would travel because nobody
+     * remembered to exclude it. Sharing a card IS the feature — a colleague needs the number and the
+     * expiry — and what stays behind is what is only ever proof the holder is present, plus a woven
+     * phrase, which a recipient could not unweave anyway.</p>
+     *
+     * <p>Redacted at BOTH ends through that one function: this field arrives from somebody else's
+     * process, so the guarantee has to hold for what arrives and not merely for what we send.</p>
+     */
     payment?: string;
   };
   /** Folder chain (shared folder inclusive) recreated on accept. */
@@ -735,66 +760,3 @@ export function isTreeNode(value: unknown): value is TreeNode {
   return true;
 }
 
-// eslint-disable-next-line complexity, max-lines-per-function
-export function isBackupBundle(value: unknown): value is BackupBundle {
-  if (typeof value !== 'object' || value === null) {
-    return false;
-  }
-  const v = value as Record<string, unknown>;
-  if (!Array.isArray(v.nodes) || !v.nodes.every(isTreeNode)) {
-    return false;
-  }
-  const allStrings = (record: unknown): boolean =>
-    typeof record === 'object' &&
-    record !== null &&
-    Object.values(record as Record<string, unknown>).every((p) => typeof p === 'string');
-  if (!allStrings(v.passwords)) {
-    return false;
-  }
-  if (v.privateKeys !== undefined && !allStrings(v.privateKeys)) {
-    return false;
-  }
-  if (v.vpnConfigs !== undefined && !allStrings(v.vpnConfigs)) {
-    return false;
-  }
-  if (v.dbConnections !== undefined && !allStrings(v.dbConnections)) {
-    return false;
-  }
-  if (v.attachments !== undefined && !allStrings(v.attachments)) {
-    return false;
-  }
-  if (v.images !== undefined && !allStrings(v.images)) {
-    return false;
-  }
-  if (v.totps !== undefined && !allStrings(v.totps)) {
-    return false;
-  }
-  // NOT exhaustive: `notes`, `configs` and `fields` have no clause and are admitted unvalidated.
-  if (v.payments !== undefined && !allStrings(v.payments)) { return false; }
-  if (v.exportedAt !== undefined && typeof v.exportedAt !== 'number') {
-    return false;
-  }
-  if (v.tombstones !== undefined) {
-    if (typeof v.tombstones !== 'object' || v.tombstones === null) {
-      return false;
-    }
-    // Each tombstone is a legacy ms-epoch number OR an object { deletedAt, v }.
-    const okTomb = Object.values(v.tombstones as Record<string, unknown>).every(
-      (t) =>
-        typeof t === 'number' ||
-        (typeof t === 'object' && t !== null && typeof (t as { deletedAt?: unknown }).deletedAt === 'number'),
-    );
-    if (!okTomb) {
-      return false;
-    }
-  }
-  if (v.horizon !== undefined) {
-    if (typeof v.horizon !== 'object' || v.horizon === null) {
-      return false;
-    }
-    if (!Object.values(v.horizon as Record<string, unknown>).every((n) => typeof n === 'number')) {
-      return false;
-    }
-  }
-  return true;
-}

@@ -1,4 +1,5 @@
 import type { TreeNode } from './types';
+import { isTreeNode } from './types';
 
 /** The decrypted payload of a per-profile .enc backup file. */
 export interface BackupBundle {
@@ -43,4 +44,86 @@ export interface BackupBundle {
   horizon?: Record<string, number>;
   /** When this bundle was written (ms epoch). Since 0.6. */
   exportedAt?: number;
+}
+
+/**
+ * The guard for the shape above, beside the shape it guards.
+ *
+ * <p>Moved out of `types.ts` while S1.3 was adding the `payments` map, and the move is the point
+ * rather than a tidy-up: that file was at exactly 800 of 800 lines, the plan said in writing that the
+ * next story touching it needed an EXTRACTION rather than another trimmed comment, and I trimmed two
+ * comments instead. The code review quoted my own plan back at me, which is the most deserved finding
+ * of the feature so far.</p>
+ *
+ * <p>Here rather than anywhere else because a guard belongs with its type: every clause below names a
+ * field of `BackupBundle` declared directly above, so the two can no longer be edited in different
+ * files. `isTreeNode` and `isEntityMetadata` still come from `types.ts`, and that import is safe in
+ * one direction only — `types.ts` imports `BackupBundle` as a TYPE, which leaves no runtime cycle.</p>
+ *
+ * <p>The list is still NOT exhaustive: `notes`, `configs` and `fields` have no clause and are
+ * admitted unvalidated. Pre-existing, recorded here rather than quietly widened, because fixing it
+ * means deciding what a malformed one should do to a whole restore.</p>
+ */
+// eslint-disable-next-line complexity, max-lines-per-function
+export function isBackupBundle(value: unknown): value is BackupBundle {
+  if (typeof value !== 'object' || value === null) {
+    return false;
+  }
+  const v = value as Record<string, unknown>;
+  if (!Array.isArray(v.nodes) || !v.nodes.every(isTreeNode)) {
+    return false;
+  }
+  const allStrings = (record: unknown): boolean =>
+    typeof record === 'object' &&
+    record !== null &&
+    Object.values(record as Record<string, unknown>).every((p) => typeof p === 'string');
+  if (!allStrings(v.passwords)) {
+    return false;
+  }
+  if (v.privateKeys !== undefined && !allStrings(v.privateKeys)) {
+    return false;
+  }
+  if (v.vpnConfigs !== undefined && !allStrings(v.vpnConfigs)) {
+    return false;
+  }
+  if (v.dbConnections !== undefined && !allStrings(v.dbConnections)) {
+    return false;
+  }
+  if (v.attachments !== undefined && !allStrings(v.attachments)) {
+    return false;
+  }
+  if (v.images !== undefined && !allStrings(v.images)) {
+    return false;
+  }
+  if (v.totps !== undefined && !allStrings(v.totps)) {
+    return false;
+  }
+  // NOT exhaustive: `notes`, `configs` and `fields` have no clause and are admitted unvalidated.
+  if (v.payments !== undefined && !allStrings(v.payments)) { return false; }
+  if (v.exportedAt !== undefined && typeof v.exportedAt !== 'number') {
+    return false;
+  }
+  if (v.tombstones !== undefined) {
+    if (typeof v.tombstones !== 'object' || v.tombstones === null) {
+      return false;
+    }
+    // Each tombstone is a legacy ms-epoch number OR an object { deletedAt, v }.
+    const okTomb = Object.values(v.tombstones as Record<string, unknown>).every(
+      (t) =>
+        typeof t === 'number' ||
+        (typeof t === 'object' && t !== null && typeof (t as { deletedAt?: unknown }).deletedAt === 'number'),
+    );
+    if (!okTomb) {
+      return false;
+    }
+  }
+  if (v.horizon !== undefined) {
+    if (typeof v.horizon !== 'object' || v.horizon === null) {
+      return false;
+    }
+    if (!Object.values(v.horizon as Record<string, unknown>).every((n) => typeof n === 'number')) {
+      return false;
+    }
+  }
+  return true;
 }

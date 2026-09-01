@@ -5,10 +5,10 @@ import {
   ENTITY_KIND_LABELS,
   StoredAccount,
   TeamMember,
-  isBackupBundle,
   isEntityMetadata,
   teamOthers,
 } from '../types';
+import { isBackupBundle } from '../backupBundleType';
 
 const entity = {
   id: 'e1',

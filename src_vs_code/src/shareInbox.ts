@@ -17,7 +17,7 @@ import {
 import { recordOrigin, resolveOrigin } from './shareOrigin';
 import { snapshotForRevision } from './revisionSnapshot';
 import { pinValidator } from './pinInput';
-import { redactArrivedPayment, redactPaymentForShare } from './paymentRedaction';
+import { redactArrivedPayment, redactPaymentForShare, withheldFromShare } from './paymentRedaction';
 import { OwnedShare, SharePayload, TeamMember, TreeNode } from './types';
 
 /**
@@ -162,11 +162,35 @@ export class ShareInbox {
         `Share finished with errors — delivered: ${delivered.length}, failed: ${failed.join('; ')}`,
       );
     } else {
+      // What the redaction removed, said out loud. `withheldFromShare` existed and was tested and was
+      // never CALLED — the same "helper with no caller" defect the gate had already caught me at one
+      // story earlier, found this time by four reviewers at once. Without it somebody who shares a
+      // hidden phrase reads "Shared …" and believes the phrase arrived; it cannot have, because
+      // unweaving needs a code the person remembers and nothing transmits.
       void vscode.window.showInformationMessage(
-        `Shared ${what} with ${delivered.join(', ')}. Tell them the PIN out-of-band.`,
+        `Shared ${what} with ${delivered.join(', ')}. Tell them the PIN out-of-band.${await this.withheldNote(senderAccountId, payloads)}`,
       );
     }
     void this.deps.sharing.reload();
+  }
+
+  /**
+   * The sentence naming what a share left behind, or '' when it left nothing behind.
+   *
+   * <p>Computed from the PAYLOADS rather than from the selection, so one implementation covers both a
+   * single entry and a folder subtree — a payload keeps the SENDER's node id, which is what reads the
+   * sender's own record. Only payment entries are read, so a folder of a hundred passwords costs
+   * nothing.</p>
+   *
+   * <p>Field NAMES only. This reaches a notification, and several UI layers log those.</p>
+   */
+  private async withheldNote(accountId: string, payloads: readonly SharePayload[]): Promise<string> {
+    const names = new Set<string>();
+    for (const payload of payloads.filter((p) => p.node.details?.isPayment === true)) {
+      const stored = await this.deps.storage.getPaymentRaw(accountId, payload.node.id);
+      withheldFromShare(stored).forEach((field) => names.add(field));
+    }
+    return names.size === 0 ? '' : ` Not sent, and they cannot be: ${[...names].sort().join(', ')}.`;
   }
 
   deliver(
@@ -580,7 +604,7 @@ After this, a share signed by any other key is refused.`,
         // dropped card is not. Somebody told the entry arrived would act on it believing it complete,
         // with no way to know a re-send is worth asking for.
         void vscode.window.showWarningMessage(
-          `"${node.name}" arrived, but its payment details could not be read and were not saved. Ask the sender to share it again.`,
+          `"${node.name}" arrived, but its payment details are in a format this version cannot read, so they were not saved. The rest of the entry is here. A re-send will not help if the sender is on a newer build — check for an update first.`,
         );
       }
     }

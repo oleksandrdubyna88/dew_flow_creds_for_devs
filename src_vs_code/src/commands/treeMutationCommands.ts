@@ -40,6 +40,7 @@ import { parseImport } from '../importFormats';
 import { importEntities } from '../importCommands';
 import { buildExternalBundle } from '../externalBundle';
 import { exportSensitiveNote, paymentFieldsInExport } from '../paymentRedaction';
+import { applyExternalSecrets } from '../externalSecretsApply';
 import { pinValidator } from '../pinInput';
 import { encryptJson } from '../cryptoUtils';
 import { decryptJson } from '../cryptoUtils';
@@ -582,31 +583,13 @@ export function registerTreeMutationCommands(host: TreeMutationCommandsHost): vo
     for (const n of remapped.nodes) {
       await storage.addNode(location.accountId, n);
     }
-    for (const [id, s] of Object.entries(remapped.secrets)) {
-      await storage.setPassword(location.accountId, id, s.password);
-      if (s.privateKey !== undefined) {
-        await storage.setPrivateKey(location.accountId, id, s.privateKey);
-      }
-      if (s.vpnConfig !== undefined) {
-        await storage.setVpnConfig(location.accountId, id, s.vpnConfig);
-      }
-      if (s.dbConnection !== undefined) {
-        await storage.setDbConnection(location.accountId, id, s.dbConnection);
-      }
-      await storage.setNotes(location.accountId, id, s.notes);
-      if (s.login !== undefined || s.url !== undefined) {
-        await storage.setFields(location.accountId, id, { login: s.login, url: s.url });
-      }
-      if (s.attachment !== undefined) {
-        await storage.setAttachment(location.accountId, id, s.attachment);
-      }
-      if (s.image !== undefined) {
-        await storage.setImage(location.accountId, id, s.image);
-      }
-      if (s.totp !== undefined) {
-        await storage.setTotp(location.accountId, id, s.totp);
-      }
-    }
+    // Was a hand-written loop here, and it had silently stopped agreeing with `ExternalSecrets`
+    // TWICE: `config` had never been restored since the kind shipped, and S1.3 added `payment` to the
+    // export without adding it here — so an export-then-import round trip created the entry and
+    // discarded the card. Both found by the code review. The loop now lives in
+    // `externalSecretsApply.ts`, where a test drives the field list and fails when an export carries
+    // something the import drops.
+    await applyExternalSecrets(storage, location.accountId, remapped.secrets);
     mutated();
     // The first imported ROOT is where the reveal lands: the import's whole shape arrived
     // under it, and highlighting all N rows would highlight nothing.

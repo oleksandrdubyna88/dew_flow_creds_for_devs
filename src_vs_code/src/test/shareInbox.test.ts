@@ -46,6 +46,12 @@ const loaded = ((): {
     acceptOne(share: OwnedShare): Promise<void>;
     acceptMany(items: OwnedShare[]): Promise<void>;
     shareNodes(accountId: string, nodes: TreeNode[]): Promise<void>;
+    deliverBatch(
+      senderAccountId: string,
+      payloads: SharePayload[],
+      recipients: unknown[],
+      pin: string,
+    ): Promise<void>;
   };
   sealShare: typeof import('../shareFormat').sealShare;
   openShare: typeof import('../shareFormat').openShare;
@@ -690,4 +696,41 @@ test('a keychain that refuses fails the whole share instead of omitting the card
     /keychain unavailable/,
     'the build must fail, so nothing is sealed and nothing is delivered',
   );
+});
+
+test('the sender is told which payment fields did not go, and never told a value', async () => {
+  // `withheldFromShare` existed, was tested, and was never CALLED — the same helper-with-no-caller
+  // defect the gate had already caught me at one story earlier, found this time by four reviewers at
+  // once. So the assertion is on the NOTIFICATION rather than on the function: what the person reads.
+  const w = world();
+  const node = await cardEntry(w.storage);
+  const payload = await loaded.buildSharePayload(w.storage, RECIPIENT.accountId, node, false);
+
+  await w.inbox.deliverBatch(RECIPIENT.accountId, [payload], [TEAM_MEMBER as never], PIN);
+
+  const said = ui.infos.join(' | ');
+  assert.match(said, /Shared "Visa"/, 'it still reports the share');
+  assert.match(said, /Not sent, and they cannot be: cvv, pin/, `the withheld names never reached the person: ${said}`);
+  assert.equal(said.includes('123'), false, 'and no value did either — this string is logged by UI layers');
+  assert.equal(said.includes('4321'), false);
+  assert.equal(said.includes('4111'), false);
+});
+
+test('a share with nothing withheld says nothing about withholding', async () => {
+  // A sentence that always appears is a sentence nobody reads.
+  const w = world();
+  const node: TreeNode = {
+    id: 'plain-card',
+    name: 'Bank details',
+    type: 'entity',
+    parentId: null,
+    details: { id: 'plain-card', name: 'Bank details', isSshEnabled: false, kind: 'payment', isPayment: true },
+  };
+  await w.storage.addNode(RECIPIENT.accountId, node);
+  await w.storage.setPayment(RECIPIENT.accountId, node.id, { iban: 'PL61109010140000071219812874' });
+  const payload = await loaded.buildSharePayload(w.storage, RECIPIENT.accountId, node, false);
+
+  await w.inbox.deliverBatch(RECIPIENT.accountId, [payload], [TEAM_MEMBER as never], PIN);
+
+  assert.equal(/Not sent/.test(ui.infos.join(' | ')), false);
 });

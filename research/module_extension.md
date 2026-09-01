@@ -315,9 +315,26 @@ a scrub there, and every restored card after that comes back unusable.
 Two details worth keeping. The stripped field NAMES leave with their values **for free**: the S1.2 rule
 that a mark may not outlive its value means deleting `cvv` deletes it from `shuffledFields` too, so the
 recipient's card draws no method picker over a field it does not have — asserted rather than
-re-implemented, because two implementations of one rule is how they drift. And redaction happens on the
-SENDING side only; the receiving side stores what arrived, because the receiver has no CVV to remove
-and must not be the place that decides what a share may carry.
+re-implemented, because two implementations of one rule is how they drift.
+
+And **redaction runs at BOTH ends, through one function.** The first version of this ran on the sending
+side only, on the argument that redacting on arrival would be two opinions about one rule. The review's
+counter is better and it won: `importShared` is a TRUST BOUNDARY, and everything reaching it was written
+by somebody else's process — so *"a share cannot carry a CVV"* has to be true of what ARRIVES and not
+merely of what we send. A crafted or replayed payload, or one from a build whose redaction was removed,
+could otherwise put a CVV into the recipient's vault while the product claimed it could not. The two
+arguments reconcile: `redactArrivedPayment` calls the SAME allowlist the sender calls, so it is one
+opinion applied twice — the shape sender identity already uses, stamped from a verified token and never
+accepted from the body.
+
+One deliberate asymmetry between the ends. The SENDING side refuses outright when a stored record exists
+and cannot be parsed, because a refusal there costs nothing. The ARRIVING side imports the entry and
+reports that the payment details could not be read, because a share that reached a person is theirs and
+refusing to store the readable half would lose more than it protects — but it says so, which the first
+version did not, and two reviewers rejected that silence independently.
+
+The sender is also told, by field name and never by value, what a share withheld: somebody sharing a
+hidden phrase would otherwise read "Shared …" and believe the phrase arrived, when it cannot have.
 
 #### `secretKeys.ts` — an extraction the ratchet forced, and the test that made it safe
 

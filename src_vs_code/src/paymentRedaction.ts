@@ -190,6 +190,11 @@ export function paymentFieldsInExport(records: Iterable<{ payment?: string }>): 
   let recordCount = 0;
   let fieldCount = 0;
   for (const record of records) {
+    // Short-circuit before parsing: an export of a thousand passwords and one card would otherwise
+    // parse undefined a thousand times. Raised by the review as a Minor and it costs one line.
+    if (record.payment === undefined) {
+      continue;
+    }
     const stored = parsePaymentFields(record.payment) as Record<string, unknown>;
     const found = WITHHELD_FROM_SHARE.filter((key) => stored[key] !== undefined).length;
     fieldCount += found;

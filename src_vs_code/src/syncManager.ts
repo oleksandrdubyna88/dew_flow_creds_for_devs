@@ -25,7 +25,8 @@ import { TransportFactory } from './transportFactory';
 import { VaultKey, VaultKeys } from './vaultKeys';
 import { pinValidator } from './pinInput';
 import { VaultTransport } from './vaultTransport';
-import { StoredAccount, isBackupBundle } from './types';
+import { StoredAccount } from './types';
+import { isBackupBundle } from './backupBundleType';
 
 const CONFIG_SECTION = 'credSshManager';
 const AUTO_SYNC_SETTING = 'autoSync';
