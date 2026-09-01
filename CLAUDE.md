@@ -121,6 +121,14 @@ This repository is reviewed by OTHER vendors' models before and after implementa
 `mcp__coai__review_plan`, `mcp__coai__review_code`, `mcp__coai__resolve`, `mcp__coai__status` and
 `mcp__coai__ask_human`.
 
+**This is IN ADDITION to your own review, never instead of it.** If your workflow ends a task by
+launching your own reviewers — the way the `feature-dev` plugin's quality phase launches three in
+parallel — run them exactly as you would have, and start them and this gate AT THE SAME TIME. A code
+round is minutes of somebody else's CLI and there is nothing to wait for. They are not substitutes:
+your own reviewers read the whole change with this repository in context, and this gate asks a
+DIFFERENT vendor's model the questions your own model is worst placed to answer. Dropping either
+half saves time by discarding the half you did not measure.
+
 **The order is a contract, and the server enforces it — `review_code` REFUSES until a plan round
 has reached `proceed`.**
 
@@ -137,8 +145,19 @@ has reached `proceed`.**
 5. **When the branch is written**, call `review_code` with the same `planText` and the `baseRef`
    you branched from. Three independent reviewers per vendor read the diff. Same `resolve` duty,
    same loop.
+
+   **A code round is never given a bare diff, and the server refuses one without a scope.**
+   `planText` is what the change was supposed to ACHIEVE — the symptom or goal, what must be true
+   when it is done, the constraints — not a commit subject. A reviewer holding only a diff can judge
+   whether the code is defensible; it cannot judge whether the code is what was asked for, and those
+   come apart constantly. Reviewing an existing commit works the same way: state what that commit was
+   supposed to do, pass the commit as `branch` and its parent as `baseRef`. In the normal flow the
+   plan from step 2 is reused automatically and this costs nothing.
 6. Verdict `call_human` → surface the open findings to the person and stop. **Do not proceed on
    your own judgement.** Verdict `escalated` → apply the named step and run a fresh round.
+
+   "Stop" means stop SHIPPING over open findings — it does not end the task. Your own review, your
+   summary, and anything else your workflow does still run.
 
 **Report the verdicts and the reviewer counts in your summary.** A round that ran with four of six
 reviewers says so — pass that on rather than implying a full panel agreed.
