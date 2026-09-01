@@ -575,3 +575,99 @@ test('a flag with no seed behind it never becomes a claim on the other side', as
   assert.equal(payload.secrets.totp, undefined);
   assert.equal(payload.node.details?.hasTotp, undefined, 'the flag travels only with a seed');
 });
+
+/** A payment instrument in the sender's vault, with the two fields that must not travel. */
+async function cardEntry(storage: InstanceType<typeof StorageManager>): Promise<TreeNode> {
+  const node: TreeNode = {
+    id: 'sender-side-card',
+    name: 'Visa',
+    type: 'entity',
+    parentId: null,
+    details: {
+      id: 'sender-side-card',
+      name: 'Visa',
+      isSshEnabled: false,
+      kind: 'payment',
+      isPayment: true,
+      paymentForm: 'card',
+    },
+  };
+  await storage.addNode(RECIPIENT.accountId, node);
+  await storage.setPayment(RECIPIENT.accountId, node.id, {
+    number: '4111111111111111',
+    expiry: '12/29',
+    holder: 'A Person',
+    cvv: '123',
+    pin: '4321',
+    shuffledFields: ['cvv'],
+  });
+  return node;
+}
+
+test('sharing a card carries the number and leaves the CVV and the PIN behind', async () => {
+  // The one stripping direction in the product, asserted where it happens rather than only in
+  // `paymentRedaction.test.ts`: that file proves the rule, this one proves the rule is WIRED. The
+  // parent plan's §2.5 exists because the promise had three statements and one test.
+  const w = world();
+  const node = await cardEntry(w.storage);
+
+  const payload = await loaded.buildSharePayload(w.storage, RECIPIENT.accountId, node, false);
+  const shared = JSON.parse(payload.secrets.payment ?? '{}') as Record<string, unknown>;
+
+  assert.equal(shared.number, '4111111111111111', 'handing a colleague a card IS the feature');
+  assert.equal(shared.expiry, '12/29');
+  assert.equal(shared.holder, 'A Person');
+  assert.equal(shared.cvv, undefined, 'the CVV does not leave the vault it was typed into');
+  assert.equal(shared.pin, undefined);
+  assert.deepEqual(
+    shared.shuffledFields,
+    undefined,
+    'and the woven-field name goes with it, or the recipient draws a picker over a field they do not have',
+  );
+});
+
+test('the sender still has everything after sharing', async () => {
+  // Redaction shapes the COPY. A redaction that reached back into the vault would be the worst
+  // possible reading of "the CVV does not travel".
+  const w = world();
+  const node = await cardEntry(w.storage);
+
+  await loaded.buildSharePayload(w.storage, RECIPIENT.accountId, node, false);
+
+  const mine = await w.storage.getPayment(RECIPIENT.accountId, node.id);
+  assert.equal(mine.cvv, '123', 'sharing a card must not empty my own');
+  assert.equal(mine.pin, '4321');
+});
+
+test('an accepted card arrives with its number, and with no CVV to arrive with', async () => {
+  const w = world();
+  const share = sealedShare(
+    {
+      node: {
+        id: 'sender-side-card',
+        name: 'Visa',
+        type: 'entity',
+        parentId: null,
+        details: {
+          id: 'sender-side-card',
+          name: 'Visa',
+          isSshEnabled: false,
+          kind: 'payment',
+          isPayment: true,
+          paymentForm: 'card',
+        },
+      },
+      secrets: { payment: '{"number":"4111111111111111","expiry":"12/29"}' },
+    },
+    PIN,
+  );
+  ui.inputs = [PIN];
+
+  await w.inbox.acceptOne(share);
+
+  const nodes = w.storage.getNodes(RECIPIENT.accountId);
+  const arrived = await w.storage.getPayment(RECIPIENT.accountId, nodes[0].id);
+  assert.equal(arrived.number, '4111111111111111', 'a card that arrived without its number is not a card');
+  assert.equal(arrived.expiry, '12/29');
+  assert.equal(arrived.cvv, undefined);
+});

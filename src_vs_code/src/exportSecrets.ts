@@ -13,6 +13,7 @@ export interface SecretReader {
   getTotp(accountId: string, id: string): Thenable<string | undefined>;
   getConfigBody(accountId: string, id: string): Thenable<string | undefined>;
   getFieldsRaw(accountId: string, id: string): Thenable<string | undefined>;
+  getPaymentRaw(accountId: string, id: string): Thenable<string | undefined>;
 }
 
 /**
@@ -43,6 +44,8 @@ entityIds: readonly string[],
     put('image', await vault.getImage(accountId, id));
     put('totp', await vault.getTotp(accountId, id));
     put('config', await vault.getConfigBody(accountId, id));
+    // The whole record, CVV and PIN included — see ExternalSecrets.payment for why.
+    put('payment', await vault.getPaymentRaw(accountId, id));
     const fields = parseFields(await vault.getFieldsRaw(accountId, id));
     put('login', fields.login);
     put('url', fields.url);

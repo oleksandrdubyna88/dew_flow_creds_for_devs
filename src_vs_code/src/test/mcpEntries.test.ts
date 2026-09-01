@@ -311,3 +311,63 @@ test('a closed verdict says WHICH switch was wanted, so the refusal can name it'
   assert.equal(found?.kind, 'closed');
   assert.equal(found?.kind === 'closed' && found.needed, 'edit');
 });
+
+test('a payment instrument opened to an agent carries no payment field, and there is no method to read one', () => {
+  // The sixth direction of the parent plan's §2.5, and the only one whose answer is "nothing at all".
+  //
+  // Two guarantees, and the second is the one worth having. First, the entry an agent sees has no
+  // payment field — no number, no CVV, no PIN, no IBAN. Second, and structurally stronger:
+  // `McpVaultSource` has no reader for a payment record, so this surface CANNOT obtain one however
+  // the shaping code is later edited. The absence is by construction, not by filtering, which is
+  // this module's stated design — a hand-written allowlist rather than a spread, precisely so a newly
+  // added field does not silently reach an agent.
+  const card = entity('p1', 'Visa', {
+    kind: 'payment',
+    isPayment: true,
+    paymentForm: 'card',
+    mcp: { view: true, use: true },
+  });
+  const resolved = resolveMcpInTree(card, () => folder('f1', 'F', { mcp: { view: true } }));
+
+  // The fake below declares no payment reader and still satisfies McpVaultSource — the
+  // interface-level half of the claim, checked by the compiler on that line.
+  const source = vault([folder('f1', 'F'), card]);
+
+  const entry = mcpEntryFor(card, {
+    resolved,
+    folderName: 'F',
+    hasPassword: false,
+    hasPrivateKey: false,
+    hasNotes: false,
+    hasTotp: false,
+    dependsOn: [],
+  });
+  assert.ok(entry !== undefined, 'the entry itself is visible — the switch says so');
+
+  // The KIND is legitimately there — an agent that may use an entry should know what it is, and
+  // "payment" is a category, not a value. What must be absent is every field that holds one.
+  assert.equal(entry?.kind, 'payment');
+  // The keys actually CARRYING something, not every key the shape declares — `McpEntry` names
+  // `host`, `port`, `user`, `vpnType` and `scriptLanguage` for other kinds and leaves them undefined
+  // here, which is the shape doing its job.
+  const present = Object.entries(entry ?? {})
+    .filter(([, value]) => value !== undefined)
+    .map(([key]) => key)
+    .sort();
+  assert.deepEqual(
+    present,
+    ['can', 'dependsOn', 'folder', 'hasNotes', 'hasPassword', 'hasPrivateKey', 'hasTotp', 'id', 'kind', 'name'],
+    'an exact allowlist rather than a search for bad words: a payment field reaching McpEntry fails HERE, ' +
+      'which is the point of this module being a hand-written shape instead of a spread',
+  );
+
+  const serialized = JSON.stringify(entry);
+  for (const forbidden of ['cvv', 'pin', 'iban', '4111', 'shuffledFields', 'holder', 'expiry']) {
+    assert.equal(
+      serialized.toLowerCase().includes(forbidden.toLowerCase()),
+      false,
+      `the agent surface leaked ${forbidden}: ${serialized}`,
+    );
+  }
+  assert.equal('getPaymentRaw' in source, false, 'no reader exists on this surface, so none can be called');
+});

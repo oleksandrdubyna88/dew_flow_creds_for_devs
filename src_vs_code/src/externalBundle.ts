@@ -23,6 +23,15 @@ export interface ExternalSecrets {
   /** The config file's contents — a secret, like the notes above it. */
   config?: string;
   /** A credential's login and URL — encrypted in the vault, plain here like everything else. */
+  /**
+   * A payment instrument's fields as JSON — the whole record, CVV and PIN included.
+   *
+   * <p>Owner's decision, 2026-09-01: an export is a FULL copy. This bundle already carries passwords,
+   * private SSH keys and VPN configs, so a CVV is not the most sensitive thing in it and a special case
+   * for payment fields would be an inconsistency rather than a defence. A share is the direction that
+   * strips them — see paymentRedaction.ts.</p>
+   */
+  payment?: string;
   login?: string;
   url?: string;
 }

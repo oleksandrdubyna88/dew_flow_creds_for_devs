@@ -138,8 +138,7 @@ export interface EntityMetadata {
   configKeyHash?: string;
   /** Marks this entity as a payment instrument (the `payment` kind). */
   isPayment?: boolean;
-  /** Which of the three field sets it shows — a field of the record, like `dbType`. Never a value:
-   * the card number and the rest are one JSON secret. See `paymentForm.ts` for both reasons. */
+  /** Which of the three field sets it shows — never a value; see `paymentForm.ts`. */
   paymentForm?: PaymentForm;
   /** The base command, e.g. `aws sso login`. Arguments live in `commandArgs`. */
   command?: string;
@@ -478,6 +477,9 @@ export interface SharePayload {
     config?: string;
     /** A credential's login/URL, as the JSON the vault stores. */
     fields?: string;
+    /** A payment instrument's fields as JSON, **CVV and PIN removed** — `paymentRedaction.ts` owns
+     *  that list and the reason a share is the only stripping direction. */
+    payment?: string;
   };
   /** Folder chain (shared folder inclusive) recreated on accept. */
   folderPath?: Array<{ name: string; folderType?: FolderType }>;
@@ -768,9 +770,7 @@ export function isBackupBundle(value: unknown): value is BackupBundle {
     return false;
   }
   // NOT exhaustive: `notes`, `configs` and `fields` have no clause and are admitted unvalidated.
-  if (v.payments !== undefined && !allStrings(v.payments)) {
-    return false;
-  }
+  if (v.payments !== undefined && !allStrings(v.payments)) { return false; }
   if (v.exportedAt !== undefined && typeof v.exportedAt !== 'number') {
     return false;
   }

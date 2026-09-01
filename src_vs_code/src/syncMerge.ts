@@ -137,8 +137,11 @@ function normalizeTombstones(
 
 /** Canonical JSON for change detection (order-insensitive). */
 function fingerprint(snapshot: ProfileSnapshot): string {
-  const sortRecord = (r: Record<string, unknown>) =>
-    Object.fromEntries(Object.entries(r).sort(([a], [b]) => a.localeCompare(b)));
+  // Takes undefined, so a caller needs no `?? {}` per slot: four of those had accumulated as optional
+  // maps were added, and `payments` becoming the fifth pushed this function past the complexity
+  // ceiling. One coalesce here instead of one per slot, and the next optional map adds no branch.
+  const sortRecord = (r: Record<string, unknown> | undefined) =>
+    Object.fromEntries(Object.entries(r ?? {}).sort(([a], [b]) => a.localeCompare(b)));
   return JSON.stringify({
     nodes: [...snapshot.nodes]
       .sort((a, b) => a.id.localeCompare(b.id))
@@ -150,10 +153,10 @@ function fingerprint(snapshot: ProfileSnapshot): string {
     notes: sortRecord(snapshot.notes),
     attachments: sortRecord(snapshot.attachments),
     images: sortRecord(snapshot.images),
-    totps: sortRecord(snapshot.totps ?? {}),
-    configs: sortRecord(snapshot.configs ?? {}),
-    fields: sortRecord(snapshot.fields ?? {}),
-    payments: sortRecord(snapshot.payments ?? {}),
+    totps: sortRecord(snapshot.totps),
+    configs: sortRecord(snapshot.configs),
+    fields: sortRecord(snapshot.fields),
+    payments: sortRecord(snapshot.payments),
     tombstones: sortRecord(
       Object.fromEntries(
         Object.entries(normalizeTombstones(snapshot.tombstones)).map(([id, t]) => [

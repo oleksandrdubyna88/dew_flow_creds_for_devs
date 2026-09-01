@@ -17,6 +17,7 @@ import {
 import { recordOrigin, resolveOrigin } from './shareOrigin';
 import { snapshotForRevision } from './revisionSnapshot';
 import { pinValidator } from './pinInput';
+import { redactPaymentForShare } from './paymentRedaction';
 import { OwnedShare, SharePayload, TeamMember, TreeNode } from './types';
 
 /**
@@ -564,6 +565,12 @@ After this, a share signed by any other key is refused.`,
     if (payload.secrets.fields !== undefined) {
       await this.deps.storage.setFieldsRaw(share.accountId, node.id, payload.secrets.fields);
     }
+    if (payload.secrets.payment !== undefined) {
+      // Stored as it arrived. It was redacted by the SENDER (`buildSharePayload`), which is the only
+      // side that has the CVV to remove — redacting again here would be a second opinion about the
+      // same rule, and the receiving side must not be the place that decides what a share may carry.
+      await this.deps.storage.setPaymentRaw(share.accountId, node.id, payload.secrets.payment);
+    }
     await this.deps.sharing.removeOwnShare(share);
     this.deps.onArrived?.(share.accountId, node.id);
   }
@@ -620,6 +627,11 @@ export async function buildSharePayload(
       // Handing a colleague the document IS the feature. Sealed like every other secret here.
       config: await storage.getConfigBody(accountId, node.id),
       fields: await storage.getFieldsRaw(accountId, node.id),
+      // The ONE stripping direction in the product. Handing a colleague a card is the feature — they
+      // need the number and the expiry — and the CVV and the PIN are the two fields that are only
+      // ever proof the holder is present, so they do not leave the vault they were typed into.
+      // `paymentRedaction.ts` owns the list; this line must not grow a second opinion about it.
+      payment: redactPaymentForShare(await storage.getPaymentRaw(accountId, node.id)),
     },
   };
 }

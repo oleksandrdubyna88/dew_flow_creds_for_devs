@@ -289,8 +289,35 @@ Only one of these is caught by a test today, and it is worth copying rather than
 covered by construction — that test is the only reason the vault read-back was noticed, and its own
 comment says it was written for exactly this. The other three needed a reviewer.
 
-**The backup carries the CVV and the PIN, deliberately.** It is the person's own encrypted vault, and
-scrubbing them would mean losing them at restore. The direction that strips them is a share.
+#### The six directions, and why they have no common answer
+
+`paymentRedaction.ts` holds the one rule, in one place, because the plan's §2.5 exists for a defect of
+exactly that shape: the promise *"the CVV and the PIN do not leave"* stood in three places and was
+covered by ONE test, against the agent filter.
+
+| direction | CVV and PIN | why |
+|---|---|---|
+| Local backup | **carry** | it is your own encrypted vault; scrubbing them loses them at restore |
+| Sync | **carry** | the same, between your own machines |
+| Revision history | **carry** | or a rollback returns the card without half its fields |
+| External export | **carry** | owner's decision: an export is a full copy, and it already carries private SSH keys |
+| **Share to a person** | **STRIP** | the value leaves your vault and lives on in theirs |
+| Agent surface | **absent entirely** | `McpVaultSource` has no reader for a payment record, so this surface cannot obtain one however the shaping code is later edited |
+
+**The share/export asymmetry is a decision, not an oversight.** A shared copy lives on in someone
+else's vault and travels to their machines without a further choice by anyone. An export is a file a
+person made once, deliberately, with a warning.
+
+Every direction has its own test, and **both sides of each** — because the export test is the one that
+earns its keep in a year. Somebody reading "the CVV must not leave" out of context will eventually add
+a scrub there, and every restored card after that comes back unusable.
+
+Two details worth keeping. The stripped field NAMES leave with their values **for free**: the S1.2 rule
+that a mark may not outlive its value means deleting `cvv` deletes it from `shuffledFields` too, so the
+recipient's card draws no method picker over a field it does not have — asserted rather than
+re-implemented, because two implementations of one rule is how they drift. And redaction happens on the
+SENDING side only; the receiving side stores what arrived, because the receiver has no CVV to remove
+and must not be the place that decides what a share may carry.
 
 #### `secretKeys.ts` — an extraction the ratchet forced, and the test that made it safe
 

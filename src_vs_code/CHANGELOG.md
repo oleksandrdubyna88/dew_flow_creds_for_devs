@@ -32,6 +32,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   A value of the wrong type is dropped rather than converted. Turning `4111` into `"4111"` would
   invent a card number, and records arrive from imports, syncs and shares written by other builds.
 
+- **A card can be shared, and the CVV and the PIN stay behind.** Handing a colleague a card is the
+  point — they need the number and the expiry — and the two fields that are only ever proof the holder
+  is present do not leave the vault they were typed into. The woven-field marker goes with them, so the
+  recipient's card offers no unweaving of a field they do not have.
+
+  Every other direction carries the whole record, and each is deliberate rather than incidental: a
+  backup, a sync and the version history keep the CVV because scrubbing it would mean losing it on a
+  restore or a rollback — a card that comes back without half its fields. An external export keeps it
+  because an export is a full copy, and it already carries passwords and private SSH keys. Six
+  directions, six tests, and both sides of each: the test that a share strips them matters today, and
+  the test that an export does NOT is the one that matters in a year.
+
+  An AI agent sees that a payment entry exists and its name, and no field of it — not the number, not
+  the CVV, not the IBAN. That surface has no way to read a payment record at all, so it is absence by
+  construction rather than filtering.
+
 - **Restoring a backup whose entry id needed sanitising lost the config document.** Present since
   config entries shipped in 0.77.0, and found only because a payment record met the identical bug in
   review. The entry was renamed to a safe id and its document stayed under the old one, so the restored

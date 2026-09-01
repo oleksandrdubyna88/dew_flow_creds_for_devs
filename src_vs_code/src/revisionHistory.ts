@@ -35,6 +35,14 @@ export interface RevisionSecrets {
   config?: string;
   /** The login/URL JSON as it was. */
   fields?: string;
+  /**
+   * A payment instrument's fields as they were — the WHOLE record, CVV and PIN included.
+   *
+   * <p>Carried rather than scrubbed, and the reason is the direction: a rollback that returned a card
+   * without half its fields would be a worse defect than having no rollback. Only a SHARE strips those
+   * two, because only a share sends the value into somebody else's vault.</p>
+   */
+  payment?: string;
 }
 
 export interface Revision {
@@ -61,7 +69,7 @@ export function revisionHead(revision: Revision): RevisionHead {
   return head;
 }
 
-const SMALL_FIELDS = ['password', 'privateKey', 'vpnConfig', 'dbConnection', 'notes', 'totp', 'config', 'fields'] as const;
+const SMALL_FIELDS = ['password', 'privateKey', 'vpnConfig', 'dbConnection', 'notes', 'totp', 'config', 'fields', 'payment'] as const;
 
 /** A copy of the list with `revision` newest-first, capped, attachments stripped. */
 export function pushRevision(list: readonly Revision[], revision: Revision): Revision[] {
