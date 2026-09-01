@@ -93,8 +93,10 @@ test('a wrong-typed value is dropped, never coerced', () => {
 });
 
 test('the token lists survive as arrays of non-empty strings, and are cleaned member by member', () => {
-  const picked = pickPaymentFields({ mixed: ['alpha', '', '  bravo  ', 7], shuffledFields: ['cvv', null] });
-  assert.deepEqual(picked, { mixed: ['alpha', 'bravo'], shuffledFields: ['cvv'] });
+  // `cvv` carries a value here because a mark without one is now pruned (see the mark test below).
+  // This test is about member-by-member CLEANING, so it must not also be testing the prune.
+  const picked = pickPaymentFields({ cvv: '123', mixed: ['alpha', '', '  bravo  ', 7], shuffledFields: ['cvv', null] });
+  assert.deepEqual(picked, { cvv: '123', mixed: ['alpha', 'bravo'], shuffledFields: ['cvv'] });
 });
 
 test('an empty token list is dropped like an empty string', () => {
@@ -104,8 +106,8 @@ test('an empty token list is dropped like an empty string', () => {
 test('shuffledFields keeps only names of fields that can ACTUALLY be woven', () => {
   // It drives the viewer: a name in here means "draw a method picker for this field". A name that
   // is not a weavable field would draw a picker over nothing.
-  const picked = pickPaymentFields({ shuffledFields: ['cvv', 'notAField', 'iban'] });
-  assert.deepEqual(picked, { shuffledFields: ['cvv', 'iban'] });
+  const picked = pickPaymentFields({ cvv: '123', iban: 'PL61', shuffledFields: ['cvv', 'notAField', 'iban'] });
+  assert.deepEqual(picked.shuffledFields, ['cvv', 'iban']);
 });
 
 test('shuffledFields cannot name itself, nor a field with no decoy generator', () => {
@@ -114,11 +116,38 @@ test('shuffledFields cannot name itself, nor a field with no decoy generator', (
   // CLOSED list of five, because each of those five has a decoy generator written for its structure
   // and nothing else does.
   assert.deepEqual(pickPaymentFields({ shuffledFields: ['shuffledFields'] }), {});
-  assert.deepEqual(pickPaymentFields({ shuffledFields: ['holder', 'bank', 'layout', 'mixed'] }), {});
+  assert.deepEqual(pickPaymentFields({ holder: 'A', bank: 'B', shuffledFields: ['holder', 'bank', 'layout', 'mixed'] }), {
+    holder: 'A',
+    bank: 'B',
+  });
+  const allFive = { number: '4', cvv: '1', pin: '2', iban: 'PL', accountNumber: '9' };
   assert.deepEqual(
-    pickPaymentFields({ shuffledFields: [...SHUFFLEABLE_KEYS] }).shuffledFields,
+    pickPaymentFields({ ...allFive, shuffledFields: [...SHUFFLEABLE_KEYS] }).shuffledFields,
     [...SHUFFLEABLE_KEYS],
     'and all five real ones survive, or the feature is unreachable',
+  );
+});
+
+test('a mark whose field is absent is dropped, in both directions', () => {
+  // The review's finding, and the sharper half of it: measuring emptiness over value fields stopped
+  // a metadata-only record from orphaning a key, but a record with SOME value still carried a stale
+  // mark — `{ number: '4111…', shuffledFields: ['cvv'] }` after the CVV was cleared. The card would
+  // then offer to unweave a field that is not there. Pruned on the way IN as well as out, so a
+  // record written by an older build is repaired on read rather than trusted.
+  assert.deepEqual(
+    pickPaymentFields({ number: '4111111111111111', shuffledFields: ['cvv'] }),
+    { number: '4111111111111111' },
+    'the mark goes, the surviving value stays',
+  );
+  assert.deepEqual(
+    parsePaymentFields('{"number":"4111111111111111","shuffledFields":["cvv"]}'),
+    { number: '4111111111111111' },
+    'and a record already stored that way is repaired on read',
+  );
+  assert.deepEqual(
+    pickPaymentFields({ cvv: '123', shuffledFields: ['cvv'] }),
+    { cvv: '123', shuffledFields: ['cvv'] },
+    'a mark WITH its value is untouched — pruning must not eat the feature',
   );
 });
 

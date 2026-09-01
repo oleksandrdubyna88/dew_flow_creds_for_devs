@@ -72,6 +72,56 @@ test('the escape is unchanged for every character it exists for, and in the same
   assert.equal(keyPart('a%b:c_d'), 'a%25b%3Ac%5Fd', 'all three, one pass each, % first');
 });
 
+/**
+ * Every per-entity builder, so a NEW one added without a golden string cannot slip through.
+ *
+ * <p>Accepted from the review, whose premise was inaccurate and whose fix was right anyway. The
+ * premise: that the escape is new and so an id like `team:west` was previously stored unescaped.
+ * It is not — `keyPart(entityId)` was applied inside every original builder at `fbdf6bb`
+ * (`storageManager.ts:83` for the private key), and the extraction preserved it verbatim, which is
+ * what the byte-for-byte test above proves.</p>
+ *
+ * <p>The real gap the fix closes is narrower and worth closing: the golden strings above use a clean
+ * `ent-42`, so a builder written LATER that composed its key by hand — bypassing `suffixed()` and
+ * therefore `keyPart` — would pass them. Driving the list here means every builder is exercised with
+ * an id carrying all three reserved characters, and a bypass shows up as an unescaped separator.</p>
+ */
+const PER_ENTITY_BUILDERS: ReadonlyArray<[string, (a: string, e: string) => string]> = [
+  ['password', secretKey],
+  ['sshPrivateKey', privateKeySecretKey],
+  ['vpnConfig', vpnConfigSecretKey],
+  ['notes', notesSecretKey],
+  ['fields', fieldsSecretKey],
+  ['config', configSecretKey],
+  ['payment', paymentSecretKey],
+  ['history', historySecretKey],
+  ['attachment', attachmentSecretKey],
+  ['image', imageSecretKey],
+  ['dbConn', dbConnSecretKey],
+  ['totp', totpSecretKey],
+];
+
+test('every per-entity builder escapes an id carrying all three reserved characters', () => {
+  const hostile = 'a%b:c_d';
+  const escaped = 'a%25b%3Ac%5Fd';
+  for (const [name, build] of PER_ENTITY_BUILDERS) {
+    const key = build('acct-7', hostile);
+    assert.ok(
+      key.startsWith(`acct-7_${escaped}`),
+      `${name} did not escape the id — got ${key}. A builder that composes its key by hand bypasses keyPart.`,
+    );
+    assert.ok(!key.includes(':c_d'), `${name} left a raw separator in the id part: ${key}`);
+  }
+});
+
+test('the builder list is complete, so a new kind cannot be added without a golden string', () => {
+  // Twelve per-entity builders plus the two account-scoped ones. A thirteenth added to secretKeys.ts
+  // without a row here leaves the count wrong, which is the cheapest available reminder.
+  assert.equal(PER_ENTITY_BUILDERS.length, 12);
+  const suffixes = PER_ENTITY_BUILDERS.map(([name]) => name);
+  assert.equal(new Set(suffixes).size, suffixes.length, 'two builders claiming one suffix collide');
+});
+
 test('a uuid passes through untouched — which is why no key already written changed', () => {
   const uuid = '3f2504e0-4f89-11d3-9a0c-0305e82c3301';
   assert.equal(keyPart(uuid), uuid);

@@ -57,8 +57,13 @@ export type PaymentFieldKey = (typeof PAYMENT_FIELD_KEYS)[number];
  *
  * <p>`mixed` is deliberately absent: it is not a field that gets woven, it IS the woven phrase, and
  * its presence is the mark for a phrase record.</p>
+ *
+ * <p>`satisfies` is load-bearing, not decoration (accepted from the review): this is a SECOND closed
+ * list beside `PAYMENT_FIELD_KEYS`, which is the drift shape S1.1 was bitten by three times. Renaming
+ * a field on `PaymentFields` without renaming it here would silently stop that field being weavable,
+ * and a runtime filter cannot complain. Now it is a compile error.</p>
  */
-export const SHUFFLEABLE_KEYS = ['number', 'cvv', 'pin', 'iban', 'accountNumber'] as const;
+export const SHUFFLEABLE_KEYS = ['number', 'cvv', 'pin', 'iban', 'accountNumber'] as const satisfies readonly (keyof PaymentFields)[];
 
 export type ShuffleableKey = (typeof SHUFFLEABLE_KEYS)[number];
 
@@ -174,7 +179,34 @@ export function pickPaymentFields(value: unknown): PaymentFields {
   takeStrings(source, out);
   takeFlags(source, out);
   takeTokenLists(source, out);
+  pruneMarks(out);
   return out as PaymentFields;
+}
+
+/**
+ * A mark may not outlive the value it describes.
+ *
+ * <p>Accepted from the code review. `shuffledFields` says "this field is stored woven, so draw it a
+ * method picker". A name whose field is absent — the CVV cleared while the card number stayed —
+ * therefore promises a picker over nothing, and worse: a woven value is unreadable without its mark
+ * and meaningless with a mark and no value. The card would offer to unweave something that is not
+ * there.</p>
+ *
+ * <p>Pruned in `pickPaymentFields` rather than only on the way out, so it holds in BOTH directions:
+ * a record written by an older build, or by one that forgot, is repaired on read instead of being
+ * trusted. That is the same forward-compatibility stance the rest of this module takes.</p>
+ */
+function pruneMarks(out: Record<string, unknown>): void {
+  const marks = out.shuffledFields;
+  if (!Array.isArray(marks)) {
+    return;
+  }
+  const withValues = marks.filter((name) => typeof out[name as string] === 'string');
+  if (withValues.length === 0) {
+    delete out.shuffledFields;
+  } else {
+    out.shuffledFields = withValues;
+  }
 }
 
 function takeStrings(source: Record<string, unknown>, out: Record<string, unknown>): void {
@@ -262,6 +294,13 @@ function hasAnyValue(picked: PaymentFields): boolean {
  * `shuffledFields` belongs to no form and so no switch cleared it. The card's viewer would then draw
  * a method picker over two fields the bank form does not have. Filtering it here rather than in the
  * switch means the rule cannot be forgotten by the story that performs the switch.</p>
+ *
+ * <p><b>NOTHING CALLS THIS YET</b>, and the review was right to say so: the switch it exists for is
+ * S2.4. A helper with no caller is assurance nobody has earned — its tests prove the arithmetic and
+ * prove nothing about the product. S2.4's Definition of Done therefore carries the obligation
+ * explicitly: the switch calls this BEFORE persisting, and an integration test switches a PERSISTED
+ * card to bank details and reads back neither a card value nor a card name. Until that test exists,
+ * this function is a specification, not a guarantee.</p>
  */
 export function clearForForm(fields: PaymentFields, form: PaymentForm): PaymentFields {
   const keep = new Set<string>(keysForForm(form));
