@@ -114,52 +114,61 @@ is told the server is older than the feature; an old extension against a new ser
 normally, because a client that names no contract version is served by design. So no coordination
 is needed — only honesty about which half is live.
 
+<!-- coai-snippet v2 -->
 ## Multi-model review gate (ConnectOtherAIs)
 
 This repository is reviewed by OTHER vendors' models before and after implementation, through the
-`coai` MCP server. The tools are `mcp__coai__providers`, `mcp__coai__open`,
-`mcp__coai__review_plan`, `mcp__coai__review_code`, `mcp__coai__resolve`, `mcp__coai__status` and
-`mcp__coai__ask_human`.
+`coai` MCP server.
 
 **This is IN ADDITION to your own review, never instead of it.** If your workflow ends a task by
-launching your own reviewers — the way the `feature-dev` plugin's quality phase launches three in
-parallel — run them exactly as you would have, and start them and this gate AT THE SAME TIME. A code
-round is minutes of somebody else's CLI and there is nothing to wait for. They are not substitutes:
-your own reviewers read the whole change with this repository in context, and this gate asks a
-DIFFERENT vendor's model the questions your own model is worst placed to answer. Dropping either
-half saves time by discarding the half you did not measure.
+launching your own reviewers — the way `feature-dev`'s quality phase launches three in parallel —
+run them exactly as you would have. Start them and this gate AT THE SAME TIME: a code round is
+minutes of somebody else's CLI, and there is nothing to wait for. They are not substitutes for each
+other and that is the entire point: your reviewers read the whole change with this repository in
+context, and this gate asks a different vendor's model the questions your own model is worst placed
+to answer. Dropping either half saves time by discarding the half you did not measure. The tools are `mcp__coai__providers`, `mcp__coai__open`,
+`mcp__coai__review_plan`, `mcp__coai__review_code`, `mcp__coai__resolve`,
+`mcp__coai__status` and `mcp__coai__ask_human`.
 
 **The order is a contract, and the server enforces it — `review_code` REFUSES until a plan round
 has reached `proceed`.**
 
-1. **Before implementing anything non-trivial**, call `open` with THIS checkout's path
-   (`git rev-parse --show-toplevel`) and `branch` from `git branch --show-current`.
-2. Call `review_plan` with your plan document verbatim as `planText`. You get merged findings, a
-   gating count against the threshold, and a verdict.
-3. Call `resolve` with a decision for EVERY finding — `accept` or `reject`, and a rejection needs
-   a reason. A reasoned rejection is discounted in later rounds unless a reviewer raises it again
-   with a genuinely new argument, so disagreeing honestly is cheap and disagreeing silently is
-   impossible.
-4. Verdict `revise` → fix the accepted findings, run `review_plan` again. Verdict `proceed` →
-   implement.
-5. **When the branch is written**, call `review_code` with the same `planText` and the `baseRef`
-   you branched from. Three independent reviewers per vendor read the diff. Same `resolve` duty,
-   same loop.
+1. **Before implementing anything non-trivial**, call `open` for the repository you are working in:
+   `repoPath` is that checkout's own path (`git rev-parse --show-toplevel`), `branch` is
+   `git branch --show-current`. Never a path from this file — read them from the checkout you are in.
+2. Call `review_plan` with your plan document verbatim as `planText`. You get merged findings,
+   a gating count against the threshold, and a verdict.
+3. Call `resolve` with a decision for EVERY finding — `accept` or `reject`, and a rejection
+   needs a reason. A reasoned rejection is discounted in later rounds unless a reviewer raises it
+   again with a genuinely new argument, so disagreeing honestly is cheap and disagreeing silently
+   is impossible.
+4. Verdict `revise` → fix the accepted findings, run `review_plan` again. Verdict `proceed`
+   → implement.
+5. **When the branch is written**, call `review_code` with the same `planText` and the
+   `baseRef` you branched from. Three independent reviewers per vendor read the diff. Same
+   `resolve` duty, same loop.
 
-   **A code round is never given a bare diff, and the server refuses one without a scope.**
-   `planText` is what the change was supposed to ACHIEVE — the symptom or goal, what must be true
-   when it is done, the constraints — not a commit subject. A reviewer holding only a diff can judge
-   whether the code is defensible; it cannot judge whether the code is what was asked for, and those
-   come apart constantly. Reviewing an existing commit works the same way: state what that commit was
-   supposed to do, pass the commit as `branch` and its parent as `baseRef`. In the normal flow the
-   plan from step 2 is reused automatically and this costs nothing.
-6. Verdict `call_human` → surface the open findings to the person and stop. **Do not proceed on
-   your own judgement.** Verdict `escalated` → apply the named step and run a fresh round.
+   **A code round is never given a bare diff.** `planText` is the SCOPE — what this change was
+   supposed to achieve — and the server refuses a code round without one. A reviewer holding only a
+   diff can judge whether the code is defensible; it cannot judge whether the code is what was
+   ASKED for, and those come apart constantly: a change can be well written, well tested, and solve
+   the wrong problem. Only the second question catches that.
 
-   "Stop" means stop SHIPPING over open findings — it does not end the task. Your own review, your
-   summary, and anything else your workflow does still run.
+   So the scope must say the symptom or goal, what must be true when it is done, and the
+   constraints — not a commit subject. Reviewing an EXISTING commit works the same way: state what
+   that commit was supposed to do as the scope, pass the commit as `branch` and its parent as
+   `baseRef`. The plan you passed at step 2 is kept with the session and reused automatically,
+   so in the normal flow this costs you nothing.
 
-**Report the verdicts and the reviewer counts in your summary.** A round that ran with four of six
+6. Verdict `call_human` → surface the open findings to the person and stop.
+   **Do not proceed on your own judgement.** Verdict `escalated` → apply the named step and run
+   a fresh round.
+
+   "Stop" here means stop SHIPPING over open findings — it does not end the task. Your own review,
+   your summary, and anything else your workflow does still run: this gate decides whether the
+   change may proceed, not what else you owe the person.
+
+Report the verdicts and the reviewer counts in your summary. A round that ran with four of six
 reviewers says so — pass that on rather than implying a full panel agreed.
 
 **Where this bites in the existing rules.** It sits between *Plan first* and *TDD* in
