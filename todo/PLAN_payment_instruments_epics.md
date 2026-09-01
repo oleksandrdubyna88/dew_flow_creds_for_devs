@@ -86,6 +86,34 @@ Two smaller ones, both landmines rather than decisions:
 Total: **21 stories**. Epics are strictly ordered — 3 needs 1 and 2, 4 needs 3's decoy and validation
 seams, 5 needs 4's viewer. Inside an epic the order is also fixed unless a story says otherwise.
 
+## Story status
+
+| story | status | notes |
+|---|---|---|
+| S1.1 | **landed** | 1 code round, 4 of 6 reviewers. Two findings, both accepted: the flag ladder's precedence could take a config's password away. Three exclusion-shaped permission lists named `payment` |
+| S1.2 | **landed** | 3 plan rounds + 1 code round, 5 of 6 reviewers on the code. Ten findings accepted, two rejected with reasons. **Two BLOCKING data-loss paths**, both reproduced as failing tests first: a sync deleted every payment record, and an import that renamed an unsafe id stranded it. Also found a pre-existing config-body version of the second, fixed in its own commit |
+| S1.3 | open | **narrowed** — see the deviation below |
+| S1.4 | open | |
+| S2.1 – S5.4 | open | |
+
+### Deviations recorded as they happen
+
+1. **Sync moved from S1.3 into S1.2**, out of necessity rather than convenience. The `SECRET_KINDS`
+   row put payments into the snapshot `getSnapshot` builds while `ProfileSnapshot` did not carry
+   them, so a merged snapshot read as an absence and `dropAbsentKinds` DELETED the key for every
+   entity. Deferring sync did not mean "does not sync yet"; it meant "destroys on the first sync".
+   S1.3 therefore no longer owns sync — **revision history is the remaining hand-maintained seam**.
+2. **A fourth hand-maintained list exists** that no story had named: the vault read-back in
+   `syncManager.ts`. Found by `syncManager.test.ts`, which derives its slot list from
+   `emptySnapshot()` at run time. All four are now tabulated in
+   [module_extension.md](../research/module_extension.md) with the failure each omission produces.
+3. **`secretKeys.ts` was extracted in S1.2** because the size ratchet forbade growing
+   `storageManager.ts`. Not in any story's plan; the ratchet made it the only way to add a secret
+   kind at all.
+4. **S2.4 inherits an obligation from S1.2**: `clearForForm` exists with no caller. S2.4 must call it
+   BEFORE persisting and add an integration test that switches a PERSISTED card to bank details and
+   reads back neither a card value nor a card name.
+
 ## Story contract — what every one of them owes
 
 Applies to all 21, so it is written once. A story is not done until every line holds:
@@ -206,7 +234,7 @@ Parent plan §2.5. The parent plan's own words: the promise stood in three place
 | direction | CVV / PIN | file:line |
 |---|---|---|
 | Local backup / restore | **carries** | free from S1.2's `SECRET_KINDS` row — assert, do not edit |
-| Sync | **carries** | `syncMerge.ts` — `ProfileSnapshot:53`, `emptySnapshot:68-84`, `fingerprint:122-150`, `mergeProfiles`' `copySecret` at `:246` and the `merged` literal `:272-286`. Four hand edits: this snapshot is a hand-maintained mirror of `SecretMapKey`, not table-driven |
+| Sync | **carries** | ✅ **DONE IN S1.2** — it could not wait, see deviation 1. `syncMerge.ts` (five edits) plus the vault read-back in `syncManager.ts` and the `rekey` list in `idQuarantine.ts` |
 | Revision history | **carries** | `revisionHistory.ts` — `RevisionSecrets:26-38`, `SMALL_FIELDS:64`; `revisionSnapshot.ts:11-31` (the `fields:` line at `:28` is the exemplar) |
 | **Share** | **stripped** | `types.ts:457-474` `SharePayload.secrets`; `shareInbox.ts:596-625` `buildSharePayload` (the `fields:` line at `:622`); `shareInbox.ts:564-566` `importShared`'s apply block |
 | External export | **carries** | `exportSecrets.ts:24-52` — one `put('payment', …)` beside the `login`/`url` pair at `:46-48`; `externalBundle.ts:13-28` `ExternalSecrets` gains `payment?`. `remapExternalIds:65-95` needs nothing — it never names a field |
