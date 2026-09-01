@@ -28,18 +28,34 @@ Three facts were verified in code before this breakdown was written, and each on
 stories. They are recorded here because they are the reason the order below is not the parent plan's
 order.
 
-1. **The write order today is the opposite of what §3d requires.** §3d rule 1 asks for *secret, then
-   node*. The code writes *node, then secret*, in both mutation paths —
-   `entityEditCommands.ts:99` (`updateNode` → `globalState`) then `:109` (`applySecrets` →
-   `SecretStorage`), and `commands/treeMutationCommands.ts:250` then `:264`. Deletion has the same
-   shape reversed: `storageManager.ts:693` (`saveNodes`, node gone from the tree) runs **before** the
-   secret-deletion loop at `:706`. So §3d is not a payment story at all — it is a change to every
-   kind, and it gets its own story (**S1.4**) that lands before any payment payload exists to be torn.
-2. **There is no startup sweep for orphaned secrets.** §3d's table calls an orphaned secret
-   "invisible, harmless, cleaned by a startup sweep". `StorageManager.init()` (`:336-361`) only
-   migrates plaintext node slots into sealed metadata; `EphemeralSweeper` sweeps entity *expiry*, not
-   orphans; `dropVanishedSecrets`/`dropAbsentKinds` (`:1111-1128`) run only inside `importBundle`.
-   The sweep the plan relies on must be built — also **S1.4**.
+1. **The write order today is the opposite of what §3d requires — for a WRITE. For a DELETE the
+   current order is already right, and §3d's rule read literally would break it.** §3d rule 1 asks
+   for *secret, then node*, without distinguishing the two operations. On the create/update paths
+   that is correct and the code has it backwards: `entityEditCommands.ts:99` (`updateNode` →
+   `globalState`) then `:109` (`applySecrets` → `SecretStorage`), and
+   `commands/treeMutationCommands.ts:250` then `:264`. On **deletion** the same words invert into the
+   very failure the rule exists to prevent: delete the secret first, fail to persist the tree, and
+   the node comes back on next start with its secret permanently gone — visible, broken, and it
+   **syncs**. `deleteNodeRecursive` already does the safe thing (`storageManager.ts:693` `saveNodes`,
+   then the secret loop at `:706`). So the rule is per-operation, not global, and both halves reduce
+   to one invariant: **an orphaned secret is the only torn state allowed to exist.** §3d is therefore
+   not a payment story at all — it is a change to every kind, and it gets its own story (**S1.4**)
+   that lands before any payment payload exists to be torn.
+2. **There is no startup sweep for orphaned secrets, and `vscode.SecretStorage` cannot be enumerated
+   to build one.** §3d's table calls an orphaned secret "invisible, harmless, cleaned by a startup
+   sweep". Three things are true and none of them is that sweep: `StorageManager.init()` (`:336-361`)
+   only migrates plaintext node slots into sealed metadata; `EphemeralSweeper` sweeps entity
+   *expiry*, not orphans; `dropVanishedSecrets`/`dropAbsentKinds` (`:1111-1128`) run only inside
+   `importBundle`. Worse, the sweep cannot simply be written: the API is `get`/`store`/`delete` for a
+   **known** key, with no listing, and every secret read in this codebase is driven by iterating the
+   **live** node list (`readSecretMaps` → `readKindsInto`, `:1035-1054`). Once a node is gone its id
+   is derivable from nothing, so there is no candidate key to sweep.
+   **What makes it implementable without inventing an index: tombstones.** Deletion already records
+   `{ deletedAt, v }` per removed id in `globalState` for the sync merge (`:699-711`) — a durable
+   list of exactly the ids whose secrets should no longer exist. The one thing missing is ordering:
+   `setTombstones` runs at `:711`, **after** the secret loop at `:706`, so a crash in between leaves
+   an orphan named by nothing. Moving the tombstone write ahead of the secret loop makes every
+   orphan the sweep must find already recorded — also **S1.4**.
 3. **Neither of the two new UX steps has anything to copy.** No entity is un-editable today
    (`editNode`, `entityEditCommands.ts:29-116`, has no gate of any kind), and no field asks for
    anything beyond an unlocked vault before it is revealed (`entityViewPanel.ts:162-171` copies
@@ -201,6 +217,13 @@ Parent plan §2.5. The parent plan's own words: the promise stood in three place
 instead of being remembered at each call site. It drops `cvv` and `pin` and keeps everything else; an
 all-empty result returns `undefined` per S1.2's rule.
 
+**Dropping a value means dropping its name from `shuffledFields` too.** Accepted from the review
+round. `shuffledFields` (S1.2) is what tells the card which fields get a method picker, so a shared
+card that still lists `cvv` there arrives at the recipient with a picker over a value that is not
+present — a crash or a garbled row, in somebody else's vault, from a record they cannot edit. The
+redaction is therefore one operation over both: remove the key **and** its entry in `shuffledFields`.
+Generalised rather than hardcoded, so the next stripped field cannot forget it.
+
 `shareableDetails` (`shareFormat.ts:371-392`) needs **no** change: it operates on plaintext
 `EntityMetadata`, and no payment value lives there. Recorded so the next reader does not go looking.
 
@@ -208,7 +231,9 @@ all-empty result returns `undefined` per S1.2's rule.
 because the parent plan asks for it in as many words: a card with CVV and PIN filled goes to share
 **without** them, and to export, backup, sync and revision history **with** them. The export test is
 the valuable one — it protects the decision from a later reader who "helpfully" adds a scrub. Plus
-`mcpEntries.test.ts`: a payment record reaches an agent with no payment field at all.
+`mcpEntries.test.ts`: a payment record reaches an agent with no payment field at all. **And from the
+review:** a card whose CVV was mixed goes to share with `cvv` gone from `shuffledFields` as well as
+from the values, so the recipient's card renders no picker for a field it does not have.
 
 **DoD** — the story contract, plus: six named tests, one per direction; the asymmetry is stated in
 `paymentRedaction.ts`'s header with the reason (a shared copy lives on in someone else's vault; an
@@ -217,36 +242,68 @@ export is a file a person made once, deliberately, with a warning).
 ### S1.4 — a crash never leaves a node without its secret
 
 Parent plan §3d rule 1. **Not a payment story** — a change to every kind, landing before any payment
-payload exists to be torn. This is findings 1 and 2 above.
+payload exists to be torn. This is findings 1 and 2 above, and it is the story the review round
+changed most: both reviewers independently refuted the first draft of it.
+
+**The invariant, stated once, because "secret first, then node" is not it.** §3d's wording is
+per-operation and reads as global. What it actually protects is one thing:
+
+> An orphaned secret — bytes in the keychain that no node references — is the only torn state
+> allowed to exist. It is invisible, harmless and collectable. A node that claims a record which is
+> not there is visible, broken, and it **syncs**.
+
+That invariant gives *opposite* orders for the two operations, which is why writing it as one order
+produced a defect:
+
+| operation | order | what a crash mid-way leaves |
+|---|---|---|
+| create / update | **secret, then node** | a secret nothing points at — an orphan |
+| delete | **node, then secret** | a secret nothing points at — an orphan |
 
 **Change**
 
-| file:line | today | after |
-|---|---|---|
-| `entityEditCommands.ts:99` then `:109` | `updateNode` → `applySecrets` | `applySecrets` → `updateNode` |
-| `commands/treeMutationCommands.ts:250` then `:264` | `addNode` → `applySecrets` | `applySecrets` → `addNode` |
-| `storageManager.ts:693` then `:706-709` | `saveNodes` → delete secrets | delete secrets → `saveNodes` |
+| file:line | today | after | why |
+|---|---|---|---|
+| `entityEditCommands.ts:99` then `:109` | `updateNode` → `applySecrets` | **`applySecrets` → `updateNode`** | today a crash between them leaves a node claiming a payload that was never written |
+| `commands/treeMutationCommands.ts:250` then `:264` | `addNode` → `applySecrets` | **`applySecrets` → `addNode`** | same |
+| `storageManager.ts:693` then `:706-709` | `saveNodes` → delete secrets | **unchanged** | already correct. Inverting it — as the first draft of this story proposed — deletes the secret, then fails to persist the tree, and the node returns on next start with its data permanently gone |
+| `storageManager.ts:706-709` then `:711` | delete secrets → `setTombstones` | **`setTombstones` → delete secrets** | so that every orphan the sweep must find is already named by a durable record |
 
-The reason, from the parent plan's own table: an orphaned secret nobody references is invisible,
-harmless and sweepable; a node claiming a record that does not exist is visible, broken, and
-**syncs**.
+The third row is written down as *unchanged and why* rather than omitted, because the obvious reading
+of §3d says to change it and the next person to read the parent plan will reach for exactly that.
 
-**New: a startup orphan sweep.** No sweep exists (finding 2). One pass on window open that lists the
-`SecretStorage` keys belonging to the current account, compares them against the live node ids, and
-deletes what no node claims. Built as a pure `orphanSweep(keys, nodeIds)` returning the keys to drop —
-so it is tested without a keychain — plus a thin caller wired beside `EphemeralSweeper`
-(`extension.ts:326-327`). It must be conservative in exactly one way: a key whose entity id it cannot
-parse is **kept**, never guessed at.
+**New: a startup orphan sweep, driven by tombstones — not by enumeration.**
+`vscode.SecretStorage` offers `get`/`store`/`delete` on a **known** key and no listing, and every
+secret read here is driven by iterating live nodes (`readKindsInto`, `storageManager.ts:1047-1054`).
+So "list the keys and drop what no node claims" is unimplementable as stated, and a new durable key
+index would be a second source of truth to keep honest.
 
-**Tests** — `paymentWrite.test.ts`: the write is interrupted at each boundary (the fake `secrets`
-store throws on the nth call) and no node is ever left without its secret; a keychain refusal leaves
-the form open with the words on screen and the error shown. `orphanSweep.test.ts`: an orphan is
-dropped, a live secret is not, an unparseable key is kept. Because this changes all kinds, the
-existing `entityEditCommands.test.ts` and tree-mutation tests must stay green **unmodified** — if one
-needs editing to pass, that is a behaviour change to report, not a test to adjust.
+Deletion already writes the list this needs: a tombstone per removed id (`:699-711`), kept for the
+sync merge. The sweep is therefore: for every tombstone id, for every `SECRET_KINDS` row, `get` the
+key and `delete` it if something is there. Pure core —
+`orphanCandidates(tombstoneIds, liveNodeIds): readonly string[]` — so it is tested with no keychain,
+plus a thin caller wired beside `EphemeralSweeper` (`extension.ts:326-327`). An id that is **both**
+tombstoned and live is never swept: a re-created id wins over its own tombstone.
 
-**DoD** — the story contract, plus: both mutation paths and the deletion path write in the new order;
-the sweep runs on startup and is pure at its core; the report says explicitly that a non-payment kind
+**The honest limit, stated rather than glossed:** a tombstone pruned by the horizon before a sweep
+ever runs leaves an orphan that is never collected. That is a wasted keychain slot holding ciphertext
+no key path reaches — invisible and harmless, which is precisely the state the invariant permits. It
+is not a leak and it is not silently ignored: it is the tolerated case.
+
+**Tests** — `entityWriteOrder.test.ts` (named for all kinds, not `paymentWrite`, because that is what
+it covers): the fake `secrets` store throws on the nth call and no node is ever left claiming a
+secret that is absent; **and the case the reviewers named** — `saveNodes` fails *after* a successful
+secret deletion, which must be impossible to reach because the node was persisted first. A keychain
+refusal leaves the form open with the words on screen and the error shown.
+`orphanSweep.test.ts`: a tombstoned id's secret is dropped; a live id's secret is not; an id that is
+both tombstoned and live is not; a tombstone with nothing in the keychain is a no-op rather than an
+error. Because this changes all kinds, the existing `entityEditCommands.test.ts` and tree-mutation
+tests must stay green **unmodified** — if one needs editing to pass, that is a behaviour change to
+report, not a test to adjust.
+
+**DoD** — the story contract, plus: the invariant is written into `storageManager.ts`'s own header in
+the two-row form above, so the next reader cannot re-derive "secret first" as a global rule; the
+sweep is tombstone-driven with its limit stated; the report says explicitly that a non-payment kind
 changed behaviour and which tests proved it did not regress.
 
 ---
@@ -475,9 +532,30 @@ construction.
 Uses S3.1's `generateDecoy` collision guard — one rule for digits and phrases, which is why it lives
 next to the generator.
 
+**Rejection sampling must be bounded, and the checksum target must be reachable.** Accepted from the
+review round: *"converge for the entered phrase"* is not always satisfiable by the chosen decoy
+wordlist, and the naive loop then spins forever. A real 12-word BIP-39 phrase with Monero picked for
+column 2 asks for a 12-word Monero phrase with a converging checksum — and Monero defines a checksum
+only at 25 words, so no draw can ever satisfy it. Two rules close it:
+
+1. **The checksum-state rule applies only where a checksum EXISTS at that length in the decoy's own
+   wordlist** — `hasChecksum(id, length)`, already in S4.1's registry, is the guard. Where it is
+   false there is no checksum to match, the constraint drops, and the decoy is drawn freely. The
+   §4.3 rule is about not *revealing* the method through a checksum mismatch; a wordlist with no
+   checksum at that length reveals nothing, so there is nothing to match.
+2. **Every rejection-sampling loop has a bounded attempt count and fails LOUDLY** — a named refusal
+   the form shows, never an unbounded retry and never a silent fall-through to an unconstrained
+   draw. A generator that cannot meet its constraint must say so; a generator that quietly relaxes
+   it produces exactly the separable half §3a forbids.
+
 **Tests** — `decoyPhrase.test.ts`: an entered phrase with a converging checksum → the decoy converges;
 entered with words deliberately moved → the decoy **also** fails; the decoy comes from the *chosen*
 wordlist (a word from another list is spotted instantly); the decoy is never equal to the real phrase.
+**And the two cases from the review:** a 12-word BIP-39 phrase with a Monero decoy wordlist terminates
+— with no checksum constraint applied, because Monero has none at 12 — rather than hanging; and a
+generator given an unsatisfiable constraint returns a named refusal within its attempt bound instead
+of looping. The second test needs a deliberately impossible spec, and it is worth writing precisely
+because an infinite loop in a save path is not a test failure anybody sees — it is a hung window.
 
 ### S4.4 — the phrase form: two columns, two layouts, and a second real key
 
@@ -488,18 +566,29 @@ layout switch, the method list in random order every open, and one unambiguous c
 saving: a forgotten code is a lost phrase — not us, not a backup, not sync, because the original is in
 none of them.
 
-| layout | column 1 | column 2 |
-|---|---|---|
-| Vertical | the whole real phrase | the whole decoy |
-| Horizontal | first half of the real + first half of the decoy | the second halves of both |
+| layout | column 1 | column 2 | defined for |
+|---|---|---|---|
+| Vertical | the whole real phrase | the whole decoy | **any** length in `PHRASE_RANGE` |
+| Horizontal | first half of the real + first half of the decoy | the second halves of both | **even** lengths only |
+
+**Horizontal is offered only for an even number of words, and that is arithmetic rather than a
+preference.** Accepted from the review round. Weaving requires two columns of *equal* length. At 25
+words — standard Monero, and squarely inside the 6–50 range — halving gives 13 and 12, so column 1
+holds 26 tokens and column 2 holds 24, `shuffleRefusal` refuses, and the save dies at the last step
+after everything has been typed. The thirds convention from
+[ЗАДАЧА_варианты_перемешивания_сид_фразы.md](ЗАДАЧА_варианты_перемешивания_сид_фразы.md) ("the first
+two parts are equal, the remainder goes to the third") does not rescue it: unequal columns are not a
+cosmetic imbalance here, they are unweavable. So the layout switch **hides** horizontal at an odd
+length and says why in one line, instead of offering a choice that cannot be saved.
+
+Consequence to state on the screen and in the help: **an odd-length phrase has twelve methods, an
+even-length one has twenty-four.** Not a defence in either case — enumerating 24 is no dearer than 12
+— so nothing is lost but the arithmetic must not surprise anyone at save time.
 
 **The second column may be a second real key** (§4.4). Then the decoy generator is not called; each
 phrase hides the other. Three consequences, all three into the help: a leak of the mixed view reveals
 **two** keys rather than one; the lengths must match (a requirement of weaving, not ours — the form
 says so through `shuffleRefusal`); and the wordlist is chosen per column.
-
-Twenty-four methods instead of twelve. Not a defence — enumerating 24 is no dearer than 12. The value
-is that a person can pick a layout they will not forget.
 
 The checksum hint appears **once, at save, and only if the entered phrase's checksum converges**
 (§4.4, §7 item 2): the mixed view leaking on its own comes down to roughly two candidates, and words
@@ -508,7 +597,10 @@ it forever" risk, which is the larger loss.
 
 **Tests** — unequal lengths refuse through `shuffleRefusal` with words, not a silent failure; the
 method list order differs across renders; the save confirmation cannot be skipped; the second-real-key
-mode calls no generator; the hint appears only for a converging entered phrase.
+mode calls no generator; the hint appears only for a converging entered phrase. **And from the
+review:** at an odd length the horizontal layout is not offered at all, and a 25-word phrase saves
+under the vertical layout rather than being refused at the last step — the test asserts the offer, not
+only the refusal, because a refusal after a form is filled is the failure being prevented.
 
 ### S4.5 — the viewer card: reassembly that hints at nothing
 
@@ -521,15 +613,38 @@ method rebuilds the field as two coloured rows.
 
 The mechanism is already in the product and should be copied rather than invented: TOTP recomputes a
 live value per request and the seed never reaches the page (`entityViewPanel.ts:129-137`,
-`viewerOptions.ts:70-73`). So `unshuffleTokens` runs **host-side** per request and posts back two
+`viewerOptions.ts:70-73`). So the reassembly runs **host-side** per request and posts back two
 **arrays** — never a joined string, on either side (§5.1). `viewerOptions.ts:40-47`'s `SecretReader`
 gains a payment accessor so the live and revision viewers share one resolution ladder automatically.
+
+**`unshuffleTokens` is not the whole reassembly — the layout has to be undone too.** Accepted from
+the review round, and it is the kind of gap that would have shipped as "the viewer shows nonsense for
+half the records". `unshuffleTokens` returns the two **columns** that were woven. Under the vertical
+layout those columns *are* the real phrase and the decoy, so nothing further is needed. Under the
+**horizontal** layout they are not: column 1 is the first half of the real followed by the first half
+of the decoy, so each returned array is half-real and half-decoy, and rendering them as two rows shows
+neither phrase. Reassembly is therefore two named steps, and the second one is missing from the parent
+plan:
+
+```
+unshuffleTokens(mixed, code)  ->  { first: column1, second: column2 }
+dehorizontalize(column1, column2) ->  { real, decoy }        // identity when layout is vertical
+```
+
+`dehorizontalize` is pure, sits beside `shuffle.ts` without touching it (that module knows nothing
+about words, digits *or* layouts, and must keep knowing nothing), and is the exact inverse of the
+form's horizontal split. Both directions read one shared halving function, for the same reason
+`shuffleTokens`/`unshuffleTokens` both read one `layout` — a split that disagrees with its own inverse
+destroys the value silently, because the original is nowhere.
 
 **No checksum check, no "looks real" mark, nothing** — and the test states it as a property: for a
 correct and an incorrect method the answer is **identical in form**, two rows, no tick, no validation.
 
 **Tests** — the viewer test above; each mixed field renders its own picker; the picker order is random
-per open; the reassembly comes from the host and the page never receives a stored value.
+per open; the reassembly comes from the host and the page never receives a stored value. **And from
+the review:** a phrase saved under the horizontal layout round-trips to the *original* real phrase
+through `unshuffleTokens` **then** `dehorizontalize` — asserted on the real phrase, because a test that
+only checks the two columns come back is exactly the test that would have missed this.
 
 ---
 
@@ -557,7 +672,7 @@ Parent plan §5.
 | 5.1 | the phrase is never joined into one string in any UI or render layer — words are separate DOM nodes, HTML is built through DOM APIs, `postMessage` carries an array | the **one** honest exception is `clipboard.writeText`, which takes a string and only a string; written as an exception because claiming "never" would be false (round-6 finding) |
 | 5.2 | the assembled view auto-closes after N seconds | |
 | 5.3 | the viewer card is really destroyed | `entityViewPanel.ts:98` already passes no `retainContextWhenHidden` — **verify, do not add.** And 5.3 must **not** be applied to the form: `formPanels.ts:35-39` sets `retainContextWhenHidden: true` deliberately, and honouring 5.3 literally there would restore the defect where switching tabs wiped a half-filled form |
-| 5.4 | the assembled value lives first as a byte buffer we allocated and zero on close; rendering reads from it | otherwise there are several string-like copies — the parse result, the intermediates, the DOM. With it, exactly one, in the DOM, and that one is unavoidable |
+| 5.4 | the assembled value lives first as a byte buffer we allocated and zero on close; rendering reads from it | **fewer** application-controlled copies, not "exactly one" — see the honesty note below |
 | 5.5 | on close the card returns to the mixed view **first**, then is destroyed | so the freshest thing in the renderer's memory is not the open value. Costs nothing, and it is the only part of "flood the memory with junk" that works — the junk is real and already there |
 | 5.6 | a help paragraph on swap and hibernation | a memory dump is taken from there more often than from a live process |
 
@@ -569,9 +684,25 @@ no way. Useful where unneeded, useless where needed — and the blockchain and L
 minute. Forcing garbage collection is also out of scope: `global.gc` needs `--expose-gc` and VS Code
 does not start that way.
 
+**This is best-effort hygiene, and 5.4 must not be written as a guarantee.** Accepted from the review
+round, and it is the same species of overclaim the parent plan already corrected once in 5.1. Decoding
+a byte buffer and assigning each word to a DOM text node creates JavaScript strings *in addition to*
+the buffer, plus DOM and renderer copies the runtime owns and we cannot reach. So "exactly one copy"
+is false, and — worse — **unverifiable**: every test listed below can pass while the claim is untrue,
+because they inspect `globalState`, webview state, logs and message shape, none of which can count
+copies in a heap. What 5.4 actually buys is fewer copies *we* control and a buffer we can zero, which
+is worth doing and is all that may be promised. The help says the limit in plain words (5.6), the way
+§5.1 already says a JS string cannot be zeroed.
+
+So the claim is *"fewer application-controlled copies, and the ones we own are cleared on close"*, and
+the tests assert the **actions**, not a copy count.
+
 **Tests** — after assembling and closing, no word of the phrase exists in `globalState`, in webview
-state, or in the log; `postMessage` payloads are arrays; and the form still retains its context (a
-regression test for the trap in 5.3).
+state, or in the log; `postMessage` payloads are arrays; the form still retains its context (a
+regression test for the trap in 5.3). **And the lifecycle actions themselves, since the count cannot
+be tested:** on close the buffer we allocated is zeroed (asserted by reading it back), the card's DOM
+is emptied, and 5.5's return-to-mixed-view happens **before** the dispose — asserted on the order of
+the calls, because that order is the whole measure.
 
 ### S5.3 — the help article, the module doc, the changelog
 
