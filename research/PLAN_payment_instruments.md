@@ -1,9 +1,36 @@
 # PLAN — платёжные средства: карта, реквизиты, фраза
 
-> Status: **plan only, ничего не реализовано.** Новый вид записи `payment` с тремя формами:
+> Status: **IMPLEMENTED, 2026-09-02.** Shipped in 0.93.0 across five epics — the build order, the
+> story-by-story record and the deviations are in
+> [PLAN_payment_instruments_epics.md](PLAN_payment_instruments_epics.md).
+>
+> **Deviations from this document, recorded rather than quietly absorbed:**
+>
+> 1. **§3d was not a payment change at all.** The write order it demands applies to every entry kind,
+>    so it landed first, as S1.4, and grew into ten review rounds of its own: Rule A and Rule B, a
+>    local `pendingCleanup` record (a tombstone was the wrong shape for it, twice), a serial queue, and
+>    compensation for a create. Cross-window coordination is deliberately out of scope and has its own
+>    plan, `todo/PLAN_cross_window_write_coordination.md`.
+> 2. **The startup sweep §3d relies on did not exist** and could not simply be written — a departed
+>    node's id is derivable from nothing. The tombstones already were that index, which is why Rule B
+>    puts them ahead of the node write.
+> 3. **"BIP-39 (English and the other eight languages)" — there are TEN.** All ten ship, taken from the
+>    canonical `bip39` package rather than typed, and checked against the standard's own vectors.
+> 4. **Monero's 1626-word list is NOT included.** It is not available as plain data from any reachable
+>    package, and inventing it for a checksum validator is exactly the failure the verification above
+>    exists to prevent. Recorded as an open item.
+> 5. **§4.3's decoy rule was corrected before it shipped:** the decoy matches the entered phrase's
+>    checksum STATE rather than always converging. Under the old rule, a phrase whose words the person
+>    had moved themselves would have had exactly one validating half — a signpost to the correct
+>    method.
+> 6. **The horizontal layout is offered only at an even word count**, which is arithmetic and not
+>    taste: at 25 words the halves are 13 and 12, the columns are unequal, and the save would die at
+>    the last step with the form already filled in.
+>
+> Новый вид записи `payment` с тремя формами:
 > банковская карта (по умолчанию), банковские реквизиты, спрятанная фраза. Решения по фразе —
 > двенадцать способов перемешивания, две колонки ввода, сборка обратно в просмотре — приняты
-> отдельно и лежат в [ЗАДАЧА_варианты_перемешивания_сид_фразы.md](ЗАДАЧА_варианты_перемешивания_сид_фразы.md);
+> отдельно и лежат в [ЗАДАЧА_варианты_перемешивания_сид_фразы.md](../todo/ЗАДАЧА_варианты_перемешивания_сид_фразы.md);
 > здесь они не повторяются, а используются.
 >
 > Все решения приняты. Приманки в память **отклонены** 2026-08-31 — довод в 5.4.
@@ -126,7 +153,7 @@
 
 ## Решения, принятые до плана
 
-Из [ЗАДАЧА_варианты_перемешивания_сид_фразы.md](ЗАДАЧА_варианты_перемешивания_сид_фразы.md):
+Из [ЗАДАЧА_варианты_перемешивания_сид_фразы.md](../todo/ЗАДАЧА_варианты_перемешивания_сид_фразы.md):
 
 | | |
 |---|---|

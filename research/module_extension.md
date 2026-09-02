@@ -239,7 +239,7 @@ looked present in testing and absent in use.
 
 #### `payment`, and the two predicates that default to the wrong answer
 
-Added with [PLAN_payment_instruments.md](../todo/PLAN_payment_instruments.md). Three FORMS in one
+Added with [PLAN_payment_instruments.md](PLAN_payment_instruments.md). Three FORMS in one
 kind — `paymentForm: 'card' | 'bank' | 'phrase'` (`paymentForm.ts`) — because the three differ only
 in their fields while the tree, the folder types, the sharing, the backup and the trash treat them
 identically. Making them three kinds would have tripled nine per-kind seams to buy nothing.

@@ -4,7 +4,7 @@
  * <p><b>What this is for.</b> A seed phrase, a PIN, a CVV — things whose whole value is that
  * nobody reads them over your shoulder. The entry stores one sequence of `2N` tokens made of two
  * sequences of `N`; only the person knows which of the twelve methods put them together, and that
- * choice is stored NOWHERE. `todo/PLAN_payment_instruments.md` and the decisions document beside
+ * choice is stored NOWHERE. `research/PLAN_payment_instruments.md` and the decisions document beside
  * it carry the reasoning, including an honest measurement of what the scheme is worth: about one
  * bit against a BIP-39 phrase, where a checksum lets an attacker discard wrong de-interleavings
  * instantly, and four to five where there is no checksum to filter with.</p>

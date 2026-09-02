@@ -1,6 +1,13 @@
 # PLAN — payment instruments, broken into epics and stories
 
-> Status: **plan only, nothing implemented yet.** This is the BUILD ORDER for
+> Status: **IMPLEMENTED, 2026-09-02.** All five epics shipped in 0.93.0; the per-story record is the
+> table below, and the deviations are in the parent plan's status line.
+>
+> **The open tail, extracted rather than left implied:** Monero's wordlist (S4.1's data half) is not
+> included — see the parent's deviation 4. Cross-window write coordination, which S1.4 uncovered, is
+> `todo/PLAN_cross_window_write_coordination.md`.
+>
+> This is the BUILD ORDER for
 > [PLAN_payment_instruments.md](PLAN_payment_instruments.md) — it decides nothing and repeats nothing.
 > Every product decision, every rejected reviewer finding and every reason lives in the parent plan;
 > the `§` references below point into it and are the authority whenever this file and that one seem to
@@ -9,7 +16,7 @@
 > Scope: `src_vs_code` only. The server is not touched and no HTTP contract changes, so
 > [module_server.md](../research/module_server.md) is out of scope by construction.
 >
-> Related: [ЗАДАЧА_варианты_перемешивания_сид_фразы.md](ЗАДАЧА_варианты_перемешивания_сид_фразы.md)
+> Related: [ЗАДАЧА_варианты_перемешивания_сид_фразы.md](../todo/ЗАДАЧА_варианты_перемешивания_сид_фразы.md)
 > (the twelve weaves and their worked breakdowns),
 > [module_extension.md](../research/module_extension.md).
 
@@ -99,7 +106,16 @@ seams, 5 needs 4's viewer. Inside an epic the order is also fixed unless a story
 | S2.2 | **landed** | Generic marks with initials, deliberately NOT the networks' logos: public MIT repo, and a trademark is not ours to ship. A test fails if somebody later replaces them with real artwork |
 | S2.3 | **landed** | Two sections, because the kind and the form narrow at different moments. A stored card is delivered by MESSAGE, never rendered into the page — the rule this kind adds to a page that renders every other kind's stored value. One of my own tests was wrong and its failure was right |
 | S2.4 | **landed** | `clearForForm` finally has a caller — the obligation S1.2 left. What a switch erases is DERIVED from the two forms' field lists, so `bank → phrase` cannot be the pair nobody pictured. The warning names fields, never values, and fires only when something is stored. `confirmDestructive` added; the four existing copies deliberately NOT rewritten |
-| S3.1 – S5.4 | open | |
+| S3.1 | **landed** | A decoy that cannot betray itself: Luhn and the same BIN for a card, mod-97 and the same country for an IBAN, and for an internal account the same shape and NOTHING more — standard structure beside a non-standard real value is a signpost. The collision guard lives next to the generator, and on exhaustion it THROWS rather than handing back the original |
+| S3.2 | **landed** | A failing checksum is a hint when plain and a CONFIRMATION when the field is about to be woven, because afterwards there is no original to compare against. Shipped with no caller and wired in after a review caught it |
+| S3.3 | **landed** | The marks become woven values; the method is stored nowhere, asserted by walking all twelve codes through the serialised record. The brand is derived BEFORE the number is woven, which is why it is a stored field |
+| S3.4 | **landed** | A woven record cannot be opened for editing — the form would weave the woven value a second time, doubling under two unknown methods, with no error at any step. Condition is "has a mixed field", never "is a phrase" |
+| S4.1 + S4.2 | **landed** | Ten BIP-39 lists from the canonical package, never typed, checked against the standard's vectors plus a derived per-language one. My own four-letter-prefix test was wrong and taught me the real property: it holds on the accent-STRIPPED form |
+| S4.3 | **landed** | The decoy matches the checksum STATE. Bounded, and refuses loudly — an unbounded loop in a save path is a hung window, not a test failure |
+| S4.4 | **landed** | Horizontal only at an even word count, and the tests assert the OFFER rather than the refusal: a refusal after a filled form is the failure being prevented |
+| S5.1 + S5.2 | **landed** | The only fields in this vault that ask twice, and a buffer that promises fewer copies WE control rather than "one copy in memory" — a claim that is false and unverifiable |
+| S5.3 | **landed** | Help in en and ru, the module doc, 0.93.0 |
+| S5.4 | **landed** | This promotion |
 
 ### Deviations recorded as they happen
 
@@ -682,7 +698,7 @@ preference.** Accepted from the review round. Weaving requires two columns of *e
 words — standard Monero, and squarely inside the 6–50 range — halving gives 13 and 12, so column 1
 holds 26 tokens and column 2 holds 24, `shuffleRefusal` refuses, and the save dies at the last step
 after everything has been typed. The thirds convention from
-[ЗАДАЧА_варианты_перемешивания_сид_фразы.md](ЗАДАЧА_варианты_перемешивания_сид_фразы.md) ("the first
+[ЗАДАЧА_варианты_перемешивания_сид_фразы.md](../todo/ЗАДАЧА_варианты_перемешивания_сид_фразы.md) ("the first
 two parts are equal, the remainder goes to the third") does not rescue it: unequal columns are not a
 cosmetic imbalance here, they are unweavable. So the layout switch **hides** horizontal at an odd
 length and says why in one line, instead of offering a choice that cannot be saved.
@@ -839,7 +855,7 @@ rather than "later".
 `git mv` to `research/`, status → `IMPLEMENTED <date>` with the deviations recorded (the wordlist count
 from S4.1, the reversed write order becoming a cross-kind change, and whatever else the build teaches),
 relative links fixed in both directions, inbound references updated, the *Currently open* table in
-[README.md](README.md) trimmed, and any phase that did not get built extracted into a fresh `todo/`
+[README.md](../todo/README.md) trimmed, and any phase that did not get built extracted into a fresh `todo/`
 plan rather than holding the document hostage.
 
 **DoD** — `node .claude/rules/shared/tools/plan-lifecycle.mjs` exits 0 and

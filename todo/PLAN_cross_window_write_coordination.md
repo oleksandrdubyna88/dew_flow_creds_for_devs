@@ -5,7 +5,7 @@
 > choosing.
 >
 > Related docs: [module_extension.md](../research/module_extension.md) (the write-order invariant, the
-> serial queue, `pendingCleanup`), [PLAN_payment_instruments_epics.md](PLAN_payment_instruments_epics.md)
+> serial queue, `pendingCleanup`), [PLAN_payment_instruments_epics.md](../research/PLAN_payment_instruments_epics.md)
 > (S1.4, where this was raised and deliberately deferred).
 
 ## The gap
