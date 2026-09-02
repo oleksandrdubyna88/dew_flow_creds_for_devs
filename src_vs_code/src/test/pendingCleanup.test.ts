@@ -60,7 +60,7 @@ test('an empty record is recognised, so the key is dropped instead of left as an
 });
 
 /** A port that records the sequence, so intent-before-work can be watched rather than trusted. */
-function port(initial: PendingCleanup, live: readonly string[] = []): {
+function port(initial: PendingCleanup, live: readonly string[] = [], listed: readonly string[] = []): {
   port: CleanupPort;
   order: string[];
   saved: PendingCleanup;
@@ -79,6 +79,7 @@ function port(initial: PendingCleanup, live: readonly string[] = []): {
       return Promise.resolve();
     },
     liveIds: () => live,
+    isListed: (accountId) => listed.includes(accountId),
     forgetSecrets: (_a, entityId) => {
       order.push(`forget:${entityId}`);
       return Promise.resolve();
@@ -134,4 +135,56 @@ test('a healthy install resumes nothing at all', async () => {
   const p = port(EMPTY_PENDING);
   assert.deepEqual(await resumePending(p.port), []);
   assert.deepEqual(p.order, ['write:|']);
+});
+
+test('an account that was ADDED BACK before the resume ran is never wiped', () => {
+  // Account ids are stable per provider account, so "sign out, sign in again, then open a window" is
+  // an ordinary sequence — and a stale marker would otherwise destroy the tree just re-added. The
+  // account list IS the lifecycle identity the review asked for, because a removal unlists first.
+  const p = port({ accounts: ['a1'], secrets: {} }, [], ['a1']);
+
+  return resumePending(p.port).then((finished) => {
+    assert.deepEqual(finished, [], 'nothing was finished, because nothing was still being removed');
+    assert.deepEqual(p.order, ['write:|'], 'and above all: no wipe');
+  });
+});
+
+test('two interrupted removals both survive in the record and are both finished', async () => {
+  // The record is a LIST. A second removal starting before the first is resumed adds to it; it does
+  // not replace it.
+  const marked = markAccountRemoving(markAccountRemoving(EMPTY_PENDING, 'a1'), 'a2');
+  const p = port(marked);
+
+  const finished = await resumePending(p.port);
+
+  assert.deepEqual(finished, ['a1', 'a2']);
+  assert.deepEqual(p.order, ['wipe:a1', 'wipe:a2', 'write:|']);
+});
+
+test('liveness is re-read per id, so an entity that arrives mid-sweep keeps its secrets', async () => {
+  // There is an await between every delete and a sync apply can land in one. A liveness answer from
+  // before the previous await is an answer about a tree that may no longer be the tree.
+  const live: string[] = [];
+  const order: string[] = [];
+  const state = { current: { accounts: [], secrets: { a1: ['first', 'arrives-late'] } } as PendingCleanup };
+  const p: CleanupPort = {
+    read: () => state.current,
+    write: (next) => {
+      state.current = next;
+      return Promise.resolve();
+    },
+    wipeAccount: () => Promise.resolve(),
+    isListed: () => false,
+    liveIds: () => [...live],
+    forgetSecrets: (_a, entityId) => {
+      order.push(entityId);
+      // Between this delete and the next check, a sync apply lands the second entity.
+      live.push('arrives-late');
+      return Promise.resolve();
+    },
+  };
+
+  await resumePending(p);
+
+  assert.deepEqual(order, ['first'], 'the id that became live again was not touched');
 });

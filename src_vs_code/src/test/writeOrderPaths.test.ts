@@ -203,11 +203,9 @@ function stores(options: { addNodeFails: boolean }): {
   storage: Record<string, unknown>;
   chain: Map<string, string>;
   tree: string[];
-  tombstoned: string[];
 } {
   const chain = new Map<string, string>();
   const tree: string[] = [];
-  const tombstoned: string[] = [];
   const set = (kind: string) => (_a: string, e: string, v: string | undefined): Promise<void> => {
     // Modelled on the real setters: a value stores, and nothing DELETES — except for a password,
     // where nothing means keep. That asymmetry is the whole point of the test.
@@ -224,17 +222,15 @@ function stores(options: { addNodeFails: boolean }): {
   };
   const storage: Record<string, unknown> = {
     addNode: (_a: string, node: { id: string }): Promise<void> => {
-      tree.push(node.id);
-      return options.addNodeFails ? Promise.reject(new Error('globalState is full')) : Promise.resolve();
-    },
-    retractNode: (_a: string, id: string): Promise<void> => {
-      const at = tree.indexOf(id);
-      if (at >= 0) {
-        tree.splice(at, 1);
-        tombstoned.push(id);
+      // A refused write does not land the node — which is exactly the case the compensation covers,
+      // and the only one it can settle without deciding what other machines may keep.
+      if (options.addNodeFails) {
+        return Promise.reject(new Error('globalState is full'));
       }
+      tree.push(node.id);
       return Promise.resolve();
     },
+    getNode: (_a: string, id: string): object | undefined => (tree.includes(id) ? { id } : undefined),
     setPassword: set('password'),
     deletePassword: del('password'),
     setNotes: set('notes'),
@@ -245,9 +241,8 @@ function stores(options: { addNodeFails: boolean }): {
     setTotp: set('totp'),
     deleteTotp: del('totp'),
     getNodes: () => [],
-    getNode: () => undefined,
   };
-  return { storage, chain, tree, tombstoned };
+  return { storage, chain, tree };
 }
 
 const IMPORTED_KINDS = ['password', 'notes', 'privateKey', 'dbConnection', 'totp'] as const;
@@ -255,7 +250,7 @@ const IMPORTED_KINDS = ['password', 'notes', 'privateKey', 'dbConnection', 'totp
 test('an import whose node write fails leaves NO secret of any kind behind', async () => {
   // Named per kind because the failure mode is per kind: one setter that keeps instead of deleting
   // is one permanently uncollectable orphan, and there is no tombstone to find it by.
-  const { storage, chain, tree, tombstoned } = stores({ addNodeFails: true });
+  const { storage, chain, tree } = stores({ addNodeFails: true });
 
   await assert.rejects(() =>
     importEntities(storage as never, { accountId: 'a1', parentId: null }, [
@@ -274,24 +269,20 @@ test('an import whose node write fails leaves NO secret of any kind behind', asy
       `${kind} survived the failed create — an orphan nothing can ever collect`,
     );
   }
-  assert.deepEqual(tree, [], 'and the node it half-wrote is gone too');
-  assert.equal(
-    tombstoned.length,
-    1,
-    'the retracted node is TOMBSTONED, because a sync cycle may already have published it',
-  );
+  assert.deepEqual(tree, [], 'nothing to tombstone: a refused write never put the node anywhere');
 });
 
-test('the import undo runs the node removal BEFORE the keychain deletes', async () => {
-  // `addNode` here pushes the id and then fails, which is the persisted-then-reported case: the
-  // secrets must stay readable until the node is proven gone.
+test('the import undo asks whether the node landed, and only then deletes', async () => {
+  // The single question this compensation is allowed to answer for itself. If the node IS there, the
+  // entry is live and consistent and nothing is taken from it — see `entityWrite.ts` on why one
+  // machine cannot decide that for its peers.
   const order: string[] = [];
   const { storage } = stores({ addNodeFails: true });
-  const retract = storage.retractNode as (a: string, i: string) => Promise<void>;
+  const getNode = storage.getNode as (a: string, i: string) => object | undefined;
   const deletePassword = storage.deletePassword as (a: string, e: string) => Promise<void>;
-  storage.retractNode = (a: string, i: string): Promise<void> => {
-    order.push('retractNode');
-    return retract(a, i);
+  storage.getNode = (a: string, i: string): object | undefined => {
+    order.push('getNode');
+    return getNode(a, i);
   };
   storage.deletePassword = (a: string, e: string): Promise<void> => {
     order.push('deletePassword');
@@ -304,7 +295,7 @@ test('the import undo runs the node removal BEFORE the keychain deletes', async 
     ]),
   );
 
-  assert.deepEqual(order, ['retractNode', 'deletePassword']);
+  assert.deepEqual(order, ['getNode', 'deletePassword']);
 });
 
 test('a successful import leaves every secret in place and undoes nothing', async () => {

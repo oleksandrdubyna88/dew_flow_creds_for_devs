@@ -369,6 +369,7 @@ export class StorageManager implements vscode.Disposable {
         await this.globalState.update(PENDING_KEY, isEmptyPending(next) ? undefined : next);
       },
       wipeAccount: (accountId) => this.wipeAccountData(accountId),
+      isListed: (accountId) => this.getAccount(accountId) !== undefined,
       liveIds: (accountId) => this.getNodes(accountId).map((n) => n.id),
       forgetSecrets: (accountId, entityId) => this.forgetEntitySecrets(accountId, entityId),
     };
@@ -393,30 +394,6 @@ export class StorageManager implements vscode.Disposable {
     for (const key of entitySecretKeys(accountId, entityId)) {
       await this.secrets.delete(key);
     }
-  }
-
-  /**
-   * Retract a node a failed create had already written — WITH a tombstone.
-   *
-   * <p>The first version forgot it quietly. Both providers found the hole: the node was PERSISTED,
-   * and a sync cycle can publish between the write and the failure being reported — so forgetting it
-   * locally leaves the other machine a live node claiming a secret this one just deleted, and it
-   * syncs BACK. A tombstone cancels it everywhere, costs nothing when the id never travelled, and
-   * `addNode` already forgets one when an id is legitimately created again. It also makes a
-   * compensated create's orphan collectable, which was one of the two classes `orphanSweep.ts` had
-   * to write off. A no-op when the id is not in the tree — the failure often predates the node.</p>
-   */
-  async retractNode(accountId: string, id: string): Promise<void> {
-    const nodes = this.getNodes(accountId);
-    const node = nodes.find((n) => n.id === id);
-    if (node === undefined) {
-      return;
-    }
-    await this.tombstone(accountId, [node]);
-    await this.saveNodes(
-      accountId,
-      nodes.filter((n) => n.id !== id),
-    );
   }
 
   // ---------- structure (globalState, per account) ----------

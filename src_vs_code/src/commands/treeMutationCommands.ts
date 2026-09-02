@@ -280,7 +280,7 @@ export function registerTreeMutationCommands(host: TreeMutationCommandsHost): vo
             Date.now(),
           ),
         }),
-      undoNode: () => storage.retractNode(location.accountId, id),
+      nodeLanded: () => storage.getNode(location.accountId, id) !== undefined,
       // Safe as a blanket delete BECAUSE the id is new: nothing older sits under any of its keys.
       undoSecrets: () => storage.forgetEntitySecrets(location.accountId, id),
     });

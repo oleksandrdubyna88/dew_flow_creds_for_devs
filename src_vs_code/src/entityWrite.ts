@@ -8,18 +8,26 @@
  * uncollectable. The review escalated it from a tidiness point to a security one, and the framing is
  * fair: a create that keeps failing keeps leaving keychain slots nobody can reach or account for.</p>
  *
- * <h3>The compensation obeys Rule A too — which is the whole subtlety</h3>
+ * <h3>It compensates ONE case, and the review is why</h3>
  *
- * <p>A first version deleted the secrets and rethrew. The review found the case that makes that
- * WORSE than not compensating at all: `writeNode` can fail <i>after</i> the node is persisted (an
- * error raised while flushing, a rejection from a memento that has already taken the value). Delete
- * the secrets then, and the result is a live node claiming a record that is not there — the one torn
- * state the invariant forbids, and the one that SYNCS.</p>
+ * <p>The first version deleted the secrets and rethrew. The second added a node retraction in front
+ * of that, because `writeNode` can fail <i>after</i> the node is persisted — an error raised while
+ * flushing, a rejection from a memento that has already taken the value — and deleting the secrets
+ * then leaves a live node claiming a record that is not there.</p>
  *
- * <p>So undoing is a REMOVAL, and a removal writes the referrer first: `undoNode`, then
- * `undoSecrets`. And if `undoNode` fails, the secrets are <b>left alone</b> — an orphan is the
- * tolerated state, a node pointing at nothing is not. Refusing to tidy is the correct answer when
- * the thing that would make tidying safe could not be done.</p>
+ * <p>The third round is what settled it, because the two review providers demanded <b>opposite</b>
+ * things about that retraction. One: a tombstone built from the node's own vector may not dominate a
+ * concurrent remote edit, so the remote live node syncs back over deleted secrets. The other: a
+ * tombstone that DOES dominate will clobber a peer where the entity legitimately exists. Both are
+ * right, and together they say there is no local answer — a machine cannot decide, from its own
+ * failure, what other machines are entitled to keep.</p>
+ *
+ * <p>So the compensation covers only the case it can settle alone: <b>the node never landed</b>.
+ * Nothing could have published it, so its secrets are unreachable by construction and deleting them
+ * is unambiguous. When the node DID land, this leaves both halves alone: the entry is live and holds
+ * its values — a consistent entry, arrived at by a failing path — and the caller still hears the
+ * error. An entry that exists when the person was told it did not is a surprise; deleting a
+ * credential from under a node that other machines can see is data loss.</p>
  *
  * <h3>What this deliberately does not cover</h3>
  *
@@ -41,10 +49,10 @@
  * <p>So the residual is a create interrupted by a process kill, between the first secret write and the
  * node write. Narrow, tolerated, and written down here rather than left to be rediscovered.</p>
  *
- * <p><b>The caller supplies both undos</b>, which is the point: it knows exactly which secrets it
+ * <p><b>The caller supplies the undo</b>, which is the point: it knows exactly which secrets it
  * wrote, and undoing precisely those is safe where deleting everything the id owns would not be. This
  * is for CREATES — on an update, "delete what this entity owns" would delete the values being
- * replaced, and `undoNode` would delete an entry that existed before the save.</p>
+ * replaced, and `nodeLanded` would answer true for an entry that existed before the save.</p>
  *
  * <p>Free of `vscode` (repository rule 3), and free of `StorageManager` too — it takes callbacks, so
  * it needed no new method on a class whose file is at its size-ratchet baseline.</p>
@@ -54,9 +62,9 @@ export interface EntityCreate {
   writeSecrets: () => Promise<void>;
   /** The node that will reference them. */
   writeNode: () => Promise<void>;
-  /** Make the node not exist. Must be a no-op when it never did — the failure may predate it. */
-  undoNode: () => Promise<void>;
-  /** Delete exactly the secrets `writeSecrets` writes. Runs only once the node is proven gone. */
+  /** Is the node in the tree NOW? The single question that decides whether anything is undone. */
+  nodeLanded: () => boolean;
+  /** Delete exactly the secrets `writeSecrets` writes. Runs only when the node did NOT land. */
   undoSecrets: () => Promise<void>;
 }
 
@@ -72,12 +80,10 @@ export async function createEntityWithSecrets(create: EntityCreate): Promise<voi
   }
 }
 
-/** Referrer first, referent second — and nothing at all if the referrer will not go. */
+/** Undo only what is unambiguously undoable: the case where the node never reached the tree. */
 async function compensate(create: EntityCreate): Promise<void> {
-  try {
-    await create.undoNode();
-  } catch {
-    return; // The node may still be there; leaving its secrets reachable is the safer half.
+  if (create.nodeLanded()) {
+    return;
   }
   try {
     await create.undoSecrets();

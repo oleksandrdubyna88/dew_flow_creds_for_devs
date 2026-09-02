@@ -93,6 +93,8 @@ export interface CleanupPort {
   write(next: PendingCleanup): Promise<void>;
   /** Delete the account's tree, tombstones, horizon and every secret its entities own. */
   wipeAccount(accountId: string): Promise<void>;
+  /** Is this account listed again? A removal unlists FIRST, so a listed id is not a pending one. */
+  isListed(accountId: string): boolean;
   /** Ids currently in this account's tree — an id still there is NOT one whose secrets may go. */
   liveIds(accountId: string): readonly string[];
   forgetSecrets(accountId: string, entityId: string): Promise<void>;
@@ -123,14 +125,20 @@ export async function removeWithIntent(
  */
 export async function resumePending(port: CleanupPort): Promise<readonly string[]> {
   const pending = port.read();
-  for (const accountId of pending.accounts) {
+  // An account that is LISTED again is not a pending removal — it is a live account whose id came
+  // back. Account ids are stable per provider account, so "sign out, sign in again, then open a
+  // window" is an ordinary sequence, and without this check the stale marker would wipe the tree the
+  // person just re-added. Raised by the review as a missing lifecycle identity; the account list is
+  // that identity, because the removal unlists before it destroys anything.
+  const removing = pending.accounts.filter((accountId) => !port.isListed(accountId));
+  for (const accountId of removing) {
     await port.wipeAccount(accountId);
   }
   for (const [accountId, ids] of Object.entries(pending.secrets)) {
     await finishSecretDeletes(port, accountId, ids);
   }
   await port.write(EMPTY_PENDING);
-  return pending.accounts;
+  return removing;
 }
 
 /**
@@ -140,8 +148,12 @@ export async function resumePending(port: CleanupPort): Promise<readonly string[
  * values; deleting them then would be exactly the data loss the invariant exists to prevent.</p>
  */
 async function finishSecretDeletes(port: CleanupPort, accountId: string, ids: readonly string[]): Promise<void> {
-  const live = new Set(port.liveIds(accountId));
-  for (const id of ids.filter((one) => !live.has(one))) {
-    await port.forgetSecrets(accountId, id);
+  for (const id of ids) {
+    // Re-read per id rather than once: there is an await between every delete, and a sync apply can
+    // land in it. A liveness answer from before the previous await is an answer about a tree that may
+    // no longer be the tree. Raised by the review, and it costs a cached array read.
+    if (!port.liveIds(accountId).includes(id)) {
+      await port.forgetSecrets(accountId, id);
+    }
   }
 }
