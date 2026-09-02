@@ -626,8 +626,14 @@ After this, a share signed by any other key is refused.`,
     );
     // The one REMOVAL on this path: an update whose payload carries no password clears the one the
     // entry had, and by here the node no longer claims it.
+    //
+    // `deletePassword`, not `setPassword(undefined)` — which KEEPS. The comment above was written as
+    // if it deleted, and for as long as that was wrong this branch did nothing at all: a sender who
+    // removed a password and re-shared as an update left the old credential on the recipient's
+    // machine indefinitely. Found by an audit of the write paths; the asymmetry is documented in
+    // `storageManager.setPassword` and asserted in `writeOrderPaths.test.ts`.
     if (password === undefined) {
-      await this.deps.storage.setPassword(share.accountId, node.id, undefined);
+      await this.deps.storage.deletePassword(share.accountId, node.id);
     }
     if (unreadablePayment) {
       // Reported, never silent. Both reviewers rejected the silent drop independently and were right

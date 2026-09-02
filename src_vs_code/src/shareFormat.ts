@@ -1,3 +1,4 @@
+import { withoutSecretClaims } from './secretClaims';
 import { resolveKind } from './entityKind';
 import * as crypto from 'node:crypto';
 import { BackupError, openBlob, readBackupShares, sealBlob } from './cryptoUtils';
@@ -376,17 +377,19 @@ export function shareableDetails(
     return undefined;
   }
   return {
-    ...details,
+    // Every claim about a stored secret goes, from the one table — see `secretClaims.ts`. This used
+    // to be a hand-written list here and it had drifted: `SharePayload.secrets` has no attachment or
+    // image field at all, so that content STRUCTURALLY cannot travel, while its file name, size and
+    // "changed by" attribution did. The recipient got a download row for a file nobody sent.
+    ...withoutSecretClaims(details),
     notes: undefined,
     dependsOn: undefined,
     depColor: undefined,
     mcp: undefined,
     mcpCreatedByAgent: undefined,
-    configKeyHash: undefined,
-    // The seventh, and the only CONDITIONAL one: `hasTotp` is a claim about a secret that may or
-    // may not be travelling in this share, and the flag must say which. Sent with the seed left
-    // behind, it gives the recipient a tree row offering *Copy One-Time Code* on an entry that
-    // has no seed to compute one from — a promise the entry cannot keep.
+    // The one CONDITIONAL claim: the seed may or may not be travelling in this share, and the flag
+    // must say which. Sent with the seed left behind, it gives the recipient a tree row offering
+    // *Copy One-Time Code* on an entry that has no seed to compute one from.
     hasTotp: includeTotp ? details.hasTotp : undefined,
   };
 }

@@ -71,3 +71,90 @@ export const SECRET_KINDS: ReadonlyArray<{
 export function emptySecretMaps(): SecretMaps {
   return Object.fromEntries(SECRET_KINDS.map((kind) => [kind.bundleKey, {}])) as SecretMaps;
 }
+
+/** Just enough of `vscode.SecretStorage` to move maps in and out of it, and not a line more. */
+export interface SecretChest {
+  get(key: string): Thenable<string | undefined>;
+  store(key: string, value: string): Thenable<void>;
+  delete(key: string): Thenable<void>;
+}
+
+/** The bundle's maps with every absent one an empty record — a pre-0.57 file has no totps at all. */
+export function secretMapsOf(bundle: Partial<Record<SecretMapKey, Record<string, string>>>): SecretMaps {
+  const maps = emptySecretMaps();
+  for (const kind of SECRET_KINDS) {
+    maps[kind.bundleKey] = bundle[kind.bundleKey] ?? {};
+  }
+  return maps;
+}
+
+/** One entity's secrets, kind by kind, into the maps — absent kinds leave no entry. */
+export async function readKindsInto(
+  chest: SecretChest,
+  accountId: string,
+  entityId: string,
+  maps: SecretMaps,
+): Promise<void> {
+  for (const kind of SECRET_KINDS) {
+    const value = await chest.get(kind.key(accountId, entityId));
+    if (value !== undefined) {
+      maps[kind.bundleKey][entityId] = value;
+    }
+  }
+}
+
+/** Every map's entries into the keychain, kind by kind. */
+export async function storeSecretMaps(chest: SecretChest, accountId: string, maps: SecretMaps): Promise<void> {
+  for (const kind of SECRET_KINDS) {
+    for (const [entityId, value] of Object.entries(maps[kind.bundleKey])) {
+      await chest.store(kind.key(accountId, entityId), value);
+    }
+  }
+}
+
+/** The kinds the incoming maps do not carry for this entity are gone from the keychain. */
+export async function dropAbsentKinds(
+  chest: SecretChest,
+  accountId: string,
+  entityId: string,
+  maps: SecretMaps,
+): Promise<void> {
+  for (const kind of SECRET_KINDS) {
+    if (maps[kind.bundleKey][entityId] === undefined) {
+      await chest.delete(kind.key(accountId, entityId));
+    }
+  }
+}
+
+/**
+ * Every entity's secrets, kind by kind — plus any legacy plaintext note, migrated into the map.
+ *
+ * <p>A note written before 0.20 is still sitting in the node's plaintext metadata. It is read here
+ * so that a backup carries it as a proper secret, and only when no STORED note has replaced it —
+ * otherwise a restore would resurrect the old text over the new.</p>
+ */
+export async function readSecretMaps(
+  chest: SecretChest,
+  accountId: string,
+  nodes: readonly { id: string; type: string; details?: { notes?: string } }[],
+): Promise<SecretMaps> {
+  const maps = emptySecretMaps();
+  for (const node of nodes.filter((n) => n.type === 'entity')) {
+    await readKindsInto(chest, accountId, node.id, maps);
+    const legacyNote = legacyNoteOf(node, maps);
+    if (legacyNote !== undefined) {
+      maps.notes[node.id] = legacyNote;
+    }
+  }
+  return maps;
+}
+
+/** A pre-0.20 note still in plaintext metadata, when no stored note has replaced it. */
+function legacyNoteOf(node: { id: string; details?: { notes?: string } }, maps: SecretMaps): string | undefined {
+  const stored = maps.notes[node.id];
+  return stored === undefined ? nonEmpty(node.details?.notes) : undefined;
+}
+
+function nonEmpty(text: string | undefined): string | undefined {
+  return text !== undefined && text.length > 0 ? text : undefined;
+}

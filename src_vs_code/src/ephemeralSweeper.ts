@@ -33,7 +33,7 @@ export interface SweepStorage {
   getNodes(accountId: string): readonly TreeNode[];
   deleteNodeRecursive(accountId: string, id: string): Promise<string[]>;
   /**
-   * Keychain keys a half-finished deletion left behind — see .
+   * Keychain keys a half-finished deletion left behind — see `orphanSweep.ts`.
    *
    * <p>Swept HERE rather than from its own startup hook, because this class already exists for the
    * same reason and says so in its own header: a window OPENING is when what a crashed window left
@@ -41,6 +41,14 @@ export interface SweepStorage {
    * for a deletion instead of for an expiry. One sweep, one trigger, one place to look.</p>
    */
   sweepOrphanSecrets(accountId: string): Promise<{ deleted: number; checked: number }>;
+  /**
+   * Finish any account removal a killed window left half-done — see `accountRemoval.ts`.
+   *
+   * <p>Same trigger and the same reason: an account whose profile is gone while its tree and secrets
+   * are still stored is precisely "what a crashed window left behind". It is NOT reachable through
+   * `getAccounts()`, which is why it needs its own call rather than a per-account pass.</p>
+   */
+  resumeAccountRemovals(): Promise<readonly string[]>;
 }
 
 /** How often the sweep wakes. Shorter than `LEASE_MS`, so a lease is renewed several times over. */
@@ -124,6 +132,12 @@ export class EphemeralSweeper implements vscode.Disposable {
 
   /** Its own method so `sweep` stays under the complexity ceiling — extracted, not suppressed. */
   private async sweepOrphans(): Promise<void> {
+    // First, because a half-removed ACCOUNT is invisible to the loop below — it is not in
+    // `getAccounts()` any more, and its own tree is the only record of what it still owns.
+    const finished = await this.storage.resumeAccountRemovals();
+    if (finished.length > 0) {
+      this.log(`Finished ${finished.length} account removal(s) left half-done by an earlier window.`);
+    }
     for (const account of this.storage.getAccounts()) {
       const swept = await this.storage.sweepOrphanSecrets(account.accountId);
       if (swept.deleted > 0) {

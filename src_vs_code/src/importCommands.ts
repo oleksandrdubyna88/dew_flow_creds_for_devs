@@ -57,11 +57,12 @@ export async function importEntities(
   for (const { node, secrets } of made) {
     // Secrets, then the node — and on any observable failure the secrets go back, so a refused
     // keychain does not leave this id's values unreachable in it. See `entityWrite.ts`.
-    await createEntityWithSecrets(
-      () => writeImportedSecrets(storage, location.accountId, node.id, secrets),
-      () => storage.addNode(location.accountId, node),
-      () => undoImportedSecrets(storage, location.accountId, node.id),
-    );
+    await createEntityWithSecrets({
+      writeSecrets: () => writeImportedSecrets(storage, location.accountId, node.id, secrets),
+      writeNode: () => storage.addNode(location.accountId, node),
+      undoNode: () => storage.forgetNode(location.accountId, node.id),
+      undoSecrets: () => undoImportedSecrets(storage, location.accountId, node.id),
+    });
   }
   return made.length;
 }

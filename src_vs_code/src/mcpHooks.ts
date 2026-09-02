@@ -37,13 +37,13 @@ export function mcpCreateHooks(storage: StorageManager, onMade: () => void): Mcp
       const secret = request.secret ?? generatedFor(request);
       // On this path the secret may have been GENERATED here, so a failure that left it behind would
       // strand a value nobody asked for and nobody can reach. See `entityWrite.ts`.
-      await createEntityWithSecrets(
-        async () => {
+      await createEntityWithSecrets({
+        writeSecrets: async () => {
           if (secret !== undefined && secret.length > 0) {
             await storage.setPassword(decision.target.accountId, id, secret);
           }
         },
-        () =>
+        writeNode: () =>
           storage.addNode(decision.target.accountId, {
             id,
             name: request.name,
@@ -51,8 +51,9 @@ export function mcpCreateHooks(storage: StorageManager, onMade: () => void): Mcp
             parentId: decision.target.entityId,
             details: detailsFor(id, kind, request),
           }),
-        () => storage.deletePassword(decision.target.accountId, id),
-      );
+        undoNode: () => storage.forgetNode(decision.target.accountId, id),
+        undoSecrets: () => storage.deletePassword(decision.target.accountId, id),
+      });
       onMade();
       return { id, name: request.name };
     },

@@ -22,6 +22,8 @@ import { buildDependencyColorMap } from '../depGraph';
 import { collectJumpCandidates } from '../commandTargets';
 import { carryThroughDetails } from '../attachmentMeta';
 import { applyAdditions, applyRemovals } from '../applyFormSecrets';
+import { createEntityWithSecrets } from '../entityWrite';
+import { withoutSecretClaims } from '../secretClaims';
 import { warnIfTrackedCopy } from '../configCommands';
 import { applyDependencyColors } from '../entityEditCommands';
 import { applyEnvBindings } from '../envApply';
@@ -160,10 +162,17 @@ export function registerTreeMutationCommands(host: TreeMutationCommandsHost): vo
       // A clone is metadata only by design. Copying the SECRETS would double every
       // password on disk and in every backup, and the usual reason to clone is to make
       // a near-identical entry that needs its OWN credential anyway.
+      //
+      // Which is exactly why the CLAIMS must go too (`secretClaims.ts`). Copying `details` wholesale
+      // gave the clone a one-time-code menu with no seed, an attachment row for no file, env
+      // bindings that resolve to nothing — and, worst, the same `configKeyHash`, which makes the
+      // clone a second holder of one application's key: `findConfigKeyHolder` takes the FIRST match,
+      // so a sync reorder or a trashed original can point a live application at the copy, which has
+      // no config body, and it is answered 401. Found by an audit, not by a report.
       details:
         source.details === undefined
           ? undefined
-          : { ...source.details, id: clonedId, name: name.trim() },
+          : withoutSecretClaims({ ...source.details, id: clonedId, name: name.trim() }),
     });
     mutated();
 
@@ -252,21 +261,28 @@ export function registerTreeMutationCommands(host: TreeMutationCommandsHost): vo
     // ADDITIONS before the node, so a crash cannot leave a node claiming a value nobody wrote.
     // A create has no removals to speak of, but the pass runs anyway: the form can arrive with a
     // clearX set on a brand-new entry, and one caller doing this differently is how the two paths
-    // drifted before.
-    await applyAdditions(storage, location.accountId, id, result);
-    await storage.addNode(location.accountId, {
-      id,
-      name: result.details.name,
-      type: 'entity',
-      parentId: location.parentId,
-      // The seam that stamps attachment metadata — and, found while building it, the one that
-      // keeps configKeyHash alive across an edit (see carryThroughDetails).
-      details: carryThroughDetails(
-        result,
-        undefined,
-        storage.getAccount(location.accountId)?.email,
-        Date.now(),
-      ),
+    // drifted before. Compensated since the S1.4 review, which pointed out that the path a PERSON
+    // uses was the one still leaving an uncollectable orphan when the node write failed.
+    await createEntityWithSecrets({
+      writeSecrets: () => applyAdditions(storage, location.accountId, id, result),
+      writeNode: () =>
+        storage.addNode(location.accountId, {
+          id,
+          name: result.details.name,
+          type: 'entity',
+          parentId: location.parentId,
+          // The seam that stamps attachment metadata — and, found while building it, the one that
+          // keeps configKeyHash alive across an edit (see carryThroughDetails).
+          details: carryThroughDetails(
+            result,
+            undefined,
+            storage.getAccount(location.accountId)?.email,
+            Date.now(),
+          ),
+        }),
+      undoNode: () => storage.forgetNode(location.accountId, id),
+      // Safe as a blanket delete BECAUSE the id is new: nothing older sits under any of its keys.
+      undoSecrets: () => storage.forgetEntitySecrets(location.accountId, id),
     });
     await applyRemovals(storage, location.accountId, id, result);
     void warnIfTrackedCopy(result.details);

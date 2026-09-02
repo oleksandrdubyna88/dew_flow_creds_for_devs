@@ -59,6 +59,7 @@ function harness(
     getAccounts: () => [ACCOUNT],
     getNodes: () => nodes,
     sweepOrphanSecrets: () => Promise.resolve({ deleted: 0, checked: 0 }),
+    resumeAccountRemovals: () => Promise.resolve([]),
     deleteNodeRecursive: (_a, id) => {
       if (id === options.failOn) {
         return Promise.reject(new Error('keychain busy'));
@@ -208,6 +209,7 @@ test('a second pass cannot start while one is still running', async () => {
     getAccounts: () => [ACCOUNT],
     getNodes: () => [entity('gone', { expiresAt: NOW - 1, burnPolicy: 'ttl' })],
     sweepOrphanSecrets: () => Promise.resolve({ deleted: 0, checked: 0 }),
+    resumeAccountRemovals: () => Promise.resolve([]),
     deleteNodeRecursive: (_a, id) =>
       new Promise((resolve) => {
         deleted.push(id);

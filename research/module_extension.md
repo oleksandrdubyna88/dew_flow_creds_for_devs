@@ -302,7 +302,7 @@ tombstoned, which the sweep deliberately refuses to touch: the deletion is merel
 | share accept (`shareInbox`) | node, then secrets — a fresh id, so nothing pre-exists to claim | |
 | **import (`importCommands`)** | **secrets → node, per entity, compensated** | inverted; every entry in a file had its own window |
 | **agent create (`mcpHooks`)** | **secret → node, compensated** | the secret may have been GENERATED here, so a lost one is a value nobody asked for |
-| **account removal (`storageManager`)** | **tombstones → tree → secrets → forget** | Rule B; the review's finding on my own Rule A fix |
+| **account removal (`storageManager`)** | **unlist → secrets → tree/tombstones/horizon** | its own record: the surviving tree names what is left. See `accountRemoval.ts` |
 
 The `importBundle` one is the find worth keeping: the review asked which other paths write both, and
 that was the answer. Its vanished-id list is now captured from the OLD tree before `saveNodes`,
@@ -347,6 +347,44 @@ reusing the tombstone list would **sync a deletion for an id that never existed*
 could then apply it to a live entry), and a machine-local pending-id list needs an expiry window to
 tell an abandoned id from one in flight, which is a second consistency problem to keep honest. The
 residual is written down in the module header rather than left to be rediscovered.
+
+##### `accountRemoval.ts` — the removal that needs no marker, and the resume that finishes it
+
+The previous order wrote tombstones and then wiped the tree. Killed in between, that leaves ids that
+are **both tombstoned and live** — which `orphanCandidates` deliberately refuses to sweep, because for
+an entity that state means a deletion merely unfinished. Nothing ever finished this one: the entries
+stayed visible here, their tombstones synced a deletion to every other machine, and their secrets were
+never collected. Both review providers raised it independently, on my own fix.
+
+**Unlist the account FIRST.** It is then invisible to the UI and — the part that makes this safe — to
+the sync cycle, which iterates `getAccounts()`. Its node list key is still in `globalState`, and that
+key NAMES every id whose secrets are still to be deleted, so the durable record Rule B asks for is the
+tree itself: exactly the thing that used to be destroyed first. Then the secrets, then the tree,
+tombstones and horizon.
+
+`resumeAccountRemovals()` runs on the same trigger as the orphan sweep and finds the leftovers with
+`Memento.keys()` — no marker of any kind, and it also collects data left by a version of this
+extension that crashed before the function existed. Idempotent by construction: it re-derives its work
+from what is stored, so running it twice is running it once.
+
+##### `secretClaims.ts` — the permanent version of "a node claiming a secret that is not there"
+
+The write order handles the TORN version of that state, the one a crash leaves for a moment. An audit
+asking "is there a path that writes a node claiming a secret it never writes" found the version that
+is never repaired — a claim copied onto a node whose secret is never written. It does not heal, and it
+syncs.
+
+Two paths had it, and it was the same mistake in both (spread `details`, fix up the id), so the fix is
+one table rather than two lists that would drift:
+
+| path | what it inherited | consequence |
+|---|---|---|
+| **Duplicate** (`cloneNode`) | everything | a *Copy One-Time Code* menu with no seed; a download row for no file; env bindings that fill nothing; and `configKeyHash` — two entries answering to one application key make `findConfigKeyHolder`'s `.find()` a race the empty copy can win, and the running application is answered **401** |
+| **Share** (`shareableDetails`) | attachment / image metadata | `SharePayload.secrets` has no attachment or image field at all, so that content STRUCTURALLY cannot travel — while its file name, size and "changed by" attribution did |
+
+The same audit found a third: `shareInbox`'s "the one REMOVAL on this path" called
+`setPassword(undefined)`, which **keeps**. For as long as that line existed, a sender who deleted a
+password and re-shared as an update left the old credential on the recipient's machine.
 
 ##### `secretMaps.ts` — the eleven rows, out of the class that used them
 

@@ -8,6 +8,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Duplicate no longer makes a copy that lies about what it holds.** A duplicated entry used to
+  inherit every flag that says a secret is stored — a one-time-code menu with no seed, an attachment
+  row for a file that was never copied, environment variables that fill in nothing. Worst of all it
+  inherited the config key, so the copy became a second answer to one application's key: with the
+  original trashed, or after a sync reordered the tree, a running application could be told **"that
+  key does not open a config in this window"** by an entry someone made with Duplicate.
+
+- **A share no longer promises an attachment it cannot send**, and **an update that removes a password
+  now removes it on the other side.** Attachments and images have never travelled in a share; their
+  file names and sizes did, so the entry that arrived showed a file nobody could open. And a sender
+  who deleted a password and re-shared the entry as an update left the old credential in place on the
+  recipient's machine — the code meant to clear it was calling the one setter that keeps.
+
 - **A half-written entry can no longer claim a secret that is not there — and a failed create no
   longer leaves one behind.** Saving, importing, restoring, accepting a share and creating through an
   agent all write the secret *before* the entry that points at it, and clear a secret only *after*

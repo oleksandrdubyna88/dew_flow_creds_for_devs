@@ -1,5 +1,6 @@
 /**
- * Creating an entity: its secrets, then its node — and if anything throws, the secrets go back.
+ * Creating an entity: its secrets, then its node — and if anything throws, both go back, in the
+ * order the invariant demands of a removal.
  *
  * <p>Rule A says a create writes the secret first, so the only torn state a crash can leave is a
  * secret nothing points at. `orphanSweep.ts` collects those from the tombstones a DELETION recorded —
@@ -7,15 +8,24 @@
  * uncollectable. The review escalated it from a tidiness point to a security one, and the framing is
  * fair: a create that keeps failing keeps leaving keychain slots nobody can reach or account for.</p>
  *
- * <h3>What this does, and what it deliberately does not</h3>
+ * <h3>The compensation obeys Rule A too — which is the whole subtlety</h3>
  *
- * <p>It compensates. Every failure this process can OBSERVE — a keychain refusal, a rejected node
- * write, a validation throw — deletes what it wrote before rethrowing, so the id leaves nothing
- * behind. That covers the failures that actually happen.</p>
+ * <p>A first version deleted the secrets and rethrew. The review found the case that makes that
+ * WORSE than not compensating at all: `writeNode` can fail <i>after</i> the node is persisted (an
+ * error raised while flushing, a rejection from a memento that has already taken the value). Delete
+ * the secrets then, and the result is a live node claiming a record that is not there — the one torn
+ * state the invariant forbids, and the one that SYNCS.</p>
  *
- * <p>It does NOT cover a process KILL between the writes, and nothing here pretends to. Covering that
- * needs a durable record written before the first secret. Two candidates were considered and both
- * rejected for stated reasons:</p>
+ * <p>So undoing is a REMOVAL, and a removal writes the referrer first: `undoNode`, then
+ * `undoSecrets`. And if `undoNode` fails, the secrets are <b>left alone</b> — an orphan is the
+ * tolerated state, a node pointing at nothing is not. Refusing to tidy is the correct answer when
+ * the thing that would make tidying safe could not be done.</p>
+ *
+ * <h3>What this deliberately does not cover</h3>
+ *
+ * <p>Every failure this process can OBSERVE. NOT a process KILL between the writes, and nothing here
+ * pretends to. Covering that needs a durable record written before the first secret. Two candidates
+ * were considered and both rejected for stated reasons:</p>
  *
  * <ul>
  *   <li><b>Reusing the tombstone list</b> — appealing, because the sweep already reads it and
@@ -31,30 +41,47 @@
  * <p>So the residual is a create interrupted by a process kill, between the first secret write and the
  * node write. Narrow, tolerated, and written down here rather than left to be rediscovered.</p>
  *
- * <p><b>The caller supplies the undo</b>, which is the point: it knows exactly which secrets it wrote,
- * and undoing precisely those is safe where deleting everything the id owns would not be. This is for
- * CREATES — on an update, "delete what this entity owns" would delete the values being replaced.</p>
+ * <p><b>The caller supplies both undos</b>, which is the point: it knows exactly which secrets it
+ * wrote, and undoing precisely those is safe where deleting everything the id owns would not be. This
+ * is for CREATES — on an update, "delete what this entity owns" would delete the values being
+ * replaced, and `undoNode` would delete an entry that existed before the save.</p>
  *
  * <p>Free of `vscode` (repository rule 3), and free of `StorageManager` too — it takes callbacks, so
  * it needed no new method on a class whose file is at its size-ratchet baseline.</p>
  */
-export async function createEntityWithSecrets(
-  writeSecrets: () => Promise<void>,
-  writeNode: () => Promise<void>,
-  undoSecrets: () => Promise<void>,
-): Promise<void> {
+export interface EntityCreate {
+  /** The additions: every secret this new entity is to hold. */
+  writeSecrets: () => Promise<void>;
+  /** The node that will reference them. */
+  writeNode: () => Promise<void>;
+  /** Make the node not exist. Must be a no-op when it never did — the failure may predate it. */
+  undoNode: () => Promise<void>;
+  /** Delete exactly the secrets `writeSecrets` writes. Runs only once the node is proven gone. */
+  undoSecrets: () => Promise<void>;
+}
+
+export async function createEntityWithSecrets(create: EntityCreate): Promise<void> {
   try {
-    await writeSecrets();
-    await writeNode();
+    await create.writeSecrets();
+    await create.writeNode();
   } catch (error) {
-    // Best-effort by construction: if the undo fails too, the caller hears the ORIGINAL error,
-    // because that is the one describing what went wrong. A failure to tidy up must not mask the
-    // failure that made tidying necessary.
-    try {
-      await undoSecrets();
-    } catch {
-      // Deliberately swallowed — see above.
-    }
+    await compensate(create);
+    // The caller hears the ORIGINAL error, because that is the one describing what went wrong. A
+    // failure to tidy up must not mask the failure that made tidying necessary.
     throw error;
+  }
+}
+
+/** Referrer first, referent second — and nothing at all if the referrer will not go. */
+async function compensate(create: EntityCreate): Promise<void> {
+  try {
+    await create.undoNode();
+  } catch {
+    return; // The node may still be there; leaving its secrets reachable is the safer half.
+  }
+  try {
+    await create.undoSecrets();
+  } catch {
+    // An orphan is the one torn state the invariant permits, and `orphanSweep.ts` explains why.
   }
 }

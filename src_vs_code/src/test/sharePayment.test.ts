@@ -245,3 +245,43 @@ test('a keychain failure while naming withheld fields does not make a delivered 
   );
   assert.deepEqual(w.delivered, [], 'nothing was delivered, so a retry cannot duplicate');
 });
+
+/**
+ * An update that REMOVES a password must remove it on the far side too.
+ *
+ * <p>Found by an audit of the write paths, not by a report: the branch existed, its comment said it
+ * cleared the password, and it called `setPassword(undefined)` — which KEEPS. So for as long as that
+ * line has been there, a sender who deleted a password and re-shared as an update left the old
+ * credential on the recipient's machine, with nothing to say so.</p>
+ */
+test('re-sharing an entry whose password was removed clears it on the recipient side', async () => {
+  const w = world();
+  const sent = {
+    id: 'sender-side-login',
+    name: 'Prod DB',
+    type: 'entity' as const,
+    parentId: null,
+    details: { id: 'sender-side-login', name: 'Prod DB', isSshEnabled: false },
+  };
+
+  ui.inputs = [PIN];
+  await w.inbox.acceptOne(sealedShare({ node: sent, secrets: { password: 'the-old-one' } }, PIN));
+  const arrivedId = w.storage.getNodes(RECIPIENT.accountId)[0].id;
+  assert.equal(
+    await w.storage.getPassword(RECIPIENT.accountId, arrivedId),
+    'the-old-one',
+    'the first share is what makes the second one an update',
+  );
+
+  ui.inputs = [PIN];
+  // The recipient is asked whether to update in place or keep both; this test is about the update.
+  ui.warningAnswer = 'Update it';
+  await w.inbox.acceptOne(sealedShare({ node: sent, secrets: {} }, PIN));
+
+  assert.equal(w.storage.getNodes(RECIPIENT.accountId).length, 1, 'updated in place, not duplicated');
+  assert.equal(
+    await w.storage.getPassword(RECIPIENT.accountId, arrivedId),
+    undefined,
+    'a credential the sender deleted must not live on here',
+  );
+});

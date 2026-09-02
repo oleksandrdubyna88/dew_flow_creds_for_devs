@@ -180,11 +180,222 @@ test('importing entries writes every secret BEFORE the node that claims it', asy
 });
 
 test('importing writes no deletions at all, because an import has nothing to delete', async () => {
-  // The reason each write became conditional: `setPassword(undefined)` DELETES, and calling it on a
-  // brand-new entry is a removal on the wrong side of the node write for no benefit.
+  // The reason each write became conditional: four of these five DELETE when handed nothing, and
+  // calling them on a brand-new entry is a removal on the wrong side of the node write for no
+  // benefit. (`setPassword` is the exception — it KEEPS — which is why it is not in the set above.)
   const { calls, storage } = recorder();
   await importEntities(storage as never, { accountId: 'a1', parentId: null }, [
     { name: 'bare', details: { name: 'bare', isSshEnabled: false }, secrets: {} } as never,
   ]);
   assert.deepEqual(calls, ['addNode'], 'a bare entry writes its node and nothing else');
 });
+
+/**
+ * A keychain and a tree as MAPS, so a failed create can be asked what it left behind.
+ *
+ * <p>The recorder above watches the order; this watches the residue. Both reviewers of round 1
+ * raised the same risk about the import undo — that a compensation written with the symmetric
+ * setters would call `setPassword(undefined)`, which KEEPS, and silently leave the password behind.
+ * The implementation calls `deletePassword`, and this is the test that says so per kind rather than
+ * leaving it to the reader of one line.</p>
+ */
+function stores(options: { addNodeFails: boolean }): {
+  storage: Record<string, unknown>;
+  chain: Map<string, string>;
+  tree: string[];
+} {
+  const chain = new Map<string, string>();
+  const tree: string[] = [];
+  const set = (kind: string) => (_a: string, e: string, v: string | undefined): Promise<void> => {
+    // Modelled on the real setters: a value stores, and nothing DELETES — except for a password,
+    // where nothing means keep. That asymmetry is the whole point of the test.
+    if (v !== undefined) {
+      chain.set(`${kind}:${e}`, v);
+    } else if (kind !== 'password') {
+      chain.delete(`${kind}:${e}`);
+    }
+    return Promise.resolve();
+  };
+  const del = (kind: string) => (_a: string, e: string): Promise<void> => {
+    chain.delete(`${kind}:${e}`);
+    return Promise.resolve();
+  };
+  const storage: Record<string, unknown> = {
+    addNode: (_a: string, node: { id: string }): Promise<void> => {
+      tree.push(node.id);
+      return options.addNodeFails ? Promise.reject(new Error('globalState is full')) : Promise.resolve();
+    },
+    forgetNode: (_a: string, id: string): Promise<void> => {
+      const at = tree.indexOf(id);
+      if (at >= 0) {
+        tree.splice(at, 1);
+      }
+      return Promise.resolve();
+    },
+    setPassword: set('password'),
+    deletePassword: del('password'),
+    setNotes: set('notes'),
+    setPrivateKey: set('privateKey'),
+    deletePrivateKey: del('privateKey'),
+    setDbConnection: set('dbConnection'),
+    deleteDbConnection: del('dbConnection'),
+    setTotp: set('totp'),
+    deleteTotp: del('totp'),
+    getNodes: () => [],
+    getNode: () => undefined,
+  };
+  return { storage, chain, tree };
+}
+
+const IMPORTED_KINDS = ['password', 'notes', 'privateKey', 'dbConnection', 'totp'] as const;
+
+test('an import whose node write fails leaves NO secret of any kind behind', async () => {
+  // Named per kind because the failure mode is per kind: one setter that keeps instead of deleting
+  // is one permanently uncollectable orphan, and there is no tombstone to find it by.
+  const { storage, chain, tree } = stores({ addNodeFails: true });
+
+  await assert.rejects(() =>
+    importEntities(storage as never, { accountId: 'a1', parentId: null }, [
+      {
+        name: 'prod',
+        details: { name: 'prod', isSshEnabled: false },
+        secrets: { password: 'pw', notes: 'n', privateKey: 'k', dbConnection: 'c', totp: 'otpauth://x' },
+      } as never,
+    ]),
+  );
+
+  for (const kind of IMPORTED_KINDS) {
+    assert.deepEqual(
+      [...chain.keys()].filter((k) => k.startsWith(`${kind}:`)),
+      [],
+      `${kind} survived the failed create — an orphan nothing can ever collect`,
+    );
+  }
+  assert.deepEqual(tree, [], 'and the node it half-wrote is gone too');
+});
+
+test('the import undo runs the node removal BEFORE the keychain deletes', async () => {
+  // `addNode` here pushes the id and then fails, which is the persisted-then-reported case: the
+  // secrets must stay readable until the node is proven gone.
+  const order: string[] = [];
+  const { storage } = stores({ addNodeFails: true });
+  const forget = storage.forgetNode as (a: string, i: string) => Promise<void>;
+  const deletePassword = storage.deletePassword as (a: string, e: string) => Promise<void>;
+  storage.forgetNode = (a: string, i: string): Promise<void> => {
+    order.push('forgetNode');
+    return forget(a, i);
+  };
+  storage.deletePassword = (a: string, e: string): Promise<void> => {
+    order.push('deletePassword');
+    return deletePassword(a, e);
+  };
+
+  await assert.rejects(() =>
+    importEntities(storage as never, { accountId: 'a1', parentId: null }, [
+      { name: 'x', details: { name: 'x', isSshEnabled: false }, secrets: { password: 'pw' } } as never,
+    ]),
+  );
+
+  assert.deepEqual(order, ['forgetNode', 'deletePassword']);
+});
+
+test('a successful import leaves every secret in place and undoes nothing', async () => {
+  const { storage, chain, tree } = stores({ addNodeFails: false });
+
+  await importEntities(storage as never, { accountId: 'a1', parentId: null }, [
+    {
+      name: 'prod',
+      details: { name: 'prod', isSshEnabled: false },
+      secrets: { password: 'pw', notes: 'n', privateKey: 'k', dbConnection: 'c', totp: 'otpauth://x' },
+    } as never,
+  ]);
+
+  assert.equal(chain.size, IMPORTED_KINDS.length, 'all five kinds stored');
+  assert.equal(tree.length, 1);
+});
+
+/**
+ * A restore/sync-apply records what it is about to make unreachable — Rule B, on the one path that
+ * removes entities without ever calling a delete.
+ *
+ * <p>Found by my own reviewer in the S1.4 round, and it is the same defect class the story exists to
+ * close: `importBundle` replaced the tree and only then dropped the secrets of the entities the new
+ * tree no longer contains. A crash in between left keychain entries that NOTHING named — the sweep
+ * only ever considers tombstoned ids — so they were uncollectable forever.</p>
+ */
+test('a restore tombstones the entries it is dropping BEFORE it replaces the tree', async () => {
+  const { StorageManager } = loadWithVscode<{ StorageManager: new (m: unknown, s: unknown) => Record<string, Function> }>(
+    '../storageManager',
+    {
+      EventEmitter: class {
+        event = (): void => {};
+        fire(): void {}
+      },
+      Uri: { file: (p: string): object => ({ fsPath: p }) },
+      workspace: { getConfiguration: () => ({ get: (_k: string, d: unknown) => d }) },
+    },
+  );
+
+  const order: string[] = [];
+  const map = new Map<string, unknown>();
+  const mem = {
+    keys: () => [...map.keys()],
+    get: <T>(k: string, f?: T): T | undefined => (map.has(k) ? (map.get(k) as T) : f),
+    update: (k: string, v: unknown): Promise<void> => {
+      const note = mementoNote(k, v);
+      if (note !== undefined) {
+        order.push(note);
+      }
+      map.set(k, v === undefined ? undefined : JSON.parse(JSON.stringify(v)));
+      return Promise.resolve();
+    },
+  };
+  const chain = new Map<string, string>();
+  const store = {
+    keys: () => [...chain.keys()],
+    get: (k: string) => Promise.resolve(chain.get(k)),
+    store: (k: string, v: string) => {
+      chain.set(k, v);
+      return Promise.resolve();
+    },
+    delete: (k: string) => {
+      order.push('secretDelete');
+      chain.delete(k);
+      return Promise.resolve();
+    },
+    onDidChange: () => {},
+  };
+  const storage = new StorageManager(mem, store);
+
+  const entry = (id: string): object => ({
+    id,
+    name: id,
+    type: 'entity',
+    parentId: null,
+    details: { id, name: id, isSshEnabled: false },
+  });
+  await storage.addNode('a1', entry('keeps'));
+  await storage.addNode('a1', entry('vanishes'));
+  await storage.setPassword('a1', 'vanishes', 'pw');
+  order.length = 0;
+
+  // A backup that simply does not contain `vanishes` — it carries no tombstone for it either.
+  await storage.importBundle('a1', { nodes: [entry('keeps')], passwords: {} });
+
+  const firstTombstone = order.findIndex((c) => c.startsWith('tombstones:'));
+  const treeReplaced = order.indexOf('nodes');
+  const firstDelete = order.indexOf('secretDelete');
+  assert.ok(firstTombstone >= 0, `a record was written (${order.join(' → ')})`);
+  assert.ok(order[firstTombstone].includes('vanishes'), 'and it names the id that is going');
+  assert.ok(firstTombstone < treeReplaced, 'before the tree that named it was replaced');
+  assert.ok(treeReplaced < firstDelete, 'and the secret went after the node stopped claiming it');
+  assert.deepEqual([...chain.keys()], [], 'the vanished entry keeps nothing in the keychain');
+});
+
+/** What a memento write means for the order under test — the tree, or the record naming what leaves it. */
+function mementoNote(key: string, value: unknown): string | undefined {
+  if (key.startsWith('credSshManager.tombstones.')) {
+    return `tombstones:${Object.keys((value ?? {}) as object).join(',')}`;
+  }
+  return key.startsWith('credSshManager.nodes.') ? 'nodes' : undefined;
+}

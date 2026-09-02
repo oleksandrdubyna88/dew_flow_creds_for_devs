@@ -19,7 +19,14 @@ import { TRASH_FOLDER_NAME, findTrash, restoreTarget } from './trash';
 import { exportSecretsFor } from './exportSecrets';
 import { PaymentFields, parsePaymentFields, serializePaymentFields } from './paymentFields';
 import { forgetTombstone, sweepOrphanSecrets } from './orphanSweep';
-import { SECRET_KINDS, SecretMapKey, SecretMaps, emptySecretMaps } from './secretMaps';
+import { NODES_KEY_PREFIX, orphanedAccountIds } from './accountRemoval';
+import {
+  SecretMaps,
+  dropAbsentKinds,
+  readSecretMaps,
+  secretMapsOf,
+  storeSecretMaps,
+} from './secretMaps';
 import {
   attachmentSecretKey,
   configSecretKey,
@@ -51,7 +58,7 @@ const ACCOUNTS_KEY = 'credSshManager.accounts';
 const SEEDED_KEY = 'credSshManager.defaultsSeeded';
 
 function nodesKey(accountId: string): string {
-  return `credSshManager.nodes.${accountId}`;
+  return `${NODES_KEY_PREFIX}${accountId}`;
 }
 
 function tombstonesKey(accountId: string): string {
@@ -72,28 +79,6 @@ const DEVICE_SEQ_KEY = 'credSshManager.deviceSeq';
 const IMPORTED_IDS_KEY = 'credSshManager.importedIds';
 
 
-/** A pre-0.20 note still sitting in plaintext metadata, when no stored note has replaced it. */
-function legacyNoteOf(node: TreeNode, maps: SecretMaps): string | undefined {
-  if (maps.notes[node.id] !== undefined) {
-    return undefined;
-  }
-  const note = plainNote(node);
-  return note !== undefined && note.length > 0 ? note : undefined;
-}
-
-function plainNote(node: TreeNode): string | undefined {
-  return node.details?.notes;
-}
-
-
-/** The bundle's maps with every absent one an empty record — a pre-0.57 file has no totps at all. */
-function secretMapsOf(bundle: Partial<Record<SecretMapKey, Record<string, string>>>): SecretMaps {
-  const maps = emptySecretMaps();
-  for (const kind of SECRET_KINDS) {
-    maps[kind.bundleKey] = bundle[kind.bundleKey] ?? {};
-  }
-  return maps;
-}
 
 
 /**
@@ -142,6 +127,13 @@ function siblingOrder(a: TreeNode, b: TreeNode): number {
  * mutated in place — and what `getNodes`/`getChildren` hand out is frozen,
  * because it is shared with every other caller until the next write.
  */
+/** Tombstones for every id the incoming tree drops — Rule B's record for a restore. */
+function vanishingRecord(before: readonly string[], incoming: readonly { id: string }[]): Record<string, Tombstone> {
+  const kept = new Set(incoming.map((n) => n.id));
+  const deletedAt = Date.now();
+  return Object.fromEntries(before.filter((id) => !kept.has(id)).map((id) => [id, { deletedAt, v: {} }]));
+}
+
 export class StorageManager implements vscode.Disposable {
   /**
    * Per-account read cache (audit 2026-08-25, C3).
@@ -341,31 +333,74 @@ export class StorageManager implements vscode.Disposable {
     return true;
   }
 
-  /** Remove a profile, its tree and its secrets. The wipe is a REMOVAL, so the node list goes FIRST
-   *  (Rule A) — reversed, a crash left every node claiming secrets already gone. Found by an audit. */
+  /** Unlist, then wipe — the order and its reasoning are in `accountRemoval.ts`. */
   async removeAccount(accountId: string): Promise<void> {
-    const gone = this.getNodes(accountId).filter((n) => n.type === 'entity').map((n) => n.id);
-    // Rule B before Rule A, and this order is the review's finding on my own fix. Inverting the
-    // removal put the tree wipe first, which made every one of this account's secrets UNCOLLECTABLE
-    // on a crash: no tree, no tombstones, so the sweep can never name them. So the tombstones are
-    // written first — they are the durable record of what is about to become unreachable — and only
-    // then the tree, the secrets, and last the tombstone list itself.
-    await this.setTombstones(accountId, Object.fromEntries(gone.map((id) => [id, { deletedAt: Date.now(), v: {} }])));
-    await this.globalState.update(nodesKey(accountId), undefined);
-    for (const key of gone.flatMap((id) => entitySecretKeys(accountId, id))) {
-      await this.secrets.delete(key);
-    }
-    await this.globalState.update(tombstonesKey(accountId), undefined);
-    await this.globalState.update(horizonKey(accountId), undefined);
-    await this.globalState.update(
-      SEEDED_KEY,
-      this.seededAccountIds().filter((id) => id !== accountId),
-    );
     await this.globalState.update(
       ACCOUNTS_KEY,
       this.getAccounts().filter((a) => a.accountId !== accountId),
     );
+    await this.globalState.update(
+      SEEDED_KEY,
+      this.seededAccountIds().filter((id) => id !== accountId),
+    );
+    await this.wipeAccountData(accountId);
     this.touch(accountId);
+  }
+
+  /**
+   * Finish every removal a killed window left half-done. Called on activation.
+   *
+   * <p>Idempotent by construction: it re-derives its work from what is actually stored, so running
+   * it twice is running it once. Returns the ids it finished, for the log.</p>
+   */
+  async resumeAccountRemovals(): Promise<readonly string[]> {
+    const orphaned = orphanedAccountIds(
+      this.globalState.keys(),
+      this.getAccounts().map((a) => a.accountId),
+    );
+    for (const accountId of orphaned) {
+      await this.wipeAccountData(accountId);
+    }
+    return orphaned;
+  }
+
+  /** The secrets named by the still-present tree, then the tree and everything keyed beside it. */
+  private async wipeAccountData(accountId: string): Promise<void> {
+    for (const node of this.getNodes(accountId).filter((n) => n.type === 'entity')) {
+      await this.forgetEntitySecrets(accountId, node.id);
+    }
+    await this.globalState.update(nodesKey(accountId), undefined);
+    await this.globalState.update(tombstonesKey(accountId), undefined);
+    await this.globalState.update(horizonKey(accountId), undefined);
+  }
+
+  /**
+   * Every keychain key this entity owns, gone. Three callers: a deletion, an account wipe, and the
+   * compensation for a failed CREATE — where deleting all twelve is safe precisely because the id is
+   * new, so there is nothing older under any of them to lose.
+   */
+  async forgetEntitySecrets(accountId: string, entityId: string): Promise<void> {
+    for (const key of entitySecretKeys(accountId, entityId)) {
+      await this.secrets.delete(key);
+    }
+  }
+
+  /**
+   * Take a node out of the tree WITHOUT a tombstone — the compensation for a failed create.
+   *
+   * <p>Deliberately not `deleteNodeRecursive`: that records a deletion, and a tombstone for an id
+   * that may never have been visible anywhere would sync a deletion of nothing. See `entityWrite.ts`.
+   * A no-op when the id is not there, which is the common case — the failure often predates the node.</p>
+   */
+  async forgetNode(accountId: string, id: string): Promise<void> {
+    const nodes = this.getNodes(accountId);
+    if (!nodes.some((n) => n.id === id)) {
+      return;
+    }
+    await this.saveNodes(
+      accountId,
+      nodes.filter((n) => n.id !== id),
+    );
   }
 
   // ---------- structure (globalState, per account) ----------
@@ -584,9 +619,7 @@ export class StorageManager implements vscode.Disposable {
       nodes.filter((n) => !toDelete.has(n.id)),
     );
     for (const n of removed.filter((one) => one.type === 'entity')) {
-      for (const key of entitySecretKeys(accountId, n.id)) {
-        await this.secrets.delete(key);
-      }
+      await this.forgetEntitySecrets(accountId, n.id);
     }
     await this.bumpHorizonToSeq(accountId);
     return removed.map((n) => n.name);
@@ -934,7 +967,7 @@ export class StorageManager implements vscode.Disposable {
   /** Pair every entity of one profile with its stored secrets. */
   async exportBundle(accountId: string): Promise<BackupBundle> {
     const nodes = this.getNodes(accountId);
-    const maps = await this.readSecretMaps(accountId, nodes);
+    const maps = await readSecretMaps(this.secrets, accountId, nodes);
     return {
       // A copy: the cached array is frozen and shared, and a bundle is the caller's to shape.
       nodes: [...nodes],
@@ -943,29 +976,6 @@ export class StorageManager implements vscode.Disposable {
       horizon: this.getHorizon(accountId),
       exportedAt: Date.now(),
     };
-  }
-
-  /** Every entity's secrets, kind by kind — plus any legacy plaintext note, migrated into the map. */
-  private async readSecretMaps(accountId: string, nodes: readonly TreeNode[]): Promise<SecretMaps> {
-    const maps = emptySecretMaps();
-    for (const node of nodes.filter((n) => n.type === 'entity')) {
-      await this.readKindsInto(accountId, node.id, maps);
-      const legacyNote = legacyNoteOf(node, maps);
-      if (legacyNote !== undefined) {
-        maps.notes[node.id] = legacyNote;
-      }
-    }
-    return maps;
-  }
-
-  /** One entity's secrets, kind by kind, into the maps — absent kinds leave no entry. */
-  private async readKindsInto(accountId: string, entityId: string, maps: SecretMaps): Promise<void> {
-    for (const kind of SECRET_KINDS) {
-      const value = await this.secrets.get(kind.key(accountId, entityId));
-      if (value !== undefined) {
-        maps[kind.bundleKey][entityId] = value;
-      }
-    }
   }
 
   /** The full profile state as the sync merge consumes it. */
@@ -996,7 +1006,15 @@ export class StorageManager implements vscode.Disposable {
     // Rule A applied to a restore (`orphanSweep.ts`); this path had it backwards in BOTH halves.
     // Vanished ids come from the OLD tree, which after `saveNodes` is no longer there to iterate.
     const before = this.getNodes(accountId).filter((n) => n.type === 'entity').map((n) => n.id);
-    await this.storeSecretMaps(accountId, maps);
+    await storeSecretMaps(this.secrets, accountId, maps);
+    // Rule B, and the gap my own reviewer found in the S1.4 round: the ids this bundle is about to
+    // remove need a durable record BEFORE they lose the tree that names them. Crash between the tree
+    // replacement and the secret drop and, without this, those keychain entries are named by nothing
+    // — the sweep only ever considers tombstoned ids. A restored backup that simply lacks an entry
+    // carries no tombstone for it, so one is minted here with an EMPTY version vector: enough to
+    // collect the secret locally, and deliberately too weak to win a merge against a live node on
+    // another machine. The bundle's own tombstones are restored as the final state below.
+    await this.setTombstones(accountId, { ...(bundle.tombstones ?? {}), ...vanishingRecord(before, bundle.nodes) });
     await this.saveNodes(
       accountId,
       bundle.nodes.map((n) => ({ ...n, children: undefined })),
@@ -1015,31 +1033,13 @@ export class StorageManager implements vscode.Disposable {
     await this.setHorizon(accountId, bundle.horizon ?? {});
   }
 
-  /** Every map's entries into the keychain, kind by kind. */
-  private async storeSecretMaps(accountId: string, maps: SecretMaps): Promise<void> {
-    for (const kind of SECRET_KINDS) {
-      for (const [entityId, value] of Object.entries(maps[kind.bundleKey])) {
-        await this.secrets.store(kind.key(accountId, entityId), value);
-      }
-    }
-  }
-
   /** Drop the secrets of entities that will disappear with the replaced tree. */
   private async dropVanishedSecrets(accountId: string, entityIds: readonly string[], maps: SecretMaps): Promise<void> {
     for (const id of entityIds) {
-      await this.dropAbsentKinds(accountId, id, maps);
+      await dropAbsentKinds(this.secrets, accountId, id, maps);
       // As it has always been: the kept versions go with the attachment map's silence.
       if (maps.attachments[id] === undefined) {
         await this.secrets.delete(historySecretKey(accountId, id));
-      }
-    }
-  }
-
-  /** The kinds the incoming maps do not carry for this entity are gone from the keychain. */
-  private async dropAbsentKinds(accountId: string, entityId: string, maps: SecretMaps): Promise<void> {
-    for (const kind of SECRET_KINDS) {
-      if (maps[kind.bundleKey][entityId] === undefined) {
-        await this.secrets.delete(kind.key(accountId, entityId));
       }
     }
   }
