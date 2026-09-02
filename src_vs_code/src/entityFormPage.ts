@@ -109,8 +109,11 @@ function configFormatOptions(current: string | undefined): string {
 function paymentFormOptions(current: string | undefined): string {
   return PAYMENT_FORMS.map(
     (form) =>
+      // `.label`, not the record: a template literal will happily stringify the object and put
+      // "[object Object]" in the dropdown, which no type check catches and no test would have either
+      // until somebody opened the form.
       `<option value="${form}" ${form === (current ?? DEFAULT_PAYMENT_FORM) ? 'selected' : ''}>${
-        PAYMENT_FORM_LABELS[form]
+        PAYMENT_FORM_LABELS[form].label
       }</option>`,
   ).join('');
 }
@@ -703,12 +706,20 @@ ${formStyleSheet(options.uiScale ?? 0)}
     </div>
     <p class="hint">The CVV and the PIN are hidden as you type and stay hidden when you come back. They are the two values that turn a number somebody saw into a payment somebody made — which is why a share never carries them, and why an export says so out loud before it writes them to a file.</p>
 
-    <label for="cardBillingAddress">Billing address</label>
-    <textarea id="cardBillingAddress" rows="2" spellcheck="false" autocomplete="off"></textarea>
+    <label for="cardAddress">Billing address</label>
+    <textarea id="cardAddress" rows="2" spellcheck="false" autocomplete="off"></textarea>
 
-    <label for="cardNote">Note</label>
-    <input id="cardNote" type="text" autocomplete="off" spellcheck="false"
-           placeholder="The one the subscriptions are on">
+    <div class="row">
+      <div>
+        <label for="cardPhone">Phone on file</label>
+        <input id="cardPhone" type="text" autocomplete="off" spellcheck="false">
+      </div>
+      <div>
+        <label for="cardCountry">Country</label>
+        <input id="cardCountry" type="text" autocomplete="off" spellcheck="false">
+      </div>
+    </div>
+    <p class="hint">The address, phone and country are what a payment form asks for beside the number — kept here so the whole answer is in one place rather than half of it.</p>
   </fieldset>
 
   ${

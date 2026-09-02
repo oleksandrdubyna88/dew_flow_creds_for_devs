@@ -1,3 +1,8 @@
+import { readDependsOnRows, readForwardRows } from './formRowReaders';
+import { DEFAULT_PAYMENT_FORM, isPaymentForm } from './paymentForm';
+import { PaymentFields } from './paymentFields';
+import { brandHint, cardInputsFrom } from './cardFormFields';
+import { cardFieldsFrom } from './cardFormFields';
 import * as vscode from 'vscode';
 import { applyLifetime } from './entityExpiry';
 import { normalizeArgs } from './commandLine';
@@ -10,7 +15,7 @@ import { parseTotpSecret } from './totp';
 import { kindCarriesTotp } from './formSections';
 import { readPastedQr } from './qrPaste';
 import { withSteamEncoder } from './totpSteam';
-import { normalizeTags, parseForward } from './sshOptions';
+import { normalizeTags } from './sshOptions';
 import { answerGenerate, formPanelFor, mountForm, runDoorCommand } from './entityFormHost';
 import { AgentDoors } from './agentDoors';
 import { applyZoomDelta } from './uiScaleHost';
@@ -32,7 +37,6 @@ import {
   DbType,
   EntityKind,
   EntityMetadata,
-  PortForward,
   VPN_TYPES,
   VpnType,
 } from './types';
@@ -92,6 +96,15 @@ export interface EntityFormOptions {
    * body, which is what an empty document should mean.</p>
    */
   initialConfigBody?: string;
+  /**
+   * The stored payment record, handed to the WEBVIEW by message — never rendered into the page.
+   *
+   * <p>Every other kind's stored value is written into the markup (a db connection string, a config
+   * body). For a CVV and a PIN that is one place too many: the HTML is a string that gets built,
+   * concatenated and — the moment anything goes wrong — logged. The webview asks for these once it is
+   * listening, and they go straight into the inputs.</p>
+   */
+  initialPayment?: PaymentFields;
   /** A TOTP seed is stored. The seed is never sent to the form — only this fact and… */
   hasStoredTotp: boolean;
   /** …how it is configured (`GitHub · 6 digits · SHA1 · every 30 s`), so it can be compared with the app. */
@@ -142,6 +155,14 @@ export interface EntityFormValues {
    * this entity is not a config at all.</p>
    */
   newConfigBody?: string;
+  /**
+   * The whole payment record, or `undefined` for a kind that is not one.
+   *
+   * <p>One field for all three forms, because storage holds one JSON record under one key — the
+   * decision `entityFields.ts` already made for a credential's login and URL, and the reason a
+   * payment did not have to go through all nine secret seams a tenth time.</p>
+   */
+  newPayment?: PaymentFields;
   newAttachment?: string;
   clearAttachment: boolean;
   newImage?: string;
@@ -204,7 +225,11 @@ export interface FormMessage {
     | 'generate'
     | 'configFields'
     | 'configFieldEdit'
-    | 'qrImage';
+    | 'qrImage'
+    | 'cardValues'
+    | 'cardTyped';
+  /** `cardTyped` only: the number as typed so far, for the mark and the checksum hint. */
+  number?: string;
   /** `qrImage` only: the pasted picture as grey pixels, base64, and its size. */
   gray?: string;
   width?: number;
@@ -311,6 +336,15 @@ export function showEntityForm(options: EntityFormOptions): Promise<EntityFormVa
         await runDoorCommand(message.command ?? '', options);
         return;
       }
+      if (message.type === 'cardValues') {
+        // Answered on REQUEST rather than pushed on mount: the page asks once its listener is
+        // attached, so there is no window in which the values are posted at nobody.
+        void panel.webview.postMessage({
+          type: 'paymentValues',
+          fields: cardInputsFrom(options.initialPayment ?? {}),
+        });
+        return;
+      }
       if (message.type === 'generate') {
         answerGenerate(panel, message);
         return;
@@ -347,6 +381,10 @@ export function showEntityForm(options: EntityFormOptions): Promise<EntityFormVa
  */
 const ROUND_TRIPS: Record<string, (message: FormMessage) => Record<string, unknown>> = {
   highlight: (message) => highlighted(message),
+  // The number never leaves the page for this — only the ANSWER comes back. `brandOf` is pure and
+  // could have run in the webview, but the page is a template string where nothing can be unit
+  // tested, which is the rule the highlighter's own comment states.
+  cardTyped: (message) => ({ type: 'cardBrand', text: brandHint(message.number ?? '') }),
   configFields: (message) => ({ type: 'configFieldsResult', ...fieldsAnswer(message) }),
   configFieldEdit: (message) => ({ type: 'configBody', text: editedConfigBody(message) }),
   // The seed the page gets back is one it is about to hold anyway — the form is where a person
@@ -417,6 +455,26 @@ function unsavedConfigProblem(
 /** The form's kind, from the locked kind or the selector — the same answer `toValues` reaches. */
 function isConfigForm(data: Record<string, unknown>, options: EntityFormOptions): boolean {
   return (options.lockedKind ?? str(data, 'entityType')) === 'config';
+}
+
+/**
+ * What the page should show: the rows, or WHY there are none.
+ *
+ * <p>Three answers, not two. Returning a bare "no rows" made a JSON config with one missing brace
+ * report "No field view for this format" — false about JSON, and silent about the brace. The
+ * problem travels with the answer so the tab can name the line instead of the format.</p>
+ *
+ * <p>Spans are deliberately NOT sent. The page would then hold offsets into a document it can go
+ * on editing in the Raw tab, and a stale offset splices into the wrong place — silently, and in a
+ * file of secrets. Recomputing from the text the page just sent is always consistent with it.</p>
+ *
+ * <p>`null` rather than `undefined` throughout: this crosses a `postMessage` boundary, where
+ * `undefined` does not survive JSON and arrives as a missing property.</p>
+ */
+interface FieldsAnswer {
+  kind: string;
+  rows: { path: string; value: string }[] | null;
+  problem: ConfigProblem | null;
 }
 
 /**
@@ -571,6 +629,8 @@ export function toValues(data: Record<string, unknown>, options: EntityFormOptio
   const isDb = kind === 'db';
   const isTerminal = kind === 'terminal';
   const isConfig = kind === 'config';
+  const isPayment = kind === 'payment';
+  const paymentForm = str(data, 'paymentForm');
   const configFormat = str(data, 'configFormat');
 
   const portText = str(data, 'port').trim();
@@ -661,6 +721,11 @@ export function toValues(data: Record<string, unknown>, options: EntityFormOptio
         isVpn && !clearVpnConfig && vpnFileName.length > 0 ? vpnFileName : undefined,
       isDb: isDb || undefined,
       dbType: isDb && isDbType(dbType) ? dbType : undefined,
+      isPayment: isPayment || undefined,
+      // Defaulted rather than left absent, for `configFormat`'s reason: a payment whose form is
+      // unknown cannot be rendered, validated, or cleared on a switch, and every one of those would
+      // read as a bug rather than as a field nobody filled in.
+      paymentForm: isPayment ? (isPaymentForm(paymentForm) ? paymentForm : DEFAULT_PAYMENT_FORM) : undefined,
       isConfig: isConfig || undefined,
       // Defaulted to JSON rather than left absent: a config whose format is unknown cannot be
       // validated, materialised with the right extension, or parsed by a provider — and every
@@ -695,6 +760,10 @@ export function toValues(data: Record<string, unknown>, options: EntityFormOptio
     // Every other secret here treats blank as "keep what is stored"; this one cannot, because the
     // form was prefilled with the stored text and blank is therefore a deliberate edit.
     newConfigBody: isConfig ? str(data, 'configBody') : undefined,
+    // Every field guarded by `isPayment`, so a kind that is not one cannot write a payment record —
+    // and, just as important, an entity converted AWAY from payment stops writing one. What it does
+    // not do is clear the record it already has; that is S2.4's erase-on-switch, which asks first.
+    newPayment: isPayment ? cardFieldsFrom(data) : undefined,
     newTotp: totpParsed?.uri,
     clearTotp,
     clearHostKey: bool(data, 'clearHostKey'),
@@ -713,64 +782,3 @@ export function toValues(data: Record<string, unknown>, options: EntityFormOptio
  * NOT read: it exists only to narrow the second dropdown, and storing it would be a second
  * source of truth for where an entity lives, going stale the first time one is moved.</p>
  */
-/**
- * The agent-access switches as the webview posts them.
- *
- * <p>`undefined` is a real answer here and not a missing one: it means the entry still follows
- * its folder. Anything else is read defensively like every other row on this boundary, and the
- * ladder in `mcpAccess.ts` normalises it afterwards.</p>
- */
-function readDependsOnRows(data: Record<string, unknown>): { targetId: string; color: string }[] {
-  const raw = data.dependsOn;
-  if (!Array.isArray(raw)) {
-    return [];
-  }
-  return raw.map((row) => dependencyFromRow(row)).filter((row) => row !== undefined);
-}
-
-function dependencyFromRow(row: unknown): { targetId: string; color: string } | undefined {
-  const r = asRecord(row);
-  const targetId = stringOr(r?.targetId, '');
-  return targetId === '' ? undefined : { targetId, color: stringOr(r?.color, '') };
-}
-
-function asRecord(value: unknown): Record<string, unknown> | undefined {
-  return typeof value === 'object' && value !== null
-    ? (value as Record<string, unknown>)
-    : undefined;
-}
-
-function stringOr(value: unknown, fallback: string): string {
-  return typeof value === 'string' ? value : fallback;
-}
-
-/**
- * The forwarding rows as the webview posts them.
- *
- * <p>Read defensively and validated by the same function the command builders use: a row that
- * does not parse is DROPPED rather than stored, because a stored rule that cannot be rendered is
- * a rule that silently does nothing on every future connection.</p>
- */
-function readForwardRows(data: Record<string, unknown>): PortForward[] {
-  const raw = data.portForwards;
-  if (!Array.isArray(raw)) {
-    return [];
-  }
-  return raw
-    .map((row) => forwardFromRow(row))
-    .filter((forward): forward is PortForward => forward !== undefined);
-}
-
-/** One posted row, validated by the same parser the command builders use. */
-// eslint-disable-next-line complexity -- a flat list of independent field checks (a webview payload is read defensively, field by field); splitting reads worse
-function forwardFromRow(row: unknown): PortForward | undefined {
-  if (typeof row !== 'object' || row === null) {
-    return undefined;
-  }
-  const r = row as Record<string, unknown>;
-  const kind = r.kind === 'remote' ? 'remote' : 'local';
-  const parsed = typeof r.rule === 'string' ? parseForward(kind, r.rule) : undefined;
-  return parsed === undefined
-    ? undefined
-    : { ...parsed, disabled: r.disabled === true ? true : undefined };
-}

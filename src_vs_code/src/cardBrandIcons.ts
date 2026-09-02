@@ -58,3 +58,22 @@ export const BRAND_INITIALS: Readonly<Record<CardBrand, string>> = {
   mir: 'MIR',
   maestro: 'MO',
 };
+
+/**
+ * What a person is shown, as opposed to what fits in a 16-pixel glyph.
+ *
+ * <p>Separate from `BRAND_INITIALS` because they answer different questions: "MC" belongs inside the
+ * mark, and "Mastercard" belongs in the sentence under the number. One table serving both would make
+ * every caller pick a substring.</p>
+ */
+export const PAYMENT_BRAND_LABELS: Readonly<Record<CardBrand, string>> = {
+  visa: 'Visa',
+  mastercard: 'Mastercard',
+  amex: 'American Express',
+  discover: 'Discover',
+  jcb: 'JCB',
+  diners: 'Diners Club',
+  unionpay: 'UnionPay',
+  mir: 'Mir',
+  maestro: 'Maestro',
+};

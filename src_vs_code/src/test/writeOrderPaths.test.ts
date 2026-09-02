@@ -40,7 +40,17 @@ const { importEntities } = loadWithVscode<typeof import('../importCommands')>('.
  * <p>Verified against the implementations rather than assumed, after a test in this very file
  * mislabelled `setPassword` and sent me looking.</p>
  */
-const DELETES_WHEN_EMPTY = new Set(['setNotes', 'setFields', 'setConfigBody', 'setPaymentRaw', 'setAttachment', 'setImage']);
+const DELETES_WHEN_EMPTY = new Set([
+  'setNotes',
+  'setFields',
+  // Both spellings: `setPayment(undefined)` serializes to nothing and reaches `setPaymentRaw(undefined)`,
+  // which deletes. The typed setter is what callers use, so it is the one that has to be listed here.
+  'setPayment',
+  'setPaymentRaw',
+  'setConfigBody',
+  'setAttachment',
+  'setImage',
+]);
 
 /**
  * How one call is recorded. A `deleteX` verb is always a removal and needs no marking; a
@@ -73,6 +83,7 @@ function recorder(): { calls: string[]; storage: Record<string, unknown> } {
     deleteDbConnection: note('deleteDbConnection'),
     setNotes: note('setNotes'),
     setFields: note('setFields'),
+    setPayment: note('setPayment'),
     setConfigBody: note('setConfigBody'),
     setAttachment: note('setAttachment'),
     setImage: note('setImage'),
@@ -127,7 +138,18 @@ test('the removals pass deletes and never writes a value', async () => {
     clearTotp: true,
   }));
 
-  assert.deepEqual(calls, ['deletePassword', 'deletePrivateKey', 'deleteTotp', 'setNotes(delete)', 'setFields(delete)', 'setConfigBody(delete)']);
+  assert.deepEqual(calls, [
+    'deletePassword',
+    'deletePrivateKey',
+    'deleteTotp',
+    'setNotes(delete)',
+    'setFields(delete)',
+    // The ninth kind takes its place in the removals pass for the same reason as the two above it:
+    // handed nothing, `setPayment` DELETES, and a deletion belongs after the node has stopped
+    // claiming the record.
+    'setPayment(delete)',
+    'setConfigBody(delete)',
+  ]);
 });
 
 test('clearing notes deletes AFTER the node write, not before it', async () => {

@@ -7,6 +7,7 @@ import { dependencyPickerScript } from './depPickerScript';
 import { mcpSwitchScript } from './mcpSwitchScript';
 import { configTabsScript } from './configTabsScript';
 import { qrPasteScript } from './qrPasteScript';
+import { cardFormScript } from './cardFormScript';
 import { generateWiring, overlayEditorWiring } from './entityFormScriptGen';
 import { formVisibilityScript } from './formVisibilityScript';
 
@@ -680,6 +681,10 @@ export function formPageScript(
       scriptLanguage: val('scriptLanguage'), scriptBody: val('scriptBody'), scriptVars: scriptVarRows,
       configFormat: val('configFormat'), configFileName: val('configFileName'),
       configBody: val('configBody'),
+      paymentForm: val('paymentForm'),
+      cardNumber: val('cardNumber'), cardExpiry: val('cardExpiry'), cardHolder: val('cardHolder'),
+      cardCvv: val('cardCvv'), cardPin: val('cardPin'),
+      cardAddress: val('cardAddress'), cardPhone: val('cardPhone'), cardCountry: val('cardCountry'),
       attachmentContent: attachmentContent, attachmentName: attachmentName,
       imageContent: imageContent, imageName: imageName,
       clearAttachment: chk('clearAttachment'), clearImage: chk('clearImage'),
@@ -720,6 +725,8 @@ export function formPageScript(
       reveal.textContent = shown ? 'Show' : 'Hide';
     });
   }
+
+  ${cardFormScript()}
 
   window.addEventListener('message', function (event) {
     var data = event.data;

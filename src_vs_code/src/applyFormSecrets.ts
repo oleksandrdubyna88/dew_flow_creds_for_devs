@@ -63,6 +63,7 @@ export async function applyAdditions(
   // after the node write — see `applyRemovals`.
   await applyWhenDefined(result.newNotes, (v) => storage.setNotes(accountId, entityId, v));
   await applyWhenDefined(result.newFields, (v) => storage.setFields(accountId, entityId, v));
+  await applyWhenDefined(result.newPayment, (v) => storage.setPayment(accountId, entityId, v));
   await applyWhenDefined(result.newConfigBody, (v) => storage.setConfigBody(accountId, entityId, v));
   await applyOptional(false, result.newAttachment, noop, (v) => storage.setAttachment(accountId, entityId, v));
   await applyOptional(false, result.newImage, noop, (v) => storage.setImage(accountId, entityId, v));
@@ -91,6 +92,7 @@ export async function applyRemovals(
   // edit — and by here the node no longer claims one, so the deletion cannot be observed as a lie.
   await applyWhenAbsent(result.newNotes, () => storage.setNotes(accountId, entityId, undefined));
   await applyWhenAbsent(result.newFields, () => storage.setFields(accountId, entityId, undefined));
+  await applyWhenAbsent(result.newPayment, () => storage.setPayment(accountId, entityId, undefined));
   await applyWhenAbsent(result.newConfigBody, () => storage.setConfigBody(accountId, entityId, undefined));
 }
 
