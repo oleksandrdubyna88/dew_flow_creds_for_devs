@@ -1,4 +1,4 @@
-import { answerCardValues, confirmFormSwitch, formOf, paymentRecordFor } from './paymentSaveGate';
+import { answerCardValues, formOf, paymentGates, paymentRecordFor } from './paymentSaveGate';
 import { hasMixedField } from './mixedFieldGuard';
 import { readDependsOnRows, readForwardRows } from './formRowReaders';
 import { PaymentFields } from './paymentFields';
@@ -392,9 +392,9 @@ const ROUND_TRIPS: Record<string, (message: FormMessage) => Record<string, unkno
   }),
 };
 
-/** Both save gates, in order — the destructive one first, so it is asked before anything else. */
+/** Every save gate, in order — see `paymentSaveGate.paymentGates` for the first two. */
 async function agreed(data: Record<string, unknown>, options: EntityFormOptions): Promise<boolean> {
-  return (await confirmFormSwitch(str(data, 'paymentForm'), options)) && (await confirmInvalidSave(data, options));
+  return (await paymentGates(data, options)) && (await confirmInvalidSave(data, options));
 }
 
 function answerRoundTrip(panel: vscode.WebviewPanel, message: FormMessage): boolean {

@@ -2,6 +2,7 @@ import { DEFAULT_PAYMENT_FORM, PaymentForm, isPaymentForm } from './paymentForm'
 import { PaymentFields, clearForForm } from './paymentFields';
 import { cardFieldsFrom, cardInputsFrom, withBrand } from './cardFormFields';
 import { switchWarning } from './paymentFormSwitch';
+import { validatePayment } from './paymentValidation';
 import { brandOf } from './cardBrand';
 import { ShuffleCode, isShuffleCode } from './shuffle';
 import { weavePaymentFields } from './paymentWeaving';
@@ -57,6 +58,34 @@ function switchPair(from: string | undefined, to: string): { from: PaymentForm; 
     return undefined;
   }
   return { from, to };
+}
+
+/**
+ * A checksum that does not hold, on a field about to become unrecoverable — asked before the save.
+ *
+ * <p>This is the third time in this feature a safety net shipped with <b>no caller</b>
+ * (`clearForForm`, `withheldFromShare`, and now this), and a code review caught it again. The module
+ * was written, tested and documented as "checked before saving, because saving a mixed field destroys
+ * the original" — and nothing ever called it. A person could transpose two digits of an IBAN, tick
+ * *store woven with a decoy*, and save: no warning, the value woven immediately with a plausible
+ * decoy, and no way ever to notice or recover. The one moment the plan calls "the last moment anybody
+ * can catch it" simply never happened.</p>
+ *
+ * <p>Only `confirm` warnings stop a save. A `hint` is said elsewhere and never blocks: a plain field
+ * with a bad checksum is still stored, because people hold cards this build has never heard of.</p>
+ */
+export async function confirmChecksums(data: Record<string, unknown>, chosen: string): Promise<boolean> {
+  const marked = markedFields(data);
+  const confirms = validatePayment(clearForForm(cardFieldsFrom(data), formOf(chosen)), marked).filter(
+    (warning) => warning.severity === 'confirm',
+  );
+  if (confirms.length === 0) {
+    return true;
+  }
+  return confirmDestructive(
+    `${confirms.map((warning) => warning.text).join('\n\n')}\n\nWeave and save anyway?`,
+    'Weave and save',
+  );
 }
 
 /**
@@ -123,4 +152,19 @@ export function answerCardValues(post: (message: unknown) => void, context: Paym
 
 function textOf(value: unknown): string {
   return typeof value === 'string' ? value : '';
+}
+
+/**
+ * The payment kind's two save gates, in the order they must be asked.
+ *
+ * <p>The destructive switch first — it is about to delete something, so nothing else should be asked
+ * before it. Then the checksums, which have to come BEFORE the weaving: afterwards there is no
+ * original left to check against, and that is the whole reason this gate exists.</p>
+ */
+export async function paymentGates(
+  data: Record<string, unknown>,
+  context: PaymentSaveContext,
+): Promise<boolean> {
+  const chosen = textOf(data.paymentForm);
+  return (await confirmFormSwitch(chosen, context)) && (await confirmChecksums(data, chosen));
 }

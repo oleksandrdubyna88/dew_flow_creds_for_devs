@@ -233,3 +233,57 @@ test('a per-field method overrides the shared one', () => {
 
   assert.notEqual(own.cvv, shared.cvv, 'a different method produces a different stored value');
 });
+
+test('a mistyped IBAN about to be WOVEN stops the save until it is confirmed', () => {
+  // The gate that was written, tested, documented — and never called, for the third time in this
+  // feature. A code review caught it. Without this, a transposed digit in a field marked to be woven
+  // is stored immediately with a plausible decoy, and there is no way ever to notice or recover.
+  captured.warnings = [];
+  captured.answer = undefined; // the person reads it and goes back to check
+
+  return gate()
+    .paymentGates({ paymentForm: 'bank', bankIban: 'NL92ABNA0417164300', mixFields: ['iban'] }, {})
+    .then((agreed) => {
+      assert.equal(agreed, false, 'the save does not happen');
+      assert.equal(captured.warnings.length, 1, 'and they were told once');
+      assert.match(captured.warnings[0], /no original|cannot be found later|check it now/i);
+    });
+});
+
+test('the same mistyped IBAN stored PLAINLY does not stop anything', async () => {
+  // The other half of the split, and the one that keeps this from being an obstacle: a plain field
+  // with a bad checksum is still saved, because people hold accounts this build has never heard of.
+  captured.warnings = [];
+
+  const agreed = await gate().paymentGates(
+    { paymentForm: 'bank', bankIban: 'NL92ABNA0417164300' },
+    {},
+  );
+
+  assert.equal(agreed, true);
+  assert.deepEqual(captured.warnings, [], 'no modal for a value that can still be corrected later');
+});
+
+test('a GOOD checksum on a woven field asks nothing at all', async () => {
+  captured.warnings = [];
+
+  const agreed = await gate().paymentGates(
+    { paymentForm: 'bank', bankIban: 'NL91ABNA0417164300', mixFields: ['iban'] },
+    {},
+  );
+
+  assert.equal(agreed, true);
+  assert.deepEqual(captured.warnings, []);
+});
+
+test('agreeing to the warning lets the save through', async () => {
+  captured.warnings = [];
+  captured.answer = 'Weave and save';
+
+  const agreed = await gate().paymentGates(
+    { paymentForm: 'card', cardNumber: '4111111111111112', mixFields: ['number'] },
+    {},
+  );
+
+  assert.equal(agreed, true, 'nothing here refuses a save — it asks');
+});

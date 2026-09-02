@@ -161,3 +161,38 @@ test('ibanConverges agrees with the published examples, both ways', () => {
   assert.equal(ibanConverges('nonsense'), false);
   assert.equal(ibanConverges(''), false);
 });
+
+test('an IBAN typed the way people actually write it still produces a converging decoy', () => {
+  // Found by a code review, and it is not a contrived input: an IBAN is displayed, printed and copied
+  // in space-grouped form everywhere it appears. The generation side did not strip spaces the way
+  // `ibanConverges` does, so a space's charCode arithmetic produced NaN check digits — a THREE
+  // character check code, a decoy one character longer than the original, and an uncaught throw from
+  // `shuffleTokens` on save.
+  for (const typed of ['NL91 ABNA 0417 1643 00', ' NL91ABNA0417164300 ', 'NL91  ABNA0417164300']) {
+    const decoy = generateDecoy({ kind: 'iban', original: typed }, seeded(5));
+
+    assert.equal(ibanConverges(decoy), true, `${typed} produced a decoy that does not converge`);
+    assert.equal(decoy.length, typed.replace(/\s/g, '').length, 'and it is the right length');
+  }
+});
+
+test('a lowercase IBAN produces a converging decoy, not a silently broken one', () => {
+  // The other half of the same finding, and the worse one because nothing crashes: the generation side
+  // mapped a lowercase letter through the wrong numeric substitution, so the decoy failed the exact
+  // checksum the feature exists to satisfy — separable from the real half by the one property that was
+  // supposed to make it indistinguishable.
+  const decoy = generateDecoy({ kind: 'iban', original: 'nl91abna0417164300' }, seeded(9));
+
+  assert.equal(ibanConverges(decoy), true);
+  assert.equal(decoy.slice(0, 2), 'NL', 'the country is kept, in the case the standard uses');
+});
+
+test('a short card number gets a decoy of its OWN length, not one digit longer', () => {
+  // `weaveOne` gates on two characters, not on a realistic card length, so a six-digit "number" can
+  // reach the card generator. It used to append a Luhn digit on top of a full-length BIN and hand back
+  // seven digits for six — which `shuffleTokens` refuses, as an uncaught throw on save.
+  for (const short of ['123456', '12345', '1234']) {
+    const decoy = generateDecoy({ kind: 'card', original: short }, seeded(3));
+    assert.equal(decoy.length, short.length, `${short} produced a decoy of length ${decoy.length}`);
+  }
+});

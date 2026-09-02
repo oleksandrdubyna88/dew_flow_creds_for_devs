@@ -82,7 +82,12 @@ function digitsDecoy(original: string, random: Random): string {
  */
 function cardDecoy(original: string, random: Random): string {
   const digits = original.replace(/\D/g, '');
-  const bin = binOf(digits);
+  // The BIN is kept only as far as it FITS. `binOf` takes six digits, and a value shorter than seven
+  // would then leave no room for the Luhn digit — the decoy came back one character longer than the
+  // original, and `shuffleTokens` refuses that, as an uncaught throw on save. Nothing stops a short
+  // value reaching here: `weaveOne` gates on two characters, not on a realistic card length. Found by
+  // a code review.
+  const bin = binOf(digits).slice(0, Math.max(0, digits.length - 1));
   const middle = Array.from({ length: Math.max(0, digits.length - bin.length - 1) }, () => digit(random)).join('');
   return withLuhnDigit(`${bin}${middle}`);
 }
@@ -98,11 +103,27 @@ function withLuhnDigit(body: string): string {
   return `${body}0`; // Unreachable: one of the ten always converges.
 }
 
-/** An IBAN: the original's country, random body, and the two check digits that make it converge. */
+/**
+ * An IBAN: the original's country, a random body, and the check digits that make it converge.
+ *
+ * <p>Normalised through the SAME helper `ibanConverges` uses, which is the point. A code review found
+ * these two had drifted: the checker stripped spaces and upper-cased, the generator did neither. An
+ * IBAN typed the way people actually write it — `NL91 ABNA 0417 1643 00` — put a space through
+ * `charCodeAt(0) - 55`, produced `NaN` check digits, and handed back a decoy one character longer than
+ * the original, which `shuffleTokens` refuses: an uncaught throw on save. A lowercase one was worse,
+ * because nothing crashed — the wrong numeric substitution simply produced a decoy that fails the very
+ * checksum this generator exists to satisfy.</p>
+ */
 function ibanDecoy(original: string, random: Random): string {
-  const country = original.slice(0, 2).toUpperCase();
-  const body = [...original.slice(4)].map((character) => alphanumeric(character, random)).join('');
+  const iban = normalizeIban(original);
+  const country = iban.slice(0, 2);
+  const body = [...iban.slice(4)].map((character) => alphanumeric(character, random)).join('');
   return `${country}${ibanCheckDigits(country, body)}${body}`;
+}
+
+/** Spaces out, upper case in — an IBAN is written in groups and read as one string. */
+function normalizeIban(iban: string): string {
+  return iban.replace(/\s/g, '').toUpperCase();
 }
 
 /** The two digits that make `country + checks + body` converge — computed, never drawn. */
@@ -118,7 +139,7 @@ function ibanCheckDigits(country: string, body: string): string {
  * a valid IBAN leaves 1.</p>
  */
 export function ibanConverges(iban: string): boolean {
-  const trimmed = iban.replace(/\s/g, '').toUpperCase();
+  const trimmed = normalizeIban(iban);
   if (!/^[A-Z]{2}\d{2}[A-Z0-9]{6,30}$/.test(trimmed)) {
     return false;
   }
