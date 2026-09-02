@@ -688,6 +688,7 @@ export function formPageScript(
       bankBeneficiary: val('bankBeneficiary'), bankName: val('bankName'), bankIban: val('bankIban'),
       bankAccountNumber: val('bankAccountNumber'), bankSwift: val('bankSwift'),
       bankIntermediary: val('bankIntermediary'), bankAddress: val('bankAddress'),
+      mixFields: collectMixFields(), mixMethod: val('mixMethod'), mixMethods: collectMixMethods(),
       attachmentContent: attachmentContent, attachmentName: attachmentName,
       imageContent: imageContent, imageName: imageName,
       clearAttachment: chk('clearAttachment'), clearImage: chk('clearImage'),

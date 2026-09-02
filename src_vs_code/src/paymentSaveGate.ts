@@ -3,6 +3,8 @@ import { PaymentFields, clearForForm } from './paymentFields';
 import { cardFieldsFrom, cardInputsFrom, withBrand } from './cardFormFields';
 import { switchWarning } from './paymentFormSwitch';
 import { brandOf } from './cardBrand';
+import { ShuffleCode, isShuffleCode } from './shuffle';
+import { weavePaymentFields } from './paymentWeaving';
 import { confirmDestructive } from './dialogs';
 
 /**
@@ -66,7 +68,40 @@ function switchPair(from: string | undefined, to: string): { from: PaymentForm; 
  */
 export function paymentRecordFor(data: Record<string, unknown>, chosen: string): PaymentFields {
   const typed = withBrand(cardFieldsFrom(data), brandOf(textOf(data.cardNumber)));
-  return clearForForm(typed, formOf(chosen));
+  const kept = clearForForm(typed, formOf(chosen));
+  // Woven LAST, and after the form switch has already dropped what the chosen form does not own —
+  // weaving a field that is about to be discarded would burn a decoy for nothing, and worse, would
+  // mark the record as having a woven field it no longer holds.
+  //
+  // The brand is derived above, from the number BEFORE it is woven. That is the whole reason it is a
+  // stored field: after weaving there is no number to read it from (§3a).
+  return weavePaymentFields(kept, markedFields(data), codesFor(data), Math.random);
+}
+
+/** Which boxes the person ticked. Anything the record cannot weave is ignored by the weaver itself. */
+function markedFields(data: Record<string, unknown>): readonly string[] {
+  const marked = data.mixFields;
+  return Array.isArray(marked) ? marked.filter((one): one is string => typeof one === 'string') : [];
+}
+
+/**
+ * The method per field: the one picked for all of them, unless a field was given its own.
+ *
+ * <p>The argument against per-field codes stays on the record — four codes on one card is four
+ * chances to forget, and a forgotten code is lost data. It is answered by the interface rather than by
+ * removing the choice: the careful person remembers one, the paranoid four, and neither pays for the
+ * other's decision.</p>
+ */
+function codesFor(data: Record<string, unknown>): Record<string, ShuffleCode> {
+  const shared = textOf(data.mixMethod);
+  const perField = data.mixMethods;
+  const own = perField !== null && typeof perField === 'object' ? (perField as Record<string, unknown>) : {};
+  return Object.fromEntries(
+    markedFields(data).flatMap((field) => {
+      const code = textOf(own[field]) || shared;
+      return isShuffleCode(code) ? [[field, code] as const] : [];
+    }),
+  );
 }
 
 /** The chosen form, defaulted — the same fallback the metadata field gets. */

@@ -22,6 +22,8 @@ export function cardFormScript(): string {
   // is one place too many: the HTML is a string that is built, concatenated, and — the moment
   // anything goes wrong — logged. The message goes straight to the fields, and is never a string
   // anybody else holds. (No backticks in this file: it IS a template literal.)
+  ${mixScript()}
+
   window.addEventListener('message', function (event) {
     var card = event.data;
     if (!card || card.type !== 'paymentValues') { return; }
@@ -56,5 +58,96 @@ export function cardFormScript(): string {
     var hint = document.getElementById('cardBrandHint');
     if (hint) { hint.textContent = brand.text; }
   });
+`;
+}
+
+/**
+ * The weaving controls' own script: which fields are marked, which method each gets, and when the
+ * controls are on screen at all.
+ *
+ * <p>Split from the block above only for the 50-line ceiling — but the seam is a real one: everything
+ * here is about a CHOICE the person makes, and nothing here ever holds a stored value.</p>
+ */
+function mixScript(): string {
+  return `  // ---- weaving: the marks, the method, and the per-field override -----------------------------
+  // Collected here and read by the save payload. The CODE never comes back from the host and is never
+  // stored — see paymentWeaving.ts. What the page owns is the choice; what it must never own is a
+  // memory of it.
+  function markedFields() {
+    var marks = document.querySelectorAll('.mixMark');
+    var picked = [];
+    for (var i = 0; i < marks.length; i++) {
+      if (marks[i].checked) { picked.push(marks[i].getAttribute('data-field')); }
+    }
+    return picked;
+  }
+
+  function collectMixFields() { return markedFields(); }
+
+  function collectMixMethods() {
+    var rows = document.querySelectorAll('.mixMethodRow');
+    var own = {};
+    for (var i = 0; i < rows.length; i++) {
+      own[rows[i].getAttribute('data-field')] = rows[i].value;
+    }
+    return own;
+  }
+
+  // The controls appear only once something is marked: a method picker above three unticked boxes is
+  // a question nobody was asked.
+  function refreshMix() {
+    var picked = markedFields();
+    var controls = document.getElementById('mixControls');
+    if (controls) { controls.style.display = picked.length > 0 ? '' : 'none'; }
+    var warning = document.getElementById('mixWarning');
+    if (warning) {
+      warning.textContent = picked.length === 0 ? '' :
+        'You will need this method to read ' + (picked.length === 1 ? 'this field' : 'these ' + picked.length + ' fields') +
+        ' again. It is stored nowhere.';
+    }
+    var per = document.getElementById('mixPerField');
+    if (per && per.style.display !== 'none') { renderPerField(picked); }
+  }
+
+  ${mixRenderScript()}
+`;
+}
+
+/** The per-field pickers: rendering them, and remembering what was already chosen. */
+function mixRenderScript(): string {
+  return `  function renderPerField(picked) {
+    var per = document.getElementById('mixPerField');
+    var shared = document.getElementById('mixMethod');
+    if (!per || !shared) { return; }
+    var existing = collectMixMethods();
+    var html = '';
+    for (var i = 0; i < picked.length; i++) {
+      var field = picked[i];
+      var chosen = existing[field] || shared.value;
+      html += '<label>' + field + '</label><select class="mixMethodRow" data-field="' + field + '">' +
+        shared.innerHTML.split('selected').join('') + '</select>';
+      html += '<span data-chosen="' + chosen + '"></span>';
+    }
+    per.innerHTML = html;
+    var rows = per.querySelectorAll('.mixMethodRow');
+    for (var j = 0; j < rows.length; j++) {
+      rows[j].value = existing[rows[j].getAttribute('data-field')] || shared.value;
+    }
+  }
+
+  var marks = document.querySelectorAll('.mixMark');
+  for (var m = 0; m < marks.length; m++) { marks[m].addEventListener('change', refreshMix); }
+  var expand = document.getElementById('mixExpand');
+  if (expand) {
+    expand.addEventListener('click', function () {
+      var per = document.getElementById('mixPerField');
+      if (!per) { return; }
+      var opening = per.style.display === 'none';
+      per.style.display = opening ? '' : 'none';
+      expand.textContent = opening ? 'Use one method for all of them' : 'Give each field its own method…';
+      if (opening) { renderPerField(markedFields()); }
+    });
+  }
+  refreshMix();
 `;
 }

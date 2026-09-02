@@ -179,3 +179,57 @@ test('a form given NO stored record still asks nothing and writes nothing away',
   const message = sent[0] as { fields: Record<string, string> };
   assert.equal(Object.values(message.fields).every((value) => value === ''), true, 'every box is blank');
 });
+
+test('a marked field is WOVEN by the real save path, and an unmarked one is not', () => {
+  // The wiring test for S3.3: the marks travel in the payload, and `paymentRecordFor` is where they
+  // stop being a checkbox and become a stored value nobody can read back without the method.
+  const written = gate().paymentRecordFor(
+    {
+      paymentForm: 'card',
+      cardNumber: '4111111111111111',
+      cardCvv: '123',
+      cardPin: '4321',
+      mixFields: ['cvv'],
+      mixMethod: 'f1',
+    },
+    'card',
+  );
+
+  assert.notEqual(written.cvv, '123', 'the CVV is not stored as typed');
+  assert.equal(written.cvv?.length, 6, 'it is woven with a decoy of its own length');
+  assert.equal(written.pin, '4321', 'and the PIN, which was not marked, is stored plainly');
+  assert.deepEqual(written.shuffledFields, ['cvv'], 'the record says which field needs a method');
+});
+
+test('the brand is derived BEFORE the number is woven, which is why it is a stored field', () => {
+  // §3a's reason, asserted: after weaving there is no number left to read a brand from.
+  const written = gate().paymentRecordFor(
+    { paymentForm: 'card', cardNumber: '4111111111111111', mixFields: ['number'], mixMethod: 'f2' },
+    'card',
+  );
+
+  assert.equal(written.brand, 'visa');
+  assert.notEqual(written.number, '4111111111111111', 'and the number itself is woven');
+});
+
+test('no method reaches the stored record, whatever the form sent', () => {
+  const written = gate().paymentRecordFor(
+    { paymentForm: 'card', cardCvv: '123', mixFields: ['cvv'], mixMethod: 'f9' },
+    'card',
+  );
+
+  assert.ok(!JSON.stringify(written).includes('f9'), 'the method must live only in the person’s memory');
+});
+
+test('a per-field method overrides the shared one', () => {
+  const shared = gate().paymentRecordFor(
+    { paymentForm: 'card', cardCvv: '123', mixFields: ['cvv'], mixMethod: 'f1' },
+    'card',
+  );
+  const own = gate().paymentRecordFor(
+    { paymentForm: 'card', cardCvv: '123', mixFields: ['cvv'], mixMethod: 'f1', mixMethods: { cvv: 'f6' } },
+    'card',
+  );
+
+  assert.notEqual(own.cvv, shared.cvv, 'a different method produces a different stored value');
+});
