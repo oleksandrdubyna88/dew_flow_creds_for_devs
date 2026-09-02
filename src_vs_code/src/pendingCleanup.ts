@@ -144,9 +144,11 @@ export async function resumePending(port: CleanupPort): Promise<readonly string[
   // half-wiped tree live, which is the state the review caught this guard creating.
   const removing: string[] = [];
   for (const accountId of pending.accounts) {
-    // Re-read per account, not once: `finishBeforeReuse` can list an account between two wipes, and a
-    // wipe is a long run of awaited deletes. A listing decided before the previous await is a listing
-    // that may no longer hold.
+    // A LISTED account is a removal that never destroyed anything — killed between the marker and the
+    // unlist. Skipping it was not enough: the marker stayed forever, and the next time that account
+    // was upserted `finishBeforeReuse` would wipe a live profile nobody asked to remove. So a listed
+    // account means FORGET the intent, not defer it. Found by the review, which came at it from the
+    // other side: the same record cannot mean two things.
     if (!port.isListed(accountId)) {
       removing.push(accountId);
       await port.wipeAccount(accountId);
@@ -193,7 +195,13 @@ export async function finishBeforeReuse(port: CleanupPort, accountId: string): P
   if (!pending.accounts.includes(accountId)) {
     return false;
   }
-  await port.wipeAccount(accountId);
+  // Still listed? Then the removal never got past its marker and destroyed nothing — this is an
+  // ABANDONED intent, and acting on it would wipe a live profile. Forget it and let the upsert
+  // proceed. Only an unlisted account has residue worth finishing.
+  const abandoned = port.isListed(accountId);
+  if (!abandoned) {
+    await port.wipeAccount(accountId);
+  }
   await port.write(clearAccountRemoving(pending, accountId));
-  return true;
+  return !abandoned;
 }

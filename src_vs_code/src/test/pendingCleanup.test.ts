@@ -306,3 +306,38 @@ test('the resume re-reads the listing between accounts, not once at the top', as
 
   assert.deepEqual(wiped, ['a1'], 'a2 was listed again by the time its turn came, and was spared');
 });
+
+test('a removal killed BEFORE it unlisted is forgotten, not carried out later', async () => {
+  // The hole the review found from the other side: the same record cannot mean two things. A marker
+  // whose account is still LISTED belongs to a removal that never destroyed anything — and skipping it
+  // left the marker forever, so the next upsert of that account would wipe a live profile nobody asked
+  // to remove. Still listed means forget the intent.
+  const state = { current: markAccountRemoving(EMPTY_PENDING, 'a1') };
+  let wiped = false;
+  const p: CleanupPort = {
+    read: () => state.current,
+    write: (next) => {
+      state.current = next;
+      return Promise.resolve();
+    },
+    wipeAccount: () => {
+      wiped = true;
+      return Promise.resolve();
+    },
+    isListed: () => true,
+    liveIds: () => [],
+    forgetSecrets: () => Promise.resolve(),
+  };
+
+  assert.equal(await finishBeforeReuse(p, 'a1'), false, 'nothing was finished, because nothing had begun');
+  assert.equal(wiped, false, 'the live profile is untouched');
+  assert.deepEqual(state.current.accounts, [], 'and the abandoned intent is gone, not left to fire later');
+});
+
+test('the resume also forgets an abandoned intent rather than leaving it to accumulate', async () => {
+  const p = port({ accounts: ['a1'], secrets: {} }, [], ['a1']);
+
+  await resumePending(p.port);
+
+  assert.deepEqual(p.saved.accounts, [], 'the record is empty afterwards, however each id was handled');
+});

@@ -389,10 +389,26 @@ deleting one entity is a dozen awaited keychain calls, and a sync apply can land
 Interrupted *before* the tree was replaced, those entities are still live and still hold their values;
 deleting them then would be precisely the data loss the invariant exists to prevent.
 
-**And the race is closed from the writer's side too.** `importBundle` takes every id it CARRIES off the
-pending list before it writes the first secret, so a sweep running beside an apply cannot delete a
-value that apply just restored. Guarding one side of a race and hoping is not the same as removing
-it.
+##### The race was never going to close one side at a time
+
+Three rounds went into narrowing one window: re-check liveness before each key, then clear the pending
+list from the writer's side before the first secret is written. Each round the reviewers said the same
+thing in a new way, and they were right — **a narrower window is not a closed one.**
+
+The window existed because applying a bundle, removing an account and finishing interrupted work are
+all `async` and all touch the same secrets, so every `await` inside one is a place another can start.
+The fix is that they do not: all three go through a **`SerialQueue`**, which already existed in this
+codebase for exactly this shape of bug in `GitTransport` — a read hard-resetting the working directory
+out from under a write. One instance, not two windows, which is the same boundary the sweep already
+exists for.
+
+With that holding, the pending-list clear moved back to AFTER the restore, where a crash cannot lose
+the intent. That ordering was only ever forced by the race it no longer has to guard.
+
+**And a removal killed before it unlisted is now FORGOTTEN, not carried out later.** The same record
+cannot mean two things: a marker whose account is still listed belongs to a removal that destroyed
+nothing, and skipping it left the marker to fire on the next upsert of that account — wiping a live
+profile nobody asked to remove.
 
 **The account order, unchanged and still the point:** unlist FIRST. The account is then invisible to
 the UI and to the sync cycle, which iterates `getAccounts()`, so nothing about it can be published

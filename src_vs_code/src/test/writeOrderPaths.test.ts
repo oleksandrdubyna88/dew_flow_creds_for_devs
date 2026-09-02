@@ -409,10 +409,11 @@ function mementoNote(key: string, value: unknown): string | undefined {
   return notes.find(([prefix]) => key.startsWith(prefix))?.[1](value);
 }
 
-test('a bundle that brings an id BACK takes it off the sweep list before writing its secrets', async () => {
-  // The race the review would not let go of, closed from the writer's side: a sweep running beside
-  // this apply cannot delete a value the apply just restored, because the apply removes the id from
-  // the pending record BEFORE the first `secrets.store`.
+test('an apply and the sweep cannot interleave, and an id the bundle carries stops being pending', async () => {
+  // Three rounds were spent narrowing this race from both sides — re-check before each key, clear the
+  // list from the writer's side — and the reviewers were right that a narrower window is not a closed
+  // one. The window existed because an apply and the sweep could interleave. Now they cannot, so the
+  // clear can sit where a crash cannot lose it: AFTER the restore.
   const { StorageManager } = loadWithVscode<{ StorageManager: new (m: unknown, s: unknown) => Record<string, Function> }>(
     '../storageManager',
     {
@@ -446,6 +447,7 @@ test('a bundle that brings an id BACK takes it off the sweep list before writing
       return Promise.resolve();
     },
     delete: (k: string) => {
+      order.push(`secretDelete:${k}`);
       chain.delete(k);
       return Promise.resolve();
     },
@@ -460,18 +462,20 @@ test('a bundle that brings an id BACK takes it off the sweep list before writing
     details: { id, name: id, isSshEnabled: false },
   });
 
-  // A previous apply left 'returns' waiting to be swept; this one brings it back.
+  // A previous apply left 'returns' waiting to be swept, and its old value is still in the keychain.
   await storage.addNode('a1', entry('other'));
   await storage.deferSecretCleanup('a1', 'returns');
+  await storage.setPassword('a1', 'returns', 'the-old-one');
   order.length = 0;
 
-  await storage.importBundle('a1', { nodes: [entry('returns')], passwords: { returns: 'pw' } });
+  // Both started in the same turn, the sweep FIRST — which is what used to lose the restored value.
+  const swept = storage.resumeAccountRemovals();
+  const applied = storage.importBundle('a1', { nodes: [entry('returns')], passwords: { returns: 'pw' } });
+  await Promise.all([swept, applied]);
 
-  const cleared = order.findIndex((c) => c.startsWith('pending:') && !c.includes('returns'));
-  const firstStore = order.indexOf('secretStore');
-  assert.ok(cleared >= 0, `the id stopped waiting to be swept (${order.join(' → ')})`);
-  assert.ok(cleared < firstStore, 'and it stopped BEFORE its value was written');
-  assert.equal(chain.get('a1_returns'), 'pw', 'so the restored password is still there');
+  assert.equal(chain.get('a1_returns'), 'pw', 'the restored password survived the sweep that ran beside it');
+  const lastPending = [...order].reverse().find((c) => c.startsWith('pending:'));
+  assert.equal(lastPending, 'pending:{}', 'and the id no longer waits to be swept');
 });
 
 /** Record what the pending-cleanup key was set to, and ignore every other write. */

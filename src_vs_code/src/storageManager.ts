@@ -6,7 +6,8 @@ import * as crypto from 'node:crypto';
 import * as vscode from 'vscode';
 import { ProfileSnapshot } from './syncMerge';
 import { quarantineUnsafeIds } from './idQuarantine';
-import { SigningKeypair, generateSigningKeypair } from './shareSignature';
+import { SigningKeypair } from './shareSignature';
+import { ensureSigningKeypair, readSigningKeypair } from './signingKeyStore';
 import { EscrowShareWrap, isEscrowShareWrap } from './orgEscrowShareWrap';
 import { RemoteState, buildDefaultFolders, shouldSeedDefaults } from './defaultFolders';
 import { Tombstone, VersionVector, bumpVector, mergeVectors, normalizeTombstone, parseTombstones } from './versionVector';
@@ -20,6 +21,7 @@ import { TRASH_FOLDER_NAME, findTrash, restoreTarget } from './trash';
 import { exportSecretsFor } from './exportSecrets';
 import { PaymentFields, parsePaymentFields, serializePaymentFields } from './paymentFields';
 import { forgetTombstone, sweepOrphanSecrets } from './orphanSweep';
+import { SerialQueue } from './serialQueue';
 import {
   CleanupPort,
   clearSecretsPending,
@@ -48,7 +50,6 @@ import {
   paymentSecretKey,
   privateKeySecretKey,
   secretKey,
-  signingKeySecretKey,
   totpSecretKey,
   vpnConfigSecretKey,
 } from './secretKeys';
@@ -152,6 +153,17 @@ export class StorageManager implements vscode.Disposable {
    * to clear it, and a second window's edit is seen on the very next read.</p>
    */
   private readonly nodeCache = new Map<string, NodeCacheEntry>();
+
+  /**
+   * Applying a bundle, removing an account and finishing interrupted work — one at a time.
+   *
+   * <p>All three are `async` and touch the same secrets, so every `await` inside one was a place
+   * another could start; a whole round of review findings were variants of that one fact. Narrowing
+   * each window individually is not closing it — the windows exist because these interleave.
+   * `SerialQueue` already solved this shape for `GitTransport`, and its header states the boundary:
+   * one instance, not two windows, which is why the sweep exists at all.</p>
+   */
+  private readonly writes = new SerialQueue();
 
   /**
    * How many times each profile's local state was written through this instance — one half of
@@ -347,7 +359,7 @@ export class StorageManager implements vscode.Disposable {
 
   /** Mark, unlist, wipe, unmark — the order and its reasoning are in `accountRemoval.ts`. */
   async removeAccount(accountId: string): Promise<void> {
-    await removeWithIntent(this.cleanupPort(), accountId, () => this.unlistAccount(accountId));
+    await this.writes.run(() => removeWithIntent(this.cleanupPort(), accountId, () => this.unlistAccount(accountId)));
     this.touch(accountId);
   }
 
@@ -359,7 +371,7 @@ export class StorageManager implements vscode.Disposable {
 
   /** Finish every removal a killed window left half-done — idempotent; see `pendingCleanup.ts`. */
   resumeAccountRemovals(): Promise<readonly string[]> {
-    return resumePending(this.cleanupPort());
+    return this.writes.run(() => resumePending(this.cleanupPort()));
   }
 
   /** This class's half of `pendingCleanup.ts` — the storage the sequencing there acts on. */
@@ -713,41 +725,14 @@ export class StorageManager implements vscode.Disposable {
 
   // ---------- share signing identity (SecretStorage, per account) ----------
 
-  /**
-   * This account's signing keypair, minted on first use.
-   *
-   * <p>In SecretStorage only, deliberately NOT wrapped into the vault payload as
-   * the plan proposed. A signing identity that syncs is one that an attacker who
-   * reads a backup can sign as, and the recovery path for a lost key already
-   * exists and is the honest one: the peer re-pins after comparing the new
-   * fingerprint. A key per machine also matches what a signature actually proves
-   * — "this machine", not "this person".</p>
-   */
-  // eslint-disable-next-line complexity
-  async signingKeypair(accountId: string): Promise<SigningKeypair | undefined> {
-    const raw = await this.secrets.get(signingKeySecretKey(accountId));
-    if (raw === undefined) {
-      return undefined;
-    }
-    try {
-      const parsed = JSON.parse(raw) as SigningKeypair;
-      return typeof parsed.publicKey === 'string' && typeof parsed.privateKey === 'string'
-        ? parsed
-        : undefined;
-    } catch {
-      return undefined;
-    }
+  /** This account's signing keypair — see `signingKeyStore.ts` for why it never syncs. */
+  signingKeypair(accountId: string): Promise<SigningKeypair | undefined> {
+    return readSigningKeypair(this.secrets, accountId);
   }
 
   /** Mint one if this account has none yet, and return whichever it now has. */
-  async ensureSigningKeypair(accountId: string): Promise<SigningKeypair> {
-    const existing = await this.signingKeypair(accountId);
-    if (existing !== undefined) {
-      return existing;
-    }
-    const fresh = generateSigningKeypair();
-    await this.secrets.store(signingKeySecretKey(accountId), JSON.stringify(fresh));
-    return fresh;
+  ensureSigningKeypair(accountId: string): Promise<SigningKeypair> {
+    return ensureSigningKeypair(this.secrets, accountId);
   }
 
   // ---------- SSH private keys (SecretStorage, tenant-scoped) ----------
@@ -966,7 +951,11 @@ export class StorageManager implements vscode.Disposable {
   }
 
   /** Replace one profile's whole tree and batch-restore its secrets. */
-  async importBundle(accountId: string, incoming: BackupBundle): Promise<void> {
+  importBundle(accountId: string, incoming: BackupBundle): Promise<void> {
+    return this.writes.run(() => this.applyBundle(accountId, incoming));
+  }
+
+  private async applyBundle(accountId: string, incoming: BackupBundle): Promise<void> {
     // The trust boundary. Every id in this bundle came from OUTSIDE — a restored backup file,
     // or whatever can write the sync location — and an id is concatenated into a SecretStorage
     // key and into a file name. One that could break either is renamed before it enters the
@@ -977,23 +966,23 @@ export class StorageManager implements vscode.Disposable {
     // Rule A applied to a restore (`orphanSweep.ts`); this path had it backwards in BOTH halves.
     // Vanished ids come from the OLD tree, which after `saveNodes` is no longer there to iterate.
     const before = this.getNodes(accountId).filter((n) => n.type === 'entity').map((n) => n.id);
-    // Anything this bundle CARRIES stops waiting to be swept, BEFORE its secrets are written — so a
-    // sweep running beside this apply cannot delete a value the apply just restored. The review's
-    // one-keychain-call race, closed from the writer's side rather than guarded against.
-    const port = this.cleanupPort();
-    await port.write(clearSecretsPending(port.read(), accountId));
     await storeSecretMaps(this.secrets, accountId, maps);
     // Rule B, with a LOCAL record rather than a tombstone — `pendingCleanup.ts` says why both shapes
     // of tombstone were wrong here.
+    // Ids this bundle drops are recorded; ids it CARRIES stop waiting to be swept — one write, and it
+    // lands HERE rather than before the secrets because no sweep can run beside this apply any more,
+    // so clearing early would only risk losing the intent to a crash. See `serialQueue.ts`.
     const kept = new Set(bundle.nodes.map((n) => n.id));
     const vanishing = before.filter((id) => !kept.has(id));
-    await port.write(markSecretsPending(port.read(), accountId, vanishing));
+    const port = this.cleanupPort();
+    await port.write(markSecretsPending(clearSecretsPending(port.read(), accountId), accountId, vanishing));
     await this.saveNodes(
       accountId,
       bundle.nodes.map((n) => ({ ...n, children: undefined })),
     );
     await dropVanishedSecrets(this.secrets, accountId, before, maps);
     await port.write(clearSecretsPending(port.read(), accountId));
+
     // Stored notes are authoritative; drop any legacy plaintext copy.
     await this.saveNodes(
       accountId,
