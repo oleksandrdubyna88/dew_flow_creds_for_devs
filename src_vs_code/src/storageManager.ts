@@ -381,16 +381,15 @@ export class StorageManager implements vscode.Disposable {
     return true;
   }
 
-  /** Remove a profile together with its whole tree and all its secrets. */
+  /** Remove a profile with its whole tree and all its secrets. The wipe is a REMOVAL, so the node
+   *  list goes FIRST (Rule A, `applyFormSecrets.ts`) — reversed, a crash left the whole account
+   *  intact with every node claiming secrets already gone. Found by an audit, not by a test. */
   async removeAccount(accountId: string): Promise<void> {
-    for (const node of this.getNodes(accountId)) {
-      if (node.type === 'entity') {
-        for (const key of entitySecretKeys(accountId, node.id)) {
-          await this.secrets.delete(key);
-        }
-      }
-    }
+    const gone = this.getNodes(accountId).filter((n) => n.type === 'entity').map((n) => n.id);
     await this.globalState.update(nodesKey(accountId), undefined);
+    for (const key of gone.flatMap((id) => entitySecretKeys(accountId, id))) {
+      await this.secrets.delete(key);
+    }
     await this.globalState.update(tombstonesKey(accountId), undefined);
     await this.globalState.update(horizonKey(accountId), undefined);
     await this.globalState.update(

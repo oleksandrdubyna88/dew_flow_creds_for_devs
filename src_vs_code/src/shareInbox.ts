@@ -527,6 +527,8 @@ After this, a share signed by any other key is refused.`,
     );
 
     let node: TreeNode;
+    /** Deferred so every ADDITION lands first — Rule A; see `applyFormSecrets.ts`. */
+    let writeNode: () => Promise<void>;
     if (previousId !== undefined) {
       const existing = this.deps.storage.getNode(share.accountId, previousId);
       const choice = await vscode.window.showWarningMessage(
@@ -561,25 +563,27 @@ After this, a share signed by any other key is refused.`,
           createdAt: existing?.createdAt,
           children: undefined,
         };
-        await this.deps.storage.updateNode(share.accountId, node);
+        writeNode = () => this.deps.storage.updateNode(share.accountId, node);
       } else {
         node = { ...payload.node, id: StorageManager.newId(), parentId, children: undefined };
-        await this.deps.storage.addNode(share.accountId, node);
+        writeNode = () => this.deps.storage.addNode(share.accountId, node);
       }
     } else {
       // A fresh local id: a peer must never address (and thus silently overwrite) an
       // entity that already exists in our vault.
       node = { ...payload.node, id: StorageManager.newId(), parentId, children: undefined };
-      await this.deps.storage.addNode(share.accountId, node);
+      writeNode = () => this.deps.storage.addNode(share.accountId, node);
     }
-    await this.deps.state.update(
-      ORIGINS_KEY,
-      recordOrigin(origins, share.item.fromEmail, payload.node.id, node.id),
-    );
     const { password, privateKey, vpnConfig, dbConnection } = payload.secrets;
     /** A payment record arrived that this build cannot read — decides whether the share is kept. */
     let unreadablePayment = false;
-    await this.deps.storage.setPassword(share.accountId, node.id, password);
+    // Rule A: every ADDITION before the node write. I had this path writing the node first and
+    // justified it by the id being fresh — both reviewers blocked that independently, and they were
+    // right: a fresh id stops an OVERWRITE, and does nothing about a node that syncs while claiming
+    // secrets nobody wrote. `setPassword(undefined)` is a removal, so it waits until after.
+    if (password !== undefined) {
+      await this.deps.storage.setPassword(share.accountId, node.id, password);
+    }
     if (privateKey !== undefined) {
       await this.deps.storage.setPrivateKey(share.accountId, node.id, privateKey);
     }
@@ -611,6 +615,19 @@ After this, a share signed by any other key is refused.`,
       const arrived = redactArrivedPayment(payload.secrets.payment);
       await this.deps.storage.setPaymentRaw(share.accountId, node.id, arrived.raw);
       unreadablePayment = arrived.unreadable;
+    }
+    // THE NODE, after every addition and before the one removal. A crash anywhere above leaves
+    // secrets nothing points at — the tolerated torn state — rather than an entry that syncs while
+    // claiming values nobody wrote.
+    await writeNode();
+    await this.deps.state.update(
+      ORIGINS_KEY,
+      recordOrigin(origins, share.item.fromEmail, payload.node.id, node.id),
+    );
+    // The one REMOVAL on this path: an update whose payload carries no password clears the one the
+    // entry had, and by here the node no longer claims it.
+    if (password === undefined) {
+      await this.deps.storage.setPassword(share.accountId, node.id, undefined);
     }
     if (unreadablePayment) {
       // Reported, never silent. Both reviewers rejected the silent drop independently and were right

@@ -54,18 +54,12 @@ export async function importEntities(
 
   const made = toTreeNodes(entities, () => StorageManager.newId(), (folder) => parents.get(folder ?? '') ?? null);
   for (const { node, secrets } of made) {
+    // ADDITIONS first, then the node — Rule A (`applyFormSecrets.ts`). This loop had it the other way
+    // round, so an import interrupted partway left a synced entry claiming a password, notes, a key, a
+    // connection string and a one-time-code seed that nobody had written. Per ENTITY, so every entry
+    // in the import had its own window. Found by an audit of the write paths, not by a test.
+    await writeImportedSecrets(storage, location.accountId, node.id, secrets);
     await storage.addNode(location.accountId, node);
-    await storage.setPassword(location.accountId, node.id, secrets.password);
-    await storage.setNotes(location.accountId, node.id, secrets.notes);
-    if (secrets.privateKey !== undefined) {
-      await storage.setPrivateKey(location.accountId, node.id, secrets.privateKey);
-    }
-    if (secrets.dbConnection !== undefined) {
-      await storage.setDbConnection(location.accountId, node.id, secrets.dbConnection);
-    }
-    if (secrets.totp !== undefined) {
-      await storage.setTotp(location.accountId, node.id, secrets.totp);
-    }
   }
   return made.length;
 }
@@ -87,4 +81,32 @@ export async function resolveLocation(
   }
   const account = await pickAccount(storage, accountPlaceholder);
   return account === undefined ? undefined : { accountId: account.accountId, parentId: null };
+}
+
+/**
+ * One imported entry's secrets, written BEFORE its node — Rule A, see `applyFormSecrets.ts`.
+ *
+ * <p>Its own function so `importEntities` stays under the 50-line ceiling, which it crossed the
+ * moment each write became conditional. Conditional because `setPassword(undefined)` and
+ * `setNotes(undefined)` DELETE, and a deletion is a removal that belongs after the node — on an
+ * import there is nothing to delete, so the honest form is not to call them at all.</p>
+ */
+async function writeImportedSecrets(
+  storage: StorageManager,
+  accountId: string,
+  entityId: string,
+  secrets: { password?: string; notes?: string; privateKey?: string; dbConnection?: string; totp?: string },
+): Promise<void> {
+  const writes: ReadonlyArray<[string | undefined, (v: string) => Promise<void>]> = [
+    [secrets.password, (v) => storage.setPassword(accountId, entityId, v)],
+    [secrets.notes, (v) => storage.setNotes(accountId, entityId, v)],
+    [secrets.privateKey, (v) => storage.setPrivateKey(accountId, entityId, v)],
+    [secrets.dbConnection, (v) => storage.setDbConnection(accountId, entityId, v)],
+    [secrets.totp, (v) => storage.setTotp(accountId, entityId, v)],
+  ];
+  for (const [value, write] of writes) {
+    if (value !== undefined) {
+      await write(value);
+    }
+  }
 }

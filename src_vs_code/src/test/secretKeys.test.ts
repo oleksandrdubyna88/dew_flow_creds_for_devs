@@ -4,6 +4,7 @@ import {
   attachmentSecretKey,
   configSecretKey,
   dbConnSecretKey,
+  entitySecretKeys,
   fieldsSecretKey,
   historySecretKey,
   imageSecretKey,
@@ -160,4 +161,44 @@ test('no two kinds share a key for the same entity', () => {
 test('two accounts and two entities never collide', () => {
   assert.notEqual(paymentSecretKey('a', 'b_c'), paymentSecretKey('a_b', 'c'));
   assert.notEqual(paymentSecretKey('a', 'b'), paymentSecretKey('b', 'a'));
+});
+
+test('entitySecretKeys still names every key it did before it moved modules', () => {
+  // The one risk in moving it out of `storageManager.ts`: a key dropped from the list is a secret
+  // that survives its entry's deletion FOREVER, in the OS keychain, where nothing will look for it
+  // again. That is the failure the list was extracted to prevent in the first place.
+  //
+  // Hardcoded literals rather than composed from the builders, for the same reason the golden strings
+  // above are: a test that builds its expectation the way the code does agrees with itself.
+  assert.deepEqual(
+    [...entitySecretKeys('acct-7', 'ent-42')].sort(),
+    [
+      'acct-7_ent-42',
+      'acct-7_ent-42:attachment',
+      'acct-7_ent-42:config',
+      'acct-7_ent-42:dbConn',
+      'acct-7_ent-42:fields',
+      'acct-7_ent-42:history',
+      'acct-7_ent-42:image',
+      'acct-7_ent-42:notes',
+      'acct-7_ent-42:payment',
+      'acct-7_ent-42:sshPrivateKey',
+      'acct-7_ent-42:totp',
+      'acct-7_ent-42:vpnConfig',
+    ],
+    'twelve keys — eleven secret kinds plus the revision history, because past versions are secrets',
+  );
+});
+
+test('every per-entity builder is in the owned-keys list', () => {
+  // The list and the builders must not part company: a twelfth kind added as a builder but not to
+  // ENTITY_KEY_BUILDERS is a secret nothing deletes.
+  const owned = new Set(entitySecretKeys('acct-7', 'ent-42'));
+  for (const [name, build] of PER_ENTITY_BUILDERS) {
+    assert.ok(
+      owned.has(build('acct-7', 'ent-42')),
+      `${name} builds a key that entitySecretKeys does not own — it would survive deletion`,
+    );
+  }
+  assert.equal(owned.size, PER_ENTITY_BUILDERS.length, 'and nothing is owned that no builder makes');
 });

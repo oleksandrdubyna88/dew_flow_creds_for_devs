@@ -23,11 +23,13 @@ import type { EntityFormValues } from './entityFormPanel';
  * additions, so a single ordered call cannot be right for both. Hence `applyAdditions` and
  * `applyRemovals`, and callers put the node write between them.</p>
  *
- * <p>`setNotes`, `setFields`, `setConfigBody` and `setPayment` are in the ADDITIONS pass even though
- * each deletes when handed nothing. That is deliberate and worth stating: what they delete is decided
- * by the form having scrubbed the OTHER kinds' fields for this kind, so the node being written
- * afterwards already agrees with them. Moving them to the removals pass would leave a window in which
- * the node claims a note the keychain no longer has.</p>
+ * <p><b>The delete-when-undefined setters are split BY VALUE, not by name.</b> `setNotes`, `setFields`
+ * and `setConfigBody` each delete when handed nothing, so which pass they belong to depends on the
+ * value: a defined value is an ADDITION and goes before the node; `undefined` is a REMOVAL and goes
+ * after it. I had put them all in additions, arguing the node written afterwards would agree with
+ * them — the review pointed out that the crash happens BEFORE that write, so the node still live at
+ * that moment is the OLD one, and it is left claiming a note the keychain no longer has. Exactly the
+ * failure Rule A exists to prevent, introduced by the fix for it.</p>
  */
 
 /** Clear, or set when a value came, or leave alone — the shape every optional secret shares. */
@@ -57,12 +59,11 @@ export async function applyAdditions(
   await applyOptional(false, result.newPrivateKey, noop, (v) => storage.setPrivateKey(accountId, entityId, v));
   await applyOptional(false, result.newVpnConfig, noop, (v) => storage.setVpnConfig(accountId, entityId, v));
   await applyOptional(false, result.newDbConnection, noop, (v) => storage.setDbConnection(accountId, entityId, v));
-  await storage.setNotes(accountId, entityId, result.newNotes);
-  await storage.setFields(accountId, entityId, result.newFields);
-  // `undefined` for every kind that is not a config, which DELETES — deliberately, and the same
-  // scrubbing the form does to every other kind's fields when the type changes. An entity turned
-  // from a config into something else must not keep a config body nothing can reach or edit.
-  await storage.setConfigBody(accountId, entityId, result.newConfigBody);
+  // Only when there is a value. `undefined` DELETES on these three, which is a removal and belongs
+  // after the node write — see `applyRemovals`.
+  await applyWhenDefined(result.newNotes, (v) => storage.setNotes(accountId, entityId, v));
+  await applyWhenDefined(result.newFields, (v) => storage.setFields(accountId, entityId, v));
+  await applyWhenDefined(result.newConfigBody, (v) => storage.setConfigBody(accountId, entityId, v));
   await applyOptional(false, result.newAttachment, noop, (v) => storage.setAttachment(accountId, entityId, v));
   await applyOptional(false, result.newImage, noop, (v) => storage.setImage(accountId, entityId, v));
   // The form already canonicalised the seed (`toValues`), so this is a store, not a parse.
@@ -85,6 +86,22 @@ export async function applyRemovals(
   await applyOptional(result.clearAttachment, undefined, () => storage.setAttachment(accountId, entityId, undefined), noopSet);
   await applyOptional(result.clearImage, undefined, () => storage.setImage(accountId, entityId, undefined), noopSet);
   await applyOptional(result.clearTotp, undefined, () => storage.deleteTotp(accountId, entityId), noopSet);
+  // The delete-when-undefined setters, on the side of the node write where a removal belongs. An
+  // entity turned from a config into something else must not keep a config body nothing can reach or
+  // edit — and by here the node no longer claims one, so the deletion cannot be observed as a lie.
+  await applyWhenAbsent(result.newNotes, () => storage.setNotes(accountId, entityId, undefined));
+  await applyWhenAbsent(result.newFields, () => storage.setFields(accountId, entityId, undefined));
+  await applyWhenAbsent(result.newConfigBody, () => storage.setConfigBody(accountId, entityId, undefined));
+}
+
+/** A setter that also deletes, called only for its ADDING behaviour. */
+function applyWhenDefined<T>(value: T | undefined, set: (value: T) => Promise<void>): Promise<void> {
+  return value === undefined ? Promise.resolve() : set(value);
+}
+
+/** The same setter, called only for its REMOVING behaviour. */
+function applyWhenAbsent<T>(value: T | undefined, remove: () => Promise<void>): Promise<void> {
+  return value === undefined ? remove() : Promise.resolve();
 }
 
 function noop(): Promise<void> {
@@ -100,7 +117,13 @@ function noopSet(_value: string): Promise<void> {
  *
  * <p>Kept so a caller that genuinely does not order a node against these (a test, or a path that has
  * already written its node) does not have to know about the split. Anything that DOES write a node
- * must call the two halves around it instead; `entityWriteOrder.test.ts` is what holds that.</p>
+ * must call the two halves around it instead — and `writeOrderPaths.test.ts` is what holds that,
+ * by recording the SEQUENCE of storage calls and asserting what came before what.</p>
+ *
+ * <p>That sentence named the wrong file until a reviewer checked it: it pointed at
+ * `entityWriteOrder.test.ts`, which tests only the sweep's pure arithmetic and asserts no ordering
+ * anywhere. A rule whose test does not exist is a comment, and pointing at a test that does not check
+ * it is worse than pointing at nothing.</p>
  */
 export async function applySecrets(
   storage: StorageManager,

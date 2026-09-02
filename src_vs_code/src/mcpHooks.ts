@@ -29,6 +29,14 @@ export function mcpCreateHooks(storage: StorageManager, onMade: () => void): Mcp
       const request = readCreateRequest(body);
       const id = StorageManager.newId();
       const kind = decision.target.kind as EntityKind;
+      // The secret is drawn and stored BEFORE the node — Rule A (`applyFormSecrets.ts`). This had
+      // the node first, and on this path that is worse than elsewhere: the secret may be GENERATED
+      // here, so a failure after the node write stranded an entry claiming a password that had never
+      // even been created. The agent would have been told the entry exists.
+      const secret = request.secret ?? generatedFor(request);
+      if (secret !== undefined && secret.length > 0) {
+        await storage.setPassword(decision.target.accountId, id, secret);
+      }
       await storage.addNode(decision.target.accountId, {
         id,
         name: request.name,
@@ -36,10 +44,6 @@ export function mcpCreateHooks(storage: StorageManager, onMade: () => void): Mcp
         parentId: decision.target.entityId,
         details: detailsFor(id, kind, request),
       });
-      const secret = request.secret ?? generatedFor(request);
-      if (secret !== undefined && secret.length > 0) {
-        await storage.setPassword(decision.target.accountId, id, secret);
-      }
       onMade();
       return { id, name: request.name };
     },

@@ -585,16 +585,18 @@ export function registerTreeMutationCommands(host: TreeMutationCommandsHost): vo
 
     // NEW ids for everything — the sender's ids belong to the sender's tree.
     const remapped = remapExternalIds(payload, () => StorageManager.newId(), location.parentId);
+    // ADDITIONS first, then the nodes — Rule A (`applyFormSecrets.ts`). This had the widest window
+    // of the paths the audit found: the ENTIRE tree was committed and visible before one secret
+    // landed, so an interruption left every imported entry claiming values nobody had written.
+    await applyExternalSecrets(storage, location.accountId, remapped.secrets);
     for (const n of remapped.nodes) {
       await storage.addNode(location.accountId, n);
     }
-    // Was a hand-written loop here, and it had silently stopped agreeing with `ExternalSecrets`
-    // TWICE: `config` had never been restored since the kind shipped, and S1.3 added `payment` to the
-    // export without adding it here — so an export-then-import round trip created the entry and
-    // discarded the card. Both found by the code review. The loop now lives in
-    // `externalSecretsApply.ts`, where a test drives the field list and fails when an export carries
-    // something the import drops.
-    await applyExternalSecrets(storage, location.accountId, remapped.secrets);
+    // The secrets landed above, before the nodes. What used to be here was a hand-written loop that
+    // had silently stopped agreeing with `ExternalSecrets` TWICE — `config` had never been restored
+    // since the kind shipped, and `payment` was added to the export and not here — so an
+    // export-then-import round trip created the entry and discarded the card. It lives in
+    // `externalSecretsApply.ts` now, where a test drives the field list.
     mutated();
     // The first imported ROOT is where the reveal lands: the import's whole shape arrived
     // under it, and highlighting all N rows would highlight nothing.
