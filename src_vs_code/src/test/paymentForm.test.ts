@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { FORM_SECTIONS, colorCollisionsForKind, sectionsForKind } from '../formSections';
 import { PAYMENT_FORMS } from '../paymentForm';
+import { paymentMarkup } from '../paymentFormMarkup';
 
 /**
  * The card form: a section that appears for `payment`, and a card fieldset inside it that appears
@@ -60,4 +61,21 @@ test('every payment form the model knows can actually be chosen', () => {
   // The selector and the model are one thing or they are two things that will drift: a form with no
   // option is a form nobody can pick, and an option with no form is one nothing can store.
   assert.deepEqual([...PAYMENT_FORMS].sort(), ['bank', 'card', 'phrase']);
+});
+
+test('the weave checkboxes are OFF until a woven value can be read back', () => {
+  // The save path weaves; nothing reassembles. There is no payment renderer in the viewer and no
+  // caller of `phraseReassembly`, so a value stored woven today could never be shown again — and the
+  // method is kept nowhere, so nobody would find out until they needed it.
+  //
+  // The boxes stay in the markup, disabled and explained, rather than being deleted: the feature is
+  // then not a surprise when it arrives. This test comes OFF when the viewer card lands.
+  const markup = paymentMarkup((id) => `<fieldset id="${id}">`, 'card');
+
+  const boxes = markup.match(/class="mixMark"[^>]*/g) ?? [];
+  assert.equal(boxes.length, 5, 'all five weavable fields are represented');
+  for (const box of boxes) {
+    assert.match(box, /disabled/, `a weave box is live: ${box}`);
+  }
+  assert.match(markup, /switched off/i, 'and the form says why');
 });
