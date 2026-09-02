@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { SHUFFLE_CODES, shuffleTokens, unshuffleTokens } from '../shuffle';
 import {
+  dehorizontalize,
   layoutRefusal,
   layoutsFor,
   methodCount,
@@ -150,5 +151,52 @@ test('the confirmation never contains the phrase', () => {
   const text = phraseSaveWarning(25, 'vertical');
   for (const word of ['abandon', 'legal', 'w0']) {
     assert.ok(!text.includes(word), `${word} reached the confirmation`);
+  }
+});
+
+test('a horizontal phrase round-trips to THE ORIGINAL PHRASE, not just to two columns', () => {
+  // The test whose absence a review caught, and the distinction is the whole point: the round-trip
+  // test above proves `shuffleTokens`/`unshuffleTokens` invert at the COLUMN level, which stays green
+  // even if the layout is never undone. Under horizontal, each recovered column is half real and half
+  // decoy — two rows that are neither phrase.
+  //
+  // Asserted on the real phrase, because a test that only checks the columns come back is exactly the
+  // test that would have missed this.
+  const real = ['w0', 'w1', 'w2', 'w3', 'w4', 'w5', 'w6', 'w7'];
+  const decoy = real.map((w) => `${w}-decoy`);
+
+  for (const code of SHUFFLE_CODES) {
+    const columns = phraseColumns(real, decoy, 'horizontal');
+    const back = unshuffleTokens(shuffleTokens(columns.first, columns.secondColumn, code), code);
+    const undone = dehorizontalize(back.first, back.second, 'horizontal');
+
+    assert.deepEqual(undone.real, real, `${code}: the phrase did not come back`);
+    assert.deepEqual(undone.decoy, decoy, `${code}: the decoy did not come back`);
+  }
+});
+
+test('the vertical layout needs no undoing, and undoing it changes nothing', () => {
+  const real = ['a', 'b', 'c', 'd'];
+  const decoy = ['x', 'y', 'z', 'w'];
+
+  const columns = phraseColumns(real, decoy, 'vertical');
+  const undone = dehorizontalize(columns.first, columns.secondColumn, 'vertical');
+
+  assert.deepEqual(undone.real, real);
+  assert.deepEqual(undone.decoy, decoy);
+});
+
+test('the split and its inverse read the SAME halving, at every even length', () => {
+  // A split that disagrees with its own inverse destroys the value silently: the original is nowhere,
+  // so nobody could ever notice. Checked across lengths rather than at one.
+  for (const length of [2, 4, 6, 8, 12, 24, 50]) {
+    const real = Array.from({ length }, (_, i) => `r${i}`);
+    const decoy = Array.from({ length }, (_, i) => `d${i}`);
+
+    const columns = phraseColumns(real, decoy, 'horizontal');
+    const undone = dehorizontalize(columns.first, columns.secondColumn, 'horizontal');
+
+    assert.deepEqual(undone.real, real, `length ${length}`);
+    assert.deepEqual(undone.decoy, decoy, `length ${length}`);
   }
 });

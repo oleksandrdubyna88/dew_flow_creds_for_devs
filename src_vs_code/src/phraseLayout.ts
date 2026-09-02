@@ -84,11 +84,44 @@ export function phraseColumns(
   if (layout === 'vertical') {
     return { first: real, secondColumn: second };
   }
-  const half = Math.floor(real.length / 2);
+  const half = halfOf(real.length);
   return {
     first: [...real.slice(0, half), ...second.slice(0, half)],
     secondColumn: [...real.slice(half), ...second.slice(half)],
   };
+}
+
+/**
+ * The inverse — and `unshuffleTokens` alone is NOT the whole reassembly.
+ *
+ * <p>The gap a review caught before it could ship, and it would have shipped as "the viewer shows
+ * nonsense for half the records". `unshuffleTokens` gives back the two COLUMNS that were woven. Under
+ * the vertical layout those columns ARE the real phrase and the decoy, so nothing further is needed.
+ * Under the horizontal layout they are not: column 1 is the first half of the real followed by the
+ * first half of the decoy, so each returned array is half of each and rendering them as two rows shows
+ * neither phrase.</p>
+ *
+ * <p>Both directions read the SAME halving function, deliberately. A split that disagrees with its own
+ * inverse destroys the value silently — the original is nowhere, so nobody could ever notice.</p>
+ */
+export function dehorizontalize(
+  first: readonly string[],
+  secondColumn: readonly string[],
+  layout: PhraseLayout,
+): { real: readonly string[]; decoy: readonly string[] } {
+  if (layout === 'vertical') {
+    return { real: first, decoy: secondColumn };
+  }
+  const half = halfOf(first.length);
+  return {
+    real: [...first.slice(0, half), ...secondColumn.slice(0, secondColumn.length - half)],
+    decoy: [...first.slice(half), ...secondColumn.slice(secondColumn.length - half)],
+  };
+}
+
+/** Where a phrase is cut. Read by the split AND its inverse, so the two cannot disagree. */
+function halfOf(length: number): number {
+  return Math.floor(length / 2);
 }
 
 /** Why this pair cannot be woven, in a sentence — or `''` when it can. `shuffleRefusal`'s words. */
