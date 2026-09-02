@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { orphanCandidates, sweepOrphanSecrets } from '../orphanSweep';
+import { forgetTombstone, orphanCandidates, sweepOrphanSecrets } from '../orphanSweep';
 import { entitySecretKeys, paymentSecretKey, secretKey } from '../secretKeys';
 
 /**
@@ -101,4 +101,37 @@ test('the sweep covers EVERY key an entity owns, including its revision history'
   assert.equal(result.deleted, keys.length, `all ${keys.length} keys`);
   assert.deepEqual(s.keys(), []);
   assert.ok(keys.some((k) => k.endsWith(':history')), 'the history key is one of them');
+});
+
+test('an id that comes back loses its tombstone, so nothing has to reason about the pair', async () => {
+  // Defence in depth, raised by the review: `orphanCandidates` already refuses an id that is both
+  // tombstoned and live, and removing the tombstone removes the question rather than answering it.
+  let saved: Record<string, { deletedAt: number; v: Record<string, number> }> | undefined;
+  const store = {
+    getTombstones: () => ({ revived: { deletedAt: 1, v: {} }, other: { deletedAt: 2, v: {} } }),
+    setTombstones: (_a: string, t: Record<string, { deletedAt: number; v: Record<string, number> }>) => {
+      saved = t;
+      return Promise.resolve();
+    },
+  };
+
+  await forgetTombstone(store, A, 'revived');
+
+  assert.deepEqual(Object.keys(saved ?? {}), ['other'], 'only the revived id is forgotten');
+});
+
+test('forgetting a tombstone that is not there writes nothing at all', async () => {
+  // A write per created node would be a write per created node — this runs on every addNode.
+  let writes = 0;
+  const store = {
+    getTombstones: () => ({}),
+    setTombstones: () => {
+      writes++;
+      return Promise.resolve();
+    },
+  };
+
+  await forgetTombstone(store, A, 'never-deleted');
+
+  assert.equal(writes, 0, 'the common case — a genuinely new id — costs no write');
 });

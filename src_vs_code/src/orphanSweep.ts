@@ -21,12 +21,26 @@ import { entitySecretKeys } from './secretKeys';
  * <p>Which is why the ordering change in `deleteNodeRecursive` matters: the tombstone is written
  * BEFORE the node is removed, so no interruption can produce an orphan that nothing names.</p>
  *
- * <h3>The honest limit</h3>
+ * <h3>The two classes of orphan this cannot collect</h3>
  *
- * <p>A tombstone pruned by the horizon before any sweep ran leaves an orphan that is never collected.
- * That is a keychain slot holding ciphertext no read path reaches — invisible and harmless, which is
- * precisely the state the invariant permits. It is the tolerated case, not a leak, and it is written
- * down rather than left for somebody to rediscover as a bug.</p>
+ * <p>Both are tolerated rather than hidden, and both are the price of Rule A rather than oversights.
+ * An uncollected orphan is a keychain slot holding ciphertext no read path reaches — invisible and
+ * harmless, which is precisely the state the invariant permits. What it is NOT is a leak.</p>
+ *
+ * <ol>
+ *   <li><b>A tombstone pruned by the horizon</b> before any sweep ran. The id is then named nowhere.</li>
+ *   <li><b>An addition interrupted before its node was ever written</b> — raised by the review, and
+ *       the sharper of the two. Rule A writes the secret first, so a crash in that window leaves a
+ *       secret whose id is in neither the live tree nor any tombstone, because the id was minted in
+ *       memory and never persisted anywhere.</li>
+ * </ol>
+ *
+ * <p><b>Why the second is not fixed.</b> Collecting it needs a durable record written BEFORE the
+ * secret — a pending-write index — which makes an entry THREE writes to three stores instead of two,
+ * each pair with its own torn states, and the index itself then needs a rule for what to do with a
+ * stale entry it cannot distinguish from a live one. That is more failure surface bought to collect
+ * bytes that are already unreachable. The trade is recorded so the next reader can disagree with the
+ * reasoning rather than assume nobody thought about it.</p>
  *
  * <p>Free of `vscode` (repository rule 3): the decision is pure, and the caller supplies the delete.</p>
  */
@@ -83,4 +97,31 @@ export async function sweepOrphanSecrets(
     }
   }
   return { deleted, checked: candidates.length };
+}
+
+/** Just the tombstone verbs, so this needs no `StorageManager` and no `vscode`. */
+export interface TombstoneStore {
+  getTombstones(accountId: string): Record<string, { deletedAt: number; v: Record<string, number> }>;
+  setTombstones(accountId: string, tombstones: Record<string, { deletedAt: number; v: Record<string, number> }>): Promise<void>;
+}
+
+/**
+ * An id that exists again is not deleted, so its tombstone goes.
+ *
+ * <p>Defence in depth rather than a fix: `orphanCandidates` already refuses an id that is both
+ * tombstoned and live, because that pair is exactly what an interrupted deletion leaves. Raised by
+ * the review anyway, and worth taking — it removes a whole class of reasoning ("what if the live
+ * check is stale?") instead of answering it, and it stops the tombstone list growing a permanent
+ * entry for every id that ever came back.</p>
+ *
+ * <p>Here rather than on `StorageManager` because that file is at its size-ratchet baseline and this
+ * is tombstone-and-sweep logic, which is what this module is.</p>
+ */
+export async function forgetTombstone(store: TombstoneStore, accountId: string, entityId: string): Promise<void> {
+  const tombstones = store.getTombstones(accountId);
+  if (tombstones[entityId] === undefined) {
+    return;
+  }
+  const { [entityId]: _revived, ...rest } = tombstones;
+  await store.setTombstones(accountId, rest);
 }

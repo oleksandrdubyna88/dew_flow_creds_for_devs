@@ -18,7 +18,7 @@ import { stampKind } from './entityKind';
 import { TRASH_FOLDER_NAME, findTrash, restoreTarget } from './trash';
 import { exportSecretsFor } from './exportSecrets';
 import { PaymentFields, parsePaymentFields, serializePaymentFields } from './paymentFields';
-import { sweepOrphanSecrets } from './orphanSweep';
+import { forgetTombstone, sweepOrphanSecrets } from './orphanSweep';
 import {
   attachmentSecretKey,
   configSecretKey,
@@ -381,9 +381,8 @@ export class StorageManager implements vscode.Disposable {
     return true;
   }
 
-  /** Remove a profile with its whole tree and all its secrets. The wipe is a REMOVAL, so the node
-   *  list goes FIRST (Rule A, `applyFormSecrets.ts`) — reversed, a crash left the whole account
-   *  intact with every node claiming secrets already gone. Found by an audit, not by a test. */
+  /** Remove a profile, its tree and its secrets. The wipe is a REMOVAL, so the node list goes FIRST
+   *  (Rule A) — reversed, a crash left every node claiming secrets already gone. Found by an audit. */
   async removeAccount(accountId: string): Promise<void> {
     const gone = this.getNodes(accountId).filter((n) => n.type === 'entity').map((n) => n.id);
     await this.globalState.update(nodesKey(accountId), undefined);
@@ -482,6 +481,7 @@ export class StorageManager implements vscode.Disposable {
     // already set (an import, an accepted share) keeps the origin date it came with.
     const created = { ...node, createdAt: node.createdAt ?? Date.now() };
     await this.saveNodes(accountId, [...this.getNodes(accountId), this.stampVector(created)]);
+    await forgetTombstone(this, accountId, created.id);
     await this.bumpHorizonToSeq(accountId);
   }
 
