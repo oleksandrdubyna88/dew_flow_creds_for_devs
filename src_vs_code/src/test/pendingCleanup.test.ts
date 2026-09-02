@@ -217,3 +217,65 @@ test('a pending removal for a DIFFERENT account is left alone by a re-add', asyn
   assert.equal(await finishBeforeReuse(p.port, 'a1'), false);
   assert.deepEqual(p.order, [], 'a2 is still pending, and still pending after this');
 });
+
+test('a cleanup that FAILS leaves the marker in place, so the next attempt finishes it', async () => {
+  // Raised by the review as a lockout risk: if the wipe throws while re-adding, the account is not
+  // listed and the person is stuck. It is not a lockout — the wipe is idempotent and the marker
+  // survives — but that is only true if the marker is cleared AFTER the wipe, so it is asserted.
+  const state = { current: markAccountRemoving(EMPTY_PENDING, 'a1') };
+  let attempts = 0;
+  const p: CleanupPort = {
+    read: () => state.current,
+    write: (next) => {
+      state.current = next;
+      return Promise.resolve();
+    },
+    wipeAccount: () => {
+      attempts += 1;
+      return attempts === 1 ? Promise.reject(new Error('the keychain is locked')) : Promise.resolve();
+    },
+    isListed: () => false,
+    liveIds: () => [],
+    forgetSecrets: () => Promise.resolve(),
+  };
+
+  await assert.rejects(() => finishBeforeReuse(p, 'a1'), /keychain is locked/);
+  assert.deepEqual(state.current.accounts, ['a1'], 'the intent survives a failed attempt');
+
+  assert.equal(await finishBeforeReuse(p, 'a1'), true, 'and the retry finishes it');
+  assert.deepEqual(state.current.accounts, [], 'only then is the marker cleared');
+});
+
+test('the sweep stops deleting an entity the moment it comes back', async () => {
+  // A dozen awaited keychain calls per entity, and a sync apply can land in any of them —
+  // `importBundle` writes secrets BEFORE the node, so the values would be written and then deleted
+  // underneath it. The port's contract puts the re-check inside the per-entity delete for that reason.
+  const keys = ['k1', 'k2', 'k3'];
+  const deleted: string[] = [];
+  const live = new Set<string>();
+  const forgetSecrets = async (_a: string, entityId: string): Promise<void> => {
+    for (const key of keys) {
+      if (live.has(entityId)) {
+        return;
+      }
+      deleted.push(key);
+      live.add(entityId); // the apply lands after the first key
+      await Promise.resolve();
+    }
+  };
+  const state = { current: { accounts: [], secrets: { a1: ['e1'] } } as PendingCleanup };
+
+  await resumePending({
+    read: () => state.current,
+    write: (next) => {
+      state.current = next;
+      return Promise.resolve();
+    },
+    wipeAccount: () => Promise.resolve(),
+    isListed: () => false,
+    liveIds: () => [...live],
+    forgetSecrets,
+  });
+
+  assert.deepEqual(deleted, ['k1'], 'it stopped at the key after the entity reappeared');
+});

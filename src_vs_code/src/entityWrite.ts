@@ -24,6 +24,20 @@ import { describeError } from './describeError';
  * right, and together they say there is no local answer — a machine cannot decide, from its own
  * failure, what other machines are entitled to keep.</p>
  *
+ * <h3>"Landed" is a READ, and it fails closed</h3>
+ *
+ * <p>`nodeLanded` is `!storage.provenAbsent(...)` — a look at the tree, never an inference from the
+ * error. The distinction the review asked for is between a missing row and a tree that cannot be read
+ * at all: `openNodesSlot` answers `[]` and records a `metadataFault` when the sealed cache will not
+ * open (a device key reset, a corrupted cache, `init()` not run), and every node then reads as missing.
+ * Harmless for rendering — the tree repopulates from the next sync — and catastrophic here, because
+ * the compensation would conclude nothing landed and delete the secrets of entities that all exist.
+ * So absence must be PROVEN, and a fault proves nothing.</p>
+ *
+ * <p>That the read is of the local tree is also what makes the whole thing safe: sync publishes from
+ * that same tree (`getSnapshot` → `exportBundle` → `getNodes`), so a node absent from it was never
+ * published, whatever the failed write reported.</p>
+ *
  * <p>So the compensation covers only the case it can settle alone: <b>the node never landed</b>.
  * Nothing could have published it, so its secrets are unreachable by construction and deleting them
  * is unambiguous. When the node DID land, this leaves both halves alone: the entry is live and holds

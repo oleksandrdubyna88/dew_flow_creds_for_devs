@@ -230,6 +230,8 @@ function stores(options: { addNodeFails: boolean }): {
       tree.push(node.id);
       return Promise.resolve();
     },
+    // The predicate is 'can absence be PROVEN', not 'is it missing' — see `provenAbsent`.
+    provenAbsent: (_a: string, id: string): boolean => !tree.includes(id),
     getNode: (_a: string, id: string): object | undefined => (tree.includes(id) ? { id } : undefined),
     setPassword: set('password'),
     deletePassword: del('password'),
@@ -272,17 +274,17 @@ test('an import whose node write fails leaves NO secret of any kind behind', asy
   assert.deepEqual(tree, [], 'nothing to tombstone: a refused write never put the node anywhere');
 });
 
-test('the import undo asks whether the node landed, and only then deletes', async () => {
+test('the import undo asks whether the node is PROVABLY absent, and only then deletes', async () => {
   // The single question this compensation is allowed to answer for itself. If the node IS there, the
   // entry is live and consistent and nothing is taken from it — see `entityWrite.ts` on why one
   // machine cannot decide that for its peers.
   const order: string[] = [];
   const { storage } = stores({ addNodeFails: true });
-  const getNode = storage.getNode as (a: string, i: string) => object | undefined;
+  const provenAbsent = storage.provenAbsent as (a: string, i: string) => boolean;
   const deletePassword = storage.deletePassword as (a: string, e: string) => Promise<void>;
-  storage.getNode = (a: string, i: string): object | undefined => {
-    order.push('getNode');
-    return getNode(a, i);
+  storage.provenAbsent = (a: string, i: string): boolean => {
+    order.push('provenAbsent');
+    return provenAbsent(a, i);
   };
   storage.deletePassword = (a: string, e: string): Promise<void> => {
     order.push('deletePassword');
@@ -295,7 +297,7 @@ test('the import undo asks whether the node landed, and only then deletes', asyn
     ]),
   );
 
-  assert.deepEqual(order, ['getNode', 'deletePassword']);
+  assert.deepEqual(order, ['provenAbsent', 'deletePassword']);
 });
 
 test('a successful import leaves every secret in place and undoes nothing', async () => {

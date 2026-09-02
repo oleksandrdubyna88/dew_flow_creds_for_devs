@@ -97,6 +97,19 @@ export interface CleanupPort {
   isListed(accountId: string): boolean;
   /** Ids currently in this account's tree — an id still there is NOT one whose secrets may go. */
   liveIds(accountId: string): readonly string[];
+  /**
+   * Delete this entity's secrets, re-checking `liveIds` before EVERY key.
+   *
+   * <p>The re-check belongs inside because deleting one entity is a dozen awaited keychain calls, and
+   * a sync apply landing in one of them can bring the entity back — `importBundle` writes the secrets
+   * before the node, so the values would be written and then deleted underneath it. Checking once, at
+   * the top, guards the first key and nothing after it.</p>
+   *
+   * <p>The honest residual, since a lock is not available here: an apply that writes a secret for this
+   * id while the node is still absent can still have that one key deleted. The window is one keychain
+   * call wide, and what survives it is an entity whose node arrives claiming a value it lost — which
+   * the next apply rewrites, because a bundle carries the whole record.</p>
+   */
   forgetSecrets(accountId: string, entityId: string): Promise<void>;
 }
 

@@ -22,7 +22,7 @@ import { buildDependencyColorMap } from '../depGraph';
 import { collectJumpCandidates } from '../commandTargets';
 import { carryThroughDetails } from '../attachmentMeta';
 import { applyAdditions, applyRemovals } from '../applyFormSecrets';
-import { createEntityWithSecrets } from '../entityWrite';
+import { EntryLandedError, createEntityWithSecrets } from '../entityWrite';
 import { withoutSecretClaims } from '../secretClaims';
 import { warnIfTrackedCopy } from '../configCommands';
 import { applyDependencyColors } from '../entityEditCommands';
@@ -263,7 +263,7 @@ export function registerTreeMutationCommands(host: TreeMutationCommandsHost): vo
     // clearX set on a brand-new entry, and one caller doing this differently is how the two paths
     // drifted before. Compensated since the S1.4 review, which pointed out that the path a PERSON
     // uses was the one still leaving an uncollectable orphan when the node write failed.
-    await createEntityWithSecrets({
+    await createdOrExplained(() => createEntityWithSecrets({
       writeSecrets: () => applyAdditions(storage, location.accountId, id, result),
       writeNode: () =>
         storage.addNode(location.accountId, {
@@ -280,10 +280,10 @@ export function registerTreeMutationCommands(host: TreeMutationCommandsHost): vo
             Date.now(),
           ),
         }),
-      nodeLanded: () => storage.getNode(location.accountId, id) !== undefined,
+      nodeLanded: () => !storage.provenAbsent(location.accountId, id),
       // Safe as a blanket delete BECAUSE the id is new: nothing older sits under any of its keys.
       undoSecrets: () => storage.forgetEntitySecrets(location.accountId, id),
-    });
+    }));
     await applyRemovals(storage, location.accountId, id, result);
     void warnIfTrackedCopy(result.details);
     await applyDependencyColors(storage, location.accountId, result.dependsOnColors);
@@ -763,4 +763,23 @@ Read this to whoever is accepting your first share. It only matters on a shared 
       await vscode.env.clipboard.writeText(print);
     }
   });
+}
+
+/**
+ * Run a create and, when it fails having LEFT THE ENTRY BEHIND, say exactly that.
+ *
+ * <p>Raised by the review as the gap between changing the thrown error and changing what the person
+ * reads: without this, an `EntryLandedError` reaches VS Code's generic command-failure notification,
+ * which reads as "it did not work" — and the person retries the same form and makes a duplicate. Every
+ * other failure is rethrown untouched, so nothing else is swallowed.</p>
+ */
+async function createdOrExplained(create: () => Promise<void>): Promise<void> {
+  try {
+    await create();
+  } catch (error) {
+    if (!(error instanceof EntryLandedError)) {
+      throw error;
+    }
+    void vscode.window.showWarningMessage(error.message);
+  }
 }

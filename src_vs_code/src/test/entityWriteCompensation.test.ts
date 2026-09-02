@@ -176,3 +176,26 @@ test('the happy path writes the secret BEFORE the node, and undoes nothing', asy
   assert.deepEqual(order, ['secret', 'node'], 'Rule A');
   assert.equal(undone, false, 'nothing is undone when nothing failed');
 });
+
+test('a tree that cannot be READ is never treated as an empty tree', async () => {
+  // The review's sharpest finding, and it is about a real failure mode: `openNodesSlot` answers `[]`
+  // and records a metadataFault when the sealed cache will not open — a device key reset, a corrupted
+  // cache. Every node then reads as missing. Harmless for rendering; catastrophic here, where it would
+  // mean "nothing landed" for an entity that exists, and delete its secrets.
+  let deleted = false;
+
+  await assert.rejects(() =>
+    createEntityWithSecrets({
+      writeSecrets: () => Promise.resolve(),
+      writeNode: () => Promise.reject(new Error('the write failed while the cache was unreadable')),
+      // What `provenAbsent` answers under a fault: absence cannot be proven, so this is not `false`.
+      nodeLanded: () => true,
+      undoSecrets: () => {
+        deleted = true;
+        return Promise.resolve();
+      },
+    }),
+  );
+
+  assert.equal(deleted, false, 'absence must be PROVEN before anything is deleted');
+});

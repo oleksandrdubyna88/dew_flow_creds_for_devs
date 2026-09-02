@@ -51,7 +51,7 @@ export function mcpCreateHooks(storage: StorageManager, onMade: () => void): Mcp
             parentId: decision.target.entityId,
             details: detailsFor(id, kind, request),
           }),
-        nodeLanded: () => storage.getNode(decision.target.accountId, id) !== undefined,
+        nodeLanded: () => !storage.provenAbsent(decision.target.accountId, id),
         undoSecrets: () => storage.deletePassword(decision.target.accountId, id),
       });
       onMade();

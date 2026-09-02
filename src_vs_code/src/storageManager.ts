@@ -351,18 +351,13 @@ export class StorageManager implements vscode.Disposable {
     this.touch(accountId);
   }
 
-  /** The account stops being one this machine manages; its data is still stored, and still named. */
+  /** Unlisted, but not gone: its data is still stored, and its own tree still names it. */
   private async unlistAccount(accountId: string): Promise<void> {
     await this.globalState.update(ACCOUNTS_KEY, this.getAccounts().filter((a) => a.accountId !== accountId));
     await this.globalState.update(SEEDED_KEY, this.seededAccountIds().filter((id) => id !== accountId));
   }
 
-  /**
-   * Finish every removal a killed window left half-done. Called on activation.
-   *
-   * <p>Idempotent by construction: it re-derives its work from what is actually stored, so running
-   * it twice is running it once. Returns the ids it finished, for the log.</p>
-   */
+  /** Finish every removal a killed window left half-done — idempotent; see `pendingCleanup.ts`. */
   resumeAccountRemovals(): Promise<readonly string[]> {
     return resumePending(this.cleanupPort());
   }
@@ -377,7 +372,7 @@ export class StorageManager implements vscode.Disposable {
       wipeAccount: (accountId) => this.wipeAccountData(accountId),
       isListed: (accountId) => this.getAccount(accountId) !== undefined,
       liveIds: (accountId) => this.getNodes(accountId).map((n) => n.id),
-      forgetSecrets: (accountId, entityId) => this.forgetEntitySecrets(accountId, entityId),
+      forgetSecrets: (a, e) => this.forgetEntitySecrets(a, e, () => this.getNode(a, e) !== undefined),
     };
   }
 
@@ -392,17 +387,12 @@ export class StorageManager implements vscode.Disposable {
   }
 
   /**
-   * Every keychain key this entity owns, gone. Three callers: a deletion, an account wipe, and the
-   * compensation for a failed CREATE — where deleting all twelve is safe precisely because the id is
-   * new, so there is nothing older under any of them to lose.
+   * Every keychain key this entity owns, gone. Safe as a blanket delete for a failed CREATE precisely
+   * because the id is new — nothing older sits under any of them.
    */
   /**
-   * Store a value, or DELETE when there is none — the shape four secret kinds share.
-   *
-   * <p>An empty string deletes rather than storing nothing: a note edited down to nothing, a field
-   * map with its last field removed and a payment record stripped bare should all leave no key
-   * behind. The one setter that does NOT work this way is `setPassword`, where nothing means KEEP —
-   * see its own comment, and `writeOrderPaths.test.ts`, which asserts the asymmetry.</p>
+   * Store a value, or DELETE when there is none — the shape six secret kinds share. `setPassword` is
+   * the one that does NOT (nothing means KEEP); its own comment and `writeOrderPaths.test.ts` say so.
    */
   private async putSecret(key: string, accountId: string, value: string | undefined): Promise<void> {
     if (value === undefined || value.length === 0) {
@@ -413,8 +403,11 @@ export class StorageManager implements vscode.Disposable {
     this.touch(accountId);
   }
 
-  async forgetEntitySecrets(accountId: string, entityId: string): Promise<void> {
+  async forgetEntitySecrets(accountId: string, entityId: string, stopIf?: () => boolean): Promise<void> {
     for (const key of entitySecretKeys(accountId, entityId)) {
+      if (stopIf?.() === true) {
+        return; // The entity came back mid-sweep — see `CleanupPort.forgetSecrets`.
+      }
       await this.secrets.delete(key);
     }
   }
@@ -448,6 +441,15 @@ export class StorageManager implements vscode.Disposable {
 
   getNode(accountId: string, id: string): TreeNode | undefined {
     return this.nodeEntry(accountId).byId.get(id);
+  }
+
+  /**
+   * Can this id's ABSENCE be proven? Not "is it missing": under a `metadataFault` every node reads as
+   * missing, so this fails CLOSED and a caller that acts on proven absence acts on nothing. Why that
+   * distinction is load-bearing is in `entityWrite.ts`.
+   */
+  provenAbsent(accountId: string, id: string): boolean {
+    return this.metadataFault === undefined && this.getNode(accountId, id) === undefined;
   }
 
   /** The sorted children of one position (`null` = root) — frozen, shared until the next write. */
@@ -985,10 +987,8 @@ export class StorageManager implements vscode.Disposable {
     // Vanished ids come from the OLD tree, which after `saveNodes` is no longer there to iterate.
     const before = this.getNodes(accountId).filter((n) => n.type === 'entity').map((n) => n.id);
     await storeSecretMaps(this.secrets, accountId, maps);
-    // Rule B: the ids this bundle drops need a durable record BEFORE they lose the tree that names
-    // them. NOT a tombstone — a weak one loses the merge to a live remote node that then syncs back
-    // over deleted secrets, and a strong one publishes a deletion meant only locally. This record is
-    // LOCAL and never syncs; the reasoning in full is in `pendingCleanup.ts`.
+    // Rule B, with a LOCAL record rather than a tombstone — `pendingCleanup.ts` says why both shapes
+    // of tombstone were wrong here.
     const kept = new Set(bundle.nodes.map((n) => n.id));
     const vanishing = before.filter((id) => !kept.has(id));
     const port = this.cleanupPort();

@@ -412,9 +412,15 @@ peer where the entity legitimately exists. Both are right, and together they say
 answer — **a machine cannot decide, from its own failure, what other machines are entitled to keep.**
 
 So `nodeLanded()` is the single question the compensation asks — and it is a **read of the tree**
-(`getNode(accountId, id) !== undefined`), never an inference from the error. That distinction is what
-makes it safe: sync publishes from this same tree (`getSnapshot` → `exportBundle` → `getNodes`), so a
-node that is not in it was never published, whatever the failed write reported.
+(`!storage.provenAbsent(...)`), never an inference from the error. That distinction is what makes it
+safe: sync publishes from this same tree (`getSnapshot` → `exportBundle` → `getNodes`), so a node that
+is not in it was never published, whatever the failed write reported.
+
+**And it fails closed.** `provenAbsent` is not "is it missing": `openNodesSlot` answers `[]` and records
+a `metadataFault` when the sealed cache will not open — a device key reset, a corrupted cache, `init()`
+not run — and every node then reads as missing. Harmless for rendering, since the tree repopulates from
+the next sync; catastrophic for a compensation, which would conclude nothing landed and delete the
+secrets of entities that all exist. A fault proves nothing, so nothing is deleted.
 
 False: nothing could have published the node, its secrets are unreachable by construction, and deleting
 them is unambiguous. True: leave both halves alone. The entry is live and holds its values — a
@@ -425,6 +431,11 @@ saying the entry exists, because both providers raised the same consequence of t
 "creating failed", the person retries the same form and ends up with two entries and no way to tell
 which is real. An entry that exists when the person was told it did not is a surprise worth naming; a
 credential deleted from under a node other machines can see is data loss.
+
+**Changing the thrown error was not enough** — the next round said so, and it was right: an uncaught
+`EntryLandedError` reaches VS Code's generic command-failure notification, which reads as "it did not
+work". The interactive create catches it and shows the sentence itself (`createdOrExplained`); the
+import path already wraps its failures in `Import failed: …`, which carries the message through.
 
 ##### `secretClaims.ts` — the permanent version of "a node claiming a secret that is not there"
 
