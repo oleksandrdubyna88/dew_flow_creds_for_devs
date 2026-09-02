@@ -59,6 +59,7 @@
     "itest:masked-run": "npm run compile && node scripts/masked-run-itest.cjs",
     "icon": "node scripts/generate-icon.mjs",
     "icons:mcp": "npm run compile && node scripts/generate-mcp-icons.mjs",
+    "icons:brands": "npm run compile && node scripts/generate-brand-icons.mjs",
     "bundle": "npm run compile && esbuild out/extension.js out/agentCli.js --bundle --platform=node --target=node18 --format=cjs --external:vscode --outdir=dist --sourcemap",
     "vscode:prepublish": "npm run bundle",
     "package": "vsce package",
