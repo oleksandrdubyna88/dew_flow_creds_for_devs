@@ -118,9 +118,9 @@ function bankMarkup(openSection: (id: string) => string): string {
       </div>
     </div>
 
-    <div class="check"><input id="mixBankIban" type="checkbox" class="mixMark" data-field="iban" disabled>
+    <div class="check"><input id="mixBankIban" type="checkbox" class="mixMark" data-field="iban">
       <label for="mixBankIban">Store the IBAN woven with a decoy</label></div>
-    <div class="check"><input id="mixBankAccount" type="checkbox" class="mixMark" data-field="accountNumber" disabled>
+    <div class="check"><input id="mixBankAccount" type="checkbox" class="mixMark" data-field="accountNumber">
       <label for="mixBankAccount">Store the account number woven with a decoy</label></div>
 
     <label for="bankAddress">Bank address</label>
@@ -157,17 +157,12 @@ function methodOptions(): string {
  * are buying at the moment they choose it, not in a document they will not open.</p>
  */
 function mixMarkup(): string {
-  return `    <div class="check"><input id="mixCardNumber" type="checkbox" class="mixMark" data-field="number" disabled>
+  return `    <div class="check"><input id="mixCardNumber" type="checkbox" class="mixMark" data-field="number">
       <label for="mixCardNumber">Store the number woven with a decoy</label></div>
-    <div class="check"><input id="mixCardCvv" type="checkbox" class="mixMark" data-field="cvv" disabled>
+    <div class="check"><input id="mixCardCvv" type="checkbox" class="mixMark" data-field="cvv">
       <label for="mixCardCvv">Store the CVV woven with a decoy</label></div>
-    <div class="check"><input id="mixCardPin" type="checkbox" class="mixMark" data-field="pin" disabled>
+    <div class="check"><input id="mixCardPin" type="checkbox" class="mixMark" data-field="pin">
       <label for="mixCardPin">Store the PIN woven with a decoy</label></div>
-
-    <p class="hint"><b>Weaving is not finished yet and is switched off.</b> The save path can weave a
-    field, and nothing can read one back — there is no viewer for it, so a value stored this way today
-    could never be shown again, and the method is kept nowhere. The boxes stay visible so the feature
-    is not a surprise when it arrives; they turn on with the viewer card.</p>
 
     <div id="mixControls" style="display:none">
       <label for="mixMethod">Weaving method</label>

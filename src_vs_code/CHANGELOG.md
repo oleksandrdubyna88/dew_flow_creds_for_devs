@@ -8,16 +8,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Not in this release: seed phrases, and storing a value woven with a decoy.** Both are built and
-  tested — the ten official BIP-39 wordlists with their real checksums, the decoys, the twelve weaving
-  methods — and both are **switched off**, because the half that reads a woven value back does not
-  exist yet. There is no payment card in the entry viewer, so a value stored woven today could never
-  be shown again, and the method is kept nowhere by design.
+- **A payment entry can now be READ.** The viewer shows the card or the bank details, a Copy per
+  field, and — for anything stored woven — a method picker that rebuilds it. Until now the only way
+  to see a saved card was to open it for editing.
 
-  The weaving boxes are therefore visible and disabled, with the reason next to them, and the form
-  selector's third option has no fields behind it yet. They turn on together with the viewer card,
-  in a later release. Nothing that is off here can be reached by accident: the boxes cannot be
-  ticked, so nothing can be woven, so nothing needs unweaving.
+  **Nothing stored is written into the page.** Every value arrives separately, on request, and a card
+  number is never part of the HTML the window is built from. That rule already governed the form; the
+  viewer is the read side of it.
+
+- **A value can be stored woven with a decoy** — the card number, the CVV, the PIN, the IBAN or the
+  account number. It is stored as your value and a decoy shuffled together under one of twelve
+  methods, and **the method is kept nowhere**: not in the vault, not in a backup, not in the sync.
+  Nobody can unweave it but you, from memory, and a forgotten method is a lost value. The form says
+  that before you choose, along with what weaving does **not** buy — it stops somebody *reading* an
+  open vault, and does nothing against somebody who can try every possibility.
+
+  The viewer's picker shows two rows and **tells you nothing about which is yours**. A wrong method
+  answers in exactly the same shape as a right one: a "looks valid" mark here would turn twelve
+  methods into one second of guessing for precisely the person this protects against.
+
+- **The CVV, the PIN and an assembled phrase ask a second time before they appear** — the only fields
+  in this vault that do, and a deliberate exception rather than an oversight. Asked once per card, and
+  again for the next entry; copying asks the same question, because copying is showing.
+
+- **An entry with a woven field cannot be opened for editing**, because the form would have nothing to
+  put where the original belongs and saving would weave the woven value a second time.
+
+- **Still to come: the phrase form.** The wordlists, the decoys and the two-column arithmetic are
+  built and tested; the form that would fill them in is not, so the selector's third option has no
+  fields behind it yet.
 
 - **A payment instrument now has a form to fill in.** Choose card or bank details, and the entry asks
   for the fields that form actually has. A card knows which payment system it belongs to as

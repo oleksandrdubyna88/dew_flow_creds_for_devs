@@ -5,6 +5,7 @@ import { configFileNameFor } from './configFile';
 import { buildCommandLine, normalizeArgs } from './commandLine';
 import { normalizeForwards, normalizeTags, renderForward } from './sshOptions';
 import { resolveScriptEnv } from './scriptRender';
+import { copyableValue } from './paymentViewMessages';
 
 /**
  * The viewer's copy switch, in its own module for the oldest reason here: `entityViewPage.ts`
@@ -31,6 +32,15 @@ export async function copyValueFor(
   field: string,
 ): Promise<string | undefined> {
   const d = options.details;
+  // The payment card's rows. Read through the host at the moment the button is pressed, exactly as a
+  // password is — the page holds no stored payment value to hand back.
+  if (field.startsWith('pay_')) {
+    const view = options.payment;
+    const fields = await options.resolvePayment?.();
+    return view === undefined || fields === undefined
+      ? undefined
+      : copyableValue(fields, view.form, field.slice('pay_'.length));
+  }
   if (field === 'snippet' || field.startsWith('snippet|')) {
     const parts = field.split('|');
     return snippetFor(

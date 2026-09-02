@@ -30,6 +30,10 @@ import { revisionSecretReader } from './viewerOptions';
 import { saveTextAs } from './saveTextAs';
 import { TreeElement } from './types';
 import { envCollection } from './envCollectionRef';
+import { paymentViewFor } from './viewerOptions';
+import { paymentCardFor } from './paymentViewMessages';
+import { parsePaymentFields } from './paymentFields';
+import { formOf } from './paymentSaveGate';
 /** Double-click target: the read-only viewer with per-field Copy buttons. */
 export async function openEntityViewer(
   accountId: string,
@@ -69,8 +73,17 @@ export async function openEntityViewer(
   // the webview only ever receives that code, never the seed it came from.
   const totpReader = storageSecretReader(storage, accountId, details.id);
   const hasTotp = (await storage.getTotp(accountId, details.id)) !== undefined;
+  // Read once, for the card's SHAPE — which fields exist and which are woven. Every value is read
+  // again per request through `resolvePayment`, so a record edited while the panel is open is not
+  // shown from a stale copy.
+  const payment = details.isPayment === true ? await storage.getPayment(accountId, details.id) : undefined;
   showEntityView({
     details,
+    payment:
+      payment === undefined
+        ? undefined
+        : paymentCardFor(details.id, formOf(details.paymentForm ?? ''), payment, Math.random),
+    resolvePayment: payment === undefined ? undefined : paymentViewFor(totpReader),
     cliAliases: doors.cliAliases,
     agentDoors: doors,
     mcp: mcpFor(node, (id) => storage.getNode(accountId, id), false),
@@ -196,6 +209,21 @@ export function openRevisionViewer(node: TreeNode, revision: Revision): void {
       revision.secrets.totp === undefined
         ? undefined
         : totpViewFor(revisionSecretReader(revision)),
+    // A kept version's card, from the record that version carried — the `SecretReader` seam is what
+    // makes this one line rather than a second implementation that would drift from the live one.
+    payment:
+      revision.secrets.payment === undefined
+        ? undefined
+        : paymentCardFor(
+            details.id,
+            formOf(details.paymentForm ?? ''),
+            parsePaymentFields(revision.secrets.payment),
+            Math.random,
+          ),
+    resolvePayment:
+      revision.secrets.payment === undefined
+        ? undefined
+        : paymentViewFor(revisionSecretReader(revision)),
     copyAllText: () => Promise.resolve(formatEntityBlock(details, password, dbConnection, notes)),
     saveVpnConfig: () =>
       vpnConfig === undefined

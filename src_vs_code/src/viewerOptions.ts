@@ -3,6 +3,7 @@ import { Revision } from './revisionHistory';
 import type { StorageManager } from './storageManager';
 import { DbType, TreeNode } from './types';
 import { TotpSnapshot, totpSnapshot } from './totp';
+import { PaymentFields, parsePaymentFields } from './paymentFields';
 import {
   McpAccess,
   McpSource,
@@ -44,6 +45,15 @@ export interface SecretReader {
   dbConnection(): Thenable<string | undefined>;
   /** The stored `otpauth://` seed. The viewer never gets this — only the code below. */
   totpSeed(): Thenable<string | undefined>;
+  /**
+   * The payment record as stored JSON. The page never gets this either — the card asks per field.
+   *
+   * <p>Here rather than at the two call sites for the reason this module exists (audit A1): the live
+   * viewer and the revision viewer used to carry one field-to-secret ladder twice, and the payment
+   * record is the ninth kind's version of exactly that. Adding it here is what makes a card work in
+   * the history viewer without a second implementation deciding to differ.</p>
+   */
+  paymentRaw(): Thenable<string | undefined>;
 }
 
 /** The one field-to-secret ladder both viewers share. */
@@ -72,6 +82,17 @@ export function totpViewFor(read: SecretReader): () => Thenable<TotpSnapshot | u
   return () => Promise.resolve(read.totpSeed()).then((uri) => totpSnapshot(uri, Date.now()));
 }
 
+/**
+ * The payment record for a viewer, parsed — `totpViewFor`'s shape, and deliberately so.
+ *
+ * <p>Read at each request rather than once, because the record can be edited while the panel is
+ * open; and parsed here so a stored string that no longer parses is an empty record rather than an
+ * exception out of a message handler.</p>
+ */
+export function paymentViewFor(read: SecretReader): () => Thenable<PaymentFields> {
+  return () => Promise.resolve(read.paymentRaw()).then((raw) => parsePaymentFields(raw));
+}
+
 /** Live secrets: read from the keychain at the moment the Copy button is pressed. */
 export function storageSecretReader(
   storage: StorageManager,
@@ -85,12 +106,13 @@ export function storageSecretReader(
     dbConnection: () => storage.getDbConnection(accountId, entityId),
     // Read at each request rather than once: the seed can be edited while the panel is open.
     totpSeed: () => storage.getTotp(accountId, entityId),
+    paymentRaw: () => storage.getPaymentRaw(accountId, entityId),
   };
 }
 
 /** A revision's secrets: whatever the record kept, nothing read from the keychain. */
 export function revisionSecretReader(revision: Revision): SecretReader {
-  const { password, privateKey, vpnConfig, dbConnection, totp } = revision.secrets;
+  const { password, privateKey, vpnConfig, dbConnection, totp, payment } = revision.secrets;
   return {
     password: () => Promise.resolve(password),
     privateKey: () => Promise.resolve(privateKey),
@@ -98,6 +120,9 @@ export function revisionSecretReader(revision: Revision): SecretReader {
     dbConnection: () => Promise.resolve(dbConnection),
     // A replaced seed still produces codes — that is why history keeps it.
     totpSeed: () => Promise.resolve(totp),
+    // The WHOLE record as it was, CVV and PIN included: a rollback that returned a card without
+    // half its fields would be a worse defect than having no rollback (revisionHistory.ts).
+    paymentRaw: () => Promise.resolve(payment),
   };
 }
 

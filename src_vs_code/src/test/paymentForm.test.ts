@@ -63,19 +63,23 @@ test('every payment form the model knows can actually be chosen', () => {
   assert.deepEqual([...PAYMENT_FORMS].sort(), ['bank', 'card', 'phrase']);
 });
 
-test('the weave checkboxes are OFF until a woven value can be read back', () => {
-  // The save path weaves; nothing reassembles. There is no payment renderer in the viewer and no
-  // caller of `phraseReassembly`, so a value stored woven today could never be shown again — and the
-  // method is kept nowhere, so nobody would find out until they needed it.
+test('the weave checkboxes are LIVE, now that a woven value can be read back', () => {
+  // The inverse of the test that stood here, and the reason it stood here is worth keeping: while
+  // there was no payment card in the viewer, ticking one of these boxes would have stored a value the
+  // product could never show again, under a method kept nowhere — so nobody would have found out
+  // until they needed it. The boxes were disabled and the form said why.
   //
-  // The boxes stay in the markup, disabled and explained, rather than being deleted: the feature is
-  // then not a surprise when it arrives. This test comes OFF when the viewer card lands.
+  // `paymentViewCard.ts` is that missing half, and `paymentViewHost.readingFor` is its inverse, so
+  // the boxes come on. What must NOT come back is a disabled attribute without the viewer: this
+  // assertion is the pin holding the two together.
   const markup = paymentMarkup((id) => `<fieldset id="${id}">`, 'card');
 
   const boxes = markup.match(/class="mixMark"[^>]*/g) ?? [];
   assert.equal(boxes.length, 5, 'all five weavable fields are represented');
   for (const box of boxes) {
-    assert.match(box, /disabled/, `a weave box is live: ${box}`);
+    assert.ok(!/disabled/.test(box), `a weave box is still switched off: ${box}`);
   }
-  assert.match(markup, /switched off/i, 'and the form says why');
+  assert.ok(!/switched off/i.test(markup), 'and the paragraph explaining why they were off is gone');
+  // The bargain itself stays on screen, exactly where somebody is about to make it.
+  assert.match(markup, /never stored/, 'the form still says the method is kept nowhere');
 });

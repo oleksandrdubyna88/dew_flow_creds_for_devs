@@ -37,6 +37,7 @@ test('the resolver maps every viewer field, including the parsed db password', a
     vpnConfig: () => Promise.resolve('vpn'),
     dbConnection: () => Promise.resolve('postgresql://u:db-secret@h:5432/db'),
     totpSeed: () => Promise.resolve(SEED),
+    paymentRaw: () => Promise.resolve(undefined),
   };
   const resolve = secretResolver(reader);
 
@@ -65,6 +66,7 @@ test('dbPassword resolves to nothing when there is no connection string', async 
     vpnConfig: () => Promise.resolve(undefined),
     dbConnection: () => Promise.resolve(undefined),
     totpSeed: () => Promise.resolve(undefined),
+    paymentRaw: () => Promise.resolve(undefined),
   });
 
   assert.equal(await resolve('dbPassword'), undefined);
@@ -176,6 +178,7 @@ test('the totp field resolves to the CODE, never to the seed it came from', asyn
     vpnConfig: () => Promise.resolve(undefined),
     dbConnection: () => Promise.resolve(undefined),
     totpSeed: () => Promise.resolve(SEED),
+    paymentRaw: () => Promise.resolve(undefined),
   });
 
   const code = await resolve('totp');
@@ -190,6 +193,7 @@ test('a reader with no seed resolves totp to nothing rather than throwing', asyn
     vpnConfig: () => Promise.resolve(undefined),
     dbConnection: () => Promise.resolve(undefined),
     totpSeed: () => Promise.resolve(undefined),
+    paymentRaw: () => Promise.resolve(undefined),
   });
 
   assert.equal(await resolve('totp'), undefined);

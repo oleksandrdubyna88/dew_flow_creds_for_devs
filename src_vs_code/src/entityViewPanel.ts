@@ -1,5 +1,7 @@
 import * as vscode from 'vscode';
 import { copySecret } from './secretClipboard';
+import { confirmDestructive } from './dialogs';
+import { PaymentViewHost, isPaymentMessage } from './paymentViewHost';
 import { applyZoomDelta, currentUiScale, pushUiScaleTo } from './uiScaleHost';
 import { ViewerTab } from './viewerClicks';
 import { BINDABLE_FIELDS, BindableField } from './envBinding';
@@ -98,15 +100,32 @@ function mountEntityView(
     { enableScripts: true, localResourceRoots: [] },
   );
   const state = { options: first };
+  // The payment card's five messages, its reveal gate and the buffers an assembled phrase lives in.
+  // Reading the CURRENT options rather than the ones this panel was built with is not a nicety: the
+  // preview tab re-renders for another entry, and a card that answered from stale options would be
+  // showing one entry's card with another entry's values.
+  const payment = new PaymentViewHost({
+    view: () => state.options.payment,
+    record: () => state.options.resolvePayment?.(),
+    post: (message) => void panel.webview.postMessage(message),
+    confirm: confirmDestructive,
+    copy: (text) => copySecret(vscode.env.clipboard, text),
+  });
   const show = (options: EntityViewOptions): void => {
     state.options = options;
+    // Before the new page exists: a grant belongs to the entry it was given for, and an assembled
+    // phrase must not survive the card it was assembled on.
+    payment.reset();
     panel.title = options.details.name;
     panel.webview.html = renderEntityViewHtml({ ...options, uiScale: currentUiScale() });
   };
   show(first);
   // T28: this page follows the shared setting for as long as it lives.
   const zoomHook = pushUiScaleTo(panel.webview);
-  panel.onDidDispose(() => zoomHook.dispose());
+  panel.onDidDispose(() => {
+    zoomHook.dispose();
+    payment.reset();
+  });
 
   // eslint-disable-next-line complexity, max-lines-per-function
   panel.webview.onDidReceiveMessage(async (message: CopyMessage) => {
@@ -114,6 +133,10 @@ function mountEntityView(
     const d = options.details;
     if (message.type === 'close') {
       panel.dispose();
+      return;
+    }
+    if (isPaymentMessage(message.type)) {
+      await payment.handle(message.type, message.field);
       return;
     }
     if ((message as { type: string }).type === 'zoom') {
@@ -160,6 +183,11 @@ function mountEntityView(
       return;
     }
     if (message.type !== 'copy') {
+      return;
+    }
+    // Copying is showing, to the clipboard: a CVV that asked before appearing and not before being
+    // copied would be a rung with a door beside it.
+    if (!(await payment.allowCopy(message.field))) {
       return;
     }
     const value = await copyValueFor(options, message.field);
