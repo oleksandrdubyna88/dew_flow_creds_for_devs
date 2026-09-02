@@ -348,6 +348,66 @@ could then apply it to a live entry), and a machine-local pending-id list needs 
 tell an abandoned id from one in flight, which is a second consistency problem to keep honest. The
 residual is written down in the module header rather than left to be rediscovered.
 
+### Payment instruments — the ninth kind
+
+A card, a set of bank details, or a phrase somebody must not lose. One entry kind, three FORMS, and
+one encrypted record under one keychain key — the shape `entityFields.ts` already established for a
+credential's login and URL, which is why a payment did not have to go through all nine secret seams a
+tenth time.
+
+| module | what it owns |
+|---|---|
+| `paymentForm.ts` / `paymentFields.ts` | the three forms, the 22 field keys, and which form owns which |
+| `cardBrand.ts` | nine payment systems as a table of BIN ranges and issued lengths |
+| `cardBrandIcons.ts` + `media/brands/` | generated marks, deliberately generic rather than the networks' logos |
+| `paymentFormSwitch.ts` / `paymentSaveGate.ts` | what a form switch erases, and the two questions asked before a save |
+| `decoyDigits.ts` / `decoyPhrase.ts` | decoys that cannot be told from the real half |
+| `paymentWeaving.ts` | where the marks become woven values |
+| `paymentValidation.ts` | a failing checksum: a hint when plain, a confirmation when about to be woven |
+| `mixedFieldGuard.ts` | a woven record cannot be opened in the edit form |
+| `wordlists.ts` + ten `wordlistBip39*.ts` | the BIP-39 lists and the checksum that reads them |
+| `phraseLayout.ts` | two columns, and the arithmetic that decides which layouts exist |
+| `revealGate.ts` / `phraseBuffer.ts` | the rung that asks again, and the bytes that get zeroed |
+| `paymentRedaction.ts` / `secretClaims.ts` | what leaves in a share, and what a node may claim to hold |
+
+#### The four decisions worth knowing before changing any of it
+
+**1. The method is stored NOWHERE.** A woven field is the person's value and a decoy shuffled together
+under one of twelve methods, and the method lives only in their memory. Everything else follows from
+that: the value has to be right the first time (hence `paymentValidation`'s confirmation), the decoy
+has to be indistinguishable (hence `decoyDigits`' Luhn and mod-97 work), and the entry can never be
+opened in the edit form again (hence `mixedFieldGuard`) — a second weave doubles the length under two
+unknown methods, then four, with no error at any step.
+
+**2. The decoy matches the real value's checksum STATE, not "is valid".** Somebody who deliberately
+re-ordered their own phrase has one that does not converge; a converging decoy beside it would point
+straight at the correct method. And the constraint applies only where a checksum exists at that length
+in the decoy's own list — otherwise the generator hunts something no draw can produce.
+
+**3. A stored payment record is never rendered into the page's HTML.** Every other kind's stored value
+is (a db connection string, a config body). For a CVV and a PIN that is one place too many, because
+the HTML is a string that gets built, concatenated and — the moment anything goes wrong — logged. It
+travels by `postMessage`, on request.
+
+**4. Claims are kept to what can be shown.** `phraseBuffer.ts` does not promise one copy in memory:
+that is false and unverifiable, since no test here can count copies in a heap. It promises fewer copies
+*we* control and a buffer we zero — and the help says the limit in plain words. The same discipline
+produced the export warning (counts, never values) and the "what weaving does not buy" paragraph in
+the form itself.
+
+#### What the reviews caught, since it shaped the code
+
+Four safety nets shipped with **no caller** across this feature — `clearForForm`, `withheldFromShare`,
+`validatePayment`, and `EntityFormOptions.initialPayment`. The last was the worst: editing a saved card
+opened a blank form over it and saving DELETED the record, while the destructive-switch confirmation
+could never fire because it read the same absent value. Each is now held by a test that asserts the
+CALL, not only the function.
+
+The other class was drift between two sides of one rule: `ibanConverges` normalised its input and
+`ibanDecoy` did not, so an IBAN typed with spaces crashed the save and a lowercase one silently
+produced a decoy failing the very checksum that makes it indistinguishable. Both directions now share
+one normaliser.
+
 ##### `pendingCleanup.ts` — the record that must NOT sync, and the resume that reads it
 
 Two operations remove things in a sequence a crash can interrupt: removing an account, and applying a

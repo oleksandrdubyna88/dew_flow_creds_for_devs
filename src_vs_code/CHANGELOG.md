@@ -4,9 +4,28 @@ All notable changes to **CredsForDevs** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.93.0] — payment instruments
 
 ### Added
+
+- **Seed phrases, and the option to store a value woven with a decoy.** A payment entry can hold a
+  phrase in any of the ten official BIP-39 languages, checked against its own checksum as you type —
+  the last moment a typo can be caught. Any of the card number, CVV, PIN, IBAN or account number can
+  be stored **woven with a decoy** instead, and a phrase can be woven against a decoy or against a
+  second real key.
+
+  **The method is kept nowhere** — not in the vault, not in a backup, not in the sync. Only you can
+  unweave it, from memory, and a forgotten method is a lost value. The form says that before you
+  choose, along with what weaving does **not** buy: it stops somebody reading an open vault, and does
+  nothing against somebody who can try every possibility.
+
+- **The CVV, the PIN and an assembled phrase ask a second time before they appear** — the only fields
+  in this vault that do. An assembled phrase closes itself, and the bytes it was held in are cleared.
+  The help says exactly what that does and does not mean, including that a memory dump can still
+  contain what was on screen.
+
+- **An entry with a woven field cannot be opened for editing**, because the form would have nothing to
+  put where the original belongs and saving would weave the woven value a second time.
 
 - **A payment instrument now has a form to fill in.** Choose card, bank details or a phrase, and the
   entry asks for the fields that form actually has. A card knows which payment system it belongs to as
