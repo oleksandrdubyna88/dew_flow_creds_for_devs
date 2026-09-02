@@ -1,3 +1,6 @@
+import { CARD_INPUT_IDS } from './cardFormFields';
+import { jsonForScript } from './webviewHtml';
+
 /**
  * The card form's own script: deliver a stored card, and name the system as it is typed.
  *
@@ -10,6 +13,9 @@
  * the error lands on the line after the comment.</p>
  */
 export function cardFormScript(): string {
+  // Interpolated from the one table rather than written out again. The hand-written copy listed only
+  // the eight CARD ids, so a stored bank record crossed `postMessage` and was dropped on the floor —
+  // and would have been wiped on the next save. Found by an audit, not by a test.
   return `
   // A stored card arrives HERE rather than in the page's HTML. Every other kind's stored value is
   // rendered into the markup (a db connection string, a config body), and for a CVV and a PIN that
@@ -20,7 +26,7 @@ export function cardFormScript(): string {
     var card = event.data;
     if (!card || card.type !== 'paymentValues') { return; }
     var fields = card.fields || {};
-    var ids = ['cardNumber', 'cardExpiry', 'cardHolder', 'cardCvv', 'cardPin', 'cardAddress', 'cardPhone', 'cardCountry'];
+    var ids = ${jsonForScript(CARD_INPUT_IDS)};
     for (var i = 0; i < ids.length; i++) {
       var box = document.getElementById(ids[i]);
       if (box) { box.value = fields[ids[i]] || ''; }

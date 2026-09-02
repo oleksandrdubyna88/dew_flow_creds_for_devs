@@ -1431,7 +1431,7 @@
         },
         {
           "command": "credSshManager.editNode",
-          "when": "view == credSshManagerView && viewItem =~ /^(folder|entity)/",
+          "when": "view == credSshManagerView && viewItem =~ /^(folder|entity)/ && !(viewItem =~ /:mixed/)",
           "group": "3_manage@1"
         },
         {

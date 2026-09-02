@@ -191,6 +191,17 @@ export interface EntityMetadata {
    */
   hasTotp?: boolean;
   /**
+   * This entry has at least one field stored woven with a decoy.
+   *
+   * <p>A plaintext flag for exactly the reason `hasTotp` above is one: the tree cannot read the
+   * keychain per row. Which fields are woven, and their values, stay in the record — this says only
+   * that the entry must not be opened in the edit form, because there is no original to put in it.</p>
+   *
+   * <p>Not a secret: "this entry is protected" is not the protection. What it buys is the menu item
+   * being HIDDEN rather than offered and then refused.</p>
+   */
+  hasMixedField?: boolean;
+  /**
    * Same-account entities this one DEPENDS ON — an SSH host that is unreachable without a VPN,
    * a password that belongs to a database behind one.
    *

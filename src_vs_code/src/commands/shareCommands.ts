@@ -1,6 +1,8 @@
 /* eslint-disable complexity, max-lines-per-function -- command registrations moved verbatim out of extension.ts
    (roadmap A1 stage 2, 2026-08-28): one function that registers a family of closures, each the size it
    was. The ceilings are a boundary for NEW code here; a handler meets them when it is next touched. */
+import { serializePaymentFields } from '../paymentFields';
+import { redactPaymentForShare } from '../paymentRedaction';
 import { ShareInbox } from '../shareInbox';
 import { SharingManager } from '../sharingManager';
 import { StorageManager } from '../storageManager';
@@ -97,6 +99,14 @@ export function registerShareCommands(host: ShareCommandsHost): void {
         totp: result.newTotp,
         config: result.newConfigBody,
         fields: serializeFields(result.newFields),
+        // THROUGH the redaction, never by symmetry with the line above.
+        //
+        // This is the SECOND payload builder in the codebase — `shareInbox.buildSharePayload` is the
+        // other, and it redacts. An audit found this one simply omitting `payment`, which was safe only
+        // by accident: the obvious "fix" is to add `serializePaymentFields(result.newPayment)` here to
+        // match its neighbours, and that one line would carry a CVV and a PIN into another person's
+        // vault. So the redaction is applied AT the call site, where the mistake would be made.
+        payment: redactPaymentForShare(serializePaymentFields(result.newPayment)),
       },
     };
     await shareInbox.deliver(sender.accountId, payload, recipients, pin);

@@ -121,9 +121,18 @@ function opens(rule: BrandRule, digits: string): boolean {
   });
 }
 
-/** A number shorter than the shortest issued length is still being typed, and is not yet wrong. */
+/**
+ * An exact issued length, or a number still on its way to one.
+ *
+ * <p>"Still being typed" is anything BELOW the longest length this system issues — not below the
+ * shortest, which is what this said at first and which had a visible bug in it. Visa issues 13, 16 and
+ * 19: at 13 digits the mark appeared, at 14 it VANISHED (14 is not a listed length and not below 13),
+ * and at 16 it came back. The same flicker hit Discover and Mir at 17–18, and Diners at 15, 17 and 18.
+ * Found by a code review, not by a test — the tests covered 1 digit, 5 digits and complete numbers,
+ * and never an intermediate length between two valid ones.</p>
+ */
 function fits(rule: BrandRule, digits: string): boolean {
-  return rule.lengths.includes(digits.length) || digits.length < Math.min(...rule.lengths);
+  return rule.lengths.includes(digits.length) || digits.length < Math.max(...rule.lengths);
 }
 
 /**

@@ -64,6 +64,17 @@ export function folderContextValue(trashed: boolean): string {
  * today. It is pure, so it is now a unit test rather than something reachable only through a
  * stubbed `vscode`.</p>
  */
+/**
+ * `:mixed` on a record with a woven field — what hides *Edit* from the menu.
+ *
+ * <p>The form would put the woven value where the original belongs and a save would weave it again.
+ * `entityEditCommands` refuses as well; this only stops the person being OFFERED something that will
+ * be refused. See `mixedFieldGuard.ts`.</p>
+ */
+function mixedToken(details: EntityMetadata | undefined): string {
+  return details?.hasMixedField === true ? ':mixed' : '';
+}
+
 // eslint-disable-next-line complexity -- one branch per capability; moved verbatim from treeDataProvider
 export function entityContextValue(
   details: EntityMetadata | undefined,
@@ -126,6 +137,7 @@ export function entityContextValue(
   if (details?.hasTotp === true) {
     contextValue += ':totp';
   }
+  contextValue += mixedToken(details);
   if (hasLifetime(details ?? {})) {
     // Burn Now… is offered on exactly these rows (the owner, 2026-08-28).
     contextValue += ':burnable';

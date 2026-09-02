@@ -160,3 +160,22 @@ test('a stored record reaches the webview by message, and only by message', asyn
   assert.equal(message.fields.cardNumber, '4111111111111111');
   assert.equal(message.fields.bankIban, '', 'every box is answered, so a switch blanks the others');
 });
+
+test('a form given NO stored record still asks nothing and writes nothing away', () => {
+  // The shape of the bug both reviewers found independently, kept as a test so it cannot come back.
+  //
+  // `initialPayment` had no producer: `editNode` filled `initialNotes`, `initialFields`,
+  // `initialConfigBody` and `initialDbConnection` and simply never filled this one. Every consequence
+  // followed from that single missing line — the form opened blank over a real card, saving it wrote
+  // `{}`, and `{}` serialises to nothing, which DELETES the record. The destructive-switch modal could
+  // never fire either, because it computes its warning from the same absent record.
+  //
+  // What this asserts is the contract that makes the missing line detectable: with no record, there is
+  // nothing to lose and nothing to warn about — so a warning appearing here would mean the record came
+  // from somewhere it should not, and the SILENCE here is what makes `editNode`'s own test meaningful.
+  const sent: unknown[] = [];
+  gate().answerCardValues((message) => sent.push(message), {});
+
+  const message = sent[0] as { fields: Record<string, string> };
+  assert.equal(Object.values(message.fields).every((value) => value === ''), true, 'every box is blank');
+});

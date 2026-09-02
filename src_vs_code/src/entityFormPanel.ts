@@ -1,4 +1,5 @@
 import { answerCardValues, confirmFormSwitch, formOf, paymentRecordFor } from './paymentSaveGate';
+import { hasMixedField } from './mixedFieldGuard';
 import { readDependsOnRows, readForwardRows } from './formRowReaders';
 import { PaymentFields } from './paymentFields';
 import { brandHint } from './cardFormFields';
@@ -727,6 +728,9 @@ export function toValues(data: Record<string, unknown>, options: EntityFormOptio
       // unknown cannot be rendered, validated, or cleared on a switch, and every one of those would
       // read as a bug rather than as a field nobody filled in.
       paymentForm: isPayment ? formOf(paymentForm) : undefined,
+      // Set from the record actually being written, not from the form's checkboxes — the two agree
+      // today and the record is the one that decides whether an edit would destroy anything.
+      hasMixedField: isPayment && hasMixedField(paymentRecordFor(data, paymentForm)) ? true : undefined,
       isConfig: isConfig || undefined,
       // Defaulted to JSON rather than left absent: a config whose format is unknown cannot be
       // validated, materialised with the right extension, or parsed by a provider — and every

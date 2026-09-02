@@ -59,11 +59,20 @@ test('spaces and dashes are how people type a card, and change nothing', () => {
   assert.equal(luhn('4111 1111 1111 1111'), true, 'the checksum reads the digits, not the spacing');
 });
 
-test('length is part of the answer, not an afterthought', () => {
-  // Amex is the case that makes this matter: 15 digits, where everyone else is 16. A 16-digit number
-  // starting 37 is not a longer Amex — it is a number this table does not know.
+test('length is part of the answer, and the mark does not flicker on the way to one', () => {
+  // Amex is the case that makes the upper bound matter: 15 digits, where everyone else is 16. A
+  // 16-digit number starting 37 is past every length Amex issues, so it is a number this table does
+  // not know.
   assert.equal(brandOf('3782822463100051'), '', 'a 16-digit 37 is not an Amex');
-  assert.equal(brandOf('411111111111111'), '', 'nor is a 15-digit Visa a Visa');
+
+  // The lower half was asserted WRONGLY here at first — as "a 15-digit Visa is not a Visa" — and a
+  // code review caught what that implied: `fits` allowed "still typing" only BELOW the shortest
+  // issued length, so a Visa lost its mark at 14 and 15 digits and got it back at 16. Visa issues 13,
+  // 16 and 19, and a number between two of those is being typed, not wrong.
+  for (const partial of ['4111111111111', '41111111111111', '411111111111111', '4111111111111111']) {
+    assert.equal(brandOf(partial), 'visa', `${partial.length} digits lost the mark`);
+  }
+  assert.equal(brandOf('41111111111111111111'), '', 'past 19 digits it is no longer a Visa');
 });
 
 test('Luhn is a hint, and hints do not refuse', () => {

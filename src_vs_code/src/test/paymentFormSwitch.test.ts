@@ -89,15 +89,24 @@ test('the record after a switch holds not one field of the form it left', () => 
   }
 });
 
-test('a field BOTH forms use survives the switch', () => {
-  // `address` is a card's billing address and part of a bank's details. Clearing it would be data
-  // loss dressed up as tidiness, and the derivation above is what prevents it.
-  const kept = clearForForm({ ...CARD, address: 'Keep me' }, 'bank');
-  const bankKeeps = new Set<string>(keysForForm('bank'));
-
-  if (bankKeeps.has('address')) {
-    assert.equal(kept.address, 'Keep me');
+test('no field belongs to two forms — which is WHY a switch can be derived at all', () => {
+  // This test used to guard "a field both forms use survives", wrapped in an `if` that was never true:
+  // a card's `address` and a bank's `bankAddress` are different keys, so `bankKeeps.has('address')` was
+  // always false and the only assertion never ran. A code review caught it. The honest version asserts
+  // the property that actually holds and that the derivation depends on.
+  const owners = new Map<string, string[]>();
+  for (const form of PAYMENT_FORMS) {
+    for (const key of keysForForm(form)) {
+      owners.set(key, [...(owners.get(key) ?? []), form]);
+    }
   }
+
+  const shared = [...owners.entries()].filter(([, forms]) => forms.length > 1);
+  assert.deepEqual(shared, [], 'a key owned by two forms would be erased by the wrong one');
+
+  // And the consequence, stated as behaviour: a card's billing address is the CARD's, so switching
+  // away takes it. Losing it is correct — it is the address for a card that is no longer here.
+  assert.equal(clearForForm({ ...CARD, address: 'Somewhere' }, 'bank').address, undefined);
 });
 
 test('the warning names FIELDS, never values', () => {

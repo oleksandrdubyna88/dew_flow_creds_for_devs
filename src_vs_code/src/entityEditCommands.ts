@@ -2,6 +2,9 @@
    the ceilings are a boundary for NEW code here; each function meets them when it is next touched for a reason of its own. */
 export type DoorsFor = (accountId: string, node: TreeNode) => Partial<Pick<EntityFormOptions, 'agentDoors' | 'entityTarget'>>;
 
+import * as vscode from 'vscode';
+import { hasMixedField, mixedEditRefusal } from './mixedFieldGuard';
+import { parsePaymentFields } from './paymentFields';
 import { TreeNode } from './types';
 import { entriesUnder, resolveMcpInTree } from './mcpAccess';
 import { StorageManager } from './storageManager';
@@ -41,6 +44,15 @@ export async function editNode(
   if (!node.details) {
     return;
   }
+  // A record with a woven field has no original to put in the form — editing it would weave the woven
+  // value a SECOND time and destroy it, silently, one save at a time. The menu item is hidden by a
+  // context token as well; this is the guarantee, because a command can also be reached from the
+  // palette, a keybinding, or another extension. See `mixedFieldGuard.ts`.
+  const storedPayment = parsePaymentFields(await storage.getPaymentRaw(accountId, node.id));
+  if (hasMixedField(storedPayment)) {
+    void vscode.window.showWarningMessage(mixedEditRefusal(storedPayment));
+    return;
+  }
   const storedHostKey = parseHostKey(node.details.hostKey);
   // The form is told a seed exists and how it is configured — never the seed itself.
   const storedTotp = await storage.getTotp(accountId, node.id);
@@ -48,6 +60,7 @@ export async function editNode(
   const storedTotpDescription =
     storedTotpParsed === undefined ? undefined : describeTotp(storedTotpParsed.config);
   const result = await showEntityForm({
+    initialPayment: storedPayment,
     mode: 'edit',
     entityId: node.id,
     initial: node.details,

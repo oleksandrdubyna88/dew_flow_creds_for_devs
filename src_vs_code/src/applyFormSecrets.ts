@@ -1,3 +1,4 @@
+import { PaymentFields } from './paymentFields';
 import type { StorageManager } from './storageManager';
 import type { EntityFormValues } from './entityFormPanel';
 
@@ -63,7 +64,11 @@ export async function applyAdditions(
   // after the node write — see `applyRemovals`.
   await applyWhenDefined(result.newNotes, (v) => storage.setNotes(accountId, entityId, v));
   await applyWhenDefined(result.newFields, (v) => storage.setFields(accountId, entityId, v));
-  await applyWhenDefined(result.newPayment, (v) => storage.setPayment(accountId, entityId, v));
+  // `applyWhenDefined` is not enough for a RECORD. `setPayment` deletes when the record serialises to
+  // nothing — and an emptied-but-defined `{}` does exactly that, so passing it here would run a real
+  // deletion in the ADDITIONS pass, before the node write. That is the torn state Rule A exists to
+  // prevent, and a code review found it: every naive edit-save of a payment produces `{}`.
+  await applyWhenDefined(nonEmptyRecord(result.newPayment), (v) => storage.setPayment(accountId, entityId, v));
   await applyWhenDefined(result.newConfigBody, (v) => storage.setConfigBody(accountId, entityId, v));
   await applyOptional(false, result.newAttachment, noop, (v) => storage.setAttachment(accountId, entityId, v));
   await applyOptional(false, result.newImage, noop, (v) => storage.setImage(accountId, entityId, v));
@@ -92,7 +97,8 @@ export async function applyRemovals(
   // edit — and by here the node no longer claims one, so the deletion cannot be observed as a lie.
   await applyWhenAbsent(result.newNotes, () => storage.setNotes(accountId, entityId, undefined));
   await applyWhenAbsent(result.newFields, () => storage.setFields(accountId, entityId, undefined));
-  await applyWhenAbsent(result.newPayment, () => storage.setPayment(accountId, entityId, undefined));
+  // …and the removals pass takes both cases: no record at all, and a record emptied to nothing.
+  await applyWhenAbsent(nonEmptyRecord(result.newPayment), () => storage.setPayment(accountId, entityId, undefined));
   await applyWhenAbsent(result.newConfigBody, () => storage.setConfigBody(accountId, entityId, undefined));
 }
 
@@ -135,4 +141,15 @@ export async function applySecrets(
 ): Promise<void> {
   await applyAdditions(storage, accountId, entityId, result);
   await applyRemovals(storage, accountId, entityId, result);
+}
+
+/**
+ * A record with something in it, or nothing at all — the distinction the two passes turn on.
+ *
+ * <p>`{}` and `undefined` mean the same thing to `setPayment` (both delete), so they have to mean the
+ * same thing to the additions/removals split as well. Otherwise an emptied form deletes on the wrong
+ * side of the node write.</p>
+ */
+function nonEmptyRecord(record: PaymentFields | undefined): PaymentFields | undefined {
+  return record !== undefined && Object.keys(record).length > 0 ? record : undefined;
 }
