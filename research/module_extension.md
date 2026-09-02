@@ -361,14 +361,22 @@ tenth time.
 | `cardBrand.ts` | nine payment systems as a table of BIN ranges and issued lengths |
 | `cardBrandIcons.ts` + `media/brands/` | generated marks, deliberately generic rather than the networks' logos |
 | `paymentFormSwitch.ts` / `paymentSaveGate.ts` | what a form switch erases, and the two questions asked before a save |
-| `decoyDigits.ts` / `decoyPhrase.ts` | decoys that cannot be told from the real half |
-| `paymentWeaving.ts` | where the marks become woven values |
+| `decoyDigits.ts` / `decoyPhrase.ts` | decoys that cannot be told from the real half — `decoyPhrase` **unwired** |
+| `paymentWeaving.ts` | where the marks become woven values — wired, and **unreachable** while the boxes are off |
 | `paymentValidation.ts` | a failing checksum: a hint when plain, a confirmation when about to be woven |
 | `mixedFieldGuard.ts` | a woven record cannot be opened in the edit form |
-| `wordlists.ts` + ten `wordlistBip39*.ts` | the BIP-39 lists and the checksum that reads them |
-| `phraseLayout.ts` | two columns, and the arithmetic that decides which layouts exist |
-| `revealGate.ts` / `phraseBuffer.ts` | the rung that asks again, and the bytes that get zeroed |
+| `wordlists.ts` + ten `wordlistBip39*.ts` | the BIP-39 lists and the checksum that reads them — **unwired** (only `decoyPhrase` reads them) |
+| `phraseLayout.ts` / `phraseReassembly.ts` | two columns, the arithmetic that decides which layouts exist, and the way back — **unwired** |
+| `revealGate.ts` / `phraseBuffer.ts` | the rung that asks again, and the bytes that get zeroed — **unwired** |
 | `paymentRedaction.ts` / `secretClaims.ts` | what leaves in a share, and what a node may claim to hold |
+
+**Six of those modules have no production caller** as of 0.94.0, and the table says so rather than
+implying a whole feature. They are the pure half of three stories whose UI half was never built —
+S4.4's phrase form, S4.5's viewer card, S5.1/S5.2's rung — and the viewer knows nothing about the
+kind at all (`entityViewPage.ts` does not contain the string `payment`). The consequences a reader
+needs: a payment entry is read by opening it for EDITING, *Phrase* in the form selector leads to a
+form with no fields, and the weave boxes are disabled on purpose, because the save path can weave and
+nothing can unweave. The tail is [../todo/PLAN_payment_ui_tail.md](../todo/PLAN_payment_ui_tail.md).
 
 #### The four decisions worth knowing before changing any of it
 
@@ -402,6 +410,15 @@ Four safety nets shipped with **no caller** across this feature — `clearForFor
 opened a blank form over it and saving DELETED the record, while the destructive-switch confirmation
 could never fire because it read the same absent value. Each is now held by a test that asserts the
 CALL, not only the function.
+
+**And then six more, which is the number worth remembering.** An audit on 2026-09-02 scanned the
+imports rather than the story table and found `revealGate`, `phraseBuffer`, `phraseReassembly`,
+`phraseLayout`, `decoyPhrase` and `wordlists` (with its ten lists, ~245 KB) reachable from nothing but
+their own tests. Ten no-caller modules in one feature is not ten oversights; it is what building
+pure logic bottom-up produces when "the tests are green" is allowed to answer "does it work". The
+lesson the reviews already stated for the first four — *a test that asserts the CALL, not only the
+function* — is the one that would have caught all ten, and it is why every story in the tail plan
+names a caller before it names a module.
 
 The other class was drift between two sides of one rule: `ibanConverges` normalised its input and
 `ibanDecoy` did not, so an IBAN typed with spaces crashed the save and a lowercase one silently

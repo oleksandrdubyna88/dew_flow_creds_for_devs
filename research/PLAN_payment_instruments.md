@@ -1,7 +1,8 @@
 # PLAN — платёжные средства: карта, реквизиты, фраза
 
-> Status: **IMPLEMENTED, 2026-09-02.** Shipped in 0.93.0 across five epics — the build order, the
-> story-by-story record and the deviations are in
+> Status: **IMPLEMENTED, 2026-09-02 — except the UI tail in deviation 7 below.** Built across five
+> epics in `0.94.0` (untagged; `extension-v0.93.0` is an unrelated tag on `main`) — the build order,
+> the story-by-story record and the deviations are in
 > [PLAN_payment_instruments_epics.md](PLAN_payment_instruments_epics.md).
 >
 > **Deviations from this document, recorded rather than quietly absorbed:**
@@ -26,6 +27,14 @@
 > 6. **The horizontal layout is offered only at an even word count**, which is arithmetic and not
 >    taste: at 25 words the halves are 13 and 12, the columns are unequal, and the save would die at
 >    the last step with the form already filled in.
+> 7. **§4.4's form, §4.5's viewer card and §3c's reveal rung were NOT built** — their pure modules
+>    were, and nothing calls them. Recorded here 2026-09-02 by an audit that read the imports rather
+>    than the story table: `revealGate.ts`, `phraseBuffer.ts`, `phraseReassembly.ts`, `decoyPhrase.ts`
+>    and (through it) `wordlists.ts` with its ten lists have no production caller, and
+>    `entityViewPage.ts` never mentions the kind. So a card is readable only by opening it for
+>    editing, *Phrase* in the selector leads to a form with no fields, and the weave boxes are
+>    switched off because a woven value could not be read back. The tail is
+>    [../todo/PLAN_payment_ui_tail.md](../todo/PLAN_payment_ui_tail.md).
 >
 > Новый вид записи `payment` с тремя формами:
 > банковская карта (по умолчанию), банковские реквизиты, спрятанная фраза. Решения по фразе —

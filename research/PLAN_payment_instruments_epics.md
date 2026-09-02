@@ -1,11 +1,35 @@
 # PLAN — payment instruments, broken into epics and stories
 
-> Status: **IMPLEMENTED, 2026-09-02.** All five epics shipped in 0.93.0; the per-story record is the
-> table below, and the deviations are in the parent plan's status line.
+> Status: **IMPLEMENTED, 2026-09-02 — with a UI tail that this line originally left implied.** All
+> twenty-one stories landed; the per-story record is the table below, and the deviations are in the
+> parent plan's status line.
 >
-> **The open tail, extracted rather than left implied:** Monero's wordlist (S4.1's data half) is not
-> included — see the parent's deviation 4. Cross-window write coordination, which S1.4 uncovered, is
-> `todo/PLAN_cross_window_write_coordination.md`.
+> **The open tail, corrected 2026-09-02 after an audit read the code rather than this table.** The
+> original version of this line named only two items, and a reader who stopped at the status line —
+> which is what a status line is for — would have concluded the feature was whole. It is not. Three
+> stories landed as their pure core with **no caller**, which the table below says as `landed (core)`
+> and this line did not:
+>
+> 1. **S4.4's phrase FORM does not exist.** `formSections.ts` declares `cardSection` and
+>    `bankSection` and no phrase section, while the selector offers all three forms — so *Phrase*
+>    leads to an empty form today.
+> 2. **S4.5's viewer CARD does not exist.** `entityViewPage.ts` contains the string `payment` zero
+>    times, so `phraseReassembly`, `phraseLayout`, `decoyPhrase` and the ten wordlists have no
+>    production caller, and no woven value could ever be read back.
+> 3. **S5.1's reveal rung and S5.2's phrase buffer have no caller either** — `revealGate.ts` and
+>    `phraseBuffer.ts` are imported by their own tests and by nothing else. Both guard the viewer,
+>    which is item 2.
+>
+> Consequently the weave boxes were switched OFF in `0.94.0` (`da9b3fe`) rather than left as a trap:
+> the save path could weave, nothing could unweave, and the method is stored nowhere by design.
+>
+> All of it is now one plan: [../todo/PLAN_payment_ui_tail.md](../todo/PLAN_payment_ui_tail.md).
+> Monero's wordlist (S4.1's data half) is still not included — see the parent's deviation 4 — and
+> cross-window write coordination, which S1.4 uncovered, is
+> [../todo/PLAN_cross_window_write_coordination.md](../todo/PLAN_cross_window_write_coordination.md).
+>
+> **And the version was wrong here too:** nothing shipped in `0.93.0`. `extension-v0.93.0` was tagged
+> 2026-09-01 from `main` at an unrelated commit, and this branch's work is `0.94.0`, untagged.
 >
 > This is the BUILD ORDER for
 > [PLAN_payment_instruments.md](PLAN_payment_instruments.md) — it decides nothing and repeats nothing.
