@@ -22,7 +22,7 @@ import { buildDependencyColorMap } from '../depGraph';
 import { collectJumpCandidates } from '../commandTargets';
 import { carryThroughDetails } from '../attachmentMeta';
 import { applyAdditions, applyRemovals } from '../applyFormSecrets';
-import { EntryLandedError, createEntityWithSecrets } from '../entityWrite';
+import { EntryLandedError } from '../entityWrite';
 import { withoutSecretClaims } from '../secretClaims';
 import { warnIfTrackedCopy } from '../configCommands';
 import { applyDependencyColors } from '../entityEditCommands';
@@ -263,7 +263,7 @@ export function registerTreeMutationCommands(host: TreeMutationCommandsHost): vo
     // clearX set on a brand-new entry, and one caller doing this differently is how the two paths
     // drifted before. Compensated since the S1.4 review, which pointed out that the path a PERSON
     // uses was the one still leaving an uncollectable orphan when the node write failed.
-    await createdOrExplained(() => createEntityWithSecrets({
+    await createdOrExplained(() => storage.runCreate({
       writeSecrets: () => applyAdditions(storage, location.accountId, id, result),
       writeNode: () =>
         storage.addNode(location.accountId, {

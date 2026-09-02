@@ -23,6 +23,7 @@ import { exportSecretsFor } from './exportSecrets';
 import { PaymentFields, parsePaymentFields, serializePaymentFields } from './paymentFields';
 import { forgetTombstone, sweepOrphanSecrets } from './orphanSweep';
 import { SerialQueue } from './serialQueue';
+import { EntityCreate, createEntityWithSecrets } from './entityWrite';
 import {
   CleanupPort,
   clearSecretsPending,
@@ -85,9 +86,9 @@ const DEVICE_ID_KEY = 'credSshManager.deviceId';
 const DEVICE_SEQ_KEY = 'credSshManager.deviceSeq';
 
 /** Per account: the id an imported entity ARRIVED with -> the id it was given here. */
-const IMPORTED_IDS_KEY = 'credSshManager.importedIds';
-
-/** Work started and not yet finished — LOCAL, never synced. See `pendingCleanup.ts`. */
+const IMPORTED_IDS_KEY = 'credSshManager.importedIds';
+
+/** Work started and not yet finished — LOCAL, never synced. See `pendingCleanup.ts`. */
 const PENDING_KEY = 'credSshManager.pendingCleanup';
 
 
@@ -468,10 +469,7 @@ export class StorageManager implements vscode.Disposable {
     return this.nodeEntry(accountId).byId.get(id);
   }
 
-  /**
-   * Present, absent, or unknowable — because under a `metadataFault` EVERY node reads as missing, so
-   * "not found" cannot mean "not there". Why that matters is in `entityWrite.ts`.
-   */
+  /** Present, absent, or unknowable — a `metadataFault` makes every node read as missing. */
   nodePresence(accountId: string, id: string): 'present' | 'absent' | 'unknown' {
     if (this.metadataFault !== undefined) {
       return 'unknown';
@@ -479,19 +477,22 @@ export class StorageManager implements vscode.Disposable {
     return this.getNode(accountId, id) === undefined ? 'absent' : 'present';
   }
 
-  /** Hand an id to the sweep, for collection once the tree can say it is really gone. */
-  async deferSecretCleanup(accountId: string, entityId: string): Promise<void> {
-    const port = this.cleanupPort();
-    await port.write(markSecretsPending(port.read(), accountId, [entityId]));
+  /** Create an entity with the sweep held off — `entityWrite.ts` explains why that is required. */
+  runCreate(create: EntityCreate): Promise<void> {
+    return this.writes.run(() => createEntityWithSecrets(create));
   }
 
-  /** Take one id back out of the sweep's record — its node is there to claim its secrets now. */
-  async endSecretCleanup(accountId: string, entityId: string): Promise<void> {
+  /** Put an id into the sweep's record, or take it back out — see `pendingCleanup.ts`. */
+  deferSecretCleanup(accountId: string, entityId: string): Promise<void> {
+    const port = this.cleanupPort();
+    return port.write(markSecretsPending(port.read(), accountId, [entityId]));
+  }
+
+  endSecretCleanup(accountId: string, entityId: string): Promise<void> {
     const port = this.cleanupPort();
     const pending = port.read();
     const rest = (pending.secrets[accountId] ?? []).filter((id) => id !== entityId);
-    const without = clearSecretsPending(pending, accountId);
-    await port.write(markSecretsPending(without, accountId, rest));
+    return port.write(markSecretsPending(clearSecretsPending(pending, accountId), accountId, rest));
   }
 
   /** The sorted children of one position (`null` = root) — frozen, shared until the next write. */
@@ -937,12 +938,8 @@ export class StorageManager implements vscode.Disposable {
   /** The full profile state as the sync merge consumes it. */
   async getSnapshot(accountId: string): Promise<ProfileSnapshot> {
     const bundle = await this.exportBundle(accountId);
-    return {
-      nodes: bundle.nodes,
-      ...secretMapsOf(bundle),
-      tombstones: bundle.tombstones ?? {},
-      horizon: bundle.horizon ?? {},
-    };
+    const { nodes, tombstones = {}, horizon = {} } = bundle;
+    return { nodes, ...secretMapsOf(bundle), tombstones, horizon };
   }
 
   /** Replace the whole profile state with a merged snapshot. */

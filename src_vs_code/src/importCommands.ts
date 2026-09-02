@@ -5,8 +5,8 @@ export interface NodeLocation {
   parentId: string | null;
 }
 
+import { EntryLandedError } from './entityWrite';
 import { StorageManager } from './storageManager';
-import { EntryLandedError, createEntityWithSecrets } from './entityWrite';
 import { ImportedEntity } from './importFormats';
 import { toTreeNodes } from './importFormats';
 import { TreeElement } from './types';
@@ -60,8 +60,7 @@ export async function importEntities(
     // failed — after which a retry duplicates the rows that did land. Raised by the review; the count
     // this returns still includes it, because it is there.
     // Secrets, then the node — and on any observable failure the secrets go back, so a refused
-    // keychain does not leave this id's values unreachable in it. See `entityWrite.ts`.
-    await landedIsFine(() => createEntityWithSecrets({
+    await landedIsFine(() => storage.runCreate({
       writeSecrets: () => writeImportedSecrets(storage, location.accountId, node.id, secrets),
       writeNode: () => storage.addNode(location.accountId, node),
       presence: () => storage.nodePresence(location.accountId, node.id),

@@ -59,12 +59,22 @@ import { describeError } from './describeError';
  * publish a deletion for an id that never existed; and a <b>pending-id list</b>, because telling an
  * abandoned id from one in flight looked like it needed timestamps and an expiry window.</p>
  *
- * <p>The second objection dissolved once the removals needed the same record. There is no expiry rule
- * to invent, because the sweep never has to guess: it acts on a pending id only when that id's
- * <b>node is absent</b>, so a create in flight is skipped for exactly the reason a create that landed
- * is. `deferCleanup` runs FIRST, unconditionally; `finishCleanup` takes the id back out once the node
- * is there to claim the secrets. What made this look impossible was assuming the record had to be the
- * tombstone list.</p>
+ * <p>The second objection dissolved once the removals needed the same record — but not in the way I
+ * first claimed, and the correction is the point. I wrote that a create in flight is skipped for the
+ * same reason a create that landed is; both review providers caught that this is exactly backwards.
+ * Between `deferCleanup` and the node write, an in-flight create's node is <b>absent</b>, which is
+ * precisely what the sweep reads as "collect this" — it would have deleted the secrets of a create
+ * seconds from finishing, and the entry would have arrived empty.</p>
+ *
+ * <p>The answer is not a timestamp and an expiry threshold. It is that <b>a create runs on the same
+ * serial queue</b> as the apply, the removal and the sweep (`StorageManager.runCreate`), so the sweep
+ * cannot run while a create is between its own writes. No lease, no clock, nothing to tune. Within a
+ * window: across windows this is the gap recorded in `todo/PLAN_cross_window_write_coordination.md`,
+ * and it is the same boundary everything else here lives inside.</p>
+ *
+ * <p>So `deferCleanup` runs FIRST, unconditionally, and `finishCleanup` takes the id back out once the
+ * node is there to claim the secrets. What made this look impossible for seven rounds was assuming the
+ * record had to be the tombstone list.</p>
  *
  * <p><b>The caller supplies the undo</b>, which is the point: it knows exactly which secrets it
  * wrote, and undoing precisely those is safe where deleting everything the id owns would not be. This

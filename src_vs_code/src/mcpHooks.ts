@@ -1,6 +1,5 @@
 /* eslint-disable complexity -- moved verbatim out of extension.ts (roadmap A1, 2026-08-28):
    the ceilings are a boundary for NEW code here; each function meets them when it is next touched for a reason of its own. */
-import { createEntityWithSecrets } from './entityWrite';
 import { StorageManager } from './storageManager';
 import { McpCreateHooks } from './brokerMcpDoor';
 import type { EntityKind } from './types';
@@ -36,8 +35,7 @@ export function mcpCreateHooks(storage: StorageManager, onMade: () => void): Mcp
       // even been created. The agent would have been told the entry exists.
       const secret = request.secret ?? generatedFor(request);
       // On this path the secret may have been GENERATED here, so a failure that left it behind would
-      // strand a value nobody asked for and nobody can reach. See `entityWrite.ts`.
-      await createEntityWithSecrets({
+      await storage.runCreate({
         writeSecrets: async () => {
           if (secret !== undefined && secret.length > 0) {
             await storage.setPassword(decision.target.accountId, id, secret);

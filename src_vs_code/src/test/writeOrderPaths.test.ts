@@ -1,3 +1,4 @@
+import { createEntityWithSecrets } from '../entityWrite';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { applyAdditions, applyRemovals } from '../applyFormSecrets';
@@ -80,8 +81,10 @@ function recorder(): { calls: string[]; storage: Record<string, unknown> } {
     getNodes: () => [],
     getNode: () => undefined,
     nodePresence: () => 'absent',
-    // The create's Rule B record — first in, last out. Not what these tests assert, but the real
-    // `createEntityWithSecrets` calls both, so the fake has to answer them.
+    // A create runs on the storage's serial queue and records its id before its first secret, so the
+    // fake has to offer the door and both halves of the record. Not what these tests assert.
+    runCreate: (create: { writeSecrets: () => Promise<void>; writeNode: () => Promise<void>; presence: () => string; deferCleanup: () => Promise<void>; finishCleanup: () => Promise<void>; undoSecrets: () => Promise<void> }): Promise<void> =>
+      createEntityWithSecrets(create as never),
     deferSecretCleanup: () => Promise.resolve(),
     endSecretCleanup: () => Promise.resolve(),
   };
@@ -237,6 +240,9 @@ function stores(options: { addNodeFails: boolean }): {
     },
     // Three answers, not two: 'unknown' is what an unreadable tree gives — see `nodePresence`.
     nodePresence: (_a: string, id: string): string => (tree.includes(id) ? 'present' : 'absent'),
+    // A create now runs on the storage's serial queue, so the fakes have to offer the door.
+    runCreate: (create: { writeSecrets: () => Promise<void>; writeNode: () => Promise<void>; presence: () => string; deferCleanup: () => Promise<void>; finishCleanup: () => Promise<void>; undoSecrets: () => Promise<void> }): Promise<void> =>
+      createEntityWithSecrets(create as never),
     deferSecretCleanup: (): Promise<void> => Promise.resolve(),
     endSecretCleanup: (): Promise<void> => Promise.resolve(),
     getNode: (_a: string, id: string): object | undefined => (tree.includes(id) ? { id } : undefined),
@@ -490,3 +496,114 @@ function notePending(order: string[], key: string, value: unknown): void {
     order.push(`pending:${JSON.stringify((value as { secrets?: unknown })?.secrets ?? {})}`);
   }
 }
+
+test('a create killed between its record and its node is collected by the next window sweep', async () => {
+  // The fault-injection test the review asked for, at the boundary that matters: `deferCleanup` has
+  // persisted and the secret is written, but the node never arrives. That is a process kill, so it is
+  // simulated by calling the pieces and then starting the sweep as a new window would.
+  const { StorageManager } = loadWithVscode<{ StorageManager: new (m: unknown, s: unknown) => Record<string, Function> }>(
+    '../storageManager',
+    {
+      EventEmitter: class {
+        event = (): void => {};
+        fire(): void {}
+      },
+      Uri: { file: (p: string): object => ({ fsPath: p }) },
+      workspace: { getConfiguration: () => ({ get: (_k: string, d: unknown) => d }) },
+    },
+  );
+
+  const map = new Map<string, unknown>();
+  const mem = {
+    keys: () => [...map.keys()],
+    get: <T>(k: string, f?: T): T | undefined => (map.has(k) ? (map.get(k) as T) : f),
+    update: (k: string, v: unknown): Promise<void> => {
+      map.set(k, v === undefined ? undefined : JSON.parse(JSON.stringify(v)));
+      return Promise.resolve();
+    },
+  };
+  const chain = new Map<string, string>();
+  const store = {
+    keys: () => [...chain.keys()],
+    get: (k: string) => Promise.resolve(chain.get(k)),
+    store: (k: string, v: string) => {
+      chain.set(k, v);
+      return Promise.resolve();
+    },
+    delete: (k: string) => {
+      chain.delete(k);
+      return Promise.resolve();
+    },
+    onDidChange: () => {},
+  };
+
+  // The window that died: record the intent, write the secret, and stop there.
+  const dying = new StorageManager(mem, store);
+  await dying.deferSecretCleanup('a1', 'never-finished');
+  await dying.setPassword('a1', 'never-finished', 'orphan');
+  assert.equal(chain.size, 1, 'the secret is in the keychain with no node pointing at it');
+
+  // The next window, over the same stores.
+  const next = new StorageManager(mem, store);
+  await next.resumeAccountRemovals();
+
+  assert.deepEqual([...chain.keys()], [], 'the orphan a process kill left is collected');
+  assert.equal(map.get('credSshManager.pendingCleanup'), undefined, 'and the record is cleared');
+});
+
+test('a create that FINISHED is not collected, however the sweep is timed', async () => {
+  // The other half, and the one that would be data loss: the node is there, so the pending id — left
+  // behind by a kill between the node write and `finishCleanup` — must be dropped, never acted on.
+  const { StorageManager } = loadWithVscode<{ StorageManager: new (m: unknown, s: unknown) => Record<string, Function> }>(
+    '../storageManager',
+    {
+      EventEmitter: class {
+        event = (): void => {};
+        fire(): void {}
+      },
+      Uri: { file: (p: string): object => ({ fsPath: p }) },
+      workspace: { getConfiguration: () => ({ get: (_k: string, d: unknown) => d }) },
+    },
+  );
+
+  const map = new Map<string, unknown>();
+  const mem = {
+    keys: () => [...map.keys()],
+    get: <T>(k: string, f?: T): T | undefined => (map.has(k) ? (map.get(k) as T) : f),
+    update: (k: string, v: unknown): Promise<void> => {
+      map.set(k, v === undefined ? undefined : JSON.parse(JSON.stringify(v)));
+      return Promise.resolve();
+    },
+  };
+  const chain = new Map<string, string>();
+  const store = {
+    keys: () => [...chain.keys()],
+    get: (k: string) => Promise.resolve(chain.get(k)),
+    store: (k: string, v: string) => {
+      chain.set(k, v);
+      return Promise.resolve();
+    },
+    delete: (k: string) => {
+      chain.delete(k);
+      return Promise.resolve();
+    },
+    onDidChange: () => {},
+  };
+
+  const storage = new StorageManager(mem, store);
+  await storage.deferSecretCleanup('a1', 'e1');
+  await storage.setPassword('a1', 'e1', 'kept');
+  await storage.addNode('a1', {
+    id: 'e1',
+    name: 'e1',
+    type: 'entity',
+    parentId: null,
+    details: { id: 'e1', name: 'e1', isSshEnabled: false },
+  });
+  // …killed here, before `finishCleanup`.
+
+  await storage.resumeAccountRemovals();
+
+  assert.equal(chain.get('a1_e1'), 'kept', 'a live entry keeps everything it has');
+  assert.equal(map.get('credSshManager.pendingCleanup'), undefined, 'and the stale id stops accumulating');
+});
