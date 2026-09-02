@@ -341,3 +341,40 @@ test('the resume also forgets an abandoned intent rather than leaving it to accu
 
   assert.deepEqual(p.saved.accounts, [], 'the record is empty afterwards, however each id was handled');
 });
+
+test('a removal killed between its mark and its unlist leaves the account whole', async () => {
+  // The one crash point the fault-injection tests did not cover, accepted from the last round. It is
+  // the cheapest of the three to reason about and the easiest to get wrong: nothing has been destroyed
+  // yet, so the ONLY correct outcome is that the account survives intact and the intent is dropped.
+  const state = { current: EMPTY_PENDING as PendingCleanup };
+  const listed = new Set(['a1']);
+  let wiped = 0;
+  const p: CleanupPort = {
+    read: () => state.current,
+    write: (next) => {
+      state.current = next;
+      return Promise.resolve();
+    },
+    wipeAccount: () => {
+      wiped += 1;
+      return Promise.resolve();
+    },
+    isListed: (accountId) => listed.has(accountId),
+    liveIds: () => [],
+    forgetSecrets: () => Promise.resolve(),
+  };
+
+  // The dying window: the marker lands, and then nothing else does.
+  await removeWithIntent(p, 'a1', () => Promise.reject(new Error('killed before the unlist'))).catch(
+    () => undefined,
+  );
+  assert.deepEqual(state.current.accounts, ['a1'], 'the intent is on disk');
+  assert.equal(wiped, 0, 'and not one secret was touched');
+
+  // The next window.
+  const finished = await resumePending(p);
+
+  assert.deepEqual(finished, [], 'nothing to finish — the account is still listed and still whole');
+  assert.equal(wiped, 0, 'above all, no wipe of a profile whose removal never began');
+  assert.deepEqual(state.current.accounts, [], 'and the abandoned intent does not linger');
+});
