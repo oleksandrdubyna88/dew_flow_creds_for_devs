@@ -77,7 +77,14 @@ test('the two directions agree — what the form writes, the form can be given b
     cardCountry: 'US',
   };
 
-  assert.deepEqual(cardInputsFrom(cardFieldsFrom(typed)), typed, 'a round trip changes nothing');
+  const back = cardInputsFrom(cardFieldsFrom(typed));
+
+  for (const [id, value] of Object.entries(typed)) {
+    assert.equal(back[id], value, `${id} did not survive the round trip`);
+  }
+  // The other direction answers EVERY id, card and bank alike, because one record holds both forms
+  // and the boxes that are not on screen have to be blanked rather than left as they were.
+  assert.equal(Object.keys(back).length, CARD_INPUT_IDS.length);
 });
 
 test('a stored card with only some fields fills only those boxes, and blanks the rest', () => {

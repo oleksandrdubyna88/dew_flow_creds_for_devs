@@ -14,9 +14,19 @@ import { PAYMENT_BRAND_LABELS } from './cardBrandIcons';
  * there is to extract rather than suppress. This leaves cleanly — it is a pure mapping with no view of
  * the panel, the webview, or `vscode`.</p>
  */
-type CardTextField = 'number' | 'expiry' | 'holder' | 'cvv' | 'pin' | 'address' | 'phone' | 'country';
+type FormTextField =
+  | 'number' | 'expiry' | 'holder' | 'cvv' | 'pin' | 'address' | 'phone' | 'country'
+  | 'beneficiary' | 'bank' | 'iban' | 'accountNumber' | 'swift' | 'intermediary' | 'bankAddress';
 
-const CARD_INPUTS: ReadonlyArray<readonly [inputId: string, field: CardTextField]> = [
+/**
+ * Both forms in ONE table, because the record is one record.
+ *
+ * <p>A card's boxes and a bank's boxes are never on screen together — the `condition` in
+ * `formSections.ts` sees to that — so reading all of them is reading the visible ones plus a row of
+ * empties, and `pickPaymentFields` drops empties. Two tables would need a rule for which one to read,
+ * and that rule would be the third place the current form is decided.</p>
+ */
+const CARD_INPUTS: ReadonlyArray<readonly [inputId: string, field: FormTextField]> = [
   ['cardNumber', 'number'],
   ['cardExpiry', 'expiry'],
   ['cardHolder', 'holder'],
@@ -25,6 +35,13 @@ const CARD_INPUTS: ReadonlyArray<readonly [inputId: string, field: CardTextField
   ['cardAddress', 'address'],
   ['cardPhone', 'phone'],
   ['cardCountry', 'country'],
+  ['bankBeneficiary', 'beneficiary'],
+  ['bankName', 'bank'],
+  ['bankIban', 'iban'],
+  ['bankAccountNumber', 'accountNumber'],
+  ['bankSwift', 'swift'],
+  ['bankIntermediary', 'intermediary'],
+  ['bankAddress', 'bankAddress'],
 ];
 
 /**

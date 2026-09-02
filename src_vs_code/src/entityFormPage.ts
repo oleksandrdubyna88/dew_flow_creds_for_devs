@@ -1,7 +1,7 @@
 import * as crypto from 'node:crypto';
 import { normalizeTags } from './sshOptions';
 import { CONFIG_FORMATS, CONFIG_FORMAT_LABELS } from './configFormat';
-import { DEFAULT_PAYMENT_FORM, PAYMENT_FORMS, PAYMENT_FORM_LABELS } from './paymentForm';
+import { paymentMarkup } from './paymentFormMarkup';
 import { PASSPHRASE_WORD_CHOICES, PASSWORD_LENGTH_CHOICES, SSH_KEY_TYPES } from './secretGenerator';
 import { zoomControlHtml } from './zoomControl';
 import { formStyleSheet } from './entityFormStyles';
@@ -101,19 +101,6 @@ function configFormatOptions(current: string | undefined): string {
     (format) =>
       `<option value="${format}" ${format === (current ?? 'json') ? 'selected' : ''}>${
         CONFIG_FORMAT_LABELS[format].label
-      }</option>`,
-  ).join('');
-}
-
-/** The three forms a payment instrument can take, as options — labels from the model, never here. */
-function paymentFormOptions(current: string | undefined): string {
-  return PAYMENT_FORMS.map(
-    (form) =>
-      // `.label`, not the record: a template literal will happily stringify the object and put
-      // "[object Object]" in the dropdown, which no type check catches and no test would have either
-      // until somebody opened the form.
-      `<option value="${form}" ${form === (current ?? DEFAULT_PAYMENT_FORM) ? 'selected' : ''}>${
-        PAYMENT_FORM_LABELS[form].label
       }</option>`,
   ).join('');
 }
@@ -670,57 +657,7 @@ ${formStyleSheet(options.uiScale ?? 0)}
     <p class="hint">Stored as a secret, like a password — never in plain metadata, never in a share, never handed to an agent. A body that does not parse is still saved; the row is marked until it does.</p>
   </fieldset>
 
-  ${openSection('paymentSection')}
-    <label for="paymentForm">Form</label>
-    <select id="paymentForm">${paymentFormOptions(d?.paymentForm)}</select>
-    <p class="hint">A card, a set of bank details, or a phrase you must not lose. All three are stored the same way — one encrypted record under one key — and the form decides which fields you are asked for.</p>
-    <p class="hint" id="paymentNotice"></p>
-  </fieldset>
-
-  ${openSection('cardSection')}
-    <label for="cardNumber">Card number</label>
-    <input id="cardNumber" type="text" inputmode="numeric" autocomplete="off" spellcheck="false"
-           placeholder="4111 1111 1111 1111">
-    <p class="hint" id="cardBrandHint"></p>
-
-    <div class="row">
-      <div>
-        <label for="cardExpiry">Expires</label>
-        <input id="cardExpiry" type="text" autocomplete="off" spellcheck="false" placeholder="12/29">
-      </div>
-      <div>
-        <label for="cardHolder">Name on the card</label>
-        <input id="cardHolder" type="text" autocomplete="off" spellcheck="false">
-      </div>
-    </div>
-
-    <div class="row">
-      <div>
-        <label for="cardCvv">CVV</label>
-        <input id="cardCvv" type="password" autocomplete="off" spellcheck="false">
-      </div>
-      <div>
-        <label for="cardPin">PIN</label>
-        <input id="cardPin" type="password" autocomplete="off" spellcheck="false">
-      </div>
-    </div>
-    <p class="hint">The CVV and the PIN are hidden as you type and stay hidden when you come back. They are the two values that turn a number somebody saw into a payment somebody made — which is why a share never carries them, and why an export says so out loud before it writes them to a file.</p>
-
-    <label for="cardAddress">Billing address</label>
-    <textarea id="cardAddress" rows="2" spellcheck="false" autocomplete="off"></textarea>
-
-    <div class="row">
-      <div>
-        <label for="cardPhone">Phone on file</label>
-        <input id="cardPhone" type="text" autocomplete="off" spellcheck="false">
-      </div>
-      <div>
-        <label for="cardCountry">Country</label>
-        <input id="cardCountry" type="text" autocomplete="off" spellcheck="false">
-      </div>
-    </div>
-    <p class="hint">The address, phone and country are what a payment form asks for beside the number — kept here so the whole answer is in one place rather than half of it.</p>
-  </fieldset>
+  ${paymentMarkup(openSection, d?.paymentForm)}
 
   ${
     options.createdAt === undefined && options.updatedAt === undefined

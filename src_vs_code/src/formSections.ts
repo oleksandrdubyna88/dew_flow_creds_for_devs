@@ -209,6 +209,18 @@ export const FORM_SECTIONS: readonly FormSection[] = [
     // not be shown a CVV box. Kept out of `kinds` on purpose — see `condition`'s own note above.
     condition: "val('paymentForm') === 'card'",
   },
+  {
+    id: 'bankSection',
+    legend: 'Bank details',
+    group: 'main',
+    // depColor10, the one `advancedConnectionSection` and `dbSection` wear — and a payment is
+    // neither. It cannot collide with `cardSection` either: the two are mutually exclusive by the
+    // condition below, but `colorCollisionsForKind` cannot see conditions, so this genuinely has to
+    // be a colour no OTHER payment section uses.
+    color: 'depColor10',
+    kinds: ['payment'],
+    condition: "val('paymentForm') === 'bank'",
+  },
 ];
 
 /** Can this section be on screen for this kind? The worst case, ignoring `condition`. */

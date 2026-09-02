@@ -110,3 +110,22 @@ export async function pickAccount(
   );
   return picked?.account;
 }
+
+/**
+ * A modal that must be agreed to before something is destroyed.
+ *
+ * <p>The `reuse-first` step-2 move, written for S2.4's form switch and named as a helper because the
+ * shape already existed by hand in several places (`burnNowCommand.ts:17`, `configWrite.ts:75`,
+ * `backupManager.ts:317`, `authManager.ts:75`, and more). Those call sites are <b>deliberately not
+ * rewritten here</b> — that is a separate change nobody asked for, and it would put a dozen unrelated
+ * files into a payment story's diff. They are named in the report with a recommendation to migrate,
+ * which is what `reuse-first` asks for: describe it, propose it, ask.</p>
+ *
+ * <p>`showWarningMessage` returns the button's own label when it is pressed and `undefined` for Esc or
+ * the dialog's Cancel — so the comparison, not a truthiness check, is what makes a dismissed dialog a
+ * refusal rather than an accident.</p>
+ */
+export async function confirmDestructive(text: string, actionLabel: string): Promise<boolean> {
+  const answer = await vscode.window.showWarningMessage(text, { modal: true }, actionLabel);
+  return answer === actionLabel;
+}
