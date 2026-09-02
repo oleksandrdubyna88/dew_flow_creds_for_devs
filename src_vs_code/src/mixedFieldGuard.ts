@@ -1,4 +1,4 @@
-import { PaymentFields, parsePaymentFields } from './paymentFields';
+import { PAYMENT_FIELD_LABELS, PaymentFields, parsePaymentFields, wovenKeys } from './paymentFields';
 
 /**
  * A record with a woven field cannot be edited in the form — and the reason is not tidiness.
@@ -21,7 +21,7 @@ import { PaymentFields, parsePaymentFields } from './paymentFields';
  * <p>Pure: no `vscode`, so both callers can be tested without one.</p>
  */
 export function hasMixedField(fields: PaymentFields): boolean {
-  return (fields.shuffledFields ?? []).length > 0;
+  return wovenKeys(fields).length > 0;
 }
 
 /** The same question against the stored JSON, for callers holding the raw record. */
@@ -36,7 +36,9 @@ export function rawHasMixedField(raw: string | undefined): boolean {
  * does not offer a way forward is a bug report waiting to be filed.</p>
  */
 export function mixedEditRefusal(fields: PaymentFields): string {
-  const names = fields.shuffledFields ?? [];
+  // By the names on screen rather than the record's keys: a refusal that says "mixed" is a refusal
+  // about a field nobody has ever seen called that.
+  const names = wovenKeys(fields).map((key) => PAYMENT_FIELD_LABELS[key]);
   return (
     `This entry has ${names.length === 1 ? 'a field' : 'fields'} stored woven with a decoy `
     + `(${names.join(', ')}). There is no original to put back in the form — editing it would weave `

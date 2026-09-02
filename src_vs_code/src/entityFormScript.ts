@@ -8,6 +8,7 @@ import { mcpSwitchScript } from './mcpSwitchScript';
 import { configTabsScript } from './configTabsScript';
 import { qrPasteScript } from './qrPasteScript';
 import { cardFormScript } from './cardFormScript';
+import { phraseFormScript } from './phraseFormScript';
 import { generateWiring, overlayEditorWiring } from './entityFormScriptGen';
 import { formVisibilityScript } from './formVisibilityScript';
 
@@ -689,6 +690,10 @@ export function formPageScript(
       bankAccountNumber: val('bankAccountNumber'), bankSwift: val('bankSwift'),
       bankIntermediary: val('bankIntermediary'), bankAddress: val('bankAddress'),
       mixFields: collectMixFields(), mixMethod: val('mixMethod'), mixMethods: collectMixMethods(),
+      phraseWords: val('phraseWords'), phraseSecond: val('phraseSecond'),
+      phraseSecondMode: val('phraseSecondMode'), phraseListFirst: val('phraseListFirst'),
+      phraseListSecond: val('phraseListSecond'), phraseLayout: val('phraseLayout'),
+      phraseMethod: val('phraseMethod'),
       attachmentContent: attachmentContent, attachmentName: attachmentName,
       imageContent: imageContent, imageName: imageName,
       clearAttachment: chk('clearAttachment'), clearImage: chk('clearImage'),
@@ -731,6 +736,7 @@ export function formPageScript(
   }
 
   ${cardFormScript()}
+  ${phraseFormScript()}
 
   window.addEventListener('message', function (event) {
     var data = event.data;

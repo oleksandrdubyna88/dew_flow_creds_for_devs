@@ -32,14 +32,39 @@ export function layoutsFor(wordCount: number): readonly PhraseLayout[] {
  * than somebody remembers is a control they think is broken.</p>
  */
 export function layoutRefusal(wordCount: number): string {
-  if (layoutsFor(wordCount).includes('horizontal')) {
-    return '';
+  return layoutsFor(wordCount).includes('horizontal')
+    ? ''
+    : LAYOUT_REFUSAL.replace('{count}', String(wordCount));
+}
+
+/**
+ * The same sentence with the number left open, so the FORM can say it as somebody types.
+ *
+ * <p>The form cannot call `layoutsFor` — it is a page, and this is the host — and the answer has to
+ * change with every word added. A second copy of the sentence written into the script would be a
+ * second copy to keep in step, so the page is given THIS one and the count it already knows.</p>
+ */
+export const LAYOUT_REFUSAL =
+  'The side-by-side layout needs an even number of words, and this phrase has {count}. '
+  + 'Weaving pairs two columns of equal length, and half of an odd number cannot make two equal '
+  + 'halves.';
+
+/**
+ * Which word counts can use the side-by-side layout at all — DERIVED from `layoutsFor`.
+ *
+ * <p>The page has to answer this on every keystroke and cannot import the rule, so it is handed the
+ * rule's own answers instead of a re-implementation of it. `phraseLayout.test.ts` asserts the table
+ * agrees with `layoutsFor` at every count in range, which is what keeps "derived" true rather than
+ * merely intended.</p>
+ */
+export function horizontalCounts(): readonly number[] {
+  const counts: number[] = [];
+  for (let count = PHRASE_RANGE.min; count <= PHRASE_RANGE.max; count++) {
+    if (layoutsFor(count).includes('horizontal')) {
+      counts.push(count);
+    }
   }
-  return (
-    `The side-by-side layout needs an even number of words, and this phrase has ${wordCount}. `
-    + 'Weaving pairs two columns of equal length, and half of an odd number cannot make two equal '
-    + 'halves.'
-  );
+  return counts;
 }
 
 /**

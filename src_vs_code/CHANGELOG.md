@@ -34,9 +34,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **An entry with a woven field cannot be opened for editing**, because the form would have nothing to
   put where the original belongs and saving would weave the woven value a second time.
 
-- **Still to come: the phrase form.** The wordlists, the decoys and the two-column arithmetic are
-  built and tested; the form that would fill them in is not, so the selector's third option has no
-  fields behind it yet.
+- **A seed phrase can be stored, and it is stored woven.** Type the phrase, pick its wordlist — ten
+  BIP-39 languages — and the entry keeps your phrase and a second column shuffled together under one
+  of twelve methods. The second column is either a decoy generated to be indistinguishable from your
+  phrase (same length, same list, and the same checksum state, so neither half stands out) or **your
+  own words**: a second real key, if you want one entry to hold two.
+
+  The words themselves are stored nowhere. What the vault holds is the woven sequence, and the method
+  is not in it — a forgotten method is a lost phrase, and the form says so before you choose.
+
+  The side-by-side layout appears only for an even number of words, and says why when it does not: it
+  pairs two columns of equal length, and half of an odd number cannot make two equal halves. It is
+  removed from the list rather than offered and then refused at the end of a filled-in form.
+
+  Reading it back is the viewer's method picker: the words come back as two rows, and nothing marks
+  either of them.
 
 - **A payment instrument now has a form to fill in.** Choose card or bank details, and the entry asks
   for the fields that form actually has. A card knows which payment system it belongs to as

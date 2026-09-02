@@ -210,6 +210,21 @@ export const FORM_SECTIONS: readonly FormSection[] = [
     condition: "val('paymentForm') === 'card'",
   },
   {
+    id: 'phraseSection',
+    legend: 'Phrase',
+    group: 'main',
+    // depColor11 — the last one free on this kind. `cardSection` has depColor4 and `bankSection`
+    // depColor10, and although all three are mutually exclusive by their conditions,
+    // `colorCollisionsForKind` cannot see a condition: it asks what could be on screen for the KIND,
+    // so a payment's three forms genuinely need three colours.
+    color: 'depColor11',
+    kinds: ['payment'],
+    // The third narrowing, the same mechanism as the two above. Until this section existed the
+    // selector offered a form with nothing behind it — the option was there, the fields were not,
+    // and a save wrote an empty record.
+    condition: "val('paymentForm') === 'phrase'",
+  },
+  {
     id: 'bankSection',
     legend: 'Bank details',
     group: 'main',

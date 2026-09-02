@@ -28,10 +28,20 @@ test('the condition is "has a mixed field", never "is a phrase"', () => {
   // A phrase is the case people picture. A card with a woven PIN is the same state and the same
   // destruction, and it is the one nobody pictures.
   const cardWithWovenPin = { number: '4111111111111111', pin: 'woven', shuffledFields: ['pin'] };
-  const phraseWithNothingWoven = { wordlistFirst: 'bip39', mixed: ['a', 'b', 'c', 'd'] };
+  // CHANGED with the phrase form. This case used to assert `false` and say "a phrase is not
+  // automatically unsafe" — true while nothing in the product could produce `mixed` at all. It is
+  // now produced by exactly one thing, weaving, so a record holding it IS woven: the form would have
+  // no words to put back and the save would weave the woven tokens a second time. The two marks live
+  // in different places (`shuffledFields` for a digit field, the presence of `mixed` for a phrase)
+  // and `wovenKeys` is the one question both are asked.
+  const savedPhrase = { wordlistFirst: 'bip39-en', mixed: ['a', 'b', 'c', 'd'] };
+  // The half of the original point that still holds: a phrase entry that has chosen a wordlist and
+  // saved no phrase is an ordinary, editable entry.
+  const phraseFormNothingSaved = { wordlistFirst: 'bip39-en', layout: 'vertical' };
 
   assert.equal(hasMixedField(cardWithWovenPin), true, 'a card can be as unsafe to edit as a phrase');
-  assert.equal(hasMixedField(phraseWithNothingWoven), false, 'and a phrase is not automatically unsafe');
+  assert.equal(hasMixedField(savedPhrase), true, 'and a stored phrase is woven by definition');
+  assert.equal(hasMixedField(phraseFormNothingSaved), false, 'while an empty one is just an entry');
 });
 
 test('the same question can be asked of the raw stored JSON', () => {
@@ -50,8 +60,11 @@ test('a record that does not parse is not treated as mixed', () => {
 test('the refusal names the fields and never their values', () => {
   const text = mixedEditRefusal({ pin: '12345678', cvv: '123456', shuffledFields: ['pin', 'cvv'] });
 
-  assert.match(text, /pin/);
-  assert.match(text, /cvv/);
+  // By the names on SCREEN, not the record's keys: a refusal naming `mixed` would be about a field
+  // nobody has ever seen called that. (This asserted the lowercase keys before the phrase form.)
+  assert.match(text, /PIN/);
+  assert.match(text, /CVV/);
+  assert.match(mixedEditRefusal({ mixed: ['a', 'b', 'c', 'd'] }), /Woven phrase/);
   assert.ok(!text.includes('12345678'), 'the woven value reached the message');
   assert.ok(!text.includes('123456'), 'the other one did too');
 });

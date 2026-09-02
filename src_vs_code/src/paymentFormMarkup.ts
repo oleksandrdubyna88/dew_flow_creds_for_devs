@@ -1,5 +1,6 @@
 import { DEFAULT_PAYMENT_FORM, PAYMENT_FORMS, PAYMENT_FORM_LABELS } from './paymentForm';
 import { SHUFFLE_CODES } from './shuffle';
+import { phraseMarkup } from './phraseFormMarkup';
 
 /**
  * The payment kind's three fieldsets: the form selector, the card, and the bank details.
@@ -15,7 +16,12 @@ import { SHUFFLE_CODES } from './shuffle';
  * is selected.</p>
  */
 export function paymentMarkup(openSection: (id: string) => string, form: string | undefined): string {
-  return [selectorMarkup(openSection, form), cardMarkup(openSection), bankMarkup(openSection)].join('\n');
+  return [
+    selectorMarkup(openSection, form),
+    cardMarkup(openSection),
+    bankMarkup(openSection),
+    phraseMarkup(openSection),
+  ].join('\n');
 }
 
 /** Which of the three forms this entry is — the only thing here that comes from the entry. */

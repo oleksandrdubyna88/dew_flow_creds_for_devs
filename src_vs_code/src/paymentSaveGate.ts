@@ -7,6 +7,10 @@ import { brandOf } from './cardBrand';
 import { ShuffleCode, isShuffleCode } from './shuffle';
 import { weavePaymentFields } from './paymentWeaving';
 import { confirmDestructive } from './dialogs';
+import * as vscode from 'vscode';
+import { PhraseInput, phraseInputFrom, phraseRecordFor, phraseRefusalFor } from './phraseSaveGate';
+import { phraseSaveWarning } from './phraseLayout';
+import { describeError } from './describeError';
 
 /**
  * The payment kind's host-side half of a save: ask before a form switch destroys the old form, and
@@ -96,6 +100,11 @@ export async function confirmChecksums(data: Record<string, unknown>, chosen: st
  * present in every sync, backup and export. The person believes they replaced the contents.</p>
  */
 export function paymentRecordFor(data: Record<string, unknown>, chosen: string): PaymentFields {
+  // A phrase is woven whole rather than field by field: its two columns ARE the pair, so there is
+  // nothing here for `weavePaymentFields` (which permutes the characters of one value) to do.
+  if (formOf(chosen) === 'phrase') {
+    return phraseRecordFor(phraseInputFrom(data), Math.random);
+  }
   const typed = withBrand(cardFieldsFrom(data), brandOf(textOf(data.cardNumber)));
   const kept = clearForForm(typed, formOf(chosen));
   // Woven LAST, and after the form switch has already dropped what the chosen form does not own —
@@ -166,5 +175,60 @@ export async function paymentGates(
   context: PaymentSaveContext,
 ): Promise<boolean> {
   const chosen = textOf(data.paymentForm);
-  return (await confirmFormSwitch(chosen, context)) && (await confirmChecksums(data, chosen));
+  return (
+    (await confirmFormSwitch(chosen, context))
+    && (await confirmChecksums(data, chosen))
+    && (await confirmPhrase(data, chosen))
+  );
+}
+
+/**
+ * The phrase's own gate: what cannot be woven, and the bargain for what can.
+ *
+ * <p>Last of the three, and that order is the same argument the other two settled: the switch asks
+ * before anything is destroyed, the checksums ask before an original is gone, and this asks about the
+ * thing that is about to become unreadable to everybody including us.</p>
+ *
+ * <p>A refusal here costs the person nothing. The form panel keeps its state deliberately
+ * (`retainContextWhenHidden`), so every typed word is exactly where it was, and no decoy has been
+ * drawn — `phraseRecordFor` is the only thing that draws one, and it runs on a save that is going
+ * through.</p>
+ */
+export async function confirmPhrase(data: Record<string, unknown>, chosen: string): Promise<boolean> {
+  const input = phraseSaveFor(data, chosen);
+  if (input === undefined) {
+    return true;
+  }
+  const refusal = phraseRefusalFor(input) || buildFailure(input);
+  if (refusal !== '') {
+    void vscode.window.showWarningMessage(refusal);
+    return false;
+  }
+  return confirmDestructive(phraseSaveWarning(input.words.length, input.layout), 'Weave and save');
+}
+
+/** A phrase save with something in it, or nothing to ask about. */
+function phraseSaveFor(data: Record<string, unknown>, chosen: string): PhraseInput | undefined {
+  if (formOf(chosen) !== 'phrase') {
+    return undefined;
+  }
+  const input = phraseInputFrom(data);
+  return input.words.length === 0 ? undefined : input;
+}
+
+/**
+ * A build, thrown away, so that the one impossible case is a sentence rather than a crash.
+ *
+ * <p>`generateDecoyPhrase` refuses loudly after sixty-four draws — deliberately, because an unbounded
+ * search in a save path is a hung window. The odds of reaching it are not worth writing down; the
+ * cost of a save that throws instead of refusing is, so it is caught here where there is still a
+ * person to tell.</p>
+ */
+function buildFailure(input: PhraseInput): string {
+  try {
+    phraseRecordFor(input, Math.random);
+    return '';
+  } catch (error) {
+    return describeError(error);
+  }
 }

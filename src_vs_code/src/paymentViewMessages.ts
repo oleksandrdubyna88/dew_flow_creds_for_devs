@@ -1,4 +1,4 @@
-import { PaymentFieldKey, PaymentFields, keysForForm } from './paymentFields';
+import { PaymentFieldKey, PaymentFields, keysForForm, wovenKeys } from './paymentFields';
 import { PaymentForm } from './paymentForm';
 import { MIN_SHUFFLE_TOKENS, ShuffleCode, isShuffleCode } from './shuffle';
 import { PhraseLayout, methodOrder } from './phraseLayout';
@@ -50,9 +50,10 @@ export function presentKeysOf(fields: PaymentFields, form: PaymentForm): readonl
 /** Which keys are stored woven — the record's own list, never a name it does not also hold. */
 export function wovenKeysOf(fields: PaymentFields, form: PaymentForm): readonly PaymentFieldKey[] {
   const present = new Set<string>(presentKeysOf(fields, form));
-  return (fields.shuffledFields ?? []).filter((name): name is PaymentFieldKey =>
-    present.has(name),
-  );
+  // `wovenKeys` owns the rule that a record marks a woven digit field and a woven PHRASE in two
+  // different ways; this only narrows it to what THIS form actually shows, so a card retyped as
+  // bank details cannot draw a picker for a key its form no longer owns.
+  return wovenKeys(fields).filter((name) => present.has(name));
 }
 
 /**

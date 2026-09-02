@@ -188,6 +188,29 @@ export function keysForForm(form: PaymentForm): readonly PaymentFieldKey[] {
   return FORM_KEYS[form];
 }
 
+/**
+ * Which keys of THIS record are stored woven — the one answer, for the three questions that need it.
+ *
+ * <p>The record says it in two different ways, and both are deliberate. A digit field is named in
+ * `shuffledFields`, because the record holds the woven value under the field's own key and nothing
+ * else would distinguish it from a plain one. A PHRASE is not named there at all — `mixed` is not a
+ * field that got woven, it IS the woven phrase, so its presence is the mark (see `SHUFFLEABLE_KEYS`,
+ * which excludes it on purpose and is checked by the compiler).</p>
+ *
+ * <p>Two representations, one question — so the question is answered once, here. It is asked by the
+ * edit guard (`mixedFieldGuard`), by the viewer's card (which draws a method picker per woven key),
+ * and by anything later that needs to know whether a record can be reopened. The first version of the
+ * phrase form learnt this the expensive way: it wrote `shuffledFields: ['mixed']`, `pickPaymentFields`
+ * pruned the name (correctly — it is not a shuffleable field), and the record came back holding a
+ * woven phrase that nothing recognised as woven. Editable, and destroyed on the next save.</p>
+ */
+export function wovenKeys(fields: PaymentFields): readonly PaymentFieldKey[] {
+  const named = (fields.shuffledFields ?? []).filter((name): name is PaymentFieldKey =>
+    (PAYMENT_FIELD_KEYS as readonly string[]).includes(name),
+  );
+  return (fields.mixed ?? []).length > 0 ? [...named, 'mixed'] : named;
+}
+
 /** The stored JSON into a record — a string that does not parse is no fields, never a throw. */
 export function parsePaymentFields(raw: string | undefined): PaymentFields {
   if (raw === undefined || raw.length === 0) {
@@ -235,12 +258,28 @@ function pruneMarks(out: Record<string, unknown>): void {
   if (!Array.isArray(marks)) {
     return;
   }
-  const withValues = marks.filter((name) => typeof out[name as string] === 'string');
+  const withValues = marks.filter((name) => holdsWovenValue(out[name as string]));
   if (withValues.length === 0) {
     delete out.shuffledFields;
   } else {
     out.shuffledFields = withValues;
   }
+}
+
+/**
+ * What counts as a value a mark can describe — a string OR a token list.
+ *
+ * <p>This used to be `typeof value === 'string'`, which was right while only the five digit fields
+ * could be woven and silently wrong the moment a phrase could be. A woven phrase is `mixed`, an
+ * ARRAY, so its mark was pruned by the very rule that exists to keep marks honest: the record kept
+ * the woven tokens and lost the one thing that says they are woven — no picker in the viewer, no
+ * refusal to edit, and the words gone the first time somebody opened the form.</p>
+ *
+ * <p>Found by the phrase form's own round-trip test, which came back with the phrase absent rather
+ * than wrong. The invariant is unchanged: a mark may not outlive the value it describes.</p>
+ */
+function holdsWovenValue(value: unknown): boolean {
+  return typeof value === 'string' || (Array.isArray(value) && value.length > 0);
 }
 
 function takeStrings(source: Record<string, unknown>, out: Record<string, unknown>): void {
