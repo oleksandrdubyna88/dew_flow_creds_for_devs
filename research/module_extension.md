@@ -300,6 +300,9 @@ tombstoned, which the sweep deliberately refuses to touch: the deletion is merel
 | delete (`storageManager`) | tombstone → node → secrets | Rule B |
 | **restore / sync-apply (`importBundle`)** | **secrets → node → drop-vanished** | had it backwards in BOTH halves; found by auditing, not by a test |
 | share accept (`shareInbox`) | node, then secrets — a fresh id, so nothing pre-exists to claim | |
+| **import (`importCommands`)** | **secrets → node, per entity, compensated** | inverted; every entry in a file had its own window |
+| **agent create (`mcpHooks`)** | **secret → node, compensated** | the secret may have been GENERATED here, so a lost one is a value nobody asked for |
+| **account removal (`storageManager`)** | **tombstones → tree → secrets → forget** | Rule B; the review's finding on my own Rule A fix |
 
 The `importBundle` one is the find worth keeping: the review asked which other paths write both, and
 that was the answer. Its vanished-id list is now captured from the OLD tree before `saveNodes`,
@@ -321,10 +324,44 @@ one trigger, one place to look. **The honest limit:** a tombstone pruned by the 
 sweep ran leaves an orphan that is never collected. That is a keychain slot holding ciphertext no read
 path reaches — the state the invariant permits, tolerated rather than hidden.
 
+##### `entityWrite.ts` — the create's orphan is the one nothing can collect
+
+A deletion's orphan is collectable because the tombstone names it. A **create** has no tombstone: if
+the node write fails after the secret is stored, that id is in neither the tree nor any record, and
+the bytes stay in the keychain until the machine is wiped. The review escalated this from tidiness to
+security, and the framing is fair — a create that keeps failing keeps leaving unaccountable slots.
+
+`createEntityWithSecrets(writeSecrets, writeNode, undoSecrets)` compensates for every failure this
+process can **observe** — a keychain refusal, a rejected node write, a validation throw — deleting
+what it wrote before rethrowing. If the undo fails too, the caller still hears the **original** error:
+a failure to tidy up must not mask the failure that made tidying necessary.
+
+**The caller supplies the undo**, which is the design: it knows exactly which secrets it wrote, and
+undoing precisely those is safe where "delete everything this id owns" would not be. It is for
+CREATES only — on an update that phrasing would delete the values being replaced. Taking callbacks
+also meant no new `StorageManager` method, on a file at its size-ratchet baseline.
+
+**What it deliberately does not cover:** a process KILL between the two writes. Covering that needs a
+durable record written before the first secret, and both candidates were rejected for stated reasons —
+reusing the tombstone list would **sync a deletion for an id that never existed** (another machine
+could then apply it to a live entry), and a machine-local pending-id list needs an expiry window to
+tell an abandoned id from one in flight, which is a second consistency problem to keep honest. The
+residual is written down in the module header rather than left to be rediscovered.
+
+##### `secretMaps.ts` — the eleven rows, out of the class that used them
+
+`SECRET_KINDS`, `SecretMapKey`, `SecretMaps` and `emptySecretMaps` moved out of `storageManager.ts`
+in S1.4. Five other files carry lists that must AGREE with this table (below), and a shared truth
+living inside the one class that happens to use it is a shared truth nothing else can be checked
+against. `emptySecretMaps` is now **derived** from the rows instead of hand-written — it was an
+eleventh list, and the kind that is wrong for a release before anyone notices, because a missing key
+reads as "this bundle carried no payments" rather than as a mistake. (Not `secretKinds.ts`, which is
+about what the extension can GENERATE.)
+
 ##### The row is half the job, and the other half deletes if you forget it
 
 Adding a secret kind to `SECRET_KINDS` is free for everything that walks the table and **actively
-destructive** for everything that does not. Four lists are hand-maintained and must agree with it, and
+destructive** for everything that does not. Five lists are hand-maintained and must agree with it, and
 the code review of S1.2 found three of them missing while the tests were green:
 
 | hand-maintained list | what forgetting it does |
@@ -332,7 +369,8 @@ the code review of S1.2 found three of them missing while the tests were green:
 | `syncMerge.ts` — `ProfileSnapshot`, `emptySnapshot`, `fingerprint`, the `copySecret` line, the `merged` literal | **DELETES.** The row already puts the kind into the snapshot `getSnapshot` builds, so a merged snapshot returning without it reads as an absence and `dropAbsentKinds` deletes that key for every entity. Save a card, let any ordinary change arrive from another machine, lose the card |
 | `syncManager.ts` — the vault read-back (`payload.x ?? {}`) | Drops the FAR side's values on arrival, so the fingerprint never matches and every cycle pushes. Its own comment records `fields` being forgotten here in 0.82 |
 | `idQuarantine.ts` — `remapBundle`'s `rekey` list | Strands the record. An unsafe imported id is renamed, the value stays under the old key, the restored entry reads empty and the only copy becomes an unreachable keychain orphan |
-| `revisionHistory.ts` — `RevisionSecrets`, `SMALL_FIELDS`, `revisionSnapshot.ts` | A rollback returns the entry without that field. **Closed for `payment`** — all four lists now carry it |
+| `revisionHistory.ts` — `RevisionSecrets`, `SMALL_FIELDS`, `revisionSnapshot.ts` | A rollback returns the entry without that field. **Closed for `payment`** — all five lists now carry it |
+| `externalSecretsApply.ts` — `EXTERNAL_SECRET_KEYS` | Silently DISCARDS the value on an external (broker/CLI) import. It had stopped agreeing twice — `config` since 0.77.0 and `payment` from S1.3 — which is why the loop is now driven from one exported table instead of written out at the call site |
 
 Only one of these is caught by a test today, and it is worth copying rather than admiring:
 `syncManager.test.ts` derives its slot list from `emptySnapshot()` **at run time**, so a new slot is

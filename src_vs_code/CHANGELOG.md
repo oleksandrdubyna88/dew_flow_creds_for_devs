@@ -8,6 +8,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **A half-written entry can no longer claim a secret that is not there — and a failed create no
+  longer leaves one behind.** Saving, importing, restoring, accepting a share and creating through an
+  agent all write the secret *before* the entry that points at it, and clear a secret only *after*
+  the entry has stopped pointing at it. Interrupted at any point, what you are left with is at worst
+  invisible and harmless; you never get an entry that shows a field it cannot open — the state that
+  used to travel to your other machines. If a create fails partway, whatever it had already stored is
+  taken back out, so nothing is left in the keychain that nothing can reach.
+
+  Nine write paths were inverted, four of them able to lose data: a restore, a sync apply, a
+  file import (each entry in the file had its own window) and an agent-created entry. Deleting an
+  account now records what is going before it wipes the tree, so a crash mid-delete cannot leave
+  secrets that nothing names.
+
 - **A ninth kind of entry: a payment instrument.** A bank card, a set of bank details or a hidden
   phrase — three forms of one kind, because they differ only in their fields while the tree, the
   folders, the sharing and the trash treat them identically. A `payments` folder is seeded for new

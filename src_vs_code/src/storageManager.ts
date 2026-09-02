@@ -19,6 +19,7 @@ import { TRASH_FOLDER_NAME, findTrash, restoreTarget } from './trash';
 import { exportSecretsFor } from './exportSecrets';
 import { PaymentFields, parsePaymentFields, serializePaymentFields } from './paymentFields';
 import { forgetTombstone, sweepOrphanSecrets } from './orphanSweep';
+import { SECRET_KINDS, SecretMapKey, SecretMaps, emptySecretMaps } from './secretMaps';
 import {
   attachmentSecretKey,
   configSecretKey,
@@ -71,32 +72,6 @@ const DEVICE_SEQ_KEY = 'credSshManager.deviceSeq';
 const IMPORTED_IDS_KEY = 'credSshManager.importedIds';
 
 
-/**
- * Every per-entity secret kept as ONE string under ONE key, by the bundle field that carries it.
- *
- * <p>Export, import, snapshot and the delete-with-the-entry all walk THIS list. It used to be
- * ten hand-written blocks per site — the audit's "seven kinds walked by hand" — and a kind added
- * to one site and forgotten in another exported silently incomplete files. Now a kind is a row.</p>
- */
-type SecretMapKey = 'passwords' | 'privateKeys' | 'vpnConfigs' | 'dbConnections' | 'notes' | 'attachments' | 'images' | 'totps' | 'configs' | 'fields' | 'payments';
-type SecretMaps = Record<SecretMapKey, Record<string, string>>;
-
-const SECRET_KINDS: ReadonlyArray<{ bundleKey: SecretMapKey; key: (accountId: string, entityId: string) => string }> = [
-  { bundleKey: 'passwords', key: (a, e) => secretKey(a, e) },
-  { bundleKey: 'privateKeys', key: (a, e) => privateKeySecretKey(a, e) },
-  { bundleKey: 'vpnConfigs', key: (a, e) => vpnConfigSecretKey(a, e) },
-  { bundleKey: 'dbConnections', key: (a, e) => dbConnSecretKey(a, e) },
-  { bundleKey: 'notes', key: (a, e) => notesSecretKey(a, e) },
-  { bundleKey: 'attachments', key: (a, e) => attachmentSecretKey(a, e) },
-  { bundleKey: 'images', key: (a, e) => imageSecretKey(a, e) },
-  { bundleKey: 'totps', key: (a, e) => totpSecretKey(a, e) },
-  { bundleKey: 'configs', key: (a, e) => configSecretKey(a, e) },
-  { bundleKey: 'fields', key: (a, e) => fieldsSecretKey(a, e) },
-  // ONE row is the whole of a new secret kind's storage — export, import, snapshot and delete all
-  // walk this list, so a kind reaches four sites with no line written at any of them.
-  { bundleKey: 'payments', key: (a, e) => paymentSecretKey(a, e) },
-];
-
 /** A pre-0.20 note still sitting in plaintext metadata, when no stored note has replaced it. */
 function legacyNoteOf(node: TreeNode, maps: SecretMaps): string | undefined {
   if (maps.notes[node.id] !== undefined) {
@@ -110,21 +85,6 @@ function plainNote(node: TreeNode): string | undefined {
   return node.details?.notes;
 }
 
-function emptySecretMaps(): SecretMaps {
-  return {
-    passwords: {},
-    privateKeys: {},
-    vpnConfigs: {},
-    dbConnections: {},
-    notes: {},
-    attachments: {},
-    images: {},
-    totps: {},
-    configs: {},
-    fields: {},
-    payments: {},
-  };
-}
 
 /** The bundle's maps with every absent one an empty record — a pre-0.57 file has no totps at all. */
 function secretMapsOf(bundle: Partial<Record<SecretMapKey, Record<string, string>>>): SecretMaps {
@@ -385,6 +345,12 @@ export class StorageManager implements vscode.Disposable {
    *  (Rule A) — reversed, a crash left every node claiming secrets already gone. Found by an audit. */
   async removeAccount(accountId: string): Promise<void> {
     const gone = this.getNodes(accountId).filter((n) => n.type === 'entity').map((n) => n.id);
+    // Rule B before Rule A, and this order is the review's finding on my own fix. Inverting the
+    // removal put the tree wipe first, which made every one of this account's secrets UNCOLLECTABLE
+    // on a crash: no tree, no tombstones, so the sweep can never name them. So the tombstones are
+    // written first — they are the durable record of what is about to become unreachable — and only
+    // then the tree, the secrets, and last the tombstone list itself.
+    await this.setTombstones(accountId, Object.fromEntries(gone.map((id) => [id, { deletedAt: Date.now(), v: {} }])));
     await this.globalState.update(nodesKey(accountId), undefined);
     for (const key of gone.flatMap((id) => entitySecretKeys(accountId, id))) {
       await this.secrets.delete(key);

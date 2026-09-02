@@ -6,6 +6,7 @@ export interface NodeLocation {
 }
 
 import { StorageManager } from './storageManager';
+import { createEntityWithSecrets } from './entityWrite';
 import { ImportedEntity } from './importFormats';
 import { toTreeNodes } from './importFormats';
 import { TreeElement } from './types';
@@ -54,12 +55,13 @@ export async function importEntities(
 
   const made = toTreeNodes(entities, () => StorageManager.newId(), (folder) => parents.get(folder ?? '') ?? null);
   for (const { node, secrets } of made) {
-    // ADDITIONS first, then the node — Rule A (`applyFormSecrets.ts`). This loop had it the other way
-    // round, so an import interrupted partway left a synced entry claiming a password, notes, a key, a
-    // connection string and a one-time-code seed that nobody had written. Per ENTITY, so every entry
-    // in the import had its own window. Found by an audit of the write paths, not by a test.
-    await writeImportedSecrets(storage, location.accountId, node.id, secrets);
-    await storage.addNode(location.accountId, node);
+    // Secrets, then the node — and on any observable failure the secrets go back, so a refused
+    // keychain does not leave this id's values unreachable in it. See `entityWrite.ts`.
+    await createEntityWithSecrets(
+      () => writeImportedSecrets(storage, location.accountId, node.id, secrets),
+      () => storage.addNode(location.accountId, node),
+      () => undoImportedSecrets(storage, location.accountId, node.id),
+    );
   }
   return made.length;
 }
@@ -81,6 +83,15 @@ export async function resolveLocation(
   }
   const account = await pickAccount(storage, accountPlaceholder);
   return account === undefined ? undefined : { accountId: account.accountId, parentId: null };
+}
+
+/** Undo exactly what `writeImportedSecrets` writes — no more, so it is safe on a fresh id. */
+async function undoImportedSecrets(storage: StorageManager, accountId: string, entityId: string): Promise<void> {
+  await storage.deletePassword(accountId, entityId);
+  await storage.setNotes(accountId, entityId, undefined);
+  await storage.deletePrivateKey(accountId, entityId);
+  await storage.deleteDbConnection(accountId, entityId);
+  await storage.deleteTotp(accountId, entityId);
 }
 
 /**
