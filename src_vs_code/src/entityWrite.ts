@@ -51,25 +51,20 @@ import { describeError } from './describeError';
  * error. An entry that exists when the person was told it did not is a surprise; deleting a
  * credential from under a node that other machines can see is data loss.</p>
  *
- * <h3>What this deliberately does not cover</h3>
+ * <h3>Even a process kill, in the end</h3>
  *
- * <p>Every failure this process can OBSERVE. NOT a process KILL between the writes, and nothing here
- * pretends to. Covering that needs a durable record written before the first secret. Two candidates
- * were considered and both rejected for stated reasons:</p>
+ * <p>Most of this story documented one tolerated residual: a kill between the first secret write and
+ * the node write leaves an orphan nothing can name. Covering it needs a durable record written before
+ * the first secret, and two candidates were rejected — a <b>tombstone</b>, because it SYNCS and would
+ * publish a deletion for an id that never existed; and a <b>pending-id list</b>, because telling an
+ * abandoned id from one in flight looked like it needed timestamps and an expiry window.</p>
  *
- * <ul>
- *   <li><b>Reusing the tombstone list</b> — appealing, because the sweep already reads it and
- *       `addNode` already forgets a revived id. Rejected because tombstones SYNC: a cycle running in
- *       that window would publish a deletion for an id that never existed, and if the create then
- *       succeeded, another machine could apply that tombstone to a live entry. Trading an unreachable
- *       orphan for cross-machine data loss is the wrong direction.</li>
- *   <li><b>A machine-local pending-id list</b> — no sync risk, but it needs a rule for telling a
- *       genuinely abandoned id from one whose create is in flight, which means timestamps and an
- *       expiry window: a second consistency problem to keep honest.</li>
- * </ul>
- *
- * <p>So the residual is a create interrupted by a process kill, between the first secret write and the
- * node write. Narrow, tolerated, and written down here rather than left to be rediscovered.</p>
+ * <p>The second objection dissolved once the removals needed the same record. There is no expiry rule
+ * to invent, because the sweep never has to guess: it acts on a pending id only when that id's
+ * <b>node is absent</b>, so a create in flight is skipped for exactly the reason a create that landed
+ * is. `deferCleanup` runs FIRST, unconditionally; `finishCleanup` takes the id back out once the node
+ * is there to claim the secrets. What made this look impossible was assuming the record had to be the
+ * tombstone list.</p>
  *
  * <p><b>The caller supplies the undo</b>, which is the point: it knows exactly which secrets it
  * wrote, and undoing precisely those is safe where deleting everything the id owns would not be. This
@@ -88,8 +83,10 @@ export interface EntityCreate {
   presence: () => 'present' | 'absent' | 'unknown';
   /** Delete exactly the secrets `writeSecrets` writes. Runs only on a PROVEN absence. */
   undoSecrets: () => Promise<void>;
-  /** Hand this id to the sweep, for when the tree cannot say yet. */
+  /** Write this id into the sweep's record, BEFORE anything else. */
   deferCleanup: () => Promise<void>;
+  /** Take it back out, once the node is there to claim the secrets. */
+  finishCleanup: () => Promise<void>;
 }
 
 /**
@@ -114,9 +111,15 @@ export class EntryLandedError extends Error {
 }
 
 export async function createEntityWithSecrets(create: EntityCreate): Promise<void> {
+  // Rule B, applied to a CREATE — which this story spent seven rounds calling impossible. The record
+  // goes down BEFORE the first secret, so a process kill anywhere after this leaves an id the sweep
+  // can name. A create still in flight is skipped for the same reason a create that succeeded is: the
+  // sweep acts on a pending id only when that id's NODE IS ABSENT.
+  await create.deferCleanup();
   try {
     await create.writeSecrets();
     await create.writeNode();
+    await tidy(create.finishCleanup);
   } catch (error) {
     const where = create.presence();
     if (where === 'present') {
@@ -124,7 +127,11 @@ export async function createEntityWithSecrets(create: EntityCreate): Promise<voi
       // error rather than instead of it, so the log still says what actually went wrong.
       throw new EntryLandedError(error);
     }
-    await tidy(where === 'absent' ? create.undoSecrets : create.deferCleanup);
+    // On a proven absence the secrets go now; on an unknown tree the record written above is the
+    // answer already, and it stays until the sweep can act on it.
+    if (where === 'absent') {
+      await tidy(create.undoSecrets);
+    }
     // The ORIGINAL error, because that is the one describing what went wrong. A failure to tidy up
     // must not mask the failure that made tidying necessary.
     throw error;

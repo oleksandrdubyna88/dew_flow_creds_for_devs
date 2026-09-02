@@ -43,6 +43,7 @@ test('a create whose node never landed leaves nothing in the keychain', async ()
         writeNode: () => Promise.reject(boom),
         presence: () => (r.tree.has('ent') ? 'present' : 'absent'),
         deferCleanup: () => Promise.resolve(),
+        finishCleanup: () => Promise.resolve(),
         undoSecrets: () => {
           r.chain.delete('ent');
           r.log.push('undoSecrets');
@@ -77,6 +78,7 @@ test('a node that DID land keeps its secrets, however the create ended', async (
       },
       presence: () => (r.tree.has('ent') ? 'present' : 'absent'),
       deferCleanup: () => Promise.resolve(),
+      finishCleanup: () => Promise.resolve(),
       undoSecrets: () => {
         secretsTouched = true;
         return Promise.resolve();
@@ -101,6 +103,7 @@ test('a landed entry is REPORTED as landed, so a retry is not a blind duplicate'
     writeNode: () => Promise.reject(boom),
     presence: () => 'present',
     deferCleanup: () => Promise.resolve(),
+    finishCleanup: () => Promise.resolve(),
     undoSecrets: () => Promise.reject(new Error('never reached')),
   }).then(
     () => undefined,
@@ -131,6 +134,7 @@ test('a create that fails DURING the secret writes still undoes the ones that la
       },
       presence: () => 'absent',
       deferCleanup: () => Promise.resolve(),
+      finishCleanup: () => Promise.resolve(),
       undoSecrets: () => {
         r.chain.clear();
         return Promise.resolve();
@@ -152,6 +156,7 @@ test('an undo that fails too does not replace the error that made it necessary',
         writeNode: () => Promise.reject(original),
         presence: () => 'absent',
         deferCleanup: () => Promise.resolve(),
+        finishCleanup: () => Promise.resolve(),
         undoSecrets: () => Promise.reject(new Error('and the cleanup failed as well')),
       }),
     (e) => e === original,
@@ -173,6 +178,7 @@ test('the happy path writes the secret BEFORE the node, and undoes nothing', asy
     },
     presence: () => 'present',
     deferCleanup: () => Promise.resolve(),
+    finishCleanup: () => Promise.resolve(),
     undoSecrets: () => {
       undone = true;
       return Promise.resolve();
@@ -203,6 +209,7 @@ test('a tree that cannot be READ deletes nothing — and hands the id to the swe
         deferred = true;
         return Promise.resolve();
       },
+      finishCleanup: () => Promise.resolve(),
       undoSecrets: () => {
         deleted = true;
         return Promise.resolve();
@@ -212,4 +219,60 @@ test('a tree that cannot be READ deletes nothing — and hands the id to the swe
 
   assert.equal(deleted, false, 'absence must be PROVEN before anything is deleted');
   assert.equal(deferred, true, 'and the id is written down, so the sweep can finish the job later');
+});
+
+test('the id is written into the sweep record BEFORE the first secret, and taken out after the node', async () => {
+  // The residual this story documented for seven rounds — a process kill between the first secret
+  // write and the node write leaves an orphan nothing can name — is closed by writing the record
+  // first. There is no expiry rule to invent, because the sweep never guesses: it acts on a pending id
+  // only when that id's NODE IS ABSENT, so a create in flight is skipped for the same reason a create
+  // that landed is.
+  const order: string[] = [];
+
+  await createEntityWithSecrets({
+    deferCleanup: () => {
+      order.push('defer');
+      return Promise.resolve();
+    },
+    writeSecrets: () => {
+      order.push('secret');
+      return Promise.resolve();
+    },
+    writeNode: () => {
+      order.push('node');
+      return Promise.resolve();
+    },
+    finishCleanup: () => {
+      order.push('finish');
+      return Promise.resolve();
+    },
+    presence: () => 'present',
+    undoSecrets: () => Promise.reject(new Error('never reached')),
+  });
+
+  assert.deepEqual(order, ['defer', 'secret', 'node', 'finish']);
+});
+
+test('a create killed after its record is written leaves an id the sweep can name', async () => {
+  // Simulated by stopping at the secret write: whatever happens after `defer`, the id is on the list.
+  const pending = new Set<string>();
+
+  await assert.rejects(() =>
+    createEntityWithSecrets({
+      deferCleanup: () => {
+        pending.add('e1');
+        return Promise.resolve();
+      },
+      writeSecrets: () => Promise.reject(new Error('killed here')),
+      writeNode: () => Promise.reject(new Error('never reached')),
+      finishCleanup: () => {
+        pending.delete('e1');
+        return Promise.resolve();
+      },
+      presence: () => 'unknown',
+      undoSecrets: () => Promise.reject(new Error('not on an unknown tree')),
+    }),
+  );
+
+  assert.deepEqual([...pending], ['e1'], 'the sweep has something to find, whatever happened after');
 });

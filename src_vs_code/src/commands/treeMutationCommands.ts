@@ -282,6 +282,7 @@ export function registerTreeMutationCommands(host: TreeMutationCommandsHost): vo
         }),
       presence: () => storage.nodePresence(location.accountId, id),
       deferCleanup: () => storage.deferSecretCleanup(location.accountId, id),
+      finishCleanup: () => storage.endSecretCleanup(location.accountId, id),
       // Safe as a blanket delete BECAUSE the id is new: nothing older sits under any of its keys.
       undoSecrets: () => storage.forgetEntitySecrets(location.accountId, id),
     }));

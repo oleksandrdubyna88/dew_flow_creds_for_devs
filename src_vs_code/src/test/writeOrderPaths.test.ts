@@ -79,6 +79,11 @@ function recorder(): { calls: string[]; storage: Record<string, unknown> } {
     deleteTotp: note('deleteTotp'),
     getNodes: () => [],
     getNode: () => undefined,
+    nodePresence: () => 'absent',
+    // The create's Rule B record — first in, last out. Not what these tests assert, but the real
+    // `createEntityWithSecrets` calls both, so the fake has to answer them.
+    deferSecretCleanup: () => Promise.resolve(),
+    endSecretCleanup: () => Promise.resolve(),
   };
   return { calls, storage };
 }
@@ -233,6 +238,7 @@ function stores(options: { addNodeFails: boolean }): {
     // Three answers, not two: 'unknown' is what an unreadable tree gives — see `nodePresence`.
     nodePresence: (_a: string, id: string): string => (tree.includes(id) ? 'present' : 'absent'),
     deferSecretCleanup: (): Promise<void> => Promise.resolve(),
+    endSecretCleanup: (): Promise<void> => Promise.resolve(),
     getNode: (_a: string, id: string): object | undefined => (tree.includes(id) ? { id } : undefined),
     setPassword: set('password'),
     deletePassword: del('password'),

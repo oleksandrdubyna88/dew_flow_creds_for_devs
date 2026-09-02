@@ -127,14 +127,19 @@ const { StorageManager } = ((): typeof import('../storageManager') => {
   return require('../storageManager') as typeof import('../storageManager');
 })();
 
-function memento(): { get<T>(key: string, fallback?: T): T | undefined; update(key: string, value: unknown): Promise<void> } {
-  const map = new Map<string, unknown>();
+function memento(seed: Record<string, unknown> = {}): {
+  get<T>(key: string, fallback?: T): T | undefined;
+  update(key: string, value: unknown): Promise<void>;
+  keys(): string[];
+} {
+  const map = new Map<string, unknown>(Object.entries(seed));
   return {
     get: <T>(key: string, fallback?: T): T | undefined => (map.has(key) ? (map.get(key) as T) : fallback),
     update: (key: string, value: unknown): Promise<void> => {
       map.set(key, value !== null && typeof value === 'object' ? JSON.parse(JSON.stringify(value)) : value);
       return Promise.resolve();
     },
+    keys: () => [...map.keys()],
   };
 }
 
@@ -205,8 +210,11 @@ function world(): World {
   // pass silently. The folder-transport verdicts have their own suite (senderPinning).
   ui.config.nasBackupPath = 'https://vault.corp.com';
   const state = memento();
-  const storage = new StorageManager(memento() as never, secrets() as never);
-  void storage.upsertAccount(RECIPIENT);
+  // Seeded rather than upserted: `upsertAccount` is queued (`serialQueue`), so calling it without
+  // awaiting would leave `world()` handing back a storage whose account is not listed yet — and this
+  // builder is synchronous by design, used by thirty tests.
+  const store = memento({ 'credSshManager.accounts': [RECIPIENT] });
+  const storage = new StorageManager(store as never, secrets() as never);
   let mutated = 0;
   const removed: OwnedShare[] = [];
   const delivered: unknown[] = [];

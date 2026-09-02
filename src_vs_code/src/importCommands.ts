@@ -66,6 +66,7 @@ export async function importEntities(
       writeNode: () => storage.addNode(location.accountId, node),
       presence: () => storage.nodePresence(location.accountId, node.id),
       deferCleanup: () => storage.deferSecretCleanup(location.accountId, node.id),
+      finishCleanup: () => storage.endSecretCleanup(location.accountId, node.id),
       undoSecrets: () => undoImportedSecrets(storage, location.accountId, node.id),
     }));
   }

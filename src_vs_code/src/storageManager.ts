@@ -8,7 +8,8 @@ import { ProfileSnapshot } from './syncMerge';
 import { quarantineUnsafeIds } from './idQuarantine';
 import { SigningKeypair } from './shareSignature';
 import { ensureSigningKeypair, readSigningKeypair } from './signingKeyStore';
-import { EscrowShareWrap, isEscrowShareWrap } from './orgEscrowShareWrap';
+import { EscrowShareWrap } from './orgEscrowShareWrap';
+import { eraseOrgEscrowShare, readOrgEscrowShare, writeOrgEscrowShare } from './escrowShareStore';
 import { RemoteState, buildDefaultFolders, shouldSeedDefaults } from './defaultFolders';
 import { Tombstone, VersionVector, bumpVector, mergeVectors, normalizeTombstone, parseTombstones } from './versionVector';
 import { isSelfOrDescendantIn, subtreeOf } from './selectionResolver';
@@ -46,7 +47,6 @@ import {
   fieldsSecretKey,
   imageSecretKey,
   notesSecretKey,
-  orgEscrowShareSecretKey,
   paymentSecretKey,
   privateKeySecretKey,
   secretKey,
@@ -307,7 +307,14 @@ export class StorageManager implements vscode.Disposable {
   }
 
   /** Add a profile, or refresh email/provider when it already exists. */
-  async upsertAccount(account: StoredAccount): Promise<void> {
+  upsertAccount(account: StoredAccount): Promise<void> {
+    // On the queue with the other three: `finishBeforeReuse` reads and writes the record a removal is
+    // midway through, and an upsert landing between a removal's marker and its unlist is exactly the
+    // interleaving the queue exists to stop.
+    return this.writes.run(() => this.listAccount(account));
+  }
+
+  private async listAccount(account: StoredAccount): Promise<void> {
     // An account whose removal was interrupted is finished off BEFORE it is listed again, so what
     // comes back is a clean profile rather than the wreckage of a deletion. See `pendingCleanup.ts`.
     // Read first and await only when there IS one: this runs on every sign-in, and the common path
@@ -402,6 +409,12 @@ export class StorageManager implements vscode.Disposable {
    * Every keychain key this entity owns, gone. Safe as a blanket delete for a failed CREATE precisely
    * because the id is new — nothing older sits under any of them.
    */
+  /** Delete one key and mark the profile changed — the three lines every `deleteX` was. */
+  private async dropSecret(key: string, accountId: string): Promise<void> {
+    await this.secrets.delete(key);
+    this.touch(accountId);
+  }
+
   /**
    * Store a value, or DELETE when there is none — the shape six secret kinds share. `setPassword` is
    * the one that does NOT (nothing means KEEP); its own comment and `writeOrderPaths.test.ts` say so.
@@ -470,6 +483,15 @@ export class StorageManager implements vscode.Disposable {
   async deferSecretCleanup(accountId: string, entityId: string): Promise<void> {
     const port = this.cleanupPort();
     await port.write(markSecretsPending(port.read(), accountId, [entityId]));
+  }
+
+  /** Take one id back out of the sweep's record — its node is there to claim its secrets now. */
+  async endSecretCleanup(accountId: string, entityId: string): Promise<void> {
+    const port = this.cleanupPort();
+    const pending = port.read();
+    const rest = (pending.secrets[accountId] ?? []).filter((id) => id !== entityId);
+    const without = clearSecretsPending(pending, accountId);
+    await port.write(markSecretsPending(without, accountId, rest));
   }
 
   /** The sorted children of one position (`null` = root) — frozen, shared until the next write. */
@@ -706,21 +728,15 @@ export class StorageManager implements vscode.Disposable {
     return this.secrets.get(secretKey(accountId, entityId));
   }
 
-  async setPassword(
-    accountId: string,
-    entityId: string,
-    password: string | undefined,
-  ): Promise<void> {
+  async setPassword(accountId: string, entityId: string, password: string | undefined): Promise<void> {
     if (password === undefined || password.length === 0) {
-      return; // empty input means "keep whatever is stored"
+      return; // empty input means "keep whatever is stored" — the ONE setter that works this way
     }
-    await this.secrets.store(secretKey(accountId, entityId), password);
-    this.touch(accountId);
+    await this.putSecret(secretKey(accountId, entityId), accountId, password);
   }
 
-  async deletePassword(accountId: string, entityId: string): Promise<void> {
-    await this.secrets.delete(secretKey(accountId, entityId));
-    this.touch(accountId);
+  deletePassword(accountId: string, entityId: string): Promise<void> {
+    return this.dropSecret(secretKey(accountId, entityId), accountId);
   }
 
   // ---------- share signing identity (SecretStorage, per account) ----------
@@ -741,14 +757,12 @@ export class StorageManager implements vscode.Disposable {
     return this.secrets.get(privateKeySecretKey(accountId, entityId));
   }
 
-  async setPrivateKey(accountId: string, entityId: string, content: string): Promise<void> {
-    await this.secrets.store(privateKeySecretKey(accountId, entityId), content);
-    this.touch(accountId);
+  setPrivateKey(accountId: string, entityId: string, content: string): Promise<void> {
+    return this.putSecret(privateKeySecretKey(accountId, entityId), accountId, content);
   }
 
-  async deletePrivateKey(accountId: string, entityId: string): Promise<void> {
-    await this.secrets.delete(privateKeySecretKey(accountId, entityId));
-    this.touch(accountId);
+  deletePrivateKey(accountId: string, entityId: string): Promise<void> {
+    return this.dropSecret(privateKeySecretKey(accountId, entityId), accountId);
   }
 
   // ---------- VPN configs (SecretStorage, tenant-scoped) ----------
@@ -757,14 +771,12 @@ export class StorageManager implements vscode.Disposable {
     return this.secrets.get(vpnConfigSecretKey(accountId, entityId));
   }
 
-  async setVpnConfig(accountId: string, entityId: string, content: string): Promise<void> {
-    await this.secrets.store(vpnConfigSecretKey(accountId, entityId), content);
-    this.touch(accountId);
+  setVpnConfig(accountId: string, entityId: string, content: string): Promise<void> {
+    return this.putSecret(vpnConfigSecretKey(accountId, entityId), accountId, content);
   }
 
-  async deleteVpnConfig(accountId: string, entityId: string): Promise<void> {
-    await this.secrets.delete(vpnConfigSecretKey(accountId, entityId));
-    this.touch(accountId);
+  deleteVpnConfig(accountId: string, entityId: string): Promise<void> {
+    return this.dropSecret(vpnConfigSecretKey(accountId, entityId), accountId);
   }
 
   // ---------- revision history (SecretStorage: old secrets are still secrets) ----------
@@ -799,27 +811,17 @@ export class StorageManager implements vscode.Disposable {
 
   // ---------- the corporate-recovery share this officer holds ----------
 
-  async getOrgEscrowShare(accountId: string): Promise<EscrowShareWrap | undefined> {
-    const raw = await this.secrets.get(orgEscrowShareSecretKey(accountId));
-    if (raw === undefined) {
-      return undefined;
-    }
-    try {
-      const parsed: unknown = JSON.parse(raw);
-      return isEscrowShareWrap(parsed) ? parsed : undefined;
-    } catch {
-      // A share this build cannot read is one the officer must accept again — saying nothing
-      // and returning undefined is what makes the panel report "this machine holds no share".
-      return undefined;
-    }
+  /** The corporate-recovery share this officer holds — see `escrowShareStore.ts`. */
+  getOrgEscrowShare(accountId: string): Promise<EscrowShareWrap | undefined> {
+    return readOrgEscrowShare(this.secrets, accountId);
   }
 
-  async setOrgEscrowShare(accountId: string, wrap: EscrowShareWrap): Promise<void> {
-    await this.secrets.store(orgEscrowShareSecretKey(accountId), JSON.stringify(wrap));
+  setOrgEscrowShare(accountId: string, wrap: EscrowShareWrap): Promise<void> {
+    return writeOrgEscrowShare(this.secrets, accountId, wrap);
   }
 
-  async clearOrgEscrowShare(accountId: string): Promise<void> {
-    await this.secrets.delete(orgEscrowShareSecretKey(accountId));
+  clearOrgEscrowShare(accountId: string): Promise<void> {
+    return eraseOrgEscrowShare(this.secrets, accountId);
   }
 
   // ---------- notes (SecretStorage, tenant-scoped) ----------
@@ -888,14 +890,12 @@ export class StorageManager implements vscode.Disposable {
     return this.secrets.get(dbConnSecretKey(accountId, entityId));
   }
 
-  async setDbConnection(accountId: string, entityId: string, value: string): Promise<void> {
-    await this.secrets.store(dbConnSecretKey(accountId, entityId), value);
-    this.touch(accountId);
+  setDbConnection(accountId: string, entityId: string, value: string): Promise<void> {
+    return this.putSecret(dbConnSecretKey(accountId, entityId), accountId, value);
   }
 
-  async deleteDbConnection(accountId: string, entityId: string): Promise<void> {
-    await this.secrets.delete(dbConnSecretKey(accountId, entityId));
-    this.touch(accountId);
+  deleteDbConnection(accountId: string, entityId: string): Promise<void> {
+    return this.dropSecret(dbConnSecretKey(accountId, entityId), accountId);
   }
 
   // ---------- TOTP seeds (SecretStorage, tenant-scoped) ----------
@@ -905,12 +905,12 @@ export class StorageManager implements vscode.Disposable {
     return this.secrets.get(totpSecretKey(accountId, entityId));
   }
 
-  async setTotp(accountId: string, entityId: string, uri: string): Promise<void> {
-    await this.secrets.store(totpSecretKey(accountId, entityId), uri);
+  setTotp(accountId: string, entityId: string, uri: string): Promise<void> {
+    return Promise.resolve(this.secrets.store(totpSecretKey(accountId, entityId), uri));
   }
 
-  async deleteTotp(accountId: string, entityId: string): Promise<void> {
-    await this.secrets.delete(totpSecretKey(accountId, entityId));
+  deleteTotp(accountId: string, entityId: string): Promise<void> {
+    return Promise.resolve(this.secrets.delete(totpSecretKey(accountId, entityId)));
   }
 
   // ---------- backup ----------
