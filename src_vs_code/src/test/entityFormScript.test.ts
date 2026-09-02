@@ -144,3 +144,28 @@ test('the whole script still parses with hostile values in every list', () => {
   const body = script.replace(/^<script[^>]*>/, '').replace(/<\/script>\s*$/, '');
   assert.doesNotThrow(() => new Function('acquireVsCodeApi', body));
 });
+
+test('replacing the whole command line re-splits the arguments instead of leaving stale ones', () => {
+  // Reported from a real clone: an "Antigravity CLI Windows" entry was duplicated, renamed, and its
+  // Command replaced with `curl -fsSL … | bash`. The argument rows kept the PowerShell ones
+  // (`…install.ps1`, `|`, `iex`), so the Full command preview showed a line that was neither the old
+  // one nor the new one — and it is the line that would have run.
+  //
+  // Splitting was a button nobody had a reason to press after editing Command by hand. A pasted
+  // whole line now splits itself; the confirm that protects filled rows is the same one the button
+  // already used, so nothing is replaced silently.
+  const script = formPageScript(NONCE, undefined);
+
+  // The defect was a GUARD, not a missing listener: `change` bailed out when any argument row had
+  // text, which is every cloned entry. It must reach askSplit unconditionally and let the confirm
+  // in `splitResult` decide.
+  assert.match(script, /command\.addEventListener\('change', askSplit\);/,
+    'change must reach the split without a filled-rows guard in front of it');
+  assert.doesNotMatch(
+    script,
+    /addEventListener\('change', function \(\) \{\s*if \(argRows\.some/,
+    'the guard that made this silently do nothing',
+  );
+  assert.match(script, /indexOf\(' '\) === -1\) \{ return; \}/,
+    'and it still reacts only to a whole LINE, not to a bare tool name');
+});

@@ -407,7 +407,11 @@ ${formStyleSheet(options.uiScale ?? 0)}
   <h2>${
     isEdit
       ? `Edit: ${escapeHtml(d?.name?.trim() || 'entity')}<span class="kindChip">${escapeHtml(kind)}</span>`
-      : 'New entity'
+      // The kind, on creation too. A new entity has nothing to NAME yet, but it always has a kind,
+      // and when the folder fixes that kind there is no choice to make anywhere on the form — so
+      // this heading is the only place it registers. Somebody adding six terminal commands in a row
+      // had nothing on screen telling them what they were creating.
+      : `New entity<span class="kindChip">${escapeHtml(kind)}</span>`
   }</h2>
 
   <div class="formGroups">

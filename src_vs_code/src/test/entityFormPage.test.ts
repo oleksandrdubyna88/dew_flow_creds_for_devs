@@ -251,8 +251,13 @@ test('the form says WHICH entity it is editing, not just that it is editing one'
   assert.match(html, /<h2>Edit: project-tools/);
   // The kind, because two entries can share a name and differ in what they are.
   assert.match(html, /class="kindChip">ssh</);
-  // A new entity has nothing to name yet.
-  assert.match(renderHtml(options({ mode: 'create' })), /<h2>New entity<\/h2>/);
+  // A new entity has nothing to NAME yet, but it always has a kind — and when the folder fixes the
+  // kind there is no choice to make, so the heading is the only place it registers. It said only
+  // "New entity", and a person adding six terminal commands in a row had nothing telling them what
+  // they were creating.
+  const created = renderHtml(options({ mode: 'create' }));
+  assert.match(created, /<h2>New /);
+  assert.match(created, /class="kindChip">credential</, 'the kind, in the same chip the edit heading uses');
 });
 
 test('an entity name is escaped in the heading, like everywhere else it is shown', () => {
