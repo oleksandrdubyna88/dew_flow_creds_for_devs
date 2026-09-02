@@ -271,6 +271,56 @@ TABLE-DRIVEN seams. Export, import, snapshot and delete-with-the-entry all walk 
 record reaches the backup, the restore and the keychain cleanup with no line written at any of those
 sites, asserted rather than assumed.
 
+#### The write-order invariant — one sentence, five write paths
+
+Not a payment rule. The plan filed it as one and the exploration found it is not: `§3d` asked for
+*"secret, then node"*, which is right for a WRITE and, read as a global rule, destroys data on a
+DELETE. Two rounds of the review gate shaped what replaced it.
+
+> An orphaned secret — bytes in the keychain that no node references — is the only torn state allowed
+> to exist. It is invisible, harmless and collectable. A node claiming a record that is not there is
+> visible, broken, and it **syncs**.
+
+**Rule A — the referrer is written on the safe side of its referent.** Node metadata refers to a
+secret. **Adding** a reference writes the referent first (secret, then node); **removing** one writes
+the referrer first (node, then secret). One save does both, because a form's filled fields are
+additions and its `clearX` checkboxes are removals — which is why `applyFormSecrets.ts` is
+`applyAdditions` + `applyRemovals` and every caller puts its node write BETWEEN them. A single
+ordered call cannot be right for both halves.
+
+**Rule B — a durable record naming what is about to become unreachable exists before it becomes
+unreachable.** For a deletion that record is the tombstone, so `deleteNodeRecursive` writes
+**tombstone → node → secrets**. Interrupted after the tombstone, the entry is both live and
+tombstoned, which the sweep deliberately refuses to touch: the deletion is merely unfinished.
+
+| write path | order | note |
+|---|---|---|
+| create (`treeMutationCommands`) | additions → node | a create has no removals, but the pass runs: a `clearX` can arrive on a new entry |
+| edit (`entityEditCommands`) | additions → node → removals | the case a single call cannot serve |
+| delete (`storageManager`) | tombstone → node → secrets | Rule B |
+| **restore / sync-apply (`importBundle`)** | **secrets → node → drop-vanished** | had it backwards in BOTH halves; found by auditing, not by a test |
+| share accept (`shareInbox`) | node, then secrets — a fresh id, so nothing pre-exists to claim | |
+
+The `importBundle` one is the find worth keeping: the review asked which other paths write both, and
+that was the answer. Its vanished-id list is now captured from the OLD tree before `saveNodes`,
+because afterwards those ids are no longer in the tree to iterate — moving the call without that
+would have silently narrowed what it cleans.
+
+##### `orphanSweep.ts` — the sweep the plan assumed existed
+
+`§3d` called an orphan "cleaned by a startup sweep". There was no sweep, and one could not simply be
+written: `vscode.SecretStorage` is `get`/`store`/`delete` on a KNOWN key, and every secret read here
+walks the LIVE node list — so a departed node's id is derivable from nothing. The review proposed
+budgeting a durable key index. **It already exists under another name:** the tombstones. Which is why
+Rule B moved the tombstone write ahead of the node write — so no interruption can produce an orphan
+that nothing names.
+
+It runs inside `EphemeralSweeper`, whose own header already said a window OPENING is when what a
+crashed window left behind is found. An orphaned secret is that, for a deletion instead of an expiry —
+one trigger, one place to look. **The honest limit:** a tombstone pruned by the horizon before any
+sweep ran leaves an orphan that is never collected. That is a keychain slot holding ciphertext no read
+path reaches — the state the invariant permits, tolerated rather than hidden.
+
 ##### The row is half the job, and the other half deletes if you forget it
 
 Adding a secret kind to `SECRET_KINDS` is free for everything that walks the table and **actively

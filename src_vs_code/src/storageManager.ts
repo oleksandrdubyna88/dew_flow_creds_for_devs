@@ -18,10 +18,12 @@ import { stampKind } from './entityKind';
 import { TRASH_FOLDER_NAME, findTrash, restoreTarget } from './trash';
 import { exportSecretsFor } from './exportSecrets';
 import { PaymentFields, parsePaymentFields, serializePaymentFields } from './paymentFields';
+import { sweepOrphanSecrets } from './orphanSweep';
 import {
   attachmentSecretKey,
   configSecretKey,
   dbConnSecretKey,
+  entitySecretKeys,
   fieldsSecretKey,
   historySecretKey,
   imageSecretKey,
@@ -90,9 +92,8 @@ const SECRET_KINDS: ReadonlyArray<{ bundleKey: SecretMapKey; key: (accountId: st
   { bundleKey: 'totps', key: (a, e) => totpSecretKey(a, e) },
   { bundleKey: 'configs', key: (a, e) => configSecretKey(a, e) },
   { bundleKey: 'fields', key: (a, e) => fieldsSecretKey(a, e) },
-  // ONE row is the whole of a new secret kind's storage: export, import, snapshot and
-  // delete-with-the-entry all walk this list, so a payment record reaches the backup, the restore
-  // and the keychain cleanup without a line being written at any of those four sites.
+  // ONE row is the whole of a new secret kind's storage — export, import, snapshot and delete all
+  // walk this list, so a kind reaches four sites with no line written at any of them.
   { bundleKey: 'payments', key: (a, e) => paymentSecretKey(a, e) },
 ];
 
@@ -134,21 +135,6 @@ function secretMapsOf(bundle: Partial<Record<SecretMapKey, Record<string, string
   return maps;
 }
 
-/**
- * Every SecretStorage key one entity owns.
- *
- * <p>Extracted while the config body was being added, because the list existed TWICE, written
- * out by hand in `removeAccount` and in the delete path — and the failure mode of that shape is
- * silent in the worst possible way: a kind added to one block and not the other leaves a
- * plaintext secret in the OS keychain after the entity that explained it is gone, where nothing
- * will ever look for it again. It is the same duplication audit A1 removed from the two export
- * walks, in the one place it had survived.</p>
- *
- * <p>The history key is included: previous versions of a secret are secrets.</p>
- */
-function entitySecretKeys(accountId: string, entityId: string): readonly string[] {
-  return [...SECRET_KINDS.map((kind) => kind.key(accountId, entityId)), historySecretKey(accountId, entityId)];
-}
 
 /**
  * One account's validated tree, remembered against the memento value it was read from.
@@ -618,27 +604,37 @@ export class StorageManager implements vscode.Disposable {
       }
     }
     const removed = nodes.filter((n) => toDelete.has(n.id));
-    await this.saveNodes(
-      accountId,
-      nodes.filter((n) => !toDelete.has(n.id)),
-    );
-    // Tombstones let the cross-machine merge propagate the deletion.
+    // THE ORDER IS THE GUARANTEE: tombstone, then node, then secrets — the tombstone is both the
+    // sync record and the only durable list of ids that had secrets. See `orphanSweep.ts`.
     const now = Date.now();
     const tombstones = { ...this.getTombstones(accountId) };
     const deviceId = this.deviceId();
     for (const n of removed) {
       // The deletion is a versioned event: bump this device and record it.
-      const v = bumpVector(n.v ?? {}, deviceId, this.nextSeq());
-      tombstones[n.id] = { deletedAt: now, v };
-      if (n.type === 'entity') {
-        for (const key of entitySecretKeys(accountId, n.id)) {
-          await this.secrets.delete(key);
-        }
-      }
+      tombstones[n.id] = { deletedAt: now, v: bumpVector(n.v ?? {}, deviceId, this.nextSeq()) };
     }
     await this.setTombstones(accountId, tombstones);
+    await this.saveNodes(
+      accountId,
+      nodes.filter((n) => !toDelete.has(n.id)),
+    );
+    for (const n of removed.filter((one) => one.type === 'entity')) {
+      for (const key of entitySecretKeys(accountId, n.id)) {
+        await this.secrets.delete(key);
+      }
+    }
     await this.bumpHorizonToSeq(accountId);
     return removed.map((n) => n.name);
+  }
+
+  /** Keychain keys a half-finished deletion left behind — reasoning in `orphanSweep.ts`. */
+  sweepOrphanSecrets(accountId: string): Promise<{ deleted: number; checked: number }> {
+    return sweepOrphanSecrets(
+      this.secrets,
+      accountId,
+      Object.keys(this.getTombstones(accountId)),
+      this.getNodes(accountId).map((n) => n.id),
+    );
   }
 
   // ---------- deletion tombstones (for sync merge) ----------
@@ -1032,12 +1028,15 @@ export class StorageManager implements vscode.Disposable {
     // from renaming a whole tree every time it runs.
     const bundle = await this.quarantine(accountId, incoming);
     const maps = secretMapsOf(bundle);
-    await this.dropVanishedSecrets(accountId, maps);
+    // Rule A applied to a restore (`orphanSweep.ts`); this path had it backwards in BOTH halves.
+    // Vanished ids come from the OLD tree, which after `saveNodes` is no longer there to iterate.
+    const before = this.getNodes(accountId).filter((n) => n.type === 'entity').map((n) => n.id);
+    await this.storeSecretMaps(accountId, maps);
     await this.saveNodes(
       accountId,
       bundle.nodes.map((n) => ({ ...n, children: undefined })),
     );
-    await this.storeSecretMaps(accountId, maps);
+    await this.dropVanishedSecrets(accountId, before, maps);
     // Stored notes are authoritative; drop any legacy plaintext copy.
     await this.saveNodes(
       accountId,
@@ -1061,12 +1060,12 @@ export class StorageManager implements vscode.Disposable {
   }
 
   /** Drop the secrets of entities that will disappear with the replaced tree. */
-  private async dropVanishedSecrets(accountId: string, maps: SecretMaps): Promise<void> {
-    for (const node of this.getNodes(accountId).filter((n) => n.type === 'entity')) {
-      await this.dropAbsentKinds(accountId, node.id, maps);
+  private async dropVanishedSecrets(accountId: string, entityIds: readonly string[], maps: SecretMaps): Promise<void> {
+    for (const id of entityIds) {
+      await this.dropAbsentKinds(accountId, id, maps);
       // As it has always been: the kept versions go with the attachment map's silence.
-      if (maps.attachments[node.id] === undefined) {
-        await this.secrets.delete(historySecretKey(accountId, node.id));
+      if (maps.attachments[id] === undefined) {
+        await this.secrets.delete(historySecretKey(accountId, id));
       }
     }
   }

@@ -32,6 +32,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   A value of the wrong type is dropped rather than converted. Turning `4111` into `"4111"` would
   invent a card number, and records arrive from imports, syncs and shares written by other builds.
 
+- **A crash mid-save can no longer leave an entry claiming a secret that is not there.** This one is
+  not about payments — it changes how EVERY kind of entry is written, and it was found while planning
+  them.
+
+  The rule the plan asked for was “write the secret, then the entry”. That is right when a save ADDS
+  something and destroys data when it removes one: clear a password, have the machine die before the
+  entry is written, and the entry comes back claiming a password the keychain no longer holds. So a save
+  now writes what it adds BEFORE the entry and what it clears AFTER it, and a deletion records its
+  tombstone before removing the entry at all.
+
+  What is left in the worst case is a secret nothing points at — invisible, harmless, and now collected:
+  a sweep on window open removes keychain leftovers from a deletion that did not finish. It finds them
+  through the deletion records, because the OS keychain cannot be listed.
+
+  Restoring a backup and applying a sync had the order backwards in both halves and now do not.
+
 - **A card can be shared, and the CVV and the PIN stay behind.** Handing a colleague a card is the
   point — they need the number and the expiry — and the two fields that are only ever proof the holder
   is present do not leave the vault they were typed into. The woven-field marker goes with them, so the

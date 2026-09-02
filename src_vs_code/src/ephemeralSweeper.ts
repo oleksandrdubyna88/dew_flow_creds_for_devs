@@ -32,6 +32,15 @@ export interface SweepStorage {
   getAccounts(): readonly StoredAccount[];
   getNodes(accountId: string): readonly TreeNode[];
   deleteNodeRecursive(accountId: string, id: string): Promise<string[]>;
+  /**
+   * Keychain keys a half-finished deletion left behind — see .
+   *
+   * <p>Swept HERE rather than from its own startup hook, because this class already exists for the
+   * same reason and says so in its own header: a window OPENING is when what a crashed window left
+   * behind is found, and that first pass is the whole crash-safety story. An orphaned secret is that,
+   * for a deletion instead of for an expiry. One sweep, one trigger, one place to look.</p>
+   */
+  sweepOrphanSecrets(accountId: string): Promise<{ deleted: number; checked: number }>;
 }
 
 /** How often the sweep wakes. Shorter than `LEASE_MS`, so a lease is renewed several times over. */
@@ -101,10 +110,26 @@ export class EphemeralSweeper implements vscode.Disposable {
     }
 
     await this.state.update(STATE_KEY, prunedLeases(renewals, liveKeys));
+    // Keychain keys a deletion did not finish removing — the other thing a crashed window leaves
+    // behind, swept on the same trigger and for the same reason this class starts eagerly. Last,
+    // because the deletions above may have created some: a delete writes its tombstone, removes the
+    // node, then removes the secrets, and a fault in that third step is exactly what this collects.
+    // Reported rather than silent, because a sweep that finds something is worth knowing about.
+    await this.sweepOrphans();
     if (expired.length + orphaned.length > 0) {
       this.onChanged();
     }
     return { expired, orphaned };
+  }
+
+  /** Its own method so `sweep` stays under the complexity ceiling — extracted, not suppressed. */
+  private async sweepOrphans(): Promise<void> {
+    for (const account of this.storage.getAccounts()) {
+      const swept = await this.storage.sweepOrphanSecrets(account.accountId);
+      if (swept.deleted > 0) {
+        this.log(`Swept ${swept.deleted} orphaned secret(s) from ${swept.checked} recorded deletion(s).`);
+      }
+    }
   }
 
   /** What this account's nodes say should happen, without touching anything yet. */

@@ -21,7 +21,7 @@ import { buildDependencyCandidates } from '../depGraph';
 import { buildDependencyColorMap } from '../depGraph';
 import { collectJumpCandidates } from '../commandTargets';
 import { carryThroughDetails } from '../attachmentMeta';
-import { applySecrets } from '../applyFormSecrets';
+import { applyAdditions, applyRemovals } from '../applyFormSecrets';
 import { warnIfTrackedCopy } from '../configCommands';
 import { applyDependencyColors } from '../entityEditCommands';
 import { applyEnvBindings } from '../envApply';
@@ -249,6 +249,11 @@ export function registerTreeMutationCommands(host: TreeMutationCommandsHost): vo
     if (result === undefined) {
       return;
     }
+    // ADDITIONS before the node, so a crash cannot leave a node claiming a value nobody wrote.
+    // A create has no removals to speak of, but the pass runs anyway: the form can arrive with a
+    // clearX set on a brand-new entry, and one caller doing this differently is how the two paths
+    // drifted before.
+    await applyAdditions(storage, location.accountId, id, result);
     await storage.addNode(location.accountId, {
       id,
       name: result.details.name,
@@ -263,7 +268,7 @@ export function registerTreeMutationCommands(host: TreeMutationCommandsHost): vo
         Date.now(),
       ),
     });
-    await applySecrets(storage, location.accountId, id, result);
+    await applyRemovals(storage, location.accountId, id, result);
     void warnIfTrackedCopy(result.details);
     await applyDependencyColors(storage, location.accountId, result.dependsOnColors);
     await applyEnvBindings(envCollection(), storage, location.accountId, result.details);

@@ -17,7 +17,7 @@ import { collectJumpCandidates } from './commandTargets';
 import { hostKeyFingerprint } from './hostKeyPin';
 import { snapshotForRevision } from './revisionSnapshot';
 import { carryThroughDetails } from './attachmentMeta';
-import { applySecrets } from './applyFormSecrets';
+import { applyAdditions, applyRemovals } from './applyFormSecrets';
 import { warnIfTrackedCopy } from './configCommands';
 import { applyEnvBindings } from './envApply';
 import { showFolderForm } from './folderFormPanel';
@@ -96,6 +96,12 @@ export async function editNode(
       details: node.details,
     }),
   );
+  // The three writes, in the one order that keeps the invariant: an orphaned secret is the only torn
+  // state allowed to exist. ADDITIONS first, so the node never claims a value that was not written;
+  // then the node; then REMOVALS, so no node outlives a value it still claims. Two rounds of the plan
+  // gate shaped this, including finding that the first version of the rule destroyed data on delete
+  // and that a single `applySecrets` call cannot be right for a save that both adds and clears.
+  await applyAdditions(storage, accountId, node.id, result);
   await storage.updateNode(accountId, {
     ...node,
     name: result.details.name,
@@ -106,7 +112,7 @@ export async function editNode(
       Date.now(),
     ),
   });
-  await applySecrets(storage, accountId, node.id, result);
+  await applyRemovals(storage, accountId, node.id, result);
   void warnIfTrackedCopy(result.details);
   await applyDependencyColors(storage, accountId, result.dependsOnColors);
   // AFTER the secrets land, so the values written are the ones just saved. The old

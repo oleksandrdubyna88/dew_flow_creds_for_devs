@@ -120,3 +120,38 @@ export function dbConnSecretKey(accountId: string, entityId: string): string {
 export function totpSecretKey(accountId: string, entityId: string): string {
   return suffixed(accountId, entityId, 'totp');
 }
+
+/** Every suffixed per-entity kind, so one list decides what an entity OWNS. */
+const ENTITY_KEY_BUILDERS: ReadonlyArray<(accountId: string, entityId: string) => string> = [
+  secretKey,
+  privateKeySecretKey,
+  vpnConfigSecretKey,
+  notesSecretKey,
+  fieldsSecretKey,
+  configSecretKey,
+  paymentSecretKey,
+  attachmentSecretKey,
+  imageSecretKey,
+  dbConnSecretKey,
+  totpSecretKey,
+  // Previous versions of a secret are secrets.
+  historySecretKey,
+];
+
+/**
+ * Every SecretStorage key one entity owns.
+ *
+ * <p>Its original home was `storageManager.ts`, and its original reason still holds: the list existed
+ * TWICE, hand-written in `removeAccount` and in the delete path, and the failure mode of that shape is
+ * silent in the worst possible way — a kind added to one block and not the other leaves a plaintext
+ * secret in the OS keychain after the entity that explained it is gone, where nothing will ever look
+ * for it again.</p>
+ *
+ * <p>It moved HERE when the orphan sweep was built, because the sweep needs it and lives outside
+ * `StorageManager` (that class holds the keychain handle privately and its file is at its size-ratchet
+ * baseline, so it can shrink but never grow). Beside the builders it is made of is where it belongs
+ * anyway: this file already owns the question "what key does this become".</p>
+ */
+export function entitySecretKeys(accountId: string, entityId: string): readonly string[] {
+  return ENTITY_KEY_BUILDERS.map((build) => build(accountId, entityId));
+}
