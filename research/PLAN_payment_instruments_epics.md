@@ -1,6 +1,6 @@
 # PLAN — payment instruments, broken into epics and stories
 
-> Status: **IMPLEMENTED, 2026-09-02 — with a UI tail that this line originally left implied.** All
+> Status: **IMPLEMENTED, 2026-09-02 — including the UI tail this line originally left implied.** All
 > twenty-one stories landed; the per-story record is the table below, and the deviations are in the
 > parent plan's status line.
 >
@@ -23,7 +23,7 @@
 > Consequently the weave boxes were switched OFF in `0.94.0` (`da9b3fe`) rather than left as a trap:
 > the save path could weave, nothing could unweave, and the method is stored nowhere by design.
 >
-> All of it is now one plan: [../todo/PLAN_payment_ui_tail.md](../todo/PLAN_payment_ui_tail.md).
+> All three were then built, as [PLAN_payment_ui_tail.md](PLAN_payment_ui_tail.md), on the same day.
 > Monero's wordlist (S4.1's data half) is still not included — see the parent's deviation 4 — and
 > cross-window write coordination, which S1.4 uncovered, is
 > [../todo/PLAN_cross_window_write_coordination.md](../todo/PLAN_cross_window_write_coordination.md).

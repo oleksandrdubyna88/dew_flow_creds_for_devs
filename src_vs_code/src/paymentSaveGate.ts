@@ -6,8 +6,7 @@ import { validatePayment } from './paymentValidation';
 import { brandOf } from './cardBrand';
 import { ShuffleCode, isShuffleCode } from './shuffle';
 import { weavePaymentFields } from './paymentWeaving';
-import { confirmDestructive } from './dialogs';
-import * as vscode from 'vscode';
+import { confirmDestructive, refuse } from './dialogs';
 import { PhraseInput, phraseInputFrom, phraseRecordFor, phraseRefusalFor } from './phraseSaveGate';
 import { phraseSaveWarning } from './phraseLayout';
 import { describeError } from './describeError';
@@ -201,7 +200,7 @@ export async function confirmPhrase(data: Record<string, unknown>, chosen: strin
   }
   const refusal = phraseRefusalFor(input) || buildFailure(input);
   if (refusal !== '') {
-    void vscode.window.showWarningMessage(refusal);
+    refuse(refusal);
     return false;
   }
   return confirmDestructive(phraseSaveWarning(input.words.length, input.layout), 'Weave and save');

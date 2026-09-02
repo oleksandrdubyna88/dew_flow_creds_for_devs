@@ -158,6 +158,41 @@ test('copying a rebuilt row copies the row, never what is stored', async () => {
 
   assert.deepEqual(h.copied, ['4821'], 'the row on screen');
   assert.ok(!h.copied.includes(WOVEN_PIN), 'and never the woven pair the record holds');
+  const ack = h.posted.at(-1) as Record<string, unknown>;
+  assert.equal(ack.type, 'copied', 'and it says so — the one button whose value is not in a box');
+  assert.equal(ack.field, `pin|a`);
+});
+
+test('a reading says which method it is FOR, so a late answer can be dropped', async () => {
+  // Two clicks are two record reads and their answers can arrive in the other order. Without the
+  // method on the message the page would show the first one's rows under a picker naming the second,
+  // and a copy would then recompute something else again. (Code review.)
+  const h = harness({ pin: WOVEN_PIN, shuffledFields: ['pin'] });
+
+  await h.host.handle('reassemble', `pin|${CODE}`);
+
+  assert.equal((h.posted[0] as Record<string, unknown>).code, CODE);
+});
+
+test('a post that throws holds nothing — every path out leads to the same place', async () => {
+  // The buffers are installed before the message goes out, because the message is built from them.
+  // A webview disposed a moment ago is the ordinary way `postMessage` throws, and an assembled
+  // phrase held with nothing on screen to close it would outlive the view it was assembled for.
+  const posted: unknown[] = [];
+  const host = new PaymentViewHost({
+    view: () => paymentCardFor('entity-1', 'card', { pin: WOVEN_PIN, shuffledFields: ['pin'] }, random),
+    record: () => Promise.resolve({ pin: WOVEN_PIN, shuffledFields: ['pin'] }),
+    post: (message) => {
+      posted.push(message);
+      throw new Error('the webview is gone');
+    },
+    confirm: () => Promise.resolve(true),
+    copy: () => Promise.resolve(),
+  });
+
+  await assert.rejects(() => host.handle('reassemble', `pin|${CODE}`));
+
+  assert.equal(host.holding, 0, 'nothing is held for a reading that never arrived');
 });
 
 test('a per-field Copy asks exactly what its Show asks', async () => {

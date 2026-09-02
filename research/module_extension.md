@@ -361,22 +361,44 @@ tenth time.
 | `cardBrand.ts` | nine payment systems as a table of BIN ranges and issued lengths |
 | `cardBrandIcons.ts` + `media/brands/` | generated marks, deliberately generic rather than the networks' logos |
 | `paymentFormSwitch.ts` / `paymentSaveGate.ts` | what a form switch erases, and the two questions asked before a save |
-| `decoyDigits.ts` / `decoyPhrase.ts` | decoys that cannot be told from the real half — `decoyPhrase` **unwired** |
-| `paymentWeaving.ts` | where the marks become woven values — wired, and **unreachable** while the boxes are off |
+| `decoyDigits.ts` / `decoyPhrase.ts` | decoys that cannot be told from the real half |
+| `paymentWeaving.ts` | where the marks become woven values |
 | `paymentValidation.ts` | a failing checksum: a hint when plain, a confirmation when about to be woven |
 | `mixedFieldGuard.ts` | a woven record cannot be opened in the edit form |
-| `wordlists.ts` + ten `wordlistBip39*.ts` | the BIP-39 lists and the checksum that reads them — **unwired** (only `decoyPhrase` reads them) |
-| `phraseLayout.ts` / `phraseReassembly.ts` | two columns, the arithmetic that decides which layouts exist, and the way back — **unwired** |
-| `revealGate.ts` / `phraseBuffer.ts` | the rung that asks again, and the bytes that get zeroed — **unwired** |
+| `wordlists.ts` + ten `wordlistBip39*.ts` | the BIP-39 lists and the checksum that reads them |
+| `phraseLayout.ts` / `phraseReassembly.ts` | two columns, the arithmetic that decides which layouts exist, and the way back |
+| `phraseFormMarkup.ts` / `phraseFormScript.ts` / `phraseSaveGate.ts` | the phrase form, and the record a phrase save writes |
+| `paymentViewCard.ts` / `paymentViewMessages.ts` / `paymentViewHost.ts` | the read-only card: its markup, what the host answers, and what is asked first |
+| `revealGate.ts` / `phraseBuffer.ts` | the rung that asks again, and the bytes that get zeroed |
 | `paymentRedaction.ts` / `secretClaims.ts` | what leaves in a share, and what a node may claim to hold |
 
-**Six of those modules have no production caller** as of 0.94.0, and the table says so rather than
-implying a whole feature. They are the pure half of three stories whose UI half was never built —
-S4.4's phrase form, S4.5's viewer card, S5.1/S5.2's rung — and the viewer knows nothing about the
-kind at all (`entityViewPage.ts` does not contain the string `payment`). The consequences a reader
-needs: a payment entry is read by opening it for EDITING, *Phrase* in the form selector leads to a
-form with no fields, and the weave boxes are disabled on purpose, because the save path can weave and
-nothing can unweave. The tail is [../todo/PLAN_payment_ui_tail.md](../todo/PLAN_payment_ui_tail.md).
+#### The read side, added in the UI tail
+
+Until [PLAN_payment_ui_tail.md](PLAN_payment_ui_tail.md), `entityViewPage.ts` did not contain the
+string `payment` at all: a saved card was readable only by opening it for EDITING, six of the modules
+above had no production caller, and the weave boxes were disabled because nothing could unweave. The
+card closed that, and it carries three rules worth knowing before changing it.
+
+**The card is drawn from METADATA.** `paymentCardMarkup` is given which form, which keys the record
+holds and which of them are woven — never a value, so none can be interpolated. Values arrive by
+`postMessage` and are set as DOM *properties*. The claim asserted by the test is precise, because the
+loose one is false: no stored value is built into the page's HTML **string** — the thing that gets
+concatenated and, when something goes wrong, logged. A value that has arrived is in the live DOM, and
+that was never what the rule was about.
+
+**Two representations of one mark, and one question.** A woven digit field is named in
+`shuffledFields`; a woven PHRASE is not, because `mixed` is not a field that got woven — it IS the
+woven phrase, and `SHUFFLEABLE_KEYS` excludes it under a compiler-checked `satisfies`. `wovenKeys()`
+is the single question both are asked, by the edit guard, by the card and by the record builder. Before
+it existed, `hasMixedField` knew only the first, so a saved phrase would have been editable and
+destroyed on the next save — the exact destruction S3.4 built the guard to prevent, reached by the one
+record shape the guard had never seen.
+
+**The gate covers the picker, not only the button.** `revealGate` decides that a CVV, a PIN and an
+assembled phrase ask a second time; `paymentViewHost` asks it for `reveal` AND for `reassemble`, since
+a woven PIN reached through a method picker is the same value. The grant is per field and per card,
+dropped when the panel re-renders another entry — this viewer is the shared preview tab. The same
+question guards a Copy, because copying is showing, to the clipboard.
 
 #### The four decisions worth knowing before changing any of it
 
@@ -418,7 +440,8 @@ their own tests. Ten no-caller modules in one feature is not ten oversights; it 
 pure logic bottom-up produces when "the tests are green" is allowed to answer "does it work". The
 lesson the reviews already stated for the first four — *a test that asserts the CALL, not only the
 function* — is the one that would have caught all ten, and it is why every story in the tail plan
-names a caller before it names a module.
+named a caller before it named a module. **All ten are wired as of the UI tail**, and the count is
+kept here rather than deleted, because the shape recurs.
 
 The other class was drift between two sides of one rule: `ibanConverges` normalised its input and
 `ibanDecoy` did not, so an IBAN typed with spaces crashed the save and a lowercase one silently

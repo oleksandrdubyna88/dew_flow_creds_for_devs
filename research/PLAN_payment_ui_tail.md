@@ -1,16 +1,42 @@
 # PLAN — the payment UI tail: the viewer card, the phrase form, and documents that say what ships
 
-> Status: **plan only, nothing implemented yet.** Scope: `src_vs_code` only — the viewer, the form,
-> the help article, the changelog and the two payment plans. No server change, no HTTP contract
-> change, so [module_server.md](../research/module_server.md) is out of scope by construction.
+> Status: **IMPLEMENTED, 2026-09-02.** All four stages shipped in `0.94.0`, one commit each. Scope was
+> `src_vs_code` only — the viewer, the form, the help article, the changelog and the two payment plans.
+> No server change and no HTTP contract change, so [module_server.md](module_server.md) was out of
+> scope by construction.
 >
-> Parent record: [PLAN_payment_instruments.md](../research/PLAN_payment_instruments.md) and its build
-> order [PLAN_payment_instruments_epics.md](../research/PLAN_payment_instruments_epics.md). This plan
+> **Deviations, recorded rather than quietly absorbed:**
+>
+> 1. **The layout is not offered as a picker in the viewer** (parent §4.5 asked for one). It is a
+>    STORED field of a phrase record, so a picker would offer twenty-four readings while the record
+>    already names which twelve are meaningful — furniture suggesting a choice that has been made.
+> 2. **Two defects were found in already-green code**, both by the phrase form's own tests, and both
+>    would have destroyed a phrase silently. `pruneMarks` kept a mark only when the value was a
+>    string, so a woven phrase's mark was pruned; and `mixed` is deliberately absent from
+>    `SHUFFLEABLE_KEYS`, so a record marks a woven digit field and a woven phrase in two different
+>    ways while `hasMixedField` knew only the first — a saved phrase would have been editable, and
+>    re-woven on the next save. `wovenKeys()` is now the one question. One existing assertion had to
+>    be CHANGED rather than added, which is called out in its own test.
+> 3. **`entityViewPage.ts` had to give up its stylesheet** (`entityViewStyles.ts`, moved verbatim). It
+>    was at 798 of the 800-line ceiling, and the rule here is extract rather than suppress.
+> 4. **Stage D's documentation half happened in Stages B and C instead** — the plan review's first
+>    finding: the original build order would have enabled the weave boxes in B while the changelog
+>    still said they were off. Each behaviour commit carries its own document change.
+> 5. **The reveal gate covers `reassemble`**, which the first draft did not say. The plan round found
+>    it; a woven PIN reached through the method picker would have been shown with no second question.
+>
+> **The open tail:** Monero's 1626-word list is still not included (parent deviation 4). Nothing here
+> has been run inside a real VS Code extension host — every test is `node:test` over compiled output,
+> which is what this repository's suite is. Cross-window write coordination remains
+> [../todo/PLAN_cross_window_write_coordination.md](../todo/PLAN_cross_window_write_coordination.md).
+>
+> Parent record: [PLAN_payment_instruments.md](PLAN_payment_instruments.md) and its build
+> order [PLAN_payment_instruments_epics.md](PLAN_payment_instruments_epics.md). This plan
 > finishes S4.4 and S4.5's UI halves and S5.1/S5.2's wiring, which those two documents record as
 > "landed (core)" — pure modules, no callers.
 >
-> Related: [ЗАДАЧА_варианты_перемешивания_сид_фразы.md](ЗАДАЧА_варианты_перемешивания_сид_фразы.md)
-> (the twelve weaves), [module_extension.md](../research/module_extension.md).
+> Related: [ЗАДАЧА_варианты_перемешивания_сид_фразы.md](../todo/ЗАДАЧА_варианты_перемешивания_сид_фразы.md)
+> (the twelve weaves), [module_extension.md](module_extension.md).
 
 ## The symptom, verified in the checkout rather than remembered
 

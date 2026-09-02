@@ -190,6 +190,14 @@ function mountEntityView(
     if (!(await payment.allowCopy(message.field))) {
       return;
     }
+    // The options can change WHILE the question is on screen — this panel is the shared preview tab,
+    // and `show()` re-renders it for another entry. `options` was captured before the await, so
+    // without this the confirmation given for the entry that was showing would copy the previous
+    // entry's CVV. Found by the code review; the identity check is enough because `show` always
+    // assigns a fresh object.
+    if (state.options !== options) {
+      return;
+    }
     const value = await copyValueFor(options, message.field);
     if (value === undefined || value.length === 0) {
       void vscode.window.showWarningMessage('Nothing to copy — the field is empty.');

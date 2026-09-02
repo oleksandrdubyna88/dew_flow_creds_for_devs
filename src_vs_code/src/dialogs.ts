@@ -129,3 +129,15 @@ export async function confirmDestructive(text: string, actionLabel: string): Pro
   const answer = await vscode.window.showWarningMessage(text, { modal: true }, actionLabel);
   return answer === actionLabel;
 }
+
+/**
+ * A refusal: something cannot be done, and there is nothing to decide.
+ *
+ * <p>Here rather than at the call site so that a module deciding WHETHER to refuse does not have to
+ * import `vscode` to SAY so — repository rule 3, which a code review caught being bent by the phrase
+ * gate. It is the same seam `confirmDestructive` is: the decision stays testable, the dialog does
+ * not have to be.</p>
+ */
+export function refuse(text: string): void {
+  void vscode.window.showWarningMessage(text);
+}

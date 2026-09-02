@@ -145,7 +145,24 @@ export class PaymentViewHost {
       this.deps.post({ type: 'paymentReading', entityId: view.entityId, key, ok: false, why: UNREADABLE });
       return;
     }
-    this.deps.post(this.readingMessage(key, view, reading));
+    this.postReading(key, this.readingMessage(key, code, view, reading));
+  }
+
+  /**
+   * Post a reading, and hold nothing if it did not arrive.
+   *
+   * <p>The buffers are installed before the message goes out — they are what it is built from — so a
+   * `postMessage` that throws (a webview disposed a moment ago is the ordinary way) would leave an
+   * assembled phrase held with nothing on screen to close it. Found by the code review, and it is the
+   * one path out of `readingMessage` that did not lead to the same place as the others.</p>
+   */
+  private postReading(key: string, message: unknown): void {
+    try {
+      this.deps.post(message);
+    } catch (error) {
+      this.release(key);
+      throw error;
+    }
   }
 
   /**
@@ -156,7 +173,12 @@ export class PaymentViewHost {
    * memory", which is false and unverifiable. The previous reading for this field is released first,
    * so trying twelve methods holds one pair of buffers rather than twelve.</p>
    */
-  private readingMessage(key: string, view: PaymentCardView, reading: Reassembled): unknown {
+  private readingMessage(
+    key: string,
+    code: string,
+    view: PaymentCardView,
+    reading: Reassembled,
+  ): unknown {
     const words = key === 'mixed';
     const buffers = [PhraseBuffer.of(reading.real), PhraseBuffer.of(reading.decoy)];
     this.release(key);
@@ -165,6 +187,11 @@ export class PaymentViewHost {
       type: 'paymentReading',
       entityId: view.entityId,
       key,
+      // The method this reading is FOR. Two clicks in quick succession are two record reads, and
+      // their answers can arrive in the other order — the page would then show the first method's
+      // rows under a picker naming the second, and a copy would recompute something else again. The
+      // page drops an answer whose method is no longer the one on screen. (Code review.)
+      code,
       ok: true,
       words,
       first: buffers[0].words(),
@@ -193,6 +220,9 @@ export class PaymentViewHost {
     const reading = readingFor(fields, view.form, key, code);
     if (reading !== undefined) {
       await this.deps.copy(copyTextFor(reading, which, key));
+      // The same acknowledgement every other Copy in this viewer gets. Without it the one button
+      // whose value cannot be seen in a box is also the one that never says it worked.
+      this.deps.post({ type: 'copied', entityId: view.entityId, field: `${key}|${which}` });
     }
   }
 

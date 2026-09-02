@@ -143,6 +143,7 @@ export function paymentCardScript(): string {
   var payCard = document.getElementById('payCard');
   if (payCard) {
 ${payHelpers()}
+${payReadingFn()}
 ${payListeners()}
     vscode.postMessage({ type: 'payment', field: 'values' });
   }
@@ -184,9 +185,18 @@ function payHelpers(): string {
       if (payTimer) { clearTimeout(payTimer); payTimer = 0; }
       if (!silent) { vscode.postMessage({ type: 'paymentClose', field: key }); }
     };
-    var payReading = function (msg) {
+`;
+}
+
+/** Showing a reading — the one place a rebuilt value reaches the page. */
+function payReadingFn(): string {
+  return `    var payReading = function (msg) {
       var note = document.getElementById('payNote_' + msg.key);
       if (!msg.ok) { if (note) { note.textContent = msg.why; } return; }
+      // Two clicks are two reads, and their answers can arrive in the other order. An answer for a
+      // method the picker no longer shows is dropped rather than displayed under the wrong label.
+      var picked = payCard.querySelector('select.mixPick[data-key="' + msg.key + '"]');
+      if (picked && msg.code && picked.value !== msg.code) { return; }
       payRow(document.getElementById('payReading_' + msg.key + '_a'), msg.first, msg.words);
       payRow(document.getElementById('payReading_' + msg.key + '_b'), msg.second, msg.words);
       document.getElementById('payRows_' + msg.key).hidden = false;
