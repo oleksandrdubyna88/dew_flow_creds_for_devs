@@ -1,8 +1,7 @@
+import { answerCardValues, confirmFormSwitch, formOf, paymentRecordFor } from './paymentSaveGate';
 import { readDependsOnRows, readForwardRows } from './formRowReaders';
-import { DEFAULT_PAYMENT_FORM, isPaymentForm } from './paymentForm';
 import { PaymentFields } from './paymentFields';
-import { brandHint, cardInputsFrom } from './cardFormFields';
-import { cardFieldsFrom } from './cardFormFields';
+import { brandHint } from './cardFormFields';
 import * as vscode from 'vscode';
 import { applyLifetime } from './entityExpiry';
 import { normalizeArgs } from './commandLine';
@@ -339,10 +338,7 @@ export function showEntityForm(options: EntityFormOptions): Promise<EntityFormVa
       if (message.type === 'cardValues') {
         // Answered on REQUEST rather than pushed on mount: the page asks once its listener is
         // attached, so there is no window in which the values are posted at nobody.
-        void panel.webview.postMessage({
-          type: 'paymentValues',
-          fields: cardInputsFrom(options.initialPayment ?? {}),
-        });
+        answerCardValues((answer) => void panel.webview.postMessage(answer), options);
         return;
       }
       if (message.type === 'generate') {
@@ -353,7 +349,7 @@ export function showEntityForm(options: EntityFormOptions): Promise<EntityFormVa
         panel.dispose();
         return;
       }
-      if (message.type === 'save' && message.data !== undefined && (await confirmInvalidSave(message.data, options))) {
+      if (message.type === 'save' && message.data !== undefined && (await agreed(message.data, options))) {
         settled = true;
         resolve(toValues(message.data, options));
         panel.dispose();
@@ -394,6 +390,11 @@ const ROUND_TRIPS: Record<string, (message: FormMessage) => Record<string, unkno
     ...readPastedQr({ gray: message.gray ?? '', width: message.width ?? 0, height: message.height ?? 0 }),
   }),
 };
+
+/** Both save gates, in order — the destructive one first, so it is asked before anything else. */
+async function agreed(data: Record<string, unknown>, options: EntityFormOptions): Promise<boolean> {
+  return (await confirmFormSwitch(str(data, 'paymentForm'), options)) && (await confirmInvalidSave(data, options));
+}
 
 function answerRoundTrip(panel: vscode.WebviewPanel, message: FormMessage): boolean {
   const answer = ROUND_TRIPS[message.type]?.(message);
@@ -725,7 +726,7 @@ export function toValues(data: Record<string, unknown>, options: EntityFormOptio
       // Defaulted rather than left absent, for `configFormat`'s reason: a payment whose form is
       // unknown cannot be rendered, validated, or cleared on a switch, and every one of those would
       // read as a bug rather than as a field nobody filled in.
-      paymentForm: isPayment ? (isPaymentForm(paymentForm) ? paymentForm : DEFAULT_PAYMENT_FORM) : undefined,
+      paymentForm: isPayment ? formOf(paymentForm) : undefined,
       isConfig: isConfig || undefined,
       // Defaulted to JSON rather than left absent: a config whose format is unknown cannot be
       // validated, materialised with the right extension, or parsed by a provider — and every
@@ -760,10 +761,10 @@ export function toValues(data: Record<string, unknown>, options: EntityFormOptio
     // Every other secret here treats blank as "keep what is stored"; this one cannot, because the
     // form was prefilled with the stored text and blank is therefore a deliberate edit.
     newConfigBody: isConfig ? str(data, 'configBody') : undefined,
-    // Every field guarded by `isPayment`, so a kind that is not one cannot write a payment record —
-    // and, just as important, an entity converted AWAY from payment stops writing one. What it does
-    // not do is clear the record it already has; that is S2.4's erase-on-switch, which asks first.
-    newPayment: isPayment ? cardFieldsFrom(data) : undefined,
+    // Guarded by `isPayment`, so a kind that is not one cannot write a payment record and an entity
+    // converted AWAY from payment stops writing one. `paymentRecordFor` also strips what the CHOSEN
+    // form does not own — the erase-on-switch the person agreed to a moment ago.
+    newPayment: isPayment ? paymentRecordFor(data, paymentForm) : undefined,
     newTotp: totpParsed?.uri,
     clearTotp,
     clearHostKey: bool(data, 'clearHostKey'),

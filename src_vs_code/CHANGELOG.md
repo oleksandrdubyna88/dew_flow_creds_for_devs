@@ -8,6 +8,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **A payment instrument now has a form to fill in.** Choose card, bank details or a phrase, and the
+  entry asks for the fields that form actually has. A card knows which payment system it belongs to as
+  you type the number, and says so — including when the digits do not add up, which is worth checking
+  but never stops the entry being saved: people hold cards this build has never heard of.
+
+  The CVV and the PIN are hidden as you type and stay hidden. Unlike every other kind, a stored card is
+  never written into the page itself — it is handed to the editor separately, because the page is a
+  string that gets built, copied and, when something goes wrong, logged.
+
+- **Retyping an entry as a different form deletes what the old one held, and asks first.** All three
+  forms share one encrypted record, so a card retyped as bank details used to leave its number, CVV and
+  PIN inside — gone from the form, and still travelling in every sync, backup and export. The
+  confirmation names the fields that will go and never shows their values, and it only appears when
+  something is actually stored: declining leaves the entry exactly as it was.
+
 - **Duplicate no longer makes a copy that lies about what it holds.** A duplicated entry used to
   inherit every flag that says a secret is stored — a one-time-code menu with no seed, an attachment
   row for a file that was never copied, environment variables that fill in nothing. Worst of all it
