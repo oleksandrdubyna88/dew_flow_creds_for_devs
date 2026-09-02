@@ -292,3 +292,54 @@ test('a column keeps its two-column width when the third one comes — the page 
   assert.ok(THREE_COLUMN_AT >= THREE_COLUMN_PAGE_MAX_PX, 'no third column before the window can hold three full ones');
   assert.ok(THREE_COLUMN_AT > TWO_COLUMN_AT && PAGE_MAX_WIDTH_PX >= TWO_COLUMN_AT);
 });
+
+test('the card fieldset is in the markup, and the generated script is what gates it', () => {
+  // Written first as "renders for a payment and for no other kind", which failed — and the failure
+  // was right: EVERY fieldset is always in the markup, and `formVisibilityScript` shows or hides it.
+  // That is the design (one page, one script, no per-kind rendering), so the assertion that means
+  // something is that the markup exists AND the ladder knows about it.
+  const html = renderHtml(options({ initial: { id: 'e1', name: 'visa', kind: 'payment' } as EntityMetadata }));
+
+  assert.match(html, /id="cardSection"/, 'a payment can hold a card');
+  assert.match(html, /id="paymentForm"/, 'and can choose which form it is');
+  assert.ok(
+    html.includes("kind === 'payment'"),
+    'the visibility ladder narrows by kind — generated from FORM_SECTIONS, not written by hand',
+  );
+  assert.ok(
+    html.includes("val('paymentForm') === 'card'"),
+    'and the card fieldset is narrowed a second time by the FORM, which is the whole point',
+  );
+});
+
+test('a stored card NEVER reaches the page — not the number, not the CVV, not the PIN', () => {
+  // The rule this page has, extended to the ninth kind. The card fields are delivered by message
+  // after the webview asks for them, exactly as an attachment's content is; putting them in the HTML
+  // would put them in a string that is built, logged and diffed by things that are not the webview.
+  const card = renderHtml(
+    options({
+      mode: 'edit',
+      initial: {
+        id: 'e1',
+        name: 'visa',
+        kind: 'payment',
+        paymentForm: 'card',
+        number: SECRET,
+        cvv: SECRET,
+        pin: SECRET,
+      } as unknown as EntityMetadata,
+    }),
+  );
+
+  assert.ok(!card.includes(SECRET), 'a card value reached the page');
+  assert.match(card, /id="cardNumber"/, 'the fields are there to type into');
+  assert.match(card, /id="cardCvv" type="password"/, 'and the two that matter are hidden as you type');
+  assert.match(card, /id="cardPin" type="password"/);
+});
+
+test('the form selector offers every form the model has, and nothing else', () => {
+  const html = renderHtml(options({ initial: { id: 'e1', name: 'x', kind: 'payment' } as EntityMetadata }));
+  for (const form of ['card', 'bank', 'phrase']) {
+    assert.ok(html.includes(`value="${form}"`), `${form} cannot be chosen`);
+  }
+});

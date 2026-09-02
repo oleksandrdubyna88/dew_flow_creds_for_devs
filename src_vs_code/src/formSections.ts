@@ -184,6 +184,31 @@ export const FORM_SECTIONS: readonly FormSection[] = [
     color: 'depColor9',
     kinds: ['config'],
   },
+
+  // --- payment: TWO sections, because the kind and the form narrow at different moments ---
+  {
+    id: 'paymentSection',
+    legend: 'Payment instrument',
+    group: 'main',
+    // depColor9 once more, on the same reasoning as the four above: a payment is never a config, a
+    // script, a VPN or an SSH connection, so they cannot be on screen together.
+    color: 'depColor9',
+    kinds: ['payment'],
+  },
+  {
+    id: 'cardSection',
+    legend: 'Card',
+    group: 'main',
+    // depColor4, which `passwordSection` wears — and which a payment never sees, because that section
+    // excludes this kind by name. The one colour genuinely free for a section that sits BESIDE the
+    // selector rather than instead of it.
+    color: 'depColor4',
+    kinds: ['payment'],
+    // The second narrowing, through the mechanism `keySection` established: every payment has a form
+    // selector, and only a card has card fields. Bank details and a phrase are the same KIND and must
+    // not be shown a CVV box. Kept out of `kinds` on purpose — see `condition`'s own note above.
+    condition: "val('paymentForm') === 'card'",
+  },
 ];
 
 /** Can this section be on screen for this kind? The worst case, ignoring `condition`. */
