@@ -370,6 +370,15 @@ list to work out what had been interrupted, and both review providers said the s
 inference cannot tell an interrupted removal from an account mid-creation, an id being reused, or a key
 left by some other lifecycle. It reads the recorded intent instead.
 
+**And an account that is LISTED again is never wiped.** Account ids are stable per provider account, so
+"sign out, sign in again, open a window" is an ordinary sequence — and a marker left by an interrupted
+removal would otherwise destroy the tree the person just re-added. The account list is the lifecycle
+identity: a removal unlists before it destroys anything, so a listed id is not a pending one.
+
+**Liveness is re-read per id**, not sampled once: there is an `await` between every delete and a sync
+apply can land in one, so an answer from before the previous await is an answer about a tree that may
+no longer be the tree.
+
 **Pending secret deletions check liveness before acting.** Interrupted *before* the tree was replaced,
 those entities are still live and still hold their values — deleting them then would be precisely the
 data loss the invariant exists to prevent. Which id is which is the question `orphanCandidates` already
@@ -381,17 +390,27 @@ while its data is being taken apart. Whether other machines lose the account is 
 product already asks out loud — *"Also delete this vault from &lt;location&gt;? Other machines syncing
 this account will lose it too"* — and answers with `transport.deleteVault`, not with tombstones.
 
-##### `retractNode` — a compensated create tombstones, because the node may have escaped
+##### The compensation covers ONE case, and the review is how that was settled
 
-`createEntityWithSecrets`' undo first removed the node *quietly*, reasoning that a tombstone for an id
-which may never have been visible would sync a deletion of nothing. Both providers found the hole: the
-node was **persisted**, and a sync cycle can publish between the write and the failure being reported.
-Forget it locally and the other machine holds a live node claiming a secret this one just deleted — and
-it syncs back. So the retraction is tombstoned: it cancels the node everywhere, costs nothing when the
-id never travelled, and `addNode` already forgets a tombstone when an id is legitimately created again.
+`createEntityWithSecrets`' undo went through three shapes, and the third is the one worth keeping:
 
-It also makes a compensated create's orphan **collectable**, which was one of the two classes
-`orphanSweep.ts` had to write off.
+1. **delete the secrets and rethrow** — worse than nothing when `writeNode` fails *after* the node is
+   persisted, because the live node is then claiming a record that is not there;
+2. **retract the node first, then the secrets** — safe locally, and the retraction needs a tombstone
+   once you notice a sync cycle can publish in that window;
+3. **compensate only when the node never landed** — where it stayed.
+
+Shape 3 exists because the two review providers demanded **opposite** things about shape 2's
+tombstone. One: built from the node's own vector it may not dominate a concurrent remote edit, so the
+remote live node syncs back over deleted secrets. The other: one that *does* dominate will clobber a
+peer where the entity legitimately exists. Both are right, and together they say there is no local
+answer — **a machine cannot decide, from its own failure, what other machines are entitled to keep.**
+
+So `nodeLanded()` is the single question the compensation asks. False: nothing could have published
+the node, its secrets are unreachable by construction, and deleting them is unambiguous. True: leave
+both halves alone. The entry is live and holds its values — a consistent entry reached by a failing
+path — and the caller still hears the error. An entry that exists when the person was told it did not
+is a surprise; a credential deleted from under a node other machines can see is data loss.
 
 ##### `secretClaims.ts` — the permanent version of "a node claiming a secret that is not there"
 
