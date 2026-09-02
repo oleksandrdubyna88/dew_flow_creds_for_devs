@@ -142,9 +142,15 @@ export async function resumePending(port: CleanupPort): Promise<readonly string[
   // moment it was re-added, which is the only point where the two facts (a pending removal, and a
   // person who wants this account back) are both known. Skipping it here without that would leave a
   // half-wiped tree live, which is the state the review caught this guard creating.
-  const removing = pending.accounts.filter((accountId) => !port.isListed(accountId));
-  for (const accountId of removing) {
-    await port.wipeAccount(accountId);
+  const removing: string[] = [];
+  for (const accountId of pending.accounts) {
+    // Re-read per account, not once: `finishBeforeReuse` can list an account between two wipes, and a
+    // wipe is a long run of awaited deletes. A listing decided before the previous await is a listing
+    // that may no longer hold.
+    if (!port.isListed(accountId)) {
+      removing.push(accountId);
+      await port.wipeAccount(accountId);
+    }
   }
   for (const [accountId, ids] of Object.entries(pending.secrets)) {
     await finishSecretDeletes(port, accountId, ids);

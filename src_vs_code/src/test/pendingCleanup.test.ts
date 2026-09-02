@@ -279,3 +279,30 @@ test('the sweep stops deleting an entity the moment it comes back', async () => 
 
   assert.deepEqual(deleted, ['k1'], 'it stopped at the key after the entity reappeared');
 });
+
+test('the resume re-reads the listing between accounts, not once at the top', async () => {
+  // `finishBeforeReuse` can list an account while this loop is between two wipes, and a wipe is a long
+  // run of awaited deletes. A listing decided before the previous await is a listing that may no
+  // longer hold — so the second account here is re-added while the first is being wiped.
+  const listed = new Set<string>();
+  const wiped: string[] = [];
+  const state = { current: { accounts: ['a1', 'a2'], secrets: {} } as PendingCleanup };
+
+  await resumePending({
+    read: () => state.current,
+    write: (next) => {
+      state.current = next;
+      return Promise.resolve();
+    },
+    wipeAccount: (accountId) => {
+      wiped.push(accountId);
+      listed.add('a2'); // somebody signs back into a2 while a1 is being wiped
+      return Promise.resolve();
+    },
+    isListed: (accountId) => listed.has(accountId),
+    liveIds: () => [],
+    forgetSecrets: () => Promise.resolve(),
+  });
+
+  assert.deepEqual(wiped, ['a1'], 'a2 was listed again by the time its turn came, and was spared');
+});

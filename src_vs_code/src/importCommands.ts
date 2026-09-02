@@ -6,7 +6,7 @@ export interface NodeLocation {
 }
 
 import { StorageManager } from './storageManager';
-import { createEntityWithSecrets } from './entityWrite';
+import { EntryLandedError, createEntityWithSecrets } from './entityWrite';
 import { ImportedEntity } from './importFormats';
 import { toTreeNodes } from './importFormats';
 import { TreeElement } from './types';
@@ -55,14 +55,19 @@ export async function importEntities(
 
   const made = toTreeNodes(entities, () => StorageManager.newId(), (folder) => parents.get(folder ?? '') ?? null);
   for (const { node, secrets } of made) {
+    // A landed-but-failed entry is a PARTIAL SUCCESS for a batch: the entry is in the tree with its
+    // secrets, and throwing here would abandon every row after it while reporting the whole import
+    // failed — after which a retry duplicates the rows that did land. Raised by the review; the count
+    // this returns still includes it, because it is there.
     // Secrets, then the node — and on any observable failure the secrets go back, so a refused
     // keychain does not leave this id's values unreachable in it. See `entityWrite.ts`.
-    await createEntityWithSecrets({
+    await landedIsFine(() => createEntityWithSecrets({
       writeSecrets: () => writeImportedSecrets(storage, location.accountId, node.id, secrets),
       writeNode: () => storage.addNode(location.accountId, node),
-      nodeLanded: () => !storage.provenAbsent(location.accountId, node.id),
+      presence: () => storage.nodePresence(location.accountId, node.id),
+      deferCleanup: () => storage.deferSecretCleanup(location.accountId, node.id),
       undoSecrets: () => undoImportedSecrets(storage, location.accountId, node.id),
-    });
+    }));
   }
   return made.length;
 }
@@ -119,6 +124,17 @@ async function writeImportedSecrets(
   for (const [value, write] of writes) {
     if (value !== undefined) {
       await write(value);
+    }
+  }
+}
+
+/** Swallow ONLY the "it is in the tree" outcome — every other failure still stops the import. */
+async function landedIsFine(create: () => Promise<void>): Promise<void> {
+  try {
+    await create();
+  } catch (error) {
+    if (!(error instanceof EntryLandedError)) {
+      throw error;
     }
   }
 }

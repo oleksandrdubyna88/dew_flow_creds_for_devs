@@ -230,8 +230,9 @@ function stores(options: { addNodeFails: boolean }): {
       tree.push(node.id);
       return Promise.resolve();
     },
-    // The predicate is 'can absence be PROVEN', not 'is it missing' — see `provenAbsent`.
-    provenAbsent: (_a: string, id: string): boolean => !tree.includes(id),
+    // Three answers, not two: 'unknown' is what an unreadable tree gives — see `nodePresence`.
+    nodePresence: (_a: string, id: string): string => (tree.includes(id) ? 'present' : 'absent'),
+    deferSecretCleanup: (): Promise<void> => Promise.resolve(),
     getNode: (_a: string, id: string): object | undefined => (tree.includes(id) ? { id } : undefined),
     setPassword: set('password'),
     deletePassword: del('password'),
@@ -274,17 +275,17 @@ test('an import whose node write fails leaves NO secret of any kind behind', asy
   assert.deepEqual(tree, [], 'nothing to tombstone: a refused write never put the node anywhere');
 });
 
-test('the import undo asks whether the node is PROVABLY absent, and only then deletes', async () => {
+test('the import undo asks where the node IS, and deletes only on a proven absence', async () => {
   // The single question this compensation is allowed to answer for itself. If the node IS there, the
   // entry is live and consistent and nothing is taken from it — see `entityWrite.ts` on why one
   // machine cannot decide that for its peers.
   const order: string[] = [];
   const { storage } = stores({ addNodeFails: true });
-  const provenAbsent = storage.provenAbsent as (a: string, i: string) => boolean;
+  const nodePresence = storage.nodePresence as (a: string, i: string) => string;
   const deletePassword = storage.deletePassword as (a: string, e: string) => Promise<void>;
-  storage.provenAbsent = (a: string, i: string): boolean => {
-    order.push('provenAbsent');
-    return provenAbsent(a, i);
+  storage.nodePresence = (a: string, i: string): string => {
+    order.push('nodePresence');
+    return nodePresence(a, i);
   };
   storage.deletePassword = (a: string, e: string): Promise<void> => {
     order.push('deletePassword');
@@ -297,7 +298,7 @@ test('the import undo asks whether the node is PROVABLY absent, and only then de
     ]),
   );
 
-  assert.deepEqual(order, ['provenAbsent', 'deletePassword']);
+  assert.deepEqual(order, ['nodePresence', 'deletePassword']);
 });
 
 test('a successful import leaves every secret in place and undoes nothing', async () => {
@@ -383,7 +384,7 @@ test('a restore RECORDS the entries it is dropping before it replaces the tree',
   // A backup that simply does not contain `vanishes` — it carries no tombstone for it either.
   await storage.importBundle('a1', { nodes: [entry('keeps')], passwords: {} });
 
-  const recorded = order.findIndex((c) => c.startsWith('pending:'));
+  const recorded = order.findIndex((c) => c.startsWith('pending:') && c.includes('vanishes'));
   const treeReplaced = order.indexOf('nodes');
   const firstDelete = order.indexOf('secretDelete');
   assert.ok(recorded >= 0, `a record was written (${order.join(' → ')})`);
@@ -406,4 +407,76 @@ function mementoNote(key: string, value: unknown): string | undefined {
     ['credSshManager.nodes.', () => 'nodes'],
   ];
   return notes.find(([prefix]) => key.startsWith(prefix))?.[1](value);
+}
+
+test('a bundle that brings an id BACK takes it off the sweep list before writing its secrets', async () => {
+  // The race the review would not let go of, closed from the writer's side: a sweep running beside
+  // this apply cannot delete a value the apply just restored, because the apply removes the id from
+  // the pending record BEFORE the first `secrets.store`.
+  const { StorageManager } = loadWithVscode<{ StorageManager: new (m: unknown, s: unknown) => Record<string, Function> }>(
+    '../storageManager',
+    {
+      EventEmitter: class {
+        event = (): void => {};
+        fire(): void {}
+      },
+      Uri: { file: (p: string): object => ({ fsPath: p }) },
+      workspace: { getConfiguration: () => ({ get: (_k: string, d: unknown) => d }) },
+    },
+  );
+
+  const order: string[] = [];
+  const map = new Map<string, unknown>();
+  const mem = {
+    keys: () => [...map.keys()],
+    get: <T>(k: string, f?: T): T | undefined => (map.has(k) ? (map.get(k) as T) : f),
+    update: (k: string, v: unknown): Promise<void> => {
+      notePending(order, k, v);
+      map.set(k, v === undefined ? undefined : JSON.parse(JSON.stringify(v)));
+      return Promise.resolve();
+    },
+  };
+  const chain = new Map<string, string>();
+  const store = {
+    keys: () => [...chain.keys()],
+    get: (k: string) => Promise.resolve(chain.get(k)),
+    store: (k: string, v: string) => {
+      order.push('secretStore');
+      chain.set(k, v);
+      return Promise.resolve();
+    },
+    delete: (k: string) => {
+      chain.delete(k);
+      return Promise.resolve();
+    },
+    onDidChange: () => {},
+  };
+  const storage = new StorageManager(mem, store);
+  const entry = (id: string): object => ({
+    id,
+    name: id,
+    type: 'entity',
+    parentId: null,
+    details: { id, name: id, isSshEnabled: false },
+  });
+
+  // A previous apply left 'returns' waiting to be swept; this one brings it back.
+  await storage.addNode('a1', entry('other'));
+  await storage.deferSecretCleanup('a1', 'returns');
+  order.length = 0;
+
+  await storage.importBundle('a1', { nodes: [entry('returns')], passwords: { returns: 'pw' } });
+
+  const cleared = order.findIndex((c) => c.startsWith('pending:') && !c.includes('returns'));
+  const firstStore = order.indexOf('secretStore');
+  assert.ok(cleared >= 0, `the id stopped waiting to be swept (${order.join(' → ')})`);
+  assert.ok(cleared < firstStore, 'and it stopped BEFORE its value was written');
+  assert.equal(chain.get('a1_returns'), 'pw', 'so the restored password is still there');
+});
+
+/** Record what the pending-cleanup key was set to, and ignore every other write. */
+function notePending(order: string[], key: string, value: unknown): void {
+  if (key === 'credSshManager.pendingCleanup') {
+    order.push(`pending:${JSON.stringify((value as { secrets?: unknown })?.secrets ?? {})}`);
+  }
 }

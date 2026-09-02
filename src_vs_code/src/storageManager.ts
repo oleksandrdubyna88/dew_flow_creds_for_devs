@@ -11,7 +11,8 @@ import { EscrowShareWrap, isEscrowShareWrap } from './orgEscrowShareWrap';
 import { RemoteState, buildDefaultFolders, shouldSeedDefaults } from './defaultFolders';
 import { Tombstone, VersionVector, bumpVector, mergeVectors, normalizeTombstone, parseTombstones } from './versionVector';
 import { isSelfOrDescendantIn, subtreeOf } from './selectionResolver';
-import { Revision, isRevisionList, pushRevision } from './revisionHistory';
+import { Revision } from './revisionHistory';
+import { readHistory, writeRevision } from './revisionStore';
 import { MetadataError, isSealedMetadata, newMetadataKey, openMetadata, sealMetadata } from './metadataCipher';
 import { ExternalSecrets } from './externalBundle';
 import { stampKind } from './entityKind';
@@ -41,7 +42,6 @@ import {
   dbConnSecretKey,
   entitySecretKeys,
   fieldsSecretKey,
-  historySecretKey,
   imageSecretKey,
   notesSecretKey,
   orgEscrowShareSecretKey,
@@ -444,12 +444,20 @@ export class StorageManager implements vscode.Disposable {
   }
 
   /**
-   * Can this id's ABSENCE be proven? Not "is it missing": under a `metadataFault` every node reads as
-   * missing, so this fails CLOSED and a caller that acts on proven absence acts on nothing. Why that
-   * distinction is load-bearing is in `entityWrite.ts`.
+   * Present, absent, or unknowable — because under a `metadataFault` EVERY node reads as missing, so
+   * "not found" cannot mean "not there". Why that matters is in `entityWrite.ts`.
    */
-  provenAbsent(accountId: string, id: string): boolean {
-    return this.metadataFault === undefined && this.getNode(accountId, id) === undefined;
+  nodePresence(accountId: string, id: string): 'present' | 'absent' | 'unknown' {
+    if (this.metadataFault !== undefined) {
+      return 'unknown';
+    }
+    return this.getNode(accountId, id) === undefined ? 'absent' : 'present';
+  }
+
+  /** Hand an id to the sweep, for collection once the tree can say it is really gone. */
+  async deferSecretCleanup(accountId: string, entityId: string): Promise<void> {
+    const port = this.cleanupPort();
+    await port.write(markSecretsPending(port.read(), accountId, [entityId]));
   }
 
   /** The sorted children of one position (`null` = root) — frozen, shared until the next write. */
@@ -776,31 +784,14 @@ export class StorageManager implements vscode.Disposable {
 
   // ---------- revision history (SecretStorage: old secrets are still secrets) ----------
 
-  /**
-   * The kept previous versions of an entity, newest first.
-   *
-   * <p>In SecretStorage rather than plaintext metadata because a revision holds the old
-   * password — replaced is not the same as harmless. Local to this machine: it is not in
-   * the sync bundle, so a second machine has its own history and one that never saw the
-   * change has none, which is honest rather than invented.</p>
-   */
-  async getHistory(accountId: string, entityId: string): Promise<Revision[]> {
-    const raw = await this.secrets.get(historySecretKey(accountId, entityId));
-    if (raw === undefined) {
-      return [];
-    }
-    try {
-      const parsed: unknown = JSON.parse(raw);
-      return isRevisionList(parsed) ? parsed : [];
-    } catch {
-      return [];
-    }
+  /** The kept previous versions of an entity, newest first — see `revisionStore.ts`. */
+  getHistory(accountId: string, entityId: string): Promise<Revision[]> {
+    return readHistory(this.secrets, accountId, entityId);
   }
 
   /** Record the CURRENT state as a revision, before it is overwritten. */
-  async recordRevision(accountId: string, entityId: string, revision: Revision): Promise<void> {
-    const next = pushRevision(await this.getHistory(accountId, entityId), revision);
-    await this.secrets.store(historySecretKey(accountId, entityId), JSON.stringify(next));
+  recordRevision(accountId: string, entityId: string, revision: Revision): Promise<void> {
+    return writeRevision(this.secrets, accountId, entityId, revision);
   }
 
   // ---------- attachments (SecretStorage, base64 content) ----------
@@ -986,12 +977,16 @@ export class StorageManager implements vscode.Disposable {
     // Rule A applied to a restore (`orphanSweep.ts`); this path had it backwards in BOTH halves.
     // Vanished ids come from the OLD tree, which after `saveNodes` is no longer there to iterate.
     const before = this.getNodes(accountId).filter((n) => n.type === 'entity').map((n) => n.id);
+    // Anything this bundle CARRIES stops waiting to be swept, BEFORE its secrets are written — so a
+    // sweep running beside this apply cannot delete a value the apply just restored. The review's
+    // one-keychain-call race, closed from the writer's side rather than guarded against.
+    const port = this.cleanupPort();
+    await port.write(clearSecretsPending(port.read(), accountId));
     await storeSecretMaps(this.secrets, accountId, maps);
     // Rule B, with a LOCAL record rather than a tombstone — `pendingCleanup.ts` says why both shapes
     // of tombstone were wrong here.
     const kept = new Set(bundle.nodes.map((n) => n.id));
     const vanishing = before.filter((id) => !kept.has(id));
-    const port = this.cleanupPort();
     await port.write(markSecretsPending(port.read(), accountId, vanishing));
     await this.saveNodes(
       accountId,

@@ -38,7 +38,13 @@ import { describeError } from './describeError';
  * that same tree (`getSnapshot` → `exportBundle` → `getNodes`), so a node absent from it was never
  * published, whatever the failed write reported.</p>
  *
- * <p>So the compensation covers only the case it can settle alone: <b>the node never landed</b>.
+ * <p>And "unknown" is not "absent". Failing closed alone would leave the aborted create's secrets in
+ * the keychain with nothing naming them — the review's point, and it is right: an orphan nobody can
+ * collect is the class this whole story exists to shrink. So an unreadable tree DEFERS instead: the id
+ * goes into the same local `pendingCleanup` record the removals use, and the sweep collects it once
+ * the tree can say it is really gone.</p>
+ *
+ * <p>So the compensation deletes only in the case it can settle alone: <b>the node never landed</b>.
  * Nothing could have published it, so its secrets are unreachable by construction and deleting them
  * is unambiguous. When the node DID land, this leaves both halves alone: the entry is live and holds
  * its values — a consistent entry, arrived at by a failing path — and the caller still hears the
@@ -78,10 +84,12 @@ export interface EntityCreate {
   writeSecrets: () => Promise<void>;
   /** The node that will reference them. */
   writeNode: () => Promise<void>;
-  /** Is the node in the tree NOW? The single question that decides whether anything is undone. */
-  nodeLanded: () => boolean;
-  /** Delete exactly the secrets `writeSecrets` writes. Runs only when the node did NOT land. */
+  /** Is the node in the tree NOW — or can the tree not say? The question that decides everything. */
+  presence: () => 'present' | 'absent' | 'unknown';
+  /** Delete exactly the secrets `writeSecrets` writes. Runs only on a PROVEN absence. */
   undoSecrets: () => Promise<void>;
+  /** Hand this id to the sweep, for when the tree cannot say yet. */
+  deferCleanup: () => Promise<void>;
 }
 
 /**
@@ -110,18 +118,24 @@ export async function createEntityWithSecrets(create: EntityCreate): Promise<voi
     await create.writeSecrets();
     await create.writeNode();
   } catch (error) {
-    if (create.nodeLanded()) {
+    const where = create.presence();
+    if (where === 'present') {
       // Nothing is undone — and the caller is told the entry EXISTS, wrapped around the original
       // error rather than instead of it, so the log still says what actually went wrong.
       throw new EntryLandedError(error);
     }
-    try {
-      await create.undoSecrets();
-    } catch {
-      // An orphan is the one torn state the invariant permits, and `orphanSweep.ts` explains why.
-    }
+    await tidy(where === 'absent' ? create.undoSecrets : create.deferCleanup);
     // The ORIGINAL error, because that is the one describing what went wrong. A failure to tidy up
     // must not mask the failure that made tidying necessary.
     throw error;
+  }
+}
+
+/** Best-effort by construction: a failure to tidy must not replace the failure being tidied. */
+async function tidy(step: () => Promise<void>): Promise<void> {
+  try {
+    await step();
+  } catch {
+    // An orphan is the one torn state the invariant permits, and `orphanSweep.ts` explains why.
   }
 }

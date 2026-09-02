@@ -41,7 +41,8 @@ test('a create whose node never landed leaves nothing in the keychain', async ()
           return Promise.resolve();
         },
         writeNode: () => Promise.reject(boom),
-        nodeLanded: () => r.tree.has('ent'),
+        presence: () => (r.tree.has('ent') ? 'present' : 'absent'),
+        deferCleanup: () => Promise.resolve(),
         undoSecrets: () => {
           r.chain.delete('ent');
           r.log.push('undoSecrets');
@@ -74,7 +75,8 @@ test('a node that DID land keeps its secrets, however the create ended', async (
         r.tree.add('ent'); // persisted…
         return Promise.reject(new Error('…and then the flush failed')); // …but reported as a failure
       },
-      nodeLanded: () => r.tree.has('ent'),
+      presence: () => (r.tree.has('ent') ? 'present' : 'absent'),
+      deferCleanup: () => Promise.resolve(),
       undoSecrets: () => {
         secretsTouched = true;
         return Promise.resolve();
@@ -97,7 +99,8 @@ test('a landed entry is REPORTED as landed, so a retry is not a blind duplicate'
   const thrown = await createEntityWithSecrets({
     writeSecrets: () => Promise.resolve(),
     writeNode: () => Promise.reject(boom),
-    nodeLanded: () => true,
+    presence: () => 'present',
+    deferCleanup: () => Promise.resolve(),
     undoSecrets: () => Promise.reject(new Error('never reached')),
   }).then(
     () => undefined,
@@ -126,7 +129,8 @@ test('a create that fails DURING the secret writes still undoes the ones that la
         r.log.push('node');
         return Promise.resolve();
       },
-      nodeLanded: () => false,
+      presence: () => 'absent',
+      deferCleanup: () => Promise.resolve(),
       undoSecrets: () => {
         r.chain.clear();
         return Promise.resolve();
@@ -146,7 +150,8 @@ test('an undo that fails too does not replace the error that made it necessary',
       createEntityWithSecrets({
         writeSecrets: () => Promise.resolve(),
         writeNode: () => Promise.reject(original),
-        nodeLanded: () => false,
+        presence: () => 'absent',
+        deferCleanup: () => Promise.resolve(),
         undoSecrets: () => Promise.reject(new Error('and the cleanup failed as well')),
       }),
     (e) => e === original,
@@ -166,7 +171,8 @@ test('the happy path writes the secret BEFORE the node, and undoes nothing', asy
       order.push('node');
       return Promise.resolve();
     },
-    nodeLanded: () => true,
+    presence: () => 'present',
+    deferCleanup: () => Promise.resolve(),
     undoSecrets: () => {
       undone = true;
       return Promise.resolve();
@@ -177,19 +183,26 @@ test('the happy path writes the secret BEFORE the node, and undoes nothing', asy
   assert.equal(undone, false, 'nothing is undone when nothing failed');
 });
 
-test('a tree that cannot be READ is never treated as an empty tree', async () => {
-  // The review's sharpest finding, and it is about a real failure mode: `openNodesSlot` answers `[]`
-  // and records a metadataFault when the sealed cache will not open — a device key reset, a corrupted
-  // cache. Every node then reads as missing. Harmless for rendering; catastrophic here, where it would
-  // mean "nothing landed" for an entity that exists, and delete its secrets.
+test('a tree that cannot be READ deletes nothing — and hands the id to the sweep', async () => {
+  // The review's sharpest finding, twice over. `openNodesSlot` answers `[]` and records a
+  // metadataFault when the sealed cache will not open — a device key reset, a corrupted cache — so
+  // every node reads as missing. Harmless for rendering; catastrophic here, where it would mean
+  // "nothing landed" for entities that all exist, and delete their secrets.
+  //
+  // Failing closed alone was not enough either: it left the aborted create's secrets with nothing
+  // naming them, which is the uncollectable orphan this whole story exists to shrink. So it DEFERS.
   let deleted = false;
+  let deferred = false;
 
   await assert.rejects(() =>
     createEntityWithSecrets({
       writeSecrets: () => Promise.resolve(),
       writeNode: () => Promise.reject(new Error('the write failed while the cache was unreadable')),
-      // What `provenAbsent` answers under a fault: absence cannot be proven, so this is not `false`.
-      nodeLanded: () => true,
+      presence: () => 'unknown',
+      deferCleanup: () => {
+        deferred = true;
+        return Promise.resolve();
+      },
       undoSecrets: () => {
         deleted = true;
         return Promise.resolve();
@@ -198,4 +211,5 @@ test('a tree that cannot be READ is never treated as an empty tree', async () =>
   );
 
   assert.equal(deleted, false, 'absence must be PROVEN before anything is deleted');
+  assert.equal(deferred, true, 'and the id is written down, so the sweep can finish the job later');
 });

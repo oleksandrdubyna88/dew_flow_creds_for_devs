@@ -384,10 +384,15 @@ somebody wants this account back.
 apply can land in one, so an answer from before the previous await is an answer about a tree that may
 no longer be the tree.
 
-**Pending secret deletions check liveness before acting.** Interrupted *before* the tree was replaced,
-those entities are still live and still hold their values — deleting them then would be precisely the
-data loss the invariant exists to prevent. Which id is which is the question `orphanCandidates` already
-answers.
+**Pending secret deletions check liveness before acting** — and before EVERY key, not once per entity:
+deleting one entity is a dozen awaited keychain calls, and a sync apply can land in any of them.
+Interrupted *before* the tree was replaced, those entities are still live and still hold their values;
+deleting them then would be precisely the data loss the invariant exists to prevent.
+
+**And the race is closed from the writer's side too.** `importBundle` takes every id it CARRIES off the
+pending list before it writes the first secret, so a sweep running beside an apply cannot delete a
+value that apply just restored. Guarding one side of a race and hoping is not the same as removing
+it.
 
 **The account order, unchanged and still the point:** unlist FIRST. The account is then invisible to
 the UI and to the sync cycle, which iterates `getAccounts()`, so nothing about it can be published
@@ -416,11 +421,16 @@ So `nodeLanded()` is the single question the compensation asks — and it is a *
 safe: sync publishes from this same tree (`getSnapshot` → `exportBundle` → `getNodes`), so a node that
 is not in it was never published, whatever the failed write reported.
 
-**And it fails closed.** `provenAbsent` is not "is it missing": `openNodesSlot` answers `[]` and records
-a `metadataFault` when the sealed cache will not open — a device key reset, a corrupted cache, `init()`
-not run — and every node then reads as missing. Harmless for rendering, since the tree repopulates from
-the next sync; catastrophic for a compensation, which would conclude nothing landed and delete the
-secrets of entities that all exist. A fault proves nothing, so nothing is deleted.
+**And it has THREE answers, not two.** `nodePresence` returns `present | absent | unknown`, because
+`openNodesSlot` answers `[]` and records a `metadataFault` when the sealed cache will not open — a
+device key reset, a corrupted cache, `init()` not run — and every node then reads as missing. Harmless
+for rendering, since the tree repopulates from the next sync; catastrophic for a compensation, which
+would conclude nothing landed and delete the secrets of entities that all exist.
+
+Failing closed alone was not enough either, and the review said so: it left the aborted create's
+secrets with nothing naming them, which is the uncollectable orphan this story exists to shrink. So
+`unknown` **defers** — the id goes into the same local `pendingCleanup` record the removals use, and
+the sweep collects it once the tree can say it is really gone.
 
 False: nothing could have published the node, its secrets are unreachable by construction, and deleting
 them is unambiguous. True: leave both halves alone. The entry is live and holds its values — a
