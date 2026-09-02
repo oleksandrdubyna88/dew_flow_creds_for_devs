@@ -10,7 +10,7 @@ import { SigningKeypair, generateSigningKeypair } from './shareSignature';
 import { EscrowShareWrap, isEscrowShareWrap } from './orgEscrowShareWrap';
 import { RemoteState, buildDefaultFolders, shouldSeedDefaults } from './defaultFolders';
 import { Tombstone, VersionVector, bumpVector, mergeVectors, normalizeTombstone, parseTombstones } from './versionVector';
-import { isSelfOrDescendantIn } from './selectionResolver';
+import { isSelfOrDescendantIn, subtreeOf } from './selectionResolver';
 import { Revision, isRevisionList, pushRevision } from './revisionHistory';
 import { MetadataError, isSealedMetadata, newMetadataKey, openMetadata, sealMetadata } from './metadataCipher';
 import { ExternalSecrets } from './externalBundle';
@@ -19,10 +19,17 @@ import { TRASH_FOLDER_NAME, findTrash, restoreTarget } from './trash';
 import { exportSecretsFor } from './exportSecrets';
 import { PaymentFields, parsePaymentFields, serializePaymentFields } from './paymentFields';
 import { forgetTombstone, sweepOrphanSecrets } from './orphanSweep';
-import { NODES_KEY_PREFIX, orphanedAccountIds } from './accountRemoval';
 import {
-  SecretMaps,
-  dropAbsentKinds,
+  CleanupPort,
+  clearSecretsPending,
+  isEmptyPending,
+  markSecretsPending,
+  parsePendingCleanup,
+  removeWithIntent,
+  resumePending,
+} from './pendingCleanup';
+import {
+  dropVanishedSecrets,
   readSecretMaps,
   secretMapsOf,
   storeSecretMaps,
@@ -58,7 +65,7 @@ const ACCOUNTS_KEY = 'credSshManager.accounts';
 const SEEDED_KEY = 'credSshManager.defaultsSeeded';
 
 function nodesKey(accountId: string): string {
-  return `${NODES_KEY_PREFIX}${accountId}`;
+  return `credSshManager.nodes.${accountId}`;
 }
 
 function tombstonesKey(accountId: string): string {
@@ -76,7 +83,10 @@ const DEVICE_ID_KEY = 'credSshManager.deviceId';
 const DEVICE_SEQ_KEY = 'credSshManager.deviceSeq';
 
 /** Per account: the id an imported entity ARRIVED with -> the id it was given here. */
-const IMPORTED_IDS_KEY = 'credSshManager.importedIds';
+const IMPORTED_IDS_KEY = 'credSshManager.importedIds';
+
+/** Work started and not yet finished — LOCAL, never synced. See `pendingCleanup.ts`. */
+const PENDING_KEY = 'credSshManager.pendingCleanup';
 
 
 
@@ -127,13 +137,6 @@ function siblingOrder(a: TreeNode, b: TreeNode): number {
  * mutated in place — and what `getNodes`/`getChildren` hand out is frozen,
  * because it is shared with every other caller until the next write.
  */
-/** Tombstones for every id the incoming tree drops — Rule B's record for a restore. */
-function vanishingRecord(before: readonly string[], incoming: readonly { id: string }[]): Record<string, Tombstone> {
-  const kept = new Set(incoming.map((n) => n.id));
-  const deletedAt = Date.now();
-  return Object.fromEntries(before.filter((id) => !kept.has(id)).map((id) => [id, { deletedAt, v: {} }]));
-}
-
 export class StorageManager implements vscode.Disposable {
   /**
    * Per-account read cache (audit 2026-08-25, C3).
@@ -333,18 +336,19 @@ export class StorageManager implements vscode.Disposable {
     return true;
   }
 
-  /** Unlist, then wipe — the order and its reasoning are in `accountRemoval.ts`. */
+  /** Mark, unlist, wipe, unmark — the order and its reasoning are in `accountRemoval.ts`. */
   async removeAccount(accountId: string): Promise<void> {
+    await removeWithIntent(this.cleanupPort(), accountId, () => this.unlistAccount(accountId));
+    this.touch(accountId);
+  }
+
+  /** The account stops being one this machine manages; its data is still stored, and still named. */
+  private async unlistAccount(accountId: string): Promise<void> {
     await this.globalState.update(
       ACCOUNTS_KEY,
       this.getAccounts().filter((a) => a.accountId !== accountId),
     );
-    await this.globalState.update(
-      SEEDED_KEY,
-      this.seededAccountIds().filter((id) => id !== accountId),
-    );
-    await this.wipeAccountData(accountId);
-    this.touch(accountId);
+    await this.globalState.update(SEEDED_KEY, this.seededAccountIds().filter((id) => id !== accountId));
   }
 
   /**
@@ -353,15 +357,21 @@ export class StorageManager implements vscode.Disposable {
    * <p>Idempotent by construction: it re-derives its work from what is actually stored, so running
    * it twice is running it once. Returns the ids it finished, for the log.</p>
    */
-  async resumeAccountRemovals(): Promise<readonly string[]> {
-    const orphaned = orphanedAccountIds(
-      this.globalState.keys(),
-      this.getAccounts().map((a) => a.accountId),
-    );
-    for (const accountId of orphaned) {
-      await this.wipeAccountData(accountId);
-    }
-    return orphaned;
+  resumeAccountRemovals(): Promise<readonly string[]> {
+    return resumePending(this.cleanupPort());
+  }
+
+  /** This class's half of `pendingCleanup.ts` — the storage the sequencing there acts on. */
+  private cleanupPort(): CleanupPort {
+    return {
+      read: () => parsePendingCleanup(this.globalState.get<unknown>(PENDING_KEY)),
+      write: async (next) => {
+        await this.globalState.update(PENDING_KEY, isEmptyPending(next) ? undefined : next);
+      },
+      wipeAccount: (accountId) => this.wipeAccountData(accountId),
+      liveIds: (accountId) => this.getNodes(accountId).map((n) => n.id),
+      forgetSecrets: (accountId, entityId) => this.forgetEntitySecrets(accountId, entityId),
+    };
   }
 
   /** The secrets named by the still-present tree, then the tree and everything keyed beside it. */
@@ -386,17 +396,23 @@ export class StorageManager implements vscode.Disposable {
   }
 
   /**
-   * Take a node out of the tree WITHOUT a tombstone — the compensation for a failed create.
+   * Retract a node a failed create had already written — WITH a tombstone.
    *
-   * <p>Deliberately not `deleteNodeRecursive`: that records a deletion, and a tombstone for an id
-   * that may never have been visible anywhere would sync a deletion of nothing. See `entityWrite.ts`.
-   * A no-op when the id is not there, which is the common case — the failure often predates the node.</p>
+   * <p>The first version forgot it quietly. Both providers found the hole: the node was PERSISTED,
+   * and a sync cycle can publish between the write and the failure being reported — so forgetting it
+   * locally leaves the other machine a live node claiming a secret this one just deleted, and it
+   * syncs BACK. A tombstone cancels it everywhere, costs nothing when the id never travelled, and
+   * `addNode` already forgets one when an id is legitimately created again. It also makes a
+   * compensated create's orphan collectable, which was one of the two classes `orphanSweep.ts` had
+   * to write off. A no-op when the id is not in the tree — the failure often predates the node.</p>
    */
-  async forgetNode(accountId: string, id: string): Promise<void> {
+  async retractNode(accountId: string, id: string): Promise<void> {
     const nodes = this.getNodes(accountId);
-    if (!nodes.some((n) => n.id === id)) {
+    const node = nodes.find((n) => n.id === id);
+    if (node === undefined) {
       return;
     }
+    await this.tombstone(accountId, [node]);
     await this.saveNodes(
       accountId,
       nodes.filter((n) => n.id !== id),
@@ -588,32 +604,13 @@ export class StorageManager implements vscode.Disposable {
    * Delete a node and (for folders) its whole subtree, including every
    * affected entity's secret. Returns the names of removed nodes.
    */
-  // eslint-disable-next-line complexity
   async deleteNodeRecursive(accountId: string, id: string): Promise<string[]> {
     const nodes = this.getNodes(accountId);
-    const toDelete = new Set<string>([id]);
-    // Repeatedly sweep for children until the set stops growing.
-    let grew = true;
-    while (grew) {
-      grew = false;
-      for (const n of nodes) {
-        if (n.parentId != null && toDelete.has(n.parentId) && !toDelete.has(n.id)) {
-          toDelete.add(n.id);
-          grew = true;
-        }
-      }
-    }
-    const removed = nodes.filter((n) => toDelete.has(n.id));
+    const removed = subtreeOf(nodes, id);
+    const toDelete = new Set(removed.map((n) => n.id));
     // THE ORDER IS THE GUARANTEE: tombstone, then node, then secrets — the tombstone is both the
     // sync record and the only durable list of ids that had secrets. See `orphanSweep.ts`.
-    const now = Date.now();
-    const tombstones = { ...this.getTombstones(accountId) };
-    const deviceId = this.deviceId();
-    for (const n of removed) {
-      // The deletion is a versioned event: bump this device and record it.
-      tombstones[n.id] = { deletedAt: now, v: bumpVector(n.v ?? {}, deviceId, this.nextSeq()) };
-    }
-    await this.setTombstones(accountId, tombstones);
+    await this.tombstone(accountId, removed);
     await this.saveNodes(
       accountId,
       nodes.filter((n) => !toDelete.has(n.id)),
@@ -623,6 +620,17 @@ export class StorageManager implements vscode.Disposable {
     }
     await this.bumpHorizonToSeq(accountId);
     return removed.map((n) => n.name);
+  }
+
+  /** Record these nodes as deleted — a VERSIONED event, so the deletion wins over the node it removes. */
+  private async tombstone(accountId: string, nodes: readonly TreeNode[]): Promise<void> {
+    const now = Date.now();
+    const deviceId = this.deviceId();
+    const tombstones = { ...this.getTombstones(accountId) };
+    for (const node of nodes) {
+      tombstones[node.id] = { deletedAt: now, v: bumpVector(node.v ?? {}, deviceId, this.nextSeq()) };
+    }
+    await this.setTombstones(accountId, tombstones);
   }
 
   /** Keychain keys a half-finished deletion left behind — reasoning in `orphanSweep.ts`. */
@@ -1007,19 +1015,20 @@ export class StorageManager implements vscode.Disposable {
     // Vanished ids come from the OLD tree, which after `saveNodes` is no longer there to iterate.
     const before = this.getNodes(accountId).filter((n) => n.type === 'entity').map((n) => n.id);
     await storeSecretMaps(this.secrets, accountId, maps);
-    // Rule B, and the gap my own reviewer found in the S1.4 round: the ids this bundle is about to
-    // remove need a durable record BEFORE they lose the tree that names them. Crash between the tree
-    // replacement and the secret drop and, without this, those keychain entries are named by nothing
-    // — the sweep only ever considers tombstoned ids. A restored backup that simply lacks an entry
-    // carries no tombstone for it, so one is minted here with an EMPTY version vector: enough to
-    // collect the secret locally, and deliberately too weak to win a merge against a live node on
-    // another machine. The bundle's own tombstones are restored as the final state below.
-    await this.setTombstones(accountId, { ...(bundle.tombstones ?? {}), ...vanishingRecord(before, bundle.nodes) });
+    // Rule B: the ids this bundle drops need a durable record BEFORE they lose the tree that names
+    // them. NOT a tombstone — a weak one loses the merge to a live remote node that then syncs back
+    // over deleted secrets, and a strong one publishes a deletion meant only locally. This record is
+    // LOCAL and never syncs; the reasoning in full is in `pendingCleanup.ts`.
+    const kept = new Set(bundle.nodes.map((n) => n.id));
+    const vanishing = before.filter((id) => !kept.has(id));
+    const port = this.cleanupPort();
+    await port.write(markSecretsPending(port.read(), accountId, vanishing));
     await this.saveNodes(
       accountId,
       bundle.nodes.map((n) => ({ ...n, children: undefined })),
     );
-    await this.dropVanishedSecrets(accountId, before, maps);
+    await dropVanishedSecrets(this.secrets, accountId, before, maps);
+    await port.write(clearSecretsPending(port.read(), accountId));
     // Stored notes are authoritative; drop any legacy plaintext copy.
     await this.saveNodes(
       accountId,
@@ -1031,17 +1040,6 @@ export class StorageManager implements vscode.Disposable {
     );
     await this.setTombstones(accountId, bundle.tombstones ?? {});
     await this.setHorizon(accountId, bundle.horizon ?? {});
-  }
-
-  /** Drop the secrets of entities that will disappear with the replaced tree. */
-  private async dropVanishedSecrets(accountId: string, entityIds: readonly string[], maps: SecretMaps): Promise<void> {
-    for (const id of entityIds) {
-      await dropAbsentKinds(this.secrets, accountId, id, maps);
-      // As it has always been: the kept versions go with the attachment map's silence.
-      if (maps.attachments[id] === undefined) {
-        await this.secrets.delete(historySecretKey(accountId, id));
-      }
-    }
   }
 
   // ---------- helpers ----------

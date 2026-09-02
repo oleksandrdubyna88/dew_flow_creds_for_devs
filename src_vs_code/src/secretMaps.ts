@@ -3,6 +3,7 @@ import {
   configSecretKey,
   dbConnSecretKey,
   fieldsSecretKey,
+  historySecretKey,
   imageSecretKey,
   notesSecretKey,
   paymentSecretKey,
@@ -157,4 +158,20 @@ function legacyNoteOf(node: { id: string; details?: { notes?: string } }, maps: 
 
 function nonEmpty(text: string | undefined): string | undefined {
   return text !== undefined && text.length > 0 ? text : undefined;
+}
+
+/** Drop the secrets of entities that will disappear with a replaced tree. */
+export async function dropVanishedSecrets(
+  chest: SecretChest,
+  accountId: string,
+  entityIds: readonly string[],
+  maps: SecretMaps,
+): Promise<void> {
+  for (const id of entityIds) {
+    await dropAbsentKinds(chest, accountId, id, maps);
+    // As it has always been: the kept versions go with the attachment map's silence.
+    if (maps.attachments[id] === undefined) {
+      await chest.delete(historySecretKey(accountId, id));
+    }
+  }
 }

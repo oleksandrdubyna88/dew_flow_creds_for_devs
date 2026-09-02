@@ -203,9 +203,11 @@ function stores(options: { addNodeFails: boolean }): {
   storage: Record<string, unknown>;
   chain: Map<string, string>;
   tree: string[];
+  tombstoned: string[];
 } {
   const chain = new Map<string, string>();
   const tree: string[] = [];
+  const tombstoned: string[] = [];
   const set = (kind: string) => (_a: string, e: string, v: string | undefined): Promise<void> => {
     // Modelled on the real setters: a value stores, and nothing DELETES — except for a password,
     // where nothing means keep. That asymmetry is the whole point of the test.
@@ -225,10 +227,11 @@ function stores(options: { addNodeFails: boolean }): {
       tree.push(node.id);
       return options.addNodeFails ? Promise.reject(new Error('globalState is full')) : Promise.resolve();
     },
-    forgetNode: (_a: string, id: string): Promise<void> => {
+    retractNode: (_a: string, id: string): Promise<void> => {
       const at = tree.indexOf(id);
       if (at >= 0) {
         tree.splice(at, 1);
+        tombstoned.push(id);
       }
       return Promise.resolve();
     },
@@ -244,7 +247,7 @@ function stores(options: { addNodeFails: boolean }): {
     getNodes: () => [],
     getNode: () => undefined,
   };
-  return { storage, chain, tree };
+  return { storage, chain, tree, tombstoned };
 }
 
 const IMPORTED_KINDS = ['password', 'notes', 'privateKey', 'dbConnection', 'totp'] as const;
@@ -252,7 +255,7 @@ const IMPORTED_KINDS = ['password', 'notes', 'privateKey', 'dbConnection', 'totp
 test('an import whose node write fails leaves NO secret of any kind behind', async () => {
   // Named per kind because the failure mode is per kind: one setter that keeps instead of deleting
   // is one permanently uncollectable orphan, and there is no tombstone to find it by.
-  const { storage, chain, tree } = stores({ addNodeFails: true });
+  const { storage, chain, tree, tombstoned } = stores({ addNodeFails: true });
 
   await assert.rejects(() =>
     importEntities(storage as never, { accountId: 'a1', parentId: null }, [
@@ -272,6 +275,11 @@ test('an import whose node write fails leaves NO secret of any kind behind', asy
     );
   }
   assert.deepEqual(tree, [], 'and the node it half-wrote is gone too');
+  assert.equal(
+    tombstoned.length,
+    1,
+    'the retracted node is TOMBSTONED, because a sync cycle may already have published it',
+  );
 });
 
 test('the import undo runs the node removal BEFORE the keychain deletes', async () => {
@@ -279,11 +287,11 @@ test('the import undo runs the node removal BEFORE the keychain deletes', async 
   // secrets must stay readable until the node is proven gone.
   const order: string[] = [];
   const { storage } = stores({ addNodeFails: true });
-  const forget = storage.forgetNode as (a: string, i: string) => Promise<void>;
+  const retract = storage.retractNode as (a: string, i: string) => Promise<void>;
   const deletePassword = storage.deletePassword as (a: string, e: string) => Promise<void>;
-  storage.forgetNode = (a: string, i: string): Promise<void> => {
-    order.push('forgetNode');
-    return forget(a, i);
+  storage.retractNode = (a: string, i: string): Promise<void> => {
+    order.push('retractNode');
+    return retract(a, i);
   };
   storage.deletePassword = (a: string, e: string): Promise<void> => {
     order.push('deletePassword');
@@ -296,7 +304,7 @@ test('the import undo runs the node removal BEFORE the keychain deletes', async 
     ]),
   );
 
-  assert.deepEqual(order, ['forgetNode', 'deletePassword']);
+  assert.deepEqual(order, ['retractNode', 'deletePassword']);
 });
 
 test('a successful import leaves every secret in place and undoes nothing', async () => {
@@ -323,7 +331,7 @@ test('a successful import leaves every secret in place and undoes nothing', asyn
  * tree no longer contains. A crash in between left keychain entries that NOTHING named — the sweep
  * only ever considers tombstoned ids — so they were uncollectable forever.</p>
  */
-test('a restore tombstones the entries it is dropping BEFORE it replaces the tree', async () => {
+test('a restore RECORDS the entries it is dropping before it replaces the tree', async () => {
   const { StorageManager } = loadWithVscode<{ StorageManager: new (m: unknown, s: unknown) => Record<string, Function> }>(
     '../storageManager',
     {
@@ -382,20 +390,27 @@ test('a restore tombstones the entries it is dropping BEFORE it replaces the tre
   // A backup that simply does not contain `vanishes` — it carries no tombstone for it either.
   await storage.importBundle('a1', { nodes: [entry('keeps')], passwords: {} });
 
-  const firstTombstone = order.findIndex((c) => c.startsWith('tombstones:'));
+  const recorded = order.findIndex((c) => c.startsWith('pending:'));
   const treeReplaced = order.indexOf('nodes');
   const firstDelete = order.indexOf('secretDelete');
-  assert.ok(firstTombstone >= 0, `a record was written (${order.join(' → ')})`);
-  assert.ok(order[firstTombstone].includes('vanishes'), 'and it names the id that is going');
-  assert.ok(firstTombstone < treeReplaced, 'before the tree that named it was replaced');
+  assert.ok(recorded >= 0, `a record was written (${order.join(' → ')})`);
+  assert.ok(order[recorded].includes('vanishes'), 'and it names the id that is going');
+  assert.ok(recorded < treeReplaced, 'before the tree that named it was replaced');
   assert.ok(treeReplaced < firstDelete, 'and the secret went after the node stopped claiming it');
   assert.deepEqual([...chain.keys()], [], 'the vanished entry keeps nothing in the keychain');
+  // The bundle's OWN tombstones are restored at the end, as the final state — that write is fine.
+  // What must not exist is a MINTED one, before the tree goes: a published record of this removal
+  // either loses the merge to a live remote node, or publishes a deletion meant only locally.
+  const mintedEarly = order.slice(0, treeReplaced).some((c) => c.startsWith('tombstones:'));
+  assert.equal(mintedEarly, false, `no tombstone was minted for the vanishing id (${order.join(' → ')})`);
 });
 
 /** What a memento write means for the order under test — the tree, or the record naming what leaves it. */
 function mementoNote(key: string, value: unknown): string | undefined {
-  if (key.startsWith('credSshManager.tombstones.')) {
-    return `tombstones:${Object.keys((value ?? {}) as object).join(',')}`;
-  }
-  return key.startsWith('credSshManager.nodes.') ? 'nodes' : undefined;
+  const notes: ReadonlyArray<[string, (v: unknown) => string]> = [
+    ['credSshManager.pendingCleanup', (v) => `pending:${JSON.stringify(v ?? {})}`],
+    ['credSshManager.tombstones.', (v) => `tombstones:${Object.keys((v ?? {}) as object).join(',')}`],
+    ['credSshManager.nodes.', () => 'nodes'],
+  ];
+  return notes.find(([prefix]) => key.startsWith(prefix))?.[1](value);
 }

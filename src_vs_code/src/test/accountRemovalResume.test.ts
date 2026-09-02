@@ -6,10 +6,15 @@ import type { StoredAccount, TreeNode } from '../types';
 /**
  * A killed account removal, finished by the next window — through the real `StorageManager`.
  *
- * <p>`accountRemoval.test.ts` covers the arithmetic of finding the leftovers. This one simulates the
- * crash: the keychain refuses a delete part-way through the wipe, `removeAccount` rejects, and the
- * next window's sweep has to finish what it started. Both providers of the S1.4 review raised the
- * unfinished removal independently, so it gets a test that actually interrupts one.</p>
+ * <p>`pendingCleanup.test.ts` covers the record and the sequencing. This one simulates the crash: the
+ * keychain refuses a delete part-way through the wipe, `removeAccount` rejects, and the next window's
+ * sweep has to finish what it started. Both providers of the S1.4 review raised the unfinished
+ * removal independently, so it gets a test that actually interrupts one.</p>
+ *
+ * <p>Round 2 replaced the marker-free version of this: the resume used to INFER its work by comparing
+ * stored keys against the account list, and both providers said the same thing about that — an
+ * inference cannot tell an interrupted removal from an account being created, an id being reused, or
+ * a key left by some other lifecycle. It now reads an explicit intent.</p>
  */
 
 interface Storage {
@@ -115,7 +120,7 @@ test('the next window finishes it: every secret gone, nothing left to find', asy
 
   const finished = await storage.resumeAccountRemovals();
 
-  assert.deepEqual(finished, [A], 'the leftover named itself, with no marker written anywhere');
+  assert.deepEqual(finished, [A], 'the intent recorded before the unlist named exactly this account');
   assert.deepEqual([...chain.map.keys()], [], 'every secret the tree named is gone');
   assert.deepEqual(storage.getNodes(A), [], 'and so is the tree that named them');
 });

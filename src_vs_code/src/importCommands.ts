@@ -60,7 +60,7 @@ export async function importEntities(
     await createEntityWithSecrets({
       writeSecrets: () => writeImportedSecrets(storage, location.accountId, node.id, secrets),
       writeNode: () => storage.addNode(location.accountId, node),
-      undoNode: () => storage.forgetNode(location.accountId, node.id),
+      undoNode: () => storage.retractNode(location.accountId, node.id),
       undoSecrets: () => undoImportedSecrets(storage, location.accountId, node.id),
     });
   }

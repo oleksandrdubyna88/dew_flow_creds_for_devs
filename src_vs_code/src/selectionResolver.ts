@@ -30,6 +30,30 @@ export interface ResolvedSelection {
   skippedCoveredByAncestor: number;
 }
 
+/**
+ * `rootId` and everything beneath it, in tree order — the set a recursive delete removes.
+ *
+ * <p>Lived inside `deleteNodeRecursive` until the write-order work needed the room; it is a pure
+ * question about a node list, which is what this module is for. Repeated sweeps rather than
+ * recursion, so a parent listed after its child is still collected and a cycle cannot hang it.</p>
+ */
+export function subtreeOf(nodes: readonly TreeNode[], rootId: string): readonly TreeNode[] {
+  const inside = new Set<string>([rootId]);
+  while (addChildren(nodes, inside)) {
+    // Until the set stops growing.
+  }
+  return nodes.filter((node) => inside.has(node.id));
+}
+
+/** One sweep: every node whose parent is already inside joins it. True when the set grew. */
+function addChildren(nodes: readonly TreeNode[], inside: Set<string>): boolean {
+  const found = nodes.filter((n) => n.parentId != null && inside.has(n.parentId) && !inside.has(n.id));
+  for (const node of found) {
+    inside.add(node.id);
+  }
+  return found.length > 0;
+}
+
 /** Whether `nodeId` is `ancestorId` or lives under it, walking the real tree. */
 // eslint-disable-next-line complexity
 export function isSelfOrDescendantIn(

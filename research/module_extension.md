@@ -298,11 +298,11 @@ tombstoned, which the sweep deliberately refuses to touch: the deletion is merel
 | create (`treeMutationCommands`) | additions → node | a create has no removals, but the pass runs: a `clearX` can arrive on a new entry |
 | edit (`entityEditCommands`) | additions → node → removals | the case a single call cannot serve |
 | delete (`storageManager`) | tombstone → node → secrets | Rule B |
-| **restore / sync-apply (`importBundle`)** | **secrets → node → drop-vanished** | had it backwards in BOTH halves; found by auditing, not by a test |
+| **restore / sync-apply (`importBundle`)** | **secrets → record vanishing → tree → drop-vanished → clear** | had it backwards in BOTH halves; the record is LOCAL, not a tombstone |
 | share accept (`shareInbox`) | node, then secrets — a fresh id, so nothing pre-exists to claim | |
 | **import (`importCommands`)** | **secrets → node, per entity, compensated** | inverted; every entry in a file had its own window |
 | **agent create (`mcpHooks`)** | **secret → node, compensated** | the secret may have been GENERATED here, so a lost one is a value nobody asked for |
-| **account removal (`storageManager`)** | **unlist → secrets → tree/tombstones/horizon** | its own record: the surviving tree names what is left. See `accountRemoval.ts` |
+| **account removal (`storageManager`)** | **record intent → unlist → secrets → tree/tombstones/horizon → clear** | the record is LOCAL. See `pendingCleanup.ts` |
 
 The `importBundle` one is the find worth keeping: the review asked which other paths write both, and
 that was the answer. Its vanished-id list is now captured from the OLD tree before `saveNodes`,
@@ -348,24 +348,50 @@ could then apply it to a live entry), and a machine-local pending-id list needs 
 tell an abandoned id from one in flight, which is a second consistency problem to keep honest. The
 residual is written down in the module header rather than left to be rediscovered.
 
-##### `accountRemoval.ts` — the removal that needs no marker, and the resume that finishes it
+##### `pendingCleanup.ts` — the record that must NOT sync, and the resume that reads it
 
-The previous order wrote tombstones and then wiped the tree. Killed in between, that leaves ids that
-are **both tombstoned and live** — which `orphanCandidates` deliberately refuses to sweep, because for
-an entity that state means a deletion merely unfinished. Nothing ever finished this one: the entries
-stayed visible here, their tombstones synced a deletion to every other machine, and their secrets were
-never collected. Both review providers raised it independently, on my own fix.
+Two operations remove things in a sequence a crash can interrupt: removing an account, and applying a
+bundle that drops entities (a restore, or a sync apply). Both need Rule B's durable record, and for
+both the first answer tried was a **tombstone**. Two review rounds killed that answer twice, for the
+same reason each time — a tombstone *syncs*:
 
-**Unlist the account FIRST.** It is then invisible to the UI and — the part that makes this safe — to
-the sync cycle, which iterates `getAccounts()`. Its node list key is still in `globalState`, and that
-key NAMES every id whose secrets are still to be deleted, so the durable record Rule B asks for is the
-tree itself: exactly the thing that used to be destroyed first. Then the secrets, then the tree,
-tombstones and horizon.
+| attempt | what went wrong |
+|---|---|
+| account removal: tombstones, then wipe the tree | killed in between, the ids are both tombstoned and live — a state the sweep deliberately refuses, so nothing ever finished the removal, while the tombstones told every other machine to delete entries this one still shows |
+| restore: mint a tombstone with an EMPTY version vector, to keep it weak | a weak record LOSES the merge to a live remote node, which then syncs back over secrets this machine has already deleted. A record strong enough to win instead publishes a deletion that was only ever meant locally |
 
-`resumeAccountRemovals()` runs on the same trigger as the orphan sweep and finds the leftovers with
-`Memento.keys()` — no marker of any kind, and it also collects data left by a version of this
-extension that crashed before the function existed. Idempotent by construction: it re-derives its work
-from what is stored, so running it twice is running it once.
+What these operations need is a note to **this machine** about work in flight — nobody else's business,
+and actively harmful as a published fact. One key, never in a bundle, never in a snapshot, cleared when
+the work lands. `removeWithIntent` wraps the removal; `resumePending` finishes whatever a killed window
+left, on the same trigger as the orphan sweep.
+
+**The resume is explicit, not inferred.** An earlier version compared stored keys against the account
+list to work out what had been interrupted, and both review providers said the same thing about it: an
+inference cannot tell an interrupted removal from an account mid-creation, an id being reused, or a key
+left by some other lifecycle. It reads the recorded intent instead.
+
+**Pending secret deletions check liveness before acting.** Interrupted *before* the tree was replaced,
+those entities are still live and still hold their values — deleting them then would be precisely the
+data loss the invariant exists to prevent. Which id is which is the question `orphanCandidates` already
+answers.
+
+**The account order, unchanged and still the point:** unlist FIRST. The account is then invisible to
+the UI and to the sync cycle, which iterates `getAccounts()`, so nothing about it can be published
+while its data is being taken apart. Whether other machines lose the account is a separate question the
+product already asks out loud — *"Also delete this vault from &lt;location&gt;? Other machines syncing
+this account will lose it too"* — and answers with `transport.deleteVault`, not with tombstones.
+
+##### `retractNode` — a compensated create tombstones, because the node may have escaped
+
+`createEntityWithSecrets`' undo first removed the node *quietly*, reasoning that a tombstone for an id
+which may never have been visible would sync a deletion of nothing. Both providers found the hole: the
+node was **persisted**, and a sync cycle can publish between the write and the failure being reported.
+Forget it locally and the other machine holds a live node claiming a secret this one just deleted — and
+it syncs back. So the retraction is tombstoned: it cancels the node everywhere, costs nothing when the
+id never travelled, and `addNode` already forgets a tombstone when an id is legitimately created again.
+
+It also makes a compensated create's orphan **collectable**, which was one of the two classes
+`orphanSweep.ts` had to write off.
 
 ##### `secretClaims.ts` — the permanent version of "a node claiming a secret that is not there"
 
