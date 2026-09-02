@@ -25,6 +25,7 @@ import {
   isEmptyPending,
   markSecretsPending,
   parsePendingCleanup,
+  finishBeforeReuse,
   removeWithIntent,
   resumePending,
 } from './pendingCleanup';
@@ -295,6 +296,14 @@ export class StorageManager implements vscode.Disposable {
 
   /** Add a profile, or refresh email/provider when it already exists. */
   async upsertAccount(account: StoredAccount): Promise<void> {
+    // An account whose removal was interrupted is finished off BEFORE it is listed again, so what
+    // comes back is a clean profile rather than the wreckage of a deletion. See `pendingCleanup.ts`.
+    // Read first and await only when there IS one: this runs on every sign-in, and the common path
+    // should not gain a turn of the event loop for a case that almost never applies.
+    const port = this.cleanupPort();
+    if (port.read().accounts.includes(account.accountId)) {
+      await finishBeforeReuse(port, account.accountId);
+    }
     const accounts = this.getAccounts();
     const exists = accounts.some((a) => a.accountId === account.accountId);
     const next = exists
@@ -344,10 +353,7 @@ export class StorageManager implements vscode.Disposable {
 
   /** The account stops being one this machine manages; its data is still stored, and still named. */
   private async unlistAccount(accountId: string): Promise<void> {
-    await this.globalState.update(
-      ACCOUNTS_KEY,
-      this.getAccounts().filter((a) => a.accountId !== accountId),
-    );
+    await this.globalState.update(ACCOUNTS_KEY, this.getAccounts().filter((a) => a.accountId !== accountId));
     await this.globalState.update(SEEDED_KEY, this.seededAccountIds().filter((id) => id !== accountId));
   }
 
@@ -380,9 +386,9 @@ export class StorageManager implements vscode.Disposable {
     for (const node of this.getNodes(accountId).filter((n) => n.type === 'entity')) {
       await this.forgetEntitySecrets(accountId, node.id);
     }
-    await this.globalState.update(nodesKey(accountId), undefined);
-    await this.globalState.update(tombstonesKey(accountId), undefined);
-    await this.globalState.update(horizonKey(accountId), undefined);
+    for (const key of [nodesKey, tombstonesKey, horizonKey]) {
+      await this.globalState.update(key(accountId), undefined);
+    }
   }
 
   /**
@@ -390,6 +396,23 @@ export class StorageManager implements vscode.Disposable {
    * compensation for a failed CREATE — where deleting all twelve is safe precisely because the id is
    * new, so there is nothing older under any of them to lose.
    */
+  /**
+   * Store a value, or DELETE when there is none — the shape four secret kinds share.
+   *
+   * <p>An empty string deletes rather than storing nothing: a note edited down to nothing, a field
+   * map with its last field removed and a payment record stripped bare should all leave no key
+   * behind. The one setter that does NOT work this way is `setPassword`, where nothing means KEEP —
+   * see its own comment, and `writeOrderPaths.test.ts`, which asserts the asymmetry.</p>
+   */
+  private async putSecret(key: string, accountId: string, value: string | undefined): Promise<void> {
+    if (value === undefined || value.length === 0) {
+      await this.secrets.delete(key);
+    } else {
+      await this.secrets.store(key, value);
+    }
+    this.touch(accountId);
+  }
+
   async forgetEntitySecrets(accountId: string, entityId: string): Promise<void> {
     for (const key of entitySecretKeys(accountId, entityId)) {
       await this.secrets.delete(key);
@@ -784,26 +807,16 @@ export class StorageManager implements vscode.Disposable {
     return this.secrets.get(attachmentSecretKey(accountId, entityId));
   }
 
-  async setAttachment(accountId: string, entityId: string, base64: string | undefined): Promise<void> {
-    if (base64 === undefined || base64.length === 0) {
-      await this.secrets.delete(attachmentSecretKey(accountId, entityId));
-    } else {
-      await this.secrets.store(attachmentSecretKey(accountId, entityId), base64);
-    }
-    this.touch(accountId);
+  setAttachment(accountId: string, entityId: string, base64: string | undefined): Promise<void> {
+    return this.putSecret(attachmentSecretKey(accountId, entityId), accountId, base64);
   }
 
   getImage(accountId: string, entityId: string): Thenable<string | undefined> {
     return this.secrets.get(imageSecretKey(accountId, entityId));
   }
 
-  async setImage(accountId: string, entityId: string, base64: string | undefined): Promise<void> {
-    if (base64 === undefined || base64.length === 0) {
-      await this.secrets.delete(imageSecretKey(accountId, entityId));
-    } else {
-      await this.secrets.store(imageSecretKey(accountId, entityId), base64);
-    }
-    this.touch(accountId);
+  setImage(accountId: string, entityId: string, base64: string | undefined): Promise<void> {
+    return this.putSecret(imageSecretKey(accountId, entityId), accountId, base64);
   }
 
   // ---------- the corporate-recovery share this officer holds ----------
@@ -837,13 +850,8 @@ export class StorageManager implements vscode.Disposable {
     return this.secrets.get(notesSecretKey(accountId, entityId));
   }
 
-  async setNotes(accountId: string, entityId: string, value: string | undefined): Promise<void> {
-    if (value === undefined || value.length === 0) {
-      await this.secrets.delete(notesSecretKey(accountId, entityId));
-    } else {
-      await this.secrets.store(notesSecretKey(accountId, entityId), value);
-    }
-    this.touch(accountId);
+  setNotes(accountId: string, entityId: string, value: string | undefined): Promise<void> {
+    return this.putSecret(notesSecretKey(accountId, entityId), accountId, value);
   }
 
   // ---------- config bodies (SecretStorage, tenant-scoped) ----------
@@ -855,13 +863,8 @@ export class StorageManager implements vscode.Disposable {
     return this.secrets.get(fieldsSecretKey(accountId, entityId));
   }
 
-  async setFieldsRaw(accountId: string, entityId: string, value: string | undefined): Promise<void> {
-    if (value === undefined || value.length === 0) {
-      await this.secrets.delete(fieldsSecretKey(accountId, entityId));
-    } else {
-      await this.secrets.store(fieldsSecretKey(accountId, entityId), value);
-    }
-    this.touch(accountId);
+  setFieldsRaw(accountId: string, entityId: string, value: string | undefined): Promise<void> {
+    return this.putSecret(fieldsSecretKey(accountId, entityId), accountId, value);
   }
 
   async getFields(accountId: string, entityId: string): Promise<EntityFields> {
@@ -880,13 +883,8 @@ export class StorageManager implements vscode.Disposable {
     return this.secrets.get(paymentSecretKey(accountId, entityId));
   }
 
-  async setPaymentRaw(accountId: string, entityId: string, value: string | undefined): Promise<void> {
-    if (value === undefined || value.length === 0) {
-      await this.secrets.delete(paymentSecretKey(accountId, entityId));
-    } else {
-      await this.secrets.store(paymentSecretKey(accountId, entityId), value);
-    }
-    this.touch(accountId);
+  setPaymentRaw(accountId: string, entityId: string, value: string | undefined): Promise<void> {
+    return this.putSecret(paymentSecretKey(accountId, entityId), accountId, value);
   }
 
   async getPayment(accountId: string, entityId: string): Promise<PaymentFields> {
@@ -902,13 +900,8 @@ export class StorageManager implements vscode.Disposable {
     return this.secrets.get(configSecretKey(accountId, entityId));
   }
 
-  async setConfigBody(accountId: string, entityId: string, value: string | undefined): Promise<void> {
-    if (value === undefined || value.length === 0) {
-      await this.secrets.delete(configSecretKey(accountId, entityId));
-    } else {
-      await this.secrets.store(configSecretKey(accountId, entityId), value);
-    }
-    this.touch(accountId);
+  setConfigBody(accountId: string, entityId: string, value: string | undefined): Promise<void> {
+    return this.putSecret(configSecretKey(accountId, entityId), accountId, value);
   }
 
   // ---------- DB connection strings (SecretStorage, tenant-scoped) ----------
@@ -945,8 +938,8 @@ export class StorageManager implements vscode.Disposable {
   // ---------- backup ----------
 
   /** Every stored secret of the given entities, keyed by entity id — see `exportSecrets.ts`. */
-  exportSecretsFor(accountId: string, entityIds: readonly string[]): Promise<Record<string, ExternalSecrets>> {
-    return exportSecretsFor(this, accountId, entityIds);
+  exportSecretsFor(accountId: string, ids: readonly string[]): Promise<Record<string, ExternalSecrets>> {
+    return exportSecretsFor(this, accountId, ids);
   }
 
   /** Pair every entity of one profile with its stored secrets. */

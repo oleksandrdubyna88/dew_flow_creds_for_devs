@@ -6,6 +6,7 @@ import {
   PendingCleanup,
   clearAccountRemoving,
   clearSecretsPending,
+  finishBeforeReuse,
   isEmptyPending,
   markAccountRemoving,
   markSecretsPending,
@@ -187,4 +188,32 @@ test('liveness is re-read per id, so an entity that arrives mid-sweep keeps its 
   await resumePending(p);
 
   assert.deepEqual(order, ['first'], 'the id that became live again was not touched');
+});
+
+test('re-adding an account with a pending removal FINISHES the removal first', async () => {
+  // The state the round-4 guard created and the round-5 review caught: an interrupted wipe leaves
+  // some entities deleted and some not, and skipping cleanup because the account is listed again
+  // leaves that wreckage live. The person asked for the account back — they should get a clean
+  // profile that can pull its vault, not the half-deleted remains of the deletion they ordered.
+  const p = port({ accounts: ['a1'], secrets: {} });
+
+  const finished = await finishBeforeReuse(p.port, 'a1');
+
+  assert.equal(finished, true);
+  assert.deepEqual(p.order, ['wipe:a1', 'write:|'], 'wiped, and the marker cannot outlive the re-add');
+});
+
+test('re-adding an ordinary account costs nothing at all', async () => {
+  // This runs on every sign-in. A person who never had an interrupted removal must not pay a write.
+  const p = port(EMPTY_PENDING);
+
+  assert.equal(await finishBeforeReuse(p.port, 'a1'), false);
+  assert.deepEqual(p.order, [], 'no wipe and no write');
+});
+
+test('a pending removal for a DIFFERENT account is left alone by a re-add', async () => {
+  const p = port({ accounts: ['a2'], secrets: {} });
+
+  assert.equal(await finishBeforeReuse(p.port, 'a1'), false);
+  assert.deepEqual(p.order, [], 'a2 is still pending, and still pending after this');
 });

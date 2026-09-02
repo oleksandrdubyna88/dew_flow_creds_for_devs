@@ -370,10 +370,15 @@ list to work out what had been interrupted, and both review providers said the s
 inference cannot tell an interrupted removal from an account mid-creation, an id being reused, or a key
 left by some other lifecycle. It reads the recorded intent instead.
 
-**And an account that is LISTED again is never wiped.** Account ids are stable per provider account, so
-"sign out, sign in again, open a window" is an ordinary sequence — and a marker left by an interrupted
-removal would otherwise destroy the tree the person just re-added. The account list is the lifecycle
-identity: a removal unlists before it destroys anything, so a listed id is not a pending one.
+**An account that is re-added FINISHES its interrupted removal first** (`finishBeforeReuse`, called by
+`upsertAccount`). Two rounds went into this one. First: a stale marker must never wipe the tree a
+person just re-added — account ids are stable per provider account, so "sign out, sign in again, open a
+window" is ordinary. Then the review caught what skipping alone would leave: an interrupted wipe has
+deleted *some* entities and *some* secrets, and letting that back in as a live account is worse than
+either finishing or deleting it. So the re-add finishes the wipe and clears the marker, and what comes
+back is a clean profile that can pull its vault — not the wreckage of the deletion that was ordered.
+This is also the only point at which both facts are known: that a removal was pending, and that
+somebody wants this account back.
 
 **Liveness is re-read per id**, not sampled once: there is an `await` between every delete and a sync
 apply can land in one, so an answer from before the previous await is an answer about a tree that may
@@ -406,11 +411,20 @@ remote live node syncs back over deleted secrets. The other: one that *does* dom
 peer where the entity legitimately exists. Both are right, and together they say there is no local
 answer — **a machine cannot decide, from its own failure, what other machines are entitled to keep.**
 
-So `nodeLanded()` is the single question the compensation asks. False: nothing could have published
-the node, its secrets are unreachable by construction, and deleting them is unambiguous. True: leave
-both halves alone. The entry is live and holds its values — a consistent entry reached by a failing
-path — and the caller still hears the error. An entry that exists when the person was told it did not
-is a surprise; a credential deleted from under a node other machines can see is data loss.
+So `nodeLanded()` is the single question the compensation asks — and it is a **read of the tree**
+(`getNode(accountId, id) !== undefined`), never an inference from the error. That distinction is what
+makes it safe: sync publishes from this same tree (`getSnapshot` → `exportBundle` → `getNodes`), so a
+node that is not in it was never published, whatever the failed write reported.
+
+False: nothing could have published the node, its secrets are unreachable by construction, and deleting
+them is unambiguous. True: leave both halves alone. The entry is live and holds its values — a
+consistent entry reached by a failing path.
+
+**And the caller is told which happened.** `EntryLandedError` wraps the original error with a sentence
+saying the entry exists, because both providers raised the same consequence of the quiet version: shown
+"creating failed", the person retries the same form and ends up with two entries and no way to tell
+which is real. An entry that exists when the person was told it did not is a surprise worth naming; a
+credential deleted from under a node other machines can see is data loss.
 
 ##### `secretClaims.ts` — the permanent version of "a node claiming a secret that is not there"
 

@@ -125,11 +125,10 @@ export async function removeWithIntent(
  */
 export async function resumePending(port: CleanupPort): Promise<readonly string[]> {
   const pending = port.read();
-  // An account that is LISTED again is not a pending removal — it is a live account whose id came
-  // back. Account ids are stable per provider account, so "sign out, sign in again, then open a
-  // window" is an ordinary sequence, and without this check the stale marker would wipe the tree the
-  // person just re-added. Raised by the review as a missing lifecycle identity; the account list is
-  // that identity, because the removal unlists before it destroys anything.
+  // An account LISTED again is not swept here — `finishBeforeReuse` has already dealt with it at the
+  // moment it was re-added, which is the only point where the two facts (a pending removal, and a
+  // person who wants this account back) are both known. Skipping it here without that would leave a
+  // half-wiped tree live, which is the state the review caught this guard creating.
   const removing = pending.accounts.filter((accountId) => !port.isListed(accountId));
   for (const accountId of removing) {
     await port.wipeAccount(accountId);
@@ -156,4 +155,26 @@ async function finishSecretDeletes(port: CleanupPort, accountId: string, ids: re
       await port.forgetSecrets(accountId, id);
     }
   }
+}
+
+/**
+ * An account is being ADDED whose removal was interrupted: finish the removal first.
+ *
+ * <p>The half-wiped tree of an account somebody asked to delete is not data to keep — some of its
+ * entities are gone, some of their secrets are gone, and nothing says which. The person has just
+ * asked for this account back, and what they should get is a clean profile that can pull its vault,
+ * not the wreckage of the deletion they ordered.</p>
+ *
+ * <p>This is also what keeps the marker from ever outliving the re-add. Without it the choice is
+ * between two bad outcomes the review named on the same round: wipe on the next window open, and lose
+ * everything the re-added account has since pulled; or skip forever, and leave the wreckage live.</p>
+ */
+export async function finishBeforeReuse(port: CleanupPort, accountId: string): Promise<boolean> {
+  const pending = port.read();
+  if (!pending.accounts.includes(accountId)) {
+    return false;
+  }
+  await port.wipeAccount(accountId);
+  await port.write(clearAccountRemoving(pending, accountId));
+  return true;
 }

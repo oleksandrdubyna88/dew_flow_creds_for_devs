@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { createEntityWithSecrets } from '../entityWrite';
+import { EntryLandedError, createEntityWithSecrets } from '../entityWrite';
 
 /**
  * Rule A leaves one torn state — a secret nothing points at — and on a CREATE nothing can collect it.
@@ -87,21 +87,27 @@ test('a node that DID land keeps its secrets, however the create ended', async (
   assert.deepEqual([...r.tree], ['ent']);
 });
 
-test('the caller still hears the failure even when nothing was undone', async () => {
-  // The person is told the save failed and then finds the entry. A surprise, and the right trade:
-  // the alternative is a credential deleted from under a node other machines can see.
+test('a landed entry is REPORTED as landed, so a retry is not a blind duplicate', async () => {
+  // Both providers raised the same consequence of leaving the entry alone: the person is shown
+  // "creating failed", retries the same form, and ends up with two entries and no way to tell which
+  // is real. Leaving the entry is still right — the alternative is deleting a credential from under a
+  // node other machines can see — so what changes is what the person is TOLD.
   const boom = new Error('the flush failed');
 
-  await assert.rejects(
-    () =>
-      createEntityWithSecrets({
-        writeSecrets: () => Promise.resolve(),
-        writeNode: () => Promise.reject(boom),
-        nodeLanded: () => true,
-        undoSecrets: () => Promise.reject(new Error('never reached')),
-      }),
-    (e) => e === boom,
+  const thrown = await createEntityWithSecrets({
+    writeSecrets: () => Promise.resolve(),
+    writeNode: () => Promise.reject(boom),
+    nodeLanded: () => true,
+    undoSecrets: () => Promise.reject(new Error('never reached')),
+  }).then(
+    () => undefined,
+    (e: unknown) => e,
   );
+
+  assert.ok(thrown instanceof EntryLandedError, 'a distinct error, not a bare failure');
+  assert.equal(thrown.cause, boom, 'wrapped AROUND the original, so the log still says what broke');
+  assert.match(thrown.message, /created/, 'and the sentence says the entry exists');
+  assert.match(thrown.message, /the flush failed/, 'with the real cause inside it');
 });
 
 test('a create that fails DURING the secret writes still undoes the ones that landed', async () => {

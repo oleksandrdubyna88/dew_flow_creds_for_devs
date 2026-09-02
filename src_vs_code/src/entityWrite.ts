@@ -1,3 +1,5 @@
+import { describeError } from './describeError';
+
 /**
  * Creating an entity: its secrets, then its node — and if anything throws, both go back, in the
  * order the invariant demands of a removal.
@@ -68,26 +70,44 @@ export interface EntityCreate {
   undoSecrets: () => Promise<void>;
 }
 
+/**
+ * A create that FAILED but left the entry behind — thrown so the person is not told a flat untruth.
+ *
+ * <p>Both providers raised the same consequence of leaving a landed entry alone: the person is shown
+ * "creating failed", retries the same form, and gets a duplicate — or cannot tell which of the two is
+ * the real one. Leaving the entry is still right (the alternative is deleting a credential from under
+ * a node other machines can see), so what has to change is what the person is TOLD.</p>
+ *
+ * <p>An idempotency key was considered and is the wrong size for this: the entry is in the tree in
+ * front of them, and a sentence naming it is worth more than a retry protocol.</p>
+ */
+export class EntryLandedError extends Error {
+  constructor(override readonly cause: unknown) {
+    super(
+      `The entry was created, but the rest of the save did not finish: ${describeError(cause)}. `
+        + 'It is in your tree — check it before creating another.',
+    );
+    this.name = 'EntryLandedError';
+  }
+}
+
 export async function createEntityWithSecrets(create: EntityCreate): Promise<void> {
   try {
     await create.writeSecrets();
     await create.writeNode();
   } catch (error) {
-    await compensate(create);
-    // The caller hears the ORIGINAL error, because that is the one describing what went wrong. A
-    // failure to tidy up must not mask the failure that made tidying necessary.
+    if (create.nodeLanded()) {
+      // Nothing is undone — and the caller is told the entry EXISTS, wrapped around the original
+      // error rather than instead of it, so the log still says what actually went wrong.
+      throw new EntryLandedError(error);
+    }
+    try {
+      await create.undoSecrets();
+    } catch {
+      // An orphan is the one torn state the invariant permits, and `orphanSweep.ts` explains why.
+    }
+    // The ORIGINAL error, because that is the one describing what went wrong. A failure to tidy up
+    // must not mask the failure that made tidying necessary.
     throw error;
-  }
-}
-
-/** Undo only what is unambiguously undoable: the case where the node never reached the tree. */
-async function compensate(create: EntityCreate): Promise<void> {
-  if (create.nodeLanded()) {
-    return;
-  }
-  try {
-    await create.undoSecrets();
-  } catch {
-    // An orphan is the one torn state the invariant permits, and `orphanSweep.ts` explains why.
   }
 }
