@@ -212,3 +212,29 @@ export function normalize(word: string): string {
 export function wordsOf(phrase: string): readonly string[] {
   return phrase.trim().length === 0 ? [] : phrase.trim().split(/\s+/);
 }
+
+/**
+ * A mnemonic of this many words, from random entropy — one that CONVERGES by construction.
+ *
+ * <p>Built rather than sampled, because sampling for a converging phrase is one draw in sixteen at
+ * twelve words and one in two hundred and fifty-six at twenty-four. `decoyPhrase.ts` needs a
+ * converging decoy on demand, and a bound nobody has to reason about is worth more than a clever
+ * loop.</p>
+ *
+ * <p>Refuses a length this list defines no checksum for: there is no such thing as a converging
+ * 13-word BIP-39 phrase, and returning something that merely looks like one would be a lie the
+ * checker would then contradict.</p>
+ */
+export function mnemonicFor(length: number, id: WordlistId, random: () => number): readonly string[] {
+  if (!hasChecksum(id, length)) {
+    throw new Error(`${id} defines no checksum at ${length} words, so no phrase of that length converges.`);
+  }
+  const entropyBits = (length * 11 * 32) / 33;
+  const entropy = Buffer.from(
+    Array.from({ length: entropyBits / 8 }, () => Math.min(255, Math.floor(random() * 256))),
+  );
+  const bits = [...entropy].map((byte) => byte.toString(2).padStart(8, '0')).join('');
+  const all = bits + checksumBits(entropy, length * 11 - entropyBits);
+  const list = wordlistOf(id);
+  return (all.match(/.{11}/g) ?? []).map((chunk) => list[parseInt(chunk, 2)]);
+}
