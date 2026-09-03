@@ -79,9 +79,39 @@ export class PaymentViewHost {
     if (view === undefined || record === undefined || !isPaymentMessage(type)) {
       return false;
     }
-    const parts = field.split('|');
-    await this.dispatch(type, parts, view, await record);
+    await this.dispatchIfCurrent(type, field, view, await record);
     return true;
+  }
+
+  /**
+   * The record read is an await, and this panel is the shared preview tab.
+   *
+   * <p>`show()` re-renders it for another entry, so by the time the keychain has answered, the card
+   * asking may not be the card on screen. Acting on the record read for the previous entry is the
+   * defect the code review found on the panel's own copy path — this is the same gap on the four
+   * paths that never reach it, because a payment message is answered here and returns.</p>
+   */
+  private async dispatchIfCurrent(
+    type: string,
+    field: string,
+    view: PaymentCardView,
+    fields: PaymentFields,
+  ): Promise<void> {
+    if (!this.stillShowing(view)) {
+      return;
+    }
+    await this.dispatch(type, field.split('|'), view, fields);
+  }
+
+  /**
+   * Whether the card that asked is still the card on screen.
+   *
+   * <p>One predicate, checked at both of this class's await boundaries — the record read above and
+   * the confirmation in `grant` below. Identity is enough and is the cheapest correct test: the panel
+   * builds fresh options for every render, so a re-render can never produce the same object.</p>
+   */
+  private stillShowing(view: PaymentCardView): boolean {
+    return this.deps.view() === view;
   }
 
   /**
@@ -242,17 +272,26 @@ export class PaymentViewHost {
 
   /** Asked once per field while this card is on screen; never again, and never for ever. */
   private async grant(key: string, view: PaymentCardView): Promise<boolean> {
-    if (!gated(key)) {
+    if (!gated(key) || this.grants.has(key)) {
       return true;
     }
-    if (this.grants.has(key)) {
-      return true;
+    return this.take(key, view, await this.deps.confirm(promptFor(key, view), 'Show'));
+  }
+
+  /**
+   * The answer, and the second await boundary.
+   *
+   * <p>A modal is the longest pause this class has, and the panel is the shared preview tab: the card
+   * can be re-rendered for another entry while the question stands. An answer given about the entry
+   * that was on screen is not an answer about the one that is — so a grant that arrives late is
+   * refused, and not remembered either.</p>
+   */
+  private take(key: string, view: PaymentCardView, granted: boolean): boolean {
+    if (!granted || !this.stillShowing(view)) {
+      return false;
     }
-    const granted = await this.deps.confirm(promptFor(key, view), 'Show');
-    if (granted) {
-      this.grants.add(key);
-    }
-    return granted;
+    this.grants.add(key);
+    return true;
   }
 
   /**

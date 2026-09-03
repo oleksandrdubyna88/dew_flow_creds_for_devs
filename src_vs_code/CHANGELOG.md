@@ -1,29 +1,23 @@
 # Changelog
 
-## 0.93.0 — 2026-09-01
-
-**A replaced command line re-splits its arguments.** Duplicate a terminal entry, rename it, paste a
-different command — and the argument rows kept the ORIGINAL's. An Antigravity Windows entry cloned
-for Linux held `install.ps1`, a pipe and `iex` under a `curl … | bash` command, and the Full command
-preview showed a line that was neither the old one nor the new one. It is the line that would have
-run.
-
-The defect was a guard, not a missing feature: the change handler bailed out whenever any argument
-row had text — which is every cloned entry, the exact case splitting exists for. It reaches the split
-unconditionally now, and the confirm that already protected filled rows decides.
-
-**The New-entity heading names the kind.** It said only "New entity". A new entry has nothing to be
-named yet, but it always has a kind, and when the folder fixes that kind there is no choice to make
-anywhere on the form — so the heading was the only place it could register, and it did not. Adding
-six terminal commands in a row now says what each one is.
-
-**The sync summary says what its numbers count.** "pushed 1" after adding six entities reads as a
-count of entities; it counts profiles, and one account's vault is one push however much changed
-inside it. Both numbers name their unit now.
-
 All notable changes to **CredsForDevs** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [0.94.1] — the copy that could belong to the entry before it
+
+### Fixed
+
+- **A payment value copied or shown just after switching entries could be the PREVIOUS entry's.**
+  The viewer's preview tab is reused: a single click on another entry re-renders it. Reading a
+  payment record from the keychain takes a moment, and during that moment the tree is live — so a
+  Show or a Copy pressed on one card could be answered from the record of the card it replaced. What
+  was drawn into the page was already protected; the **clipboard was not**, so copying a rebuilt row
+  in that window put the earlier entry's value there instead.
+
+  Nothing left the machine and nothing was stored wrongly — it is your own other entry, and the
+  window is the length of one keychain read. It is fixed at both waiting points now: the record read
+  and the confirmation dialog. A card that has been replaced answers nothing at all.
 
 ## [0.94.0] — payment instruments
 
@@ -229,6 +223,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   list of kinds against the Secret section; it checks the rule that cannot ever be wrong — a kind
   that refuses to hold a password is never offered one. It caught this on the commit that added the
   kind.
+
+## [0.93.0] — 2026-09-01
+
+**A replaced command line re-splits its arguments.** Duplicate a terminal entry, rename it, paste a
+different command — and the argument rows kept the ORIGINAL's. An Antigravity Windows entry cloned
+for Linux held `install.ps1`, a pipe and `iex` under a `curl … | bash` command, and the Full command
+preview showed a line that was neither the old one nor the new one. It is the line that would have
+run.
+
+The defect was a guard, not a missing feature: the change handler bailed out whenever any argument
+row had text — which is every cloned entry, the exact case splitting exists for. It reaches the split
+unconditionally now, and the confirm that already protected filled rows decides.
+
+**The New-entity heading names the kind.** It said only "New entity". A new entry has nothing to be
+named yet, but it always has a kind, and when the folder fixes that kind there is no choice to make
+anywhere on the form — so the heading was the only place it could register, and it did not. Adding
+six terminal commands in a row now says what each one is.
+
+**The sync summary says what its numbers count.** "pushed 1" after adding six entities reads as a
+count of entities; it counts profiles, and one account's vault is one push however much changed
+inside it. Both numbers name their unit now.
 
 ## [0.92.0] — 2026-08-31
 

@@ -73,6 +73,39 @@ Two of its rejections are worth naming, because they are the shape to watch for:
 | 7 | code | `codex` | A `postMessage` that throws left an assembled phrase held in a buffer with nothing on screen to close it |
 | 8 | code | `codex` | Two quick clicks are two record reads; their answers could arrive reversed, showing one method's rows under a picker naming another |
 
+## A finding acted on is not the same as a defect closed
+
+Added 2026-09-02, after the release, in answer to one question: *of the bugs that were really found,
+is everything fixed?* Checking rather than remembering turned up that **one was not**.
+
+Code-round finding #3 — a gated Copy could copy the previous entry, because the options are captured
+before the confirmation await and the viewer is the shared preview tab — was fixed in
+`entityViewPanel.ts`, at the panel's own copy path. But a payment message is routed to
+`PaymentViewHost` **eleven lines earlier and returns**, so the four paths that class owns never reach
+that guard. The clipboard one was reachable: `copyReading` rebuilds a row and copies it, and the
+window is the length of a keychain read, during which the tree is fully interactive.
+
+The page was already safe — every answer carries the entity id it was read for and the card drops what
+is addressed elsewhere, which is plan-round finding #3 doing its job. The **clipboard has no such
+stamp**, and that is where the fix's edge was.
+
+Now closed at both of the class's await boundaries — the record read and the modal — in
+`PaymentViewHost`, where it is a unit test rather than a panel nobody can open in one. Watched red
+first: with the check removed, *"the previous entry's PIN did not reach the clipboard"* failed,
+because it had.
+
+Two things worth keeping from this:
+
+- **A fix verified where it was written is not a fix verified where the defect lives.** The review
+  named a shape; the shape existed in two places; the fix landed in the one the reviewer quoted.
+- The fix's own test found a second thing: the neighbouring test's harness minted a fresh view object
+  per call, which the new identity check reads as "the panel re-rendered". The harness was wrong, not
+  the check — but a test that mints new identity per call would have hidden a real staleness bug just
+  as easily.
+
+Counted honestly, the tally above is unchanged — the review still prevented eight defects — and the
+score for *defects closed by the first fix* is **7 of 8**.
+
 ## And the finding the gate did NOT make: the tests found the worst two
 
 Neither round found either of the two defects that would actually have **destroyed data**. Both were

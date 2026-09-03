@@ -179,8 +179,12 @@ test('a post that throws holds nothing — every path out leads to the same plac
   // A webview disposed a moment ago is the ordinary way `postMessage` throws, and an assembled
   // phrase held with nothing on screen to close it would outlive the view it was assembled for.
   const posted: unknown[] = [];
+  // ONE view object, returned every time: the host compares identity to tell whether the card that
+  // asked is still the card on screen, and a harness minting a fresh one per call would look to it
+  // exactly like the panel having re-rendered.
+  const view = paymentCardFor('entity-1', 'card', { pin: WOVEN_PIN, shuffledFields: ['pin'] }, random);
   const host = new PaymentViewHost({
-    view: () => paymentCardFor('entity-1', 'card', { pin: WOVEN_PIN, shuffledFields: ['pin'] }, random),
+    view: () => view,
     record: () => Promise.resolve({ pin: WOVEN_PIN, shuffledFields: ['pin'] }),
     post: (message) => {
       posted.push(message);
@@ -193,6 +197,39 @@ test('a post that throws holds nothing — every path out leads to the same plac
   await assert.rejects(() => host.handle('reassemble', `pin|${CODE}`));
 
   assert.equal(host.holding, 0, 'nothing is held for a reading that never arrived');
+});
+
+test('nothing is copied or shown for a card the panel has since replaced', async () => {
+  // The gap the code review found on the panel's own copy path, on the four paths that never reach
+  // it: a payment message is answered by this class and returns before the panel's guard. Both await
+  // boundaries are covered — the record read, and the modal, which is the long one.
+  const fields: PaymentFields = { pin: WOVEN_PIN, cvv: '737', shuffledFields: ['pin'] };
+  const posted: unknown[] = [];
+  const copied: string[] = [];
+  const shown = paymentCardFor('entity-1', 'card', fields, random);
+  const state = { view: shown };
+  const host = new PaymentViewHost({
+    view: () => state.view,
+    record: () => Promise.resolve(fields),
+    post: (message) => posted.push(message),
+    // The panel re-renders for another entry WHILE the question is on screen — which is exactly
+    // what the shared preview tab does on the next single click.
+    confirm: () => {
+      state.view = paymentCardFor('entity-2', 'card', fields, random);
+      return Promise.resolve(true);
+    },
+    copy: (text) => {
+      copied.push(text);
+      return Promise.resolve();
+    },
+  });
+
+  await host.handle('copyReading', `pin|a|${CODE}`);
+  await host.handle('reveal', 'cvv');
+
+  assert.deepEqual(copied, [], 'the previous entry\'s PIN did not reach the clipboard');
+  assert.deepEqual(posted, [], 'and its CVV was not sent to a card showing something else');
+  assert.equal(host.holding, 0);
 });
 
 test('a per-field Copy asks exactly what its Show asks', async () => {
