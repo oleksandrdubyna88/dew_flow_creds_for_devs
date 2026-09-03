@@ -334,10 +334,39 @@ does the same for a password that is not stored here at all, and puts it on the 
 - A passphrase is six words from a **256-word** list: exactly eight bits each, 48 bits for the
   default. The optional capital and trailing digit exist for sites that demand them and are **not**
   counted as strength, because a number that flatters is a number you cannot use.
+- Ask for a **word length** and the source becomes a longer list, filtered — and the strength is
+  recomputed from the pool that is actually left. A filter that shrinks the source and goes on
+  reporting the old number would be a lie about a password.
+- A **seed phrase** is drawn with the wordlist and the word count you choose, with the checksum
+  computed for you, so what comes out is a phrase a wallet will accept. Word length is deliberately
+  NOT offered there: on a BIP-39 list the lengths belong to the list, and filtering them produces
+  something no wallet takes.
 - **The strength is stated in bits**, not as a colour. A bar tells you how a designer felt; the bits
   tell you how long a guess takes.
 - A generated key pair is drawn in the editor and saved to the keychain. `ssh-keygen` cannot do
   that — it writes a file — and with *Add to SSH Agent* the key is then used without becoming one.
+
+## Payment instruments — and reading one back
+
+A card, a set of bank details, or a phrase you must not lose.
+
+- The **card number** is shown in the groups it is printed in — fours, or 4-6-5 for American
+  Express — and stored as digits, because a woven number is permuted character by character and a
+  stored space could never be unwoven. Two copy buttons: digits for a form that refuses spaces,
+  groups of four for reading it aloud.
+- The **payment system** is detected from the number and is yours to correct. It has to be: a
+  number stored woven with a decoy has no first digits left to read it from.
+- The **billing address** is six cells — paste a whole one and it is split into them, where every
+  guess is visible and correctable. The block underneath is assembled in the order the destination
+  country writes it, and that block is what a share and an export carry.
+- A **CVV or PIN** asks before it appears, and can be put away again — the button becomes *Hide*.
+- Any of the number, CVV, PIN, IBAN or account number can be stored **woven with a decoy** under
+  one of twelve methods, and the controls now SHOW what a method does: a green column, an orange
+  one, and the weave of the two. Both are made up for the picture; your own value is never drawn
+  beside the decoy it is woven with.
+- **A method is called the same thing everywhere.** The order the twelve are offered in is drawn
+  afresh each time, so a position never becomes a habit — but "Method 5" names one algorithm, in
+  the form where you weave a value and in the card where you read it back.
 
 ## Import what you already have
 

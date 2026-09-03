@@ -368,6 +368,11 @@ tenth time.
 | `wordlists.ts` + ten `wordlistBip39*.ts` + `wordlistMoneroEn.ts` | the lists and the checksum that reads them |
 | `moneroChecksum.ts` | Monero's own checksum — a different FAMILY, not a variation on BIP-39's |
 | `phraseLayout.ts` / `phraseReassembly.ts` | two columns, the arithmetic that decides which layouts exist, and the way back |
+| `cardNumberFormat.ts` | a number as it is READ (groups of four, 4-6-5 for Amex) against as it is STORED (digits) |
+| `addressFormat.ts` | a billing address as six cells, the parse that guesses them, and five countries' orders |
+| `weaveExample.ts` | what a weaving method does, drawn on two generated samples |
+| `phraseGenerate.ts` | drawing a checksum-valid phrase, with the list and the length chosen |
+| `secretEnvelope.ts` | a secret that describes itself: woven, or locked under a PIN, in one write |
 | `phraseFormMarkup.ts` / `phraseFormScript.ts` / `phraseSaveGate.ts` | the phrase form, and the record a phrase save writes |
 | `paymentViewCard.ts` / `paymentViewMessages.ts` / `paymentViewHost.ts` | the read-only card: its markup, what the host answers, and what is asked first |
 | `revealGate.ts` / `phraseBuffer.ts` | the rung that asks again, and the bytes that get zeroed |
@@ -733,6 +738,103 @@ nothing in the product can fire, since the broker serves no payment field. All t
 `formSections.test.ts` no longer asserts a fixed list for it — it asserts the rule: *a kind
 `keepsPassword` refuses is never shown the Secret section.* That test caught `payment` on the
 commit that added it.
+
+#### The label of a weaving method is a property of the CODE (2026-09-03)
+
+`shuffle.ts` said it in writing from the start — *"The methods, in their permanent order. The UI
+shows them SHUFFLED; the code never moves"* — and neither half was true. The form listed the twelve
+codes unshuffled and labelled them by position, so "Method 5" was always `f5`; the card drew a fresh
+order on every open (`methodOrder`) and labelled THAT by position, so its "Method 5" was a different
+algorithm each time the card was opened.
+
+The method is stored **nowhere** — it lives in one person's memory — so a label that names a
+different algorithm on the surface where the value has to be read back is not a cosmetic
+disagreement. It is the value becoming unreadable by the only route there is. `METHOD_LABELS` /
+`methodLabel` now bind the name to the code, on both surfaces, and only the ORDER is drawn afresh —
+which is what makes "a method remembered by position is one a later release could move" an argument
+rather than a slogan. Nothing stored needed re-reading: the form's naming was the correct one all
+along, so every value woven before the fix keeps the label it was saved under.
+
+#### `brand` is confirmed, not merely derived (2026-09-03)
+
+`paymentFields.ts` has always described `brand` as stored rather than derived — *"a field the person
+confirms"* — because a number woven with a decoy has no first digits left to read a system from. Its
+only writer derived it from the typed number on every save, and no control existed anywhere to
+confirm or correct it, so a card whose prefix this build does not recognise stored no system at all.
+The form now offers the choice, defaulted to *Detected automatically*.
+
+The marks themselves had been drawn and wired to nothing: `brandIconFile` and `BRAND_ICON_FILES` had
+no consumer outside their own module, though all eighteen files existed under `media/brands/`. The
+DRAWING moved out of the generator script into `cardBrandIcons.ts`, so a file on disk and a glyph in
+a webview are one mark; the webview inlines it with `currentColor`, which is why no panel had to open
+its `localResourceRoots`. All nine marks are rendered hidden and the page reveals the one the value
+names — a glyph for a stored system, with that system never interpolated into the page's HTML.
+
+#### The card number is read as it is printed (2026-09-03)
+
+Grouping is presentation, and the record keeps digits. Not a preference: a woven number is permuted
+per CHARACTER, so a stored space would be woven in among the digits and the original could never be
+rebuilt. `cardNumberFormat.ts` formats on the way to the screen and strips on the way to the record,
+the caret is counted in DIGITS so a keystroke in the middle of a saved number does not throw the
+cursor to the end, and the number row carries two clipboard buttons — digits for a form that refuses
+spaces, groups of four for reading it aloud. A copy VARIANT is a shape and never a key: `allowCopy`
+splits on the pipe, so `pay_cvv|anything` asks exactly as `pay_cvv` does.
+
+#### The billing address is six cells (2026-09-03)
+
+It was one free textarea, which is where an address goes to become unusable — nobody can copy just
+the postcode out of one. It follows the doctrine `commandParse.ts` already states for a pasted
+command line: *every guess it makes is written into a field the user can see and correct, never
+applied invisibly.* `address` STAYS as the derived block, rewritten from the cells on every save
+exactly as `brand` is derived and stored, which is what lets the share, the export, the import and
+the agent filter go on seeing one field — and `paymentRedaction` names the cells beside it, because
+redacting the assembled string while shipping its parts would be the same address in a share that
+says it removed it. An older record's block is parsed back into cells on open, visibly and
+correctably.
+
+#### The weaving controls show what a method does (2026-09-03)
+
+Somebody was asked to choose one of twelve methods, told in the same paragraph that the choice is
+stored nowhere and that forgetting it loses the value — and shown nothing at all about what any of
+them does. Per marked field there are now three columns: a generated value, a generated decoy, and
+the weave of the two with every token painted by the half it came from. **Both columns are
+generated**: drawing somebody's real number beside the decoy it is woven with, under the method that
+wove them, would put the answer on screen next to the question. The third column is `shuffleLayout`
+itself, the same function the real weave reads, so the picture cannot show one thing while the save
+does another.
+
+#### A phrase can be drawn (2026-09-03)
+
+`mnemonicFor` had produced checksum-valid phrases since the decoy work and was reachable from one
+caller. The phrase form now has a Generate control; the draw happens in the host from
+`crypto.randomInt`, and a length the chosen list cannot checksum is moved to one it can with the
+note saying so. Word LENGTH is offered for the password's passphrase and never for a stored phrase:
+on a BIP-39 list the lengths are the list's, and filtering them produces something no wallet
+accepts. Where it IS offered, the strength is recomputed from the pool actually left.
+
+#### The secret envelope (2026-09-03)
+
+`secretEnvelope.ts` — the value and the facts about how it is protected, written in ONE operation.
+The mark cannot live on the tree node, where it would sync for free, because the keychain and
+`globalState` are not one transaction and a mark that can exist without its value is unreadable
+data. A locked secret is a fresh random data key sealing the value, that key wrapped under the PIN
+(`sealBlob` + `wrapWithPin` — the vault's own primitives, no new cryptography), and the plaintext
+nowhere. A string this build never wrote IS a plaintext secret, so there is no migration. Reading
+answers a typed `locked` result and never prompts: the readers include background sync, the tree
+renderer and headless tooling, none of which can show a modal.
+
+Its two consumers — a woven password and a PIN on an entry or a folder — are
+[../todo/PLAN_woven_passwords_and_entity_pin.md](../todo/PLAN_woven_passwords_and_entity_pin.md).
+
+#### Where the time goes (2026-09-03)
+
+`startupTiming.ts` answers a report of a slow start and about five seconds before a command opens.
+It is a MEASUREMENT rather than a fix, and deliberately: the cross-window lock (four operations take
+it, no launch among them), the tool probes, the mask table, `StorageManager.init` and the bundle
+were each read and eliminated first, and none accounts for seconds. `PhaseTimer` records the
+activation phases; `timed` wraps every command through the ONE `register` helper, so ninety call
+sites are instrumented by a single wrap and anything over 750 ms names itself in the per-run
+diagnostic file.
 
 ### Terminal commands
 

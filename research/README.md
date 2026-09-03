@@ -87,3 +87,4 @@ The family-wide rules are a submodule at `.claude/rules/shared`. Repository-spec
 [../CLAUDE.md](../CLAUDE.md). The `research/` + `todo/` split, and the promotion procedure that moves
 a plan between them, are defined in `.claude/rules/shared/common/planning-docs.md` and enforced in CI
 by `plan-lifecycle.mjs`.
+- [PLAN_payment_polish_and_entity_pin.md](PLAN_payment_polish_and_entity_pin.md) — the owner's batch of 2026-09-03: the payment surfaces, the weaving controls, the billing address as cells, generation with parameters, and the secret envelope §6 rests on.

@@ -1,16 +1,57 @@
 # PLAN — the owner's batch of 2026-09-03: payment surfaces, weaving, and a per-entity PIN
 
-> Status: **plan only, nothing implemented yet.** Scope: `src_vs_code/src` — the payment form and
+> Status: **IMPLEMENTED, 2026-09-03** — nine of its ten items, plus §7 which the owner added while
+> it ran. §6.1 (a woven password) and §6.2 (a PIN on an entry or a folder) are NOT built: their
+> foundation §6.0 shipped, and the rest was extracted into
+> [../todo/PLAN_woven_passwords_and_entity_pin.md](../todo/PLAN_woven_passwords_and_entity_pin.md)
+> with the six accepted review findings folded into it. Scope: `src_vs_code/src` — the payment form and
 > viewer, the weaving controls, the phrase and password generators, and one new secret envelope
 > shared by woven passwords and PIN-protected entries. No server change; the HTTP contract is
 > untouched except where §6.2 adds a share flag.
 >
-> Related docs: [module_extension.md](../research/module_extension.md),
-> [architecture.md](../research/architecture.md),
-> [PLAN_payment_instruments.md](../research/PLAN_payment_instruments.md),
-> [PLAN_payment_ui_tail.md](../research/PLAN_payment_ui_tail.md),
-> [PLAN_generator.md](../research/PLAN_generator.md),
-> [PLAN_sharing.md](../research/PLAN_sharing.md).
+> Related docs: [module_extension.md](module_extension.md),
+> [architecture.md](architecture.md),
+> [PLAN_payment_instruments.md](PLAN_payment_instruments.md),
+> [PLAN_payment_ui_tail.md](PLAN_payment_ui_tail.md),
+> [PLAN_generator.md](PLAN_generator.md),
+> [PLAN_sharing.md](PLAN_sharing.md).
+
+## What shipped differently
+
+Recorded because the deviations are the part of a plan worth keeping.
+
+**§6.1 and §6.2 were not built, and the reason is not "time ran out".** §6.2 changes how every
+secret in the product is READ — `storageManager`, the sync, the share flow, the agent broker, the
+SSH agent, the tree renderer, the headless CLI. A PIN checkbox wired to a form but not to every read
+path promises a protection the storage does not perform, which in this product is the one defect
+that matters more than shipping late. §6.0, the envelope both rest on, is built, tested and shipped
+— including the two review findings that shaped it (authenticated ciphertext rather than a value
+beside a flag; a typed `locked` result rather than a prompt from a layer that background callers
+use).
+
+**§7 was added mid-batch by the owner** — a slow start, and about five seconds before a command, a
+database or a terminal opens. It shipped as a MEASUREMENT rather than a fix, and deliberately: five
+candidates were read and eliminated first (the cross-window lock, the tool probes, the mask table,
+`StorageManager.init`, the bundle), none of them accounts for seconds, and a speculative
+optimisation of an untimed path is how a fix ships that changes nothing and is believed to have
+worked. One run with `startupTiming.ts` in place now names the phase and the command.
+
+**§2.3 turned out to be two defects rather than one.** The glyphs were the visible half; underneath,
+`brand` was documented as "a field the person confirms" and no control existed anywhere to confirm
+it, so an unrecognised card stored no system at all and nothing in the interface could fix that.
+
+**§4.2 was not a missing feature.** The per-field weaving method already existed behind a button;
+it printed the record's raw keys as labels and stayed hidden with three fields ticked, which is why
+it read as absent.
+
+**The address plan was wrong in one direction, and a reviewer caught it.** "Export, share and import
+need no change at all" held for the assembled block and not for the cells: `paymentRedaction`
+redacts `address` by NAME, so five unredacted cells would have shipped a billing address in a share
+that says it removed it.
+
+**Three of the owner's five sharing requirements were already shipped** and nobody had noticed:
+every share is PIN-sealed, the sender types the PIN twice at share time, and the recipient must
+enter it to open.
 
 ## Where this came from
 
