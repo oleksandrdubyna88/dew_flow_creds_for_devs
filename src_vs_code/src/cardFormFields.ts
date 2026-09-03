@@ -1,5 +1,5 @@
 import { PaymentFields, pickPaymentFields } from './paymentFields';
-import { brandOf, luhn } from './cardBrand';
+import { brandOf, isCardBrand, luhn } from './cardBrand';
 import { caretAfterFormat, digitsOnly, groupDigits } from './cardNumberFormat';
 import { PAYMENT_BRAND_LABELS } from './cardBrandIcons';
 
@@ -78,7 +78,18 @@ function textOf(value: unknown): string {
 
 /** The record's values back under the form's ids — the other direction, for delivering a stored card. */
 export function cardInputsFrom(fields: PaymentFields): Record<string, string> {
-  return Object.fromEntries(CARD_INPUTS.map(([inputId, field]) => [inputId, fields[field] ?? '']));
+  return {
+    ...Object.fromEntries(CARD_INPUTS.map(([inputId, field]) => [inputId, displayed(field, fields)])),
+    // Not in the table because it is not a typed field — it is a CHOICE, offered as a list, and it
+    // has to come back so a card that was corrected once stays corrected.
+    cardBrand: fields.brand ?? '',
+  };
+}
+
+/** The displayed form of a stored value — the number's grouping, and nothing else's. */
+function displayed(field: FormTextField, fields: PaymentFields): string {
+  const value = fields[field] ?? '';
+  return field === 'number' ? groupDigits(value) : value;
 }
 
 /**
@@ -89,6 +100,20 @@ export function cardInputsFrom(fields: PaymentFields): Record<string, string> {
  */
 export function withBrand(fields: PaymentFields, brand: string): PaymentFields {
   return brand === '' ? fields : { ...fields, brand };
+}
+
+/**
+ * The system to store: what the person chose, or what the number says when they chose nothing.
+ *
+ * <p>`paymentFields.ts` has always said `brand` is "a field the person confirms" — and until now
+ * nothing could confirm it. It was derived on every save from the typed number, so an unrecognised
+ * prefix stored no system at all and there was no way to correct that from the interface. Which is
+ * exactly the case the field exists for: a number stored woven with a decoy has no first digits
+ * left to read a system from, so after the save nothing can ever work it out again.</p>
+ */
+export function brandFor(data: Record<string, unknown>): string {
+  const chosen = textOf(data.cardBrand);
+  return isCardBrand(chosen) ? chosen : brandOf(textOf(data.cardNumber));
 }
 
 /**
@@ -138,6 +163,9 @@ export function cardTypedAnswer(number: string, caretDigits: number): Record<str
   return {
     type: 'cardBrand',
     text: brandHint(number),
+    // The system the NUMBER says, for the mark shown while the picker is on "Detected
+    // automatically". The page holds no prefix table of its own and must not grow one.
+    brand: brandOf(number),
     was: number,
     grouped,
     caret: caretAfterFormat(grouped, caretDigits),

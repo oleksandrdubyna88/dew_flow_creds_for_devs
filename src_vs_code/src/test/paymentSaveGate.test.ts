@@ -159,7 +159,9 @@ test('a stored record reaches the webview by message, and only by message', asyn
   assert.equal(sent.length, 1);
   const message = sent[0] as { type: string; fields: Record<string, string> };
   assert.equal(message.type, 'paymentValues');
-  assert.equal(message.fields.cardNumber, '4111111111111111');
+  // Grouped, because this is what fills the BOX: a card is read in the groups it is printed in.
+  // What the record holds is still digits — see cardNumberFormat.ts.
+  assert.equal(message.fields.cardNumber, '4111 1111 1111 1111');
   assert.equal(message.fields.bankIban, '', 'every box is answered, so a switch blanks the others');
 });
 

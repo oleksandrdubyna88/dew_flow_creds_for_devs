@@ -3,6 +3,7 @@ import { COPY_ICON, escapeHtml } from './webviewHtml';
 import { PaymentCardView } from './paymentViewMessages';
 import { needsReveal } from './revealGate';
 import { methodLabel } from './shuffle';
+import { BRAND_MARK_STYLES, brandMarksMarkup } from './cardBrandIcons';
 
 /**
  * The read-only payment card: the one surface on which a stored card, a set of bank details or a
@@ -83,7 +84,7 @@ function plainRow(key: PaymentFieldKey): string {
   return `<div class="row">
       <label>${label}</label>
       <div class="line"><input readonly id="pay_${key}"${gated ? ` value="${MASK}" class="gated"` : ''}>
-        ${show}<button data-field="pay_${key}" data-action="copy" class="icon" title="Copy ${label}${key === 'number' ? ' as digits, with no spaces' : ''}" aria-label="Copy ${label}">${COPY_ICON}</button>${spacedCopy(key, label)}
+        ${brandMark(key)}${show}<button data-field="pay_${key}" data-action="copy" class="icon" title="Copy ${label}${key === 'number' ? ' as digits, with no spaces' : ''}" aria-label="Copy ${label}">${COPY_ICON}</button>${spacedCopy(key, label)}
       </div>
     </div>`;
 }
@@ -95,6 +96,11 @@ function plainRow(key: PaymentFieldKey): string {
  * reading a number aloud wants them. Two identical icons side by side would be a coin toss, so this
  * one is marked and both say in their titles which is which.</p>
  */
+/** The nine marks, hidden, beside the system row. The page reveals the one the value names. */
+function brandMark(key: PaymentFieldKey): string {
+  return key === 'brand' ? brandMarksMarkup() : '';
+}
+
 function spacedCopy(key: PaymentFieldKey, label: string): string {
   return key !== 'number'
     ? ''
@@ -187,7 +193,17 @@ ${payListeners()}
 function payHelpers(): string {
   return `    var payTimer = 0;
     var payMine = function (msg) { return msg && msg.entityId === payCard.dataset.entity; };
+    // Reveal the mark the value names, and hide the other eight. Nothing is built here: all nine
+    // were drawn into the page as constants of this build, so a glyph appears for a stored value
+    // without that value ever having been interpolated into this page's HTML.
+    var payMark = function (brand) {
+      var marks = payCard.querySelectorAll('.brandMark');
+      for (var i = 0; i < marks.length; i++) {
+        marks[i].hidden = marks[i].dataset.brand !== brand;
+      }
+    };
     var payFill = function (values) {
+      if (values.brand !== undefined) { payMark(values.brand); }
       for (var key in values) {
         var box = document.getElementById('pay_' + key);
         // A PROPERTY, not an attribute: nothing set here appears in a serialisation of the page.
@@ -321,5 +337,5 @@ export function paymentCardStyles(): string {
   .payNote { margin: 3px 0; }
   input.gated { letter-spacing: .2em; }
   /* The spaced copy carries a visible mark, because two identical icons are a coin toss. */
-  button.spaced span { font-size: .8em; margin-left: 1px; opacity: .8; }`;
+  button.spaced span { font-size: .8em; margin-left: 1px; opacity: .8; }${BRAND_MARK_STYLES}`;
 }

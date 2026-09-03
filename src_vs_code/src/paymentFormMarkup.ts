@@ -1,5 +1,7 @@
 import { DEFAULT_PAYMENT_FORM, PAYMENT_FORMS, PAYMENT_FORM_LABELS } from './paymentForm';
 import { methodLabel } from './shuffle';
+import { CARD_BRANDS } from './cardBrand';
+import { PAYMENT_BRAND_LABELS, brandMarksMarkup } from './cardBrandIcons';
 import { methodOrder } from './phraseLayout';
 import { Random } from './decoyDigits';
 import { phraseMarkup } from './phraseFormMarkup';
@@ -49,6 +51,10 @@ function cardMarkup(openSection: (id: string) => string, random: Random): string
     <input id="cardNumber" type="text" inputmode="numeric" autocomplete="off" spellcheck="false"
            placeholder="4111 1111 1111 1111">
     <p class="hint" id="cardBrandHint"></p>
+
+    <label for="cardBrand">Payment system</label>
+    <div class="line"><select id="cardBrand">${brandOptions()}</select>${brandMarksMarkup()}</div>
+    <p class="hint">Read from the number, and yours to correct. A number stored woven with a decoy has no first digits left to read it from — which is why this is a field you confirm rather than one the build works out again on every save.</p>
 
     <div class="row">
       <div>
@@ -153,6 +159,14 @@ function paymentFormOptions(current: string | undefined): string {
         PAYMENT_FORM_LABELS[form].label
       }</option>`,
   ).join('');
+}
+
+/** "Detected automatically" first, because it is right for almost every card almost every time. */
+function brandOptions(): string {
+  return [
+    '<option value="">Detected automatically</option>',
+    ...CARD_BRANDS.map((brand) => `<option value="${brand}">${PAYMENT_BRAND_LABELS[brand]}</option>`),
+  ].join('');
 }
 
 /**

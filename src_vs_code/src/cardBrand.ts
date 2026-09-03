@@ -109,6 +109,11 @@ export function digitsOf(number: string): string {
  * while the person types, not after the last digit. Length is only checked once there is a full-length
  * candidate, which is what stops a 16-digit `37…` from reading as a (15-digit) Amex.</p>
  */
+/** Whether a string is a system this build knows — the guard a CHOSEN value crosses. */
+export function isCardBrand(value: unknown): value is CardBrand {
+  return typeof value === 'string' && (CARD_BRANDS as readonly string[]).includes(value);
+}
+
 export function brandOf(number: string): CardBrand | '' {
   const digits = digitsOf(number);
   if (digits.length === 0) {

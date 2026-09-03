@@ -1,9 +1,8 @@
 import { DEFAULT_PAYMENT_FORM, PaymentForm, isPaymentForm } from './paymentForm';
 import { PaymentFields, clearForForm } from './paymentFields';
-import { cardFieldsFrom, cardInputsFrom, withBrand } from './cardFormFields';
+import { brandFor, cardFieldsFrom, cardInputsFrom, withBrand } from './cardFormFields';
 import { switchWarning } from './paymentFormSwitch';
 import { validatePayment } from './paymentValidation';
-import { brandOf } from './cardBrand';
 import { ShuffleCode, isShuffleCode } from './shuffle';
 import { weavePaymentFields } from './paymentWeaving';
 import { confirmDestructive, refuse } from './dialogs';
@@ -112,7 +111,7 @@ export function paymentRecordFor(data: Record<string, unknown>, chosen: string):
   if (formOf(chosen) === 'phrase') {
     return phraseRecordFor(phraseInputFrom(data), Math.random);
   }
-  const typed = withBrand(cardFieldsFrom(data), brandOf(textOf(data.cardNumber)));
+  const typed = withBrand(cardFieldsFrom(data), brandFor(data));
   const kept = clearForForm(typed, formOf(chosen));
   // Woven LAST, and after the form switch has already dropped what the chosen form does not own —
   // weaving a field that is about to be discarded would burn a decoy for nothing, and worse, would

@@ -7,6 +7,8 @@ import { paymentCardMarkup } from '../paymentViewCard';
 import { paymentCardFor } from '../paymentViewMessages';
 import { PaymentFields } from '../paymentFields';
 import { SHUFFLE_CODES } from '../shuffle';
+import { CARD_BRANDS } from '../cardBrand';
+import { brandFor } from '../cardFormFields';
 
 /**
  * The card form: a section that appears for `payment`, and a card fieldset inside it that appears
@@ -135,3 +137,41 @@ test('the labels are bound to the code, so a different draw renames nothing', ()
 function pinned(value: number): () => number {
   return () => value;
 }
+
+/**
+ * The payment system is a field the person CONFIRMS — which is what `paymentFields.ts` has always
+ * said it is, and what nothing could actually do.
+ *
+ * <p>Its only writer derived it from the typed number on every save, so a card whose prefix this
+ * build does not recognise stored no system at all and there was no way to correct that from the
+ * interface. That is exactly the case the stored field exists for: a number woven with a decoy has
+ * no first digits left to read a system from, so after the save nothing can ever work it out.</p>
+ */
+test('the form offers the payment system, detected by default and correctable by hand', () => {
+  const markup = paymentMarkup((id) => `<fieldset id="${id}">`, 'card');
+
+  assert.match(markup, /<select id="cardBrand">/, 'there is a control at all');
+  assert.match(markup, /<option value="">Detected automatically<\/option>/, 'and it defaults to reading it');
+  for (const brand of CARD_BRANDS) {
+    assert.ok(markup.includes(`<option value="${brand}">`), `${brand} can be chosen`);
+  }
+});
+
+test('all nine marks are drawn, hidden — so a glyph never needs a stored value in the HTML', () => {
+  const markup = paymentMarkup((id) => `<fieldset id="${id}">`, 'card');
+
+  const marks = markup.match(/class="brandMark" data-brand="[a-z]+" hidden/g) ?? [];
+  assert.equal(marks.length, CARD_BRANDS.length, 'every system has its mark in the page');
+  assert.match(markup, /currentColor/, 'and it takes the colour of the text beside it, in either theme');
+});
+
+test('a chosen system is kept; an unchosen one is read from the number', () => {
+  assert.equal(brandFor({ cardBrand: 'maestro', cardNumber: '4111111111111111' }), 'maestro',
+    'what the person confirmed beats what the prefix says');
+  assert.equal(brandFor({ cardBrand: '', cardNumber: '4111111111111111' }), 'visa',
+    'and with no choice, the number still answers');
+  assert.equal(brandFor({ cardBrand: 'not-a-system', cardNumber: '4111111111111111' }), 'visa',
+    'a value this build does not know is not a choice');
+  assert.equal(brandFor({ cardBrand: '', cardNumber: '9999999999999999' }), '',
+    'an unrecognised number with no choice stores nothing, as before');
+});

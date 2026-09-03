@@ -23,6 +23,7 @@ export function cardFormScript(): string {
   // anything goes wrong — logged. The message goes straight to the fields, and is never a string
   // anybody else holds. (No backticks in this file: it IS a template literal.)
   ${mixScript()}
+${markScript()}
 
   window.addEventListener('message', function (event) {
     var card = event.data;
@@ -34,6 +35,7 @@ export function cardFormScript(): string {
       if (box) { box.value = fields[ids[i]] || ''; }
     }
     showBrand();
+    showMark(val2('cardBrand'));
   });
 
   // The mark beside the number, updated as it is typed: brandOf answers as soon as the prefix
@@ -75,6 +77,8 @@ function brandAnswerScript(): string {
     if (!brand || brand.type !== 'cardBrand') { return; }
     var hint = document.getElementById('cardBrandHint');
     if (hint) { hint.textContent = brand.text; }
+    lastDetected = brand.brand || '';
+    if (brandPick && brandPick.value === '') { showMark(lastDetected); }
     var box = document.getElementById('cardNumber');
     // Applied only if the box still holds what was SENT. Two keystrokes are two round trips and
     // their answers can arrive in either order; the older one must not overwrite the newer text.
@@ -83,6 +87,36 @@ function brandAnswerScript(): string {
       if (document.activeElement === box) { box.setSelectionRange(brand.caret, brand.caret); }
     }
   });
+`;
+}
+
+/**
+ * Which of the nine marks is on screen.
+ *
+ * <p>All nine were drawn into the page as constants of this build and are hidden; this reveals the
+ * one the value names. That is how a glyph appears for a STORED system without that system ever
+ * being interpolated into the page's HTML — the rule this whole form is built around.</p>
+ *
+ * <p>(No backticks in this file: it IS a template literal.)</p>
+ */
+function markScript(): string {
+  return `  // The mark for a system, or none at all. All nine are already in the page; this reveals one.
+  function showMark(brand) {
+    var marks = document.querySelectorAll('#cardSection .brandMark');
+    for (var i = 0; i < marks.length; i++) {
+      marks[i].hidden = marks[i].dataset.brand !== brand;
+    }
+  }
+  function val2(id) {
+    var box = document.getElementById(id);
+    return box ? box.value : '';
+  }
+  var brandPick = document.getElementById('cardBrand');
+  if (brandPick) {
+    brandPick.addEventListener('change', function () { showMark(brandPick.value || lastDetected); });
+  }
+  // What the NUMBER says, remembered so that "Detected automatically" can show a mark too.
+  var lastDetected = '';
 `;
 }
 

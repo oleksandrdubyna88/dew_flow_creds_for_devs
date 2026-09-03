@@ -83,21 +83,33 @@ test('the two directions agree — what the form writes, the form can be given b
   const back = cardInputsFrom(cardFieldsFrom(typed));
 
   for (const [id, value] of Object.entries(typed)) {
-    assert.equal(back[id], value, `${id} did not survive the round trip`);
+    // The number is the ONE field whose displayed form differs from its stored form: it goes back
+    // to the box in the groups the card is printed in, and `cardFieldsFrom` strips them again. So
+    // the round trip is asserted where it is actually required to hold — on the RECORD.
+    const expected = id === 'cardNumber' ? '4111 1111 1111 1111' : value;
+    assert.equal(back[id], expected, `${id} did not survive the round trip`);
   }
-  // The other direction answers EVERY id, card and bank alike, because one record holds both forms
-  // and the boxes that are not on screen have to be blanked rather than left as they were.
-  assert.equal(Object.keys(back).length, CARD_INPUT_IDS.length);
+  assert.deepEqual(
+    cardFieldsFrom(back),
+    cardFieldsFrom(typed),
+    'form -> record -> form -> record is stable, which is what "the two directions agree" means',
+  );
+  // Every id is answered, card and bank alike, because one record holds both forms and the boxes
+  // that are not on screen have to be blanked rather than left as they were — plus the payment
+  // system, which is a CHOICE offered as a list rather than a typed box, and has to come back so a
+  // card corrected once stays corrected.
+  assert.equal(Object.keys(back).length, CARD_INPUT_IDS.length + 1);
+  assert.equal(back.cardBrand, '', 'nothing was chosen and nothing was detectable from the record');
 });
 
 test('a stored card with only some fields fills only those boxes, and blanks the rest', () => {
   // Never `undefined` into a DOM value: the box would read "undefined" to the person looking at it.
   const boxes = cardInputsFrom({ number: '4111', cvv: '123' });
 
-  assert.equal(boxes.cardNumber, '4111');
+  assert.equal(boxes.cardNumber, '4111', 'four digits are one group, and never padded');
   assert.equal(boxes.cardCvv, '123');
   assert.equal(boxes.cardHolder, '', 'an absent field is an empty box');
-  assert.equal(Object.keys(boxes).length, CARD_INPUT_IDS.length, 'every box is answered');
+  assert.equal(Object.keys(boxes).length, CARD_INPUT_IDS.length + 1, 'every box, plus the system');
 });
 
 test('the brand is derived on save, and an unknown number stores no brand at all', () => {
