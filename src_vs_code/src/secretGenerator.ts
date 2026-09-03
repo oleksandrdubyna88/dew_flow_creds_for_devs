@@ -1,4 +1,5 @@
 import * as crypto from 'node:crypto';
+import { wordlistOf } from './wordlists';
 
 /**
  * Making a secret rather than thinking one up.
@@ -177,6 +178,15 @@ export const WORDS: readonly string[] = (
 
 export const WORD_LIST_SIZE = WORDS.length;
 
+/**
+ * The longer source, for when a word LENGTH is asked for.
+ *
+ * <p>BIP-39 English: 2048 words of three to eight letters, already shipped for the phrase kind and
+ * already the thing this build trusts to be a wordlist. A second hand-picked list would be a second
+ * thing to audit for no gain.</p>
+ */
+const LONG_WORDS: readonly string[] = wordlistOf('bip39-en');
+
 export interface PassphraseOptions {
   words: number;
   separator: string;
@@ -184,6 +194,20 @@ export interface PassphraseOptions {
   capitalize: boolean;
   /** Append one digit, for the same reason. */
   addNumber: boolean;
+  /**
+   * Draw only words of at most this many letters, from a longer list.
+   *
+   * <p>Absent — the default — keeps the shipped 256-word list of exactly four letters, whose whole
+   * point is that eight bits per word is EXACT arithmetic. Present, the source becomes BIP-39
+   * English (2048 words, three to eight letters) filtered to the asked length, and the strength is
+   * recomputed from what is actually left in the pool: a filter that shrinks the list and goes on
+   * reporting the old number is a lie about a password.</p>
+   *
+   * <p>This is offered for a PASSPHRASE and never for a stored phrase. There, the list decides the
+   * word lengths and filtering one produces something no checksum accepts — see
+   * `phraseGenerate.ts`.</p>
+   */
+  maxWordLength?: number;
 }
 
 /** The word counts the form offers; 6 is the default (48 bits from a 256-word list). */
@@ -209,16 +233,36 @@ function capitalizeWord(word: string): string {
  */
 export function generatePassphrase(options: PassphraseOptions): GeneratedSecret {
   const count = Math.max(1, Math.floor(options.words));
-  const drawn = Array.from({ length: count }, () => WORDS[crypto.randomInt(WORDS.length)]);
+  const pool = poolFor(options.maxWordLength);
+  const drawn = Array.from({ length: count }, () => pool[crypto.randomInt(pool.length)]);
   const shaped = options.capitalize ? drawn.map(capitalizeWord) : drawn;
   const joined = shaped.join(options.separator);
   const value = options.addNumber ? `${joined}${crypto.randomInt(10)}` : joined;
-  const entropyBits = count * Math.log2(WORDS.length);
+  // Computed from the pool actually drawn from, never from the list this started with. A filter
+  // that shrinks the source and reports the old strength is the one bug a generator must not have.
+  const entropyBits = count * Math.log2(pool.length);
   return {
     value,
     entropyBits,
-    description: `${count} words from a ${WORDS.length}-word list — ${Math.round(entropyBits)} bits.`,
+    description: `${count} words from a ${pool.length}-word list — ${Math.round(entropyBits)} bits.`,
   };
+}
+
+/**
+ * The words to draw from: the shipped four-letter list, or BIP-39 English cut to a length.
+ *
+ * <p>A filter that leaves too few words to be worth anything falls back rather than producing a
+ * two-word alphabet with a straight face — under sixteen is under four bits a word, which is not a
+ * passphrase whatever it is called.</p>
+ */
+const MIN_USEFUL_POOL = 16;
+
+function poolFor(maxWordLength: number | undefined): readonly string[] {
+  if (maxWordLength === undefined) {
+    return WORDS;
+  }
+  const filtered = LONG_WORDS.filter((word) => word.length <= maxWordLength);
+  return filtered.length >= MIN_USEFUL_POOL ? filtered : WORDS;
 }
 
 export interface GeneratedKeyPair {

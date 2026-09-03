@@ -5,6 +5,7 @@ import { readDependsOnRows, readForwardRows } from './formRowReaders';
 import { PaymentFields } from './paymentFields';
 import { addressBlockFor, addressSplitAnswer, cardTypedAnswer } from './cardFormFields';
 import { exampleAnswer } from './weaveExample';
+import { generatePhraseAnswer } from './phraseGenerate';
 import * as vscode from 'vscode';
 import { applyLifetime } from './entityExpiry';
 import { normalizeArgs } from './commandLine';
@@ -348,6 +349,7 @@ const ROUND_TRIPS: Record<string, (message: FormMessage, options: EntityFormOpti
   // tested, which is the rule the highlighter's own comment states.
   cardTyped: (message) => cardTypedAnswer(message.number ?? '', message.caretDigits ?? 0),
   weaveExample: (message) => exampleAnswer(message.field ?? '', message.code ?? '', Math.random) ?? {},
+  generatePhrase: (message) => generatePhraseAnswer(message.genWords, message.genWordlist),
   splitAddress: (message) => addressSplitAnswer(message.text ?? ''),
   addressChanged: (message) => ({ type: 'addressPreview', text: addressBlockFor(message.data ?? {}) }),
   // The Form selector moved. Only the host can say what the switch would delete, because only the

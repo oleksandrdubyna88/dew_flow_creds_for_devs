@@ -1,4 +1,5 @@
 import { WORDLIST_IDS, wordlistLabel } from './wordlists';
+import { PHRASE_WORD_CHOICES } from './phraseGenerate';
 import { SHUFFLE_CODES } from './shuffle';
 import { PHRASE_RANGE } from './shuffle';
 
@@ -33,11 +34,31 @@ function firstColumn(): string {
               placeholder="the words, separated by spaces or newlines"></textarea>
     <p class="hint" id="phraseCount"></p>
 
+    <div class="line">
+      <select id="phraseGenWords">${wordCountOptions()}</select>
+      <button type="button" id="generatePhrase">Generate phrase</button>
+    </div>
+    <p class="hint" id="phraseGenNote">Drawn here, in the extension host, from the operating system's own randomness — never in the page, where <code>Math.random()</code> produces something that merely looks random. The checksum is computed for you, so what comes out is a phrase a wallet will accept.</p>
+
     <label for="phraseListFirst">Wordlist</label>
     <select id="phraseListFirst">${listOptions()}</select>
     <p class="hint">The list decides what a decoy is drawn from and how the checksum is read — it is
     a property of the PHRASE, not of a network. Bitcoin, Ethereum and Solana seeds are all BIP-39
     English.</p>`;
+}
+
+/**
+ * The lengths a phrase is offered at.
+ *
+ * <p>Which of them the CHOSEN list can actually checksum is the list's own property — BIP-39 does
+ * the first five, Monero only 25 — and the host moves an impossible pick to a possible one rather
+ * than the page pretending to know. Word LENGTH is deliberately not offered: on a BIP-39 list it is
+ * fixed by the list, and filtering it would cut the pool and produce something no wallet accepts.</p>
+ */
+function wordCountOptions(): string {
+  return PHRASE_WORD_CHOICES.map(
+    (count) => `<option value="${count}"${count === 12 ? ' selected' : ''}>${count} words</option>`,
+  ).join('');
 }
 
 /**

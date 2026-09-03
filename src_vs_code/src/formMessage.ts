@@ -27,7 +27,8 @@ export interface FormMessage {
     | 'paymentFormChanged'
     | 'weaveExample'
     | 'splitAddress'
-    | 'addressChanged';
+    | 'addressChanged'
+    | 'generatePhrase';
   /** `paymentFormChanged` only: the form now chosen, so the host can say what it would delete. */
   form?: string;
   /** `weaveExample` only: which weavable field, and under which of the twelve methods. */
@@ -50,6 +51,8 @@ export interface FormMessage {
   command?: string;
   /** `zoom` only (T28): which way the press went. */
   zoomDelta?: number;
+  /** `generatePhrase` only: which list to draw from. The count rides on `genWords`. */
+  genWordlist?: string;
   /** `generate` only: which kind of secret to draw. */
   kind?: 'password' | 'passphrase' | 'key';
   /** `generate` only: the options the page's controls chose (T14). Absent = the defaults. */

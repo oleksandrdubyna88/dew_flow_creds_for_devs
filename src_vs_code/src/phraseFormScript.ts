@@ -20,6 +20,7 @@ import { jsonForScript } from './webviewHtml';
  */
 export function phraseFormScript(): string {
   return `
+${phraseGenerateScript()}
   // ---- the phrase form: words, layouts, and the second column --------------------------------
   var phraseWords = document.getElementById('phraseWords');
   if (phraseWords) {
@@ -80,5 +81,46 @@ function phraseListeners(): string {
         control.addEventListener('change', refreshPhrase);
       }
     }
+`;
+}
+
+/**
+ * Drawing a phrase: the count and the list go to the host, the words come back.
+ *
+ * <p>The host draws it — `crypto.randomInt` is a Node API, and a page reaching for `Math.random()`
+ * would produce a seed that merely looks random. The page's whole part is naming the choices and
+ * putting the answer in the box. (No backticks in this file: it IS a template literal.)</p>
+ */
+export function phraseGenerateScript(): string {
+  return `
+  var generatePhraseButton = document.getElementById('generatePhrase');
+  if (generatePhraseButton) {
+    generatePhraseButton.addEventListener('click', function () {
+      var count = document.getElementById('phraseGenWords');
+      var list = document.getElementById('phraseListFirst');
+      vscode.postMessage({
+        type: 'generatePhrase',
+        genWords: count ? Number(count.value) : undefined,
+        genWordlist: list ? list.value : undefined,
+      });
+    });
+  }
+
+  window.addEventListener('message', function (event) {
+    var drawn = event.data;
+    if (!drawn || drawn.type !== 'phraseGenerated') { return; }
+    var note = document.getElementById('phraseGenNote');
+    if (!drawn.ok) {
+      if (note) { note.textContent = drawn.why; }
+      return;
+    }
+    var box = document.getElementById('phraseWords');
+    if (box) {
+      box.value = drawn.words;
+      // The count under the box is computed from what is in it, so it has to be told.
+      box.dispatchEvent(new Event('input'));
+    }
+    if (note) { note.textContent = drawn.note; }
+  });
 `;
 }
