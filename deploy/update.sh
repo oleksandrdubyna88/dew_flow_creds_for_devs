@@ -102,6 +102,37 @@ if [[ "${1:-}" != "--rollback" ]]; then
 fi
 set_image "$TARGET"
 
+
+# ---------------------------------------------------------------------------
+# Retention. A host that only ever pulls fills its disk, and it fills it on the
+# day of a release rather than gradually — see development-workflow.md,
+# "Self-hosted means somebody has to delete things".
+#
+# What is kept is exactly what --rollback can reach: the running image and the
+# trail. That is not a coincidence to be maintained by hand — the retention
+# policy IS the rollback depth, so the two cannot drift apart.
+# ---------------------------------------------------------------------------
+prune_images() {
+  local base keep tag total
+  base="$(current_image)"; base="${base%:*}"
+  [[ -n "$base" ]] || return 0
+  # OURS ONLY, by repository name. Never `docker system prune -a`: this host may
+  # be shared, and a blanket prune deletes what somebody else is depending on.
+  keep="$(printf '%s
+' "$(current_image)"; [[ -f "$STATE_FILE" ]] && cat "$STATE_FILE")"
+  total="$(docker images --format '{{.Repository}}:{{.Tag}}' | grep -c "^${base}:" || true)"
+  # Never empty the shelf: the same rule the backup script states. If everything
+  # we can see is a candidate, something is wrong with our view and not with the
+  # disk.
+  [[ "$total" -gt 1 ]] || return 0
+  while read -r tag; do
+    [[ -n "$tag" ]] || continue
+    printf '%s
+' "$keep" | grep -qxF "$tag" && continue
+    docker image rm "$tag" >/dev/null 2>&1 && log "pruned ${tag}"
+  done < <(docker images --format '{{.Repository}}:{{.Tag}}' | grep "^${base}:" || true)
+}
+
 # ---------------------------------------------------------------------------
 # Recreate. Only the app container needs replacing; nginx/certbot keep running,
 # so TLS termination never blinks.
@@ -119,6 +150,9 @@ for _ in $(seq 1 30); do
   case "$state" in
     healthy)
       log "healthy — now running ${TARGET}"
+      # Only once the new one is proven: a prune before the health check would
+      # delete the image the rollback is about to need.
+      prune_images
       log "roll back with: ./update.sh --rollback"
       exit 0
       ;;

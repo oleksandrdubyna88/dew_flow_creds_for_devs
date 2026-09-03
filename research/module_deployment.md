@@ -162,7 +162,7 @@ touches them; `docker compose down -v` is never used in any script here.
 
 1. refuses to run against an invalid `.env`;
 2. pulls **before** recreating, so a failed pull changes nothing;
-3. pushes the outgoing tag onto `.update-state`, a trail of the last THREE deployments that `--rollback` pops from — so two bad releases in a row can both be stepped back over, and a plain refresh does not bury the real previous by pushing a duplicate. One deep, which is what this was until 2026-09-03, turns the case that actually happens into a rebuild under pressure (`development-workflow.md`, *A rollback must not BUILD*);
+3. pushes the outgoing tag onto `.update-state`, a trail of the last THREE deployments that `--rollback` pops from — so two bad releases in a row can both be stepped back over, and a plain refresh does not bury the real previous by pushing a duplicate. One deep, which is what this was until 2026-09-03, turns the case that actually happens into a rebuild under pressure (`development-workflow.md`, *A rollback must not BUILD*). The trail doubles as the retention policy: once the new container reports healthy, `prune_images` removes every image of OUR repository that is neither running nor on the trail — ours only by name, never `docker system prune -a` on a host that may be shared, and never when only one of ours is visible. Before this the host kept every image it had ever pulled;
 4. recreates only `vault` (`--no-deps`), so TLS termination never blinks;
 5. **waits for the healthcheck** and exits non-zero with the container's logs if it never goes
    healthy.
