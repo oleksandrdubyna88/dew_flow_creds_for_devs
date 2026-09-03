@@ -331,6 +331,16 @@ export function formPageScript(
 
   document.getElementById('entityType').addEventListener('change', updateVisibility);
   document.getElementById('sshKeyEntityId').addEventListener('change', updateVisibility);
+  // The Form selector picks which of the three payment fieldsets is on screen. Without this
+  // binding, val(paymentForm) was read once at load, so choosing Bank details or Hidden phrase
+  // left the Card fieldset up and two of the three forms could not be reached in a session.
+  const paymentFormSelect = document.getElementById('paymentForm');
+  if (paymentFormSelect) {
+    paymentFormSelect.addEventListener('change', updateVisibility);
+    paymentFormSelect.addEventListener('change', function () {
+      vscode.postMessage({ type: 'paymentFormChanged', form: paymentFormSelect.value });
+    });
+  }
   updateVisibility();
 
   // ---- DB: connection string <-> parts, default port per type ----
@@ -741,6 +751,15 @@ export function formPageScript(
 
   ${cardFormScript()}
   ${phraseFormScript()}
+
+  window.addEventListener('message', function (event) {
+    if (event.data && event.data.type === 'paymentSwitchNotice') {
+      var notice = document.getElementById('paymentNotice');
+      // textContent, never innerHTML: the sentence names FIELDS, but it is built host-side and
+      // this page has one rule about strings from the host.
+      if (notice) { notice.textContent = event.data.text; }
+    }
+  });
 
   window.addEventListener('message', function (event) {
     var data = event.data;

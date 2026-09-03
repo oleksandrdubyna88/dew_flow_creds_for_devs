@@ -1,4 +1,4 @@
-import { answerCardValues, formOf, paymentGates, paymentRecordFor } from './paymentSaveGate';
+import { answerCardValues, formOf, paymentGates, paymentRecordFor, switchNoticeFor } from './paymentSaveGate';
 import { hasMixedField } from './mixedFieldGuard';
 import { readDependsOnRows, readForwardRows } from './formRowReaders';
 import { PaymentFields } from './paymentFields';
@@ -227,7 +227,10 @@ export interface FormMessage {
     | 'configFieldEdit'
     | 'qrImage'
     | 'cardValues'
-    | 'cardTyped';
+    | 'cardTyped'
+    | 'paymentFormChanged';
+  /** `paymentFormChanged` only: the form now chosen, so the host can say what it would delete. */
+  form?: string;
   /** `cardTyped` only: the number as typed so far, for the mark and the checksum hint. */
   number?: string;
   /** `qrImage` only: the pasted picture as grey pixels, base64, and its size. */
@@ -319,7 +322,7 @@ export function showEntityForm(options: EntityFormOptions): Promise<EntityFormVa
     let settled = false;
     // eslint-disable-next-line complexity
     panel.webview.onDidReceiveMessage(async (message: FormMessage) => {
-      if (answerRoundTrip(panel, message)) {
+      if (answerRoundTrip(panel, message, options)) {
         return;
       }
       if (message.type === 'splitCommand') {
@@ -376,12 +379,18 @@ export function showEntityForm(options: EntityFormOptions): Promise<EntityFormVa
  * <p>Returns whether the message WAS a round-trip, so the caller's dispatch stays a single line
  * and the list of them stays here.</p>
  */
-const ROUND_TRIPS: Record<string, (message: FormMessage) => Record<string, unknown>> = {
+const ROUND_TRIPS: Record<string, (message: FormMessage, options: EntityFormOptions) => Record<string, unknown>> = {
   highlight: (message) => highlighted(message),
   // The number never leaves the page for this — only the ANSWER comes back. `brandOf` is pure and
   // could have run in the webview, but the page is a template string where nothing can be unit
   // tested, which is the rule the highlighter's own comment states.
   cardTyped: (message) => ({ type: 'cardBrand', text: brandHint(message.number ?? '') }),
+  // The Form selector moved. Only the host can say what the switch would delete, because only the
+  // host holds the stored record — the page carries no payment value at all, by rule.
+  paymentFormChanged: (message, options) => ({
+    type: 'paymentSwitchNotice',
+    text: switchNoticeFor(message.form ?? '', options),
+  }),
   configFields: (message) => ({ type: 'configFieldsResult', ...fieldsAnswer(message) }),
   configFieldEdit: (message) => ({ type: 'configBody', text: editedConfigBody(message) }),
   // The seed the page gets back is one it is about to hold anyway — the form is where a person
@@ -397,8 +406,8 @@ async function agreed(data: Record<string, unknown>, options: EntityFormOptions)
   return (await paymentGates(data, options)) && (await confirmInvalidSave(data, options));
 }
 
-function answerRoundTrip(panel: vscode.WebviewPanel, message: FormMessage): boolean {
-  const answer = ROUND_TRIPS[message.type]?.(message);
+function answerRoundTrip(panel: vscode.WebviewPanel, message: FormMessage, options: EntityFormOptions): boolean {
+  const answer = ROUND_TRIPS[message.type]?.(message, options);
   if (answer === undefined) {
     return false;
   }

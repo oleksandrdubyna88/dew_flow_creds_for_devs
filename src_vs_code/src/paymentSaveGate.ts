@@ -39,12 +39,20 @@ export interface PaymentSaveContext {
  * leaves the entry — and its old record — exactly as it was.</p>
  */
 export async function confirmFormSwitch(chosen: string, context: PaymentSaveContext): Promise<boolean> {
-  const warning = warningFor(chosen, context);
+  const warning = switchNoticeFor(chosen, context);
   return warning === '' || confirmDestructive(warning, 'Switch and delete');
 }
 
-/** No old form, no new form, or nothing stored to lose — all three mean nothing to ask about. */
-function warningFor(chosen: string, context: PaymentSaveContext): string {
+/**
+ * What switching to `chosen` would destroy, as a sentence, or `''` when nothing is at stake.
+ *
+ * <p>No old form, no new form, or nothing stored to lose — all three mean nothing to say.</p>
+ *
+ * <p>Exported because the form's own selector now shows it the moment the choice is made, and the
+ * save gate asks with it at the end. ONE function, so the notice and the confirmation cannot name
+ * different fields — which they would, eventually, as two copies.</p>
+ */
+export function switchNoticeFor(chosen: string, context: PaymentSaveContext): string {
   const pair = switchPair(context.initial?.paymentForm, chosen);
   return pair === undefined ? '' : switchWarning(pair.from, pair.to, context.initialPayment ?? {});
 }

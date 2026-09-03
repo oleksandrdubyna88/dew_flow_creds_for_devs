@@ -169,3 +169,33 @@ test('replacing the whole command line re-splits the arguments instead of leavin
   assert.match(script, /indexOf\(' '\) === -1\) \{ return; \}/,
     'and it still reacts only to a whole LINE, not to a bare tool name');
 });
+
+/**
+ * The Form selector has to change what is on screen.
+ *
+ * <p>The section conditions were right all along — `formSections.ts` gates `cardSection`,
+ * `phraseSection` and `bankSection` on `val('paymentForm')`, and `formVisibilityScript` emits them
+ * faithfully. Nothing ever asked the page to re-run that function when the selector moved: the
+ * bindings named `entityType` and `sshKeyEntityId` and no more. So `val('paymentForm')` was read
+ * once, at load, and two of the three payment forms could not be reached in a session at all —
+ * choosing *Bank details* or *Hidden phrase* left the Card fieldset on screen.</p>
+ */
+test('changing the Form selector re-runs the visibility ladder', () => {
+  const script = formPageScript(NONCE, entity({ kind: 'payment' }));
+
+  assert.match(
+    script,
+    /getElementById\('paymentForm'\)[\s\S]{0,120}addEventListener\('change', updateVisibility\)/,
+    'the payment form selector must re-run updateVisibility, or the fieldset never changes',
+  );
+});
+
+test('the switch says what it is about to delete, in the notice the markup already carries', () => {
+  const script = formPageScript(NONCE, entity({ kind: 'payment' }));
+
+  // `#paymentNotice` was an empty <p> nothing ever wrote to, while `switchWarning` — the pure
+  // function that names the fields a switch destroys — was wired only into the SAVE gate. The
+  // warning therefore arrived at the end, about a choice made at the beginning.
+  assert.match(script, /paymentNotice/, 'the notice element is written to');
+  assert.match(script, /type: 'paymentFormChanged'/, 'and the host is told, since it holds the record');
+});
