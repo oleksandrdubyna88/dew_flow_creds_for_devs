@@ -1,6 +1,6 @@
 # PLAN — coordinating writes between two VS Code windows
 
-> Status: **plan only, nothing implemented yet.** Scope: `src_vs_code/src/storageManager.ts`,
+> Status: **step 1 of 4 done (the reproduction); the primitive is not built.** Scope: `src_vs_code/src/storageManager.ts`,
 > `pendingCleanup.ts`, `serialQueue.ts`, and whatever durable coordination primitive this ends up
 > choosing.
 >
@@ -47,11 +47,41 @@ A removing an account while window B applies a bundle is not serialized by anyth
 - **How it is tested.** Two `StorageManager` instances over one memento, which is exactly what the
   reviewers asked for and what no test does today.
 
+## What the reproduction found — step 1 is DONE
+
+`src/test/crossWindowWrites.test.ts`, 2026-09-03. Two `StorageManager` instances over one memento and
+one keychain, with the shared memento able to PAUSE on a named key so the interleaving is repeatable
+rather than raced.
+
+**The damage has a name, and it is worse than "a broken state":**
+
+> Window A begins removing an account and is parked between unlisting it and wiping its secrets.
+> Window B imports a bundle into the same profile. **The import succeeds and B is told so.** A then
+> resumes and wipes — destroying what B has just written, after B reported success, with no error on
+> either side.
+
+So the failure is not a torn end state that a sweep could find later. The end state is perfectly
+self-consistent: the account is gone and nothing of it remains. What is missing is the person's data,
+and nothing anywhere recorded that it was lost. That is the shape a lease has to close, and it is why
+"skip when you cannot take it" is not universally right — for an import, silently skipping is the same
+outcome as being wiped.
+
+A control test sits beside it: the identical pair through ONE instance is serialized by `SerialQueue`
+and the import survives, because it genuinely runs second. Without that control the first test would
+only show that the two operations conflict, not that the WINDOW is where the guarantee stops.
+
+**One constraint the reproduction also settled**, and it belongs in the design rather than being
+discovered during it: `vscode.Memento` has no compare-and-swap. `get` then `update` is a read-modify-write
+two windows can both win, so a lease key in `globalState` is **advisory** — it narrows the race from
+the length of an operation to the length of one write, and does not eliminate it. A write-then-read-back
+(take the lease, re-read it, proceed only if it is still ours) resolves the common case, since the
+memento broadcasts a foreign write and the loser sees the winner's holder id. Any design that claims
+more than that is claiming something this API cannot give.
+
 ## Build order
 
-1. A failing test with two `StorageManager` instances over one shared memento + keychain, showing a
-   removal and an apply interleaving into a broken state. **This first** — the gap is currently a
-   claim, and a claim about concurrency deserves a reproduction.
+1. ~~A failing test with two `StorageManager` instances over one shared memento + keychain, showing a
+   removal and an apply interleaving into a broken state.~~ **Done** — see above.
 2. The lease primitive, in its own module, free of `vscode`, with the stale-lease rule.
 3. Route the same three operations (plus `upsertAccount`) through it, inside the existing
    `SerialQueue.run` so a window is serialized against both itself and its peers.
