@@ -14,6 +14,29 @@ writing the endpoint, or run the whole tree headless before a release.
 | [`metrics/`](metrics) | `/api/metrics` |
 | [`org-recovery/`](org-recovery) | the eleven corporate-recovery routes |
 
+## This repository has a SECOND HTTP surface, and it is not here
+
+The VS Code extension serves one too: `src_vs_code/src/credsAgentServer.ts` listens on a loopback
+port (and, through `brokerListeners.ts`, on a pipe or unix socket) and answers the routes a `creds`
+CLI, an MCP client and an alias caller use — `/v1/use/…`, the MCP doors, the config read, health.
+
+**It has no `.http` files, deliberately, and it is not uncovered.** It is served by a VS Code
+extension host, and its port and grant token are minted per window and per pid, so there is no
+headless run for a suite to make. What the `.http` tier exists to provide — a real request over the
+wire — it already has: `src_vs_code/src/test/brokerWorld.ts` starts the **real** server, mints a real
+grant, and `call()` does a real `fetch` against `http://127.0.0.1:<port>`. **65 tests** drive it that
+way across `credsAgentServer.test.ts` and `brokerMcpRoutes.test.ts`.
+
+Written down because the numbers below invite the wrong conclusion: `http-coverage.mjs` reads C# and
+Rust route registrations, so its verdict for this repository — 26 of 26 — is a statement about the
+**vault server** and says nothing at all about the extension's API. An armed coverage check is not a
+claim that every HTTP surface in a repository has a suite.
+
+For the record, the family's founding evidence for this whole tier came from that second surface:
+`/v1/use/exportEnv` was unreachable in every released build because the route grammar rejected a
+capital letter, and the first end-to-end run found it in seconds
+([testing.md](../.claude/rules/shared/common/testing.md)).
+
 ## The environment this suite expects
 
 A contract suite has an environment contract, and a failure to meet it is an **environment** failure —
