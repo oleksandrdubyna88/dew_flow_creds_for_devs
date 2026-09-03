@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as nodePath from 'node:path';
 import { TreeNode } from '../types';
 import { loadWithVscode } from './vscodeStub';
 
@@ -15,8 +18,8 @@ import { loadWithVscode } from './vscodeStub';
  * one condition written into the plan it was deferred to:
  * <b>"the gap is currently a claim, and a claim about concurrency deserves a reproduction"</b>. This
  * file is that reproduction — step 1 of
- * `todo/PLAN_cross_window_write_coordination.md`, before any locking primitive exists to be argued
- * about.</p>
+ * `research/PLAN_cross_window_write_coordination.md`. The tests below it are the acceptance half:
+ * the same interleaving, with the lock, keeping the import.</p>
  *
  * <h3>How it is made deterministic</h3>
  *
@@ -91,9 +94,18 @@ function sharedSecrets(): { api: object; keys: () => string[] } {
   };
 }
 
-/** Two StorageManagers over ONE memento and ONE keychain: two windows of the same profile. */
-function twoWindows(): { a: Storage; b: Storage; memento: ReturnType<typeof sharedMemento>; keys: () => string[] } {
-  const { StorageManager } = loadWithVscode<{ StorageManager: new (m: unknown, s: unknown) => Storage }>(
+/**
+ * Two StorageManagers over ONE memento and ONE keychain: two windows of the same profile.
+ *
+ * <p>`lockDir` is what makes the difference the whole plan is about. Without it each window has a
+ * `SerialQueue` and nothing else, which is what the reproduction below shows costing an import. With
+ * it they share a lock directory on the real filesystem — the real `mkdir`, not a fake, because the
+ * atomicity of that one call is the entire design.</p>
+ */
+function twoWindows(lockDir?: string): {
+  a: Storage; b: Storage; memento: ReturnType<typeof sharedMemento>; keys: () => string[];
+} {
+  const { StorageManager } = loadWithVscode<{ StorageManager: new (m: unknown, s: unknown, d?: string) => Storage }>(
     '../storageManager',
     {
       EventEmitter: class {
@@ -102,16 +114,22 @@ function twoWindows(): { a: Storage; b: Storage; memento: ReturnType<typeof shar
       },
       Uri: { file: (p: string): object => ({ fsPath: p }) },
       workspace: { getConfiguration: () => ({ get: (_k: string, d: unknown) => d }) },
+      window: { setStatusBarMessage: () => ({ dispose: (): void => undefined }) },
     },
   );
   const memento = sharedMemento();
   const secrets = sharedSecrets();
   return {
-    a: new StorageManager(memento.api, secrets.api),
-    b: new StorageManager(memento.api, secrets.api),
+    a: new StorageManager(memento.api, secrets.api, lockDir),
+    b: new StorageManager(memento.api, secrets.api, lockDir),
     memento,
     keys: secrets.keys,
   };
+}
+
+/** A real directory, because the lock's whole claim is about a real `mkdir`. */
+function lockDirectory(): string {
+  return fs.mkdtempSync(nodePath.join(os.tmpdir(), 'creds-window-lock-'));
 }
 
 const ACCOUNT = { accountId: 'acc-1', email: 'a@example.com', provider: 'microsoft' };
@@ -188,4 +206,54 @@ test('the same two operations in ONE window cannot interleave — which is the w
     true,
     'the import ran AFTER the removal instead of inside it',
   );
+});
+
+test('WITH the lock, the import is not destroyed — the same interleaving, closed', async () => {
+  // The acceptance criterion of the whole plan, and it is the test above with one argument added.
+  // Everything else is identical: same seeding, same gate, same key, same two operations.
+  const { a, b, memento, keys } = twoWindows(lockDirectory());
+  await a.upsertAccount(ACCOUNT);
+  await a.addNode(ACCOUNT.accountId, NODE);
+  await a.setPassword(ACCOUNT.accountId, 'e1', 'the-original');
+  const bundle = await b.exportBundle(ACCOUNT.accountId);
+
+  const gate = memento.pauseOn('credSshManager.defaultsSeeded');
+  const removal = a.removeAccount(ACCOUNT.accountId);
+  await gate.reached;
+
+  // Window B asks to import while A is parked mid-removal. It does NOT run now: A holds the lock,
+  // so B waits — with a notice on the status bar rather than a silent stall — and the promise is
+  // still pending when we let A go.
+  const theImport = b.importBundle(ACCOUNT.accountId, bundle);
+  let finishedEarly = false;
+  void theImport.then(() => {
+    finishedEarly = true;
+  });
+  await new Promise((go) => setTimeout(go, 50));
+  assert.equal(finishedEarly, false, 'B is waiting for A rather than running inside it');
+
+  gate.release();
+  await removal;
+  await theImport;
+
+  // B ran AFTER the removal, so what it wrote is what stands — the import the person asked for is
+  // there, and it was never reported as successful while doomed.
+  assert.equal(
+    await b.getPassword(ACCOUNT.accountId, 'e1'),
+    'the-original',
+    'the import survived, which is the whole point of the lock',
+  );
+  assert.ok(keys().some((key) => key.includes(ACCOUNT.accountId)), 'and its secret is in the keychain');
+});
+
+test('the lock is released even when the operation fails, so one bad save is not a wedged profile', async () => {
+  const dir = lockDirectory();
+  const { a, b } = twoWindows(dir);
+  await a.upsertAccount(ACCOUNT);
+
+  // An import of something that is not a bundle — whatever it does, it must not keep the lock.
+  await a.importBundle(ACCOUNT.accountId, { nodes: 'not a list' }).catch(() => undefined);
+
+  await b.upsertAccount({ ...ACCOUNT, accountId: 'acc-2' });
+  assert.ok(b.getAccounts().some((account) => account.accountId === 'acc-2'), 'the next window got through');
 });

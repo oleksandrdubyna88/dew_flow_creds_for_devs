@@ -1,11 +1,34 @@
 # PLAN — coordinating writes between two VS Code windows
 
-> Status: **step 1 of 4 done (the reproduction); the primitive is not built.** Scope: `src_vs_code/src/storageManager.ts`,
+> Status: **IMPLEMENTED, 2026-09-03**, in `0.96.0`.
+>
+> **Deviations, recorded rather than quietly absorbed:**
+>
+> 1. **The primitive is not the one this plan first proposed.** A lease key in `globalState` with a
+>    write-then-read-back was refuted by its own review round — three Blocking findings from three
+>    vendors independently — before a line existed. It is an atomic `mkdir` under `globalStorageUri`.
+>    The argument is kept in full below, because the refuted design is the more useful half of the
+>    record.
+> 2. **`leasedWrites.ts` exists only so `storageManager.ts` gains ONE import.** That file is at its
+>    size-ratchet baseline and may not grow by a line; the façade re-exports what the manager needs and
+>    holds the single `vscode`-facing function (the status-bar notice). Not a style choice.
+> 3. **The wait is a status-bar message, not `window.withProgress`.** The round asked for an indefinite
+>    wait that is visible; a modal progress dialog for a background save would be visible and wrong.
+> 4. **The sweep's retry is bounded at three.** The round asked for a retry and did not say how many;
+>    unbounded retries against a window that is simply busy is a timer nobody asked for, and the work
+>    stays safe undone — the record it reads is durable and the next window to start finds it.
+> 5. **The lock is optional.** Without a directory `LeasedQueue` is exactly a `SerialQueue`, which is
+>    what every existing test gets and what a build with no writable storage falls back to: a
+>    degradation to the guarantee this extension had until now, not a failure.
+>
+> **What is NOT closed:** the residual race in `windowLock.ts`'s header — breaking a stale lock is
+> `remove` then `mkdir`, so a third window's claim made between them can be removed. Microseconds
+> wide, requires a holder to have already exceeded the TTL, and named where a caller reads it. Scope: `src_vs_code/src/storageManager.ts`,
 > `pendingCleanup.ts`, `serialQueue.ts`, and whatever durable coordination primitive this ends up
 > choosing.
 >
-> Related docs: [module_extension.md](../research/module_extension.md) (the write-order invariant, the
-> serial queue, `pendingCleanup`), [PLAN_payment_instruments_epics.md](../research/PLAN_payment_instruments_epics.md)
+> Related docs: [module_extension.md](module_extension.md) (the write-order invariant, the
+> serial queue, `pendingCleanup`), [PLAN_payment_instruments_epics.md](PLAN_payment_instruments_epics.md)
 > (S1.4, where this was raised and deliberately deferred).
 
 ## The gap

@@ -22,7 +22,7 @@ import { TRASH_FOLDER_NAME, findTrash, restoreTarget } from './trash';
 import { exportSecretsFor } from './exportSecrets';
 import { PaymentFields, parsePaymentFields, serializePaymentFields } from './paymentFields';
 import { forgetTombstone, sweepOrphanSecrets } from './orphanSweep';
-import { SerialQueue } from './serialQueue';
+import { LeasedQueue, leasedWrites, sweepWithRetry } from './leasedWrites';
 import { EntityCreate, createEntityWithSecrets } from './entityWrite';
 import {
   CleanupPort,
@@ -156,15 +156,12 @@ export class StorageManager implements vscode.Disposable {
   private readonly nodeCache = new Map<string, NodeCacheEntry>();
 
   /**
-   * Applying a bundle, removing an account and finishing interrupted work — one at a time.
-   *
-   * <p>All three are `async` and touch the same secrets, so every `await` inside one was a place
-   * another could start; a whole round of review findings were variants of that one fact. Narrowing
-   * each window individually is not closing it — the windows exist because these interleave.
-   * `SerialQueue` already solved this shape for `GitTransport`, and its header states the boundary:
-   * one instance, not two windows, which is why the sweep exists at all.</p>
+   * Applying a bundle, removing an account and finishing interrupted work — one at a time, and one
+   * WINDOW at a time. Every `await` inside these was a place another could start; a whole round of
+   * findings were variants of that fact, and `crossWindowWrites.test.ts` shows the half a per-instance
+   * queue cannot reach. `LeasedQueue` is that queue plus the lock — see `windowLock.ts`.</p>
    */
-  private readonly writes = new SerialQueue();
+  private readonly writes: LeasedQueue;
 
   /**
    * How many times each profile's local state was written through this instance — one half of
@@ -181,7 +178,10 @@ export class StorageManager implements vscode.Disposable {
   constructor(
     private readonly globalState: vscode.Memento,
     private readonly secrets: vscode.SecretStorage,
+    /** Where the cross-window lock lives. Absent in tests and without one this is a `SerialQueue`. */
+    lockDir?: string,
   ) {
+    this.writes = leasedWrites(lockDir);
     // A password written by another window of this profile lands in the keychain without
     // passing through this instance; the change event is the only way to learn of it.
     this.secretsListener = secrets.onDidChange(() => {
@@ -379,7 +379,7 @@ export class StorageManager implements vscode.Disposable {
 
   /** Finish every removal a killed window left half-done — idempotent; see `pendingCleanup.ts`. */
   resumeAccountRemovals(): Promise<readonly string[]> {
-    return this.writes.run(() => resumePending(this.cleanupPort()));
+    return sweepWithRetry(this.writes, () => resumePending(this.cleanupPort()));
   }
 
   /** This class's half of `pendingCleanup.ts` — the storage the sequencing there acts on. */

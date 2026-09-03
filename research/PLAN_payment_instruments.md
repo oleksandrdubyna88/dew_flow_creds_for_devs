@@ -12,7 +12,7 @@
 >    so it landed first, as S1.4, and grew into ten review rounds of its own: Rule A and Rule B, a
 >    local `pendingCleanup` record (a tombstone was the wrong shape for it, twice), a serial queue, and
 >    compensation for a create. Cross-window coordination is deliberately out of scope and has its own
->    plan, `todo/PLAN_cross_window_write_coordination.md`.
+>    plan, [PLAN_cross_window_write_coordination.md](PLAN_cross_window_write_coordination.md) — built 2026-09-03.
 > 2. **The startup sweep §3d relies on did not exist** and could not simply be written — a departed
 >    node's id is derivable from nothing. The tombstones already were that index, which is why Rule B
 >    puts them ahead of the node write.

@@ -69,8 +69,9 @@ import { describeError } from './describeError';
  * <p>The answer is not a timestamp and an expiry threshold. It is that <b>a create runs on the same
  * serial queue</b> as the apply, the removal and the sweep (`StorageManager.runCreate`), so the sweep
  * cannot run while a create is between its own writes. No lease, no clock, nothing to tune. Within a
- * window: across windows this is the gap recorded in `todo/PLAN_cross_window_write_coordination.md`,
- * and it is the same boundary everything else here lives inside.</p>
+ * window: across windows this was the gap recorded in
+ * `research/PLAN_cross_window_write_coordination.md`, closed in 0.96.0 by the lock that queue now
+ * takes — and it is the same boundary everything else here lives inside.</p>
  *
  * <p>So `deferCleanup` runs FIRST, unconditionally, and `finishCleanup` takes the id back out once the
  * node is there to claim the secrets. What made this look impossible for seven rounds was assuming the

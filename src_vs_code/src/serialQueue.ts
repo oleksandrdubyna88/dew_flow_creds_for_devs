@@ -11,9 +11,11 @@
  * the tail, and the stored tail is the swallowed form, so one caller's error is that caller's
  * alone.</p>
  *
- * <p>Serializes within ONE instance and no further. Two VS Code windows, or a colleague, are
- * still handled by the rejected-push contract the transport already has — this closes the gap
- * that contract cannot see.</p>
+ * <p>Serializes within ONE instance and no further — and that boundary is no longer the last word on
+ * it. `leasedQueue.ts` wraps this with a cross-window lock (`windowLock.ts`) for the operations that
+ * share a profile's `globalState` and `SecretStorage`; `crossWindowWrites.test.ts` shows what the gap
+ * cost before it existed. For `GitTransport`, whose peers are other MACHINES, the rejected-push
+ * contract remains the answer and this class alone is still the right one.</p>
  */
 export class SerialQueue {
   private tail: Promise<unknown> = Promise.resolve();

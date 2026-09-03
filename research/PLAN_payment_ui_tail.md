@@ -33,7 +33,7 @@
 > has been run inside a real VS Code extension host — every test is `node:test` over compiled output,
 > which is what this repository's suite is; all five extension integration suites and the server's own
 > 162 tests were run after the release and pass. Cross-window write coordination remains
-> [../todo/PLAN_cross_window_write_coordination.md](../todo/PLAN_cross_window_write_coordination.md).
+> [PLAN_cross_window_write_coordination.md](PLAN_cross_window_write_coordination.md), built 2026-09-03.
 >
 > Parent record: [PLAN_payment_instruments.md](PLAN_payment_instruments.md) and its build
 > order [PLAN_payment_instruments_epics.md](PLAN_payment_instruments_epics.md). This plan

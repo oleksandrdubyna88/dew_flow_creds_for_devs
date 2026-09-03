@@ -4,6 +4,32 @@ All notable changes to **CredsForDevs** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.96.0] — two windows of one profile no longer overwrite each other
+
+### Fixed
+
+- **An import in one window could be destroyed by an account removal in another, after being reported
+  as successful.** VS Code runs a separate extension host per window, and every window of the same
+  profile shares one settings store and one keychain. This extension serialised its dangerous
+  operations — importing a bundle, applying a sync, removing an account, creating an entry, and the
+  startup sweep — within a single window and, until now, no further.
+
+  The failure was silent by construction. Window B's import landed, B was told it had worked, and
+  window A's removal then wiped what B had written. The end state was perfectly self-consistent — the
+  account gone and nothing of it left — so nothing was ever detectably broken. What was missing was
+  the data, and nothing recorded that it had gone.
+
+  Those operations now take a lock that every window of the profile can see. While another window
+  holds it, yours **waits** rather than proceeding — the status bar says another window is writing —
+  and nothing reports success having done nothing. The startup sweep is the one exception: another
+  window holding the lock is that window doing the sweep's work, so it stands aside and tries again
+  shortly after, in case that window does not finish.
+
+  **A window that is killed while holding the lock does not block the profile.** The holder says it is
+  alive every few seconds, and a lock that goes quiet becomes takeable — so a crash costs the next
+  window a few seconds, not a locked vault. A window that is merely slow keeps saying so and keeps
+  its turn, however long its work takes.
+
 ## [0.95.0] — Monero seeds
 
 ### Added

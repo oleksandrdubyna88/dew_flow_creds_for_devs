@@ -373,6 +373,48 @@ tenth time.
 | `revealGate.ts` / `phraseBuffer.ts` | the rung that asks again, and the bytes that get zeroed |
 | `paymentRedaction.ts` / `secretClaims.ts` | what leaves in a share, and what a node may claim to hold |
 
+#### Two windows of one profile — the lock
+
+`SerialQueue` serializes this extension's dangerous operations within ONE instance and says so in its
+own header. VS Code runs an extension host per WINDOW and every window of a profile shares one
+`globalState` and one `SecretStorage`, so two windows were serialized by nothing.
+`crossWindowWrites.test.ts` reproduces what that cost: window B's import **succeeds and is reported
+as successful**, then window A's account removal wipes it — an end state that is perfectly
+self-consistent and missing the person's data, which is why no sweep could ever find it.
+
+| module | what it owns |
+|---|---|
+| `windowLock.ts` | the lock: an atomic `mkdir`, a heartbeat, a stale break, a fenced release |
+| `leasedQueue.ts` | `SerialQueue` plus that lock; the wait, the skip, and the sweep's retry |
+| `leasedWrites.ts` | the only `vscode`-facing part: the status-bar notice, and the wiring |
+
+**The primitive is a directory, and that is the whole design.** The first draft was a lease record in
+`globalState` with a write-then-read-back to settle ties; its review round returned three Blocking
+findings from three vendors independently, all the same — `Memento.update` is asynchronous and a
+foreign write arrives by broadcast with no ordering against a local read, so both windows read empty,
+both write, and each re-reads its own value. `fs.mkdir` without `recursive` either creates or fails,
+and `globalStorageUri` is a directory every window of the profile already shares.
+
+Three things around it that are not decoration:
+
+- **A heartbeat, not a renewed deadline.** A holder is valid while its timestamp is fresh, so a window
+  that dies stops being a holder without having to notice — which is what a killed window and a wedged
+  one have in common. A long import simply keeps beating.
+- **A fenced release.** The holder file names the ACQUISITION, and release removes the lock only if it
+  still names ours; otherwise a holder that overran its TTL deletes the lock of whoever replaced it,
+  and the failure arrives through the exit.
+- **The sweep skips and comes back.** Another window holding the lock IS that window doing the sweep's
+  work — but the sweep runs once at startup, so a holder killed a moment later would leave its
+  half-finished removal for nobody. A skip schedules another attempt after the TTL, three times.
+
+**Without a lock directory it is a `SerialQueue` and nothing else**, which is what every test that
+builds a `StorageManager` with two arguments gets. That is the behaviour this extension had until
+now, so the fallback is a degradation to the previous guarantee rather than a failure.
+
+**The residual race is in `windowLock.ts`'s own header** rather than in a plan: breaking a stale lock
+is `remove` then `mkdir`, two operations, so a third window's fresh claim made in the instant between
+them can be removed. Microseconds wide, and it needs a holder to have already exceeded the TTL.
+
 #### The read side, added in the UI tail
 
 Until [PLAN_payment_ui_tail.md](PLAN_payment_ui_tail.md), `entityViewPage.ts` did not contain the
