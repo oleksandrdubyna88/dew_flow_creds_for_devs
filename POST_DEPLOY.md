@@ -6,7 +6,7 @@ than by the code: the reverse proxy, the certificate, an environment variable, a
 happened at all. Twelve is the cap; there are seven.
 
 Target: the deployed vault, as an origin — `--target https://vault.example.com`
-Last verified: 2026-09-03 · http://127.0.0.1:5099 — **a local server, not the deployment**: items 1 and 2 PASS; item 5 correctly FAILS there because no Microsoft scope is configured; items 3, 4, 6 and 7 need the real host. Run it against the deployment after the next deploy and replace this line with what you saw.
+Last verified: 2026-09-03 · **the deployment**, immediately after `rsd server deploy` shipped 0.5.3 · all five automated items PASS, run by the deploy workflow itself. Items 6 and 7 are a person's and were not covered by that run.
 
 | # | What a person loses if this is broken | Check | Auto |
 |---|---|---|---|
