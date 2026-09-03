@@ -3,7 +3,7 @@
 #
 #   ./update.sh              # pull the tag in .env and recreate the containers
 #   ./update.sh 1.4.0        # switch to a specific version, rewriting VAULT_IMAGE in .env
-#   ./update.sh --rollback   # go back to the tag recorded by the previous run
+#   ./update.sh --rollback   # step back to the previous deployment; again to the one before it
 #
 # Your data is NOT touched: DATA_DIR / CERT_DIR / LOG_DIR are host bind mounts, and
 # nothing here removes volumes. The one destructive flag docker offers for that
@@ -15,6 +15,12 @@ cd "$(dirname "$0")"
 ENV_FILE=".env"
 STATE_FILE=".update-state"
 
+# How many deployments back `--rollback` can reach. Three, because the case that needs a rollback is
+# often "the last two are both bad", and a depth of one turns that into a rebuild under pressure —
+# see development-workflow.md, "A rollback must not BUILD". The images themselves never expire: they
+# are version tags in the registry, so this file is a trail and not a store.
+HISTORY_DEPTH=3
+
 log()  { printf '\033[1;34m[update]\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33m[update]\033[0m %s\n' "$*" >&2; }
 die()  { printf '\033[1;31m[update]\033[0m %s\n' "$*" >&2; exit 1; }
@@ -24,6 +30,30 @@ die()  { printf '\033[1;31m[update]\033[0m %s\n' "$*" >&2; exit 1; }
 compose() { docker compose "$@"; }
 
 current_image() { grep -E '^VAULT_IMAGE=' "$ENV_FILE" | head -1 | cut -d= -f2-; }
+
+# Newest first, one image per line, capped. Pushing a duplicate of the head is a no-op: a plain
+# `./update.sh` refresh must not push the current image and quietly bury the real previous one.
+push_history() {
+  local image="$1" kept
+  [[ -n "$image" ]] || return 0
+  [[ -f "$STATE_FILE" && "$(head -1 "$STATE_FILE")" == "$image" ]] && return 0
+  kept="$([[ -f "$STATE_FILE" ]] && head -n "$((HISTORY_DEPTH - 1))" "$STATE_FILE" || true)"
+  { printf '%s
+' "$image"; [[ -n "$kept" ]] && printf '%s
+' "$kept"; } >"${STATE_FILE}.new"
+  mv "${STATE_FILE}.new" "$STATE_FILE"
+}
+
+# Take the newest entry off the trail and print it. Consecutive rollbacks therefore walk BACKWARDS
+# instead of returning to the place they just came from, which is what one-deep did.
+pop_history() {
+  local top
+  [[ -s "$STATE_FILE" ]] || return 1
+  top="$(head -1 "$STATE_FILE")"
+  tail -n +2 "$STATE_FILE" >"${STATE_FILE}.new" && mv "${STATE_FILE}.new" "$STATE_FILE"
+  printf '%s
+' "$top"
+}
 
 set_image() {
   local image="$1"
@@ -41,9 +71,8 @@ set_image() {
 PREVIOUS="$(current_image)"
 
 if [[ "${1:-}" == "--rollback" ]]; then
-  [[ -f "$STATE_FILE" ]] || die "no previous version recorded — nothing to roll back to."
-  TARGET="$(cat "$STATE_FILE")"
-  log "rolling back to ${TARGET}"
+  TARGET="$(pop_history)" || die "no previous version recorded — nothing to roll back to."
+  log "rolling back to ${TARGET} ($(wc -l <"$STATE_FILE" | tr -d ' ') older still recorded)"
 elif [[ -n "${1:-}" ]]; then
   BASE="${PREVIOUS%:*}"
   TARGET="${BASE}:${1}"
@@ -65,9 +94,11 @@ if ! docker pull "$TARGET" >/dev/null; then
   die "could not pull ${TARGET}. Nothing was changed."
 fi
 
-# Record where we came from BEFORE switching, so --rollback has a target.
+# Record where we came from BEFORE switching, so --rollback has a target. A rollback does not push:
+# the image it is leaving is the one just judged bad, and putting it back on the trail would make the
+# next --rollback return to it.
 if [[ "${1:-}" != "--rollback" ]]; then
-  echo "$PREVIOUS" >"$STATE_FILE"
+  push_history "$PREVIOUS"
 fi
 set_image "$TARGET"
 

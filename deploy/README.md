@@ -255,7 +255,7 @@ host and that port 80 is reachable from the internet. Nothing local can assert t
 ```bash
 ./update.sh              # pull the tag in .env, recreate, wait for healthy
 ./update.sh 1.4.0        # move to a specific version
-./update.sh --rollback   # return to the version the last run replaced
+./update.sh --rollback   # step back one deployment; run it again to go back further (3 kept)
 ```
 
 The script pulls first and only then recreates, records the previous tag before switching, and
