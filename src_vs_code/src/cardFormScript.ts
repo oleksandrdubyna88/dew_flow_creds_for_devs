@@ -180,6 +180,7 @@ function mixScript(): string {
   }
 
   ${mixRenderScript()}
+${addressScript()}
 ${exampleScript()}
 `;
 }
@@ -311,5 +312,64 @@ function mixRenderScript(): string {
     });
   }
   refreshMix();
+`;
+}
+
+/**
+ * The billing address: paste a line, get cells, watch the block assemble underneath.
+ *
+ * <p>Both round trips go to the host, which is where a parser can be unit tested — the page's job
+ * is to hand over what is in the boxes and put back what comes home. (No backticks in this file.)</p>
+ */
+export function addressScript(): string {
+  return `  var ADDRESS_IDS = ['cardAddressLine1', 'cardAddressLine2', 'cardAddressCity',
+                     'cardAddressRegion', 'cardAddressPostal', 'cardCountry'];
+
+  function addressData() {
+    var data = {};
+    for (var i = 0; i < ADDRESS_IDS.length; i++) {
+      var box = document.getElementById(ADDRESS_IDS[i]);
+      data[ADDRESS_IDS[i]] = box ? box.value : '';
+    }
+    return data;
+  }
+
+  function refreshAddress() {
+    vscode.postMessage({ type: 'addressChanged', data: addressData() });
+  }
+
+  for (var a = 0; a < ADDRESS_IDS.length; a++) {
+    var cell = document.getElementById(ADDRESS_IDS[a]);
+    if (cell) { cell.addEventListener('input', refreshAddress); }
+  }
+
+  var addressPaste = document.getElementById('addressPaste');
+  var splitAddress = document.getElementById('splitAddress');
+  function askSplitAddress() {
+    if (addressPaste && addressPaste.value.trim().length > 0) {
+      vscode.postMessage({ type: 'splitAddress', text: addressPaste.value });
+    }
+  }
+  if (splitAddress) { splitAddress.addEventListener('click', askSplitAddress); }
+  // Pasting is the ordinary way in, so it splits by itself — the button is for a line typed by hand
+  // and for trying again after an edit.
+  if (addressPaste) { addressPaste.addEventListener('change', askSplitAddress); }
+
+  window.addEventListener('message', function (event) {
+    var answer = event.data;
+    if (!answer) { return; }
+    if (answer.type === 'addressSplit') {
+      for (var i = 0; i < ADDRESS_IDS.length; i++) {
+        var box = document.getElementById(ADDRESS_IDS[i]);
+        // Only what the parse actually found: an empty guess must not wipe a box somebody filled.
+        if (box && answer[ADDRESS_IDS[i]]) { box.value = answer[ADDRESS_IDS[i]]; }
+      }
+      refreshAddress();
+    }
+    if (answer.type === 'addressPreview') {
+      var preview = document.getElementById('addressPreview');
+      if (preview) { preview.value = answer.text; }
+    }
+  });
 `;
 }

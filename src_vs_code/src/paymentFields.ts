@@ -22,7 +22,14 @@ import { PaymentForm } from './paymentForm';
 
 /** The card fields. `brand` is STORED rather than derived — a woven number has no first digits to
  *  read, so the payment system becomes a field the person confirms (plan §3a). */
-const CARD_KEYS = ['number', 'expiry', 'holder', 'cvv', 'pin', 'address', 'phone', 'country', 'brand'] as const;
+const CARD_KEYS = [
+  'number', 'expiry', 'holder', 'cvv', 'pin', 'address', 'phone', 'country', 'brand',
+  // The billing address, as the cells it is actually made of. `address` stays and becomes the
+  // DERIVED block — rewritten from these on every save, exactly as `brand` is derived and stored —
+  // so every seam that already carries it (the share redaction, the export, the import, the agent
+  // filter) keeps working on one field and needs no change at all.
+  'addressLine1', 'addressLine2', 'addressCity', 'addressRegion', 'addressPostal',
+] as const;
 
 /** What a wire transfer asks for. `accountNumber` is deliberately NOT `iban`: a decoy for a plain
  *  `123456789` that carried a country code and a converging mod-97 would be separable at a glance,
@@ -108,7 +115,13 @@ export interface PaymentFields {
   holder?: string;
   cvv?: string;
   pin?: string;
+  /** The assembled block, DERIVED from the five cells below — see `addressFormat.ts`. */
   address?: string;
+  addressLine1?: string;
+  addressLine2?: string;
+  addressCity?: string;
+  addressRegion?: string;
+  addressPostal?: string;
   phone?: string;
   country?: string;
   brand?: string;
@@ -151,6 +164,11 @@ export const PAYMENT_FIELD_LABELS: Record<PaymentFieldKey, string> = {
   cvv: 'CVV',
   pin: 'PIN',
   address: 'Billing address',
+  addressLine1: 'Address line 1',
+  addressLine2: 'Address line 2',
+  addressCity: 'City',
+  addressRegion: 'Region / State',
+  addressPostal: 'Postal code',
   phone: 'Phone',
   country: 'Country',
   brand: 'Payment system',

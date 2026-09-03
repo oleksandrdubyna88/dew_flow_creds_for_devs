@@ -83,7 +83,7 @@ function plainRow(key: PaymentFieldKey): string {
     : '';
   return `<div class="row">
       <label>${label}</label>
-      <div class="line"><input readonly id="pay_${key}"${gated ? ` value="${MASK}" class="gated"` : ''}>
+      <div class="line">${valueBox(key, gated)}
         ${brandMark(key)}${show}<button data-field="pay_${key}" data-action="copy" class="icon" title="Copy ${label}${key === 'number' ? ' as digits, with no spaces' : ''}" aria-label="Copy ${label}">${COPY_ICON}</button>${spacedCopy(key, label)}
       </div>
     </div>`;
@@ -96,6 +96,18 @@ function plainRow(key: PaymentFieldKey): string {
  * reading a number aloud wants them. Two identical icons side by side would be a coin toss, so this
  * one is marked and both say in their titles which is which.</p>
  */
+/**
+ * The box a value is shown in: one line, or several for the assembled address.
+ *
+ * <p>Empty in both cases — every value arrives by message and is set as a DOM property, which is the
+ * rule this whole card is built around.</p>
+ */
+function valueBox(key: PaymentFieldKey, gated: boolean): string {
+  return key === 'address'
+    ? `<textarea readonly rows="4" id="pay_${key}" class="addressBlock"></textarea>`
+    : `<input readonly id="pay_${key}"${gated ? ` value="${MASK}" class="gated"` : ''}>`;
+}
+
 /** The nine marks, hidden, beside the system row. The page reveals the one the value names. */
 function brandMark(key: PaymentFieldKey): string {
   return key === 'brand' ? brandMarksMarkup() : '';
@@ -336,6 +348,8 @@ export function paymentCardStyles(): string {
   .reading .word { display: inline-block; margin-right: .5em; }
   .payNote { margin: 3px 0; }
   input.gated { letter-spacing: .2em; }
+  /* The assembled address: as many lines as the country's own order gives it. */
+  textarea.addressBlock { flex: 1; resize: vertical; font-family: inherit; }
   /* The spaced copy carries a visible mark, because two identical icons are a coin toss. */
   button.spaced span { font-size: .8em; margin-left: 1px; opacity: .8; }${BRAND_MARK_STYLES}`;
 }

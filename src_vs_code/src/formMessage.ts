@@ -25,7 +25,9 @@ export interface FormMessage {
     | 'cardValues'
     | 'cardTyped'
     | 'paymentFormChanged'
-    | 'weaveExample';
+    | 'weaveExample'
+    | 'splitAddress'
+    | 'addressChanged';
   /** `paymentFormChanged` only: the form now chosen, so the host can say what it would delete. */
   form?: string;
   /** `weaveExample` only: which weavable field, and under which of the twelve methods. */

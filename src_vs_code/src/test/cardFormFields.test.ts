@@ -34,7 +34,7 @@ test('a filled form becomes the record, under the record’s own names', () => {
     cardHolder: 'A Person',
     cardCvv: '123',
     cardPin: '4321',
-    cardAddress: '1 Somewhere Road',
+    cardAddressLine1: '1 Somewhere Road',
     cardPhone: '+31 6 1234 5678',
     cardCountry: 'NL',
   });
@@ -48,7 +48,10 @@ test('a filled form becomes the record, under the record’s own names', () => {
     holder: 'A Person',
     cvv: '123',
     pin: '4321',
-    address: '1 Somewhere Road',
+    addressLine1: '1 Somewhere Road',
+    // Derived from the cells, in the country's own order — the block a courier reads. Every seam
+    // that already carried a billing address goes on seeing this one field.
+    address: '1 Somewhere Road\nNL',
     phone: '+31 6 1234 5678',
     country: 'NL',
   });
@@ -75,7 +78,7 @@ test('the two directions agree — what the form writes, the form can be given b
     cardHolder: 'A Person',
     cardCvv: '123',
     cardPin: '4321',
-    cardAddress: 'Somewhere',
+    cardAddressLine1: 'Somewhere',
     cardPhone: '+1 555',
     cardCountry: 'US',
   };

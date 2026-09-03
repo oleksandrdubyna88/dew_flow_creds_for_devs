@@ -58,6 +58,13 @@ const SHARE_SAFE = [
   'expiry',
   'holder',
   'address',
+  // The cells the block is built from. Redacting the assembled string and shipping its parts would
+  // be the same address in a share that says it removed it.
+  'addressLine1',
+  'addressLine2',
+  'addressCity',
+  'addressRegion',
+  'addressPostal',
   'phone',
   'country',
   'brand',

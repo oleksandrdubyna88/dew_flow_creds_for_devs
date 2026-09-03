@@ -81,9 +81,7 @@ function cardMarkup(openSection: (id: string) => string, random: Random): string
 
     ${mixMarkup(random)}
 
-    <label for="cardAddress">Billing address</label>
-    <textarea id="cardAddress" rows="2" spellcheck="false" autocomplete="off"></textarea>
-
+    ${addressMarkup()}
     <div class="row">
       <div>
         <label for="cardPhone">Phone on file</label>
@@ -96,6 +94,43 @@ function cardMarkup(openSection: (id: string) => string, random: Random): string
     </div>
     <p class="hint">The address, phone and country are what a payment form asks for beside the number — kept here so the whole answer is in one place rather than half of it.</p>
   </fieldset>
+`;
+}
+
+/**
+ * The billing address: somewhere to paste one, five cells, and the block they assemble into.
+ *
+ * <p>Its own function for the fifty-line ceiling — and because it is one idea. `cardMarkup` is
+ * about a card; this is about where its owner lives, which a bank asks for beside the number and
+ * which nobody can use as one undivided paragraph.</p>
+ */
+function addressMarkup(): string {
+  return `    <label for="addressPaste">Billing address</label>
+    <textarea id="addressPaste" rows="2" spellcheck="false" autocomplete="off"
+              placeholder="Paste the whole address here — 1 Infinite Loop, Cupertino, CA, 95014, United States"></textarea>
+    <button type="button" id="splitAddress">Split pasted address into fields</button>
+    <p class="hint">Every guess it makes lands in a box below, where you can see it and correct it — the same bargain the pasted-command rows make. Nothing is applied invisibly.</p>
+
+    <label for="cardAddressLine1">Address line 1</label>
+    <input id="cardAddressLine1" type="text" autocomplete="off" spellcheck="false">
+    <label for="cardAddressLine2">Address line 2</label>
+    <input id="cardAddressLine2" type="text" autocomplete="off" spellcheck="false">
+    <div class="row">
+      <div>
+        <label for="cardAddressCity">City</label>
+        <input id="cardAddressCity" type="text" autocomplete="off" spellcheck="false">
+      </div>
+      <div>
+        <label for="cardAddressRegion">Region / State</label>
+        <input id="cardAddressRegion" type="text" autocomplete="off" spellcheck="false">
+      </div>
+    </div>
+    <label for="cardAddressPostal">Postal code</label>
+    <input id="cardAddressPostal" type="text" autocomplete="off" spellcheck="false">
+
+    <label for="addressPreview">The address as it will be written</label>
+    <textarea id="addressPreview" rows="4" readonly tabindex="-1"></textarea>
+    <p class="hint">Assembled from the boxes above in the order the destination country writes them — the United States, Germany, Poland and the United Kingdom each differ, and anywhere else is written plainly. This is what a share, an export and the card itself will carry.</p>
 `;
 }
 
