@@ -25,9 +25,14 @@
 > 5. **The reveal gate covers `reassemble`**, which the first draft did not say. The plan round found
 >    it; a woven PIN reached through the method picker would have been shown with no second question.
 >
+> **What the review gate cost and returned is measured**, not asserted:
+> [RESULTS_review_gate_payment_ui_tail.md](RESULTS_review_gate_payment_ui_tail.md) — 30 findings, 16
+> acted on, 8 defects prevented, and a per-vendor split worth reading before trusting a finding count.
+>
 > **The open tail:** Monero's 1626-word list is still not included (parent deviation 4). Nothing here
 > has been run inside a real VS Code extension host — every test is `node:test` over compiled output,
-> which is what this repository's suite is. Cross-window write coordination remains
+> which is what this repository's suite is; all five extension integration suites and the server's own
+> 162 tests were run after the release and pass. Cross-window write coordination remains
 > [../todo/PLAN_cross_window_write_coordination.md](../todo/PLAN_cross_window_write_coordination.md).
 >
 > Parent record: [PLAN_payment_instruments.md](PLAN_payment_instruments.md) and its build
