@@ -1,5 +1,6 @@
 import { CARD_INPUT_IDS } from './cardFormFields';
 import { jsonForScript } from './webviewHtml';
+import { PAYMENT_FIELD_LABELS } from './paymentFields';
 
 /**
  * The card form's own script: deliver a stored card, and name the system as it is typed.
@@ -111,6 +112,8 @@ function markScript(): string {
     var box = document.getElementById(id);
     return box ? box.value : '';
   }
+  var sharedMethod = document.getElementById('mixMethod');
+  if (sharedMethod) { sharedMethod.addEventListener('change', askExamples); }
   var brandPick = document.getElementById('cardBrand');
   if (brandPick) {
     brandPick.addEventListener('change', function () { showMark(brandPick.value || lastDetected); });
@@ -165,16 +168,117 @@ function mixScript(): string {
         ' again. It is stored nowhere.';
     }
     var per = document.getElementById('mixPerField');
+    var expand = document.getElementById('mixExpand');
+    // Opened by itself once a SECOND field is marked: one shared method is the obvious answer for
+    // one field and a question for several, and a question behind a button reads as no question.
+    if (per && picked.length > 1 && per.style.display === 'none') {
+      per.style.display = '';
+      if (expand) { expand.textContent = 'Use one method for all of them'; }
+    }
     if (per && per.style.display !== 'none') { renderPerField(picked); }
+    askExamples();
   }
 
   ${mixRenderScript()}
+${exampleScript()}
+`;
+}
+
+/**
+ * The worked example: ask for one per marked field, and paint the three columns.
+ *
+ * <p>Painted with DOM APIs rather than `innerHTML`, like everything else on this page that shows a
+ * value. Nothing here is a secret — both columns were made up by the host — but the page has one
+ * way of putting text on screen and a second one would be the exception somebody copies.</p>
+ *
+ * <p>The block is keyed by FIELD, so answers that arrive in a different order than they were asked
+ * for land in their own places rather than overwriting each other. (No backticks in this file.)</p>
+ */
+function exampleScript(): string {
+  return `  function askExamples() {
+    var host = document.getElementById('mixExample');
+    if (!host) { return; }
+    var picked = markedFields();
+    var own = collectMixMethods();
+    var shared = document.getElementById('mixMethod');
+    // A block per marked field, in the order they are ticked. Removing the ones no longer marked
+    // here rather than on the answer keeps an unticked field from lingering while its answer flies.
+    var keep = {};
+    for (var i = 0; i < picked.length; i++) { keep[picked[i]] = true; }
+    var blocks = host.querySelectorAll('.weaveEx');
+    for (var b = 0; b < blocks.length; b++) {
+      if (!keep[blocks[b].dataset.field]) { blocks[b].remove(); }
+    }
+    for (var j = 0; j < picked.length; j++) {
+      vscode.postMessage({
+        type: 'weaveExample',
+        field: picked[j],
+        code: own[picked[j]] || (shared ? shared.value : ''),
+      });
+    }
+  }
+
+${examplePaintScript()}`;
+}
+
+/**
+ * Painting one answer: a heading, then three columns.
+ *
+ * <p>DOM APIs rather than `innerHTML`, like everything else on this page that puts a value on
+ * screen. Nothing here is a secret — both columns were made up by the host — but this page has one
+ * way of doing it and a second one would be the exception somebody copies. (No backticks.)</p>
+ */
+function examplePaintScript(): string {
+  return `  function exampleBlock(field) {
+    var host = document.getElementById('mixExample');
+    var found = host.querySelector('.weaveEx[data-field="' + field + '"]');
+    if (found) { return found; }
+    var block = document.createElement('div');
+    block.className = 'weaveEx';
+    block.dataset.field = field;
+    host.appendChild(block);
+    return block;
+  }
+
+  function exampleColumn(label, tokens, side) {
+    var column = document.createElement('div');
+    column.className = 'exCol';
+    var name = document.createElement('div');
+    name.className = 'exName';
+    name.textContent = label;
+    column.appendChild(name);
+    var row = document.createElement('div');
+    row.className = 'exRow';
+    for (var i = 0; i < tokens.length; i++) {
+      var cell = document.createElement('span');
+      cell.className = 'exTok ' + (side || tokens[i].side);
+      cell.textContent = side ? tokens[i] : tokens[i].text;
+      row.appendChild(cell);
+    }
+    column.appendChild(row);
+    return column;
+  }
+
+  window.addEventListener('message', function (event) {
+    var answer = event.data;
+    if (!answer || answer.type !== 'weaveExampleResult' || !answer.field) { return; }
+    var block = exampleBlock(answer.field);
+    block.textContent = '';
+    var title = document.createElement('div');
+    title.className = 'exTitle';
+    title.textContent = (FIELD_LABELS[answer.field] || answer.field) + ' — ' + answer.method;
+    block.appendChild(title);
+    block.appendChild(exampleColumn('Your value (made up here)', answer.first, 'first'));
+    block.appendChild(exampleColumn('The decoy it is woven with', answer.second, 'second'));
+    block.appendChild(exampleColumn('What gets stored', answer.woven, ''));
+  });
 `;
 }
 
 /** The per-field pickers: rendering them, and remembering what was already chosen. */
 function mixRenderScript(): string {
-  return `  function renderPerField(picked) {
+  return `  var FIELD_LABELS = ${jsonForScript(PAYMENT_FIELD_LABELS)};
+  function renderPerField(picked) {
     var per = document.getElementById('mixPerField');
     var shared = document.getElementById('mixMethod');
     if (!per || !shared) { return; }
@@ -182,10 +286,9 @@ function mixRenderScript(): string {
     var html = '';
     for (var i = 0; i < picked.length; i++) {
       var field = picked[i];
-      var chosen = existing[field] || shared.value;
-      html += '<label>' + field + '</label><select class="mixMethodRow" data-field="' + field + '">' +
+      html += '<label>' + (FIELD_LABELS[field] || field) + '</label>' +
+        '<select class="mixMethodRow" data-field="' + field + '">' +
         shared.innerHTML.split('selected').join('') + '</select>';
-      html += '<span data-chosen="' + chosen + '"></span>';
     }
     per.innerHTML = html;
     var rows = per.querySelectorAll('.mixMethodRow');

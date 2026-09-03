@@ -208,6 +208,8 @@ function mixMarkup(random: Random): string {
       It protects against somebody <b>reading</b> an open vault: a shoulder, a screen share, a backup file on a laptop. It does <b>not</b> protect against somebody who can try every possibility — a CVV is a thousand values, and weaving costs them nothing.</p>
       <button type="button" id="mixExpand">Give each field its own method…</button>
       <div id="mixPerField" style="display:none"></div>
+      <p class="hint">What the method does, on two values made up for the picture. Your own value is never drawn here — showing it beside the decoy it is woven with, under the method that wove them, would put the answer on screen next to the question.</p>
+      <div id="mixExample"></div>
     </div>
 `;
 }

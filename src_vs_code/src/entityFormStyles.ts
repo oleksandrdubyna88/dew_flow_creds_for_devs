@@ -169,5 +169,17 @@ export function formStyleSheet(uiScale: number): string {
   .qrChoices .qrWhy { font-size: .85em; opacity: .7; }
   kbd { font-family: var(--vscode-editor-font-family, monospace); font-size: .9em;
         border: 1px solid var(--vscode-widget-border, #4444); border-radius: 3px; padding: 0 3px; }
+  /* The worked example under the weaving controls. Two colours and no more: one for the value, one
+     for the decoy, and the woven row painted from the same two so a person can see where each
+     token went. Both come from the editor's chart palette, so they hold in either theme. */
+  .weaveEx { margin: 8px 0 10px; padding: 8px 10px; border-radius: 4px;
+             border: 1px solid var(--vscode-widget-border, #4444); }
+  .weaveEx .exTitle { font-weight: 600; margin-bottom: 6px; }
+  .weaveEx .exName { font-size: .85em; opacity: .75; margin: 4px 0 2px; }
+  .weaveEx .exRow { display: flex; flex-wrap: wrap; gap: 2px;
+                    font-family: var(--vscode-editor-font-family, monospace); }
+  .weaveEx .exTok { padding: 1px 3px; border-radius: 2px; }
+  .weaveEx .exTok.first { color: var(--vscode-charts-green, #89d185); }
+  .weaveEx .exTok.second { color: var(--vscode-charts-orange, #d18616); }
 `;
 }

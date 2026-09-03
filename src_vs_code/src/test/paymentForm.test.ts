@@ -9,6 +9,7 @@ import { PaymentFields } from '../paymentFields';
 import { SHUFFLE_CODES } from '../shuffle';
 import { CARD_BRANDS } from '../cardBrand';
 import { brandFor } from '../cardFormFields';
+import { cardFormScript } from '../cardFormScript';
 
 /**
  * The card form: a section that appears for `payment`, and a card fieldset inside it that appears
@@ -174,4 +175,40 @@ test('a chosen system is kept; an unchosen one is read from the number', () => {
     'a value this build does not know is not a choice');
   assert.equal(brandFor({ cardBrand: '', cardNumber: '9999999999999999' }), '',
     'an unrecognised number with no choice stores nothing, as before');
+});
+
+test('the per-field method rows are labelled the way a person reads them, not by record key', () => {
+  const script = cardFormScript();
+
+  assert.match(script, /FIELD_LABELS\[field\]/, 'the label comes from the shared table');
+  assert.match(script, /"number":"Card number"/, 'and the table is handed to the page, not re-spelled in it');
+  assert.ok(!script.includes('data-chosen'), 'the span nothing ever read is gone');
+});
+
+test('choosing a second field opens the per-field methods, instead of hiding them behind a button', () => {
+  const script = cardFormScript();
+
+  // With three fields ticked it was still behind "Give each field its own method…", which is why it
+  // read as a feature that did not exist.
+  assert.match(script, /picked\.length > 1[\s\S]{0,120}display = ''/, 'two marks open it');
+});
+
+test('the weaving controls show what a method DOES, on values nobody has to care about', () => {
+  const markup = paymentMarkup((id) => `<fieldset id="${id}">`, 'card');
+  const script = cardFormScript();
+
+  assert.match(markup, /id="mixExample"/, 'there is somewhere for the picture to go');
+  assert.match(markup, /never drawn here/, 'and it says out loud that the value shown is made up');
+  assert.match(script, /type: 'weaveExample'/, 'the page asks the host, which is where it can be tested');
+  assert.match(script, /weaveExampleResult/, 'and paints the answer');
+  // Three columns: the value, the decoy, and where each token went.
+  assert.match(script, /What gets stored/);
+  assert.ok(!/innerHTML/.test(script.slice(script.indexOf('weaveExampleResult'))), 'painted with DOM APIs');
+});
+
+test('an example is asked for per FIELD, so a CVV and a card number are not shown the same shape', () => {
+  const script = cardFormScript();
+
+  assert.match(script, /field: picked\[j\]/, 'one request per marked field');
+  assert.match(script, /\.weaveEx\[data-field="/, 'and each answer lands in its own block');
 });

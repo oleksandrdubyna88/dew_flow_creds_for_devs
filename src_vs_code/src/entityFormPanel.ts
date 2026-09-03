@@ -1,8 +1,10 @@
 import { answerCardValues, formOf, paymentGates, paymentRecordFor, switchNoticeFor } from './paymentSaveGate';
+import { FormMessage } from './formMessage';
 import { hasMixedField } from './mixedFieldGuard';
 import { readDependsOnRows, readForwardRows } from './formRowReaders';
 import { PaymentFields } from './paymentFields';
 import { cardTypedAnswer } from './cardFormFields';
+import { exampleAnswer } from './weaveExample';
 import * as vscode from 'vscode';
 import { applyLifetime } from './entityExpiry';
 import { normalizeArgs } from './commandLine';
@@ -214,49 +216,7 @@ function readArgRows(data: Record<string, unknown>): CommandArg[] {
   return rows;
 }
 
-export interface FormMessage {
-  type:
-    | 'save'
-    | 'cancel'
-    | 'zoom'
-    | 'command'
-    | 'splitCommand'
-    | 'highlight'
-    | 'generate'
-    | 'configFields'
-    | 'configFieldEdit'
-    | 'qrImage'
-    | 'cardValues'
-    | 'cardTyped'
-    | 'paymentFormChanged';
-  /** `paymentFormChanged` only: the form now chosen, so the host can say what it would delete. */
-  form?: string;
-  /** `cardTyped` only: the number as typed so far, for the mark and the checksum hint. */
-  number?: string;
-  /** `cardTyped` only: how many DIGITS stand before the caret, so grouping can put it back. */
-  caretDigits?: number;
-  /** `qrImage` only: the pasted picture as grey pixels, base64, and its size. */
-  gray?: string;
-  width?: number;
-  height?: number;
-  /** `configFieldEdit` only: which row was changed, and to what. */
-  path?: string;
-  value?: string;
-  /** `highlight` only (T17): which overlay asked, echoed back with the answer. */
-  hlTarget?: string;
-  /** `command` only (T24b): a footer link asking the host to run a command on this entry. */
-  command?: string;
-  /** `zoom` only (T28): which way the press went. */
-  zoomDelta?: number;
-  /** `generate` only: which kind of secret to draw. */
-  kind?: 'password' | 'passphrase' | 'key';
-  /** `generate` only: the options the page's controls chose (T14). Absent = the defaults. */
-  genLength?: number; genLower?: boolean; genUpper?: boolean; genDigits?: boolean;
-  genSymbols?: boolean; genKeyType?: string; genWords?: number;
-  data?: Record<string, unknown>;
-  text?: string;
-  lang?: string;
-}
+
 
 
 /**
@@ -387,6 +347,7 @@ const ROUND_TRIPS: Record<string, (message: FormMessage, options: EntityFormOpti
   // could have run in the webview, but the page is a template string where nothing can be unit
   // tested, which is the rule the highlighter's own comment states.
   cardTyped: (message) => cardTypedAnswer(message.number ?? '', message.caretDigits ?? 0),
+  weaveExample: (message) => exampleAnswer(message.field ?? '', message.code ?? '', Math.random) ?? {},
   // The Form selector moved. Only the host can say what the switch would delete, because only the
   // host holds the stored record — the page carries no payment value at all, by rule.
   paymentFormChanged: (message, options) => ({
@@ -798,3 +759,5 @@ export function toValues(data: Record<string, unknown>, options: EntityFormOptio
  * NOT read: it exists only to narrow the second dropdown, and storing it would be a second
  * source of truth for where an entity lives, going stale the first time one is moved.</p>
  */
+
+export { FormMessage };
