@@ -3,6 +3,10 @@ import { test } from 'node:test';
 import { FORM_SECTIONS, colorCollisionsForKind, sectionsForKind } from '../formSections';
 import { PAYMENT_FORMS } from '../paymentForm';
 import { paymentMarkup } from '../paymentFormMarkup';
+import { paymentCardMarkup } from '../paymentViewCard';
+import { paymentCardFor } from '../paymentViewMessages';
+import { PaymentFields } from '../paymentFields';
+import { SHUFFLE_CODES } from '../shuffle';
 
 /**
  * The card form: a section that appears for `payment`, and a card fieldset inside it that appears
@@ -83,3 +87,51 @@ test('the weave checkboxes are LIVE, now that a woven value can be read back', (
   // The bargain itself stays on screen, exactly where somebody is about to make it.
   assert.match(markup, /never stored/, 'the form still says the method is kept nowhere');
 });
+
+/**
+ * The one thing a person MUST remember, named the same way on both surfaces.
+ *
+ * <p>`shuffle.ts:27` states the intent — *"The methods, in their permanent order. The UI shows them
+ * SHUFFLED; the code never moves."* Neither half was true: the form listed the codes in fixed order
+ * and labelled them by POSITION, and the card shuffled the list and labelled THAT by position. So
+ * the card's "Method 5" was a different algorithm on every open, and never the `f5` the form had
+ * called "Method 5" when the value was woven.</p>
+ *
+ * <p>That is not a cosmetic disagreement. The method is stored NOWHERE — it lives only in the
+ * person's memory — so a label that names a different algorithm on the surface where the value has
+ * to be read back is the value becoming unreadable.</p>
+ */
+function methodsOf(markup: string): Map<string, string> {
+  const pairs = new Map<string, string>();
+  for (const [, code, label] of markup.matchAll(/<option value="(f\d+)">([^<]+)<\/option>/g)) {
+    pairs.set(label, code);
+  }
+  return pairs;
+}
+
+test('Method 5 names the same algorithm in the form and in the card, whatever the order', () => {
+  const woven: PaymentFields = { number: '4111111111111111', shuffledFields: ['number'] };
+  const form = methodsOf(paymentMarkup((id) => `<fieldset id="${id}">`, 'card'));
+  const card = methodsOf(paymentCardMarkup(paymentCardFor('e1', 'card', woven, pinned(0.11))));
+
+  assert.equal(form.size, SHUFFLE_CODES.length, 'the form offers every method');
+  assert.equal(card.size, SHUFFLE_CODES.length, 'so does the card');
+  for (const [label, code] of form) {
+    assert.equal(card.get(label), code, `${label} means ${code} in the form and ${card.get(label)} in the card`);
+  }
+});
+
+test('the labels are bound to the code, so a different draw renames nothing', () => {
+  const woven: PaymentFields = { number: '4111111111111111', shuffledFields: ['number'] };
+  const one = methodsOf(paymentCardMarkup(paymentCardFor('e1', 'card', woven, pinned(0.11))));
+  const two = methodsOf(paymentCardMarkup(paymentCardFor('e1', 'card', woven, pinned(0.83))));
+
+  for (const [label, code] of one) {
+    assert.equal(two.get(label), code, `${label} moved between two opens of the same card`);
+  }
+});
+
+/** A draw that is the same every call, so an order is a fact rather than a coin toss. */
+function pinned(value: number): () => number {
+  return () => value;
+}

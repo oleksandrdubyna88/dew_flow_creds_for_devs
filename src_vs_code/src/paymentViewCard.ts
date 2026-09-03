@@ -2,6 +2,7 @@ import { PAYMENT_FIELD_LABELS, PaymentFieldKey } from './paymentFields';
 import { COPY_ICON, escapeHtml } from './webviewHtml';
 import { PaymentCardView } from './paymentViewMessages';
 import { needsReveal } from './revealGate';
+import { methodLabel } from './shuffle';
 
 /**
  * The read-only payment card: the one surface on which a stored card, a set of bank details or a
@@ -83,8 +84,10 @@ function plainRow(key: PaymentFieldKey): string {
  */
 function wovenRow(key: PaymentFieldKey, view: PaymentCardView): string {
   const label = escapeHtml(PAYMENT_FIELD_LABELS[key]);
+  // The label comes from the CODE, never from the position: `view.methods` is drawn afresh on
+  // every open, and labelling by index made "Method 3" name a different algorithm each time.
   const options = view.methods
-    .map((code, index) => `<option value="${code}">Method ${index + 1}</option>`)
+    .map((code) => `<option value="${code}">${methodLabel(code)}</option>`)
     .join('');
   return `<div class="row wovenRow" data-key="${key}">
       <label>${label} — stored woven with a decoy</label>

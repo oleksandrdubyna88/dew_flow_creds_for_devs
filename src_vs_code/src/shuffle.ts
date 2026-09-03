@@ -31,6 +31,32 @@ export const SHUFFLE_CODES = [
 
 export type ShuffleCode = (typeof SHUFFLE_CODES)[number];
 
+/**
+ * What a method is CALLED, bound to its code for ever.
+ *
+ * <p>This is the half the sentence above was missing, and its absence was the worst defect in the
+ * feature. Both surfaces used to label a method by its POSITION in the list they happened to be
+ * rendering: the form listed the codes unshuffled, so "Method 5" was `f5`; the card shuffled the
+ * list per open and labelled that by position, so the card's "Method 5" was a different algorithm
+ * every time it was opened, and almost never the one the value was woven under.</p>
+ *
+ * <p>The method is stored NOWHERE — it lives only in the person's memory (see the header). A label
+ * that names a different algorithm on the surface where the value must be read back is therefore
+ * not a cosmetic disagreement: it is the value becoming unreadable by the only route there is.</p>
+ *
+ * <p>So the NAME is a property of the code, and only the ORDER of the options is drawn afresh —
+ * which is what `methodOrder` was always for, and what makes "the third one" a habit not worth
+ * forming without also making "Method 3" a lie.</p>
+ */
+export const METHOD_LABELS: Readonly<Record<ShuffleCode, string>> = Object.freeze(
+  Object.fromEntries(SHUFFLE_CODES.map((code, index) => [code, `Method ${index + 1}`])),
+) as Readonly<Record<ShuffleCode, string>>;
+
+/** The name this method carries on every surface, whatever position it was drawn into. */
+export function methodLabel(code: ShuffleCode): string {
+  return METHOD_LABELS[code];
+}
+
 export function isShuffleCode(value: unknown): value is ShuffleCode {
   return typeof value === 'string' && (SHUFFLE_CODES as readonly string[]).includes(value);
 }

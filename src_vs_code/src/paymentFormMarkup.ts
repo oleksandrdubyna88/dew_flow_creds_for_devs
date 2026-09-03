@@ -1,5 +1,7 @@
 import { DEFAULT_PAYMENT_FORM, PAYMENT_FORMS, PAYMENT_FORM_LABELS } from './paymentForm';
-import { SHUFFLE_CODES } from './shuffle';
+import { methodLabel } from './shuffle';
+import { methodOrder } from './phraseLayout';
+import { Random } from './decoyDigits';
 import { phraseMarkup } from './phraseFormMarkup';
 
 /**
@@ -15,10 +17,14 @@ import { phraseMarkup } from './phraseFormMarkup';
  * moment anything goes wrong — logged. The only thing below that comes from the entry is which FORM
  * is selected.</p>
  */
-export function paymentMarkup(openSection: (id: string) => string, form: string | undefined): string {
+export function paymentMarkup(
+  openSection: (id: string) => string,
+  form: string | undefined,
+  random: Random = Math.random,
+): string {
   return [
     selectorMarkup(openSection, form),
-    cardMarkup(openSection),
+    cardMarkup(openSection, random),
     bankMarkup(openSection),
     phraseMarkup(openSection),
   ].join('\n');
@@ -37,7 +43,7 @@ function selectorMarkup(openSection: (id: string) => string, form: string | unde
 }
 
 /** The card fields. Shown only when the selector says `card` — see `formSections.ts`. */
-function cardMarkup(openSection: (id: string) => string): string {
+function cardMarkup(openSection: (id: string) => string, random: Random): string {
   return `  ${openSection('cardSection')}
     <label for="cardNumber">Card number</label>
     <input id="cardNumber" type="text" inputmode="numeric" autocomplete="off" spellcheck="false"
@@ -67,7 +73,7 @@ function cardMarkup(openSection: (id: string) => string): string {
     </div>
     <p class="hint">The CVV and the PIN are hidden as you type and stay hidden when you come back. They are the two values that turn a number somebody saw into a payment somebody made — which is why a share never carries them, and why an export says so out loud before it writes them to a file.</p>
 
-    ${mixMarkup()}
+    ${mixMarkup(random)}
 
     <label for="cardAddress">Billing address</label>
     <textarea id="cardAddress" rows="2" spellcheck="false" autocomplete="off"></textarea>
@@ -149,9 +155,19 @@ function paymentFormOptions(current: string | undefined): string {
   ).join('');
 }
 
-/** The twelve weaving methods, by the names the shuffle module gives them. */
-function methodOptions(): string {
-  return SHUFFLE_CODES.map((code, index) => `<option value="${code}">Method ${index + 1}</option>`).join('');
+/**
+ * The twelve weaving methods: a fresh ORDER every time the form is drawn, and a NAME that never
+ * moves.
+ *
+ * <p>The order is drawn for the reason the card draws its own — so that "the third one" never
+ * becomes a habit worth forming, because a position is something a later release can silently
+ * change. The name is bound to the code (`methodLabel`) so that the shuffling costs nobody the one
+ * thing they have to remember.</p>
+ */
+function methodOptions(random: Random): string {
+  return methodOrder(random)
+    .map((code) => `<option value="${code}">${methodLabel(code)}</option>`)
+    .join('');
 }
 
 /**
@@ -162,7 +178,7 @@ function methodOptions(): string {
  * rather than only in the help: somebody about to make a value unrecoverable should read what they
  * are buying at the moment they choose it, not in a document they will not open.</p>
  */
-function mixMarkup(): string {
+function mixMarkup(random: Random): string {
   return `    <div class="check"><input id="mixCardNumber" type="checkbox" class="mixMark" data-field="number">
       <label for="mixCardNumber">Store the number woven with a decoy</label></div>
     <div class="check"><input id="mixCardCvv" type="checkbox" class="mixMark" data-field="cvv">
@@ -172,7 +188,7 @@ function mixMarkup(): string {
 
     <div id="mixControls" style="display:none">
       <label for="mixMethod">Weaving method</label>
-      <select id="mixMethod">${methodOptions()}</select>
+      <select id="mixMethod">${methodOptions(random)}</select>
       <p class="hint" id="mixWarning"></p>
       <p class="hint"><b>What this does and does not do.</b> A woven field is stored as your value and a decoy shuffled together, and the method is <b>never stored</b> — not here, not in a backup, not in the sync. Nobody can unweave it but you, from memory, so a forgotten method is a lost value.<br>
       It protects against somebody <b>reading</b> an open vault: a shoulder, a screen share, a backup file on a laptop. It does <b>not</b> protect against somebody who can try every possibility — a CVV is a thousand values, and weaving costs them nothing.</p>
