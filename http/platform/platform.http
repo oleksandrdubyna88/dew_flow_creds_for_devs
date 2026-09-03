@@ -1,0 +1,119 @@
+# Platform — the three routes that answer before anything else does: liveness, what a client needs
+# in order to authenticate at all, and who the server thinks you are.
+#
+# One folder for three single-route prefixes, because these are what a person means by "the platform
+# endpoints" and they are always read together — the escape hatch in http-contracts.md's grouping
+# table, used deliberately rather than by accident.
+
+# @name health_returns_ok_and_says_the_store_is_writable
+# @prod
+GET {{baseUrl}}/api/health
+Accept: application/json
+
+?? status == 200
+?? header content-type matches ^application\/json
+
+{{
+  const assert = require('node:assert');
+  const body = response.parsedBody;
+  test('health names itself, so a misrouted proxy cannot pass for the vault', () => {
+    assert.strictEqual(body.service, 'cred-vault-server');
+  });
+  test('a writable store is what "ok" means here — the probe really writes a file', () => {
+    assert.strictEqual(body.status, 'ok');
+    assert.strictEqual(body.storage, 'writable');
+  });
+}}
+
+###
+# The contract version rides on EVERY response, which is how a client learns the server's age from a
+# call it was already making. Asserted on health because health is the one call every client makes.
+# @name every_response_carries_the_contract_version
+# @prod
+GET {{baseUrl}}/api/health
+
+?? status == 200
+
+{{
+  const assert = require('node:assert');
+  test('X-Creds-Contract is present and is a positive integer', () => {
+    const claimed = response.headers['x-creds-contract'];
+    assert.ok(claimed !== undefined, 'no X-Creds-Contract header — a client cannot tell how old this server is');
+    assert.ok(Number(claimed) >= 1, `unreadable contract version: ${claimed}`);
+  });
+}}
+
+###
+# Anonymous by necessity: the caller has no token yet, which is the entire point of the endpoint.
+# @name client_config_is_served_without_a_token
+# @prod
+GET {{baseUrl}}/api/client-config
+Accept: application/json
+
+?? status == 200
+?? header content-type matches ^application\/json
+
+{{
+  const assert = require('node:assert');
+  test('microsoftScope is present — absent means every developer must paste it by hand', () => {
+    assert.ok('microsoftScope' in response.parsedBody);
+    assert.strictEqual(typeof response.parsedBody.microsoftScope, 'string');
+  });
+  test('and nothing else is here: one field, by design', () => {
+    assert.deepStrictEqual(Object.keys(response.parsedBody), ['microsoftScope']);
+  });
+}}
+
+###
+# @name whoami_returns_the_identity_taken_from_the_token
+# @prod
+GET {{baseUrl}}/api/whoami
+Authorization: Bearer {{token}}
+X-Creds-Contract: {{contract}}
+Accept: application/json
+
+?? status == 200
+
+{{
+  const assert = require('node:assert');
+  const body = response.parsedBody;
+  test('the email is the token\'s, lower-cased by the server', () => {
+    assert.strictEqual(body.email, aliceEmail);
+  });
+  test('hasVault is a boolean, never absent — a client branches on it', () => {
+    assert.strictEqual(typeof body.hasVault, 'boolean');
+  });
+}}
+
+###
+# @name whoami_without_a_token_is_401
+GET {{baseUrl}}/api/whoami
+
+?? status == 401
+
+###
+# 403, not 401: the token is perfectly valid and the caller is simply not from a domain this
+# deployment serves. Collapsing the two would tell a stranger their token was the problem.
+# @name whoami_from_outside_the_allowed_domain_is_403
+GET {{baseUrl}}/api/whoami
+Authorization: Bearer {{outsiderToken}}
+
+?? status == 403
+
+###
+# @name whoami_with_a_forged_signature_is_401
+GET {{baseUrl}}/api/whoami
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJjcmVkLXZhdWx0LWxvY2FsIiwiZW1haWwiOiJtYWxsb3J5QGV4YW1wbGUuY29tIn0.not-a-real-signature
+
+?? status == 401
+
+###
+# @uncovered 503 /api/health — reached only when the data directory stops being writable; provoking
+#            it means breaking the volume under a running server, which is machinery this rule
+#            explicitly does not ask for.
+# @uncovered 426 — the server refuses a client older than Vault:MinimumClientContract, and that
+#            setting defaults to 1 while no client can claim less. Reaching it needs a server
+#            started with a raised minimum: a deployment configuration, not a request.
+# @uncovered 429 — the fixed window is 120 requests per 10 seconds per caller. Provoking it costs
+#            121 requests and would then fail every later request in the run.
+# @uncovered 500 — the unhandled-exception handler. There is no request that makes correct code throw.

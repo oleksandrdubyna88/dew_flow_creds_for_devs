@@ -11,6 +11,10 @@ on:
     paths:
       - 'src_minimalapi_server/**'
       - 'deploy/**'
+      # The contract suite and the post-deploy checklist are part of this pipeline's verdict,
+      # so a change to either has to re-run it.
+      - 'http/**'
+      - 'POST_DEPLOY.md'
       - 'Directory.Build.props'
       - 'Directory.Packages.props'
       - 'global.json'
@@ -22,6 +26,10 @@ on:
     paths:
       - 'src_minimalapi_server/**'
       - 'deploy/**'
+      # The contract suite and the post-deploy checklist are part of this pipeline's verdict,
+      # so a change to either has to re-run it.
+      - 'http/**'
+      - 'POST_DEPLOY.md'
       - 'Directory.Build.props'
       - 'Directory.Packages.props'
       - 'global.json'
@@ -57,6 +65,62 @@ jobs:
       # No `.exe` suffix on Linux; the same binary is CredVaultServer.Tests.exe locally.
       - name: Test
         run: ./src_minimalapi_server/tests/bin/Release/net10.0/CredVaultServer.Tests
+
+  # The tier neither the unit tests nor the compose validation can reach: real requests over the
+  # wire against a running server — routing, the auth scheme, the status codes, the serialized
+  # shape. Its first run found a 500 that 164 green tests could not see, because every envelope
+  # they build happens to send the optional field a client may omit.
+  # See http/README.md and .claude/rules/shared/common/http-contracts.md.
+  contract:
+    name: http · contract suite
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: git submodule update --init --depth 1 .claude/rules/shared
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Install the pinned httpyac
+        working-directory: http
+        run: npm ci
+
+      # The environment contract, in one place: http/README.md explains why each value is needed.
+      # The signing key is minted per run and never leaves this job — whoever holds one can mint a
+      # token for any email on the server it configures.
+      - name: Start the server the suite expects
+        run: |
+          echo "VAULT_LOCAL_SIGNING_KEY=$(openssl rand -base64 48)" >> "$GITHUB_ENV"
+          mkdir -p "$RUNNER_TEMP/vault-data"
+          echo "VAULT_DATA_DIR=$RUNNER_TEMP/vault-data" >> "$GITHUB_ENV"
+
+      - name: Run it
+        run: |
+          Auth__Local__SigningKey="$VAULT_LOCAL_SIGNING_KEY" \
+          Vault__AllowedDomains=example.com \
+          Vault__CorpRecovery__OfficerEmails=officer@example.com,officer2@example.com,officer3@example.com \
+          Vault__CorpRecovery__Threshold=2 \
+          Vault__DataDir="$VAULT_DATA_DIR" \
+          Vault__PublishInstanceFile=false \
+          ASPNETCORE_URLS=http://127.0.0.1:5099 \
+            dotnet run --project src_minimalapi_server/src -c Release &
+          for _ in $(seq 1 30); do
+            curl -fsS -o /dev/null http://127.0.0.1:5099/api/health && break
+            sleep 2
+          done
+          node .claude/rules/shared/tools/http-run.mjs \
+            --require-env VAULT_LOCAL_SIGNING_KEY --env local --target http://127.0.0.1:5099
+
+      # Exit 1 while a route has no request. Every route has one today, so this starts armed
+      # rather than as a warning — the state a repository earns by finishing its backfill.
+      - name: Every route has a request
+        run: node .claude/rules/shared/tools/http-coverage.mjs --source src_minimalapi_server
+
+      # Shape only — no network, nothing executed. The items themselves run after a deploy,
+      # from rsd-server-deploy.yml.
+      - name: The post-deploy checklist is still well formed
+        run: node .claude/rules/shared/tools/post-deploy-check.mjs
 
   # The deployment stack ships with the server, so it is verified in the same
   # pipeline — a broken compose file or entrypoint is a server release defect.

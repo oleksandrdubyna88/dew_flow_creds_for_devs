@@ -1,0 +1,143 @@
+# The vault itself — read, write, delete. A caller can only ever address their OWN vault: the email
+# is taken from the verified token and never from the request, so there is no "someone else's vault"
+# request to write here.
+#
+# ORDER MATTERS IN THIS FILE, and the file is written to leave the store as it found it: the 404
+# below is only true before the first write, and the delete at the end is what makes it true again
+# for the next run. If a run is interrupted between them, the first request of the next run fails —
+# say that, rather than making the assertion vague enough to pass either way.
+#
+# Nothing here is tagged @prod. Every write is real, and even the read is not safe to assert against
+# a live deployment: `GET /api/vault` answers 404 for a person who has not written one yet, so the
+# same request is a pass or a failure depending on whose token ran it.
+
+# @name vault_is_404_before_anything_has_been_written
+GET {{baseUrl}}/api/vault
+Authorization: Bearer {{token}}
+X-Creds-Contract: {{contract}}
+
+?? status == 404
+
+###
+# @name vault_put_stores_the_blob_and_answers_with_its_version
+PUT {{baseUrl}}/api/vault
+Authorization: Bearer {{token}}
+X-Creds-Contract: {{contract}}
+Content-Type: application/octet-stream
+
+the-sealed-vault-bytes-v1
+
+?? status == 204
+
+{{
+  const assert = require('node:assert');
+  test('an ETag comes back, or a client can never write conditionally again', () => {
+    assert.ok(response.headers.etag, 'no ETag on the write — If-Match becomes impossible');
+  });
+  exports.vaultETag = response.headers.etag;
+}}
+
+###
+# @name vault_get_returns_the_stored_bytes_and_the_same_version
+GET {{baseUrl}}/api/vault
+Authorization: Bearer {{token}}
+X-Creds-Contract: {{contract}}
+
+?? status == 200
+?? header content-type == application/octet-stream
+
+{{
+  const assert = require('node:assert');
+  test('what comes back is what went in', () => {
+    assert.strictEqual(String(response.body).trim(), 'the-sealed-vault-bytes-v1');
+  });
+  test('the read echoes the version the write returned', () => {
+    assert.strictEqual(response.headers.etag, vaultETag);
+  });
+}}
+
+###
+# The conditional write, and the reason it exists: two of one person's machines syncing at once.
+# @name vault_put_with_a_matching_if_match_is_accepted
+PUT {{baseUrl}}/api/vault
+Authorization: Bearer {{token}}
+X-Creds-Contract: {{contract}}
+Content-Type: application/octet-stream
+If-Match: {{vaultETag}}
+
+the-sealed-vault-bytes-v2
+
+?? status == 204
+
+###
+# 412 — the caller's copy is out of date. The version above is now stale, which is exactly the
+# situation this branch is for.
+# @name vault_put_with_a_stale_if_match_is_412
+PUT {{baseUrl}}/api/vault
+Authorization: Bearer {{token}}
+X-Creds-Contract: {{contract}}
+Content-Type: application/octet-stream
+If-Match: {{vaultETag}}
+
+the-sealed-vault-bytes-v3-should-not-land
+
+?? status == 412
+
+###
+# @name vault_put_with_if_none_match_when_one_exists_is_412
+PUT {{baseUrl}}/api/vault
+Authorization: Bearer {{token}}
+X-Creds-Contract: {{contract}}
+Content-Type: application/octet-stream
+If-None-Match: *
+
+only-if-i-am-the-first-writer
+
+?? status == 412
+
+###
+# @name vault_put_with_an_empty_body_is_400
+PUT {{baseUrl}}/api/vault
+Authorization: Bearer {{token}}
+X-Creds-Contract: {{contract}}
+Content-Type: application/octet-stream
+Content-Length: 0
+
+?? status == 400
+
+###
+# @name vault_get_without_a_token_is_401
+GET {{baseUrl}}/api/vault
+
+?? status == 401
+
+###
+# @name vault_get_from_outside_the_allowed_domain_is_403
+GET {{baseUrl}}/api/vault
+Authorization: Bearer {{outsiderToken}}
+
+?? status == 403
+
+###
+# Account removal: the vault AND the inbox. Last on purpose — it is what returns the store to the
+# state the first request in this file asserts.
+# @name vault_delete_removes_the_account_and_is_idempotent
+DELETE {{baseUrl}}/api/vault
+Authorization: Bearer {{token}}
+X-Creds-Contract: {{contract}}
+
+?? status == 204
+
+###
+# @name vault_get_after_the_delete_is_404_again
+GET {{baseUrl}}/api/vault
+Authorization: Bearer {{token}}
+X-Creds-Contract: {{contract}}
+
+?? status == 404
+
+###
+# @uncovered 400 too-large — the cap is 8 MiB by default; sending 8 MiB to prove a size check is a
+#            slow request that asserts a number in a config file rather than a behaviour.
+# @uncovered 429 — the byte budget is 64 MiB per 600 seconds. Reaching it means uploading 64 MiB,
+#            and having reached it, every later vault write in the run fails for ten minutes.

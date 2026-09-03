@@ -1,0 +1,261 @@
+# Sharing one sealed credential with one colleague — and taking it back while it is still pending.
+#
+# The payload is ciphertext produced on the sender's machine; the server carries it and never opens
+# it. What the server DOES decide is the sender's identity (stamped from the verified token), the
+# recipient's domain, the size, and whether an inbox is full — and those are the four decisions this
+# file exercises.
+#
+# The file leaves the store as it found it: every share it posts is either accepted by the recipient
+# or withdrawn by the sender before the last request.
+
+# @name share_post_seals_an_item_into_the_recipients_inbox
+POST {{baseUrl}}/api/shares
+Authorization: Bearer {{token}}
+X-Creds-Contract: {{contract}}
+Content-Type: application/json
+
+{
+  "toEmail": "{{bobEmail}}",
+  "entityName": "staging database",
+  "entityKind": "credential",
+  "salt": "AAAAAAAAAAAAAAAAAAAAAA==",
+  "iv": "AAAAAAAAAAAAAAAA",
+  "tag": "AAAAAAAAAAAAAAAAAAAAAA==",
+  "data": "c2VhbGVkLWJ5dGVz",
+  "kdfN": 16384,
+  "kdfR": 8,
+  "kdfP": 1,
+  "format": 2
+}
+
+?? status == 201
+
+###
+# The sender's receipt — and the one guarantee that matters about it: it is NOT a second copy of the
+# secret. The sealed payload exists once, in the recipient's inbox.
+# @name shares_sent_lists_a_receipt_that_carries_no_ciphertext
+GET {{baseUrl}}/api/shares/sent
+Authorization: Bearer {{token}}
+X-Creds-Contract: {{contract}}
+Accept: application/json
+
+?? status == 200
+?? header content-type matches ^application\/json
+
+{{
+  const assert = require('node:assert');
+  const receipts = response.parsedBody;
+  test('exactly the one receipt this run created — a leftover means an earlier run did not finish', () => {
+    assert.ok(Array.isArray(receipts), `sent answered with ${typeof receipts}`);
+    assert.strictEqual(receipts.length, 1,
+      `expected 1 receipt, found ${receipts.length}. The store was not left clean by a previous run.`);
+  });
+  test('a receipt names what was sent and to whom, and carries none of the sealed fields', () => {
+    const receipt = receipts[0];
+    assert.strictEqual(receipt.toEmail, bobEmail);
+    assert.strictEqual(receipt.entityName, 'staging database');
+    for (const secret of ['salt', 'iv', 'tag', 'data']) {
+      assert.ok(!(secret in receipt),
+        `the receipt carries "${secret}" — that doubles the exposure of every share`);
+    }
+  });
+  exports.acceptedShareId = receipts[0].id;
+}}
+
+###
+# The sender identity is stamped by the SERVER from the verified token. This is the assertion that
+# says a sender cannot be forged — the property the whole feature rests on.
+# @name shares_inbox_shows_the_sender_the_server_verified
+GET {{baseUrl}}/api/shares
+Authorization: Bearer {{bobToken}}
+X-Creds-Contract: {{contract}}
+Accept: application/json
+
+?? status == 200
+
+{{
+  const assert = require('node:assert');
+  const inbox = response.parsedBody;
+  test('the recipient sees the one share', () => {
+    assert.strictEqual(inbox.length, 1, `expected 1 item in the inbox, found ${inbox.length}`);
+  });
+  test('fromEmail is the sender\'s verified address, not anything the sender typed', () => {
+    assert.strictEqual(inbox[0].fromEmail, aliceEmail);
+  });
+  test('the sealed payload and its kdf parameters survive the round trip untouched', () => {
+    assert.strictEqual(inbox[0].data, 'c2VhbGVkLWJ5dGVz');
+    assert.strictEqual(inbox[0].kdfN, 16384);
+    assert.strictEqual(inbox[0].format, 2,
+      'format was dropped — a recipient then cannot reconstruct the AAD, and the share is unopenable');
+  });
+}}
+
+###
+# The recipient deals with it: accepting or declining is the same call, and both mean "it is no
+# longer pending".
+# @name share_delete_from_ones_own_inbox_is_204
+DELETE {{baseUrl}}/api/shares/{{acceptedShareId}}
+Authorization: Bearer {{bobToken}}
+X-Creds-Contract: {{contract}}
+
+?? status == 204
+
+###
+# 409 rather than 404, and the difference is the whole point: "there is no such share" and "it is
+# beyond recall" are different answers, and only one of them means the secret is somewhere the
+# sender can no longer reach.
+# @name withdrawing_something_already_accepted_is_409_not_404
+DELETE {{baseUrl}}/api/shares/sent/{{acceptedShareId}}
+Authorization: Bearer {{token}}
+X-Creds-Contract: {{contract}}
+
+?? status == 409
+
+###
+# @name share_post_again_so_the_withdrawal_path_has_something_pending
+POST {{baseUrl}}/api/shares
+Authorization: Bearer {{token}}
+X-Creds-Contract: {{contract}}
+Content-Type: application/json
+
+{
+  "toEmail": "{{bobEmail}}",
+  "entityName": "staging database (second)",
+  "entityKind": "credential",
+  "salt": "AAAAAAAAAAAAAAAAAAAAAA==",
+  "iv": "AAAAAAAAAAAAAAAA",
+  "tag": "AAAAAAAAAAAAAAAAAAAAAA==",
+  "data": "c2VhbGVkLWJ5dGVz"
+}
+
+?? status == 201
+
+###
+# @name shares_sent_names_the_still_pending_one
+GET {{baseUrl}}/api/shares/sent
+Authorization: Bearer {{token}}
+X-Creds-Contract: {{contract}}
+Accept: application/json
+
+?? status == 200
+
+{{
+  const assert = require('node:assert');
+  test('the accepted one left the sender\'s receipts; only the pending one remains', () => {
+    assert.strictEqual(response.parsedBody.length, 1);
+  });
+  exports.pendingShareId = response.parsedBody[0].id;
+}}
+
+###
+# @name withdrawing_something_still_pending_takes_it_back
+DELETE {{baseUrl}}/api/shares/sent/{{pendingShareId}}
+Authorization: Bearer {{token}}
+X-Creds-Contract: {{contract}}
+
+?? status == 204
+
+###
+# @name the_recipients_inbox_is_empty_after_a_withdrawal
+GET {{baseUrl}}/api/shares
+Authorization: Bearer {{bobToken}}
+X-Creds-Contract: {{contract}}
+Accept: application/json
+
+?? status == 200
+
+{{
+  const assert = require('node:assert');
+  test('a withdrawn share is gone from the inbox it was sitting in', () => {
+    assert.strictEqual(response.parsedBody.length, 0,
+      'the withdrawal answered 204 and the item is still there');
+  });
+}}
+
+###
+# @name share_to_a_recipient_outside_the_senders_domain_is_403
+POST {{baseUrl}}/api/shares
+Authorization: Bearer {{token}}
+X-Creds-Contract: {{contract}}
+Content-Type: application/json
+
+{
+  "toEmail": "stranger@outside.test",
+  "entityName": "staging database",
+  "entityKind": "credential",
+  "salt": "AAAAAAAAAAAAAAAAAAAAAA==",
+  "iv": "AAAAAAAAAAAAAAAA",
+  "tag": "AAAAAAAAAAAAAAAAAAAAAA==",
+  "data": "c2VhbGVkLWJ5dGVz"
+}
+
+?? status == 403
+
+###
+# @name share_without_a_recipient_is_400
+POST {{baseUrl}}/api/shares
+Authorization: Bearer {{token}}
+X-Creds-Contract: {{contract}}
+Content-Type: application/json
+
+{
+  "toEmail": "",
+  "entityName": "staging database",
+  "salt": "AAAAAAAAAAAAAAAAAAAAAA==",
+  "iv": "AAAAAAAAAAAAAAAA",
+  "tag": "AAAAAAAAAAAAAAAAAAAAAA==",
+  "data": "c2VhbGVkLWJ5dGVz"
+}
+
+?? status == 400
+
+###
+# The sealed fields must be base64 — the server never decodes them, but a payload it cannot even
+# store is refused at the door rather than handed to a recipient who cannot open it.
+# @name share_with_a_payload_that_is_not_base64_is_400
+POST {{baseUrl}}/api/shares
+Authorization: Bearer {{token}}
+X-Creds-Contract: {{contract}}
+Content-Type: application/json
+
+{
+  "toEmail": "{{bobEmail}}",
+  "entityName": "staging database",
+  "salt": "AAAAAAAAAAAAAAAAAAAAAA==",
+  "iv": "AAAAAAAAAAAAAAAA",
+  "tag": "AAAAAAAAAAAAAAAAAAAAAA==",
+  "data": "not base64 at all !!"
+}
+
+?? status == 400
+
+###
+# @name deleting_a_share_that_is_not_in_your_inbox_is_404
+DELETE {{baseUrl}}/api/shares/00000000-0000-0000-0000-000000000000
+Authorization: Bearer {{bobToken}}
+X-Creds-Contract: {{contract}}
+
+?? status == 404
+
+###
+# @name withdrawing_a_share_you_never_sent_is_404
+DELETE {{baseUrl}}/api/shares/sent/00000000-0000-0000-0000-000000000000
+Authorization: Bearer {{token}}
+X-Creds-Contract: {{contract}}
+
+?? status == 404
+
+###
+# @name posting_a_share_without_a_token_is_401
+POST {{baseUrl}}/api/shares
+Content-Type: application/json
+
+{ "toEmail": "someone@example.com", "entityName": "x", "salt": "AAAA", "iv": "AAAA", "tag": "AAAA", "data": "AAAA" }
+
+?? status == 401
+
+###
+# @uncovered 409 inbox full — the cap is 500 pending items per recipient. Filling an inbox to
+#            provoke it is 500 requests and leaves a store nothing in this file can clean up.
+# @uncovered 400 payload too large — the cap is 1 MiB; sending it asserts a number in a config file
+#            rather than a behaviour, and slowly.

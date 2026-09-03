@@ -128,3 +128,7 @@ src_minimalapi_server/**/data/
 
 # Host logs: a folder per day, a file per run (.claude/rules/shared/common/logging-serilog.md)
 logs/
+
+# The .http suite's report and any tag-filtered tree the runner materialises. The suite itself is
+# committed; what a run produces is not — and a report you did not just produce proves nothing.
+.http-artifacts/

@@ -1,0 +1,14 @@
+{
+  "name": "cred-vault-http-suite",
+  "private": true,
+  "version": "1.0.0",
+  "description": "The vault server's .http contract suite. See README.md.",
+  "type": "commonjs",
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "httpyac": "6.16.7"
+  },
+  "_comment": "commonjs on purpose: httpyac loads httpyac.config.js with require(), which fails under ESM."
+}

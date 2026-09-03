@@ -67,11 +67,29 @@ public sealed record ShareRequest
     /// <summary>Which fields the client bound as AAD — carried through, never interpreted.</summary>
     public int? Format { get; init; }
 
+    /// <summary>
+    /// The kind with its documented default applied — and the only form anything here may read.
+    /// </summary>
+    /// <remarks>
+    /// <para><b>The property initializer above does not survive deserialization.</b> A client that
+    /// omits <c>entityKind</c>, or sends it as <c>null</c>, produces an instance whose
+    /// <see cref="EntityKind"/> is null rather than <c>"credential"</c> — so <c>EntityKind.Length</c>
+    /// in <see cref="IsValid"/> threw, and a well-formed request from anybody who could authenticate
+    /// came back <b>500</b>. Found by the `.http` contract suite on its first run; invisible to the
+    /// tests because every envelope they build happens to send the field.</para>
+    /// <para>Normalised here rather than at the call site, because <see cref="PayloadBytes"/> reads it
+    /// too and the same dereference would simply move. The stored <c>ShareItem</c> takes this value,
+    /// so a null never reaches a recipient's inbox — where a released extension's own shape check
+    /// would drop the whole item and show an empty inbox instead of an error.</para>
+    /// </remarks>
+    [JsonIgnore]
+    public string Kind => string.IsNullOrWhiteSpace(EntityKind) ? "credential" : EntityKind;
+
     public bool IsValid() =>
         !string.IsNullOrWhiteSpace(ToEmail)
         && ToEmail.Contains('@')
         && !string.IsNullOrWhiteSpace(EntityName)
-        && EntityKind.Length <= 64
+        && Kind.Length <= 64
         && IsBase64(Salt)
         && IsBase64(Iv)
         && IsBase64(Tag)
@@ -91,7 +109,7 @@ public sealed record ShareRequest
     /// </summary>
     public long PayloadBytes() =>
         (long)Salt.Length + Iv.Length + Tag.Length + Data.Length
-        + EntityName.Length + EntityKind.Length + ToEmail.Length;
+        + EntityName.Length + Kind.Length + ToEmail.Length;
 }
 
 /// <summary>

@@ -1,0 +1,255 @@
+# Corporate recovery — the levers of the officers' ceremony, and the one page every ordinary user is
+# entitled to read: who can recover their vault, and how many of them it takes.
+#
+# PRECONDITION: this group needs corporate recovery configured with `officer@<domain>` on the roster
+# (see ../README.md). Without a roster the server answers 403 to every officer-only route, which is
+# an environment mismatch rather than a contract regression.
+#
+# WHAT THIS FILE DOES NOT COVER, and why: the ceremony's success paths need real cryptographic
+# material — an X25519 key pair and Shamir shares produced on the officers' own machines. There is
+# no request that manufactures those, and faking them would assert that the fake was accepted. They
+# are declared at the end rather than left as a silence.
+
+# @name org_recovery_config_is_readable_by_any_allowed_caller
+# @prod
+GET {{baseUrl}}/api/org-recovery/config
+Authorization: Bearer {{token}}
+X-Creds-Contract: {{contract}}
+Accept: application/json
+
+?? status == 200
+?? header content-type matches ^application\/json
+
+{{
+  const assert = require('node:assert');
+  const config = response.parsedBody;
+  test('an ordinary user can see whether their vault is subject to recovery at all', () => {
+    assert.strictEqual(typeof config.enabled, 'boolean');
+  });
+  test('and WHICH colleagues, and how many of them — a silent escrow is a backdoor by shape', () => {
+    assert.ok(Array.isArray(config.officerEmails));
+    assert.strictEqual(typeof config.threshold, 'number');
+  });
+  test('enabled and setupComplete are two different facts, and both are reported', () => {
+    assert.strictEqual(typeof config.setupComplete, 'boolean');
+  });
+  test('no private material is ever in this document — only a public key, once published', () => {
+    assert.ok(!('orgPrivateKey' in config));
+    assert.strictEqual(typeof config.orgPublicKey, 'string');
+  });
+}}
+
+###
+# @name org_recovery_config_without_a_token_is_401
+GET {{baseUrl}}/api/org-recovery/config
+
+?? status == 401
+
+###
+# @name invites_are_listed_for_an_officer
+GET {{baseUrl}}/api/org-recovery/invites
+Authorization: Bearer {{officerToken}}
+X-Creds-Contract: {{contract}}
+Accept: application/json
+
+?? status == 200
+
+{{
+  const assert = require('node:assert');
+  test('an officer with no invites sees an empty array, never null', () => {
+    assert.ok(Array.isArray(response.parsedBody));
+  });
+}}
+
+###
+# One answer for "you are not on the roster" and "the feature is off here": distinguishing them
+# would hand a stranger the roster's shape for free.
+# @name invites_for_a_caller_who_is_not_an_officer_is_403
+GET {{baseUrl}}/api/org-recovery/invites
+Authorization: Bearer {{token}}
+X-Creds-Contract: {{contract}}
+
+?? status == 403
+
+###
+# @name posting_an_invite_as_a_non_officer_is_403
+POST {{baseUrl}}/api/org-recovery/invites
+Authorization: Bearer {{token}}
+X-Creds-Contract: {{contract}}
+Content-Type: application/json
+
+{ "toEmail": "{{officerEmail}}" }
+
+?? status == 403
+
+###
+# @name posting_a_malformed_invite_is_400
+POST {{baseUrl}}/api/org-recovery/invites
+Authorization: Bearer {{officerToken}}
+X-Creds-Contract: {{contract}}
+Content-Type: application/json
+
+{ "nothing": "that an invite needs" }
+
+?? status == 400
+
+###
+# @name acknowledging_an_invite_id_that_is_not_a_guid_is_400
+POST {{baseUrl}}/api/org-recovery/invites/not-a-guid/ack
+Authorization: Bearer {{officerToken}}
+X-Creds-Contract: {{contract}}
+
+?? status == 400
+
+###
+# 404 rather than 403: the path names no owner, so an officer holding somebody else's invite id has
+# nothing here to reach it with — it simply is not in their own inbox.
+# @name acknowledging_an_invite_that_is_not_in_your_inbox_is_404
+POST {{baseUrl}}/api/org-recovery/invites/00000000-0000-0000-0000-000000000000/ack
+Authorization: Bearer {{officerToken}}
+X-Creds-Contract: {{contract}}
+
+?? status == 404
+
+###
+# @name invite_status_for_a_setup_id_that_is_not_a_guid_is_400
+GET {{baseUrl}}/api/org-recovery/invites/status?setupId=not-a-guid
+Authorization: Bearer {{officerToken}}
+X-Creds-Contract: {{contract}}
+
+?? status == 400
+
+###
+# A well-formed id nobody has used is not an error: every officer is still pending on it.
+# @name invite_status_for_an_unused_setup_id_reports_everyone_pending
+GET {{baseUrl}}/api/org-recovery/invites/status?setupId=00000000-0000-0000-0000-000000000000
+Authorization: Bearer {{officerToken}}
+X-Creds-Contract: {{contract}}
+Accept: application/json
+
+?? status == 200
+
+{{
+  const assert = require('node:assert');
+  const status = response.parsedBody;
+  test('the answer says how many officers exist and which have not acknowledged', () => {
+    assert.strictEqual(typeof status.total, 'number');
+    assert.ok(Array.isArray(status.pending));
+  });
+}}
+
+###
+# @name publishing_a_malformed_setup_is_400
+POST {{baseUrl}}/api/org-recovery/setup
+Authorization: Bearer {{officerToken}}
+X-Creds-Contract: {{contract}}
+Content-Type: application/json
+
+{ "orgPublicKey": "" }
+
+?? status == 400
+
+###
+# 409 before 400: a server with no published key cannot start a recovery whatever the body says, and
+# saying THAT is more useful than complaining about the payload.
+# @name starting_a_recovery_before_a_key_is_published_is_409
+POST {{baseUrl}}/api/org-recovery/sessions
+Authorization: Bearer {{officerToken}}
+X-Creds-Contract: {{contract}}
+Content-Type: application/json
+
+{ "targetEmail": "{{aliceEmail}}" }
+
+?? status == 409
+
+###
+# @name reading_a_recovery_session_that_does_not_exist_is_404
+GET {{baseUrl}}/api/org-recovery/sessions/00000000-0000-0000-0000-000000000000
+Authorization: Bearer {{officerToken}}
+X-Creds-Contract: {{contract}}
+
+?? status == 404
+
+###
+# @name contributing_to_a_session_that_does_not_exist_is_404
+POST {{baseUrl}}/api/org-recovery/sessions/00000000-0000-0000-0000-000000000000/contribute
+Authorization: Bearer {{officerToken}}
+X-Creds-Contract: {{contract}}
+Content-Type: application/json
+
+{ "share": "AAAA" }
+
+?? status == 404
+
+###
+# @name deleting_a_session_that_does_not_exist_is_404
+DELETE {{baseUrl}}/api/org-recovery/sessions/00000000-0000-0000-0000-000000000000
+Authorization: Bearer {{officerToken}}
+X-Creds-Contract: {{contract}}
+
+?? status == 404
+
+###
+# The re-keying pair. Their success paths need a session that has reached its quorum, which needs a
+# real ceremony — but their refusal is reachable, and it is the one that matters: a session that does
+# not exist must never expose a target's vault.
+# @name reading_a_target_vault_through_a_session_that_does_not_exist_is_404
+GET {{baseUrl}}/api/org-recovery/sessions/00000000-0000-0000-0000-000000000000/target-vault
+Authorization: Bearer {{officerToken}}
+X-Creds-Contract: {{contract}}
+
+?? status == 404
+
+###
+# @name reading_a_target_vault_without_a_token_is_401
+GET {{baseUrl}}/api/org-recovery/sessions/00000000-0000-0000-0000-000000000000/target-vault
+
+?? status == 401
+
+###
+# @name writing_a_re_keyed_vault_through_a_session_that_does_not_exist_is_404
+PUT {{baseUrl}}/api/org-recovery/sessions/00000000-0000-0000-0000-000000000000/target-vault
+Authorization: Bearer {{officerToken}}
+X-Creds-Contract: {{contract}}
+Content-Type: application/octet-stream
+
+the-re-keyed-vault-bytes
+
+?? status == 404
+
+###
+# Every officer, not only the one who started a recovery: a recovery nobody else can see is a
+# recovery nobody else can question.
+# @name the_audit_trail_is_readable_by_any_officer
+GET {{baseUrl}}/api/org-recovery/audit
+Authorization: Bearer {{officerToken}}
+X-Creds-Contract: {{contract}}
+Accept: application/json
+
+?? status == 200
+
+{{
+  const assert = require('node:assert');
+  test('the trail is an array, empty or not', () => {
+    assert.ok(Array.isArray(response.parsedBody));
+  });
+}}
+
+###
+# @name the_audit_trail_is_not_readable_by_a_non_officer
+GET {{baseUrl}}/api/org-recovery/audit
+Authorization: Bearer {{token}}
+X-Creds-Contract: {{contract}}
+
+?? status == 403
+
+###
+# @uncovered 201 invite · 200 setup · 201 session · 204 contribute · 200 target-vault · 204 re-key —
+#            every success path of the ceremony needs an X25519 key pair and Shamir shares minted on
+#            the officers' own machines. No request produces those, and a fabricated payload would
+#            only prove the fabrication was accepted.
+# @uncovered 409 roster changed / already published / not your ceremony — each needs a completed
+#            ceremony first, for the same reason.
+# @uncovered 412 on the re-keyed vault, and its 400 for an empty body — both need a session that has
+#            reached its quorum, which is the ceremony again. Only the refusals above are reachable.
+# @uncovered 403 target outside your domain — needs a published key, because the 409 above comes first.

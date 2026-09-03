@@ -1,0 +1,46 @@
+# The operators' metrics document. Officer-only — whoever the operator named on the recovery roster
+# is whoever may read this server's load and disk.
+#
+# PRECONDITION: corporate recovery must be configured with `officer@<domain>` on the roster, per
+# ../README.md. Without a roster the server answers 403 to every caller including this one, and the
+# first assertion below fails for an environmental reason rather than a contractual one.
+
+# @name metrics_are_readable_by_a_recovery_officer
+GET {{baseUrl}}/api/metrics
+Authorization: Bearer {{officerToken}}
+X-Creds-Contract: {{contract}}
+Accept: application/json
+
+?? status == 200
+?? header content-type matches ^application\/json
+
+{{
+  const assert = require('node:assert');
+  const body = response.parsedBody;
+  test('the document names the service and the build it came from', () => {
+    assert.strictEqual(body.service, 'cred-vault-server');
+    assert.ok(typeof body.version === 'string' && body.version.length > 0,
+      `no version in the metrics document: ${JSON.stringify(Object.keys(body))}`);
+  });
+  test('the counters are numbers — a dashboard divides by them', () => {
+    for (const field of ['requests', 'status4xx', 'status5xx', 'vaults', 'dataDirFreeBytes']) {
+      assert.strictEqual(typeof body[field], 'number', `${field} is ${typeof body[field]}`);
+    }
+  });
+}}
+
+###
+# One answer for "you are not an officer" and "the feature is off here": telling a caller which of
+# the two it is hands them the roster's shape for free.
+# @name metrics_for_a_caller_who_is_not_an_officer_is_403
+GET {{baseUrl}}/api/metrics
+Authorization: Bearer {{token}}
+X-Creds-Contract: {{contract}}
+
+?? status == 403
+
+###
+# @name metrics_without_a_token_is_401
+GET {{baseUrl}}/api/metrics
+
+?? status == 401

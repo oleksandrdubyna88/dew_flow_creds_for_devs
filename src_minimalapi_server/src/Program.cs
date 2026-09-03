@@ -1188,7 +1188,10 @@ app.MapPost("/api/shares", async (HttpContext ctx, CancellationToken ct) =>
         FromName = caller.Value.Name,
         ToEmail = req.ToEmail.Trim().ToLowerInvariant(),
         EntityName = req.EntityName,
-        EntityKind = req.EntityKind,
+        // The normalised kind, never the raw property: a client may omit it or send null, and a
+        // null landing in an inbox is dropped by a released extension's own shape check — the
+        // recipient then sees an empty inbox rather than an error. See ShareRequest.Kind.
+        EntityKind = req.Kind,
         CreatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
         Salt = req.Salt,
         Iv = req.Iv,

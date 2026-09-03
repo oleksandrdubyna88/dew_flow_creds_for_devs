@@ -72,6 +72,71 @@ public sealed class SharingTests
     }
 
     [Fact]
+    public async Task AShareThatOmitsEntityKindIsAcceptedWithTheDefaultKindRatherThanCrashing()
+    {
+        // `entityKind` has a default on the record, so the wire contract says a client may omit it —
+        // and every envelope in this file sends it, which is why nothing here ever exercised the
+        // omission. The `.http` contract suite did, on its first run, and the answer was 500: the
+        // source-generated deserializer leaves the property NULL rather than running the record's
+        // initializer, and `EntityKind.Length` in IsValid() then dereferences it.
+        //
+        // A 500 is never the right answer to a well-formed request, and this one is reachable by
+        // anybody who can authenticate.
+        using var server = new VaultServer();
+        using var alice = server.ClientFor(Alice, "Alice");
+        using var bob = server.ClientFor(Bob);
+        var ct = TestContext.Current.CancellationToken;
+
+        var posted = await alice.PostAsJsonAsync(
+            "/api/shares",
+            new
+            {
+                toEmail = Bob,
+                entityName = "prod db",
+                salt = Convert.ToBase64String(new byte[16]),
+                iv = Convert.ToBase64String(new byte[12]),
+                tag = Convert.ToBase64String(new byte[16]),
+                data = Convert.ToBase64String(Encoding.UTF8.GetBytes("sealed-payload")),
+            },
+            ct);
+
+        posted.StatusCode.Should().Be(
+            HttpStatusCode.Created,
+            "omitting an optional field must not reach an unhandled NullReferenceException");
+
+        var share = await FirstShare(bob, ct);
+        share.GetProperty("entityKind").GetString().Should().Be(
+            "credential",
+            "the record's documented default is what an omitted kind means");
+    }
+
+    [Fact]
+    public async Task AShareWhoseEntityKindIsExplicitlyNullIsRefusedRatherThanCrashing()
+    {
+        // The same dereference by the other route. A client that serialises its optional field as
+        // `null` instead of omitting it is ordinary, and it must not be able to produce a 500.
+        using var server = new VaultServer();
+        using var alice = server.ClientFor(Alice, "Alice");
+        var ct = TestContext.Current.CancellationToken;
+
+        var posted = await alice.PostAsJsonAsync(
+            "/api/shares",
+            new
+            {
+                toEmail = Bob,
+                entityName = "prod db",
+                entityKind = (string?)null,
+                salt = Convert.ToBase64String(new byte[16]),
+                iv = Convert.ToBase64String(new byte[12]),
+                tag = Convert.ToBase64String(new byte[16]),
+                data = Convert.ToBase64String(Encoding.UTF8.GetBytes("sealed-payload")),
+            },
+            ct);
+
+        posted.StatusCode.Should().Be(HttpStatusCode.Created);
+    }
+
+    [Fact]
     public async Task TheShareFormatReachesTheRecipientUntouched()
     {
         // The field the recipient cannot open a bound share without. It was missing until

@@ -1,0 +1,47 @@
+# Team discovery — the emails of people on this server who share the caller's domain, and nothing
+# else about them. A directory that leaked names or vault sizes would be a different feature.
+
+# @name team_lists_email_addresses_and_only_email_addresses
+# @prod
+GET {{baseUrl}}/api/team
+Authorization: Bearer {{token}}
+X-Creds-Contract: {{contract}}
+Accept: application/json
+
+?? status == 200
+?? header content-type matches ^application\/json
+
+{{
+  const assert = require('node:assert');
+  const members = response.parsedBody;
+  test('the answer is an array — never null, whatever the server holds', () => {
+    assert.ok(Array.isArray(members), `team answered with ${typeof members}`);
+  });
+  test('every member is one email and no other field', () => {
+    for (const member of members) {
+      assert.deepStrictEqual(Object.keys(member), ['email'],
+        `a team member carries more than an email: ${JSON.stringify(member)}`);
+      assert.ok(member.email.includes('@'));
+    }
+  });
+  test('nobody outside the caller\'s own domain is listed', () => {
+    const domain = aliceEmail.slice(aliceEmail.lastIndexOf('@'));
+    for (const member of members) {
+      assert.ok(member.email.endsWith(domain),
+        `${member.email} is outside ${domain} and must not be discoverable here`);
+    }
+  });
+}}
+
+###
+# @name team_without_a_token_is_401
+GET {{baseUrl}}/api/team
+
+?? status == 401
+
+###
+# @name team_from_outside_the_allowed_domain_is_403
+GET {{baseUrl}}/api/team
+Authorization: Bearer {{outsiderToken}}
+
+?? status == 403

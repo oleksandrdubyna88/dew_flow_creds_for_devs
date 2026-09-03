@@ -78,7 +78,11 @@ jobs:
           [ "$PULL" = "true" ] || CMD="$CMD nopull"
           ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes               "${SSH_USER:-root}@$HOST" "$CMD"
 
-      - name: Verify from the outside
+      # A 200 on /api/health says the process is alive. It does not say the certificate has more
+      # than a fortnight left, that the plaintext port redirects, that the running build is the one
+      # just deployed, or that the scope a client needs is configured — and every one of those is
+      # decided by this host rather than by the code, which is what POST_DEPLOY.md is a list of.
+      - name: Wait for the deployment to answer
         env:
           URL: ${{ secrets.RSD_PUBLIC_URL }}
         run: |
@@ -92,3 +96,18 @@ jobs:
             sleep 5
           done
           echo "the server did not answer 200 on /api/health from outside"; exit 1
+
+      # This workflow is otherwise pure SSH and checks nothing out. The checklist and its runner
+      # live in the repository, so it needs them — and only from here down.
+      - uses: actions/checkout@v4
+      - run: git submodule update --init --depth 1 .claude/rules/shared
+
+      - name: Run the post-deploy checklist against what is now running
+        env:
+          URL: ${{ secrets.RSD_PUBLIC_URL }}
+        run: |
+          if [ -z "$URL" ]; then
+            echo "RSD_PUBLIC_URL not set — the checklist has no target to run against."
+            exit 0
+          fi
+          node .claude/rules/shared/tools/post-deploy-check.mjs --target "$URL"
