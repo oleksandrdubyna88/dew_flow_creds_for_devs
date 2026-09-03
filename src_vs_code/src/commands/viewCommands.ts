@@ -21,7 +21,7 @@ import { openEntityViewer } from '../entityViewerCommands';
 import { quickOpenItems } from '../quickOpen';
 import { ENTITY_KIND_LABELS } from '../types';
 import { askForEntryId } from '../mcpHooks';
-import { findById } from '../extension';
+import { findById } from '../entityLookup';
 export interface ViewCommandsHost {
   readonly announceArrival: (accountId: string, entityId: string) => Promise<void>;
   readonly clicks: ViewerClicks;

@@ -504,3 +504,39 @@ alone. The method is deliberately stored nowhere — `shuffle.ts:4-10`, *"that c
 NOWHERE"* — so persisting it, as the finding asks, would destroy the property the feature exists
 for. No decoy is regenerated at render, so the divergence described cannot happen. Taken as a
 documentation gap only, which this paragraph closes.
+
+---
+
+## Phase 7 — the slow start, added by the owner mid-batch
+
+**Report.** Starting up became slow, and invoking a command, a database or a terminal can take
+about five seconds. It used to be faster.
+
+**What was eliminated, with the evidence, before anything was changed.** Five plausible causes were
+read and ruled out — writing this down because each of them would have made a convincing commit
+message for a change that fixed nothing:
+
+| candidate | why it is not the cause |
+|---|---|
+| the cross-window lock (`06cc4f2`, today) | only four operations take it — `listAccount`, `removeAccount`, `runCreate`, `importBundle` (`storageManager.ts:315,370,482,952`). Opening a terminal, a database or a command is not among them |
+| a per-launch tool probe | `toolEnsure`/`toolCheck` run only AFTER a binary is found missing, never before a launch |
+| the output mask table | scoped to ONE entity since 0.57.0, deliberately and with the reasoning in `maskEntries.ts:6-14` |
+| `StorageManager.init` | one keychain read plus one AES-GCM open per account (`storageManager.ts:219-244`) — no KDF on that path |
+| the bundle | 2.5 MB single file; the eleven BIP-39 wordlists are 274 KB of it, 11%. Parsing that is ~100 ms, not seconds |
+
+**So the deliverable is a measurement, not a guess.** `startupTiming.ts` (pure, `vscode`-free):
+`PhaseTimer` records the activation phases, and `timed` wraps every command through the ONE
+`register` helper in `extension.ts` — ninety call sites instrumented by a single wrap. A command
+slower than `SLOW_COMMAND_MS` (750) writes one line naming itself and its duration into the
+per-run diagnostic file that a reporter is already asked to attach; a quick one writes nothing.
+Failures are timed and re-thrown, because a command that takes five seconds and then fails is the
+report most worth having.
+
+**The size ratchet forced the right shape.** `extension.ts` is exempted at 1105 lines and may only
+shrink, so the instrumentation could not simply be added. `findById` — the one function in that
+file with no view of activation — moved to `entityLookup.ts`, and the file came out at 1102.
+
+**Still open, and the one hypothesis worth testing on the machine rather than in the code:** all
+three slow actions SPAWN a process, and this machine runs Smart App Control, which inspects newly
+written binaries. A Defender exclusion for the extension's storage directory, tested against the
+timing lines this phase adds, would confirm or kill it in one run.

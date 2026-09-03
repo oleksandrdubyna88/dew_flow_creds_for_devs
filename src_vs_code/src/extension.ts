@@ -54,6 +54,7 @@ import { burnIfOneUse } from './burnOnUse';
 import { SshBridgeManager } from './sshBridgeManager';
 import { entityKey } from './entityFlags';
 import { Machine } from './installCommand';
+import { PhaseTimer, timed } from './startupTiming';
 import { toWslPath } from './wslRelay';
 import { DEFAULT_DISTRO, WslRelayManager, spawnWslRelay } from './wslRelayManager';
 import { AliasMap, aliasFor, listAliases, resolveAlias } from './cliAliases';
@@ -85,7 +86,7 @@ import {
   terminalRunAction,
   vpnAction,
 } from './agentUseActions';
-import { StoredAccount, EntityMetadata, TreeElement, TreeNode } from './types';
+import { StoredAccount, EntityMetadata, TreeNode } from './types';
 import { mcpUseLookup } from './mcpHooks';
 import { moveEntryToTrash } from './mcpHooks';
 import { mcpCreateHooks } from './mcpHooks';
@@ -108,6 +109,10 @@ import { envCollection } from './envCollectionRef';
 const SECRETS_SETTLE_MS = 400;
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
+  // Started before anything else happens, so the first phase is honest. What it is for is in
+  // startupTiming.ts: five candidates for the slow start were read and eliminated, and a guess at
+  // the sixth would be a change nobody could confirm.
+  const timing = new PhaseTimer();
   setEnvCollection(context.environmentVariableCollection);
 
   // One place decides how long a copied secret lingers; see secretClipboard.ts for why
@@ -131,6 +136,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // SQLite file in the profile; the topology it held (hosts, users, CLI args, env-var names)
   // is exactly what a stolen profile folder should not contain in the clear.
   await storage.init();
+  timing.mark('storage.init');
   if (storage.metadataFault !== undefined) {
     void vscode.window.showWarningMessage(`CredsForDevs: ${storage.metadataFault}`);
   }
@@ -158,6 +164,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // diagnosticLog.ts on why "no secret reaches the log" is a property and not a filter.
   const log = createDiagnosticLog({ storageDir });
   context.subscriptions.push(log);
+  timing.mark('services');
   log.info('extension', `activated; diagnostics for this run are in ${log.file}`);
 
   // Live `ssh -R` bridges. Every one is killed with the window: a forwarded socket is an
@@ -741,8 +748,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
   warnIfKeyringMissing(context);
 
+  // Every command is timed through here, which is the whole reason this helper is worth having:
+  // one wrap instruments ninety call sites. A command under the threshold logs nothing — see
+  // startupTiming.ts. The handler's answer and its failures pass through untouched.
   const register = (command: string, handler: (...args: unknown[]) => unknown) =>
-    context.subscriptions.push(vscode.commands.registerCommand(command, handler));
+    context.subscriptions.push(vscode.commands.registerCommand(command, timed(command, handler, log)));
 
   /**
    * The list of machines, in the order a person scans it.
@@ -1031,6 +1041,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // The provider as well as the view: disposing a TreeView does not dispose its provider, and
   // the provider owns a debounce timer and an emitter of its own.
   context.subscriptions.push(treeView, provider);
+
+  timing.mark('commands');
+  log.info('timing', `activation ${timing.summary()}`);
 }
 
 export function deactivate(): void {
@@ -1087,19 +1100,3 @@ function configRouteSources(storage: StorageManager): ConfigRouteSources {
 
 // ---------- helpers ----------
 
-/**
- * The tree element for one id, across every unlocked account.
- *
- * <p>Every account, because an agent's list already merged them and the id it quotes carries no
- * account with it. Folders are findable too: an agent naming the folder an entry lives in is a
- * reasonable thing to want to look at.</p>
- */
-export function findById(storage: StorageManager, id: string): TreeElement | undefined {
-  for (const account of storage.getAccounts()) {
-    const node = storage.getNode(account.accountId, id);
-    if (node !== undefined) {
-      return { kind: 'node', accountId: account.accountId, node };
-    }
-  }
-  return undefined;
-}
