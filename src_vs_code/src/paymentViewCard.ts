@@ -2,7 +2,7 @@ import { PAYMENT_FIELD_LABELS, PaymentFieldKey } from './paymentFields';
 import { COPY_ICON, escapeHtml } from './webviewHtml';
 import { PaymentCardView } from './paymentViewMessages';
 import { needsReveal } from './revealGate';
-import { methodLabel } from './shuffle';
+import { REASSEMBLE_ACTION, WOVEN_ROW_NOTE, WOVEN_ROW_STYLES, wovenRowMarkup } from './wovenRow';
 import { BRAND_MARK_STYLES, brandMarksMarkup } from './cardBrandIcons';
 
 /**
@@ -50,8 +50,7 @@ export const REVEAL_ACTION = 'reveal';
  */
 export const HIDE_ACTION = 'hide';
 
-/** What a method picker's Show asks for: a woven field rebuilt under the chosen method. */
-export const REASSEMBLE_ACTION = 'reassemble';
+export { REASSEMBLE_ACTION };
 
 /**
  * The card, or nothing at all for an entry that is not a payment.
@@ -64,7 +63,7 @@ export function paymentCardMarkup(view: PaymentCardView | undefined): string {
     return '';
   }
   const woven = new Set<string>(view.woven);
-  return `<div id="payCard" data-entity="${escapeHtml(view.entityId)}">
+  return `<div id="payCard" data-woven-host="" data-entity="${escapeHtml(view.entityId)}">
 ${view.present.map((key) => (woven.has(key) ? wovenRow(key, view) : plainRow(key))).join('\n')}
 </div>`;
 }
@@ -130,50 +129,24 @@ function spacedCopy(key: PaymentFieldKey, label: string): string {
  * would offer twenty-four readings while the record already says which twelve are meaningful.</p>
  */
 function wovenRow(key: PaymentFieldKey, view: PaymentCardView): string {
-  const label = escapeHtml(PAYMENT_FIELD_LABELS[key]);
-  // The label comes from the CODE, never from the position: `view.methods` is drawn afresh on
-  // every open, and labelling by index made "Method 3" name a different algorithm each time.
-  const options = view.methods
-    .map((code) => `<option value="${code}">${methodLabel(code)}</option>`)
-    .join('');
-  return `<div class="row wovenRow" data-key="${key}">
-      <label>${label} — stored woven with a decoy</label>
-      <div class="line">
-        <select class="mixPick" data-key="${key}" aria-label="Method for ${label}">${options}</select>
-        <button data-field="${key}" data-action="${REASSEMBLE_ACTION}" class="icon" title="Rebuild ${label} under the chosen method" aria-label="Show ${label}">Show</button>
-      </div>
-      <div class="note payNote" id="payNote_${key}">${escapeHtml(hint(key, view.wordCount))}</div>
-      <div class="readingRows" id="payRows_${key}" hidden>
-        ${readingRow(key, 'a', label)}
-        ${readingRow(key, 'b', label)}
-      </div>
-    </div>`;
+  return wovenRowMarkup({
+    key,
+    label: PAYMENT_FIELD_LABELS[key],
+    methods: view.methods,
+    note: hint(key, view.wordCount),
+  });
 }
 
 /**
- * One of the two rows. They are deliberately identical in every respect a reader could use.
+ * What the row says before anything is rebuilt — and what it must never say afterwards.
  *
- * <p>They are numbered rather than named — "First" and "Second" — and the ids the page uses are `a`
- * and `b` rather than `real` and `decoy`. Which column the arithmetic calls which is the host's
- * business: a DOM that says `decoy` out loud is a hint sitting one inspector away from the person
- * this design defends against, and it costs nothing to not write it.</p>
+ * <p>A phrase gets one more sentence than a card field, because a phrase is the one reading that
+ * takes itself off the screen again.</p>
  */
-function readingRow(key: PaymentFieldKey, which: 'a' | 'b', label: string): string {
-  const ordinal = which === 'a' ? 'First' : 'Second';
-  return `<div class="line readingLine">
-          <div class="reading" id="payReading_${key}_${which}" aria-label="${ordinal} row for ${label}"></div>
-          <button data-field="${key}|${which}" data-action="copyReading" class="icon" title="Copy the ${ordinal.toLowerCase()} row" aria-label="Copy the ${ordinal.toLowerCase()} row">${COPY_ICON}</button>
-        </div>`;
-}
-
-/** What the row says before anything is rebuilt — and what it must never say afterwards. */
 function hint(key: PaymentFieldKey, wordCount: number): string {
-  const shared =
-    'Pick a method and press Show. Both rows come back the same way whichever method you pick — '
-    + 'nothing here can tell you which one is yours, and that is deliberate.';
   return key === 'mixed'
-    ? `${wordCount} words. ${shared} The assembled phrase closes itself shortly after it opens.`
-    : shared;
+    ? `${wordCount} words. ${WOVEN_ROW_NOTE} The assembled phrase closes itself shortly after it opens.`
+    : WOVEN_ROW_NOTE;
 }
 
 /**
@@ -190,7 +163,10 @@ function hint(key: PaymentFieldKey, wordCount: number): string {
  */
 export function paymentCardScript(): string {
   return `
-  var payCard = document.getElementById('payCard');
+  // Found by ATTRIBUTE, not by the payment card's id: a credential's woven password lives in its
+  // own block and reads through this same script. Exactly one host exists per entry — a payment has
+  // no password and a credential has no card — so there is nothing to disambiguate.
+  var payCard = document.querySelector('[data-woven-host]');
   if (payCard) {
 ${payHelpers()}
 ${payGateFns()}
@@ -340,13 +316,7 @@ function payListeners(): string {
 /** The card's styles: the two rows read as one pair, and a word is a word. */
 export function paymentCardStyles(): string {
   return `
-  .wovenRow .readingLine { margin-top: 4px; align-items: center; }
-  .reading { flex: 1; padding: 5px 7px; min-height: 1.4em; border-radius: 3px;
-             background: var(--vscode-input-background); color: var(--vscode-input-foreground);
-             border: 1px solid var(--vscode-input-border, transparent);
-             font-family: var(--vscode-editor-font-family, monospace); word-break: break-all; }
-  .reading .word { display: inline-block; margin-right: .5em; }
-  .payNote { margin: 3px 0; }
+${WOVEN_ROW_STYLES}
   input.gated { letter-spacing: .2em; }
   /* The assembled address: as many lines as the country's own order gives it. */
   textarea.addressBlock { flex: 1; resize: vertical; font-family: inherit; }
