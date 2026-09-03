@@ -27,8 +27,12 @@ would have reached the `.vsix`.
 | round | reviewers | findings | acted on | declined (correct) | declined (wrong) | no-op |
 |---|---|---|---|---|---|---|
 | plan | 3 of 3 answered | 14 | **10** | 0 | 4 | 0 |
-| code | 9 of 9 answered | 16 | **6** | 2 | 3 | 5 |
-| **total** | | **30** | **16** (53 %) | 2 | 7 | 5 |
+| code | 9 of 9 answered | 16 | **6** | 1 | 4 | 5 |
+| **total** | | **30** | **16** (53 %) | 1 | 8 | 5 |
+
+*(The columns are checkable against the appendix, which is the point of having one: the first version
+of this table split the declines 2/7 instead of 1/8 and still summed to thirty, which is exactly how a
+wrong tally survives being looked at.)*
 
 **Defects prevented: 8 of 30 (27 %).** Five were caught in the plan round, before a line existed;
 three in the code round, in code that compiled, passed 3 000 tests and looked finished.
