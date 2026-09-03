@@ -30,8 +30,24 @@ import { methodLabel } from './shuffle';
  * against — which is the trap the parent plan names in its own §4.5.</p>
  */
 
+/**
+ * What a masked box shows instead of a value.
+ *
+ * <p>Shared by the markup that writes it and the script that puts it back, so the two cannot
+ * disagree about what "masked" looks like — it used to be a literal in the markup only.</p>
+ */
+export const MASK = '••••••••';
+
 /** What a Show button asks for — one name, so the panel's switch has one shape to match. */
 export const REVEAL_ACTION = 'reveal';
+
+/**
+ * Putting a revealed value back. Answered by the PAGE and never sent to the host.
+ *
+ * <p>There is nothing host-side to release for a plain gated field — `held` carries woven readings
+ * only — so a message would be a round trip that changes nothing and one more thing to get wrong.</p>
+ */
+export const HIDE_ACTION = 'hide';
 
 /** What a method picker's Show asks for: a woven field rebuilt under the chosen method. */
 export const REASSEMBLE_ACTION = 'reassemble';
@@ -62,7 +78,7 @@ function plainRow(key: PaymentFieldKey): string {
   const label = escapeHtml(PAYMENT_FIELD_LABELS[key]);
   const gated = needsReveal(key);
   const show = gated
-    ? `<button data-field="${key}" data-action="${REVEAL_ACTION}" class="icon" title="Show the ${label} — this asks first" aria-label="Show ${label}">Show</button>`
+    ? `<button data-field="${key}" data-action="${REVEAL_ACTION}" data-label="${label}" class="icon" aria-pressed="false" title="Show the ${label} — this asks first" aria-label="Show ${label}">Show</button>`
     : '';
   return `<div class="row">
       <label>${label}</label>
@@ -146,6 +162,7 @@ export function paymentCardScript(): string {
   var payCard = document.getElementById('payCard');
   if (payCard) {
 ${payHelpers()}
+${payGateFns()}
 ${payReadingFn()}
 ${payListeners()}
     vscode.postMessage({ type: 'payment', field: 'values' });
@@ -161,7 +178,10 @@ function payHelpers(): string {
       for (var key in values) {
         var box = document.getElementById('pay_' + key);
         // A PROPERTY, not an attribute: nothing set here appears in a serialisation of the page.
-        if (box) { box.value = values[key]; box.classList.remove('gated'); }
+        // The button flips HERE, on arrival, and never on the click: a declined confirmation posts
+        // nothing at all, and a button reading Hide over a masked box would state the opposite of
+        // what is on screen.
+        if (box) { box.value = values[key]; box.classList.remove('gated'); payToggle(key, true); }
       }
     };
     // Words go in one text node each and are never joined (measure 5.1). Digits are not a phrase and
@@ -187,6 +207,40 @@ function payHelpers(): string {
       payRow(document.getElementById('payReading_' + key + '_b'), [], false);
       if (payTimer) { clearTimeout(payTimer); payTimer = 0; }
       if (!silent) { vscode.postMessage({ type: 'paymentClose', field: key }); }
+    };
+`;
+}
+
+/**
+ * The gated row's two states, and the move between them.
+ *
+ * <p>Its own block rather than more of `payHelpers`, which is about filling a box, drawing a row
+ * and closing one. This is about a single question — is this value on screen — and it is the only
+ * part of the card that writes a button rather than a value.</p>
+ */
+function payGateFns(): string {
+  return `    // The reveal button of a gated row, or nothing at all for a row that has none.
+    var payGate = function (key) {
+      return payCard.querySelector('button[data-label][data-field="' + key + '"]');
+    };
+    // Show <-> Hide. The label comes off the button's own dataset, so nothing new is interpolated
+    // into this page and the two states cannot drift apart in wording.
+    var payToggle = function (key, shown) {
+      var button = payGate(key);
+      if (!button) { return; }
+      var name = button.dataset.label;
+      button.dataset.action = shown ? '${HIDE_ACTION}' : '${REVEAL_ACTION}';
+      button.textContent = shown ? 'Hide' : 'Show';
+      button.title = shown ? 'Hide the ' + name : 'Show the ' + name + ' — this asks first';
+      button.setAttribute('aria-label', (shown ? 'Hide ' : 'Show ') + name);
+      button.setAttribute('aria-pressed', shown ? 'true' : 'false');
+    };
+    var payHide = function (key) {
+      var box = document.getElementById('pay_' + key);
+      if (!box) { return; }
+      box.value = '${MASK}';
+      box.classList.add('gated');
+      payToggle(key, false);
     };
 `;
 }
@@ -228,6 +282,9 @@ function payListeners(): string {
       var button = event.target.closest ? event.target.closest('button[data-action]') : null;
       if (!button) { return; }
       var action = button.dataset.action;
+      // Hiding never leaves the page. Stopped here so the page's generic button handler does not
+      // also post it to a host that has no answer for it.
+      if (action === '${HIDE_ACTION}') { payHide(button.dataset.field); event.stopPropagation(); return; }
       if (action !== 'reassemble' && action !== 'copyReading') { return; }
       var key = button.dataset.field.split('|')[0];
       var pick = payCard.querySelector('select.mixPick[data-key="' + key + '"]');

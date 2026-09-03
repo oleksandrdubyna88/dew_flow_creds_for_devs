@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { paymentCardMarkup, paymentCardScript } from '../paymentViewCard';
+import { MASK, paymentCardMarkup, paymentCardScript } from '../paymentViewCard';
 import {
   copyTextFor,
   paymentCardFor,
@@ -172,4 +172,45 @@ test('the card knows which keys are present and which are woven, and never inven
   assert.deepEqual(wovenKeysOf(fields, 'card'), ['pin'], 'an absent field is not woven; nor is a name');
   assert.ok(!presentKeysOf(fields, 'card').includes('beneficiary'), 'a bank key is not a card key');
   assert.ok(presentKeysOf({ number: '' }, 'card').length === 0, 'an empty string is not a value');
+});
+
+/**
+ * A revealed CVV has to be hideable again.
+ *
+ * <p>There was no hide path at all: the row rendered a static `Show`, and `payFill` wrote the value
+ * and dropped the `gated` class with nothing anywhere to reverse it. Somebody who revealed a CVV to
+ * read it had no way to put it away again short of closing the card.</p>
+ *
+ * <p>The flip belongs where the VALUE arrives, not on the click. A click only asks; the host posts
+ * nothing at all when the confirmation is declined (`paymentViewHost.reveal`), and a button reading
+ * `Hide` over a still-masked box would be stating the opposite of the truth.</p>
+ */
+test('a gated row can be put back — the button becomes Hide, and hiding re-masks it', () => {
+  const html = paymentCardMarkup(paymentCardFor('e1', 'card', CARD, random));
+  const script = paymentCardScript();
+
+  assert.match(html, /data-label="CVV"/, 'the label rides on the button, so the script can rename it');
+  assert.ok(html.includes(`value="${MASK}"`), 'the row starts masked with the shared constant');
+  assert.ok(script.includes(MASK), 'and the script re-masks with the SAME constant, not a copy');
+
+  // The flip is inside payFill — the arrival of a value — and not in the click handler.
+  assert.match(
+    script,
+    /payFill = function[\s\S]*?payToggle\(key, true\)/,
+    'an ARRIVING value is what turns the button into Hide — never the click that asked for it',
+  );
+  assert.match(script, /textContent = shown \? 'Hide' : 'Show'/, 'and the two states are one expression');
+  assert.match(script, /action === 'hide'/, 'and the page handles hiding itself');
+});
+
+test('hiding is answered by the page alone — the host is never told', () => {
+  const script = paymentCardScript();
+
+  // There is nothing host-side to release for a plain gated field: `held` carries woven readings
+  // only. A message would be a round trip that changes nothing, and one more thing to get wrong.
+  const hideBranch = script.slice(script.indexOf("action === 'hide'"));
+  assert.ok(
+    !/postMessage/.test(hideBranch.slice(0, 400)),
+    'hiding must not post to the host — it is a page-local re-mask',
+  );
 });
