@@ -5,7 +5,7 @@ import { configFileNameFor } from './configFile';
 import { buildCommandLine, normalizeArgs } from './commandLine';
 import { normalizeForwards, normalizeTags, renderForward } from './sshOptions';
 import { resolveScriptEnv } from './scriptRender';
-import { copyableValue } from './paymentViewMessages';
+import { copyVariant, copyableValue } from './paymentViewMessages';
 
 /**
  * The viewer's copy switch, in its own module for the oldest reason here: `entityViewPage.ts`
@@ -37,9 +37,13 @@ export async function copyValueFor(
   if (field.startsWith('pay_')) {
     const view = options.payment;
     const fields = await options.resolvePayment?.();
-    return view === undefined || fields === undefined
+    // `pay_<key>` or `pay_<key>|<variant>`. The variant decides the SHAPE of the answer, never
+    // which field is read — that is still the key, and it is still checked against the record.
+    const [key, variant = ''] = field.slice('pay_'.length).split('|');
+    const value = view === undefined || fields === undefined
       ? undefined
-      : copyableValue(fields, view.form, field.slice('pay_'.length));
+      : copyableValue(fields, view.form, key);
+    return value === undefined ? undefined : copyVariant(key, variant, value);
   }
   if (field === 'snippet' || field.startsWith('snippet|')) {
     const parts = field.split('|');

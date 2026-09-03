@@ -92,8 +92,13 @@ const ORDERED: readonly BrandRule[] = [
   ...RULES.filter((rule) => rule.brand === 'maestro'),
 ];
 
-/** Just the digits — people type cards with spaces and dashes, and so do their banks' statements. */
-function digitsOf(number: string): string {
+/**
+ * Just the digits — people type cards with spaces and dashes, and so do their banks' statements.
+ *
+ * <p>Exported for `cardNumberFormat`, which needs the same answer and must not have a second one:
+ * what the record stores and what the checksum reads have to be the same string.</p>
+ */
+export function digitsOf(number: string): string {
   return number.replace(/\D/g, '');
 }
 

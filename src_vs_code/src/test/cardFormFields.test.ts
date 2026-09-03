@@ -40,7 +40,10 @@ test('a filled form becomes the record, under the record’s own names', () => {
   });
 
   assert.deepEqual(fields, {
-    number: '4111 1111 1111 1111',
+    // Digits, though the box was typed with spaces: grouping is presentation and the record keeps
+    // what can be woven. A stored space would be permuted in among the digits by shuffleTokens and
+    // the original could never be rebuilt. See cardNumberFormat.ts.
+    number: '4111111111111111',
     expiry: '12/29',
     holder: 'A Person',
     cvv: '123',

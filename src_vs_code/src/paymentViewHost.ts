@@ -267,7 +267,9 @@ export class PaymentViewHost {
     if (view === undefined || !field.startsWith('pay_')) {
       return true;
     }
-    return this.grant(field.slice('pay_'.length), view);
+    // The KEY, never the whole field: `pay_cvv|anything` must ask exactly as `pay_cvv` does, or a
+    // variant suffix would be a door beside the one this gate is standing at.
+    return this.grant(field.slice('pay_'.length).split('|')[0], view);
   }
 
   /** Asked once per field while this card is on screen; never again, and never for ever. */

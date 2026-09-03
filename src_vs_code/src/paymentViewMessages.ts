@@ -5,6 +5,7 @@ import { PhraseLayout, methodOrder } from './phraseLayout';
 import { Reassembled, reassemble } from './phraseReassembly';
 import { Random } from './decoyDigits';
 import { needsReveal } from './revealGate';
+import { groupDigits } from './cardNumberFormat';
 
 /**
  * What the viewer's host answers when the card asks — decided here, where it can be tested.
@@ -88,7 +89,31 @@ export function paymentCardFor(
 export function plainValues(fields: PaymentFields, form: PaymentForm): Record<string, string> {
   const woven = new Set<string>(wovenKeysOf(fields, form));
   const shown = presentKeysOf(fields, form).filter((key) => !needsReveal(key) && !woven.has(key));
-  return Object.fromEntries(shown.flatMap((key) => textOf(fields, key).map((value) => [key, value])));
+  return Object.fromEntries(
+    shown.flatMap((key) => textOf(fields, key).map((value) => [key, forDisplay(key, value)])),
+  );
+}
+
+/**
+ * What the card shows, which is not always what the record holds.
+ *
+ * <p>One field, one difference: a card number is stored as digits and READ in the groups it is
+ * printed in. Nobody can check sixteen undivided digits against the plastic in their hand.</p>
+ */
+function forDisplay(key: PaymentFieldKey, value: string): string {
+  return key === 'number' ? groupDigits(value) : value;
+}
+
+/**
+ * The copy variants of one field: what the clipboard gets when there is more than one right answer.
+ *
+ * <p>Only the card number has two. `pay_number` copies digits, for a form that refuses spaces;
+ * `pay_number|spaced` copies the grouped text, for a person reading it back to somebody. Two
+ * identical clipboard icons with no way to tell them apart would be a coin toss, so the buttons say
+ * which is which — see `plainRow`.</p>
+ */
+export function copyVariant(key: string, variant: string, value: string): string {
+  return key === 'number' && variant === 'spaced' ? groupDigits(value) : value;
 }
 
 /**

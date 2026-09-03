@@ -82,10 +82,23 @@ function plainRow(key: PaymentFieldKey): string {
     : '';
   return `<div class="row">
       <label>${label}</label>
-      <div class="line"><input readonly id="pay_${key}"${gated ? ' value="••••••••" class="gated"' : ''}>
-        ${show}<button data-field="pay_${key}" data-action="copy" class="icon" title="Copy ${label}" aria-label="Copy ${label}">${COPY_ICON}</button>
+      <div class="line"><input readonly id="pay_${key}"${gated ? ` value="${MASK}" class="gated"` : ''}>
+        ${show}<button data-field="pay_${key}" data-action="copy" class="icon" title="Copy ${label}${key === 'number' ? ' as digits, with no spaces' : ''}" aria-label="Copy ${label}">${COPY_ICON}</button>${spacedCopy(key, label)}
       </div>
     </div>`;
+}
+
+/**
+ * The card number's second clipboard button: the same value, in the groups it is printed in.
+ *
+ * <p>Only the number has two right answers — a payment form usually refuses spaces, and a person
+ * reading a number aloud wants them. Two identical icons side by side would be a coin toss, so this
+ * one is marked and both say in their titles which is which.</p>
+ */
+function spacedCopy(key: PaymentFieldKey, label: string): string {
+  return key !== 'number'
+    ? ''
+    : `<button data-field="pay_number|spaced" data-action="copy" class="icon spaced" title="Copy ${label} in groups of four" aria-label="Copy ${label} with spaces">${COPY_ICON}<span aria-hidden="true">␣</span></button>`;
 }
 
 /**
@@ -306,5 +319,7 @@ export function paymentCardStyles(): string {
              font-family: var(--vscode-editor-font-family, monospace); word-break: break-all; }
   .reading .word { display: inline-block; margin-right: .5em; }
   .payNote { margin: 3px 0; }
-  input.gated { letter-spacing: .2em; }`;
+  input.gated { letter-spacing: .2em; }
+  /* The spaced copy carries a visible mark, because two identical icons are a coin toss. */
+  button.spaced span { font-size: .8em; margin-left: 1px; opacity: .8; }`;
 }

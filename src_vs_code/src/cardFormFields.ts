@@ -1,5 +1,6 @@
 import { PaymentFields, pickPaymentFields } from './paymentFields';
 import { brandOf, luhn } from './cardBrand';
+import { caretAfterFormat, digitsOnly, groupDigits } from './cardNumberFormat';
 import { PAYMENT_BRAND_LABELS } from './cardBrandIcons';
 
 /**
@@ -52,8 +53,19 @@ const CARD_INPUTS: ReadonlyArray<readonly [inputId: string, field: FormTextField
  */
 export function cardFieldsFrom(data: Record<string, unknown>): PaymentFields {
   return pickPaymentFields(
-    Object.fromEntries(CARD_INPUTS.map(([inputId, field]) => [field, textOf(data[inputId])])),
+    Object.fromEntries(CARD_INPUTS.map(([inputId, field]) => [field, stored(field, textOf(data[inputId]))])),
   );
+}
+
+/**
+ * The stored form of a box's text — which differs from the displayed form for exactly one field.
+ *
+ * <p>A card number is SHOWN in groups and STORED as digits, and the direction matters more than it
+ * looks: a woven number is permuted per character, so a stored space would be woven in among the
+ * digits and the original could never be rebuilt. See `cardNumberFormat.ts`.</p>
+ */
+function stored(field: FormTextField, value: string): string {
+  return field === 'number' ? digitsOnly(value) : value;
 }
 
 /** The ids the webview is asked to fill when a stored card is delivered by message. */
@@ -100,6 +112,37 @@ export function brandHint(number: string): string {
 }
 
 const MISTYPED = ' · the digits do not add up — worth checking, but it will still save';
+
+/**
+ * What the number box should be showing, given what it holds now.
+ *
+ * <p>Host-side for the reason `brandHint` is: the page is a template string, and nothing inside one
+ * can be unit tested. The page sends what it holds and where the caret is; it gets back the grouped
+ * text and where the caret goes.</p>
+ */
+export function groupedNumber(number: string): string {
+  return groupDigits(number);
+}
+
+/**
+ * Everything the page is told after a keystroke in the number box: what system it looks like, the
+ * number re-grouped, and where the caret goes.
+ *
+ * <p>`was` rides along so the page can drop a STALE answer. Two keystrokes are two round trips and
+ * their answers can arrive in either order; without the stamp the older one would overwrite text
+ * the person has since typed. The card's reassembly answers carry the same guard for the same
+ * reason.</p>
+ */
+export function cardTypedAnswer(number: string, caretDigits: number): Record<string, unknown> {
+  const grouped = groupedNumber(number);
+  return {
+    type: 'cardBrand',
+    text: brandHint(number),
+    was: number,
+    grouped,
+    caret: caretAfterFormat(grouped, caretDigits),
+  };
+}
 
 function binOfDigits(number: string): string {
   return number.replace(/\D/g, '');

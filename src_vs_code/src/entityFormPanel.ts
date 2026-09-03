@@ -2,7 +2,7 @@ import { answerCardValues, formOf, paymentGates, paymentRecordFor, switchNoticeF
 import { hasMixedField } from './mixedFieldGuard';
 import { readDependsOnRows, readForwardRows } from './formRowReaders';
 import { PaymentFields } from './paymentFields';
-import { brandHint } from './cardFormFields';
+import { cardTypedAnswer } from './cardFormFields';
 import * as vscode from 'vscode';
 import { applyLifetime } from './entityExpiry';
 import { normalizeArgs } from './commandLine';
@@ -233,6 +233,8 @@ export interface FormMessage {
   form?: string;
   /** `cardTyped` only: the number as typed so far, for the mark and the checksum hint. */
   number?: string;
+  /** `cardTyped` only: how many DIGITS stand before the caret, so grouping can put it back. */
+  caretDigits?: number;
   /** `qrImage` only: the pasted picture as grey pixels, base64, and its size. */
   gray?: string;
   width?: number;
@@ -384,7 +386,7 @@ const ROUND_TRIPS: Record<string, (message: FormMessage, options: EntityFormOpti
   // The number never leaves the page for this — only the ANSWER comes back. `brandOf` is pure and
   // could have run in the webview, but the page is a template string where nothing can be unit
   // tested, which is the rule the highlighter's own comment states.
-  cardTyped: (message) => ({ type: 'cardBrand', text: brandHint(message.number ?? '') }),
+  cardTyped: (message) => cardTypedAnswer(message.number ?? '', message.caretDigits ?? 0),
   // The Form selector moved. Only the host can say what the switch would delete, because only the
   // host holds the stored record — the page carries no payment value at all, by rule.
   paymentFormChanged: (message, options) => ({

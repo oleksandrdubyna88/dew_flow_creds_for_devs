@@ -42,7 +42,14 @@ export function cardFormScript(): string {
     var number = document.getElementById('cardNumber');
     var hint = document.getElementById('cardBrandHint');
     if (!number || !hint) { return; }
-    vscode.postMessage({ type: 'cardTyped', number: number.value });
+    // How many DIGITS stand before the caret, not how many characters: the spaces are about to
+    // move, and a caret counted in characters lands somewhere nobody meant.
+    var upTo = number.value.slice(0, number.selectionStart || 0);
+    vscode.postMessage({
+      type: 'cardTyped',
+      number: number.value,
+      caretDigits: upTo.replace(/[^0-9]/g, '').length,
+    });
   }
   var cardNumberBox = document.getElementById('cardNumber');
   if (cardNumberBox) {
@@ -52,11 +59,29 @@ export function cardFormScript(): string {
     vscode.postMessage({ type: 'cardValues' });
   }
 
-  window.addEventListener('message', function (event) {
+  ${brandAnswerScript()}
+`;
+}
+
+/**
+ * What the page does with the host's answer: name the system, and re-group the number.
+ *
+ * <p>Its own block for the fifty-line ceiling, and because it is the one place this page WRITES the
+ * number box rather than reading it. (No backticks in this file: it IS a template literal.)</p>
+ */
+function brandAnswerScript(): string {
+  return `  window.addEventListener('message', function (event) {
     var brand = event.data;
     if (!brand || brand.type !== 'cardBrand') { return; }
     var hint = document.getElementById('cardBrandHint');
     if (hint) { hint.textContent = brand.text; }
+    var box = document.getElementById('cardNumber');
+    // Applied only if the box still holds what was SENT. Two keystrokes are two round trips and
+    // their answers can arrive in either order; the older one must not overwrite the newer text.
+    if (box && box.value === brand.was && brand.grouped !== brand.was) {
+      box.value = brand.grouped;
+      if (document.activeElement === box) { box.setSelectionRange(brand.caret, brand.caret); }
+    }
   });
 `;
 }

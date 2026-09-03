@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import { MASK, paymentCardMarkup, paymentCardScript } from '../paymentViewCard';
 import {
   copyTextFor,
+  copyVariant,
   paymentCardFor,
   plainValues,
   presentKeysOf,
@@ -213,4 +214,31 @@ test('hiding is answered by the page alone — the host is never told', () => {
     !/postMessage/.test(hideBranch.slice(0, 400)),
     'hiding must not post to the host — it is a page-local re-mask',
   );
+});
+
+test('the card shows the number the way the card is printed, and copies it both ways', () => {
+  const html = paymentCardMarkup(paymentCardFor('e1', 'card', { number: '5293660594910479' }, random));
+
+  assert.match(html, /data-field="pay_number" data-action="copy"/, 'digits, for a form that refuses spaces');
+  assert.match(html, /data-field="pay_number\|spaced"/, 'and groups of four, for reading it aloud');
+  // The two buttons must be tellable apart. Two identical icons side by side is a coin toss.
+  assert.match(html, /title="Copy Card number as digits, with no spaces"/);
+  assert.match(html, /title="Copy Card number in groups of four"/);
+  // And still nothing from the record reaches the page.
+  assert.ok(!html.includes('5293'), 'the value itself arrives by message, as it always did');
+});
+
+test('what the card is FILLED with is grouped; what the record holds is not', () => {
+  const fields = { number: '5293660594910479' };
+
+  assert.equal(plainValues(fields, 'card').number, '5293 6605 9491 0479', 'read as it is printed');
+  assert.equal(fields.number, '5293660594910479', 'the record is untouched — grouping is display only');
+});
+
+test('a copy variant is a SHAPE, never a way past the reveal gate', () => {
+  // `pay_cvv|spaced` must ask exactly as `pay_cvv` does. A suffix that skipped the question would
+  // be a door standing beside the one the gate is guarding.
+  assert.equal(copyVariant('number', 'spaced', '5293660594910479'), '5293 6605 9491 0479');
+  assert.equal(copyVariant('number', '', '5293660594910479'), '5293660594910479', 'no variant, no change');
+  assert.equal(copyVariant('cvv', 'spaced', '737'), '737', 'nothing else has a second shape');
 });

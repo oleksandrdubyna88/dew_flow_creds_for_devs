@@ -140,7 +140,9 @@ test('a card that stays a card keeps its fields and gains its brand', async () =
     'card',
   );
 
-  assert.equal(written.number, '4111 1111 1111 1111');
+  // Stored as digits though it was typed with spaces — see cardNumberFormat.ts: what is woven is
+  // the stored string, so a space in it is a card number nobody can rebuild.
+  assert.equal(written.number, '4111111111111111');
   assert.equal(written.cvv, '123');
   assert.equal(written.brand, 'visa', 'derived on every save, so a corrected number corrects the mark');
 });
