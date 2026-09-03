@@ -71,26 +71,79 @@ and the import survives, because it genuinely runs second. Without that control 
 only show that the two operations conflict, not that the WINDOW is where the guarantee stops.
 
 **One constraint the reproduction also settled**, and it belongs in the design rather than being
-discovered during it: `vscode.Memento` has no compare-and-swap. `get` then `update` is a read-modify-write
-two windows can both win, so a lease key in `globalState` is **advisory** — it narrows the race from
-the length of an operation to the length of one write, and does not eliminate it. A write-then-read-back
-(take the lease, re-read it, proceed only if it is still ours) resolves the common case, since the
-memento broadcasts a foreign write and the loser sees the winner's holder id. Any design that claims
-more than that is claiming something this API cannot give.
+discovered during it: `vscode.Memento` has no compare-and-swap. `get` then `update` is a
+read-modify-write two windows can both win, so a lease key in `globalState` cannot exclude anything.
+
+## The design round that changed the primitive — 2026-09-03
+
+The first draft of steps 2–4 proposed exactly that lease, with a write-then-read-back to settle a
+tie. **Three of the round's findings were Blocking and all three said the same thing, from three
+different vendors independently: the read-back does not settle it.** Both windows read empty, both
+write their own holder, and each can re-read its own value — `Memento.update` is asynchronous and a
+foreign write reaches the other window's cache through a broadcast with no ordering guarantee against
+a local read. So two windows enter, and the reproduction above still destroys the import. A design
+whose central claim is refuted before a line is written is the cheapest kind of finding there is.
+
+Eleven findings, **all accepted**. The design below is the corrected one.
+
+### The primitive is a directory, not a key
+
+`fs.mkdir` without `recursive` is **atomic on every platform this ships to**: it either creates the
+directory or fails because it exists. That is a real mutual exclusion primitive, and one this
+extension already has a place for — `context.globalStorageUri` is a directory on disk shared by every
+window of the profile, which is the same sharing that makes the problem exist in the first place.
+
+- **Acquire** = `mkdir(lockDir)`. Success IS the lock; there is no read-then-write to lose.
+- **Identity** = a `holder.json` written inside the directory after acquiring: an id unique to this
+  acquisition (not to the window — see fencing) plus a heartbeat timestamp.
+- **Heartbeat**, not renewal-of-a-deadline: the holder rewrites the timestamp while it works, and a
+  window is a valid holder only while `now - heartbeat < TTL`. A holder whose renewal loop dies stops
+  being one without having to notice, which is what a killed window and a wedged one have in common.
+- **Stale break** = read `holder.json`, and if it is older than the TTL, remove the directory and
+  retry the `mkdir`. The retry is what makes the break safe: two windows can both decide to break,
+  but only one can win the `mkdir` that follows.
+- **Fencing** = the acquisition id. Release removes the directory **only if `holder.json` still names
+  this acquisition**, so a holder that overran its TTL and was broken cannot delete the lock of the
+  window that replaced it. The residual — a break landing between our check and our `rmdir` — is
+  named in the header rather than papered over.
+
+### What the round settled about behaviour
+
+- **The sweep skips — and must come back.** Skipping when another window holds the lock is right, but
+  a holder that is then killed leaves the pending removal for nobody: the sweep runs once at startup.
+  So a skip schedules a retry after the TTL, and keeps doing so while the record still names work.
+- **A person-triggered operation waits INDEFINITELY with a visible progress notification**, not on a
+  bounded timeout. A bounded one fails a command while the other window is still mutating the same
+  data, which is a worse state than waiting.
+- **An import never reports success having done nothing.** Step 1 is why: silently skipping an import
+  is the same outcome as being wiped.
+- **The message never names a window id.** "Another window is importing" is actionable; "window 12345"
+  is not.
+- **The wiring goes in a `LeasedQueue` beside `SerialQueue`, not into `storageManager.ts`**, which is
+  at its size-ratchet baseline and may not grow. The five call sites keep their shape.
 
 ## Build order
 
 1. ~~A failing test with two `StorageManager` instances over one shared memento + keychain, showing a
    removal and an apply interleaving into a broken state.~~ **Done** — see above.
-2. The lease primitive, in its own module, free of `vscode`, with the stale-lease rule.
-3. Route the same three operations (plus `upsertAccount`) through it, inside the existing
-   `SerialQueue.run` so a window is serialized against both itself and its peers.
-4. Decide and implement the "cannot take the lease" behaviour per operation.
+2. The lock primitive — `windowLock.ts`, free of `vscode`, taking a small filesystem port so the
+   `mkdir` race, the stale break and the fencing check are all unit tests. Its header states the one
+   residual race rather than implying there is none.
+3. `LeasedQueue` beside `SerialQueue`: same `run` shape, the lock taken inside it. The five call
+   sites in `storageManager.ts` keep their shape and that file does not grow.
+4. The per-operation behaviour the round settled — the sweep skips and retries after the TTL,
+   everything else waits with a visible progress notification, and nothing reports success having
+   done nothing.
+5. Re-point the step-1 reproduction at the leased operations and watch it stop losing the import.
+   That test is the acceptance criterion, and it already exists.
 
 ## Definition of Done
 
-- [ ] The two-instance test from step 1 exists and passes.
-- [ ] A window killed holding the lease does not block the next one.
+- [x] The two-instance test from step 1 exists and passes, and names the failure: an import that
+      SUCCEEDED is destroyed afterwards, with no error on either side.
+- [ ] The same test, re-pointed at leased operations, no longer loses the import.
+- [ ] A window killed holding the lock does not block the next one — the heartbeat, not a deadline.
+- [ ] A holder that overran its TTL cannot delete the lock of the window that replaced it.
 - [ ] The sweep skips rather than waits; a person-triggered removal waits visibly.
 - [ ] `research/module_extension.md` records the primitive and its boundary.
 - [ ] `SerialQueue`'s header stops being the last word on this, and points here.
