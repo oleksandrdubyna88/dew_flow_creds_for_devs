@@ -133,8 +133,13 @@ jobs:
           # its OWN runner rather than another `-r` on an existing one.
           - rid: osx-arm64
             runner: macos-latest
+          # osx-x64 built on the arm64 image, cross-targeted. It used to say `macos-13`, the last
+          # Intel image, and that is why every server release ever made is missing this one asset:
+          # the leg did not fail, it QUEUED — for 45 minutes on the tag that finally got looked at,
+          # and presumably forever on the ones before. A job waiting for a runner that is not coming
+          # is invisible in every list that shows conclusions.
           - rid: osx-x64
-            runner: macos-13
+            runner: macos-latest
     runs-on: ${{ matrix.runner }}
     permissions:
       contents: write   # attach binaries to the release
@@ -171,13 +176,75 @@ jobs:
             echo "ASSET=$NAME.tar.gz" >> "$GITHUB_ENV"
           fi
 
-      - name: Attach to the release
+      # The leg hands its asset to the publish job and does NOT touch the release. See the comment on
+      # `server-release` for what that changed.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: server-${{ matrix.rid }}
+          path: ${{ env.ASSET }}
+          if-no-files-found: error
+          retention-days: 1
+
+  # ONE publish, after the WHOLE matrix — the rule from
+  # .claude/rules/shared/common/development-workflow.md, applied here because this workflow was the
+  # thing it warns about. Every leg used to run `gh release create … || true` and upload its own
+  # asset, so the release went public the moment the FIRST leg finished and every later one added to
+  # it. A leg that failed, or sat queued on a retired runner image, therefore left a PUBLISHED release
+  # with a partial asset set and nothing anywhere reporting a problem.
+  #
+  # That is not hypothetical here: server-v0.5.0 shipped 4 assets, v0.5.1 shipped 5, v0.5.2 shipped 5
+  # — every server release this repository has ever made was missing osx-x64, and each one read as a
+  # success in every list. `needs:` makes a single failed leg keep the release from existing at all,
+  # and the count assertion below makes a silently shrinking matrix a red build rather than an
+  # absence a user discovers on the download page.
+  server-release:
+    name: publish server release
+    needs: server-binaries
+    if: startsWith(github.ref, 'refs/tags/server-v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: server-*
+          path: assets
+          merge-multiple: true
+
+      - name: Create the release with every asset at once
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
         shell: bash
         run: |
-          gh release create "$GITHUB_REF_NAME" --title "cred-vault-server ${GITHUB_REF_NAME#server-v}"             --notes "Native AOT builds. Docker: ghcr.io/${{ github.repository_owner }}/cred-vault-server:${GITHUB_REF_NAME#server-v}"             2>/dev/null || true
-          gh release upload "$GITHUB_REF_NAME" "$ASSET" --clobber
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME#server-v}"
+          gh release create "$GITHUB_REF_NAME" assets/* \
+            --title "cred-vault-server $VERSION" \
+            --notes "Native AOT builds. Docker: ghcr.io/${{ github.repository_owner }}/cred-vault-server:$VERSION"
+
+      # Asserted from the RELEASE, not from this workflow's opinion of itself: a matrix that silently
+      # shrinks — a runner image retired, a leg skipped by an `if:` — passes every job-level check.
+      - name: Every target has an asset
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          EXPECTED_RIDS: linux-x64 linux-arm64 win-x64 win-arm64 osx-arm64 osx-x64
+        shell: bash
+        run: |
+          set -euo pipefail
+          NAMES="$(gh release view "$GITHUB_REF_NAME" --json assets --jq '.assets[].name' | tr '\n' ' ')"
+          MISSING=""
+          for rid in $EXPECTED_RIDS; do
+            case "$NAMES" in *"$rid"*) ;; *) MISSING="$MISSING $rid" ;; esac
+          done
+          if [ -n "$MISSING" ]; then
+            echo "::error::the release is missing an asset for:$MISSING"
+            echo "A user on that platform finds an absence, not an error. Delete the release and the"
+            echo "tag, fix the leg, and ship the next patch version — never move a tag."
+            exit 1
+          fi
+          echo "all six RIDs present: $NAMES"
 
   # The headless CLI, same technology and same four RIDs as the server: one toolchain in the
   # repository, and the AOT analyzers already run on every ordinary build so an incompatible
@@ -203,8 +270,13 @@ jobs:
           # its OWN runner rather than another `-r` on an existing one.
           - rid: osx-arm64
             runner: macos-latest
+          # osx-x64 built on the arm64 image, cross-targeted. It used to say `macos-13`, the last
+          # Intel image, and that is why every server release ever made is missing this one asset:
+          # the leg did not fail, it QUEUED — for 45 minutes on the tag that finally got looked at,
+          # and presumably forever on the ones before. A job waiting for a runner that is not coming
+          # is invisible in every list that shows conclusions.
           - rid: osx-x64
-            runner: macos-13
+            runner: macos-latest
     runs-on: ${{ matrix.runner }}
     permissions:
       contents: write
@@ -275,14 +347,61 @@ jobs:
         shell: bash
         run: sha256sum "$ASSET" > "$ASSET.sha256"
 
-      - name: Attach to the release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cli-${{ matrix.rid }}
+          path: |
+            ${{ env.ASSET }}
+            ${{ env.ASSET }}.sha256
+          if-no-files-found: error
+          retention-days: 1
+
+  # Same shape as server-release, and here for the same reason: the defect was at all three sites,
+  # so the fix is at all three. Fixing only the one that was noticed is the failure
+  # .claude/rules/shared/common/security.md calls "a measure applied at SOME of its sites".
+  cli-release:
+    name: publish cli release
+    needs: cli-binaries
+    if: startsWith(github.ref, 'refs/tags/cli-v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: cli-*
+          path: assets
+          merge-multiple: true
+
+      - name: Create the release with every asset at once
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
         shell: bash
         run: |
-          gh release create "$GITHUB_REF_NAME" --title "creds ${GITHUB_REF_NAME#cli-v}" --notes "Native AOT builds of the headless CLI." 2>/dev/null || true
-          gh release upload "$GITHUB_REF_NAME" "$ASSET" --clobber
-          gh release upload "$GITHUB_REF_NAME" "$ASSET.sha256" --clobber
+          set -euo pipefail
+          gh release create "$GITHUB_REF_NAME" assets/* \
+            --title "creds ${GITHUB_REF_NAME#cli-v}" \
+            --notes "Native AOT builds of the headless CLI."
+
+      - name: Every target has an asset
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          EXPECTED_RIDS: linux-x64 linux-arm64 win-x64 win-arm64 osx-arm64 osx-x64
+        shell: bash
+        run: |
+          set -euo pipefail
+          NAMES="$(gh release view "$GITHUB_REF_NAME" --json assets --jq '.assets[].name' | tr '\n' ' ')"
+          MISSING=""
+          for rid in $EXPECTED_RIDS; do
+            case "$NAMES" in *"$rid"*) ;; *) MISSING="$MISSING $rid" ;; esac
+          done
+          if [ -n "$MISSING" ]; then
+            echo "::error::the release is missing an asset for:$MISSING"
+            exit 1
+          fi
+          echo "all six RIDs present: $NAMES"
 
   # The MCP server: same technology, same four RIDs, its own tag line. Versioned apart from the
   # CLI because they are two binaries with two audiences — a person installs `creds` for their
@@ -307,8 +426,13 @@ jobs:
           # its OWN runner rather than another `-r` on an existing one.
           - rid: osx-arm64
             runner: macos-latest
+          # osx-x64 built on the arm64 image, cross-targeted. It used to say `macos-13`, the last
+          # Intel image, and that is why every server release ever made is missing this one asset:
+          # the leg did not fail, it QUEUED — for 45 minutes on the tag that finally got looked at,
+          # and presumably forever on the ones before. A job waiting for a runner that is not coming
+          # is invisible in every list that shows conclusions.
           - rid: osx-x64
-            runner: macos-13
+            runner: macos-latest
     runs-on: ${{ matrix.runner }}
     permissions:
       contents: write
@@ -367,14 +491,58 @@ jobs:
         shell: bash
         run: sha256sum "$ASSET" > "$ASSET.sha256"
 
-      - name: Attach to the release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mcp-${{ matrix.rid }}
+          path: |
+            ${{ env.ASSET }}
+            ${{ env.ASSET }}.sha256
+          if-no-files-found: error
+          retention-days: 1
+
+  mcp-release:
+    name: publish mcp release
+    needs: mcp-binaries
+    if: startsWith(github.ref, 'refs/tags/mcp-v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: mcp-*
+          path: assets
+          merge-multiple: true
+
+      - name: Create the release with every asset at once
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
         shell: bash
         run: |
-          gh release create "$GITHUB_REF_NAME" --title "creds-mcp ${GITHUB_REF_NAME#mcp-v}" --notes "Native AOT builds of the MCP server." 2>/dev/null || true
-          gh release upload "$GITHUB_REF_NAME" "$ASSET" --clobber
-          gh release upload "$GITHUB_REF_NAME" "$ASSET.sha256" --clobber
+          set -euo pipefail
+          gh release create "$GITHUB_REF_NAME" assets/* \
+            --title "creds-mcp ${GITHUB_REF_NAME#mcp-v}" \
+            --notes "Native AOT builds of the MCP server."
+
+      - name: Every target has an asset
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          EXPECTED_RIDS: linux-x64 linux-arm64 win-x64 win-arm64 osx-arm64 osx-x64
+        shell: bash
+        run: |
+          set -euo pipefail
+          NAMES="$(gh release view "$GITHUB_REF_NAME" --json assets --jq '.assets[].name' | tr '\n' ' ')"
+          MISSING=""
+          for rid in $EXPECTED_RIDS; do
+            case "$NAMES" in *"$rid"*) ;; *) MISSING="$MISSING $rid" ;; esac
+          done
+          if [ -n "$MISSING" ]; then
+            echo "::error::the release is missing an asset for:$MISSING"
+            exit 1
+          fi
+          echo "all six RIDs present: $NAMES"
 
   extension:
     name: publish extension
