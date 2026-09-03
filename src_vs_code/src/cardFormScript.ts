@@ -113,7 +113,7 @@ function markScript(): string {
     return box ? box.value : '';
   }
   var sharedMethod = document.getElementById('mixMethod');
-  if (sharedMethod) { sharedMethod.addEventListener('change', askExamples); }
+  if (sharedMethod) { sharedMethod.addEventListener('change', askExamplesSoon); }
   var brandPick = document.getElementById('cardBrand');
   if (brandPick) {
     brandPick.addEventListener('change', function () { showMark(brandPick.value || lastDetected); });
@@ -176,7 +176,7 @@ function mixScript(): string {
       if (expand) { expand.textContent = 'Use one method for all of them'; }
     }
     if (per && per.style.display !== 'none') { renderPerField(picked); }
-    askExamples();
+    askExamplesSoon();
   }
 
   ${mixRenderScript()}
@@ -196,7 +196,22 @@ ${exampleScript()}
  * for land in their own places rather than overwriting each other. (No backticks in this file.)</p>
  */
 function exampleScript(): string {
-  return `  function askExamples() {
+  return `  // One repaint per BURST of control changes, not one per keystroke: five marked fields under ten
+  // quick changes is fifty host draws, most of them obsolete before they are painted.
+  var exampleTimer = 0;
+  function askExamplesSoon() {
+    if (exampleTimer) { clearTimeout(exampleTimer); }
+    exampleTimer = setTimeout(askExamples, 120);
+  }
+
+  // What THIS field's method is right now — its own, or the shared one.
+  function methodNow(field) {
+    var own = collectMixMethods();
+    var shared = document.getElementById('mixMethod');
+    return own[field] || (shared ? shared.value : '');
+  }
+
+  function askExamples() {
     var host = document.getElementById('mixExample');
     if (!host) { return; }
     var picked = markedFields();
@@ -263,6 +278,10 @@ function examplePaintScript(): string {
   window.addEventListener('message', function (event) {
     var answer = event.data;
     if (!answer || answer.type !== 'weaveExampleResult' || !answer.field) { return; }
+    // Two changes are two requests, and their answers can arrive in either order. An answer for a
+    // method the controls no longer show would leave somebody choosing from a picture of a
+    // different algorithm with nothing saying so — the same guard the reassembly answers carry.
+    if (answer.method !== methodNow(answer.field)) { return; }
     var block = exampleBlock(answer.field);
     block.textContent = '';
     var title = document.createElement('div');
@@ -361,8 +380,10 @@ export function addressScript(): string {
     if (answer.type === 'addressSplit') {
       for (var i = 0; i < ADDRESS_IDS.length; i++) {
         var box = document.getElementById(ADDRESS_IDS[i]);
-        // Only what the parse actually found: an empty guess must not wipe a box somebody filled.
-        if (box && answer[ADDRESS_IDS[i]]) { box.value = answer[ADDRESS_IDS[i]]; }
+        // EVERY cell, empty ones included: pressing Split is REPLACING this address, not adding to
+        // it. Keeping a cell the parse did not fill leaves the old postcode under the new street,
+        // and the preview and the save then carry a place nobody lives. (Review finding, twice.)
+        if (box) { box.value = answer[ADDRESS_IDS[i]] || ''; }
       }
       refreshAddress();
     }

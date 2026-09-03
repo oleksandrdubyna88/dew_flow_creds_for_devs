@@ -49,7 +49,17 @@ import { KeyWrap, isKeyWrap, newMasterKey, unwrapWithPinAsync, wrapWithPinAsync 
 export type SecretRead =
   | { readonly kind: 'value'; readonly value: string; readonly woven: boolean }
   | { readonly kind: 'locked'; readonly envelope: SecretEnvelope; readonly woven: boolean }
-  | { readonly kind: 'absent' };
+  | { readonly kind: 'absent' }
+  /**
+   * One of ours, and broken. NEVER the same answer as "a legacy plaintext secret".
+   *
+   * <p>Two review findings, one mistake: a truncated keychain write leaves envelope-shaped text
+   * that does not parse, and reading that as a plain value hands ciphertext to whatever asked for
+   * a password — and lets the next save overwrite the original with it. A caller must be able to
+   * tell "this is not mine" from "this is mine and it is damaged", because only the second one
+   * means stop.</p>
+   */
+  | { readonly kind: 'corrupt'; readonly why: string };
 
 export interface SecretLock {
   /** The data key, wrapped under the PIN. */
@@ -87,7 +97,60 @@ export function readSecret(raw: string | undefined): SecretRead {
     return { kind: 'absent' };
   }
   const envelope = parsed(raw);
-  return envelope === undefined ? { kind: 'value', value: raw, woven: false } : opened(envelope);
+  return envelope === undefined ? unparsed(raw) : checked(envelope);
+}
+
+/** One of ours: opened when it is whole, refused when it is not. */
+function checked(envelope: SecretEnvelope): SecretRead {
+  return wellFormed(envelope)
+    ? opened(envelope)
+    : broken('this secret is one of ours and its envelope is malformed');
+}
+
+/**
+ * Text that is not an envelope: a damaged write, or somebody's old password.
+ *
+ * <p>The distinction is the whole point of this function existing. Envelope-SHAPED text that will
+ * not parse is an interrupted keychain write, and handing it back as a value gives CIPHERTEXT to
+ * whatever asked for a password — and lets the next save overwrite the original with it.</p>
+ */
+function unparsed(raw: string): SecretRead {
+  return looksLikeOurs(raw)
+    ? broken('this secret was written as an envelope and is truncated or damaged')
+    : { kind: 'value', value: raw, woven: false };
+}
+
+/** A refusal a caller can act on, with a sentence it can show. */
+function broken(why: string): SecretRead {
+  return { kind: 'corrupt', why };
+}
+
+/** Text that begins the way this module's own writes begin. Cheap, and only ever used on a miss. */
+function looksLikeOurs(raw: string): boolean {
+  return /^\s*\{\s*"v"\s*:\s*\d/.test(raw);
+}
+
+/**
+ * Whether the envelope holds a shape this module could have written.
+ *
+ * <p>`lock` and `value` are mutually exclusive BY CONSTRUCTION — a locked envelope holds
+ * ciphertext and nothing else — so an envelope carrying both is not one of ours however well it
+ * parses, and must never be unlocked by falling through to the plaintext it is carrying.</p>
+ */
+function wellFormed(envelope: SecretEnvelope): boolean {
+  const lock = envelope.lock;
+  if (lock === undefined) {
+    return true;
+  }
+  return envelope.value === undefined && isKeyWrap(lock.wrap) && isSealed(lock.sealed);
+}
+
+/** The four fields `openBlob` needs. A wrap without them is a wrap that cannot be opened. */
+const SEALED_FIELDS: readonly (keyof SealedBlob)[] = ['salt', 'iv', 'tag', 'data'];
+
+function isSealed(sealed: SealedBlob | undefined): boolean {
+  const blob = sealed as Partial<SealedBlob> | undefined;
+  return blob !== undefined && SEALED_FIELDS.every((field) => typeof blob[field] === 'string');
 }
 
 /** One of ours, read: locked or in the clear, and woven either way or not. */
@@ -156,8 +219,14 @@ export async function unlockSecret(
   pin: string,
 ): Promise<string> {
   const lock = envelope.lock;
-  if (lock === undefined || !isKeyWrap(lock.wrap)) {
+  if (lock === undefined) {
     return envelope.value ?? '';
+  }
+  // A locked envelope whose wrap cannot be read is CORRUPT, and saying so is the only safe answer.
+  // Falling back to `envelope.value` here — which the first draft did — would hand back a value
+  // that was supposed to need a PIN, for any envelope carrying both. (Review finding, accepted.)
+  if (!isKeyWrap(lock.wrap)) {
+    throw new Error('This secret is locked and its wrap is damaged; it cannot be opened.');
   }
   return unsealed(lock, accountId, pin);
 }
@@ -175,8 +244,13 @@ export function isLockedSecret(raw: string | undefined): boolean {
   return readSecret(raw).kind === 'locked';
 }
 
+/** Whether what is stored is one of ours and damaged — a state a caller must not write over. */
+export function isCorruptSecret(raw: string | undefined): boolean {
+  return readSecret(raw).kind === 'corrupt';
+}
+
 /** Whether what is stored is a woven pair — true whether or not it is also locked. */
 export function isWovenSecret(raw: string | undefined): boolean {
   const read = readSecret(raw);
-  return read.kind !== 'absent' && read.woven;
+  return (read.kind === 'value' || read.kind === 'locked') && read.woven;
 }
