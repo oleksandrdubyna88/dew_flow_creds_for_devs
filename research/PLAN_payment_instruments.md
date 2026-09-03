@@ -18,9 +18,15 @@
 >    puts them ahead of the node write.
 > 3. **"BIP-39 (English and the other eight languages)" — there are TEN.** All ten ship, taken from the
 >    canonical `bip39` package rather than typed, and checked against the standard's own vectors.
-> 4. **Monero's 1626-word list is NOT included.** It is not available as plain data from any reachable
->    package, and inventing it for a checksum validator is exactly the failure the verification above
->    exists to prevent. Recorded as an open item.
+> 4. **Monero's 1626-word list was NOT included — and is, since 0.95.0.** The deviation as recorded
+>    was right about the packages and wrong about the conclusion: `monerojs` carries no list, and
+>    `mymonero-core-js` and `monero-ts` carry it only compiled into WebAssembly, but the canonical
+>    SOURCE is a plain header — `src/mnemonics/english.h` in monero-project/monero — and it was never
+>    consulted. The caution it was written for still stands and is what made the verification worth
+>    doing: 1626 words, all distinct, all 1626 three-letter prefixes distinct, membership cross-checked
+>    against the WebAssembly build, the checksum transcribed from `electrum-words.cpp`, and two real
+>    seeds published by two independent projects that hold only if all of it is right. The lesson is
+>    narrower than "it cannot be had": *no package ships it* is not *it is unobtainable*.
 > 5. **§4.3's decoy rule was corrected before it shipped:** the decoy matches the entered phrase's
 >    checksum STATE rather than always converging. Under the old rule, a phrase whose words the person
 >    had moved themselves would have had exactly one validating half — a signpost to the correct

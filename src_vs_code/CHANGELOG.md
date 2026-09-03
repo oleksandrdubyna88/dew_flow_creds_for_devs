@@ -4,6 +4,30 @@ All notable changes to **CredsForDevs** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.95.0] — Monero seeds
+
+### Added
+
+- **A Monero seed can be stored as one.** The wordlist picker gains **Monero (English)** beside the
+  ten BIP-39 languages, and a 25-word Monero seed is checked by Monero's own rule rather than being
+  taken on trust: the first three letters of each word, CRC-32'd, name which word is repeated as the
+  twenty-fifth. A decoy drawn for it is drawn from the same list and matches the same checksum state,
+  so neither half of a woven phrase stands out.
+
+  This is the one thing the payment feature shipped without, and the reason it did was good: the list
+  is not available as plain data from any package on npm — `monerojs` has none, and `mymonero-core-js`
+  and `monero-ts` carry it only compiled into WebAssembly — and a wordlist that is *nearly* right does
+  not fail to compile or fail to save. It silently makes a correct seed read as invalid, or an
+  invalid one read as correct.
+
+  So it comes from monero-project's own `english.h`, and it is checked four ways: 1626 words, all
+  distinct, **all 1626 three-letter prefixes distinct** — the defining property, which any truncation
+  would break — and two real 25-word seeds published by two independent projects, whose checksums
+  hold only if the list is right, in order, and our arithmetic agrees with Monero's.
+
+  A Monero seed is 25 words, which is odd, so the side-by-side layout is not offered for one — the
+  form says why, as it does for any odd count.
+
 ## [0.94.1] — the copy that could belong to the entry before it
 
 ### Fixed
@@ -50,7 +74,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   put where the original belongs and saving would weave the woven value a second time.
 
 - **A seed phrase can be stored, and it is stored woven.** Type the phrase, pick its wordlist — ten
-  BIP-39 languages — and the entry keeps your phrase and a second column shuffled together under one
+  BIP-39 languages, and Monero since 0.95.0 — and the entry keeps your phrase and a second column shuffled together under one
   of twelve methods. The second column is either a decoy generated to be indistinguishable from your
   phrase (same length, same list, and the same checksum state, so neither half stands out) or **your
   own words**: a second real key, if you want one entry to hold two.

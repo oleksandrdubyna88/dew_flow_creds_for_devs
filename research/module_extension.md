@@ -365,7 +365,8 @@ tenth time.
 | `paymentWeaving.ts` | where the marks become woven values |
 | `paymentValidation.ts` | a failing checksum: a hint when plain, a confirmation when about to be woven |
 | `mixedFieldGuard.ts` | a woven record cannot be opened in the edit form |
-| `wordlists.ts` + ten `wordlistBip39*.ts` | the BIP-39 lists and the checksum that reads them |
+| `wordlists.ts` + ten `wordlistBip39*.ts` + `wordlistMoneroEn.ts` | the lists and the checksum that reads them |
+| `moneroChecksum.ts` | Monero's own checksum — a different FAMILY, not a variation on BIP-39's |
 | `phraseLayout.ts` / `phraseReassembly.ts` | two columns, the arithmetic that decides which layouts exist, and the way back |
 | `phraseFormMarkup.ts` / `phraseFormScript.ts` / `phraseSaveGate.ts` | the phrase form, and the record a phrase save writes |
 | `paymentViewCard.ts` / `paymentViewMessages.ts` / `paymentViewHost.ts` | the read-only card: its markup, what the host answers, and what is asked first |
@@ -393,6 +394,14 @@ is the single question both are asked, by the edit guard, by the card and by the
 it existed, `hasMixedField` knew only the first, so a saved phrase would have been editable and
 destroyed on the next save — the exact destruction S3.4 built the guard to prevent, reached by the one
 record shape the guard had never seen.
+
+**Two checksum families, one question.** BIP-39 reads a phrase as bits — a word is its INDEX, and the
+trailing bits are a SHA-256 of the entropy. Monero does none of that: it CRC-32s the first three
+characters of each word and the remainder names which word is repeated as the twenty-fifth. `Wordlist`
+therefore carries a `checksum` field and `checksumHolds`/`mnemonicFor` dispatch on it; the Monero half
+lives in its own module because the two share nothing but the question. The registry's tests are
+scoped the same way — every "every list is 2048 words" assertion was always about the BIP-39 family
+and now says so.
 
 **The gate covers the picker, not only the button.** `revealGate` decides that a CVV, a PIN and an
 assembled phrase ask a second time; `paymentViewHost` asks it for `reveal` AND for `reassemble`, since

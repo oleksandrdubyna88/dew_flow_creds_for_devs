@@ -9,6 +9,8 @@ import { BIP39_FR } from './wordlistBip39Fr';
 import { BIP39_IT } from './wordlistBip39It';
 import { BIP39_CS } from './wordlistBip39Cs';
 import { BIP39_PT } from './wordlistBip39Pt';
+import { MONERO_EN } from './wordlistMoneroEn';
+import { MONERO_SEED_LENGTH, moneroChecksumHolds, moneroMnemonic } from './moneroChecksum';
 
 /**
  * Which wordlists a phrase can be written in, and what can be CHECKED about one.
@@ -37,6 +39,7 @@ export const WORDLIST_IDS = [
   'bip39-it',
   'bip39-cs',
   'bip39-pt',
+  'monero-en',
 ] as const;
 
 export type WordlistId = (typeof WORDLIST_IDS)[number];
@@ -57,6 +60,14 @@ interface Wordlist {
    * nothing rather than to invent a rule.</p>
    */
   readonly checksumLengths: readonly number[];
+  /**
+   * Which checksum FAMILY this list belongs to.
+   *
+   * <p>Not a detail of the same rule: BIP-39 reads a phrase as bits and hashes the entropy, Monero
+   * CRC-32s the three-character prefixes and repeats one of the words. A list has one or the other,
+   * and the two live in different modules because they share nothing but the question they answer.</p>
+   */
+  readonly checksum: 'bip39' | 'monero';
 }
 
 /**
@@ -74,60 +85,79 @@ const REGISTRY: Readonly<Record<WordlistId, Wordlist>> = {
     label: 'BIP-39 (English)',
     words: BIP39_EN,
     checksumLengths: BIP39_LENGTHS,
+    checksum: 'bip39',
   },
   'bip39-ja': {
     id: 'bip39-ja',
     label: 'BIP-39 (Japanese)',
     words: BIP39_JA,
     checksumLengths: BIP39_LENGTHS,
+    checksum: 'bip39',
   },
   'bip39-ko': {
     id: 'bip39-ko',
     label: 'BIP-39 (Korean)',
     words: BIP39_KO,
     checksumLengths: BIP39_LENGTHS,
+    checksum: 'bip39',
   },
   'bip39-es': {
     id: 'bip39-es',
     label: 'BIP-39 (Spanish)',
     words: BIP39_ES,
     checksumLengths: BIP39_LENGTHS,
+    checksum: 'bip39',
   },
   'bip39-zh-hans': {
     id: 'bip39-zh-hans',
     label: 'BIP-39 (Chinese, Simplified)',
     words: BIP39_ZH_HANS,
     checksumLengths: BIP39_LENGTHS,
+    checksum: 'bip39',
   },
   'bip39-zh-hant': {
     id: 'bip39-zh-hant',
     label: 'BIP-39 (Chinese, Traditional)',
     words: BIP39_ZH_HANT,
     checksumLengths: BIP39_LENGTHS,
+    checksum: 'bip39',
   },
   'bip39-fr': {
     id: 'bip39-fr',
     label: 'BIP-39 (French)',
     words: BIP39_FR,
     checksumLengths: BIP39_LENGTHS,
+    checksum: 'bip39',
   },
   'bip39-it': {
     id: 'bip39-it',
     label: 'BIP-39 (Italian)',
     words: BIP39_IT,
     checksumLengths: BIP39_LENGTHS,
+    checksum: 'bip39',
   },
   'bip39-cs': {
     id: 'bip39-cs',
     label: 'BIP-39 (Czech)',
     words: BIP39_CS,
     checksumLengths: BIP39_LENGTHS,
+    checksum: 'bip39',
   },
   'bip39-pt': {
     id: 'bip39-pt',
     label: 'BIP-39 (Portuguese)',
     words: BIP39_PT,
     checksumLengths: BIP39_LENGTHS,
+    checksum: 'bip39',
+  },
+  'monero-en': {
+    id: 'monero-en',
+    label: 'Monero (English)',
+    words: MONERO_EN,
+    // ONE length, and the source says so in as many words: anything that is not `seed_length + 1`
+    // is an old-style seed, which this checksum says nothing about.
+    checksumLengths: [MONERO_SEED_LENGTH],
+    checksum: 'monero',
   },
 };
 
@@ -167,6 +197,13 @@ export function checksumHolds(words: readonly string[], id: WordlistId): boolean
   if (!hasChecksum(id, words.length)) {
     return false;
   }
+  return REGISTRY[id].checksum === 'monero'
+    ? moneroChecksumHolds(words, wordlistOf(id))
+    : bip39ChecksumHolds(words, id);
+}
+
+/** BIP-39's own: the phrase as bits, and the trailing bits are a SHA-256 of the entropy. */
+function bip39ChecksumHolds(words: readonly string[], id: WordlistId): boolean {
   const bits = bitsOf(words, id);
   if (bits === '') {
     return false;
@@ -229,6 +266,13 @@ export function mnemonicFor(length: number, id: WordlistId, random: () => number
   if (!hasChecksum(id, length)) {
     throw new Error(`${id} defines no checksum at ${length} words, so no phrase of that length converges.`);
   }
+  return REGISTRY[id].checksum === 'monero'
+    ? moneroMnemonic(wordlistOf(id), random)
+    : bip39Mnemonic(length, id, random);
+}
+
+/** BIP-39's construction: random entropy, then the checksum bits the standard computes from it. */
+function bip39Mnemonic(length: number, id: WordlistId, random: () => number): readonly string[] {
   const entropyBits = (length * 11 * 32) / 33;
   const entropy = Buffer.from(
     Array.from({ length: entropyBits / 8 }, () => Math.min(255, Math.floor(random() * 256))),

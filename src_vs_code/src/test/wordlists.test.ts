@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { moneroPrefix } from '../moneroChecksum';
 import {
   WORDLIST_IDS,
   WordlistId,
@@ -7,6 +8,7 @@ import {
   hasChecksum,
   indexOf,
   isWordlistId,
+  mnemonicFor,
   normalize,
   wordlistLabel,
   wordlistOf,
@@ -165,16 +167,26 @@ const PER_LANGUAGE: ReadonlyArray<readonly [WordlistId, string]> = [
   ['bip39-cs', 'abdikace abdikace abdikace abdikace abdikace abdikace abdikace abdikace abdikace abdikace abdikace agrese'],
   ['bip39-pt', 'abacate abacate abacate abacate abacate abacate abacate abacate abacate abacate abacate abater'],];
 
-test('every registered language checks out on its own vector', () => {
-  assert.equal(PER_LANGUAGE.length, WORDLIST_IDS.length, 'a language with no vector is a language nobody checked');
+/**
+ * The BIP-39 half of the registry.
+ *
+ * <p>Every test below that says "every list" meant "every BIP-39 list" from the day it was written,
+ * and said `WORDLIST_IDS` because at the time those were the same set. Monero's list is 1626 words
+ * with a CRC-32 checksum over three-letter prefixes — none of the properties here are about it, and
+ * asserting them there would be asserting things nobody ever claimed. It has its own four below.</p>
+ */
+const BIP39_IDS = WORDLIST_IDS.filter((id) => id.startsWith('bip39-'));
+
+test('every registered BIP-39 language checks out on its own vector', () => {
+  assert.equal(PER_LANGUAGE.length, BIP39_IDS.length, 'a language with no vector is a language nobody checked');
 
   for (const [id, phrase] of PER_LANGUAGE) {
     assert.equal(checksumHolds(wordsOf(phrase), id), true, `${id} does not check out`);
   }
 });
 
-test('every list is 2048 unique words, in order — the property all ten depend on', () => {
-  for (const id of WORDLIST_IDS) {
+test('every BIP-39 list is 2048 unique words, in order — the property all ten depend on', () => {
+  for (const id of BIP39_IDS) {
     const words = wordlistOf(id);
     assert.equal(words.length, 2048, `${id} is not 2048 words`);
     assert.equal(new Set(words).size, 2048, `${id} has a duplicate, so one index is unreachable`);
@@ -203,7 +215,7 @@ test('the four-letter prefix is unique on every Latin-script list — with accen
   //
   // It does NOT hold for the CJK lists, whose words are one or two characters — asserting it there
   // would be asserting something the standard never claimed.
-  const latin = WORDLIST_IDS.filter((id) => !id.startsWith('bip39-zh') && id !== 'bip39-ja' && id !== 'bip39-ko');
+  const latin = BIP39_IDS.filter((id) => !id.startsWith('bip39-zh') && id !== 'bip39-ja' && id !== 'bip39-ko');
 
   for (const id of latin) {
     const prefixes = new Set(wordlistOf(id).map((word) => withoutAccents(word).slice(0, 4)));
@@ -221,4 +233,75 @@ test('every list is already NFKD, so a stored phrase and a typed one compare equ
     const unnormalised = wordlistOf(id).filter((word) => word !== normalize(word));
     assert.deepEqual(unnormalised, [], `${id} carries words that are not in normal form`);
   }
+});
+
+/**
+ * Monero — the one list the payment plan shipped without, and the reason it did.
+ *
+ * <p>Its deviation 4 said the list was "not available as plain data from any reachable package, and
+ * inventing it for a checksum validator is exactly the failure the verification above exists to
+ * prevent". That was true of the packages: `monerojs` carries no list, and `mymonero-core-js` and
+ * `monero-ts` carry it only compiled into WebAssembly. It is not true of the canonical SOURCE, which
+ * is where this one came from — `src/mnemonics/english.h` in monero-project/monero.</p>
+ *
+ * <p>The vectors below are the part that makes this more than a transcription: two real 25-word seeds
+ * published by two INDEPENDENT projects — monero-project's own functional tests and monero-python —
+ * whose checksums hold only if the table is right, in order, and the algorithm agrees with Monero's.</p>
+ */
+const MONERO_SEEDS: readonly string[] = [
+  // monero-project/monero, tests/functional_tests/wallet.py
+  'velvet lymph giddy number token physics poetry unquoted nibs useful sabotage limits benches '
+  + 'lifestyle eden nitrogen anvil fewest avoid batch vials washing fences goat unquoted',
+  // monero-ecosystem/monero-python, tests/test_seed.py — a different project, a different seed
+  'wedge going quick racetrack auburn physics lectures light waist axes whipped habitat square '
+  + 'awkward together injury niece nugget guarded hive obnoxious waxing faked folding square',
+];
+
+test('two real Monero seeds, from two independent projects, check out', () => {
+  for (const seed of MONERO_SEEDS) {
+    assert.equal(checksumHolds(wordsOf(seed), 'monero-en'), true, `this seed does not check out: ${seed.slice(0, 40)}…`);
+  }
+});
+
+test('a Monero seed with its checksum word replaced does NOT check out', () => {
+  // The half that matters: a checker that accepts everything would pass the test above.
+  for (const seed of MONERO_SEEDS) {
+    const words = [...wordsOf(seed)];
+    const other = wordlistOf('monero-en').find((word) => moneroPrefix(word) !== moneroPrefix(words[24]));
+    words[24] = other ?? '';
+    assert.equal(checksumHolds(words, 'monero-en'), false, 'a wrong checksum word was accepted');
+  }
+});
+
+test('the Monero list is 1626 words whose three-letter prefixes are all distinct', () => {
+  // The defining property of a Monero wordlist, and the strongest integrity check available on it:
+  // three characters identify a word, so a truncation, a duplication or a stray edit breaks this
+  // long before it could quietly break somebody's seed.
+  const words = wordlistOf('monero-en');
+
+  assert.equal(words.length, 1626);
+  assert.equal(new Set(words).size, 1626, 'a duplicate word');
+  assert.equal(new Set(words.map(moneroPrefix)).size, 1626, 'two words share their first three letters');
+  assert.ok(words.every((word) => /^[a-z]{4,12}$/.test(word)), 'a word is not plain lowercase latin');
+});
+
+test('Monero checksums only at 25 words, and BIP-39 never does', () => {
+  // `get_is_old_style_seed`: anything that is not seed_length + 1 is an old-style seed, which this
+  // checksum says nothing about. Guarding it matters — `hasChecksum` is what stops the decoy
+  // generator hunting a constraint no draw can satisfy.
+  assert.equal(hasChecksum('monero-en', 25), true);
+  for (const length of [12, 13, 24, 26, 50]) {
+    assert.equal(hasChecksum('monero-en', length), false, `${length} words must carry no checksum`);
+  }
+  assert.equal(hasChecksum('bip39-en', 25), false, 'and 25 is not a BIP-39 length');
+});
+
+test('a constructed Monero seed converges — which is what a decoy needs', () => {
+  // `decoyPhrase` asks for a converging phrase on demand, and one draw in twenty-four converges by
+  // chance. Constructed, never sampled.
+  const drawn = mnemonicFor(25, 'monero-en', () => 0.4242);
+
+  assert.equal(drawn.length, 25);
+  assert.equal(checksumHolds(drawn, 'monero-en'), true, 'a constructed seed must check out by construction');
+  assert.equal(checksumHolds(drawn, 'bip39-en'), false, 'and it is not a BIP-39 phrase');
 });
