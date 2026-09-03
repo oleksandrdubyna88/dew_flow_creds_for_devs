@@ -37,7 +37,14 @@ push_history() {
   local image="$1" kept
   [[ -n "$image" ]] || return 0
   [[ -f "$STATE_FILE" && "$(head -1 "$STATE_FILE")" == "$image" ]] && return 0
-  kept="$([[ -f "$STATE_FILE" ]] && head -n "$((HISTORY_DEPTH - 1))" "$STATE_FILE" || true)"
+  # Spelled as an `if` rather than `A && B || C`: shellcheck SC2015 is right that the two are not
+  # the same, and here the difference bites — an unreadable STATE_FILE would take the `|| true`
+  # branch and silently blank the trail rather than failing, which is the one thing a rollback trail
+  # must not do quietly.
+  kept=""
+  if [[ -f "$STATE_FILE" ]]; then
+    kept="$(head -n "$((HISTORY_DEPTH - 1))" "$STATE_FILE")"
+  fi
   { printf '%s
 ' "$image"; [[ -n "$kept" ]] && printf '%s
 ' "$kept"; } >"${STATE_FILE}.new"
