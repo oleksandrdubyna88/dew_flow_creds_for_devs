@@ -1,4 +1,5 @@
 import { binOf, luhn } from './cardBrand';
+import { DIGITS, LOWER, SYMBOLS, UPPER } from './secretGenerator';
 
 /**
  * A decoy that does not look like the thing it hides is not a decoy.
@@ -21,7 +22,7 @@ import { binOf, luhn } from './cardBrand';
  * <p>Pure: no `vscode`, and the randomness is a parameter. `shuffle.ts` knows nothing about words or
  * digits and must stay that way — the difference between them lives only here.</p>
  */
-export type DecoyKind = 'card' | 'iban' | 'account' | 'digits';
+export type DecoyKind = 'card' | 'iban' | 'account' | 'digits' | 'password';
 
 export interface DecoySpec {
   readonly kind: DecoyKind;
@@ -65,8 +66,49 @@ function draw(spec: DecoySpec, random: Random): string {
     iban: ibanDecoy,
     account: accountDecoy,
     digits: digitsDecoy,
+    password: passwordDecoy,
   };
   return makers[spec.kind](spec.original, random);
+}
+
+/**
+ * A password: the same LENGTH and the same character CLASSES as the value it hides.
+ *
+ * <h3>Why it mirrors the classes rather than drawing from everything</h3>
+ *
+ * <p>A review round proposed the opposite — draw from the full alphabet, so the decoy tells nobody
+ * which classes the real password uses. It was rejected, and the reason is the whole mechanism.</p>
+ *
+ * <p>A woven value is the two halves INTERLEAVED. If the decoy carries characters from a class the
+ * real password does not use, every one of them is provably decoy: the halves separate by
+ * inspection, with no method and no guessing, and the twelve methods become irrelevant. Mirroring
+ * leaks that the pair shares a class set. Not mirroring collapses the feature. `cardDecoy` keeps
+ * the original's BIN for exactly this reason.</p>
+ *
+ * <p>Position is not imitated, only the SET: a decoy that put a digit wherever the original has one
+ * would leak the shape of the password rather than merely its alphabet, and the shape is the part
+ * somebody guessing would actually use.</p>
+ */
+function passwordDecoy(original: string, random: Random): string {
+  const alphabet = classesOf(original);
+  return alphabet.length === 0
+    ? original
+    : [...original].map(() => alphabet[Math.min(alphabet.length - 1, Math.floor(random() * alphabet.length))]).join('');
+}
+
+/**
+ * Every character class the original draws on, as one alphabet.
+ *
+ * <p>The four the generator itself knows (`secretGenerator.ts`), plus anything else the value
+ * contains kept verbatim — a password with a letter no class of ours names must still be woven with
+ * a decoy that could contain one, or that character marks its own half.</p>
+ */
+function classesOf(original: string): readonly string[] {
+  const known = [LOWER, UPPER, DIGITS, SYMBOLS].filter((set) => [...original].some((one) => set.includes(one)));
+  const strangers = [...new Set([...original])].filter(
+    (one) => ![LOWER, UPPER, DIGITS, SYMBOLS].some((set) => set.includes(one)),
+  );
+  return [...known.flatMap((set) => [...set]), ...strangers];
 }
 
 /** Digits of the same length, and nothing else — a CVV or a PIN has no structure to imitate. */
