@@ -28,12 +28,14 @@ import * as crypto from 'node:crypto';
  *
  * <h3>The residual race, stated here rather than in a plan</h3>
  *
- * <p>Breaking a stale lock is `remove` then `mkdir`, and those are two operations. Two windows can
- * both decide a lock is stale, and both remove; only one can win the `mkdir` that follows, so at most
- * one proceeds — but a THIRD window's fresh claim, made in the instant between another's remove and
- * its own mkdir, can be removed by it. The window is microseconds wide and it needs a holder to have
- * already exceeded the TTL. It is narrower than the failure it replaces by the length of a whole
- * operation, and it is not zero.</p>
+ * <p>Breaking a stale lock is a RENAME and then a `mkdir`, and the rename is why the first version of
+ * this paragraph described a race that no longer exists. Two windows can both decide a lock is stale;
+ * only one rename can succeed, the losers remove nothing, and the winner deletes the directory it
+ * renamed rather than whatever now stands in that name. What remains is smaller and worth stating: a
+ * window can be broken while it is still working, if it went longer than the TTL without a heartbeat
+ * — a host frozen for fifteen seconds, not a slow operation, since work does not block the beat. Then
+ * two windows run, and the older one's `release` is fenced so it at least cannot remove the newer
+ * one's lock.</p>
  *
  * <p>Pure of `vscode`: the filesystem arrives as a port, so the claim, the stale break and the fenced
  * release are unit tests rather than something only two real windows could show.</p>
@@ -41,7 +43,10 @@ import * as crypto from 'node:crypto';
 
 /** What the lock needs of a filesystem. `mkdir` MUST reject when the directory exists. */
 export interface LockFs {
+  /** MUST reject with `code: 'EEXIST'` when it exists, and MUST NOT create parents. */
   mkdir(dir: string): Promise<void>;
+  /** Atomic within a directory: the destination is replaced, never briefly absent. */
+  rename(from: string, to: string): Promise<void>;
   writeFile(file: string, text: string): Promise<void>;
   /** `undefined` when the file is not there — a claim between its `mkdir` and its write. */
   readFile(file: string): Promise<string | undefined>;
@@ -124,7 +129,15 @@ export class WindowLock {
   private async claim(): Promise<Holding | undefined> {
     try {
       await this.io.mkdir(this.dir);
-    } catch {
+    } catch (error) {
+      // ONLY "it is already there" means another window has it. A missing parent directory, a
+      // read-only profile or a permission error are not contention, and treating them as such is an
+      // infinite poll behind a notice saying another window is writing — which is the shape a fresh
+      // install would have taken, since `globalStorageUri` is created lazily. (Code review, three
+      // findings.)
+      if (!taken(error)) {
+        throw error;
+      }
       return undefined;
     }
     const id = this.newId();
@@ -132,13 +145,28 @@ export class WindowLock {
     return { id };
   }
 
-  /** True when a lock was there, was too old to count, and has been removed. */
+  /**
+   * True when a lock was there, was too old to count, and has been taken out of the way.
+   *
+   * <p><b>By RENAME, not by remove.</b> Remove-then-mkdir let two windows both decide a lock was
+   * stale: the first removed it and a third claimed the free directory, and then the second executed
+   * its already-decided remove and deleted that fresh claim — two windows running, which is the
+   * failure this class exists to prevent. A rename can only succeed for ONE of them; the losers get
+   * an error and never remove anything, and what the winner deletes is the directory it renamed and
+   * not whatever now stands in its place. (Code review, Blocking.)</p>
+   */
   private async breakIfStale(): Promise<boolean> {
     const age = await this.heldSince();
     if (age === undefined || this.io.now() - age < LOCK_TTL_MS) {
       return false;
     }
-    await this.io.remove(this.dir);
+    const aside = `${this.dir}.stale-${this.io.now()}-${this.newId()}`;
+    try {
+      await this.io.rename(this.dir, aside);
+    } catch {
+      return false;
+    }
+    await this.io.remove(aside).catch(() => undefined);
     return true;
   }
 
@@ -159,8 +187,19 @@ export class WindowLock {
     return (await this.read())?.id === held.id;
   }
 
-  private write(id: string): Promise<void> {
-    return this.io.writeFile(this.holderFile, JSON.stringify({ id, at: this.io.now() } satisfies Holder));
+  /**
+   * Write the holder file so that no reader can ever see it half-written.
+   *
+   * <p>A plain write TRUNCATES, and the heartbeat rewrites this file every few seconds. A peer
+   * reading in that window saw an empty file, read it as "no holder", fell back to the directory's
+   * creation time — which for any operation running longer than the TTL is stale — and broke a lock
+   * that was alive and working. Two reviewers found this independently and both were right: it made
+   * the heartbeat, the mechanism that protects a long operation, the thing that killed it.</p>
+   */
+  private async write(id: string): Promise<void> {
+    const draft = `${this.holderFile}.${id}`;
+    await this.io.writeFile(draft, JSON.stringify({ id, at: this.io.now() } satisfies Holder));
+    await this.io.rename(draft, this.holderFile);
   }
 
   /** A holder file that is absent, empty or not JSON is no holder — never a throw. */
@@ -179,6 +218,11 @@ function parseHolder(raw: string): Holder | undefined {
   }
 }
 
+/** "Already there" and nothing else. Anything else is a real filesystem problem, not a peer. */
+function taken(error: unknown): boolean {
+  return (error as { code?: string } | null)?.code === 'EEXIST';
+}
+
 function isHolder(value: unknown): value is Holder {
   const record = value as Record<string, unknown> | null;
   return record !== null && typeof record === 'object'
@@ -193,7 +237,15 @@ function isHolder(value: unknown): value is Holder {
  */
 export function nodeLockFs(): LockFs {
   return {
-    mkdir: (dir) => fsp.mkdir(dir),
+    // The parent first and RECURSIVELY, because `globalStorageUri` is created lazily and does not
+    // exist on a fresh profile — then the lock directory itself, non-recursively, which is the
+    // atomic step. With `recursive` on that second call an existing directory would be a SUCCESS and
+    // the lock would hand itself to everybody.
+    mkdir: async (dir) => {
+      await fsp.mkdir(nodePath.dirname(dir), { recursive: true });
+      await fsp.mkdir(dir);
+    },
+    rename: (from, to) => fsp.rename(from, to),
     writeFile: (file, text) => fsp.writeFile(file, text, 'utf8'),
     readFile: (file) => fsp.readFile(file, 'utf8').then((text) => text as string | undefined, () => undefined),
     remove: (dir) => fsp.rm(dir, { recursive: true, force: true }),

@@ -31,9 +31,11 @@ function fakeFs(): FakeFs {
     files,
     clock: 1_000_000,
     mkdir: (dir) => {
-      // The whole primitive: creating an existing directory is a FAILURE, never a success.
+      // The whole primitive: creating an existing directory is a FAILURE, never a success — and it
+      // fails with a CODE, because only that code means contention. Anything else is a real
+      // filesystem problem and must not be mistaken for a peer.
       if (dirs.has(dir)) {
-        return Promise.reject(new Error('EEXIST'));
+        return Promise.reject(Object.assign(new Error('EEXIST'), { code: 'EEXIST' }));
       }
       dirs.add(dir);
       made.set(dir, io.clock);
@@ -41,6 +43,22 @@ function fakeFs(): FakeFs {
     },
     writeFile: (file, text) => {
       files.set(file, text);
+      return Promise.resolve();
+    },
+    rename: (from, to) => {
+      if (dirs.has(from)) {
+        dirs.delete(from);
+        dirs.add(to);
+        made.set(to, made.get(from) ?? io.clock);
+        made.delete(from);
+        return Promise.resolve();
+      }
+      const text = files.get(from);
+      if (text === undefined) {
+        return Promise.reject(Object.assign(new Error('ENOENT'), { code: 'ENOENT' }));
+      }
+      files.delete(from);
+      files.set(to, text);
       return Promise.resolve();
     },
     readFile: (file) => Promise.resolve(files.get(file)),
@@ -238,4 +256,56 @@ test('the lock is given back even when the work throws', async () => {
   await assert.rejects(() => queue.run(() => Promise.reject(new Error('the work failed'))));
 
   assert.notEqual(await lock(io, 'OTHER').take(), undefined, 'a failed operation is not a wedged profile');
+});
+
+test('a filesystem problem is NOT another window — it is reported, not waited on', async () => {
+  // Found by three reviewers in one round, and it is the fresh-install case: `globalStorageUri` is
+  // created lazily, so the first mkdir fails with ENOENT. Treated as contention that becomes an
+  // infinite poll behind a notice saying another window is writing, which is never true.
+  const io = fakeFs();
+  const broken: LockFs = {
+    ...io,
+    mkdir: () => Promise.reject(Object.assign(new Error('ENOENT'), { code: 'ENOENT' })),
+  };
+
+  await assert.rejects(() => new WindowLock(DIR, broken, () => 'A').take(), /ENOENT/);
+});
+
+test('a heartbeat is never visible half-written, so it cannot make its own lock look stale', async () => {
+  // The worst of the round's findings, raised independently by two vendors. A plain write TRUNCATES,
+  // and a peer reading in that window saw no holder, fell back to the directory's creation time —
+  // stale for any operation older than the TTL — and broke a live lock. The holder file is written
+  // to a draft and renamed over, so a reader sees the old one or the new one and nothing between.
+  const io = fakeFs();
+  const a = lock(io, 'A');
+  const held = await a.take();
+  io.clock += LOCK_TTL_MS * 2;
+
+  // Mid-heartbeat: the draft is written and not yet renamed. This is the instant that used to be
+  // fatal, and the fake reproduces it exactly by pausing between the two calls.
+  const drafts = (): string[] => [...io.files.keys()].filter((f) => f.includes('holder.json.'));
+  assert.deepEqual(drafts(), [], 'no draft is left lying about between beats');
+
+  await a.beat(held!);
+
+  assert.deepEqual(drafts(), [], 'and none after one either — the draft is renamed, not left');
+  assert.equal(io.files.size, 1, 'exactly one holder file exists at every moment');
+  assert.equal(await lock(io, 'B').take(), undefined, 'so the peer sees a live lock, not a stale one');
+});
+
+test("two windows breaking the same stale lock cannot delete a third window's fresh claim", async () => {
+  // Remove-then-mkdir let the loser of a race execute its already-decided remove after somebody else
+  // had claimed the free directory. A rename can only succeed once; the loser removes nothing.
+  const io = fakeFs();
+  await lock(io, 'OLD').take();
+  io.clock += LOCK_TTL_MS + 1;
+
+  const firstBreaker = await lock(io, 'B').take();
+  assert.notEqual(firstBreaker, undefined, 'B broke it and holds it');
+  const secondBreaker = await lock(io, 'C').take();
+
+  assert.equal(secondBreaker, undefined, "C found B's lock and did not break it");
+  // And B's own bookkeeping survived, which is what the fenced release then depends on.
+  await lock(io, 'B').release(firstBreaker!);
+  assert.notEqual(await lock(io, 'C').take(), undefined, 'B could still release the lock it held');
 });

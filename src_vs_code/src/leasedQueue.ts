@@ -145,7 +145,12 @@ export function sweepWithRetry(
   const left = deps.attempts ?? 3;
   return queue.runOrSkip(work, () => {
     if (left > 0) {
-      later(LOCK_TTL_MS, () => void sweepWithRetry(queue, work, { ...deps, attempts: left - 1 }));
+      // Caught: a detached retry whose storage write fails would otherwise be an unhandled
+      // rejection in the extension host, reported as a crash of something unrelated. The sweep
+      // failing is not fatal — the record it reads is durable and the next window finds it.
+      later(LOCK_TTL_MS, () => {
+        void sweepWithRetry(queue, work, { ...deps, attempts: left - 1 }).catch(() => undefined);
+      });
     }
     return [];
   });
