@@ -138,6 +138,10 @@ export function entityContextValue(
     contextValue += ':totp';
   }
   contextValue += mixedToken(details);
+  // Two tokens, the shape the agent/VPN/bridge pairs use: the menu offers *Protect with a PIN…* or
+  // *Remove PIN Protection…*, never both. Read from the METADATA mirror, never from the keychain —
+  // a tree row is drawn hundreds of times and a secret read per row per draw is not a tree.
+  contextValue += details?.pinProtected === true ? ':pinon' : ':pinoff';
   if (hasLifetime(details ?? {})) {
     // Burn Now… is offered on exactly these rows (the owner, 2026-08-28).
     contextValue += ':burnable';

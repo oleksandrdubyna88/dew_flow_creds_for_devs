@@ -346,6 +346,41 @@ does the same for a password that is not stored here at all, and puts it on the 
 - A generated key pair is drawn in the editor and saved to the keychain. `ssh-keygen` cannot do
   that — it writes a file — and with *Add to SSH Agent* the key is then used without becoming one.
 
+## A PIN on one entry — a second lock inside the vault
+
+The vault is one lock: everything inside it opens together, which is what makes it usable, and it
+means an open vault is a readable vault. For the few things that deserve a second lock — the
+production database, the payment card, the key that signs releases — right-click the entry and
+choose **Protect with a PIN**.
+
+Every secret that entry holds is re-encrypted under a PIN of your own: the password, the private
+key, the notes, the login and URL, the payment details, the config body, the connection string, the
+VPN configuration, the one-time-code seed. A fresh random key seals the value, the PIN seals that
+key, and the plaintext is nowhere. This is a real re-encryption, not a prompt in front of a value
+that is already readable.
+
+- **Opening the entry asks once.** The PIN opens the whole entry for as long as that window lives;
+  closing it, reloading it or locking the vault forgets it. It is written down nowhere.
+- **Agents do not see it at all** — absent from the listing and the search, and a direct request by
+  id is answered the way a made-up id is answered. An agent that can see an entry it can never open
+  will keep asking.
+- **Nothing automatic uses it.** An environment variable, a terminal, the SSH broker, a `creds://`
+  reference and an agent rotation each say why instead of guessing.
+- **The health report skips it and says so**, because ciphertext always grades as a strong unique
+  password and grading it would tell you your weakest habit is fine.
+- **A backup keeps the protection** — what is exported is what is stored, still wrapped.
+
+**Protect Every Entry with a PIN** on a folder does the same to every entry inside it, at any
+depth. It does not encrypt the folder — a folder is a place, and the protection belongs to the
+entries. Entries that already have a PIN of their own are **named before the run starts and then
+skipped**: a folder may legitimately hold entries under two PINs, and when it already holds
+protected ones the PIN you type is checked against them and you are told how many it opens before
+anything is written.
+
+**Remove PIN Protection** takes it back off, given the PIN. And the one thing to read twice: a
+forgotten PIN is gone data. There is no recovery — the vault recovery code opens the VAULT, not an
+entry.
+
 ## A password stored woven with a decoy
 
 The **General** section of a credential has *Store this password woven with a decoy*. Tick it, pick

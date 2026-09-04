@@ -7,6 +7,7 @@ import { zoomControlHtml } from './zoomControl';
 import { methodLabel } from './shuffle';
 import { methodOrder } from './phraseLayout';
 import { Random } from './decoyDigits';
+import { pinState, wovenState } from './generalNotes';
 import { formStyleSheet } from './entityFormStyles';
 import { AgentDoors, agentDoorRows } from './agentDoors';
 import { describeAttachment } from './attachmentMeta';
@@ -184,23 +185,6 @@ function methodOptions(random: Random): string {
   return methodOrder(random)
     .map((code) => `<option value="${code}">${methodLabel(code)}</option>`)
     .join('');
-}
-
-/**
- * What the General section says about a woven password — a FACT, not a control.
- *
- * <p>There is no way to switch it off, and that is the point rather than an omission: unweaving
- * needs the method, which is stored nowhere, so a build offering "turn this off" would be
- * claiming something it cannot do. A password is REPLACED, never unwoven.</p>
- */
-function wovenState(d: EntityMetadata | undefined): string {
-  return d?.passwordWoven !== true
-    ? ''
-    : `<p class="hint woven"><b>Woven — on.</b> This entry\u2019s password is stored interleaved with a
-       decoy under a method only you know. <b>The stored value cannot be unwoven</b> — that needs the
-       method, and nothing here has it. What you can do is REPLACE it: type a new password below.
-       The weaving box is already ticked so a replacement stays protected; untick it deliberately to
-       store the new password in the clear.</p>`;
 }
 
 // eslint-disable-next-line complexity
@@ -489,6 +473,7 @@ ${formStyleSheet(options.uiScale ?? 0)}
         : ''
     }
     ${wovenState(d)}
+    ${pinState(d)}
   </fieldset>
 
   ${openSection('connectionSection')}

@@ -134,8 +134,10 @@ test('the cached flag is what puts Copy Password (:pwd) and Share (:shareable) i
   const withPassword = await tree.getTreeItem({ kind: 'node', accountId: 'a1', node: entity('e1', 'with') });
   const without = await tree.getTreeItem({ kind: 'node', accountId: 'a1', node: entity('e2', 'without') });
 
-  assert.equal(withPassword.contextValue, 'entity:pwd:shareable');
-  assert.equal(without.contextValue, 'entity', 'no password, no host: nothing to copy or share');
+  // ':pinoff' is the half of the PIN pair an unprotected entry carries: the menu offers *Protect
+  // with a PIN...* on this row and *Remove PIN Protection...* on the other, never both.
+  assert.equal(withPassword.contextValue, 'entity:pwd:pinoff:shareable');
+  assert.equal(without.contextValue, 'entity:pinoff', 'no password, no host: nothing to copy or share');
 });
 
 test('the flag is scoped to the account, because a restore can put one id into two profiles', async () => {
@@ -144,7 +146,7 @@ test('the flag is scoped to the account, because a restore can put one id into t
 
   const item = await tree.getTreeItem({ kind: 'node', accountId: 'a1', node: entity('e1', 'with') });
 
-  assert.equal(item.contextValue, 'entity', 'another profile\'s password is not this row\'s');
+  assert.equal(item.contextValue, 'entity:pinoff', 'another profile\'s password is not this row\'s');
 });
 
 // ---- the tokens the SSH-agent and TOTP menus hang off -------------------------
