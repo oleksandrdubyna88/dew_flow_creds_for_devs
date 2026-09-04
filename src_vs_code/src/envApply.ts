@@ -16,6 +16,28 @@ import { EntityMetadata } from './types';
  */
 
 /** The current value of one bindable field, or undefined when nothing is stored. */
+/**
+ * Why this field cannot be handed to something automatic, or `''` when it can.
+ *
+ * <p>One field has an answer here, and it is a decision rather than a limitation: a WOVEN password
+ * is stored as the person's value and a decoy interleaved, and nothing — this build included —
+ * knows which half is theirs. An environment variable or a terminal could therefore only ever be
+ * given a guess, and a wrong password injected into either is an account lockout nobody watches
+ * happen. So the value is withheld, and the caller says this sentence rather than "nothing to
+ * copy", which would be false.</p>
+ *
+ * <p>The alternative — prompting for the method and the column at each use — was considered and
+ * rejected by the owner: it puts the choice of which half is real in front of somebody at the
+ * moment they are least able to check it.</p>
+ */
+export function automaticRefusal(details: EntityMetadata, field: BindableField): string {
+  return field === 'password' && details.passwordWoven === true
+    ? `"${details.name}" stores its password woven with a decoy, so it cannot be used automatically: `
+      + 'nothing here knows which of the two halves is yours. Open the entry, pick your method, and '
+      + 'copy the row you recognise.'
+    : '';
+}
+
 // eslint-disable-next-line complexity
 export async function bindableFieldValue(
   storage: StorageManager,
@@ -23,6 +45,9 @@ export async function bindableFieldValue(
   details: EntityMetadata,
   field: BindableField,
 ): Promise<string | undefined> {
+  if (automaticRefusal(details, field) !== '') {
+    return undefined;
+  }
   switch (field) {
     case 'password':
       return storage.getPassword(accountId, details.id);

@@ -7,6 +7,7 @@ import { EntityMetadata } from '../types';
 import { SHUFFLE_CODES } from '../shuffle';
 import { handleWovenPassword } from '../wovenPasswordHost';
 import { weaveSecret } from '../wovenSecret';
+import { automaticRefusal } from '../envApply';
 import { EntityViewOptions, renderEntityViewHtml } from '../entityViewPage';
 
 const viewOptions = (details: Partial<EntityMetadata>): EntityViewOptions =>
@@ -162,4 +163,28 @@ test('a message that is not the password is not this host business', async () =>
   });
 
   assert.equal(taken, false, 'the payment host owns that one');
+});
+
+/**
+ * The automatic paths refuse, and say why. The owner's decision: nothing here — this build
+ * included — knows which of the two halves is the password, so an environment variable or a
+ * terminal could only ever be handed a guess.
+ */
+test('a woven password is withheld from the automatic paths, with a sentence', () => {
+  const woven = { id: 'e1', name: 'prod-db', kind: 'credential', passwordWoven: true } as unknown as EntityMetadata;
+  const plain = { id: 'e1', name: 'prod-db', kind: 'credential' } as unknown as EntityMetadata;
+
+  const refusal = automaticRefusal(woven, 'password');
+  assert.match(refusal, /cannot be used automatically/);
+  assert.match(refusal, /prod-db/, 'it names the entry');
+  assert.match(refusal, /pick your method/, 'and says what to do instead');
+  assert.equal(automaticRefusal(plain, 'password'), '', 'an ordinary password is handed over as before');
+});
+
+test('only the PASSWORD is withheld — the other bindable fields are not woven', () => {
+  const woven = { id: 'e1', name: 'x', kind: 'credential', passwordWoven: true } as unknown as EntityMetadata;
+
+  for (const field of ['privateKey', 'publicKey', 'dbConnection', 'dbPassword'] as const) {
+    assert.equal(automaticRefusal(woven, field), '', `${field} has nothing to do with a woven password`);
+  }
 });

@@ -21,7 +21,7 @@ import * as vscode from 'vscode';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import { envProbeCommand } from './envProbe';
-import { bindableFieldValue } from './envApply';
+import { automaticRefusal, bindableFieldValue } from './envApply';
 import { entityKey } from './entityFlags';
 import { Revision } from './revisionHistory';
 import { mcpAsOfVersion } from './viewerOptions';
@@ -152,6 +152,13 @@ export async function openEntityViewer(
       terminal.sendText(envProbeCommand(vscode.env.shell, name), true);
     },
     setEnv: async (field, name) => {
+      // Said rather than reported as emptiness: there IS a password, and "nothing stored" would be
+      // a false answer to a person who can see it on the card.
+      const refusal = automaticRefusal(details, field);
+      if (refusal !== '') {
+        void vscode.window.showWarningMessage(refusal);
+        return false;
+      }
       const value = await bindableFieldValue(storage, accountId, details, field);
       if (value === undefined || value.length === 0) {
         void vscode.window.showWarningMessage('Nothing stored in that field — nothing was set.');
