@@ -1,3 +1,4 @@
+import { isLockedSecret } from './secretEnvelope';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -95,13 +96,28 @@ export async function collectPasswords(storage: StorageManager): Promise<Passwor
 }
 
 /** One entry per non-empty value — an absent field contributes nothing to weigh. */
+/**
+ * One password for the report, or nothing at all.
+ *
+ * <p><b>A PIN-protected value is skipped, and skipping it is the only honest answer.</b> What is
+ * stored for such an entry is a random data key's ciphertext: long, high-entropy and unlike every
+ * other password in the vault — so a scan that read it would report the entry as a strong, unique
+ * password. That is a lie in the one direction that matters: somebody would be told their weakest
+ * habit is fine because it happens to be encrypted twice.</p>
+ *
+ * <p>Nor is it a value this could grade if it wanted to: reading it needs a PIN, and the scan runs
+ * over the whole vault with no window to ask in.</p>
+ */
 function present(
   entityName: string,
   accountEmail: string,
   field: string,
   value: string | undefined,
 ): PasswordEntry[] {
-  return value !== undefined && value.length > 0 ? [{ entityName, accountEmail, field, value }] : [];
+  if (value === undefined || value.length === 0 || isLockedSecret(value)) {
+    return [];
+  }
+  return [{ entityName, accountEmail, field, value }];
 }
 
 async function entryFor(

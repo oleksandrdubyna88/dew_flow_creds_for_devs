@@ -6,6 +6,7 @@ import { resolveSshCredential } from './sshCredential';
 import { askpassEnv } from './sshAskpass';
 import { materializePrivateKey, writeAskpassScriptFile } from './keyInstaller';
 import { EntityMetadata } from './types';
+import { automaticPinRefusal } from './pinGate';
 
 /**
  * Turning a saved credential into what a NON-INTERACTIVE `ssh` needs: a key path, an
@@ -67,6 +68,40 @@ function wovenRefusal(name: string, warning: string | undefined): ExecAuth {
   };
 }
 
+/**
+ * A password, or the two reasons it cannot be handed to `ssh`.
+ *
+ * <p>A WOVEN password is the person's value and a decoy interleaved, and nothing here — this build
+ * included — knows which half is theirs, so this would authenticate with a guess. A PIN-PROTECTED
+ * one cannot be read at all without a prompt, and this path runs with no window to prompt in. Both
+ * are refused in the same shape a missing credential is refused in, so every caller already handles
+ * them, and both say why.</p>
+ */
+function byPassword(
+  password: string,
+  entity: EntityMetadata,
+  storageDir: string,
+  warning: string | undefined,
+): ExecAuth {
+  if (entity.passwordWoven === true) {
+    return wovenRefusal(entity.name, warning);
+  }
+  const locked = automaticPinRefusal(password, entity.name);
+  if (locked !== '') {
+    return { ok: false, reason: 'no_credential', message: locked, warning };
+  }
+  const scriptPath = writeAskpassScriptFile(storageDir, process.platform);
+  return {
+    ok: true,
+    auth: 'askpass',
+    // spawn REPLACES the environment rather than merging it (unlike createTerminal), so the
+    // parent's PATH and HOME must be carried in explicitly — without them ssh is unresolvable and
+    // known_hosts is not found.
+    env: { ...process.env, ...askpassEnv(scriptPath, password, process.platform) },
+    warning,
+  };
+}
+
 // eslint-disable-next-line complexity
 export async function resolveExecAuth(
   storage: StorageManager,
@@ -86,23 +121,7 @@ export async function resolveExecAuth(
     };
   }
   if (source.kind === 'password') {
-    // A WOVEN password cannot be handed to ssh. It is the person's value and a decoy interleaved,
-    // and nothing here knows which half is theirs — so this would authenticate with a guess, and a
-    // guess against a real host is a failed login an agent would then retry. Refused with the same
-    // shape a missing credential is refused with, and with a sentence saying why.
-    if (entity.passwordWoven === true) {
-      return wovenRefusal(entity.name, warning);
-    }
-    const scriptPath = writeAskpassScriptFile(storageDir, process.platform);
-    return {
-      ok: true,
-      auth: 'askpass',
-      // spawn REPLACES the environment rather than merging it (unlike createTerminal), so the
-      // parent's PATH and HOME must be carried in explicitly — without them ssh is unresolvable
-      // and known_hosts is not found.
-      env: { ...process.env, ...askpassEnv(scriptPath, source.password, process.platform) },
-      warning,
-    };
+    return byPassword(source.password, entity, storageDir, warning);
   }
   if (source.kind === 'keyPath') {
     return { ok: true, keyPath: source.path, env: { ...process.env }, auth: 'key', warning };

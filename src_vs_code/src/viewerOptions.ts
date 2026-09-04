@@ -4,6 +4,7 @@ import type { StorageManager } from './storageManager';
 import { DbType, TreeNode } from './types';
 import { TotpSnapshot, totpSnapshot } from './totp';
 import { PaymentFields, parsePaymentFields } from './paymentFields';
+import { PinGate, PinOpen, openStored } from './pinGate';
 import {
   McpAccess,
   McpSource,
@@ -108,6 +109,45 @@ export function storageSecretReader(
     totpSeed: () => storage.getTotp(accountId, entityId),
     paymentRaw: () => storage.getPaymentRaw(accountId, entityId),
   };
+}
+
+/**
+ * The same reader, with every value passed through the PIN gate.
+ *
+ * <p>Wrapped HERE rather than at each of the six getters, because this is the one seam the live
+ * viewer reads secrets through — the whole reason `SecretReader` exists. Six separate gates would
+ * be six places to add the seventh field and forget one.</p>
+ *
+ * <p>Every miss is SAID: a cancelled prompt, a wrong PIN and a damaged wrap each produce a sentence
+ * through `report`, and only then does the value come back undefined. What this must never be is a
+ * silent `undefined` that the viewer renders as "nothing stored" about a value that is stored.</p>
+ */
+export function gatedSecretReader(
+  inner: SecretReader,
+  gate: PinGate,
+  report: (message: string) => void,
+): SecretReader {
+  const through = (read: () => Thenable<string | undefined>) => async (): Promise<string | undefined> =>
+    told(await openStored(await read(), gate), report);
+  return {
+    password: through(inner.password),
+    privateKey: through(inner.privateKey),
+    vpnConfig: through(inner.vpnConfig),
+    dbConnection: through(inner.dbConnection),
+    totpSeed: through(inner.totpSeed),
+    paymentRaw: through(inner.paymentRaw),
+  };
+}
+
+/** The value, or nothing — and nothing only after the reason has been put in front of somebody. */
+function told(opened: PinOpen, report: (message: string) => void): string | undefined {
+  if (opened.kind === 'value' || opened.kind === 'unprotected') {
+    return opened.value;
+  }
+  if (opened.kind !== 'cancelled') {
+    report(opened.reason);
+  }
+  return undefined;
 }
 
 /** A revision's secrets: whatever the record kept, nothing read from the keychain. */
