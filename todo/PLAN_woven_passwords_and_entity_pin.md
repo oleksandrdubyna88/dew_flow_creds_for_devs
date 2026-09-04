@@ -231,8 +231,29 @@ window is a PIN on disk.
   viewer streams, and a PIN on them buys nothing a locked password does not already buy.
 - **unprotect(entity, pin)** — the same, in reverse.
 
-Both are **all-or-nothing per entry**: the slots are read, every one is transformed in memory, and
-only then are they written. A half-protected entry is the state nothing can describe.
+**They are IDEMPOTENT and SELF-DESCRIBING, not atomic** *(three reviewers, one finding, and it is
+correct)*. The first draft said "all-or-nothing per entry: transformed in memory, then written",
+which is not a guarantee anything can keep — `SecretStorage` has no transaction, so a process killed
+between two slot writes leaves an entry with some slots locked and some not, and holding the values
+in memory first does not change that by one line.
+
+What makes it survivable is the decision Part 1 already rests on: **the mark is inside each value**.
+A half-protected entry is therefore not "the state nothing can describe" — it is an entry whose
+password is locked and whose notes are not, and `readSecret` says exactly that, per slot, to anyone
+who asks. So:
+
+- **`protect` skips slots that are already locked** and locks the rest, so running it again finishes
+  an interrupted run. There is nothing to resume because re-running IS the resume.
+- **`unprotect` is the mirror**: it skips what is already plain.
+- **The entry reports its own state** — how many of its slots are locked — so an interrupted run is
+  seen rather than discovered later.
+- **A wrong PIN fails before any write.** It is verified against the first locked slot on unprotect,
+  so "wrong PIN, half the entry re-wrapped" cannot arise.
+- **The order is fixed**: on protect the password goes LAST, so an interruption leaves the
+  most-wanted value in the state the person last chose deliberately.
+
+This is weaker than atomicity and it is what is actually true. Claiming a transaction
+`SecretStorage` cannot provide would be the worse answer.
 
 ### 2.2 The gate
 
@@ -240,19 +261,81 @@ View and edit ask. The answer is remembered no longer than the window is unlocke
 `PaymentViewHost`'s grant already has, including its "the panel may have been re-rendered for
 another entry" check.
 
+**What that lifetime actually is** *(three reviewers asked; the first draft only said "while the
+window is unlocked")*:
+
+- **Per extension host.** A window reload, an extension-host restart and a crash each end it. Two
+  windows of one profile hold two independent grants — separate processes, neither seeing the
+  other's. Nothing is written anywhere, which is the point.
+- **Checked at the moment of USE, not only at the window's end.** A grant read at the start of a
+  long operation and spent at the end can be gone by then; every unwrap re-reads it, and a missing
+  one is a fresh ask — never a silent failure, and never reported as `corrupt`.
+- **No timer.** An idle timeout that re-asks mid-task is a prompt people learn to type through, and
+  the vault's own lock is the timer that matters: locking the vault ends every grant.
+- **Nothing background ever needs one.** Sync, export, backup and history move the stored bytes, and
+  the stored bytes ARE the envelope — so a lost grant cannot make a background job fail, because no
+  background job ever had one.
+
+**A forgotten PIN is an irreversible loss, and the interface says so before the wrap** *(a
+reviewer's finding)*. There is no recovery path: the data key exists only inside the wrap and the
+wrap opens with the PIN alone. The vault's recovery code opens the VAULT; it does not open an
+entry's own PIN, and pretending otherwise would be the cruellest possible bug.
+
 ### 2.3 The folder run
 
-A recursive walk that wraps every entry inside under one PIN the person types once.
+A recursive walk that wraps every unprotected entry under one PIN the person types once.
 
-- **Already-protected entries are skipped and reported**, keeping their own PIN.
-- Interrupted, it leaves a mix of protected and unprotected entries, all readable. There is nothing
-  to resume and nothing to roll back; the person runs it again.
-- The flag persists so a **new entry created in that folder is asked for the PIN as it is created**.
+**The skipped entries are named BEFORE the run, not after it** *(a reviewer's finding, and the one
+that would have cost somebody real access)*. Somebody running the folder with PIN B expects it to be
+uniformly B afterwards. It will not be: entries already wrapped under PIN A keep PIN A, and if that
+person does not know PIN A they have just locked themselves out of entries they could read
+yesterday, while believing the opposite. So the confirmation names the count first: *"3 of the 15
+entries here are already protected under a PIN of their own. They will be left exactly as they are —
+this run does not change them, and you will still need their own PIN to open them."*
+
+**A folder can legitimately hold entries under two PINs**, and the interface must never pretend
+otherwise. Four reviewers converged on the ambiguity in "accepted when it opens AT LEAST ONE
+protected sibling": with siblings under A and B either PIN is accepted, and nothing tells the person
+which one they just used.
+
+The answer is **not** a stored folder PIN (there is none by design, and storing one would undo the
+whole feature) and **not** a dropdown of sibling PINs (they cannot be listed — they are kept
+nowhere). It is a COUNT, shown the moment the PIN is typed:
+
+> *This PIN opens 4 of the 7 protected entries in this folder.*
+
+or, when it opens none:
+
+> *This PIN opens none of the 7 protected entries here. This entry will be the first under it.*
+
+Deterministic, needs nothing stored, and it turns the ambiguity into a fact while it can still be
+acted on. An empty or wholly unprotected folder has nothing to count, so there the PIN is typed
+twice — the only check available, and the one every new PIN in this product gets.
+
+**Interrupted, the run leaves a mix — all readable.** Nothing to roll back, and re-running IS the
+resume: it skips what is already locked and finishes the rest. What the first draft left out *(a
+reviewer's finding)* is how anybody DISCOVERS that, so the folder shows the count — *"12 of 15
+protected"* — where the folder is, not in a log nobody opens. A persisted progress index was
+proposed and rejected: the entries already describe their own state, and an index goes stale the
+moment somebody adds or deletes an entry between runs.
+
+The flag persists so a **new entry created in that folder is asked for the PIN as it is created**.
+**The flag rides ordinary node metadata, and ordinary node metadata is opaque to the server** — the
+vault reaches it as one client-side-encrypted blob (CLAUDE.md: *"the server never holds a key that
+opens a vault"*), so the server cannot see which folders are flagged. A reviewer asked; the plan
+should have said it.
 
 ### 2.4 Agents do not see protected entries
 
 Absent from the listing, not refused on use. `mcpAccess` and the door filter already decide what an
 agent may see; this is one more reason for an entry not to appear.
+
+**One predicate, applied at the LOOKUP as well as at the listing** *(a reviewer's finding)*. Four
+filters are four places to forget one, and enumeration is not the only way in: an agent holding an
+id from a listing taken before the entry was protected can ask for it directly. So the predicate is
+written once and every surface calls it — before a listing, before a search result, before a tree
+serialisation, and before answering a direct id. A protected entry answers a direct lookup the way
+an entry that does not exist answers it, because to an agent it does not.
 
 ### 2.5 Sharing: the flag is an instruction to ask, never a key
 
