@@ -66,7 +66,7 @@ const loaded = ((): {
   };
   sealShare: typeof import('../shareFormat').sealShare;
   openShare: typeof import('../shareFormat').openShare;
-  buildSharePayload: typeof import('../shareInbox').buildSharePayload;
+  buildSharePayload: typeof import('../sharePayloadBuild').buildSharePayload;
 } => {
   const loader = Module as unknown as { _load(request: string, ...rest: unknown[]): unknown };
   const original = loader._load;
@@ -108,13 +108,16 @@ const loaded = ((): {
     return original.call(this, request, ...rest);
   };
   try {
-    const inbox = require('../shareInbox') as { ShareInbox: never; buildSharePayload: never };
+    const inbox = require('../shareInbox') as { ShareInbox: never };
+    // Moved out of `shareInbox` when the entry PIN pushed that file over its ceiling: the payload
+    // builder is about a VALUE, the inbox about the conversation around sending it.
+    const build = require('../sharePayloadBuild') as { buildSharePayload: never };
     const fmt = require('../shareFormat') as { sealShare: never; openShare: never };
     return {
       ShareInbox: inbox.ShareInbox,
       sealShare: fmt.sealShare,
       openShare: fmt.openShare,
-      buildSharePayload: inbox.buildSharePayload,
+      buildSharePayload: build.buildSharePayload,
     } as never;
   } finally {
     loader._load = original;

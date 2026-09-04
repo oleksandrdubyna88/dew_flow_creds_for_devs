@@ -248,3 +248,60 @@ test('a CORRUPT wrap is named as damage, and nothing offers to overwrite it', as
   assert.match(opened.kind === 'corrupt' ? opened.reason : '', /prod-db/);
   assert.match(opened.kind === 'corrupt' ? opened.reason : '', /Nothing has been changed/);
 });
+
+/**
+ * §2.5 — sharing a protected entry.
+ *
+ * <p>The sender types the PIN at share time, which is both the owner's requirement (<i>"и что б
+ * пошарить такую запись - нужно тоже в процесе шары ввести пин код"</i>) and a correctness
+ * necessity: what is stored is ciphertext under a key only the sender's PIN opens, the recipient
+ * does not have that PIN, and the share's own transit PIN is a one-time transfer secret rather
+ * than somebody's protection. A payload built from the stored bytes would be gibberish nobody
+ * could ever open.</p>
+ */
+test('a share payload carries the OPENED value, never the wrap', async () => {
+  const mod = loadWithVscode<typeof import('../sharePayloadBuild')>('../sharePayloadBuild', {});
+  const wrapped = await locked();
+  const storage = {
+    getNotes: () => Promise.resolve(undefined),
+    getTotp: () => Promise.resolve(undefined),
+    getPassword: () => Promise.resolve(wrapped),
+    getPrivateKey: () => Promise.resolve(undefined),
+    getVpnConfig: () => Promise.resolve(undefined),
+    getDbConnection: () => Promise.resolve(undefined),
+    getConfigBody: () => Promise.resolve(undefined),
+    getFieldsRaw: () => Promise.resolve(undefined),
+    getPaymentRaw: () => Promise.resolve(undefined),
+  } as never;
+  const node = { id: 'e1', name: 'prod-db', type: 'entity', details: details() } as never;
+
+  const payload = await mod.buildSharePayload(storage, ACCOUNT, node, false, {
+    accountId: ACCOUNT,
+    entityId: 'e1',
+    entryName: 'prod-db',
+    ask: () => Promise.resolve(PIN),
+  });
+
+  assert.equal(payload.secrets.password, 'hunter2', 'the recipient gets a value they can use');
+  assert.ok(!String(payload.secrets.password).includes('"v":1'), 'and never the envelope');
+});
+
+test('without a gate the payload is what is stored — an unprotected entry is untouched', async () => {
+  const mod = loadWithVscode<typeof import('../sharePayloadBuild')>('../sharePayloadBuild', {});
+  const storage = {
+    getNotes: () => Promise.resolve(undefined),
+    getTotp: () => Promise.resolve(undefined),
+    getPassword: () => Promise.resolve('hunter2'),
+    getPrivateKey: () => Promise.resolve(undefined),
+    getVpnConfig: () => Promise.resolve(undefined),
+    getDbConnection: () => Promise.resolve(undefined),
+    getConfigBody: () => Promise.resolve(undefined),
+    getFieldsRaw: () => Promise.resolve(undefined),
+    getPaymentRaw: () => Promise.resolve(undefined),
+  } as never;
+  const node = { id: 'e1', name: 'prod-db', type: 'entity', details: details() } as never;
+
+  const payload = await mod.buildSharePayload(storage, ACCOUNT, node, false);
+
+  assert.equal(payload.secrets.password, 'hunter2');
+});
