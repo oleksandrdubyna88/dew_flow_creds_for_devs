@@ -4,6 +4,7 @@
 import { TreeNode } from '../types';
 import { DoorsFor } from '../entityEditCommands';
 import { StorageManager } from '../storageManager';
+import { applyCreatePin, pinForNewEntry } from '../pinOnCreate';
 import { TransportFactory } from '../transportFactory';
 import { VaultKeys } from '../vaultKeys';
 import { asElement } from '../commandTargets';
@@ -237,6 +238,14 @@ export function registerTreeMutationCommands(host: TreeMutationCommandsHost): vo
     if (location === undefined) {
       return;
     }
+    // Asked BEFORE the form, not after the entry is saved. Asked after, a dismissed box would
+    // leave an unprotected entry sitting in a folder whose whole point is that nothing in it is —
+    // which is the thing the owner's "пин обязательное поле" exists to prevent. Asked first,
+    // dismissing simply means no entry is created.
+    const createPin = await pinForNewEntry(storage, location.accountId, location.parentId);
+    if (createPin.kind === 'cancelled') {
+      return;
+    }
     const id = StorageManager.newId();
     const result = await showEntityForm({
       mode: 'create',
@@ -287,6 +296,9 @@ export function registerTreeMutationCommands(host: TreeMutationCommandsHost): vo
       undoSecrets: () => storage.forgetEntitySecrets(location.accountId, id),
     }));
     await applyRemovals(storage, location.accountId, id, result);
+    // After the secrets are written, because it wraps what is THERE: applied earlier it would wrap
+    // nothing and leave the real values in the clear beside a mark saying otherwise.
+    await applyCreatePin(createPin, storage, location.accountId, id);
     void warnIfTrackedCopy(result.details);
     await applyDependencyColors(storage, location.accountId, result.dependsOnColors);
     await applyEnvBindings(envCollection(), storage, location.accountId, result.details);

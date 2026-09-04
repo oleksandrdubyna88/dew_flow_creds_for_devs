@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import { TreeNode } from '../types';
 import { entriesUnder, protectionSummary, siblingReport } from '../pinFolderPlan';
 import { hiddenFromAgents } from '../mcpEntries';
+import { loadWithVscode } from './vscodeStub';
 
 /**
  * What a folder run would DO, and what it SAYS before doing it.
@@ -119,4 +120,40 @@ test('a protected entry is hidden from agents; an ordinary one is not', () => {
   assert.equal(hiddenFromAgents(protectedNode), true);
   assert.equal(hiddenFromAgents(entry('e2', null)), false);
   assert.equal(hiddenFromAgents(undefined), false, 'a missing node is not a protected one');
+});
+
+/**
+ * §2.3 — a new entry in a folder whose entries are protected.
+ *
+ * <p>The owner's requirement: <i>"при создании новой в такой папке — пин обязательное поле"</i>.
+ * Asked BEFORE the form, so dismissing means no entry rather than an unprotected one sitting in a
+ * folder whose whole point is that nothing in it is.</p>
+ */
+test('a folder with a protected entry asks; one without does not', async () => {
+  const nodes = [
+    folder('locked'),
+    { ...entry('a', 'locked'), details: { id: 'a', name: 'a', pinProtected: true } } as TreeNode,
+    folder('open'),
+    entry('b', 'open'),
+  ];
+  const storage = { getNodes: () => nodes } as never;
+  const mod = loadWithVscode<typeof import('../pinOnCreate')>('../pinOnCreate', {
+    window: { showInputBox: () => Promise.resolve(undefined) },
+  });
+
+  assert.deepEqual(await mod.pinForNewEntry(storage, 'a1', 'open'), { kind: 'none' });
+  assert.deepEqual(
+    await mod.pinForNewEntry(storage, 'a1', 'locked'),
+    { kind: 'cancelled' },
+    'dismissing the box means no entry is created — not an unprotected one',
+  );
+});
+
+test('an entry created at the ROOT is never asked — the root is not a folder', async () => {
+  const storage = { getNodes: () => [] } as never;
+  const mod = loadWithVscode<typeof import('../pinOnCreate')>('../pinOnCreate', {
+    window: { showInputBox: () => assert.fail('the root has no siblings to be protected by') },
+  });
+
+  assert.deepEqual(await mod.pinForNewEntry(storage, 'a1', null), { kind: 'none' });
 });
