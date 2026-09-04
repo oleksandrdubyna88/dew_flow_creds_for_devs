@@ -4,6 +4,9 @@ import { CONFIG_FORMATS, CONFIG_FORMAT_LABELS } from './configFormat';
 import { paymentMarkup } from './paymentFormMarkup';
 import { PASSPHRASE_WORD_CHOICES, PASSWORD_LENGTH_CHOICES, SSH_KEY_TYPES } from './secretGenerator';
 import { zoomControlHtml } from './zoomControl';
+import { methodLabel } from './shuffle';
+import { methodOrder } from './phraseLayout';
+import { Random } from './decoyDigits';
 import { formStyleSheet } from './entityFormStyles';
 import { AgentDoors, agentDoorRows } from './agentDoors';
 import { describeAttachment } from './attachmentMeta';
@@ -143,6 +146,45 @@ const ENV_ROW_LABEL: Record<BindableField, string> = {
   dbConnection: 'Expose the connection string in terminals as env variable',
   dbPassword: 'Expose the database password in terminals as env variable',
 };
+
+/**
+ * Storing a password woven with a decoy: the mark, the method, and the picture.
+ *
+ * <p>The same three controls the card offers, in the same words and from the same modules — the
+ * checkbox, a picker whose ORDER is drawn afresh and whose NAMES belong to the codes, and the
+ * worked example that shows what a method does before the choice becomes irreversible.</p>
+ *
+ * <p>The paragraph is deliberately in the FORM rather than only in the help: somebody about to
+ * make a value unrecoverable should read what they are buying at the moment they choose it.</p>
+ */
+function weaveControls(random: Random = Math.random): string {
+  return `<div class="check"><input id="weavePassword" type="checkbox">
+      <label for="weavePassword">Store this password woven with a decoy</label></div>
+    <div id="weaveControls" style="display:none">
+      <label for="weaveMethod">Weaving method</label>
+      <select id="weaveMethod">${methodOptions(random)}</select>
+      <p class="hint"><b>What this does and does not do.</b> The password is stored as your value
+      and a decoy interleaved, and the method is <b>never stored</b> — not here, not in a backup,
+      not in the sync. Nobody can unweave it but you, from memory, so a forgotten method is a lost
+      password.<br>
+      It protects against somebody <b>reading</b> an open vault: a shoulder, a screen share, a
+      backup file on a laptop. It does <b>not</b> protect against somebody who can try every
+      possibility.<br>
+      <b>A woven password cannot be used automatically.</b> Nothing here — this build included —
+      knows which of the two halves is yours, so the terminal, the environment variable and any
+      agent stop being offered it. You read it from the card and use it yourself.</p>
+      <p class="hint">What the method does, on two values made up for the picture. Your own
+      password is never drawn here.</p>
+      <div id="weaveExampleHost"></div>
+    </div>`;
+}
+
+/** The twelve methods: a fresh ORDER every time, and a NAME that belongs to the code. */
+function methodOptions(random: Random): string {
+  return methodOrder(random)
+    .map((code) => `<option value="${code}">${methodLabel(code)}</option>`)
+    .join('');
+}
 
 /**
  * What the General section says about a woven password — a FACT, not a control.
@@ -628,6 +670,7 @@ ${formStyleSheet(options.uiScale ?? 0)}
            <label for="clearPassword">Clear the stored password</label></div>`
         : ''
     }
+    ${weaveControls()}
   </fieldset>
 
   ${openSection('scriptSection')}

@@ -5,6 +5,8 @@ import { readDependsOnRows, readForwardRows } from './formRowReaders';
 import { PaymentFields } from './paymentFields';
 import { addressBlockFor, addressSplitAnswer, cardTypedAnswer } from './cardFormFields';
 import { exampleAnswer } from './weaveExample';
+import { wovenSave } from './wovenPasswordSave';
+import { cryptoRandom } from './phraseGenerate';
 import { generatePhraseAnswer } from './phraseGenerate';
 import * as vscode from 'vscode';
 import { applyLifetime } from './entityExpiry';
@@ -141,6 +143,8 @@ export interface EntityFormValues {
   details: EntityMetadata;
   newPassword?: string;
   clearPassword: boolean;
+  /** Why a password the form was told to weave was stored plain instead, or `''`. */
+  wovenRefusal?: string;
   newPrivateKey?: string;
   clearPrivateKey: boolean;
   newVpnConfig?: string;
@@ -613,6 +617,8 @@ export function toValues(data: Record<string, unknown>, options: EntityFormOptio
 
   const portText = str(data, 'port').trim();
   const password = str(data, 'password');
+  // The four states a password save can be in, decided once: see wovenPasswordSave.ts.
+  const saved = wovenSave(password, bool(data, 'weavePassword'), str(data, 'weaveMethod'), options.initial?.passwordWoven === true, cryptoRandom);
   const privateKey = str(data, 'privateKey');
   const keyEntity = str(data, 'sshKeyEntityId');
   const vpnConfig = str(data, 'vpnConfigContent');
@@ -718,8 +724,14 @@ export function toValues(data: Record<string, unknown>, options: EntityFormOptio
       commandArgs: isTerminal && commandArgs !== undefined && commandArgs.length > 0 ? commandArgs : undefined,
       commandNote: isTerminal ? str(data, 'commandNote').trim() || undefined : undefined,
       notes: undefined, // notes now live in SecretStorage, never in metadata
+      // Carried, not recomputed from a checkbox: typing nothing must keep a woven password woven,
+      // and typing a NEW one without the mark is a replacement that drops it.
+      passwordWoven: !isDb && saved.woven ? true : undefined,
     },
-    newPassword: !isDb && password.length > 0 ? password : undefined,
+    // Woven or not, decided in one place: `wovenSave` holds the four states a save can meet, and
+    // the refusal it answers with when something was asked for and could not be done.
+    newPassword: !isDb && saved.value.length > 0 ? saved.value : undefined,
+    wovenRefusal: saved.refusal,
     // A config has no password slot, so a stored one is invisible and uneditable — and, until this
     // line, enough to make the entry shareable. Scrubbed on write, exactly as a TOTP seed is when
     // an entity moves to a kind that cannot hold one.

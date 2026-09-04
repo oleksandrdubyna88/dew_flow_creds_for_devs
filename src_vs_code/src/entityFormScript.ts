@@ -11,6 +11,7 @@ import { cardFormScript } from './cardFormScript';
 import { phraseFormScript } from './phraseFormScript';
 import { generateWiring, overlayEditorWiring } from './entityFormScriptGen';
 import { formVisibilityScript } from './formVisibilityScript';
+import { wovenFormScript } from './wovenFormScript';
 
 /** What the Depends-on picker needs, gathered once when the page is built. */
 export interface DependencyPickerData {
@@ -696,7 +697,7 @@ export function formPageScript(
       scriptLanguage: val('scriptLanguage'), scriptBody: val('scriptBody'), scriptVars: scriptVarRows,
       configFormat: val('configFormat'), configFileName: val('configFileName'),
       configBody: val('configBody'),
-      paymentForm: val('paymentForm'),
+      paymentForm: val('paymentForm'), weavePassword: chk('weavePassword'), weaveMethod: val('weaveMethod'),
       cardNumber: val('cardNumber'), cardExpiry: val('cardExpiry'), cardHolder: val('cardHolder'),
       cardCvv: val('cardCvv'), cardPin: val('cardPin'),
       cardAddress: val('cardAddress'), cardPhone: val('cardPhone'), cardCountry: val('cardCountry'),
@@ -750,6 +751,7 @@ export function formPageScript(
   }
 
   ${cardFormScript()}
+${wovenFormScript()}
   ${phraseFormScript()}
 
   window.addEventListener('message', function (event) {
