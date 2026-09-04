@@ -5,6 +5,28 @@ import { wovenFormScript } from '../wovenFormScript';
 import { EntityFormOptions } from '../entityFormPanel';
 import { EntityMetadata } from '../types';
 import { SHUFFLE_CODES } from '../shuffle';
+import { handleWovenPassword } from '../wovenPasswordHost';
+import { weaveSecret } from '../wovenSecret';
+import { EntityViewOptions, renderEntityViewHtml } from '../entityViewPage';
+
+const viewOptions = (details: Partial<EntityMetadata>): EntityViewOptions =>
+  ({
+    details: { id: 'e1', name: 'x', kind: 'credential', isSshEnabled: false, ...details },
+    hasPassword: true,
+    hasPrivateKey: false,
+    hasVpnConfig: false,
+    hasDbConnection: false,
+    dbPortIsDefault: false,
+    dbHasPassword: false,
+    hasAttachment: false,
+    history: [],
+    resolveSecret: async () => undefined,
+    copyAllText: async () => '',
+    saveVpnConfig: async () => {},
+    saveAttachment: async () => {},
+    setEnv: async () => true,
+    checkEnv: () => {},
+  }) as unknown as EntityViewOptions;
 
 /**
  * The write side of a woven password: the controls that offer it, and the sentence General shows
@@ -80,4 +102,64 @@ test('the controls stay hidden until the box is ticked', () => {
 
   assert.match(html, /id="weaveControls" style="display:none"/);
   assert.match(script, /weaveWrap\.style\.display = weaveBox\.checked/);
+});
+
+/**
+ * The read side: the viewer's two-column row, and what a Show or a Copy on it is answered with.
+ */
+test('a woven password is READ through the two-column row, not shown as a dot', () => {
+  const woven = renderEntityViewHtml(viewOptions({ passwordWoven: true }));
+  const plain = renderEntityViewHtml(viewOptions({}));
+
+  assert.match(woven, /data-woven-host=""/, 'the card script binds to this');
+  assert.match(woven, /data-key="password"/);
+  assert.match(woven, /id="payReading_password_a"/);
+  // The script names the selector either way; what a plain entry must not have is an element.
+  assert.ok(!/data-woven-host=""/.test(plain), 'an ordinary password keeps its one row');
+  assert.match(plain, /data-field="password"/, 'and it is still copyable from there');
+});
+
+test('a Show is answered with the two readings, and NEITHER is marked', async () => {
+  const posted: Record<string, unknown>[] = [];
+  const stored = weaveSecret('hunter2!', SHUFFLE_CODES[3], () => 0.37);
+
+  await handleWovenPassword('reassemble', `password|${SHUFFLE_CODES[3]}`, {
+    entityId: () => 'e1',
+    read: () => Promise.resolve(stored),
+    post: (m) => posted.push(m as Record<string, unknown>),
+    copy: () => Promise.resolve(),
+  });
+
+  assert.equal(posted.length, 1);
+  const answer = posted[0];
+  assert.equal(answer.ok, true);
+  assert.equal(answer.words, false, 'a password is characters, not words');
+  assert.equal(answer.entityId, 'e1', 'stamped, so an answer for another entry is droppable');
+  // Nothing in the message says which row is the password.
+  assert.ok(!/real|decoy/i.test(JSON.stringify(answer)));
+});
+
+test('a method this build has no name for is refused, and says nothing was changed', async () => {
+  const posted: Record<string, unknown>[] = [];
+
+  await handleWovenPassword('reassemble', 'password|f99', {
+    entityId: () => 'e1',
+    read: () => Promise.resolve('abcdef'),
+    post: (m) => posted.push(m as Record<string, unknown>),
+    copy: () => Promise.resolve(),
+  });
+
+  assert.equal(posted[0].ok, false);
+  assert.match(String(posted[0].why), /Nothing has been changed/);
+});
+
+test('a message that is not the password is not this host business', async () => {
+  const taken = await handleWovenPassword('reassemble', 'cvv|f1', {
+    entityId: () => 'e1',
+    read: () => Promise.resolve('abcd'),
+    post: () => undefined,
+    copy: () => Promise.resolve(),
+  });
+
+  assert.equal(taken, false, 'the payment host owns that one');
 });
