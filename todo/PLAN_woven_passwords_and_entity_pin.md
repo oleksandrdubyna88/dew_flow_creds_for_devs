@@ -319,7 +319,18 @@ protected"* — where the folder is, not in a log nobody opens. A persisted prog
 proposed and rejected: the entries already describe their own state, and an index goes stale the
 moment somebody adds or deletes an entry between runs.
 
-The flag persists so a **new entry created in that folder is asked for the PIN as it is created**.
+**DEVIATION, 2026-09-04: there is no persisted flag, and the signal is DERIVED.** A folder counts
+as protected exactly when at least one entry inside it is — which is the question that actually
+matters, cannot drift out of step with the entries the way a stored boolean can, and is
+self-repairing (unprotect the last one and the folder stops asking, which is what somebody who just
+did that means). A new entry created there is asked for the PIN BEFORE the form opens, so dismissing
+the box means no entry rather than an unprotected one sitting in a folder whose whole point is that
+nothing in it is.
+
+The one case a stored flag would cover and this does not: a folder somebody ran the command on while
+it was EMPTY. Nothing was protected, so nothing marks it, and the first entry created there is not
+asked. Recorded rather than papered over — the alternative is a flag claiming protected about a
+folder where nothing is.
 **The flag rides ordinary node metadata, and ordinary node metadata is opaque to the server** — the
 vault reaches it as one client-side-encrypted blob (CLAUDE.md: *"the server never holds a key that
 opens a vault"*), so the server cannot see which folders are flagged. A reviewer asked; the plan
