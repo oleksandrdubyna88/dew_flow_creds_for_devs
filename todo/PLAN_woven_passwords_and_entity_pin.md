@@ -175,18 +175,55 @@ guard prevents. So:
 
 ## Part 2 — a PIN on an entry or a folder
 
-### 2.1 Every read path learns about `locked`
+### 2.0 What the readers actually need — the survey, done before the code
 
-`storageManager`'s accessors return `SecretRead`. Interactive hosts ask; non-interactive ones refuse
-or skip. **This does not get simpler under the owner's model and is the bulk of the work**: a reader
-that has not been taught will hang, throw, or hand envelope JSON to something expecting a password.
+The plan said §2.1 was "the bulk of the work" and that every reader must learn about `locked`. That
+was written before anyone read them. Every call site of a secret getter has now been enumerated and
+classified, and the shape of the work is different from what the sentence implies: **most readers
+need no change at all**, because a locked envelope is a STRING and they move strings.
 
-**The file is at its size-ratchet baseline and may only shrink**, so this begins with an extraction.
+| Reader | What it does with the value | Verdict |
+|---|---|---|
+| `entityEditCommands` `hasStoredPassword` | asks whether one EXISTS | unchanged — an envelope exists |
+| `entityFlags` | the tree's badges | unchanged — boolean |
+| `entityViewerCommands:51` `hasPassword` | boolean | unchanged |
+| `mcpEntries.storedSecrets` | five booleans and the db string | unchanged; the entry is filtered out by §2.4 |
+| `exportSecrets` / `exportBundle` | copies bytes into a backup | **unchanged, and this is the design**: a backup of a locked entry stays locked, which is what its owner asked for |
+| `revisionSnapshot` | copies bytes into history | unchanged — history keeps what was stored |
+| **`entityViewerCommands:108`, `viewerOptions.password()`** | shows it | **asks** (§2.2) |
+| **`commands/entityCommands:89`** Copy password | copies it | **asks** |
+| **`envApply`, the terminal, `sshCredential`** | hands it to something automatic | **withheld**, with the reason — the boundary Part 1 built (`FieldReading`) already carries it |
+| **`rotateAction` `current`** | replaces it | **refused**, exactly as a woven password is |
+| **`hygieneScan`** | looks for weak and reused secrets | **skips, and says so** — scanning ciphertext would report every locked entry as a strong unique password, which is a lie in the direction that matters |
+| **`maskEntries`** | masks values appearing in output | **skips** — it cannot mask a value it cannot read, and the ciphertext will never appear |
+| **`shareInbox`** | puts it in a share payload | **asks at share time** (§2.5, and the owner asked for exactly this) |
 
-**Every named reader is enumerated in the test matrix** *(a reviewer's finding — the first draft said
-"every read path" and then tested two of them)*: background sync, the tree renderer, the share and
-the export, the SSH agent, the terminal launch, env exposure, `credsAgentServer`, the headless CLI,
-the MCP tools, the hygiene scan, the revision history.
+**So `storageManager`'s getters keep their signatures.** They return what is stored, which for a
+locked entry is the envelope — and `readSecret` already tells any caller which it is. What changes
+is the dozen callers above, each in its own way, and each with its own test. A blanket type change
+across ten getters would have touched forty call sites to make thirty of them re-state "pass it on
+unchanged".
+
+**The one thing that must not happen** is a reader that hands envelope JSON to something expecting a
+password. That is what the classification is FOR, and the test matrix below names every row of it.
+
+### 2.1 The PIN session, and where the wrap happens
+
+`pinSession.ts` — a per-window grant, keyed by entity id, holding the PIN for as long as the window
+is unlocked and no longer. The shape `PaymentViewHost`'s grant already has, including its "the panel
+may have been re-rendered for another entry" check, and the same reason: a grant that outlives the
+window is a PIN on disk.
+
+`entityPin.ts` — the two operations, pure of `vscode`:
+
+- **protect(entity, pin)** — every secret slot the entry has, read, `lockSecret`-ed, written back.
+  Slots, enumerated: password, private key, VPN config, notes, fields, payment, config body, db
+  connection, TOTP seed. Attachments and images are NOT wrapped: they are base64 blobs that a
+  viewer streams, and a PIN on them buys nothing a locked password does not already buy.
+- **unprotect(entity, pin)** — the same, in reverse.
+
+Both are **all-or-nothing per entry**: the slots are read, every one is transformed in memory, and
+only then are they written. A half-protected entry is the state nothing can describe.
 
 ### 2.2 The gate
 
@@ -260,7 +297,10 @@ Steps 1–3 ship on their own. Step 4 is the one that must be finished once star
 | 1.4 | env, terminal and agent each REFUSE a woven entry, and each says why |
 | 1.5 | the form opens for a woven credential; every other field saves; the secret is untouched |
 | 1.5 | Replace the password… writes a new value without reading the old one |
-| 2.1 | each enumerated reader handles `locked`: it skips, refuses or asks — none throws or hangs |
+| 2.0 | EVERY row of the reader survey, by name: the six that pass an envelope through unchanged still do; the viewer and Copy ask; env, terminal and the SSH broker withhold with a reason; a rotation is refused; the hygiene scan skips and says so; the masker skips; a share asks at share time |
+| 2.1 | protect/unprotect is all-or-nothing per entry: a failure part-way writes NOTHING |
+| 2.1 | every slot an entry has is wrapped, and attachments and images deliberately are not |
+| 2.1 | a wrong PIN on unprotect fails as a wrong PIN, not as corruption |
 | 2.2 | the grant is per entry and dies with the window; a re-render for another entry drops it |
 | 2.3 | a folder run wraps every unprotected entry, SKIPS the protected ones, and says which |
 | 2.3 | a run interrupted halfway leaves every entry readable — some protected, some not |
