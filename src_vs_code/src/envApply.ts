@@ -4,6 +4,7 @@ import { BindableField, EnvBindings, staleEnvNames } from './envBinding';
 import { StorageManager } from './storageManager';
 import { EntityMetadata } from './types';
 import { FieldReading, readingOf, valueOf, withheld } from './fieldReading';
+import { automaticPinRefusal } from './pinGate';
 
 /**
  * Writing bound secret fields into VS Code's environment variable collection — the
@@ -55,7 +56,20 @@ export async function bindableFieldReading(
   field: BindableField,
 ): Promise<FieldReading> {
   const refusal = automaticRefusal(details, field);
-  return refusal === '' ? readingOf(await storedField(storage, accountId, details, field)) : withheld(refusal);
+  return refusal === '' ? afterReading(await storedField(storage, accountId, details, field), details) : withheld(refusal);
+}
+
+/**
+ * The second refusal, and it can only be decided AFTER the read.
+ *
+ * <p>A woven password is known from the entry (`passwordWoven` is a field). A PIN-protected value
+ * is known only from the VALUE — the wrap is inside it, which is the whole reason the mark cannot
+ * be lost — so this is where it is seen. Both come back as `withheld`, because to an automatic
+ * caller they are the same fact: the value is there and it may not have it.</p>
+ */
+function afterReading(stored: string | undefined, details: EntityMetadata): FieldReading {
+  const locked = automaticPinRefusal(stored, details.name);
+  return locked === '' ? readingOf(stored) : withheld(locked);
 }
 
 // eslint-disable-next-line complexity

@@ -11,6 +11,7 @@ import { EntityMetadata } from './types';
 import { DrawOptions, GenerationOutcome, NO_GENERATOR_OUTCOME } from './secretKinds';
 import { readSecretOptions } from './mcpSecretOptions';
 import { Revision } from './revisionHistory';
+import { automaticPinRefusal } from './pinGate';
 
 /**
  * The `rotate` action: the window changes a secret on the far side and then stores it.
@@ -165,11 +166,8 @@ async function prepare(
   if (!checked.ok) {
     return { ok: false, error: checked.message };
   }
-  const withheld = wovenSlot(details, checked.slot);
-  if (withheld !== '') {
-    return { ok: false, error: withheld };
-  }
-  return draw(ctx, details, checked, body, deps);
+  const withheld = await notRotatable(ctx, details, checked.slot, deps);
+  return withheld === '' ? draw(ctx, details, checked, body, deps) : { ok: false, error: withheld };
 }
 
 /**
@@ -184,6 +182,40 @@ async function prepare(
  * protection and nothing automatic is entitled to make it. Rotating the entry by hand still works:
  * the form is where a replacement chooses whether it stays woven.</p>
  */
+/** The two reasons a slot is not an agent's to rotate, asked in the cheap order. */
+async function notRotatable(
+  ctx: UseActionContext,
+  details: EntityMetadata,
+  slot: RotationSlot,
+  deps: RotateDeps,
+): Promise<string> {
+  const woven = wovenSlot(details, slot);
+  return woven === '' ? protectedSlot(ctx, slot, details, deps) : woven;
+}
+
+/**
+ * A PIN-protected slot is not one an agent may rotate.
+ *
+ * <p>The rotation would store a new, readable value while the entry went on carrying a wrap it no
+ * longer has — the same shape as the woven refusal beside it, and refused for the same reason:
+ * removing somebody's protection is a decision, and nothing automatic gets to make it.</p>
+ *
+ * <p>Checked in `prepare`, beside the woven one, so nothing is generated first: a refused request
+ * must not leave a drawn secret in a history nobody expected to grow.</p>
+ */
+async function protectedSlot(
+  ctx: UseActionContext,
+  slot: RotationSlot,
+  details: EntityMetadata,
+  deps: RotateDeps,
+): Promise<string> {
+  const locked = automaticPinRefusal(await deps.current(ctx, slot), details.name);
+  return locked === ''
+    ? ''
+    : `${locked} A rotation would replace a value this build cannot read, and the entry would keep `
+      + 'claiming a protection its new value does not have.';
+}
+
 function wovenSlot(details: EntityMetadata, slot: RotationSlot): string {
   return slot === 'password' && details.passwordWoven === true
     ? `"${details.name}" stores its password woven with a decoy, so it cannot be rotated `

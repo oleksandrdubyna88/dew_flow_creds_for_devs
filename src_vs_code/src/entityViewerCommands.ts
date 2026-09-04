@@ -7,7 +7,7 @@ import { ViewerTab } from './viewerClicks';
 import { dbDisplay } from './viewerOptions';
 import { parseHostKey } from './hostKeyPin';
 import { imageMime } from './attachment';
-import { storageSecretReader } from './viewerOptions';
+import { gatedSecretReader, storageSecretReader } from './viewerOptions';
 import { showEntityView } from './entityViewPanel';
 import { mcpFor } from './viewerOptions';
 import { describeRemaining } from './entityExpiry';
@@ -34,6 +34,8 @@ import { paymentViewFor } from './viewerOptions';
 import { paymentCardFor } from './paymentViewMessages';
 import { parsePaymentFields } from './paymentFields';
 import { formOf } from './paymentSaveGate';
+import { admit, openedText } from './pinAdmission';
+import { entryPinGate } from './pinPrompt';
 /** Double-click target: the read-only viewer with per-field Copy buttons. */
 export async function openEntityViewer(
   accountId: string,
@@ -48,12 +50,24 @@ export async function openEntityViewer(
   if (!details) {
     return;
   }
+  // The door, before the page. An entry protected with its own PIN is opened ONCE, here, rather
+  // than field by field — four of the values below are read eagerly to build the page, and a value
+  // that slipped past a per-field gate would reach it as envelope JSON. Declining does not open a
+  // viewer full of empty boxes; it does not open a viewer.
+  const gate = entryPinGate(accountId, details.id, details.name);
+  const admission = await admit(storage, accountId, details.id, gate);
+  if (admission.kind !== 'in') {
+    if (admission.kind === 'refused') {
+      void vscode.window.showWarningMessage(admission.reason);
+    }
+    return;
+  }
   const hasPassword = (await storage.getPassword(accountId, details.id)) !== undefined;
   const hasPrivateKey = (await storage.getPrivateKey(accountId, details.id)) !== undefined;
   const hasVpnConfig = (await storage.getVpnConfig(accountId, details.id)) !== undefined;
-  const dbConnection = await storage.getDbConnection(accountId, details.id);
-  const notes = (await storage.getNotes(accountId, details.id)) ?? details.notes;
-  const fields = await storage.getFields(accountId, details.id);
+  const dbConnection = await openedText(await storage.getDbConnection(accountId, details.id), gate);
+  const notes = (await openedText(await storage.getNotes(accountId, details.id), gate)) ?? details.notes;
+  const fields = parseFields(await openedText(await storage.getFieldsRaw(accountId, details.id), gate));
   // Always show a port for DB entities — the type's default when not explicit.
   const db = dbDisplay(dbConnection, details.dbType);
   const keySourceName =
@@ -71,7 +85,14 @@ export async function openEntityViewer(
   const imageMimeType = details.imageFileName !== undefined ? imageMime(details.imageFileName) : undefined;
   // The seed can be edited while the panel is open, so the code is derived per request — and
   // the webview only ever receives that code, never the seed it came from.
-  const totpReader = storageSecretReader(storage, accountId, details.id);
+  // Every LIVE read goes through the same gate. The PIN is already in this window's session by
+  // here, so nothing asks again — what this buys is that a slot an interrupted protect-run left
+  // locked is still opened rather than handed to the page as JSON.
+  const totpReader = gatedSecretReader(
+    storageSecretReader(storage, accountId, details.id),
+    gate,
+    (message) => void vscode.window.showWarningMessage(message),
+  );
   const hasTotp = (await storage.getTotp(accountId, details.id)) !== undefined;
   // Read once, for the card's SHAPE — which fields exist and which are woven. Every value is read
   // again per request through `resolvePayment`, so a record edited while the panel is open is not
@@ -97,7 +118,7 @@ export async function openEntityViewer(
     hasDbConnection: dbConnection !== undefined,
     notes,
     fields,
-    config: await storage.getConfigBody(accountId, details.id),
+    config: await openedText(await storage.getConfigBody(accountId, details.id), gate),
     ...db,
     sshCommand: buildSshCommand(details),
     resolveSecret: secretResolver(totpReader),
@@ -105,8 +126,8 @@ export async function openEntityViewer(
     copyAllText: async () =>
       formatEntityBlock(
         details,
-        await storage.getPassword(accountId, details.id),
-        await storage.getDbConnection(accountId, details.id),
+        await totpReader.password(),
+        await totpReader.dbConnection(),
         notes,
         fields,
       ),

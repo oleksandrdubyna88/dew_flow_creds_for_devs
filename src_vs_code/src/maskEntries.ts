@@ -1,3 +1,4 @@
+import { isLockedSecret } from './secretEnvelope';
 import { parseDbConnectionString } from './dbConnString';
 import type { MaskEntry } from './secretMasker';
 import { EntityMetadata } from './types';
@@ -71,8 +72,19 @@ export async function maskEntriesFor(
 }
 
 /** A non-empty string as a one-element list, so absent values compose away. */
+/**
+ * A value worth masking, or nothing.
+ *
+ * <p><b>A PIN-protected value is skipped, and there is nothing lost by it.</b> The masker replaces
+ * secrets that appear in a command's output; what is stored for a protected entry is the wrap, and
+ * the wrap is not what any tool prints — the PLAINTEXT would be, and this cannot read it. Masking
+ * the ciphertext would be masking a string that will never occur.</p>
+ *
+ * <p>It also cannot leak: an entry whose values are locked has already refused every automatic path
+ * that could put one in a command line, so there is no run whose output could carry it.</p>
+ */
 function present(value: string | undefined): string[] {
-  return typeof value === 'string' && value.length > 0 ? [value] : [];
+  return typeof value === 'string' && value.length > 0 && !isLockedSecret(value) ? [value] : [];
 }
 
 /**
