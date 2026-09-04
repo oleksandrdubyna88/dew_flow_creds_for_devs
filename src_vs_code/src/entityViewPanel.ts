@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { copySecret } from './secretClipboard';
 import { confirmDestructive } from './dialogs';
 import { PaymentViewHost, isPaymentMessage } from './paymentViewHost';
+import { handleWovenPassword } from './wovenPasswordHost';
 import { applyZoomDelta, currentUiScale, pushUiScaleTo } from './uiScaleHost';
 import { ViewerTab } from './viewerClicks';
 import { BINDABLE_FIELDS, BindableField } from './envBinding';
@@ -136,7 +137,19 @@ function mountEntityView(
       return;
     }
     if (isPaymentMessage(message.type)) {
-      await payment.handle(message.type, message.field);
+      // A credential has no payment view, so `handle` answers false — and the woven password's own
+      // host takes the same message. One page, one script, two sources for the value.
+      if (!(await payment.handle(message.type, message.field))) {
+        await handleWovenPassword(message.type, message.field, {
+          // Read PER CALL, for the reason the payment host reads its own view per call: the
+          // preview tab re-renders for another entry, and answering from what this panel was
+          // built with would show one entry's rows for another entry's password.
+          entityId: () => state.options.details.id,
+          read: () => state.options.resolveSecret('password'),
+          post: (answer) => void panel.webview.postMessage(answer),
+          copy: (text) => copySecret(vscode.env.clipboard, text),
+        });
+      }
       return;
     }
     if ((message as { type: string }).type === 'zoom') {

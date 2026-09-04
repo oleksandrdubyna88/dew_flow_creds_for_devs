@@ -21,7 +21,7 @@ import * as vscode from 'vscode';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import { envProbeCommand } from './envProbe';
-import { bindableFieldValue } from './envApply';
+import { bindableFieldReading } from './envApply';
 import { entityKey } from './entityFlags';
 import { Revision } from './revisionHistory';
 import { mcpAsOfVersion } from './viewerOptions';
@@ -152,12 +152,16 @@ export async function openEntityViewer(
       terminal.sendText(envProbeCommand(vscode.env.shell, name), true);
     },
     setEnv: async (field, name) => {
-      const value = await bindableFieldValue(storage, accountId, details, field);
-      if (value === undefined || value.length === 0) {
-        void vscode.window.showWarningMessage('Nothing stored in that field — nothing was set.');
+      // One question, three answers. Withheld is said in the words the policy chose — there IS a
+      // password, and "nothing stored" would be a false answer to somebody looking at the card.
+      const reading = await bindableFieldReading(storage, accountId, details, field);
+      if (reading.kind !== 'value') {
+        void vscode.window.showWarningMessage(
+          reading.kind === 'withheld' ? reading.reason : 'Nothing stored in that field — nothing was set.',
+        );
         return false;
       }
-      envCollection().replace(name, value);
+      envCollection().replace(name, reading.value);
       envCollection().description = 'CredsForDevs: secrets exposed as terminal variables';
       void vscode.window.showInformationMessage(
         `$${name} is set for NEW integrated terminals. Already-open terminals keep their old environment.`,

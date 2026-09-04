@@ -39,12 +39,18 @@ interface Log {
 }
 
 function world(
-  overrides: { result?: UseActionResult; details?: Partial<EntityMetadata>; current?: string } = {},
+  overrides: {
+    result?: UseActionResult;
+    details?: Partial<EntityMetadata>;
+    current?: string;
+    /** The wrapped action's kind, which is what decides the SLOT a rotation writes. */
+    kind?: string;
+  } = {},
 ): { action: UseAction; log: Log; generated: string } {
   const log: Log = { ran: [], recorded: 0, stored: [], refreshed: 0 };
   const generated = 'NEW-secret-4b7e';
   const underlying: UseAction = {
-    kind: 'db',
+    kind: overrides.kind ?? 'db',
     action: 'query',
     verb: 'run a query against',
     validate: () => ({ ok: true }),
@@ -282,4 +288,31 @@ test('a rotation with no kind named is a password, which is what one almost alwa
   await action.run(CTX, { statement: STATEMENT });
 
   assert.ok(log.ran[0].includes(generated));
+});
+
+/**
+ * A woven password is not a slot an agent may rotate. Rotating it would store a new, unwoven value
+ * while the entry went on saying `Woven — on` — the viewer offering a two-column row over a plain
+ * password, every reading failing as "not a whole woven pair". The same defect a Clear used to
+ * leave behind, arriving by a door an AGENT opens rather than the person.
+ */
+test('an agent cannot rotate a WOVEN password — it is refused, and nothing is stored', async () => {
+  const { action, log } = world({ kind: 'credential', details: { kind: 'credential', passwordWoven: true } });
+
+  const result = await action.run(CTX, { statement: STATEMENT });
+
+  assert.equal(log.ran.length, 0, 'the far side is never reached');
+  assert.equal(log.stored.length, 0, 'and nothing is written');
+  assert.equal(log.recorded, 0, 'not even a history entry');
+  assert.match(JSON.stringify(result), /cannot be rotated/, 'the refusal says why');
+  assert.match(JSON.stringify(result), /Rotate it from the entry/, 'and what to do instead');
+});
+
+test('an ordinary password on the same kind still rotates', async () => {
+  // The other side of the line: the refusal is about the mark, not about credentials.
+  const { action, log, generated } = world({ kind: 'credential', details: { kind: 'credential' } });
+
+  await action.run(CTX, { statement: STATEMENT });
+
+  assert.deepEqual(log.stored, [{ slot: 'password', value: generated }]);
 });

@@ -103,3 +103,40 @@ test('an entry with no seed and nothing pasted claims none', () => {
   assert.notEqual(values.details.hasTotp, true);
   assert.equal(values.newTotp, undefined);
 });
+
+/**
+ * The woven password's two edges, both found by reviewers on the branch that added it.
+ *
+ * <p>The first is the mark outliving the value: ticking Clear deletes the secret, and
+ * `passwordWoven` went on standing — so the viewer kept offering a two-column row for an entry
+ * with nothing in it, every Show answering "not a whole woven pair", and every automatic path
+ * refusing a password that no longer existed.</p>
+ *
+ * <p>The second is a weave that was REFUSED. The password was stored exactly as typed and nothing
+ * on screen said so: a ticked box, a saved entry, and a secret in the clear that looks woven.</p>
+ */
+test('clearing the password clears the woven MARK with it', () => {
+  const panel = world();
+
+  const values = panel.toValues(posted('credential', { clearPassword: true }), {
+    entityId: 'e1',
+    initial: { passwordWoven: true },
+    hasStoredPassword: true,
+  } as never);
+
+  assert.equal(values.clearPassword, true);
+  assert.equal(values.details.passwordWoven, undefined, 'no value, no property of the value');
+});
+
+test('a woven password survives an edit that did not touch it', () => {
+  // The other side of the same line: only CLEARING drops the mark. An ordinary save of an entry
+  // whose password was not retyped must keep it, or every rename unweaves a secret.
+  const panel = world();
+
+  const values = panel.toValues(posted('credential'), {
+    entityId: 'e1',
+    initial: { passwordWoven: true },
+  } as never);
+
+  assert.equal(values.details.passwordWoven, true);
+});

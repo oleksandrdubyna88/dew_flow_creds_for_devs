@@ -5,7 +5,8 @@ import { readDependsOnRows, readForwardRows } from './formRowReaders';
 import { PaymentFields } from './paymentFields';
 import { addressBlockFor, addressSplitAnswer, cardTypedAnswer } from './cardFormFields';
 import { exampleAnswer } from './weaveExample';
-import { generatePhraseAnswer } from './phraseGenerate';
+import { unwovenWarning, wovenSave } from './wovenPasswordSave';
+import { cryptoRandom, generatePhraseAnswer } from './phraseGenerate';
 import * as vscode from 'vscode';
 import { applyLifetime } from './entityExpiry';
 import { normalizeArgs } from './commandLine';
@@ -141,6 +142,8 @@ export interface EntityFormValues {
   details: EntityMetadata;
   newPassword?: string;
   clearPassword: boolean;
+  /** Why a password the form was told to weave was stored plain instead, or `''`. */
+  wovenRefusal?: string;
   newPrivateKey?: string;
   clearPrivateKey: boolean;
   newVpnConfig?: string;
@@ -370,7 +373,35 @@ const ROUND_TRIPS: Record<string, (message: FormMessage, options: EntityFormOpti
 
 /** Every save gate, in order — see `paymentSaveGate.paymentGates` for the first two. */
 async function agreed(data: Record<string, unknown>, options: EntityFormOptions): Promise<boolean> {
-  return (await paymentGates(data, options)) && (await confirmInvalidSave(data, options));
+  return (
+    (await paymentGates(data, options))
+    && (await confirmInvalidSave(data, options))
+    && (await confirmUnwovenSave(data, options))
+  );
+}
+
+/**
+ * Ask before saving a password the form was told to weave and could not — and let Cancel mean it.
+ *
+ * <p>The same shape as `confirmInvalidSave`, deliberately: asked HERE the form is still open, so
+ * Cancel leaves the typed password and the method picker exactly where they were. Returning
+ * `false` simply does not settle the promise; nothing is written and nothing is lost.</p>
+ */
+async function confirmUnwovenSave(
+  data: Record<string, unknown>,
+  options: EntityFormOptions,
+): Promise<boolean> {
+  const warning = unwovenWarning(
+    str(data, 'password'),
+    bool(data, 'weavePassword'),
+    str(data, 'weaveMethod'),
+    options.initial?.passwordWoven === true,
+  );
+  if (warning === undefined) {
+    return true;
+  }
+  const answer = await vscode.window.showWarningMessage(warning, { modal: true }, 'Save anyway');
+  return answer === 'Save anyway';
 }
 
 function answerRoundTrip(panel: vscode.WebviewPanel, message: FormMessage, options: EntityFormOptions): boolean {
@@ -433,26 +464,6 @@ function unsavedConfigProblem(
 /** The form's kind, from the locked kind or the selector — the same answer `toValues` reaches. */
 function isConfigForm(data: Record<string, unknown>, options: EntityFormOptions): boolean {
   return (options.lockedKind ?? str(data, 'entityType')) === 'config';
-}
-
-/**
- * What the page should show: the rows, or WHY there are none.
- *
- * <p>Three answers, not two. Returning a bare "no rows" made a JSON config with one missing brace
- * report "No field view for this format" — false about JSON, and silent about the brace. The
- * problem travels with the answer so the tab can name the line instead of the format.</p>
- *
- * <p>Spans are deliberately NOT sent. The page would then hold offsets into a document it can go
- * on editing in the Raw tab, and a stale offset splices into the wrong place — silently, and in a
- * file of secrets. Recomputing from the text the page just sent is always consistent with it.</p>
- *
- * <p>`null` rather than `undefined` throughout: this crosses a `postMessage` boundary, where
- * `undefined` does not survive JSON and arrives as a missing property.</p>
- */
-interface FieldsAnswer {
-  kind: string;
-  rows: { path: string; value: string }[] | null;
-  problem: ConfigProblem | null;
 }
 
 /**
@@ -613,6 +624,11 @@ export function toValues(data: Record<string, unknown>, options: EntityFormOptio
 
   const portText = str(data, 'port').trim();
   const password = str(data, 'password');
+  // Read once and used twice, because the two uses must agree: a cleared password is a DELETED
+  // password, and an entry cannot go on claiming a property of a value that is no longer there.
+  const clearsPassword = keepsPassword(kind) ? bool(data, 'clearPassword') : options.hasStoredPassword;
+  // The four states a password save can be in, decided once: see wovenPasswordSave.ts.
+  const saved = wovenSave(password, bool(data, 'weavePassword'), str(data, 'weaveMethod'), options.initial?.passwordWoven === true, cryptoRandom);
   const privateKey = str(data, 'privateKey');
   const keyEntity = str(data, 'sshKeyEntityId');
   const vpnConfig = str(data, 'vpnConfigContent');
@@ -718,12 +734,22 @@ export function toValues(data: Record<string, unknown>, options: EntityFormOptio
       commandArgs: isTerminal && commandArgs !== undefined && commandArgs.length > 0 ? commandArgs : undefined,
       commandNote: isTerminal ? str(data, 'commandNote').trim() || undefined : undefined,
       notes: undefined, // notes now live in SecretStorage, never in metadata
+      // Carried, not recomputed from a checkbox: typing nothing must keep a woven password woven,
+      // and typing a NEW one without the mark is a replacement that drops it.
+      // ...and dropped when the password is cleared. A reviewer found the mark outliving the value:
+      // the secret was deleted, `passwordWoven` stood, and the viewer went on offering a
+      // two-column row for an entry with nothing in it — every Show answering "not a whole woven
+      // pair", every automatic path refusing a password that no longer existed.
+      passwordWoven: !isDb && !clearsPassword && saved.woven ? true : undefined,
     },
-    newPassword: !isDb && password.length > 0 ? password : undefined,
+    // Woven or not, decided in one place: `wovenSave` holds the four states a save can meet, and
+    // the refusal it answers with when something was asked for and could not be done.
+    newPassword: !isDb && saved.value.length > 0 ? saved.value : undefined,
+    wovenRefusal: saved.refusal,
     // A config has no password slot, so a stored one is invisible and uneditable — and, until this
     // line, enough to make the entry shareable. Scrubbed on write, exactly as a TOTP seed is when
     // an entity moves to a kind that cannot hold one.
-    clearPassword: keepsPassword(kind) ? bool(data, 'clearPassword') : options.hasStoredPassword,
+    clearPassword: clearsPassword,
     newPrivateKey: (isSsh || isKey || isVpn) && privateKey.length > 0 ? privateKey : undefined,
     clearPrivateKey: bool(data, 'clearPrivateKey') || bool(data, 'clearVpnKey'),
     newVpnConfig: isVpn && vpnConfig.length > 0 ? vpnConfig : undefined,

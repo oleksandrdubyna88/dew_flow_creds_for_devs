@@ -200,3 +200,45 @@ test('several bindings are written together, each from its own field', async () 
     PUB: 'THE-PUBLIC-KEY',
   });
 });
+
+/**
+ * The three answers, and why two were not enough — a reviewer's finding on the woven-password
+ * branch. Every automatic path returned `string | undefined`, so "there is nothing here" and
+ * "there is something here and you may not have it" arrived identically, and each caller invented
+ * its own sentence. The one that had not been taught about woven passwords invented the wrong one.
+ */
+test('a withheld field reads as WITHHELD, carrying the reason — never as an absence', async () => {
+  const mod = envApply();
+
+  const reading = await mod.bindableFieldReading(
+    storage() as never,
+    'acc',
+    details({ passwordWoven: true }),
+    'password',
+  );
+
+  assert.equal(reading.kind, 'withheld');
+  assert.match(reading.kind === 'withheld' ? reading.reason : '', /cannot be used automatically/);
+});
+
+test('an empty field reads as ABSENT, and a stored one as a VALUE', async () => {
+  const mod = envApply();
+
+  const nothing = await mod.bindableFieldReading(storage({ password: undefined }) as never, 'acc', details(), 'password');
+  const something = await mod.bindableFieldReading(storage() as never, 'acc', details(), 'password');
+
+  assert.equal(nothing.kind, 'absent', 'an entry with no password is not refusing you one');
+  assert.deepEqual(something, { kind: 'value', value: 'THE-PASSWORD' });
+});
+
+test('the value-only reader is the reading, narrowed — the two cannot disagree', async () => {
+  // `bindableFieldValue` stays for `applyEnvBindings`, which writes what it can and skips what it
+  // cannot. It must be the SAME decision, not a second one: a withheld field yields no value.
+  const mod = envApply();
+
+  assert.equal(
+    await mod.bindableFieldValue(storage() as never, 'acc', details({ passwordWoven: true }), 'password'),
+    undefined,
+  );
+  assert.equal(await mod.bindableFieldValue(storage() as never, 'acc', details(), 'password'), 'THE-PASSWORD');
+});

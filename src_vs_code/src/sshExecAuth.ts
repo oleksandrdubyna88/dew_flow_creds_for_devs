@@ -48,6 +48,25 @@ export type ExecAuth =
  * who may delete it, and a shared one meant the first call to finish pulled the key out from
  * under every other that was still authenticating with it.</p>
  */
+/**
+ * A woven password cannot be handed to ssh.
+ *
+ * <p>It is the person's value and a decoy interleaved, and nothing here knows which half is theirs
+ * — so this would authenticate with a guess, and a guess against a real host is a failed login an
+ * agent would then retry. Refused in the same shape a missing credential is refused in, so every
+ * caller already handles it, and with a sentence rather than a silence.</p>
+ */
+function wovenRefusal(name: string, warning: string | undefined): ExecAuth {
+  return {
+    ok: false,
+    reason: 'no_credential',
+    message:
+      `"${name}" stores its password woven with a decoy, so it cannot be used automatically: `
+      + 'nothing here knows which of the two halves is yours.',
+    warning,
+  };
+}
+
 // eslint-disable-next-line complexity
 export async function resolveExecAuth(
   storage: StorageManager,
@@ -67,6 +86,13 @@ export async function resolveExecAuth(
     };
   }
   if (source.kind === 'password') {
+    // A WOVEN password cannot be handed to ssh. It is the person's value and a decoy interleaved,
+    // and nothing here knows which half is theirs — so this would authenticate with a guess, and a
+    // guess against a real host is a failed login an agent would then retry. Refused with the same
+    // shape a missing credential is refused with, and with a sentence saying why.
+    if (entity.passwordWoven === true) {
+      return wovenRefusal(entity.name, warning);
+    }
     const scriptPath = writeAskpassScriptFile(storageDir, process.platform);
     return {
       ok: true,

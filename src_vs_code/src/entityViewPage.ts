@@ -27,6 +27,8 @@ import { TotpSnapshot } from './totp';
 import { PaymentFields } from './paymentFields';
 import { PaymentCardView } from './paymentViewMessages';
 import { paymentCardMarkup, paymentCardScript } from './paymentViewCard';
+import { WOVEN_ROW_NOTE, wovenRowMarkup } from './wovenRow';
+import { methodOrder } from './phraseLayout';
 import { entityViewStyles } from './entityViewStyles';
 import { normalizeForwards, normalizeTags, renderForward } from './sshOptions';
 import { EntityFields } from './entityFields';
@@ -206,6 +208,22 @@ function codePanelFor(options: EntityViewOptions): string {
  * `formSections.ts` fails this file's tests instead of silently unframing the page.</p>
  */
 const NO_DOORS: AgentDoors = { cliAliases: [], codeAccess: false, bridgeOpen: false, wslRelay: false };
+
+/**
+ * A woven password: the two-column row it is read through, in a host of its own.
+ *
+ * <p>The host element carries `data-woven-host`, which is what the card's page script binds to —
+ * so a credential's woven password reads through that script rather than a second copy of it. A
+ * payment has no password and a credential has no card, so exactly one host exists per entry.</p>
+ */
+function wovenPasswordRow(entityId: string): string {
+  return `<div data-woven-host="" data-entity="${escapeHtml(entityId)}">${wovenRowMarkup({
+    key: 'password',
+    label: 'Password',
+    methods: methodOrder(Math.random),
+    note: WOVEN_ROW_NOTE,
+  })}</div>`;
+}
 
 function viewFrame(sectionId: string, legend: string, body: string): string {
   if (body.trim().length === 0) {
@@ -412,7 +430,7 @@ export function renderEntityViewHtml(options: EntityViewOptions): string {
     row('Host', 'host', d.host),
     row('User', 'user', d.user),
     row('Port', 'port', d.port !== undefined ? String(d.port) : undefined),
-    row('Password', 'password', options.hasPassword ? '•' : undefined, true),
+    d.passwordWoven === true ? wovenPasswordRow(d.id) : row('Password', 'password', options.hasPassword ? '•' : undefined, true),
     // The code is filled in by the host after load (see the `totp` message) and redrawn as
     // it expires; the seed is not in this HTML and never will be.
     ...(options.totp !== undefined

@@ -1,7 +1,6 @@
 import { DecoyKind, Random, generateDecoy } from './decoyDigits';
 import { ShuffleCode, Slot, isShuffleCode, shuffleLayout } from './shuffle';
 import { SHUFFLEABLE_KEYS, ShuffleableKey } from './paymentFields';
-import { decoyKindFor } from './paymentWeaving';
 
 /**
  * What a weaving method actually DOES, shown on two samples nobody has to care about.
@@ -29,12 +28,12 @@ import { decoyKindFor } from './paymentWeaving';
  * a field name that is not weavable or a method this build does not have would otherwise reach the
  * shuffler as an index into nothing. The same shape as every other boundary in this feature.</p>
  */
-function isShuffleableKey(value: string): value is ShuffleableKey {
-  return (SHUFFLEABLE_KEYS as readonly string[]).includes(value);
+function isExampleField(value: string): value is ExampleField {
+  return (EXAMPLE_FIELDS as readonly string[]).includes(value);
 }
 
 export function exampleAnswer(field: string, code: string, random: Random): Record<string, unknown> | undefined {
-  if (!isShuffleableKey(field) || !isShuffleCode(code)) {
+  if (!isExampleField(field) || !isShuffleCode(code)) {
     return undefined;
   }
   return { type: 'weaveExampleResult', ...weaveExample(field, code, random) };
@@ -64,13 +63,22 @@ export interface WeaveExample {
  * samples shown is ever one of these strings, because `generateDecoy` refuses to return its own
  * input.</p>
  */
-const SHAPES: Readonly<Record<ShuffleableKey, string>> = {
-  number: '4111111111111111',
-  cvv: '000',
-  pin: '0000',
-  iban: 'NL00BANK0000000000',
-  accountNumber: '00000000',
+const SHAPES: Readonly<Record<ExampleField, { readonly kind: DecoyKind; readonly shape: string }>> = {
+  number: { kind: 'card', shape: '4111111111111111' },
+  cvv: { kind: 'digits', shape: '000' },
+  pin: { kind: 'digits', shape: '0000' },
+  iban: { kind: 'iban', shape: 'NL00BANK0000000000' },
+  accountNumber: { kind: 'account', shape: '00000000' },
+  // A password is not a payment field and has no record to belong to, but the picture it needs is
+  // the same picture. Sixteen mixed characters: long enough that the method visibly moves things,
+  // short enough to read in one glance.
+  password: { kind: 'password', shape: 'aB3xY9qWmK7pR2sT' },
 };
+
+/** The fields an example can be drawn FOR — the weavable payment keys, and a password. */
+export type ExampleField = ShuffleableKey | 'password';
+
+export const EXAMPLE_FIELDS: readonly ExampleField[] = [...SHUFFLEABLE_KEYS, 'password'];
 
 /**
  * Two generated samples and the weave of them under `code`.
@@ -80,9 +88,9 @@ const SHAPES: Readonly<Record<ShuffleableKey, string>> = {
  * was given, so drawing both against the same seed could hand back a matching pair and an example
  * in which the method appears to do nothing.</p>
  */
-export function weaveExample(field: ShuffleableKey, code: ShuffleCode, random: Random): WeaveExample {
-  const kind: DecoyKind = decoyKindFor(field);
-  const first = generateDecoy({ kind, original: SHAPES[field] }, random);
+export function weaveExample(field: ExampleField, code: ShuffleCode, random: Random): WeaveExample {
+  const { kind, shape } = SHAPES[field];
+  const first = generateDecoy({ kind, original: shape }, random);
   const second = generateDecoy({ kind, original: first }, random);
   const halves = { first: [...first], second: [...second] };
   return {

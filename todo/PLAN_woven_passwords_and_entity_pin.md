@@ -1,7 +1,24 @@
 # PLAN — a woven password, and a PIN on an entry or a folder
 
-> Status: **plan only, nothing implemented yet.** The foundation both halves rest on IS built and
-> shipped — `src_vs_code/src/secretEnvelope.ts` and its tests, from
+> Status: **Part 1 IMPLEMENTED 2026-09-04 (extension v0.98.0); Part 2 open.** The plan stays here
+> because the majority of its value — the PIN — is still unbuilt.
+>
+> **Part 1 (a woven password) shipped** and is documented in
+> [module_extension.md](../research/module_extension.md) under *A woven password*. It went through
+> the coai gate twice: 14 plan findings and 29 code findings resolved, the second code round
+> `proceed`. Two deviations from what is written below, both from review:
+>
+> - §1.2 said the mark could not be switched off. What cannot be undone is UNWEAVING the stored
+>   value; replacing the password always works, and saying otherwise made the form contradict
+>   itself. The wording is now exact and the box arrives ticked for an already-woven entry.
+> - §1.4 grew a boundary the plan did not anticipate. `FieldReading` = `value | withheld(reason) |
+>   absent`, because every automatic path answered `string | undefined` and a `creds://` reference
+>   to a woven password therefore reported *"has no password stored"* — false in both halves. An
+>   agent ROTATION is refused for the same reason: it would store an unwoven value under a mark
+>   that still said `Woven — on`.
+>
+> The foundation Part 2 rests on IS built and shipped — `src_vs_code/src/secretEnvelope.ts` and its
+> tests, from
 > [PLAN_payment_polish_and_entity_pin.md](../research/PLAN_payment_polish_and_entity_pin.md) §6.0.
 > What remains is everything that USES it.
 >
@@ -40,6 +57,19 @@ Two things follow that must be said out loud rather than assumed:
    without it a folder that says "protected" quietly accumulates unprotected entries, which is a
    promise the interface would be making and the storage would not be keeping.
 
+   **There may be no single "folder PIN", and the interface must not pretend there is.** *(Two
+   reviewers, one finding.)* A run with PIN A protects some entries; a later run with PIN B skips
+   those and protects the rest, so a folder can hold entries under two PINs — which is a legitimate
+   state, not a corruption. The checkbox therefore means **"the PIN another entry in this folder
+   already uses"**, and it is accepted when the typed value opens AT LEAST ONE protected sibling.
+   Opening none is not refused — introducing a second PIN deliberately is allowed — but it is SAID,
+   so nobody discovers it a month later. The folder run itself reports how many entries it
+   protected and how many it skipped, and that the skipped ones keep their own.
+
+   **An EMPTY or wholly unprotected folder has nothing to verify against** *(a reviewer's
+   finding)*, so there the PIN is typed TWICE, which is the only check available and the same one
+   every other new PIN in this product gets.
+
    **The folder's PIN has to be TYPED, and checked before it is used.** It is stored nowhere, which
    is the point of it, so "use the folder's PIN" cannot mean "fetch it" — it means the person enters
    it. And it must be VERIFIED, by unwrapping any already-protected sibling in that folder: without
@@ -72,7 +102,7 @@ unwrapped for that operation.
 
 ---
 
-## Part 1 — a woven password
+## Part 1 — a woven password *(IMPLEMENTED 2026-09-04)*
 
 **Goal.** The card can store a number, a CVV or a PIN woven with a decoy under a method kept only in
 the person's memory. A password is the value most people would want that for, and cannot have it.
@@ -197,6 +227,15 @@ which entries are PIN-protected — repository rule 1.
 
 ---
 
+### 2.6 A woven password that is also PIN-protected
+
+*(A reviewer's finding: the two marks meet and the order was undefined.)* The woven string is the
+VALUE; the envelope wraps a value. So: **weave first, wrap second** — the envelope's ciphertext is
+the woven string, and `passwordWoven` stays on the entry where it always was. Unlocking gives back
+the woven string, which is then read through the two-column row exactly as an unprotected woven
+password is. The two features compose in one direction only, and it is the one that needs no new
+code in either.
+
 ## Build order
 
 1. **1.1** the password decoy shape — pure, testable on its own.
@@ -228,7 +267,8 @@ Steps 1–3 ship on their own. Step 4 is the one that must be finished once star
 | 2.3 | a new entry in a flagged folder cannot be saved without a PIN |
 | 2.3 | "use the folder's PIN" is ticked by default, and a WRONG folder PIN is refused by checking it against a protected sibling |
 | 2.3 | unticking it takes a new PIN, twice, and the sibling check does not apply |
-| 2.4 | a protected entry is absent from an agent's listing, not merely refused |
+| 2.4 | a protected entry is absent from EVERY agent-facing surface, enumerated: the MCP entry list, the MCP search, the tree an agent reads, the broker's own listing — not merely refused on use *(a reviewer's finding: "every list" tested at two of them proves nothing about the others)* |
+| 2.6 | a woven password inside a PIN wrap unlocks to the woven string, and reads back through the same row |
 | 2.5 | a shared protected entry asks the RECIPIENT for a PIN; the transit PIN is never the local one |
 | 2.5 | the share payload's flag is inside the sealed part — the server sees nothing |
 | 2.5 | a headless import of a protected share fails fast, naming the argument it needs |

@@ -823,8 +823,66 @@ nowhere. A string this build never wrote IS a plaintext secret, so there is no m
 answers a typed `locked` result and never prompts: the readers include background sync, the tree
 renderer and headless tooling, none of which can show a modal.
 
-Its two consumers — a woven password and a PIN on an entry or a folder — are
-[../todo/PLAN_woven_passwords_and_entity_pin.md](../todo/PLAN_woven_passwords_and_entity_pin.md).
+Its second consumer — a PIN on an entry or a folder — is still
+[../todo/PLAN_woven_passwords_and_entity_pin.md](../todo/PLAN_woven_passwords_and_entity_pin.md)
+Part 2. The first shipped; it is the section below.
+
+#### A woven password (2026-09-04)
+
+A credential's password can be stored the way a card's PIN already could: interleaved with a decoy
+of its own shape, under one of the twelve methods, and **the method is stored nowhere**. What is on
+screen when you open the entry is two rows of characters with nothing marking either — you pick the
+method you chose and read the row you recognise.
+
+**The mark is a FIELD of the entry** (`EntityMetadata.passwordWoven`), and that is the one place
+this feature parts company with the envelope above. The PIN wrap keeps its mark INSIDE the value
+because it must: a wrap whose mark is lost is ciphertext nobody can identify. A woven value whose
+mark is lost is whole and merely mislabelled, and the person sets it again. That asymmetry is the
+whole reason Part 1 could ship on its own — `getPassword` still returns a plain string, so the
+export, the share and the hygiene scan needed no change, and `storageManager.ts` was not touched.
+
+| Module | What it holds |
+|---|---|
+| `wovenSecret.ts` | `weaveSecret` / `unweaveSecret` / `weaveRefusal` — a password and its decoy, and the two readings a method gives back |
+| `wovenPasswordSave.ts` | the four states a save meets, and `unwovenWarning` — what to SAY when the form will not do what it appears to promise |
+| `wovenPasswordHost.ts` | the viewer's half: what a Show or a Copy on the two rows is answered with |
+| `wovenRow.ts` | the two-column row itself, serving the card and the password from one implementation |
+| `wovenFormScript.ts` | the form's page script — when the controls appear, and the live example |
+| `fieldReading.ts` | `value \| withheld(reason) \| absent` — see *withheld is not absent* below |
+| `entityFieldReading.ts` | every field a `creds://` reference can name, as one of those three |
+
+**A decoy is the same LENGTH and character CLASSES as the password** (`decoyDigits.passwordDecoy`).
+A character from a class the real password does not use would be provably decoy, and the halves
+would separate by inspection.
+
+**The automatic paths refuse, and say why.** An environment variable, a terminal, the SSH broker and
+an agent rotation are all handed a sentence rather than a guess: nothing here — this build included
+— knows which half is the person's. The alternative, prompting for the method and the column at each
+use, was considered and rejected by the owner: it puts the choice of which half is real in front of
+somebody at the moment they are least able to check it.
+
+**Withheld is not absent.** Every automatic path used to answer `string | undefined`, so "there is
+nothing here" and "there is something here and you may not have it" arrived identically, and each
+caller invented its own sentence. A `creds://` reference to a woven password reported *"X has no
+password stored — … resolves to nothing"*, false in both halves. `FieldReading` puts the difference
+in the TYPE: the only route to the value is a reading that carries the refusal with it, so a new
+consumer cannot fail to see it. `bindableFieldReading` decides the policy once;
+`bindableFieldValue` is its narrowing, kept for `applyEnvBindings`, which writes what it can.
+
+**What cannot be undone is UNWEAVING, and the form says exactly that.** The stored value cannot be
+unwoven — that needs the method. Replacing it always works, and the weaving box arrives ticked for
+an entry that already has it, so a replacement stays protected unless somebody unticks it
+deliberately. A weave the form REFUSES — a one-character password, or a method code the build has no
+name for — is put to the person BEFORE the save settles, in the shape `confirmInvalidSave` set: the
+panel stays open and Cancel leaves the cursor where it was.
+
+**A rotation is refused rather than silently unmarked.** An agent rotating a woven password would
+store a new unwoven value while the entry went on saying `Woven — on`, leaving the viewer with a
+two-column row over a plain password. Unmarking is a decision about somebody's protection and
+nothing automatic is entitled to make it; the form is where a replacement chooses.
+
+**A share carries the mark**, or the recipient opens an entry whose password is unreadable with
+nothing on screen explaining why.
 
 #### Where the time goes (2026-09-03)
 
