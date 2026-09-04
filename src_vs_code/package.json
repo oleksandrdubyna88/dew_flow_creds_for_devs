@@ -1029,6 +1029,21 @@
         "command": "credSshManager.closeRemoteBridge",
         "title": "Close Remote Bridge",
         "category": "CredsForDevs"
+      },
+      {
+        "command": "credSshManager.protectEntry",
+        "title": "Protect with a PIN…",
+        "category": "CredsForDevs"
+      },
+      {
+        "command": "credSshManager.unprotectEntry",
+        "title": "Remove PIN Protection…",
+        "category": "CredsForDevs"
+      },
+      {
+        "command": "credSshManager.protectFolder",
+        "title": "Protect Every Entry with a PIN…",
+        "category": "CredsForDevs"
       }
     ],
     "keybindings": [
@@ -1624,6 +1639,21 @@
           "command": "credSshManager.showConfigChanges",
           "when": "view == credSshManagerView && viewItem =~ /:config/",
           "group": "2_actions@15"
+        },
+        {
+          "command": "credSshManager.protectEntry",
+          "when": "view == credSshManagerView && viewItem =~ /^entity/ && viewItem =~ /:pinoff/",
+          "group": "3_protect@0"
+        },
+        {
+          "command": "credSshManager.unprotectEntry",
+          "when": "view == credSshManagerView && viewItem =~ /^entity/ && viewItem =~ /:pinon/",
+          "group": "3_protect@1"
+        },
+        {
+          "command": "credSshManager.protectFolder",
+          "when": "view == credSshManagerView && viewItem =~ /^folder/",
+          "group": "3_protect@0"
         }
       ]
     }

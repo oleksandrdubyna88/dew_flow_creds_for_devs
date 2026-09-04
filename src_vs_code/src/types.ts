@@ -185,6 +185,14 @@ export interface EntityMetadata {
    * something it cannot. A password is replaced, never unwoven — see the form.</p>
    */
   passwordWoven?: boolean;
+  /**
+   * This entry's secrets are wrapped under a PIN of its own — a MIRROR of the wrap, not the truth
+   * about it. The truth is inside each value, where `readSecret` finds it; this exists because the
+   * agent surfaces answer synchronously and cannot read a keychain per entry per listing. It fails
+   * closed: missing when it should be set (the only drift a crash makes) leaves the entry listed,
+   * where every automatic path still refuses its values with a reason. See `entityPin.ts`.
+   */
+  pinProtected?: boolean;
   /** Display name of the encrypted attachment (content in SecretStorage). */
   attachmentFileName?: string;
   /** Write-time stamps (T27) — they move only when the FILE does; see attachmentMeta.ts. */
@@ -713,6 +721,7 @@ export function isEntityMetadata(value: unknown): value is EntityMetadata {
     (v.sshAgent === undefined || typeof v.sshAgent === 'boolean') &&
     (v.hasTotp === undefined || typeof v.hasTotp === 'boolean') &&
     (v.passwordWoven === undefined || typeof v.passwordWoven === 'boolean') &&
+    (v.pinProtected === undefined || typeof v.pinProtected === 'boolean') &&
     hasValidRelations(v) &&
     // Loose on purpose, for the same reason `kind` above is: a colour key minted by a NEWER
     // build must not make this one reject the whole entity. `isDepColorKey` (depColors.ts) is

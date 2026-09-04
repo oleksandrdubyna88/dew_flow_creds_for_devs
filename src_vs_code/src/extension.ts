@@ -72,6 +72,7 @@ import * as childProcess from 'node:child_process';
 import * as fs from 'node:fs';
 import { applyEnvBindings } from './envApply';
 import { entityFieldReading } from './entityFieldReading';
+import { registerPinCommands } from './pinCommands';
 import { syncReminderDue } from './syncReminder';
 import { RefSource } from './secretRef';
 import { MIN_MASKABLE_LENGTH } from './outputMask';
@@ -924,6 +925,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   };
 
   registerRunCommands({ context, refSource, register, storage, storageDir, vaultKeys });
+
+  registerPinCommands({ register, storage, refresh: () => mutated() });
 
   register('credSshManager.stopVpn', (target) =>
     runVpn(target, 'stop', storage, storageDir, vaultKeys),

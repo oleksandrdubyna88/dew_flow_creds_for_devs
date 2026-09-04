@@ -92,6 +92,23 @@ export function isVisibleToAgents(access: McpAccess): boolean {
   return access.view === true;
 }
 
+/**
+ * The second wall, and it is written ONCE.
+ *
+ * <p>An entry protected with its own PIN is not refused to an agent — it is ABSENT. An agent that
+ * can see an entry it can never open will keep trying, and every attempt is a door somebody has to
+ * answer for a value that was never going to be handed over.</p>
+ *
+ * <p><b>Applied at the LOOKUP as well as at the listing</b> *(a reviewer's finding)*. Filtering
+ * enumeration alone leaves the way in that matters: an agent holding an id from a listing taken
+ * before the entry was protected can ask for it directly. So a protected entry answers a direct
+ * lookup exactly the way an entry that does not exist answers it, because to an agent it does
+ * not.</p>
+ */
+export function hiddenFromAgents(node: TreeNode | undefined): boolean {
+  return node?.details?.pinProtected === true;
+}
+
 export function capabilitiesOf(access: McpAccess): McpCapabilities {
   const [, use, edit, create, del] = accessMask(access);
   return { use, edit, create, delete: del };
@@ -245,7 +262,7 @@ async function entryIfVisible(
 
 /** A folder is not an entry, and an entry nobody opened is not shown. */
 function shown(node: TreeNode, resolved: ResolvedMcpAccess): boolean {
-  return node.type === 'entity' && isVisibleToAgents(resolved.access);
+  return node.type === 'entity' && isVisibleToAgents(resolved.access) && !hiddenFromAgents(node);
 }
 
 /** An entry at the root has no folder, and an empty name is the honest answer for it. */
@@ -310,12 +327,32 @@ export function findUsableEntry(
   action: string,
 ): UsableEntry {
   for (const { accountId } of source.getAccounts()) {
-    const node = source.getNode(accountId, entryId);
-    if (node?.type === 'entity') {
-      return verdictFor(accountId, node, (id) => source.getNode(accountId, id), action);
+    const found = lookedUp(source, accountId, entryId, action);
+    if (found !== undefined) {
+      return found;
     }
   }
   return undefined;
+}
+
+/**
+ * One account's answer.
+ *
+ * <p>A protected entry answers `undefined` — the same answer a made-up id gets — rather than
+ * `closed`. "Closed" would tell an agent the entry exists and which switch to ask for, and a PIN is
+ * not a switch anybody can throw.</p>
+ */
+function lookedUp(
+  source: Pick<McpVaultSource, 'getAccounts' | 'getNode'>,
+  accountId: string,
+  entryId: string,
+  action: string,
+): UsableEntry {
+  const node = source.getNode(accountId, entryId);
+  if (node?.type !== 'entity' || hiddenFromAgents(node)) {
+    return undefined;
+  }
+  return verdictFor(accountId, node, (id) => source.getNode(accountId, id), action);
 }
 
 /**
