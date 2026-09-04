@@ -4,6 +4,90 @@ All notable changes to **CredsForDevs** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.98.0] — a password stored woven with a decoy
+
+### Added
+
+- **A credential’s password can be stored woven with a decoy**, the way a card’s PIN already could.
+  Tick *Store this password woven with a decoy* in **General**, pick one of the twelve methods, and
+  what goes into the keychain is your password and a made-up one of the same shape, interleaved
+  character by character. **The method is stored nowhere** — opening the entry shows two rows with
+  nothing marking either, and you read the one you recognise. A wrong method answers in exactly the
+  same shape as a right one, which is the property rather than an omission.
+
+  The decoy has the same length and the same character sets as the real password: a character from a
+  set your password does not use would be provably decoy.
+
+- **The mark is shown as a fact**, on the edit form and in the viewer (*Woven — on*). What cannot be
+  undone is the *unweaving* — that needs the method. Replacing the password always works, and the
+  box arrives already ticked, so a replacement stays protected unless you untick it deliberately.
+
+- **A share carries the mark**, so a recipient is told the value is woven rather than opening an
+  entry full of gibberish with nothing explaining it.
+
+### Changed
+
+- **Nothing automatic will use a woven password, and each path says why.** An environment variable,
+  a terminal, the SSH broker, a `creds://` reference and an agent rotation are handed a sentence
+  instead of a guess — a wrong password injected into a login is an account lockout nobody watches
+  happen. Prompting for the method and the column at each use was considered and rejected: it puts
+  the choice of which half is real in front of somebody at the moment they are least able to check.
+
+- **Withheld is no longer reported as absent.** Every automatic path used to answer
+  `string | undefined`, so "there is nothing here" and "there is something here and you may not have
+  it" arrived identically — a `creds://` reference to a woven password failed with *"X has no
+  password stored … resolves to nothing"*, false in both halves. The distinction now lives in the
+  type, so a new consumer cannot fail to see it.
+
+- **An agent cannot rotate a woven password.** A rotation would store a new, unwoven value while the
+  entry went on saying *Woven — on*, leaving the viewer with a two-column row over a plain password.
+  Refused rather than silently unmarked: unmarking is a decision about somebody’s protection.
+
+### Fixed
+
+- **A weave that could not be done stored the password in the clear and said so nowhere.** A
+  one-character password, or a method code the build has no name for, now asks before the save
+  settles — with the form still open, so Cancel leaves the cursor where it was.
+
+- **Clearing the password left the woven mark standing.** The secret was deleted and the entry went
+  on claiming to be woven, so the viewer offered two rows to read for an entry with nothing in it.
+
+- **The viewer could stamp one entry’s password with another entry’s id.** The preview tab is
+  shared: a Show on one entry and a click on another while the keychain was still answering, and the
+  id was sampled after the read — which is the stamp the page trusts to decide an answer is current.
+
+## [0.97.0] — the payment batch: reading a card back the way it is printed
+
+### Added
+
+- **Hide beside Show.** A revealed CVV or PIN can be put away again.
+- **The card number reads as it is printed** — fours, or 4-6-5 for American Express — and copies both
+  ways: digits for a form that refuses spaces, groups for reading aloud. Stored as digits, because a
+  woven number is permuted per character and a stored space could never be unwoven.
+- **The payment system is a field you can set, with a mark beside it** — it has to be settable: a
+  number stored woven has no first digits left to read the system from.
+- **The billing address decomposes into cells**, the way a pasted terminal command already did.
+  Paste a whole address, correct any cell, and the block underneath is assembled in the order the
+  destination country writes it. That block is what a share and an export carry.
+- **The weaving controls show what a method does before you choose it**: a green column, an orange
+  one, and the weave of the two. Both are made up for the picture — your own value is never drawn
+  beside the decoy it is woven with.
+- **A phrase can be generated**, with the wordlist and the word count you choose and the checksum
+  computed, so what comes out is a phrase a wallet accepts.
+
+### Fixed
+
+- **"Method N" named a different algorithm in the form and in the card.** The card labelled the
+  twelve by position in a shuffled list, so its "Method 5" changed on every open. The label is now a
+  property of the code; only the ORDER is drawn afresh.
+- **The Form selector never switched the fieldset** — choosing bank details or a phrase went on
+  showing the card.
+
+### Changed
+
+- **The slow start is measured rather than guessed at.** Five candidates were read and eliminated
+  first; what shipped is instrumentation — every command through one wrap, and anything over 750 ms
+  naming itself in the per-run diagnostic file.
 ## [0.96.0] — two windows of one profile no longer overwrite each other
 
 ### Fixed

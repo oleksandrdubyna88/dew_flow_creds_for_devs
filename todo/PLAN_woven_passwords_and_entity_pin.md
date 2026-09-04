@@ -1,7 +1,24 @@
 # PLAN — a woven password, and a PIN on an entry or a folder
 
-> Status: **plan only, nothing implemented yet.** The foundation both halves rest on IS built and
-> shipped — `src_vs_code/src/secretEnvelope.ts` and its tests, from
+> Status: **Part 1 IMPLEMENTED 2026-09-04 (extension v0.98.0); Part 2 open.** The plan stays here
+> because the majority of its value — the PIN — is still unbuilt.
+>
+> **Part 1 (a woven password) shipped** and is documented in
+> [module_extension.md](../research/module_extension.md) under *A woven password*. It went through
+> the coai gate twice: 14 plan findings and 29 code findings resolved, the second code round
+> `proceed`. Two deviations from what is written below, both from review:
+>
+> - §1.2 said the mark could not be switched off. What cannot be undone is UNWEAVING the stored
+>   value; replacing the password always works, and saying otherwise made the form contradict
+>   itself. The wording is now exact and the box arrives ticked for an already-woven entry.
+> - §1.4 grew a boundary the plan did not anticipate. `FieldReading` = `value | withheld(reason) |
+>   absent`, because every automatic path answered `string | undefined` and a `creds://` reference
+>   to a woven password therefore reported *"has no password stored"* — false in both halves. An
+>   agent ROTATION is refused for the same reason: it would store an unwoven value under a mark
+>   that still said `Woven — on`.
+>
+> The foundation Part 2 rests on IS built and shipped — `src_vs_code/src/secretEnvelope.ts` and its
+> tests, from
 > [PLAN_payment_polish_and_entity_pin.md](../research/PLAN_payment_polish_and_entity_pin.md) §6.0.
 > What remains is everything that USES it.
 >
@@ -85,7 +102,7 @@ unwrapped for that operation.
 
 ---
 
-## Part 1 — a woven password
+## Part 1 — a woven password *(IMPLEMENTED 2026-09-04)*
 
 **Goal.** The card can store a number, a CVV or a PIN woven with a decoy under a method kept only in
 the person's memory. A password is the value most people would want that for, and cannot have it.

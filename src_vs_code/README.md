@@ -346,6 +346,31 @@ does the same for a password that is not stored here at all, and puts it on the 
 - A generated key pair is drawn in the editor and saved to the keychain. `ssh-keygen` cannot do
   that — it writes a file — and with *Add to SSH Agent* the key is then used without becoming one.
 
+## A password stored woven with a decoy
+
+The **General** section of a credential has *Store this password woven with a decoy*. Tick it, pick
+one of the twelve methods — the same twelve a card's PIN uses, offered in an order drawn afresh
+every time — and what goes into the keychain is your password and a made-up one of the same shape,
+interleaved.
+
+**The method is written down nowhere.** Opening the entry shows two rows of characters with nothing
+marking either one; you pick the method you chose and read the row you recognise. A wrong method
+answers in exactly the same shape as a right one, which is the point rather than an omission: the
+choice in your memory is the only thing separating the two halves.
+
+- The decoy has the **same length and the same character sets** as the real password. A character
+  from a set your password does not use would be provably decoy.
+- The entry says **Woven — on** on the edit form and in the viewer. What cannot be undone is the
+  *unweaving* — that needs the method. Replacing the password always works, and the box arrives
+  already ticked, so a replacement stays protected unless you untick it on purpose.
+- **Nothing automatic will use it.** An environment variable, a terminal, the SSH broker, a
+  `creds://` reference and an agent rotation are each given a sentence saying why instead of a
+  guess — a wrong password injected into a login is an account lockout nobody watches happen.
+- **A share carries the mark**, so whoever you share with is told the value is woven rather than
+  opening an entry full of gibberish with nothing explaining it.
+- Too short to weave, or no method picked, and the form **asks before it saves** rather than
+  quietly storing the password in the clear.
+
 ## Payment instruments — and reading one back
 
 A card, a set of bank details, or a phrase you must not lose.
