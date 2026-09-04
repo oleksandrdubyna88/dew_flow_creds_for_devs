@@ -168,6 +168,54 @@ test('a method this build has no name for is refused, and says nothing was chang
   assert.match(String(posted[0].why), /Nothing has been changed/);
 });
 
+test('the answer is stamped with the entry that ASKED, not the one on screen when it returns', async () => {
+  // A reviewer's finding, and it was right. The preview tab is shared: a Show on entry A, then a
+  // click on entry B while the keychain is still answering, and the id was sampled AFTER the await
+  // — so A's password arrived stamped as B's, which is the one stamp the page trusts. Sampling
+  // first makes a late answer droppable instead of making it look current.
+  const posted: Record<string, unknown>[] = [];
+  let onScreen = 'a';
+  let release = (): void => undefined;
+  const held = new Promise<string>((resolve) => {
+    release = (): void => resolve(weaveSecret('hunter2!', SHUFFLE_CODES[3], () => 0.37));
+  });
+
+  const answered = handleWovenPassword('reassemble', `password|${SHUFFLE_CODES[3]}`, {
+    entityId: () => onScreen,
+    read: () => held,
+    post: (m) => posted.push(m as Record<string, unknown>),
+    copy: () => Promise.resolve(),
+  });
+  onScreen = 'b'; // the person clicked another entry while the read was in flight
+  release();
+  await answered;
+
+  assert.equal(posted[0].entityId, 'a', 'A password stamped as B is a password shown on B');
+});
+
+test('a copy is stamped the same way, for the same reason', async () => {
+  const copied: string[] = [];
+  const posted: Record<string, unknown>[] = [];
+  let onScreen = 'a';
+  let release = (): void => undefined;
+  const held = new Promise<string>((resolve) => {
+    release = (): void => resolve(weaveSecret('hunter2!', SHUFFLE_CODES[3], () => 0.37));
+  });
+
+  const answered = handleWovenPassword('copyReading', `password|a|${SHUFFLE_CODES[3]}`, {
+    entityId: () => onScreen,
+    read: () => held,
+    post: (m) => posted.push(m as Record<string, unknown>),
+    copy: (t) => { copied.push(t); return Promise.resolve(); },
+  });
+  onScreen = 'b';
+  release();
+  await answered;
+
+  assert.equal(copied.length, 1);
+  assert.equal(posted[0].entityId, 'a', 'the acknowledgement belongs to the entry that asked');
+});
+
 test('a message that is not the password is not this host business', async () => {
   const taken = await handleWovenPassword('reassemble', 'cvv|f1', {
     entityId: () => 'e1',

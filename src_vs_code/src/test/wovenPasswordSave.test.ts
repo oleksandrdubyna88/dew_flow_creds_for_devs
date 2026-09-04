@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { wovenSave } from '../wovenPasswordSave';
+import { unwovenWarning, wovenSave } from '../wovenPasswordSave';
 import { unweaveSecret } from '../wovenSecret';
 import { SHUFFLE_CODES } from '../shuffle';
 
@@ -72,4 +72,32 @@ test('nothing is refused silently — a refusal always comes with a sentence', (
     assert.equal(saved.woven, false);
     assert.notEqual(saved.refusal, '', `"${typed}" was refused without saying why`);
   }
+});
+
+/**
+ * The other half of a save, and four reviewers found it missing: a weave that was REFUSED stored
+ * the password exactly as typed and said so nowhere — a ticked box, a saved entry, and a secret in
+ * the clear that looks woven. What the form asks BEFORE it settles is decided here, beside what it
+ * would store, so the two cannot come to disagree about which of the four states a save is in.
+ */
+test('a refused weave is put to the person, and says what would be stored instead', () => {
+  const tooShort = unwovenWarning('a', true, SHUFFLE_CODES[0], false);
+  const noMethod = unwovenWarning('hunter2!', true, 'f99', false);
+
+  assert.match(String(tooShort), /clear/i, 'it says what would be stored');
+  assert.match(String(noMethod), /method/i, 'and why');
+});
+
+test('unticking the box on a woven entry, with nothing typed, is put to the person too', () => {
+  // The narrow half of a reviewer's last finding. The box now arrives TICKED for a woven entry, so
+  // unticking it is deliberate — and on its own it does nothing at all, which is a gap between what
+  // somebody did and what happened. Said once, at the moment it matters.
+  assert.match(String(unwovenWarning('', false, '', true)), /still woven/i);
+  assert.equal(unwovenWarning('', false, '', false), undefined, 'nothing to say about an ordinary entry');
+});
+
+test('a weave that succeeds asks nothing, and neither does an ordinary save', () => {
+  assert.equal(unwovenWarning('hunter2!', true, SHUFFLE_CODES[0], false), undefined);
+  assert.equal(unwovenWarning('', true, SHUFFLE_CODES[0], false), undefined, 'nothing typed is nothing to weave');
+  assert.equal(unwovenWarning('plain-one', false, '', false), undefined);
 });

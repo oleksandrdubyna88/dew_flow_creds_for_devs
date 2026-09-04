@@ -44,11 +44,12 @@ export async function handleWovenPassword(
   if (key !== WOVEN_PASSWORD_KEY || (type !== 'reassemble' && type !== 'copyReading')) {
     return false;
   }
-  const stored = await deps.read();
+  // Sampled BEFORE the await, and that order is the whole point. This panel is the shared preview
+  // tab, so by the time the keychain answers, the entry on screen may be a different one — and an
+  // id read afterwards would stamp THIS entry's password with THAT entry's id, which is precisely
+  // the stamp the page trusts. Read first, and a stale answer is one the page drops.
   const entityId = deps.entityId();
-  // The read is an await and this panel is the shared preview tab: by the time the keychain has
-  // answered, the card asking may not be the card on screen. The stamp makes that droppable rather
-  // than another entry's password quietly appearing.
+  const stored = await deps.read();
   await answer(type, rest, stored, entityId, deps);
   return true;
 }

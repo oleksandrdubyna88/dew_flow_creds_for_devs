@@ -31,6 +31,7 @@ const ENTITY: EntityMetadata = {
 function withCredential(
   source: Record<string, unknown>,
   writes: string[] = [],
+  entity: EntityMetadata = ENTITY,
 ): (storageDir: string) => Promise<ExecAuth> {
   const mod = loadWithVscode<typeof import('../sshExecAuth')>(
     '../sshExecAuth',
@@ -50,7 +51,7 @@ function withCredential(
     },
   );
   return (storageDir: string) =>
-    mod.resolveExecAuth({} as never, 'acct', ENTITY, storageDir);
+    mod.resolveExecAuth({} as never, 'acct', entity, storageDir);
 }
 
 /** Narrow to the success case once, so no assertion has to re-check `ok` inline. */
@@ -170,4 +171,32 @@ test('a key that cannot be written is an internal failure, not a passwordless at
   const refusal = refused(result);
   assert.equal(refusal.reason, 'internal');
   assert.match(refusal.message, /EACCES/);
+});
+
+/**
+ * A woven password cannot be handed to `ssh`, and a reviewer was right that only `automaticRefusal`
+ * had been tested for it — the resolver's own answer, which is what the broker and the bridge both
+ * branch on, was asserted nowhere.
+ */
+test('a WOVEN password is refused rather than authenticated with a guess', async () => {
+  const woven = { ...ENTITY, name: 'prod box', passwordWoven: true } as EntityMetadata;
+  const writes: string[] = [];
+
+  const result = await withCredential({ kind: 'password', password: 'w0v3n-pair' }, writes, woven)('/store');
+
+  const refusal = refused(result);
+  assert.equal(refusal.reason, 'no_credential', 'the shape every caller already handles');
+  assert.match(refusal.message, /prod box/, 'it names the entry');
+  assert.match(refusal.message, /cannot be used automatically/);
+  assert.match(refusal.message, /which of the two halves is yours/, 'and says why, rather than going silent');
+  assert.deepEqual(writes, [], 'no askpass script is written for a value that will not be used');
+});
+
+test('an ordinary password on the SAME entity is still handed over', async () => {
+  // The other side of the line: the refusal is about the mark, not about the entity or the kind.
+  const plain = { ...ENTITY, name: 'prod box' } as EntityMetadata;
+
+  const result = await withCredential({ kind: 'password', password: 'w0v3n-pair' }, [], plain)('/store');
+
+  assert.equal(ok(result).auth, 'askpass');
 });
