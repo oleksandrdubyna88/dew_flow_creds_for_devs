@@ -1,3 +1,6 @@
+import { buildSharePayload, countTotpEntries, nothingToShare } from './sharePayloadBuild';
+import { admit } from './pinAdmission';
+import { entryPinGate } from './pinPrompt';
 import { describeError } from './describeError';
 import * as vscode from 'vscode';
 import { BackupError } from './cryptoUtils';
@@ -13,11 +16,11 @@ import {
   resolveShares,
   sealShare,
   shareTranscript,
-  shareableDetails, shareLabelTrusted } from './shareFormat';
+  shareLabelTrusted } from './shareFormat';
 import { recordOrigin, resolveOrigin } from './shareOrigin';
 import { snapshotForRevision } from './revisionSnapshot';
 import { pinValidator } from './pinInput';
-import { redactArrivedPayment, redactPaymentForShare, withheldFromShare } from './paymentRedaction';
+import { redactArrivedPayment, withheldFromShare } from './paymentRedaction';
 import { OwnedShare, SharePayload, TeamMember, TreeNode } from './types';
 
 /**
@@ -217,8 +220,39 @@ export class ShareInbox {
    * with the folder chain), recipients, PIN, delivery. The command handler only resolves
    * the selection.
    */
-  // The orchestration of four moved steps; each early exit counts against the limit.
-  // eslint-disable-next-line complexity
+  /**
+   * One node's payloads, or nothing when its PIN was not given.
+   *
+   * <p>Declining aborts the WHOLE share rather than quietly sending the rest. A selection is one
+   * act to the person who made it, and delivering three of four entries while saying nothing about
+   * the fourth is the kind of partial success nobody checks for.</p>
+   */
+  private async payloadsFor(
+    accountId: string,
+    node: TreeNode,
+    includeTotp: boolean,
+  ): Promise<SharePayload[] | undefined> {
+    if (node.type !== 'entity') {
+      return this.collectFolderPayloads(accountId, node, includeTotp);
+    }
+    const gate = entryPinGate(accountId, node.id, node.name);
+    const admission = await admit(this.deps.storage, accountId, node.id, gate);
+    if (admission.kind !== 'in') {
+      this.reportAdmission(admission, node.name);
+      return undefined;
+    }
+    return [await buildSharePayload(this.deps.storage, accountId, node, includeTotp, gate)];
+  }
+
+  /** Why nothing was shared, in the words the gate chose. A cancel says only what it is. */
+  private reportAdmission(admission: { kind: string; reason?: string }, name: string): void {
+    void vscode.window.showWarningMessage(
+      admission.reason ??
+        `"${name}" is protected with its own PIN, so nothing was shared. The recipient cannot be `
+          + 'given that PIN, so the values have to be unwrapped here before they can travel.',
+    );
+  }
+
   async shareNodes(accountId: string, nodes: TreeNode[]): Promise<void> {
     // Asked BEFORE anything is read: a seed nobody chose to send is never fetched at all.
     const includeTotp = await this.askIncludeTotp(await countTotpEntries(this.deps.storage, accountId, nodes));
@@ -227,31 +261,44 @@ export class ShareInbox {
     }
     // One list of payloads across everything selected — delivery already batched, so
     // recipients and the share PIN are asked for once whatever the selection size.
-    const payloads: SharePayload[] = [];
-    for (const node of nodes) {
-      payloads.push(
-        ...(node.type === 'entity'
-          ? [await buildSharePayload(this.deps.storage, accountId, node, includeTotp)]
-          : await this.collectFolderPayloads(accountId, node, includeTotp)),
-      );
+    const payloads = await this.allPayloads(accountId, nodes, includeTotp);
+    if (payloads === undefined) {
+      return; // an entry's own PIN was not given; nothing is shared, not even the rest
     }
     if (payloads.length === 0) {
-      void vscode.window.showInformationMessage(
-        nodes.length === 1
-          ? `Folder "${nodes[0].name}" holds no entities — nothing to share.`
-          : 'Nothing to share — the selected folders hold no entities.',
-      );
+      void vscode.window.showInformationMessage(nothingToShare(nodes));
       return;
     }
+    await this.askAndDeliver(accountId, payloads);
+  }
+
+  /** Every selected node's payloads, or nothing at all when one of them was declined. */
+  private async allPayloads(
+    accountId: string,
+    nodes: readonly TreeNode[],
+    includeTotp: boolean,
+  ): Promise<SharePayload[] | undefined> {
+    const payloads: SharePayload[] = [];
+    for (const node of nodes) {
+      const built = await this.payloadsFor(accountId, node, includeTotp);
+      if (built === undefined) {
+        return undefined;
+      }
+      payloads.push(...built);
+    }
+    return payloads;
+  }
+
+  /** The last two questions, asked once for the whole batch: who, and the transit PIN. */
+  private async askAndDeliver(accountId: string, payloads: readonly SharePayload[]): Promise<void> {
     const recipients = await this.pickRecipients(accountId);
     if (recipients === undefined) {
       return;
     }
     const pin = await this.promptSharePin(true);
-    if (pin === undefined) {
-      return;
+    if (pin !== undefined) {
+      await this.deliverBatch(accountId, [...payloads], recipients, pin);
     }
-    await this.deliverBatch(accountId, payloads, recipients, pin);
   }
 
   /**
@@ -662,111 +709,4 @@ After this, a share signed by any other key is refused.`,
 function senderLocation(storage: StorageManager, accountId: string): string | undefined {
   const account = storage.getAccount(accountId);
   return account === undefined ? undefined : nasPathFor(account);
-}
-
-/**
- * Everything an entity carries, packaged for a share.
- *
- * <p><b>`includeTotp` is a parameter and not a default</b> because the one-time-code seed is the
- * only secret here whose sharing is a separate decision. Every other field in this payload is
- * something the recipient needs in order to use what they were given; a TOTP seed is the sender's
- * <i>second factor</i>, and handing it over lets the recipient produce codes for that login for as
- * long as the seed lives. Sometimes that is exactly the intent — a shared service account nobody
- * owns personally — and sometimes it is the last thing the sender meant to do. So the caller asks,
- * and passes the answer here.</p>
- *
- * <p>This used to read every secret except this one, while the accept side wrote
- * `payload.secrets.totp` if it ever arrived — so a shared entry silently lost its second factor
- * while its metadata still said it had one.</p>
- */
-export async function buildSharePayload(
-  storage: StorageManager,
-  accountId: string,
-  node: TreeNode,
-  includeTotp: boolean,
-): Promise<SharePayload> {
-  const note = (await storage.getNotes(accountId, node.id)) ?? node.details?.notes;
-  // Read only when it is going to travel: a seed nobody asked to send has no business being
-  // fetched out of the keychain, let alone sealed into a payload.
-  const seed = includeTotp ? await storage.getTotp(accountId, node.id) : undefined;
-  // The flag follows the SEED, not the request and not the stored metadata. `hasTotp` is a
-  // plaintext convenience that can outlive what it describes, and a copy carrying it over an
-  // empty keychain shows the recipient a *Copy One-Time Code* row with nothing behind it. Derived
-  // here rather than trusted, so "the flag travels exactly when the seed does" is structural.
-  const sharedDetails = shareableDetails(node.details, seed !== undefined);
-  return {
-    node: { ...node, details: sharedDetails, parentId: null, children: undefined },
-    secrets: {
-      password: await storage.getPassword(accountId, node.id),
-      privateKey: await storage.getPrivateKey(accountId, node.id),
-      vpnConfig: await storage.getVpnConfig(accountId, node.id),
-      dbConnection: await storage.getDbConnection(accountId, node.id),
-      notes: note,
-      totp: seed,
-      // Handing a colleague the document IS the feature. Sealed like every other secret here.
-      config: await storage.getConfigBody(accountId, node.id),
-      fields: await storage.getFieldsRaw(accountId, node.id),
-      // The ONE stripping direction in the product. Handing a colleague a card is the feature — they
-      // need the number and the expiry — and the CVV and the PIN are the two fields that are only
-      // ever proof the holder is present, so they do not leave the vault they were typed into.
-      // `paymentRedaction.ts` owns the list; this line must not grow a second opinion about it.
-      payment: redactPaymentForShare(await storage.getPaymentRaw(accountId, node.id)),
-    },
-  };
-}
-
-/**
- * How many of the selected entries carry a one-time-code seed.
- *
- * <p><b>The flag first, then the keychain.</b> `hasTotp` is a plaintext convenience the tree reads
- * once per row, and it is right almost always — but it is a description of a secret, not the
- * secret, and the two can disagree: an entry written by an older build, an import, an edit to the
- * metadata. A question gated on the flag alone is therefore a question that sometimes never gets
- * asked, and an unasked question is a silent "no": the seed could never be opted IN.</p>
- *
- * <p>So an entry the flag does not vouch for is checked against the keychain. That is a real read
- * per unflagged entry, and it is affordable here for the reason it is not affordable in the tree
- * (audit finding C1): this runs once, on an explicit action, over the handful of rows somebody
- * selected — not on every row of every folder every time one is expanded.</p>
- */
-export async function countTotpEntries(
-  storage: StorageManager,
-  accountId: string,
-  nodes: readonly TreeNode[],
-): Promise<number> {
-  let count = 0;
-  for (const entity of entitiesIn(storage, accountId, nodes)) {
-    count += (await carriesSeed(storage, accountId, entity)) ? 1 : 0;
-  }
-  return count;
-}
-
-/** Every entity in the selection, folders walked through. */
-function entitiesIn(
-  storage: StorageManager,
-  accountId: string,
-  nodes: readonly TreeNode[],
-): TreeNode[] {
-  const entities: TreeNode[] = [];
-  const walk = (node: TreeNode): void => {
-    if (node.type === 'entity') {
-      entities.push(node);
-      return;
-    }
-    for (const child of storage.getChildren(accountId, node.id)) {
-      walk(child);
-    }
-  };
-  for (const node of nodes) {
-    walk(node);
-  }
-  return entities;
-}
-
-/** The flag if it vouches for one; otherwise the keychain, which is the truth. */
-async function carriesSeed(storage: StorageManager, accountId: string, entity: TreeNode): Promise<boolean> {
-  if (entity.details?.hasTotp === true) {
-    return true;
-  }
-  return (await storage.getTotp(accountId, entity.id)) !== undefined;
 }

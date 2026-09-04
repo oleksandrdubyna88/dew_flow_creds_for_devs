@@ -362,6 +362,21 @@ share it unprotected.
 **Headless import** *(a reviewer's finding)* fails fast with a message naming the required PIN
 argument, rather than blocking on a prompt nothing can answer.
 
+**WHAT SHIPPED 2026-09-04, and what did not.** The SENDER half is done: sharing a protected entry
+asks for that entry's PIN and unwraps every value through it, so the recipient receives something
+they can actually use. It has to work that way — the stored bytes are ciphertext under a key only
+the sender's PIN opens, the recipient does not have that PIN, and the share's own transit PIN is a
+one-time transfer secret rather than somebody's protection. Declining aborts the WHOLE share rather
+than quietly sending the rest of a selection, because a selection is one act to the person who made
+it.
+
+**Still open: the RECIPIENT half.** The copy that arrives is not protected, and nothing yet tells
+the recipient that the sender had it protected or offers them their own PIN on first open. The mark
+is deliberately NOT carried in the meantime: a copy claiming `pinProtected` under a PIN nobody has
+would hide from the recipient's agents and show them a "PIN — on" note for a lock that opens
+nothing — worse than an honest unprotected copy. The headless-import fast failure belongs to that
+same unbuilt half.
+
 **Not negotiable:** the flag is a payload field, sealed with the rest. The server must not learn
 which entries are PIN-protected — repository rule 1.
 
