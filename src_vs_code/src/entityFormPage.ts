@@ -144,6 +144,19 @@ const ENV_ROW_LABEL: Record<BindableField, string> = {
   dbPassword: 'Expose the database password in terminals as env variable',
 };
 
+/**
+ * What the General section says about a woven password — a FACT, not a control.
+ *
+ * <p>There is no way to switch it off, and that is the point rather than an omission: unweaving
+ * needs the method, which is stored nowhere, so a build offering "turn this off" would be
+ * claiming something it cannot do. A password is REPLACED, never unwoven.</p>
+ */
+function wovenState(d: EntityMetadata | undefined): string {
+  return d?.passwordWoven !== true
+    ? ''
+    : `<p class="hint woven"><b>Woven — on.</b> This entry\u2019s password is stored interleaved with a decoy under a method only you know. It cannot be switched off: unweaving needs that method, and nothing here has it. Replace the password below to store a new one, woven or not.</p>`;
+}
+
 // eslint-disable-next-line complexity
 function envRow(field: BindableField, d: EntityMetadata | undefined): string {
   const bound = d?.envBindings?.[field];
@@ -429,6 +442,7 @@ ${formStyleSheet(options.uiScale ?? 0)}
         ? `<p class="hint">Type is fixed by the folder's type.</p>`
         : ''
     }
+    ${wovenState(d)}
   </fieldset>
 
   ${openSection('connectionSection')}

@@ -170,6 +170,21 @@ export interface EntityMetadata {
   burnPolicy?: BurnPolicy;
   /** Secret field -> terminal env variable NAME (values never travel; see envBinding.ts). */
   envBindings?: Record<string, string>;
+  /**
+   * This entry's password is stored WOVEN with a decoy, under a method only its owner knows.
+   *
+   * <p><b>Why a field on the entry rather than a mark inside the secret.</b> The PIN wrap carries
+   * its mark in the value (`secretEnvelope.ts`) because it must: a wrap whose mark is lost is
+   * ciphertext nobody can identify. Weaving is not encryption and does not have that failure — a
+   * lost mark leaves the value whole and merely mislabelled, and the person can set the mark again.
+   * So it lives here, where it syncs with the entry, shows on the card and in the form, and where
+   * every reader of the password goes on reading a plain string.</p>
+   *
+   * <p><b>There is no way to turn it off, and that is the point.</b> Unweaving needs the method,
+   * which is stored nowhere; a build that offered "switch this off" would be claiming it could do
+   * something it cannot. A password is replaced, never unwoven — see the form.</p>
+   */
+  passwordWoven?: boolean;
   /** Display name of the encrypted attachment (content in SecretStorage). */
   attachmentFileName?: string;
   /** Write-time stamps (T27) — they move only when the FILE does; see attachmentMeta.ts. */
@@ -697,6 +712,7 @@ export function isEntityMetadata(value: unknown): value is EntityMetadata {
     (v.imageFileName === undefined || typeof v.imageFileName === 'string') &&
     (v.sshAgent === undefined || typeof v.sshAgent === 'boolean') &&
     (v.hasTotp === undefined || typeof v.hasTotp === 'boolean') &&
+    (v.passwordWoven === undefined || typeof v.passwordWoven === 'boolean') &&
     hasValidRelations(v) &&
     // Loose on purpose, for the same reason `kind` above is: a colour key minted by a NEWER
     // build must not make this one reject the whole entity. `isDepColorKey` (depColors.ts) is
