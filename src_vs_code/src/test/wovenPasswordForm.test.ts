@@ -9,6 +9,7 @@ import { handleWovenPassword } from '../wovenPasswordHost';
 import { weaveSecret } from '../wovenSecret';
 import { automaticRefusal } from '../envApply';
 import { wovenSave } from '../wovenPasswordSave';
+import { shareableDetails } from '../shareFormat';
 import { EntityViewOptions, renderEntityViewHtml } from '../entityViewPage';
 
 const viewOptions = (details: Partial<EntityMetadata>): EntityViewOptions =>
@@ -78,16 +79,28 @@ test('the form says what weaving does NOT buy, where the choice is made', () => 
   assert.match(html, /cannot be used automatically/);
 });
 
-test('General states a woven password as a fact, and offers no way to switch it off', () => {
+test('General states a woven password as a fact, and is exact about what cannot be undone', () => {
   const woven = renderHtml(options({ passwordWoven: true }));
   const plain = renderHtml(options({}));
 
   assert.match(woven, /Woven — on/);
-  assert.match(woven, /cannot be switched off/);
-  assert.match(woven, /Replace the password/, 'and says what to do instead');
+  // Exact, because a reviewer was right that the earlier wording was not: what cannot be undone is
+  // UNWEAVING the stored value. Replacing it is always possible, and is a different act.
+  assert.match(woven, /stored value cannot be unwoven/);
+  assert.match(woven, /REPLACE it/, 'and says what can be done instead');
   assert.ok(!/Woven — on/.test(plain), 'an ordinary entry says nothing about it');
-  // No control anywhere claims to undo it.
-  assert.ok(!/id="unweave|id="clearWoven/.test(woven));
+  assert.ok(!/id="unweave|id="clearWoven/.test(woven), 'no control claims to undo it');
+});
+
+test('replacing a woven password keeps it woven by DEFAULT, and unticking is deliberate', () => {
+  // The finding this exists for: a person opening a woven entry and pasting a new password left
+  // the mark unset, and the save silently dropped the protection while General promised otherwise.
+  const woven = renderHtml(options({ passwordWoven: true }));
+  const plain = renderHtml(options({}));
+
+  assert.match(woven, /id="weavePassword" type="checkbox" checked/, 'ticked for an entry that has it');
+  assert.match(woven, /id="weaveControls" style="display:"/, 'and its method is on screen, not hidden');
+  assert.match(plain, /id="weavePassword" type="checkbox">/, 'and unticked for one that does not');
 });
 
 test('the picture is asked for per method, and a stale answer is dropped', () => {
@@ -216,4 +229,22 @@ test('typing nothing leaves a woven password exactly as it was', () => {
 
   assert.equal(saved.value, '', 'nothing is written');
   assert.equal(saved.woven, true, 'and the entry goes on saying what it is');
+});
+
+/**
+ * A reviewer's finding, and its true half: a share carries the woven STRING, so the recipient must
+ * be told it is woven — otherwise they open an entry whose password is unreadable gibberish with
+ * nothing on screen explaining why.
+ *
+ * <p>The half of that finding this does NOT accept is the claim that an exported woven value lets
+ * an attacker separate the halves offline. Separating them is exactly what the twelve methods
+ * prevent, and the honest measure of what that is worth is already written in the help: about one
+ * bit against a checksummed phrase and four to five without. An export is encrypted besides.</p>
+ */
+test('a share tells the recipient the password is woven', () => {
+  const details = { id: 'e1', name: 'x', kind: 'credential', passwordWoven: true, hasPassword: true } as unknown as EntityMetadata;
+
+  const shared = shareableDetails(details, false);
+
+  assert.equal(shared?.passwordWoven, true, 'or they get gibberish with no explanation');
 });

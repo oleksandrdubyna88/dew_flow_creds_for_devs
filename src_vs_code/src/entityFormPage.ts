@@ -157,10 +157,10 @@ const ENV_ROW_LABEL: Record<BindableField, string> = {
  * <p>The paragraph is deliberately in the FORM rather than only in the help: somebody about to
  * make a value unrecoverable should read what they are buying at the moment they choose it.</p>
  */
-function weaveControls(random: Random = Math.random): string {
-  return `<div class="check"><input id="weavePassword" type="checkbox">
+function weaveControls(woven: boolean, random: Random = Math.random): string {
+  return `<div class="check"><input id="weavePassword" type="checkbox"${woven ? ' checked' : ''}>
       <label for="weavePassword">Store this password woven with a decoy</label></div>
-    <div id="weaveControls" style="display:none">
+    <div id="weaveControls" style="display:${woven ? '' : 'none'}">
       <label for="weaveMethod">Weaving method</label>
       <select id="weaveMethod">${methodOptions(random)}</select>
       <p class="hint"><b>What this does and does not do.</b> The password is stored as your value
@@ -196,7 +196,11 @@ function methodOptions(random: Random): string {
 function wovenState(d: EntityMetadata | undefined): string {
   return d?.passwordWoven !== true
     ? ''
-    : `<p class="hint woven"><b>Woven — on.</b> This entry\u2019s password is stored interleaved with a decoy under a method only you know. It cannot be switched off: unweaving needs that method, and nothing here has it. Replace the password below to store a new one, woven or not.</p>`;
+    : `<p class="hint woven"><b>Woven — on.</b> This entry\u2019s password is stored interleaved with a
+       decoy under a method only you know. <b>The stored value cannot be unwoven</b> — that needs the
+       method, and nothing here has it. What you can do is REPLACE it: type a new password below.
+       The weaving box is already ticked so a replacement stays protected; untick it deliberately to
+       store the new password in the clear.</p>`;
 }
 
 // eslint-disable-next-line complexity
@@ -670,7 +674,7 @@ ${formStyleSheet(options.uiScale ?? 0)}
            <label for="clearPassword">Clear the stored password</label></div>`
         : ''
     }
-    ${weaveControls()}
+    ${weaveControls(d?.passwordWoven === true)}
   </fieldset>
 
   ${openSection('scriptSection')}
