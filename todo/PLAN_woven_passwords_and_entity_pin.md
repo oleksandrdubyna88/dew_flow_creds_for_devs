@@ -123,8 +123,17 @@ card's BIN, and it is the same argument.
 
 ### 1.2 The mark, and where it lives
 
-The stored password becomes `plainSecret(woven, true)` — the envelope, carrying `woven: true`. One
-write, which is the entire reason the envelope exists.
+**What shipped is NOT this.** The plan said the stored password becomes `plainSecret(woven, true)` —
+an envelope carrying `woven: true`. It became a FIELD of the entry (`EntityMetadata.passwordWoven`)
+instead, and the reason is an asymmetry the plan had not noticed: a PIN wrap whose mark is lost is
+ciphertext nobody can identify, while a woven value whose mark is lost is whole and merely
+mislabelled — the person sets it again. Keeping the mark outside the value meant `getPassword` went
+on returning a plain string, so the export, the share, the hygiene scan and `storageManager.ts` (at
+its size ratchet, may only shrink) needed no change at all, and Part 1 could ship without Part 2.
+
+`plainSecret`’s `woven` branch is therefore unused by shipped code. §2.6 is where the two marks
+meet: weave first, wrap second, so a locked woven password is `lockSecret(wovenString, …, true)`
+with `passwordWoven` still on the entry.
 
 ### 1.3 The controls, and the read-back — specified rather than assumed
 
