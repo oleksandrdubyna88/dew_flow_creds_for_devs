@@ -8,6 +8,7 @@ import { SHUFFLE_CODES } from '../shuffle';
 import { handleWovenPassword } from '../wovenPasswordHost';
 import { weaveSecret } from '../wovenSecret';
 import { automaticRefusal } from '../envApply';
+import { wovenSave } from '../wovenPasswordSave';
 import { EntityViewOptions, renderEntityViewHtml } from '../entityViewPage';
 
 const viewOptions = (details: Partial<EntityMetadata>): EntityViewOptions =>
@@ -187,4 +188,32 @@ test('only the PASSWORD is withheld — the other bindable fields are not woven'
   for (const field of ['privateKey', 'publicKey', 'dbConnection', 'dbPassword'] as const) {
     assert.equal(automaticRefusal(woven, field), '', `${field} has nothing to do with a woven password`);
   }
+});
+
+/**
+ * §1.5 — a woven password must not make the whole entry immutable, which a reviewer raised and
+ * which is where the card's own answer would have been wrong.
+ */
+test('a credential with a woven password still OPENS, with every other field editable', () => {
+  // The payment guard refuses a woven RECORD, and a payment record is only its fields, so refusing
+  // the form costs little there. A credential carries a login, a URL, notes, env bindings,
+  // dependencies and agent doors — making all of that immutable would be worse than the defect the
+  // guard prevents.
+  const html = renderHtml(options({ passwordWoven: true }));
+
+  assert.match(html, /id="name"/, 'the name is editable');
+  assert.match(html, /id="password"/, 'and the box for a NEW password is there');
+  // The real guarantee: the boxes are there. A blunt search for the word 'refuse' catches the
+  // page's own prose about other things.
+  assert.match(html, /id="login"/, 'the credential fields are editable');
+  assert.ok(!html.includes('mixedEditRefusal'), 'and no guard stands in front of the form');
+});
+
+test('typing nothing leaves a woven password exactly as it was', () => {
+  // The other half of the same guarantee: the entry is editable AND the secret is untouched by an
+  // edit that did not mean to touch it.
+  const saved = wovenSave('', false, '', true, () => 0.5);
+
+  assert.equal(saved.value, '', 'nothing is written');
+  assert.equal(saved.woven, true, 'and the entry goes on saying what it is');
 });
