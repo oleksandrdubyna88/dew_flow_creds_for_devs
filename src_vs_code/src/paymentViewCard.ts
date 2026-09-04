@@ -2,7 +2,7 @@ import { PAYMENT_FIELD_LABELS, PaymentFieldKey } from './paymentFields';
 import { COPY_ICON, escapeHtml } from './webviewHtml';
 import { PaymentCardView } from './paymentViewMessages';
 import { needsReveal } from './revealGate';
-import { REASSEMBLE_ACTION, WOVEN_ROW_NOTE, WOVEN_ROW_STYLES, wovenRowMarkup } from './wovenRow';
+import { WOVEN_ROW_NOTE, WOVEN_ROW_STYLES, wovenRowMarkup } from './wovenRow';
 import { BRAND_MARK_STYLES, brandMarksMarkup } from './cardBrandIcons';
 
 /**
@@ -49,8 +49,6 @@ export const REVEAL_ACTION = 'reveal';
  * only — so a message would be a round trip that changes nothing and one more thing to get wrong.</p>
  */
 export const HIDE_ACTION = 'hide';
-
-export { REASSEMBLE_ACTION };
 
 /**
  * The card, or nothing at all for an entry that is not a payment.

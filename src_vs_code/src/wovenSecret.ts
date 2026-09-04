@@ -21,10 +21,20 @@ import { Random, generateDecoy } from './decoyDigits';
  * a test rather than a hope.</p>
  */
 
-/** Why a password cannot be woven, in a sentence a form can print, or `''` when it can. */
+/**
+ * Why a password cannot be woven, in a sentence a form can print, or `''` when it can.
+ *
+ * <p><b>Counted in CODE POINTS, not in `.length`.</b> A single emoji is two UTF-16 units and one
+ * character, so measuring `.length` let it past a check meant to stop it — and it then threw much
+ * deeper, out of `generateDecoy` or `shuffleTokens`, with a sentence about decoys that says nothing
+ * to the person who typed it. Weaving splits by code point (`[...value]`), so the gate in front of
+ * it has to count the same way, and the message has to report the number a person can see. (Two
+ * reviewers, one finding.)</p>
+ */
 export function weaveRefusal(value: string): string {
-  return value.length < MIN_SHUFFLE_TOKENS
-    ? `A password of ${value.length} character${value.length === 1 ? '' : 's'} cannot be woven — `
+  const characters = [...value].length;
+  return characters < MIN_SHUFFLE_TOKENS
+    ? `A password of ${characters} character${characters === 1 ? '' : 's'} cannot be woven — `
       + `weaving needs at least ${MIN_SHUFFLE_TOKENS}, because the methods move characters between them.`
     : '';
 }
