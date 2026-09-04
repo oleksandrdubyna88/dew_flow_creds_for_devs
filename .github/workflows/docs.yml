@@ -42,3 +42,8 @@ jobs:
       # bumps are one task" is a check, not a habit.
       - name: Pin check
         run: node .claude/rules/shared/tools/pin-check.mjs
+
+      # The review-gate block is a shared rule now. This repository is where the stale
+      # paste was measured — v2 against v5 — so it is the one that most needs the check.
+      - name: Gate snippet
+        run: node .claude/rules/shared/tools/gate-snippet-check.mjs
