@@ -165,7 +165,31 @@ async function prepare(
   if (!checked.ok) {
     return { ok: false, error: checked.message };
   }
+  const withheld = wovenSlot(details, checked.slot);
+  if (withheld !== '') {
+    return { ok: false, error: withheld };
+  }
   return draw(ctx, details, checked, body, deps);
+}
+
+/**
+ * A woven password is not a slot an agent may rotate.
+ *
+ * <p>Rotating it would store a new, unwoven value while the entry went on saying `Woven — on` —
+ * so the viewer would offer a two-column row over a plain password and every reading would fail
+ * as "not a whole woven pair". That is the same defect a Clear used to leave behind, arriving here
+ * by a different door, and this one is opened by an AGENT rather than by the person.</p>
+ *
+ * <p>Refused rather than silently unmarked, because unmarking is a decision about somebody's
+ * protection and nothing automatic is entitled to make it. Rotating the entry by hand still works:
+ * the form is where a replacement chooses whether it stays woven.</p>
+ */
+function wovenSlot(details: EntityMetadata, slot: RotationSlot): string {
+  return slot === 'password' && details.passwordWoven === true
+    ? `"${details.name}" stores its password woven with a decoy, so it cannot be rotated `
+      + 'automatically: a new value would replace a protection nothing here can put back. Rotate it '
+      + 'from the entry, where the weaving box decides what a replacement becomes.'
+    : '';
 }
 
 /**

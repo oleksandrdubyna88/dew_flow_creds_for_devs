@@ -3,6 +3,7 @@ import { parseDbConnectionString } from './dbConnString';
 import { BindableField, EnvBindings, staleEnvNames } from './envBinding';
 import { StorageManager } from './storageManager';
 import { EntityMetadata } from './types';
+import { FieldReading, readingOf, valueOf, withheld } from './fieldReading';
 
 /**
  * Writing bound secret fields into VS Code's environment variable collection — the
@@ -38,16 +39,32 @@ export function automaticRefusal(details: EntityMetadata, field: BindableField):
     : '';
 }
 
+/**
+ * One bindable field, as one of the three answers.
+ *
+ * <p>The refusal is decided HERE and nowhere else. It used to be checked by each caller before
+ * calling this, which a reviewer correctly read as a policy with no boundary: a new consumer that
+ * did not know to ask would get `undefined` and report "nothing stored" about a password that is
+ * very much stored. Now the only way to reach the value is through a reading that carries the
+ * refusal with it.</p>
+ */
+export async function bindableFieldReading(
+  storage: StorageManager,
+  accountId: string,
+  details: EntityMetadata,
+  field: BindableField,
+): Promise<FieldReading> {
+  const refusal = automaticRefusal(details, field);
+  return refusal === '' ? readingOf(await storedField(storage, accountId, details, field)) : withheld(refusal);
+}
+
 // eslint-disable-next-line complexity
-export async function bindableFieldValue(
+async function storedField(
   storage: StorageManager,
   accountId: string,
   details: EntityMetadata,
   field: BindableField,
 ): Promise<string | undefined> {
-  if (automaticRefusal(details, field) !== '') {
-    return undefined;
-  }
   switch (field) {
     case 'password':
       return storage.getPassword(accountId, details.id);
@@ -62,6 +79,16 @@ export async function bindableFieldValue(
       return conn === undefined ? undefined : parseDbConnectionString(conn).password;
     }
   }
+}
+
+/** The value alone, for `applyEnvBindings`, which writes what it can and skips what it cannot. */
+export async function bindableFieldValue(
+  storage: StorageManager,
+  accountId: string,
+  details: EntityMetadata,
+  field: BindableField,
+): Promise<string | undefined> {
+  return valueOf(await bindableFieldReading(storage, accountId, details, field));
 }
 
 /**

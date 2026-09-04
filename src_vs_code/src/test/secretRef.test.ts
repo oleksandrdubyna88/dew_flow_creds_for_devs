@@ -58,8 +58,18 @@ const source: RefSource = {
           { id: 's2', name: 'gw', path: ['Other', 'gw'] }, // deliberately duplicate name
         ]
       : [],
-  fieldValue: (accountId, entityId, field) =>
-    Promise.resolve(accountId === 'w' && entityId === 'db1' && field === 'password' ? 'hunter2' : undefined),
+  fieldReading: (accountId, entityId, field) =>
+    Promise.resolve(
+      accountId === 'w' && entityId === 'db1' && field === 'password'
+        ? ({ kind: 'value', value: 'hunter2' } as const)
+        : ({ kind: 'absent' } as const),
+    ),
+};
+
+/** The same vault, with the one password WITHHELD rather than missing. */
+const withheldSource: RefSource = {
+  ...source,
+  fieldReading: () => Promise.resolve({ kind: 'withheld', reason: 'It is woven with a decoy.' } as const),
 };
 
 test('a reference resolves to the field value by account email and entity name', async () => {
@@ -93,4 +103,27 @@ test('an unknown account or entity is a distinct, named error', async () => {
 test('the account match ignores case, as identity providers do', async () => {
   const out = await resolveSecretRefs(['creds://WORK@CORP.COM/prod-db/password'], source);
   assert.equal(out.ok && out.values['creds://WORK@CORP.COM/prod-db/password'], 'hunter2');
+});
+
+/**
+ * A reviewer's finding, and the reachable half of it: this resolver knew two answers where there
+ * are three. A woven password IS stored and may not be used, and reporting that as "has no
+ * password stored ... resolves to nothing" is false in both halves — to a person reading the error
+ * and to an agent deciding what to do next.
+ */
+test('a WITHHELD field reports why, and never as an absence', async () => {
+  const out = await resolveSecretRefs(['creds://work@corp.com/prod-db/password'], withheldSource);
+
+  assert.equal(out.ok, false);
+  const error = out.ok ? '' : out.error;
+  assert.match(error, /woven with a decoy/, 'the policy own sentence reaches the person');
+  assert.ok(!/has no password stored/.test(error), 'and the false one does not');
+  assert.ok(!/resolves to nothing/.test(error), 'it resolves to something nobody may use');
+});
+
+test('an ABSENT field still reads as absent — the two are not merged', async () => {
+  const out = await resolveSecretRefs(['creds://work@corp.com/prod-db/privateKey'], source);
+
+  assert.equal(out.ok, false);
+  assert.match(out.ok ? '' : out.error, /has no privateKey stored/);
 });

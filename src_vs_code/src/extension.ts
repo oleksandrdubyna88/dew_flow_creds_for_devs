@@ -70,9 +70,9 @@ import { MaskEntry, buildMaskTable } from './secretMasker';
 import { describeScan, scanForSecrets } from './secretScan';
 import * as childProcess from 'node:child_process';
 import * as fs from 'node:fs';
-import { applyEnvBindings, bindableFieldValue } from './envApply';
+import { applyEnvBindings } from './envApply';
+import { entityFieldReading } from './entityFieldReading';
 import { syncReminderDue } from './syncReminder';
-import { totpSnapshot } from './totp';
 import { RefSource } from './secretRef';
 import { MIN_MASKABLE_LENGTH } from './outputMask';
 import { SshAgentManager } from './sshAgentManager';
@@ -918,21 +918,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         .filter((n) => n.type === 'entity')
         .map((n) => ({ id: n.id, name: n.name, path: [...folderPath(n, byId), n.name] }));
     },
-    fieldValue: async (accountId, entityId, field) => {
-      const details = storage.getNode(accountId, entityId)?.details;
-      if (details === undefined) {
-        return undefined;
-      }
-      if (field === 'notes') {
-        return (await storage.getNotes(accountId, entityId)) ?? details.notes;
-      }
-      if (field === 'totp') {
-        return totpSnapshot(await storage.getTotp(accountId, entityId), Date.now())?.code;
-      }
-      // The remaining five are exactly the env-bindable fields, so the one table that already
-      // maps a field to a value answers here too rather than a second copy of it.
-      return bindableFieldValue(storage, accountId, details, field);
-    },
+    // Three answers rather than two — a withheld field carries the reason it was withheld, so a
+    // reference to a woven password reports THAT instead of inventing an absence.
+    fieldReading: (accountId, entityId, field) => entityFieldReading(storage, accountId, entityId, field),
   };
 
   registerRunCommands({ context, refSource, register, storage, storageDir, vaultKeys });

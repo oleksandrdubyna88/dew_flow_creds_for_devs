@@ -19,6 +19,8 @@
  * <p>Pure and `vscode`-free: the vault is passed in as `RefSource`.</p>
  */
 
+import { FieldReading } from './fieldReading';
+
 /** The fields a reference may name. Exactly the values a run can put in an environment. */
 export const SECRET_REF_FIELDS = [
   'password',
@@ -96,7 +98,13 @@ export interface RefSource {
   accounts(): Array<{ accountId: string; email: string }>;
   /** Every entity of one account, with its folder path (folders first, entity name last). */
   entities(accountId: string): Array<{ id: string; name: string; path: string[] }>;
-  fieldValue(accountId: string, entityId: string, field: SecretRefField): Promise<string | undefined>;
+  /**
+   * One field, as one of the three readings.
+   *
+   * <p>Not `string | undefined`: a woven password is stored and unusable, and this resolver used to
+   * report it as <i>"has no password stored"</i> — false in both halves. A reviewer's finding.</p>
+   */
+  fieldReading(accountId: string, entityId: string, field: SecretRefField): Promise<FieldReading>;
 }
 
 export type RefResolution =
@@ -156,13 +164,17 @@ async function readField(
   found: { accountId: string; entityId: string; path: string[] },
   source: RefSource,
 ): Promise<OneResolution> {
-  const value = await source.fieldValue(found.accountId, found.entityId, ref.field);
-  return value !== undefined && value.length > 0
-    ? { ok: true, value }
-    : {
-        ok: false,
-        error: `"${describePath(found.path)}" has no ${ref.field} stored — ${raw} resolves to nothing.`,
-      };
+  const reading = await source.fieldReading(found.accountId, found.entityId, ref.field);
+  if (reading.kind === 'value') {
+    return { ok: true, value: reading.value };
+  }
+  return {
+    ok: false,
+    error:
+      reading.kind === 'withheld'
+        ? `${raw} cannot be resolved automatically. ${reading.reason}`
+        : `"${describePath(found.path)}" has no ${ref.field} stored — ${raw} resolves to nothing.`,
+  };
 }
 
 /** One reference to its value, or the reason it has none. */
