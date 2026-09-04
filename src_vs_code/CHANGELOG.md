@@ -4,6 +4,58 @@ All notable changes to **CredsForDevs** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.99.0] — a PIN on an entry, and on everything in a folder
+
+### Added
+
+- **Protect with a PIN** on any entry. Every secret it holds — the password, the private key, the
+  notes, the login and URL, the payment details, the config body, the connection string, the VPN
+  configuration, the one-time-code seed — is re-encrypted under a PIN of your own, on top of the
+  encryption the vault already gives it. A fresh random key seals the value, the PIN seals that
+  key, and the plaintext is nowhere. A real re-encryption, not a prompt in front of a value that is
+  already readable.
+
+- **Protect Every Entry with a PIN** on a folder does the same to everything inside it, at any
+  depth. It does not encrypt the folder: a folder is a place, and the protection belongs to the
+  entries. Entries that already have a PIN of their own are **named before the run starts and then
+  skipped** — somebody running with a new PIN expects uniformity, and would otherwise lock
+  themselves out of the other entries while believing the opposite.
+
+- **A folder may legitimately hold entries under two PINs, and the interface says which one you
+  typed.** When a folder already holds protected entries, the PIN you type is checked against them
+  and you are told how many it opens — *"this PIN opens 4 of the 7 protected entries here"* —
+  before anything is written.
+
+- **A new entry created in such a folder is asked for the PIN before the form opens.** Asked after,
+  a dismissed box would leave an unprotected entry in a folder whose whole point is that nothing in
+  it is.
+
+- **Remove PIN Protection** takes it back off, given the PIN.
+
+### Changed
+
+- **Agents do not see a protected entry at all** — absent from the listing and the search, and a
+  direct request by id is answered the way a made-up id is answered. An agent that can see an entry
+  it can never open will keep asking, and every one of those is a door you have to answer.
+
+- **Nothing automatic uses one.** An environment variable, a terminal, the SSH broker, a `creds://`
+  reference and an agent rotation each say why instead of guessing.
+
+- **The health report skips protected entries and says so.** The ciphertext of a random key always
+  grades as a strong unique password, so scanning it would tell you your weakest habit is fine.
+
+- **Sharing a protected entry asks for its PIN** and unwraps the values, so the recipient gets
+  something they can use. Declining stops the whole share rather than quietly sending the rest of a
+  selection. The copy that arrives is not protected: you are not handing over your PIN, and the
+  share PIN is transit protection rather than somebody else’s.
+
+- **A backup keeps the protection.** What is exported is what is stored, still wrapped.
+
+### Fixed
+
+- A duplicated interface declaration in the entity form panel, merged silently by TypeScript since
+  the config work.
+
 ## [0.98.0] — a password stored woven with a decoy
 
 ### Added

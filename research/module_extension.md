@@ -827,6 +827,82 @@ Its second consumer — a PIN on an entry or a folder — is still
 [../todo/PLAN_woven_passwords_and_entity_pin.md](../todo/PLAN_woven_passwords_and_entity_pin.md)
 Part 2. The first shipped; it is the section below.
 
+#### A PIN on an entry, and on everything in a folder (2026-09-04)
+
+The second consumer of `secretEnvelope`, and the one it was built for. Every secret slot an entry
+holds is re-encrypted under a PIN of its own: a fresh random data key seals the value, the PIN seals
+that key, the plaintext is nowhere. The owner's model, in their words — *"галочка на папке папку не
+шифрует, она просто сетает всем сущностям внутри рекурсивно пин и шифрует"* — makes the folder
+command a LOOP over the entry command, so a folder is never a thing that has a PIN and nothing is
+inherited at read time.
+
+| Module | What it holds |
+|---|---|
+| `entitySlots.ts` | the nine slots, as one table everything walks — and the fixed ORDER |
+| `entityPin.ts` | `protectEntity` / `unprotectEntity` / `pinOpens` / `lockedSlotCount`, pure of `vscode` |
+| `pinSession.ts` | the grant: a module-level Map in the extension host and nothing else |
+| `pinGate.ts` | opening one value for an operation somebody CLICKED; `automaticPinRefusal` for everything else |
+| `pinAdmission.ts` | the door — asked ONCE per entry, not per field |
+| `pinPrompt.ts` | the thin `vscode` edge: the one input box, with the one wording |
+| `pinCommands.ts` | the three commands, and the folder run |
+| `pinFolderPlan.ts` | what a folder run would do, and the sentences it says before doing it |
+| `pinOnCreate.ts` | a new entry in a folder whose entries are protected |
+| `sharePayloadBuild.ts` | the payload builder, lifted out of `shareInbox` when this pushed it over its ceiling |
+
+**Idempotent and self-describing, NOT atomic.** Three reviewers said the plan's "all-or-nothing per
+entry" was a promise nothing could keep, and they were right: `SecretStorage` has no transaction, so
+a process killed between two slot writes leaves a mixture, and holding the values in memory first
+changes nothing. What makes that survivable is the decision the woven password already rests on —
+**the mark is inside each value** — so a half-protected entry is not a state nothing can describe: it
+is an entry whose password is locked and whose notes are not, and `readSecret` says exactly that per
+slot. `protect` therefore skips what is already locked and **re-running IS the resume**, with no
+progress marker to go stale when the entry gains or loses a slot between runs. A slot locked under a
+DIFFERENT PIN is left alone and reported; a CORRUPT one is never overwritten, because damaged
+ciphertext is the only copy of the evidence; a wrong PIN on the way out fails before the first write;
+and the password is wrapped LAST, so an interruption leaves the most-wanted value in the state the
+person last chose deliberately.
+
+**Attachments and images are deliberately not slots** — megabyte base64 blobs held in memory twice to
+seal, protecting nothing an attacker who has the file does not already have.
+
+**The reader survey, done before the code.** The plan said every read path must learn about `locked`
+and was written before anyone read them. Enumerated, most need no change at all, because a locked
+envelope is a STRING and they move strings: the existence flags, the tree badges,
+`mcpEntries.storedSecrets`, `revisionSnapshot`, and `exportSecrets` — a backup of a locked entry
+stays locked, which is what its owner asked for. What changed is a dozen callers, each in its own
+way: the viewer asks at the DOOR (four values are read eagerly to build the page, and a per-field
+gate would ask four times while anything that slipped past reached the page as envelope JSON); env,
+the terminal, `creds://` and the SSH broker withhold through `FieldReading`; an agent rotation is
+refused; the hygiene scan SKIPS, because the ciphertext of a random data key always grades "strong
+and unique" and scanning it would tell somebody their weakest habit is fine; the masker skips what no
+tool will ever print; and a share unwraps at share time.
+
+**Agents do not see a protected entry.** `hiddenFromAgents` is written once and called before a
+listing, a search result, a tree serialisation and a **direct id** — enumeration filters alone leave
+the way in that matters, an agent holding an id from an older listing. It answers `undefined`, not
+`closed`: "closed" would say the entry exists and name the switch to ask for, and a PIN is not a
+switch anybody can throw. `pinProtected` on the entry is a MIRROR of the wrap, not the truth about
+it — the truth is inside each value — and exists because these surfaces answer synchronously. It
+fails CLOSED: missing when it should be set leaves the entry listed, where every automatic path still
+refuses its values with a reason. The mark is written AFTER the values it describes, so an
+interruption never hides an entry whose values are still readable.
+
+**A folder may hold entries under two PINs, and the interface says which one you typed.** Four
+reviewers converged on the plan's "accepted when it opens AT LEAST ONE protected sibling": with
+siblings under two PINs either is accepted and nothing says which was used. A stored folder PIN and a
+dropdown of sibling PINs are both impossible here — nothing stores a PIN, by design. What ships is a
+COUNT, said as the PIN is typed: *"this PIN opens 4 of the 7 protected entries in this folder"*. The
+run also names what it will SKIP before it runs, because somebody running with a new PIN expects
+uniformity and would otherwise lock themselves out of the other entries while believing the opposite.
+
+**Two things that are NOT built, recorded rather than implied.** There is no persisted folder flag:
+"this folder is protected" is DERIVED from at least one entry inside it being protected, which cannot
+drift and is self-repairing, and the gap is a folder somebody ran the command on while it was empty.
+And §2.5's recipient half is unbuilt — the sender is asked for the PIN and every value is unwrapped
+so the recipient gets something usable, but nothing yet offers the recipient their own PIN. The mark
+is deliberately not carried in the meantime: a copy claiming `pinProtected` under a PIN nobody has
+would hide from the recipient's agents and show a "PIN — on" note for a lock that opens nothing.
+
 #### A woven password (2026-09-04)
 
 A credential's password can be stored the way a card's PIN already could: interleaved with a decoy
