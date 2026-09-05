@@ -1,0 +1,70 @@
+name: sonarcloud
+
+# SonarCloud analysis of the .NET halves — the vault server, the CLI, the MCP server and the broker
+# client — with coverage from each half's own test runner. The tests are xUnit v3 / MTP executables
+# and run under dotnet-coverage; `dotnet test` has no VSTest host here. Three of the four test
+# projects are not in the solution file, so they are built by name between `begin` and `end`. The
+# VS Code extension is not in this analysis; it is a follow-up with a scanner of its own.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+concurrency:
+  group: sonarcloud-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  sonar:
+    name: SonarCloud Scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-java@v4
+        with:
+          distribution: zulu
+          java-version: 21
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - name: Install the scanner and the coverage tool
+        run: |
+          dotnet tool install --global dotnet-sonarscanner
+          dotnet tool install --global dotnet-coverage
+      - name: Begin
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: |
+          dotnet-sonarscanner begin \
+            /k:"remsoftdev_dew_flow_creds_for_devs" \
+            /o:"remsoftdev" \
+            /d:sonar.token="$SONAR_TOKEN" \
+            /d:sonar.host.url="https://sonarcloud.io" \
+            /d:sonar.cs.vscoveragexml.reportsPaths="coverage/*.xml" \
+            /d:sonar.exclusions="**/bin/**,**/obj/**,**/node_modules/**,deploy/**" \
+            /d:sonar.coverage.exclusions="**/tests/**,**/*.Tests/**"
+      - name: Build
+        run: |
+          dotnet build dew_flow_creds_for_devs.slnx -c Release --no-incremental
+          dotnet build src_cli/tests/CredsCli.Tests.csproj -c Release
+          dotnet build src_mcp/tests/CredsMcp.Tests.csproj -c Release
+          dotnet build src_broker_client/tests/BrokerClient.Tests.csproj -c Release
+      - name: Test with coverage
+        run: |
+          mkdir -p coverage
+          dotnet-coverage collect -f xml -o coverage/server.xml -- ./src_minimalapi_server/tests/bin/Release/net10.0/CredVaultServer.Tests
+          dotnet-coverage collect -f xml -o coverage/cli.xml -- ./src_cli/tests/bin/Release/net10.0/CredsCli.Tests
+          dotnet-coverage collect -f xml -o coverage/mcp.xml -- ./src_mcp/tests/bin/Release/net10.0/CredsMcp.Tests
+          dotnet-coverage collect -f xml -o coverage/broker.xml -- ./src_broker_client/tests/bin/Release/net10.0/CredsBroker.Tests
+      - name: End
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: dotnet-sonarscanner end /d:sonar.token="$SONAR_TOKEN"
