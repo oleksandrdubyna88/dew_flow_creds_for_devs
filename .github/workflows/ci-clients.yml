@@ -23,7 +23,13 @@ jobs:
     name: clients · build · test
     runs-on: ubuntu-latest
     steps:
+      # This job builds and RUNS code from a pull request, so the checkout must not leave the
+      # token behind in the local git config where that code could reach it. `contents: read` bounds
+      # what the token can do; `persist-credentials: false` means the code never meets it at all.
+      # (CodeRabbit on this pull request; zizmor calls the pattern `artipacked`.)
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 10.0.x
