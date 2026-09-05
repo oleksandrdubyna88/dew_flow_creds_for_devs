@@ -82,7 +82,7 @@ public sealed class OrgEventLogTests : IDisposable
         _now = _now.AddMilliseconds(1);
         await log.AppendAsync(Row(OrgEventKinds.SettingsChanged), Ct);
 
-        Directory.EnumerateFiles(EventsDir).Select(f => Path.GetFileName(f)).Order()
+        Directory.EnumerateFiles(EventsDir, "*.ndjson").Select(f => Path.GetFileName(f)).Order()
             .Should().Equal("2026-03-01.ndjson", "2026-03-02.ndjson");
         (await File.ReadAllLinesAsync(log.PathForDay(_now), Ct)).Should().ContainSingle();
     }
@@ -152,6 +152,39 @@ public sealed class OrgEventLogTests : IDisposable
         _log.Errors.Should().ContainSingle(m => m.Contains("lock"));
         (await log.AppendAsync(Row(OrgEventKinds.SettingsChanged), Ct))
             .Should().BeTrue("the bound is on the wait, not on the log");
+    }
+
+    [Fact]
+    public async Task TwoInstancesOverOneDirectoryBothAppendAndEveryRowSurvives()
+    {
+        // A rolling restart has two instances writing the same day file for a while. Each holds its
+        // own in-process lock, so nothing but the file's own sharing and append semantics stands
+        // between them — and a row refused or overwritten there is a row the company never sees.
+        var first = NewLog();
+        var second = new OrgEventLog(_dir, _log, () => _now);
+        const int perInstance = 200;
+
+        var a = Task.Run(() => AppendManyAsync(first, "a", perInstance), Ct);
+        var b = Task.Run(() => AppendManyAsync(second, "b", perInstance), Ct);
+        var accepted = await Task.WhenAll(a, b);
+
+        accepted.Sum().Should().Be(2 * perInstance, "neither instance may lose a row to the other");
+        var lines = await File.ReadAllLinesAsync(first.PathForDay(Noon), Ct);
+        lines.Should().HaveCount(2 * perInstance, "every row is on its own line");
+        lines.Select(line => Parse(line).Detail).Should().OnlyHaveUniqueItems("every row is whole and parseable");
+    }
+
+    private static async Task<int> AppendManyAsync(OrgEventLog log, string tag, int count)
+    {
+        var accepted = 0;
+        for (var i = 0; i < count; i++)
+        {
+            if (await log.AppendAsync(Row(OrgEventKinds.MemberRoleChanged) with { Detail = $"{tag}{i}" }, Ct))
+            {
+                accepted++;
+            }
+        }
+        return accepted;
     }
 
     [Fact]

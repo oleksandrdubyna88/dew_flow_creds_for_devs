@@ -204,6 +204,66 @@ public sealed class OrgMembersStoreTests : IDisposable
     }
 
     [Fact]
+    public async Task AHigherSchemaVersionIsUnavailableEvenWhenEveryFieldIsOneThisBuildKnows()
+    {
+        // The version is the contract, not the fields. A record above this build's version is refused
+        // whole — never read "as far as this build understands it", and never rewritten at the older
+        // version by the next edit, which would silently downgrade what the newer build meant.
+        var fromTheFuture = MemberRecord.DefaultFor(Anna, 1) with
+        {
+            SchemaVersion = MemberRecord.CurrentSchemaVersion + 1,
+            Role = MemberRole.Dev,
+        };
+        WriteRecord(Anna, fromTheFuture);
+        var bytes = await File.ReadAllBytesAsync(RecordPath(Anna), Ct);
+
+        _store.Find(Anna).Status.Should().Be(MemberLookup.Unavailable, "every field is known; the version alone refuses it");
+        var act = () => _store.UpsertAsync(Anna, r => r with { Role = MemberRole.Admin }, Admin, Ct);
+        await act.Should().ThrowAsync<MemberRecordUnavailableException>("it is not merged into this build's shape");
+        (await File.ReadAllBytesAsync(RecordPath(Anna), Ct)).Should().Equal(bytes, "and not a byte of it was rewritten");
+    }
+
+    [Fact]
+    public void ARecordWhoseEmailDoesNotMatchItsFilenameIsUnavailable()
+    {
+        // A restore that mixes files, or an operator editing one by hand: a well-formed record for
+        // Bob sitting at Anna's key would otherwise be Found, and Anna would be given Bob's role.
+        WriteRecord(Anna, MemberRecord.DefaultFor("bob@example.com", 1) with { Role = MemberRole.Admin });
+
+        var lookup = _store.Find(Anna);
+
+        lookup.Status.Should().Be(MemberLookup.Unavailable, "one person's record must never be applied to another");
+        _log.Errors.Should().ContainSingle(
+            m => m.Contains(RecordPath(Anna)) && m.Contains("bob@example.com") && m.Contains(Anna),
+            "the operator needs the file and both emails to untangle it");
+    }
+
+    [Fact]
+    public void AnUnregisteredLookupIsAnsweredFromTheCacheOnTheSecondCall()
+    {
+        // The gate will ask on every request. Somebody with no record — a token that has never
+        // synced — must not cost a thrown FileNotFoundException per request.
+        _store.Find(Anna).Status.Should().Be(MemberLookup.NotRegistered);
+        _store.Find(Anna).Status.Should().Be(MemberLookup.NotRegistered);
+
+        _store.DiskReads.Should().Be(1, "the second answer came from memory");
+    }
+
+    [Fact]
+    public void ARecordCreatedAfterAnUnregisteredLookupIsSeenOnTheNextFind()
+    {
+        // The negative answer is cached; the file appearing — a sync on another instance, a restore —
+        // must invalidate it, or a registered person would stay unregistered until a restart.
+        _store.Find(Anna).Status.Should().Be(MemberLookup.NotRegistered);
+        WriteRecord(Anna, MemberRecord.DefaultFor(Anna, 1) with { Role = MemberRole.Dev });
+
+        var found = _store.Find(Anna);
+
+        found.Status.Should().Be(MemberLookup.Found);
+        found.Record!.Role.Should().Be(MemberRole.Dev);
+    }
+
+    [Fact]
     public async Task AnUnknownFieldRoundTripsByteForByte()
     {
         // A NEWER build added a field without bumping the version — the additive case. This build
@@ -257,13 +317,13 @@ public sealed class OrgMembersStoreTests : IDisposable
     // ---------------------------------------------------------------- the rest of the surface
 
     [Fact]
-    public void NothingCreatesTheOrgDirectoryUntilAWrite()
+    public async Task NothingCreatesTheOrgDirectoryUntilAWrite()
     {
         // This store is constructed on every deployment, personal ones included. An org/ directory
         // on a personal server would tell an operator it has a roster it does not have.
         _store.Find(Anna).Status.Should().Be(MemberLookup.NotRegistered);
         _store.ListForDomain("example.com").Should().BeEmpty();
-        _store.Remove(Anna);
+        await _store.RemoveAsync(Anna, Ct);
 
         Directory.Exists(Path.Combine(_dir, "org")).Should().BeFalse("reads and a no-op remove leave the disk as they found it");
     }
@@ -302,6 +362,16 @@ public sealed class OrgMembersStoreTests : IDisposable
     }
 
     [Fact]
+    public async Task ListForDomainAcceptsADomainWrittenWithItsAtSign()
+    {
+        // "@example.com" is how a domain is often typed. Doubling the sign would match nobody and
+        // answer an empty roster with no error — the silent kind of wrong.
+        await _store.UpsertAsync(Anna, r => r, Admin, Ct);
+
+        _store.ListForDomain("@example.com").Select(r => r.Email).Should().Equal(Anna);
+    }
+
+    [Fact]
     public async Task RemoveTakesTheRecordAndTheNextFindIsNotRegistered()
     {
         // DELETE /api/vault takes the record with the vault, so the registry cannot outgrow the
@@ -309,7 +379,7 @@ public sealed class OrgMembersStoreTests : IDisposable
         await _store.UpsertAsync(Anna, r => r, Admin, Ct);
         _store.Find(Anna).Status.Should().Be(MemberLookup.Found);
 
-        _store.Remove(Anna);
+        await _store.RemoveAsync(Anna, Ct);
 
         _store.Find(Anna).Status.Should().Be(MemberLookup.NotRegistered);
         File.Exists(RecordPath(Anna)).Should().BeFalse();
