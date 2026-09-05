@@ -84,6 +84,12 @@ for the two places that must not consult the registry. **Epic 1 must expose a sy
 `Find(email)` over an in-memory cache** — see *Contract with epic 1* below — or every one of the
 ~17 call sites becomes async for a disk read on the hot path.
 
+**`Unavailable` refuses too, with `503`.** `RequireActiveCaller` has three branches, not two: a
+record that says `active: false` is `403` with the reason header below, and a record this build
+could not read is `503` with `Retry-After` — never served as though the person were active. Failing
+open here would mean one corrupted file re-admits somebody a company has just locked out, which is
+the one outcome this epic exists to prevent.
+
 **The refusal carries `X-Creds-Reason: account-deactivated`.** A client that must lock the account
 and purge local key material cannot be asked to match on English prose, and a 403 for a disallowed
 domain must stay distinguishable from a 403 for a blocked person.
@@ -178,9 +184,17 @@ leave four open doors, three of them in the panel header. Every handler carries 
 Epic 2 needs, and epic 1 must ship:
 
 ```csharp
-Member? Find(string email);   // synchronous, from an in-memory cache; null = not registered
-Task SetActiveAsync(string email, bool active, string byAdmin, CancellationToken ct);
+// Three answers, not two. Epic 1's round found that a null for "could not read it" is a
+// privilege escalation, and the same null here would be a worse one: a record this build
+// cannot read must not read as an ACTIVE person.
+MemberLookupResult Find(string email);   // synchronous, from an in-memory cache, never throws
+Task<UpsertResult> UpsertAsync(string email, Func<MemberRecord, MemberRecord> edit,
+                               string byAdmin, CancellationToken ct);
 ```
+
+**Blocking is `UpsertAsync(email, r => r with { Active = false }, admin, ct)`** — not a second
+method and not a second write path, because the per-member lock that stops two admins losing each
+other's edit lives inside that one call.
 
 The cache is loaded lazily per email and invalidated on write — the registry is small (200 records
 of about a kilobyte) and read on every request, so a disk read per call is the wrong shape. If epic 1

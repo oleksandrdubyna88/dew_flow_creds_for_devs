@@ -141,9 +141,19 @@ async turns roughly seventeen call sites into awaits for a file that is at most 
 records. So the store exposes:
 
 ```csharp
-MemberRecord? Find(string email);      // synchronous, from the cache; null = not registered
-Task<MemberRecord> UpsertAsync(string email, Func<MemberRecord, MemberRecord> edit, string byAdmin, CancellationToken ct);
+// Three answers, never two — a null here is what the escalation above was made of.
+MemberLookupResult Find(string email);          // synchronous, from the cache, never throws
+Task<UpsertResult> UpsertAsync(string email, Func<MemberRecord, MemberRecord> edit,
+                               string byAdmin, CancellationToken ct);   // says whether it CREATED
+IReadOnlyList<MemberRecord> ListForDomain(string domain);
+void Remove(string email);                       // DELETE /api/vault takes the record with it
 ```
+
+`UpsertResult` reports `Created` because two callers need to know: the registration hook emits
+`member.registered` only on a create, and an admin upsert that creates a record emits it too, with
+the admin as the actor. **Epic 2's `SetActiveAsync` is this same `UpsertAsync`**
+(`r => r with { Active = false }`), not a second write path around the lock; epic 2's plan is
+corrected to say so.
 
 The cache is filled lazily per email and invalidated by every write that goes through the store, so
 there is exactly one path that mutates it — and that is not enough on its own, which two findings
@@ -240,7 +250,7 @@ serializer; a missing entry fails at runtime, and the file's own header says so.
 | File | New/modify | Responsibility |
 |---|---|---|
 | `src/OrgMembers.cs` | new | The records above, `MemberRole`/`ShareDefault` validation, `PolicyFor(role, shareDefault)` as a pure function. |
-| `src/OrgMembersStore.cs` | new | `${DataDir}/org/members/<KeyFor(email)>.json`. `EnsureRegisteredAsync`, `ReadAsync`, `WriteAsync`, `ListForDomainAsync`. Structurally identical to `OrgRecoveryStore.cs` — its header (`OrgRecoveryStore.cs:10-12`) states why a second storage style is a second set of failure modes. Atomic write per `OrgRecoveryStore.cs:374-379`; keys from `VaultStore.KeyFor` (`VaultStore.cs:30-36`) so one identity space has one hashing scheme. A record that will not parse is treated as *not registered*, logged once, never fatal. |
+| `src/OrgMembersStore.cs` | new | `${DataDir}/org/members/<KeyFor(email)>.json`, with the four methods named above. Same idioms as `OrgRecoveryStore.cs` — atomic write per `OrgRecoveryStore.cs:374-379`, keys from `VaultStore.KeyFor` (`VaultStore.cs:30-36`) so one identity space has one hashing scheme — with **two deliberate departures from that template, both stated in the file header**: its directories are created lazily on the first write, not in the constructor (`OrgRecoveryStore.cs:29-40` creates eagerly, and this store is constructed on every deployment including personal ones, where no `org/` may appear); and a record that will not parse is **`Unavailable`, never *not registered*** — the difference is the escalation this plan's round found. The per-member lock reuses `VaultStore`'s stripe by widening `GateFor` (`VaultStore.cs:115-119`) from `private static` to `internal static`, rather than standing up a second one; a member upsert and a vault write for the same email then share a gate, which is harmless and worth saying out loud. |
 | `src/OrgSettingsStore.cs` | new | `${DataDir}/org/settings.json`, one record. Absent → the endpoint answers the default and writes nothing. |
 | `src/OrgEventLog.cs` | new | Append-only NDJSON at `${DataDir}/org/events/<yyyy-MM-dd>.ndjson`, `AppendAsync(OrgEventDto)` under **one dedicated `SemaphoreSlim(1,1)`** — every writer appends to the same file, so the vault's 64-way stripe does not apply and a comment says why, or somebody will "optimise" it into a race. The row shape and the kinds are defined in [PLAN_corp_event_log.md](PLAN_corp_event_log.md); the reader is that epic's. The break-glass audit log's bare `File.AppendAllTextAsync` (`OrgRecoveryStore.cs:312-317`) is safe only because a recovery is rare — it is the precedent for the *format*, not for the locking. Its own root, never under `org-recovery/`, so no future sweep can reach it. |
 | `src/OrgEndpoints.cs` | new | `MapOrgEndpoints(...)`, an extension method holding this epic's five routes. **`Program.cs` is 1,381 lines today** and the five epics add about twenty endpoints between them, against the coding-style ceiling of 800. So the corporate surface is registered from per-epic files starting with the first one, the way the logic and storage halves are already split into `Org*.cs` / `Org*Store.cs`. |
@@ -313,6 +323,36 @@ belongs in the release notes.
 | `package.json` | modify | `credSshManager.setMemberRole` beside `createForUser` (`:637`, menu `:1393`), gated `viewItem == teamMember-adminView`; `credSshManager.showMyRole` beside `showOrgRecovery` (`:803`, menu `:1588`), reusing the existing `viewItem =~ /^account-corp/` guard, which already means "corp mode is on for this account". |
 | `src/contractVersion.ts` | modify | `CLIENT_CONTRACT_VERSION = 3` (`:19`), with an `ORG_POLICY_CONTRACT = 3` documented in the style of `SHARE_FORMAT_CONTRACT`. |
 
+## The small decisions the story split had to ask about
+
+Each of these was under-specified enough that two people would have implemented it two ways.
+
+- **`member.registered` has two emitters**, not one: the sync hook, and an admin upsert that creates
+  a record before the person has ever synced. The actor differs (the person, then the admin); the
+  kind does not. It is added to epic 4's kinds union, where it was missing.
+- **`SetMemberRequest` with both fields null is `400`**, not a no-op that answers `200` and changes
+  nothing. A `shareDefault` sent for a non-developer is **stored**, not refused: it only takes
+  effect for `dev`, exactly as `MemberPolicy.For` reads it, and refusing it would stop an admin
+  setting the shape before demoting somebody.
+- **The gate writes the JSON body itself.** `RequireOfficer` sets a status and writes nothing
+  (`Program.cs:696-708`), so a `RequireAdmin` modelled on it would produce an empty `403` where this
+  plan promised an `ErrorDto`. A `FailJson` sibling of `Fail` (`Program.cs:465-469`) is what the
+  gate and the endpoints both call.
+- **`Retry-After` on the `503` is one named constant** in `OrgEndpoints.cs`, not a number typed at
+  each site.
+- **`MapOrgEndpoints` takes one `OrgEndpointDeps` record** — the gates, `DomainOf`, `orgRecovery`,
+  the three stores, `allowAnyDomain`, the logger. They are local functions in a top-level
+  `Program.cs` and cross the file boundary only as delegates; a record lets epics 2–5 widen the
+  dependency set without editing the call site each time.
+- **The appender guarantees the shape of the file, not the reader's tolerance of it.** Epic 4 owns
+  the reader and its torn-line skip. What this epic can promise is that an append after a torn final
+  line starts on a fresh one — it checks the last byte and prefixes `\n` — because otherwise the
+  torn row and the next one fuse, and epic 4's skip loses two rows where it should lose one.
+- **The client trusts the server's `policy` and uses `role` only for the UI.** The server derives
+  the policy (§The shapes); a client that re-derived it would be a second implementation of the same
+  rule, drifting the day either changes. An unknown role therefore means "show no admin actions",
+  and the most-restrictive fallback applies only when `policy` itself is absent or malformed.
+
 ## Growth
 
 | Surface | Size at 200 people | Retired by | Interrupted |
@@ -325,17 +365,26 @@ belongs in the release notes.
 
 Server first; the extension cannot be tested against an endpoint that does not exist.
 
-1. `OrgMembers.cs` + `OrgMembersStore.cs` + `AppJsonContext` entries; store-level tests.
+1. `OrgMembers.cs` + `OrgMembersStore.cs` + **`OrgSettingsStore.cs`** + `AppJsonContext` entries;
+   store-level tests. The settings store moves up from step 5: `MemberSelfDto.OfflineLeaseHours`
+   comes out of it, so `GET /api/org/me` cannot be built before it exists — the original order had
+   the endpoint preceding its own data source.
 2. `OrgEventLog.cs` + its append test, plus the test proving `ShareMaintenance` and
    `OrgRecoveryMaintenance` do not touch `org/events/`.
-3. `RequireAdmin`; the registration hook at `Program.cs:628`; `GET /api/org/me` including the
-   no-write default.
-4. `GET /api/org/members`, `PUT /api/org/members/{email}` with the officer `409` and upsert.
-5. `OrgSettingsStore.cs` + both settings endpoints.
+3. The registration hook at `Program.cs:628`; `GET /api/org/me` including the no-write default;
+   **`DELETE /api/vault` removes the registry record** (named only in §Growth before this, and a
+   growth budget nothing implements is a budget nobody keeps).
+4. `RequireAdmin` — moved down to sit with its first caller. A gate with no caller is exactly the
+   "control that exists in source and is never called" this repository has shipped before.
+5. `GET /api/org/members`, `PUT /api/org/members/{email}`, and both settings endpoints.
 6. `/api/team` corp-mode filter: inactive members dropped. The DTO keeps its single field until
    epic 3 widens it.
-7. `ContractVersion.Current = 3` + the corp floor + the reason text.
-8. `http/org/*.http` written and run green.
+7. `ContractVersion.Current = 3` + the corp floor + the reason text, **and the client constant in
+   the same story** (`contractVersion.ts:19`) — the two are one cutover, and splitting them opens a
+   window in which this repository's own extension is refused by its own server.
+8. `http/org/*.http` written and run green — **and `http/httpyac.config.js:43` bumped from
+   `contract: '2'` to `'3'`**, which nothing else in this plan mentioned: the suite runs against a
+   corp-mode server, so without it every request in the whole tree answers `426`.
 9. Extension: `contractVersion.ts`, `orgMembersClient.ts`, `corpPolicy.ts` + tests.
 10. Extension: `refreshOrgPolicy` wiring, the cache, the contextValues, and a **wiring test** in the
     shape of `orgRecoveryWiring.test.ts` — this repository has already shipped a corp feature whose
@@ -402,6 +451,19 @@ Server first; the extension cannot be tested against an endpoint that does not e
    alternative promotes a developer by corrupting a file — but one bad file locks one person out
    until an operator looks. Taken deliberately: it is loud, it names the file, and it costs one
    record rather than the service.
+
+## How this epic is built: four stories
+
+Split by Fable after the plan round, and regrouped rather than sliced along the build order — the
+regrouping is what the numbered steps above now reflect. Each story is reviewed on its own diff,
+tested, documented and committed before the next one starts.
+
+| # | Story | Risk |
+|---|---|---|
+| 1 | The server can persist who its people are, and never mistakes a record it cannot read for one it can — the three stores, the three-state lookup, the schema version, the per-member lock | expensive to get wrong: the data-format and concurrency contract every later epic reads |
+| 2 | On a corp server everyone who syncs is registered, every client can read its role and policy, and a client too old to read it is refused — the hook, `GET /api/org/me`, the team filter, the contract cutover on both halves | expensive: a fail-closed `503` on the request path and a hard version cutover |
+| 3 | An admin can see the roster, set a role and a share default, and change the offline lease, and every change leaves a row — `RequireAdmin` and the four admin routes | expensive: this is the authorization surface, and both the cross-domain hole and the officer-demotion lie were real findings |
+| 4 | The extension knows each account's role, shows it, and lets an admin set one from the Team row | ordinary: every rule is a pure module with a unit test, and the server is the boundary |
 
 ## The plan round (2026-09-04)
 
