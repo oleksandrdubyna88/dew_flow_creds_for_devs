@@ -895,6 +895,17 @@ COUNT, said as the PIN is typed: *"this PIN opens 4 of the 7 protected entries i
 run also names what it will SKIP before it runs, because somebody running with a new PIN expects
 uniformity and would otherwise lock themselves out of the other entries while believing the opposite.
 
+**What the code round changed.** Nine reviewers over the branch found five real holes, and one of
+them was the serious kind: sharing a FOLDER delegated to a walk that built payloads with no gate, so
+the folder holding a protected entry sent its raw envelope — a payload the recipient can never open.
+The walk goes through the gated path now, and one declined entry stops the whole folder. The others:
+`openedText` returned a CORRUPT envelope as text (into the notes box, the connection string and a
+share payload) where the envelope's contract says damaged and not-mine are different answers; a
+session grant was keyed by entity id alone, which a restore can put into two profiles; `protectEntity`
+accepted an empty PIN, locking an entry under nothing; and a folder run said nothing when an entry
+failed and showed no progress, so a name alone could not tell "working" from "stuck" during minutes
+of scrypt.
+
 **Two things that are NOT built, recorded rather than implied.** There is no persisted folder flag:
 "this folder is protected" is DERIVED from at least one entry inside it being protected, which cannot
 drift and is self-repairing, and the gap is a folder somebody ran the command on while it was empty.
