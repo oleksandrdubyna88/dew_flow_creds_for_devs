@@ -30,6 +30,10 @@ whole server is ~2,100 lines.
 | `src/OrgRecovery.cs` | The corporate-recovery roster, its quorum guard and its fingerprint |
 | `src/OrgRecoveryStore.cs` | Setup invites and the published org public key, on disk |
 | `src/OrgRecoveryMaintenance.cs` | Drops setup invites nobody acknowledged |
+| `src/OrgMembers.cs` | The members registry as records with no I/O: roles, share defaults, the three-state lookup, the policy derived from a role |
+| `src/OrgMembersStore.cs` | One record per person under `org/members/`, read synchronously from a stat-checked cache, written read-modify-write under the vault's per-email lock |
+| `src/OrgSettingsStore.cs` | The runtime settings an admin edits without a restart (`org/settings.json`); absent answers the default and writes nothing |
+| `src/OrgEventLog.cs` | The append-only NDJSON event log, one file per UTC day under `org/events/` — the writer only; the reader is a later epic's |
 | `src/Logging.cs` | Serilog wiring: the coloured console + the segmenting run file |
 | `src/AnsiConsoleSink.cs` | Hand-written ANSI colour (ported from the family — Serilog's own theme writes zero escapes once stdout is redirected, and a container's captured stdout always is) |
 | `src/DailyRunFileSink.cs` | A file per run, segmenting at UTC midnight (`00-00-00-<pid>.log` in the next day's folder) so a never-restarting container cannot grow one file for months |
@@ -435,6 +439,10 @@ ${DataDir}/org-recovery/invites/<key>/<guid>.json     one officer's sealed Shami
 ${DataDir}/org-recovery/ceremonies/<guid>.json        who ran a setup, and whom it invited
 ${DataDir}/org-recovery/sessions/<guid>.json          a live break-glass and its contributions
 ${DataDir}/org-recovery/audit.log                     NDJSON: who opened whose vault, never swept
+${DataDir}/org/members/<key>.json                     one person's registry record: role, flags, who changed it and when
+${DataDir}/org/settings.json                          the runtime settings an admin may change; absent means the defaults
+${DataDir}/org/events/<yyyy-MM-dd>.ndjson             the corporate event log, one file per UTC day, never swept
+${DataDir}/org/events/.append.lock                    zero bytes; held exclusively for the length of one append, across processes
 ```
 
 `key = sha256(lowercased email) hex, first 32 chars` (128 bits). Hashed so a directory listing is
@@ -443,6 +451,39 @@ is here", and it is read defensively — a malformed or locked sidecar is skippe
 
 Every write is atomic: write `<path>.<random>.tmp`, then `File.Move(overwrite: true)`. A reader
 therefore never sees a partial blob, which is what lets `deploy/backup.sh` archive a live server.
+
+`org/` appears only when something is written into it — a personal deployment never has one, which is
+how an operator looking at the disk can tell a server with a roster from one without. Three things
+about what is under it, none of which has an endpoint yet:
+
+- **A member record this build cannot read is *unavailable*, never *not registered*.** Not registered
+  means the default role, and the default may export, so a malformed file, an unreadable one, one
+  whose `schemaVersion` is above this build's (however many of its fields this build recognises), or a
+  well-formed record whose email does not hash to the file it sits in — a restore that mixed two files
+  — would otherwise promote its owner or hand them a colleague's role; every caller fails closed
+  instead, and the log names the file at Error, once. A field this build does not know is carried and
+  written back rather than dropped, so an older instance cannot strip what a newer one wrote. Lookups
+  are synchronous, from an in-memory cache that re-stats the file first — a record changed by a restore
+  or a second instance is seen on the next lookup, and "no file" is cached the same way, so a person
+  who never synced costs one exception once, not per request; writes are read-modify-write under the
+  same per-email lock as `PUT /api/vault`, so two admins editing one person cannot lose an edit.
+- **A settings file that exists but cannot be read answers the last value this process read or
+  wrote**, and only a process that never had one answers the default (a 24-hour offline lease) —
+  because an admin who set the lease to `0`, strictly online, must not have every client handed 24
+  hours back by a permission flip. Absent still answers the default and writes nothing. Either way the
+  log names the file at Error, once, and says which value is being answered; refusing everybody over
+  this file would be an outage.
+- **The event log takes one dedicated lock in two halves, with one five-second bound** — an in-process
+  semaphore, and `org/events/.append.lock` opened exclusively across processes, because every writer
+  appends to the same day file, so the vault's stripe would race — and a failed append never fails the
+  mutation it records: it answers false and logs at Error naming the file, the kind, the actor and the
+  subject, so the trail degrades to the server log rather than vanishing. The day file is opened for
+  append with shared read-write, so a second instance during a rolling restart appends rather than
+  losing its row and a reader never blocks a writer; the lock file exists because that alone is not
+  an atomic append in .NET — measured: 71 of 400 rows from two instances overwritten while every
+  append reported success. A torn final line from a killed process gets a newline before the next
+  row, so the reader loses one row rather than two. Neither maintenance sweep touches `org/events/`;
+  a test pins it.
 
 ### Known limits
 
@@ -461,8 +502,9 @@ therefore never sees a partial blob, which is what lets `deploy/backup.sh` archi
 
 ## Tests
 
-`src_minimalapi_server/tests/` — xUnit v3 on Microsoft Testing Platform, 68 tests, ~1.5 s, entirely
-in-process through `WebApplicationFactory`. No free port, no background `dotnet run`.
+`src_minimalapi_server/tests/` — xUnit v3 on Microsoft Testing Platform, 207 tests, ~8 s. The
+endpoint suites run in-process through `WebApplicationFactory` — no free port, no background
+`dotnet run`; the store suites drive a store directly on a throwaway data directory.
 
 ```bash
 dotnet build dew_flow_creds_for_devs.slnx
@@ -485,6 +527,10 @@ Never `dotnet test` — there is no VSTest host here and it aborts.
 | `ConcurrencyTests` | `If-Match`/`If-None-Match` optimistic-concurrency semantics on `PUT /api/vault` |
 | `InstanceFileTests` | The instance-file publish/withdraw lifecycle |
 | `ClientConfigTests`, `HealthProbeUrlTests` | (nested in `HealthTests.cs`) the advertised scope, and the probe URL |
+| `MemberPolicyTests` | The role → policy table: admin and member unrestricted whatever the share default, both developer share defaults, an unknown role or share default gets the most restrictive policy, the default role is member |
+| `OrgMembersStoreTests` | The registry: answered from the cache (a missing record too), the stat check sees an outside write and a record that appears, the per-member lock keeps both of two concurrent edits, unreadable is unavailable (never the default), a record whose email does not hash to its file is unavailable, schema version — with only known fields too — refuses whole, unknown fields carried, `@domain` accepted, no `org/` until a write |
+| `OrgSettingsStoreTests` | The default without a file and no write, write then read, a malformed or unopenable file answers the last value this process read (the default only when it never read one), logged once, an outside write is seen |
+| `OrgEventLogTests` | Append and read back, the UTC day boundary, a torn tail gets its newline, the bounded lock, an unwritable folder is logged not thrown, two instances over one directory lose no row, both sweeps leave `org/events/` alone |
 
 Configuration reaches the app through **process environment variables**, not
 `WithWebHostBuilder` — `Program.cs` reads `builder.Configuration` before `Build()`, so anything a

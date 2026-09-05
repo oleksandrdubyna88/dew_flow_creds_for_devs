@@ -56,6 +56,9 @@ public sealed record ClientConfigDto(string MicrosoftScope);
 [JsonSerializable(typeof(StartSessionRequest))]
 [JsonSerializable(typeof(ContributeRequest))]
 [JsonSerializable(typeof(AuditEntryDto))]
+[JsonSerializable(typeof(MemberRecord))]
+[JsonSerializable(typeof(OrgSettingsDto))]
+[JsonSerializable(typeof(OrgEventDto))]
 public sealed partial class AppJsonContext : JsonSerializerContext;
 
 /// <summary>The instance file's contract, indented for the human who opens it.</summary>
