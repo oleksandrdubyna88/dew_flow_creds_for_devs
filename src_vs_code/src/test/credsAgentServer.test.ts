@@ -21,7 +21,8 @@ import { SERVICE_NAME } from '../brokerProtocol';
  * burning cannot cost the agent a result it already earned.</p>
  */
 
-import { SECRET, call, code, share, world } from './brokerWorld';
+import { INTERNAL_FAILURE } from '../brokerProtocol';
+import { SECRET, call, code, message, share, world } from './brokerWorld';
 
 test('health is unauthenticated — it is what lets the CLI check the port before sending a token', async () => {
   const w = world({});
@@ -499,6 +500,11 @@ test('the listing is a GET only — a POST to it is not an action route', async 
  * carries the real reason where it used to carry only the summary.</p>
  */
 test('an internal failure gives the agent a fixed sentence, never the error’s own text', async () => {
+  // Asserted as an EQUALITY, not as the absence of three strings — two reviewers made the same
+  // point and they were right: a negative assertion passes on the unfixed code for any error whose
+  // message happens not to contain them, so `Error('query failed')` would have gone green while
+  // still handing its own text to the agent. What is promised is a CONSTANT, so that is what is
+  // checked, and then the realistic leak is checked on top of it.
   const w = world({});
   w.result = new Error('ENOENT: /home/dev/.ssh/id_ed25519_prod, open failed at Connection.parse:214');
   try {
@@ -507,10 +513,27 @@ test('an internal failure gives the agent a fixed sentence, never the error’s 
     const answer = await call(port, '/v1/use/exec', { token: secret, body: { command: 'uptime' } });
 
     assert.equal(code(answer), 'internal');
+    assert.equal(message(answer), INTERNAL_FAILURE, 'the wire carries the constant and nothing else');
     const said = JSON.stringify(answer.body);
     assert.ok(!said.includes('ENOENT'), said);
     assert.ok(!said.includes('id_ed25519_prod'), 'a path names a machine and an account');
     assert.ok(!said.includes('Connection.parse'), 'and a frame names the implementation');
+  } finally {
+    w.server.dispose();
+  }
+});
+
+test('a plain error leaks nothing either — the guarantee is the constant, not a filter', async () => {
+  // The case the negative-only assertion would have missed entirely.
+  const w = world({});
+  w.result = new Error('query failed: SELECT * FROM billing.card WHERE id=42');
+  try {
+    const { port, secret } = await share(w);
+
+    const answer = await call(port, '/v1/use/exec', { token: secret, body: { command: 'uptime' } });
+
+    assert.equal(message(answer), INTERNAL_FAILURE);
+    assert.ok(!JSON.stringify(answer.body).includes('billing.card'), 'a table name is machinery too');
   } finally {
     w.server.dispose();
   }
@@ -527,6 +550,10 @@ test('…and the journal keeps the reason, because that is where a person looks'
     const journal = w.audit.join('\n');
     assert.match(journal, /ENOENT/, 'the diagnosis moved here rather than disappearing');
     assert.match(journal, /uptime/, 'beside what was asked for');
+    // Three reviewers asked for this one: `respondError` has always taken the door a refusal came
+    // in by, and this call site was the one not passing it — so a refused use was the only kind of
+    // refusal the journal could not place. Asserted, or it can regress to `undefined` in silence.
+    assert.match(journal, /via token/, 'and the door it arrived by');
   } finally {
     w.server.dispose();
   }
