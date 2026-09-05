@@ -1,5 +1,5 @@
 import { grantPin, grantedPin, forgetPin } from './pinSession';
-import { readSecret, unlockSecret } from './secretEnvelope';
+import { SecretEnvelope, readSecret, unlockSecret } from './secretEnvelope';
 
 /**
  * Opening one PIN-protected value for one operation the person just asked for.
@@ -62,10 +62,7 @@ export async function openStored(stored: string | undefined, gate: PinGate): Pro
   return openLocked(read.envelope, gate);
 }
 
-async function openLocked(
-  envelope: Parameters<typeof unlockSecret>[0],
-  gate: PinGate,
-): Promise<PinOpen> {
+async function openLocked(envelope: SecretEnvelope, gate: PinGate): Promise<PinOpen> {
   const remembered = grantedPin(gate.entityId);
   const withRemembered = remembered === undefined ? undefined : await tryPin(envelope, gate, remembered);
   if (withRemembered !== undefined) {
@@ -77,10 +74,7 @@ async function openLocked(
   return askOnce(envelope, gate);
 }
 
-async function askOnce(
-  envelope: Parameters<typeof unlockSecret>[0],
-  gate: PinGate,
-): Promise<PinOpen> {
+async function askOnce(envelope: SecretEnvelope, gate: PinGate): Promise<PinOpen> {
   const typed = await gate.ask(PROMPT, gate.entryName);
   if (typed === undefined || typed.length === 0) {
     return { kind: 'cancelled' };
@@ -95,7 +89,7 @@ async function askOnce(
 
 /** One attempt. A wrong PIN is an ANSWER here — the throw belongs to the layer that must report it. */
 async function tryPin(
-  envelope: Parameters<typeof unlockSecret>[0],
+  envelope: SecretEnvelope,
   gate: PinGate,
   pin: string,
 ): Promise<string | undefined> {

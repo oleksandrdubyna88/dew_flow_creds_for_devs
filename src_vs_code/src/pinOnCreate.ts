@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { StorageManager } from './storageManager';
 import { TreeNode } from './types';
-import { pinOpens, protectEntity } from './entityPin';
+import { isProtected, pinOpens, protectEntity } from './entityPin';
 import { pinValidator } from './pinInput';
 import { entriesUnder } from './pinFolderPlan';
 
@@ -44,7 +44,7 @@ export async function pinForNewEntry(
   accountId: string,
   parentId: string | null,
 ): Promise<CreatePin> {
-  const siblings = protectedSiblings(storage, accountId, parentId);
+  const siblings = await protectedSiblings(storage, accountId, parentId);
   return siblings.length === 0 ? { kind: 'none' } : askAndCheck(siblings, storage, accountId);
 }
 
@@ -66,15 +66,30 @@ async function askAndCheck(
   return (await agreed(typed, siblings, storage, accountId)) ? { kind: 'pin', pin: typed } : { kind: 'cancelled' };
 }
 
-/** The protected entries directly under this folder, at any depth — from the metadata mirror. */
-function protectedSiblings(
+/**
+ * The protected entries under this folder, at any depth — read from the VALUES, not the mirror.
+ *
+ * <p>`pinProtected` is the synchronous mirror the agent surfaces need, and it fails closed for them:
+ * a mark missing after a crash leaves an entry listed where its values still refuse. Here the same
+ * staleness fails the other way — a folder whose mark was lost would stop asking, and the next entry
+ * created in it would be stored in the clear inside a folder whose whole point is that nothing is.
+ * This runs once, when a person clicks Add, so it can afford the real answer.</p>
+ */
+async function protectedSiblings(
   storage: StorageManager,
   accountId: string,
   parentId: string | null,
-): readonly TreeNode[] {
-  return parentId === null
-    ? []
-    : entriesUnder(storage.getNodes(accountId), parentId).filter((n) => n.details?.pinProtected === true);
+): Promise<readonly TreeNode[]> {
+  if (parentId === null) {
+    return [];
+  }
+  const found: TreeNode[] = [];
+  for (const node of entriesUnder(storage.getNodes(accountId), parentId)) {
+    if (await isProtected(storage, accountId, node.id)) {
+      found.push(node);
+    }
+  }
+  return found;
 }
 
 /** How many of them it opens — said, then agreed to, before an entry is created under it. */
@@ -106,11 +121,14 @@ export async function applyCreatePin(
   accountId: string,
   entityId: string,
 ): Promise<void> {
-  const node = settled.kind === 'pin' ? storage.getNode(accountId, entityId) : undefined;
+  if (settled.kind !== 'pin') {
+    return;
+  }
+  const node = storage.getNode(accountId, entityId);
   if (node === undefined) {
     return;
   }
-  await protectEntity(storage, accountId, entityId, (settled as { pin: string }).pin);
+  await protectEntity(storage, accountId, entityId, settled.pin);
   // The mark last, for the reason `pinCommands` gives: a mark written first and then interrupted
   // would hide the entry from every agent surface while its values were still readable.
   await storage.updateNode(accountId, {

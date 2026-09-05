@@ -319,6 +319,15 @@ protected"* — where the folder is, not in a log nobody opens. A persisted prog
 proposed and rejected: the entries already describe their own state, and an index goes stale the
 moment somebody adds or deletes an entry between runs.
 
+**The mirror is read in ONE direction only** *(self-review, 2026-09-05)*. `pinProtected` on the entry
+exists for the AGENT surfaces, which answer synchronously and cannot read a keychain per entry per
+listing, and its staleness fails closed there: a mark lost to a crash leaves the entry listed, where
+its values still refuse. Everywhere ELSE the same staleness fails the other way, so nothing else uses
+it. The create flow in particular reads the real wrap: a folder whose mark was lost would stop
+asking, and the next entry created in it would be stored in the clear inside a folder whose whole
+point is that nothing is. That check runs once, when a person clicks Add, so it can afford the real
+answer.
+
 **DEVIATION, 2026-09-04: there is no persisted flag, and the signal is DERIVED.** A folder counts
 as protected exactly when at least one entry inside it is — which is the question that actually
 matters, cannot drift out of step with the entries the way a stored boolean can, and is
