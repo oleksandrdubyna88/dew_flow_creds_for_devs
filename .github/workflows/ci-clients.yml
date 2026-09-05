@@ -1,0 +1,39 @@
+name: ci · clients
+
+# The CLI, the MCP server and the broker client each have a test project, and until 2026-09-05 none
+# of the three ran in CI — the server workflow builds the whole solution but runs only its own tests.
+# This job runs the other three. No path filter: a required check that a pull request can skip is a
+# check that protects nothing.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-clients-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build-test:
+    name: clients · build · test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: Build
+        run: dotnet build dew_flow_creds_for_devs.slnx -c Release
+      # xUnit v3 on Microsoft Testing Platform: each test project is its own runner executable, and
+      # `dotnet test` has no VSTest host here — it would abort with a tooling error, not a test result.
+      - name: Test the CLI
+        run: ./src_cli/tests/bin/Release/net10.0/CredsCli.Tests
+      - name: Test the MCP server
+        run: ./src_mcp/tests/bin/Release/net10.0/CredsMcp.Tests
+      - name: Test the broker client
+        run: ./src_broker_client/tests/bin/Release/net10.0/BrokerClient.Tests
