@@ -47,6 +47,25 @@ Out of scope, by decision: blocking and the login key (epic 2 owns `active`'s *b
 only reserves the field), projects (epic 3 owns `projects[]`'s *behaviour*; this epic reserves the
 field and the DTO shape), the log's query surface (epic 4), backup (epic 5).
 
+## What this epic is NOT — the finding the round opened with
+
+**Contract 3 and the policy document are not an enforcement boundary, and this plan has to say so
+where somebody reading only this plan will see it.** A developer holding a valid token can call
+`POST /api/shares` or `GET /api/vault` with `curl`; nothing in this epic stops them, because
+everything this epic ships is a document the client is expected to obey. The umbrella's *Boundaries*
+table grades every rule, and the three this epic publishes fall out like this:
+
+| Rule | Enforced where | Lands in |
+|---|---|---|
+| a developer may not export, back up locally, clone into a personal account | the shipped extension only — a mistake, not an insider | epic 2 |
+| a developer may share only inside a project, with an active member of it | **the server**, at `POST /api/shares` | **epic 3** |
+| a blocked person may do nothing at all | **the server**, in the caller gate | **epic 2** |
+
+So the contract floor exists for a narrower reason than "make the policy binding": a client below 3
+cannot even READ the policy, and one that cannot read it cannot be expected to obey any of it.
+Serving it would be serving a bypass *and* hiding that from whoever deployed the server. That is
+worth a `426`; it is not worth calling security.
+
 ## Decisions taken here, with their reasons
 
 **Corp mode is `orgRecovery.Enabled`, not a new key.** `OrgRecoveryConfig.Read` already computes it
@@ -61,6 +80,13 @@ registry write is its sibling, idempotent, and gated on corp mode so a personal 
 creates the directory at all. Registering on every authenticated call would fill an admin's list
 with tokens that synced nothing.
 
+**And the hook may never fail the write it rides on.** By the time it runs, `TryWriteVaultAsync` has
+already succeeded, so a registry write that throws — disk full, a lock, a permission — is caught,
+logged at `Error`, and swallowed: answering `500` for a vault that was in fact stored is a worse
+failure than an unregistered person, and an unregistered person is a state this design already
+handles, because `GET /api/org/me` computes the default and the next sync retries the same
+idempotent write.
+
 **`GET /api/org/me` never writes.** A caller whose token is valid but who has never synced gets a
 *computed* default — `member`, active, no projects — with no file created. This is
 `OrgRecoveryConfig.Read`'s "off is the shape, not a flag" discipline applied to a person: the answer
@@ -73,9 +99,40 @@ join the DTO in epic 3**, which is the epic that touches `Models.cs` and needs t
 its own filtering — one epic owns one field, or two plans describe the same change and neither
 builds it.
 
+**A role may be set only for somebody in the caller's own domain.** Two reviewers found this
+independently and it was a real hole: the plan scoped the LIST by `DomainOf` and said nothing about
+the upsert, so on a server whose `Vault:AllowedDomains` names two companies, an admin at one could
+write a role for a person at the other. `PUT /api/org/members/{email}` refuses a cross-domain target
+with `403`, exactly as the break-glass session start already does (`Program.cs:983` —
+`!allowAnyDomain && DomainOf(target) != DomainOf(caller)`), and the refusal has its own test.
+`Vault:AllowAnyDomain` keeps its meaning: a deployment that deliberately turned domain scoping off
+gets none here either.
+
 **An officer's email cannot be given a role.** `PUT /api/org/members/{email}` naming an officer
 answers `409`, never a silent no-op — the roster is config, changing it needs a ceremony
 (`PLAN_org_recovery.md` §Top risks 1), and a UI that appeared to demote an officer would be lying.
+
+**A record this build cannot read is not a person without rights — and it is not a person with
+DEFAULT rights either.** This plan said an unparseable record "is treated as *not registered*", and
+the round is what showed that sentence to be a privilege escalation wearing a defensive coat: not
+registered means the default, the default is `member`, and a member may export. Corrupt one file —
+a half-written record, a bad sector, a restore from a truncated archive — and a developer becomes a
+member. So the lookup has three answers, not two:
+
+```csharp
+public enum MemberLookup { Found, NotRegistered, Unavailable }
+```
+
+- **`NotRegistered`** — no file. The person has never synced, so the computed default applies; that
+  is the whole reason `GET /api/org/me` can answer before the disk agrees.
+- **`Unavailable`** — a file exists and this build could not read it: malformed JSON, an I/O error,
+  a schema version it refuses. Every caller fails CLOSED — `RequireAdmin` refuses, `GET /api/org/me`
+  answers **`503`** with `Retry-After`, and the reason is logged at `Error` naming the file. A
+  refusal a person can see and an operator can fix beats a silent promotion nobody can.
+- **A read on the request path may never throw.** The gate calls `Find` on every request; an
+  exception there answers a stack trace where a sentence belongs. The store catches `IOException`,
+  `UnauthorizedAccessException` and `JsonException`, answers `Unavailable`, and logs once per file
+  rather than once per request.
 
 **The registry is read synchronously, from an in-memory cache.** Epic 2 puts an `active` check
 inside the caller gate, which runs on every request and is synchronous today
@@ -89,8 +146,23 @@ Task<MemberRecord> UpsertAsync(string email, Func<MemberRecord, MemberRecord> ed
 ```
 
 The cache is filled lazily per email and invalidated by every write that goes through the store, so
-there is exactly one path that mutates it. This is a contract epics 2, 3 and 4 build on; changing it
-later changes them.
+there is exactly one path that mutates it — and that is not enough on its own, which two findings
+caught between them:
+
+- **A cached record goes stale the moment anything outside this process writes the file** — a
+  restore, an operator's editor, a second instance during a rolling restart. Left alone, epic 2's
+  block check would keep admitting somebody blocked minutes ago, which is the one thing it exists to
+  prevent. So a cache entry carries the file's `LastWriteTimeUtc` and length and `Find` re-stats
+  before answering; a mismatch re-reads. A stat is microseconds; a stale block is the failure this
+  whole epic is scaffolding for. **The test is an ALREADY-CACHED record changed on disk by another
+  writer** — not the cache miss this plan originally tested, which proved nothing about it.
+- **Two admins editing one person can lose an edit.** Atomic replacement stops a torn file, not a
+  lost update: both calls read the same record, each applies its own change, and the second write
+  wins whole. `UpsertAsync` does its read-modify-write **inside a per-member lock**, the striped
+  semaphore `VaultStore` already uses for this exact reason (`VaultStore.cs:115-119`, and the
+  TOCTOU note above it). Tested with two concurrent edits to two different fields, both surviving.
+
+This is a contract epics 2, 3 and 4 build on; changing it later changes them.
 
 **Runtime settings are runtime because they have no cryptographic consequence.** `offlineLeaseHours`
 changes behaviour; the officer roster changes what a key is sealed to. The first is one PUT away,
@@ -142,6 +214,22 @@ moveOutOfProject: true}`. Derived, because a stored copy of a rule is a second s
 drifts from the role it was derived from — the failure `module_extension.md` records as "the kind is
 carried, not re-derived" in reverse.
 
+**A record from a NEWER build must round-trip through this one.** `System.Text.Json` drops an
+unknown property in silence, so an older server reading a record a newer one wrote and then writing
+it back — which every role change does — would strip whatever the newer build added, and nothing
+would notice. This is the extension's own hard-won rule in a second setting: *a wrap this build
+cannot use is one it must carry* (`module_extension.md`, §Cryptography). So `MemberRecord` carries:
+
+```csharp
+int SchemaVersion,                                                        // 1 today
+[property: JsonExtensionData] IDictionary<string, JsonElement>? Unknown   // carried, never dropped
+```
+
+A record whose `SchemaVersion` exceeds this build's is `Unavailable`, not "unknown fields I will
+ignore": a build that cannot promise it understands a record must not act on it. The test writes a
+record with an extra field and a bumped version, reads it, writes it back, and asserts the extra
+field survives byte for byte.
+
 **Every DTO gets a `[JsonSerializable]` line in `AppJsonContext.cs:33-59`.** AOT has no reflection
 serializer; a missing entry fails at runtime, and the file's own header says so.
 
@@ -171,6 +259,34 @@ serializer; a missing entry fails at runtime, and the file's own header says so.
 | GET | `/api/org/settings` | `RequireAdmin` | `/api/org-recovery/config` read half | `OrgSettingsDto`; absent file → default 24. |
 | PUT | `/api/org/settings` | `RequireAdmin` | same, write half | `offlineLeaseHours >= 0`; `0` is the legal "strictly online", not an error. |
 
+### The event log — what emits, and what a failure means
+
+The round's sharpest reliability finding was that this epic ships a log nothing is required to write
+to: every endpoint here could pass its tests over an empty file. So the emissions are part of the
+plan rather than of somebody's memory.
+
+| Event | Emitted by | Carries |
+|---|---|---|
+| `member.registered` | the registration hook (`Program.cs:628`), on the write that creates a record | subject, the default role |
+| `member.role_changed` | `PUT /api/org/members/{email}` when the role differs | actor, subject, from → to |
+| `member.share_default_changed` | the same endpoint when the share default differs | actor, subject, from → to |
+| `settings.changed` | `PUT /api/org/settings` | actor, the field, from → to |
+
+Two rules about failure, because "append-only" says nothing about what happens when the append
+cannot:
+
+1. **The row is appended AFTER the mutation has landed, and a failed append never fails the
+   mutation.** A role change that happened must not be reported as a `500`; the write is already on
+   disk, and a client that retried would be acting on a lie. The failure is logged at `Error` naming
+   the file — the operator's signal that the log has stopped recording.
+2. **The append waits for its lock with a bound.** One `SemaphoreSlim(1, 1)` is the right shape —
+   there is exactly one file per day, so a "per-file lock" is the same lock under another name — but
+   an unbounded wait on a request path is how one stuck writer becomes a stalled server. The wait is
+   bounded at five seconds; past it the append is abandoned under rule 1.
+
+Every mutation above gets an **end-to-end test** that performs the request and reads the log back,
+because the failure this prevents is exactly a green suite over a silent log.
+
 ### Contract 3 and the corp floor
 
 `ContractVersion.Current` becomes 3 (`ContractVersion.cs:40`). `Vault:MinimumClientContract` stays
@@ -189,7 +305,7 @@ belongs in the release notes.
 |---|---|---|
 | `src/corpApiClient.ts` | new | The request plumbing every corporate client needs — `url()`, `headersFor()`, `request()`, the contract header, the timeout — extracted from `orgRecoveryClient.ts`, which becomes its first caller with no change in behaviour. **Extracted here, not later**: epics 2 and 5 each add a client, so by epic 2 there would be three copies of it and by epic 5 four. The reuse-first rule's answer to that is to pull the common half out before the second copy exists. |
 | `src/orgMembersClient.ts` | new | `readMe`, `listMembers`, `setMember`, `readSettings`, `writeSettings`, on top of `corpApiClient`. Separate from `ServerTransport` for the reason `orgRecoveryClient.ts:10-14` gives: `VaultTransport` is implemented by a folder and a git remote too, and widening it with corp methods makes them carry a concept they cannot mean. |
-| `src/corpPolicy.ts` | new, pure | `corpPolicy(facts)` → `{role, policy, leaseHours, fetchedAt}` and `accountContextValue` extension. Pure so the rule is a unit test, exactly as `orgRecoveryAccess.ts:38-64` is. |
+| `src/corpPolicy.ts` | new, pure | `corpPolicy(facts)` → `{role, policy, leaseHours, fetchedAt}` and `accountContextValue` extension. Pure so the rule is a unit test, exactly as `orgRecoveryAccess.ts:38-64` is. **The admin predicate is `role === 'admin' \|\| isOfficer`, never the role alone** — the round caught this backwards: the server's `RequireAdmin` admits an officer unconditionally, and an officer cannot be given a registry role (that is the `409`), so gating the UI on the role would show an officer no management actions while the server served every one of them. `MemberSelfDto` already carries `IsOfficer` for it. |
 | `src/orgRecoveryAccess.ts` | modify | The union gains `admin` and `dev`; `accountContextValue` (`:53-64`) gains `account-corpAdmin` and `account-corpDev`. Officer stays highest — an officer is always an admin, so no combined state exists. The prefix rule (`viewItem =~ /^account-corp/`) keeps working for everything already contributed against it. |
 | `src/extension.ts` | modify | `refreshOrgPolicy(account)` beside `refreshOrgAccess` (`:459-479`), called from the same per-account loop (`:481-489`). One fetch per readiness cycle. A failure caches the previous answer and never throws — the org-escrow rule "not knowing changes nothing" applies here too. **The success timestamp is the offline lease's heartbeat** (epic 2 reads it). |
 | `src/treeDataProvider.ts` | modify | `orgPolicy` cache beside `orgAccess` (`:91`); the `teamMember` row (`:455-466`) shows the role in its description and takes `teamMember-adminView` when the viewing account is an admin, so the QuickPick does not appear for a member looking at colleagues. |
@@ -231,17 +347,27 @@ Server first; the extension cannot be tested against an endpoint that does not e
 
 **Server** (`tests/`, xUnit v3 on MTP, `VaultServer` + `Tokens.For`, `[Collection(ServerCollection.Name)]`):
 
-- `OrgMembersStoreTests`: `Find` answers from the cache after one read; a write invalidates it; a
-  record written by another process is picked up on the next miss.
+- `OrgMembersStoreTests`: `Find` answers from the cache after one read; a write invalidates it;
+  **an ALREADY-CACHED record changed on disk by another writer is re-read on the next `Find`** (the
+  stat check, not a cache miss); two concurrent `UpsertAsync` calls editing different fields both
+  survive; a malformed record answers `Unavailable`, never `NotRegistered`; a record with a higher
+  `SchemaVersion` answers `Unavailable`; an unknown field round-trips byte for byte; a read that
+  throws `IOException` answers `Unavailable` and does not propagate.
 - `OrgMembersTests`: registration happens on the first `PUT /api/vault` and not on `GET /api/org/me`;
   default role is `member`; a second PUT does not rewrite the record; personal mode creates no
   `org/` directory at all.
 - `OrgAdminGateTests`: an officer with no registry row passes `RequireAdmin`; a registry admin
   passes; a member gets `403`; corp mode off gets the same `403`, indistinguishable.
-- `OrgMembersAdminTests`: list is domain-scoped; upsert for a never-synced email; officer → `409`;
-  invalid role → `400`; `UpdatedBy` comes from the token even when the body claims otherwise.
+- `OrgMembersAdminTests`: list is domain-scoped; upsert for a never-synced email; **a cross-domain
+  target → `403`**; officer → `409`; invalid role → `400`; `UpdatedBy` comes from the token even
+  when the body claims otherwise; a role change and a share-default change each leave exactly one
+  event-log row.
+- `OrgUnavailableTests`: with a corrupted record on disk, `GET /api/org/me` answers `503` and
+  `RequireAdmin` refuses — never the member default, which is the escalation the round found.
+- `OrgRegistrationTests`: a registry write that fails does not fail the vault write, and the next
+  write registers the person after all.
 - `OrgSettingsTests`: default without a file; PUT then GET; `0` accepted; negative `400`;
-  non-admin `403`.
+  non-admin `403`; a change leaves exactly one `settings.changed` row.
 - `TeamCorpTests`: an inactive member is absent in corp mode and present in personal mode; the
   response shape is unchanged for an old client.
 - `ContractVersionTests` (extend): corp mode floors the minimum at 3 even with the configured
@@ -253,7 +379,8 @@ Server first; the extension cannot be tested against an endpoint that does not e
 
 - `corpPolicy.test.ts`: role → policy table, including the two dev share defaults; a failed fetch
   keeps the previous answer; an unknown role from a newer server degrades to the most restrictive
-  policy rather than the most permissive.
+  policy rather than the most permissive; **an officer whose role is `member` still gets the admin
+  view**.
 - `orgRecoveryAccess.test.ts` (extend): the two new contextValues, and that `account` is still
   byte-identical when corp mode is off.
 - `orgMembersClient.test.ts`: response shape guards, contract header sent, `426` surfaced as the
@@ -271,6 +398,29 @@ Server first; the extension cannot be tested against an endpoint that does not e
    it needs a release note, not a mitigation.
 4. **An unknown role from a newer server** must fail closed. Written as a test above because the
    opposite is the natural mistake.
+5. **`503` on an unreadable record is a refusal a person meets.** Fail-closed is right — the
+   alternative promotes a developer by corrupting a file — but one bad file locks one person out
+   until an operator looks. Taken deliberately: it is loud, it names the file, and it costs one
+   record rather than the service.
+
+## The plan round (2026-09-04)
+
+Three reviewers, three vendors, all three answered; fourteen findings, twelve gating; verdict
+`good_enough`, the stage's round budget being one.
+
+**Twelve accepted and folded in above**: the export ban graded honestly rather than implied by the
+contract floor; cross-domain role writes refused; the event log given its emissions and its failure
+semantics; the cache made to notice an external write; lost updates closed with a per-member lock;
+officers admitted to the admin view; the log's lock bounded; a three-state lookup so an unreadable
+record can never read as the member default; a schema version with unknown fields carried; and the
+registration hook made unable to fail a vault write that had already landed.
+
+**Two rejected as duplicates** of findings already accepted — a second statement of the stale-cache
+defect and a second of the schema-version one — with the reason recorded in the gate: one change
+described twice is how the two descriptions later disagree.
+
+The most valuable finding was one this plan created itself. *"An unparseable record is treated as not
+registered"* read as defensive, and was an escalation whose trigger is a corrupted file.
 
 ## Definition of Done
 
