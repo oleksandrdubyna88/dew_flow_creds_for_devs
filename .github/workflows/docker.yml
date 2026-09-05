@@ -47,6 +47,10 @@ jobs:
         with:
           # Build the commit that actually passed, not whatever main points at now.
           ref: ${{ github.event.workflow_run.head_sha || github.ref }}
+          # This job holds packages:write, so the token has no business staying in the local git
+          # config where the checked-out build could reach it. The if: above already bounds WHAT is
+          # checked out to a push on main; this bounds what it could do with what it finds.
+          persist-credentials: false
 
       - uses: docker/setup-buildx-action@v4
 
