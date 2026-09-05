@@ -59,6 +59,11 @@ public sealed record ClientConfigDto(string MicrosoftScope);
 [JsonSerializable(typeof(MemberRecord))]
 [JsonSerializable(typeof(OrgSettingsDto))]
 [JsonSerializable(typeof(OrgEventDto))]
+[JsonSerializable(typeof(MemberSelfDto))]
+[JsonSerializable(typeof(ProjectSelfDto))]
+[JsonSerializable(typeof(PolicyDto))]
+[JsonSerializable(typeof(IReadOnlyList<ProjectSelfDto>))]
+[JsonSerializable(typeof(IReadOnlyList<PendingFolderRemoval>))]
 public sealed partial class AppJsonContext : JsonSerializerContext;
 
 /// <summary>The instance file's contract, indented for the human who opens it.</summary>

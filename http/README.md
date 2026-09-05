@@ -13,6 +13,7 @@ writing the endpoint, or run the whole tree headless before a release.
 | [`shares/`](shares) | `/api/shares`, `/api/shares/sent`, and both withdrawal paths |
 | [`metrics/`](metrics) | `/api/metrics` |
 | [`org-recovery/`](org-recovery) | the eleven corporate-recovery routes |
+| [`org/`](org) | `/api/org/me` — the corporate surface; the next epics add their routes here |
 
 ## This repository has a SECOND HTTP surface, and it is not here
 
@@ -28,7 +29,7 @@ grant, and `call()` does a real `fetch` against `http://127.0.0.1:<port>`. **65 
 way across `credsAgentServer.test.ts` and `brokerMcpRoutes.test.ts`.
 
 Written down because the numbers below invite the wrong conclusion: `http-coverage.mjs` reads C# and
-Rust route registrations, so its verdict for this repository — 26 of 26 — is a statement about the
+Rust route registrations, so its verdict for this repository — 27 of 27 — is a statement about the
 **vault server** and says nothing at all about the extension's API. An armed coverage check is not a
 claim that every HTTP surface in a repository has a suite.
 
@@ -47,7 +48,7 @@ precondition genuinely changed.
 |---|---|
 | `Auth:Local:SigningKey` ≥ 32 bytes, and the same value in `VAULT_LOCAL_SIGNING_KEY` | Microsoft and Google tokens exist only after an interactive sign-in. The `Local` scheme is symmetric, so the suite signs its own tokens — which is what makes every authenticated request runnable headless. |
 | `Vault:AllowedDomains=example.com` | The 403 branch is *"your token is fine and your domain is not served here"*. Reaching it needs a domain the server refuses, so it needs a domain it accepts. |
-| `Vault:CorpRecovery:OfficerEmails=officer@example.com,officer2@example.com` | `/api/metrics` and every recovery lever are officer-only. Without a roster the server answers 403 to everyone, and the officer requests fail for an environmental reason. |
+| `Vault:CorpRecovery:OfficerEmails=officer@example.com,officer2@example.com,officer3@example.com` | `/api/metrics` and every recovery lever are officer-only, and `org/` needs corp mode on. **Three, not two**: the quorum guard turns a smaller roster OFF (`OrgRecoveryConfig.MinimumOfficers`), so a two-officer environment runs the whole suite against a personal server — the officer requests fail for an environmental reason, and `org/me.http`'s 426 never fires. CI uses the same three. |
 | A **fresh** `Vault:DataDir` | `vault/vault.http` opens with "there is no vault yet". The file deletes what it created, so a completed run leaves the store as it found it; an interrupted one does not. |
 
 **The signing key is never in this repository.** Whoever holds it can mint a token for any email on
@@ -63,7 +64,7 @@ npm install --save-dev httpyac@6.16.7            # once per machine
 export VAULT_LOCAL_SIGNING_KEY="$(openssl rand -base64 48)"
 Auth__Local__SigningKey="$VAULT_LOCAL_SIGNING_KEY" \
 Vault__AllowedDomains=example.com \
-Vault__CorpRecovery__OfficerEmails=officer@example.com,officer2@example.com \
+Vault__CorpRecovery__OfficerEmails=officer@example.com,officer2@example.com,officer3@example.com \
 Vault__DataDir=/tmp/vault-suite \
 Vault__PublishInstanceFile=false \
   dotnet run --project src_minimalapi_server/src --urls http://127.0.0.1:5099 &

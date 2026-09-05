@@ -16,7 +16,19 @@
  */
 
 /** What this build speaks. Bump when the extension can no longer read an older server. */
-export const CLIENT_CONTRACT_VERSION = 2;
+export const CLIENT_CONTRACT_VERSION = 3;
+
+/**
+ * The first contract that serves the role-and-policy document, `GET /api/org/me`.
+ *
+ * <p>On a server with a corporate roster this is also the FLOOR: a client below it is refused with
+ * 426, because it does not know the document exists and would obey none of it — exporting, sharing
+ * and backing up exactly as before, with nothing on either side saying so. That is why this
+ * constant moves in the same change as the server's, not a story later: a gap between the two is a
+ * window in which this repository's own extension is refused by its own server. Below this version
+ * a server has no roles to report, and the extension shows none.</p>
+ */
+export const ORG_POLICY_CONTRACT = 3;
 
 /**
  * The first contract that carries a share's `format` through `/api/shares`.

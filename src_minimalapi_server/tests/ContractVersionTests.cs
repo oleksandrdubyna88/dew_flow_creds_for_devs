@@ -122,4 +122,76 @@ public sealed class ContractVersionTests
 
         response.StatusCode.Should().Be(HttpStatusCode.UpgradeRequired);
     }
+
+    // ---------------------------------------------------------------- the corp floor
+
+    [Fact]
+    public async Task CorpModeFloorsTheMinimumAtThreeEvenWithTheConfiguredDefault()
+    {
+        // Vault:MinimumClientContract is left at its default of 1. The roster alone raises the floor:
+        // a contract-2 client does not know /api/org/me exists, so on a server with a policy it would
+        // obey none of it — and nothing on either side would say so.
+        using var server = Corp.Server();
+        using var client = Claiming(server.ClientFor(Alice), "2");
+
+        var response = await client.GetAsync("/api/whoami", TestContext.Current.CancellationToken);
+
+        response.StatusCode.Should().Be(HttpStatusCode.UpgradeRequired);
+    }
+
+    [Fact]
+    public async Task TheCorpRefusalNamesTheReason()
+    {
+        using var server = Corp.Server();
+        using var client = Claiming(server.ClientFor(Alice), "2");
+        var ct = TestContext.Current.CancellationToken;
+
+        var response = await client.GetAsync("/api/whoami", ct);
+
+        response.StatusCode.Should().Be(HttpStatusCode.UpgradeRequired);
+        var body = await response.Content.ReadAsStringAsync(ct);
+        body.Should().Contain("policy", "the sentence says WHY, not merely that the client is old");
+        body.Should().Contain("update the extension");
+    }
+
+    [Fact]
+    public async Task PersonalModeIsUnchanged()
+    {
+        // No roster, no floor: the configured minimum (1 by default) is the whole rule, exactly as
+        // before this build. A personal deployment must not notice the corporate surface exists.
+        using var server = new VaultServer();
+        var ct = TestContext.Current.CancellationToken;
+
+        using var two = Claiming(server.ClientFor(Alice), "2");
+        (await two.GetAsync("/api/whoami", ct)).StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var one = Claiming(server.ClientFor(Alice), "1");
+        (await one.GetAsync("/api/whoami", ct)).StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Fact]
+    public async Task ACorpServerServesAClientThatSpeaksThreeOrSaysNothing()
+    {
+        // The floor refuses what cannot read the policy. A current client can; a client that predates
+        // the whole mechanism sends nothing and is served as legacy here too — refusing it would turn
+        // the roster into an outage for every extension released before the header existed.
+        using var server = Corp.Server();
+        var ct = TestContext.Current.CancellationToken;
+
+        using var current = Claiming(server.ClientFor(Alice), "3");
+        (await current.GetAsync("/api/whoami", ct)).StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var silent = server.ClientFor(Alice);
+        (await silent.GetAsync("/api/whoami", ct)).StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Fact]
+    public void TheFloorNeverLowersAHigherConfiguredMinimum()
+    {
+        // Math.Max, and a test because the natural slip is an assignment: an operator who set 5
+        // must not be handed 3 back by the roster.
+        ContractVersion.MinimumFor(configured: 5, corpMode: true).Should().Be(5);
+        ContractVersion.MinimumFor(configured: 1, corpMode: true).Should().Be(ContractVersion.OrgPolicyContract);
+        ContractVersion.MinimumFor(configured: 1, corpMode: false).Should().Be(1);
+    }
 }

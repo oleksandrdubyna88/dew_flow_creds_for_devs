@@ -134,6 +134,19 @@ if (orgRecovery.Enabled)
         TimeSpan.FromHours(Math.Max(1, orgSetupTtlHours))));
 }
 
+// The members registry, the runtime settings and the event log — on EVERY deployment, because the
+// routes that read them exist on every deployment and answer "corp mode off" from the same code.
+// Nothing here may create their directories: each appears on its first write (OrgMembersStore says
+// why), and an `org/` on a personal server would tell an operator looking at the disk that this
+// server has a roster when it has none. Registered rather than constructed, unlike the stores above:
+// these take an ILogger<T>, and the logger factory exists only after Build().
+builder.Services.AddSingleton(sp => new OrgMembersStore(
+    dataDir, sp.GetRequiredService<ILoggerFactory>().CreateLogger<OrgMembersStore>()));
+builder.Services.AddSingleton(sp => new OrgSettingsStore(
+    dataDir, sp.GetRequiredService<ILoggerFactory>().CreateLogger<OrgSettingsStore>()));
+builder.Services.AddSingleton(sp => new OrgEventLog(
+    dataDir, sp.GetRequiredService<ILoggerFactory>().CreateLogger<OrgEventLog>(), () => DateTimeOffset.UtcNow));
+
 // Hard request-body ceiling (backstop; endpoints also check Content-Length).
 builder.WebHost.ConfigureKestrel(o => o.Limits.MaxRequestBodySize = maxVaultBytes + 64 * 1024);
 
@@ -303,13 +316,37 @@ var serverVersion = typeof(Program).Assembly
     .OfType<System.Reflection.AssemblyInformationalVersionAttribute>()
     .FirstOrDefault()?.InformationalVersion ?? typeof(Program).Assembly.GetName().Version?.ToString(3) ?? "unknown";
 
+// The corporate stores, resolved once the factory exists, and the one record the corporate routes
+// take. RequireCaller and DomainOf are local functions below and cross into OrgEndpoints.cs only as
+// delegates — the gates stay in this file, so it still answers "who may do this".
+var orgMembers = app.Services.GetRequiredService<OrgMembersStore>();
+var orgDeps = new OrgEndpointDeps(
+    RequireCaller,
+    DomainOf,
+    orgRecovery,
+    orgMembers,
+    app.Services.GetRequiredService<OrgSettingsStore>(),
+    app.Services.GetRequiredService<OrgEventLog>(),
+    allowAnyDomain,
+    log,
+    ContractVersion.Current);
+
 // The contract version, decided before authentication so a client too old to be served is told
 // THAT rather than being handed a 401 about a token that was never the problem. Every response
 // carries the server version, so a client learns it from a call it was already making.
+//
+// The minimum applied is the EFFECTIVE one: in corp mode it is floored at the contract from which
+// the role-and-policy document exists (3). A client below it does not know GET /api/org/me is
+// there, so on a server with a policy it obeys none of it, and serving it would hide that from
+// whoever deployed the server. Math.Max, so an operator's higher minimum stands; personal mode is
+// the configured value and nothing else, exactly as before.
+var effectiveMinimumContract = ContractVersion.MinimumFor(minimumClientContract, orgRecovery.Enabled);
+var corpFloorReason = orgRecovery.Enabled ? ContractVersion.CorpFloorReason : null;
 app.Use(async (ctx, next) =>
 {
     ctx.Response.Headers[ContractVersion.Header] = ContractVersion.Current.ToString();
-    var decision = ContractVersion.Judge(ctx.Request.Headers[ContractVersion.Header], minimumClientContract);
+    var decision = ContractVersion.Judge(
+        ctx.Request.Headers[ContractVersion.Header], effectiveMinimumContract, corpFloorReason);
     if (decision.Verdict == ContractVersion.Verdict.TooOld)
     {
         ctx.Response.StatusCode = StatusCodes.Status426UpgradeRequired;
@@ -626,6 +663,10 @@ app.MapPut("/api/vault", async (HttpContext ctx, CancellationToken ct) =>
     log.LogInformation("vault write by {Email} ({Bytes} bytes)", caller.Value.Email, ms.Length);
     metrics.VaultWritten(ms.Length);
     await store.RecordOwnerAsync(caller.Value.Email, ct);
+    // The registry's sibling of the sidecar above: corp mode only, idempotent, and it can never fail
+    // this response — the vault has already landed, and a 500 over a vault that was in fact stored is
+    // a worse failure than an unregistered person, whom the next sync registers anyway.
+    await OrgEndpoints.RegisterOnSyncAsync(orgDeps, caller.Value.Email, ct);
     ctx.Response.Headers.ETag = VaultStore.ETagFor(content);
     ctx.Response.StatusCode = StatusCodes.Status204NoContent;
 });
@@ -636,6 +677,10 @@ app.MapDelete("/api/vault", async (HttpContext ctx, CancellationToken ct) =>
     var caller = RequireCaller(ctx);
     if (caller is null) return;
     store.DeleteEverythingFor(caller.Value.Email);
+    // The registry record goes with the vault, so the registry cannot outgrow the people it describes.
+    // Not gated on corp mode: a record left behind by a roster since removed is still one to remove,
+    // and where no org/ exists this is one stat and nothing else.
+    await orgMembers.RemoveAsync(caller.Value.Email, ct);
     log.LogInformation("vault + inbox deleted for {Email}", caller.Value.Email);
     ctx.Response.StatusCode = StatusCodes.Status204NoContent;
 });
@@ -648,10 +693,30 @@ app.MapGet("/api/team", async (HttpContext ctx, CancellationToken ct) =>
     var callerDomain = DomainOf(caller.Value.Email);
     var members = store.ListVaultOwners()
         .Where(e => DomainOf(e) == callerDomain)
+        .Where(IsDiscoverable)
         .Select(e => new TeamMemberDto(e))
         .ToList();
     await ctx.Response.WriteAsJsonAsync(members, AppJsonContext.Default.ListTeamMemberDto);
 });
+
+// Filtered, not replaced. In corp mode a colleague whose record says `active: false` — blocked, the
+// behaviour epic 2 gives the field — is not offered as a recipient, and neither is one whose record
+// this build cannot read: the caller gate will refuse that person, so a share to them would wait in
+// an inbox nobody can open, and "unreadable" must never read as "fine" (the escalation the plan round
+// found). Personal mode consults nothing and stays byte-identical — the first clause short-circuits
+// before any lookup. The DTO is not widened here; the role and the projects join it in epic 3.
+bool IsDiscoverable(string email) =>
+    !orgRecovery.Enabled
+    || orgMembers.Find(email) switch
+    {
+        { Status: MemberLookup.Unavailable } => false,
+        { Status: MemberLookup.Found, Record: { Active: false } } => false,
+        _ => true,
+    };
+
+// The corporate surface, mapped from its own file — Program.cs is past the size ceiling and four
+// more epics add about twenty routes. The gates stay above; only routes live there.
+app.MapOrgEndpoints(orgDeps);
 
 // ----- corporate recovery: what every account here is subject to -----
 //

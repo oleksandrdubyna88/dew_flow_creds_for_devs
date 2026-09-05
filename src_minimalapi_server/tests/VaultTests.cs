@@ -122,4 +122,21 @@ public sealed class VaultTests
         var afterwards = await alice.GetAsync("/api/vault", TestContext.Current.CancellationToken);
         afterwards.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
+
+    [Fact]
+    public async Task DeletingAVaultRemovesTheRegistryRecord()
+    {
+        // The registry cannot outgrow the people it describes: a person leaves by being blocked, and a
+        // record is deleted only with their vault. Without this the growth budget is a sentence in a plan.
+        using var server = Corp.Server();
+        using var alice = server.ClientFor(Alice);
+        await alice.PutAsync("/api/vault", new ByteArrayContent(Blob), TestContext.Current.CancellationToken);
+        var record = Corp.RecordPath(server, Alice);
+        File.Exists(record).Should().BeTrue("precondition: the write registered the caller");
+
+        var deleted = await alice.DeleteAsync("/api/vault", TestContext.Current.CancellationToken);
+
+        deleted.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        File.Exists(record).Should().BeFalse("the record goes with the vault");
+    }
 }
