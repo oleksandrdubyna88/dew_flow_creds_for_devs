@@ -3,6 +3,7 @@ import { StorageManager } from './storageManager';
 import { TreeNode } from './types';
 import { isProtected, pinOpens, protectEntity } from './entityPin';
 import { pinValidator } from './pinInput';
+import { newPin } from './pinPrompt';
 import { entriesUnder } from './pinFolderPlan';
 
 /**
@@ -20,10 +21,11 @@ import { entriesUnder } from './pinFolderPlan';
  * step with the entries the way a stored flag can. It is also self-repairing: unprotect the last
  * entry and the folder stops asking, which is what somebody who just did that means.</p>
  *
- * <p>The one case a stored flag would cover and this does not: a folder somebody ran the command on
- * while it was EMPTY. Nothing was protected, so nothing marks it, and the first entry created there
- * is not asked. Recorded as a deviation in the plan rather than papered over — the alternative is a
- * flag that says "protected" about a folder where nothing is.</p>
+ * <p><b>The one case derivation cannot answer</b> is a folder somebody ran the command on while it
+ * was EMPTY: no sibling to derive from, so the first entry created there would not be asked. That is
+ * what `TreeNode.folderAsksForPin` is for, and the wording is the whole point — it is a PREFERENCE
+ * ("entries created here are asked"), never a claim that the folder is protected. A preference
+ * cannot drift out of step with the values because it never described them.</p>
  */
 
 /** How the PIN was settled for a new entry, or that it was not. */
@@ -45,7 +47,48 @@ export async function pinForNewEntry(
   parentId: string | null,
 ): Promise<CreatePin> {
   const siblings = await protectedSiblings(storage, accountId, parentId);
-  return siblings.length === 0 ? { kind: 'none' } : askAndCheck(siblings, storage, accountId);
+  if (siblings.length > 0) {
+    return askAndCheck(siblings, storage, accountId);
+  }
+  // No sibling to check against, but the folder may still have been told to ask — the empty-folder
+  // case. There the PIN is typed TWICE, which is the only check available and the same one every
+  // other new PIN in this product gets.
+  return asksAnyway(storage, accountId, parentId) ? firstPinHere() : { kind: 'none' };
+}
+
+/** Does this folder, or any folder above it, carry the preference? */
+function asksAnyway(storage: StorageManager, accountId: string, parentId: string | null): boolean {
+  const byId = new Map(storage.getNodes(accountId).map((n) => [n.id, n]));
+  let current = folderAt(parentId, byId);
+  for (let depth = 0; depth < MAX_FOLDER_DEPTH; depth += 1) {
+    if (current === undefined) {
+      return false;
+    }
+    if (current.folderAsksForPin === true) {
+      return true;
+    }
+    current = above(current, byId);
+  }
+  return false;
+}
+
+/** Where the walk starts: the parent folder, or nothing at the root. */
+function folderAt(parentId: string | null, byId: Map<string, TreeNode>): TreeNode | undefined {
+  return parentId === null ? undefined : byId.get(parentId);
+}
+
+/** The folder above this one, or nothing — at the root, and when sync left a chain pointing nowhere. */
+function above(node: TreeNode, byId: Map<string, TreeNode>): TreeNode | undefined {
+  return node.parentId === null || node.parentId === undefined ? undefined : byId.get(node.parentId);
+}
+
+/** The same cap the folder walk uses; a malformed parent chain costs one answer, never the stack. */
+const MAX_FOLDER_DEPTH = 64;
+
+/** The first PIN in a folder that asks: typed twice, because there is nothing here to check it against. */
+async function firstPinHere(): Promise<CreatePin> {
+  const typed = await newPin('this entry', FIRST_HERE);
+  return typed === undefined ? { kind: 'cancelled' } : { kind: 'pin', pin: typed };
 }
 
 async function askAndCheck(
@@ -141,3 +184,7 @@ const PROMPT =
   'Entries in this folder are protected with a PIN, so this one will be too. Type the PIN the others '
   + 'use — it is stored nowhere, so it has to be typed, and it will be checked against them before '
   + 'anything is written.';
+
+const FIRST_HERE =
+  'This folder asks for a PIN on every entry created in it, and nothing here is protected yet — so '
+  + 'this one is the first, and its PIN is yours to choose. It is stored nowhere, so type it twice.';

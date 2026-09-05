@@ -1,5 +1,6 @@
 import { buildSharePayload, countTotpEntries, nothingToShare } from './sharePayloadBuild';
 import { admit } from './pinAdmission';
+import { declinedMessage, forThisRecipient } from './shareRecipientPin';
 import { entryPinGate } from './pinPrompt';
 import { describeError } from './describeError';
 import * as vscode from 'vscode';
@@ -370,14 +371,15 @@ export class ShareInbox {
     return declined ? undefined : payloads;
   }
 
-  /** The accept flow for ONE share: sender check, PIN, import, refresh. */
-  // Moved as written (A1); the pre-existing complexity is marked, not hidden.
-  // eslint-disable-next-line complexity
-  async acceptOne(share: OwnedShare): Promise<void> {
-    if (!(await this.senderCheck(share))) {
-      return;
-    }
-    const pin = await vscode.window.showInputBox({
+  /**
+   * The share's own transit PIN — the one the sender typed twice when they sent it.
+   *
+   * <p>Not to be confused with the entry's PIN, which the recipient chooses for themselves a few
+   * lines later: this one opens the ENVELOPE and is a one-time transfer secret, that one wraps the
+   * VALUES and is theirs to keep. Keeping the two prompts apart is why they are two functions.</p>
+   */
+  private askSharePin(share: OwnedShare): Thenable<string | undefined> {
+    return vscode.window.showInputBox({
       title: `Accept "${share.item.entityName}" from ${describeSender(
         share.item.fromEmail,
         senderLocation(this.deps.storage, share.accountId),
@@ -388,6 +390,16 @@ export class ShareInbox {
       password: true,
       ignoreFocusOut: true,
     });
+  }
+
+  /** The accept flow for ONE share: sender check, PIN, import, refresh. */
+  // Moved as written (A1); the pre-existing complexity is marked, not hidden.
+  // eslint-disable-next-line complexity
+  async acceptOne(share: OwnedShare): Promise<void> {
+    if (!(await this.senderCheck(share))) {
+      return;
+    }
+    const pin = await this.askSharePin(share);
     if (pin === undefined) {
       return;
     }
@@ -412,8 +424,17 @@ export class ShareInbox {
       );
       return;
     }
+    // The sender had this protected, so the recipient is offered one of their own — BEFORE the
+    // import, and the values are wrapped in memory rather than written and wrapped afterwards.
+    // Three reviewers made the same point: written first, a crash between the two steps leaves an
+    // unprotected copy on disk, which is exactly what "declining imports nothing" promises against.
+    const arriving = await forThisRecipient(payload, share.accountId);
+    if (arriving === undefined) {
+      void vscode.window.showInformationMessage(declinedMessage(share.item.entityName));
+      return;
+    }
     try {
-      await this.importShared(share, payload);
+      await this.importShared(share, arriving);
     } catch (error) {
       void vscode.window.showErrorMessage(
         `"${share.item.entityName}" opened, but saving it failed: ${describeError(error)}`,

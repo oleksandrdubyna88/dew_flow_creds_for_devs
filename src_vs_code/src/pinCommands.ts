@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { StorageManager } from './storageManager';
 import { TreeNode } from './types';
-import { entryPinGate } from './pinPrompt';
+import { entryPinGate, newPin } from './pinPrompt';
 import { forgetPin } from './pinSession';
 import { isProtected, pinOpens, protectEntity, unprotectEntity } from './entityPin';
 import { pinValidator } from './pinInput';
@@ -192,28 +192,6 @@ async function confirmedAgainstSiblings(
   return answer === 'Use this PIN';
 }
 
-/** A NEW pin: typed twice, because there is nothing here to check it against. */
-async function newPin(subject: string): Promise<string | undefined> {
-  const first = await vscode.window.showInputBox({
-    title: `A PIN for "${subject}"`,
-    prompt: NEW_PIN,
-    password: true,
-    ignoreFocusOut: true,
-    validateInput: pinValidator('choosing'),
-  });
-  if (first === undefined || first.length === 0) {
-    return undefined;
-  }
-  const again = await vscode.window.showInputBox({
-    title: `A PIN for "${subject}"`,
-    prompt: 'Type it once more. There is no way to recover it.',
-    password: true,
-    ignoreFocusOut: true,
-    validateInput: (value) => (value === first ? undefined : 'The two do not match.'),
-  });
-  return again === first ? first : undefined;
-}
-
 /**
  * The loop, and the mark. One entry or a folder full of them takes the same road.
  *
@@ -279,11 +257,6 @@ async function markProtection(node: TreeNode, on: boolean, deps: PinCommandDeps)
 
 const ALREADY_PROTECTED =
   'That entry already has its own PIN. Remove the protection first if you want to set a different one.';
-
-const NEW_PIN =
-  'This PIN wraps every secret this entry holds. It is stored NOWHERE — not here, not in a backup, '
-  + 'not in the sync — so a forgotten PIN means the values are gone. The vault recovery code opens '
-  + 'the VAULT; it does not open an entry.';
 
 const PIN_FOR_FOLDER =
   'The PIN another entry in this folder already uses. It is stored nowhere, so it has to be typed — '

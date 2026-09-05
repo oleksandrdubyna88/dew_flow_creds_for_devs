@@ -22,6 +22,13 @@ import type { EntityMetadata } from './types';
  *   <li><b>imageFileName / imageSize / imageWidth / imageHeight</b> — the same, for an image.</li>
  *   <li><b>envBindings</b> — names an environment variable to be filled from a secret that is not
  *       there, so the shell gets an empty value where a credential was promised.</li>
+ *   <li><b>pinProtected</b> — says the entry's values are wrapped under a PIN. A share unwraps them
+ *       first (the recipient never gets the sender's PIN) and a clone copies no secrets at all, so
+ *       at the far end the mark is false — and every consequence of it fires against nothing: the
+ *       entry is hidden from that person's agent surfaces, the form says <i>PIN — on</i>, and the
+ *       command it points at reads the values, finds nothing locked, and contradicts it. Shipped as
+ *       a defect in 0.99.0. What travels instead is `pinAskOnImport`, which is an instruction to
+ *       ask rather than a claim about a value.</li>
  * </ul>
  *
  * <p>`has:totp`, `has:attachment`, `has:image`, `has:env` and `has:code-access` all match on these,
@@ -39,6 +46,7 @@ export const SECRET_CLAIM_FIELDS = [
   'imageWidth',
   'imageHeight',
   'envBindings',
+  'pinProtected',
 ] as const satisfies readonly (keyof EntityMetadata)[];
 
 /** The same metadata with every claim about a stored secret dropped. */

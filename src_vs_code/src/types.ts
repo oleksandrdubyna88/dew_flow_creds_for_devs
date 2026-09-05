@@ -1,16 +1,7 @@
-import { BurnPolicy, isBurnPolicy } from './entityExpiry';
-import type { BackupBundle } from './backupBundleType';
-import { ConfigFormat, hasValidConfigFields } from './configFormat';
-import { PaymentForm, hasValidPaymentFields } from './paymentForm';
+import type { BurnPolicy } from './entityExpiry';
+import type { ConfigFormat } from './configFormat';
+import type { PaymentForm } from './paymentForm';
 import { McpAccess } from './mcpAccess';
-import {
-  hasValidKindFlags,
-  isCommandArgArray,
-  isEnvBindings,
-  isMcpAccess,
-  isPortForwardArray,
-  isStringArray,
-} from './typeGuards';
 export type AuthProvider = 'microsoft' | 'google';
 
 export type NodeType = 'folder' | 'entity';
@@ -193,6 +184,12 @@ export interface EntityMetadata {
    * where every automatic path still refuses its values with a reason. See `entityPin.ts`.
    */
   pinProtected?: boolean;
+  /**
+   * The person who SENT this had it protected — an instruction to ask, never a claim about a value.
+   * Separate from `pinProtected`, which would be FALSE on the arriving copy: the sender unwraps
+   * every value at share time. Spent by the accept flow. Why, at length: `secretClaims.ts`.
+   */
+  pinAskOnImport?: boolean;
   /** Display name of the encrypted attachment (content in SecretStorage). */
   attachmentFileName?: string;
   /** Write-time stamps (T27) — they move only when the FILE does; see attachmentMeta.ts. */
@@ -340,6 +337,12 @@ export interface TreeNode {
   v?: Record<string, number>;
   /** Folders only: the entity kind this folder holds ('any' = unrestricted). */
   folderType?: FolderType;
+  /**
+   * Folders only: entries created here are asked for a PIN — a PREFERENCE, never a claim that the
+   * folder is protected. Whether an ENTRY is protected stays derived from the entry; this closes the
+   * one case derivation cannot, a folder the command ran on while empty. See `pinOnCreate.ts`.
+   */
+  folderAsksForPin?: boolean;
   /** Manual position among siblings (folders); lower comes first. */
   sortOrder?: number;
   /**
@@ -559,240 +562,12 @@ export interface SentShare {
   createdAt: number;
 }
 
-/** Field and type, as a table: five `&&` in a row is where a missing one hides. */
-const SENT_SHARE_FIELDS: readonly (readonly [string, string])[] = [
-  ['id', 'string'],
-  ['toEmail', 'string'],
-  ['entityName', 'string'],
-  ['entityKind', 'string'],
-  ['createdAt', 'number'],
-];
-
-export function isSentShare(value: unknown): value is SentShare {
-  if (typeof value !== 'object' || value === null) {
-    return false;
-  }
-  const v = value as Record<string, unknown>;
-  return SENT_SHARE_FIELDS.every(([key, type]) => typeof v[key] === type);
-}
-
-// eslint-disable-next-line complexity
-export function isShareItem(value: unknown): value is ShareItem {
-  if (typeof value !== 'object' || value === null) {
-    return false;
-  }
-  const v = value as Record<string, unknown>;
-  // `fromEmail` is authoritative; legacy items carry only `from`.
-  const fromEmail =
-    typeof v.fromEmail === 'string'
-      ? v.fromEmail
-      : isStoredAccount(v.from)
-        ? v.from.email
-        : undefined;
-  if (fromEmail === undefined) {
-    return false;
-  }
-  return (
-    typeof v.id === 'string' &&
-    // `null` counts as absent, not as malformed. JSON has no `undefined`, so a serializer
-    // that writes nulls would otherwise make this guard DROP the item — and a dropped share
-    // leaves an inbox that reads as empty instead of one that explains itself.
-    (v.format === undefined || v.format === null || typeof v.format === 'number') &&
-    typeof v.entityName === 'string' &&
-    typeof v.entityKind === 'string' &&
-    (ENTITY_KINDS as readonly string[]).includes(v.entityKind) &&
-    typeof v.createdAt === 'number' &&
-    typeof v.salt === 'string' &&
-    typeof v.iv === 'string' &&
-    typeof v.tag === 'string' &&
-    typeof v.data === 'string'
-  );
-}
-
-// eslint-disable-next-line complexity
-export function isSharePayload(value: unknown): value is SharePayload {
-  if (typeof value !== 'object' || value === null) {
-    return false;
-  }
-  const v = value as Record<string, unknown>;
-  if (!isTreeNode(v.node) || (v.node as TreeNode).type !== 'entity') {
-    return false;
-  }
-  if (typeof v.secrets !== 'object' || v.secrets === null) {
-    return false;
-  }
-  if (
-    v.folderPath !== undefined &&
-    !(Array.isArray(v.folderPath) &&
-      v.folderPath.every(
-        (seg) =>
-          typeof seg === 'object' &&
-          seg !== null &&
-          typeof (seg as Record<string, unknown>).name === 'string',
-      ))
-  ) {
-    return false;
-  }
-  return Object.values(v.secrets as Record<string, unknown>).every(
-    (x) => x === undefined || typeof x === 'string',
-  );
-}
-
-export type { BackupBundle };
-
-export function isAuthProvider(value: unknown): value is AuthProvider {
-  return value === 'microsoft' || value === 'google';
-}
-
-// eslint-disable-next-line complexity
-export function isStoredAccount(value: unknown): value is StoredAccount {
-  if (typeof value !== 'object' || value === null) {
-    return false;
-  }
-  const v = value as Record<string, unknown>;
-  return (
-    typeof v.accountId === 'string' &&
-    typeof v.email === 'string' &&
-    isAuthProvider(v.provider)
-  );
-}
-
-
 /**
- * The relationship and agent-permission half, split out only because the whole conjunction
- * outgrew the per-function line budget. A field missing from here is stripped by every sync and
- * import, so the split is bookkeeping and never a place to stop checking.
+ * The runtime guards live in `typeGuards.ts` and are re-exported here.
+ *
+ * <p>That file was created the FIRST time this one hit its ceiling, for the small shape checks the
+ * big guards are built from; the big guards followed the second time. Everything above this line
+ * is a type and is erased at build; everything there is a function that RUNS, against data another
+ * build or another person wrote. No caller had to move.</p>
  */
-// eslint-disable-next-line complexity -- one clause per field, as above
-function hasValidRelations(v: Record<string, unknown>): boolean {
-  return (
-    (v.dependsOn === undefined || isStringArray(v.dependsOn)) &&
-    (v.depColor === undefined || typeof v.depColor === 'string') &&
-    (v.mcp === undefined || isMcpAccess(v.mcp)) &&
-    (v.mcpCreatedByAgent === undefined || typeof v.mcpCreatedByAgent === 'boolean')
-  );
-}
-
-// eslint-disable-next-line complexity
-export function isEntityMetadata(value: unknown): value is EntityMetadata {
-  if (typeof value !== 'object' || value === null) {
-    return false;
-  }
-  const v = value as Record<string, unknown>;
-  return (
-    typeof v.id === 'string' &&
-    typeof v.name === 'string' &&
-    typeof v.isSshEnabled === 'boolean' &&
-    // An unknown kind is not a reason to reject the record — a vault written by a NEWER
-    // build may carry one, and dropping the whole entity would lose data this build can
-    // still show. `resolveKind` falls back to the flags for anything it does not know.
-    (v.kind === undefined || typeof v.kind === 'string') &&
-    (v.host === undefined || typeof v.host === 'string') &&
-    (v.user === undefined || typeof v.user === 'string') &&
-    (v.port === undefined || typeof v.port === 'number') &&
-    (v.sshKeyPath === undefined || typeof v.sshKeyPath === 'string') &&
-    (v.publicKey === undefined || typeof v.publicKey === 'string') &&
-    (v.sshKeyEntityId === undefined || typeof v.sshKeyEntityId === 'string') &&
-    (v.jumpHostEntityId === undefined || typeof v.jumpHostEntityId === 'string') &&
-    (v.portForwards === undefined || isPortForwardArray(v.portForwards)) &&
-    (v.agentForward === undefined || typeof v.agentForward === 'boolean') &&
-    (v.hostKey === undefined || typeof v.hostKey === 'string') &&
-    (v.tags === undefined || (Array.isArray(v.tags) && v.tags.every((t) => typeof t === 'string'))) &&
-    hasValidKindFlags(v) &&
-    (v.dbType === undefined ||
-      (typeof v.dbType === 'string' && (DB_TYPES as readonly string[]).includes(v.dbType))) &&
-    (v.vpnType === undefined ||
-      (typeof v.vpnType === 'string' && (VPN_TYPES as readonly string[]).includes(v.vpnType))) &&
-    (v.vpnConfigFileName === undefined || typeof v.vpnConfigFileName === 'string') &&
-    hasValidConfigFields(v) &&
-    (v.configKeyHash === undefined || typeof v.configKeyHash === 'string') &&
-    hasValidPaymentFields(v) &&
-    (v.scriptLanguage === undefined || typeof v.scriptLanguage === 'string') &&
-    (v.script === undefined || typeof v.script === 'string') &&
-    (v.scriptVars === undefined || isCommandArgArray(v.scriptVars)) &&
-    (v.command === undefined || typeof v.command === 'string') &&
-    (v.commandNote === undefined || typeof v.commandNote === 'string') &&
-    (v.commandArgs === undefined || isCommandArgArray(v.commandArgs)) &&
-    (v.expiresAt === undefined || typeof v.expiresAt === 'number') &&
-    (v.burnPolicy === undefined || isBurnPolicy(v.burnPolicy)) &&
-    (v.envBindings === undefined || isEnvBindings(v.envBindings)) &&
-    (v.attachmentFileName === undefined || typeof v.attachmentFileName === 'string') &&
-    (v.imageFileName === undefined || typeof v.imageFileName === 'string') &&
-    (v.sshAgent === undefined || typeof v.sshAgent === 'boolean') &&
-    (v.hasTotp === undefined || typeof v.hasTotp === 'boolean') &&
-    (v.passwordWoven === undefined || typeof v.passwordWoven === 'boolean') &&
-    (v.pinProtected === undefined || typeof v.pinProtected === 'boolean') &&
-    hasValidRelations(v) &&
-    // Loose on purpose, for the same reason `kind` above is: a colour key minted by a NEWER
-    // build must not make this one reject the whole entity. `isDepColorKey` (depColors.ts) is
-    // the strict gate, and it is applied where the value is USED, not where it is admitted.
-    (v.notes === undefined || typeof v.notes === 'string')
-  );
-}
-
-/**
- * The folder-only fields: whether this is the trash, how long it keeps things, and what an agent
- * may do with what is inside. Without these three the flags are stripped by every sync and
- * import, and the trash would arrive on the second machine as an ordinary folder full of things
- * somebody thought they had deleted.
- */
-// eslint-disable-next-line complexity -- one clause per optional field, as every guard here is
-function hasValidFolderExtras(v: Record<string, unknown>): boolean {
-  return (
-    (v.isTrash === undefined || typeof v.isTrash === 'boolean') &&
-    (v.trashRetentionDays === undefined || typeof v.trashRetentionDays === 'number') &&
-    (v.mcp === undefined || isMcpAccess(v.mcp))
-  );
-}
-
-// eslint-disable-next-line complexity
-export function isTreeNode(value: unknown): value is TreeNode {
-  if (typeof value !== 'object' || value === null) {
-    return false;
-  }
-  const v = value as Record<string, unknown>;
-  if (typeof v.id !== 'string' || typeof v.name !== 'string') {
-    return false;
-  }
-  if (v.type !== 'folder' && v.type !== 'entity') {
-    return false;
-  }
-  if (v.parentId !== undefined && v.parentId !== null && typeof v.parentId !== 'string') {
-    return false;
-  }
-  if (v.createdAt !== undefined && typeof v.createdAt !== 'number') {
-    return false;
-  }
-  if (v.updatedAt !== undefined && typeof v.updatedAt !== 'number') {
-    return false;
-  }
-  if (v.v !== undefined) {
-    if (typeof v.v !== 'object' || v.v === null) {
-      return false;
-    }
-    if (!Object.values(v.v as Record<string, unknown>).every((n) => typeof n === 'number')) {
-      return false;
-    }
-  }
-  if (v.sortOrder !== undefined && typeof v.sortOrder !== 'number') {
-    return false;
-  }
-  // Without these two the trash flag and its retention are stripped by every sync, import and
-  // sealed-slot read — the folder would arrive on the second machine as an ordinary folder full
-  // of things somebody thought they had deleted.
-  if (!hasValidFolderExtras(v)) {
-    return false;
-  }
-  if (
-    v.folderType !== undefined &&
-    !(typeof v.folderType === 'string' &&
-      ([...ENTITY_KINDS, 'any', 'project'] as string[]).includes(v.folderType))
-  ) {
-    return false;
-  }
-  if (v.type === 'entity' && !isEntityMetadata(v.details)) {
-    return false;
-  }
-  return true;
-}
-
+export * from './typeGuards';

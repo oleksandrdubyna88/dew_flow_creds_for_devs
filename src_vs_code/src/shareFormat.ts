@@ -391,5 +391,10 @@ export function shareableDetails(
     // must say which. Sent with the seed left behind, it gives the recipient a tree row offering
     // *Copy One-Time Code* on an entry that has no seed to compute one from.
     hasTotp: includeTotp ? details.hasTotp : undefined,
+    // `pinProtected` was stripped above, with the rest of the claims, because the values travel
+    // UNWRAPPED — the sender types their PIN at share time and the recipient never gets it. What
+    // takes its place says something that is still true at the far end: the person who sent this had
+    // it protected, so ask the recipient for one of their own.
+    pinAskOnImport: details.pinProtected === true ? true : undefined,
   };
 }
