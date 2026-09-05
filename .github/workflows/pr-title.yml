@@ -1,5 +1,9 @@
 name: pr · title
 
+# The pull request title becomes the line in main's history (rebase keeps commits, squash uses the
+# title), so it has to say what changed in the family's own shape: `type: what changed`. The subject
+# is free text: proper nouns (SonarCloud, CodeRabbit, Dependabot) start with capitals, and a check
+# that rejected them rejected the first real pull request it met.
 on:
   pull_request_target:
     types: [opened, edited, synchronize, reopened]
@@ -27,6 +31,3 @@ jobs:
             ci
             build
           requireScope: false
-          subjectPattern: ^(?![A-Z]).+$
-          subjectPatternError: |
-            The subject "{subject}" starts with a capital letter; the family writes `type: lower-case what changed`.
