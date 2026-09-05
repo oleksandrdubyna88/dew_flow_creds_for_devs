@@ -558,3 +558,51 @@ test('…and the journal keeps the reason, because that is where a person looks'
     w.server.dispose();
   }
 });
+
+/**
+ * The journal is a local FILE, so the reason that moves into it is masked and capped.
+ *
+ * <p>A reviewer's finding on the round that reviewed the move, and the best of it: taking the
+ * caught error out of the response and putting it in the journal put it somewhere it had never
+ * been. A driver's message is exactly where a credential turns up — `authentication failed for
+ * token …`, a connection string with its password in it — and a journal is read, copied and backed
+ * up. The masker that strips secrets out of command output strips them out of this too.</p>
+ */
+test('a secret inside the error is MASKED before it reaches the journal', async () => {
+  const w = world({ secrets: [{ value: SECRET, label: 'PASSWORD' }] });
+  w.result = new Error(`authentication failed for ${SECRET} against prod`);
+  try {
+    const { port, secret } = await share(w);
+
+    await call(port, '/v1/use/exec', { token: secret, body: { command: 'uptime' } });
+
+    const journal = w.audit.join('\n');
+    assert.ok(!journal.includes(SECRET), journal);
+    assert.match(journal, /authentication failed/, 'the diagnosis survives the masking');
+  } finally {
+    w.server.dispose();
+  }
+});
+
+test('a runaway error message is bounded — by the formatter, which already did it', async () => {
+  // A reviewer asked for a cap on the reason before it is journalled. Checked, and rejected: this
+  // is already true one layer down, where `formatAuditLine` flattens and truncates every detail to
+  // 200 characters through `oneLine`. A second cap at a larger number could never fire, and at a
+  // smaller one it would silently shorten every other detail this journal carries.
+  //
+  // Asserted anyway, because the reason it needs no cap is a property of another module and this is
+  // the test that would notice if that property went away.
+  const w = world({});
+  w.result = new Error('x'.repeat(5000));
+  try {
+    const { port, secret } = await share(w);
+
+    await call(port, '/v1/use/exec', { token: secret, body: { command: 'uptime' } });
+
+    const line = w.audit.find((l) => l.includes('internal')) ?? '';
+    assert.ok(line.length < 400, `journal line was ${line.length} characters`);
+    assert.match(line, /…$/, 'and it ends in an ellipsis rather than looking complete');
+  } finally {
+    w.server.dispose();
+  }
+});
