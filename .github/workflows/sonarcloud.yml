@@ -48,6 +48,8 @@ jobs:
             /d:sonar.token="$SONAR_TOKEN" \
             /d:sonar.host.url="https://sonarcloud.io" \
             /d:sonar.cs.vscoveragexml.reportsPaths="coverage/*.xml" \
+            /d:sonar.javascript.lcov.reportPaths="coverage/extension.lcov" \
+            /d:sonar.typescript.lcov.reportPaths="coverage/extension.lcov" \
             /d:sonar.exclusions="**/bin/**,**/obj/**,**/node_modules/**,deploy/**" \
             /d:sonar.coverage.exclusions="**/tests/**,**/*.Tests/**"
       - name: Build
@@ -63,6 +65,33 @@ jobs:
           dotnet-coverage collect -f xml -o coverage/cli.xml -- ./src_cli/tests/bin/Release/net10.0/CredsCli.Tests
           dotnet-coverage collect -f xml -o coverage/mcp.xml -- ./src_mcp/tests/bin/Release/net10.0/CredsMcp.Tests
           dotnet-coverage collect -f xml -o coverage/broker.xml -- ./src_broker_client/tests/bin/Release/net10.0/CredsBroker.Tests
+      # The extension is TypeScript and the .NET scanner does not run its tests, so every change to
+      # src_vs_code arrived at the gate as 0 % coverage of new code — a number about the analysis
+      # rather than about the change. Measured on PR #18: 339 new lines to cover, 339 uncovered, from
+      # a branch that shipped 3200 passing tests. The same gap was found and closed in
+      # dew_flow_connect_other_ais first; this is that fix, ported.
+      - name: The extension's coverage
+        working-directory: src_vs_code
+        run: |
+          # --ignore-scripts: SonarCloud githubactions:S6505 — a lifecycle script runs as CI with the
+          # token in the environment. keytar's node-gyp rebuild is the only one here and the tests do
+          # not load it, so they still run without it.
+          npm ci --ignore-scripts
+          npm run compile
+          mkdir -p ../coverage
+          # Through c8 rather than node's own --experimental-test-coverage: node writes the paths of
+          # the files it EXECUTED, which are out/*.js, while Sonar analyses src/*.ts — so the report
+          # would name nothing Sonar is measuring. c8 reads the same V8 data and applies the source
+          # maps, so the report names the TypeScript. (Verified here: SF:src/configFormat.ts, 356
+          # source files, against node's own SF:out/configFormat.js.)
+          # The installed binary, never npx: npx resolves and runs a package on demand, which is a
+          # supply-chain hole in CI with a token in the environment (SonarCloud githubactions:S6505,
+          # S8543). c8 is a declared dev dependency, so npm ci has already put it here at the version
+          # the lock file pins.
+          ./node_modules/.bin/c8 --reporter=lcovonly --report-dir=../coverage/c8 --src=src node --test "out/test/"*.test.js
+          # c8 writes them relative to THIS folder, with the platform's separators; Sonar wants them
+          # relative to the repository root.
+          sed -e 's|^SF:|SF:src_vs_code/|' -e 's|\\|/|g' ../coverage/c8/lcov.info > ../coverage/extension.lcov
       - name: End
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
