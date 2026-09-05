@@ -29,9 +29,16 @@ jobs:
     name: build · smoke · publish
     runs-on: ubuntu-latest
     # A failed or cancelled server pipeline produces no image.
+    # Only a PUSH to main builds and publishes. `ci · server` also runs for pull requests, and a
+    # workflow_run chained to it would otherwise check out a pull request's head — from a fork,
+    # potentially — with packages:write in hand and build it into a published image (CodeQL
+    # actions/untrusted-checkout, 2026-09-05). A pull request is tested by its own workflows;
+    # nothing it contains is published until it is merged and pushed.
     if: >-
       github.event_name == 'workflow_dispatch' ||
-      github.event.workflow_run.conclusion == 'success'
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.head_branch == 'main')
     permissions:
       contents: read
       packages: write

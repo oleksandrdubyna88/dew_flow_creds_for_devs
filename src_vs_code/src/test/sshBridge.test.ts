@@ -281,7 +281,7 @@ test('the sanitiser is shared with the path builder, so the two cannot drift', (
   const path = remoteSocketPath(user, 'abc');
   const glob = sweepCommand(user);
 
-  assert.match(path, new RegExp(`/tmp/creds-${safeUserComponent(user)}-abc\.sock$`));
+  assert.match(path, new RegExp(`/tmp/creds-${safeUserComponent(user)}-abc[.]sock$`));
   assert.ok(glob.includes(`/tmp/creds-${safeUserComponent(user)}-*.sock`));
 });
 
