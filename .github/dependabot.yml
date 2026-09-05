@@ -33,6 +33,16 @@ updates:
       npm-minor-and-patch:
         patterns: ["*"]
         update-types: ["minor", "patch"]
+    # The toolchain is chosen by hand with the VS Code engine version: a major bump of TypeScript or
+    # of @types/node is a decision, not an update — the first two the bot proposed (5.9 -> 7.0,
+    # 20 -> 26) both failed typecheck on arrival, 2026-09-05.
+    ignore:
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@types/vscode"
+        update-types: ["version-update:semver-major"]
     labels: ["dependencies", "npm"]
     commit-message:
       prefix: "chore(deps)"
