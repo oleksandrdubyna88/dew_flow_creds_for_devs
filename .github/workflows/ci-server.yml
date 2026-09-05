@@ -23,19 +23,6 @@ on:
       - '.github/workflows/ci-server.yml'
   pull_request:
     branches: [main]
-    paths:
-      - 'src_minimalapi_server/**'
-      - 'deploy/**'
-      # The contract suite and the post-deploy checklist are part of this pipeline's verdict,
-      # so a change to either has to re-run it.
-      - 'http/**'
-      - 'POST_DEPLOY.md'
-      - 'Directory.Build.props'
-      - 'Directory.Packages.props'
-      - 'global.json'
-      - 'nuget.config'
-      - 'dew_flow_creds_for_devs.slnx'
-      - '.github/workflows/ci-server.yml'
   workflow_dispatch:
 
 concurrency:

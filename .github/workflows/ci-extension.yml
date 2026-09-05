@@ -13,9 +13,6 @@ on:
       - '.github/workflows/ci-extension.yml'
   pull_request:
     branches: [main]
-    paths:
-      - 'src_vs_code/**'
-      - '.github/workflows/ci-extension.yml'
   workflow_dispatch:
 
 concurrency:
