@@ -27,13 +27,20 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 10.0.x
-      - name: Build
-        run: dotnet build dew_flow_creds_for_devs.slnx -c Release
+      # The three test projects are built by name: the solution file does not carry all of them, and
+      # a project the solution never built is a runner executable that does not exist — which is how
+      # this job's first run failed on `No such file or directory`.
+      - name: Build the three test projects
+        run: |
+          dotnet build src_cli/tests/CredsCli.Tests.csproj -c Release
+          dotnet build src_mcp/tests/CredsMcp.Tests.csproj -c Release
+          dotnet build src_broker_client/tests/BrokerClient.Tests.csproj -c Release
       # xUnit v3 on Microsoft Testing Platform: each test project is its own runner executable, and
       # `dotnet test` has no VSTest host here — it would abort with a tooling error, not a test result.
+      # The executable is named by <AssemblyName>, which for the broker client is CredsBroker.Tests.
       - name: Test the CLI
         run: ./src_cli/tests/bin/Release/net10.0/CredsCli.Tests
       - name: Test the MCP server
         run: ./src_mcp/tests/bin/Release/net10.0/CredsMcp.Tests
       - name: Test the broker client
-        run: ./src_broker_client/tests/bin/Release/net10.0/BrokerClient.Tests
+        run: ./src_broker_client/tests/bin/Release/net10.0/CredsBroker.Tests
