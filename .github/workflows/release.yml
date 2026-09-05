@@ -49,11 +49,11 @@ jobs:
       digest-amd64: ${{ steps.export.outputs.digest-amd64 }}
       digest-arm64: ${{ steps.export.outputs.digest-arm64 }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@v4
 
-      - uses: docker/login-action@v3
+      - uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -69,7 +69,7 @@ jobs:
           fi
 
       - id: build
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: src_minimalapi_server/Dockerfile
@@ -91,7 +91,7 @@ jobs:
       contents: read
       packages: write
     steps:
-      - uses: docker/login-action@v3
+      - uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -144,9 +144,9 @@ jobs:
     permissions:
       contents: write   # attach binaries to the release
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@v6
         with:
           global-json-file: global.json
 
@@ -178,7 +178,7 @@ jobs:
 
       # The leg hands its asset to the publish job and does NOT touch the release. See the comment on
       # `server-release` for what that changed.
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: server-${{ matrix.rid }}
           path: ${{ env.ASSET }}
@@ -205,7 +205,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           pattern: server-*
           path: assets
@@ -281,9 +281,9 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@v6
         with:
           global-json-file: global.json
 
@@ -347,7 +347,7 @@ jobs:
         shell: bash
         run: sha256sum "$ASSET" > "$ASSET.sha256"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: cli-${{ matrix.rid }}
           path: |
@@ -367,7 +367,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           pattern: cli-*
           path: assets
@@ -437,9 +437,9 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@v6
         with:
           global-json-file: global.json
 
@@ -491,7 +491,7 @@ jobs:
         shell: bash
         run: sha256sum "$ASSET" > "$ASSET.sha256"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: mcp-${{ matrix.rid }}
           path: |
@@ -508,7 +508,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           pattern: mcp-*
           path: assets
@@ -554,9 +554,9 @@ jobs:
       run:
         working-directory: src_vs_code
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22.x
           cache: npm
@@ -609,7 +609,7 @@ jobs:
           fi
           npx vsce publish --packagePath creds-for-devs.vsix --pat "${VSCE_PAT}"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: extension-vsix
           path: src_vs_code/creds-for-devs.vsix

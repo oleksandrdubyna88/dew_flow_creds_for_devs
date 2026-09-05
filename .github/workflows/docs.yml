@@ -25,7 +25,7 @@ jobs:
     name: plan lifecycle · submodule pin
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # Only that ONE submodule: `submodules: true` would drag in every other one
       # for what is a walk over markdown.
