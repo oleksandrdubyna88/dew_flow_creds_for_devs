@@ -30,9 +30,9 @@ jobs:
       run:
         working-directory: src_vs_code
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22.x
           cache: npm
@@ -92,7 +92,7 @@ jobs:
       # never worked from any client. Needs the .NET SDK; the script SKIPS rather than fails
       # when the CLI is not built, so this stays honest on a machine without one.
       - name: Set up .NET
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v6
         with:
           global-json-file: global.json
 
@@ -107,7 +107,7 @@ jobs:
       - name: Package
         run: npx vsce package --out creds-for-devs-ci.vsix
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: extension-vsix
           path: src_vs_code/creds-for-devs-ci.vsix
