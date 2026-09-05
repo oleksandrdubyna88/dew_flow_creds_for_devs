@@ -666,6 +666,10 @@ app.MapPut("/api/vault", async (HttpContext ctx, CancellationToken ct) =>
     // The registry's sibling of the sidecar above: corp mode only, idempotent, and it can never fail
     // this response — the vault has already landed, and a 500 over a vault that was in fact stored is
     // a worse failure than an unregistered person, whom the next sync registers anyway.
+    //
+    // Inside it the record is written and THEN the member.registered row appended, so a crash between
+    // the two costs one row and never produces a duplicate: the row rides on `Created`, which
+    // UpsertAsync computes inside the per-member lock, and every later sync finds the record.
     await OrgEndpoints.RegisterOnSyncAsync(orgDeps, caller.Value.Email, ct);
     ctx.Response.Headers.ETag = VaultStore.ETagFor(content);
     ctx.Response.StatusCode = StatusCodes.Status204NoContent;
@@ -680,6 +684,11 @@ app.MapDelete("/api/vault", async (HttpContext ctx, CancellationToken ct) =>
     // The registry record goes with the vault, so the registry cannot outgrow the people it describes.
     // Not gated on corp mode: a record left behind by a roster since removed is still one to remove,
     // and where no org/ exists this is one stat and nothing else.
+    //
+    // Vault first, then the record — and the vault decides the response. RemoveAsync swallows a lock or
+    // a permission itself (logging at Error, naming the person), so a registry the OS will not let us
+    // touch cannot turn a delete that happened into a 500. The surviving state is a record with no
+    // vault: the admin list shows it, and the next DELETE or an admin removes it.
     await orgMembers.RemoveAsync(caller.Value.Email, ct);
     log.LogInformation("vault + inbox deleted for {Email}", caller.Value.Email);
     ctx.Response.StatusCode = StatusCodes.Status204NoContent;
