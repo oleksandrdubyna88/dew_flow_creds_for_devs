@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { TreeNode } from '../types';
-import { entriesUnder, protectionSummary, siblingReport } from '../pinFolderPlan';
+import { entriesUnder, protectionSummary, runReport, siblingReport } from '../pinFolderPlan';
 import { hiddenFromAgents } from '../mcpEntries';
 import { loadWithVscode } from './vscodeStub';
 import { lockSecret } from '../secretEnvelope';
@@ -186,4 +186,26 @@ test('an entry created at the ROOT is never asked — the root is not a folder',
   });
 
   assert.deepEqual(await mod.pinForNewEntry(storage, 'a1', null), { kind: 'none' });
+});
+
+/**
+ * What a finished run says — three numbers, not one.
+ *
+ * <p>A reviewer's finding: a run that stopped part-way aborted with nothing said, so the person saw
+ * the progress notification vanish and could not tell a finished run from a failed one. Naming the
+ * failures is what makes "run it again" usable, because a re-run skips what is already done.</p>
+ */
+test('a run that fully succeeded says so, and names the entry when there was one', () => {
+  assert.match(runReport(['prod-db'], []), /"prod-db" is protected with its own PIN/);
+  assert.match(runReport(['a', 'b', 'c'], []), /3 entries are protected/);
+  assert.match(runReport(['a'], []), /no way to recover it/, 'the stakes, every time');
+});
+
+test('a PARTIAL run names what could not be done, and that a re-run finishes it', () => {
+  const said = runReport(['a', 'b'], ['c', 'd']);
+
+  assert.match(said, /2 entries are protected/);
+  assert.match(said, /2 could not be: c, d/, 'which ones — not a count nobody can act on');
+  assert.match(said, /unchanged and still readable/, 'and what state they are in');
+  assert.match(said, /run it again/, 'and the repair, which is the same command');
 });

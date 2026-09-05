@@ -183,20 +183,20 @@ test('pinOpens answers the folder question without throwing', async () => {
  */
 test('a grant is per entry, and forgetting one leaves the others', () => {
   forgetAllPins();
-  grantPin('a', 'pin-a');
-  grantPin('b', 'pin-b');
+  grantPin(ACCOUNT, 'a', 'pin-a');
+  grantPin(ACCOUNT, 'b', 'pin-b');
 
-  forgetPin('a');
+  forgetPin(ACCOUNT, 'a');
 
-  assert.equal(grantedPin('a'), undefined, 'and undefined means ASK, never "it failed"');
-  assert.equal(grantedPin('b'), 'pin-b');
+  assert.equal(grantedPin(ACCOUNT, 'a'), undefined, 'and undefined means ASK, never "it failed"');
+  assert.equal(grantedPin(ACCOUNT, 'b'), 'pin-b');
   assert.equal(grantCount(), 1);
 });
 
 test('the vault lock forgets everything at once', () => {
   forgetAllPins();
-  grantPin('a', 'pin-a');
-  grantPin('b', 'pin-b');
+  grantPin(ACCOUNT, 'a', 'pin-a');
+  grantPin(ACCOUNT, 'b', 'pin-b');
 
   forgetAllPins();
 

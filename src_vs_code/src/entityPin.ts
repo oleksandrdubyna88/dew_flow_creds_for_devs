@@ -53,6 +53,12 @@ export async function protectEntity(
   entityId: string,
   pin: string,
 ): Promise<PinRunResult> {
+  // Exported and pure, so the input box's validator is not a guarantee about this function — and a
+  // reviewer named the shape the failure would take: the entry locks under nothing, and every later
+  // attempt to open it is answered "that PIN does not open this entry", which is true and useless.
+  if (pin.trim().length === 0) {
+    throw new Error('An empty PIN cannot protect anything; nothing was changed.');
+  }
   const changed: string[] = [];
   const skipped: string[] = [];
   for (const slot of SECRET_SLOTS) {

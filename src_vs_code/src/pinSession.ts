@@ -23,17 +23,30 @@
  * <p>Pure of `vscode`, so the lifetime is a test rather than a claim.</p>
  */
 
-/** Entry id -> the PIN that opened it in this window. */
+/**
+ * account + entry -> the PIN that opened it in this window.
+ *
+ * <p>Keyed by BOTH, and a reviewer was right to insist. Ids are UUIDs, so a collision is not an
+ * accident — but a RESTORE puts one id into two profiles, which this repository already has a test
+ * for elsewhere ("the flag is scoped to the account, because a restore can put one id into two
+ * profiles"). A grant keyed by the id alone would carry one profile's PIN into another's entry, and
+ * if the two PINs happened to match it would open silently.</p>
+ */
 const granted = new Map<string, string>();
 
+/** The one place the composite key is spelled, so no caller can build a different one. */
+function keyOf(accountId: string, entityId: string): string {
+  return `${accountId}\u0000${entityId}`;
+}
+
 /** Remember what opened this entry. Called only after the PIN has actually opened something. */
-export function grantPin(entityId: string, pin: string): void {
-  granted.set(entityId, pin);
+export function grantPin(accountId: string, entityId: string, pin: string): void {
+  granted.set(keyOf(accountId, entityId), pin);
 }
 
 /** The PIN for this entry, or nothing — and nothing means ASK, never "it failed". */
-export function grantedPin(entityId: string): string | undefined {
-  return granted.get(entityId);
+export function grantedPin(accountId: string, entityId: string): string | undefined {
+  return granted.get(keyOf(accountId, entityId));
 }
 
 /**
@@ -43,8 +56,8 @@ export function grantedPin(entityId: string): string | undefined {
  * to open with what is remembered — a stale grant that keeps failing is worse than no grant, since
  * it turns "type your PIN" into "this entry is broken".</p>
  */
-export function forgetPin(entityId: string): void {
-  granted.delete(entityId);
+export function forgetPin(accountId: string, entityId: string): void {
+  granted.delete(keyOf(accountId, entityId));
 }
 
 /** Everything, at once: what the vault's own lock calls, and what a sign-out calls. */

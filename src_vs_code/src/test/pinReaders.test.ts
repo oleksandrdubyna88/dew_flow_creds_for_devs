@@ -147,7 +147,7 @@ test('the right PIN opens the value and is remembered for this window', async ()
 
   assert.deepEqual(opened, { kind: 'value', value: 'hunter2' });
   assert.equal(asked.length, 1);
-  assert.equal(grantedPin('e1'), PIN, 'so the next field of the same entry asks nothing');
+  assert.equal(grantedPin(ACCOUNT, 'e1'), PIN, 'so the next field of the same entry asks nothing');
 });
 
 test('a remembered PIN opens the next value without asking again', async () => {
@@ -220,7 +220,7 @@ test('a stale grant that no longer opens the entry is dropped, and the person is
   const opened = await openStored(other, { ...gate, ask: () => Promise.resolve('a-different-pin-x') });
 
   assert.equal(opened.kind, 'value');
-  assert.equal(grantedPin('e1'), 'a-different-pin-x', 'the working one replaced the stale one');
+  assert.equal(grantedPin(ACCOUNT, 'e1'), 'a-different-pin-x', 'the working one replaced the stale one');
 });
 
 test('an unprotected value passes straight through, asking nothing', async () => {

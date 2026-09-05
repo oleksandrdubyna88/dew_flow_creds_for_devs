@@ -86,6 +86,29 @@ export function siblingReport(folderName: string, plan: FolderPinPlan): string {
   );
 }
 
+/**
+ * What a finished run did, in the words a person is told it in.
+ *
+ * <p>Three numbers, not one *(a reviewer's finding)*. A run that stops part-way used to abort with
+ * nothing said, so the person saw a progress notification vanish and had no way to tell a finished
+ * run from a failed one. Naming the failures — and the entry each belongs to — is what makes the
+ * "run it again" answer usable, because re-running skips what is already done.</p>
+ */
+export function runReport(done: readonly string[], failed: readonly string[]): string {
+  const protectedPart =
+    done.length === 1
+      ? `"${done[0]}" is protected with its own PIN.`
+      : `${done.length} entries are protected with that PIN.`;
+  if (failed.length === 0) {
+    return `${protectedPart} There is no way to recover it.`;
+  }
+  return (
+    `${protectedPart} ${failed.length} could not be: ${failed.join(', ')}. `
+    + 'Those are unchanged and still readable — run it again and it will finish them, skipping '
+    + 'what is already done.'
+  );
+}
+
 /** The state of a folder in one line — what the tree shows, and what an already-done run says. */
 export function protectionSummary(folderName: string, plan: FolderPinPlan): string {
   const total = plan.alreadyProtected.length + plan.toProtect.length;
