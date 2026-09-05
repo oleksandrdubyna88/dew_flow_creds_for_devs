@@ -300,5 +300,8 @@ const SECRET = 'sk-live-9f2c41ab';
 
 const code = (answer: Answer): string => (answer.body.error as { code: string } | undefined)?.code ?? '';
 
-export { world, call, share, code, SECRET };
+/** The sentence a refusal carries, beside the code — what the agent is actually told. */
+const message = (answer: Answer): string => (answer.body.error as { message: string } | undefined)?.message ?? '';
+
+export { world, call, share, code, message, SECRET };
 export type { World, Answer, Ran };
