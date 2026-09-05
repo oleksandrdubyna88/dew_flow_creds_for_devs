@@ -337,16 +337,22 @@ public sealed class OrgMembersStore(string dataDir, ILogger<OrgMembersStore> log
     /// behind a vault write for the same stripe.
     ///
     /// <para>Best-effort like <see cref="VaultStore.DeleteEverythingFor"/>, and unlike it, it says so: a
-    /// file that could not be deleted is logged rather than silently left to be listed.</para>
+    /// file that could not be deleted is logged rather than silently left to be listed. <b>Never throws
+    /// for a lock or a permission</b> — the caller has already deleted the vault, and a <c>500</c> for a
+    /// delete that in fact happened is the failure the registration hook was built not to produce. What
+    /// survives is a record with no vault; the admin list shows it, and the next <c>DELETE</c> or an admin
+    /// removes it. That line is therefore the operator's ONE signal about the state, so it is at Error and
+    /// names the person — a warning without a name is a line nobody acts on.</para>
     /// </summary>
     public async Task RemoveAsync(string email, CancellationToken ct)
     {
-        var key = VaultStore.KeyFor(MemberRecord.Normalize(email));
+        var normalized = MemberRecord.Normalize(email);
+        var key = VaultStore.KeyFor(normalized);
         var gate = VaultStore.GateFor(key);
         await gate.WaitAsync(ct);
         try
         {
-            var path = TargetFor(key, string.Empty).FilePath;
+            var path = TargetFor(key, normalized).FilePath;
             if (File.Exists(path))
             {
                 File.Delete(path);
@@ -355,7 +361,10 @@ public sealed class OrgMembersStore(string dataDir, ILogger<OrgMembersStore> log
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
-            log.LogWarning(e, "member record for a deleted vault could not be removed; it stays listed until it is");
+            log.LogError(
+                e,
+                "member record for {Email} could not be removed after their vault was deleted; a record with no vault stays listed until the next DELETE or an admin removes it",
+                normalized);
         }
         finally
         {

@@ -275,7 +275,10 @@ role, at a time nobody did. A record that exists is left alone; one that cannot 
 and left alone too (a default written over a blocked developer's unreadable record is an unblock
 nobody ordered). On the write that creates a record, one `member.registered` row is appended to the
 event log with the person as actor and the default role as detail — and only on that write, so the
-log does not grow by one row per sync. **The hook can never fail the response it rides on:** the
+log does not grow by one row per sync. The record is written before the row, so a crash between
+the two costs one row and never a duplicate: the row rides on `Created`, which the store computes
+inside the per-member lock, and two devices syncing for the first time at once leave one row.
+**The hook can never fail the response it rides on:** the
 vault has already landed, so a registry write that throws — disk full, a lock, a permission, a file
 where `org/members` should be a directory — is logged at Error and swallowed, and the next sync is
 the retry. Watched failing without the catch: a stored vault answered `500`.
@@ -289,7 +292,11 @@ widened here — the role and the projects join it in epic 3, which needs them f
 
 **`DELETE /api/vault` takes the registry record with the vault**, so the registry cannot outgrow
 the people it describes. Not gated on corp mode: a record left behind by a roster since removed is
-still one to remove, and where no `org/` exists this is one stat and nothing else.
+still one to remove, and where no `org/` exists this is one stat and nothing else. Vault first, then
+the record, and the vault decides the response: `RemoveAsync` swallows a lock or a permission itself
+and logs at Error naming the person, so a registry the OS will not release cannot turn a delete that
+happened into a `500`. The surviving state is a record with no vault — the admin list shows it, and
+the next `DELETE` or an admin removes it.
 
 ### `/api/org-recovery/config` — and why it is not officer-only
 
@@ -602,7 +609,7 @@ what is under it:
 
 ## Tests
 
-`src_minimalapi_server/tests/` — xUnit v3 on Microsoft Testing Platform, 227 tests, ~10 s. The
+`src_minimalapi_server/tests/` — xUnit v3 on Microsoft Testing Platform, 242 tests, ~13 s. The
 endpoint suites run in-process through `WebApplicationFactory` — no free port, no background
 `dotnet run`; the store suites drive a store directly on a throwaway data directory.
 
@@ -617,13 +624,15 @@ Never `dotnet test` — there is no VSTest host here and it aborts.
 |---|---|
 | `HealthTests` | Public reachability, storage-writability reporting |
 | `AuthenticationTests` | No token, foreign domain, `alg=none`, wrong key, no email claim, expired |
-| `VaultTests` | Round-trip fidelity, per-caller isolation, size caps, survival after an oversize upload, deleting a vault removes the registry record |
+| `VaultTests` | Round-trip fidelity, per-caller isolation, size caps, survival after an oversize upload, deleting a vault removes the registry record, a registry removal the OS refuses does not fail the delete |
 | `TeamTests` | Owners listed, non-owners absent, deletion drops out |
 | `TeamCorpTests` | An inactive member is absent in corp mode and present in personal mode; the shape for an old client is `[{email}]` and byte-identical across the two modes |
 | `ContractVersionTests` | The header on every response, silent and garbled and newer clients served, a configured minimum refuses with a reason, the refusal precedes authentication; corp mode floors the minimum at 3 with the default configuration, the refusal names the policy, personal mode is unchanged, a corp server still serves a contract-3 client and a silent one, the floor never lowers a higher configured minimum |
 | `OrgMembersTests` | Registration on the first vault write and not on `/api/org/me`; the default role is member; a second sync does not re-stamp a record an admin edited; personal mode creates no `org/` and answers `corpMode: false` from constants whatever a leftover record says; a never-synced caller is computed and nothing is written; an officer reads `isOfficer: true` with no registry row |
-| `OrgRegistrationTests` | A registry that cannot be written (`org/members` is a file) does not fail the vault write; the next sync registers the person after all; two syncs leave exactly one `member.registered` row |
+| `OrgRegistrationTests` | A registry that cannot be written (`org/members` is a file) does not fail the vault write; the next sync registers the person after all; two syncs leave exactly one `member.registered` row and the second emits nothing; two concurrent first syncs leave one row and one record; the swallowed failure is logged at Error naming the person |
+| `OrgMeAuthorizationTests` | No token → `401` with a JSON body; an outside-domain token → `403` with a JSON body and nothing registered; an email differing only in case and surrounding space resolves to one record, end to end |
 | `OrgUnavailableTests` | A corrupted record makes `/api/org/me` answer `503` with `Retry-After` and a JSON body — never the member default; a sync never overwrites a record it cannot read, and still stores the vault |
+| `AppJsonContextTests` | Every DTO the org routes and their refusals serialize, lists included, is in the source-generated context — the one class of bug the endpoint suites cannot see, because under JIT an unregistered type falls through to reflection and only the AOT binary fails |
 | `SharingTests` | Delivery, sender stamping, cross-domain refusal, traversal ids, recipient-only delete |
 | `RateLimitTests` | One caller cannot lock out another; a caller who overruns is still throttled |
 | `ForwardedHttpsTests` | A missing header is refused; health stays exempt |
@@ -633,7 +642,7 @@ Never `dotnet test` — there is no VSTest host here and it aborts.
 | `InstanceFileTests` | The instance-file publish/withdraw lifecycle |
 | `ClientConfigTests`, `HealthProbeUrlTests` | (nested in `HealthTests.cs`) the advertised scope, and the probe URL |
 | `MemberPolicyTests` | The role → policy table: admin and member unrestricted whatever the share default, both developer share defaults, an unknown role or share default gets the most restrictive policy, the default role is member |
-| `OrgMembersStoreTests` | The registry: answered from the cache (a missing record too), the stat check sees an outside write and a record that appears, the per-member lock keeps both of two concurrent edits, unreadable is unavailable (never the default), a record whose email does not hash to its file is unavailable, schema version — with only known fields too — refuses whole, unknown fields carried, `@domain` accepted, no `org/` until a write |
+| `OrgMembersStoreTests` | The registry: answered from the cache (a missing record too), the stat check sees an outside write and a record that appears, the per-member lock keeps both of two concurrent edits, unreadable is unavailable (never the default), a record whose email does not hash to its file is unavailable, schema version — with only known fields too — refuses whole, unknown fields carried, `@domain` accepted, no `org/` until a write, a record the OS will not delete is logged at Error naming the person |
 | `OrgSettingsStoreTests` | The default without a file and no write, write then read, a malformed or unopenable file answers the last value this process read (the default only when it never read one), logged once, an outside write is seen |
 | `OrgEventLogTests` | Append and read back, the UTC day boundary, a torn tail gets its newline, the bounded lock, an unwritable folder is logged not thrown, two instances over one directory lose no row, both sweeps leave `org/events/` alone |
 

@@ -139,4 +139,27 @@ public sealed class VaultTests
         deleted.StatusCode.Should().Be(HttpStatusCode.NoContent);
         File.Exists(record).Should().BeFalse("the record goes with the vault");
     }
+
+    [Fact]
+    public async Task AFailedRegistryRemovalDoesNotFailTheVaultDelete()
+    {
+        // Vault first, then the record, and the vault decides the response. A record the OS will not
+        // let go of leaves a record with no vault behind — the admin list shows it, the next DELETE or an
+        // admin removes it — which is a better state than a 500 for a delete that in fact happened.
+        using var server = Corp.Server();
+        using var alice = server.ClientFor(Alice);
+        var ct = TestContext.Current.CancellationToken;
+        await alice.PutAsync("/api/vault", new ByteArrayContent(Blob), ct);
+        var record = Corp.RecordPath(server, Alice);
+
+        HttpResponseMessage deleted;
+        using (Corp.Undeletable(record))
+        {
+            deleted = await alice.DeleteAsync("/api/vault", ct);
+        }
+
+        deleted.StatusCode.Should().Be(HttpStatusCode.NoContent, "the vault half happened and is what the caller asked for");
+        (await alice.GetAsync("/api/vault", ct)).StatusCode.Should().Be(HttpStatusCode.NotFound);
+        File.Exists(record).Should().BeTrue("the surviving state: a record with no vault");
+    }
 }

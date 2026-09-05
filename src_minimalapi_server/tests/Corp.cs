@@ -39,6 +39,40 @@ internal static class Corp
     public static MemberRecord ReadRecord(VaultServer server, string email) =>
         JsonSerializer.Deserialize(File.ReadAllBytes(RecordPath(server, email)), AppJsonContext.Default.MemberRecord)!;
 
+    /// <summary>
+    /// Make one record impossible to delete, the way the OS at hand refuses a delete. Windows refuses to
+    /// unlink a file another handle holds exclusively, so the handle is held — story 1's own trick for a
+    /// failing read. Unix unlinks an open file happily and refuses only when the DIRECTORY is not
+    /// writable, so the directory loses its write bit (CI runs as a non-root user; root ignores the bit).
+    /// Dispose undoes either, so the temp tree can still be removed.
+    /// </summary>
+    public static IDisposable Undeletable(string recordPath) =>
+        OperatingSystem.IsWindows()
+            ? new FileStream(recordPath, FileMode.Open, FileAccess.ReadWrite, FileShare.None)
+            : new WritableAgain(Path.GetDirectoryName(recordPath)!);
+
+    private sealed class WritableAgain : IDisposable
+    {
+        private readonly string _dir;
+
+        public WritableAgain(string dir)
+        {
+            _dir = dir;
+            if (!OperatingSystem.IsWindows())
+            {
+                File.SetUnixFileMode(_dir, UnixFileMode.UserRead | UnixFileMode.UserExecute);
+            }
+        }
+
+        public void Dispose()
+        {
+            if (!OperatingSystem.IsWindows())
+            {
+                File.SetUnixFileMode(_dir, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+            }
+        }
+    }
+
     /// <summary>Every row the event log holds, whatever day file it landed in. Empty when nothing was ever written.</summary>
     public static IReadOnlyList<OrgEventDto> EventRows(VaultServer server)
     {

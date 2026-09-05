@@ -384,4 +384,22 @@ public sealed class OrgMembersStoreTests : IDisposable
         _store.Find(Anna).Status.Should().Be(MemberLookup.NotRegistered);
         File.Exists(RecordPath(Anna)).Should().BeFalse();
     }
+
+    [Fact]
+    public async Task ARecordThatCannotBeDeletedIsLoggedAtErrorNamingTheEmail()
+    {
+        // DELETE /api/vault deletes the vault first and the record second, and the vault decides the
+        // response — so a refused delete here never surfaces to the caller. What survives is a record
+        // with no vault, listed by the admin list until the next DELETE or an admin removes it, and the
+        // operator's ONE signal about it is this line. It has to be at Error, and it has to say who.
+        await _store.UpsertAsync(Anna, r => r, Admin, Ct);
+
+        using (Corp.Undeletable(RecordPath(Anna)))
+        {
+            await _store.RemoveAsync(Anna, Ct);
+        }
+
+        File.Exists(RecordPath(Anna)).Should().BeTrue("the OS refused the delete, as arranged");
+        _log.Errors.Should().ContainSingle(m => m.Contains(Anna), "the operator's signal names the person");
+    }
 }
