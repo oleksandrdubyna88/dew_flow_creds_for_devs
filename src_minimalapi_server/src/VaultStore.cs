@@ -112,10 +112,14 @@ public sealed partial class VaultStore
     // dictionary that grows with every account and is never pruned — the "everything that
     // grows has an owner" rule. 64 stripes means two accounts occasionally wait on each
     // other for the length of one file write, which costs nothing and cannot leak.
+    //
+    // Shared with OrgMembersStore rather than duplicated: a member upsert takes the same gate as a
+    // vault write for the same email, which is harmless — each holds it for one small file write —
+    // and one stripe is one owner to reason about instead of two.
     private static readonly SemaphoreSlim[] Gates =
         [.. Enumerable.Range(0, 64).Select(_ => new SemaphoreSlim(1, 1))];
 
-    private static SemaphoreSlim GateFor(string key) =>
+    internal static SemaphoreSlim GateFor(string key) =>
         Gates[(int)(uint.Parse(key[..8], System.Globalization.NumberStyles.HexNumber) % Gates.Length)];
 
     /// <summary>Emails of everyone with a stored vault (for team discovery).</summary>
@@ -298,7 +302,11 @@ public sealed partial class VaultStore
         return true;
     }
 
-    private static async Task AtomicWriteAsync(string path, byte[] content, CancellationToken ct)
+    /// <summary>
+    /// Temp, then move, so a reader never sees a partial file. Shared with the org stores for the
+    /// same reason the gate is: one write idiom in the server is one set of failure modes to learn.
+    /// </summary>
+    internal static async Task AtomicWriteAsync(string path, byte[] content, CancellationToken ct)
     {
         var temp = path + "." + Guid.NewGuid().ToString("N")[..8] + ".tmp";
         await File.WriteAllBytesAsync(temp, content, ct);

@@ -30,6 +30,10 @@ whole server is ~2,100 lines.
 | `src/OrgRecovery.cs` | The corporate-recovery roster, its quorum guard and its fingerprint |
 | `src/OrgRecoveryStore.cs` | Setup invites and the published org public key, on disk |
 | `src/OrgRecoveryMaintenance.cs` | Drops setup invites nobody acknowledged |
+| `src/OrgMembers.cs` | The members registry as records with no I/O: roles, share defaults, the three-state lookup, the policy derived from a role |
+| `src/OrgMembersStore.cs` | One record per person under `org/members/`, read synchronously from a stat-checked cache, written read-modify-write under the vault's per-email lock |
+| `src/OrgSettingsStore.cs` | The runtime settings an admin edits without a restart (`org/settings.json`); absent answers the default and writes nothing |
+| `src/OrgEventLog.cs` | The append-only NDJSON event log, one file per UTC day under `org/events/` — the writer only; the reader is a later epic's |
 | `src/Logging.cs` | Serilog wiring: the coloured console + the segmenting run file |
 | `src/AnsiConsoleSink.cs` | Hand-written ANSI colour (ported from the family — Serilog's own theme writes zero escapes once stdout is redirected, and a container's captured stdout always is) |
 | `src/DailyRunFileSink.cs` | A file per run, segmenting at UTC midnight (`00-00-00-<pid>.log` in the next day's folder) so a never-restarting container cannot grow one file for months |
@@ -435,6 +439,9 @@ ${DataDir}/org-recovery/invites/<key>/<guid>.json     one officer's sealed Shami
 ${DataDir}/org-recovery/ceremonies/<guid>.json        who ran a setup, and whom it invited
 ${DataDir}/org-recovery/sessions/<guid>.json          a live break-glass and its contributions
 ${DataDir}/org-recovery/audit.log                     NDJSON: who opened whose vault, never swept
+${DataDir}/org/members/<key>.json                     one person's registry record: role, flags, who changed it and when
+${DataDir}/org/settings.json                          the runtime settings an admin may change; absent means the defaults
+${DataDir}/org/events/<yyyy-MM-dd>.ndjson             the corporate event log, one file per UTC day, never swept
 ```
 
 `key = sha256(lowercased email) hex, first 32 chars` (128 bits). Hashed so a directory listing is
@@ -443,6 +450,27 @@ is here", and it is read defensively — a malformed or locked sidecar is skippe
 
 Every write is atomic: write `<path>.<random>.tmp`, then `File.Move(overwrite: true)`. A reader
 therefore never sees a partial blob, which is what lets `deploy/backup.sh` archive a live server.
+
+`org/` appears only when something is written into it — a personal deployment never has one, which is
+how an operator looking at the disk can tell a server with a roster from one without. Three things
+about what is under it, none of which has an endpoint yet:
+
+- **A member record this build cannot read is *unavailable*, never *not registered*.** Not registered
+  means the default role, and the default may export, so a malformed file, an unreadable one, or one
+  whose `schemaVersion` is above this build's would otherwise promote its owner; every caller fails
+  closed instead, and the log names the file at Error, once. A field this build does not know is
+  carried and written back rather than dropped, so an older instance cannot strip what a newer one
+  wrote. Lookups are synchronous, from an in-memory cache that re-stats the file first — a record
+  changed by a restore or a second instance is seen on the next lookup; writes are read-modify-write
+  under the same per-email lock as `PUT /api/vault`, so two admins editing one person cannot lose an
+  edit.
+- **A settings file this build cannot read answers the default** (a 24-hour offline lease), logged
+  once — nothing in it grants a permission, and refusing everybody over it would be an outage.
+- **The event log takes one dedicated lock with a five-second bound** — every writer appends to the
+  same day file, so the vault's stripe would race — and a failed append never fails the mutation it
+  records: it answers false and logs at Error naming the file. A torn final line from a killed process
+  gets a newline before the next row, so the reader loses one row rather than two. Neither maintenance
+  sweep touches `org/events/`; a test pins it.
 
 ### Known limits
 
@@ -461,8 +489,9 @@ therefore never sees a partial blob, which is what lets `deploy/backup.sh` archi
 
 ## Tests
 
-`src_minimalapi_server/tests/` — xUnit v3 on Microsoft Testing Platform, 68 tests, ~1.5 s, entirely
-in-process through `WebApplicationFactory`. No free port, no background `dotnet run`.
+`src_minimalapi_server/tests/` — xUnit v3 on Microsoft Testing Platform, 189 tests, ~5 s. The
+endpoint suites run in-process through `WebApplicationFactory` — no free port, no background
+`dotnet run`; the store suites drive a store directly on a throwaway data directory.
 
 ```bash
 dotnet build dew_flow_creds_for_devs.slnx
@@ -485,6 +514,9 @@ Never `dotnet test` — there is no VSTest host here and it aborts.
 | `ConcurrencyTests` | `If-Match`/`If-None-Match` optimistic-concurrency semantics on `PUT /api/vault` |
 | `InstanceFileTests` | The instance-file publish/withdraw lifecycle |
 | `ClientConfigTests`, `HealthProbeUrlTests` | (nested in `HealthTests.cs`) the advertised scope, and the probe URL |
+| `OrgMembersStoreTests` | The registry: answered from the cache, the stat check sees an outside write, the per-member lock keeps both of two concurrent edits, unreadable is unavailable (never the default), schema version, unknown fields carried, no `org/` until a write |
+| `OrgSettingsStoreTests` | The default without a file and no write, write then read, a malformed file answers the default once-logged, an outside write is seen |
+| `OrgEventLogTests` | Append and read back, the UTC day boundary, a torn tail gets its newline, the bounded lock, an unwritable folder is logged not thrown, both sweeps leave `org/events/` alone |
 
 Configuration reaches the app through **process environment variables**, not
 `WithWebHostBuilder` — `Program.cs` reads `builder.Configuration` before `Build()`, so anything a
