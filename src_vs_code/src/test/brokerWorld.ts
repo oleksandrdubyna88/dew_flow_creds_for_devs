@@ -39,7 +39,14 @@ interface World {
   created: string[];
   presence: number;
   /** Set by the run() stub to whatever the action should answer. */
-  result: { status: number; body: Record<string, unknown> };
+  /**
+   * What the wrapped action answers — or, when it is an `Error`, what it THROWS.
+   *
+   * <p>The harness could express every outcome an action reaches by returning, and none it reaches
+   * by failing, so the catch around `run` had no test at all. That is the branch that decides what
+   * an agent is told about an internal failure.</p>
+   */
+  result: { status: number; body: Record<string, unknown> } | Error;
 }
 
 function world(options: {
@@ -102,7 +109,7 @@ function world(options: {
     summarize: (body: Record<string, unknown>): string => String(body.command ?? ''),
     run: (ctx: { entityId: string }, body: Record<string, unknown>): Promise<unknown> => {
       w.ran.push({ action: name, entityId: ctx.entityId, body });
-      return Promise.resolve(w.result);
+      return w.result instanceof Error ? Promise.reject(w.result) : Promise.resolve(w.result);
     },
   });
   const registry = {
