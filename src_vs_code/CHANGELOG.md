@@ -53,6 +53,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Sharing a folder that held a PIN-protected entry sent it unopenable.** The folder walk did not
+  ask for the entry's PIN, so what travelled was the wrap itself — and the recipient does not have
+  that PIN and must never be given it. Declining now stops the whole share rather than sending the
+  rest.
+- **A damaged wrap could reach the screen as text.** Envelope-shaped data that will not parse was
+  passed on unchanged, so it could appear in the notes box, in a connection string, and in a share.
+- **A remembered PIN was scoped to the entry but not to the profile.** A restore can put one entry
+  id into two profiles, and the grant would have crossed between them.
+- **A folder run that hit a problem stopped without saying so.** It now reports how far it got, which
+  entries it could not do, and that running it again finishes them — which is true, because it skips
+  what is already protected.
 - A duplicated interface declaration in the entity form panel, merged silently by TypeScript since
   the config work.
 
