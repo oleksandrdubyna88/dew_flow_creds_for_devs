@@ -483,3 +483,51 @@ test('the listing is a GET only — a POST to it is not an action route', async 
     w.server.dispose();
   }
 });
+
+/**
+ * An internal failure tells the AGENT nothing about the implementation, and tells the JOURNAL
+ * everything.
+ *
+ * <p>CodeQL raised `js/stack-trace-exposure` (medium) here, and it was right about the shape even
+ * though the reader is a local agent rather than the internet: the caught error's own message went
+ * straight onto the wire. An `Error` from anywhere under `run` — a driver, a parser, a filesystem
+ * call — carries paths, versions, table names and query fragments, and this product's whole design
+ * treats an agent as a party that is told the RESULT and never the machinery.</p>
+ *
+ * <p>The half that must not be lost is the diagnosis, so it moves rather than disappearing: the
+ * journal line, which is local and is what a person reads when an agent reports a failure, now
+ * carries the real reason where it used to carry only the summary.</p>
+ */
+test('an internal failure gives the agent a fixed sentence, never the error’s own text', async () => {
+  const w = world({});
+  w.result = new Error('ENOENT: /home/dev/.ssh/id_ed25519_prod, open failed at Connection.parse:214');
+  try {
+    const { port, secret } = await share(w);
+
+    const answer = await call(port, '/v1/use/exec', { token: secret, body: { command: 'uptime' } });
+
+    assert.equal(code(answer), 'internal');
+    const said = JSON.stringify(answer.body);
+    assert.ok(!said.includes('ENOENT'), said);
+    assert.ok(!said.includes('id_ed25519_prod'), 'a path names a machine and an account');
+    assert.ok(!said.includes('Connection.parse'), 'and a frame names the implementation');
+  } finally {
+    w.server.dispose();
+  }
+});
+
+test('…and the journal keeps the reason, because that is where a person looks', async () => {
+  const w = world({});
+  w.result = new Error('ENOENT: /home/dev/.ssh/id_ed25519_prod, open failed');
+  try {
+    const { port, secret } = await share(w);
+
+    await call(port, '/v1/use/exec', { token: secret, body: { command: 'uptime' } });
+
+    const journal = w.audit.join('\n');
+    assert.match(journal, /ENOENT/, 'the diagnosis moved here rather than disappearing');
+    assert.match(journal, /uptime/, 'beside what was asked for');
+  } finally {
+    w.server.dispose();
+  }
+});

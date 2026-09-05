@@ -3,6 +3,7 @@ import * as http from 'node:http';
 import * as vscode from 'vscode';
 import {
   ErrorCode,
+  INTERNAL_FAILURE,
   MAX_CONCURRENT_EXECS,
   MAX_REQUEST_BODY_BYTES,
   errorBody,
@@ -529,7 +530,7 @@ export class CredsAgentServer implements vscode.Disposable {
    * point would be a way for consent, masking or the audit to apply to one caller and not the
    * other — and the one that gets forgotten is always the newer path.</p>
    */
-  // eslint-disable-next-line complexity, max-lines-per-function
+  // eslint-disable-next-line complexity
   private async perform(
     res: http.ServerResponse,
     grant: Grant,
@@ -584,14 +585,10 @@ export class CredsAgentServer implements vscode.Disposable {
       // storage failure while burning must not cost the agent the result it already earned.
       await burnIfSpent(this.burnAfterUse, grant, result.status, this.note);
     } catch (error) {
-      this.respondError(
-        res,
-        'internal',
-        describeError(error),
-        grant,
-        action,
-        summary,
-      );
+      // THAT it failed, never HOW — see INTERNAL_FAILURE. The reason is not lost, it MOVES to the
+      // journal, which is local and is where a person looks when an agent reports a failure.
+      const why = `${summary} · ${describeError(error)}`;
+      this.respondError(res, 'internal', INTERNAL_FAILURE, grant, action, why, via);
     }
   }
 

@@ -62,6 +62,22 @@ export function errorBody(code: ErrorCode, message: string): ErrorBody {
   return { error: { code, message } };
 }
 
+/**
+ * What an agent is told when something under an action fails.
+ *
+ * <p>Fixed text, deliberately. The error it replaces was the caught exception's own message, which
+ * named a path, a driver frame or a query fragment on every occasion it fired — and an agent is a
+ * party that gets the RESULT and never the machinery. (CodeQL js/stack-trace-exposure, medium; it
+ * was right about the shape even though the reader here is a local process.)</p>
+ *
+ * <p>The diagnosis is not lost, it moves: the agent journal is local, it is what a person reads when
+ * an agent reports a failure, and it carries the reason beside what was asked for.</p>
+ *
+ * <p>Here rather than in the server, because this module is where the wire's vocabulary lives —
+ * beside `ErrorCode` and `errorBody`, which decide the rest of what a caller is told.</p>
+ */
+export const INTERNAL_FAILURE = 'The action failed inside this window. See the agent journal for the reason.';
+
 export interface HealthBody {
   ok: true;
   service: typeof SERVICE_NAME;
