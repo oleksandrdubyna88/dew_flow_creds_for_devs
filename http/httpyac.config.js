@@ -39,8 +39,10 @@ module.exports = {
       baseUrl: process.env.VAULT_BASE_URL ?? 'http://127.0.0.1:5099',
 
       // The contract version this suite speaks. Sent on every request so the suite is a client
-      // like any other — and so a future 426 is something the suite can be made to provoke.
-      contract: '2',
+      // like any other — and so a 426 is something the suite can provoke (org/me.http does).
+      // Pinned to the server's current contract because the suite runs against a CORP-MODE server
+      // (see README.md), where the floor is 3: left at '2', every request in this tree answers 426.
+      contract: '3',
 
       aliceEmail: `alice@${DOMAIN}`,
       bobEmail: `bob@${DOMAIN}`,

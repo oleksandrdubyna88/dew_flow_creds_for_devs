@@ -36,8 +36,15 @@ public static class ContractVersion
     /// version it is talking to BEFORE it seals: against a version-1 server it seals with no AAD
     /// at all, because a binding the recipient cannot reconstruct is worse than none. That makes
     /// this the first bump the mechanism was actually built for.</para>
+    /// <para><b>3 — the server has a role-and-policy document, <c>GET /api/org/me</c>.</b> A
+    /// version-2 client does not know the route exists, so on a server with a corporate roster it
+    /// obeys no policy at all — not a garbled response but a missing one: it exports, shares and
+    /// backs up exactly as before, and nothing on either side says so. That is the misreading this
+    /// bump names. It is also why corp mode floors the minimum here (<see cref="OrgPolicyContract"/>)
+    /// where version 2 only asked to be detected: a client that cannot read the document cannot be
+    /// expected to obey it, and serving it would hide that from whoever deployed the server.</para>
     /// </remarks>
-    public const int Current = 2;
+    public const int Current = 3;
 
     /// <summary>
     /// The default oldest a client may be and still be served.
@@ -53,6 +60,32 @@ public static class ContractVersion
     /// With this, a test raises the minimum and drives a real refusal.</para>
     /// </remarks>
     public const int DefaultMinimumSupported = 1;
+
+    /// <summary>
+    /// The contract from which the role-and-policy document, <c>GET /api/org/me</c>, exists — and
+    /// therefore the floor on a server with a corporate roster.
+    /// </summary>
+    /// <remarks>
+    /// <para>Mirrors <c>ORG_POLICY_CONTRACT</c> in the extension's <c>contractVersion.ts</c>. A client
+    /// below it does not know the document is there, so on a server with a policy it obeys none of
+    /// it — and serving it would be serving a bypass while hiding that from whoever deployed the
+    /// server. Worth a <c>426</c>; not worth calling security, because the policy is what an honest
+    /// client obeys, not what the server enforces (the plan's <i>Boundaries</i> table).</para>
+    /// </remarks>
+    public const int OrgPolicyContract = 3;
+
+    /// <summary>The sentence a corp-mode refusal adds, so the body says WHY and not merely "too old".</summary>
+    public const string CorpFloorReason =
+        "this server has a corporate roster, and a client below contract 3 cannot read the role and "
+        + "policy document (GET /api/org/me) every client here is expected to obey";
+
+    /// <summary>
+    /// The minimum the middleware actually applies: the configured one, floored at
+    /// <see cref="OrgPolicyContract"/> in corp mode. <c>Math.Max</c>, never an assignment — an operator
+    /// who set the minimum higher must not be handed 3 back by the roster.
+    /// </summary>
+    public static int MinimumFor(int configured, bool corpMode) =>
+        corpMode ? Math.Max(configured, OrgPolicyContract) : configured;
 
     /// <summary>Sent by the client on every request, and by the server on every response.</summary>
     public const string Header = "X-Creds-Contract";
@@ -73,8 +106,19 @@ public static class ContractVersion
     /// Judge the header value.
     /// </summary>
     /// <param name="header">The raw <c>X-Creds-Contract</c> value, or null when absent.</param>
-    /// <param name="minimumSupported">From <c>Vault:MinimumClientContract</c>.</param>
-    public static Decision Judge(string? header, int minimumSupported = DefaultMinimumSupported)
+    /// <param name="minimumSupported">
+    /// The effective minimum — <see cref="MinimumFor"/> applied to <c>Vault:MinimumClientContract</c>.
+    /// </param>
+    /// <param name="corpReason">
+    /// In corp mode, the sentence that says WHY (<see cref="CorpFloorReason"/>); null in personal mode.
+    /// Added to the refusal only when the claim is below <see cref="OrgPolicyContract"/> — an operator
+    /// who configured a minimum of 5 refuses a contract-4 client for their own reason, and that client
+    /// can read the policy perfectly well.
+    /// </param>
+    public static Decision Judge(
+        string? header,
+        int minimumSupported = DefaultMinimumSupported,
+        string? corpReason = null)
     {
         if (!int.TryParse(header?.Trim(), out var claimed) || claimed <= 0)
         {
@@ -84,11 +128,14 @@ public static class ContractVersion
         }
         if (claimed < minimumSupported)
         {
-            return new Decision(
-                Verdict.TooOld,
-                claimed,
-                $"this server speaks contract {Current} and no longer serves {claimed}; update the extension");
+            return new Decision(Verdict.TooOld, claimed, RefusalText(claimed, corpReason));
         }
         return new Decision(Verdict.Serve, claimed, "compatible");
+    }
+
+    private static string RefusalText(int claimed, string? corpReason)
+    {
+        var why = corpReason is not null && claimed < OrgPolicyContract ? $" — {corpReason}" : string.Empty;
+        return $"this server speaks contract {Current} and no longer serves {claimed}{why}; update the extension";
     }
 }

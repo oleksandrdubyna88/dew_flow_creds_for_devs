@@ -267,3 +267,73 @@ public static class MemberPolicy
     private static string NormalizeShare(string shareDefault) =>
         ShareDefaults.IsKnown(shareDefault) ? shareDefault : ShareDefaults.None;
 }
+
+/// <summary>
+/// One project assignment as the client sees it. Only what THIS epic can know — the assignment; the
+/// project's <c>Name</c> joins in epic 3, which owns the project store. Named there as a build item,
+/// because a field in a documented response that no epic can fill is how a shape becomes a lie.
+/// </summary>
+public sealed record ProjectSelfDto(string ProjectId, string Share)
+{
+    public static ProjectSelfDto From(ProjectAssignment assignment) => new(assignment.ProjectId, assignment.Share);
+}
+
+/// <summary>
+/// The document every client reads each cycle — <c>GET /api/org/me</c>: who the caller is to this
+/// server, and what an honest client does about it.
+/// </summary>
+/// <remarks>
+/// <para><c>CorpMode</c> first, because it decides how the rest is read: <c>false</c> means every other
+/// field is the inert default and the client shows no corporate UI at all. <c>IsOfficer</c> rides
+/// beside <c>Role</c> because the two are different facts from different sources — the roster is
+/// configuration, the role is a record — and the client's admin predicate is
+/// <c>role === 'admin' || isOfficer</c>. <c>ServerContract</c> repeats the response header so a client
+/// that keeps the document can tell which server wrote it.</para>
+/// </remarks>
+public sealed record MemberSelfDto(
+    bool CorpMode,
+    string Email,
+    string Role,
+    bool Active,
+    bool IsOfficer,
+    string ShareDefault,
+    IReadOnlyList<ProjectSelfDto> Projects,
+    IReadOnlyList<PendingFolderRemoval> PendingFolderRemovals,
+    PolicyDto Policy,
+    int OfflineLeaseHours,
+    int LoginKeyVersion,
+    int ServerContract)
+{
+    /// <summary>The document for a record — stored or computed, the endpoint does not care which.</summary>
+    public static MemberSelfDto For(
+        MemberRecord record,
+        bool corpMode,
+        bool isOfficer,
+        int offlineLeaseHours,
+        int serverContract) => new(
+            CorpMode: corpMode,
+            Email: record.Email,
+            Role: record.Role,
+            Active: record.Active,
+            IsOfficer: isOfficer,
+            ShareDefault: record.ShareDefault,
+            Projects: [.. record.Projects.Select(ProjectSelfDto.From)],
+            PendingFolderRemovals: record.PendingFolderRemovals,
+            Policy: MemberPolicy.For(record.Role, record.ShareDefault),
+            OfflineLeaseHours: offlineLeaseHours,
+            LoginKeyVersion: record.LoginKeyVersion,
+            ServerContract: serverContract);
+
+    /// <summary>
+    /// What a server with no roster answers: the default record, no officer, the default lease. Computed
+    /// from constants and nothing else, so it cannot differ between a personal server that never had an
+    /// <c>org/</c> and one whose roster was removed — "corp mode off" has to mean off.
+    /// </summary>
+    public static MemberSelfDto Personal(string email, int serverContract) =>
+        For(
+            MemberRecord.DefaultFor(email, now: 0),
+            corpMode: false,
+            isOfficer: false,
+            offlineLeaseHours: OrgSettingsDto.DefaultOfflineLeaseHours,
+            serverContract: serverContract);
+}

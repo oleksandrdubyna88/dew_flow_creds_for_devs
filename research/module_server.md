@@ -20,7 +20,7 @@ whole server is ~2,100 lines.
 
 | File | Role |
 |---|---|
-| `src/Program.cs` | Configuration, startup guards, the pipeline, and all twenty-five endpoints |
+| `src/Program.cs` | Configuration, startup guards, the pipeline, the gates, and the twenty-five endpoints of the personal and recovery surfaces; the corporate routes are mapped from `OrgEndpoints.cs` |
 | `src/VaultStore.cs` | Filesystem storage: atomic writes, hashed paths, the crash sweep |
 | `src/VaultStoreOutbox.cs` | The sender's receipts, and the two sweeps that bound both sides |
 | `src/ShareMaintenance.cs` | The hourly pass: retire dealt-with receipts, prune what aged out |
@@ -34,6 +34,7 @@ whole server is ~2,100 lines.
 | `src/OrgMembersStore.cs` | One record per person under `org/members/`, read synchronously from a stat-checked cache, written read-modify-write under the vault's per-email lock |
 | `src/OrgSettingsStore.cs` | The runtime settings an admin edits without a restart (`org/settings.json`); absent answers the default and writes nothing |
 | `src/OrgEventLog.cs` | The append-only NDJSON event log, one file per UTC day under `org/events/` — the writer only; the reader is a later epic's |
+| `src/OrgEndpoints.cs` | The corporate surface `/api/org/*`, mapped from its own file (`Program.cs` is past the size ceiling and four more epics add routes): `GET /api/org/me`, the JSON `FailJson` every refusal there uses, and the registration hook `PUT /api/vault` calls. The gates stay in `Program.cs` and cross over as delegates in one `OrgEndpointDeps` record |
 | `src/Logging.cs` | Serilog wiring: the coloured console + the segmenting run file |
 | `src/AnsiConsoleSink.cs` | Hand-written ANSI colour (ported from the family — Serilog's own theme writes zero escapes once stdout is redirected, and a container's captured stdout always is) |
 | `src/DailyRunFileSink.cs` | A file per run, segmenting at UTC midnight (`00-00-00-<pid>.log` in the next day's folder) so a never-restarting container cannot grow one file for months |
@@ -83,9 +84,10 @@ identifier**, so there is nothing to tamper with.
 | `GET` | `/api/client-config` | none | `200` | `{microsoftScope}` from `Auth__Microsoft__ClientScope`, `""` when unset. See below |
 | `GET` | `/api/whoami` | any allowed caller | `200` | `{email, name, hasVault}` |
 | `GET` | `/api/vault` | token email | `200` bytes / `404` | `application/octet-stream` + an `ETag`; 404 means nothing stored yet |
-| `PUT` | `/api/vault` | token email | `204` | 1..`MaxVaultBytes`; `400` outside that. Honours `If-Match` / `If-None-Match`, `412` when the precondition fails |
-| `DELETE` | `/api/vault` | token email | `204` | Deletes the vault, its `.email` sidecar, and the whole inbox |
-| `GET` | `/api/team` | any allowed caller | `200` | `[{email}]` — vault owners in the caller's own domain |
+| `PUT` | `/api/vault` | token email | `204` | 1..`MaxVaultBytes`; `400` outside that. Honours `If-Match` / `If-None-Match`, `412` when the precondition fails. In corp mode the first write also **registers** the caller (below) |
+| `DELETE` | `/api/vault` | token email | `204` | Deletes the vault, its `.email` sidecar, the whole inbox — and the registry record |
+| `GET` | `/api/team` | any allowed caller | `200` | `[{email}]` — vault owners in the caller's own domain; in corp mode, minus anyone whose record says `active: false` or cannot be read |
+| `GET` | `/api/org/me` | any allowed caller | `200` / `503` | The role-and-policy document — **a document the client obeys, not a boundary the server holds**. Corp mode off → `corpMode: false` and inert defaults. Never writes. See below |
 | `GET` | `/api/org-recovery/config` | any allowed caller | `200` | The corporate-recovery roster this server runs under. See below |
 | `POST` | `/api/org-recovery/invites` | officer | `201` | One officer's sealed Shamir share; sender stamped |
 | `GET` | `/api/org-recovery/invites` | officer | `200` | Your own pending invites, **streamed** |
@@ -178,22 +180,116 @@ only signal there is, because nothing tells the sender.
 
 ### The contract version
 
-**Current: 2** — a share carries its `format` (above). Version 1 dropped it, which is why the bump
-is the first one the mechanism was actually built for: a client must know which version it is
+**Current: 3** — the server has a role-and-policy document, `GET /api/org/me` (below). A version-2
+client does not know the route exists, so on a server with a corporate roster it obeys no policy at
+all — not a garbled response but a missing one: it exports, shares and backs up exactly as before,
+and nothing on either side says so. That is the misreading the bump names. **2** was a share
+carrying its `format` (above): version 1 dropped it, and a client must know which version it is
 talking to *before* it seals, not after it fails.
 
 Every response carries `X-Creds-Contract: <server version>`; a client sends the same header.
-Below `Vault:MinimumClientContract` the middleware answers **`426` before authentication**, so an
-extension too old to be served is told THAT instead of a `401` about a token that was never the
-problem. A caller that sends nothing, or something a proxy mangled, is served — every extension
-released before this existed sends nothing.
+Below the minimum the middleware answers **`426` before authentication**, so an extension too old
+to be served is told THAT instead of a `401` about a token that was never the problem. A caller
+that sends nothing, or something a proxy mangled, is served — every extension released before this
+existed sends nothing, on a corp server too.
+
+**The minimum applied is the effective one, and corp mode floors it at 3.**
+`ContractVersion.MinimumFor(configured, corpMode)` is `Math.Max(configured, 3)` when a roster is
+configured and the configured value otherwise, so an operator's higher minimum stands and a
+personal server is exactly as before. The reason is narrower than "make the policy binding" — the
+policy is what an honest client obeys, not what the server enforces — but a client that cannot even
+read the document cannot be expected to obey any of it, and serving it would be serving a bypass
+while hiding that from whoever deployed the server. So the `426` body in corp mode says why:
+*"this server speaks contract 3 and no longer serves 2 — this server has a corporate roster, and a
+client below contract 3 cannot read the role and policy document (GET /api/org/me) every client
+here is expected to obey; update the extension."* The sentence is added only when the claim is
+below 3; an operator who configured 5 refuses a contract-4 client for their own reason. This is a
+hard cutover on the day a corp server upgrades (owner decision 12) and belongs in the release notes;
+the extension's `CLIENT_CONTRACT_VERSION` and `ORG_POLICY_CONTRACT` moved to 3 in the same change,
+because a gap between the two halves is a window in which this repository's own extension is
+refused by its own server.
 
 It rides on a header rather than in `/api/client-config` because that endpoint documents its own
 reason for having exactly one field, and because a header means a client learns the version from
-a call it was already making. The default minimum equals the current version, so the refusal path
-is unreachable in production today — which is precisely why `Vault:MinimumClientContract` is
-configurable: a test raises it and drives a real refusal, instead of a branch nobody has ever seen
-run being discovered wrong on the day it first matters.
+a call it was already making. The default minimum stays 1, so on a personal server the refusal
+path is reachable only through configuration — which is precisely why `Vault:MinimumClientContract`
+is configurable: a test raises it and drives a real refusal, instead of a branch nobody has ever
+seen run being discovered wrong on the day it first matters. On a corp server the floor makes the
+refusal real with no configuration at all, and `http/org/me.http` provokes it over the wire.
+
+### `GET /api/org/me` — a document the client obeys, not a boundary
+
+```json
+{
+  "corpMode": true,
+  "email": "dev@company.com", "role": "member", "active": true,
+  "isOfficer": false,
+  "shareDefault": "project",
+  "projects": [], "pendingFolderRemovals": [],
+  "policy": { "export": true, "share": "any", "moveOutOfProject": true },
+  "offlineLeaseHours": 24,
+  "loginKeyVersion": 0,
+  "serverContract": 3
+}
+```
+
+The one document every client reads each cycle, in corp mode and out of it. Everything in it is
+what the shipped extension is expected to act on — export, local backup and moving an entry out of
+a project happen inside the extension, where the server cannot see them — so nothing here stops a
+developer holding a valid token and `curl`. The umbrella plan's *Boundaries* table grades every
+rule; the ones the server does enforce land at `POST /api/shares` and in the caller gate in the
+next epics. Written down here because the natural mistake is to later "fix" a client-side ban by
+moving it to a server that cannot observe the thing it would be banning.
+
+- **Corp mode off** (`orgRecovery.Enabled` false — the roster is the switch, there is no second
+  flag) answers `corpMode: false` and the defaults computed from constants, and consults nothing:
+  a personal server is indistinguishable from one that never had a registry, whatever a leftover
+  file under `org/` says. A test writes Alice as a blocked developer and reads back a member.
+- **Never registered** — no record on disk — answers the *computed* default: `member`, active, no
+  projects, the default lease. **It writes nothing.** This is `OrgRecoveryConfig.Read`'s "off is
+  the shape, not a flag" applied to a person: the answer is correct before the disk agrees, and a
+  token that stored nothing gets no file — not even the directory.
+- **A record this build cannot read** answers **`503`** with `Retry-After: 60` and a JSON
+  `{error}`, never the member default. The plan round's finding: not registered means the default,
+  the default is `member`, and a member may export — so "treat an unparseable record as not
+  registered" was a privilege escalation with a corrupted file as its trigger. One bad file costs
+  one person a refusal an operator can fix (the store already logged the path at Error); it must
+  not buy a developer an export.
+- `isOfficer` comes from the roster, `role` from the record: two facts from two sources, both
+  reported, because the client's admin predicate is `role === 'admin' || isOfficer` and an officer
+  cannot be given a registry role. `offlineLeaseHours` is `OrgSettingsStore`'s current value;
+  `policy` is derived from the role on every call and never stored; `serverContract` repeats the
+  response header so a kept document says which server wrote it.
+- **Every refusal on `/api/org/*` is a JSON `ErrorDto`** — the `401` and `403` from the shared
+  gate included — through `OrgEndpoints.FailJson`, the sibling of `Program.cs`'s plain-text `Fail`.
+  An admin UI has to show *why*; the older endpoints keep their empty bodies because their clients
+  were written against them.
+
+**Registration happens on the first vault write, not on the first authenticated call.**
+`PUT /api/vault` calls `OrgEndpoints.RegisterOnSyncAsync` right after `RecordOwnerAsync`, in corp
+mode only. It looks the caller up first and writes only when there is **no record**: the plan spelt
+the hook as an unconditional identity upsert, and that was watched doing the wrong thing — the
+store stamps every write, so a sync re-stamped a record an admin had edited (`updatedBy` became
+`""`, `updatedAt` the time of the sync) and the admin list would have shown that nobody changed the
+role, at a time nobody did. A record that exists is left alone; one that cannot be read is logged
+and left alone too (a default written over a blocked developer's unreadable record is an unblock
+nobody ordered). On the write that creates a record, one `member.registered` row is appended to the
+event log with the person as actor and the default role as detail — and only on that write, so the
+log does not grow by one row per sync. **The hook can never fail the response it rides on:** the
+vault has already landed, so a registry write that throws — disk full, a lock, a permission, a file
+where `org/members` should be a directory — is logged at Error and swallowed, and the next sync is
+the retry. Watched failing without the catch: a stored vault answered `500`.
+
+**`/api/team` is filtered, not replaced.** Personal mode is byte-identical (sidecars, domain
+filter, `[{email}]`). In corp mode an owner whose record says `active: false` — the behaviour epic
+2 gives the field — is dropped, and so is one whose record cannot be read: the caller gate will
+refuse that person, so a share to them would wait in an inbox nobody can open, and "unreadable"
+must never read as "fine". A person with no record is listed; the default is active. The DTO is not
+widened here — the role and the projects join it in epic 3, which needs them for its own filtering.
+
+**`DELETE /api/vault` takes the registry record with the vault**, so the registry cannot outgrow
+the people it describes. Not gated on corp mode: a record left behind by a roster since removed is
+still one to remove, and where no `org/` exists this is one stat and nothing else.
 
 ### `/api/org-recovery/config` — and why it is not officer-only
 
@@ -453,8 +549,11 @@ Every write is atomic: write `<path>.<random>.tmp`, then `File.Move(overwrite: t
 therefore never sees a partial blob, which is what lets `deploy/backup.sh` archive a live server.
 
 `org/` appears only when something is written into it — a personal deployment never has one, which is
-how an operator looking at the disk can tell a server with a roster from one without. Three things
-about what is under it, none of which has an endpoint yet:
+how an operator looking at the disk can tell a server with a roster from one without. The first
+write is a person's first vault sync on a corp server (`org/members/`, and the day's `org/events/`
+file for the `member.registered` row); reading `GET /api/org/me` creates nothing, and the three
+stores are constructed on every deployment without creating their directories. Three things about
+what is under it:
 
 - **A member record this build cannot read is *unavailable*, never *not registered*.** Not registered
   means the default role, and the default may export, so a malformed file, an unreadable one, one
@@ -498,11 +597,12 @@ about what is under it, none of which has an endpoint yet:
   when its owner acted — so one that reached `MaxInboxItems` refused every later share with `409`,
   a failure the SENDER saw about a state only the recipient could clear.
 - **`/api/team` enumerates.** Any authenticated caller can list every colleague's email. That is the
-  feature, but it is worth knowing it is also directory enumeration for anyone inside the domain.
+  feature, but it is worth knowing it is also directory enumeration for anyone inside the domain. In
+  corp mode the list is narrower — blocked and unreadable records are absent — but no wider.
 
 ## Tests
 
-`src_minimalapi_server/tests/` — xUnit v3 on Microsoft Testing Platform, 207 tests, ~8 s. The
+`src_minimalapi_server/tests/` — xUnit v3 on Microsoft Testing Platform, 227 tests, ~10 s. The
 endpoint suites run in-process through `WebApplicationFactory` — no free port, no background
 `dotnet run`; the store suites drive a store directly on a throwaway data directory.
 
@@ -517,8 +617,13 @@ Never `dotnet test` — there is no VSTest host here and it aborts.
 |---|---|
 | `HealthTests` | Public reachability, storage-writability reporting |
 | `AuthenticationTests` | No token, foreign domain, `alg=none`, wrong key, no email claim, expired |
-| `VaultTests` | Round-trip fidelity, per-caller isolation, size caps, survival after an oversize upload |
+| `VaultTests` | Round-trip fidelity, per-caller isolation, size caps, survival after an oversize upload, deleting a vault removes the registry record |
 | `TeamTests` | Owners listed, non-owners absent, deletion drops out |
+| `TeamCorpTests` | An inactive member is absent in corp mode and present in personal mode; the shape for an old client is `[{email}]` and byte-identical across the two modes |
+| `ContractVersionTests` | The header on every response, silent and garbled and newer clients served, a configured minimum refuses with a reason, the refusal precedes authentication; corp mode floors the minimum at 3 with the default configuration, the refusal names the policy, personal mode is unchanged, a corp server still serves a contract-3 client and a silent one, the floor never lowers a higher configured minimum |
+| `OrgMembersTests` | Registration on the first vault write and not on `/api/org/me`; the default role is member; a second sync does not re-stamp a record an admin edited; personal mode creates no `org/` and answers `corpMode: false` from constants whatever a leftover record says; a never-synced caller is computed and nothing is written; an officer reads `isOfficer: true` with no registry row |
+| `OrgRegistrationTests` | A registry that cannot be written (`org/members` is a file) does not fail the vault write; the next sync registers the person after all; two syncs leave exactly one `member.registered` row |
+| `OrgUnavailableTests` | A corrupted record makes `/api/org/me` answer `503` with `Retry-After` and a JSON body — never the member default; a sync never overwrites a record it cannot read, and still stores the vault |
 | `SharingTests` | Delivery, sender stamping, cross-domain refusal, traversal ids, recipient-only delete |
 | `RateLimitTests` | One caller cannot lock out another; a caller who overruns is still throttled |
 | `ForwardedHttpsTests` | A missing header is refused; health stays exempt |

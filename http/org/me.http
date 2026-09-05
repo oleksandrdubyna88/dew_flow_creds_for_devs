@@ -1,0 +1,141 @@
+# The corporate surface — GET /api/org/me, the one document every client reads each cycle: who the
+# caller is to this server (role, active, officer), what an honest client does about it (the policy),
+# and the offline lease. A DOCUMENT THE CLIENT OBEYS, not a boundary the server holds: export, local
+# backup and moving an entry out of a project happen inside the extension, where the server cannot see
+# them, so nothing here stops a developer with a valid token and curl. The rules the server does enforce
+# land at POST /api/shares and in the caller gate in later epics.
+#
+# PRECONDITION: this suite runs against a corp-mode server (see ../README.md — a roster with
+# officer@<domain> on it), so `corpMode` is true here, and the contract-3 floor is live — which is what
+# makes the 426 below a real request rather than a declaration. On a personal server the same route
+# answers `corpMode: false` with inert defaults, and the floor does not exist.
+
+# @name org_me_answers_the_callers_role_and_policy
+# @prod
+GET {{baseUrl}}/api/org/me
+Authorization: Bearer {{token}}
+X-Creds-Contract: {{contract}}
+Accept: application/json
+
+?? status == 200
+?? header content-type matches ^application\/json
+
+{{
+  const assert = require('node:assert');
+  const me = response.parsedBody;
+  test('corpMode is a boolean, and true here — the suite runs against a roster', () => {
+    assert.strictEqual(me.corpMode, true);
+  });
+  test('the email is the token\'s, never a claim in the request', () => {
+    assert.strictEqual(me.email, aliceEmail);
+  });
+  test('a person who only ever synced is a member, active, and not an officer', () => {
+    assert.ok(['admin', 'member', 'dev'].includes(me.role), `unknown role ${me.role}`);
+    assert.strictEqual(typeof me.active, 'boolean');
+    assert.strictEqual(typeof me.isOfficer, 'boolean');
+    assert.strictEqual(me.isOfficer, false);
+  });
+  test('the policy is derived on the server and carried whole — the client never re-derives it', () => {
+    assert.strictEqual(typeof me.policy, 'object');
+    assert.strictEqual(typeof me.policy.export, 'boolean');
+    assert.strictEqual(typeof me.policy.share, 'string');
+    assert.strictEqual(typeof me.policy.moveOutOfProject, 'boolean');
+  });
+  test('projects and pending removals are arrays — never null, whatever the record holds', () => {
+    assert.ok(Array.isArray(me.projects));
+    assert.ok(Array.isArray(me.pendingFolderRemovals));
+    assert.strictEqual(typeof me.shareDefault, 'string');
+  });
+  test('the lease, the login-key version and the server contract are numbers', () => {
+    assert.strictEqual(typeof me.offlineLeaseHours, 'number');
+    assert.ok(me.offlineLeaseHours >= 0, '0 is the legal "strictly online"; negative is not a lease');
+    assert.strictEqual(typeof me.loginKeyVersion, 'number');
+    assert.strictEqual(typeof me.serverContract, 'number');
+  });
+  test('serverContract repeats the response header, so a kept document says which server wrote it', () => {
+    assert.strictEqual(String(me.serverContract), response.headers['x-creds-contract']);
+  });
+}}
+
+###
+# The roster is configuration, not a registry record: an officer who never synced is still one, and
+# the client's admin predicate is `role === 'admin' || isOfficer`.
+# @name org_me_for_an_officer_says_so
+# @prod
+GET {{baseUrl}}/api/org/me
+Authorization: Bearer {{officerToken}}
+X-Creds-Contract: {{contract}}
+Accept: application/json
+
+?? status == 200
+
+{{
+  const assert = require('node:assert');
+  test('isOfficer is true for somebody on the roster', () => {
+    assert.strictEqual(response.parsedBody.isOfficer, true);
+  });
+  test('and their registry role is a separate fact, reported alongside', () => {
+    assert.ok(['admin', 'member', 'dev'].includes(response.parsedBody.role));
+  });
+}}
+
+###
+# Every refusal on /api/org/* is a JSON {error}, unlike the older endpoints' empty bodies: an admin
+# UI has to show WHY.
+# @name org_me_without_a_token_is_401_with_a_json_reason
+GET {{baseUrl}}/api/org/me
+X-Creds-Contract: {{contract}}
+
+?? status == 401
+?? header content-type matches ^application\/json
+
+{{
+  const assert = require('node:assert');
+  test('the body names the refusal', () => {
+    assert.strictEqual(typeof response.parsedBody.error, 'string');
+    assert.ok(response.parsedBody.error.length > 0);
+  });
+}}
+
+###
+# 403, not 401: the token is valid and the caller is simply not from a domain this deployment serves.
+# @name org_me_from_outside_the_allowed_domain_is_403_with_a_json_reason
+GET {{baseUrl}}/api/org/me
+Authorization: Bearer {{outsiderToken}}
+X-Creds-Contract: {{contract}}
+
+?? status == 403
+?? header content-type matches ^application\/json
+
+{{
+  const assert = require('node:assert');
+  test('the body names the refusal', () => {
+    assert.strictEqual(typeof response.parsedBody.error, 'string');
+  });
+}}
+
+###
+# The corp floor, provoked for real. Vault:MinimumClientContract is at its default; the roster alone
+# raises the floor to 3, and a contract-2 client — which does not know this route exists — is refused
+# before authentication with a sentence that says why. The platform group declares 426 uncovered
+# because on a PERSONAL server it needs a raised configuration; here it needs only a roster.
+# @name org_me_from_a_contract_2_client_is_426_on_a_corp_server
+GET {{baseUrl}}/api/org/me
+Authorization: Bearer {{token}}
+X-Creds-Contract: 2
+
+?? status == 426
+
+{{
+  const assert = require('node:assert');
+  test('the refusal names the policy document the old client cannot read, and what to do', () => {
+    assert.ok(response.body.includes('policy'), `426 body says nothing about why: ${response.body}`);
+    assert.ok(response.body.includes('update the extension'));
+  });
+}}
+
+###
+# @uncovered 503 — a member record this build cannot read (malformed JSON, a schema version above this
+#            build's, a file that will not open). Provoking it means corrupting a file under a running
+#            server, which is machinery this rule explicitly does not ask for; the server suite's
+#            OrgUnavailableTests writes the garbage and reads the 503, Retry-After and JSON body back.
