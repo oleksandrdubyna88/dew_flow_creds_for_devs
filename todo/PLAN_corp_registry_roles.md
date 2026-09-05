@@ -294,6 +294,18 @@ cannot:
    an unbounded wait on a request path is how one stuck writer becomes a stalled server. The wait is
    bounded at five seconds; past it the append is abandoned under rule 1.
 
+   **The lock has a second half, and a measurement is why.** A semaphore orders writers inside one
+   process; a rolling restart has two processes writing the same day file. The code round proposed
+   `FileMode.Append` for an OS-atomic write, and that was measured and refuted: .NET's `Append` is
+   `OpenOrCreate` plus a seek to the end **at open time**, not `O_APPEND`, so two writers who open at
+   the same length write at the same offset. Four hundred rows from two instances came back as 329,
+   344, 336, 334, 347, 296 and 314 across seven runs — **with every append reporting success**. So a
+   `.append.lock` beside the day file, opened `FileShare.None`, held across one probe and one write,
+   retried every 5 ms under the same five-second deadline; eight of eight repeats then complete.
+   Worth knowing for the same reason: the earlier `FileShare.Read` would have refused the second
+   process on Windows and, on Linux, where .NET maps it to an advisory shared lock, would have let it
+   clobber silently.
+
 Every mutation above gets an **end-to-end test** that performs the request and reads the log back,
 because the failure this prevents is exactly a green suite over a silent log.
 
@@ -358,6 +370,7 @@ Each of these was under-specified enough that two people would have implemented 
 | Surface | Size at 200 people | Retired by | Interrupted |
 |---|---|---|---|
 | `org/members/*.json` | ~200 KB | deleted with the vault (`DELETE /api/vault` gains the registry file); otherwise kept — a person leaves by being blocked | atomic write, nothing partial |
+| *(the listing's own budget)* | the admin list reads every record in the domain, served from the same stat-checked cache | **above roughly 2,000 members** that read stops being free and the endpoint needs pagination — a code-round finding, rejected for this shape and recorded here as the threshold rather than built now | — |
 | `org/settings.json` | one record | overwritten | atomic write |
 | `org/events/*.ndjson` | ~50 KB/day, **kept forever**, ~18 MB/year — decision 11 | nobody; the sweeps must skip it, pinned by a test | a torn final line is skipped by the reader (epic 4) and logged once |
 

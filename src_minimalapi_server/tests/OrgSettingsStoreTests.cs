@@ -94,6 +94,66 @@ public sealed class OrgSettingsStoreTests : IDisposable
         _store.Read().OfflineLeaseHours.Should().Be(3);
     }
 
+    /// <summary>Two writes inside one clock tick can share an mtime; an outside write moves it forward explicitly.</summary>
+    private static void Touch(string path) =>
+        File.SetLastWriteTimeUtc(path, File.GetLastWriteTimeUtc(path).AddSeconds(2));
+
+    [Fact]
+    public async Task AFileThatCanNoLongerBeOpenedAnswersTheLastValueThisProcessRead()
+    {
+        // An admin set strictly-online. A lock or a permission flip on the file must not hand every
+        // client 24 hours back — that is a control silently weakened by an I/O error.
+        await _store.UpdateAsync(s => s with { OfflineLeaseHours = 0 }, Admin, Ct);
+        _store.Read().OfflineLeaseHours.Should().Be(0);
+        Touch(SettingsPath); // so the cache cannot answer, and the store has to go to the disk
+
+        int whileLocked;
+        int stillLocked;
+        using (new FileStream(SettingsPath, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+        {
+            whileLocked = _store.Read().OfflineLeaseHours;
+            stillLocked = _store.Read().OfflineLeaseHours;
+        }
+
+        whileLocked.Should().Be(0, "the last value this process read, not the default");
+        stillLocked.Should().Be(0);
+        _log.Errors.Should().ContainSingle(m => m.Contains(SettingsPath), "once per failure, not per call");
+    }
+
+    [Fact]
+    public async Task AFileThatCanNoLongerBeParsedAnswersTheLastValueThisProcessRead()
+    {
+        await _store.UpdateAsync(s => s with { OfflineLeaseHours = 0 }, Admin, Ct);
+        _store.Read().OfflineLeaseHours.Should().Be(0);
+        await File.WriteAllTextAsync(SettingsPath, "{ half-written", Ct);
+        Touch(SettingsPath);
+
+        _store.Read().OfflineLeaseHours.Should().Be(0, "the last value this process read, not the default");
+        _store.Read().OfflineLeaseHours.Should().Be(0);
+        _log.Errors.Should().ContainSingle(m => m.Contains(SettingsPath), "once per file, not per call");
+    }
+
+    [Fact]
+    public async Task AFileThatCannotBeOpenedWithNothingReadBeforeAnswersTheDefault()
+    {
+        // The other direction: a process that has never read a value has nothing better than the
+        // default to offer, and says so.
+        Directory.CreateDirectory(OrgDir);
+        await File.WriteAllBytesAsync(
+            SettingsPath,
+            JsonSerializer.SerializeToUtf8Bytes(new OrgSettingsDto(0, 1, Admin), AppJsonContext.Default.OrgSettingsDto),
+            Ct);
+
+        int whileLocked;
+        using (new FileStream(SettingsPath, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+        {
+            whileLocked = _store.Read().OfflineLeaseHours;
+        }
+
+        whileLocked.Should().Be(OrgSettingsDto.DefaultOfflineLeaseHours);
+        _log.Errors.Should().ContainSingle(m => m.Contains(SettingsPath));
+    }
+
     [Fact]
     public async Task ANegativeLeaseIsRefusedBeforeAnythingIsWritten()
     {

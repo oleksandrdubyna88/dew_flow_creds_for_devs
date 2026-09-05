@@ -26,12 +26,17 @@ public sealed record OrgSettingsDto(int OfflineLeaseHours, long UpdatedAt, strin
 /// deployment never grows an <c>org/</c> directory because somebody read a setting.
 ///
 /// <para>Reads never throw and are served from memory under the same stat check as the members
-/// registry. A file this build cannot read answers the DEFAULT, logged once at Error naming the file —
-/// the opposite direction from a member record, and deliberately so: nothing in this file grants a
-/// permission, so the worst a bad file can do is a lease of 24 hours where an admin wanted less, and
-/// the log says exactly that. Refusing every <c>GET /api/org/me</c> over a settings file would turn one
-/// bad file into an outage for everybody. Here <see cref="FileInfo.Exists"/> IS the existence check:
-/// the members store pays for a stricter one because "absent" there means a permission.</para>
+/// registry. <b>Absent and unreadable are different facts.</b> A file that exists but cannot be opened
+/// or parsed answers the LAST VALUE THIS PROCESS READ OR WROTE, and only a process that never had one
+/// falls back to the default — because an admin who set the lease to <c>0</c>, strictly online, must not
+/// have every client handed 24 hours back by a permission flip or a lock on the file. That is a control
+/// silently weakened by an I/O error, and the whole reason the setting exists is to be the stricter
+/// choice. Either way the log names the file at Error, once — not per call — and says which value is
+/// being answered. Refusing every <c>GET /api/org/me</c> over a settings file would turn one bad file into
+/// an outage for everybody, which is why this is not the members store's refusal.</para>
+///
+/// <para>Here <see cref="FileInfo.Exists"/> IS the existence check: the members store pays for a stricter
+/// one because "absent" there means a permission.</para>
 /// </summary>
 public sealed class OrgSettingsStore(string dataDir, ILogger<OrgSettingsStore> log)
 {
@@ -42,6 +47,10 @@ public sealed class OrgSettingsStore(string dataDir, ILogger<OrgSettingsStore> l
     private readonly SemaphoreSlim _gate = new(1, 1);
 
     private volatile CacheEntry? _cached;
+
+    // The last value this process read or wrote successfully — what an unreadable file answers.
+    private volatile OrgSettingsDto? _lastGood;
+
     private int _ioFailureLogged;
 
     private sealed record CacheEntry(OrgSettingsDto Settings, DateTime LastWriteUtc, long Length);
@@ -67,7 +76,7 @@ public sealed class OrgSettingsStore(string dataDir, ILogger<OrgSettingsStore> l
             var settings = Parse(File.ReadAllBytes(_path));
             Interlocked.Exchange(ref _ioFailureLogged, 0);
             // The malformed verdict is cached with the stat too: the same bytes give the same answer,
-            // and an unreadable file must be logged once, not on every request.
+            // and an unparseable file must be logged once, not on every request.
             _cached = new CacheEntry(settings, info.LastWriteTimeUtc, info.Length);
             return settings;
         }
@@ -78,10 +87,17 @@ public sealed class OrgSettingsStore(string dataDir, ILogger<OrgSettingsStore> l
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
+            // Not cached: a lock or a permission flip may be transient, and the next read is the retry.
             LogIoFailureOnce(e);
-            return OrgSettingsDto.Default;
+            return Fallback();
         }
     }
+
+    /// <summary>What an unreadable file answers — see the class remarks for why not the default.</summary>
+    private OrgSettingsDto Fallback() => _lastGood ?? OrgSettingsDto.Default;
+
+    private string FallbackSource() =>
+        _lastGood is null ? "the default; nothing was read before" : "the last value this process read";
 
     private OrgSettingsDto Parse(byte[] bytes)
     {
@@ -91,36 +107,42 @@ public sealed class OrgSettingsStore(string dataDir, ILogger<OrgSettingsStore> l
             if (settings is { } read && read.IsWellFormed())
             {
                 // A hand-edited file may omit the field; the deserializer does not run the default.
-                return read with { UpdatedBy = read.UpdatedBy ?? string.Empty };
+                var good = read with { UpdatedBy = read.UpdatedBy ?? string.Empty };
+                _lastGood = good;
+                return good;
             }
-            return AnswerDefault(null, "is empty or names a negative lease");
+            return AnswerFallback(null, "is empty or names a negative lease");
         }
         catch (JsonException e)
         {
-            return AnswerDefault(e, "is not valid JSON");
+            return AnswerFallback(e, "is not valid JSON");
         }
     }
 
-    private OrgSettingsDto AnswerDefault(Exception? e, string reason)
+    private OrgSettingsDto AnswerFallback(Exception? e, string reason)
     {
+        var fallback = Fallback();
         log.LogError(
             e,
-            "org settings {Path} {Reason}; answering the default lease of {Hours} h until it is fixed",
+            "org settings {Path} {Reason}; answering a lease of {Hours} h ({Source}) until it is fixed",
             _path,
             reason,
-            OrgSettingsDto.DefaultOfflineLeaseHours);
-        return OrgSettingsDto.Default;
+            fallback.OfflineLeaseHours,
+            FallbackSource());
+        return fallback;
     }
 
     private void LogIoFailureOnce(Exception e)
     {
         if (Interlocked.Exchange(ref _ioFailureLogged, 1) == 0)
         {
+            var fallback = Fallback();
             log.LogError(
                 e,
-                "org settings {Path} cannot be opened; answering the default lease of {Hours} h until it can be",
+                "org settings {Path} cannot be opened; answering a lease of {Hours} h ({Source}) until it can be",
                 _path,
-                OrgSettingsDto.DefaultOfflineLeaseHours);
+                fallback.OfflineLeaseHours,
+                FallbackSource());
         }
     }
 
@@ -128,7 +150,8 @@ public sealed class OrgSettingsStore(string dataDir, ILogger<OrgSettingsStore> l
     /// Read-modify-write under the one lock. Stamps who and when from the verified caller, never from
     /// the edit. A file this build cannot read is replaced by the admin's write: unlike a member record
     /// it carries nothing this build must not lose — which stops being true the day another build adds
-    /// a block to it, and the members store is the shape that carries unknowns when it does.
+    /// a block to it, and the members store is the shape that carries unknowns when it does. The value
+    /// written becomes the last good one: this process knows it, whatever the disk does next.
     /// </summary>
     public async Task<OrgSettingsDto> UpdateAsync(
         Func<OrgSettingsDto, OrgSettingsDto> edit,
@@ -145,6 +168,7 @@ public sealed class OrgSettingsStore(string dataDir, ILogger<OrgSettingsStore> l
                 JsonSerializer.SerializeToUtf8Bytes(edited, AppJsonContext.Default.OrgSettingsDto),
                 ct);
             _cached = null;
+            _lastGood = edited;
             return edited;
         }
         finally
