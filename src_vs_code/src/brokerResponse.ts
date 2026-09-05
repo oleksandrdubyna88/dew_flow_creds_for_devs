@@ -36,6 +36,31 @@ export async function maskedBody(
 }
 
 /**
+ * The reason an action failed, as the JOURNAL may hold it.
+ *
+ * <p>A reviewer's finding, and the best of its round: moving the caught error out of the response
+ * and into the journal put it somewhere it had never been. A driver's message is exactly the place a
+ * credential turns up — `authentication failed for token sk-live-…`, a connection string with its
+ * password in it — and the journal is a local file that gets read, copied and backed up. So the same
+ * masker that strips secrets out of command output strips them out of this, and for the same
+ * reason.</p>
+ *
+ * <p><b>Not capped here</b>, and a reviewer asked for that too — checked and rejected: `formatAuditLine`
+ * already flattens and truncates the detail to 200 characters through `oneLine`, so a second cap at
+ * any larger number could never fire and a second cap at a smaller one would silently shorten every
+ * other detail this journal carries. What truncation does NOT do is redact, which is why the masking
+ * above is the part that had to be added.</p>
+ */
+export async function maskedReason(
+  entriesFor: ((accountId: string, entityId: string) => Promise<readonly MaskEntry[]>) | undefined,
+  where: { accountId: string; entityId: string },
+  reason: string,
+): Promise<string> {
+  const masked = (await maskedBody(entriesFor, where, { reason })) as { body: { reason?: unknown } };
+  return typeof masked.body.reason === 'string' ? masked.body.reason : reason;
+}
+
+/**
  * Destroy a one-use entry now that it has been used — and say so.
  *
  * <p>Only a successful call spends it. A refused, failed or not-supported call left the

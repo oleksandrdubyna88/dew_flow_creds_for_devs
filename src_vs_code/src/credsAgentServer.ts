@@ -34,7 +34,7 @@ import { removeEndpoint, writeEndpoint } from './cliEndpoint';
 import { AliasThrottle } from './aliasThrottle';
 import { startOnce } from './idempotentStart';
 import { MaskEntry } from './secretMasker';
-import { burnIfSpent, maskedBody } from './brokerResponse';
+import { burnIfSpent, maskedBody, maskedReason } from './brokerResponse';
 
 /**
  * The broker: a loopback HTTP surface through which an agent asks this window
@@ -586,8 +586,10 @@ export class CredsAgentServer implements vscode.Disposable {
       await burnIfSpent(this.burnAfterUse, grant, result.status, this.note);
     } catch (error) {
       // THAT it failed, never HOW — see INTERNAL_FAILURE. The reason is not lost, it MOVES to the
-      // journal, which is local and is where a person looks when an agent reports a failure.
-      const why = `${summary} · ${describeError(error)}`;
+      // journal, which is local and is where a person looks when an agent reports a failure — and
+      // through the SAME masker the response body goes through, because a driver's message is
+      // exactly where a credential turns up.
+      const why = `${summary} · ${await maskedReason(this.maskEntriesFor, grant, describeError(error))}`;
       this.respondError(res, 'internal', INTERNAL_FAILURE, grant, action, why, via);
     }
   }
