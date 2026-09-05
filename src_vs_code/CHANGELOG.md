@@ -4,6 +4,27 @@ All notable changes to **CredsForDevs** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.99.1] — an internal failure tells the agent THAT, and the journal HOW
+
+### Fixed
+
+- **An agent was told how an action failed, not just that it had.** When something under a use
+  action threw, the caught error’s own message went back over the wire — and a driver, a parser or
+  a filesystem call names paths, versions, table names and query fragments in the text it raises.
+  The agent now gets a fixed sentence and the same error CODE it always got; the reason moves to
+  the agent journal, which is on this machine and is where you look when an agent reports a
+  failure.
+
+- **…and the reason is masked on the way there.** A driver's message is exactly where a credential
+  turns up, so it goes through the same masker that strips secrets out of command output before it
+  reaches the journal.
+
+- **A refused use now records which door it arrived by**, like every other refusal in that journal.
+  It was the one kind that did not.
+
+_Closes the CodeQL `js/stack-trace-exposure` alert. `0.99.0` shipped without these, so the two
+builds get different version strings — one string, one build._
+
 ## [0.99.0] — a PIN on an entry, and on everything in a folder
 
 ### Added
