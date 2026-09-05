@@ -4,6 +4,7 @@ import { TreeNode } from '../types';
 import { entriesUnder, protectionSummary, siblingReport } from '../pinFolderPlan';
 import { hiddenFromAgents } from '../mcpEntries';
 import { loadWithVscode } from './vscodeStub';
+import { lockSecret } from '../secretEnvelope';
 
 /**
  * What a folder run would DO, and what it SAYS before doing it.
@@ -129,14 +130,33 @@ test('a protected entry is hidden from agents; an ordinary one is not', () => {
  * Asked BEFORE the form, so dismissing means no entry rather than an unprotected one sitting in a
  * folder whose whole point is that nothing in it is.</p>
  */
+/**
+ * A vault holding real values, keyed by entity id — because the question this asks is about the
+ * WRAP, not about the mark beside it.
+ */
+function vaultWith(nodes: readonly TreeNode[], passwords: Record<string, string>): never {
+  const nothing = (): Promise<undefined> => Promise.resolve(undefined);
+  return {
+    getNodes: () => nodes,
+    getPassword: (_a: string, id: string) => Promise.resolve(passwords[id]),
+    getNotes: nothing,
+    getFieldsRaw: nothing,
+    getPaymentRaw: nothing,
+    getConfigBody: nothing,
+    getDbConnection: nothing,
+    getVpnConfig: nothing,
+    getTotp: nothing,
+    getPrivateKey: nothing,
+  } as never;
+}
+
 test('a folder with a protected entry asks; one without does not', async () => {
-  const nodes = [
-    folder('locked'),
-    { ...entry('a', 'locked'), details: { id: 'a', name: 'a', pinProtected: true } } as TreeNode,
-    folder('open'),
-    entry('b', 'open'),
-  ];
-  const storage = { getNodes: () => nodes } as never;
+  // The ask is driven by the WRAP, not by `pinProtected`. That mark is the synchronous mirror the
+  // agent surfaces need, and its staleness fails closed for them; here the same staleness would fail
+  // the other way — a folder whose mark was lost would stop asking, and the next entry created in it
+  // would be stored in the clear. So this vault carries a real locked value and no mark at all.
+  const nodes = [folder('locked'), entry('a', 'locked'), folder('open'), entry('b', 'open')];
+  const storage = vaultWith(nodes, { a: await lockSecret('hunter2', 'a1', 'correct-horse-battery') });
   const mod = loadWithVscode<typeof import('../pinOnCreate')>('../pinOnCreate', {
     window: { showInputBox: () => Promise.resolve(undefined) },
   });
@@ -149,8 +169,18 @@ test('a folder with a protected entry asks; one without does not', async () => {
   );
 });
 
+test('a folder of UNPROTECTED entries does not ask, however many there are', async () => {
+  const nodes = [folder('open'), entry('a', 'open'), entry('b', 'open')];
+  const storage = vaultWith(nodes, { a: 'hunter2', b: 'swordfish' });
+  const mod = loadWithVscode<typeof import('../pinOnCreate')>('../pinOnCreate', {
+    window: { showInputBox: () => assert.fail('nothing here is protected') },
+  });
+
+  assert.deepEqual(await mod.pinForNewEntry(storage, 'a1', 'open'), { kind: 'none' });
+});
+
 test('an entry created at the ROOT is never asked — the root is not a folder', async () => {
-  const storage = { getNodes: () => [] } as never;
+  const storage = vaultWith([], {});
   const mod = loadWithVscode<typeof import('../pinOnCreate')>('../pinOnCreate', {
     window: { showInputBox: () => assert.fail('the root has no siblings to be protected by') },
   });

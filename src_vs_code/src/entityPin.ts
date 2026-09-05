@@ -1,6 +1,6 @@
 import { SECRET_SLOTS, SecretSlot } from './entitySlots';
 import { StorageManager } from './storageManager';
-import { isLockedSecret, lockSecret, readSecret, unlockSecret } from './secretEnvelope';
+import { SecretEnvelope, isLockedSecret, lockSecret, readSecret, unlockSecret } from './secretEnvelope';
 
 /**
  * Putting one entry's secrets under a PIN, and taking them back out.
@@ -179,7 +179,7 @@ export async function pinOpens(
   return false;
 }
 
-async function opensQuietly(envelope: Parameters<typeof unlockSecret>[0], accountId: string, pin: string): Promise<boolean> {
+async function opensQuietly(envelope: SecretEnvelope, accountId: string, pin: string): Promise<boolean> {
   try {
     await unlockSecret(envelope, accountId, pin);
     return true;
