@@ -80,7 +80,16 @@ export async function firstLockedStored(
  * that knows what a corrupt envelope is and refuses to treat it as text.</p>
  */
 export async function openedText(stored: string | undefined, gate: PinGate): Promise<string | undefined> {
-  return readSecret(stored).kind === 'locked' ? valueOfOpen(await openStored(stored, gate)) : stored;
+  const read = readSecret(stored);
+  if (read.kind === 'locked' || read.kind === 'corrupt') {
+    // A reviewer's finding, and it was a real hole: only `locked` was special-cased, so envelope-
+    // shaped text that will not PARSE fell through and was returned — putting `{"v":1,"lock":…}` in
+    // the notes box, in the connection string the viewer shows, and into a share payload. The
+    // envelope's contract separates "mine and damaged" from "not mine" precisely so that cannot
+    // happen, and this is the caller that was ignoring it.
+    return valueOfOpen(await openStored(stored, gate));
+  }
+  return stored;
 }
 
 function valueOfOpen(opened: PinOpen): string | undefined {

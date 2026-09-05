@@ -338,17 +338,24 @@ export class ShareInbox {
     accountId: string,
     folder: TreeNode,
     includeTotp: boolean,
-  ): Promise<SharePayload[]> {
+  ): Promise<SharePayload[] | undefined> {
     const payloads: SharePayload[] = [];
+    let declined = false;
     const walk = async (
       node: TreeNode,
       path: Array<{ name: string; folderType?: TreeNode['folderType'] }>,
     ): Promise<void> => {
       if (node.type === 'entity') {
-        payloads.push({
-          ...(await buildSharePayload(this.deps.storage, accountId, node, includeTotp)),
-          folderPath: path,
-        });
+        // Through `payloadsFor`, which is where the entry's own PIN is asked for. A reviewer found
+        // this walk calling `buildSharePayload` directly: sharing the FOLDER that holds a protected
+        // entry sent its raw envelope — a payload the recipient can never open, because unwrapping
+        // it needs a PIN they do not have and must never be given.
+        const built = await this.payloadsFor(accountId, node, includeTotp);
+        if (built === undefined) {
+          declined = true;
+          return;
+        }
+        payloads.push(...built.map((p) => ({ ...p, folderPath: path })));
         return;
       }
       const childPath = [...path, { name: node.name, folderType: node.folderType }];
@@ -357,7 +364,10 @@ export class ShareInbox {
       }
     };
     await walk(folder, []);
-    return payloads;
+    // One declined entry stops the whole folder, for the reason a declined entry stops a whole
+    // selection: sending the rest and saying nothing about the one that was refused is the kind of
+    // partial success nobody checks for.
+    return declined ? undefined : payloads;
   }
 
   /** The accept flow for ONE share: sender check, PIN, import, refresh. */

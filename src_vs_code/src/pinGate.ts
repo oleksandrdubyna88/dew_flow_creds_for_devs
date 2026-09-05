@@ -63,14 +63,14 @@ export async function openStored(stored: string | undefined, gate: PinGate): Pro
 }
 
 async function openLocked(envelope: SecretEnvelope, gate: PinGate): Promise<PinOpen> {
-  const remembered = grantedPin(gate.entityId);
+  const remembered = grantedPin(gate.accountId, gate.entityId);
   const withRemembered = remembered === undefined ? undefined : await tryPin(envelope, gate, remembered);
   if (withRemembered !== undefined) {
     return { kind: 'value', value: withRemembered };
   }
   // A remembered PIN that no longer opens this entry is worse than none: it turns "type your PIN"
   // into "this entry is broken". Dropped, and the person is asked as if for the first time.
-  forgetPin(gate.entityId);
+  forgetPin(gate.accountId, gate.entityId);
   return askOnce(envelope, gate);
 }
 
@@ -83,7 +83,7 @@ async function askOnce(envelope: SecretEnvelope, gate: PinGate): Promise<PinOpen
   if (opened === undefined) {
     return { kind: 'wrong', reason: WRONG_PIN };
   }
-  grantPin(gate.entityId, typed);
+  grantPin(gate.accountId, gate.entityId, typed);
   return { kind: 'value', value: opened };
 }
 

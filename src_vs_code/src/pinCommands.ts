@@ -7,7 +7,7 @@ import { isProtected, pinOpens, protectEntity, unprotectEntity } from './entityP
 import { pinValidator } from './pinInput';
 import { describeError } from './describeError';
 import { asElement } from './commandTargets';
-import { FolderPinPlan, folderPinPlan, protectionSummary, siblingReport } from './pinFolderPlan';
+import { FolderPinPlan, folderPinPlan, protectionSummary, runReport, siblingReport } from './pinFolderPlan';
 
 /**
  * Putting a PIN on an entry or a folder, and taking it off — the commands a person runs.
@@ -92,7 +92,7 @@ async function removeOne(node: TreeNode, pin: string, deps: PinCommandDeps): Pro
     return;
   }
   await markProtection(node, false, deps);
-  forgetPin(node.id);
+  forgetPin(deps.accountId, node.id);
   deps.refresh();
   void vscode.window.showInformationMessage(`"${node.name}" is no longer protected with its own PIN.`);
 }
@@ -214,22 +214,48 @@ async function newPin(subject: string): Promise<string | undefined> {
   return again === first ? first : undefined;
 }
 
-/** The loop, and the mark. One entry or a folder full of them takes the same road. */
+/**
+ * The loop, and the mark. One entry or a folder full of them takes the same road.
+ *
+ * <p>Two things a reviewer was right about. The progress says <b>how far</b>, not only which entry —
+ * a wrap costs about a second per slot, so a folder of fifty is minutes during which a name alone
+ * cannot tell "working" from "stuck". And a failure on one entry no longer aborts the run with
+ * nothing said: the rest are attempted, and the report names what could not be done. Re-running is
+ * the repair, because `protectEntity` skips what is already locked.</p>
+ */
 async function runProtect(nodes: readonly TreeNode[], pin: string, deps: PinCommandDeps): Promise<void> {
   const done: string[] = [];
+  const failed: string[] = [];
   await vscode.window.withProgress(
     { location: vscode.ProgressLocation.Notification, title: 'Protecting with a PIN…' },
     async (progress) => {
-      for (const node of nodes) {
-        progress.report({ message: node.name });
-        await protectEntity(deps.storage, deps.accountId, node.id, pin);
-        await markProtection(node, true, deps);
-        done.push(node.name);
+      for (const [index, node] of nodes.entries()) {
+        progress.report({ message: `${index + 1} of ${nodes.length} — ${node.name}` });
+        await protectOne(node, pin, deps, done, failed);
       }
     },
   );
   deps.refresh();
-  void vscode.window.showInformationMessage(protectedMessage(done));
+  void vscode.window.showInformationMessage(runReport(done, failed));
+}
+
+/** One entry, with its failure kept rather than thrown — the rest of the folder still deserves a try. */
+async function protectOne(
+  node: TreeNode,
+  pin: string,
+  deps: PinCommandDeps,
+  done: string[],
+  failed: string[],
+): Promise<void> {
+  try {
+    await protectEntity(deps.storage, deps.accountId, node.id, pin);
+    await markProtection(node, true, deps);
+    done.push(node.name);
+  } catch {
+    // The reason is not shown per entry: a folder of fifty would produce fifty modals. What the
+    // person needs is WHICH entries, and that a re-run finishes them.
+    failed.push(node.name);
+  }
 }
 
 /**
@@ -249,12 +275,6 @@ async function markProtection(node: TreeNode, on: boolean, deps: PinCommandDeps)
     ...node,
     details: { ...details, pinProtected: on ? true : undefined },
   });
-}
-
-function protectedMessage(done: readonly string[]): string {
-  return done.length === 1
-    ? `"${done[0]}" is protected with its own PIN. There is no way to recover it.`
-    : `${done.length} entries are protected with that PIN. There is no way to recover it.`;
 }
 
 const ALREADY_PROTECTED =
