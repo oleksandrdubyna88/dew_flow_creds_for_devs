@@ -1,0 +1,24 @@
+name: coderabbit · request review
+
+# CodeRabbit's free plan for public repositories reviews automatically only above ten stars; below
+# that it posts a "Trigger review" checkbox and waits. A review that has to be asked for by hand is a
+# review that is not there when the pull request is read five minutes later — so this asks, once,
+# the moment a pull request opens or is reopened. Pushes to an open PR are reviewed incrementally
+# by CodeRabbit itself after the first review.
+on:
+  pull_request_target:
+    types: [opened, reopened, ready_for_review]
+
+permissions:
+  pull-requests: write
+
+jobs:
+  ask:
+    name: ask CodeRabbit
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.draft == false
+    steps:
+      - name: Comment
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh pr comment "${{ github.event.pull_request.number }}" --repo "${{ github.repository }}" --body "@coderabbitai review"

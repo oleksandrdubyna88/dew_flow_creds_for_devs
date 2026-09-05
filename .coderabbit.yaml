@@ -1,0 +1,94 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+#
+# CodeRabbit for dew_flow_creds_for_devs — a credential manager in two halves that ship separately:
+# the CredsForDevs VS Code extension (src_vs_code, TypeScript; holds the secrets, does all the
+# cryptography, the only thing that sees plaintext) and the Cred Vault Server (src_minimalapi_server,
+# .NET 10 minimal API; a zero-knowledge blob store). Plus the CLI, the MCP server and the broker
+# client (.NET 10). The repository is public. The family's shared rules are a git submodule the
+# reviewer may not see, so the ones that matter are restated per path.
+language: "ru-RU"
+
+reviews:
+  profile: "chill"
+  request_changes_workflow: false
+  high_level_summary: true
+  poem: false
+  review_status: true
+  auto_review:
+    enabled: true
+    drafts: false
+    base_branches:
+      - "main"
+  path_filters:
+    - "!**/bin/**"
+    - "!**/obj/**"
+    - "!**/out/**"
+    - "!**/node_modules/**"
+    - "!**/*.vsix"
+    - "!**/package-lock.json"
+    - "!TestResults/**"
+  path_instructions:
+    - path: "src_minimalapi_server/**/*.cs"
+      instructions: |
+        The trust boundary is the product: the server never holds a key that opens a vault, stores
+        only ciphertext it cannot read, and stamps share-sender identity from a verified token. Flag
+        any change that lets the server understand a payload, log a secret, or trust an unverified
+        identity. .NET 10 minimal API: records for data, no null in business logic, primary constructors,
+        cyclomatic complexity of a method at most 4. Every route has a request in the .http contract
+        suite. Tests are xUnit v3 on Microsoft Testing Platform and run as an executable, never
+        `dotnet test`. A bug fix adds a test that reproduces the defect first.
+    - path: "src_vs_code/src/**/*.ts"
+      instructions: |
+        The extension holds the secrets and does all the cryptography. Flag plaintext reaching a log,
+        a webview without escaping, a network call, or disk outside the vault's own encrypted store.
+        Page modules are free of `vscode` imports so they are unit-testable with node:test; anything
+        importing `vscode` is glue. Everything reaching a webview is escaped. Colours come from
+        --vscode-* variables. Every new behaviour has a test under src/test.
+    - path: "src_cli/**/*.cs"
+      instructions: |
+        The CLI talks to the extension's broker; it never receives plaintext it did not ask the person
+        for. Same C# rules as the server; tests run as the MTP executable.
+    - path: "src_mcp/**/*.cs"
+      instructions: |
+        The MCP server exposes credentials to AI agents by CAPABILITY, never by value: no tool may
+        return a secret. Flag any tool result that could carry one. Same C# rules; MTP executable tests.
+    - path: "src_broker_client/**/*.cs"
+      instructions: |
+        Shared client for the broker protocol. Same C# rules; MTP executable tests.
+    - path: "deploy/**"
+      instructions: |
+        Compose stack and operator scripts. deploy/.env is git-ignored and must stay that way; flag any
+        secret, host name or token that lands in a committed file. Every TLS mode of the compose stack
+        must still validate.
+    - path: "**/*.md"
+      instructions: |
+        todo/ holds plans not yet done; research/ documents the system as it is; a plan carries a
+        status line on line 2-3. POST_DEPLOY.md is the checklist a deploy is verified against — a route
+        change without a matching line there is a defect. Do not flag the narrative style; do flag a
+        doc that contradicts the code in the same PR.
+    - path: ".github/workflows/*.yml"
+      instructions: |
+        Tests run as executables (xUnit v3 / MTP): a step running `dotnet test` is a defect. A
+        pull_request trigger with a paths filter makes a required check skippable — flag it.
+  tools:
+    gitleaks:
+      enabled: true
+    actionlint:
+      enabled: true
+    yamllint:
+      enabled: true
+    eslint:
+      enabled: true
+    markdownlint:
+      enabled: false
+
+chat:
+  auto_reply: true
+
+knowledge_base:
+  opt_out: false
+  code_guidelines:
+    enabled: true
+    filePatterns:
+      - "CLAUDE.md"
+      - ".claude/rules/**/*.md"
