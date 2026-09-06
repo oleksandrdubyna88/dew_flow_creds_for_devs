@@ -6,10 +6,12 @@ import { escapeHtml } from './webviewHtml';
  * "My role and policy" — the read-only view of what this server says about one account.
  *
  * <p>It exists for the reason the corporate-recovery page does: a policy nobody can see reads as
- * a broken product. The day a later version refuses an export because the policy forbids it, the
- * person must have had somewhere to read that this is what their server says about them, who
- * administers it, and how long a laptop may stay offline before it locks. A notification is gone
- * in seconds; this is true for as long as the server is configured that way.</p>
+ * a broken product. That day has arrived for two of the four rows — `exportCommand.ts` and
+ * `backupScheduler.ts` both call `refuseExit`, and `standingGate` refuses to open an account whose
+ * lease has run out — so the page carries a per-ROW column saying what this build does, rather
+ * than the one sentence it used to carry saying none of it was applied. Sharing and moving out of
+ * a project are still only shown. A notification is gone in seconds; this is true for as long as
+ * the server is configured that way.</p>
  *
  * <p>Read-only by design, built exactly like `orgRecoveryPanel.ts`: `enableScripts: false`, no
  * local resources, every server-supplied string escaped. Every value on it arrives from a SERVER
@@ -93,15 +95,17 @@ function policyNotice(state: CorpPolicyState): string {
 function policyRows(state: CorpPolicyState): string {
   const policy = state.policy;
   return `<table>
-  <tr><th scope="col">Action</th><th scope="col">Policy</th></tr>
-  <tr><td>Export, back up to disk, clone into another account</td><td>${yesNo(policy.export)}</td></tr>
-  <tr><td>Share an entry</td><td>${shareWords(policy.share)}</td></tr>
-  <tr><td>Move an entry out of a project folder</td><td>${yesNo(policy.moveOutOfProject)}</td></tr>
+  <tr><th scope="col">Action</th><th scope="col">Policy</th><th scope="col">This version</th></tr>
+  <tr><td>Export, back up to disk, clone into another account</td><td>${yesNo(policy.export)}</td><td>Refused by this version</td></tr>
+  <tr><td>Share an entry</td><td>${shareWords(policy.share)}</td><td>Shown, not yet applied</td></tr>
+  <tr><td>Move an entry out of a project folder</td><td>${yesNo(policy.moveOutOfProject)}</td><td>Shown, not yet applied</td></tr>
 </table>
 ${policyNotice(state)}
-<p class="quiet">The policy is written by the server and shown here as it arrived.
-This version of the extension displays it; applying it — refusing an export the policy forbids —
-comes in a later version. What you read here is what will be enforced, not yet what is.</p>`;
+<p class="quiet">The policy is written by the server and shown here as it arrived. The third column
+says what THIS build does about each row, because they no longer agree: an export or a disk backup
+the policy forbids is refused with a reason, and sharing and moving an entry out of a project are
+still only shown. A page that said "not enforced yet" over a row that is enforced would be the
+broken product this page exists to prevent.</p>`;
 }
 
 function projectRows(state: CorpPolicyState): string {
@@ -125,7 +129,9 @@ ${policyRows(state)}
 ${projectRows(state)}
 <h3>Offline lease</h3>
 <p>${escapeHtml(describeLease(state.leaseHours))}.
-Set by the administrators; applied by a later version of the extension.</p>`;
+Set by the administrators, and applied: past it this account will not open until the server has
+been reached again. Nothing is deleted — a lease is a statement about how stale this window's
+knowledge is, not a punishment.</p>`;
 }
 
 function body(state: CorpPolicyState): string {

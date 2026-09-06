@@ -17,7 +17,10 @@ import { ES_BODIES } from './helpEs';
  *
  * <p><b>Languages.</b> English is required on every article; the rest are optional and fall back
  * VISIBLY ("not translated yet — showing English") — a missing translation must never hide an
- * article.</p>
+ * article. As of 2026-09-06 all five are COMPLETE, all 35 articles each, which makes the fallback a
+ * rule with nothing currently exercising it: `helpCatalog.test.ts` therefore checks it against a
+ * gap it CONSTRUCTS, and checks the completeness separately, because the two fail for opposite
+ * reasons and a test that needs a gap to exist goes red the day the last article is translated.</p>
  *
  * <p><b>Split by language, 2026-09-06.</b> This file held the schema AND all the prose, and reached
  * 765 lines against an 800-line ceiling with two languages in it — for a catalog meant to carry
