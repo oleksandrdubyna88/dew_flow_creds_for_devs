@@ -168,6 +168,7 @@ public sealed class LoginKeyEndpointTests
         var refused = await Corp.LoginKeyAsync(alice);
 
         refused.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+        refused.Headers.RetryAfter.Should().NotBeNull("a 503 with no Retry-After invites a client into a tight loop");
         (await Corp.RefusalAsync(refused, HttpStatusCode.ServiceUnavailable)).Should().Contain("Vault:LoginKey:Kek");
         (await Corp.SyncAsync(alice)).StatusCode.Should().Be(HttpStatusCode.NoContent);
         (await alice.GetAsync("/api/vault", Ct)).StatusCode.Should().Be(HttpStatusCode.OK);

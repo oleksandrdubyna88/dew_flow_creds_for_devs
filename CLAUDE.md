@@ -149,10 +149,20 @@ people's credentials, so a defect here is not a defect in a toy.
 5. **`deploy/certbot/` holds a committed script; `deploy/certbot-data/` holds runtime certificates.**
    The suffix is load-bearing — an earlier layout put both in one directory, and the `.gitignore`
    entry for the data silently excluded the script.
-6. **Anything that changes the HTTP contract changes two codebases.** The extension's expectations
+6. **Anything that CHANGES the HTTP contract changes two codebases.** The extension's expectations
    live in `src_vs_code/src/serverTransport.ts`; the server's endpoints in `Program.cs`. They are
    documented together in [research/module_server.md](research/module_server.md), and a change to one
    without the other ships a broken client.
+
+   **Adding a route nobody calls yet is not such a change.** Reading the rule that way contradicts this
+   file's own release doctrine — the halves are independent, either may go first, and an old extension
+   against a new server is served normally because a client that names no contract version is served by
+   design. A server-only story that adds an endpoint its client adopts in a later story satisfies this
+   rule the moment `module_server.md` documents the route, which is the part that keeps the two
+   implementations honest; the client half is owed when the client starts calling it. What the rule
+   forbids is changing a route, a status or a shape that a released client already depends on without
+   changing the client with it. (Reconciled 2026-09-06, after a review round read the old wording as a
+   blocker for a deliberately server-only story.)
 
 ## Definition of Done
 
