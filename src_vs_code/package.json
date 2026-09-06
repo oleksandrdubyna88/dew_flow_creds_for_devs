@@ -641,6 +641,12 @@
         "icon": "$(add)"
       },
       {
+        "command": "credSshManager.setMemberRole",
+        "title": "Set Role…",
+        "category": "CredsForDevs",
+        "icon": "$(shield)"
+      },
+      {
         "command": "credSshManager.acceptShare",
         "title": "Accept…",
         "category": "CredsForDevs",
@@ -805,6 +811,12 @@
         "title": "Corporate Recovery…",
         "category": "CredsForDevs",
         "icon": "$(organization)"
+      },
+      {
+        "command": "credSshManager.showMyRole",
+        "title": "My Role and Policy…",
+        "category": "CredsForDevs",
+        "icon": "$(shield)"
       },
       {
         "command": "credSshManager.acceptRecoveryShare",
@@ -1407,13 +1419,18 @@
         },
         {
           "command": "credSshManager.createForUser",
-          "when": "view == credSshManagerView && viewItem == teamMember",
+          "when": "view == credSshManagerView && viewItem =~ /^teamMember/",
           "group": "inline@1"
         },
         {
           "command": "credSshManager.createForUser",
-          "when": "view == credSshManagerView && viewItem == teamMember",
+          "when": "view == credSshManagerView && viewItem =~ /^teamMember/",
           "group": "1_create@1"
+        },
+        {
+          "command": "credSshManager.setMemberRole",
+          "when": "view == credSshManagerView && viewItem == teamMember-adminView",
+          "group": "1_create@2"
         },
         {
           "command": "credSshManager.acceptShare",
@@ -1604,6 +1621,11 @@
           "command": "credSshManager.showOrgRecovery",
           "when": "view == credSshManagerView && viewItem =~ /^account-corp/",
           "group": "4_corp@1"
+        },
+        {
+          "command": "credSshManager.showMyRole",
+          "when": "view == credSshManagerView && viewItem =~ /^account-corp/",
+          "group": "4_corp@6"
         },
         {
           "command": "credSshManager.acceptRecoveryShare",

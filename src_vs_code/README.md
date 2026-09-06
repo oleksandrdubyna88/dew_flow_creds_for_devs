@@ -875,6 +875,17 @@ A vault can be opened by **several security keys plus the PIN**, in the
   break-glass, ***Contribute to a Recovery…*** is an officer's half, ***Finish a Recovery…***
   re-keys the vault under a temporary PIN told to the target out of band.
 
+## Corporate roles — admin, member, dev
+
+On a server with recovery officers, every account has a **role**, and the server tells the
+extension which on every sync — together with the **policy** for that role (may export, may share
+with whom, may move an entry out of a project). ***Set Role…*** on a colleague's Team row lets an
+admin — or a recovery officer, who administers unconditionally — make somebody admin, member
+(today's behaviour, and the default) or dev, and for a dev choose whether they may share inside
+their projects or not at all. ***My Role and Policy…*** on an account row shows what the server
+says about you. Honest note: this version **shows** the policy and does not yet apply it; the bans
+themselves arrive in a later version, and the page says so.
+
 ## NAS backup & automatic multi-PC sync
 
 Everything travels as **one AES-256-GCM encrypted file per profile**
@@ -1100,6 +1111,8 @@ also on the right-click menu where it applies.
 - **Recovery** — Set Up Recovery Code… · Unlock Vault (Recovery Code)… · Remove Recovery Code… ·
   Corporate Recovery… · Accept Recovery Share… · Recover a Colleague’s Vault… · Contribute to a
   Recovery… · Finish a Recovery…
+- **Corporate roles** — Set Role… (on a colleague's Team row, for admins and officers) · My Role
+  and Policy… (on any account row of a corporate server)
 - **Keys on disk** — Install SSH Key to System (~/.ssh) · Remove Installed Key… · Add to SSH Agent (confirm every use) · Remove from SSH Agent
 - **Scans** — Health Report (weak, reused, exposed) · Check Clipboard for Vault Secrets ·
   Scan This File for Vault Secrets · Show Diagnostics

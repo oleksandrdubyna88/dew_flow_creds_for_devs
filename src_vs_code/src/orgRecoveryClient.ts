@@ -1,6 +1,5 @@
-import { CLIENT_CONTRACT_VERSION, CONTRACT_HEADER } from './contractVersion';
+import { CorpApiClient } from './corpApiClient';
 import { ServerMetrics, isServerMetrics } from './serverMetricsPage';
-import { describeError } from './describeError';
 import { StoredAccount } from './types';
 import { DEFAULT_REQUEST_TIMEOUT_MS } from './serverTransport';
 
@@ -138,45 +137,24 @@ function isInvite(value: unknown): value is EscrowInvite {
 }
 
 export class OrgRecoveryClient {
+  /**
+   * The request plumbing — URL, bearer and contract headers, timeout, the unreachable sentence —
+   * lives in `CorpApiClient` since epic 1, because every corporate client needs the same block
+   * and the second copy is the defect. This class was its first caller and behaves exactly as
+   * it did before the move; its suite is the characterization test.
+   */
+  private readonly api: CorpApiClient;
+
   constructor(
     readonly location: string,
-    private readonly tokenFor: (account: StoredAccount) => Promise<string | undefined>,
-    private readonly timeoutMs: number = DEFAULT_REQUEST_TIMEOUT_MS,
-  ) {}
-
-  private url(path: string): string {
-    return `${this.location.replace(/\/+$/, '')}${path}`;
+    tokenFor: (account: StoredAccount) => Promise<string | undefined>,
+    timeoutMs: number = DEFAULT_REQUEST_TIMEOUT_MS,
+  ) {
+    this.api = new CorpApiClient(location, tokenFor, timeoutMs);
   }
 
-  private static headersFor(init: RequestInit, token: string): Headers {
-    const headers = new Headers(init.headers);
-    headers.set('Authorization', `Bearer ${token}`);
-    headers.set(CONTRACT_HEADER, String(CLIENT_CONTRACT_VERSION));
-    if (init.body !== undefined) {
-      headers.set('Content-Type', 'application/json');
-    }
-    return headers;
-  }
-
-  private async request(
-    account: StoredAccount,
-    path: string,
-    init: RequestInit = {},
-  ): Promise<Response> {
-    const token = await this.tokenFor(account);
-    if (token === undefined) {
-      throw new Error(`No usable token for ${account.email} — sign in again.`);
-    }
-    const headers = OrgRecoveryClient.headersFor(init, token);
-    try {
-      return await fetch(this.url(path), {
-        ...init,
-        headers,
-        signal: AbortSignal.timeout(this.timeoutMs),
-      });
-    } catch (error) {
-      throw new Error(`Vault server unreachable (${this.location}): ${describeError(error)}`);
-    }
+  private request(account: StoredAccount, path: string, init: RequestInit = {}): Promise<Response> {
+    return this.api.request(account, path, init);
   }
 
   /**

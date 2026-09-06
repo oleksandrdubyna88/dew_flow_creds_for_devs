@@ -7,6 +7,7 @@ import { materializePrivateKey } from './keyInstaller';
 import { runBounded } from './sshExecRunner';
 import { GoogleAuthProvider } from './googleAuthProvider';
 import { nasPathFor } from './nasPaths';
+import { OrgMembersClient } from './orgMembersClient';
 import { OrgRecoveryClient } from './orgRecoveryClient';
 import { ServerTransport } from './serverTransport';
 import { StorageManager } from './storageManager';
@@ -86,6 +87,29 @@ export class TransportFactory {
     }
     const client = new OrgRecoveryClient(location, (a) => this.tokenFor(a));
     this.orgClients.set(location, client);
+    return client;
+  }
+
+  /** One members client per server location, cached like the recovery clients are. */
+  private readonly membersClients = new Map<string, OrgMembersClient>();
+
+  /**
+   * The corporate members client for this account's server — roles, the roster, the runtime
+   * settings — or `undefined` when it does not sync to one. Beside `orgRecoveryFor` for the same
+   * reason that method gives: one `tokenFor`, one place to fix when token resolution changes, and
+   * no client for a folder or a git remote, which have no registry to ask.
+   */
+  orgMembersFor(account: StoredAccount): OrgMembersClient | undefined {
+    const location = nasPathFor(account);
+    if (location === undefined || !isServerLocation(location)) {
+      return undefined;
+    }
+    const existing = this.membersClients.get(location);
+    if (existing !== undefined) {
+      return existing;
+    }
+    const client = new OrgMembersClient(location, (a) => this.tokenFor(a));
+    this.membersClients.set(location, client);
     return client;
   }
 
