@@ -4,6 +4,50 @@ All notable changes to **CredsForDevs** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] — the help speaks five languages, and one payment mark instead of nine
+
+### Fixed
+
+- **Every payment system was drawn beside "Payment system" at once.** All nine marks are put into
+  the page hidden and the one the value names is revealed — which is how a *stored* payment system
+  never reaches the page's HTML. But an author rule carrying `display` beats the browser's own
+  `[hidden] { display: none }`, so on the read-only card the hiding did nothing and all nine showed.
+  On the edit form the styles were absent instead, so hiding worked and layout did not: the one
+  surviving mark wrapped onto the line below its own field.
+- **The mark is four times the size**, 64px against the 16px of the tree glyph, and sits on a row
+  that centres it beside the field — on both surfaces, from one shared rule, because a size that
+  grows in one place and a row that only centres in the other is how this broke in the first place.
+- **The corporate policy page promised something that had stopped being true.** It said *"applying
+  it — refusing an export the policy forbids — comes in a later version. What you read here is what
+  will be enforced, not yet what is."* An export or a disk backup the policy forbids **is** refused
+  now, and an account past its offline lease will not open. Sharing and moving an entry out of a
+  project genuinely are still only shown. So the page carries a third column saying what *this*
+  build does about each row: one sentence cannot cover rows that disagree, and a page whose whole
+  reason for existing is that a person can read what their server says about them must not tell a
+  developer an export will work when it will be refused.
+- **Six claims in the help had fallen behind the code**, counted against it rather than remembered:
+  `basics` said eight kinds of entry where there are nine and gave `payment` no bullet;
+  *Project folders* scaffolded seven where it scaffolds nine, with `config` and `payments` missing
+  from the list, the count and the tail; *What an agent can and cannot do* said 8 kinds and
+  "~200 commands" where the manifest contributes 104, and left `payment` out of the kinds that
+  cannot be rotated; *Corporate roles* still said a dev can export.
+
+### Added
+
+- **The help is complete in all five languages** — English, Russian, Ukrainian, German and Spanish,
+  35 articles each. A language that ever loses an article still falls back to English *visibly*,
+  article by article, rather than making it disappear; there is simply nothing exercising that
+  today.
+
+### Changed
+
+- **The help catalog is one file per language.** `helpContent.ts` held the schema *and* all the
+  prose — 765 lines against this repository's 800-line ceiling, with two of the five declared
+  languages in it, so a catalog meant to carry five could not grow one. It is now 110 lines: the
+  schema, the assembly and the fallback rule, with the article order its own module and the bodies
+  beside it. Nothing a reader sees changed; the move was verified by compiling the old catalog and
+  diffing it field by field against the new one.
+
 ## [1.0.0] — a shared entry stops claiming a PIN it lost, and its recipient is offered one
 
 ### Fixed
