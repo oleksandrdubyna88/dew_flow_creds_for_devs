@@ -32,6 +32,26 @@ public sealed class LoginKeyStoreTests
         return (new LoginKeyStore(dir, Kek(seed), log), log);
     }
 
+    /// <summary>
+    /// A sealed record the test KEK opens, holding whatever bytes the caller asks for — the only way to
+    /// produce a file that AUTHENTICATES and still carries the wrong thing.
+    /// </summary>
+    private static byte[] SealedUnderTestKek(byte[] payload)
+    {
+        var iv = new byte[12];
+        var tag = new byte[16];
+        var data = new byte[payload.Length];
+        using var aes = new System.Security.Cryptography.AesGcm(Kek(1), tag.Length);
+        aes.Encrypt(iv, payload, data, tag);
+        return System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(
+            new SealedLoginKey(
+                Convert.ToBase64String(iv),
+                Convert.ToBase64String(tag),
+                Convert.ToBase64String(data),
+                DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()),
+            AppJsonContext.Default.SealedLoginKey);
+    }
+
     [Fact]
     public async Task NoLogLineEverCarriesTheKeyMaterial()
     {
@@ -97,6 +117,55 @@ public sealed class LoginKeyStoreTests
         await File.WriteAllTextAsync(PathFor(dir, Alice), "{ this is not the JSON this store writes", Ct);
 
         (await store.GetOrCreateAsync(Alice, Ct)).Status.Should().Be(LoginKeyLookup.Unreadable);
+    }
+
+    [Fact]
+    public async Task AWellFormedFileHoldingTheWrongNumberOfBytesIsUnreadable()
+    {
+        // GCM authenticates, so this cannot be forged from outside — but it CAN be written by a future
+        // version, a hand-edited file, or a restore from a build that meant something else by these
+        // bytes. Serving it would hand a client 31 bytes where the contract promises 32, and story 3
+        // would seal a vault to something no later build reproduces.
+        var dir = TempDir();
+        var (store, _) = StoreIn(dir);
+        await store.GetOrCreateAsync(Alice, Ct);
+        await File.WriteAllBytesAsync(PathFor(dir, Alice), SealedUnderTestKek(new byte[31]), Ct);
+
+        var result = await store.GetOrCreateAsync(Alice, Ct);
+
+        result.Status.Should().Be(LoginKeyLookup.Unreadable, "a key of the wrong length is not a key");
+    }
+
+    [Fact]
+    public async Task ValidJsonWithNoFieldsIsUnreadableAndMintsNothing()
+    {
+        var dir = TempDir();
+        var (store, _) = StoreIn(dir);
+        await store.GetOrCreateAsync(Alice, Ct);
+        var before = await File.ReadAllBytesAsync(PathFor(dir, Alice), Ct);
+        await File.WriteAllTextAsync(PathFor(dir, Alice), "{}", Ct);
+
+        (await store.GetOrCreateAsync(Alice, Ct)).Status.Should().Be(LoginKeyLookup.Unreadable);
+        (await File.ReadAllTextAsync(PathFor(dir, Alice), Ct)).Should().Be("{}", "nothing was minted over it");
+        before.Should().NotBeEmpty("the premise: there was a real key here");
+    }
+
+    [Fact]
+    public async Task AStorageFailureIsNeverReportedAsNoKey()
+    {
+        // The difference decides what a developer is told. "Absent" means "this server has issued you
+        // nothing", which a client reads as "no binding" — while the truth here is "this server could
+        // not write", and the honest answer is come back later. A directory that cannot be created is
+        // the cheapest way to make every write fail.
+        var dir = TempDir();
+        var (store, _) = StoreIn(dir);
+        var blocker = Path.Combine(dir, "org", "login-keys");
+        Directory.CreateDirectory(Path.Combine(dir, "org"));
+        await File.WriteAllTextAsync(blocker, "a file where the folder should be", Ct);
+
+        var result = await store.GetOrCreateAsync(Alice, Ct);
+
+        result.Status.Should().Be(LoginKeyLookup.Unreadable, "a write that failed is not an absence");
     }
 
     [Fact]

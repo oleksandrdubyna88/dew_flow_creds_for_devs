@@ -167,29 +167,51 @@ public sealed class LoginKeyStore(string dataDir, byte[] kek, ILogger<LoginKeySt
             return found;
         }
         var key = RandomNumberGenerator.GetBytes(KeyBytes);
-        Directory.CreateDirectory(_dir);
-        var written = await TryCreateAsync(PathFor(email), Seal(key), ct);
-        if (!written)
+        if (await TryCreateAsync(email, key, ct))
         {
-            return await FindAsync(email, ct);
+            log.LogInformation("login key issued for {Email} ({Fingerprint})", email, LoginKeyResult.FingerprintOf(key));
+            return LoginKeyResult.Of(key);
         }
-        log.LogInformation("login key issued for {Email} ({Fingerprint})", email, LoginKeyResult.FingerprintOf(key));
-        return LoginKeyResult.Of(key);
+        return await AfterAFailedCreateAsync(email, ct);
+    }
+
+    /// <summary>
+    /// A create that did not happen is two different events, and telling them apart is the difference
+    /// between "somebody else got there first" and "this server cannot write". The disk decides: a key
+    /// that is there now belonged to the winner of the race; one that is still absent means the write
+    /// failed — a full volume, a read-only mount, a file where the folder should be — and answering
+    /// <see cref="LoginKeyLookup.Absent"/> would tell a developer they have no key when the truth is that
+    /// the server could not make one. A client reads absence as "no binding" and moves on.
+    /// </summary>
+    private async Task<LoginKeyResult> AfterAFailedCreateAsync(string email, CancellationToken ct)
+    {
+        var winner = await FindAsync(email, ct);
+        if (winner.Status != LoginKeyLookup.Absent)
+        {
+            return winner;
+        }
+        log.LogError(
+            "login key for {Email} could not be written, so none was issued. This is a storage problem — "
+            + "check the data directory's permissions and free space.",
+            email);
+        return LoginKeyResult.Unreadable;
     }
 
     /// <summary>
     /// Temp file, then a move that REFUSES to overwrite. Both halves matter: the temp file is why a
     /// reader never sees a half-written key, and <c>overwrite: false</c> is why a second process cannot
-    /// replace one that already exists.
+    /// replace one that already exists. The directory is created here rather than by the caller so that a
+    /// tree that cannot be created is a failed create like any other, not an exception out of the handler.
     /// </summary>
-    private static async Task<bool> TryCreateAsync(string path, byte[] content, CancellationToken ct)
+    private async Task<bool> TryCreateAsync(string email, byte[] key, CancellationToken ct)
     {
         try
         {
-            await VaultStore.AtomicWriteAsync(path, content, ct, overwrite: false);
+            Directory.CreateDirectory(_dir);
+            await VaultStore.AtomicWriteAsync(PathFor(email), Seal(key), ct, overwrite: false);
             return true;
         }
-        catch (IOException)
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
             return false;
         }
@@ -224,7 +246,13 @@ public sealed class LoginKeyStore(string dataDir, byte[] kek, ILogger<LoginKeySt
             var key = new byte[data.Length];
             using var aes = new AesGcm(kek, Convert.FromBase64String(sealedKey.Tag).Length);
             aes.Decrypt(Convert.FromBase64String(sealedKey.Iv), data, Convert.FromBase64String(sealedKey.Tag), key);
-            return LoginKeyResult.Of(key);
+            // Authenticated, and still checked. GCM proves the bytes are the ones this KEK sealed; it says
+            // nothing about how many there should be. A record written by a future build, a hand-edited
+            // file or a restore that meant something else by these bytes would otherwise be served as a
+            // key of the wrong length, and story 3 would seal a vault to something no build reproduces.
+            return key.Length == KeyBytes
+                ? LoginKeyResult.Of(key)
+                : Unreadable(email, $"it holds {key.Length} bytes where a login key is {KeyBytes}");
         }
         catch (Exception e) when (e is CryptographicException or FormatException or ArgumentException)
         {

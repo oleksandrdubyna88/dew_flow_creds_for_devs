@@ -671,9 +671,8 @@ public static class OrgEndpoints
         }
         if (!deps.LoginKeys.Configured)
         {
-            await FailJson(
+            await FailUnavailableJson(
                 ctx,
-                StatusCodes.Status503ServiceUnavailable,
                 "This server has no login-key encryption key configured (Vault:LoginKey:Kek), so it cannot "
                 + "issue login keys. This is a server configuration problem, not a problem with your account.");
             return;
@@ -706,11 +705,11 @@ public static class OrgEndpoints
         var result = await lookup;
         if (result.Status == LoginKeyLookup.Unreadable)
         {
-            await FailJson(
+            await FailUnavailableJson(
                 ctx,
-                StatusCodes.Status503ServiceUnavailable,
-                "This server holds a login key it cannot read right now. Nothing was replaced; ask an "
-                + "administrator to check the server's configuration.");
+                "This server cannot give you a login key right now: it either holds one it cannot read, or "
+                + "could not write a new one. Nothing was replaced; ask an administrator to check the "
+                + "server's configuration and storage.");
             return;
         }
         if (result.Status == LoginKeyLookup.Absent)
@@ -772,16 +771,23 @@ public static class OrgEndpoints
 
     private const string MalformedSettingsBody = "The body is not the JSON this endpoint reads; send offlineLeaseHours.";
 
-    private static Task FailUnavailable(HttpContext ctx)
-    {
-        ctx.Response.Headers.RetryAfter = UnavailableRetryAfterSeconds.ToString(CultureInfo.InvariantCulture);
+    private static Task FailUnavailable(HttpContext ctx) =>
         // Names the problem and WHO ends it — an administrator — so the person does not retry into the
         // same wall; never the file, which is the operator's business and is already in the server log
         // at Error, written once by the store.
-        return FailJson(
+        FailUnavailableJson(
             ctx,
-            StatusCodes.Status503ServiceUnavailable,
             "Your membership record cannot be read by this server, so nothing about your role can be "
             + "answered. An administrator must repair it; the server log names the file.");
+
+    /// <summary>
+    /// Every <c>503</c> this surface answers, with its <c>Retry-After</c>. One helper because a
+    /// <c>503</c> without that header invites a client into a tight loop against a wall, and because two
+    /// spellings of "come back later" is how one of them ends up without the header at all.
+    /// </summary>
+    private static Task FailUnavailableJson(HttpContext ctx, string message)
+    {
+        ctx.Response.Headers.RetryAfter = UnavailableRetryAfterSeconds.ToString(CultureInfo.InvariantCulture);
+        return FailJson(ctx, StatusCodes.Status503ServiceUnavailable, message);
     }
 }
