@@ -9,10 +9,10 @@ security key that never leaves it — so the folder, the NAS or the server holdi
 holds ciphertext and nothing else. Whoever runs that storage, **including you**, cannot read
 what is in it.
 
-It works with **no server and no network** — nothing leaves the machine, and there is nothing to
-sign up for. Creating a profile signs in with the Microsoft or Google account you already have, and
-that identity is only the profile's name; nothing is stored with them. Point it at a folder to sync
-your own machines; add the optional self-hosted server when a team needs to share.
+Creating a profile signs in **once** with the Microsoft or Google account you already have — that
+identity is only the profile's name, nothing is stored with them, and there is nothing to sign up
+for. After that it works with **no server and no network**: nothing leaves the machine. Point it at
+a folder to sync your own machines; add the optional self-hosted server when a team needs to share.
 
 > **Where it runs, and two honest caveats.**
 >

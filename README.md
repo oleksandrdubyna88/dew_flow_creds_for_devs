@@ -34,16 +34,20 @@ it can read all of it.
 
 ## What makes it different
 
-**Act on it, never receive it.** No response shape in the broker protocol has a field a secret could
-travel in — a structure, not a policy. The source says it plainly
+**Act on it, never receive it.** The broker protocol has no field a raw secret could travel in — a
+structure, not a policy. The source says it plainly
 ([`brokerProtocol.ts:7`](src_vs_code/src/brokerProtocol.ts)): *"no shape it could arrive in exists"*.
-What that guarantee does and does not cover is spelled out under
-[Your agent, and what it may do](#your-agent-and-what-it-may-do) — including where it becomes
-best-effort, because a claim with no edge stated is a claim nobody should believe.
+**That is a guarantee about the protocol, not about everything an approved command may print:** a
+command you approve which writes a credential to its own output is masked on the way out, and that
+masking is best-effort. The whole edge is under
+[Your agent, and what it may do](#your-agent-and-what-it-may-do), because a claim with no edge
+stated is a claim nobody should believe.
 
-**Protocols, not just HTTP.** Every other agent credential broker proxies HTTPS. This one performs
-SSH commands, database queries, VPN connections and saved terminal commands on the agent's behalf,
-on the machine where the secret already lives.
+**Protocols, not just HTTP.** The credential brokers built for AI agents that this was measured
+against on 2026-09-06 — Infisical's Agent Vault, Anthropic's Managed Agents Vaults, 1Password for
+Claude, Bitwarden's Agent Access SDK — all mediate HTTP: a forward proxy, egress substitution,
+browser autofill, an SDK. This one performs SSH commands, database queries, VPN connections and
+saved terminal commands on the agent's behalf, on the machine where the secret already lives.
 
 **Local-first.** Secrets sit in the OS keychain. The team server is optional, stores ciphertext, and
 holds no key — there is no decryption routine in it to call.
@@ -61,9 +65,10 @@ npm ci && npm run package        # produces creds-for-devs-<version>.vsix
 code --install-extension creds-for-devs-*.vsix
 ```
 
-Add an account, add a credential, press Connect. No server, no network for daily use, nothing leaves
-the machine. Creating the account profile itself signs in with your existing Microsoft or Google
-account — that identity is the profile's name, and nothing is stored with them.
+Add an account, add a credential, press Connect. **Creating the account profile signs in once with
+your existing Microsoft or Google account** — that identity is the profile's name, and nothing is
+stored with them. After that there is no server and no network in daily use: nothing leaves the
+machine.
 
 ### Run the team server, if you want one
 

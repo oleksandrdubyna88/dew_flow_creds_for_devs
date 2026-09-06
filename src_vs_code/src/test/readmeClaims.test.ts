@@ -292,7 +292,7 @@ test('no broker response type grows a field a secret could travel in', () => {
   assert.equal(shapes.length >= 3, true, `only ${shapes.length} response shapes found — they moved`);
   for (const [, name, body] of shapes) {
     assert.equal(
-      /\b(password|privateKey|secret|passphrase|seed|apiKey|token)\s*[?:]/i.test(body),
+      /\b(password|privateKey|secret|passphrase|seed|apiKey|token|credential|pin)\s*[?:]/i.test(body),
       false,
       `${name} declares a secret-shaped field:\n${body}`,
     );
