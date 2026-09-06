@@ -1726,6 +1726,23 @@ that just asked. A background cycle holds the master key and not the PIN, and mu
 therefore defers, which is why a developer's vault binds on the first write after their next unlock
 rather than at the exact moment the role is granted.
 
+**The held key is revalidated every five minutes** (`LOGIN_KEY_REVALIDATE_MS`). This is what decides
+how long a deactivated developer keeps working in a window they had already opened: without a bound,
+the key is cached and every later call is served from memory, so the `blocked` answer that evicts the
+master key and locks the vault is never fetched at all. Five minutes is short enough that an
+administrator sees a block take effect while they are still watching, and long enough that an ordinary
+sync cycle does not become one request per write. A server that cannot answer keeps the key it had —
+dropping it over one flaky request would lock somebody out of their own vault on a train — and only
+`blocked` throws it away. Story 4's offline lease is the same question over a longer horizon and for
+the whole account; the two are deliberately independent.
+
+**A changed server key is reported as itself, before anything is decrypted.** The fingerprint travels
+with the key through the unlock path, and `requireBinding` compares it against what the wrap was
+sealed to: a vault bound to key A met by a server now issuing key B — an older backup restored on the
+server — produces *"your organisation server's login key has CHANGED"*, not a wrong-password the
+person answers by retyping a correct PIN. `bindWithLoginKey` also refuses a key that is not 32 bytes,
+because a key of the wrong size derives a perfectly valid AES key that opens nothing.
+
 **What this does not promise.** A copy taken *before* the binding still opens with the PIN — nothing
 can reach into a file somebody already has. The guarantee is about versions written while bound, and
 that is what makes deactivation effective going forward rather than retroactively.

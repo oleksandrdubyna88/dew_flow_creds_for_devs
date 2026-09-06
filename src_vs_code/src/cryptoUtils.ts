@@ -299,6 +299,15 @@ const LOGIN_KEY_BIND_INFO = Buffer.from('cred-ssh-manager/dev-login-key-bind');
  * enough. See `research/architecture.md` §The trust boundary.</p>
  */
 export function bindWithLoginKey(baseKey: Buffer, loginKey: Buffer): Buffer {
+  // Defence in depth, and the failure it prevents is the one nobody can diagnose: a key of the wrong
+  // size derives a perfectly valid AES key that opens nothing, and the person is told their PIN is
+  // wrong. The client refuses such a key at the wire too; this is the layer that cannot be bypassed.
+  if (loginKey.length !== KEY_LENGTH) {
+    throw new BackupError(
+      'server-key-required',
+      `A login key must be ${KEY_LENGTH} bytes; this one is ${loginKey.length}.`,
+    );
+  }
   const material = Buffer.concat([baseKey, loginKey]);
   const bound = Buffer.from(
     crypto.hkdfSync('sha256', material, Buffer.alloc(0), LOGIN_KEY_BIND_INFO, KEY_LENGTH),

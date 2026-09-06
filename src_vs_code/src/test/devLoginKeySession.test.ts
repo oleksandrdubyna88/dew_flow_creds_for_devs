@@ -37,6 +37,42 @@ test('the key is fetched once and then held', async () => {
   assert.equal(asked(), 1, 'a held key is not re-fetched');
 });
 
+test('a held key is revalidated, so blocking reaches a window that is already open', async () => {
+  // The code round's finding, and the one that decided whether this feature works at all: without a
+  // bound on how long a cached key is trusted, an administrator blocking somebody has no effect
+  // until they close VS Code — every later call is served from memory and the server is never asked.
+  const { client, asked } = clientAnswering(issued(), { kind: 'blocked' });
+  const locked: string[] = [];
+  let now = 1_000;
+  const session = new LoginKeySession(() => client, (a) => locked.push(a.email), undefined, () => now, 60_000);
+  assert.notEqual(await session.resolve(account), undefined);
+
+  now += 30_000;
+  assert.notEqual(await session.resolve(account), undefined, 'still fresh: no second request');
+  assert.equal(asked(), 1);
+
+  now += 40_000;
+  const after = await session.resolve(account);
+
+  assert.equal(asked(), 2, 'past the horizon the server is asked again');
+  assert.equal(after, undefined);
+  assert.deepEqual(locked, ['alice@example.com'], 'and the blocked answer evicts and locks');
+});
+
+test('a server that cannot answer keeps the key it already had', async () => {
+  // The other direction of the same knob: dropping a key over one flaky request would lock somebody
+  // out of their own vault on a train.
+  const { client } = clientAnswering(issued(), { kind: 'unavailable', why: 'ECONNREFUSED' });
+  let now = 1_000;
+  const session = new LoginKeySession(() => client, () => assert.fail('not blocked'), undefined, () => now, 10);
+  const first = await session.resolve(account);
+
+  now += 1_000;
+  const second = await session.resolve(account);
+
+  assert.deepEqual(second, first);
+});
+
 test('a blocked account drops the key AND tells the caller to lock', async () => {
   // Forgetting S alone would leave an already-unlocked session reading everything until the window
   // closed. The eviction is the point.

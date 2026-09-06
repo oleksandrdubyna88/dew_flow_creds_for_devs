@@ -32,7 +32,7 @@ test('a bound PIN wrap opens with the login key and not without it', () => {
   const master = newMasterKey();
   const wrap = wrapWithPin(master, account.accountId, '1234', 1, S);
 
-  assert.deepEqual(unwrapWithPin(wrap, account.accountId, '1234', S.key), master);
+  assert.deepEqual(unwrapWithPin(wrap, account.accountId, '1234', S), master);
   assert.equal(wrap.serverBound, true);
   assert.equal(wrap.loginKeyFingerprint, S.fingerprint);
 });
@@ -45,18 +45,10 @@ test('the login key missing is server-key-required, NEVER wrong-password', () =>
   assert.equal(kindOf(() => unwrapWithPin(wrap, account.accountId, '1234')), 'server-key-required');
 });
 
-test('the WRONG login key is still an authentication failure, and that is correct', () => {
-  // After the guard passes, a tag failure means what it has always meant. The fingerprint is what
-  // distinguishes a changed server key BEFORE any decryption is attempted — see bindingMatches.
-  const wrap = wrapWithPin(newMasterKey(), account.accountId, '1234', 1, S);
-
-  assert.equal(kindOf(() => unwrapWithPin(wrap, account.accountId, '1234', OTHER.key)), 'wrong-password');
-});
-
 test('the right login key with the wrong PIN is a wrong PIN', () => {
   const wrap = wrapWithPin(newMasterKey(), account.accountId, '1234', 1, S);
 
-  assert.equal(kindOf(() => unwrapWithPin(wrap, account.accountId, '9999', S.key)), 'wrong-password');
+  assert.equal(kindOf(() => unwrapWithPin(wrap, account.accountId, '9999', S)), 'wrong-password');
 });
 
 test('a vault written WITHOUT a login key is byte-identical in shape to today', () => {
@@ -72,7 +64,7 @@ test('a bound security-key wrap needs the login key too', () => {
   const secret = Buffer.alloc(32, 5);
   const wrap = wrapWithPrf(master, 'cred-1', 'salt', secret, 'YubiKey', 1, undefined, S);
 
-  assert.deepEqual(unwrapWithPrf(wrap, secret, S.key), master);
+  assert.deepEqual(unwrapWithPrf(wrap, secret, S), master);
   assert.equal(kindOf(() => unwrapWithPrf(wrap, secret)), 'server-key-required');
 });
 
@@ -80,8 +72,35 @@ test('the async PIN path binds and opens the same way', async () => {
   const master = newMasterKey();
   const wrap = await wrapWithPinAsync(master, account.accountId, '1234', 1, S);
 
-  assert.deepEqual(await unwrapWithPinAsync(wrap, account.accountId, '1234', S.key), master);
+  assert.deepEqual(await unwrapWithPinAsync(wrap, account.accountId, '1234', S), master);
   await assert.rejects(() => unwrapWithPinAsync(wrap, account.accountId, '1234'), /organisation server/);
+});
+
+test('a wrap sealed to ANOTHER key is reported as the server key changing, not a wrong PIN', () => {
+  // The guard this story exists to provide, and it was half-built: the fingerprint comparison had no
+  // caller, so a restored older backup — vault bound to A, server now issuing B — reached the person
+  // as `wrong-password`. They would then retype a PIN that is perfectly correct.
+  const wrap = wrapWithPin(newMasterKey(), account.accountId, '1234', 1, S);
+
+  assert.equal(kindOf(() => unwrapWithPin(wrap, account.accountId, '1234', OTHER)), 'server-key-required');
+});
+
+test('the changed-key refusal says what actually happened', () => {
+  const wrap = wrapWithPin(newMasterKey(), account.accountId, '1234', 1, S);
+
+  try {
+    unwrapWithPin(wrap, account.accountId, '1234', OTHER);
+    assert.fail('expected a refusal');
+  } catch (error) {
+    assert.match((error as Error).message, /changed/i);
+  }
+});
+
+test('an empty or short login key is refused rather than deriving a plausible wrong key', () => {
+  // Defence in depth. The client already refuses a key of the wrong size at the wire, but a key that
+  // is merely WRONG here produces a valid-looking derivation and a wrong-password nobody can explain.
+  assert.throws(() => bindWithLoginKey(Buffer.alloc(32, 1), Buffer.alloc(0)), /32/);
+  assert.throws(() => bindWithLoginKey(Buffer.alloc(32, 1), Buffer.alloc(16, 1)), /32/);
 });
 
 test('the binding primitive is deterministic and depends on both halves', () => {
@@ -139,7 +158,7 @@ test('rotating a bound vault WITH the login key keeps it bound', async () => {
   });
 
   assert.equal(rotated.wraps[0].serverBound, true);
-  assert.deepEqual(unwrapWithPin(rotated.wraps[0], account.accountId, '5678', S.key), rotated.masterKey);
+  assert.deepEqual(unwrapWithPin(rotated.wraps[0], account.accountId, '5678', S), rotated.masterKey);
 });
 
 test('rotating an UNBOUND vault is unaffected', async () => {

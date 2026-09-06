@@ -14,6 +14,7 @@ import {
   prfSaltsByCredential,
   recoveryWrap,
   wrapForCredential,
+  LoginKeyBinding,
   isKeyWrap,
   unwrapWithPinAsync,
   unwrapWithPrf,
@@ -114,7 +115,7 @@ export class VaultKeys {
    * constructor would make every test that builds a `VaultKeys` declare a concept it does not
    * use.</p>
    */
-  loginKeys: { resolve: (account: StoredAccount) => Promise<{ key: Buffer } | undefined> } | undefined;
+  loginKeys: { resolve: (account: StoredAccount) => Promise<LoginKeyBinding | undefined> } | undefined;
 
   /**
    * The login key this vault's wraps need, or nothing when they need none.
@@ -124,11 +125,17 @@ export class VaultKeys {
    * had, the unwrap itself refuses with `server-key-required` — the pre-decryption guard in
    * `keyWrap.ts` — so a missing server never reaches the person as a wrong PIN.</p>
    */
-  private async loginKeyFor(account: StoredAccount, wraps: readonly KeyWrap[]): Promise<Buffer | undefined> {
+  private async loginKeyFor(
+    account: StoredAccount,
+    wraps: readonly KeyWrap[],
+  ): Promise<LoginKeyBinding | undefined> {
     if (!isBoundVault(wraps)) {
       return undefined;
     }
-    return (await this.loginKeys?.resolve(account))?.key;
+    // The FINGERPRINT travels with the key, not just the bytes: `requireBinding` compares it against
+    // what the wrap was sealed to, so a server whose key has moved on is reported as that rather than
+    // as a wrong PIN. Returning bytes alone is what left that comparison without a caller.
+    return this.loginKeys?.resolve(account);
   }
 
   clearCache(accountId?: string): void {
