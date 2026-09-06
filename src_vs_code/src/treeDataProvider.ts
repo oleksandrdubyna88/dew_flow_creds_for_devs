@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import { shareLabelTrusted } from './shareFormat';
 import { StorageManager } from './storageManager';
 import { ShareSources, sharedMatches, unverifiedSender } from './shareRows';
-import { TEAM_COLOR, teamMemberItem, teamScopeItem } from './teamItems';
+import { TEAM_COLOR, sharedRootItem, teamMemberItem, teamScopeItem } from './teamItems';
 import type { SharingManager } from './sharingManager';
 import { TreeElement, TreeNode } from './types';
 
@@ -24,7 +24,7 @@ import { parentFolderOf, refuseMove, refuseProjectFolderChange } from './moveGat
 import { SyncReadiness } from './syncReadiness';
 import { OrgRecoveryAccess, orgAccessWithRole } from './orgRecoveryAccess';
 import { CorpPolicyState } from './corpPolicy';
-import { MemberListEntry } from './orgMembersClient';
+import { MemberListEntry, ProjectRow } from './orgMembersClient';
 import { describeTarget, entityContextValue, markInvalid, folderContextValue } from './treeRowText';
 import { FOLDER_COLOR, buildTooltip, entityIcon, folderIcon, kindIcon } from './treeIcons';
 import { parentOf } from './treeParent';
@@ -99,6 +99,8 @@ export class CredTreeDataProvider
    * the previous entry (`orgPolicyRefresh.ts`) — not knowing changes nothing.
    */
   readonly orgPolicy = new Map<string, CorpPolicyState>();
+  /** The server's projects, for naming the ids on a Team row; filled by the same refresh. */
+  readonly orgProjects = new Map<string, readonly ProjectRow[]>();
 
   /**
    * The roster, held only for accounts that administer — it is what gives a colleague's Team
@@ -466,18 +468,11 @@ export class CredTreeDataProvider
         viaAccountId: element.viaAccountId,
         viewer: this.orgPolicy.get(element.viaAccountId),
         roster: this.orgRoster.get(element.viaAccountId),
+        projects: this.orgProjects.get(element.viaAccountId),
       });
     }
     if (element.kind === 'sharedRoot') {
-      const item = new vscode.TreeItem(
-        'Shared with me',
-        vscode.TreeItemCollapsibleState.Expanded,
-      );
-      item.id = 'sharedRoot';
-      item.contextValue = 'sharedRoot';
-      item.iconPath = new vscode.ThemeIcon('gift');
-      item.description = `${this.sharing?.ownShares.length ?? 0}`;
-      return item;
+      return sharedRootItem(this.sharing?.ownShares.length ?? 0);
     }
     if (element.kind === 'sharedSender') {
       const item = new vscode.TreeItem(

@@ -1,5 +1,5 @@
 import { CorpPolicyFacts, CorpPolicyState, afterPolicyFetch, factsOf } from './corpPolicy';
-import { MemberListEntry, OrgMembersClient } from './orgMembersClient';
+import { MemberListEntry, OrgMembersClient, ProjectRow } from './orgMembersClient';
 import { StoredAccount } from './types';
 
 /**
@@ -16,6 +16,12 @@ export interface OrgPolicyHost {
   readonly clientFor: (account: StoredAccount) => OrgMembersClient | undefined;
   readonly orgPolicy: Map<string, CorpPolicyState>;
   readonly orgRoster: Map<string, readonly MemberListEntry[]>;
+  /**
+   * The projects this account's server knows, by account — what turns an id on somebody's
+   * record into a name a person recognises. Beside the roster because it has the same life: one
+   * corporate answer per account, dropped together when the account is repointed.
+   */
+  readonly orgProjects: Map<string, readonly ProjectRow[]>;
   /** Which server each cached answer came from, so a repointed account cannot keep the old one. */
   readonly orgPolicyServer: Map<string, string>;
   /**
@@ -42,6 +48,8 @@ export interface OrgPolicyHost {
 export interface RefreshOutcome {
   readonly policyRead: boolean;
   readonly rosterRead: boolean;
+  /** Whether the project list was read this time. A failure keeps the last one — see below. */
+  readonly projectsRead: boolean;
 }
 
 /**
@@ -52,7 +60,7 @@ export interface RefreshOutcome {
  * carrying a literal that grows a field per epic.</p>
  */
 export function policyHost(
-  caches: Pick<OrgPolicyHost, 'orgPolicy' | 'orgRoster' | 'orgPolicyServer'>,
+  caches: Pick<OrgPolicyHost, 'orgPolicy' | 'orgRoster' | 'orgProjects' | 'orgPolicyServer'>,
   clientFor: (account: StoredAccount) => OrgMembersClient | undefined,
   heartbeat: (accountId: string, at: number) => PromiseLike<void>,
   now: () => number = Date.now,
@@ -62,6 +70,7 @@ export function policyHost(
     clientFor,
     orgPolicy: caches.orgPolicy,
     orgRoster: caches.orgRoster,
+    orgProjects: caches.orgProjects,
     orgPolicyServer: caches.orgPolicyServer,
     heartbeat,
     afterRead,
@@ -77,8 +86,9 @@ export async function refreshOrgPolicy(host: OrgPolicyHost, account: StoredAccou
     // a stale fact drawn as a current one.
     host.orgPolicy.delete(id);
     host.orgRoster.delete(id);
+    host.orgProjects.delete(id);
     host.orgPolicyServer.delete(id);
-    return { policyRead: false, rosterRead: false };
+    return { policyRead: false, rosterRead: false, projectsRead: false };
   }
   // An account repointed at another corporate server keeps its id, so the id alone would let the
   // previous server's role survive a failed first read against the new one — and the tree would
@@ -88,7 +98,7 @@ export async function refreshOrgPolicy(host: OrgPolicyHost, account: StoredAccou
   const fetched = await readFacts(client, account, host.now).catch(() => undefined);
   const next = afterPolicyFetch(host.orgPolicy.get(id), fetched);
   if (next === undefined || fetched === undefined) {
-    return { policyRead: false, rosterRead: false }; // could not ask: everything stays as it was
+    return { policyRead: false, rosterRead: false, projectsRead: false }; // could not ask: everything stays as it was
   }
   host.orgPolicy.set(id, next);
   // Wrapped rather than awaited bare: `heartbeat` is somebody else's callback, and one that throws
@@ -103,7 +113,8 @@ export async function refreshOrgPolicy(host: OrgPolicyHost, account: StoredAccou
     .then(() => host.afterRead?.(account, next))
     .then(undefined, () => undefined);
   const rosterRead = await refreshRoster(host, client, account, next.isAdmin);
-  return { policyRead: true, rosterRead };
+  const projectsRead = await refreshProjects(host, client, account);
+  return { policyRead: true, rosterRead, projectsRead };
 }
 
 /**
@@ -118,6 +129,7 @@ function forgetAnswersFromAnotherServer(host: OrgPolicyHost, id: string, locatio
   }
   host.orgPolicy.delete(id);
   host.orgRoster.delete(id);
+  host.orgProjects.delete(id);
   host.orgPolicyServer.set(id, location);
 }
 
@@ -146,5 +158,27 @@ async function refreshRoster(
     return false;
   }
   host.orgRoster.set(account.accountId, rows);
+  return true;
+}
+
+/**
+ * The projects this account's server knows, for naming the ids on people's records.
+ *
+ * <p><b>A read that fails keeps the last list</b>, exactly as the policy document does one function
+ * above, and never throws into the readiness loop: a row that suddenly stopped naming the projects
+ * it named a minute ago would be a worse answer than a slightly old one, and the names are a
+ * label — nothing decides on them. Every caller may ask: a developer is answered with their own
+ * projects, which is what their rows need.</p>
+ */
+async function refreshProjects(
+  host: OrgPolicyHost,
+  client: OrgMembersClient,
+  account: StoredAccount,
+): Promise<boolean> {
+  const rows = await client.listProjects(account).catch(() => undefined);
+  if (rows === undefined) {
+    return false;
+  }
+  host.orgProjects.set(account.accountId, rows);
   return true;
 }

@@ -13,7 +13,7 @@ import { registerWslRelayCommands } from './commands/wslRelayCommands';
 import { registerAccountCommands } from './commands/accountCommands';
 import { registerShareCommands } from './commands/shareCommands';
 import { registerViewCommands } from './commands/viewCommands';
-import { registerOrgMemberCommands } from './commands/orgMemberCommands';
+import { registerOrgCommands } from './commands/orgProjectCommands';
 import * as vscode from 'vscode';
 import { setSecretClipboardTtl } from './secretClipboard';
 import { backupToNas, restoreFromBackup } from './backupManager';
@@ -946,7 +946,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // ---------- the printed recovery code (roadmap D9) ----------
 
   registerRecoveryCommands({ breakGlassSessions, context, pinStore, register, storage, transports, vaultKeys });
-  registerOrgMemberCommands({ provider, refreshOrgPolicy: (a) => refreshOrgPolicy(orgPolicyHost, a), register, storage, transports });
+  registerOrgCommands({ provider, refreshOrgPolicy: (a) => refreshOrgPolicy(orgPolicyHost, a), register, storage, transports });
   registerKeyCommands({ keyHost, lockNow, refreshReadiness, register, storage, sync, transports, vaultKeys });
 
   /**

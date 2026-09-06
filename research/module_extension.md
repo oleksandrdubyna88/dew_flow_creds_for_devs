@@ -3909,6 +3909,52 @@ It refuses only on facts it positively holds:
 permits the share, which binding form follows, and one recipient's delivery — because `shareInbox.ts`
 was already at the 800-line ceiling and this is a whole concern with its own tests.
 
+## The admin's project actions, and what a Team row says (2026-09-06, epic 3 story 5)
+
+Epic 3 built a store, a rule, folders and a binding; none of it was reachable without `curl`. These
+are the callers, and the row that shows the result.
+
+### Three actions, on the row that has the person
+
+***New Project…*** is on the Team SCOPE row as well as a colleague's, and that is the plan round's
+finding: with it only on a member row, an administrator whose roster is empty — the first day of a
+deployment, which is exactly when projects get created — has no way in at all.
+
+***Assign to Project…*** picks an OPEN project, then the share (`inherit`, `project`, `none` — the
+server's three, `inherit` first because it is the common case). ***Remove from Project…*** picks
+from the intersection of the project list and that person's own assignments: the other plan-round
+finding, and a destructive one left unfixed, because an admin could otherwise pick a project the
+person was never on and then be asked whether to delete a folder they never had.
+
+**The folder question is two items, both in words, and the SAFE one first** — it is the item Enter
+selects, which is the reasoning the delete command already records for putting *Move to Trash* ahead
+of *Delete Permanently*. There is no checkbox in a VS Code QuickPick, and the two outcomes are not
+recoverable from each other, which is also why the server refuses the request outright when the
+parameter is absent.
+
+**All three are hidden from the command palette.** From the palette VS Code passes no row, so the
+command would have nothing to act on and would fail before any request could be made — a `when: false`
+entry is both the guard and the reason it is never offered there.
+
+**The write is what succeeded.** A re-read that fails afterwards says so on its own line rather than
+turning a completed change into an apparent failure — which is what would make somebody run a
+non-idempotent create a second time.
+
+### The row: three names, then a count
+
+`microsoft · dev · Atlas, Borealis, Cygnus +6`. Three names is what a row can carry before the email
+— which is what the row is FOR — loses its place.
+
+**An id the project list cannot name is COUNTED, never dropped.** Nine projects with one unnamed
+reads `+6`, not `+5`: a row must not tell somebody they are on fewer projects than they are. An
+unnamed id happens while the list is still being read, and on a project archived out from under a
+cached answer.
+
+The names come from `GET /api/org/projects`, cached per account beside the roster and refreshed by
+the same loop — **a failed read keeps the last list**, exactly as the policy document does, because a
+row that suddenly stopped naming the projects it named a minute ago is a worse answer than a slightly
+old one. Nothing decides on these names; they are a label.
+
 ## Security hardening (2026-08-25 review)
 
 The coverage pass that followed it ([SECURITY_REVIEW_2026-08-26.md](SECURITY_REVIEW_2026-08-26.md))

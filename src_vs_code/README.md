@@ -895,8 +895,20 @@ with whom, may move an entry out of a project). ***Set Role…*** on a colleague
 admin — or a recovery officer, who administers unconditionally — make somebody admin, member
 (today's behaviour, and the default) or dev, and for a dev choose whether they may share inside
 their projects or not at all. ***My Role and Policy…*** on an account row shows what the server
-says about you. Honest note: this version **shows** the policy and does not yet apply it; the bans
-themselves arrive in a later version, and the page says so.
+says about you.
+
+**Projects.** An admin runs ***New Project…*** from Team — that is where the first one is made —
+then ***Assign to Project…*** and ***Remove from Project…*** on a colleague's row. An assignment
+becomes a folder in that person's own vault, named after the project and following its name; for a
+developer that folder cannot be renamed, moved or deleted, and an entry cannot be moved out of it
+except to the Trash. Removing somebody asks what happens to their copy — leave it with them, or
+delete it from every machine they sync — because the two are not recoverable from each other. A
+Team row shows the projects a colleague is on beside their role.
+
+A developer's sharing is the one rule the **server** enforces rather than asking an honest client
+to obey: they may share only out of a project folder, only with somebody on that project, and only
+while the project is open. The project travels with the share and is bound into its encryption, so
+it cannot be edited afterwards.
 
 ## NAS backup & automatic multi-PC sync
 
@@ -1125,6 +1137,8 @@ also on the right-click menu where it applies.
   Recovery… · Finish a Recovery…
 - **Corporate roles** — Set Role… (on a colleague's Team row, for admins and officers) · My Role
   and Policy… (on any account row of a corporate server)
+- **Corporate projects** — New Project… (on the Team row, or a colleague's) · Assign to Project… ·
+  Remove from Project… (both on a colleague's Team row, for admins and officers)
 - **Keys on disk** — Install SSH Key to System (~/.ssh) · Remove Installed Key… · Add to SSH Agent (confirm every use) · Remove from SSH Agent
 - **Scans** — Health Report (weak, reused, exposed) · Check Clipboard for Vault Secrets ·
   Scan This File for Vault Secrets · Show Diagnostics
