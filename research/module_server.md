@@ -242,6 +242,12 @@ this surface promises a reason and an empty `403` is not one.
 
 ### The admin's routes
 
+**A record the server cannot read is absent from the roster** rather than breaking it: one damaged
+file must not cost an admin the whole list, and it must not be drawn as a person with a role either.
+The store logs its path at Error, and the person themselves meets the `503` on their own
+`/api/org/me` — so whoever is looking for them finds the log, and whoever is looking at everybody
+else is not stopped by them.
+
 **`GET /api/org/members`** answers `MemberListEntryDto[]` — the record's facts plus `isOfficer`,
 which the record cannot hold because it comes from configuration. It is reported beside the role for
 a practical reason: a list that showed the CTO as a plain `member` would invite exactly the edit the
@@ -277,8 +283,13 @@ silence. Absent is a `400` instead.
 
 ### What the admin routes write to the log
 
-Each row is appended **after** the write it records has landed, and an append that fails never fails
-the mutation (the log's rule, from the story that built it):
+**One row per changed PROPERTY, not per request** — a PUT that sets both a role and a share default
+leaves two, and one that sets a role to the value it already had leaves none. Each row is appended
+**after** the write it records has landed, and **an append that fails never fails the mutation**: the
+change is on disk, a `500` would tell the admin otherwise, and the loss is logged at Error carrying
+the kind, the actor and the subject, so the trail degrades to the server log rather than vanishing.
+So the guarantee is exactly that and no more — the log is a record of what happened, not a second
+commit the mutation waits for:
 
 | Kind | From | Detail |
 |---|---|---|
@@ -705,7 +716,7 @@ what is under it:
 
 ## Tests
 
-`src_minimalapi_server/tests/` — xUnit v3 on Microsoft Testing Platform, 289 tests, ~14 s. The
+`src_minimalapi_server/tests/` — xUnit v3 on Microsoft Testing Platform, 292 tests, ~13 s. The
 endpoint suites run in-process through `WebApplicationFactory` — no free port, no background
 `dotnet run`; the store suites drive a store directly on a throwaway data directory.
 

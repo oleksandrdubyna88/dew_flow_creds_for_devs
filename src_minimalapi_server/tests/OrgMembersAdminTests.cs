@@ -351,4 +351,60 @@ public sealed class OrgMembersAdminTests
         put.Headers.RetryAfter.Should().NotBeNull();
         (await File.ReadAllTextAsync(Corp.RecordPath(server, Alice), Ct)).Should().Be(Corp.Garbage);
     }
+
+    [Fact]
+    public async Task ARoleSetIsInTheVeryNextList()
+    {
+        // The write and the read go through one store with one cache, and the write invalidates it — but
+        // "an admin sets a role and the list still shows the old one" is the kind of staleness that gets
+        // discovered by an admin making a second decision from it, so it is pinned rather than reasoned.
+        using var server = Corp.Server();
+        using var cto = server.ClientFor(Corp.Cto);
+        using var alice = server.ClientFor(Alice);
+        await Corp.SyncAsync(alice);
+
+        (await Corp.SetMemberAsync(cto, Alice, role: MemberRole.Dev)).StatusCode.Should().Be(HttpStatusCode.OK);
+        var list = await ListAsync(cto);
+
+        Entry(list, Alice).GetProperty("role").GetString().Should().Be(MemberRole.Dev);
+    }
+
+    [Fact]
+    public async Task ARecordTheServerCannotReadIsAbsentFromTheRosterRatherThanBreakingIt()
+    {
+        // One damaged file must not cost an admin the whole roster, and it must not be drawn as a person
+        // with a role either — the row is omitted, the store logs the path at Error, and the person meets
+        // the 503 on their own /api/org/me. Whoever is looking for them finds the log; whoever is looking
+        // at everybody else is not stopped by them.
+        using var server = Corp.Server();
+        using var cto = server.ClientFor(Corp.Cto);
+        using var alice = server.ClientFor(Alice);
+        using var bob = server.ClientFor(Bob);
+        await Corp.SyncAsync(alice);
+        await Corp.SyncAsync(bob);
+        await Corp.CorruptRecordAsync(server, Alice);
+
+        var list = await ListAsync(cto);
+
+        list.EnumerateArray().Select(e => e.GetProperty("email").GetString()).Should().BeEquivalentTo([Bob]);
+        (await alice.GetAsync("/api/org/me", Ct)).StatusCode.Should().Be(
+            HttpStatusCode.ServiceUnavailable, "the person themselves is told, and told to ask an administrator");
+    }
+
+    [Fact]
+    public async Task APlusAddressedTargetIsTheSamePersonTheRouteDecoded()
+    {
+        // Path segments arrive decoded, and a plus in a path is a plus rather than a space — but an email
+        // with one is exactly the address a naive check or a wrong decoding turns into a 400 or, worse,
+        // into a second record for the same person. One request, and the record's own email says which.
+        const string plus = "alice+work@example.com";
+        using var server = Corp.Server();
+        using var cto = server.ClientFor(Corp.Cto);
+
+        var put = await Corp.SetMemberAsync(cto, Uri.EscapeDataString(plus), role: MemberRole.Dev);
+
+        put.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await Corp.BodyAsync(put)).GetProperty("email").GetString().Should().Be(plus);
+        Corp.ReadRecord(server, plus).Role.Should().Be(MemberRole.Dev);
+    }
 }
