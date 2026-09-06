@@ -3551,3 +3551,45 @@ story:
 rasteriser that draws the same key glyph as `media/icon.svg` and encodes the PNG with `node:zlib`.
 The Marketplace rejects an SVG in the `icon` field, and a committed binary nobody can regenerate is
 worse than a script. Full publishing procedure: `src_vs_code/docs/PUBLISHING.md`.
+
+### The front door leads with the broker, and the claims have tests (2026-09-06)
+
+The root `README.md` was a monorepo introduction — `# dew_flow_creds_for_devs` over a "two products,
+one repository" table — and `package.json` names it as `homepage`, so it is what a Marketplace reader
+clicks through to. It now opens as the product, and the sentence it opens with is chosen against the
+field rather than from taste.
+
+**Why the differentiator is the PROTOCOL, not the property.** Measured 2026-09-06: *"the agent never
+sees the secret"* is said, in almost those words, by Infisical's Agent Vault, 1Password for Claude,
+Bitwarden's Agent Access SDK and Anthropic's own Managed Agents Vaults. It has stopped carrying
+information. What none of them does is broker anything but HTTP — Infisical is a MITM forward proxy,
+Anthropic substitutes on egress and says so, 1Password uses browser autofill and process environment.
+This product performs SSH commands, database queries, VPN connections and saved terminal commands, on
+the machine where the secret already is. That clause is both true and, for now, unmatched, so it is
+the one the first screen spends its attention on.
+
+**The guarantee is stated with its edge, because the edge is real.** The structural half holds
+absolutely: no response shape in `brokerProtocol.ts` has a field a secret could travel in. The second
+half is best-effort and the README now says so — if an approved command *prints* a credential, the
+masker in `brokerResponse.ts` replaces this entry's stored values on the way out, **fails open by
+design** (a failed table lets the answer through rather than turning a working command into an
+outage), and can only mask values the vault knows. A README that claimed the whole guarantee would be
+contradicted by the product's own source comment.
+
+**Three claims the README may never make**, each because the code says otherwise: there is no master
+password (`keyWrap.ts:38` — the wraps are pin, webauthn, recovery, org-escrow); nothing is *"stamped
+by the identity provider"* (the SERVER stamps the sender from a verified token, and the Ed25519
+folder-share signatures are trust-on-first-use, whose own file says at `shareSignature.ts:25` that it
+**must never be described as eliminating spoofing**); and there is no tenancy model, only
+per-verified-email vault scoping.
+
+**`test/readmeClaims.test.ts` is the part that will still be true next year.** It reads
+`ENTITY_KINDS`, `MCP_SWITCHES` and the files on disk — never a copy of a number — and refuses the
+banned phrasings, a missing caveat, an image reference that resolves to nothing, a picture promised
+and not delivered, markup only GitHub renders, and a broker response type that grows a secret-shaped
+field. The rewrite it replaced had three wrong numbers in it (seven kinds for nine, six switches for
+ten, an install script's line count off by ten), which is what a document nobody re-reads does.
+
+Every phrase check runs against the text with whitespace collapsed. That is not tidiness: these
+documents are hard-wrapped at about a hundred columns, and the first run of the suite reported the
+trust-on-first-use caveat missing because the sentence broke after "first".
