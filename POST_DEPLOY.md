@@ -8,6 +8,11 @@ happened at all. Twelve is the cap; there are seven.
 Target: the deployed vault, as an origin — `--target https://vault.example.com`
 Last verified: 2026-09-03 · **the deployment**, immediately after `rsd server deploy` shipped 0.5.3 · all five automated items PASS, run by the deploy workflow itself. Items 6 and 7 are a person's and were not covered by that run.
 
+> **Item 2's expectation moved on 2026-09-06 and has NOT been re-verified against a deployment.**
+> Epic 3 raised the contract floor to 4, so `EXPECTED_CONTRACT` now defaults to `4` here. The stamp
+> above is deliberately left at the last run that was actually watched: a check whose expected value
+> changed is a check nobody has seen pass. The next deploy of this epic is what re-verifies it.
+
 | # | What a person loses if this is broken | Check | Auto |
 |---|---|---|---|
 | 1 | Nothing works: no sync, no sharing, no sign-in — and if the volume is merely unwritable, every write fails while the process looks alive | `node -e "fetch(process.env.TARGET+'/api/health').then(r=>r.json()).then(h=>process.exitCode=+(h.status==='ok'&&h.storage==='writable'?0:1))"` | auto |

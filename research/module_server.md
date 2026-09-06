@@ -358,6 +358,15 @@ part is the set of branches, and a branch nobody enumerated is the one that fail
 | a **developer** | whose recipient's record cannot be read | **`503`** |
 | a **developer** | inside their project, to somebody on it | allowed |
 
+**The server checks what it can SEE, and the rest is named rather than assumed.** `projectId` is
+client-supplied and the payload it describes is ciphertext, so the server cannot verify that the
+entity really sat in that folder — a developer could name a project they are on while sending
+something from outside it. That is the same trust class `entityKind` has always occupied, and it
+is why the client-side move gate — which keeps entities inside their project folders — is part of
+this epic rather than a nicety. What the rule DOES verify is the two facts it holds: that the
+project is open, and that both people are on it. Stated here so a reader does not assume a
+guarantee the ciphertext makes impossible.
+
 **Developers only, and the field is carried for everybody.** The client sends `projectId` for any
 entity under a project folder whatever the sender's role, so a rule keyed on *"this request names a
 project"* would refuse a MEMBER sharing out of one — a regression on the behaviour this epic
@@ -519,7 +528,11 @@ rather than failing the whole document.
 
 ### The contract version
 
-**Current: 3** — the server has a role-and-policy document, `GET /api/org/me` (below). A version-2
+**Current: 4** — a share carries the corporate project it came out of, and a client below this
+cannot OPEN one: it would open the project form with no additional authenticated data, fail the
+GCM tag, and report a wrong PIN for a share that is intact. That is the six-day failure of
+0.82.1–0.87 in a new place, so the corp floor moved with the number rather than a story later.
+**3** was the role-and-policy document, `GET /api/org/me` (below). A version-2
 client does not know the route exists, so on a server with a corporate roster it obeys no policy at
 all — not a garbled response but a missing one: it exports, shares and backs up exactly as before,
 and nothing on either side says so. That is the misreading the bump names. **2** was a share

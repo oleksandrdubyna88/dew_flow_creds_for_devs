@@ -257,20 +257,15 @@ public sealed class OrgProjectShareTests
     }
 
     [Fact]
-    public async Task AnOversizedProjectIdIsCountedAgainstTheShareBudget()
+    public void AProjectIdIsCountedAgainstTheShareBudget()
     {
         // A field nobody counts is a field an attacker fills — the lesson PayloadBytes already carries
-        // for entityKind, and a member's projectId is stored verbatim without the rule bounding it.
-        using var server = Corp.Server();
-        using var alice = server.ClientFor(Alice, "Alice");
-        using var bob = server.ClientFor(Bob);
-        await Corp.SyncAsync(alice);
-        await Corp.SyncAsync(bob);
+        // for entityKind. The length bound below refuses the extreme case first; this is the second
+        // line, and it is the one that would matter if the bound were ever widened.
+        var withProject = new ShareRequest { ToEmail = "b@x", EntityName = "n", ProjectId = new string('a', 32) };
+        var without = new ShareRequest { ToEmail = "b@x", EntityName = "n" };
 
-        var share = await ShareAsync(alice, Bob, new string('a', (1024 * 1024) + 1));
-
-        share.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        (await share.Content.ReadAsStringAsync(Ct)).Should().Contain("exceeds");
+        (withProject.PayloadBytes() - without.PayloadBytes()).Should().Be(32);
     }
 
     [Fact]
@@ -289,5 +284,22 @@ public sealed class OrgProjectShareTests
 
         var inbox = await bob.GetStringAsync("/api/shares", Ct);
         inbox.Should().NotContain("projectId");
+    }
+
+    [Fact]
+    public async Task AProjectIdLongerThanAProjectIdIsRefusedOutright()
+    {
+        // It is counted against the share budget, so a megabyte of it cannot slip past the cap — but a
+        // field the server stores verbatim should be bounded by what it can legally BE, not only by how
+        // much of it fits. A project id is 32 hex characters; nothing longer names one.
+        using var server = Corp.Server();
+        using var alice = server.ClientFor(Alice, "Alice");
+        using var bob = server.ClientFor(Bob);
+        await Corp.SyncAsync(alice);
+        await Corp.SyncAsync(bob);
+
+        var share = await ShareAsync(alice, Bob, new string(char.Parse("a"), 500));
+
+        share.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 }
