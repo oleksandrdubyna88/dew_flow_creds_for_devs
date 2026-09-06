@@ -2,8 +2,8 @@ import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { test } from 'node:test';
-import { HELP_ARTICLES, HELP_LANGUAGES, bodyFor, helpArticle } from '../helpContent';
-import { articleHtml, renderHelpHtml, searchIndex } from '../helpPage';
+import { HELP_ARTICLES, HELP_LANGUAGES, HelpArticle, bodyFor, helpArticle } from '../helpContent';
+import { HELP_UI, articleHtml, renderHelpHtml, searchIndex } from '../helpPage';
 
 /**
  * T21 — the help catalog is data, so its guarantees are cheap and real: one fixed article
@@ -50,18 +50,66 @@ test('the order is the path a new person walks, not a ranking of obscurity', () 
   }
 });
 
+/**
+ * The fallback RULE, on an article that cannot exist — so translating one cannot break it.
+ *
+ * <p>This test used to name `mcp-logs` as the article German did not have, and went red the day
+ * German got it: a test that fails when the work it is about SUCCEEDS. The rule is a property of
+ * `bodyFor`, so it is checked on a body map that is missing a language by construction.</p>
+ */
 test('a missing translation falls back to English VISIBLY — never hides an article', () => {
-  const article = helpArticle('mcp-logs');
-  assert.ok(article !== undefined);
-  const de = bodyFor(article, 'de');
-  assert.equal(de.fallback, true);
-  assert.equal(de.body.title, article.en.title);
-  const ru = bodyFor(article, 'ru');
-  assert.equal(ru.fallback, false);
-  assert.notEqual(ru.body.title, article.en.title);
-  assert.ok(articleHtml('mcp-logs', 'de').includes('Noch nicht übersetzt'));
+  const englishOnly: HelpArticle = {
+    id: 'not-a-real-article',
+    en: {
+      title: 'A title',
+      whatItIs: 'a',
+      why: 'b',
+      setup: 'c',
+      usage: 'd',
+      whatCanGoWrong: 'e',
+    },
+    mediaSlots: [],
+  };
+
+  const de = bodyFor(englishOnly, 'de');
+  assert.equal(de.fallback, true, 'a language with no body for it is reported as a fallback');
+  assert.equal(de.body, englishOnly.en, 'and the English body itself is what the reader gets');
+  assert.equal(bodyFor(englishOnly, 'en').fallback, false, 'English is never its own fallback');
+
+  const russian = helpArticle('mcp-logs')!;
+  const ru = bodyFor(russian, 'ru');
+  assert.equal(ru.fallback, false, 'Russian is complete');
+  assert.notEqual(ru.body.title, russian.en.title, 'and it is the Russian text');
   assert.ok(!articleHtml('mcp-logs', 'ru').includes('fallback'));
 });
+
+/** The page half: whatever is still untranslated must SAY so, in the reader's own language. */
+test('an untranslated article says so on the page, in the language asked for', () => {
+  const gap = (['uk', 'de', 'es'] as const)
+    .flatMap((language) => HELP_ARTICLES.map((article) => ({ language, article })))
+    .find(({ language, article }) => article[language] === undefined);
+
+  if (gap === undefined) {
+    // Every language is complete — the notice has nothing to mark, and that is the good outcome.
+    for (const language of HELP_LANGUAGES) {
+      assert.equal(
+        HELP_ARTICLES.filter((a) => a[language] === undefined).length,
+        0,
+        `${language} is complete`,
+      );
+    }
+    return;
+  }
+
+  const html = articleHtml(gap.article.id, gap.language);
+  assert.ok(html.includes(HELP_UI[gap.language].fallback), `${gap.language} says it is showing English`);
+  assert.ok(html.includes(escapeForCheck(gap.article.en.title)), 'and the English text is what it shows');
+});
+
+/** Titles reach the page escaped; only the ampersand matters among the ones in this catalog. */
+function escapeForCheck(title: string): string {
+  return title.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
 
 test('Russian ships complete — every article, every field', () => {
   for (const article of HELP_ARTICLES) {
