@@ -215,6 +215,28 @@ test('a 426 is surfaced as the shared too-old sentence, quoting the server', asy
   );
 });
 
+test('a 409 carries the server’s own sentence — a bare status cannot say "that person is an officer"', async () => {
+  respondWith(409, {
+    error: 'That address is a recovery officer, which is configuration rather than a role.',
+  });
+
+  await assert.rejects(
+    () => client().setMember(account, 'cto@example.com', { role: 'member' }),
+    { message: 'That address is a recovery officer, which is configuration rather than a role.' },
+  );
+});
+
+test('a 503 carries the server’s own sentence, so the admin is told to repair the record', async () => {
+  respondWith(503, {
+    error: 'That membership record cannot be read by this server. An administrator must repair it.',
+  });
+
+  await assert.rejects(
+    () => client().setMember(account, 'alice@example.com', { role: 'dev' }),
+    { message: 'That membership record cannot be read by this server. An administrator must repair it.' },
+  );
+});
+
 test('a 403 carries the server’s own {error} sentence, not a bare status', async () => {
   respondWith(403, { error: 'Not an administrator of this server.' });
 

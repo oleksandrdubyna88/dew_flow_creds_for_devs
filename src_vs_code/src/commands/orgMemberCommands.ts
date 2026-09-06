@@ -134,15 +134,28 @@ async function applyRole(
   if (change === undefined) {
     return; // cancelled in a picker
   }
+  let row: MemberListEntry;
   try {
-    const row = await client.setMember(picked.admin, picked.email, change);
-    await host.refreshOrgPolicy(picked.admin);
-    host.provider.refresh();
-    void vscode.window.showInformationMessage(`${row.email} is now ${roleLabel(row.role, row.isOfficer)} on ${client.location}.`);
+    row = await client.setMember(picked.admin, picked.email, change);
   } catch (error) {
     // A 409 (a recovery officer), a 403, a 503 — the server's own sentence, which is the one the
-    // admin can act on.
+    // admin can act on. Nothing was written, so there is nothing else to say.
     void vscode.window.showErrorMessage(`Could not set the role of ${picked.email}: ${describeError(error)}`);
+    return;
+  }
+  // From here the write HAS landed, and everything left is about what this window shows. A failure
+  // in it must never be reported as a failure to set the role: an admin told "could not set the
+  // role" over a repaint sets it again, and the second attempt can overwrite a decision somebody
+  // else made in between.
+  void vscode.window.showInformationMessage(`${row.email} is now ${roleLabel(row.role, row.isOfficer)} on ${client.location}.`);
+  try {
+    await host.refreshOrgPolicy(picked.admin);
+    host.provider.refresh();
+  } catch (error) {
+    void vscode.window.showWarningMessage(
+      `${row.email} is now ${roleLabel(row.role, row.isOfficer)}, but this window could not refresh: `
+        + `${describeError(error)}. The tree catches up on the next cycle.`,
+    );
   }
 }
 
