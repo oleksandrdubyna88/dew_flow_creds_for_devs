@@ -72,8 +72,12 @@ Recorded in the order they were taken; each epic cites the ones it implements.
 6. **The login key S**, dev roles only: a server-held random secret, issued only to an active dev,
    folded into the PIN and security-key wraps so the vault file is dead without it even to someone
    holding the PIN. Stored under `DataDir` sealed with a key from the deployment's `.env`, so a
-   move or a restore of the server carries it. Rotated on unblock. The **recovery-code wrap is
-   stripped** for devs and its three commands refused — a printed code opens the master key with no
+   move or a restore of the server carries it. **No rotation on unblock** — decided 2026-09-06 after the epic-2 split showed that
+   rotating orphans the vault: every wrap is sealed to S, so a new key would leave the person's
+   current vault openable by nobody and turn every unblock into a break-glass ceremony, against
+   decision 5's "reversible". It also protects nothing, since whoever kept a copy of S is the
+   person being re-admitted. Blocking already makes S unobtainable, which is the mechanism. A
+   two-key rotation is a tail for later. The **recovery-code wrap is stripped** for devs and its three commands refused — a printed code opens the master key with no
    PIN and no S, so leaving it would be leaving the same door open under another name; a code
    printed earlier still opens copies written earlier, which only a break-glass re-key ends. The
    org-escrow wrap stays, because it is how the company gets in at all.

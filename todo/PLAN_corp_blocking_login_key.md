@@ -18,6 +18,30 @@
 > [SECURITY_REVIEW_2026-08-24.md](../research/SECURITY_REVIEW_2026-08-24.md) (M-1, the offline PIN
 > attack that sets the bar here).
 
+## Two decisions taken 2026-09-06, before a line was written
+
+The story split raised both; the owner answered both.
+
+**1. There is no rotation of the login key on unblock, and the reason is that rotation orphans the
+vault it was meant to protect.** Every wrap of a bound vault is sealed to S. Delete S when somebody is
+blocked and mint S′ when they are unblocked, and the vault they had ten minutes ago opens for nobody —
+every unblock becomes a break-glass ceremony with three officers, against decision 5's "reversible".
+It also protects nothing: whoever kept a copy of S is, by definition, the person being re-admitted, and
+they receive S′ too. **Blocking already makes S unobtainable — the server refuses to hand it over — and
+that is the whole mechanism.** The umbrella's decision 6 is corrected with this reasoning; a two-key
+rotation (the server serving `{current, previous}` until a client acknowledges a re-bind) is written up
+as a tail for the owner to decide later, and until it exists a copy of S taken while a person was a
+developer stays valid. Said plainly rather than implied.
+
+**2. The three-machine break-glass rehearsal stays an open tail, and story 3 ships without it — with
+the risk named here rather than in a summary nobody re-reads.** After story 3, break-glass is the only
+road into a blocked developer's vault, and that road has never been driven end to end
+([PLAN_org_recovery_tail.md](PLAN_org_recovery_tail.md) item 1, open since 2026-08-27). The owner chose
+to proceed. What that buys and what it costs: the feature ships now, and the first real recovery is
+also the first rehearsal. The mitigation available without three people is that every part of the road
+already has unit tests, and that a bound vault's owner keeps their own PIN and security key — the
+quorum is needed only when the person is gone.
+
 ## The symptom
 
 Someone leaves. Today the company can do two things: wait for the identity provider to stop issuing
@@ -76,7 +100,22 @@ negotiable.
 
 ## Decisions taken here, with their reasons
 
-**The `active` check lives inside the caller gate, not in new middleware.** Every endpoint already
+**The `active` check lives inside `RequireCaller` ITSELF, not in a sibling.** The split's finding, and
+it is the security rule's own doctrine: a sibling gate means converting seventeen call sites by hand,
+which is "a measure applied at some of the sites that need it" — the class of defect this repository
+keeps finding. `Find` is synchronous and a refusal needs only a status and a header, so the check goes
+inside the existing gate and every caller is covered by one edit, including `RequireOfficer`,
+`RequireAdminAsync` and the corporate routes' own wrapper. The plan's earlier claim that two places
+"must not consult the registry" named neither, and there are none: the anonymous routes never call it.
+
+**The five branches, and the one that decides a quorum's fate.** Corp mode off → pass. **An officer →
+pass, whatever their record says**, because the roster is configuration and a gate that refuses an
+officer on `Active: false` or on an unreadable record locks the break-glass quorum out of the only road
+into the vault this epic is about. `NotRegistered` → pass. `Found` and active → pass. `Found` and
+inactive → `403` with `X-Creds-Reason: account-deactivated`. `Unavailable` → `503` with `Retry-After`,
+never a pass: failing open there is the escalation epic 1 found, one gate later.
+
+**The old wording, kept for the record.** Every endpoint already
 opens with `RequireCaller` (`Program.cs:445-459`), so it is the choke point. It becomes
 `RequireActiveCaller`, an async sibling that resolves the caller, consults the registry and answers
 `403` through the existing `Fail` helper (`Program.cs:465-469`); the old sync `RequireCaller` stays
@@ -181,6 +220,13 @@ leave four open doors, three of them in the panel header. Every handler carries 
 
 ## Contract with epic 1
 
+**A demoted member must still be able to open what they wrote as a developer.** `GET
+/api/org/login-key` **mints** only for an active developer, and **serves an existing key to any active
+corporate caller**. The split found the deadlock in the plan's original rule: binding is a property of
+a VERSION, not of a person, so a member demoted from `dev` still has bound versions on the server, and
+a `403` for "not a dev" would leave them holding a vault nobody can open on a machine without the
+keychain copy. The key is never deleted while the vault exists, for the same reason.
+
 Epic 2 needs, and epic 1 must ship:
 
 ```csharp
@@ -282,6 +328,73 @@ inbox says. Done inline in the block handler, not on `ShareMaintenance`'s hourly
 10. Extension: the export, backup and clone gates.
 11. Docs: the reworded rule in `architecture.md`, the README table, `CLAUDE.md` rule 1,
     `module_server.md`, `module_extension.md`.
+
+## How this epic is built: four stories
+
+Split by Fable on 2026-09-06, against the code epic 1 actually shipped rather than against what its
+plan promised. Each story is a branch of its own — the review gate is keyed by branch and closes after
+one code round — and the epic gets one pull request.
+
+| # | Story | Risk |
+|---|---|---|
+| 1 | A blocked colleague is refused by the server everywhere the same minute, and their pending shares are withdrawn in both directions with the sender told why | expensive: the gate every request passes, and a withdrawal that reaches into other people's inboxes |
+| 2 | The server can hold one factor of a developer's vault key, sealed under the deployment's own key, and hand it only to somebody active who is owed it | expensive: key custody, and the first feature that could log a secret by accident |
+| 3 | A developer's vault file is dead without the server — the PIN and security-key wraps bind to it, the recovery code is closed, and the founding sentence is reworded with its evidence beside it | expensive: cryptography on every developer vault, and a live migration of files already on servers |
+| 4 | An honest client locks a deactivated or long-offline developer account and refuses the exits a developer may not use | ordinary: every decision is a pure predicate over a policy the server already derives |
+
+### What the split found, and what changed because of it
+
+Sixteen things. The two the owner decided are at the top of this document; these are the rest, each
+folded into the section it belongs to:
+
+- **`ReconcileSentAsync` would erase a withdrawn receipt within the hour.** Its "still pending" test is
+  "the inbox file exists", and withdrawal deletes exactly that file — so the sender would never see why
+  their share vanished. The sweep keeps a receipt carrying a reason; the 31-day prune still retires it.
+- **`vaultRekey.rekeyUnderPin` and `securityKeyOps.envelopeWithAddedWrap` were absent from the file
+  list.** Every PIN change and every last-key removal on a developer would write an UNBOUND version,
+  undone only at the next sync — a hole that opens once per PIN change.
+- **`hasVaultKeyedWrap` reads a bound PIN-only vault as a standalone PIN backup**, so the backup path
+  would rewrite it under a backup PIN with no binding at all. Its own comment says a new shape must
+  fail safe there.
+- **`lock(accountId?)` is unnecessary surface and is dropped.** Withholding S already makes a bound
+  wrap unusable, which is the lock.
+- **`resolveLoginKey` "server, interactive only" contradicts "binds on the next sync"** — the first
+  bind happens in a background write, so the server leg runs there too.
+- **`DELETE /api/vault` must remove the login key**, a growth-table promise with no build item — the
+  same defect epic 1 found for the registry record.
+- **The `.http` file cannot run without `Vault__LoginKey__Kek`** in the suite's start command, in
+  `deploy/.env.example` and in the compose file. None of the three exists — the same class as epic 1's
+  contract pin, found the same way.
+- **The umbrella says `org/login-keys/*.sealed` and this plan says `*.bin`.** One name: `.bin`.
+- **`treeMutationCommands.ts` does not exist**; the cross-account move lives in `treeDataProvider`'s
+  drop handler and `storageManager.moveNode`.
+- **Both ratcheted files are AT baseline** (`extension.ts` 1105, `storageManager.ts` 1034), so every
+  line story 4 adds lands in a new module or the ratchet fails.
+- **The Sent view owes a sentence and a dismiss button** — promised in the symptom and in no file row.
+- **The rehearsal gate named the wrong artefact**: it said "before the first `GET /api/org/login-key`
+  ships", which binds nothing. The gate is story 3's commit, where a vault first depends on it.
+
+### The migration, answered
+
+**When a vault gains the bound wrap.** On the first sync WRITE after all of: the policy says
+`role: dev, active: true`; S has been resolved, which needs one online round trip; and the envelope is
+already v2 or later (a v1 file upgrades first and binds on the following cycle, exactly as the
+org-escrow wrap does). The PIN wrap binds in that write. **A security-key wrap binds only at the next
+interactive touch**, so until then the file plus the key still opens offline — and the client says so
+rather than implying otherwise.
+
+**A developer offline when their role changes.** Nothing is enforced at the server's pace. Member to
+dev: the last pushed version stays an ordinary unbound file until the next online sync binds it.
+Blocked while offline: the machine keeps working until the lease runs out from its last heartbeat
+(`0` means it stops the moment it is offline), then the account reads as locked with a reason; on first
+contact the `403` purges S. A machine that never reconnects, whose owner reads their own keychain, is
+outside the honest-client grade — the Boundaries table says so.
+
+**Demotion, dev to member.** The next sync unbinds: the vault is opened with S, the PIN wrap is
+rewritten unbound, and the recovery wrap is NOT restored. Versions written while a developer stay
+bound and open only with S — which the server still serves to their active owner. **Binding is a
+property of a version, not of a person:** demotion re-opens the offline door for every version written
+after it and for none before, and the wrap's own flag says which regime a given copy is in.
 
 ## Test plan
 
