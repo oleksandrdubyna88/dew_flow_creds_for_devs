@@ -13,23 +13,12 @@ namespace CredVaultServer.Tests;
 [Collection(ServerCollection.Name)]
 public sealed class OrgUnavailableTests
 {
-    private const string Garbage = "{ this is not a record";
-
     private static string Alice => $"alice@{VaultServer.Domain}";
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
-    /// <summary>
-    /// Overwrite Alice's record with something no build can parse — a half-written file, a bad sector, a
-    /// restore from a truncated archive — and move its mtime on, as the seconds between a restore and
-    /// the next request would, so the server's stat check cannot mistake it for the record it cached.
-    /// </summary>
-    private static async Task CorruptAsync(VaultServer server, string email)
-    {
-        var path = Corp.RecordPath(server, email);
-        await File.WriteAllTextAsync(path, Garbage, Ct);
-        File.SetLastWriteTimeUtc(path, File.GetLastWriteTimeUtc(path).AddSeconds(2));
-    }
+    // The corruption itself is Corp.CorruptRecordAsync: the admin gate suite breaks records the same way.
+    private static Task CorruptAsync(VaultServer server, string email) => Corp.CorruptRecordAsync(server, email);
 
     [Fact]
     public async Task ACorruptedRecordMakesOrgMeAnswer503NeverTheMemberDefault()
@@ -63,7 +52,7 @@ public sealed class OrgUnavailableTests
         var put = await Corp.SyncAsync(alice);
 
         put.StatusCode.Should().Be(HttpStatusCode.NoContent, "the vault write is not the registry's hostage");
-        (await File.ReadAllTextAsync(Corp.RecordPath(server, Alice), Ct)).Should().Be(Garbage);
+        (await File.ReadAllTextAsync(Corp.RecordPath(server, Alice), Ct)).Should().Be(Corp.Garbage);
     }
 
     [Fact]

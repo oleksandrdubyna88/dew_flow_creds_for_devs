@@ -39,7 +39,15 @@ public static class MemberRole
     /// </summary>
     public const string Default = Member;
 
-    public static bool IsKnown(string? role) => role is Admin or Member or Dev;
+    /// <summary>
+    /// The one list. <see cref="IsKnown"/> reads it and so does the <c>400</c> that names the legal
+    /// values — a second spelling of the same three names is how a fourth role gets added to one of them.
+    /// </summary>
+    public static readonly IReadOnlyList<string> All = [Admin, Member, Dev];
+
+    public static string LegalValues => string.Join(", ", All);
+
+    public static bool IsKnown(string? role) => role is not null && All.Contains(role);
 }
 
 /// <summary>
@@ -63,7 +71,12 @@ public static class ShareDefaults
     /// <summary>What the server reports for a role that is not a developer at all.</summary>
     public const string Any = "any";
 
-    public static bool IsKnown(string? value) => value is Project or None;
+    /// <summary>The values a record may hold — <see cref="Any"/> is reported, never stored, so it is not here.</summary>
+    public static readonly IReadOnlyList<string> All = [Project, None];
+
+    public static string LegalValues => string.Join(", ", All);
+
+    public static bool IsKnown(string? value) => value is not null && All.Contains(value);
 }
 
 /// <summary>How one project assignment modifies a developer's own share default.</summary>
@@ -226,11 +239,19 @@ public readonly record struct MemberLookupResult(MemberLookup Status, MemberReco
 }
 
 /// <summary>
-/// What an upsert did: the record as written, and whether it CREATED it. Two callers emit
-/// <c>member.registered</c> only on a create — the sync hook, and an admin who sets a role before the
-/// person's first sync — and neither can tell from the record alone.
+/// What an upsert did: the record as written, whether it CREATED it, and the record it started from.
+/// Two callers emit <c>member.registered</c> only on a create — the sync hook, and an admin who sets a
+/// role before the person's first sync — and neither can tell from the record alone.
 /// </summary>
-public readonly record struct UpsertResult(MemberRecord Record, bool Created);
+/// <remarks>
+/// <see cref="Before"/> is the record the edit was applied to, read INSIDE the per-member lock — the
+/// default record when the upsert created one. The admin routes emit <c>member.role_changed</c> only when
+/// the value actually differs, and "differs from what" has to be the record the write replaced: a lookup
+/// before the call would compare against whatever a concurrent admin had not yet written, and two
+/// admins changing one person could then log the same transition twice or a transition that never
+/// happened. The store already holds the baseline; handing it back costs nothing.
+/// </remarks>
+public readonly record struct UpsertResult(MemberRecord Record, bool Created, MemberRecord Before);
 
 /// <summary>
 /// What a client may do, derived from the role every time it is asked.
@@ -336,4 +357,72 @@ public sealed record MemberSelfDto(
             isOfficer: false,
             offlineLeaseHours: OrgSettingsDto.DefaultOfflineLeaseHours,
             serverContract: serverContract);
+}
+
+/// <summary>
+/// One row of the admin's roster — <c>GET /api/org/members</c>. The record's facts, plus the one the
+/// record cannot hold: whether the person is on the recovery roster. That comes from configuration,
+/// and it is reported here because an officer cannot be given a registry role (the <c>409</c>), so a
+/// list that showed the CTO as a plain <c>member</c> would invite exactly the edit the server refuses.
+/// </summary>
+public sealed record MemberListEntryDto(
+    string Email,
+    string Role,
+    bool Active,
+    string ShareDefault,
+    IReadOnlyList<string> ProjectIds,
+    bool IsOfficer,
+    long UpdatedAt,
+    string UpdatedBy)
+{
+    public static MemberListEntryDto For(MemberRecord record, bool isOfficer) => new(
+        Email: record.Email,
+        Role: record.Role,
+        Active: record.Active,
+        ShareDefault: record.ShareDefault,
+        ProjectIds: [.. record.Projects.Select(p => p.ProjectId)],
+        IsOfficer: isOfficer,
+        UpdatedAt: record.UpdatedAt,
+        UpdatedBy: record.UpdatedBy);
+}
+
+/// <summary>
+/// What an admin sends to <c>PUT /api/org/members/{email}</c>: a role, a share default, or both.
+/// </summary>
+/// <remarks>
+/// <para><b>Both null is a <c>400</c></b>, not a <c>200</c> that changes nothing: a client that sent an
+/// empty body has a bug, and a success answer would hide it behind a re-stamped record.</para>
+/// <para><b>A share default for somebody who is not a developer is stored, not refused.</b> It takes
+/// effect only for <c>dev</c> — exactly as <see cref="MemberPolicy.For"/> reads it — and refusing it
+/// would stop an admin from setting the shape first and demoting the person second, which is the
+/// order that never leaves a developer with a share default nobody chose.</para>
+/// <para>Nothing here can name who made the change: <c>updatedBy</c> is stamped from the verified
+/// token, and a property in the body that claims otherwise is ignored by the deserializer.</para>
+/// </remarks>
+public sealed record SetMemberRequest(string? Role, string? ShareDefault)
+{
+    /// <summary>
+    /// The <c>400</c> this request earns, or empty when the server can act on it. Names the legal
+    /// values rather than echoing what was sent: the sentence is for an admin UI, not a log.
+    /// </summary>
+    public string Problem() =>
+        NothingToChange() ?? RoleProblem() ?? ShareDefaultProblem() ?? string.Empty;
+
+    /// <summary>The record as this request leaves it; a null field leaves that field alone.</summary>
+    public MemberRecord ApplyTo(MemberRecord record) => record with
+    {
+        Role = Role ?? record.Role,
+        ShareDefault = ShareDefault ?? record.ShareDefault,
+    };
+
+    private string? NothingToChange() =>
+        Role is null && ShareDefault is null ? "Nothing to change: send a role, a shareDefault, or both." : null;
+
+    private string? RoleProblem() =>
+        Role is not null && !MemberRole.IsKnown(Role) ? $"Unknown role; the legal values are {MemberRole.LegalValues}." : null;
+
+    private string? ShareDefaultProblem() =>
+        ShareDefault is not null && !ShareDefaults.IsKnown(ShareDefault)
+            ? $"Unknown shareDefault; the legal values are {ShareDefaults.LegalValues}."
+            : null;
 }

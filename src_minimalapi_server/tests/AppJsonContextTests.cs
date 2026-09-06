@@ -24,6 +24,11 @@ public sealed class AppJsonContextTests
     [InlineData(typeof(ErrorDto))]
     [InlineData(typeof(IReadOnlyList<ProjectSelfDto>))]
     [InlineData(typeof(IReadOnlyList<PendingFolderRemoval>))]
+    [InlineData(typeof(MemberListEntryDto))]
+    [InlineData(typeof(List<MemberListEntryDto>))]
+    [InlineData(typeof(SetMemberRequest))]
+    [InlineData(typeof(SetSettingsRequest))]
+    [InlineData(typeof(OrgSettingsDto))]
     public void EveryOrgResponseTypeIsInTheSourceGeneratedContext(Type type)
     {
         // Every DTO the org routes and their refusals serialize, lists included. A missing entry here is

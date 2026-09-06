@@ -21,6 +21,31 @@ public sealed record OrgSettingsDto(int OfflineLeaseHours, long UpdatedAt, strin
 }
 
 /// <summary>
+/// What an admin sends to <c>PUT /api/org/settings</c>. A request record of its own rather than
+/// <see cref="OrgSettingsDto"/>, and nullable on purpose: a deserializer does not run defaults, so a
+/// positional <c>int</c> the client omitted would bind to <c>0</c> — and <c>0</c> here is the legal
+/// "strictly online". A body of <c>{}</c> would have switched every client's offline lease off in
+/// silence. Absent is a <c>400</c> instead; the stamp is the server's, never a field a client can send.
+/// </summary>
+public sealed record SetSettingsRequest(int? OfflineLeaseHours)
+{
+    /// <summary>The <c>400</c> this request earns, or empty when the server can act on it.</summary>
+    public string Problem() => OfflineLeaseHours switch
+    {
+        null => "Nothing to change: send offlineLeaseHours.",
+        < 0 => "offlineLeaseHours must be 0 or more; 0 means strictly online.",
+        _ => string.Empty,
+    };
+}
+
+/// <summary>
+/// What an update did: the settings it replaced and the settings as written, both taken under the
+/// store's lock, so the <c>settings.changed</c> row says which value a write actually replaced rather
+/// than which one the caller happened to read a moment earlier.
+/// </summary>
+public readonly record struct SettingsUpdate(OrgSettingsDto Before, OrgSettingsDto After);
+
+/// <summary>
 /// <c>${DataDir}/org/settings.json</c>. Absent answers <see cref="OrgSettingsDto.Default"/> and writes
 /// nothing — "off is the shape, not a flag": the answer is correct before the disk agrees, and a personal
 /// deployment never grows an <c>org/</c> directory because somebody read a setting.
@@ -153,7 +178,7 @@ public sealed class OrgSettingsStore(string dataDir, ILogger<OrgSettingsStore> l
     /// a block to it, and the members store is the shape that carries unknowns when it does. The value
     /// written becomes the last good one: this process knows it, whatever the disk does next.
     /// </summary>
-    public async Task<OrgSettingsDto> UpdateAsync(
+    public async Task<SettingsUpdate> UpdateAsync(
         Func<OrgSettingsDto, OrgSettingsDto> edit,
         string byAdmin,
         CancellationToken ct)
@@ -161,7 +186,8 @@ public sealed class OrgSettingsStore(string dataDir, ILogger<OrgSettingsStore> l
         await _gate.WaitAsync(ct);
         try
         {
-            var edited = Stamp(edit(Read()), byAdmin);
+            var before = Read();
+            var edited = Stamp(edit(before), byAdmin);
             Directory.CreateDirectory(_orgDir);
             await VaultStore.AtomicWriteAsync(
                 _path,
@@ -169,7 +195,7 @@ public sealed class OrgSettingsStore(string dataDir, ILogger<OrgSettingsStore> l
                 ct);
             _cached = null;
             _lastGood = edited;
-            return edited;
+            return new SettingsUpdate(before, edited);
         }
         finally
         {

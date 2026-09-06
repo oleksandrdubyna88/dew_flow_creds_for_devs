@@ -1,3 +1,4 @@
+using System.Net;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
@@ -37,8 +38,70 @@ internal static class Corp
     public static Task<HttpResponseMessage> SyncAsync(HttpClient client) =>
         client.PutAsync("/api/vault", new ByteArrayContent(Blob), Ct);
 
+    /// <summary>
+    /// The admin's upsert, with the body built from the real request type — a hand-typed JSON fixture
+    /// the server quietly declines is a test that passes for the wrong reason.
+    /// </summary>
+    public static Task<HttpResponseMessage> SetMemberAsync(
+        HttpClient admin,
+        string email,
+        string? role = null,
+        string? shareDefault = null) =>
+        PutJsonAsync(
+            admin,
+            $"/api/org/members/{email}",
+            JsonSerializer.Serialize(new SetMemberRequest(role, shareDefault), AppJsonContext.Default.SetMemberRequest));
+
+    public static Task<HttpResponseMessage> SetOfflineLeaseAsync(HttpClient admin, int hours) =>
+        PutJsonAsync(
+            admin,
+            "/api/org/settings",
+            JsonSerializer.Serialize(new SetSettingsRequest(hours), AppJsonContext.Default.SetSettingsRequest));
+
+    /// <summary>A PUT with the body spelt out — for the requests whose point is a field the type does not have, or no JSON at all.</summary>
+    public static Task<HttpResponseMessage> PutJsonAsync(HttpClient client, string path, string json) =>
+        client.PutAsync(path, new StringContent(json, Encoding.UTF8, "application/json"), Ct);
+
+    public static async Task<JsonElement> BodyAsync(HttpResponseMessage response)
+    {
+        var body = await response.Content.ReadAsStringAsync(Ct);
+        return JsonDocument.Parse(body).RootElement;
+    }
+
+    /// <summary>The <c>{error}</c> every refusal on <c>/api/org/*</c> carries — asserted to be JSON on the way.</summary>
+    public static async Task<string> RefusalAsync(HttpResponseMessage response, HttpStatusCode expected)
+    {
+        response.StatusCode.Should().Be(expected);
+        response.Content.Headers.ContentType!.MediaType.Should().Be("application/json", "an admin UI has to show WHY");
+        return (await BodyAsync(response)).GetProperty("error").GetString()!;
+    }
+
     public static MemberRecord ReadRecord(VaultServer server, string email) =>
         JsonSerializer.Deserialize(File.ReadAllBytes(RecordPath(server, email)), AppJsonContext.Default.MemberRecord)!;
+
+    public const string Garbage = "{ this is not a record";
+
+    /// <summary>
+    /// Overwrite one record with something no build can parse — a half-written file, a bad sector, a
+    /// restore from a truncated archive — and move its mtime on, as the seconds between a restore and
+    /// the next request would, so the server's stat check cannot mistake it for the record it cached.
+    /// </summary>
+    public static async Task CorruptRecordAsync(VaultServer server, string email)
+    {
+        var path = RecordPath(server, email);
+        await File.WriteAllTextAsync(path, Garbage, Ct);
+        File.SetLastWriteTimeUtc(path, File.GetLastWriteTimeUtc(path).AddSeconds(2));
+    }
+
+    /// <summary>
+    /// Make the event log unwritable before anything has written to it: a file where <c>org/events</c>
+    /// should be a directory, which no append can create under, on any file system.
+    /// </summary>
+    public static void BlockTheEventLog(VaultServer server)
+    {
+        Directory.CreateDirectory(OrgDir(server));
+        File.WriteAllText(Path.Combine(OrgDir(server), "events"), "a file where the folder should be");
+    }
 
     /// <summary>
     /// Make one record impossible to delete, the way the OS at hand refuses a delete. Windows refuses to
@@ -102,6 +165,10 @@ internal static class Corp
             await Task.Delay(10, Ct);
         }
     }
+
+    /// <summary>The rows of one kind, in the order they were appended.</summary>
+    public static IReadOnlyList<OrgEventDto> Rows(VaultServer server, string kind) =>
+        [.. EventRows(server).Where(r => r.Kind == kind)];
 
     /// <summary>Every row the event log holds, whatever day file it landed in. Empty when nothing was ever written.</summary>
     public static IReadOnlyList<OrgEventDto> EventRows(VaultServer server)

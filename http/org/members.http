@@ -1,0 +1,225 @@
+# The admin's roster — GET /api/org/members and PUT /api/org/members/{email}. Both are RequireAdmin's,
+# and the gate admits two kinds of caller: a recovery officer, unconditionally, because the roster is
+# the operator's own list; and anybody whose registry record says `admin`. Every refusal it decides is
+# the SAME 403 with a JSON body — not an admin, never registered, corp mode off, and a record the server
+# cannot read all answer alike, because telling a caller WHICH fact failed hands them the roster's shape.
+#
+# PRECONDITION: a corp-mode server (see ../README.md — three officers, `officer@example.com` among
+# them), so `{{officerToken}}` administers and `{{token}}` (Alice) does not.
+#
+# The 503 branch — a record that exists and cannot be parsed — is not here: provoking it means
+# corrupting a file on the server's disk, which a request cannot do.
+# @uncovered 503 — reachable only by damaging a record on disk; covered by OrgUnavailableTests
+
+# @name org_members_lists_the_admins_own_domain
+# @prod
+GET {{baseUrl}}/api/org/members
+Authorization: Bearer {{officerToken}}
+X-Creds-Contract: {{contract}}
+Accept: application/json
+
+?? status == 200
+?? header content-type matches ^application\/json
+
+{{
+  const assert = require('node:assert');
+  const rows = response.parsedBody;
+  test('the answer is an array of rows, never an object with a wrapper', () => {
+    assert.ok(Array.isArray(rows), `expected an array, got ${typeof rows}`);
+  });
+  test('every row carries what an admin UI draws a line from', () => {
+    for (const row of rows) {
+      assert.strictEqual(typeof row.email, 'string');
+      assert.ok(['admin', 'member', 'dev'].includes(row.role), `unknown role ${row.role}`);
+      assert.strictEqual(typeof row.active, 'boolean');
+      assert.strictEqual(typeof row.shareDefault, 'string');
+      assert.ok(Array.isArray(row.projectIds));
+      assert.strictEqual(typeof row.isOfficer, 'boolean');
+      assert.strictEqual(typeof row.updatedAt, 'number');
+      assert.strictEqual(typeof row.updatedBy, 'string');
+    }
+  });
+  test('every row is in the caller\'s own domain — the store scopes it, not the endpoint', () => {
+    const domain = officerEmail.split('@')[1];
+    for (const row of rows) {
+      assert.ok(row.email.endsWith(`@${domain}`), `${row.email} is not in ${domain}`);
+    }
+  });
+}}
+
+###
+
+# @name org_members_refuses_a_caller_who_does_not_administer
+# @prod
+GET {{baseUrl}}/api/org/members
+Authorization: Bearer {{token}}
+X-Creds-Contract: {{contract}}
+Accept: application/json
+
+?? status == 403
+?? header content-type matches ^application\/json
+
+{{
+  const assert = require('node:assert');
+  test('the refusal says why in the JSON this surface promises', () => {
+    assert.strictEqual(typeof response.parsedBody.error, 'string');
+    assert.ok(response.parsedBody.error.length > 0);
+  });
+}}
+
+###
+
+# @name org_members_refuses_an_unauthenticated_caller
+# @prod
+GET {{baseUrl}}/api/org/members
+X-Creds-Contract: {{contract}}
+Accept: application/json
+
+?? status == 401
+?? header content-type matches ^application\/json
+
+###
+
+# The upsert. Alice is the target throughout, and the last request here puts her back to `member`, so
+# a completed run leaves the roster as it found it.
+
+# @name org_members_sets_a_role
+PUT {{baseUrl}}/api/org/members/{{aliceEmail}}
+Authorization: Bearer {{officerToken}}
+X-Creds-Contract: {{contract}}
+Content-Type: application/json
+Accept: application/json
+
+{ "role": "dev" }
+
+?? status == 200
+?? header content-type matches ^application\/json
+
+{{
+  const assert = require('node:assert');
+  const row = response.parsedBody;
+  test('the answer is the row as written', () => {
+    assert.strictEqual(row.email, aliceEmail);
+    assert.strictEqual(row.role, 'dev');
+  });
+  test('updatedBy is the token\'s, never a field a client can send', () => {
+    assert.strictEqual(row.updatedBy, officerEmail);
+    assert.ok(row.updatedAt > 0);
+  });
+}}
+
+###
+
+# @name org_members_refuses_a_target_in_another_domain
+PUT {{baseUrl}}/api/org/members/somebody@another-company.example
+Authorization: Bearer {{officerToken}}
+X-Creds-Contract: {{contract}}
+Content-Type: application/json
+Accept: application/json
+
+{ "role": "member" }
+
+?? status == 403
+?? header content-type matches ^application\/json
+
+{{
+  const assert = require('node:assert');
+  test('the refusal names the domain, because that is the fact an admin has to act on', () => {
+    assert.match(response.parsedBody.error, /domain/i);
+  });
+}}
+
+###
+
+# @name org_members_refuses_a_target_that_is_not_an_address
+PUT {{baseUrl}}/api/org/members/not-an-email
+Authorization: Bearer {{officerToken}}
+X-Creds-Contract: {{contract}}
+Content-Type: application/json
+Accept: application/json
+
+{ "role": "member" }
+
+?? status == 400
+?? header content-type matches ^application\/json
+
+###
+
+# @name org_members_refuses_a_role_it_does_not_know
+PUT {{baseUrl}}/api/org/members/{{aliceEmail}}
+Authorization: Bearer {{officerToken}}
+X-Creds-Contract: {{contract}}
+Content-Type: application/json
+Accept: application/json
+
+{ "role": "superuser" }
+
+?? status == 400
+?? header content-type matches ^application\/json
+
+{{
+  const assert = require('node:assert');
+  test('the 400 names the legal values — the sentence is for an admin UI, not a log', () => {
+    assert.match(response.parsedBody.error, /admin/);
+    assert.match(response.parsedBody.error, /member/);
+    assert.match(response.parsedBody.error, /dev/);
+  });
+}}
+
+###
+
+# @name org_members_refuses_a_body_that_changes_nothing
+PUT {{baseUrl}}/api/org/members/{{aliceEmail}}
+Authorization: Bearer {{officerToken}}
+X-Creds-Contract: {{contract}}
+Content-Type: application/json
+Accept: application/json
+
+{}
+
+?? status == 400
+?? header content-type matches ^application\/json
+
+###
+
+# @name org_members_refuses_an_officer_target
+PUT {{baseUrl}}/api/org/members/{{officerEmail}}
+Authorization: Bearer {{officerToken}}
+X-Creds-Contract: {{contract}}
+Content-Type: application/json
+Accept: application/json
+
+{ "role": "member" }
+
+?? status == 409
+?? header content-type matches ^application\/json
+
+{{
+  const assert = require('node:assert');
+  test('409, not a silent no-op: a UI that appeared to demote an officer would be lying', () => {
+    assert.match(response.parsedBody.error, /officer/i);
+  });
+}}
+
+###
+
+# @name org_members_puts_the_target_back_to_member
+PUT {{baseUrl}}/api/org/members/{{aliceEmail}}
+Authorization: Bearer {{officerToken}}
+X-Creds-Contract: {{contract}}
+Content-Type: application/json
+Accept: application/json
+
+{ "role": "member", "shareDefault": "project" }
+
+?? status == 200
+
+{{
+  const assert = require('node:assert');
+  test('the roster is as the run found it', () => {
+    assert.strictEqual(response.parsedBody.role, 'member');
+    assert.strictEqual(response.parsedBody.shareDefault, 'project');
+  });
+}}
+
+###

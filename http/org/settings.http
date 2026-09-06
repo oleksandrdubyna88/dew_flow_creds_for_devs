@@ -1,0 +1,150 @@
+# The runtime settings — GET and PUT /api/org/settings, admin-only. Runtime because nothing here has a
+# cryptographic consequence: the offline lease changes what an honest client does between two successful
+# syncs, while the officer roster changes what a key is sealed to, which is why THAT one stays in
+# configuration and costs a restart and a ceremony.
+#
+# PRECONDITION: a corp-mode server (../README.md — three officers). `{{officerToken}}` administers;
+# `{{token}}` (Alice) does not.
+#
+# The file this writes is `org/settings.json`, and the last request here puts the lease back to its
+# default, so a completed run leaves the server as it found it.
+
+# @name org_settings_answers_the_current_lease
+# @prod
+GET {{baseUrl}}/api/org/settings
+Authorization: Bearer {{officerToken}}
+X-Creds-Contract: {{contract}}
+Accept: application/json
+
+?? status == 200
+?? header content-type matches ^application\/json
+
+{{
+  const assert = require('node:assert');
+  const settings = response.parsedBody;
+  test('the lease is a number of hours, and 0 is a legal one', () => {
+    assert.strictEqual(typeof settings.offlineLeaseHours, 'number');
+    assert.ok(settings.offlineLeaseHours >= 0, '0 means strictly online; negative is not a lease');
+  });
+  test('the stamp says who wrote it and when — empty until somebody has', () => {
+    assert.strictEqual(typeof settings.updatedBy, 'string');
+    assert.strictEqual(typeof settings.updatedAt, 'number');
+  });
+}}
+
+###
+
+# @name org_settings_refuses_a_caller_who_does_not_administer
+# @prod
+GET {{baseUrl}}/api/org/settings
+Authorization: Bearer {{token}}
+X-Creds-Contract: {{contract}}
+Accept: application/json
+
+?? status == 403
+?? header content-type matches ^application\/json
+
+###
+
+# @name org_settings_writes_a_new_lease
+PUT {{baseUrl}}/api/org/settings
+Authorization: Bearer {{officerToken}}
+X-Creds-Contract: {{contract}}
+Content-Type: application/json
+Accept: application/json
+
+{ "offlineLeaseHours": 8 }
+
+?? status == 200
+?? header content-type matches ^application\/json
+
+{{
+  const assert = require('node:assert');
+  test('the answer is the settings as written, stamped from the token', () => {
+    assert.strictEqual(response.parsedBody.offlineLeaseHours, 8);
+    assert.strictEqual(response.parsedBody.updatedBy, officerEmail);
+    assert.ok(response.parsedBody.updatedAt > 0);
+  });
+}}
+
+###
+
+# @name org_settings_reads_back_what_was_written
+# @prod
+GET {{baseUrl}}/api/org/settings
+Authorization: Bearer {{officerToken}}
+X-Creds-Contract: {{contract}}
+Accept: application/json
+
+?? status == 200
+
+{{
+  const assert = require('node:assert');
+  test('a change is live without a restart — that is the whole point of a runtime setting', () => {
+    assert.strictEqual(response.parsedBody.offlineLeaseHours, 8);
+  });
+}}
+
+###
+
+# @name org_settings_refuses_a_negative_lease
+PUT {{baseUrl}}/api/org/settings
+Authorization: Bearer {{officerToken}}
+X-Creds-Contract: {{contract}}
+Content-Type: application/json
+Accept: application/json
+
+{ "offlineLeaseHours": -1 }
+
+?? status == 400
+?? header content-type matches ^application\/json
+
+{{
+  const assert = require('node:assert');
+  test('the 400 says what 0 means, since 0 is the value next to the refused one', () => {
+    assert.match(response.parsedBody.error, /0/);
+  });
+}}
+
+###
+
+# @name org_settings_refuses_a_body_with_no_field
+PUT {{baseUrl}}/api/org/settings
+Authorization: Bearer {{officerToken}}
+X-Creds-Contract: {{contract}}
+Content-Type: application/json
+Accept: application/json
+
+{}
+
+?? status == 400
+?? header content-type matches ^application\/json
+
+{{
+  const assert = require('node:assert');
+  test('an omitted field is a 400, never a 0 the deserializer invented — 0 switches the lease off', () => {
+    assert.match(response.parsedBody.error, /offlineLeaseHours/);
+  });
+}}
+
+###
+
+# @name org_settings_puts_the_lease_back
+PUT {{baseUrl}}/api/org/settings
+Authorization: Bearer {{officerToken}}
+X-Creds-Contract: {{contract}}
+Content-Type: application/json
+Accept: application/json
+
+{ "offlineLeaseHours": 24 }
+
+?? status == 200
+
+{{
+  const assert = require('node:assert');
+  test('the server is as the run found it', () => {
+    assert.strictEqual(response.parsedBody.offlineLeaseHours, 24);
+  });
+}}
+
+###
