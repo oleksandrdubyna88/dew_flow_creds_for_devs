@@ -35,6 +35,9 @@ public sealed class OrgProjectShareTests
             tag = Convert.ToBase64String(new byte[16]),
             data = Convert.ToBase64String(Encoding.UTF8.GetBytes("sealed-payload")),
             projectId,
+            // What a real client posts: the project form when there is a project to bind, the
+            // ordinary server form when there is not. The server carries both verbatim.
+            format = projectId is null ? 3 : 4,
         };
 
     private static Task<HttpResponseMessage> ShareAsync(HttpClient sender, string toEmail, string? projectId = null) =>
@@ -97,6 +100,7 @@ public sealed class OrgProjectShareTests
         var inbox = JsonDocument.Parse(await bob.GetStringAsync("/api/shares", Ct)).RootElement;
         var item = inbox.EnumerateArray().Should().ContainSingle().Subject;
         item.GetProperty("projectId").GetString().Should().Be(id, "the project is carried to the recipient");
+        item.GetProperty("format").GetInt32().Should().Be(4, "and the form that BINDS it survives the round trip — the field the 0.82.1 break dropped");
     }
 
     [Fact]

@@ -83,7 +83,7 @@ public sealed class TeamCorpTests
     private static HttpClient Modern(VaultServer server, string email)
     {
         var client = server.ClientFor(email);
-        client.DefaultRequestHeaders.Add(ContractVersion.Header, ContractVersion.OrgPolicyContract.ToString());
+        client.DefaultRequestHeaders.Add(ContractVersion.Header, ContractVersion.Current.ToString());
         return client;
     }
 

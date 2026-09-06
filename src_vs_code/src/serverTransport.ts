@@ -299,18 +299,23 @@ export class ServerTransport implements VaultTransport {
         this.lastTeamStatus = undefined; // somebody answered; nothing to report
         const ownEmails = new Set(ownAccounts.map((a) => a.email.toLowerCase()));
         return payload
-          .map((entry) =>
-            typeof entry === 'object' && entry !== null
-              ? String((entry as Record<string, unknown>).email ?? '')
-              : '',
-          )
-          .filter((email) => email.includes('@'))
-          .map((email) => ({
+          .map((entry) => (typeof entry === 'object' && entry !== null ? (entry as Record<string, unknown>) : {}))
+          .filter((row) => String(row.email ?? '').includes('@'))
+          .map((row) => ({
+            email: String(row.email),
+            // Contract 3 and later; a row from an older server carries none, and `undefined` there
+            // means "not told" rather than "on no project" — see `TeamMember.projectIds`.
+            projectIds: Array.isArray(row.projectIds)
+              ? row.projectIds.filter((id): id is string => typeof id === 'string')
+              : undefined,
+          }))
+          .map(({ email, projectIds }) => ({
             account: {
               accountId: email.toLowerCase(),
               email,
               provider: account.provider,
             },
+            projectIds,
             location: this.location,
             // Server shares are bound to the recipient's email.
             shareKeyId: email.toLowerCase(),
@@ -364,6 +369,9 @@ export class ServerTransport implements VaultTransport {
           // below `SHARE_FORMAT_CONTRACT` ignores it — which is why the sender only seals
           // a bound form when `carriesShareFormat` says the field will survive.
           format: item.format,
+          // Epic 3: the server's share rule decides on it, epic 4 logs it, and format 4 binds it.
+          // Absent on every share that did not come out of a project folder.
+          projectId: item.projectId,
         }),
       });
       if (!response.ok) {

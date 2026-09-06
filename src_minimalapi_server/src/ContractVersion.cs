@@ -44,7 +44,25 @@ public static class ContractVersion
     /// where version 2 only asked to be detected: a client that cannot read the document cannot be
     /// expected to obey it, and serving it would hide that from whoever deployed the server.</para>
     /// </remarks>
-    public const int Current = 3;
+    public const int Current = 4;
+
+    /// <summary>
+    /// The contract from which a share carries its <c>projectId</c> — and therefore the floor on a
+    /// server with a corporate roster, from epic 3.
+    /// </summary>
+    /// <remarks>
+    /// <para>Mirrors <c>SHARE_PROJECT_CONTRACT</c> in the extension's <c>contractVersion.ts</c>. A
+    /// developer's share is sealed in the project form (<c>format: 4</c>), and a client that has never
+    /// heard of that number opens it with NO additional authenticated data, fails the GCM tag, and
+    /// reports a WRONG PIN to somebody whose PIN was fine — the failure the server transport shipped
+    /// for six days between 0.82.1 and 0.87. A refusal that names the update is a better answer than
+    /// a lie about a password, so the floor moves rather than the client being left to discover it.</para>
+    /// <para><b>This is not lowerable from configuration.</b> The effective minimum is
+    /// <c>Math.Max(configured, ShareProjectContract)</c> in corp mode, so rolling it back means
+    /// deploying the previous server build — which is what makes it a release decision rather than a
+    /// switch, and why <c>POST_DEPLOY.md</c> item 2 carries the expected number.</para>
+    /// </remarks>
+    public const int ShareProjectContract = 4;
 
     /// <summary>
     /// The default oldest a client may be and still be served.
@@ -80,16 +98,17 @@ public static class ContractVersion
     /// constant moves, and a test moves it to prove this one follows.
     /// </summary>
     public static readonly string CorpFloorReason =
-        $"this server has a corporate roster, and a client below contract {OrgPolicyContract} cannot read "
-        + "the role and policy document (GET /api/org/me) every client here is expected to obey";
+        $"this server has a corporate roster, and a client below contract {ShareProjectContract} cannot "
+        + "read the role and policy document (GET /api/org/me) every client here is expected to obey, nor "
+        + "open a share sealed to a project — it would report a wrong PIN for a share that is intact";
 
     /// <summary>
     /// The minimum the middleware actually applies: the configured one, floored at
-    /// <see cref="OrgPolicyContract"/> in corp mode. <c>Math.Max</c>, never an assignment — an operator
-    /// who set the minimum higher must not be handed 3 back by the roster.
+    /// <see cref="ShareProjectContract"/> in corp mode. <c>Math.Max</c>, never an assignment — an operator
+    /// who set the minimum higher must not be handed 4 back by the roster.
     /// </summary>
     public static int MinimumFor(int configured, bool corpMode) =>
-        corpMode ? Math.Max(configured, OrgPolicyContract) : configured;
+        corpMode ? Math.Max(configured, ShareProjectContract) : configured;
 
     /// <summary>Sent by the client on every request, and by the server on every response.</summary>
     public const string Header = "X-Creds-Contract";
@@ -115,7 +134,7 @@ public static class ContractVersion
     /// </param>
     /// <param name="corpReason">
     /// In corp mode, the sentence that says WHY (<see cref="CorpFloorReason"/>); null in personal mode.
-    /// Added to the refusal only when the claim is below <see cref="OrgPolicyContract"/> — an operator
+    /// Added to the refusal only when the claim is below <see cref="ShareProjectContract"/> — an operator
     /// who configured a minimum of 5 refuses a contract-4 client for their own reason, and that client
     /// can read the policy perfectly well.
     /// </param>
@@ -139,7 +158,7 @@ public static class ContractVersion
 
     private static string RefusalText(int claimed, string? corpReason)
     {
-        var why = corpReason is not null && claimed < OrgPolicyContract ? $" — {corpReason}" : string.Empty;
+        var why = corpReason is not null && claimed < ShareProjectContract ? $" — {corpReason}" : string.Empty;
         return $"this server speaks contract {Current} and no longer serves {claimed}{why}; update the extension";
     }
 }

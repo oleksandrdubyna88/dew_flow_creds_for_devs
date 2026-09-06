@@ -1,3 +1,5 @@
+import { CorpPolicyState } from './corpPolicy';
+import { deliverToRecipient, projectsOfPayloads, refuseForRecipient } from './shareDelivery';
 import { buildSharePayload, countTotpEntries, nothingToShare } from './sharePayloadBuild';
 import { admit } from './pinAdmission';
 import { declinedMessage, forThisRecipient } from './shareRecipientPin';
@@ -15,7 +17,6 @@ import { keyFingerprint } from './shareSignature';
 import {
   openShare,
   resolveShares,
-  sealShare,
   shareTranscript,
   shareLabelTrusted } from './shareFormat';
 import { recordOrigin, resolveOrigin } from './shareOrigin';
@@ -50,6 +51,14 @@ export interface ShareInboxDeps {
   readonly onMutated: () => void;
   /** This build's version — legacy (unbound) shares stop opening at `LEGACY_SHARES_UNTIL`. */
   readonly extensionVersion?: string;
+  /**
+   * This account's corporate policy, or nothing for a personal one.
+   *
+   * <p>Optional so every test that builds an inbox without a corporate concept keeps compiling,
+   * and because `undefined` is the honest answer for a personal account — `shareRule` reads it as
+   * "no corporate document has ever been seen here" and fences nobody.</p>
+   */
+  readonly policyOf?: (accountId: string) => CorpPolicyState | undefined;
 }
 
 export class ShareInbox {
@@ -152,22 +161,17 @@ export class ShareInbox {
     // the other thing the old placement got wrong: a partial failure reported counts and never
     // mentioned that the recipient who DID receive the entry got it without its CVV.
     const withheld = await this.withheldNote(senderAccountId, payloads);
+    // The project each entity came out of — the folder ABOVE it, which is what the server's rule
+    // decides on and what format 4 binds. Computed once per payload rather than per recipient.
+    const projects = projectsOfPayloads(payloads, (id) => this.deps.storage.getNode(sender.accountId, id));
     for (const recipient of recipients) {
-      try {
-        const items = payloads.map((p) =>
-          sealShare(p, recipient.shareKeyId, sender, pin, Date.now(), {
-            form,
-            signing,
-            toEmail: recipient.account.email,
-          }),
-        );
-        await this.deps.sharing.appendShares(sender, recipient, items);
-        delivered.push(recipient.account.email);
-      } catch (error) {
-        failed.push(
-          `${recipient.account.email}: ${describeError(error)}`,
-        );
-      }
+      const outcome = await deliverToRecipient(
+        { sharing: this.deps.sharing, policyOf: this.deps.policyOf },
+        { sender, recipient, pin, form, signing },
+        payloads,
+        projects,
+      );
+      (outcome.ok ? delivered : failed).push(outcome.line);
     }
     const what =
       payloads.length === 1 ? `"${payloads[0].node.name}"` : `${payloads.length} entities`;
@@ -290,8 +294,30 @@ export class ShareInbox {
     return payloads;
   }
 
+
+  /**
+   * Why these entities cannot be shared at all, or empty.
+   *
+   * <p>Asked once BEFORE the picker opens. Left to the per-recipient check it would empty the
+   * recipient list instead, and somebody staring at no recipients concludes discovery is broken
+   * rather than reading the one sentence that says what to do. The recipient half is deliberately
+   * absent here: this is the question about the ENTITY.</p>
+   */
+  private shareableAtAll(accountId: string, payloads: readonly SharePayload[]): string {
+    return refuseForRecipient(
+      this.deps.policyOf?.(accountId),
+      undefined,
+      projectsOfPayloads(payloads, (id) => this.deps.storage.getNode(accountId, id)),
+    );
+  }
+
   /** The last two questions, asked once for the whole batch: who, and the transit PIN. */
   private async askAndDeliver(accountId: string, payloads: readonly SharePayload[]): Promise<void> {
+    const blocked = this.shareableAtAll(accountId, payloads);
+    if (blocked !== '') {
+      void vscode.window.showWarningMessage(blocked);
+      return;
+    }
     const recipients = await this.pickRecipients(accountId);
     if (recipients === undefined) {
       return;

@@ -16,7 +16,24 @@
  */
 
 /** What this build speaks. Bump when the extension can no longer read an older server. */
-export const CLIENT_CONTRACT_VERSION = 3;
+export const CLIENT_CONTRACT_VERSION = 4;
+
+/**
+ * The first contract that carries a share's `projectId` through `/api/shares` — and therefore the
+ * floor on a server with a corporate roster, from epic 3.
+ *
+ * <p>A corporate server refuses a client below it, and the reason is the whole point of the
+ * mechanism. A developer's share is sealed in the project form (`format: 4`), and a build that has
+ * never heard of that number would open it with NO additional authenticated data, fail the GCM tag,
+ * and report a WRONG PIN to somebody whose PIN was fine — which is exactly what the server
+ * transport did for six days between 0.82.1 and 0.87. A refusal that names the update is a better
+ * answer than a lie about a password.</p>
+ *
+ * <p>It moves in the same change as the server's constant, for `ORG_POLICY_CONTRACT`'s reason: a
+ * gap between the two is a window in which this repository's own extension is refused by its own
+ * server.</p>
+ */
+export const SHARE_PROJECT_CONTRACT = 4;
 
 /**
  * The first contract that serves the role-and-policy document, `GET /api/org/me`.

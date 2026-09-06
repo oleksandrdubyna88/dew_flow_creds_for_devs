@@ -5,11 +5,13 @@ import { test } from 'node:test';
 import { BackupError, encryptJson, sealBlob } from '../cryptoUtils';
 import {
   LEGACY_SHARES_UNTIL,
+  SHARE_FORMAT_PROJECT,
   SHARE_FORMAT_SERVER,
   envelopeWithShares,
   legacyShareAllowed,
   openShare,
   shareFormOf,
+  shareFormTooNew,
   shareLabelBound,
   shareLabelTrusted,
   resolveShares,
@@ -21,6 +23,8 @@ import {
 import { EntityMetadata, ShareItem, SharePayload, StoredAccount, isShareItem } from '../types';
 
 const NOW = 1_800_000_000_000;
+const ATLAS = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+const OTHER = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
 const admin: StoredAccount = { accountId: 'admin-1', email: 'admin@x', provider: 'microsoft' };
 const user: StoredAccount = { accountId: 'user-1', email: 'user@x', provider: 'google' };
 
@@ -378,4 +382,112 @@ test('shareLabelTrusted: a server share is not reported as unbound', () => {
   assert.equal(shareLabelTrusted(server, true), true, 'the server stamped its label');
   assert.equal(shareLabelTrusted(server, false), false, 'the same bytes off a folder are a claim');
   assert.equal(shareLabelTrusted(sealShare(payload('b'), user.accountId, admin, 'p', NOW), false), true);
+});
+
+// ----- format 4: the project-bound server form (epic 3 story 4) -----
+
+test('a project-bound share round-trips, and the project reaches the recipient in plaintext', () => {
+  const item = sealShare(payload('prod db'), user.email, admin, 'pin', NOW, {
+    form: 'project',
+    projectId: ATLAS,
+  });
+
+  assert.equal(item.format, SHARE_FORMAT_PROJECT);
+  assert.equal(item.projectId, ATLAS);
+  assert.equal(openShare(item, user.email, 'pin', '0.0.0', true).node.name, 'prod db');
+});
+
+test('the project is BOUND: editing it after the fact breaks decryption', () => {
+  // The whole reason format 4 exists. projectId is client-supplied, carried verbatim by the server,
+  // and the server's share rule decides on it — exactly the trust class entityKind occupies.
+  const item = sealShare(payload('prod db'), user.email, admin, 'pin', NOW, {
+    form: 'project',
+    projectId: ATLAS,
+  });
+
+  const edited: ShareItem = { ...item, projectId: OTHER };
+
+  assert.throws(() => openShare(edited, user.email, 'pin', '0.0.0', true), BackupError);
+});
+
+test('the entity name is still bound in the project form', () => {
+  const item = sealShare(payload('prod db'), user.email, admin, 'pin', NOW, {
+    form: 'project',
+    projectId: ATLAS,
+  });
+
+  assert.throws(
+    () => openShare({ ...item, entityName: 'staging db' }, user.email, 'pin', '0.0.0', true),
+    BackupError,
+  );
+});
+
+test('a project form with no project refuses to seal rather than binding nothing', () => {
+  // JSON.stringify drops an undefined key, so this would have produced bytes byte-identical to the
+  // server form: a share that claims to bind a project and binds nothing, saying so nowhere.
+  assert.throws(
+    () => sealShare(payload('x'), user.email, admin, 'pin', NOW, { form: 'project' }),
+    BackupError,
+  );
+  assert.throws(
+    () => sealShare(payload('x'), user.email, admin, 'pin', NOW, { form: 'project', projectId: '' }),
+    BackupError,
+  );
+});
+
+test('format 4 is honoured only off a vault server, exactly as format 3 is', () => {
+  const item = sealShare(payload('x'), user.email, admin, 'pin', NOW, {
+    form: 'project',
+    projectId: ATLAS,
+  });
+
+  // serverStamped false: the same refusal a format-3 item gets off a folder or a git remote.
+  assert.throws(() => openShare(item, user.email, 'pin', '0.0.0', false), BackupError);
+});
+
+test('a form from a NEWER build is refused with the update sentence, never opened as legacy', () => {
+  // The six-day failure, in the one place it could repeat. Opened without AAD a newer form fails its
+  // GCM tag and is reported to the recipient as a wrong PIN — a lie about a password for a share
+  // that is perfectly intact. A released build is protected from format 4 by the contract floor's
+  // 426; THIS build is protected from format 5 by the refusal below.
+  const item = sealShare(payload('x'), user.email, admin, 'pin', NOW, { form: 'server' });
+  const fromTheFuture: ShareItem = { ...item, format: 5 };
+
+  assert.throws(
+    () => openShare(fromTheFuture, user.email, 'pin', '0.0.0', true),
+    (error: unknown) => {
+      assert.ok(error instanceof BackupError);
+      assert.match(error.message, /newer version/);
+      assert.match(error.message, /PIN is not the problem/);
+      return true;
+    },
+  );
+});
+
+test('shareFormOf names every form this build knows, and legacy is the ABSENCE of one', () => {
+  assert.equal(shareFormOf({ format: undefined }), 'legacy');
+  assert.equal(shareFormOf({ format: 2 }), 'bound');
+  assert.equal(shareFormOf({ format: SHARE_FORMAT_SERVER }), 'server');
+  assert.equal(shareFormOf({ format: SHARE_FORMAT_PROJECT }), 'project');
+  assert.equal(shareFormTooNew({ format: SHARE_FORMAT_PROJECT }), false);
+  assert.equal(shareFormTooNew({ format: 5 }), true);
+  assert.equal(shareFormTooNew({ format: undefined }), false);
+});
+
+test('a share with no project still seals as the server form', () => {
+  // Four is not "the new server form" — it is the form for a share that HAS a project to bind. An
+  // entry outside every project folder is sent exactly as it was yesterday.
+  const item = sealShare(payload('x'), user.email, admin, 'pin', NOW, { form: 'server' });
+
+  assert.equal(item.format, SHARE_FORMAT_SERVER);
+  assert.equal(item.projectId, undefined);
+  assert.equal(openShare(item, user.email, 'pin', '0.0.0', true).node.name, 'x');
+});
+
+test('a project share carries no null projectId onto the wire', () => {
+  // The trap `format` records: a released build's own shape check accepts a string or ABSENCE, and
+  // drops the whole item on a JSON null — the recipient then sees an empty inbox, not an error.
+  const plain = sealShare(payload('x'), user.email, admin, 'pin', NOW, { form: 'server' });
+
+  assert.equal(JSON.stringify(plain).includes('projectId'), false);
 });

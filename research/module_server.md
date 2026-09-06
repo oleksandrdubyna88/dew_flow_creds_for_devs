@@ -405,6 +405,22 @@ them: permission of `OrgProjects.EffectiveShare`, availability of the project st
 **Discovery is still vault-based** (`ListVaultOwners`): a colleague assigned to a project who has
 never synced has no vault and is not discoverable. Left as it is — changing the source of team
 discovery changes what every non-corporate deployment shows — and recorded here as a limit.
+### The contract floor is 4 from epic 3 (2026-09-06)
+
+`ContractVersion.Current` is 4, and `ShareProjectContract` is the floor a corporate server applies.
+A client below it is refused with `426` before authentication, and the sentence says why: it cannot
+read the role-and-policy document, and it cannot open a share sealed to a project — it would report
+a wrong PIN for a share that is intact.
+
+**The floor is not lowerable from configuration.** `MinimumFor` is
+`Math.Max(configured, ShareProjectContract)` in corp mode, so an operator can raise it and not lower
+it; rolling back means deploying the previous server build. `POST_DEPLOY.md` item 2 carries the
+expected number so a server left on the old build is caught by the check rather than by a colleague.
+
+`POST /api/shares` carries `projectId` verbatim, as it carries `format`. The server has no opinion
+about either beyond the share rule, and both are omitted rather than written as `null` — a released
+client's own shape check accepts a field or its absence, and drops the whole item on a null.
+
 ### Projects, assignments, and the instruction to remove a folder (2026-09-06)
 
 A project is a name people are assigned to: `${DataDir}/org/projects/<guid>.json`, one small record

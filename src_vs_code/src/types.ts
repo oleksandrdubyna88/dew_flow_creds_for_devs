@@ -434,6 +434,15 @@ export interface TeamMember {
    */
   shareKeyId: string;
   isSelf: boolean;
+  /**
+   * The projects this person is on, as the server reported them (epic 3).
+   *
+   * <p><b>Absent means "not told", never "none".</b> A folder or a git remote has no roster to ask,
+   * and a server below contract 3 answers a row of one field — so `shareRule` treats an absent list
+   * as no facts and refuses nothing on it. An EMPTY array is a fact: the server said this person is
+   * on no project the caller can see.</p>
+   */
+  projectIds?: readonly string[];
 }
 
 /** A pending share addressed to one of MY accounts. */
@@ -510,6 +519,14 @@ export interface ShareItem {
   kdfP?: number;
   /** 2 = the label is GCM additional authenticated data (0.82); absent = a legacy, unbound share. */
   format?: number;
+  /**
+   * The corporate project this entity came out of (epic 3, format 4).
+   *
+   * <p>Optional for the reason `format` is: every share sent before this existed carries none, and a
+   * share from outside every project folder still does. Bound into the AAD by the project form, and
+   * carried verbatim by the server so its share rule can decide on it.</p>
+   */
+  projectId?: string;
   /**
    * Ed25519 signature over the share's transcript, and the key that made it.
    *

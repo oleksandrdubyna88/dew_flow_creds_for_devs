@@ -42,7 +42,7 @@ module.exports = {
       // like any other — and so a 426 is something the suite can provoke (org/me.http does).
       // Pinned to the server's current contract because the suite runs against a CORP-MODE server
       // (see README.md), where the floor is 3: left at '2', every request in this tree answers 426.
-      contract: '3',
+      contract: '4',
 
       aliceEmail: `alice@${DOMAIN}`,
       bobEmail: `bob@${DOMAIN}`,
