@@ -51,6 +51,14 @@ public readonly record struct ProjectResult(ProjectLookup Status, ProjectRecord?
 /// personal deployment tells an operator this server has a roster when it has none. And an unreadable
 /// record is its own answer, never "absent".</para>
 ///
+/// <para><b>Growth: one small record per project, archived and never deleted, never swept.</b> The
+/// event log cites a project by id forever, so a deleted record turns every row that names it into an
+/// id nobody can resolve — which is why archiving is the only close. The bound is the number of
+/// engagements a company has ever run, at a few hundred bytes each; there is no retention policy
+/// because there is nothing here whose value expires. The instructions this store's assignments
+/// produce DO expire: a <c>pendingFolderRemovals</c> entry is cleared by its owner's acknowledgement,
+/// and dies with the member record.</para>
+///
 /// <para><b>Writes take the same striped lock every other store takes</b> (<see cref="VaultStore.GateFor"/>),
 /// so a rename and an archive arriving together are serialised rather than racing: both read, both
 /// write, and without the gate the second would silently discard the first. One stripe per project id,

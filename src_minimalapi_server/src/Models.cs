@@ -115,11 +115,21 @@ public sealed record ShareRequest
     [JsonIgnore]
     public string Kind => string.IsNullOrWhiteSpace(EntityKind) ? "credential" : EntityKind;
 
+    /// <summary>The longest a project id can be — 32 hex characters; nothing longer names one.</summary>
+    /// <remarks>
+    /// Bounded by what the value can legally BE, not only by how much of it fits under
+    /// <c>MaxShareBytes</c>. It is stored verbatim and carried to a recipient, and the budget alone
+    /// would let most of a megabyte through — the shape of the hole <see cref="PayloadBytes"/>
+    /// already documents for <c>entityKind</c>.
+    /// </remarks>
+    public const int MaxProjectIdLength = 32;
+
     public bool IsValid() =>
         !string.IsNullOrWhiteSpace(ToEmail)
         && ToEmail.Contains('@')
         && !string.IsNullOrWhiteSpace(EntityName)
         && Kind.Length <= 64
+        && (ProjectId is null || ProjectId.Length <= MaxProjectIdLength)
         && IsBase64(Salt)
         && IsBase64(Iv)
         && IsBase64(Tag)
