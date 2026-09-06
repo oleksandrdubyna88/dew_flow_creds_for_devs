@@ -88,6 +88,10 @@ identifier**, so there is nothing to tamper with.
 | `DELETE` | `/api/vault` | token email | `204` | Deletes the vault, its `.email` sidecar, the whole inbox — and the registry record |
 | `GET` | `/api/team` | any allowed caller | `200` | `[{email}]` — vault owners in the caller's own domain; in corp mode, minus anyone whose record says `active: false` or cannot be read |
 | `GET` | `/api/org/me` | any allowed caller | `200` / `503` | The role-and-policy document — **a document the client obeys, not a boundary the server holds**. Corp mode off → `corpMode: false` and inert defaults. Never writes. See below |
+| `GET` | `/api/org/members` | **admin** | `200` | The roster of the caller's own domain, one row per record, officers flagged. Not streamed: 200 records of about a kilobyte |
+| `PUT` | `/api/org/members/{email}` | **admin** | `200` / `400` / `403` / `409` / `503` | Set a role, a share default, or both — for somebody who may not have synced yet. See below |
+| `GET` | `/api/org/settings` | **admin** | `200` | The runtime settings; absent file → the defaults, and no file is written |
+| `PUT` | `/api/org/settings` | **admin** | `200` / `400` | `offlineLeaseHours >= 0`; `0` is the legal "strictly online" |
 | `GET` | `/api/org-recovery/config` | any allowed caller | `200` | The corporate-recovery roster this server runs under. See below |
 | `POST` | `/api/org-recovery/invites` | officer | `201` | One officer's sealed Shamir share; sender stamped |
 | `GET` | `/api/org-recovery/invites` | officer | `200` | Your own pending invites, **streamed** |
@@ -220,6 +224,83 @@ path is reachable only through configuration — which is precisely why `Vault:M
 is configurable: a test raises it and drives a real refusal, instead of a branch nobody has ever
 seen run being discovered wrong on the day it first matters. On a corp server the floor makes the
 refusal real with no configuration at all, and `http/org/me.http` provokes it over the wire.
+
+### `RequireAdmin` — two ways in, one refusal
+
+Beside `RequireOfficer`, and deliberately two answers to one question. **An officer passes
+unconditionally**: the roster is the operator's own list, an officer cannot be given a registry role
+(the `409` below), and a deployment whose officers could not administer would need a second list to
+say who can. **Everybody else passes only by their record saying `admin`.**
+
+Every refusal it decides is the **same `403` with the same JSON body** — not an admin, never
+registered, corp mode off, and a record this build cannot read. That is `RequireOfficer`'s doctrine
+for its reason: telling a caller which fact failed hands them the roster's shape for free. The
+unreadable case is the one worth naming: a record the server cannot parse is not a person whose
+standing it may guess, and guessing would mean the computed default, which is a `member` — the plan
+round's escalation, one gate later. The gate writes its own body, unlike `RequireOfficer`, because
+this surface promises a reason and an empty `403` is not one.
+
+### The admin's routes
+
+**`GET /api/org/members`** answers `MemberListEntryDto[]` — the record's facts plus `isOfficer`,
+which the record cannot hold because it comes from configuration. It is reported beside the role for
+a practical reason: a list that showed the CTO as a plain `member` would invite exactly the edit the
+server refuses. The scoping is the **store's** (`ListForDomain`), not the endpoint's: on a server
+whose `Vault:AllowedDomains` names two companies, one company's admin must never be handed the
+other's roster, and a filter written at the call site is one the next call site forgets.
+
+**`PUT /api/org/members/{email}`** is the upsert, and it creates: Bob joins on Monday and the admin
+sets him up on Friday, so his first policy is the one the admin chose rather than the default his
+first sync would have written. Its refusals, in the order they are checked:
+
+| Answer | When, and why it is that answer |
+|---|---|
+| `400` | The path segment is not an email address. Checked FIRST: it would otherwise hash to a key like any string and be written, and answering the cross-domain `403` would tell an admin their own colleague is in another company |
+| `403` | The target is in another domain (unless `Vault:AllowAnyDomain`). Two reviewers found this hole independently in the plan; on a two-company server it is one company administering the other. Mirrors the break-glass session start's own check |
+| `409` | The target is a recovery officer. Never a silent no-op: the roster is configuration, and a UI that appeared to demote the CTO would be lying about what happened |
+| `400` | An unknown role, an unknown share default, a body that is not this endpoint's JSON, or one that changes nothing. The sentence names the legal values, because it is for an admin UI rather than a log; `{}` is a `400` rather than a `200` that re-stamps a record and reports success |
+| `503` | The record exists and cannot be read. The file is left exactly as it was: overwriting it would start from the default, and a default written over a blocked developer's corrupt record is an unblock nobody ordered |
+
+A share default sent for somebody who is not a developer is **stored, not refused** — it takes effect
+only for `dev`, exactly as `MemberPolicy.For` reads it, and refusing it would stop an admin setting
+the shape first and demoting second, which is the order that never leaves a developer with a share
+default nobody chose. `updatedBy` is stamped from the token; a field in the body that claims
+otherwise is ignored.
+
+**`GET` / `PUT /api/org/settings`** are runtime because nothing in them has a cryptographic
+consequence: the offline lease changes what an honest client does between two successful syncs, while
+the officer roster changes what a key is sealed to — which is why that one stays in configuration and
+costs a restart and a ceremony. `SetSettingsRequest.OfflineLeaseHours` is **nullable on purpose**: a
+deserializer runs no defaults, so a positional `int` a client omitted would bind to `0`, and `0` here
+is the legal "strictly online" — a body of `{}` would have switched every client's lease off in
+silence. Absent is a `400` instead.
+
+### What the admin routes write to the log
+
+Each row is appended **after** the write it records has landed, and an append that fails never fails
+the mutation (the log's rule, from the story that built it):
+
+| Kind | From | Detail |
+|---|---|---|
+| `member.registered` | the upsert, when it created the record — with the ADMIN as actor | the role it was created with |
+| `member.role_changed` | the upsert, only when the value actually differs | `from -> to` |
+| `member.share_default_changed` | the upsert, only when the value actually differs | `from -> to` |
+| `settings.changed` | `PUT /api/org/settings`, only when the value differs | `offlineLeaseHours from -> to` |
+
+"Differs" is decided against `UpsertResult.Before` — the record the write actually replaced, read
+under the store's own lock. A lookup at the call site would compare against whatever a concurrent
+admin had not yet written, and two admins editing one person could then log a transition that never
+happened.
+
+### An operator log names the person, and code scanning is told so once
+
+The lines that name an email — a registry record refused, a record that could not be removed, an
+audit row lost — are flagged by CodeQL as exposure of private information, and they are dismissed
+rather than redacted. The server already keeps an `.email` sidecar per account in plaintext and has
+logged the caller on every vault write and delete since long before the registry existed, so nothing
+new is exposed; and each of these lines exists **because a review finding asked for it**: an
+operator's one signal has to name whose record it is and which file held it, or nobody can act on it.
+A future line of the same shape earns the same dismissal, with that reason.
 
 ### `GET /api/org/me` — a document the client obeys, not a boundary
 
@@ -624,7 +705,7 @@ what is under it:
 
 ## Tests
 
-`src_minimalapi_server/tests/` — xUnit v3 on Microsoft Testing Platform, 252 tests, ~15 s. The
+`src_minimalapi_server/tests/` — xUnit v3 on Microsoft Testing Platform, 289 tests, ~14 s. The
 endpoint suites run in-process through `WebApplicationFactory` — no free port, no background
 `dotnet run`; the store suites drive a store directly on a throwaway data directory.
 
@@ -645,6 +726,9 @@ Never `dotnet test` — there is no VSTest host here and it aborts.
 | `ContractVersionTests` | The header on every response, silent and garbled and newer clients served, a configured minimum refuses with a reason, the refusal precedes authentication; corp mode floors the minimum at 3 with the default configuration, the refusal names the policy, personal mode is unchanged, a corp server still serves a contract-3 client and a silent one, the floor never lowers a higher configured minimum, the reason names the floor from the constant, a corporate route's `426` is JSON while every older route's stays plain text |
 | `OrgMembersTests` | Registration on the first vault write and not on `/api/org/me`; the default role is member; a second sync does not re-stamp a record an admin edited; personal mode creates no `org/` and answers `corpMode: false` from constants whatever a leftover record says; a never-synced caller is computed and nothing is written; an officer reads `isOfficer: true` with no registry row |
 | `OrgRegistrationTests` | A registry that cannot be written (`org/members` is a file) does not fail the vault write; the next sync registers the person after all; two syncs leave exactly one `member.registered` row and the second emits nothing; two concurrent first syncs leave one row and one record; an admin creating the record in the hook's window keeps their stamp (the lock held by the test); a client hanging up after registration still gets its row; the swallowed failure is logged at Error naming the person |
+| `OrgAdminGateTests` | Who administers: an officer with no record passes and registers nobody, a registry admin passes, a member and a developer and a never-registered caller are refused, an admin whose record became unreadable is refused rather than guessed at, corp mode off is the same `403` to the byte, and the gate's own `401` carries a JSON body |
+| `OrgMembersAdminTests` | The roster and the upsert: scoped to the caller's domain with officers flagged, a role set before the person's first sync and left alone by it, cross-domain `403`, officer `409`, unknown role and empty body and malformed JSON and a target that is not an address `400`, a share default stored for a member and inert in the policy, `updatedBy` from the token, one row per real change and none for a change that changes nothing, and a `503` that leaves the record's bytes untouched |
+| `OrgSettingsTests` | The lease over the wire: the default without a file, written and read back, `0` accepted, negative and `{}` refused, non-admin `403`, and one `settings.changed` row |
 | `OrgMeAuthorizationTests` | No token → `401` with a JSON body; an outside-domain token → `403` with a JSON body and nothing registered; an email differing only in case and surrounding space resolves to one record, end to end |
 | `OrgUnavailableTests` | A corrupted record makes `/api/org/me` answer `503` with `Retry-After` and a JSON body — never the member default; the body says an administrator must repair it and never names the file; a sync never overwrites a record it cannot read, and still stores the vault |
 | `AppJsonContextTests` | Every DTO the org routes and their refusals serialize, lists included, is in the source-generated context — the one class of bug the endpoint suites cannot see, because under JIT an unregistered type falls through to reflection and only the AOT binary fails |

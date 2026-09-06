@@ -245,7 +245,7 @@ public sealed class OrgMembersStore(string dataDir, ILogger<OrgMembersStore> log
         UnderGateAsync(email, ct, (current, normalized, now, path) =>
         {
             var (baseline, created) = Baseline(current, normalized, now, path);
-            return new WritePlan(Stamp(edit(baseline), normalized, byAdmin, now), created, Write: true);
+            return new WritePlan(Stamp(edit(baseline), normalized, byAdmin, now), created, Write: true, Before: baseline);
         });
 
     /// <summary>
@@ -268,11 +268,14 @@ public sealed class OrgMembersStore(string dataDir, ILogger<OrgMembersStore> log
         UnderGateAsync(email, ct, (current, normalized, now, path) =>
         {
             var (baseline, created) = Baseline(current, normalized, now, path);
-            return new WritePlan(baseline, created, Write: created);
+            return new WritePlan(baseline, created, Write: created, Before: baseline);
         });
 
-    /// <summary>What one guarded decision came to: the record to answer, whether it was created, and whether anything goes to disk.</summary>
-    private sealed record WritePlan(MemberRecord Record, bool Created, bool Write);
+    /// <summary>
+    /// What one guarded decision came to: the record to answer, whether it was created, whether anything
+    /// goes to disk, and the record the decision started from (see <see cref="UpsertResult.Before"/>).
+    /// </summary>
+    private sealed record WritePlan(MemberRecord Record, bool Created, bool Write, MemberRecord Before);
 
     /// <summary>The decision made while the lock is held: from what is on disk now, to a <see cref="WritePlan"/>.</summary>
     private delegate WritePlan Decide(MemberLookupResult current, string email, long now, string path);
@@ -303,7 +306,7 @@ public sealed class OrgMembersStore(string dataDir, ILogger<OrgMembersStore> log
                     ct);
                 _cache.TryRemove(key, out _);
             }
-            return new UpsertResult(plan.Record, plan.Created);
+            return new UpsertResult(plan.Record, plan.Created, plan.Before);
         }
         finally
         {

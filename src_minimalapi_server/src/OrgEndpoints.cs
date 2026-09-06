@@ -11,14 +11,22 @@ namespace CredVaultServer;
 public delegate (string Email, string? Name)? CallerGate(HttpContext ctx);
 
 /// <summary>
+/// The admin gate, which is asynchronous where <see cref="CallerGate"/> is not: it reads the registry
+/// and writes its own refusal. It lives in <c>Program.cs</c> beside <c>RequireOfficer</c> — one file
+/// answers "who may do this" — and crosses into the routes as this delegate.
+/// </summary>
+public delegate Task<(string Email, string? Name)?> AdminGate(HttpContext ctx);
+
+/// <summary>
 /// Everything the corporate routes need from <c>Program.cs</c>, as one record. The gates and
 /// <c>DomainOf</c> are local functions in a top-level program and cross into this file only as
 /// delegates; a record lets the next epics widen the set without editing the call site each time.
-/// <see cref="DomainOf"/> and <see cref="AllowAnyDomain"/> are carried for the admin routes the next
-/// story adds — the cross-domain refusal is theirs.
+/// <see cref="DomainOf"/> and <see cref="AllowAnyDomain"/> are what the admin routes refuse a
+/// cross-domain target with.
 /// </summary>
 public sealed record OrgEndpointDeps(
     CallerGate RequireCaller,
+    AdminGate RequireAdmin,
     Func<string, string> DomainOf,
     OrgRecoveryConfig OrgRecovery,
     OrgMembersStore Members,
@@ -60,6 +68,14 @@ public static class OrgEndpoints
         // The one document every client reads each cycle — in corp mode and out of it. Any allowed
         // caller; never writes (see MeAsync).
         app.MapGet("/api/org/me", (HttpContext ctx, CancellationToken ct) => MeAsync(ctx, deps, ct));
+
+        // The admin's surface. Every one of these is RequireAdmin's, and the gate writes its own
+        // refusal, so a route that forgets the null check cannot serve anybody.
+        app.MapGet("/api/org/members", (HttpContext ctx, CancellationToken ct) => MembersAsync(ctx, deps, ct));
+        app.MapPut("/api/org/members/{email}", (HttpContext ctx, string email, CancellationToken ct) =>
+            SetMemberAsync(ctx, deps, email, ct));
+        app.MapGet("/api/org/settings", (HttpContext ctx, CancellationToken ct) => SettingsAsync(ctx, deps, ct));
+        app.MapPut("/api/org/settings", (HttpContext ctx, CancellationToken ct) => SetSettingsAsync(ctx, deps, ct));
         return app;
     }
 
@@ -157,7 +173,7 @@ public static class OrgEndpoints
     /// </summary>
     private static async Task MeAsync(HttpContext ctx, OrgEndpointDeps deps, CancellationToken ct)
     {
-        var caller = await RequireOrgCallerAsync(ctx, deps);
+        var caller = await RequireOrgCallerAsync(ctx, deps.RequireCaller);
         if (caller is null)
         {
             return;
@@ -199,9 +215,9 @@ public static class OrgEndpoints
     /// The shared gate decides and sets the status; this adds the body the corporate surface promises,
     /// so a <c>401</c> or <c>403</c> here carries a sentence where the older endpoints carry none.
     /// </summary>
-    private static async Task<(string Email, string? Name)?> RequireOrgCallerAsync(HttpContext ctx, OrgEndpointDeps deps)
+    public static async Task<(string Email, string? Name)?> RequireOrgCallerAsync(HttpContext ctx, CallerGate requireCaller)
     {
-        var caller = deps.RequireCaller(ctx);
+        var caller = requireCaller(ctx);
         if (caller is null)
         {
             await FailJson(ctx, ctx.Response.StatusCode, RefusalReason(ctx.Response.StatusCode));
@@ -214,6 +230,247 @@ public static class OrgEndpoints
         StatusCodes.Status401Unauthorized => "No verified identity was presented.",
         _ => "That account is not served by this deployment.",
     };
+
+    // ---------- the admin's roster ----------
+
+    /// <summary>
+    /// Everyone in the admin's own domain, as rows.
+    ///
+    /// <para><b>Scoped by the store, not by the endpoint.</b> On a server whose
+    /// <c>Vault:AllowedDomains</c> names two companies, one company's admin must never be handed the
+    /// other's roster, and a filter written at the call site is a filter the next call site forgets.</para>
+    ///
+    /// <para><b>Not streamed</b>, unlike the share inbox: the plan budgets two hundred records of about
+    /// a kilobyte, so the whole list is a fraction of one vault blob, and every record is answered from
+    /// the store's cache behind one stat. The threshold at which that stops being true — roughly two
+    /// thousand people — is recorded in the plan with pagination named as the answer.</para>
+    /// </summary>
+    private static async Task MembersAsync(HttpContext ctx, OrgEndpointDeps deps, CancellationToken ct)
+    {
+        var caller = await deps.RequireAdmin(ctx);
+        if (caller is null)
+        {
+            return;
+        }
+        var rows = deps.Members.ListForDomain(deps.DomainOf(caller.Value.Email))
+            .Select(record => MemberListEntryDto.For(record, deps.OrgRecovery.IsOfficer(record.Email)))
+            .OrderBy(entry => entry.Email, StringComparer.Ordinal)
+            .ToList();
+        await ctx.Response.WriteAsJsonAsync(rows, AppJsonContext.Default.ListMemberListEntryDto, cancellationToken: ct);
+    }
+
+    /// <summary>
+    /// Set a role, a share default, or both — for somebody who may not have synced yet.
+    ///
+    /// <para>The refusals, in the order they are checked and for the reason each exists. <b>A
+    /// cross-domain target is <c>403</c></b>: two reviewers found that hole independently in the plan,
+    /// and on a two-company server it is one company administering the other. <b>An officer is
+    /// <c>409</c></b>, never a silent no-op — the roster is configuration, and a UI that appeared to
+    /// demote the CTO would be lying about what happened. <b>An unknown role, an unknown share default,
+    /// or nothing at all is <c>400</c></b>, naming the legal values, because the sentence is for an
+    /// admin UI rather than a log. <b>A record this build cannot read is <c>503</c></b>, and the file is
+    /// left exactly as it was: overwriting it would start from the default, and a default written over a
+    /// blocked developer's corrupt record is an unblock nobody ordered.</para>
+    /// </summary>
+    private static async Task SetMemberAsync(HttpContext ctx, OrgEndpointDeps deps, string email, CancellationToken ct)
+    {
+        var caller = await deps.RequireAdmin(ctx);
+        if (caller is null)
+        {
+            return;
+        }
+        var target = MemberRecord.Normalize(email);
+        var refusal = TargetProblem(deps, caller.Value.Email, target);
+        if (refusal is not null)
+        {
+            await FailJson(ctx, refusal.Value.Status, refusal.Value.Message);
+            return;
+        }
+        var request = await ReadSetMemberAsync(ctx);
+        var problem = request is null ? MalformedBody : request.Problem();
+        if (problem.Length > 0)
+        {
+            await FailJson(ctx, StatusCodes.Status400BadRequest, problem);
+            return;
+        }
+        await ApplyMemberEditAsync(ctx, deps, caller.Value.Email, target, request!, ct);
+    }
+
+    private const string MalformedBody = "The body is not the JSON this endpoint reads; send a role, a share default, or both.";
+
+    /// <summary>The refusal this target earns before the body is even read, or nothing.</summary>
+    /// <remarks>
+    /// The shape is checked FIRST, and the order is the point: a path segment with no <c>@</c> is not a
+    /// person, and answering it with the cross-domain <c>403</c> would tell an admin their own colleague
+    /// is in another company. Without the check it would hash to a key like any string and be written.
+    /// </remarks>
+    private static (int Status, string Message)? TargetProblem(OrgEndpointDeps deps, string caller, string target)
+    {
+        if (!target.Contains('@') || target.Length < 3)
+        {
+            return (StatusCodes.Status400BadRequest,
+                "That is not an email address, so there is nobody to give a role to.");
+        }
+        if (!deps.AllowAnyDomain && deps.DomainOf(target) != deps.DomainOf(caller))
+        {
+            return (StatusCodes.Status403Forbidden,
+                "That address is in another domain; an administrator may only set roles inside their own.");
+        }
+        return deps.OrgRecovery.IsOfficer(target)
+            ? (StatusCodes.Status409Conflict,
+                "That address is a recovery officer, which is configuration rather than a role: officers "
+                + "administer by being on the roster, and the roster is changed by the operator and a restart.")
+            : null;
+    }
+
+    /// <summary>A body this build cannot parse is a <c>400</c>, never an exception the handler leaks.</summary>
+    private static async Task<SetMemberRequest?> ReadSetMemberAsync(HttpContext ctx)
+    {
+        try
+        {
+            return await ctx.Request.ReadFromJsonAsync(AppJsonContext.Default.SetMemberRequest, ctx.RequestAborted);
+        }
+        catch (Exception e) when (e is System.Text.Json.JsonException or BadHttpRequestException)
+        {
+            return null;
+        }
+    }
+
+    private static async Task ApplyMemberEditAsync(
+        HttpContext ctx,
+        OrgEndpointDeps deps,
+        string admin,
+        string target,
+        SetMemberRequest request,
+        CancellationToken ct)
+    {
+        UpsertResult result;
+        try
+        {
+            result = await deps.Members.UpsertAsync(target, request.ApplyTo, admin, ct);
+        }
+        catch (MemberRecordUnavailableException)
+        {
+            // The same answer /api/org/me gives the person themselves, for the same reason: the record
+            // exists and cannot be read, so nothing may be written over it either.
+            await FailUnavailable(ctx);
+            return;
+        }
+        await RecordMemberEditAsync(deps, admin, result, ct);
+        await ctx.Response.WriteAsJsonAsync(
+            MemberListEntryDto.For(result.Record, deps.OrgRecovery.IsOfficer(result.Record.Email)),
+            AppJsonContext.Default.MemberListEntryDto,
+            cancellationToken: ct);
+    }
+
+    /// <summary>
+    /// The rows an edit leaves — after the write has landed, never before, and never able to fail it.
+    ///
+    /// <para>What "changed" means is decided against <see cref="UpsertResult.Before"/>, the record the
+    /// write actually replaced, taken under the store's own lock. A lookup here would compare against
+    /// whatever a concurrent admin had not yet written, and two admins editing one person could then log
+    /// a transition that never happened.</para>
+    /// </summary>
+    private static async Task RecordMemberEditAsync(
+        OrgEndpointDeps deps,
+        string admin,
+        UpsertResult result,
+        CancellationToken ct)
+    {
+        if (result.Created)
+        {
+            await deps.Events.AppendAsync(
+                Row(OrgEventKinds.MemberRegistered, admin, result.Record.Email, result.Record.Role), ct);
+        }
+        if (result.Before.Role != result.Record.Role)
+        {
+            await deps.Events.AppendAsync(
+                Row(OrgEventKinds.MemberRoleChanged, admin, result.Record.Email,
+                    Transition(result.Before.Role, result.Record.Role)), ct);
+        }
+        if (result.Before.ShareDefault != result.Record.ShareDefault)
+        {
+            await deps.Events.AppendAsync(
+                Row(OrgEventKinds.MemberShareDefaultChanged, admin, result.Record.Email,
+                    Transition(result.Before.ShareDefault, result.Record.ShareDefault)), ct);
+        }
+    }
+
+    /// <summary>From and to in one field, because a row that says only the new value cannot be read back
+    /// as a history: "made a developer" and "made a developer, again" are different facts.</summary>
+    private static string Transition(string before, string after) => $"{before} -> {after}";
+
+    private static OrgEventDto Row(string kind, string actor, string subject, string detail) => new(
+        At: DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+        Kind: kind,
+        Actor: actor,
+        Subject: subject,
+        Project: null,
+        ShareId: null,
+        EntityName: null,
+        EntityKind: null,
+        Outcome: null,
+        Detail: detail);
+
+    // ---------- the runtime settings ----------
+
+    /// <summary>
+    /// The settings an admin may change without a restart, and the reason they may: nothing here has a
+    /// cryptographic consequence. The offline lease changes what an honest client does between two
+    /// successful syncs; the officer roster changes what a key is sealed to, which is why that one stays
+    /// in configuration and costs a restart and a ceremony.
+    /// </summary>
+    private static async Task SettingsAsync(HttpContext ctx, OrgEndpointDeps deps, CancellationToken ct)
+    {
+        var caller = await deps.RequireAdmin(ctx);
+        if (caller is null)
+        {
+            return;
+        }
+        await ctx.Response.WriteAsJsonAsync(deps.Settings.Read(), AppJsonContext.Default.OrgSettingsDto, cancellationToken: ct);
+    }
+
+    private static async Task SetSettingsAsync(HttpContext ctx, OrgEndpointDeps deps, CancellationToken ct)
+    {
+        var caller = await deps.RequireAdmin(ctx);
+        if (caller is null)
+        {
+            return;
+        }
+        var request = await ReadSetSettingsAsync(ctx);
+        var problem = request is null ? MalformedSettingsBody : request.Problem();
+        if (problem.Length > 0)
+        {
+            await FailJson(ctx, StatusCodes.Status400BadRequest, problem);
+            return;
+        }
+        var hours = request!.OfflineLeaseHours!.Value;
+        var update = await deps.Settings.UpdateAsync(
+            current => current with { OfflineLeaseHours = hours }, caller.Value.Email, ct);
+        if (update.Before.OfflineLeaseHours != update.After.OfflineLeaseHours)
+        {
+            await deps.Events.AppendAsync(
+                Row(OrgEventKinds.SettingsChanged, caller.Value.Email, subject: string.Empty,
+                    detail: $"offlineLeaseHours {Transition(
+                        update.Before.OfflineLeaseHours.ToString(CultureInfo.InvariantCulture),
+                        update.After.OfflineLeaseHours.ToString(CultureInfo.InvariantCulture))}"), ct);
+        }
+        await ctx.Response.WriteAsJsonAsync(update.After, AppJsonContext.Default.OrgSettingsDto, cancellationToken: ct);
+    }
+
+    private const string MalformedSettingsBody = "The body is not the JSON this endpoint reads; send offlineLeaseHours.";
+
+    private static async Task<SetSettingsRequest?> ReadSetSettingsAsync(HttpContext ctx)
+    {
+        try
+        {
+            return await ctx.Request.ReadFromJsonAsync(AppJsonContext.Default.SetSettingsRequest, ctx.RequestAborted);
+        }
+        catch (Exception e) when (e is System.Text.Json.JsonException or BadHttpRequestException)
+        {
+            return null;
+        }
+    }
 
     private static Task FailUnavailable(HttpContext ctx)
     {

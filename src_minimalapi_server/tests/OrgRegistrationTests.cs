@@ -58,6 +58,8 @@ public sealed class OrgRegistrationTests
             Directory.CreateDirectory(Dir);
             Deps = new OrgEndpointDeps(
                 RequireCaller: _ => null,
+                // The hook never reaches a gate; a delegate that refuses everything says so.
+                RequireAdmin: _ => Task.FromResult<(string Email, string? Name)?>(null),
                 DomainOf: _ => string.Empty,
                 OrgRecovery: OrgRecoveryConfig.Read(Corp.Officers.Split(','), 2),
                 Members: new OrgMembersStore(Dir, NullLogger<OrgMembersStore>.Instance),

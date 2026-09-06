@@ -322,6 +322,7 @@ var serverVersion = typeof(Program).Assembly
 var orgMembers = app.Services.GetRequiredService<OrgMembersStore>();
 var orgDeps = new OrgEndpointDeps(
     RequireCaller,
+    RequireAdminAsync,
     DomainOf,
     orgRecovery,
     orgMembers,
@@ -782,6 +783,39 @@ app.MapGet("/api/org-recovery/config", async (HttpContext ctx, CancellationToken
 // Every endpoint below is officer-only. Not because the payloads are readable — they are
 // opaque — but because these are the levers of the ceremony, and a stranger who can post an
 // invite can seat their own share where a real officer's belongs.
+// Who may administer, and it is deliberately TWO answers to one question. An officer passes
+// unconditionally: the roster is the operator's own list, an officer cannot be given a registry role
+// (the 409 on the upsert), and a deployment whose officers could not administer would need a second
+// list to say who can. Everybody else passes only by their record saying so.
+//
+// Every refusal is the SAME 403 — not an admin, never registered, corp mode off, and a record this
+// build cannot read. RequireOfficer's doctrine, for its reason: telling a caller WHICH fact failed
+// hands them the roster's shape for free. The unreadable case is the one worth naming: a record the
+// server cannot parse is not a person whose standing it may guess, and guessing would mean the
+// computed default, which is a member — one gate later, the same escalation the plan round found.
+//
+// It writes its own body, unlike RequireOfficer: this surface promises a JSON reason, and an empty
+// 403 is not one.
+async Task<(string Email, string? Name)?> RequireAdminAsync(HttpContext ctx)
+{
+    var caller = await OrgEndpoints.RequireOrgCallerAsync(ctx, RequireCaller);
+    if (caller is null)
+    {
+        return null;
+    }
+    if (orgRecovery.Enabled
+        && (orgRecovery.IsOfficer(caller.Value.Email)
+            || orgMembers.Find(caller.Value.Email) is { Status: MemberLookup.Found, Record.Role: MemberRole.Admin }))
+    {
+        return caller;
+    }
+    await OrgEndpoints.FailJson(
+        ctx,
+        StatusCodes.Status403Forbidden,
+        "This deployment does not let you administer its people.");
+    return null;
+}
+
 (string Email, string? Name)? RequireOfficer(HttpContext ctx)
 {
     var caller = RequireCaller(ctx);

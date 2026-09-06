@@ -55,8 +55,10 @@ public sealed class OrgSettingsStoreTests : IDisposable
     [Fact]
     public async Task WriteThenRead()
     {
-        var written = await _store.UpdateAsync(s => s with { OfflineLeaseHours = 0 }, Admin, Ct);
+        var update = await _store.UpdateAsync(s => s with { OfflineLeaseHours = 0 }, Admin, Ct);
 
+        var written = update.After;
+        update.Before.Should().Be(OrgSettingsDto.Default, "the update says what it replaced — here, the computed default");
         written.OfflineLeaseHours.Should().Be(0, "zero is the legal strictly-online, not an error");
         written.UpdatedBy.Should().Be(Admin, "who changed it comes from the caller, never from the edit");
         written.UpdatedAt.Should().BePositive();
