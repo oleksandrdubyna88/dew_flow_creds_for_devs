@@ -1,4 +1,5 @@
 using System.Net;
+using System.Text.Json;
 using FluentAssertions;
 
 namespace CredVaultServer.Tests;
@@ -193,5 +194,50 @@ public sealed class ContractVersionTests
         ContractVersion.MinimumFor(configured: 5, corpMode: true).Should().Be(5);
         ContractVersion.MinimumFor(configured: 1, corpMode: true).Should().Be(ContractVersion.OrgPolicyContract);
         ContractVersion.MinimumFor(configured: 1, corpMode: false).Should().Be(1);
+    }
+
+    [Fact]
+    public void TheCorpReasonNamesTheFloorFromTheConstant()
+    {
+        // The sentence exists to name the floor; a number typed into it advertises a stale version the
+        // day the constant moves. Proved with teeth by moving the constant and watching this fail.
+        ContractVersion.CorpFloorReason.Should().Contain($"contract {ContractVersion.OrgPolicyContract}");
+    }
+
+    [Fact]
+    public async Task ATooOldClientOnACorporateRouteIsRefusedInJson()
+    {
+        // The middleware answers before any endpoint, so without this a contract-2 client asking for
+        // /api/org/me got the one plain-text refusal on a surface that promises {error} everywhere else —
+        // a body the admin UI cannot parse, at exactly the moment it needs to show why.
+        using var server = Corp.Server();
+        using var client = Claiming(server.ClientFor(Alice), "2");
+        var ct = TestContext.Current.CancellationToken;
+
+        var response = await client.GetAsync("/api/org/me", ct);
+
+        response.StatusCode.Should().Be(HttpStatusCode.UpgradeRequired);
+        response.Content.Headers.ContentType.Should().NotBeNull("a plain-text refusal carries no content type at all");
+        response.Content.Headers.ContentType!.MediaType.Should().Be("application/json");
+        var body = await response.Content.ReadAsStringAsync(ct);
+        JsonDocument.Parse(body).RootElement.GetProperty("error").GetString().Should().Contain("policy");
+    }
+
+    [Fact]
+    public async Task ATooOldClientOnAnOlderRouteIsStillRefusedInPlainText()
+    {
+        // The older routes' clients were written against a plain sentence, and keep it byte for byte —
+        // /api/org-recovery/* included: it shares a prefix with the corporate surface and none of its shape.
+        using var server = Corp.Server();
+        using var client = Claiming(server.ClientFor(Alice), "2");
+        var ct = TestContext.Current.CancellationToken;
+
+        foreach (var path in new[] { "/api/vault", "/api/org-recovery/config" })
+        {
+            var response = await client.GetAsync(path, ct);
+            response.StatusCode.Should().Be(HttpStatusCode.UpgradeRequired, path);
+            (response.Content.Headers.ContentType?.MediaType ?? "text/plain").Should().NotBe("application/json", path);
+            (await response.Content.ReadAsStringAsync(ct)).Should().StartWith("this server speaks contract", path);
+        }
     }
 }

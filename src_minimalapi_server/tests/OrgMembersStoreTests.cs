@@ -402,4 +402,50 @@ public sealed class OrgMembersStoreTests : IDisposable
         File.Exists(RecordPath(Anna)).Should().BeTrue("the OS refused the delete, as arranged");
         _log.Errors.Should().ContainSingle(m => m.Contains(Anna), "the operator's signal names the person");
     }
+
+    // ---------------------------------------------------------------- insert-if-absent
+
+    [Fact]
+    public async Task InsertIfAbsentOverAnExistingRecordWritesNothing()
+    {
+        // The sync hook's write. An existing record comes back untouched — not re-stamped, not rewritten,
+        // not even its mtime — because a stamp is the trail an admin's action leaves, and a sync is not an
+        // admin's action.
+        await _store.UpsertAsync(Anna, r => r with { Role = MemberRole.Dev }, Admin, Ct);
+        var path = RecordPath(Anna);
+        var before = await File.ReadAllBytesAsync(path, Ct);
+        var mtime = File.GetLastWriteTimeUtc(path);
+
+        var result = await _store.InsertIfAbsentAsync(Anna, Ct);
+
+        result.Created.Should().BeFalse();
+        result.Record.UpdatedBy.Should().Be(Admin, "the existing record is what comes back");
+        result.Record.Role.Should().Be(MemberRole.Dev);
+        (await File.ReadAllBytesAsync(path, Ct)).Should().Equal(before, "not one byte moved");
+        File.GetLastWriteTimeUtc(path).Should().Be(mtime, "no write happened at all");
+    }
+
+    [Fact]
+    public async Task InsertIfAbsentCreatesTheDefaultAndSaysSo()
+    {
+        var result = await _store.InsertIfAbsentAsync(Anna, Ct);
+
+        result.Created.Should().BeTrue();
+        result.Record.Role.Should().Be(MemberRole.Default);
+        result.Record.UpdatedBy.Should().BeEmpty("the person registered themself");
+        _store.Find(Anna).Status.Should().Be(MemberLookup.Found);
+    }
+
+    [Fact]
+    public async Task InsertIfAbsentOverAnUnreadableRecordRefusesRatherThanOverwriting()
+    {
+        // The same rule as an upsert: a default written over a blocked developer's unreadable record is an
+        // unblock nobody ordered.
+        WriteRaw(Anna, "{ not json");
+
+        var act = () => _store.InsertIfAbsentAsync(Anna, Ct);
+
+        await act.Should().ThrowAsync<MemberRecordUnavailableException>();
+        (await File.ReadAllTextAsync(RecordPath(Anna), Ct)).Should().Be("{ not json");
+    }
 }

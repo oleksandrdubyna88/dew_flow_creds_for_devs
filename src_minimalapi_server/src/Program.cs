@@ -349,6 +349,16 @@ app.Use(async (ctx, next) =>
         ctx.Request.Headers[ContractVersion.Header], effectiveMinimumContract, corpFloorReason);
     if (decision.Verdict == ContractVersion.Verdict.TooOld)
     {
+        // The corporate surface promises a JSON {error} on every refusal, and this is the one refusal
+        // that runs before any of its endpoints: a contract-2 client asking for /api/org/me otherwise
+        // got a plain sentence the admin UI cannot parse, at the moment it needs to show why. Every
+        // older route keeps its plain text byte for byte — /api/org-recovery/* included, which shares
+        // a prefix and none of the shape; StartsWithSegments matches whole segments, so it stays out.
+        if (ctx.Request.Path.StartsWithSegments("/api/org"))
+        {
+            await OrgEndpoints.FailJson(ctx, StatusCodes.Status426UpgradeRequired, decision.Reason);
+            return;
+        }
         ctx.Response.StatusCode = StatusCodes.Status426UpgradeRequired;
         await ctx.Response.WriteAsync(decision.Reason);
         return;
@@ -668,8 +678,8 @@ app.MapPut("/api/vault", async (HttpContext ctx, CancellationToken ct) =>
     // a worse failure than an unregistered person, whom the next sync registers anyway.
     //
     // Inside it the record is written and THEN the member.registered row appended, so a crash between
-    // the two costs one row and never produces a duplicate: the row rides on `Created`, which
-    // UpsertAsync computes inside the per-member lock, and every later sync finds the record.
+    // the two costs one row and never produces a duplicate: the row rides on `Created`, which the
+    // store computes inside the per-member lock, and every later sync finds the record.
     await OrgEndpoints.RegisterOnSyncAsync(orgDeps, caller.Value.Email, ct);
     ctx.Response.Headers.ETag = VaultStore.ETagFor(content);
     ctx.Response.StatusCode = StatusCodes.Status204NoContent;
@@ -689,7 +699,12 @@ app.MapDelete("/api/vault", async (HttpContext ctx, CancellationToken ct) =>
     // a permission itself (logging at Error, naming the person), so a registry the OS will not let us
     // touch cannot turn a delete that happened into a 500. The surviving state is a record with no
     // vault: the admin list shows it, and the next DELETE or an admin removes it.
-    await orgMembers.RemoveAsync(caller.Value.Email, ct);
+    //
+    // CancellationToken.None on purpose. The vault is already gone, so the removal is owed whether or
+    // not the client is still listening: a disconnect that cancelled the wait would leave that record
+    // behind AND throw out of a handler whose work had already happened — watched, with the lock held
+    // by a test. What this makes uncancellable is one per-member lock held for a stat and an unlink.
+    await orgMembers.RemoveAsync(caller.Value.Email, CancellationToken.None);
     log.LogInformation("vault + inbox deleted for {Email}", caller.Value.Email);
     ctx.Response.StatusCode = StatusCodes.Status204NoContent;
 });

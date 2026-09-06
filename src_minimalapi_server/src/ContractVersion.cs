@@ -74,10 +74,14 @@ public static class ContractVersion
     /// </remarks>
     public const int OrgPolicyContract = 3;
 
-    /// <summary>The sentence a corp-mode refusal adds, so the body says WHY and not merely "too old".</summary>
-    public const string CorpFloorReason =
-        "this server has a corporate roster, and a client below contract 3 cannot read the role and "
-        + "policy document (GET /api/org/me) every client here is expected to obey";
+    /// <summary>
+    /// The sentence a corp-mode refusal adds, so the body says WHY and not merely "too old". Built from
+    /// the constant it names — a number typed into the text advertises a stale version the day the
+    /// constant moves, and a test moves it to prove this one follows.
+    /// </summary>
+    public static readonly string CorpFloorReason =
+        $"this server has a corporate roster, and a client below contract {OrgPolicyContract} cannot read "
+        + "the role and policy document (GET /api/org/me) every client here is expected to obey";
 
     /// <summary>
     /// The minimum the middleware actually applies: the configured one, floored at

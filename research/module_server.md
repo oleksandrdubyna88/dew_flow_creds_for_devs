@@ -202,8 +202,12 @@ read the document cannot be expected to obey any of it, and serving it would be 
 while hiding that from whoever deployed the server. So the `426` body in corp mode says why:
 *"this server speaks contract 3 and no longer serves 2 — this server has a corporate roster, and a
 client below contract 3 cannot read the role and policy document (GET /api/org/me) every client
-here is expected to obey; update the extension."* The sentence is added only when the claim is
-below 3; an operator who configured 5 refuses a contract-4 client for their own reason. This is a
+here is expected to obey; update the extension."* The sentence is built from `OrgPolicyContract`,
+not typed, so a later cutover cannot advertise a stale number, and it is added only when the claim
+is below 3; an operator who configured 5 refuses a contract-4 client for their own reason. **On
+`/api/org/*` the `426` is a JSON `{error}`**, because that surface promises one on every refusal and
+the middleware answers before any of its endpoints can; every older route — `/api/org-recovery/*`
+included, a shared prefix and none of the shape — keeps the plain sentence byte for byte. This is a
 hard cutover on the day a corp server upgrades (owner decision 12) and belongs in the release notes;
 the extension's `CLIENT_CONTRACT_VERSION` and `ORG_POLICY_CONTRACT` moved to 3 in the same change,
 because a gap between the two halves is a window in which this repository's own extension is
@@ -250,35 +254,43 @@ moving it to a server that cannot observe the thing it would be banning.
   the shape, not a flag" applied to a person: the answer is correct before the disk agrees, and a
   token that stored nothing gets no file — not even the directory.
 - **A record this build cannot read** answers **`503`** with `Retry-After: 60` and a JSON
-  `{error}`, never the member default. The plan round's finding: not registered means the default,
-  the default is `member`, and a member may export — so "treat an unparseable record as not
-  registered" was a privilege escalation with a corrupted file as its trigger. One bad file costs
-  one person a refusal an operator can fix (the store already logged the path at Error); it must
-  not buy a developer an export.
+  `{error}` that says an administrator must repair it — never the member default, and never the
+  file, which stays in the log. The plan round's finding: not registered means the default, the
+  default is `member`, and a member may export — so "treat an unparseable record as not registered"
+  was a privilege escalation with a corrupted file as its trigger. One bad file costs one person a
+  refusal an administrator can end (the store already logged the path at Error); it must not buy a
+  developer an export.
 - `isOfficer` comes from the roster, `role` from the record: two facts from two sources, both
   reported, because the client's admin predicate is `role === 'admin' || isOfficer` and an officer
   cannot be given a registry role. `offlineLeaseHours` is `OrgSettingsStore`'s current value;
   `policy` is derived from the role on every call and never stored; `serverContract` repeats the
   response header so a kept document says which server wrote it.
 - **Every refusal on `/api/org/*` is a JSON `ErrorDto`** — the `401` and `403` from the shared
-  gate included — through `OrgEndpoints.FailJson`, the sibling of `Program.cs`'s plain-text `Fail`.
-  An admin UI has to show *why*; the older endpoints keep their empty bodies because their clients
-  were written against them.
+  gate included, and the contract middleware's `426` — through `OrgEndpoints.FailJson`, the sibling
+  of `Program.cs`'s plain-text `Fail`. An admin UI has to show *why*; the older endpoints keep their
+  empty bodies and plain sentences because their clients were written against them.
 
 **Registration happens on the first vault write, not on the first authenticated call.**
 `PUT /api/vault` calls `OrgEndpoints.RegisterOnSyncAsync` right after `RecordOwnerAsync`, in corp
-mode only. It looks the caller up first and writes only when there is **no record**: the plan spelt
-the hook as an unconditional identity upsert, and that was watched doing the wrong thing — the
-store stamps every write, so a sync re-stamped a record an admin had edited (`updatedBy` became
-`""`, `updatedAt` the time of the sync) and the admin list would have shown that nobody changed the
-role, at a time nobody did. A record that exists is left alone; one that cannot be read is logged
-and left alone too (a default written over a blocked developer's unreadable record is an unblock
-nobody ordered). On the write that creates a record, one `member.registered` row is appended to the
-event log with the person as actor and the default role as detail — and only on that write, so the
-log does not grow by one row per sync. The record is written before the row, so a crash between
-the two costs one row and never a duplicate: the row rides on `Created`, which the store computes
-inside the per-member lock, and two devices syncing for the first time at once leave one row.
-**The hook can never fail the response it rides on:** the
+mode only. It writes only when there is **no record**, and the store decides that INSIDE the
+per-member lock (`OrgMembersStore.InsertIfAbsentAsync`): the plan spelt the hook as an unconditional
+identity upsert, and that was watched doing the wrong thing — the store stamps every write, so a
+sync re-stamped a record an admin had edited (`updatedBy` became `""`, `updatedAt` the time of the
+sync) and the admin list would have shown that nobody changed the role, at a time nobody did. A
+lookup before the upsert was the first fix, and that was watched too: with the lock held by a test,
+an admin's create landing between the lookup and the write was re-stamped all the same, so the
+decision moved inside the lock and the window is gone. A record that exists is left alone — not a
+byte, not its mtime; one that cannot be read is logged and left alone too (a default written over a
+blocked developer's unreadable record is an unblock nobody ordered). On the write that creates a
+record, one `member.registered` row is appended to the event log with the person as actor and the
+default role as detail — and only on that write, so the log does not grow by one row per sync. The
+record is written before the row, so a crash between the two costs one row and never a duplicate:
+the row rides on `Created`, computed under the lock, and two devices syncing for the first time at
+once leave one row. **The append takes no client token**: once the record exists the row is owed
+whoever is still listening, and a disconnect that cancelled it would lose the row for good, since
+every later sync finds the record and emits nothing (watched with the log's lock held by a test);
+the insert keeps the request's token, because a client that leaves before the record exists has
+lost nothing the next sync does not retry. **The hook can never fail the response it rides on:** the
 vault has already landed, so a registry write that throws — disk full, a lock, a permission, a file
 where `org/members` should be a directory — is logged at Error and swallowed, and the next sync is
 the retry. Watched failing without the catch: a stored vault answered `500`.
@@ -296,7 +308,10 @@ still one to remove, and where no `org/` exists this is one stat and nothing els
 the record, and the vault decides the response: `RemoveAsync` swallows a lock or a permission itself
 and logs at Error naming the person, so a registry the OS will not release cannot turn a delete that
 happened into a `500`. The surviving state is a record with no vault — the admin list shows it, and
-the next `DELETE` or an admin removes it.
+the next `DELETE` or an admin removes it. The removal takes **no client token**: the vault is already
+gone, so it is owed whether or not the client is still listening, and a disconnect that cancelled
+the wait would leave that record behind and throw out of a handler whose work had happened (watched
+with the lock held by a test); what that makes uncancellable is one lock held for a stat and an unlink.
 
 ### `/api/org-recovery/config` — and why it is not officer-only
 
@@ -609,7 +624,7 @@ what is under it:
 
 ## Tests
 
-`src_minimalapi_server/tests/` — xUnit v3 on Microsoft Testing Platform, 242 tests, ~13 s. The
+`src_minimalapi_server/tests/` — xUnit v3 on Microsoft Testing Platform, 252 tests, ~15 s. The
 endpoint suites run in-process through `WebApplicationFactory` — no free port, no background
 `dotnet run`; the store suites drive a store directly on a throwaway data directory.
 
@@ -624,14 +639,14 @@ Never `dotnet test` — there is no VSTest host here and it aborts.
 |---|---|
 | `HealthTests` | Public reachability, storage-writability reporting |
 | `AuthenticationTests` | No token, foreign domain, `alg=none`, wrong key, no email claim, expired |
-| `VaultTests` | Round-trip fidelity, per-caller isolation, size caps, survival after an oversize upload, deleting a vault removes the registry record, a registry removal the OS refuses does not fail the delete |
+| `VaultTests` | Round-trip fidelity, per-caller isolation, size caps, survival after an oversize upload, deleting a vault removes the registry record, a registry removal the OS refuses does not fail the delete, a client hanging up mid-delete does not abandon the removal |
 | `TeamTests` | Owners listed, non-owners absent, deletion drops out |
 | `TeamCorpTests` | An inactive member is absent in corp mode and present in personal mode; the shape for an old client is `[{email}]` and byte-identical across the two modes |
-| `ContractVersionTests` | The header on every response, silent and garbled and newer clients served, a configured minimum refuses with a reason, the refusal precedes authentication; corp mode floors the minimum at 3 with the default configuration, the refusal names the policy, personal mode is unchanged, a corp server still serves a contract-3 client and a silent one, the floor never lowers a higher configured minimum |
+| `ContractVersionTests` | The header on every response, silent and garbled and newer clients served, a configured minimum refuses with a reason, the refusal precedes authentication; corp mode floors the minimum at 3 with the default configuration, the refusal names the policy, personal mode is unchanged, a corp server still serves a contract-3 client and a silent one, the floor never lowers a higher configured minimum, the reason names the floor from the constant, a corporate route's `426` is JSON while every older route's stays plain text |
 | `OrgMembersTests` | Registration on the first vault write and not on `/api/org/me`; the default role is member; a second sync does not re-stamp a record an admin edited; personal mode creates no `org/` and answers `corpMode: false` from constants whatever a leftover record says; a never-synced caller is computed and nothing is written; an officer reads `isOfficer: true` with no registry row |
-| `OrgRegistrationTests` | A registry that cannot be written (`org/members` is a file) does not fail the vault write; the next sync registers the person after all; two syncs leave exactly one `member.registered` row and the second emits nothing; two concurrent first syncs leave one row and one record; the swallowed failure is logged at Error naming the person |
+| `OrgRegistrationTests` | A registry that cannot be written (`org/members` is a file) does not fail the vault write; the next sync registers the person after all; two syncs leave exactly one `member.registered` row and the second emits nothing; two concurrent first syncs leave one row and one record; an admin creating the record in the hook's window keeps their stamp (the lock held by the test); a client hanging up after registration still gets its row; the swallowed failure is logged at Error naming the person |
 | `OrgMeAuthorizationTests` | No token → `401` with a JSON body; an outside-domain token → `403` with a JSON body and nothing registered; an email differing only in case and surrounding space resolves to one record, end to end |
-| `OrgUnavailableTests` | A corrupted record makes `/api/org/me` answer `503` with `Retry-After` and a JSON body — never the member default; a sync never overwrites a record it cannot read, and still stores the vault |
+| `OrgUnavailableTests` | A corrupted record makes `/api/org/me` answer `503` with `Retry-After` and a JSON body — never the member default; the body says an administrator must repair it and never names the file; a sync never overwrites a record it cannot read, and still stores the vault |
 | `AppJsonContextTests` | Every DTO the org routes and their refusals serialize, lists included, is in the source-generated context — the one class of bug the endpoint suites cannot see, because under JIT an unregistered type falls through to reflection and only the AOT binary fails |
 | `SharingTests` | Delivery, sender stamping, cross-domain refusal, traversal ids, recipient-only delete |
 | `RateLimitTests` | One caller cannot lock out another; a caller who overruns is still throttled |
@@ -642,7 +657,7 @@ Never `dotnet test` — there is no VSTest host here and it aborts.
 | `InstanceFileTests` | The instance-file publish/withdraw lifecycle |
 | `ClientConfigTests`, `HealthProbeUrlTests` | (nested in `HealthTests.cs`) the advertised scope, and the probe URL |
 | `MemberPolicyTests` | The role → policy table: admin and member unrestricted whatever the share default, both developer share defaults, an unknown role or share default gets the most restrictive policy, the default role is member |
-| `OrgMembersStoreTests` | The registry: answered from the cache (a missing record too), the stat check sees an outside write and a record that appears, the per-member lock keeps both of two concurrent edits, unreadable is unavailable (never the default), a record whose email does not hash to its file is unavailable, schema version — with only known fields too — refuses whole, unknown fields carried, `@domain` accepted, no `org/` until a write, a record the OS will not delete is logged at Error naming the person |
+| `OrgMembersStoreTests` | The registry: answered from the cache (a missing record too), the stat check sees an outside write and a record that appears, the per-member lock keeps both of two concurrent edits, unreadable is unavailable (never the default), a record whose email does not hash to its file is unavailable, schema version — with only known fields too — refuses whole, unknown fields carried, `@domain` accepted, no `org/` until a write, a record the OS will not delete is logged at Error naming the person, insert-if-absent leaves an existing record untouched to the byte and the mtime, creates the default and says so, refuses an unreadable one |
 | `OrgSettingsStoreTests` | The default without a file and no write, write then read, a malformed or unopenable file answers the last value this process read (the default only when it never read one), logged once, an outside write is seen |
 | `OrgEventLogTests` | Append and read back, the UTC day boundary, a torn tail gets its newline, the bounded lock, an unwritable folder is logged not thrown, two instances over one directory lose no row, both sweeps leave `org/events/` alone |
 
