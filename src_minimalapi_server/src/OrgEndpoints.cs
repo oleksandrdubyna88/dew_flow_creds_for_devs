@@ -583,11 +583,12 @@ public static class OrgEndpoints
         }
         deps.Log.LogWarning(
             "{Admin} BLOCKED {Target}: every request from them is refused from now on; {ToThem} pending share(s) "
-            + "to them and {FromThem} from them were withdrawn",
+            + "to them and {FromThem} from them were withdrawn; {Unexplained} sender(s) could not be told why",
             admin,
             target,
             withdrawal.ToThem,
-            withdrawal.FromThem);
+            withdrawal.FromThem,
+            withdrawal.UnexplainedSenders);
         await deps.Events.AppendAsync(
             Row(OrgEventKinds.MemberBlocked, admin, target, WithdrawalDetail(withdrawal)), CancellationToken.None);
     }
@@ -612,8 +613,17 @@ public static class OrgEndpoints
             withdrawal.FromThem);
     }
 
+    /// <summary>
+    /// What the row says a block took with it — and, when it happened, that somebody was left in the dark.
+    /// A sender whose receipt could not be rewritten never learns why their share vanished and the hourly
+    /// sweep retires the unmarked receipt like any other, so the one place that can still say so is the
+    /// record of the block itself.
+    /// </summary>
     private static string WithdrawalDetail(Withdrawal withdrawal) =>
-        $"withdrew {withdrawal.ToThem} pending share(s) to them and {withdrawal.FromThem} from them";
+        $"withdrew {withdrawal.ToThem} pending share(s) to them and {withdrawal.FromThem} from them"
+        + (withdrawal.UnexplainedSenders > 0
+            ? $"; {withdrawal.UnexplainedSenders} sender(s) could NOT be told why — their receipt would not rewrite"
+            : string.Empty);
 
     private static async Task UnblockedAsync(OrgEndpointDeps deps, string admin, string target)
     {

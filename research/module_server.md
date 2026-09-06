@@ -216,6 +216,14 @@ is owner decision 5, and the recipient's next sync is not something an admin can
   action guaranteed to do nothing. A repeat that finds nothing costs two directory reads and writes no
   row; one that finds leftovers logs a Warning saying it completed an unfinished withdrawal, rather
   than appending a second `member.blocked` a reader would count as a second block.
+- **A sender who could not be told is counted, never silently lost.** The inbox copy is deleted
+  *before* the sender's receipt is rewritten — the right order, since the reverse leaves readable
+  material in the inbox of somebody who may be re-admitted — so a receipt that will not rewrite costs
+  that sender their one explanation, and the hourly sweep then retires the unmarked receipt like any
+  accepted one. That is best-effort working as designed; being invisible is not, so `Withdrawal`
+  carries `UnexplainedSenders` and both the Warning line and the `member.blocked` row say *"N sender(s)
+  could NOT be told why"*. The residual is real and stated: that sender learns nothing from the
+  product, and only the block's own record says it happened.
 
 **The recipient half: a share cannot be addressed to a blocked person.** The caller gate judges
 whoever is calling, and a share is addressed to somebody else — so `POST /api/shares` consults the
@@ -228,6 +236,16 @@ memory — drops material into an inbox its owner is refused at, where it waits 
 becomes readable the day they are re-admitted, while the sender holds a receipt saying it was sent.
 **Neither refusal carries `X-Creds-Reason`**: that header tells a client to lock its OWN account and
 purge its key material, and an honest client matching it here would lock the innocent sender out.
+
+**The client half of the same contract** (`serverTransport.ts`, the second implementation this
+document governs): a `403` now produces three different sentences instead of one guess. With
+`X-Creds-Reason: account-deactivated` it names the caller's own deactivation and says to ask an
+administrator; with a body it quotes the server's sentence and deliberately does **not** name the
+caller as the refused party, because the refusal may be about a recipient; with neither it falls back
+to the old *"outside the allowed domain, or not permitted"*. Before this, a share to a deactivated
+colleague told the sender their own domain was wrong — a guess, about the wrong person, pointing at a
+setting that was fine. Other failed statuses on a share quote the server's sentence too, truncated to
+300 characters because the answer may come from a proxy rather than from us.
 
 What the sender sees, in order: `GET /api/shares/sent` still lists the receipt, now with
 `withdrawnReason`; `DELETE /api/shares/sent/{id}` on it answers `204` and forgets it — a **first
@@ -901,7 +919,7 @@ Never `dotnet test` — there is no VSTest host here and it aborts.
 | `OrgUnavailableTests` | A corrupted record makes `/api/org/me` answer `503` with `Retry-After` and a JSON body — never the member default; the body says an administrator must repair it and never names the file; an officer's sync never overwrites a record it cannot read and still stores the vault (the officer is the one caller the gate lets reach the hook), and a non-officer's sync is refused at the door with the record left as it was |
 | `OrgBlockingGateTests` | The blocking gate: a blocked caller meets `403` + `X-Creds-Reason` on EVERY authenticated route, the list derived from the server's own `EndpointDataSource` (with a companion asserting the enumeration still sees the vault routes); a blocked person cannot delete their vault; the corporate surface's refusal is JSON naming the deactivation; a domain `403` carries no header; an unreadable record is `503` + `Retry-After` and never served; an officer whose record says inactive — or cannot be read — still passes; a never-registered caller passes and registers nobody; personal mode is byte-identical with or without a leftover record; a block written under the server is met on the very next request and an unblock likewise; the limiter still partitions a blocked caller on their own bucket; the five branches as a truth table, and the registry is not consulted for an officer or on a personal server |
 | `OrgBlockingAdminTests` | `PUT /api/org/members/{email}/active`: `204` and the roster shows inactive; the blocked person is refused on the very next request; blocking twice is idempotent and leaves exactly one `member.blocked` row; unblocking restores and leaves one `member.unblocked` row; a no-op leaves no row; blocking a never-synced person creates the record inactive with the admin's stamp; officer `409`, cross-domain `403`, non-address `400`, `{}` and `null` and garbage `400` (never a `false` the deserializer invented), corrupt record `503` with the file untouched, non-admin `403`, no token `401`; **an officer target stays `409` even when their own record cannot be read** (the precedence, pinned); `updatedBy` from the token; a block still answers `204` when the event log cannot be written; a block touches neither the role nor the share default |
-| `OrgBlockingWithdrawalTests` | A share to a blocked person leaves their inbox and the sender's receipt carries the reason; a receipt not withdrawn has no `withdrawnReason` key; the hourly sweep keeps a withdrawn receipt and still retires an accepted one (the positive control), end to end too; dismissing a withdrawn receipt is `204` and forgets it; the 31-day prune still retires it; a share from a blocked person leaves the recipient's inbox and the blocked sender's receipt goes too; both directions in one block with an unrelated share surviving; nothing comes back on unblock; **a repeated block finishes a withdrawal the first one could not** (the inbox file held open through the first PUT, released, and the repeat takes it); an idempotent re-block with nothing left withdraws nothing twice |
+| `OrgBlockingWithdrawalTests` | A share to a blocked person leaves their inbox and the sender's receipt carries the reason; a receipt not withdrawn has no `withdrawnReason` key; the hourly sweep keeps a withdrawn receipt and still retires an accepted one (the positive control), end to end too; dismissing a withdrawn receipt is `204` and forgets it; the 31-day prune still retires it; a share from a blocked person leaves the recipient's inbox and the blocked sender's receipt goes too; both directions in one block with an unrelated share surviving; nothing comes back on unblock; **a repeated block finishes a withdrawal the first one could not** (the inbox file held open through the first PUT, released, and the repeat takes it); **a sender who could not be told is counted in the block row** rather than silently lost (their receipt held open for the whole block); an idempotent re-block with nothing left withdraws nothing twice |
 | `OrgBlockingShareTests` | The recipient half: `POST /api/shares` to a deactivated colleague is `403` naming the deactivation, creates no inbox and no receipt, and carries **no** `X-Creds-Reason` (which would make an honest client lock the innocent sender's own account); an unreadable recipient record is `503` with `Retry-After` and no delivery; an active colleague, somebody who never synced, and a personal server with a leftover corrupt record are all unaffected |
 | `AppJsonContextTests` | Every DTO the org routes and their refusals serialize, lists included, is in the source-generated context — the one class of bug the endpoint suites cannot see, because under JIT an unregistered type falls through to reflection and only the AOT binary fails |
 | `SharingTests` | Delivery, sender stamping, cross-domain refusal, traversal ids, recipient-only delete |

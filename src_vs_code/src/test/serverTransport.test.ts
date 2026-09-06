@@ -298,6 +298,64 @@ test('a server that will not list gives an empty list, not a crash', async () =>
   assert.deepEqual(await transportFor().listSent(account), []);
 });
 
+const peer = {
+  account: { accountId: 'acct-2', email: 'bob@example.com', provider: 'microsoft' },
+} as never;
+
+const oneShare = [{ entityName: 'prod db', entityKind: 'db' } as never];
+
+test('a refused share says WHY the server refused it, not just the status number', async () => {
+  // The corporate server can now refuse a share for a reason the sender can act on — the recipient's
+  // account was deactivated — and it says so in the body. What the sender actually read before this was
+  // "Vault server refused alice@example.com (403) — outside the allowed domain, or not permitted": a
+  // guess, about the wrong person, that sends them to check a domain setting which is fine.
+  installServer(403, '3', "Recipient's account has been deactivated.");
+
+  await assert.rejects(
+    () => transportFor().appendShares(account, peer, oneShare),
+    (error: Error) => {
+      assert.match(error.message, /deactivated/);
+      assert.doesNotMatch(error.message, /outside the allowed domain/);
+      assert.doesNotMatch(
+        error.message,
+        /refused alice@example\.com/,
+        'the refusal is about bob, so it must not name alice as the refused party',
+      );
+      return true;
+    },
+  );
+});
+
+test('a 403 about the CALLER names the deactivation, not the domain', async () => {
+  // The other half of the same status: the server sets X-Creds-Reason when the refusal is about the
+  // caller's own account, so the client need not match English to tell the two apart.
+  globalThis.fetch = (() =>
+    Promise.resolve(
+      new Response('', { status: 403, headers: { 'X-Creds-Reason': 'account-deactivated' } }),
+    )) as typeof fetch;
+
+  await assert.rejects(() => transportFor().readVault(account), (error: Error) => {
+    assert.match(error.message, /alice@example\.com has been deactivated/);
+    assert.doesNotMatch(error.message, /outside the allowed domain/);
+    return true;
+  });
+});
+
+test('a 403 with neither header nor body still explains itself', async () => {
+  // The control, and the case the old sentence was written for: a domain refusal carries no body.
+  installServer(403, '3', '');
+
+  await assert.rejects(() => transportFor().readVault(account), /outside the allowed domain/);
+});
+
+test('a refused share with no body still names the status', async () => {
+  // The control: an older server, a proxy, or a 500 with nothing in it must still produce a usable
+  // sentence rather than one that trails off into an empty quote.
+  installServer(500, '3', '');
+
+  await assert.rejects(() => transportFor().appendShares(account, peer, oneShare), /HTTP 500/);
+});
+
 test('a withdrawal that worked is reported as such', async () => {
   installRecordingServer(204);
 
