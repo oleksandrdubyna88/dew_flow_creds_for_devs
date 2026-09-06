@@ -6,7 +6,7 @@
 > of five epics under [PLAN_corp_control_plane.md](PLAN_corp_control_plane.md), which holds the
 > owner decisions, the invariants and the shared shapes.
 >
-> Depends on [PLAN_corp_registry_roles.md](PLAN_corp_registry_roles.md) (roles, `RequireAdmin`, the
+> Depends on [PLAN_corp_registry_roles.md](../research/PLAN_corp_registry_roles.md) (roles, `RequireAdmin`, the
 > member record's `projects[]` and `pendingFolderRemovals[]`) and on
 > [PLAN_corp_blocking_login_key.md](PLAN_corp_blocking_login_key.md) (`active`, which the share rule
 > consults). [PLAN_corp_event_log.md](PLAN_corp_event_log.md) later replaces this epic's

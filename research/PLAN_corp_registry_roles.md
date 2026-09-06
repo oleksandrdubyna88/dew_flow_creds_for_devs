@@ -1,20 +1,43 @@
 # PLAN — epic 1: the members registry, roles, runtime settings, contract 3
 
-> Status: **plan only, nothing implemented yet, 2026-09-04.** Scope: the server learns who its
-> people are and what each of them is — a registry under `${DataDir}/org/`, three roles, an
-> admin gate, a policy document every client reads each cycle, runtime settings admins can edit
-> without a restart, and the client-version floor a corporate deployment needs. First of five
-> epics under [PLAN_corp_control_plane.md](PLAN_corp_control_plane.md), which holds the owner
-> decisions, the invariants and the shared shapes this plan implements against.
+> Status: **IMPLEMENTED, 2026-09-06.** All four stories shipped: the registry, the settings and the
+> event log's writer; registration on first sync, `GET /api/org/me`, the team filter and the contract-3
+> floor; `RequireAdmin` and the four admin routes; and the extension's policy client, contextValues,
+> Team-row role, role QuickPick and read-only page. The server suite went 164 → 300 tests and the
+> extension's 3204 → 3270; the `.http` suite covers 31 of 31 routes.
 >
-> Next epics depend on this one: [PLAN_corp_blocking_login_key.md](PLAN_corp_blocking_login_key.md)
-> needs `active` and `RequireAdmin`,
-> [PLAN_corp_projects_share_rule.md](PLAN_corp_projects_share_rule.md) needs roles,
-> [PLAN_corp_event_log.md](PLAN_corp_event_log.md)'s *store* ships here so epics 1–3 emit into it.
+> **Deviations, in the order they cost something.** The plan's own sentence *"an unparseable record is
+> treated as not registered"* was a privilege escalation — not registered means the default, the
+> default is `member`, and a member may export — so the lookup has three answers and every caller
+> fails closed; the same wording had survived into epic 2's blocking gate, where it would have failed
+> OPEN, and that plan was corrected too. `[JsonExtensionData]` could not be a positional or `init`
+> property (the serializer refuses one bound to a constructor argument, and the source generator emits
+> an `init` property as exactly that). `FileMode.Append` is NOT atomic across processes in .NET — 400
+> rows from two writers came back as 329, 344, 336, 334, 347, 296 and 314 with every append reporting
+> success — so the event log took a lock file. The registration hook could not be the plan's identity
+> upsert, which re-stamped `updatedBy` on every sync; it is an insert-if-absent decided inside the
+> lock. The stores could not be constructed where the plan said (they take an `ILogger<T>`, and no
+> factory exists before `Build()`). `http/httpyac.config.js` pinned `contract: '2'` and would have
+> answered `426` to every request in the tree the moment the floor landed — no plan had noticed it.
+> And `createForUser` would have vanished for admins the moment their colleague rows changed
+> contextValue.
 >
-> Related docs: [module_server.md](../research/module_server.md),
-> [module_extension.md](../research/module_extension.md),
-> [PLAN_org_recovery.md](../research/PLAN_org_recovery.md) (every pattern below is its pattern).
+> **What it cost to get right:** three plan rounds and four code rounds through the multi-vendor gate
+> (78 findings, 29 accepted), plus a boundary fix the gate's code scanning earned — `TokenIdentity`
+> now refuses an identity carrying a control character, because a newline in an email forges a log
+> line, and the address is written into the log, a record's filename, an audit row and a share's
+> stamped sender.
+>
+> First of five epics under [PLAN_corp_control_plane.md](../todo/PLAN_corp_control_plane.md), which
+> holds the owner decisions, the invariants and the shared shapes this plan implemented against. The
+> next epics build on it: [PLAN_corp_blocking_login_key.md](../todo/PLAN_corp_blocking_login_key.md)
+> takes `active` and `RequireAdmin` — and owes its own event row at its own call site, a seam a code
+> round found here — [PLAN_corp_projects_share_rule.md](../todo/PLAN_corp_projects_share_rule.md)
+> takes the roles, and [PLAN_corp_event_log.md](../todo/PLAN_corp_event_log.md) takes the log whose
+> writer shipped here.
+>
+> Related docs: [module_server.md](module_server.md), [module_extension.md](module_extension.md),
+> [PLAN_org_recovery.md](PLAN_org_recovery.md) (every pattern below is its pattern).
 
 ## The symptom
 
@@ -252,7 +275,7 @@ serializer; a missing entry fails at runtime, and the file's own header says so.
 | `src/OrgMembers.cs` | new | The records above, `MemberRole`/`ShareDefault` validation, `PolicyFor(role, shareDefault)` as a pure function. |
 | `src/OrgMembersStore.cs` | new | `${DataDir}/org/members/<KeyFor(email)>.json`, with the four methods named above. Same idioms as `OrgRecoveryStore.cs` — atomic write per `OrgRecoveryStore.cs:374-379`, keys from `VaultStore.KeyFor` (`VaultStore.cs:30-36`) so one identity space has one hashing scheme — with **two deliberate departures from that template, both stated in the file header**: its directories are created lazily on the first write, not in the constructor (`OrgRecoveryStore.cs:29-40` creates eagerly, and this store is constructed on every deployment including personal ones, where no `org/` may appear); and a record that will not parse is **`Unavailable`, never *not registered*** — the difference is the escalation this plan's round found. The per-member lock reuses `VaultStore`'s stripe by widening `GateFor` (`VaultStore.cs:115-119`) from `private static` to `internal static`, rather than standing up a second one; a member upsert and a vault write for the same email then share a gate, which is harmless and worth saying out loud. |
 | `src/OrgSettingsStore.cs` | new | `${DataDir}/org/settings.json`, one record. Absent → the endpoint answers the default and writes nothing. |
-| `src/OrgEventLog.cs` | new | Append-only NDJSON at `${DataDir}/org/events/<yyyy-MM-dd>.ndjson`, `AppendAsync(OrgEventDto)` under **one dedicated `SemaphoreSlim(1,1)`** — every writer appends to the same file, so the vault's 64-way stripe does not apply and a comment says why, or somebody will "optimise" it into a race. The row shape and the kinds are defined in [PLAN_corp_event_log.md](PLAN_corp_event_log.md); the reader is that epic's. The break-glass audit log's bare `File.AppendAllTextAsync` (`OrgRecoveryStore.cs:312-317`) is safe only because a recovery is rare — it is the precedent for the *format*, not for the locking. Its own root, never under `org-recovery/`, so no future sweep can reach it. |
+| `src/OrgEventLog.cs` | new | Append-only NDJSON at `${DataDir}/org/events/<yyyy-MM-dd>.ndjson`, `AppendAsync(OrgEventDto)` under **one dedicated `SemaphoreSlim(1,1)`** — every writer appends to the same file, so the vault's 64-way stripe does not apply and a comment says why, or somebody will "optimise" it into a race. The row shape and the kinds are defined in [PLAN_corp_event_log.md](../todo/PLAN_corp_event_log.md); the reader is that epic's. The break-glass audit log's bare `File.AppendAllTextAsync` (`OrgRecoveryStore.cs:312-317`) is safe only because a recovery is rare — it is the precedent for the *format*, not for the locking. Its own root, never under `org-recovery/`, so no future sweep can reach it. |
 | `src/OrgEndpoints.cs` | new | `MapOrgEndpoints(...)`, an extension method holding this epic's five routes. **`Program.cs` is 1,381 lines today** and the five epics add about twenty endpoints between them, against the coding-style ceiling of 800. So the corporate surface is registered from per-epic files starting with the first one, the way the logic and storage halves are already split into `Org*.cs` / `Org*Store.cs`. |
 | `src/Program.cs` | modify | `RequireAdmin` after `RequireOfficer` (`:696-708`); the registry hook beside `RecordOwnerAsync` (`:628`); the corp-mode contract floor in the middleware (`:309-320`); `orgMembers`/`orgSettings`/`orgEvents` constructed beside `orgRecovery` (`:48-56`), their directories created only in corp mode; one `app.MapOrgEndpoints(...)` call. The gates stay here beside `RequireOfficer`, so one file still answers "who may do this". |
 | `src/ContractVersion.cs` | modify | `Current = 3` (`:40`), and `Judge` gains an optional corp reason so the `426` body names the cause. |

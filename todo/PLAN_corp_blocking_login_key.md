@@ -7,7 +7,7 @@
 > epics under [PLAN_corp_control_plane.md](PLAN_corp_control_plane.md), which holds the owner
 > decisions, the invariants and the shared shapes.
 >
-> Depends on [PLAN_corp_registry_roles.md](PLAN_corp_registry_roles.md) for the registry, the roles
+> Depends on [PLAN_corp_registry_roles.md](../research/PLAN_corp_registry_roles.md) for the registry, the roles
 > and `RequireAdmin`. **This epic reworks the sentence `architecture.md:51` opens with** — see
 > *The rule that changes*.
 >
