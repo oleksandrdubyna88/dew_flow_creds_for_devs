@@ -3343,10 +3343,24 @@ exact interleaving the class exists to prevent. Worth recording because the bool
 correct in a single-threaded language, and single-threaded is not the same as uninterruptible.
 
 What shipped is `AsyncLocalStorage`, which answers the question actually being asked: *is this call in
-the async context of the work that holds the lease?* Inside, the work runs inline — the caller is
-already the exclusive holder of both the queue and the cross-window lock, so waiting would be waiting
-for itself. `leaseReentrancy.test.ts` covers the three cases: nested runs inline, independent calls
-still serialize, and a throw does not leave the context believing it is held.
+the async context of the work that holds the lease?*
+
+**And "inside" is not enough on its own** — a review round found the hole before it shipped.
+`AsyncLocalStorage` is inherited by every task the holder starts, so two writes fired with
+`Promise.all` from inside the lease both see the context; under a naive *run inline* they execute at
+once, each reading before either writes, and the second erases the first. That is the defect the
+lease was being extended to close, reintroduced one level down. So each level carries a queue of its
+own: nested work runs on its PARENT's queue, which makes siblings take turns, and receives a fresh
+queue for whatever it starts in turn, so a child awaiting a grandchild is never queued behind itself.
+`leaseReentrancy.test.ts` holds all five cases.
+
+**The read happens inside the lease, and it is a fresh read.** `nodeEntry` calls
+`globalState.get(...)` on every access and reuses its cache only when the returned reference is
+identical, so a value another window has written cannot be served from cache once VS Code has
+propagated it. What the lease cannot do is make that propagation synchronous: if window A's write has
+not yet reached window B's memento when B takes the lock, B composes against what it can see. That is
+the residual, it is the same class as the one named in `windowLock.ts`'s own header, and it is
+narrower than what was there before by the whole width of a human edit.
 
 ## A share's label is bound to its ciphertext (0.82.1)
 

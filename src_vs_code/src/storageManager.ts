@@ -537,12 +537,11 @@ export class StorageManager implements vscode.Disposable {
    *  is `shareInbox.ts` alone: an accepted share is the record now. Everyone else wants
    *  `updateNodeFields`, because a whole node read earlier erases whatever landed in between. */
   async updateNode(accountId: string, updated: TreeNode): Promise<void> {
-    const stamped = this.stampVector(updated);
-    await this.saveNodes(
-      accountId,
-      this.getNodes(accountId).map((n) => (n.id === stamped.id ? stamped : n)),
-    );
-    await this.bumpHorizonToSeq(accountId);
+    await this.writes.run(async () => {
+      const stamped = this.stampVector(updated);
+      await this.saveNodes(accountId, this.getNodes(accountId).map((n) => (n.id === stamped.id ? stamped : n)));
+      await this.bumpHorizonToSeq(accountId);
+    });
   }
 
   /** Move a node under a new parent (null = root). Caller validates cycles. */

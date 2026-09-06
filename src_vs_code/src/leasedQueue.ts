@@ -45,7 +45,7 @@ export class LeasedQueue {
    * prevent. `AsyncLocalStorage` answers the question actually being asked: is this call in the
    * async context of the work that holds the lease?</p>
    */
-  private readonly inside = new AsyncLocalStorage<true>();
+  private readonly inside = new AsyncLocalStorage<SerialQueue>();
 
   constructor(
     private readonly lock: WindowLock | undefined,
@@ -65,12 +65,25 @@ export class LeasedQueue {
    * outer call took.</p>
    */
   async run<T>(work: () => Promise<T>): Promise<T> {
-    if (this.inside.getStore() === true) {
-      return work();
+    const siblings = this.inside.getStore();
+    if (siblings !== undefined) {
+      return siblings.run(() => this.enter(work));
     }
-    return (await this.inner.run(() =>
-      this.inside.run(true, () => this.holding(work, true)),
-    )) as T;
+    return (await this.inner.run(() => this.enter(() => this.holding(work, true)))) as T;
+  }
+
+  /**
+   * Run `work` with a FRESH queue for whatever it starts in turn.
+   *
+   * <p>The level matters. Nested work goes on its PARENT's queue, so siblings take their turns; and
+   * it gets a new queue of its own, so a child awaiting a grandchild is never queued behind itself.
+   * Both tests exist, and the first was red before this: `AsyncLocalStorage` is inherited by every
+   * task the holder starts, so a naive "run inline" let two writes fired with `Promise.all` from
+   * inside the lease execute at once — each reading before either wrote. That is the very defect the
+   * lease was being extended to close, reintroduced one level down.</p>
+   */
+  private enter<T>(work: () => Promise<T>): Promise<T> {
+    return this.inside.run(new SerialQueue(), work);
   }
 
   /**
