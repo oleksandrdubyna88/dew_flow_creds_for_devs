@@ -306,8 +306,8 @@ async function markProtection(node: TreeNode, on: boolean, deps: PinCommandDeps)
   if (details === undefined) {
     return;
   }
-  await deps.storage.updateNodeFields(deps.accountId, node.id, {
-    details: { ...details, pinProtected: on ? true : undefined },
+  await deps.storage.updateDetailsFields(deps.accountId, node.id, {
+    pinProtected: on ? true : undefined,
   });
 }
 

@@ -254,6 +254,10 @@ test('a folder run where every entry FAILED records no preference', async () => 
       written.push({ id, ...patch } as TreeNode);
       return Promise.resolve();
     },
+    updateDetailsFields: (_a: string, id: string, fields: Record<string, unknown>) => {
+      written.push({ id, details: fields } as unknown as TreeNode);
+      return Promise.resolve();
+    },
   } as never;
   const mod = folderCommands(['a-real-pin-1234', 'a-real-pin-1234']);
 
@@ -292,6 +296,10 @@ test('…but a run where at least ONE entry succeeded does record it', async () 
     getPrivateKey: nothing,
     updateNodeFields: (_a: string, id: string, patch: Partial<TreeNode>) => {
       written.push({ id, ...patch } as TreeNode);
+      return Promise.resolve();
+    },
+    updateDetailsFields: (_a: string, id: string, fields: Record<string, unknown>) => {
+      written.push({ id, details: fields } as unknown as TreeNode);
       return Promise.resolve();
     },
   } as never;

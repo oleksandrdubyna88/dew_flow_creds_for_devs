@@ -1,7 +1,7 @@
 import { PinGate, PinOpen, openStored } from './pinGate';
 import { SECRET_SLOTS } from './entitySlots';
 import { StorageManager } from './storageManager';
-import { TreeNode } from './types';
+import { EntityMetadata } from './types';
 import { isLockedSecret, readSecret } from './secretEnvelope';
 
 /**
@@ -120,9 +120,7 @@ async function repairFalseMark(
   if (node?.details?.pinProtected !== true) {
     return;
   }
-  await clearMark(storage, accountId, entityId, {
-    details: { ...node.details, pinProtected: undefined },
-  });
+  await clearMark(storage, accountId, entityId, { pinProtected: undefined });
 }
 
 /**
@@ -136,10 +134,10 @@ async function clearMark(
   storage: StorageManager,
   accountId: string,
   entityId: string,
-  patch: Partial<TreeNode>,
+  fields: Partial<EntityMetadata>,
 ): Promise<void> {
   try {
-    await storage.updateNodeFields(accountId, entityId, patch);
+    await storage.updateDetailsFields(accountId, entityId, fields);
   } catch {
     /* said above: the next open tries again */
   }

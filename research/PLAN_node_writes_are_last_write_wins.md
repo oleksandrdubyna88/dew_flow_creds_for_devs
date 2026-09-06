@@ -114,8 +114,20 @@ allows.
 
 ## Definition of Done
 
-- [ ] `npm run typecheck`, `npm run lint`, `npm test` and `npm run ratchet` green in `src_vs_code`.
-- [ ] No node write outside `storageManager.ts` passes a whole node it read earlier.
-- [ ] The re-entrancy answer is recorded in `research/module_extension.md`, not only in a test.
-- [ ] `research/module_extension.md` updated; `architecture.md` if the storage seam changed shape.
-- [ ] The `coai` gate: `review_plan` to `proceed`, then `review_code` on the branch.
+- [x] `npm run typecheck`, `npm run lint`, `npm test` and `npm run ratchet` green in `src_vs_code` —
+      3313 tests, 3309 passing, 4 skipped, 0 failing; `storageManager.ts` at 1029 against a starting
+      1034, with the baseline tightened to match.
+- [x] No node write outside `storageManager.ts` passes a whole node it read earlier — one caller
+      remains, `shareInbox.ts`, where an accepted share IS the record now, named in the doc comment.
+      Nor inside it: `setTrashRetention` was the last, found by the code round.
+- [x] No caller rebuilds `details` from a snapshot either. `updateDetailsFields` merges at write
+      time; nine call sites moved onto it. That half was found by the code round after the first
+      shipped, and is the more useful record: fixing whole nodes had left their metadata undone.
+- [x] The re-entrancy answer is recorded in `research/module_extension.md`, not only in a test —
+      including that a boolean is wrong, that the context is inherited by every task the holder
+      starts, and that it must be CLOSED when the work ends or late timer work slips through inline.
+- [x] `research/module_extension.md` updated under *Node writes*; `architecture.md` unchanged,
+      because the storage seam kept its shape.
+- [x] The `coai` gate: plan round `good_enough` (12 findings, 4 accepted), code round **`proceed`**
+      (12 findings, 2 accepted then), and CodeRabbit's five on the pull request — four accepted,
+      one answered.

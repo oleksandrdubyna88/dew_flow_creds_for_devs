@@ -64,6 +64,13 @@ function world(options: { scanned?: HostKey; answer?: string } = {}): World {
       updated.push({ ...(before ?? ({ id } as TreeNode)), ...patch } as TreeNode);
       return Promise.resolve();
     },
+    // Merges into the CURRENT details, exactly as `StorageManager.updateDetailsFields` does — a
+    // fake that replaced them would assert against a shape the product no longer produces.
+    updateDetailsFields: (_a: string, id: string, fields: Record<string, unknown>): Promise<void> => {
+      const before = nodes.get(id);
+      updated.push({ ...(before ?? ({ id } as TreeNode)), details: { ...before?.details, ...fields } } as TreeNode);
+      return Promise.resolve();
+    },
     _put: (node: TreeNode): void => {
       nodes.set(node.id, node);
     },
