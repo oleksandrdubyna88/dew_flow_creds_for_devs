@@ -79,6 +79,12 @@ jobs:
       - name: Start the server the suite expects
         run: |
           echo "VAULT_LOCAL_SIGNING_KEY=$(openssl rand -base64 48)" >> "$GITHUB_ENV"
+          # The login-key KEK: base64 of exactly 32 bytes, thrown away with the runner.
+          # Without it the server starts fine and answers 503 on GET /api/org/login-key —
+          # a legitimate deployment, and so an ENVIRONMENT failure of this suite rather than
+          # a contract regression. The suite cannot tell those apart, so the environment has
+          # to be complete.
+          echo "VAULT_LOGIN_KEY_KEK=$(openssl rand -base64 32)" >> "$GITHUB_ENV"
           mkdir -p "$RUNNER_TEMP/vault-data"
           echo "VAULT_DATA_DIR=$RUNNER_TEMP/vault-data" >> "$GITHUB_ENV"
 
@@ -88,6 +94,7 @@ jobs:
           Vault__AllowedDomains=example.com \
           Vault__CorpRecovery__OfficerEmails=officer@example.com,officer2@example.com,officer3@example.com \
           Vault__CorpRecovery__Threshold=2 \
+          Vault__LoginKey__Kek="$VAULT_LOGIN_KEY_KEK" \
           Vault__DataDir="$VAULT_DATA_DIR" \
           Vault__PublishInstanceFile=false \
           ASPNETCORE_URLS=http://127.0.0.1:5099 \
