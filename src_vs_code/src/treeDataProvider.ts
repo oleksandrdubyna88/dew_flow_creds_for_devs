@@ -106,6 +106,9 @@ export class CredTreeDataProvider
    */
   readonly orgRoster = new Map<string, readonly MemberListEntry[]>();
 
+  /** Which server each cached answer came from — a repointed account must not keep the old one. */
+  readonly orgPolicyServer = new Map<string, string>();
+
   /**
    * Kept previous versions, per entity id.
    *

@@ -3,6 +3,7 @@ import { accountFromTargetOrPick } from '../accountPick';
 import { asElement } from '../commandTargets';
 import { corpPolicy, factsOf, roleLabel } from '../corpPolicy';
 import { describeError } from '../describeError';
+import { RefreshOutcome } from '../orgPolicyRefresh';
 import { MEMBER_ROLES, MemberListEntry, MemberRole, OrgMembersClient, SHARE_DEFAULTS, ShareDefault } from '../orgMembersClient';
 import { showMemberPolicyView } from '../orgMemberPolicyPanel';
 import { StorageManager } from '../storageManager';
@@ -22,7 +23,7 @@ import { StoredAccount } from '../types';
 export interface OrgMemberCommandsHost {
   readonly provider: CredTreeDataProvider;
   /** Re-reads the viewing account's policy and roster after a change, so the row says the new role. */
-  readonly refreshOrgPolicy: (account: StoredAccount) => Promise<void>;
+  readonly refreshOrgPolicy: (account: StoredAccount) => Promise<RefreshOutcome>;
   readonly register: (command: string, handler: (...args: unknown[]) => unknown) => void;
   readonly storage: StorageManager;
   readonly transports: TransportFactory;
@@ -125,6 +126,11 @@ async function pickChange(email: string, current: MemberListEntry | undefined): 
   return shareDefault === undefined ? undefined : { role, shareDefault };
 }
 
+/** The window could not re-read what it just changed, so the tree may still show the old role. */
+function staleAfter(outcome: RefreshOutcome): boolean {
+  return !outcome.policyRead || !outcome.rosterRead;
+}
+
 async function applyRole(
   host: OrgMemberCommandsHost,
   client: OrgMembersClient,
@@ -148,13 +154,16 @@ async function applyRole(
   // role" over a repaint sets it again, and the second attempt can overwrite a decision somebody
   // else made in between.
   void vscode.window.showInformationMessage(`${row.email} is now ${roleLabel(row.role, row.isOfficer)} on ${client.location}.`);
-  try {
-    await host.refreshOrgPolicy(picked.admin);
-    host.provider.refresh();
-  } catch (error) {
+  // The refresh cannot throw — it is built not to, so that a flaky network never breaks the repaint
+  // that draws every other row — which means a `catch` here would be unreachable and the stale tree
+  // would go unmentioned. It reports what it managed instead, and the warning is about the WINDOW,
+  // never about the write, which has already landed.
+  const outcome = await host.refreshOrgPolicy(picked.admin);
+  host.provider.refresh();
+  if (staleAfter(outcome)) {
     void vscode.window.showWarningMessage(
-      `${row.email} is now ${roleLabel(row.role, row.isOfficer)}, but this window could not refresh: `
-        + `${describeError(error)}. The tree catches up on the next cycle.`,
+      `${row.email} is now ${roleLabel(row.role, row.isOfficer)}, but this window could not re-read `
+        + 'the server, so the tree may show the old role until the next cycle.',
     );
   }
 }

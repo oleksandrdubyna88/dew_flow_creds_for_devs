@@ -1612,6 +1612,17 @@ Readiness needs `SecretStorage`, which a `getTreeItem` call cannot await — so 
 provider and recomputed at the moments it can change: startup, a sync cycle, a PIN being set, a
 lock.
 
+### What the code round changed here
+
+Three of its findings were about the same seam and are worth carrying: a refresh that **cannot throw**
+gives a caller no way to learn it failed, so it reports an outcome instead — the role command uses it
+to say "the role changed, this window is behind" rather than staying silent about a stale row; a
+cached answer now remembers **which server** it came from, because an account repointed at another
+corporate server keeps its id, and the old server's role would otherwise survive a failed first read
+against the new one; and whether a policy is the server's own or this build's fallback is an explicit
+flag rather than an identity check against the fallback object, so the page can tell a person "the
+company decided this" from "this build and this server disagree about a shape".
+
 ## Cryptography
 
 ### The envelope

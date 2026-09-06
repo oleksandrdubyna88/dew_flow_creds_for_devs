@@ -16,6 +16,8 @@ export interface OrgPolicyHost {
   readonly clientFor: (account: StoredAccount) => OrgMembersClient | undefined;
   readonly orgPolicy: Map<string, CorpPolicyState>;
   readonly orgRoster: Map<string, readonly MemberListEntry[]>;
+  /** Which server each cached answer came from, so a repointed account cannot keep the old one. */
+  readonly orgPolicyServer: Map<string, string>;
   /**
    * Persist the time of a successful read. Epic 2 reads it back as the offline lease's
    * heartbeat, which is why it lives outside the process and is written only on success.
@@ -24,7 +26,16 @@ export interface OrgPolicyHost {
   readonly now: () => number;
 }
 
-export async function refreshOrgPolicy(host: OrgPolicyHost, account: StoredAccount): Promise<void> {
+/**
+ * What a refresh managed. It never throws, so a caller that needs to know — the role command, which
+ * has just written and wants the tree to agree — cannot learn it from an exception.
+ */
+export interface RefreshOutcome {
+  readonly policyRead: boolean;
+  readonly rosterRead: boolean;
+}
+
+export async function refreshOrgPolicy(host: OrgPolicyHost, account: StoredAccount): Promise<RefreshOutcome> {
   const id = account.accountId;
   const client = host.clientFor(account);
   if (client === undefined) {
@@ -32,16 +43,43 @@ export async function refreshOrgPolicy(host: OrgPolicyHost, account: StoredAccou
     // a stale fact drawn as a current one.
     host.orgPolicy.delete(id);
     host.orgRoster.delete(id);
-    return;
+    host.orgPolicyServer.delete(id);
+    return { policyRead: false, rosterRead: false };
   }
+  // An account repointed at another corporate server keeps its id, so the id alone would let the
+  // previous server's role survive a failed first read against the new one — and the tree would
+  // offer management actions there on an authority nobody granted. The location is part of what a
+  // cached answer IS, so a change to it drops the answer before anything is asked.
+  forgetAnswersFromAnotherServer(host, id, client.location);
   const fetched = await readFacts(client, account, host.now).catch(() => undefined);
   const next = afterPolicyFetch(host.orgPolicy.get(id), fetched);
   if (next === undefined || fetched === undefined) {
-    return; // could not ask: everything stays exactly as it was
+    return { policyRead: false, rosterRead: false }; // could not ask: everything stays as it was
   }
   host.orgPolicy.set(id, next);
-  await Promise.resolve(host.heartbeat(id, next.fetchedAt)).then(undefined, () => undefined);
-  await refreshRoster(host, client, account, next.isAdmin);
+  // Wrapped rather than awaited bare: `heartbeat` is somebody else's callback, and one that throws
+  // SYNCHRONOUSLY would escape this function and take the readiness loop down with it — the one
+  // thing this module promises not to do.
+  await Promise.resolve()
+    .then(() => host.heartbeat(id, next.fetchedAt))
+    .then(undefined, () => undefined);
+  const rosterRead = await refreshRoster(host, client, account, next.isAdmin);
+  return { policyRead: true, rosterRead };
+}
+
+/**
+ * An account repointed at another corporate server keeps its id, so the id alone would let the
+ * previous server's role survive a failed first read against the new one — and the tree would offer
+ * management actions there on an authority nobody granted. The location is part of what a cached
+ * answer IS, so a change to it drops the answer before anything is asked.
+ */
+function forgetAnswersFromAnotherServer(host: OrgPolicyHost, id: string, location: string): void {
+  if (host.orgPolicyServer.get(id) === location) {
+    return;
+  }
+  host.orgPolicy.delete(id);
+  host.orgRoster.delete(id);
+  host.orgPolicyServer.set(id, location);
 }
 
 function readFacts(client: OrgMembersClient, account: StoredAccount, now: () => number): Promise<CorpPolicyFacts> {
@@ -59,13 +97,15 @@ async function refreshRoster(
   client: OrgMembersClient,
   account: StoredAccount,
   isAdmin: boolean,
-): Promise<void> {
+): Promise<boolean> {
   if (!isAdmin) {
     host.orgRoster.delete(account.accountId);
-    return;
+    return false;
   }
   const rows = await client.listMembers(account).catch(() => undefined);
-  if (rows !== undefined) {
-    host.orgRoster.set(account.accountId, rows);
+  if (rows === undefined) {
+    return false;
   }
+  host.orgRoster.set(account.accountId, rows);
+  return true;
 }
