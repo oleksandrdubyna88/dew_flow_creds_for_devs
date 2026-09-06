@@ -119,18 +119,25 @@ X-Creds-Contract: {{contract}}
 # raises the floor to 3, and a contract-2 client — which does not know this route exists — is refused
 # before authentication with a sentence that says why. The platform group declares 426 uncovered
 # because on a PERSONAL server it needs a raised configuration; here it needs only a roster.
+# JSON, unlike the same refusal on every older route: this surface promises {error} everywhere, and
+# the middleware answers before any of its endpoints can.
 # @name org_me_from_a_contract_2_client_is_426_on_a_corp_server
 GET {{baseUrl}}/api/org/me
 Authorization: Bearer {{token}}
 X-Creds-Contract: 2
 
 ?? status == 426
+?? header content-type matches ^application\/json
 
 {{
   const assert = require('node:assert');
-  test('the refusal names the policy document the old client cannot read, and what to do', () => {
-    assert.ok(response.body.includes('policy'), `426 body says nothing about why: ${response.body}`);
-    assert.ok(response.body.includes('update the extension'));
+  test('the refusal is an {error} the admin UI can show', () => {
+    assert.strictEqual(typeof response.parsedBody.error, 'string');
+  });
+  test('and it names the policy document the old client cannot read, and what to do', () => {
+    const why = response.parsedBody.error;
+    assert.ok(why.includes('policy'), `426 body says nothing about why: ${why}`);
+    assert.ok(why.includes('update the extension'));
   });
 }}
 

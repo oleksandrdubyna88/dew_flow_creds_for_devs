@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json;
+using FluentAssertions;
 
 namespace CredVaultServer.Tests;
 
@@ -70,6 +71,35 @@ internal static class Corp
             {
                 File.SetUnixFileMode(_dir, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
             }
+        }
+    }
+
+    /// <summary>
+    /// Poll until <paramref name="condition"/> holds, or fail naming what never happened. For the tests that
+    /// let a request run on after its client hung up: the server's continuation has no response to await,
+    /// so the disk is the only place to watch. Five seconds, ten-millisecond steps.
+    /// </summary>
+    public static async Task Eventually(Func<bool> condition, string what)
+    {
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(5);
+        while (!condition() && DateTime.UtcNow < deadline)
+        {
+            await Task.Delay(10, Ct);
+        }
+        condition().Should().BeTrue("within five seconds {0}", what);
+    }
+
+    /// <summary>
+    /// Wait until <paramref name="condition"/> holds or <paramref name="atMost"/> passes — and assert
+    /// nothing: for the moments a test must give an asynchronous abort time to land without being able
+    /// to say which way it will go.
+    /// </summary>
+    public static async Task Within(TimeSpan atMost, Func<bool> condition)
+    {
+        var deadline = DateTime.UtcNow + atMost;
+        while (!condition() && DateTime.UtcNow < deadline)
+        {
+            await Task.Delay(10, Ct);
         }
     }
 

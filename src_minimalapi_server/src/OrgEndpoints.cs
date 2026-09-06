@@ -114,29 +114,26 @@ public static class OrgEndpoints
     }
 
     /// <summary>
-    /// Only a person with NO record is written. The plan spelt the hook as an unconditional identity
-    /// upsert, and that was watched doing the wrong thing: <see cref="OrgMembersStore.UpsertAsync"/>
-    /// stamps every write, so a sync re-stamped a record an admin had edited — <c>updatedBy</c> became
-    /// the empty string and <c>updatedAt</c> the time of the sync, and the admin list would have shown
-    /// that nobody changed the role, at a time nobody did. So the lookup comes first. The window between
-    /// it and the write — an admin's first edit landing at the very instant of the person's first-ever
-    /// sync — costs at most that one stamp, and the role survives because the upsert reads inside the lock.
+    /// Only a person with NO record is written, and the decision is the store's, INSIDE the lock. The plan
+    /// spelt the hook as an unconditional identity upsert, and that was watched re-stamping a record an
+    /// admin had edited — <c>updatedBy</c> back to the empty string, <c>updatedAt</c> the time of the sync.
+    /// The first fix looked the caller up first, and that was watched too: with the per-member gate held
+    /// by a test, an admin's create landing between the lookup and the write was re-stamped all the same.
+    /// <see cref="OrgMembersStore.InsertIfAbsentAsync"/> decides with the gate held, so there is no window.
+    ///
+    /// <para>The insert takes the request's token: a client that hangs up before the record exists has
+    /// lost nothing, because the next sync retries this same idempotent write. The row does NOT — see
+    /// inside.</para>
     /// </summary>
     private static async Task RegisterIfAbsentAsync(OrgEndpointDeps deps, string email, CancellationToken ct)
     {
-        switch (deps.Members.Find(email).Status)
-        {
-            case MemberLookup.Found:
-                return;
-            case MemberLookup.Unavailable:
-                // Not an exception path — the store answered — but the same rule: never written over.
-                deps.Log.LogError("{Email} synced but was not registered: their record exists and cannot be read, and a sync must not overwrite it", email);
-                return;
-        }
-        var result = await deps.Members.UpsertAsync(email, r => r, byAdmin: string.Empty, ct);
+        var result = await deps.Members.InsertIfAbsentAsync(email, ct);
         if (result.Created)
         {
-            await deps.Events.AppendAsync(Registered(result.Record), ct);
+            // Once the record exists the row is owed whoever is still listening. Cancelled by a
+            // disconnect it is lost for good — every later sync finds the record and emits nothing — so
+            // the append gets no client token; its own five-second bound is what limits the wait.
+            await deps.Events.AppendAsync(Registered(result.Record), CancellationToken.None);
         }
     }
 
@@ -221,12 +218,13 @@ public static class OrgEndpoints
     private static Task FailUnavailable(HttpContext ctx)
     {
         ctx.Response.Headers.RetryAfter = UnavailableRetryAfterSeconds.ToString(CultureInfo.InvariantCulture);
-        // Names the problem and who fixes it, not the file: the path is the operator's business and is
-        // already in the server log at Error, written once by the store.
+        // Names the problem and WHO ends it — an administrator — so the person does not retry into the
+        // same wall; never the file, which is the operator's business and is already in the server log
+        // at Error, written once by the store.
         return FailJson(
             ctx,
             StatusCodes.Status503ServiceUnavailable,
-            "Your membership record cannot be read by this server. Nothing about your role can be answered "
-            + "until an operator fixes it; the server log names the file.");
+            "Your membership record cannot be read by this server, so nothing about your role can be "
+            + "answered. An administrator must repair it; the server log names the file.");
     }
 }

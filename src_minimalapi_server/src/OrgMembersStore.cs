@@ -237,11 +237,53 @@ public sealed class OrgMembersStore(string dataDir, ILogger<OrgMembersStore> log
     /// record is an unblock nobody ordered; <see cref="MemberRecordUnavailableException"/> names the file
     /// instead, the lock is released on the way out, and the operator fixes the file.</para>
     /// </summary>
-    public async Task<UpsertResult> UpsertAsync(
+    public Task<UpsertResult> UpsertAsync(
         string email,
         Func<MemberRecord, MemberRecord> edit,
         string byAdmin,
-        CancellationToken ct)
+        CancellationToken ct) =>
+        UnderGateAsync(email, ct, (current, normalized, now, path) =>
+        {
+            var (baseline, created) = Baseline(current, normalized, now, path);
+            return new WritePlan(Stamp(edit(baseline), normalized, byAdmin, now), created, Write: true);
+        });
+
+    /// <summary>
+    /// The sync hook's write: create the default record if there is none, and if there is one, answer it
+    /// UNTOUCHED — no write, no stamp, <see cref="UpsertResult.Created"/> false.
+    ///
+    /// <para>Decided inside the lock, and that is the whole point of a second method rather than
+    /// <c>Find</c> followed by <see cref="UpsertAsync"/>. A check outside the lock has a window: the hook
+    /// saw "absent", an admin's first edit landed and created the record, and the identity upsert then
+    /// re-stamped it — <c>updatedBy</c> became the empty string, which is exactly the trail an admin
+    /// action is supposed to leave. Watched happening with the lock held by a test. Same lock, same
+    /// read, same write path as <see cref="UpsertAsync"/>: one <see cref="UnderGateAsync"/>, two
+    /// decisions.</para>
+    ///
+    /// <para>An unreadable record throws <see cref="MemberRecordUnavailableException"/> exactly as an
+    /// upsert does — a default written over a blocked developer's unreadable record is an unblock nobody
+    /// ordered.</para>
+    /// </summary>
+    public Task<UpsertResult> InsertIfAbsentAsync(string email, CancellationToken ct) =>
+        UnderGateAsync(email, ct, (current, normalized, now, path) =>
+        {
+            var (baseline, created) = Baseline(current, normalized, now, path);
+            return new WritePlan(baseline, created, Write: created);
+        });
+
+    /// <summary>What one guarded decision came to: the record to answer, whether it was created, and whether anything goes to disk.</summary>
+    private sealed record WritePlan(MemberRecord Record, bool Created, bool Write);
+
+    /// <summary>The decision made while the lock is held: from what is on disk now, to a <see cref="WritePlan"/>.</summary>
+    private delegate WritePlan Decide(MemberLookupResult current, string email, long now, string path);
+
+    /// <summary>
+    /// The one read-modify-write path: take the per-member gate, read the disk (never the cache — the
+    /// cache is what a concurrent writer makes stale), decide, write if the decision says so, invalidate.
+    /// The read is inside the lock on purpose, as <see cref="VaultStore.TryWriteVaultAsync"/>'s is:
+    /// outside it, the lost update is back.
+    /// </summary>
+    private async Task<UpsertResult> UnderGateAsync(string email, CancellationToken ct, Decide decide)
     {
         var normalized = MemberRecord.Normalize(email);
         var key = VaultStore.KeyFor(normalized);
@@ -251,15 +293,17 @@ public sealed class OrgMembersStore(string dataDir, ILogger<OrgMembersStore> log
         {
             var target = TargetFor(key, normalized);
             var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-            var (baseline, created) = Baseline(ReadFromDisk(target), normalized, now, target.FilePath);
-            var edited = Stamp(edit(baseline), normalized, byAdmin, now);
-            Directory.CreateDirectory(_membersDir);
-            await VaultStore.AtomicWriteAsync(
-                target.FilePath,
-                JsonSerializer.SerializeToUtf8Bytes(edited, AppJsonContext.Default.MemberRecord),
-                ct);
-            _cache.TryRemove(key, out _);
-            return new UpsertResult(edited, created);
+            var plan = decide(ReadFromDisk(target), normalized, now, target.FilePath);
+            if (plan.Write)
+            {
+                Directory.CreateDirectory(_membersDir);
+                await VaultStore.AtomicWriteAsync(
+                    target.FilePath,
+                    JsonSerializer.SerializeToUtf8Bytes(plan.Record, AppJsonContext.Default.MemberRecord),
+                    ct);
+                _cache.TryRemove(key, out _);
+            }
+            return new UpsertResult(plan.Record, plan.Created);
         }
         finally
         {

@@ -162,4 +162,50 @@ public sealed class VaultTests
         (await alice.GetAsync("/api/vault", ct)).StatusCode.Should().Be(HttpStatusCode.NotFound);
         File.Exists(record).Should().BeTrue("the surviving state: a record with no vault");
     }
+
+    [Fact]
+    public async Task AClientHangingUpDuringTheDeleteDoesNotAbandonTheRegistryRemoval()
+    {
+        // The vault is gone the moment DeleteEverythingFor returns; the registry removal after it is owed
+        // whether or not anyone is still listening. Cancelled by a disconnect it would leave a record
+        // with no vault AND throw out of a handler whose work had already happened. The per-member lock
+        // the removal waits on is held here so the hang-up lands exactly in that window; the gate is
+        // process-wide, hence the finally.
+        using var server = Corp.Server();
+        using var alice = server.ClientFor(Alice);
+        var ct = TestContext.Current.CancellationToken;
+        await alice.PutAsync("/api/vault", new ByteArrayContent(Blob), ct);
+        var record = Corp.RecordPath(server, Alice);
+        var vault = Path.Combine(server.DataDir, "vaults", VaultStore.KeyFor(Alice) + ".bin");
+        var gate = VaultStore.GateFor(VaultStore.KeyFor(Alice));
+        using var hangUp = new CancellationTokenSource();
+        Task<HttpResponseMessage> delete;
+        await gate.WaitAsync(ct);
+        try
+        {
+            delete = alice.DeleteAsync("/api/vault", hangUp.Token);
+            await Corp.Eventually(() => !File.Exists(vault), "the handler deleted the vault and reached the registry");
+            hangUp.Cancel();
+            // The test host raises RequestAborted off the calling thread and completes the client's task
+            // only when the pipeline ends. A handler that honoured the token dies here and that task
+            // completes; one that ignores it is still waiting on the gate, so the task cannot be awaited
+            // before the release without a deadlock. Half a second is given for the abort to land either
+            // way — releasing sooner would hand the gate to a waiter not yet cancelled and prove nothing.
+            await Corp.Within(TimeSpan.FromMilliseconds(500), () => delete.IsCompleted);
+        }
+        finally
+        {
+            gate.Release();
+        }
+        try
+        {
+            await delete;
+        }
+        catch (OperationCanceledException)
+        {
+            // The client hung up, as arranged.
+        }
+
+        await Corp.Eventually(() => !File.Exists(record), "the registry record was removed after the client left");
+    }
 }
