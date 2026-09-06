@@ -36,6 +36,9 @@ whole server is ~2,100 lines.
 | `src/OrgMembersStore.cs` | One record per person under `org/members/`, read synchronously from a stat-checked cache, written read-modify-write under the vault's per-email lock |
 | `src/OrgSettingsStore.cs` | The runtime settings an admin edits without a restart (`org/settings.json`); absent answers the default and writes nothing |
 | `src/OrgEventLog.cs` | The append-only NDJSON event log, one file per UTC day under `org/events/` — the writer only; the reader is a later epic's |
+| `src/OrgProjects.cs` | The project records, the name rule, and `EffectiveShare` — an unassigned person may do nothing, which is not the same as having no override |
+| `src/OrgProjectsStore.cs` | One JSON file per project under `org/projects/`, three-answer lookup, striped writes, archived never deleted |
+| `src/OrgProjectsEndpoints.cs` | The six project and assignment routes, mapped from their own file so `Program.cs` gains one call |
 | `src/LoginKeyStore.cs` | Custody of the per-developer login key S under `org/login-keys/`: AES-256-GCM under the deployment KEK, minted once by create-if-absent, and a three-answer lookup whose unreadable branch NEVER mints a replacement |
 | `src/LoginKeyKek.cs` | Reading that KEK out of configuration and refusing anything that is not exactly 32 bytes of base64, plus the startup line an operator gets when theirs is unusable |
 | `src/OrgEndpoints.cs` | The corporate surface `/api/org/*`, mapped from its own file (`Program.cs` is past the size ceiling and four more epics add routes): `GET /api/org/me`, the admin's roster, role and settings routes, the block/unblock route `PUT /api/org/members/{email}/active`, the JSON `FailJson` every refusal there uses, and the registration hook `PUT /api/vault` calls. The gates stay in `Program.cs` and cross over as delegates in one `OrgEndpointDeps` record |
@@ -100,6 +103,12 @@ identifier**, so there is nothing to tamper with.
 | `GET` | `/api/org/members` | **admin** | `200` | The roster of the caller's own domain, one row per record, officers flagged. Not streamed: 200 records of about a kilobyte |
 | `PUT` | `/api/org/members/{email}` | **admin** | `200` / `400` / `403` / `409` / `503` | Set a role, a share default, or both — for somebody who may not have synced yet. See below |
 | `PUT` | `/api/org/members/{email}/active` | **admin** | `204` / `400` / `403` / `409` / `503` | `{active}` — `false` blocks, `true` re-admits. Idempotent: `204` whether or not anything changed. A real block withdraws every pending share to and from the person and appends `member.blocked`; an officer target is `409`. See below |
+| `GET` | `/api/org/projects` | any active corporate caller | `200` | The projects this caller may see: all of them for an admin or a member, **only their own assignments for a developer** — a project name is a fact about a customer engagement |
+| `POST` | `/api/org/projects` | **admin** | `200` / `400` / `403` | `{name}` → the project. Ids are hex GUIDs, minted server-side |
+| `PUT` | `/api/org/projects/{id}` | **admin** | `200` / `400` / `403` / `404` / `503` | `{name?, archived?}`, both nullable: an omitted `archived` means *leave it*, so a rename cannot unarchive. Unarchiving is allowed and has its own event row |
+| `PUT` | `/api/org/projects/{id}/members/{email}` | **admin** | `204` / `400` / `403` / `404` / `409` / `503` | `{share}` — assign, or change the override. The project must exist, or a typo writes an assignment naming nothing |
+| `DELETE` | `/api/org/projects/{id}/members/{email}` | **admin** | `204` / `400` / `403` / `404` / `409` / `503` | **`?deleteFolder=` is required.** `true` also appends a `pendingFolderRemovals` entry; `false` leaves their copy with them. No default, because the two are not recoverable from each other |
+| `POST` | `/api/org/members/me/pending-folder-removals/{projectId}/ack` | own caller | `204` / `503` | The person's own proof that the removal has landed AND been pushed. Idempotent |
 | `GET` | `/api/org/login-key` | any active corporate caller | `200` / `404` / `503` | The caller's own login key and its fingerprint. Minted for an active **dev**; served to anybody active who already has one; `404` when they have none; `503` with no KEK, or when the stored key cannot be read. **`Cache-Control: no-store`** — the one response here that carries key material. See below |
 | `GET` | `/api/org/settings` | **admin** | `200` | The runtime settings; absent file → the defaults, and no file is written |
 | `PUT` | `/api/org/settings` | **admin** | `200` / `400` | `offlineLeaseHours >= 0`; `0` is the legal "strictly online" |
@@ -325,6 +334,54 @@ lowercase hex characters — is a public name: it lets a client tell "the server
 from "wrong PIN" without either side comparing secrets, and it is what appears in the log instead of
 the key. A store-level test asserts the material never reaches a log line, with a positive control so
 a run that logged nothing cannot pass it.
+
+### Projects, assignments, and the instruction to remove a folder (2026-09-06)
+
+A project is a name people are assigned to: `${DataDir}/org/projects/<guid>.json`, one small record
+each (`OrgProjectsStore`). Epic 3's later stories turn an assignment into a folder in that person's own
+vault and into a share rule; this is the surface that creates them.
+
+**A project is archived, never deleted.** The event log records assignments and shares by project id
+and is kept forever, so a deleted project turns every row that names it into an id nobody can resolve.
+Archiving keeps the name readable and stops the project being used. **Unarchiving is allowed** — an
+admin who archived the wrong one must be able to say so — and writes its own row, because a log that
+records the archive and not the undo describes a state the server is not in.
+
+**Three answers, again.** `Find` returns found / absent / **unreadable**, for the reason the members
+store does: read as "absent", a rename would write a fresh record over a half-written one and lose
+whatever it held, including assignments nobody touched. Writes take the same 64-way stripe every other
+store takes, so a rename and an archive arriving together are serialised rather than racing.
+
+**`deleteFolder` is required on an unassignment**, and that is the one place this surface refuses to
+guess. Left to a default, one reading deletes somebody's folder when the admin meant only to unassign,
+and the other leaves corporate material on a machine when they meant it gone — and the two requests
+look identical. Making the caller say it costs one query parameter.
+
+**The removal instruction is durable, and the acknowledgement is per PERSON.** `deleteFolder=true`
+appends a `pendingFolderRemovals` entry to the member record, which `GET /api/org/me` already carries;
+the client clears it by calling the ack route. One entry per record, not per device: the first machine
+to carry the instruction out clears it, and every other machine of theirs receives the deletion the
+ordinary way — as a tombstone through their own vault sync. **That is why the client must ack after the
+PUSH and not after the local delete**: the acknowledgement claims the removal has left the machine, not
+merely that it happened on it. A person who never syncs again never acks, and the instruction waits.
+
+**Somebody not assigned may do nothing in a project.** `OrgProjects.EffectiveShare` answers `none` for
+an absent assignment rather than falling through to the person's own `shareDefault` — the plan round's
+finding, and it would have given a member with a permissive default the run of every project on the
+server. An assignment carrying `inherit` re-reads the role's default every time rather than freezing it,
+so changing somebody's role changes their projects with it.
+
+**Six kinds reach the event log** at the point of durable write — `project.created`, `project.renamed`,
+`project.archived`, `project.unarchived`, `project.assigned`, `project.unassigned` — each with a test
+that reads the row back OUT of the log rather than asserting a status code. Written in this epic rather
+than left to epic 4's reader, because a log nothing is required to write to is the defect epic 1 called
+its sharpest.
+
+**`GET /api/org/me` now names the projects** it lists: `ProjectSelfDto` gained `Name`, joined from the
+store. Epic 1 shipped it without one because there was no store to take a name from, and an id is not
+something a person can read. An assignment whose project has since been removed answers an empty name
+rather than failing the whole document.
+
 
 ### The contract version
 
@@ -888,6 +945,7 @@ ${DataDir}/org/settings.json                          the runtime settings an ad
 ${DataDir}/org/events/<yyyy-MM-dd>.ndjson             the corporate event log, one file per UTC day, never swept
 ${DataDir}/org/events/.append.lock                    zero bytes; held exclusively for the length of one append, across processes
 ${DataDir}/org/login-keys/<key>.bin                   one developer's login key, AES-256-GCM under the deployment KEK; written create-if-absent, removed only with the vault
+${DataDir}/org/projects/<guid>.json                    one project: its name, whether it is archived, and who last touched it
 ```
 
 `key = sha256(lowercased email) hex, first 32 chars` (128 bits). Hashed so a directory listing is
@@ -983,6 +1041,8 @@ Never `dotnet test` — there is no VSTest host here and it aborts.
 | `OrgBlockingWithdrawalTests` | A share to a blocked person leaves their inbox and the sender's receipt carries the reason; a receipt not withdrawn has no `withdrawnReason` key; the hourly sweep keeps a withdrawn receipt and still retires an accepted one (the positive control), end to end too; dismissing a withdrawn receipt is `204` and forgets it; the 31-day prune still retires it; a share from a blocked person leaves the recipient's inbox and the blocked sender's receipt goes too; both directions in one block with an unrelated share surviving; nothing comes back on unblock; **a repeated block finishes a withdrawal the first one could not** (the inbox file held open through the first PUT, released, and the repeat takes it); **a sender who could not be told is counted in the block row** rather than silently lost (their receipt held open for the whole block); an idempotent re-block with nothing left withdraws nothing twice |
 | `OrgBlockingShareTests` | The recipient half: `POST /api/shares` to a deactivated colleague is `403` naming the deactivation, creates no inbox and no receipt, and carries **no** `X-Creds-Reason` (which would make an honest client lock the innocent sender's own account); an unreadable recipient record is `503` with `Retry-After` and no delivery; an active colleague, somebody who never synced, and a personal server with a leftover corrupt record are all unaffected |
 | `AppJsonContextTests` | Every DTO the org routes and their refusals serialize, lists included, is in the source-generated context — the one class of bug the endpoint suites cannot see, because under JIT an unregistered type falls through to reflection and only the AOT binary fails |
+| `OrgProjectsStoreTests` | The store alone: a project round-trips and is named by its id; no projects means no `org/` tree at all; a file this build cannot read is **unreadable, never absent**, and says so once; a record in the wrong file is unreadable too; an id that could leave the folder simply is not there; a rename and an archive arriving together both survive (the stripe); updating something absent does not create it; the list is newest-first and skips what it cannot read; `NameOf` answers empty for anything it cannot resolve; an unassigned person may do NOTHING in a project; an omitted `archived` means unchanged |
+| `OrgProjectsAdminTests` | The six routes over the wire, with every mutation's event row read back from the LOG rather than from the response: create, rename (both names in the row), archive and unarchive as two kinds, assign (replacing an override rather than repeating the project), assign to a project that does not exist → `404` with nothing written, an unassignment with no `deleteFolder` → `400` and nothing changed, `false` leaves no instruction, `true` leaves one the person can acknowledge, the ack clears exactly one and is idempotent, a developer sees only their own projects, their own document names the project, a non-admin changes nothing, officer `409` / cross-domain `403` / non-address `400` through the shared `TargetProblem`, an unknown share `400`, mixed casing is one person, and a personal server has no projects and grows no folder |
 | `LoginKeyEndpointTests` | `GET /api/org/login-key`: a developer is minted one and a second call returns byte-identical bytes; the response is `no-store`; the fingerprint is sixteen hex characters and travels with the key; a member with no key is `404` **and none is minted for them**; a demoted developer is still served theirs; a blocked one is refused by the gate and gets the SAME key back on unblock (no rotation); no KEK is `503` while sync, vault reads and team all still work; a 16-byte KEK is refused rather than truncated; a personal server answers "this deployment issues no login keys" and grows no `org/`; the file on disk is ciphertext; `DELETE /api/vault` removes the key, and still succeeds on a server that cannot issue any; mixed casing is one person and one key |
 | `LoginKeyStoreTests` | The store alone: no log line carries the key material (with a positive control, so a run that logged nothing cannot pass); a key that will not decrypt under this KEK is **never replaced** and the file is byte-identical afterwards; a tampered ciphertext and garbage JSON are both `Unreadable`, never plausible bytes; two stores over one directory mint ONE key and leave no temp file; `Find` never mints, not even the folder; the fingerprint is stable, differs per key, and is empty when there is nothing to name; removing what is not there is success while removing a file held open is not, and says so at Error; the KEK is 32 bytes of base64 or nothing; the startup complaint is silent only where nobody asked for the feature |
 | `SharingTests` | Delivery, sender stamping, cross-domain refusal, traversal ids, recipient-only delete |

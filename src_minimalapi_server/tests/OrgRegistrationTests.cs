@@ -70,6 +70,8 @@ public sealed class OrgRegistrationTests
                 // Likewise: registration never touches a login key. An empty KEK is the honest value —
                 // this world could not issue one — and it proves the record needs no key to be built.
                 LoginKeys: new LoginKeyStore(Dir, [], NullLogger<LoginKeyStore>.Instance),
+                // Registration names no project, so the resolver is never called here.
+                ProjectName: _ => string.Empty,
                 AllowAnyDomain: false,
                 Log: Log,
                 ServerContract: ContractVersion.Current);

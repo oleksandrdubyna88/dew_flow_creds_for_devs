@@ -1,0 +1,315 @@
+# Projects — the admin's six routes under /api/org/projects, and the person's own acknowledgement.
+#
+# A project is a name people are assigned to. The assignment is what epic 3's later stories turn into
+# a folder in that person's vault and into a share rule; this file covers the surface that creates
+# them, and the two refusals that are decisions rather than typos:
+#
+#   * `deleteFolder` is REQUIRED on an unassignment. Left to a default, one reading deletes somebody's
+#     folder when the admin meant only to unassign and the other leaves corporate material on a machine
+#     when they meant to remove it — and the request looks identical either way.
+#   * a rename does NOT unarchive. `archived` omitted means "leave it", never `false`.
+#
+# PRECONDITION: a corp-mode server (../README.md — three officers). `{{officerToken}}` administers;
+# `{{token}}` (Alice) and `{{bobToken}}` do not.
+#
+# THE SUITE HAS NO DEVELOPER, so the dev-only visibility rule is exercised by making Bob one for two
+# requests and putting him back. Said here because a file that changes a role and does not restore it
+# leaves every later file running against a different server than it expects.
+#
+# The file archives what it creates at the end: a project cannot be deleted (the event log cites it),
+# so a completed run leaves the store with one archived project rather than a growing list of live ones.
+
+# @name org_projects_creates_one
+POST {{baseUrl}}/api/org/projects
+Authorization: Bearer {{officerToken}}
+X-Creds-Contract: {{contract}}
+Content-Type: application/json
+
+{ "name": "Atlas" }
+
+?? status == 200
+?? header content-type matches ^application\/json
+
+{{
+  const assert = require('node:assert');
+  test('the answer names the project and gives it an id', () => {
+    assert.match(response.parsedBody.id, /^[0-9a-f]{32}$/);
+    assert.strictEqual(response.parsedBody.name, 'Atlas');
+    assert.strictEqual(response.parsedBody.archived, false);
+  });
+  exports.projectId = response.parsedBody.id;
+}}
+
+###
+
+# @name org_projects_refuses_a_nameless_one
+POST {{baseUrl}}/api/org/projects
+Authorization: Bearer {{officerToken}}
+X-Creds-Contract: {{contract}}
+Content-Type: application/json
+
+{ "name": "   " }
+
+?? status == 400
+
+###
+
+# @name org_projects_refuses_a_caller_who_does_not_administer
+POST {{baseUrl}}/api/org/projects
+Authorization: Bearer {{token}}
+X-Creds-Contract: {{contract}}
+Content-Type: application/json
+
+{ "name": "Sneaky" }
+
+?? status == 403
+
+###
+
+# @name org_projects_renames_without_unarchiving
+PUT {{baseUrl}}/api/org/projects/{{projectId}}
+Authorization: Bearer {{officerToken}}
+X-Creds-Contract: {{contract}}
+Content-Type: application/json
+
+{ "name": "Atlas II" }
+
+?? status == 200
+
+{{
+  const assert = require('node:assert');
+  test('the rename lands and the project is still live', () => {
+    assert.strictEqual(response.parsedBody.name, 'Atlas II');
+    assert.strictEqual(response.parsedBody.archived, false);
+  });
+}}
+
+###
+
+# @name org_projects_refuses_an_empty_change
+PUT {{baseUrl}}/api/org/projects/{{projectId}}
+Authorization: Bearer {{officerToken}}
+X-Creds-Contract: {{contract}}
+Content-Type: application/json
+
+{}
+
+?? status == 400
+
+###
+
+# @name org_projects_assigns_bob
+PUT {{baseUrl}}/api/org/projects/{{projectId}}/members/{{bobEmail}}
+Authorization: Bearer {{officerToken}}
+X-Creds-Contract: {{contract}}
+Content-Type: application/json
+
+{ "share": "project" }
+
+?? status == 204
+
+###
+
+# @name org_projects_show_up_on_his_own_document
+GET {{baseUrl}}/api/org/me
+Authorization: Bearer {{bobToken}}
+X-Creds-Contract: {{contract}}
+Accept: application/json
+
+?? status == 200
+
+{{
+  const assert = require('node:assert');
+  test('his own document names the project rather than only its id', () => {
+    const mine = response.parsedBody.projects.find((p) => p.projectId === projectId);
+    assert.ok(mine, 'the assignment is on his record');
+    assert.strictEqual(mine.name, 'Atlas II');
+    assert.strictEqual(mine.share, 'project');
+  });
+}}
+
+###
+
+# @name org_projects_refuses_an_unknown_share
+PUT {{baseUrl}}/api/org/projects/{{projectId}}/members/{{bobEmail}}
+Authorization: Bearer {{officerToken}}
+X-Creds-Contract: {{contract}}
+Content-Type: application/json
+
+{ "share": "everything" }
+
+?? status == 400
+
+###
+
+# @name org_projects_refuses_an_officer_target
+PUT {{baseUrl}}/api/org/projects/{{projectId}}/members/officer2@example.com
+Authorization: Bearer {{officerToken}}
+X-Creds-Contract: {{contract}}
+Content-Type: application/json
+
+{ "share": "inherit" }
+
+?? status == 409
+
+###
+
+# @name org_projects_refuses_a_project_that_does_not_exist
+PUT {{baseUrl}}/api/org/projects/00000000000000000000000000000000/members/{{bobEmail}}
+Authorization: Bearer {{officerToken}}
+X-Creds-Contract: {{contract}}
+Content-Type: application/json
+
+{ "share": "inherit" }
+
+?? status == 404
+
+###
+
+# Bob becomes a developer for the two requests below, and is put back afterwards.
+# @name org_projects_makes_bob_a_developer
+PUT {{baseUrl}}/api/org/members/{{bobEmail}}
+Authorization: Bearer {{officerToken}}
+X-Creds-Contract: {{contract}}
+Content-Type: application/json
+
+{ "role": "dev" }
+
+?? status == 200
+
+###
+
+# @name org_projects_a_developer_sees_only_their_own
+GET {{baseUrl}}/api/org/projects
+Authorization: Bearer {{bobToken}}
+X-Creds-Contract: {{contract}}
+Accept: application/json
+
+?? status == 200
+
+{{
+  const assert = require('node:assert');
+  test('every project a developer can see is one they are on', () => {
+    assert.ok(response.parsedBody.every((p) => p.id === projectId),
+      'a project name is a fact about a customer engagement, not a directory');
+  });
+}}
+
+###
+
+# @name org_projects_puts_bob_back
+PUT {{baseUrl}}/api/org/members/{{bobEmail}}
+Authorization: Bearer {{officerToken}}
+X-Creds-Contract: {{contract}}
+Content-Type: application/json
+
+{ "role": "member" }
+
+?? status == 200
+
+###
+
+# @name org_projects_unassignment_must_say_what_happens_to_the_folder
+DELETE {{baseUrl}}/api/org/projects/{{projectId}}/members/{{bobEmail}}
+Authorization: Bearer {{officerToken}}
+X-Creds-Contract: {{contract}}
+
+?? status == 400
+
+{{
+  const assert = require('node:assert');
+  test('the refusal says what to send and why there is no default', () => {
+    assert.match(response.parsedBody.error, /deleteFolder/);
+  });
+}}
+
+###
+
+# @name org_projects_unassigns_and_asks_for_the_folder_back
+DELETE {{baseUrl}}/api/org/projects/{{projectId}}/members/{{bobEmail}}?deleteFolder=true
+Authorization: Bearer {{officerToken}}
+X-Creds-Contract: {{contract}}
+
+?? status == 204
+
+###
+
+# @name org_projects_the_instruction_reaches_him
+GET {{baseUrl}}/api/org/me
+Authorization: Bearer {{bobToken}}
+X-Creds-Contract: {{contract}}
+Accept: application/json
+
+?? status == 200
+
+{{
+  const assert = require('node:assert');
+  test('the removal is on his own document, which is how his client will find it', () => {
+    const pending = response.parsedBody.pendingFolderRemovals.find((p) => p.projectId === projectId);
+    assert.ok(pending, 'the instruction is durable, not an event that can be missed');
+    assert.strictEqual(pending.deleteFolder, true);
+  });
+  test('and the assignment is gone', () => {
+    assert.strictEqual(response.parsedBody.projects.find((p) => p.projectId === projectId), undefined);
+  });
+}}
+
+###
+
+# @name org_projects_he_acknowledges_it
+POST {{baseUrl}}/api/org/members/me/pending-folder-removals/{{projectId}}/ack
+Authorization: Bearer {{bobToken}}
+X-Creds-Contract: {{contract}}
+
+?? status == 204
+
+###
+
+# @name org_projects_acknowledging_twice_is_still_204
+POST {{baseUrl}}/api/org/members/me/pending-folder-removals/{{projectId}}/ack
+Authorization: Bearer {{bobToken}}
+X-Creds-Contract: {{contract}}
+
+?? status == 204
+
+###
+
+# @name org_projects_the_instruction_is_gone
+GET {{baseUrl}}/api/org/me
+Authorization: Bearer {{bobToken}}
+X-Creds-Contract: {{contract}}
+Accept: application/json
+
+?? status == 200
+
+{{
+  const assert = require('node:assert');
+  test('cleared once, and only that one', () => {
+    assert.strictEqual(response.parsedBody.pendingFolderRemovals.length, 0);
+  });
+}}
+
+###
+
+# @name org_projects_archives_what_this_file_created
+PUT {{baseUrl}}/api/org/projects/{{projectId}}
+Authorization: Bearer {{officerToken}}
+X-Creds-Contract: {{contract}}
+Content-Type: application/json
+
+{ "archived": true }
+
+?? status == 200
+
+{{
+  const assert = require('node:assert');
+  test('a project is archived, never deleted — the event log cites it by id forever', () => {
+    assert.strictEqual(response.parsedBody.archived, true);
+  });
+}}
+
+###
+# @uncovered 503 — a project file this build cannot read, and a member record it cannot read: both
+#            need a file corrupted underneath a running server, which is machinery this tier does not
+#            ask for. OrgProjectsStoreTests writes the garbage and reads the three-answer result back;
+#            OrgProjectsAdminTests covers the 503 the admin routes answer over it.

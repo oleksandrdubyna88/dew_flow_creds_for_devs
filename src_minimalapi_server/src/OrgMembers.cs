@@ -302,9 +302,18 @@ public static class MemberPolicy
 /// project's <c>Name</c> joins in epic 3, which owns the project store. Named there as a build item,
 /// because a field in a documented response that no epic can fill is how a shape becomes a lie.
 /// </summary>
-public sealed record ProjectSelfDto(string ProjectId, string Share)
+public sealed record ProjectSelfDto(string ProjectId, string Name, string Share)
 {
-    public static ProjectSelfDto From(ProjectAssignment assignment) => new(assignment.ProjectId, assignment.Share);
+    /// <summary>
+    /// The assignment as its owner sees it, joined with the project's NAME.
+    ///
+    /// <para>Epic 1 shipped this without one because there was no project store to take a name
+    /// from, and an id is not something a person can read. The name is passed IN rather than
+    /// looked up here, so this stays a pure projection — and an assignment whose project has
+    /// since been removed answers an empty name instead of failing the whole document.</para>
+    /// </summary>
+    public static ProjectSelfDto From(ProjectAssignment assignment, string name) =>
+        new(assignment.ProjectId, name, assignment.Share);
 }
 
 /// <summary>
@@ -339,14 +348,20 @@ public sealed record MemberSelfDto(
         bool corpMode,
         bool isOfficer,
         int offlineLeaseHours,
-        int serverContract) => new(
+        int serverContract,
+        /// <summary>
+        /// A project id to its name. Passed in because this record is a projection and the
+        /// project store is somebody else's; a name it cannot resolve comes back empty rather
+        /// than failing the document, which is what an assignment to a removed project is.
+        /// </summary>
+        Func<string, string> nameOf) => new(
             CorpMode: corpMode,
             Email: record.Email,
             Role: record.Role,
             Active: record.Active,
             IsOfficer: isOfficer,
             ShareDefault: record.ShareDefault,
-            Projects: [.. record.Projects.Select(ProjectSelfDto.From)],
+            Projects: [.. record.Projects.Select(p => ProjectSelfDto.From(p, nameOf(p.ProjectId)))],
             PendingFolderRemovals: record.PendingFolderRemovals,
             Policy: MemberPolicy.For(record.Role, record.ShareDefault),
             OfflineLeaseHours: offlineLeaseHours,
@@ -364,7 +379,9 @@ public sealed record MemberSelfDto(
             corpMode: false,
             isOfficer: false,
             offlineLeaseHours: OrgSettingsDto.DefaultOfflineLeaseHours,
-            serverContract: serverContract);
+            serverContract: serverContract,
+            // A personal server has no projects to name, and no store to ask.
+            nameOf: _ => string.Empty);
 }
 
 /// <summary>
