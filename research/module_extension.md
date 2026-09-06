@@ -3835,6 +3835,80 @@ enforced.
 developer's own machine holds their vault key. What the SERVER enforces is the share rule, which
 depends on none of this.
 
+## A developer's share binds its project — `format: 4` (2026-09-06, epic 3 story 4)
+
+The client now sends `projectId`, BINDS it, and stops offering shares the server would refuse.
+
+### The form table, as it now stands
+
+| `format` | Name | AAD covers | Where it is honoured |
+|---|---|---|---|
+| *(absent)* | legacy | nothing | anywhere, until `LEGACY_SHARES_UNTIL` |
+| 2 | bound | `fromEmail`, `entityName`, `entityKind`, `createdAt` | a folder or a git remote |
+| 3 | server | `entityName`, `entityKind` | a vault server only |
+| 4 | project | `entityName`, `entityKind`, `projectId` | a vault server only |
+
+**Four is not "the new server form".** It is the form for a share that HAS a project to bind. An
+entry that lives outside every project folder is sent exactly as it was yesterday — renumbering it
+would make every such share unopenable by every released build, for nothing.
+
+**`projectId` is in the same trust class as `entityKind`**: client-supplied, carried verbatim by the
+server, and security-relevant — the server's share rule decides on it. Left outside the tag it could
+be edited after the fact on a share that had already been authorised, which is the gap the `format`
+mechanism exists to close.
+
+**A project form refuses to bind nothing.** `projectId` is optional on the label and
+`JSON.stringify` drops an undefined key, so sealing the project form without one would produce bytes
+byte-identical to the server form's: a share that claims to bind a project, binds nothing, and says
+so nowhere. It throws instead.
+
+### An unknown format is REFUSED, never opened as legacy
+
+This is the one thing this story could not get wrong. `shareFormOf` used to answer `legacy` for any
+number it did not recognise — so a newer form would be opened with NO additional authenticated data,
+fail its GCM tag, and be reported to the recipient as a **wrong PIN**: a lie about a password, for a
+share that is perfectly intact. That is exactly what the server transport did for six days between
+0.82.1 and 0.87.
+
+The absence of a `format` is what legacy means. A number above `HIGHEST_KNOWN_SHARE_FORMAT` means the
+sender is newer, and it is refused with a sentence that names the update and says the PIN is not the
+problem. A build already released cannot run that refusal — nothing client-side protects it — which
+is what the contract floor is for, below.
+
+### The contract floor moved to 4
+
+`CLIENT_CONTRACT_VERSION` and the server's `Current` are 4, and `SHARE_PROJECT_CONTRACT` is the corp
+floor. A corporate server refuses a client below it with `426` and a sentence, because that client
+would report a wrong PIN for a share sealed to a project.
+
+**It is not lowerable from configuration** — the effective minimum is
+`Math.Max(configured, ShareProjectContract)` — so rolling it back means deploying the previous server
+build. That is a release decision rather than a switch, and it is why `POST_DEPLOY.md` item 2 carries
+the expected number and moves with the release.
+
+### The client rule, and what it is not
+
+`shareRule.ts` is a pure function over facts the window already holds: the policy document, the
+project folder above the entity, and the recipient's row. **It is not a boundary** — the server's
+`ShareRule` is, and it decides again on every request. This exists so a developer is not offered a
+recipient the server will refuse, and so a share that cannot succeed fails before a PIN is typed.
+
+It refuses only on facts it positively holds:
+
+- **the entity's place** is checked ONCE before the picker opens. Left to the per-recipient check it
+  would empty the recipient list instead, and somebody staring at no recipients concludes discovery
+  is broken rather than reading the sentence that says what to do;
+- **a recipient row with no project list is not a refusal** — an older server, or a client that
+  claimed no contract. Hiding a colleague who is in fact valid is a worse failure than showing one
+  the server refuses with its own sentence. An EMPTY list is a fact and does refuse;
+- **archived is not checked here.** The client cannot know: the policy document carries assignments,
+  with no lifecycle on them, and knowing more would mean a second fetch on the share path. The server
+  refuses a closed engagement, which is the half that has the fact.
+
+`shareDelivery.ts` holds the corporate half of the send path — where an entity sits, whether that
+permits the share, which binding form follows, and one recipient's delivery — because `shareInbox.ts`
+was already at the 800-line ceiling and this is a whole concern with its own tests.
+
 ## Security hardening (2026-08-25 review)
 
 The coverage pass that followed it ([SECURITY_REVIEW_2026-08-26.md](SECURITY_REVIEW_2026-08-26.md))

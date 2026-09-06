@@ -81,6 +81,36 @@ export const SHARE_FORMAT_BOUND = 2;
 export const SHARE_FORMAT_SERVER = 3;
 
 /**
+ * The form a server share takes when the entity came out of a corporate PROJECT (epic 3).
+ *
+ * <p>It binds what the server form binds plus the `projectId`, and it exists because that field is
+ * in exactly the same trust class as `entityKind`: client-supplied, carried verbatim by the server,
+ * and security-relevant — the server's share rule decides on it. Left outside the tag it could be
+ * edited after the fact on a share that had already been authorised, which is the gap the whole
+ * `format` mechanism was built to close.</p>
+ *
+ * <p><b>A share with no project stays {@link SHARE_FORMAT_SERVER}.</b> Four is not "the new server
+ * form"; it is the form for a share that HAS a project to bind. A member sending an entry that lives
+ * outside every project folder is sending what they sent yesterday, and renumbering it would make
+ * every such share unopenable by every released build for nothing.</p>
+ *
+ * <p><b>Honoured only for an item that came from a vault server</b>, by the same `serverStamped`
+ * resolution that guards 3 — off one it is the shape of security-review finding 7.</p>
+ */
+export const SHARE_FORMAT_PROJECT = 4;
+
+/**
+ * The highest form this build can open.
+ *
+ * <p>A number above it is REFUSED with a sentence naming the update, and that refusal is the whole
+ * reason this constant exists. Before it, `shareFormOf` answered `legacy` for anything it did not
+ * recognise — so a newer form would have been opened with NO AAD, failed its GCM tag, and been
+ * reported to the recipient as a wrong PIN. That is precisely how the server transport lost six
+ * days between 0.82.1 and 0.87, and it is the one failure this mechanism must never repeat.</p>
+ */
+export const HIGHEST_KNOWN_SHARE_FORMAT = SHARE_FORMAT_PROJECT;
+
+/**
  * Shares sealed before the bound format carry no AAD and open as they always did, marked as
  * such — until this version, from which they are refused with a request to update the sender
  * (the owner, 2026-08-28: "after N versions, stop opening them").
@@ -91,7 +121,7 @@ export const LEGACY_SHARES_UNTIL = '0.85.0';
  * Which fields a share's AAD covers. A property of the TRANSPORT the share is going through,
  * never of the payload — see `SHARE_FORMAT_SERVER` for why the two cannot share one answer.
  */
-export type ShareForm = 'bound' | 'server' | 'legacy';
+export type ShareForm = 'bound' | 'server' | 'project' | 'legacy';
 
 /** The plaintext a recipient is shown before anything is decrypted. */
 export interface ShareLabel {
@@ -99,6 +129,8 @@ export interface ShareLabel {
   entityName: string;
   entityKind: EntityKind;
   createdAt: number;
+  /** The corporate project the entity came out of, when it came out of one. Bound by format 4. */
+  projectId?: string;
 }
 
 /**
@@ -109,16 +141,41 @@ export function shareLabelAad(label: ShareLabel, form: ShareForm = 'bound'): Buf
   if (form === 'legacy') {
     return undefined;
   }
-  const bound =
-    form === 'server'
-      ? { entityName: label.entityName, entityKind: label.entityKind }
-      : {
-          fromEmail: label.fromEmail,
-          entityName: label.entityName,
-          entityKind: label.entityKind,
-          createdAt: label.createdAt,
-        };
-  return Buffer.from(JSON.stringify(bound), 'utf8');
+  return Buffer.from(JSON.stringify(boundFields(label, form)), 'utf8');
+}
+
+/**
+ * The object each form binds, in one place so both ends build the same bytes.
+ *
+ * <p><b>The project form REFUSES to bind nothing.</b> `projectId` is optional on the label, and
+ * `JSON.stringify` drops an undefined key — so a project form sealed without one would produce bytes
+ * byte-identical to the server form's: a share that claims to bind a project, binds nothing, and says
+ * so nowhere. It throws instead.</p>
+ */
+function boundFields(label: ShareLabel, form: ShareForm): Record<string, unknown> {
+  if (form === 'server') {
+    return { entityName: label.entityName, entityKind: label.entityKind };
+  }
+  if (form === 'project') {
+    return { ...projectBinding(label) };
+  }
+  return {
+    fromEmail: label.fromEmail,
+    entityName: label.entityName,
+    entityKind: label.entityKind,
+    createdAt: label.createdAt,
+  };
+}
+
+function projectBinding(label: ShareLabel): Record<string, unknown> {
+  const projectId = label.projectId ?? '';
+  if (projectId.length === 0) {
+    throw new BackupError(
+      'corrupted',
+      'A project-bound share must name the project it came from; sealing one without it would bind nothing.',
+    );
+  }
+  return { entityName: label.entityName, entityKind: label.entityKind, projectId };
 }
 
 /** Whether this item's label is bound to its ciphertext — false for a share from an older build. */
@@ -138,12 +195,26 @@ export function shareLabelTrusted(item: Pick<ShareItem, 'format'>, serverStamped
   return serverStamped || shareLabelBound(item);
 }
 
-/** The form an item on the wire was sealed in. */
+/**
+ * The form an item on the wire was sealed in.
+ *
+ * <p>An unrecognised number is NOT legacy — see {@link shareFormOf} 's caller, which refuses it. The
+ * absence of a `format` is what legacy means; a number this build has never heard of means the
+ * sender is newer, and opening it with no AAD would report a wrong PIN.</p>
+ */
 export function shareFormOf(item: Pick<ShareItem, 'format'>): ShareForm {
   if (item.format === SHARE_FORMAT_BOUND) {
     return 'bound';
   }
-  return item.format === SHARE_FORMAT_SERVER ? 'server' : 'legacy';
+  if (item.format === SHARE_FORMAT_SERVER) {
+    return 'server';
+  }
+  return item.format === SHARE_FORMAT_PROJECT ? 'project' : 'legacy';
+}
+
+/** Whether this item claims a form from a build newer than this one. */
+export function shareFormTooNew(item: Pick<ShareItem, 'format'>): boolean {
+  return item.format !== undefined && item.format > HIGHEST_KNOWN_SHARE_FORMAT;
 }
 
 /** Whether a build of `version` still opens legacy (unbound) shares. */
@@ -170,6 +241,14 @@ export interface SealOptions {
   readonly form?: ShareForm;
   readonly signing?: SigningKeypair;
   readonly toEmail?: string;
+  /**
+   * The corporate project this entity came out of, when it came out of one.
+   *
+   * <p>Travels in the label, is BOUND by the project form, and is sent beside the ciphertext so the
+   * server's share rule can decide on it. A share with none is sealed in the server form, which is
+   * what every share outside a project folder has always been.</p>
+   */
+  readonly projectId?: string;
 }
 
 export function sealShare(
@@ -186,6 +265,7 @@ export function sealShare(
     entityName: payload.node.name,
     entityKind: resolveKind(payload.node.details),
     createdAt,
+    projectId: options.projectId,
   };
   const blob = sealBlob(payload, recipientKeyId + pin, shareLabelAad(label, form));
   const item: ShareItem = {
@@ -195,6 +275,10 @@ export function sealShare(
     ...formatFieldOf(form),
     ...blob,
   };
+  // `...label` spreads an undefined `projectId` onto the item, which JSON.stringify then drops —
+  // the same absence-not-null rule `format` follows, and for the same reason: a released build's
+  // own shape check accepts a string or nothing, and a null drops the whole item from the inbox.
+
   return signedIfPossible(item, options);
 }
 
@@ -218,7 +302,10 @@ function formatFieldOf(form: ShareForm): { format?: number } {
   if (form === 'bound') {
     return { format: SHARE_FORMAT_BOUND };
   }
-  return form === 'server' ? { format: SHARE_FORMAT_SERVER } : {};
+  if (form === 'server') {
+    return { format: SHARE_FORMAT_SERVER };
+  }
+  return form === 'project' ? { format: SHARE_FORMAT_PROJECT } : {};
 }
 
 /** Decrypt a share item. Throws BackupError; validates the payload shape. */
@@ -246,15 +333,39 @@ export function openShare(
   return payload;
 }
 
-/** The two refusals that happen before any key is derived. */
+/** The three refusals that happen before any key is derived. */
 function refuseUnopenable(item: ShareItem, currentVersion: string, serverStamped: boolean): void {
-  if (item.format === SHARE_FORMAT_SERVER && !serverStamped) {
+  refuseTooNew(item);
+  if (serverForm(item) && !serverStamped) {
     throw new BackupError(
       'unsupported-version',
       'This share is in the vault-server form but did not come from a vault server. Only a server can stamp the sender it leaves unbound, so it is refused.',
     );
   }
   refuseStaleLegacy(item, currentVersion, serverStamped);
+}
+
+/** Both server-only forms: the sender they leave unbound is stamped by the server, or by nobody. */
+function serverForm(item: ShareItem): boolean {
+  return item.format === SHARE_FORMAT_SERVER || item.format === SHARE_FORMAT_PROJECT;
+}
+
+/**
+ * A form from a newer build is refused with the one useful sentence.
+ *
+ * <p>Never opened as legacy. Opened without AAD it would fail its GCM tag and be reported to the
+ * recipient as a WRONG PIN — a lie about a password, for a share that is perfectly intact. That is
+ * the failure the server transport shipped for six days, and this is the branch that stops the next
+ * format from repeating it.</p>
+ */
+function refuseTooNew(item: ShareItem): void {
+  if (shareFormTooNew(item)) {
+    throw new BackupError(
+      'unsupported-version',
+      'This share was sealed by a newer version of CredsForDevs than this one can open — update the '
+        + 'extension and try again. (Your PIN is not the problem.)',
+    );
+  }
 }
 
 /** A legacy share past `LEGACY_SHARES_UNTIL` is refused with the one useful sentence. */

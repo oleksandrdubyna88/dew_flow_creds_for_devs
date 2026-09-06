@@ -203,3 +203,39 @@ function folderName(assignment: ProjectAssignmentFact): string {
   const trimmed = assignment.name.trim();
   return trimmed.length > 0 ? trimmed : 'Project ' + assignment.projectId.slice(0, 8);
 }
+
+/**
+ * The corporate project an entity belongs to: the project folder ABOVE it, however deep.
+ *
+ * <p>Walking up rather than reading a field on the entity, because the rule is evaluated on the
+ * FOLDER — an entity's project is where it sits, which is also what makes the move gate the thing
+ * that keeps the answer honest. A cycle in the tree cannot loop this: the walk stops after the depth
+ * any real vault has, and a tree that deep has a different problem.</p>
+ */
+export function projectOfNode(
+  node: TreeNode,
+  getNode: (id: string) => TreeNode | undefined,
+): string | undefined {
+  let current: TreeNode | undefined = node;
+  for (let depth = 0; depth < MAX_TREE_DEPTH; depth += 1) {
+    if (current === undefined) {
+      return undefined;
+    }
+    if (isProjectFolder(current)) {
+      return current.projectId;
+    }
+    current = parentOf(current, getNode);
+  }
+  return undefined;
+}
+
+function parentOf(
+  node: TreeNode,
+  getNode: (id: string) => TreeNode | undefined,
+): TreeNode | undefined {
+  const parentId = node.parentId;
+  return parentId === undefined || parentId === null ? undefined : getNode(parentId);
+}
+
+/** Deeper than any vault a person builds; the guard is against a cycle, not against depth. */
+const MAX_TREE_DEPTH = 64;

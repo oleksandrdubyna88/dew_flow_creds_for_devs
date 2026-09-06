@@ -171,15 +171,17 @@ public sealed class ContractVersionTests
     }
 
     [Fact]
-    public async Task ACorpServerServesAClientThatSpeaksThreeOrSaysNothing()
+    public async Task ACorpServerServesACurrentClientOrOneThatSaysNothing()
     {
-        // The floor refuses what cannot read the policy. A current client can; a client that predates
-        // the whole mechanism sends nothing and is served as legacy here too — refusing it would turn
-        // the roster into an outage for every extension released before the header existed.
+        // The floor refuses what cannot read the policy — and, from epic 3, what cannot OPEN what it
+        // would be sent: a client below the project contract reports a wrong PIN for a share sealed to
+        // a project. A client that predates the whole mechanism sends nothing and is served as legacy
+        // here too — refusing it would turn the roster into an outage for every extension released
+        // before the header existed.
         using var server = Corp.Server();
         var ct = TestContext.Current.CancellationToken;
 
-        using var current = Claiming(server.ClientFor(Alice), "3");
+        using var current = Claiming(server.ClientFor(Alice), ContractVersion.Current.ToString());
         (await current.GetAsync("/api/whoami", ct)).StatusCode.Should().Be(HttpStatusCode.OK);
 
         using var silent = server.ClientFor(Alice);
@@ -187,12 +189,27 @@ public sealed class ContractVersionTests
     }
 
     [Fact]
+    public async Task ACorpServerRefusesTheContractThatCannotOpenAProjectShare()
+    {
+        // Epic 3 raised the floor, and this is what it buys: the build that would have reported a
+        // wrong PIN for an intact share is told to update instead. The refusal says why.
+        using var server = Corp.Server();
+        var ct = TestContext.Current.CancellationToken;
+        using var previous = Claiming(server.ClientFor(Alice), ContractVersion.OrgPolicyContract.ToString());
+
+        var response = await previous.GetAsync("/api/whoami", ct);
+
+        response.StatusCode.Should().Be(HttpStatusCode.UpgradeRequired);
+        (await response.Content.ReadAsStringAsync(ct)).Should().Contain("wrong PIN");
+    }
+
+    [Fact]
     public void TheFloorNeverLowersAHigherConfiguredMinimum()
     {
         // Math.Max, and a test because the natural slip is an assignment: an operator who set 5
-        // must not be handed 3 back by the roster.
+        // must not be handed the floor back by the roster.
         ContractVersion.MinimumFor(configured: 5, corpMode: true).Should().Be(5);
-        ContractVersion.MinimumFor(configured: 1, corpMode: true).Should().Be(ContractVersion.OrgPolicyContract);
+        ContractVersion.MinimumFor(configured: 1, corpMode: true).Should().Be(ContractVersion.ShareProjectContract);
         ContractVersion.MinimumFor(configured: 1, corpMode: false).Should().Be(1);
     }
 
@@ -201,7 +218,7 @@ public sealed class ContractVersionTests
     {
         // The sentence exists to name the floor; a number typed into it advertises a stale version the
         // day the constant moves. Proved with teeth by moving the constant and watching this fail.
-        ContractVersion.CorpFloorReason.Should().Contain($"contract {ContractVersion.OrgPolicyContract}");
+        ContractVersion.CorpFloorReason.Should().Contain($"contract {ContractVersion.ShareProjectContract}");
     }
 
     [Fact]

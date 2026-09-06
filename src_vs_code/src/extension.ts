@@ -985,7 +985,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     sharing,
     state: context.globalState,
     extensionVersion: String((context.extension.packageJSON as { version?: string }).version ?? '0.0.0'),
-    onMutated: mutated,
+    onMutated: mutated, policyOf: corpPolicyOf,
     // Fire-and-forget: the tint and reveal must never fail an accept.
     onArrived: (accountId, entityId) => void announceArrival(accountId, entityId),
   });

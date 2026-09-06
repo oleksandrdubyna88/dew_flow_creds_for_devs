@@ -199,6 +199,7 @@ export function isShareItem(value: unknown): value is ShareItem {
     // that writes nulls would otherwise make this guard DROP the item — and a dropped share
     // leaves an inbox that reads as empty instead of one that explains itself.
     (v.format === undefined || v.format === null || typeof v.format === 'number') &&
+    (v.projectId === undefined || v.projectId === null || typeof v.projectId === 'string') &&
     typeof v.entityName === 'string' &&
     typeof v.entityKind === 'string' &&
     (ENTITY_KINDS as readonly string[]).includes(v.entityKind) &&
