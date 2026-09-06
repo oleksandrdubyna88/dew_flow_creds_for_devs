@@ -30,7 +30,7 @@
 >
 > First of five epics under [PLAN_corp_control_plane.md](../todo/PLAN_corp_control_plane.md), which
 > holds the owner decisions, the invariants and the shared shapes this plan implemented against. The
-> next epics build on it: [PLAN_corp_blocking_login_key.md](../todo/PLAN_corp_blocking_login_key.md)
+> next epics build on it: [PLAN_corp_blocking_login_key.md](PLAN_corp_blocking_login_key.md)
 > takes `active` and `RequireAdmin` — and owes its own event row at its own call site, a seam a code
 > round found here — [PLAN_corp_projects_share_rule.md](../todo/PLAN_corp_projects_share_rule.md)
 > takes the roles, and [PLAN_corp_event_log.md](../todo/PLAN_corp_event_log.md) takes the log whose

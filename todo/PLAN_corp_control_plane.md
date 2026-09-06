@@ -8,7 +8,7 @@
 > the order. Each epic carries its own code references, tests and Definition of Done.
 >
 > Epics, in build order: [PLAN_corp_registry_roles.md](../research/PLAN_corp_registry_roles.md) →
-> [PLAN_corp_blocking_login_key.md](PLAN_corp_blocking_login_key.md) →
+> [PLAN_corp_blocking_login_key.md](../research/PLAN_corp_blocking_login_key.md) →
 > [PLAN_corp_projects_share_rule.md](PLAN_corp_projects_share_rule.md) →
 > [PLAN_corp_event_log.md](PLAN_corp_event_log.md) →
 > [PLAN_corp_server_backup.md](PLAN_corp_server_backup.md).

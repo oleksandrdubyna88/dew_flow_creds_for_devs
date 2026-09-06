@@ -1,13 +1,33 @@
 # PLAN — epic 2: blocking, and the login key that makes a copied dev vault dead
 
-> Status: **plan only, nothing implemented yet, 2026-09-04.** Scope: an admin can deactivate a
-> colleague and every door shuts the same minute — the server refuses them, their pending shares are
-> withdrawn in both directions, and their vault file stops opening even for someone holding the PIN.
-> That last part is the login key: a server-held factor folded into a dev's wraps. Second of five
-> epics under [PLAN_corp_control_plane.md](PLAN_corp_control_plane.md), which holds the owner
-> decisions, the invariants and the shared shapes.
+> Status: **IMPLEMENTED, 2026-09-06.** All four stories shipped and went through the review gate: the
+> blocking gate inside `RequireCaller` with both directions of pending shares withdrawn; the server's
+> custody of the login key S; the cryptographic binding that makes a copied developer vault dead
+> without a live login, with the founding sentence reworded in all three places; and the honest
+> client's offline lease and export bans.
+> **Two things are still owed and are tails, not gaps:** the three-machine break-glass rehearsal (the
+> owner chose to ship without it — see decision 2 below, and
+> [PLAN_org_recovery_tail.md](../todo/PLAN_org_recovery_tail.md) item 1), and the by-hand verification
+> that a copied dev vault refuses a correct PIN on another machine, which no unit test can stand in for.
 >
-> Depends on [PLAN_corp_registry_roles.md](../research/PLAN_corp_registry_roles.md) for the registry, the roles
+> **Deviations, and the largest is a promise this plan made and did not keep.** *Rotation on unblock*
+> was dropped by the owner on 2026-09-06 — it orphans the vault it protects, since every wrap is sealed
+> to S — so "unblock issues a new S and the old one opens nothing" in the DoD below is **refuted, not
+> outstanding**: blocking works by withholding S, and a copy of S taken while somebody was a developer
+> stays valid until a two-key rotation exists. Said plainly rather than implied.
+>
+> The review rounds changed four more things. Binding the PIN wrap needs the PIN, which a background
+> sync does not hold, so binding waits for a write that has it rather than attempting one that cannot
+> succeed. A printed recovery code and an unbound security key are doors that bypass S, so a bind drops
+> both — never the last way in — and says so. The login key is revalidated every five minutes, because a
+> cached one made blocking ineffective in a window somebody already had open. And `refuseClone` was
+> written, found to have no caller, and deleted: this product has no cross-account clone, and a
+> function that claims to enforce a rule and never runs is worse than none.
+>
+> Second of five epics under [PLAN_corp_control_plane.md](../todo/PLAN_corp_control_plane.md), which
+> holds the owner decisions, the invariants and the shared shapes.
+>
+> Depends on [PLAN_corp_registry_roles.md](PLAN_corp_registry_roles.md) for the registry, the roles
 > and `RequireAdmin`. **This epic reworks the sentence `architecture.md:51` opens with** — see
 > *The rule that changes*.
 >
@@ -36,7 +56,7 @@ developer stays valid. Said plainly rather than implied.
 **2. The three-machine break-glass rehearsal stays an open tail, and story 3 ships without it — with
 the risk named here rather than in a summary nobody re-reads.** After story 3, break-glass is the only
 road into a blocked developer's vault, and that road has never been driven end to end
-([PLAN_org_recovery_tail.md](PLAN_org_recovery_tail.md) item 1, open since 2026-08-27). The owner chose
+([PLAN_org_recovery_tail.md](../todo/PLAN_org_recovery_tail.md) item 1, open since 2026-08-27). The owner chose
 to proceed. What that buys and what it costs: the feature ships now, and the first real recovery is
 also the first rehearsal. The mitigation available without three people is that every part of the road
 already has unit tests, and that a bound vault's owner keeps their own PIN and security key — the
@@ -450,7 +470,7 @@ guarantees, and a test that has never been red is decoration.
 
 ## Definition of Done
 
-- [ ] **The corporate-recovery rehearsal has run** — [PLAN_org_recovery_tail.md](PLAN_org_recovery_tail.md)
+- [ ] **The corporate-recovery rehearsal has run** — [PLAN_org_recovery_tail.md](../todo/PLAN_org_recovery_tail.md)
       item 1, three officers on three machines — and its findings are recorded, **before the first
       `GET /api/org/login-key` ships**. After this epic, break-glass is the only road into a blocked
       dev's vault, and a door nobody has ever opened must not become the only one. The umbrella
