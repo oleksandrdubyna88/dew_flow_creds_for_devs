@@ -102,6 +102,24 @@ jobs:
       - name: Integration test (creds CLI against the broker)
         run: npm run itest:cli
 
+      # The MCP surface end to end: `creds-mcp` over stdio, every tool, and both switch ladders
+      # including the `own` delete scope. It was run by whoever remembered it until 2026-09-06,
+      # which is the state `scenario-tests.md` was written about — and the same day, the WSL
+      # relay harness turned out to have been unable to START for long enough that nobody could
+      # say when. Nothing platform-specific here beyond the binary's name, so it runs on the
+      # Ubuntu runner beside the CLI. Catalogued in research/module_tests.md.
+      - name: Build the MCP server
+        run: dotnet build ../src_mcp/src/CredsMcp.csproj
+
+      - name: Integration test (creds-mcp over stdio)
+        run: npm run itest:mcp
+
+      # A masked run through a real pty: the value reaches the child's environment and every
+      # appearance of it in the child's OUTPUT becomes a placeholder. Both platform branches are
+      # written, so the Linux one is what CI exercises.
+      - name: Integration test (masked run)
+        run: npm run itest:masked-run
+
       # Packaging proves the manifest is publishable: a missing icon, licence or
       # repository field fails here rather than at `vsce publish` time.
       - name: Package

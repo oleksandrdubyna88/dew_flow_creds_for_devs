@@ -1,9 +1,33 @@
 # PLAN — the scenario harnesses this repository already has, named and catalogued
 
-> Status: **plan only, nothing implemented yet, 2026-09-06.** Scope: `research/module_tests.md`, which
-> does not exist, plus whatever the writing of it exposes as an uncovered flow.
+> Status: **IMPLEMENTED 2026-09-06.** [module_tests.md](module_tests.md) exists and names all nine
+> harnesses, every one of them was RUN rather than read, two joined CI, and the four that stayed out
+> carry a reason each.
 >
-> Related docs: `.claude/rules/shared/common/scenario-tests.md` (the rule this answers),
+> **Three deviations, and the first is why the rule exists.**
+>
+> - **The plan said "read each script's header and its assertions, not its name." Running them was
+>   better, and it found a harness that could not START.** `wsl-agent-relay-itest.cjs` crashed with
+>   `TypeError: distros.find is not a function` before its first manager check — two API drifts, from
+>   `start(command, distro)` becoming `start(command, distros[])` and `socketPath` becoming
+>   `socketPathFor(distro)`. Nothing could have caught either: these harnesses are untyped `.cjs`
+>   requiring compiled `out/*.js`, so no compiler sees them, and this one is in no CI. It had been
+>   proving nothing, silently, for long enough that the git history is the only way to date it. That
+>   is the rule's own sentence — *owning a harness is not enough* — arriving as a fact.
+> - **Two harnesses joined CI rather than collecting a reason.** `creds-mcp-itest.cjs` and
+>   `masked-run-itest.cjs` had no reason to be out, only an absence: the extension job already sets
+>   up .NET for the CLI harness, and neither needs anything platform-specific. Of the four that
+>   remain out, three are Windows-only by construction (named pipes, WSL) against an `ubuntu-latest`
+>   runner, and the fourth needs a running server — which CI already states in the workflow.
+> - **The epic-1 corporate surface was not the first uncovered flow, and something larger was.** The
+>   plan predicted it. What the catalogue actually surfaced is that **nothing drives the editor at
+>   all** — every harness stubs `vscode` or talks to the broker underneath it — so a command wired to
+>   no menu, a context value that stopped matching, or a webview that throws on open is caught by
+>   nothing. That, and the fact that every harness here runs on Windows while the Linux keychain
+>   fallback the README warns about has no scenario coverage whatever.
+>
+> Related docs: [module_tests.md](module_tests.md),
+> `.claude/rules/shared/common/scenario-tests.md` (the rule this answers),
 > [testing.md](../.claude/rules/shared/common/testing.md), [http/README.md](../http/README.md).
 
 ## The symptom
