@@ -32,7 +32,14 @@ const SECTION_LABELS: Record<HelpLanguage, Readonly<Record<'whatItIs' | 'why' | 
   es: { whatItIs: 'Qué es', why: 'Por qué', setup: 'Cómo configurarlo', usage: 'Cómo usarlo', whatCanGoWrong: 'Qué puede salir mal' },
 };
 
-const UI: Record<HelpLanguage, { search: string; back: string; home: string; fallback: string; noHits: string }> = {
+/**
+ * The page's own vocabulary, per language.
+ *
+ * <p>Exported so a test can READ the notice an untranslated article shows rather than retype it —
+ * a retyped string is a second copy that goes stale silently, and the one it would go stale about
+ * is the sentence telling a reader why the text in front of them is in the wrong language.</p>
+ */
+export const HELP_UI: Record<HelpLanguage, { search: string; back: string; home: string; fallback: string; noHits: string }> = {
   en: { search: 'Search the help…', back: '← Back', home: 'Help', fallback: 'Not translated yet — showing English.', noHits: 'Nothing matches.' },
   ru: { search: 'Поиск по справке…', back: '← Назад', home: 'Справка', fallback: 'Ещё не переведено — показан английский.', noHits: 'Ничего не найдено.' },
   uk: { search: 'Пошук у довідці…', back: '← Назад', home: 'Довідка', fallback: 'Ще не перекладено — показано англійську.', noHits: 'Нічого не знайдено.' },
@@ -120,7 +127,7 @@ export function articleHtml(id: string, language: HelpLanguage): string {
   ];
   return `<article data-article="${escapeHtml(id)}">
     <h2>${escapeHtml(body.title)}</h2>
-    ${fallback ? `<p class="fallback">${escapeHtml(UI[language].fallback)}</p>` : ''}
+    ${fallback ? `<p class="fallback">${escapeHtml(HELP_UI[language].fallback)}</p>` : ''}
     ${sections
       .map(([key, text]) => `<h3>${escapeHtml(labels[key])}</h3>${bodyHtml(text)}`)
       .join('\n')}
@@ -184,7 +191,7 @@ function helpStyles(uiScale: number): string {
 }
 
 function helpBody(language: HelpLanguage, index: ReturnType<typeof searchIndex>, uiScale: number): string {
-  const ui = UI[language];
+  const ui = HELP_UI[language];
   return `
   <div class="topBar">
     <div class="crumbs" id="crumbs"><a data-nav="home">${escapeHtml(ui.home)}</a></div>
@@ -213,7 +220,7 @@ function helpBody(language: HelpLanguage, index: ReturnType<typeof searchIndex>,
 // One template literal — the page script — so it is one "function" only in the way TypeScript counts.
 // eslint-disable-next-line max-lines-per-function
 function helpScript(nonce: string, language: HelpLanguage, index: ReturnType<typeof searchIndex>): string {
-  const ui = UI[language];
+  const ui = HELP_UI[language];
   const articles = Object.fromEntries(HELP_ARTICLES.map((a) => [a.id, articleHtml(a.id, language)]));
   return `<script nonce="${nonce}">
   const vscode = acquireVsCodeApi();

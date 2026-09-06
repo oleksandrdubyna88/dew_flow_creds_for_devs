@@ -48,6 +48,14 @@ jobs:
           # still linted and still analysed for defects; only the "what fraction of these lines did
           # a unit test execute" question is meaningless about them, and left unexcluded it fails
           # the gate at 0.0 on any pull request that adds one.
+          #
+          # `help*.ts` is excluded from DUPLICATION only. The help catalog is one article set
+          # written five times over, once per language: the same 35 keys, the same six fields, the
+          # same order, by construction — that is what a translation IS. The copy detector reads a
+          # parallel text as 69% duplicated and is right about the shape and wrong about the
+          # meaning, and the only way to satisfy it would be to stop shipping the languages. Still
+          # analysed for defects; only the "is this block a copy of that one" question is
+          # meaningless about it.
           dotnet-sonarscanner begin \
             /k:"remsoftdev_dew_flow_creds_for_devs" \
             /o:"remsoftdev" \
@@ -57,7 +65,8 @@ jobs:
             /d:sonar.javascript.lcov.reportPaths="coverage/extension.lcov" \
             /d:sonar.typescript.lcov.reportPaths="coverage/extension.lcov" \
             /d:sonar.exclusions="**/bin/**,**/obj/**,**/node_modules/**,deploy/**" \
-            /d:sonar.coverage.exclusions="**/tests/**,**/*.Tests/**,**/scripts/**,**/http/**"
+            /d:sonar.coverage.exclusions="**/tests/**,**/*.Tests/**,**/scripts/**,**/http/**" \
+            /d:sonar.cpd.exclusions="src_vs_code/src/help*.ts"
       - name: Build
         run: |
           dotnet build dew_flow_creds_for_devs.slnx -c Release --no-incremental
