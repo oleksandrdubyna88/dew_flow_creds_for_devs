@@ -287,7 +287,7 @@ public static class OrgEndpoints
             return;
         }
         var request = await ReadSetMemberAsync(ctx);
-        var problem = request is null ? MalformedBody : request.Problem();
+        var problem = request is null ? MalformedMemberBody : request.Problem();
         if (problem.Length > 0)
         {
             await FailJson(ctx, StatusCodes.Status400BadRequest, problem);
@@ -296,7 +296,7 @@ public static class OrgEndpoints
         await ApplyMemberEditAsync(ctx, deps, caller.Value.Email, target, request!, ct);
     }
 
-    private const string MalformedBody = "The body is not the JSON this endpoint reads; send a role, a share default, or both.";
+    private const string MalformedMemberBody = "The body is not the JSON this endpoint reads; send a role, a share default, or both.";
 
     /// <summary>The refusal this target earns before the body is even read, or nothing.</summary>
     /// <remarks>
