@@ -220,7 +220,7 @@ async function applyEdit(
   if (node === undefined) {
     return false;
   }
-  await storage.updateNode(decision.target.accountId, { ...node, ...changesOf(edit) });
+  await storage.updateNodeFields(decision.target.accountId, node.id, changesOf(edit));
   return true;
 }
 

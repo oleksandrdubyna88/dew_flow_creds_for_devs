@@ -73,6 +73,7 @@ function recorder(): { calls: string[]; storage: Record<string, unknown> } {
   const storage: Record<string, unknown> = {
     addNode: (...a: unknown[]) => note('addNode')(...a, 'node'),
     updateNode: (...a: unknown[]) => note('updateNode')(...a, 'node'),
+    updateNodeFields: (...a: unknown[]) => note('updateNode')(...a, 'node'),
     setPassword: note('setPassword'),
     deletePassword: note('deletePassword'),
     setPrivateKey: note('setPrivateKey'),

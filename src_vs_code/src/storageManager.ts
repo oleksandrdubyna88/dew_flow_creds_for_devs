@@ -34,12 +34,7 @@ import {
   removeWithIntent,
   resumePending,
 } from './pendingCleanup';
-import {
-  dropVanishedSecrets,
-  readSecretMaps,
-  secretMapsOf,
-  storeSecretMaps,
-} from './secretMaps';
+import { dropVanishedSecrets, readSecretMaps, secretMapsOf, storeSecretMaps } from './secretMaps';
 import {
   attachmentSecretKey,
   configSecretKey,
@@ -54,13 +49,7 @@ import {
   totpSecretKey,
   vpnConfigSecretKey,
 } from './secretKeys';
-import {
-  BackupBundle,
-  StoredAccount,
-  TreeNode,
-  isStoredAccount,
-  isTreeNode,
-} from './types';
+import { BackupBundle, StoredAccount, TreeNode, isStoredAccount, isTreeNode } from './types';
 import { EntityFields, parseFields, serializeFields } from './entityFields';
 
 const ACCOUNTS_KEY = 'credSshManager.accounts';
@@ -90,9 +79,6 @@ const IMPORTED_IDS_KEY = 'credSshManager.importedIds';
 
 /** Work started and not yet finished — LOCAL, never synced. See `pendingCleanup.ts`. */
 const PENDING_KEY = 'credSshManager.pendingCleanup';
-
-
-
 
 /**
  * One account's validated tree, remembered against the memento value it was read from.
@@ -547,6 +533,9 @@ export class StorageManager implements vscode.Disposable {
     await this.bumpHorizonToSeq(accountId);
   }
 
+  /** REPLACES the node — for a caller that genuinely has the whole new one, which since 2026-09-06
+   *  is `shareInbox.ts` alone: an accepted share is the record now. Everyone else wants
+   *  `updateNodeFields`, because a whole node read earlier erases whatever landed in between. */
   async updateNode(accountId: string, updated: TreeNode): Promise<void> {
     const stamped = this.stampVector(updated);
     await this.saveNodes(
@@ -558,16 +547,23 @@ export class StorageManager implements vscode.Disposable {
 
   /** Move a node under a new parent (null = root). Caller validates cycles. */
   async moveNode(accountId: string, id: string, newParentId: string | null): Promise<void> {
-    await this.relocate(accountId, id, { parentId: newParentId });
+    await this.updateNodeFields(accountId, id, { parentId: newParentId });
   }
 
-  /** One write: the node with `patch` applied and stamped, then the horizon bumped. */
-  private async relocate(accountId: string, id: string, patch: Partial<TreeNode>): Promise<void> {
-    await this.saveNodes(
-      accountId,
-      this.getNodes(accountId).map((n) => (n.id === id ? this.stampVector({ ...n, ...patch }) : n)),
-    );
-    await this.bumpHorizonToSeq(accountId);
+  /** Some fields of a node, composed at WRITE time — so a change that landed in between survives,
+   *  which `updateNode` cannot promise. A PATCH, never a merge: a field the person CLEARED stays
+   *  cleared. Both halves and why: `research/module_extension.md`, *Node writes*. */
+  async updateNodeFields(accountId: string, id: string, patch: Partial<TreeNode>): Promise<void> {
+    // Behind the lease, so the read and the write cannot be split by ANOTHER WINDOW either. Safe to
+    // nest since `leasedQueue.ts` learned it is already held — without that this deadlocks, because
+    // `createEntityWithSecrets` runs in here too.
+    await this.writes.run(async () => {
+      await this.saveNodes(
+        accountId,
+        this.getNodes(accountId).map((n) => (n.id === id ? this.stampVector({ ...n, ...patch }) : n)),
+      );
+      await this.bumpHorizonToSeq(accountId);
+    });
   }
 
   /**
@@ -589,7 +585,7 @@ export class StorageManager implements vscode.Disposable {
       // One write for the move AND where it came from — a crash between two could not leave
       // an entry in the trash that has forgotten its folder.
       const from = this.getNode(accountId, id)?.parentId ?? null;
-      await this.relocate(accountId, id, { trashedFrom: from, parentId: trash.id });
+      await this.updateNodeFields(accountId, id, { trashedFrom: from, parentId: trash.id });
     }
     return trash;
   }
@@ -605,7 +601,7 @@ export class StorageManager implements vscode.Disposable {
       return undefined;
     }
     const target = restoreTarget(node, (nodeId) => this.getNode(accountId, nodeId));
-    await this.relocate(accountId, id, { trashedFrom: undefined, parentId: target });
+    await this.updateNodeFields(accountId, id, { trashedFrom: undefined, parentId: target });
     return target === null ? null : this.getNode(accountId, target);
   }
 

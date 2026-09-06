@@ -3306,6 +3306,48 @@ kind without a shape a compile error. `EntityMetadata` itself stays one interfac
 in every vault, share and backup, and its readers are not rewritten — the deviation from the
 roadmap's original wording, recorded there.
 
+## Node writes: a patch at write time, behind the lease (2026-09-06)
+
+`updateNode(accountId, node)` took a WHOLE node from its caller and mapped it over the stored list.
+Whatever that caller had read earlier is what got written — so a rename that landed in between was
+erased, silently, leaving a vault so self-consistent that no later sweep could find the loss. Sixteen
+call sites passed a node they had read earlier; every one of them was the defect.
+
+**`updateNodeFields(accountId, id, patch)` is now the way a node changes.** It composes the patch
+onto the node **as it is at write time**, so anything that changed underneath survives. The method is
+not new — it was `relocate`, private, doing exactly this for a move. Making it public and pointing
+the callers at it was the whole fix, which is what the reuse-first rule is for.
+
+It is a **patch, never a merge**, and the difference is the trap in the obvious alternative: a merge
+that resurrects a field the person deliberately CLEARED is a worse defect than the one being fixed,
+and silent in the same way. Naming `details` in the patch replaces `details`; naming nothing leaves
+it alone. `nodeWriteRace.test.ts` holds both halves.
+
+`updateNode` survives with exactly one caller — `shareInbox.ts`, where an accepted share genuinely IS
+the record now — and its doc comment says so, because a method that is easy to misuse and documented
+as dangerous is still going to be misused.
+
+### The lease had to learn it was already held
+
+Putting the write behind `this.writes` was the second half, and it deadlocks naively:
+`LeasedQueue.run` goes through a `SerialQueue`, whose implementation is `tail.then(work)`, so a
+nested `run` queues behind the task that is calling it while that task waits for the nested one.
+`createEntityWithSecrets` already runs inside the lease, so the shape was reachable rather than
+theoretical.
+
+**A boolean was tried first and is wrong.** While the holder is suspended at an `await`, an
+UNRELATED caller can enter `run`, and a flag cannot tell that caller apart from a nested one. The
+control test in `crossWindowWrites.test.ts` — *"the same two operations in ONE window cannot
+interleave"* — caught it on the first run by letting an import execute inside a removal, which is the
+exact interleaving the class exists to prevent. Worth recording because the boolean looks obviously
+correct in a single-threaded language, and single-threaded is not the same as uninterruptible.
+
+What shipped is `AsyncLocalStorage`, which answers the question actually being asked: *is this call in
+the async context of the work that holds the lease?* Inside, the work runs inline — the caller is
+already the exclusive holder of both the queue and the cross-window lock, so waiting would be waiting
+for itself. `leaseReentrancy.test.ts` covers the three cases: nested runs inline, independent calls
+still serialize, and a throw does not leave the context believing it is held.
+
 ## A share's label is bound to its ciphertext (0.82.1)
 
 `sealShare` passes the four label fields — `fromEmail`, `entityName`, `entityKind`, `createdAt` —

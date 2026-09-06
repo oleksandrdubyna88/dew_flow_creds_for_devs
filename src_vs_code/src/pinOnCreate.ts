@@ -185,10 +185,9 @@ export async function applyCreatePin(
   await protectEntity(storage, accountId, entityId, settled.pin);
   // The mark last, for the reason `pinCommands` gives: a mark written first and then interrupted
   // would hide the entry from every agent surface while its values were still readable.
-  await storage.updateNode(accountId, {
-    ...node,
+  await storage.updateNodeFields(accountId, node.id, {
     details: { ...node.details, pinProtected: true },
-  } as TreeNode);
+  } as Partial<TreeNode>);
 }
 
 const PROMPT =

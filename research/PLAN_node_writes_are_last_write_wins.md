@@ -1,7 +1,30 @@
 # PLAN — a node write must not lose a concurrent one
 
-> Status: **plan only, nothing implemented yet.** Scope: `src_vs_code/src/storageManager.ts` and the
-> fourteen call sites of `updateNode` / `moveNode` outside it.
+> Status: **IMPLEMENTED 2026-09-06.** All five build-order steps landed:
+> `relocate` became the public `updateNodeFields`, sixteen call sites moved onto it, the lease learned
+> it was already held, the writes went behind it, and `updateNode` kept exactly one caller with a doc
+> comment naming it.
+>
+> **Three deviations, and the second is the one to read.**
+>
+> - **Step 2 needed no new method.** The plan asked for `relocate` to gain a `details` patch; it did
+>   not need one — `Partial<TreeNode>` already covers `details`, and `relocate` was already composing
+>   at write time. Making it public and renaming it was the entire step. That is the reuse-first rule
+>   paying out: the capability existed and was private.
+> - **The re-entrancy guard was built twice, because a boolean is wrong here.** Step 1 established
+>   the deadlock as predicted. The first fix was a flag, which looks obviously correct in a
+>   single-threaded language — and the control test in `crossWindowWrites.test.ts` refuted it on the
+>   first run by letting an import execute inside a removal. While the holder is suspended at an
+>   `await`, an unrelated caller can enter `run`, and a flag cannot tell it from a nested one.
+>   `AsyncLocalStorage` asks the question that was actually meant: is this call in the async context
+>   of the work that holds the lease? **Single-threaded is not the same as uninterruptible**, and the
+>   distinction cost a design.
+> - **`storageManager.ts` could not grow by a line**, so the room came from two `import` blocks whose
+>   multi-line form outlived the lists that needed it. The file ends 4 lines SMALLER than it started
+>   and the ratchet baseline is tightened to match.
+>
+> Scope as built: `src_vs_code/src/storageManager.ts`, `src/leasedQueue.ts`, sixteen call sites, and
+> three test fakes that had to follow the seam.
 >
 > Related docs: [module_extension.md](../research/module_extension.md),
 > [PLAN_cross_window_write_coordination.md](../research/PLAN_cross_window_write_coordination.md),

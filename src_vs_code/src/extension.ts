@@ -895,7 +895,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     [reordered[index], reordered[swapWith]] = [reordered[swapWith], reordered[index]];
     for (const [i, folder] of reordered.entries()) {
       if (folder.sortOrder !== i) {
-        await storage.updateNode(accountId, { ...folder, sortOrder: i });
+        await storage.updateNodeFields(accountId, folder.id, { sortOrder: i });
       }
     }
     mutated();

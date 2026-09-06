@@ -115,8 +115,7 @@ export async function editNode(
   // gate shaped this, including finding that the first version of the rule destroyed data on delete
   // and that a single `applySecrets` call cannot be right for a save that both adds and clears.
   await applyAdditions(storage, accountId, node.id, result);
-  await storage.updateNode(accountId, {
-    ...node,
+  await storage.updateNodeFields(accountId, node.id, {
     name: result.details.name,
     details: carryThroughDetails(
       result,
@@ -168,8 +167,7 @@ export async function editFolder(
   if (result === undefined) {
     return;
   }
-  await storage.updateNode(accountId, {
-    ...node,
+  await storage.updateNodeFields(accountId, node.id, {
     name: result.name.length > 0 ? result.name : node.name,
     mcp: result.mcp,
   });
@@ -218,8 +216,7 @@ export async function applyDependencyColors(
   for (const pick of picks) {
     const target = storage.getNode(accountId, pick.targetId);
     if (target?.details !== undefined && target.details.depColor !== pick.color) {
-      await storage.updateNode(accountId, {
-        ...target,
+      await storage.updateNodeFields(accountId, target.id, {
         details: { ...target.details, depColor: pick.color },
       });
     }
@@ -243,5 +240,5 @@ export async function updateConfigDetails(
   if (details === undefined) {
     return;
   }
-  await storage.updateNode(element.accountId, { ...element.node, details: { ...details, ...change } });
+  await storage.updateNodeFields(element.accountId, element.node.id, { details: { ...details, ...change } });
 }

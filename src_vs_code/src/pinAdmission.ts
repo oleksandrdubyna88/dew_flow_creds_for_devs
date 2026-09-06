@@ -120,8 +120,7 @@ async function repairFalseMark(
   if (node?.details?.pinProtected !== true) {
     return;
   }
-  await clearMark(storage, accountId, {
-    ...node,
+  await clearMark(storage, accountId, entityId, {
     details: { ...node.details, pinProtected: undefined },
   });
 }
@@ -136,10 +135,11 @@ async function repairFalseMark(
 async function clearMark(
   storage: StorageManager,
   accountId: string,
-  repaired: TreeNode,
+  entityId: string,
+  patch: Partial<TreeNode>,
 ): Promise<void> {
   try {
-    await storage.updateNode(accountId, repaired);
+    await storage.updateNodeFields(accountId, entityId, patch);
   } catch {
     /* said above: the next open tries again */
   }
