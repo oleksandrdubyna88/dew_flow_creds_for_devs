@@ -59,6 +59,51 @@ function requestHeaders(init: RequestInit & { rawBody?: string }, token: string)
   return headers;
 }
 
+/** How much of a refusal body is worth quoting — a proxy can answer a page of HTML. */
+const REFUSAL_QUOTE_LIMIT = 300;
+
+/**
+ * What a refused request should say to the person who made it.
+ *
+ * <p>The server's own sentence when it sent one, and the bare status when it did not. A corporate
+ * server refuses a share for reasons the sender can act on — the recipient's account was
+ * deactivated, or their record cannot be read right now — and `HTTP 403` alone throws away the
+ * only part that tells them what to do next. Truncated, because the answer may come from a proxy
+ * rather than from us.</p>
+ */
+async function refusalDetail(response: Response): Promise<string> {
+  const body = (await response.text().catch(() => '')).trim().slice(0, REFUSAL_QUOTE_LIMIT);
+  return body.length > 0 ? `${body} (HTTP ${response.status})` : `HTTP ${response.status}.`;
+}
+
+/** The header a corporate server sets when the CALLER's own account is the reason for a 403. */
+const REASON_HEADER = 'X-Creds-Reason';
+
+/** Its one value today: an administrator set this account to inactive. */
+const ACCOUNT_DEACTIVATED = 'account-deactivated';
+
+/**
+ * What a 403 means, in the sender's own words rather than ours.
+ *
+ * <p>Three different refusals arrive with this status and they need three different sentences. The
+ * header marks the one that is about the CALLER — an administrator deactivated their account — and it
+ * is a header precisely so a client need not match English. Otherwise the server's body carries the
+ * reason, and it may be about somebody ELSE: a share addressed to a colleague who was blocked is
+ * refused with a sentence about the recipient, so the message must not name the caller as the refused
+ * party. Only when there is no header and no body do we fall back to the old guess, which was being
+ * printed for every one of these cases before — telling a sender their domain was wrong when the truth
+ * was that their colleague had been deactivated.</p>
+ */
+async function refusedMessage(account: StoredAccount, location: string, response: Response): Promise<string> {
+  if (response.headers.get(REASON_HEADER) === ACCOUNT_DEACTIVATED) {
+    return `${account.email} has been deactivated by an administrator on ${location} (403). Ask an administrator to re-activate the account.`;
+  }
+  const said = (await response.text().catch(() => '')).trim().slice(0, REFUSAL_QUOTE_LIMIT);
+  return said.length > 0
+    ? `Vault server refused the request (403): ${said}`
+    : `Vault server refused ${account.email} (403) — outside the allowed domain, or not permitted.`;
+}
+
 export class ServerTransport implements VaultTransport {
   /**
    * The status behind the last empty team, if any.
@@ -184,9 +229,7 @@ export class ServerTransport implements VaultTransport {
       );
     }
     if (response.status === 403) {
-      throw new Error(
-        `Vault server refused ${account.email} (403) — outside the allowed domain, or not permitted.`,
-      );
+      throw new Error(await refusedMessage(account, this.location, response));
     }
     return response;
   }
@@ -325,7 +368,7 @@ export class ServerTransport implements VaultTransport {
       });
       if (!response.ok) {
         throw new Error(
-          `Sharing "${item.entityName}" with ${recipient.account.email} failed: HTTP ${response.status}.`,
+          `Sharing "${item.entityName}" with ${recipient.account.email} failed: ${await refusalDetail(response)}`,
         );
       }
     }

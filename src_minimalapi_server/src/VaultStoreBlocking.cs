@@ -2,10 +2,22 @@ using System.Text.Json;
 
 namespace CredVaultServer;
 
-/// <summary>What one block withdrew: how many pending shares were addressed TO the person, and how many FROM them.</summary>
-public readonly record struct Withdrawal(int ToThem, int FromThem)
+/// <summary>
+/// What one block withdrew: how many pending shares were addressed TO the person, how many FROM them, and
+/// how many of their senders could NOT be told why.
+/// </summary>
+/// <remarks>
+/// <b><see cref="UnexplainedSenders"/> exists because the alternative is a silence nobody can see.</b> The
+/// inbox copy is deleted before the sender's receipt is rewritten — the right order, since the reverse
+/// leaves readable material in the inbox of somebody who may be re-admitted — so a receipt that will not
+/// rewrite (a lock, a permission, a full disk) costs the sender their one explanation, and the hourly
+/// sweep then retires the unmarked receipt as an ordinary accepted share. That is best-effort working as
+/// designed, but it must not be invisible: the count rides back with the others into the Warning line and
+/// the <c>member.blocked</c> row, so an operator can see that a sender was left in the dark.
+/// </remarks>
+public readonly record struct Withdrawal(int ToThem, int FromThem, int UnexplainedSenders)
 {
-    public static readonly Withdrawal None = new(0, 0);
+    public static readonly Withdrawal None = new(0, 0, 0);
 
     public int Total => ToThem + FromThem;
 }
@@ -55,10 +67,13 @@ public sealed partial class VaultStore
     public async Task<Withdrawal> WithdrawAllInvolvingAsync(string email, CancellationToken ct)
     {
         var toThem = 0;
+        var unexplained = 0;
         foreach (var path in SafeFiles(Path.Combine(_sharesDir, KeyFor(email))))
         {
             ct.ThrowIfCancellationRequested();
-            toThem += await WithdrawInboxItemAsync(path, ct);
+            var (withdrawn, untold) = await WithdrawInboxItemAsync(path, ct);
+            toThem += withdrawn;
+            unexplained += untold;
         }
         var fromThem = 0;
         foreach (var path in SafeFiles(SentDirFor(email)))
@@ -66,28 +81,30 @@ public sealed partial class VaultStore
             ct.ThrowIfCancellationRequested();
             fromThem += await WithdrawSentItemAsync(path, ct);
         }
-        return new Withdrawal(toThem, fromThem);
+        return new Withdrawal(toThem, fromThem, unexplained);
     }
 
     /// <summary>
-    /// One item in the blocked person's inbox: read it, delete it, tell its sender. Counts 1 only when the
-    /// inbox file actually went; an I/O refusal on this one item skips it and the loop goes on.
+    /// One item in the blocked person's inbox: read it, delete it, tell its sender. Counts 1 as withdrawn
+    /// only when the inbox file actually went; an I/O refusal on this one item skips it and the loop goes
+    /// on. <c>Untold</c> is 1 when the share went but its sender's receipt could not be rewritten — the
+    /// case that would otherwise be a silence (see <see cref="Withdrawal.UnexplainedSenders"/>).
     /// </summary>
-    private async Task<int> WithdrawInboxItemAsync(string path, CancellationToken ct)
+    private async Task<(int Withdrawn, int Untold)> WithdrawInboxItemAsync(string path, CancellationToken ct)
     {
         try
         {
             var item = await ReadShareOrNullAsync(path, ct);
             if (item is null || Forget(path) == 0)
             {
-                return 0;
+                return (0, 0);
             }
-            await MarkWithdrawnAsync(item.FromEmail, item.Id, RecipientDeactivatedReason, ct);
-            return 1;
+            var told = await MarkWithdrawnAsync(item.FromEmail, item.Id, RecipientDeactivatedReason, ct);
+            return (1, told ? 0 : 1);
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
-            return 0;
+            return (0, 0);
         }
     }
 
@@ -97,8 +114,13 @@ public sealed partial class VaultStore
     /// would be noise in a view whose one action is "dismiss". A receipt that will not rewrite is left as it
     /// was: the share is already out of the inbox, which is the part that matters, and the hourly sweep then
     /// retires the receipt exactly as it would for an accepted share.
+    ///
+    /// <para><b>Returns whether the sender now has their explanation</b>, and a missing receipt counts as
+    /// yes: nothing was owed, because the sender had already dismissed or pruned it. Only the I/O failure
+    /// is a no, and it is the one case where somebody is left in the dark by a block that reported
+    /// success — so the caller counts it and the admin's log line says it happened.</para>
     /// </summary>
-    private async Task MarkWithdrawnAsync(string senderEmail, string id, string reason, CancellationToken ct)
+    private async Task<bool> MarkWithdrawnAsync(string senderEmail, string id, string reason, CancellationToken ct)
     {
         var path = Path.Combine(SentDirFor(senderEmail), id + ".json");
         try
@@ -106,16 +128,19 @@ public sealed partial class VaultStore
             var receipt = await ReadSentOrNullAsync(path, ct);
             if (receipt is null)
             {
-                return;
+                return true;
             }
             await AtomicWriteAsync(
                 path,
                 JsonSerializer.SerializeToUtf8Bytes(receipt with { WithdrawnReason = reason }, AppJsonContext.Default.SentShare),
                 ct);
+            return true;
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
-            // See the summary: the inbox file is gone, and the sweep handles a receipt it could not rewrite.
+            // The inbox file is already gone and the sweep will retire this receipt as an ordinary one, so
+            // the sender loses the explanation. Counted, never swallowed: the block's log line says it.
+            return false;
         }
     }
 

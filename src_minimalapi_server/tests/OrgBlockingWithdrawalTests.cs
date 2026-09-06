@@ -90,6 +90,34 @@ public sealed class OrgBlockingWithdrawalTests
     }
 
     [Fact]
+    public async Task ASenderWhoCouldNotBeToldIsCountedInTheBlockRowRatherThanSilentlyLost()
+    {
+        // The review round's one real reliability finding. The inbox copy is deleted BEFORE the sender's
+        // receipt is rewritten — the right order, since the reverse leaves readable material in the inbox of
+        // somebody who may be re-admitted — so a receipt that will not rewrite costs the sender their one
+        // explanation, and the hourly sweep then retires the unmarked receipt as an ordinary accepted share.
+        // That is best-effort working as designed; being INVISIBLE is not. Here alice's receipt is held open
+        // for the whole block: the share still leaves bob's inbox, the block still answers 204, and the row
+        // says a sender was left in the dark.
+        using var server = Corp.Server();
+        using var cto = server.ClientFor(Corp.Cto);
+        using var alice = server.ClientFor(Alice, "Alice");
+        using var bob = server.ClientFor(Bob);
+        await Corp.SyncAsync(bob);
+        await ShareAsync(alice, Bob);
+        var id = (await SentAsync(alice))[0].GetProperty("id").GetString()!;
+
+        using (Corp.Undeletable(ReceiptPath(server.DataDir, Alice, id)))
+        {
+            (await Corp.SetActiveAsync(cto, Bob, active: false)).StatusCode.Should().Be(HttpStatusCode.NoContent);
+        }
+
+        File.Exists(InboxPath(server, Bob, id)).Should().BeFalse("the share still leaves the inbox — that is the part that matters");
+        var row = Corp.Rows(server, OrgEventKinds.MemberBlocked).Should().ContainSingle().Subject;
+        row.Detail.Should().Contain("1 sender(s) could NOT be told why");
+    }
+
+    [Fact]
     public async Task TheHourlySweepKeepsAWithdrawnReceiptAndStillRetiresAnAcceptedOne()
     {
         // Store-level, the two receipts side by side. Both point at an inbox file that no longer exists;
