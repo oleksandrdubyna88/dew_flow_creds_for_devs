@@ -1,12 +1,36 @@
 # PLAN — the README stops being a monorepo front door and starts being the product's first screen
 
-> Status: **plan only, nothing implemented yet.** Scope: `README.md`, the first screen of
-> `src_vs_code/README.md`, `src_vs_code/package.json` (`description`, `keywords`), and the GitHub
-> repository About + Topics, which live outside the tree and are the owner's to set.
+> Status: **IMPLEMENTED 2026-09-06.** `README.md` rewritten, the listing's two errors corrected, the
+> manifest updated, and `src_vs_code/src/test/readmeClaims.test.ts` written so the claims cannot rot
+> quietly. The About line and the topic list are handed to the owner below; applying them is theirs.
 >
-> Related docs: [PLAN_marketplace_listing.md](../research/PLAN_marketplace_listing.md),
-> [ЗАДАЧА_скриншоты_для_маркетплейса.md](ЗАДАЧА_скриншоты_для_маркетплейса.md),
-> [architecture.md](../research/architecture.md), [module_extension.md](../research/module_extension.md).
+> **Five deviations, and the third is the one worth reading.**
+>
+> - **The About line stays at 217 characters.** A reviewer said GitHub's limit is 160 and it must be
+>   cut. Measured instead of assumed: the limit is 350, `ory/hydra` carries a 298-character
+>   description today, and this repository already carried a 228-character one. What the finding was
+>   right about is that search cards truncate near 150, so the differentiating clause leads.
+> - **The repository already had a description and ten topics.** The plan was written as though both
+>   were empty. The handover is therefore *add these eight*, not *set these*, and it is written that
+>   way below.
+> - **The suite caught its own test.** The first version of the picture-promise detector shipped to
+>   the code round with literal backspace bytes where word boundaries were meant — an escaping
+>   accident in the script that wrote it. It matched nothing, reported no promise, and passed. Three
+>   reviewers found it independently. The detector now has a test of its own, fed the exact sentence
+>   that was live on the listing, and blinding the regex turns that test red. **A test that cannot
+>   fail is worse than no test, because it is counted** — which is this plan's own thesis, arriving
+>   from the direction it was not looking.
+> - **The install.sh line count is absent rather than corrected.** Pinning a script's exact length in
+>   prose makes an unrelated comment a failing build; the README claims it reads in a minute, and the
+>   test asserts that claim instead.
+> - **No badges on the listing, four on the front door, and no installs badge anywhere.** The
+>   Marketplace listing's badge refusal stands on its original reasoning. The front door takes
+>   version, licence and the two CI workflows — but not the install count, which reads as weakness
+>   at 9 and would have to be removed later anyway.
+>
+> Related docs: [PLAN_marketplace_listing.md](PLAN_marketplace_listing.md),
+> [ЗАДАЧА_скриншоты_для_маркетплейса.md](../todo/ЗАДАЧА_скриншоты_для_маркетплейса.md),
+> [architecture.md](architecture.md), [module_extension.md](module_extension.md).
 
 ## The symptom
 
@@ -216,7 +240,7 @@ an assertion into an observation.
 Eight seconds: Claude Code issues `creds_exec` → the VS Code approval prompt showing the real entry
 and the real command → the command's output in the agent transcript → the secret visibly absent.
 
-This is the same ask as [ЗАДАЧА_скриншоты_для_маркетплейса.md](ЗАДАЧА_скриншоты_для_маркетплейса.md),
+This is the same ask as [ЗАДАЧА_скриншоты_для_маркетплейса.md](../todo/ЗАДАЧА_скриншоты_для_маркетплейса.md),
 which already carries the fabricated-data rules and three traps: the Marketplace does not render
 relative image paths, `media/docs/**` must reach `.vscodeignore` before it bloats the `.vsix`, and
 the tables wrap badly at Marketplace width. **This plan ships without images** — the README must read

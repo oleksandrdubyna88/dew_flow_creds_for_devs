@@ -201,7 +201,7 @@ approve the statement with the placeholder still in it, which is what makes it s
 is wired to **database and SSH entries**; other kinds cannot be rotated this way.
 
 Note the two syntaxes are different things and both are real: `{{creds:new}}` means *"a value that
-does not exist yet, mint it"*, while `creds://you@corp.com/prod-db/password` is a reference to the
+does not exist yet, mint it"*, while `creds://you@example.com/prod-db/password` is a reference to the
 value stored **today**, resolved into a child process's environment and masked out of its output.
 
 There is exactly one call where a secret travels *toward* the vault: an agent that provisioned
