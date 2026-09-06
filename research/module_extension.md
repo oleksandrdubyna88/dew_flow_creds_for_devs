@@ -3696,9 +3696,13 @@ a policy nobody can see reads as a broken product. Built exactly like that page 
 a string a newer server may spell any way it likes and a project id is what an admin typed, the
 provenance behind the 2026-08-26 HIGH finding. It says the role (an officer is called an officer),
 what the policy allows, the projects, the lease in words (`0` is "strictly online"), and — in so many
-words — that **this version shows the policy and does not yet apply it**. Without that sentence the
-page would read "you cannot export" beside an Export menu entry that works, which is the broken
-product the page exists to prevent.
+words — what THIS build does about each row, in a third column. That column replaced one sentence
+saying none of it was applied, which had become the opposite of what happens: `exportCommand.ts` and
+`backupScheduler.ts` both call `refuseExit`, and `standingGate` refuses to open an account whose
+lease has run out, while sharing and moving an entry out of a project genuinely are still only
+shown. Per row rather than per page, because the rows no longer agree — and a page that read
+"not enforced yet" over a row that IS enforced is the same broken product the sentence was written
+to prevent, pointing the other way.
 
 **Wired in `activate()`, and the scan says so.** `orgMembersWiring.test.ts` requires a production
 file that *imports* `orgPolicyRefresh` and calls `refreshOrgPolicy` (the first version accepted
