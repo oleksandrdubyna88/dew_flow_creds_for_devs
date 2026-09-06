@@ -1,7 +1,7 @@
 {
   "name": "creds-for-devs",
   "displayName": "CredsForDevs",
-  "description": "Zero-trust credential manager for developers: SSH hosts and keys, VPN configs, databases, scripts and the CLI commands nobody remembers — in VS Code. Secrets live in the OS keychain; sync and team sharing are end-to-end encrypted, so the self-hosted vault server never sees plaintext. An AI coding agent can use an SSH credential without ever receiving it.",
+  "description": "Your coding agent can run the migration — and can never be handed the password. SSH hosts, keys, databases, VPNs, secrets and config files in VS Code, with optional end-to-end encrypted team sync.",
   "version": "1.0.0",
   "publisher": "remsoftdev",
   "license": "MIT",
@@ -28,7 +28,9 @@
     "database",
     "ssh keys",
     "claude code",
-    "ai agent"
+    "ai agent",
+    "mcp",
+    "model context protocol"
   ],
   "repository": {
     "type": "git",

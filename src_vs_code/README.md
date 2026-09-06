@@ -9,8 +9,10 @@ security key that never leaves it — so the folder, the NAS or the server holdi
 holds ciphertext and nothing else. Whoever runs that storage, **including you**, cannot read
 what is in it.
 
-It works with **no account, no server and no network**. Point it at a folder to sync your own
-machines; add the optional self-hosted server when a team needs to share.
+It works with **no server and no network** — nothing leaves the machine, and there is nothing to
+sign up for. Creating a profile signs in with the Microsoft or Google account you already have, and
+that identity is only the profile's name; nothing is stored with them. Point it at a folder to sync
+your own machines; add the optional self-hosted server when a team needs to share.
 
 > **Where it runs, and two honest caveats.**
 >
@@ -70,8 +72,8 @@ machines; add the optional self-hosted server when a team needs to share.
 | **Diagnostics you can attach** | *Show Diagnostics* opens the one output channel and names the per-run log file on disk — sync, backup, transport and unlock failures land there, and no secret can, by construction |
 | **Several accounts** | Microsoft and Google profiles side by side, each with its own tree, its own vault location, and its own team — separated by a blank row, each account row counting `entries / in the Trash / shared` |
 
-Screenshots: see the tree, the entity form and the share flow on the
-[repository page](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs).
+The [repository page](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs) carries the
+security model, the broker's design and every security review this code has been through.
 
 ## The tree
 
