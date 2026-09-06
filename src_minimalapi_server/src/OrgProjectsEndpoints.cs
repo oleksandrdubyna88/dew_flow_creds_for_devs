@@ -63,19 +63,35 @@ public static class OrgProjectsEndpoints
             await WriteListAsync(ctx, [], ct);
             return;
         }
-        await WriteListAsync(ctx, Visible(deps, projects, caller.Value.Email), ct);
+        var visible = Visible(deps, projects, caller.Value.Email);
+        if (visible is null)
+        {
+            await OrgEndpoints.FailUnavailable(ctx);
+            return;
+        }
+        await WriteListAsync(ctx, visible, ct);
     }
 
-    private static List<ProjectDto> Visible(OrgEndpointDeps deps, OrgProjectsStore projects, string email)
+    /// <summary>
+    /// What this caller may see, or <c>null</c> when their own record cannot be read.
+    ///
+    /// <para><b>Null rather than the whole list</b>, and the shape is the point. The blocking gate
+    /// already refuses an unreadable record with a <c>503</c> before this method runs — a test proves
+    /// it — so this branch is unreachable today. It is written closed anyway: the previous shape
+    /// answered "I cannot read your record" with *every project on this server*, which is the one
+    /// answer a developer must never get, and the only thing standing between it and a caller was a
+    /// gate on a different layer.</para>
+    /// </summary>
+    private static List<ProjectDto>? Visible(OrgEndpointDeps deps, OrgProjectsStore projects, string email)
     {
-        var all = projects.List().Select(p => new ProjectDto(p.Id, p.Name, p.Archived)).ToList();
-        var lookup = deps.Members.Find(email);
-        if (deps.OrgRecovery.IsOfficer(email) || lookup is not { Status: MemberLookup.Found, Record: { } record })
+        var lookup = deps.OrgRecovery.IsOfficer(email) ? null : (MemberLookupResult?)deps.Members.Find(email);
+        if (lookup is { Status: MemberLookup.Unavailable })
         {
-            return all;
+            return null;
         }
-        return record.Role == MemberRole.Dev
-            ? [.. all.Where(p => OrgProjects.IsAssigned(record, p.Id))]
+        var all = projects.List().Select(p => new ProjectDto(p.Id, p.Name, p.Archived)).ToList();
+        return lookup is { Status: MemberLookup.Found, Record: { Role: MemberRole.Dev } developer }
+            ? [.. all.Where(p => OrgProjects.IsAssigned(developer, p.Id))]
             : all;
     }
 
@@ -148,35 +164,40 @@ public static class OrgProjectsEndpoints
         string admin,
         CancellationToken ct)
     {
-        var before = projects.Find(id);
         var result = await projects.UpdateAsync(
             id,
             p => p with { Name = request.Name?.Trim() ?? p.Name, Archived = request.Archived ?? p.Archived },
             admin,
             ct);
-        if (result.Status != ProjectLookup.Found || result.Record is null)
+        if (result is not { Status: ProjectLookup.Found, Before: { } before, After: { } after })
         {
             await MissingOrUnavailable(ctx, result.Status);
             return;
         }
-        await RecordUpdateAsync(deps, admin, before.Record, result.Record);
-        await WriteProjectAsync(ctx, result.Record, ct);
+        await RecordUpdateAsync(deps, admin, before, after);
+        await WriteProjectAsync(ctx, after, ct);
     }
 
-    /// <summary>One row per thing that actually changed — a rename and an archive in one call are two.</summary>
+    /// <summary>
+    /// One row per thing that actually changed — a rename and an archive in one call are two.
+    ///
+    /// <para><paramref name="before"/> is the record the write REPLACED, taken under the store's own
+    /// lock (<see cref="ProjectUpdate"/>). A <c>Find</c> here instead would compare against whatever a
+    /// concurrent admin had not yet written, and log a transition this request did not make.</para>
+    /// </summary>
     private static async Task RecordUpdateAsync(
         OrgEndpointDeps deps,
         string admin,
-        ProjectRecord? before,
+        ProjectRecord before,
         ProjectRecord after)
     {
-        if (before is not null && before.Name != after.Name)
+        if (before.Name != after.Name)
         {
             await deps.Events.AppendAsync(
                 OrgEndpoints.Row(OrgEventKinds.ProjectRenamed, admin, null, $"{before.Name} → {after.Name}", after.Id),
                 CancellationToken.None);
         }
-        if (before is null || before.Archived == after.Archived)
+        if (before.Archived == after.Archived)
         {
             return;
         }
@@ -198,6 +219,17 @@ public static class OrgProjectsEndpoints
         {
             return;
         }
+        // Archiving is the only way a project closes — it cannot be deleted, because the event log
+        // cites it forever. A closed project that still takes people is not closed. Taking somebody
+        // OFF an archived project stays allowed: a project closes with people still on it.
+        if (context.Value.Project.Archived)
+        {
+            await OrgEndpoints.FailJson(
+                ctx,
+                StatusCodes.Status409Conflict,
+                "That project is archived. Unarchive it before putting anybody on it; taking somebody off it works either way.");
+            return;
+        }
         var request = await OrgEndpoints.ReadJsonAsync(ctx, AppJsonContext.Default.ProjectMemberRequest);
         var problem = request?.Problem() ?? "The body is not the JSON this endpoint reads; send a share.";
         if (problem.Length > 0)
@@ -215,9 +247,14 @@ public static class OrgProjectsEndpoints
         string share,
         CancellationToken ct)
     {
+        var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         var result = await UpsertOrFailAsync(ctx, deps, on.Target, on.Admin, ct, r => r with
         {
             Projects = [.. r.Projects.Where(p => p.ProjectId != on.Project.Id), new ProjectAssignment(on.Project.Id, share)],
+            // Putting somebody back WITHDRAWS a standing instruction to delete that folder. Both are
+            // durable and their client reads them in one document: left in place, the removal is
+            // carried out on the next cycle against the folder it has just been told it owns.
+            PendingFolderRemovals = RemovalsAfter(r, on.Project.Id, deleteFolder: false, now),
         });
         if (result is null)
         {
@@ -256,7 +293,37 @@ public static class OrgProjectsEndpoints
             await OrgEndpoints.FailJson(ctx, StatusCodes.Status400BadRequest, problem);
             return;
         }
+        if (!await RegisteredAsync(ctx, deps, context.Value.Target))
+        {
+            return;
+        }
         await WriteUnassignmentAsync(ctx, deps, context.Value, deleteFolder, ct);
+    }
+
+    /// <summary>
+    /// Whether this person is on the roster at all — asked on the way OUT of a project, never on the
+    /// way in.
+    ///
+    /// <para>The asymmetry is deliberate. The member store creates what it cannot find, and on an
+    /// ASSIGNMENT that is the feature: an admin puts a new hire on a project on their first day,
+    /// before they have opened the extension, exactly as the members surface already gives them a role.
+    /// On an unassignment there is nothing to create — an admin's typo would otherwise put somebody on
+    /// the roster by removing them from something they were never on.</para>
+    /// </summary>
+    private static async Task<bool> RegisteredAsync(HttpContext ctx, OrgEndpointDeps deps, string target)
+    {
+        var lookup = deps.Members.Find(target);
+        if (lookup.Status == MemberLookup.Found)
+        {
+            return true;
+        }
+        await (lookup.Status == MemberLookup.Unavailable
+            ? OrgEndpoints.FailUnavailable(ctx)
+            : OrgEndpoints.FailJson(
+                ctx,
+                StatusCodes.Status404NotFound,
+                "Nobody with that address is registered on this server, so there is nothing to unassign."));
+        return false;
     }
 
     private static (bool DeleteFolder, string Problem) ReadDeleteFolder(HttpContext ctx)
@@ -283,11 +350,7 @@ public static class OrgProjectsEndpoints
         var result = await UpsertOrFailAsync(ctx, deps, on.Target, on.Admin, ct, r => r with
         {
             Projects = [.. r.Projects.Where(p => p.ProjectId != on.Project.Id)],
-            // Only a removal that must reach their machines is recorded. An unassignment that leaves the
-            // folder needs no instruction: nothing has to happen on the other side.
-            PendingFolderRemovals = deleteFolder
-                ? [.. r.PendingFolderRemovals.Where(x => x.ProjectId != on.Project.Id), new PendingFolderRemoval(on.Project.Id, true, now)]
-                : r.PendingFolderRemovals,
+            PendingFolderRemovals = RemovalsAfter(r, on.Project.Id, deleteFolder, now),
         });
         if (result is null)
         {
@@ -302,6 +365,24 @@ public static class OrgProjectsEndpoints
                 on.Project.Id),
             CancellationToken.None);
         ctx.Response.StatusCode = StatusCodes.Status204NoContent;
+    }
+
+    /// <summary>
+    /// Their standing folder removals after this decision: at most one per project, and the last word
+    /// wins.
+    ///
+    /// <para>Both callers pass through here, which is what makes the rule one rule. An unassignment
+    /// that leaves the folder records nothing — nothing has to happen on the other side — but it must
+    /// still WITHDRAW an instruction already standing, or an admin who changes their mind cannot.</para>
+    /// </summary>
+    private static IReadOnlyList<PendingFolderRemoval> RemovalsAfter(
+        MemberRecord record,
+        string projectId,
+        bool deleteFolder,
+        long now)
+    {
+        var others = record.PendingFolderRemovals.Where(x => x.ProjectId != projectId);
+        return deleteFolder ? [.. others, new PendingFolderRemoval(projectId, true, now)] : [.. others];
     }
 
     // ---------- the person's own ----------

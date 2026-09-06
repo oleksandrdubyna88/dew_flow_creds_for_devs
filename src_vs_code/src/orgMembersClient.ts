@@ -18,10 +18,19 @@ import { StoredAccount } from './types';
  * it would be read as "no role" or "no policy".</p>
  */
 
-/** One project assignment as the document carries it; epic 3 adds the project's name. */
+/**
+ * One project assignment as the document carries it.
+ *
+ * <p>`name` is OPTIONAL, and that is about servers rather than taste: a server from before epic 3
+ * has no project store to take a name from and sends the assignment without one, so a client that
+ * required it would reject that server's whole document — role, policy and lease with it. Additive
+ * on the wire, optional in the type, and the shape guard below still checks only the two fields this
+ * build depends on.</p>
+ */
 export interface ProjectAssignment {
   readonly projectId: string;
   readonly share: string;
+  readonly name?: string;
 }
 
 /**

@@ -92,6 +92,12 @@ public static class OrgProjects
     /// <para>The override is `inherit` when an admin assigned somebody without deciding, which is the
     /// common case: it means "whatever their role says", and it is re-read every time rather than
     /// frozen at assignment, so changing a person's role changes their projects with it.</para>
+    /// <para><b>`inherit` resolves through <see cref="MemberPolicy"/>, never off the record's own
+    /// `shareDefault`.</b> That field is what an admin last stored; the policy is what the ROLE
+    /// permits, and <see cref="PolicyDto"/> says in its own remarks why there may be only one of
+    /// those — a stored copy of a rule is a second source of truth. The two disagree exactly where it
+    /// matters: a role this build does not know fails closed in the policy (`none`) and fell through
+    /// to the stored value here, and so did a `shareDefault` written by a newer server.</para>
     /// </remarks>
     public static string EffectiveShare(MemberRecord member, string projectId)
     {
@@ -100,7 +106,9 @@ public static class OrgProjects
         {
             return ShareDefaults.None;
         }
-        return assignment.Share == ProjectMemberRequest.Inherit ? member.ShareDefault : assignment.Share;
+        return assignment.Share == ProjectMemberRequest.Inherit
+            ? MemberPolicy.For(member.Role, member.ShareDefault).Share
+            : assignment.Share;
     }
 
     /// <summary>Whether this person is assigned to this project at all.</summary>

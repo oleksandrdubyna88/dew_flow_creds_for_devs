@@ -122,6 +122,7 @@ public sealed class OrgProjectsStoreTests
         var result = await store.UpdateAsync(new string('b', 32), p => p with { Name = "Ghost" }, "a@example.com", Ct);
 
         result.Status.Should().Be(ProjectLookup.Absent);
+        result.Before.Should().BeNull("nothing was replaced");
     }
 
     [Fact]
@@ -199,5 +200,54 @@ public sealed class OrgProjectsStoreTests
         new UpdateProjectRequest("Atlas II", null).Problem().Should().BeEmpty();
         new UpdateProjectRequest(null, null).Problem().Should().Contain("Nothing to change");
         new UpdateProjectRequest("  ", null).Problem().Should().Contain("needs a name");
+    }
+
+    [Fact]
+    public void InheritFollowsTheRolesPolicyRatherThanTheStoredField()
+    {
+        // `MemberPolicy.For` is where "what may this role do" is decided, and the type it returns says
+        // why: derived, never stored. Reading `ShareDefault` off the record instead is a second copy of
+        // that rule, and the two disagree exactly where it matters — a role this build does not know
+        // fails CLOSED in the policy and fell through to the stored value here.
+        var newerServersRole = MemberRecord.DefaultFor("bob@example.com", 0) with
+        {
+            Role = "overseer",
+            ShareDefault = ShareDefaults.Project,
+            Projects = [new ProjectAssignment("p1", ProjectMemberRequest.Inherit)],
+        };
+
+        OrgProjects.EffectiveShare(newerServersRole, "p1").Should().Be(
+            ShareDefaults.None,
+            "a role this build cannot understand is one whose permissions it cannot honestly grant");
+    }
+
+    [Fact]
+    public void AStoredShareThisBuildDoesNotKnowIsNotHonoured()
+    {
+        var dev = MemberRecord.DefaultFor("bob@example.com", 0) with
+        {
+            Role = MemberRole.Dev,
+            ShareDefault = "everything",
+            Projects = [new ProjectAssignment("p1", ProjectMemberRequest.Inherit)],
+        };
+
+        OrgProjects.EffectiveShare(dev, "p1").Should().Be(ShareDefaults.None);
+    }
+
+    [Fact]
+    public async Task AnUpdateSaysWhatItReplacedAndWhatItWrote()
+    {
+        // The caller writes "renamed from X to Y" out of the difference, so X has to be the record this
+        // write replaced. Read with a Find before the call it is whatever a concurrent admin had not yet
+        // written — which is how a rename ends up logging an archive it did not perform.
+        var (store, _, _) = StoreIn();
+        var created = await store.CreateAsync("Atlas", "cto@example.com", Ct);
+
+        var update = await store.UpdateAsync(created.Id, p => p with { Name = "Atlas II" }, "a@example.com", Ct);
+
+        update.Status.Should().Be(ProjectLookup.Found);
+        update.Before!.Name.Should().Be("Atlas");
+        update.After!.Name.Should().Be("Atlas II");
+        update.Before.Archived.Should().BeFalse();
     }
 }

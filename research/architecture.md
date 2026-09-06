@@ -209,11 +209,22 @@ ${DATA_DIR}/
   shares/
     <sha256(recipient email)[..32]>/
       <guid>.json                              one pending share
+  org/                                         ONLY on a server with a corporate roster
+    members/<key>.json                         one person: role, flags, project assignments
+    projects/<guid>.json                       one project: its name, whether it is archived
+    settings.json                              the runtime settings an admin may change
+    events/<yyyy-MM-dd>.ndjson                 the corporate event log, one file per UTC day
+    login-keys/<key>.bin                       one developer's login key, under the deployment KEK
 ```
 
 Filenames are hashed so the directory listing is not a staff directory, and the `.email` sidecar
 exists only because team discovery needs to answer "who else uses this server". Writes are atomic
 (write to a temp file, rename), which is what lets `backup.sh` run against a live server.
+
+**`org/` appears on the first WRITE, never at startup.** A personal deployment grows none of it, and
+that is a decision rather than laziness: an `org/` tree on disk tells an operator this server has a
+roster when it has none. What each record holds, and why each is shaped as it is, is in
+[module_server.md](module_server.md).
 
 ### Logging
 

@@ -87,17 +87,12 @@ public static class ShareDefaults
     public static bool IsKnown(string? value) => value is not null && All.Contains(value);
 }
 
-/// <summary>How one project assignment modifies a developer's own share default.</summary>
-public static class ProjectShare
-{
-    public const string Inherit = "inherit";
-    public const string Allow = "allow";
-    public const string Deny = "deny";
-
-    public const string Default = Inherit;
-
-    public static bool IsKnown(string? value) => value is Inherit or Allow or Deny;
-}
+// `ProjectShare` (inherit / allow / deny) stood here from epic 1, reserved for the assignment
+// override and referenced by nothing. Epic 3 built that override out of `inherit` plus the
+// `ShareDefaults` vocabulary — the values a share rule can actually be stated in — which left the
+// reserved type describing a scheme the server does not implement, in the field an implementer would
+// reach for first. Removed rather than kept as a hint: two vocabularies for one field is how the
+// share rule gets built against the wrong one. `ProjectMemberRequest.Inherit` is the constant.
 
 /// <summary>One person's assignment to one project. Epic 3 gives it behaviour.</summary>
 public sealed record ProjectAssignment(string ProjectId, string Share);
