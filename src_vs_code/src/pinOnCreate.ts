@@ -58,17 +58,23 @@ export async function pinForNewEntry(
 
 /** Does this folder, or any folder above it, carry the preference? */
 function asksAnyway(storage: StorageManager, accountId: string, parentId: string | null): boolean {
-  // By ID, one ancestor at a time. Building a Map of every node in the account to walk at most 64 of
+  // By ID, one ancestor at a time. Building a Map of every node in the account to walk a handful of
   // them made an Add cost O(everything stored) — and `getNode` is already indexed. (A reviewer's
   // finding, three times over.)
+  //
+  // The walk ends at the ROOT or at a folder it has already seen — never at a fixed depth. A cap
+  // was the first shape of this, and a reviewer found its false negative: nothing limits how deep a
+  // drag may nest a folder, so a chain longer than the cap would stop one folder short of the one
+  // carrying the preference, and the entry would be created with no PIN and no question asked —
+  // silently, which is the part that matters. The `Set` gives what the cap was actually for, a
+  // parent chain that LOOPS, without inventing a depth nobody can justify.
+  const seen = new Set<string>();
   let current = folderAt(parentId, storage, accountId);
-  for (let depth = 0; depth < MAX_FOLDER_DEPTH; depth += 1) {
-    if (current === undefined) {
-      return false;
-    }
+  while (current !== undefined && !seen.has(current.id)) {
     if (current.folderAsksForPin === true) {
       return true;
     }
+    seen.add(current.id);
     current = above(current, storage, accountId);
   }
   return false;
@@ -89,9 +95,6 @@ function above(node: TreeNode, storage: StorageManager, accountId: string): Tree
     ? undefined
     : storage.getNode(accountId, node.parentId);
 }
-
-/** The same cap the folder walk uses; a malformed parent chain costs one answer, never the stack. */
-const MAX_FOLDER_DEPTH = 64;
 
 /** The first PIN in a folder that asks: typed twice, because there is nothing here to check it against. */
 async function firstPinHere(): Promise<CreatePin> {

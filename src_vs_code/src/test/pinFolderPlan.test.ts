@@ -210,3 +210,114 @@ test('a PARTIAL run names what could not be done, and that a re-run finishes it'
   assert.match(said, /unchanged and still readable/, 'and what state they are in');
   assert.match(said, /run it again/, 'and the repair, which is the same command');
 });
+
+/**
+ * A run that protected NOTHING must not record the preference.
+ *
+ * <p>A reviewer's finding, and the right half of a question this plan got wrong twice. The first
+ * draft set the mark BEFORE the run, so a run nobody finished left a folder asking about entries it
+ * had never protected. Moving it after the run fixed that — and left this: `runProtect` keeps each
+ * failure rather than throwing (the rest of the folder deserves a try), so when EVERY entry fails
+ * the code carried on and set the preference anyway. The next entry created there is then asked for
+ * a PIN in a folder where nothing is protected.</p>
+ *
+ * <p>An empty folder is the deliberate exception and keeps its own path: there the preference is the
+ * ONLY record that can exist, which is the whole reason the field was added.</p>
+ */
+test('a folder run where every entry FAILED records no preference', async () => {
+  const folder = { id: 'f1', name: 'Production', type: 'folder', parentId: null } as TreeNode;
+  const entity = {
+    id: 'e1',
+    name: 'prod-db',
+    type: 'entity',
+    parentId: 'f1',
+    details: { id: 'e1', name: 'prod-db', isSshEnabled: false },
+  } as TreeNode;
+  const written: TreeNode[] = [];
+  const storage = {
+    getNodes: () => [folder, entity],
+    getNode: (_a: string, id: string) => [folder, entity].find((n) => n.id === id),
+    // Reads succeed so the PLAN can be built — the failure has to land on the RUN, which is what
+    // the finding is about. The write is what fails, so `protectEntity` throws for this entry and
+    // `protectOne` records it as failed.
+    getPassword: () => Promise.resolve('hunter2'),
+    setPassword: () => Promise.reject(new Error('the keychain is unavailable')),
+    getNotes: () => Promise.resolve(undefined),
+    getFieldsRaw: () => Promise.resolve(undefined),
+    getPaymentRaw: () => Promise.resolve(undefined),
+    getConfigBody: () => Promise.resolve(undefined),
+    getDbConnection: () => Promise.resolve(undefined),
+    getVpnConfig: () => Promise.resolve(undefined),
+    getTotp: () => Promise.resolve(undefined),
+    getPrivateKey: () => Promise.resolve(undefined),
+    updateNode: (_a: string, node: TreeNode) => {
+      written.push(node);
+      return Promise.resolve();
+    },
+  } as never;
+  const mod = folderCommands(['a-real-pin-1234', 'a-real-pin-1234']);
+
+  await mod.protectFolder(folder, { storage, accountId: 'a1', refresh: () => undefined });
+
+  assert.equal(
+    written.some((n) => n.id === 'f1' && n.folderAsksForPin === true),
+    false,
+    'nothing was protected, so nothing may claim the folder asks: ' + JSON.stringify(written),
+  );
+});
+
+test('…but a run where at least ONE entry succeeded does record it', async () => {
+  const folder = { id: 'f1', name: 'Production', type: 'folder', parentId: null } as TreeNode;
+  const entity = {
+    id: 'e1',
+    name: 'prod-db',
+    type: 'entity',
+    parentId: 'f1',
+    details: { id: 'e1', name: 'prod-db', isSshEnabled: false },
+  } as TreeNode;
+  const written: TreeNode[] = [];
+  const nothing = (): Promise<undefined> => Promise.resolve(undefined);
+  const storage = {
+    getNodes: () => [folder, entity],
+    getNode: (_a: string, id: string) => [folder, entity].find((n) => n.id === id),
+    getPassword: () => Promise.resolve('hunter2'),
+    setPassword: () => Promise.resolve(),
+    getNotes: nothing,
+    getFieldsRaw: nothing,
+    getPaymentRaw: nothing,
+    getConfigBody: nothing,
+    getDbConnection: nothing,
+    getVpnConfig: nothing,
+    getTotp: nothing,
+    getPrivateKey: nothing,
+    updateNode: (_a: string, node: TreeNode) => {
+      written.push(node);
+      return Promise.resolve();
+    },
+  } as never;
+  const mod = folderCommands(['a-real-pin-1234', 'a-real-pin-1234']);
+
+  await mod.protectFolder(folder, { storage, accountId: 'a1', refresh: () => undefined });
+
+  assert.equal(
+    written.some((n) => n.id === 'f1' && n.folderAsksForPin === true),
+    true,
+    'one protected entry is a protected folder: ' + JSON.stringify(written),
+  );
+});
+
+/** `pinCommands` with the two PIN boxes answered and every notification swallowed. */
+function folderCommands(inputs: readonly string[]): typeof import('../pinCommands') {
+  const queue = [...inputs];
+  return loadWithVscode<typeof import('../pinCommands')>('../pinCommands', {
+    window: {
+      showInputBox: () => Promise.resolve(queue.shift()),
+      showWarningMessage: () => Promise.resolve('Protect the rest'),
+      showInformationMessage: () => Promise.resolve(undefined),
+      showErrorMessage: () => Promise.resolve(undefined),
+      withProgress: (_o: unknown, task: (p: { report(): void }) => Promise<unknown>) =>
+        task({ report: () => undefined }),
+    },
+    ProgressLocation: { Notification: 15 },
+  });
+}
