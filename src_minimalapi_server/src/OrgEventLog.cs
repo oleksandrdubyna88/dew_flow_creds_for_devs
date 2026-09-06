@@ -51,6 +51,28 @@ public static class OrgEventKinds
     public const string MemberUnblocked = "member.unblocked";
 
     public const string SettingsChanged = "settings.changed";
+
+    /// <summary>
+    /// The project kinds, emitted by <c>OrgProjectsEndpoints</c> at the point of durable write.
+    ///
+    /// <para>Written in epic 3 rather than left to epic 4's reader, because a log nothing is REQUIRED
+    /// to write to is the defect epic 1 called its sharpest: the reader ships, the rows never come, and
+    /// the gap is invisible until somebody needs the history. Each of these has a test that reads the
+    /// row back OUT of the log rather than asserting the endpoint's status code.</para>
+    /// </summary>
+    public const string ProjectCreated = "project.created";
+
+    public const string ProjectRenamed = "project.renamed";
+
+    public const string ProjectArchived = "project.archived";
+
+    /// <summary>An archive undone. Its own kind, because a log that records the archive and not the
+    /// undo describes a state the server is not in.</summary>
+    public const string ProjectUnarchived = "project.unarchived";
+
+    public const string ProjectAssigned = "project.assigned";
+
+    public const string ProjectUnassigned = "project.unassigned";
 }
 
 /// <summary>

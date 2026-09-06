@@ -113,6 +113,10 @@ internal static class Corp
             JsonSerializer.Serialize(new SetSettingsRequest(hours), AppJsonContext.Default.SetSettingsRequest));
 
     /// <summary>A PUT with the body spelt out — for the requests whose point is a field the type does not have, or no JSON at all.</summary>
+    /// <summary>The POST twin of <see cref="PutJsonAsync"/>, for the routes that create.</summary>
+    public static Task<HttpResponseMessage> PostJsonAsync(HttpClient client, string path, string json) =>
+        client.PostAsync(path, new StringContent(json, Encoding.UTF8, "application/json"), Ct);
+
     public static Task<HttpResponseMessage> PutJsonAsync(HttpClient client, string path, string json) =>
         client.PutAsync(path, new StringContent(json, Encoding.UTF8, "application/json"), Ct);
 

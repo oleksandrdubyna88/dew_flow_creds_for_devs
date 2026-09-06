@@ -18,6 +18,12 @@ public sealed class AppJsonContextTests
 {
     [Theory]
     [InlineData(typeof(MemberSelfDto))]
+    [InlineData(typeof(ProjectRecord))]
+    [InlineData(typeof(ProjectDto))]
+    [InlineData(typeof(List<ProjectDto>))]
+    [InlineData(typeof(CreateProjectRequest))]
+    [InlineData(typeof(UpdateProjectRequest))]
+    [InlineData(typeof(ProjectMemberRequest))]
     [InlineData(typeof(ProjectSelfDto))]
     [InlineData(typeof(PolicyDto))]
     [InlineData(typeof(PendingFolderRemoval))]

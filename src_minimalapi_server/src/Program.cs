@@ -155,6 +155,10 @@ builder.Services.AddSingleton(sp => new OrgEventLog(
 // Custody of the developers' login keys. Registered on EVERY deployment, personal ones included, and
 // with whatever KEK the configuration holds — including none: deleting a key is not decryption, so
 // DELETE /api/vault must be able to remove one on a server that can no longer issue any.
+// The projects a company runs. Registered on every deployment, like the other org stores: the
+// tree under org/ appears on the first WRITE, so a personal server grows none.
+builder.Services.AddSingleton(sp => new OrgProjectsStore(
+    dataDir, sp.GetRequiredService<ILoggerFactory>().CreateLogger<OrgProjectsStore>()));
 builder.Services.AddSingleton(sp => new LoginKeyStore(
     dataDir, loginKeyKek, sp.GetRequiredService<ILoggerFactory>().CreateLogger<LoginKeyStore>()));
 
@@ -331,6 +335,7 @@ var serverVersion = typeof(Program).Assembly
 // take. RequireCaller and DomainOf are local functions below and cross into OrgEndpoints.cs only as
 // delegates — the gates stay in this file, so it still answers "who may do this".
 var orgMembers = app.Services.GetRequiredService<OrgMembersStore>();
+var orgProjects = app.Services.GetRequiredService<OrgProjectsStore>();
 var orgDeps = new OrgEndpointDeps(
     RequireCaller,
     RequireAdminAsync,
@@ -342,6 +347,9 @@ var orgDeps = new OrgEndpointDeps(
     // The same instance the share endpoints close over: blocking withdraws pending shares from it.
     store,
     app.Services.GetRequiredService<LoginKeyStore>(),
+    // The name a project id resolves to, for the assignments /api/org/me answers. A function
+    // rather than the store: this surface reads names and never writes projects.
+    orgProjects.NameOf,
     allowAnyDomain,
     log,
     ContractVersion.Current);
@@ -841,6 +849,9 @@ bool IsDiscoverable(string email) => StandingOf(email) == Standing.Admitted;
 // The corporate surface, mapped from its own file — Program.cs is past the size ceiling and four
 // more epics add about twenty routes. The gates stay above; only routes live there.
 app.MapOrgEndpoints(orgDeps);
+// The project surface, from its own file for the reason the corporate one is: this file is past
+// the size a reader can hold, and each epic adds routes.
+app.MapOrgProjectsEndpoints(orgDeps, orgProjects);
 
 // ----- corporate recovery: what every account here is subject to -----
 //

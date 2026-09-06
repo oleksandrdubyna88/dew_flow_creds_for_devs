@@ -36,6 +36,8 @@ public sealed record OrgEndpointDeps(
     OrgEventLog Events,
     VaultStore Shares,
     LoginKeyStore LoginKeys,
+    /// <summary>A project id to its name, for the assignments <c>/api/org/me</c> answers.</summary>
+    Func<string, string> ProjectName,
     bool AllowAnyDomain,
     ILogger Log,
     int ServerContract);
@@ -219,7 +221,8 @@ public static class OrgEndpoints
             corpMode: true,
             isOfficer: deps.OrgRecovery.IsOfficer(record.Email),
             offlineLeaseHours: deps.Settings.Read().OfflineLeaseHours,
-            serverContract: deps.ServerContract);
+            serverContract: deps.ServerContract,
+            nameOf: deps.ProjectName);
 
     private static Task WriteAsync(HttpContext ctx, MemberSelfDto self, CancellationToken ct) =>
         ctx.Response.WriteAsJsonAsync(self, AppJsonContext.Default.MemberSelfDto, cancellationToken: ct);
@@ -333,7 +336,7 @@ public static class OrgEndpoints
     /// admin may reach — and the sentences say "manage" rather than "give a role", because they are read
     /// from both.</para>
     /// </remarks>
-    private static (int Status, string Message)? TargetProblem(OrgEndpointDeps deps, string caller, string target)
+    internal static (int Status, string Message)? TargetProblem(OrgEndpointDeps deps, string caller, string target)
     {
         if (!target.Contains('@') || target.Length < 3)
         {
@@ -358,7 +361,7 @@ public static class OrgEndpoints
     /// every request type on this surface — the third copy of this try/catch is where one of them would
     /// have caught one exception type fewer than the others.
     /// </summary>
-    private static async Task<T?> ReadJsonAsync<T>(HttpContext ctx, JsonTypeInfo<T> typeInfo)
+    internal static async Task<T?> ReadJsonAsync<T>(HttpContext ctx, JsonTypeInfo<T> typeInfo)
         where T : class
     {
         try
@@ -452,12 +455,23 @@ public static class OrgEndpoints
     /// as a history: "made a developer" and "made a developer, again" are different facts.</summary>
     private static string Transition(string before, string after) => $"{before} -> {after}";
 
-    private static OrgEventDto Row(string kind, string actor, string subject, string? detail) => new(
+    /// <param name="subject">
+    /// Whom the row is about, when it is about a person. A project row that names nobody —
+    /// created, renamed, archived — passes null rather than repeating the actor, so a reader
+    /// filtering by subject finds the people rows and only those.
+    /// </param>
+    /// <param name="project">The project this row cites, for the kinds that have one.</param>
+    internal static OrgEventDto Row(
+        string kind,
+        string actor,
+        string? subject,
+        string? detail,
+        string? project = null) => new(
         At: DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
         Kind: kind,
         Actor: actor,
         Subject: subject,
-        Project: null,
+        Project: project,
         ShareId: null,
         EntityName: null,
         EntityKind: null,
@@ -771,7 +785,7 @@ public static class OrgEndpoints
 
     private const string MalformedSettingsBody = "The body is not the JSON this endpoint reads; send offlineLeaseHours.";
 
-    private static Task FailUnavailable(HttpContext ctx) =>
+    internal static Task FailUnavailable(HttpContext ctx) =>
         // Names the problem and WHO ends it — an administrator — so the person does not retry into the
         // same wall; never the file, which is the operator's business and is already in the server log
         // at Error, written once by the store.
