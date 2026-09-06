@@ -70,8 +70,13 @@ export interface RekeyResult {
  * <p>A rotation is the one operation that writes a wrap from scratch, so it is the one place where
  * "we could not reach the server" would otherwise turn into "this vault no longer needs one" —
  * silently, on a PIN change the person asked for. Refusing keeps the old file, which still opens.</p>
+ *
+ * <p><b>Exported because there are three such places, not one.</b> The security review found the
+ * third — `SyncManager.rekeyToNewPin`, which rebuilds the PIN wrap without going through
+ * `rekeyUnderPin` — after the guard had been added at the two the plan listed. One exported guard is
+ * how the next path that rebuilds a wrap gets it too.</p>
  */
-function refuseToUnbind(args: RekeyArgs): void {
+export function refuseToUnbind(args: Pick<RekeyArgs, 'previousWraps' | 'binding'>): void {
   if (isBoundVault(args.previousWraps) && args.binding === undefined) {
     throw new BackupError(
       'server-key-required',

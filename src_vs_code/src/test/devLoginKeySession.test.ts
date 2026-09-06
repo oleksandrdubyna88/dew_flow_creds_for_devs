@@ -19,6 +19,9 @@ function clientAnswering(...outcomes: LoginKeyOutcome[]): { client: OrgLoginKeyC
   return { client, asked: () => asked };
 }
 
+/** Not a wiped buffer — the property a caller mid-write depends on. */
+const usable = (key: Buffer): boolean => key.some((b) => b !== 0);
+
 const issued = (fingerprint = 'abc'): LoginKeyOutcome => ({
   kind: 'issued',
   key: Buffer.alloc(32, 3),
@@ -106,13 +109,30 @@ test('an account with no corporate server is simply not asked', async () => {
   assert.equal(await session.resolve(account), undefined);
 });
 
-test('forgetting zeroes the bytes it held', async () => {
+test('forgetting wipes what the session holds WITHOUT clobbering a caller mid-write', async () => {
+  // This test used to assert the opposite — that the handed-out buffer is zeroed — and the security
+  // review is what showed that was the hazard rather than the guarantee: a caller already sealing a
+  // wrap with that same Buffer would have written the vault under HKDF(base ‖ 0^32), which nothing
+  // can ever open. The session still zeroes ITS copy on forget; callers get their own.
   const { client } = clientAnswering(issued());
   const session = new LoginKeySession(() => client, () => undefined);
-  const held = await session.resolve(account);
+  const mine = await session.resolve(account);
 
   session.forget(account.accountId);
 
-  assert.ok(held !== undefined);
-  assert.ok(held.key.every((b) => b === 0), 'the buffer this window handed out is wiped, not just dropped');
+  assert.ok(mine !== undefined);
+  assert.ok(usable(mine.key), 'the caller keeps usable bytes');
+  assert.equal(session.current(account.accountId), undefined, 'and the session keeps nothing');
+});
+
+test('two callers never share one buffer', async () => {
+  const { client } = clientAnswering(issued());
+  const session = new LoginKeySession(() => client, () => undefined);
+
+  const first = await session.resolve(account);
+  const second = await session.resolve(account);
+
+  assert.ok(first !== undefined && second !== undefined);
+  assert.notEqual(first.key, second.key, 'different Buffers');
+  assert.deepEqual(first.key, second.key, 'with the same bytes');
 });
