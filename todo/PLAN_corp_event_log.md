@@ -125,7 +125,7 @@ public sealed record OrgEventQuery(string? Actor, string? Subject, string? Perso
 | shares | `share.sent`, `share.accepted`, `share.declined`, `share.unknown`, `share.withdrawn`, `share.withdrawn_blocked`, `share.expired` |
 | people | `member.registered`, `member.role_changed`, `member.share_default_changed`, `member.blocked`, `member.unblocked` |
 | projects | `project.created`, `project.renamed`, `project.archived`, `project.assigned`, `project.unassigned` |
-| keys | `loginkey.issued`, `loginkey.revoked` |
+| keys | `login_key.issued` (there is no revocation — see epic 2's decision on rotation) |
 | operations | `settings.changed`, `backup.configured`, `backup.run`, `backup.failed` |
 
 ## Files
