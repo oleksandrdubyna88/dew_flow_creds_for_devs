@@ -173,11 +173,27 @@ public sealed class OrgProjectsStore(string dataDir, ILogger<OrgProjectsStore> l
             JsonSerializer.SerializeToUtf8Bytes(record, AppJsonContext.Default.ProjectRecord),
             ct);
 
+    /// <summary>
+    /// One record for the listing, or nothing when this build must not present it.
+    ///
+    /// <para><b>The id inside must match the filename outside</b>, which is the same check
+    /// <see cref="Find"/> makes and which the listing did not: a copied or hand-edited file answered
+    /// under one project's id in the list and was ABSENT from every id-based route, so an admin saw a
+    /// project they could not rename, archive, or assign anybody to.</para>
+    /// </summary>
     private ProjectRecord? ReadOrNull(string path)
     {
         try
         {
-            return JsonSerializer.Deserialize(File.ReadAllBytes(path), AppJsonContext.Default.ProjectRecord);
+            var record = JsonSerializer.Deserialize(File.ReadAllBytes(path), AppJsonContext.Default.ProjectRecord);
+            if (record is not null && record.Id == Path.GetFileNameWithoutExtension(path))
+            {
+                return record;
+            }
+            log.LogError(
+                "a project file does not hold the project it is named for and is left out of the list: {Path}",
+                path);
+            return null;
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or JsonException)
         {
@@ -186,6 +202,14 @@ public sealed class OrgProjectsStore(string dataDir, ILogger<OrgProjectsStore> l
         }
     }
 
+    /// <summary>
+    /// The project files, or none when the folder itself cannot be enumerated.
+    ///
+    /// <para>The failure is LOGGED rather than swallowed: a permissions or I/O fault on the directory
+    /// looked exactly like a server with no projects at all, and nothing anywhere said otherwise.
+    /// An empty list is still the answer — one unreadable folder must not fail a request that has
+    /// nothing to do with projects — but an operator now has the line that explains it.</para>
+    /// </summary>
     private IEnumerable<string> SafeFiles()
     {
         try
@@ -194,6 +218,7 @@ public sealed class OrgProjectsStore(string dataDir, ILogger<OrgProjectsStore> l
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
+            log.LogError(e, "the projects folder could not be listed, so this answer is EMPTY rather than complete: {Dir}", _dir);
             return [];
         }
     }

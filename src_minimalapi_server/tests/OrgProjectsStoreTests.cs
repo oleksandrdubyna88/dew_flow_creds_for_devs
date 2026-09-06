@@ -250,4 +250,44 @@ public sealed class OrgProjectsStoreTests
         update.After!.Name.Should().Be("Atlas II");
         update.Before.Archived.Should().BeFalse();
     }
+
+    [Fact]
+    public async Task AListedRecordMustBeTheProjectItsFileIsNamedFor()
+    {
+        // Find already refuses this; the LIST did not, so a copied file answered under one id in the
+        // listing and was absent from every id-based route — an admin sees a project they cannot
+        // rename, archive or assign anybody to.
+        var (store, log, dir) = StoreIn();
+        var a = await store.CreateAsync("Atlas", "cto@example.com", Ct);
+        var b = await store.CreateAsync("Borealis", "cto@example.com", Ct);
+        File.Copy(PathFor(dir, b.Id), PathFor(dir, a.Id), overwrite: true);
+
+        store.List().Select(p => p.Id).Should().Equal([b.Id], "the impostor is left out");
+        log.Errors.Should().ContainSingle().Which.Should().Contain("named for");
+    }
+
+    [Fact]
+    public void AProjectsFolderThatCannotBeReadSaysSoRatherThanLookingEmpty()
+    {
+        // A permissions or I/O failure on the directory looked exactly like a server with no
+        // projects, and nothing anywhere said otherwise.
+        var (store, log, dir) = StoreIn();
+        // A FILE where the projects directory should be: no enumeration can succeed under it.
+        Directory.CreateDirectory(Path.Combine(dir, "org"));
+        File.WriteAllText(Path.Combine(dir, "org", "projects"), "a file where the folder should be");
+
+        store.List().Should().BeEmpty();
+
+        log.Errors.Should().ContainSingle().Which.Should().Contain("could not be listed");
+    }
+
+    [Fact]
+    public void ANameIsOneLineAPersonCanRead()
+    {
+        // The name becomes a FOLDER on every assigned person's machine, and a newline or a tab in a
+        // folder name is a path Windows refuses outright.
+        ProjectRecord.NameProblem("Atlas\nBorealis").Should().Contain("one line");
+        ProjectRecord.NameProblem("Atlas\tII").Should().Contain("one line");
+        ProjectRecord.NameProblem("Atlas II").Should().BeEmpty();
+    }
 }

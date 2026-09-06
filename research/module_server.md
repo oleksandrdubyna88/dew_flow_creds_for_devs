@@ -472,6 +472,16 @@ memoized reader rather than parsing every colleague's record twice. And the ackn
 the only write on this surface with no admin gate of its own — answers `204` on a personal server
 instead of writing through a store that creates what it cannot find, which would have conjured the
 `org/` tree such a server is documented never to grow.
+
+**Four more from story 3's code round.** A project name must be ONE LINE — no tabs, no line breaks —
+because it becomes a folder name on every assigned person's machine and a path Windows refuses
+outright. The LISTING now checks the id inside a file against the filename outside, as `Find` always
+did: a copied file used to answer under one project's id in the list while being absent from every
+id-based route, so an admin saw a project they could not rename, archive or assign anybody to. A
+projects folder that cannot be ENUMERATED is logged rather than swallowed — it looked exactly like a
+server with no projects. And a developer's listing answers `503` when one of their own assigned
+projects cannot be read, instead of quietly returning a shorter list: the missing project reads as
+"you are not on it any more", a policy statement the server never made.
 **Six kinds reach the event log** at the point of durable write — `project.created`, `project.renamed`,
 `project.archived`, `project.unarchived`, `project.assigned`, `project.unassigned` — each with a test
 that reads the row back OUT of the log rather than asserting a status code. Written in this epic rather

@@ -542,4 +542,25 @@ public sealed class OrgProjectsAdminTests
         response.StatusCode.Should().Be(HttpStatusCode.NoContent);
         Directory.Exists(Corp.OrgDir(server)).Should().BeFalse("a personal server grows no org/ tree");
     }
+
+    [Fact]
+    public async Task ADevelopersListSaysUnavailableRatherThanQuietlyDroppingAProjectItCannotRead()
+    {
+        // The caller's own record answers 503 when it cannot be read; an assigned project that cannot
+        // be read was silently omitted, so the answer was 200 and a list missing the very project the
+        // developer was looking for — which reads as "you are not on it any more".
+        using var server = Corp.Server();
+        using var cto = server.ClientFor(Corp.Cto);
+        using var alice = server.ClientFor(Alice);
+        await Corp.SyncAsync(alice);
+        var id = await NewProjectAsync(cto, "Atlas");
+        await AssignAsync(cto, id, Alice);
+        await Corp.SetMemberAsync(cto, Alice, role: "dev");
+        await File.WriteAllTextAsync(
+            Path.Combine(Corp.OrgDir(server), "projects", id + ".json"), "{ not a project", Ct);
+
+        var response = await alice.GetAsync("/api/org/projects", Ct);
+
+        response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+    }
 }
