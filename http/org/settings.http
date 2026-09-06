@@ -46,6 +46,25 @@ Accept: application/json
 
 ###
 
+# @name org_settings_refuses_an_unauthenticated_caller
+# @prod
+GET {{baseUrl}}/api/org/settings
+X-Creds-Contract: {{contract}}
+Accept: application/json
+
+?? status == 401
+?? header content-type matches ^application\/json
+
+{{
+  const assert = require('node:assert');
+  test('the gate writes the body too, so a 401 here carries a reason like every other refusal', () => {
+    assert.strictEqual(typeof response.parsedBody.error, 'string');
+    assert.ok(response.parsedBody.error.length > 0);
+  });
+}}
+
+###
+
 # @name org_settings_writes_a_new_lease
 PUT {{baseUrl}}/api/org/settings
 Authorization: Bearer {{officerToken}}

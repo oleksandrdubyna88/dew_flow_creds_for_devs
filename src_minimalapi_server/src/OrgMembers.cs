@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -43,7 +44,13 @@ public static class MemberRole
     /// The one list. <see cref="IsKnown"/> reads it and so does the <c>400</c> that names the legal
     /// values — a second spelling of the same three names is how a fourth role gets added to one of them.
     /// </summary>
-    public static readonly IReadOnlyList<string> All = [Admin, Member, Dev];
+    /// <remarks>
+    /// An <see cref="ImmutableArray{T}"/> rather than a collection expression behind
+    /// <c>IReadOnlyList</c>: that compiles to a plain array, which any caller can cast back to
+    /// <c>string[]</c> and write to. The value set of a role is not a thing code should be able to edit
+    /// at runtime, and the type is the only place to say so that cannot be forgotten.
+    /// </remarks>
+    public static readonly ImmutableArray<string> All = [Admin, Member, Dev];
 
     public static string LegalValues => string.Join(", ", All);
 
@@ -72,7 +79,8 @@ public static class ShareDefaults
     public const string Any = "any";
 
     /// <summary>The values a record may hold — <see cref="Any"/> is reported, never stored, so it is not here.</summary>
-    public static readonly IReadOnlyList<string> All = [Project, None];
+    /// <remarks>Immutable for the reason <see cref="MemberRole.All"/> gives.</remarks>
+    public static readonly ImmutableArray<string> All = [Project, None];
 
     public static string LegalValues => string.Join(", ", All);
 
