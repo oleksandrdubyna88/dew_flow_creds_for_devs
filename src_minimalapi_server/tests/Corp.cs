@@ -2,6 +2,7 @@ using System.Net;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace CredVaultServer.Tests;
 
@@ -51,6 +52,23 @@ internal static class Corp
             admin,
             $"/api/org/members/{email}",
             JsonSerializer.Serialize(new SetMemberRequest(role, shareDefault), AppJsonContext.Default.SetMemberRequest));
+
+    /// <summary>The admin's block or unblock — <c>PUT /api/org/members/{email}/active</c>, the body built from the real request type.</summary>
+    public static Task<HttpResponseMessage> SetActiveAsync(HttpClient admin, string email, bool active) =>
+        PutJsonAsync(
+            admin,
+            $"/api/org/members/{email}/active",
+            JsonSerializer.Serialize(new SetActiveRequest(active), AppJsonContext.Default.SetActiveRequest));
+
+    /// <summary>
+    /// What the admin endpoint does, done underneath the server by a second store over the same
+    /// directory — for the gate suites, which must not depend on the endpoint they are not testing, and for
+    /// the one record the endpoint refuses to write: an officer's (the <c>409</c>). A restore or an
+    /// operator's editor produces exactly this.
+    /// </summary>
+    public static Task WriteActiveByHandAsync(VaultServer server, string email, bool active) =>
+        new OrgMembersStore(server.DataDir, NullLogger<OrgMembersStore>.Instance)
+            .UpsertAsync(email, r => r with { Active = active }, "by-hand@example.com", Ct);
 
     public static Task<HttpResponseMessage> SetOfflineLeaseAsync(HttpClient admin, int hours) =>
         PutJsonAsync(

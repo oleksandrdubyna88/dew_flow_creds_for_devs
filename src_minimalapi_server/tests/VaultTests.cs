@@ -146,20 +146,25 @@ public sealed class VaultTests
         // Vault first, then the record, and the vault decides the response. A record the OS will not
         // let go of leaves a record with no vault behind — the admin list shows it, the next DELETE or an
         // admin removes it — which is a better state than a 500 for a delete that in fact happened.
+        //
+        // The caller is an officer, deliberately. On Windows the fixture holds the record open with
+        // FileShare.None, which the blocking gate inside RequireCaller (epic 2) reads as "cannot be read"
+        // and answers 503 at the door — before the handler this test is about. The gate never consults an
+        // officer's record, so the CTO is the one caller who reaches the delete with the file still held.
         using var server = Corp.Server();
-        using var alice = server.ClientFor(Alice);
+        using var cto = server.ClientFor(Corp.Cto);
         var ct = TestContext.Current.CancellationToken;
-        await alice.PutAsync("/api/vault", new ByteArrayContent(Blob), ct);
-        var record = Corp.RecordPath(server, Alice);
+        await cto.PutAsync("/api/vault", new ByteArrayContent(Blob), ct);
+        var record = Corp.RecordPath(server, Corp.Cto);
 
         HttpResponseMessage deleted;
         using (Corp.Undeletable(record))
         {
-            deleted = await alice.DeleteAsync("/api/vault", ct);
+            deleted = await cto.DeleteAsync("/api/vault", ct);
         }
 
         deleted.StatusCode.Should().Be(HttpStatusCode.NoContent, "the vault half happened and is what the caller asked for");
-        (await alice.GetAsync("/api/vault", ct)).StatusCode.Should().Be(HttpStatusCode.NotFound);
+        (await cto.GetAsync("/api/vault", ct)).StatusCode.Should().Be(HttpStatusCode.NotFound);
         File.Exists(record).Should().BeTrue("the surviving state: a record with no vault");
     }
 

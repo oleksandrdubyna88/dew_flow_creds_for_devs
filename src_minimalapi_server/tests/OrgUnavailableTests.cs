@@ -44,6 +44,28 @@ public sealed class OrgUnavailableTests
         // The hook's idempotent write starts from the default when it finds no record. A default written
         // over an unreadable one is an unblock nobody ordered — so the corrupt bytes stay, the vault
         // write still lands, and the operator fixes the file.
+        //
+        // Since the blocking gate (epic 2) a NON-officer with such a record never reaches the hook — the
+        // caller gate answers 503 first, and the gate suite pins that. The one caller who does reach it is
+        // an officer, whom the gate admits whatever their record says; so the officer is who proves the
+        // hook's own guarantee end to end.
+        using var server = Corp.Server();
+        using var cto = server.ClientFor(Corp.Cto);
+        await Corp.SyncAsync(cto);
+        await CorruptAsync(server, Corp.Cto);
+
+        var put = await Corp.SyncAsync(cto);
+
+        put.StatusCode.Should().Be(HttpStatusCode.NoContent, "the vault write is not the registry's hostage");
+        (await File.ReadAllTextAsync(Corp.RecordPath(server, Corp.Cto), Ct)).Should().Be(Corp.Garbage);
+    }
+
+    [Fact]
+    public async Task ANonOfficerWithAnUnreadableRecordIsRefusedAtTheDoorAndTheRecordStaysAsItWas()
+    {
+        // The other half of the same guarantee after epic 2: the sync is refused (503, the gate's), and the
+        // refusal writes nothing over the file either — an unreadable record is left for the operator by
+        // every path that meets it.
         using var server = Corp.Server();
         using var alice = server.ClientFor(Alice);
         await Corp.SyncAsync(alice);
@@ -51,7 +73,7 @@ public sealed class OrgUnavailableTests
 
         var put = await Corp.SyncAsync(alice);
 
-        put.StatusCode.Should().Be(HttpStatusCode.NoContent, "the vault write is not the registry's hostage");
+        put.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable, "an unreadable record is never a pass");
         (await File.ReadAllTextAsync(Corp.RecordPath(server, Alice), Ct)).Should().Be(Corp.Garbage);
     }
 

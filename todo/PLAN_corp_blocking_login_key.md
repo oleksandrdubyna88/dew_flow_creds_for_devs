@@ -286,6 +286,17 @@ the existing withdraw logic: a receipt already carrying a reason is dismissed wi
 inbox says. Done inline in the block handler, not on `ShareMaintenance`'s hourly cadence —
 "immediately" is the requirement.
 
+**Two additions story 1's review round bought, both in this file's scope rather than a later epic.**
+*The withdrawal re-runs on every `active: false` write, transition or not* — it is a loop over other
+people's files, so a crash or a held handle leaves it half-done, and a repeat that saw "no transition"
+and answered `204` would make the only recovery a human has do nothing. A repeat with nothing left
+writes no row; one that finds leftovers logs a Warning instead of a second `member.blocked`. *And
+`POST /api/shares` refuses a deactivated recipient* (`403`; `503` while their record is unreadable) —
+the plan had left this to epic 3 as "the share rule", but hiding somebody from `/api/team` does not
+stop a client that remembers the address, and material dropped into a locked-out inbox becomes
+readable on the day they are re-admitted. Neither refusal carries `X-Creds-Reason`: it instructs a
+client about its OWN account, and an honest sender's client would lock the wrong vault.
+
 ### Extension
 
 | File | New/modify | Responsibility |
@@ -402,8 +413,11 @@ after it and for none before, and the wrap's own flag says which regime a given 
 config and the login key, each `403` carrying the reason header; an officer cannot be blocked
 (`409`); unblock restores; S is byte-identical across two `GET`s and different after unblock; a share
 to a blocked user is withdrawn and its sender's receipt carries the reason, then dismisses; a share
-from a blocked user leaves the recipient's inbox; with no KEK the login key is `503` while ordinary
-sync is unaffected.
+from a blocked user leaves the recipient's inbox; a **repeated** block finishes a withdrawal the first
+one could not (the inbox file held open through the first request, released, and the repeat takes it);
+a share addressed **to** a blocked person is refused rather than delivered, with no reason header on
+the sender's response; an officer target stays `409` when their own record is also unreadable; with no
+KEK the login key is `503` while ordinary sync is unaffected.
 
 **Extension** (`node:test`): a PIN round-trip with and without S; the wrong S fails as
 `server-key-required`, never `wrong-password`; a vault written without S is **byte-identical to

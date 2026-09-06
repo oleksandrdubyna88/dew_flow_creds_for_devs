@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text.Json.Serialization.Metadata;
 using Microsoft.Extensions.Logging;
 
 namespace CredVaultServer;
@@ -22,7 +23,8 @@ public delegate Task<(string Email, string? Name)?> AdminGate(HttpContext ctx);
 /// <c>DomainOf</c> are local functions in a top-level program and cross into this file only as
 /// delegates; a record lets the next epics widen the set without editing the call site each time.
 /// <see cref="DomainOf"/> and <see cref="AllowAnyDomain"/> are what the admin routes refuse a
-/// cross-domain target with.
+/// cross-domain target with. <see cref="Shares"/> is the one store the share endpoints close over —
+/// blocking withdraws a person's pending shares from it.
 /// </summary>
 public sealed record OrgEndpointDeps(
     CallerGate RequireCaller,
@@ -32,6 +34,7 @@ public sealed record OrgEndpointDeps(
     OrgMembersStore Members,
     OrgSettingsStore Settings,
     OrgEventLog Events,
+    VaultStore Shares,
     bool AllowAnyDomain,
     ILogger Log,
     int ServerContract);
@@ -74,6 +77,12 @@ public static class OrgEndpoints
         app.MapGet("/api/org/members", (HttpContext ctx, CancellationToken ct) => MembersAsync(ctx, deps, ct));
         app.MapPut("/api/org/members/{email}", (HttpContext ctx, string email, CancellationToken ct) =>
             SetMemberAsync(ctx, deps, email, ct));
+        // Blocking — the one admin action that reaches into other people's inboxes. Its own route rather
+        // than a field on the upsert, because "changed a role" and "locked somebody out" are different
+        // acts an audit log must tell apart, and because the body's ONE field must be impossible to omit
+        // by accident (see SetActiveRequest).
+        app.MapPut("/api/org/members/{email}/active", (HttpContext ctx, string email, CancellationToken ct) =>
+            SetActiveAsync(ctx, deps, email, ct));
         app.MapGet("/api/org/settings", (HttpContext ctx, CancellationToken ct) => SettingsAsync(ctx, deps, ct));
         app.MapPut("/api/org/settings", (HttpContext ctx, CancellationToken ct) => SetSettingsAsync(ctx, deps, ct));
         return app;
@@ -220,14 +229,27 @@ public static class OrgEndpoints
         var caller = requireCaller(ctx);
         if (caller is null)
         {
-            await FailJson(ctx, ctx.Response.StatusCode, RefusalReason(ctx.Response.StatusCode));
+            await WriteRefusalAsync(ctx);
         }
         return caller;
     }
 
-    private static string RefusalReason(int status) => status switch
+    /// <summary>
+    /// The sentence for whatever the shared gate decided, read back off the status and the header it set.
+    /// The blocking gate's <c>503</c> is the same file <c>/api/org/me</c> answers <c>503</c> for, so it gets
+    /// that route's own sentence; its <c>403</c> is told apart from the domain's by the reason header — the
+    /// same fact a client acts on, so the two cannot drift.
+    /// </summary>
+    private static Task WriteRefusalAsync(HttpContext ctx) =>
+        ctx.Response.StatusCode == StatusCodes.Status503ServiceUnavailable
+            ? FailUnavailable(ctx)
+            : FailJson(ctx, ctx.Response.StatusCode, RefusalReason(ctx));
+
+    private static string RefusalReason(HttpContext ctx) => ctx.Response.StatusCode switch
     {
         StatusCodes.Status401Unauthorized => "No verified identity was presented.",
+        _ when ctx.Response.Headers[CallerStanding.ReasonHeader] == CallerStanding.AccountDeactivated =>
+            "This account has been deactivated by an administrator, and the server refuses every request from it.",
         _ => "That account is not served by this deployment.",
     };
 
@@ -286,7 +308,7 @@ public static class OrgEndpoints
             await FailJson(ctx, refusal.Value.Status, refusal.Value.Message);
             return;
         }
-        var request = await ReadSetMemberAsync(ctx);
+        var request = await ReadJsonAsync(ctx, AppJsonContext.Default.SetMemberRequest);
         var problem = request is null ? MalformedMemberBody : request.Problem();
         if (problem.Length > 0)
         {
@@ -300,38 +322,71 @@ public static class OrgEndpoints
 
     /// <summary>The refusal this target earns before the body is even read, or nothing.</summary>
     /// <remarks>
-    /// The shape is checked FIRST, and the order is the point: a path segment with no <c>@</c> is not a
+    /// <para>The shape is checked FIRST, and the order is the point: a path segment with no <c>@</c> is not a
     /// person, and answering it with the cross-domain <c>403</c> would tell an admin their own colleague
-    /// is in another company. Without the check it would hash to a key like any string and be written.
+    /// is in another company. Without the check it would hash to a key like any string and be written.</para>
+    /// <para>Shared by the role upsert and the block, so the two cannot come to disagree about who an
+    /// admin may reach — and the sentences say "manage" rather than "give a role", because they are read
+    /// from both.</para>
     /// </remarks>
     private static (int Status, string Message)? TargetProblem(OrgEndpointDeps deps, string caller, string target)
     {
         if (!target.Contains('@') || target.Length < 3)
         {
             return (StatusCodes.Status400BadRequest,
-                "That is not an email address, so there is nobody to give a role to.");
+                "That is not an email address, so it names nobody this server could manage.");
         }
         if (!deps.AllowAnyDomain && deps.DomainOf(target) != deps.DomainOf(caller))
         {
             return (StatusCodes.Status403Forbidden,
-                "That address is in another domain; an administrator may only set roles inside their own.");
+                "That address is in another domain; an administrator may only manage people inside their own.");
         }
         return deps.OrgRecovery.IsOfficer(target)
             ? (StatusCodes.Status409Conflict,
-                "That address is a recovery officer, which is configuration rather than a role: officers "
-                + "administer by being on the roster, and the roster is changed by the operator and a restart.")
+                "That address is a recovery officer, which is configuration rather than a record: officers "
+                + "administer by being on the roster, cannot be blocked, and the roster is changed by the "
+                + "operator and a restart.")
             : null;
     }
 
-    /// <summary>A body this build cannot parse is a <c>400</c>, never an exception the handler leaks.</summary>
-    private static async Task<SetMemberRequest?> ReadSetMemberAsync(HttpContext ctx)
+    /// <summary>
+    /// A body this build cannot parse is a <c>400</c>, never an exception the handler leaks. One reader for
+    /// every request type on this surface — the third copy of this try/catch is where one of them would
+    /// have caught one exception type fewer than the others.
+    /// </summary>
+    private static async Task<T?> ReadJsonAsync<T>(HttpContext ctx, JsonTypeInfo<T> typeInfo)
+        where T : class
     {
         try
         {
-            return await ctx.Request.ReadFromJsonAsync(AppJsonContext.Default.SetMemberRequest, ctx.RequestAborted);
+            return await ctx.Request.ReadFromJsonAsync(typeInfo, ctx.RequestAborted);
         }
         catch (Exception e) when (e is System.Text.Json.JsonException or BadHttpRequestException)
         {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// The one write the admin routes make, or the <c>503</c> — the same answer <c>/api/org/me</c> gives the
+    /// person themselves, for the same reason: the record exists and cannot be read, so nothing may be
+    /// written over it either. Shared by the role edit and the block.
+    /// </summary>
+    private static async Task<UpsertResult?> UpsertOrUnavailableAsync(
+        HttpContext ctx,
+        OrgEndpointDeps deps,
+        string target,
+        Func<MemberRecord, MemberRecord> edit,
+        string admin,
+        CancellationToken ct)
+    {
+        try
+        {
+            return await deps.Members.UpsertAsync(target, edit, admin, ct);
+        }
+        catch (MemberRecordUnavailableException)
+        {
+            await FailUnavailable(ctx);
             return null;
         }
     }
@@ -344,21 +399,14 @@ public static class OrgEndpoints
         SetMemberRequest request,
         CancellationToken ct)
     {
-        UpsertResult result;
-        try
+        var result = await UpsertOrUnavailableAsync(ctx, deps, target, request.ApplyTo, admin, ct);
+        if (result is null)
         {
-            result = await deps.Members.UpsertAsync(target, request.ApplyTo, admin, ct);
-        }
-        catch (MemberRecordUnavailableException)
-        {
-            // The same answer /api/org/me gives the person themselves, for the same reason: the record
-            // exists and cannot be read, so nothing may be written over it either.
-            await FailUnavailable(ctx);
             return;
         }
-        await RecordMemberEditAsync(deps, admin, result, ct);
+        await RecordMemberEditAsync(deps, admin, result.Value, ct);
         await ctx.Response.WriteAsJsonAsync(
-            MemberListEntryDto.For(result.Record, deps.OrgRecovery.IsOfficer(result.Record.Email)),
+            MemberListEntryDto.For(result.Value.Record, deps.OrgRecovery.IsOfficer(result.Value.Record.Email)),
             AppJsonContext.Default.MemberListEntryDto,
             cancellationToken: ct);
     }
@@ -400,7 +448,7 @@ public static class OrgEndpoints
     /// as a history: "made a developer" and "made a developer, again" are different facts.</summary>
     private static string Transition(string before, string after) => $"{before} -> {after}";
 
-    private static OrgEventDto Row(string kind, string actor, string subject, string detail) => new(
+    private static OrgEventDto Row(string kind, string actor, string subject, string? detail) => new(
         At: DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
         Kind: kind,
         Actor: actor,
@@ -411,6 +459,167 @@ public static class OrgEndpoints
         EntityKind: null,
         Outcome: null,
         Detail: detail);
+
+    // ---------- blocking ----------
+
+    /// <summary>
+    /// <c>PUT /api/org/members/{email}/active</c> — <c>{active: false}</c> blocks, <c>{active: true}</c>
+    /// re-admits. Admin-only; the same three target refusals as the role upsert, from the same function.
+    ///
+    /// <para><b>Idempotent, and a <c>204</c> either way.</b> A value the record already holds writes no
+    /// event row — the log records transitions, and "blocked, again" is not one — but a repeated
+    /// <c>active: false</c> DOES re-run the withdrawal, because that is the only way a human can finish one
+    /// an earlier block left half-done; see <see cref="BlockedAsync"/>. A real transition to <c>false</c>
+    /// is the block: the caller gate refuses
+    /// the person from their very next request (the record is on disk, the gate re-stats), every pending
+    /// share to and from them is withdrawn, and <c>member.blocked</c> is appended. A real transition to
+    /// <c>true</c> re-admits and appends <c>member.unblocked</c>; nothing withdrawn comes back.</para>
+    ///
+    /// <para><b>The edit is <c>Active</c> and nothing else</b> — a developer who is blocked and re-admitted
+    /// comes back the developer they were, not the default member who may export.</para>
+    /// </summary>
+    private static async Task SetActiveAsync(HttpContext ctx, OrgEndpointDeps deps, string email, CancellationToken ct)
+    {
+        var caller = await deps.RequireAdmin(ctx);
+        if (caller is null)
+        {
+            return;
+        }
+        var target = MemberRecord.Normalize(email);
+        var refusal = TargetProblem(deps, caller.Value.Email, target);
+        if (refusal is not null)
+        {
+            await FailJson(ctx, refusal.Value.Status, refusal.Value.Message);
+            return;
+        }
+        var (active, problem) = await ReadActiveAsync(ctx);
+        if (problem.Length > 0)
+        {
+            await FailJson(ctx, StatusCodes.Status400BadRequest, problem);
+            return;
+        }
+        await ApplyActiveAsync(ctx, deps, caller.Value.Email, target, active, ct);
+    }
+
+    private const string MalformedActiveBody = "The body is not the JSON this endpoint reads; send active, true or false.";
+
+    /// <summary>The flag, or the <c>400</c> — an omitted or null <c>active</c> is never read as <c>false</c>.</summary>
+    private static async Task<(bool Active, string Problem)> ReadActiveAsync(HttpContext ctx)
+    {
+        var request = await ReadJsonAsync(ctx, AppJsonContext.Default.SetActiveRequest);
+        return request?.Active is { } active
+            ? (active, string.Empty)
+            : (false, request is null ? MalformedActiveBody : request.Problem());
+    }
+
+    private static async Task ApplyActiveAsync(
+        HttpContext ctx,
+        OrgEndpointDeps deps,
+        string admin,
+        string target,
+        bool active,
+        CancellationToken ct)
+    {
+        var result = await UpsertOrUnavailableAsync(ctx, deps, target, r => r with { Active = active }, admin, ct);
+        if (result is null)
+        {
+            return;
+        }
+        await RecordActiveEditAsync(deps, admin, result.Value);
+        ctx.Response.StatusCode = StatusCodes.Status204NoContent;
+    }
+
+    /// <summary>
+    /// What a block or unblock leaves behind — AFTER the record has landed, and unable to fail the response.
+    ///
+    /// <para>"Changed" is decided against <see cref="UpsertResult.Before"/>, the record the write replaced
+    /// under the store's lock, as the role rows are. <b>No client token from here on</b>, on the precedent of
+    /// <c>DELETE /api/vault</c>: the record is written and the person is already refused, so the withdrawal
+    /// and the rows are owed whether or not the admin's client is still listening — a disconnect that
+    /// cancelled the withdrawal half-way would leave shares in inboxes the block was meant to empty.</para>
+    /// </summary>
+    private static async Task RecordActiveEditAsync(OrgEndpointDeps deps, string admin, UpsertResult result)
+    {
+        if (result.Created)
+        {
+            await deps.Events.AppendAsync(
+                Row(OrgEventKinds.MemberRegistered, admin, result.Record.Email, result.Record.Role), CancellationToken.None);
+        }
+        if (!result.Record.Active)
+        {
+            await BlockedAsync(deps, admin, result.Record.Email, transition: result.Before.Active);
+            return;
+        }
+        if (!result.Before.Active)
+        {
+            await UnblockedAsync(deps, admin, result.Record.Email);
+        }
+    }
+
+    /// <summary>
+    /// The block, once the record says so: withdraw both directions first, then the row, so the row can say
+    /// what the block took with it. Logged at Warning naming the admin and the target — this is the one
+    /// admin action that changes what happens to OTHER people's inboxes, and an operator reading the log
+    /// must be able to see who did it to whom without opening the event log.
+    ///
+    /// <para><b>The withdrawal runs on every <c>active: false</c> write, transition or not, and that is what
+    /// makes the operation recoverable.</b> It is a loop over other people's files: a crash, a handle
+    /// somebody else holds, a permission flipped half-way leaves shares in an inbox the block was meant to
+    /// empty, and nothing retries them on a cadence. If a repeat compared <see cref="UpsertResult.Before"/>,
+    /// saw no transition and answered <c>204</c>, then the only recovery a human has — send it again — would
+    /// be the one action guaranteed to do nothing. A repeat with nothing left costs two directory reads.</para>
+    ///
+    /// <para><b>Only a transition writes a row</b>, because the log records what changed and "blocked, again"
+    /// did not. A repeat that DID find leftovers says so in the server log instead of appending a second
+    /// <c>member.blocked</c> that a reader would count as a second block.</para>
+    /// </summary>
+    private static async Task BlockedAsync(OrgEndpointDeps deps, string admin, string target, bool transition)
+    {
+        var withdrawal = await deps.Shares.WithdrawAllInvolvingAsync(target, CancellationToken.None);
+        if (!transition)
+        {
+            ReportRepeat(deps, admin, target, withdrawal);
+            return;
+        }
+        deps.Log.LogWarning(
+            "{Admin} BLOCKED {Target}: every request from them is refused from now on; {ToThem} pending share(s) "
+            + "to them and {FromThem} from them were withdrawn",
+            admin,
+            target,
+            withdrawal.ToThem,
+            withdrawal.FromThem);
+        await deps.Events.AppendAsync(
+            Row(OrgEventKinds.MemberBlocked, admin, target, WithdrawalDetail(withdrawal)), CancellationToken.None);
+    }
+
+    /// <summary>
+    /// A repeated block: silent when it found nothing, which is the ordinary case, and loud when it did —
+    /// leftovers mean an earlier block did not finish, and the row that block wrote understates what was
+    /// actually withdrawn.
+    /// </summary>
+    private static void ReportRepeat(OrgEndpointDeps deps, string admin, string target, Withdrawal withdrawal)
+    {
+        if (withdrawal.Total == 0)
+        {
+            return;
+        }
+        deps.Log.LogWarning(
+            "{Admin} repeated the block on {Target} and it completed a withdrawal an earlier one left unfinished: "
+            + "{ToThem} pending share(s) to them and {FromThem} from them went now",
+            admin,
+            target,
+            withdrawal.ToThem,
+            withdrawal.FromThem);
+    }
+
+    private static string WithdrawalDetail(Withdrawal withdrawal) =>
+        $"withdrew {withdrawal.ToThem} pending share(s) to them and {withdrawal.FromThem} from them";
+
+    private static async Task UnblockedAsync(OrgEndpointDeps deps, string admin, string target)
+    {
+        deps.Log.LogWarning("{Admin} UNBLOCKED {Target}: they are served again from now on", admin, target);
+        await deps.Events.AppendAsync(Row(OrgEventKinds.MemberUnblocked, admin, target, detail: null), CancellationToken.None);
+    }
 
     // ---------- the runtime settings ----------
 
@@ -437,7 +646,7 @@ public static class OrgEndpoints
         {
             return;
         }
-        var request = await ReadSetSettingsAsync(ctx);
+        var request = await ReadJsonAsync(ctx, AppJsonContext.Default.SetSettingsRequest);
         var problem = request is null ? MalformedSettingsBody : request.Problem();
         if (problem.Length > 0)
         {
@@ -459,18 +668,6 @@ public static class OrgEndpoints
     }
 
     private const string MalformedSettingsBody = "The body is not the JSON this endpoint reads; send offlineLeaseHours.";
-
-    private static async Task<SetSettingsRequest?> ReadSetSettingsAsync(HttpContext ctx)
-    {
-        try
-        {
-            return await ctx.Request.ReadFromJsonAsync(AppJsonContext.Default.SetSettingsRequest, ctx.RequestAborted);
-        }
-        catch (Exception e) when (e is System.Text.Json.JsonException or BadHttpRequestException)
-        {
-            return null;
-        }
-    }
 
     private static Task FailUnavailable(HttpContext ctx)
     {

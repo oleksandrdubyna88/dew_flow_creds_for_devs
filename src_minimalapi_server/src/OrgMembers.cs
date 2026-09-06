@@ -434,3 +434,19 @@ public sealed record SetMemberRequest(string? Role, string? ShareDefault)
             ? $"Unknown shareDefault; the legal values are {ShareDefaults.LegalValues}."
             : null;
 }
+
+/// <summary>
+/// What an admin sends to <c>PUT /api/org/members/{email}/active</c>: <c>{active: false}</c> blocks,
+/// <c>{active: true}</c> re-admits.
+/// </summary>
+/// <remarks>
+/// <b>Nullable for the reason <see cref="SetSettingsRequest"/> documents, and here the stakes are a
+/// person rather than a lease.</b> A deserializer runs no defaults, so a positional <c>bool</c> the client
+/// omitted would bind to <c>false</c> — and <c>false</c> here BLOCKS somebody. A body of <c>{}</c>, or an
+/// explicit <c>null</c>, is a <c>400</c> that names the field; nothing about the record changes.
+/// </remarks>
+public sealed record SetActiveRequest(bool? Active)
+{
+    /// <summary>The <c>400</c> this request earns, or empty when the server can act on it.</summary>
+    public string Problem() => Active is null ? "Nothing to change: send active, true or false." : string.Empty;
+}

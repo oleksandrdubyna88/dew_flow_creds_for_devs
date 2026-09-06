@@ -38,6 +38,18 @@ public static class OrgEventKinds
 
     public const string MemberShareDefaultChanged = "member.share_default_changed";
 
+    /// <summary>
+    /// An admin set <c>active: false</c>, and the transition was real — a second block of somebody already
+    /// blocked leaves no row. Emitted by <c>PUT /api/org/members/{email}/active</c> itself, never by the
+    /// store: the same <c>UpsertAsync</c> serves a sync (actor: the person) and an admin (actor: the admin),
+    /// and only the caller knows which. A second mutation path over one store with no row of its own is
+    /// how an audit log stops being one.
+    /// </summary>
+    public const string MemberBlocked = "member.blocked";
+
+    /// <summary>The reverse transition, <c>active: true</c> over a record that said <c>false</c>.</summary>
+    public const string MemberUnblocked = "member.unblocked";
+
     public const string SettingsChanged = "settings.changed";
 }
 

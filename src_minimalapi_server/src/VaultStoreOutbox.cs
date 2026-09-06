@@ -92,12 +92,17 @@ public sealed partial class VaultStore
     }
 
     /// <summary>
-    /// Drop every receipt whose share is no longer pending.
+    /// Drop every receipt whose share is no longer pending — except one the server withdrew itself.
     /// </summary>
     /// <remarks>
-    /// The recipient accepting or declining deletes the inbox file; nothing tells the sender. So
+    /// <para>The recipient accepting or declining deletes the inbox file; nothing tells the sender. So
     /// the file's absence IS the signal, and this is the periodic reading of it. Returns how many
-    /// receipts were retired.
+    /// receipts were retired.</para>
+    /// <para><b>A receipt carrying <see cref="SentShare.WithdrawnReason"/> is kept.</b> Blocking a
+    /// recipient deletes exactly the inbox file this test reads, so without the exception the sweep
+    /// would erase the sender's one explanation within the hour and they would never learn why their
+    /// share vanished — the story split found this by reading the two paths side by side. The reason
+    /// stays until the sender dismisses it or the 31-day prune takes it.</para>
     /// </remarks>
     public async Task<int> ReconcileSentAsync(CancellationToken ct)
     {
@@ -108,7 +113,7 @@ public sealed partial class VaultStore
             {
                 ct.ThrowIfCancellationRequested();
                 var receipt = await ReadSentOrNullAsync(path, ct);
-                if (receipt is null || !StillPending(receipt))
+                if (receipt is null || Retirable(receipt))
                 {
                     retired += Forget(path);
                 }
@@ -116,6 +121,9 @@ public sealed partial class VaultStore
         }
         return retired;
     }
+
+    /// <summary>Gone from the inbox and NOT withdrawn by the server: the recipient acted, so the receipt has told its story.</summary>
+    private bool Retirable(SentShare receipt) => !receipt.IsWithdrawn && !StillPending(receipt);
 
     private bool StillPending(SentShare receipt) =>
         File.Exists(Path.Combine(_sharesDir, KeyFor(receipt.ToEmail), receipt.Id + ".json"));

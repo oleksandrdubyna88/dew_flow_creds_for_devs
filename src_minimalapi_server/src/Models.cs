@@ -131,6 +131,28 @@ public sealed record SentShare
     [JsonPropertyName("entityName")] public string EntityName { get; init; } = "";
     [JsonPropertyName("entityKind")] public string EntityKind { get; init; } = "";
     [JsonPropertyName("createdAt")] public long CreatedAt { get; init; }
+
+    /// <summary>
+    /// Why the server withdrew this share on the sender's behalf — set when the recipient was blocked, so
+    /// the sender learns once why it vanished; the row is then theirs to dismiss.
+    /// </summary>
+    /// <remarks>
+    /// <para><b>Omitted rather than written as <c>null</c> or <c>""</c>, and nullable rather than
+    /// defaulted</b> — the <c>Format</c> precedent on <see cref="ShareItem"/>, for its reason and one more.
+    /// Every receipt written before this field existed has no such key, and a released extension's
+    /// <c>isSentShare</c> checks its five fields and ignores extras, so an ABSENT field keeps the wire
+    /// byte-identical for every client alive. And a deserializer runs no initializer: a <c>string</c>
+    /// property with <c>= ""</c> would still arrive <c>null</c> for a receipt that lacks the key, while the
+    /// type claimed otherwise (measured on <c>ShareRequest.EntityKind</c>, 2026-09-03). The one form
+    /// anything here may read is <see cref="IsWithdrawn"/>.</para>
+    /// </remarks>
+    [JsonPropertyName("withdrawnReason")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? WithdrawnReason { get; init; }
+
+    /// <summary>Whether the server withdrew this share — the sweep keeps such a receipt, the dismiss route removes it.</summary>
+    [JsonIgnore]
+    public bool IsWithdrawn => !string.IsNullOrEmpty(WithdrawnReason);
 }
 
 /// <summary>A person discoverable in this deployment.</summary>

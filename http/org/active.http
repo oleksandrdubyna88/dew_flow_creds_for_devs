@@ -1,0 +1,390 @@
+# Blocking — PUT /api/org/members/{email}/active, admin-only. `{active: false}` shuts every door the same
+# minute: the caller gate inside RequireCaller refuses the person on their very next request with a 403
+# carrying `X-Creds-Reason: account-deactivated` (so a client can tell it from a domain 403 without
+# matching prose), every pending share to and from them is withdrawn, and the sender of a withdrawn share
+# is told why on their receipt, once, then dismisses it. `{active: true}` re-admits. Idempotent: 204
+# whether or not anything changed.
+#
+# PRECONDITION: a corp-mode server (../README.md — three officers). `{{officerToken}}` administers;
+# `{{token}}` (Alice) and `{{bobToken}}` do not.
+#
+# The file blocks Alice and then Bob, and the last requests put both back, so a completed run leaves the
+# roster as it found it — and every share it posts is withdrawn and dismissed before the end, so
+# shares/shares.http still finds an empty store.
+
+# @name org_active_blocks_a_person
+PUT {{baseUrl}}/api/org/members/{{aliceEmail}}/active
+Authorization: Bearer {{officerToken}}
+X-Creds-Contract: {{contract}}
+Content-Type: application/json
+
+{ "active": false }
+
+?? status == 204
+
+###
+
+# @name org_active_shows_in_the_roster
+GET {{baseUrl}}/api/org/members
+Authorization: Bearer {{officerToken}}
+X-Creds-Contract: {{contract}}
+Accept: application/json
+
+?? status == 200
+?? header content-type matches ^application\/json
+
+{{
+  const assert = require('node:assert');
+  test('the row says inactive, as a boolean an admin UI can draw a badge from', () => {
+    const alice = response.parsedBody.find((row) => row.email === aliceEmail);
+    assert.ok(alice, 'Alice has a record — the block created or updated it');
+    assert.strictEqual(alice.active, false);
+    assert.strictEqual(alice.updatedBy, officerEmail, 'stamped from the token');
+  });
+}}
+
+###
+# The gate, on an OLD route: the plain 403 plus the header. No body here — the older routes answer their
+# 401 and 403 with none, and this refusal keeps their shape.
+# @name org_active_the_blocked_person_is_refused_with_a_reason_header
+GET {{baseUrl}}/api/vault
+Authorization: Bearer {{token}}
+X-Creds-Contract: {{contract}}
+
+?? status == 403
+?? header x-creds-reason == account-deactivated
+
+###
+# The same gate on the corporate surface: the JSON {error} that surface promises, and the same header.
+# @name org_active_the_blocked_person_is_refused_on_the_corporate_surface_with_json
+GET {{baseUrl}}/api/org/me
+Authorization: Bearer {{token}}
+X-Creds-Contract: {{contract}}
+Accept: application/json
+
+?? status == 403
+?? header content-type matches ^application\/json
+?? header x-creds-reason == account-deactivated
+
+{{
+  const assert = require('node:assert');
+  test('the body says it is a deactivation, not a domain refusal', () => {
+    assert.match(response.parsedBody.error, /deactivated/i);
+  });
+}}
+
+###
+# @name org_active_blocking_twice_is_idempotent
+PUT {{baseUrl}}/api/org/members/{{aliceEmail}}/active
+Authorization: Bearer {{officerToken}}
+X-Creds-Contract: {{contract}}
+Content-Type: application/json
+
+{ "active": false }
+
+?? status == 204
+
+###
+# `active` is nullable on purpose: a deserializer runs no defaults, a positional bool omitted by the
+# client binds to false, and false here BLOCKS somebody. `{}` is a 400 that names the field.
+# @name org_active_refuses_a_body_with_no_field
+PUT {{baseUrl}}/api/org/members/{{aliceEmail}}/active
+Authorization: Bearer {{officerToken}}
+X-Creds-Contract: {{contract}}
+Content-Type: application/json
+Accept: application/json
+
+{}
+
+?? status == 400
+?? header content-type matches ^application\/json
+
+{{
+  const assert = require('node:assert');
+  test('an omitted field is a 400 naming it, never a false the deserializer invented', () => {
+    assert.match(response.parsedBody.error, /active/);
+  });
+}}
+
+###
+
+# @name org_active_refuses_a_target_that_is_not_an_address
+PUT {{baseUrl}}/api/org/members/not-an-email/active
+Authorization: Bearer {{officerToken}}
+X-Creds-Contract: {{contract}}
+Content-Type: application/json
+Accept: application/json
+
+{ "active": false }
+
+?? status == 400
+?? header content-type matches ^application\/json
+
+###
+
+# @name org_active_refuses_a_target_in_another_domain
+PUT {{baseUrl}}/api/org/members/somebody@another-company.example/active
+Authorization: Bearer {{officerToken}}
+X-Creds-Contract: {{contract}}
+Content-Type: application/json
+Accept: application/json
+
+{ "active": false }
+
+?? status == 403
+?? header content-type matches ^application\/json
+
+{{
+  const assert = require('node:assert');
+  test('the refusal names the domain', () => {
+    assert.match(response.parsedBody.error, /domain/i);
+  });
+}}
+
+###
+# The roster is configuration, and a gate that refused an officer would lock the break-glass quorum out
+# of the only road into a blocked developer's vault. So an officer cannot be blocked: 409, never a no-op.
+# @name org_active_refuses_an_officer_target
+PUT {{baseUrl}}/api/org/members/{{officerEmail}}/active
+Authorization: Bearer {{officerToken}}
+X-Creds-Contract: {{contract}}
+Content-Type: application/json
+Accept: application/json
+
+{ "active": false }
+
+?? status == 409
+?? header content-type matches ^application\/json
+
+{{
+  const assert = require('node:assert');
+  test('409 says officer', () => {
+    assert.match(response.parsedBody.error, /officer/i);
+  });
+}}
+
+###
+
+# @name org_active_refuses_a_caller_who_does_not_administer
+PUT {{baseUrl}}/api/org/members/{{aliceEmail}}/active
+Authorization: Bearer {{bobToken}}
+X-Creds-Contract: {{contract}}
+Content-Type: application/json
+Accept: application/json
+
+{ "active": true }
+
+?? status == 403
+?? header content-type matches ^application\/json
+
+{{
+  const assert = require('node:assert');
+  test('the refusal says why in the JSON this surface promises — and carries no deactivation header, Bob is fine', () => {
+    assert.strictEqual(typeof response.parsedBody.error, 'string');
+    assert.strictEqual(response.headers['x-creds-reason'], undefined);
+  });
+}}
+
+###
+
+# @name org_active_refuses_an_unauthenticated_caller
+PUT {{baseUrl}}/api/org/members/{{aliceEmail}}/active
+X-Creds-Contract: {{contract}}
+Content-Type: application/json
+Accept: application/json
+
+{ "active": true }
+
+?? status == 401
+?? header content-type matches ^application\/json
+
+###
+
+# @name org_active_puts_the_person_back
+PUT {{baseUrl}}/api/org/members/{{aliceEmail}}/active
+Authorization: Bearer {{officerToken}}
+X-Creds-Contract: {{contract}}
+Content-Type: application/json
+
+{ "active": true }
+
+?? status == 204
+
+###
+
+# @name org_active_the_restored_person_is_served_again
+GET {{baseUrl}}/api/org/me
+Authorization: Bearer {{token}}
+X-Creds-Contract: {{contract}}
+Accept: application/json
+
+?? status == 200
+
+{{
+  const assert = require('node:assert');
+  test('reversible — decision 5: active again, and no reason header on a success', () => {
+    assert.strictEqual(response.parsedBody.active, true);
+    assert.strictEqual(response.headers['x-creds-reason'], undefined);
+  });
+}}
+
+###
+# ----- withdrawal: what a block does to a share that was pending -----
+# Alice shares with Bob; Bob is blocked; the share leaves Bob's inbox and Alice's receipt carries the
+# reason — rewritten, not deleted, because the receipt is the only place she can learn why. Then she
+# dismisses it, which is the new first branch of DELETE /api/shares/sent/{id}: 204 whatever the inbox says
+# (the older branch would read the missing inbox file as "already accepted" and answer 409).
+
+# @name org_active_a_share_is_posted_so_the_block_has_something_to_withdraw
+POST {{baseUrl}}/api/shares
+Authorization: Bearer {{token}}
+X-Creds-Contract: {{contract}}
+Content-Type: application/json
+
+{
+  "toEmail": "{{bobEmail}}",
+  "entityName": "withdrawn by a block",
+  "entityKind": "credential",
+  "salt": "AAAAAAAAAAAAAAAAAAAAAA==",
+  "iv": "AAAAAAAAAAAAAAAA",
+  "tag": "AAAAAAAAAAAAAAAAAAAAAA==",
+  "data": "c2VhbGVkLWJ5dGVz"
+}
+
+?? status == 201
+
+###
+
+# @name org_active_blocks_the_recipient
+PUT {{baseUrl}}/api/org/members/{{bobEmail}}/active
+Authorization: Bearer {{officerToken}}
+X-Creds-Contract: {{contract}}
+Content-Type: application/json
+
+{ "active": false }
+
+?? status == 204
+
+###
+
+# The recipient half of the rule: a blocked person is hidden from /api/team, not from a client that
+# remembers the address — and a share that landed anyway would wait in an inbox nobody can open until the
+# day they are re-admitted. The refusal carries NO X-Creds-Reason: that header tells a client to lock its
+# OWN account, and this response is about somebody else's standing.
+# @name org_active_a_share_to_the_blocked_recipient_is_refused
+POST {{baseUrl}}/api/shares
+Authorization: Bearer {{token}}
+X-Creds-Contract: {{contract}}
+Content-Type: application/json
+
+{
+  "toEmail": "{{bobEmail}}",
+  "entityName": "sent after the block",
+  "entityKind": "db",
+  "salt": "AAAAAAAAAAAAAAAAAAAAAA==",
+  "iv": "AAAAAAAAAAAAAAAA",
+  "tag": "AAAAAAAAAAAAAAAAAAAAAA==",
+  "data": "c2VhbGVkLXBheWxvYWQ="
+}
+
+?? status == 403
+
+{{
+  const assert = require('node:assert');
+  test('the sentence names the reason, and no header tells the sender to lock their own vault', () => {
+    assert.match(response.body, /deactivated/i);
+    assert.strictEqual(response.headers['x-creds-reason'], undefined);
+  });
+}}
+
+###
+
+# @name org_active_the_senders_receipt_carries_the_reason
+GET {{baseUrl}}/api/shares/sent
+Authorization: Bearer {{token}}
+X-Creds-Contract: {{contract}}
+Accept: application/json
+
+?? status == 200
+?? header content-type matches ^application\/json
+
+{{
+  const assert = require('node:assert');
+  const receipts = response.parsedBody;
+  test('exactly the one receipt this run created — a leftover means an earlier run did not finish', () => {
+    assert.ok(Array.isArray(receipts));
+    assert.strictEqual(receipts.length, 1, `expected 1 receipt, found ${receipts.length}`);
+  });
+  test('the receipt is kept and says why: withdrawnReason is a non-empty string', () => {
+    assert.strictEqual(typeof receipts[0].withdrawnReason, 'string');
+    assert.ok(receipts[0].withdrawnReason.length > 0);
+    assert.match(receipts[0].withdrawnReason, /deactivated/i);
+  });
+  test('and it is still a receipt, never a copy of the secret', () => {
+    for (const secret of ['salt', 'iv', 'tag', 'data']) {
+      assert.ok(!(secret in receipts[0]));
+    }
+  });
+  exports.withdrawnShareId = receipts[0].id;
+}}
+
+###
+
+# @name org_active_dismissing_a_withdrawn_receipt_is_204
+DELETE {{baseUrl}}/api/shares/sent/{{withdrawnShareId}}
+Authorization: Bearer {{token}}
+X-Creds-Contract: {{contract}}
+
+?? status == 204
+
+###
+
+# @name org_active_the_dismissed_receipt_is_gone
+GET {{baseUrl}}/api/shares/sent
+Authorization: Bearer {{token}}
+X-Creds-Contract: {{contract}}
+Accept: application/json
+
+?? status == 200
+
+{{
+  const assert = require('node:assert');
+  test('dismissed once, gone — the store is as the run found it', () => {
+    assert.strictEqual(response.parsedBody.length, 0);
+  });
+}}
+
+###
+
+# @name org_active_puts_the_recipient_back
+PUT {{baseUrl}}/api/org/members/{{bobEmail}}/active
+Authorization: Bearer {{officerToken}}
+X-Creds-Contract: {{contract}}
+Content-Type: application/json
+
+{ "active": true }
+
+?? status == 204
+
+###
+
+# @name org_active_a_withdrawn_share_does_not_come_back_on_unblock
+GET {{baseUrl}}/api/shares
+Authorization: Bearer {{bobToken}}
+X-Creds-Contract: {{contract}}
+Accept: application/json
+
+?? status == 200
+
+{{
+  const assert = require('node:assert');
+  test('withdrawal is not a suspension: the inbox is empty after re-admission', () => {
+    assert.strictEqual(response.parsedBody.length, 0);
+  });
+}}
+
+###
+# @uncovered 503 — a target whose record this build cannot read is refused with Retry-After and the file
+#            left untouched; provoking it means corrupting a file under a running server, which is
+#            machinery this rule does not ask for. OrgBlockingAdminTests and OrgBlockingGateTests write
+#            the garbage and read the 503 back, on the admin route and on the gate.
