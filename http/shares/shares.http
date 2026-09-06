@@ -255,7 +255,101 @@ Content-Type: application/json
 ?? status == 401
 
 ###
+
+# ----- epic 3: the project rule -----
+#
+# The one boundary of the project epic the server enforces rather than asks an honest client to obey.
+# It fences DEVELOPERS only; a member's share is untouched, which every request above this line is.
+# Alice becomes a developer for two requests and is put back — a file that changes a role and does
+# not restore it leaves every later file running against a different server than it expects.
+
+# @name shares_makes_alice_a_developer
+PUT {{baseUrl}}/api/org/members/{{aliceEmail}}
+Authorization: Bearer {{officerToken}}
+X-Creds-Contract: {{contract}}
+Content-Type: application/json
+
+{ "role": "dev" }
+
+?? status == 200
+?? header content-type matches ^application\/json
+
+{{
+  const assert = require('node:assert');
+  test('she is a developer for the next two requests', () => {
+    assert.strictEqual(response.parsedBody.role, 'dev');
+  });
+}}
+
+###
+
+# @name shares_a_developer_may_not_share_from_outside_a_project
+POST {{baseUrl}}/api/shares
+Authorization: Bearer {{token}}
+X-Creds-Contract: {{contract}}
+Content-Type: application/json
+
+{ "toEmail": "{{bobEmail}}", "entityName": "prod db", "entityKind": "db",
+  "salt": "AAAAAAAAAAAAAAAAAAAAAA==", "iv": "AAAAAAAAAAAAAAAA", "tag": "AAAAAAAAAAAAAAAAAAAAAA==",
+  "data": "c2VhbGVk" }
+
+?? status == 403
+
+{{
+  const assert = require('node:assert');
+  test('the refusal says what to do about it, not merely that it was refused', () => {
+    assert.match(response.body, /project folder/);
+  });
+}}
+
+###
+
+# @name shares_a_developer_naming_a_project_that_is_not_there_is_403
+POST {{baseUrl}}/api/shares
+Authorization: Bearer {{token}}
+X-Creds-Contract: {{contract}}
+Content-Type: application/json
+
+{ "toEmail": "{{bobEmail}}", "entityName": "prod db", "entityKind": "db",
+  "salt": "AAAAAAAAAAAAAAAAAAAAAA==", "iv": "AAAAAAAAAAAAAAAA", "tag": "AAAAAAAAAAAAAAAAAAAAAA==",
+  "data": "c2VhbGVk", "projectId": "00000000000000000000000000000000" }
+
+?? status == 403
+
+{{
+  const assert = require('node:assert');
+  test('a project that is gone or closed is not a channel', () => {
+    assert.match(response.body, /not available/);
+  });
+}}
+
+###
+
+# @name shares_puts_alice_back
+PUT {{baseUrl}}/api/org/members/{{aliceEmail}}
+Authorization: Bearer {{officerToken}}
+X-Creds-Contract: {{contract}}
+Content-Type: application/json
+
+{ "role": "member" }
+
+?? status == 200
+?? header content-type matches ^application\/json
+
+{{
+  const assert = require('node:assert');
+  test('and she is a member again, or every later file runs against a different server', () => {
+    assert.strictEqual(response.parsedBody.role, 'member');
+  });
+}}
+###
 # @uncovered 409 inbox full — the cap is 500 pending items per recipient. Filling an inbox to
 #            provoke it is 500 requests and leaves a store nothing in this file can clean up.
 # @uncovered 400 payload too large — the cap is 1 MiB; sending it asserts a number in a config file
 #            rather than a behaviour, and slowly.
+# @uncovered the developer rule's remaining rows — a share INSIDE a project, one to somebody off
+#            it, an assignment set to no sharing, an archived project, and the 503 for a project
+#            file this build cannot read. Each needs a project, two assignments and a role flip
+#            against accounts the rest of this suite shares; OrgProjectShareTests covers all five
+#            over real HTTP and asserts what a status code cannot — that a refused share leaves no
+#            inbox and no receipt behind.

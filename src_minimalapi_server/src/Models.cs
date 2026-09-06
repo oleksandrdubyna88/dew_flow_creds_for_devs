@@ -48,6 +48,21 @@ public sealed record ShareItem
     [JsonPropertyName("format")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public int? Format { get; init; }
+
+    /// <summary>The corporate project this entity came out of, when it came out of one.</summary>
+    /// <remarks>
+    /// <para>Carried for EVERY sender, whatever their role — <see cref="ShareRule"/> fences developers
+    /// with it, epic 4 logs it, and story 4 binds it into the AAD — and interpreted by nobody here.</para>
+    /// <para><b>Omitted rather than written as <c>null</c>, for the reason <see cref="Format"/> records
+    /// one line above</b>, which is the same trap and cost six days the last time: a released
+    /// extension's <c>isShareItem</c> guard accepts a field as a string or as ABSENT, and a JSON
+    /// <c>null</c> is neither — the item is dropped and the recipient's inbox reads as empty rather
+    /// than as anything a person could investigate. Every client in the field today sends no project,
+    /// so this must stay byte-identical for them.</para>
+    /// </remarks>
+    [JsonPropertyName("projectId")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? ProjectId { get; init; }
 }
 
 /// <summary>What a client POSTs to share one entity with one person.</summary>
@@ -66,6 +81,21 @@ public sealed record ShareRequest
 
     /// <summary>Which fields the client bound as AAD — carried through, never interpreted.</summary>
     public int? Format { get; init; }
+
+    /// <summary>
+    /// The corporate project the shared entity came out of, when the client can say.
+    /// </summary>
+    /// <remarks>
+    /// <para>Absent from every client released so far, and that is the ordinary case rather than a
+    /// fault: <see cref="ShareRule"/> reads a blank one as "no project", and only a DEVELOPER is
+    /// refused for it.</para>
+    /// <para><b>Counted by <see cref="PayloadBytes"/>.</b> The rule bounds it only for a developer —
+    /// theirs has to name a real project — while a member's is carried verbatim and stored. Left
+    /// uncounted it would be exactly what the remark on that method describes: a field nobody counts
+    /// is a field an attacker fills, past <c>MaxShareBytes</c>, into an inbox that holds 500 of them.
+    /// That hole was found once here already; it is not being reopened by a new field.</para>
+    /// </remarks>
+    public string? ProjectId { get; init; }
 
     /// <summary>
     /// The kind with its documented default applied — and the only form anything here may read.
@@ -109,7 +139,7 @@ public sealed record ShareRequest
     /// </summary>
     public long PayloadBytes() =>
         (long)Salt.Length + Iv.Length + Tag.Length + Data.Length
-        + EntityName.Length + Kind.Length + ToEmail.Length;
+        + EntityName.Length + Kind.Length + ToEmail.Length + (ProjectId?.Length ?? 0);
 }
 
 /// <summary>
@@ -156,7 +186,29 @@ public sealed record SentShare
 }
 
 /// <summary>A person discoverable in this deployment.</summary>
+/// <remarks>
+/// <b>Unchanged, deliberately.</b> Epic 3 needs a wider row, and it gets a second TYPE rather than
+/// optional fields on this one — see <see cref="TeamMemberDetailDto"/>.
+/// </remarks>
 public sealed record TeamMemberDto(string Email);
+
+/// <summary>
+/// The same person, as a client that speaks contract 3 or later reads them: with the role and the
+/// projects the caller is entitled to see.
+/// </summary>
+/// <remarks>
+/// <para><b>A second type, not two nullable fields on <see cref="TeamMemberDto"/>.</b> A header-less
+/// client is served even on a corp server — <c>ContractVersion.Judge</c> serves an absent claim, and
+/// a test pins the team shape as byte-identical to personal mode for one. Making that identity
+/// structural means it cannot be lost by dropping a <c>WhenWritingNull</c> attribute, and it keeps
+/// nullable fields off the wire model entirely.</para>
+/// <para><b><see cref="ProjectIds"/> is what the CALLER may see, not everything the person is on.</b>
+/// For a developer it is the intersection with their own assignments: a colleague on A1 with me and
+/// on A5 without me must not hand me "A5" — the plan round's sharpest finding, and it would have
+/// leaked the engagement list this epic exists to fence. For a member or an admin, who may read the
+/// whole roster anyway, it is the full list.</para>
+/// </remarks>
+public sealed record TeamMemberDetailDto(string Email, string Role, IReadOnlyList<string> ProjectIds);
 
 public sealed record WhoAmIDto(string Email, string? Name, bool HasVault);
 

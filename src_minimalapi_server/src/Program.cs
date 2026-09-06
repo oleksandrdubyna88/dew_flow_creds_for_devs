@@ -611,6 +611,44 @@ async Task<bool> RecipientRefused(HttpContext ctx, string recipient, Cancellatio
 Standing StandingOf(string email) =>
     CallerStanding.Decide(orgRecovery.Enabled, orgRecovery.IsOfficer(email), () => orgMembers.Find(email));
 
+// Epic 3's project boundary — the one rule of that epic the server enforces rather than asks an honest
+// client to obey. The decision itself is a pure truth table (ShareRule); this gathers the facts and
+// applies the answer, which is the same division CallerStanding/RequireCaller already uses.
+//
+// A personal server reads NOTHING: the guard returns before a single record is stat-ed, so personal mode
+// stays byte-identical whatever a leftover org/ tree holds. An officer is decided by configuration, and
+// their record is never read either.
+async Task<bool> ProjectShareRefused(HttpContext ctx, string sender, ShareRequest req, CancellationToken ct)
+{
+    if (!orgRecovery.Enabled || orgRecovery.IsOfficer(sender))
+    {
+        return false;
+    }
+    var decision = ShareRule.Decide(new ShareRuleFacts(
+        CorpMode: true,
+        SenderIsOfficer: false,
+        Sender: orgMembers.Find(sender),
+        ProjectId: req.ProjectId,
+        // Only looked up when there is one to look up: a request naming no project must not read a file
+        // for it, and story 1's store answers "absent" for anything that is not 32 hex characters anyway.
+        Project: ShareRule.NamesAProject(req.ProjectId) ? orgProjects.Find(req.ProjectId!.Trim()) : ProjectResult.Absent,
+        Recipient: orgMembers.Find(req.ToEmail.Trim().ToLowerInvariant())));
+    if (decision.Verdict == ShareVerdict.Allow)
+    {
+        return false;
+    }
+    if (decision.Verdict == ShareVerdict.Unavailable)
+    {
+        Unavailable(ctx);
+        await ctx.Response.WriteAsync(decision.Message, ct);
+        return true;
+    }
+    // No X-Creds-Reason, for RecipientRefused's reason: that header tells a client to lock its own
+    // account and purge key material, and this refusal is about one share, not about who is calling.
+    await Fail(ctx, StatusCodes.Status403Forbidden, decision.Message);
+    return true;
+}
+
 // The same status-plus-plain-text shape the older endpoints spell inline three lines at a
 // time. Extracted rather than repeated because the org-recovery endpoints below have eight
 // refusal paths between them, and eight copies is where one of them ends up saying something
@@ -829,13 +867,45 @@ app.MapGet("/api/team", async (HttpContext ctx, CancellationToken ct) =>
     var caller = RequireCaller(ctx);
     if (caller is null) return;
     var callerDomain = DomainOf(caller.Value.Email);
-    var members = store.ListVaultOwners()
+    var discoverable = store.ListVaultOwners()
         .Where(e => DomainOf(e) == callerDomain)
         .Where(IsDiscoverable)
-        .Select(e => new TeamMemberDto(e))
         .ToList();
-    await ctx.Response.WriteAsJsonAsync(members, AppJsonContext.Default.ListTeamMemberDto);
+    await WriteTeamAsync(ctx, caller.Value.Email, discoverable, ct);
 });
+
+// Two things happen here, and they are gated on DIFFERENT questions — which is the clarification the
+// plan round earned, because the plan had them as one.
+//
+//   * The FILTER is about the caller's role. A developer is offered the colleagues they share a project
+//     with, and nobody else: a client that proposes a recipient the share rule will refuse is a client
+//     that teaches people the feature is broken. It applies whatever the caller claims, header or none.
+//   * The SHAPE is about the caller's contract. A header-less client is served even on a corp server
+//     (ContractVersion.Judge serves an absent claim), and a test pins its rows as byte-identical to
+//     personal mode's — so the wider row travels only to a caller that says it speaks contract 3.
+//
+// Personal mode consults nothing at all and returns exactly what it always did.
+async Task WriteTeamAsync(HttpContext ctx, string caller, List<string> discoverable, CancellationToken ct)
+{
+    if (!orgRecovery.Enabled)
+    {
+        await ctx.Response.WriteAsJsonAsync(
+            discoverable.Select(e => new TeamMemberDto(e)).ToList(),
+            AppJsonContext.Default.ListTeamMemberDto,
+            cancellationToken: ct);
+        return;
+    }
+    var rows = TeamRoster.For(caller, orgRecovery.IsOfficer(caller), discoverable, orgMembers.Find);
+    if (ContractVersion.Judge(ctx.Request.Headers[ContractVersion.Header]).Claimed < ContractVersion.OrgPolicyContract)
+    {
+        await ctx.Response.WriteAsJsonAsync(
+            rows.Select(r => new TeamMemberDto(r.Email)).ToList(),
+            AppJsonContext.Default.ListTeamMemberDto,
+            cancellationToken: ct);
+        return;
+    }
+    await ctx.Response.WriteAsJsonAsync(rows, AppJsonContext.Default.ListTeamMemberDetailDto, cancellationToken: ct);
+}
 
 // Filtered, not replaced — and by the caller gate's OWN decision, not a second reading of the record.
 // A colleague the gate would refuse — blocked, or a record this build cannot read — is not offered as
@@ -1407,6 +1477,11 @@ app.MapPost("/api/shares", async (HttpContext ctx, CancellationToken ct) =>
     {
         return;
     }
+    // Epic 3's project rule, AFTER that one and never re-reading `active`: see ShareRule.
+    if (await ProjectShareRefused(ctx, caller.Value.Email, req, ct))
+    {
+        return;
+    }
     if (req.PayloadBytes() > maxShareBytes || req.EntityName.Length > 512)
     {
         ctx.Response.StatusCode = StatusCodes.Status400BadRequest;
@@ -1430,6 +1505,9 @@ app.MapPost("/api/shares", async (HttpContext ctx, CancellationToken ct) =>
         // null landing in an inbox is dropped by a released extension's own shape check — the
         // recipient then sees an empty inbox rather than an error. See ShareRequest.Kind.
         EntityKind = req.Kind,
+        // Carried for every sender and read by nobody here: the rule above has already decided, epic 4
+        // logs it, and story 4 binds it into the AAD. Blank becomes absent on the wire — see ShareItem.
+        ProjectId = string.IsNullOrWhiteSpace(req.ProjectId) ? null : req.ProjectId.Trim(),
         CreatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
         Salt = req.Salt,
         Iv = req.Iv,

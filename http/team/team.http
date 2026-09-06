@@ -1,7 +1,15 @@
-# Team discovery — the emails of people on this server who share the caller's domain, and nothing
-# else about them. A directory that leaked names or vault sizes would be a different feature.
+# Team discovery — the people on this server who share the caller's domain, and how much of each of
+# them the caller may be told. A directory that leaked names or vault sizes would be a different
+# feature.
+#
+# Two shapes, gated on DIFFERENT questions, which is the part worth writing down:
+#
+#   * the FILTER is about the caller's ROLE — a developer is offered only the colleagues they share a
+#     project with, whatever contract they claim;
+#   * the SHAPE is about the contract they CLAIM — a client that says nothing is served the row it was
+#     written against, `{email}` and no other field, on a corporate server too.
 
-# @name team_lists_email_addresses_and_only_email_addresses
+# @name team_tells_a_modern_client_the_role_and_the_projects
 # @prod
 GET {{baseUrl}}/api/team
 Authorization: Bearer {{token}}
@@ -17,11 +25,13 @@ Accept: application/json
   test('the answer is an array — never null, whatever the server holds', () => {
     assert.ok(Array.isArray(members), `team answered with ${typeof members}`);
   });
-  test('every member is one email and no other field', () => {
+  test('a caller that claims contract 3 is told the role and the projects', () => {
     for (const member of members) {
-      assert.deepStrictEqual(Object.keys(member), ['email'],
-        `a team member carries more than an email: ${JSON.stringify(member)}`);
+      assert.deepStrictEqual(Object.keys(member), ['email', 'role', 'projectIds'],
+        `a team row is not the contract-3 shape: ${JSON.stringify(member)}`);
       assert.ok(member.email.includes('@'));
+      assert.ok(typeof member.role === 'string' && member.role.length > 0);
+      assert.ok(Array.isArray(member.projectIds), 'never null where a list belongs');
     }
   });
   test('nobody outside the caller\'s own domain is listed', () => {
@@ -29,6 +39,29 @@ Accept: application/json
     for (const member of members) {
       assert.ok(member.email.endsWith(domain),
         `${member.email} is outside ${domain} and must not be discoverable here`);
+    }
+  });
+}}
+
+###
+
+# A client that claims nothing is every extension released before the mechanism existed, and it is
+# served — on a corporate server too. What it gets must be the shape it was written against.
+# @name team_serves_a_client_that_claims_no_contract_the_old_shape
+# @prod
+GET {{baseUrl}}/api/team
+Authorization: Bearer {{token}}
+Accept: application/json
+
+?? status == 200
+?? header content-type matches ^application\/json
+
+{{
+  const assert = require('node:assert');
+  test('one email and no other field', () => {
+    for (const member of response.parsedBody) {
+      assert.deepStrictEqual(Object.keys(member), ['email'],
+        `an old client was served a shape it cannot read: ${JSON.stringify(member)}`);
     }
   });
 }}
@@ -45,3 +78,9 @@ GET {{baseUrl}}/api/team
 Authorization: Bearer {{outsiderToken}}
 
 ?? status == 403
+
+###
+# @uncovered the developer filter — this suite has no developer of its own, and making one would
+#            change the role of an account every other file shares. Covered instead by TeamCorpTests,
+#            which asserts the filtered set, the intersected project list, and that a developer on no
+#            project still sees themselves.
