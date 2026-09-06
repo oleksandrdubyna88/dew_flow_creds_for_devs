@@ -1,0 +1,257 @@
+# PLAN — the README stops being a monorepo front door and starts being the product's first screen
+
+> Status: **plan only, nothing implemented yet.** Scope: `README.md`, the first screen of
+> `src_vs_code/README.md`, `src_vs_code/package.json` (`description`, `keywords`), and the GitHub
+> repository About + Topics, which live outside the tree and are the owner's to set.
+>
+> Related docs: [PLAN_marketplace_listing.md](../research/PLAN_marketplace_listing.md),
+> [ЗАДАЧА_скриншоты_для_маркетплейса.md](ЗАДАЧА_скриншоты_для_маркетплейса.md),
+> [architecture.md](../research/architecture.md), [module_extension.md](../research/module_extension.md).
+
+## The symptom
+
+Three things, and the third is the one that costs the most.
+
+**1. The repository page has no images and promises some.** `src_vs_code/README.md:73` tells every
+Marketplace visitor *"Screenshots: see the tree, the entity form and the share flow on the repository
+page"*. `README.md` contains no `![`, no `<img>`, no `.png` — the promise is live and false today.
+`src_vs_code/media/docs/` does not exist. `PLAN_marketplace_listing.md:26-28` already named this *"the
+item that matters"* and `src_vs_code/docs/PUBLISHING.md:140` calls it *"the biggest gap in the
+listing"*.
+
+**2. The front door introduces a monorepo, not a product.** `README.md:1` is
+`# dew_flow_creds_for_devs`, followed by a two-row "two products, one repository" table. That is a
+correct document for somebody who already arrived and a poor one for somebody deciding whether to.
+`package.json` names this file as `homepage`, so it is what a Marketplace reader clicks through to.
+
+**3. The one thing nobody else does is not on the first screen, and the words for it have been
+taken.** Measured 2026-09-06 against the field:
+
+| who | their words | what they broker |
+|---|---|---|
+| Infisical Agent Vault (2,187★) | *"agents should never see the underlying secret in the first place"* | **HTTPS only** — a MITM forward proxy |
+| Anthropic Managed Agents Vaults | *"The agent never sees the secret value"* | **HTTP egress only**, and *"substitution is outbound only"* |
+| 1Password for Claude | *"Give Claude access without giving up your credentials"* | browser autofill + process env |
+| Bitwarden Agent Access SDK | *"use a credential to complete a task without ever seeing it in plain text"* | SDK |
+| HashiCorp Vault MCP | *"may expose certain Vault data, **including Vault secrets**, to MCP clients and LLMs"* | hands the secret over |
+
+So *"the agent never sees the secret"* is no longer a surprising sentence — it is the category's
+wallpaper. **What no one brokers is SSH, database wire protocols, VPN and terminal sessions.** The
+closest architectural precedent, CyberArk's Secretless Broker, does exactly those protocols, was
+built in 2019 for applications, sits at 387★ and was never repositioned for agents.
+
+The first screen must therefore lead with **which protocols**, not with the property.
+
+## What is TRUE, verified before any of it is printed
+
+Every claim below was checked against the code on 2026-09-06. The ones that failed are in the next
+section, and they matter more.
+
+| claim | proof |
+|---|---|
+| MIT | `LICENSE:1`, `src_vs_code/package.json:7` |
+| .NET 10 Minimal API, **and Native AOT** | `Directory.Build.props:4`, `CredVaultServer.csproj:1,12` |
+| CLI 2.3–3.1 MB compressed, 6.8 MB on disk, no runtime, **six** RIDs | `research/README.md:61`; `.github/workflows/release.yml:260-279` |
+| server binary ~21 MB, chiselled image **50 MB** (from 275) | `research/module_server.md:847,873,879-880` |
+| AES-256-GCM; scrypt N=2¹⁷ (~128 MiB, ~1 s) guarding the **wrap**, HKDF for the payload key | `cryptoUtils.ts:80-81,209,232`; `keyWrap.ts:15-33` |
+| the server has no decryption routine — only SHA-256 and HMAC | `VaultStore.cs:10-11,34,52`; `Program.cs:385,556` |
+| **no response shape can carry a secret** | `brokerProtocol.ts:7-10` — *"no shape it could arrive in exists"*; `:86-94`, `:96`, `:159-165`, `:207-210` |
+| `{{creds:new}}` rotation, verbatim, incl. the `ALTER USER` example | `secretRotation.ts:32`; `contract/mcp-tools-v1.json:428`; `UseTools.cs:125-127` |
+| lifetimes: Forever / 1 hour / 1 day / until VS Code closes / until an agent uses it once | `entityExpiry.ts:26-34,41-51` |
+| one encrypted file + one encrypted image, 4 MiB each, executables refused incl. double extensions | `attachment.ts:14-29` |
+| **nine** entity kinds | `types.ts:269-279` |
+| **ten** permission switches — six over entries, four over folders | `mcpSwitches.ts:34-108` |
+| 16 MCP tools, none returning a secret | `contract/mcp-tools-v1.json` |
+| every call still raises a consent modal naming the real entry and the real command | `PLAN_mcp_server.md` |
+
+## What is FALSE, and must never be printed
+
+These came out of the same pass. Three of them would be expensive for a security product.
+
+1. **There is no master password.** `keyWrap.ts:38` — the wraps are exactly
+   `'pin' | 'webauthn' | 'recovery' | 'org-escrow'`. Naming a factor the product does not implement
+   is the most damaging error available here.
+2. **Nothing is "stamped by the verified identity provider".** The server stamps `FromEmail` from a
+   verified token (`Program.cs:1307-1311`) — attribution, not a signature. The real Ed25519
+   signatures (`shareSignature.ts:39-45`) are trust-on-first-use plus key continuity, and line **25**
+   of that file says: ***"It must never be described as eliminating spoofing."*** The README may not
+   contradict a rule the source states about itself.
+3. **There is no tenancy model.** It is per-verified-email vault scoping plus an allowed-domain check
+   (`Program.cs:493-507`, `:608-612`). In this codebase "tenant" only ever means the Entra issuer.
+4. **Rotation is wired to db and ssh entries only** (`extension.ts:746-747`). Printed without that
+   limit, the first reader to try it on a plain credential gets a refusal.
+5. **"Completely standalone offline" is not true of the first run.** `types.ts:5` —
+   `AuthProvider = 'microsoft' | 'google'`, and every profile hangs off one
+   (`accountCommands.ts:109-121`). The server is optional; the sign-in is not. `src_vs_code/README.md:12`
+   currently overclaims this and gets corrected in the same change.
+6. Stale numbers not to copy from the current text: *"Seven kinds of entry"* (`README.md:43` — nine),
+   *"install.sh is 120 lines"* (`README.md:119` — 130), *"Four RID builds"*
+   (`research/README.md:61` — six), and the five-row switch table at `README.md:137-143` (ten).
+
+**The rule that governs the whole rewrite** is `.claude/rules/shared/common/knowledge-base.md`:
+shortening drops the caveat. This README's claims are qualified on purpose — masking covers commands
+run *through* CredsForDevs, TOFU is weak against an attacker already in place, Linux without a Secret
+Service falls back to an obfuscated store. **A shorter README that loses those reads as an
+endorsement of what they forbade.** Every caveat that exists today survives, moved rather than cut.
+
+## The first screen, drafted
+
+Two surfaces with different capabilities, and the difference decides the markup:
+
+| | GitHub | Marketplace |
+|---|---|---|
+| ` ```mermaid ` | renders | **does not** |
+| `> [!NOTE]` alerts | renders | **does not** |
+| relative image paths | work | **fragile** — absolute raw URLs only |
+| `- [x]` checkboxes | render | render |
+
+So: mermaid stays in `research/`, the root README's diagram ships as plain fenced text, and every
+image uses an absolute `raw.githubusercontent.com` URL.
+
+```markdown
+# CredsForDevs
+
+**Your coding agent can run the migration. It can never read the password.**
+
+A credential vault in VS Code — SSH hosts and keys, database connections, VPN profiles, terminal
+commands, config files and secrets — with an MCP broker that lets Claude Code execute against them
+over SSH, database and VPN protocols, which no HTTP proxy can broker.
+
+Marketplace · How the broker works · Security model · Self-host · Reviews
+‹five links, root-relative: the marketplace page, `research/PLAN_agent_ssh_broker.md`,
+`research/architecture.md`, `deploy/README.md`, `research/`›
+
+[badges: Marketplace version · installs · MIT · build]
+
+▶ ‹the GIF slot — see "What only a human can do" below›
+
+Your SSH keys are in `~/.ssh`, your connection strings are in `appsettings.Development.json`, your
+`.ovpn` files are in Downloads, and the moment you point a coding agent at any of them it can read
+all of it.
+
+- [x] SSH hosts, keys, jump hosts and port forwards
+- [x] Databases — Postgres, MySQL, SQL Server, MongoDB
+- [x] VPN profiles — WireGuard and OpenVPN, started and stopped from the tree
+- [x] Terminal commands and scripts, arguments as rows
+- [x] Config files kept out of git, read back from code in twenty languages
+- [x] Payment instruments, one-time codes, seed phrases
+- [x] An MCP broker for Claude Code — execute, never read
+- [x] Ten permission switches, all off by default, and a consent prompt every time
+- [x] A single-binary CLI, 6.8 MB, no runtime
+- [x] Optional self-hosted team sync the server cannot decrypt
+
+## What makes it different
+
+**Execute, never read.** There is no response shape in the broker protocol with a field for a
+password or a key — not a policy, a structure: *"no shape it could arrive in exists"*
+(`src_vs_code/src/brokerProtocol.ts:7`).
+
+**Protocols, not just HTTP.** Every other agent broker proxies HTTPS. This one performs SSH commands,
+database queries, VPN connections and saved terminal commands on the agent's behalf.
+
+**Local-first.** Secrets live in the OS keychain. The team server is optional, stores ciphertext, and
+holds no key — `VaultStore.cs` has no decryption routine to call.
+```
+
+Then, unchanged in substance and moved rather than rewritten: the zero-knowledge section with its
+comparison table, the agent section with the ten switches and the `{{creds:new}}` rotation **with its
+db/ssh limit stated**, the quickstart in three steps, `creds` on another machine, the caveats, and
+the deep links into `research/`.
+
+## The other three surfaces
+
+**`src_vs_code/README.md`** keeps its completeness — it is the listing, and `PLAN_marketplace_listing.md`
+established that its *Everything it does* table is the right first screen for a reader who is already
+in the store. Three changes only: the false screenshot promise at `:73` goes or gains real images; the
+offline overclaim at `:12` is corrected; the stale switch counts are fixed. **No badges here** — that
+refusal was deliberate and its reasoning holds: *"a CI badge on a listing whose reader cannot act on a
+red build is decoration."*
+
+**`package.json.description`** is the highest-leverage string in the product: it is the only copy that
+appears in in-editor search, the sidebar and the storefront card. 1Password's is *"Say goodbye to
+plaintext secrets in your code"* — pure reader-pain, no product noun. Ours should carry the
+differentiator in the same register.
+
+**About and Topics** are set in the GitHub UI, so this plan proposes and the owner applies.
+
+About, 217 characters:
+
+> The credential vault your AI agent can use but never read. VS Code extension for SSH hosts, DB
+> connections, VPN profiles and secrets — with an MCP broker for Claude Code and optional self-hosted
+> zero-knowledge sync.
+
+Topics, 18 of 20, in render order:
+
+```
+credentials, secrets-management, secret-management, secrets,
+vscode-extension, vscode,
+mcp, mcp-server, model-context-protocol, claude-code, ai-agents,
+security, zero-trust, ssh,
+self-hosted, end-to-end-encryption,
+developer-tools, dotnet
+```
+
+Four exclusions with reasons, because a topic list is easier to argue about than to justify:
+`password-manager` (4,530 repos — mis-positions the product in a consumer category against
+Bitwarden and KeePassXC, and the readers it attracts have no SSH hosts), `csharp` (redundant with
+`dotnet`; the language bar already says it), `docker` (218,347 repos, says nothing about what this
+is), and **`ssh-broker`, which GitHub reports as *"hasn't been used on any public repositories,
+yet"*** — a zero-use topic cannot be browsed or recommended. The word "broker" belongs in the About
+line, where Secretless Broker proves it works, and `ssh` (10,332) takes the slot.
+
+The asymmetry worth acting on: the secrets topics are small and uncurated (`credentials` 1,028,
+`secret-management` 638, `zero-trust` 2,379) and winnable on the topic page; the AI topics are huge
+and curated (`mcp` 73,373, `claude-code` 69,720) and unwinnable by browsing — but they are the only
+ones with an inbound related-topic graph, so they are claimed for recommendations rather than for
+ranking. The intersection **`credentials` × `vscode-extension` × `mcp` is currently occupied by zero
+repositories.**
+
+## What only a human can do, and it is the single highest-value item
+
+The GIF. A negative capability — the *absence* of a secret from a transcript — is the least credible
+thing prose can assert, and per the table above the assertion itself is now wallpaper. A recording
+where the reader watches the command succeed **and sees the secret is not in the transcript** turns
+an assertion into an observation.
+
+Eight seconds: Claude Code issues `creds_exec` → the VS Code approval prompt showing the real entry
+and the real command → the command's output in the agent transcript → the secret visibly absent.
+
+This is the same ask as [ЗАДАЧА_скриншоты_для_маркетплейса.md](ЗАДАЧА_скриншоты_для_маркетплейса.md),
+which already carries the fabricated-data rules and three traps: the Marketplace does not render
+relative image paths, `media/docs/**` must reach `.vscodeignore` before it bloats the `.vsix`, and
+the tables wrap badly at Marketplace width. **This plan ships without images** — the README must read
+well with the slot empty, because a README waiting on a photo shoot is a README that never lands.
+
+## Build order
+
+1. The verification pass above is done; it is the input, not a step.
+2. `README.md` rewritten to the structure above, every caveat carried across, every stale number
+   fixed.
+3. `src_vs_code/README.md` — the three corrections, no restructure.
+4. `package.json` `description` and `keywords`.
+5. Hand the owner the About line and the topic list; they apply them.
+6. `research/module_extension.md` — a line recording that the front door now leads with the broker,
+   and why the protocol claim is the one that is defensible.
+
+## Test plan
+
+| what | test |
+|---|---|
+| no false claim ships | a test asserts the README contains none of: "master password", "tenant isolation", "identity provider" near "sign", "seven kinds", "six switches" |
+| the numbers stay true | a test reads `ENTITY_KINDS.length`, `MCP_SWITCHES.length` and the `install.sh` line count and asserts the README's figures match |
+| the screenshot promise is not re-broken | a test fails if `src_vs_code/README.md` mentions screenshots while no image file is referenced |
+| links resolve | every relative markdown link in `README.md` points at a file that exists |
+| both surfaces | no ` ```mermaid ` block and no `> [!` alert in either README |
+
+The first two are the point: this document's whole thesis is that a marketing claim rots faster than
+code, so the claims that can be checked mechanically should be.
+
+## Definition of Done
+
+- [ ] `npm test` green in `src_vs_code`, including the five new README tests.
+- [ ] Every claim in the "FALSE" list is absent from both READMEs.
+- [ ] Every caveat present today is still present.
+- [ ] The screenshot promise is either fulfilled or removed.
+- [ ] `research/module_extension.md` updated per the Knowledge Base DoD.
+- [ ] The `coai` gate: `review_plan` to `proceed`, then `review_code` on the branch.
+- [ ] The About line and topic list are handed over; applying them is the owner's step.
