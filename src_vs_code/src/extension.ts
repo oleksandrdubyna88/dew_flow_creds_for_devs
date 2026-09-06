@@ -1017,7 +1017,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const runRestore = () => restoreFromBackup(storage, vaultKeys, mutated);
   registerAccountCommands({ backups, corpPolicyOf, googleAuth, mutated, refreshReadiness, register, reportTeamRefusals, runBackup, runRestore, sharing, storage, sync, transports, vaultKeys });
   // Aliases kept for the original spec's command ids.
-  register('extension.exportSecrets', runBackup);
   register('extension.importSecrets', runRestore);
 
   // The provider as well as the view: disposing a TreeView does not dispose its provider, and

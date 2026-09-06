@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { CorpPolicyState, MOST_RESTRICTIVE_POLICY } from '../corpPolicy';
 import { STRICT_ONLINE_GRACE_MS, describeLocked, leaseExpired, leaseWindowMs, lockedReason } from '../corpLease';
-import { refuseClone, refuseExit } from '../corpExits';
+import { refuseExit } from '../corpExits';
 
 const HOUR = 60 * 60 * 1000;
 
@@ -93,11 +93,9 @@ test('an unreadable document arrives here as a refusal, not as an absence', () =
   assert.notEqual(refuseExit(state({ policy: MOST_RESTRICTIVE_POLICY, policyFromServer: false }), 'export'), '');
 });
 
-test('cloning inside your own vault is not an export', () => {
-  // The permission is "clone into ANOTHER account". Duplicating an entry to edit it is not that,
-  // and refusing it would stop a developer doing something no rule here asks to stop.
-  const dev = state();
-
-  assert.equal(refuseClone(dev, 'acct-1', 'acct-1'), '');
-  assert.notEqual(refuseClone(dev, 'acct-1', 'acct-2'), '');
+test('the clone command is not gated, because it does not leave the account', () => {
+  // The permission is "clone into ANOTHER account", and this product has no such operation:
+  // `cloneNode` copies within one account and the drop handler moves within one. The sentence for a
+  // cross-account move exists for epic 3 to use at the call site it will add.
+  assert.match(refuseExit(state(), 'clone'), /into another account/);
 });

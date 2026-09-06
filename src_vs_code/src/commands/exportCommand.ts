@@ -107,20 +107,32 @@ function subtreeOf(
   accountId: string,
   targets: readonly { node: TreeNode }[],
 ): TreeNode[] {
-  const all = storage.getNodes(accountId);
+  // Indexed once rather than filtered per folder: the filter form is O(nodes x folders), which on a
+  // vault of ten thousand nodes is the difference between an instant prompt and a visible pause.
+  const children = indexByParent(storage.getNodes(accountId));
   const picked: TreeNode[] = [];
   const collect = (n: TreeNode): void => {
     picked.push(n);
-    if (n.type === 'folder') {
-      for (const c of all.filter((x) => x.parentId === n.id)) {
-        collect(c);
-      }
+    for (const child of children.get(n.id) ?? []) {
+      collect(child);
     }
   };
   for (const t of targets) {
     collect(t.node);
   }
   return picked;
+}
+
+/** Every node's children, in one pass — the index that keeps the walk above linear. */
+function indexByParent(nodes: readonly TreeNode[]): Map<string, TreeNode[]> {
+  const children = new Map<string, TreeNode[]>();
+  for (const node of nodes) {
+    const parent = node.parentId ?? '';
+    const siblings = children.get(parent) ?? [];
+    siblings.push(node);
+    children.set(parent, siblings);
+  }
+  return children;
 }
 
 /** The file this export becomes: protected under a password, or plain JSON the person insisted on. */
@@ -181,7 +193,10 @@ async function sealedForm(bundle: unknown): Promise<ExportFile | undefined> {
 async function save(file: ExportFile, exportName: string, nodeCount: number): Promise<void> {
   const targetUri = await vscode.window.showSaveDialog({
     title: 'Export to file',
-    defaultUri: vscode.Uri.file(path.join(os.homedir(), `${exportName}.${file.ext}`)),
+    // The name comes from a node the person named, so it may hold separators or dots. The dialog
+    // shows where it will write, but a default that walks out of the home directory is a default
+    // somebody accepts without reading.
+    defaultUri: vscode.Uri.file(path.join(os.homedir(), `${safeFileName(exportName)}.${file.ext}`)),
     filters: file.ext === 'json' ? { JSON: ['json'] } : { 'Encrypted export': ['enc'] },
   });
   if (targetUri === undefined) {
@@ -189,4 +204,10 @@ async function save(file: ExportFile, exportName: string, nodeCount: number): Pr
   }
   await vscode.workspace.fs.writeFile(targetUri, Buffer.from(file.content, 'utf8'));
   void vscode.window.showInformationMessage(`Exported ${nodeCount} node(s) to ${targetUri.fsPath}.`);
+}
+
+/** A node's name as a file name: no separators, no traversal, never empty. */
+function safeFileName(name: string): string {
+  const cleaned = name.replace(/[\/:*?"<>|]/g, '-').replace(/^\.+/, '').trim();
+  return cleaned.length === 0 ? 'export' : cleaned;
 }

@@ -404,23 +404,34 @@ ${detail}
    * deleting it afterwards destroys somebody's backup over a race.</p>
    */
   const refuseBackup = (): string => {
-    for (const account of storage.getAccounts()) {
-      const refusal = refuseExit(corpPolicyOf?.(account.accountId), 'backup');
-      if (refusal !== '') {
-        return `${account.email}: ${refusal}`;
-      }
+    // EVERY refused account is named, not just the first: a person told about one, who removes it
+    // and presses again only to be told about the next, learns the rule one refusal at a time.
+    const refused = storage
+      .getAccounts()
+      .filter((account) => refuseExit(corpPolicyOf?.(account.accountId), 'backup') !== '');
+    if (refused.length === 0) {
+      return '';
     }
-    return '';
+    return `This backup would write ${refused.map((a) => a.email).join(', ')} to disk, which their role `
+      + 'on this server does not allow. Remove those accounts from this window, or ask an administrator '
+      + 'to change the role.';
   };
 
-  register('credSshManager.backupToNas', async () => {
+  const gatedBackup = async (): Promise<unknown> => {
     const refusal = refuseBackup();
     if (refusal !== '') {
       void vscode.window.showWarningMessage(refusal);
       return undefined;
     }
     return runBackup();
-  });
+  };
+
+  register('credSshManager.backupToNas', gatedBackup);
+  // The legacy alias, registered HERE rather than beside the others in `extension.ts` — where it was
+  // wired straight to the ungated `runBackup`, which the code round found: a corporate developer
+  // forbidden to export could still write the whole vault to disk through a command id from an older
+  // release. A gate one command forgets is not a gate.
+  register('extension.exportSecrets', gatedBackup);
 
   register('credSshManager.restoreBackup', runRestore);
 }

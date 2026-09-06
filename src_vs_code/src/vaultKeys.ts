@@ -117,6 +117,9 @@ export class VaultKeys {
    */
   loginKeys: { resolve: (account: StoredAccount) => Promise<LoginKeyBinding | undefined> } | undefined;
 
+  /** The last standing sentence shown per account, so a refusal is said once rather than per cycle. */
+  private readonly saidStanding = new Map<string, string>();
+
   /**
    * Why this account may not be opened right now — deactivated, or offline past its lease — or empty
    * when it may. Set on a corporate deployment only; absent everywhere else.
@@ -293,6 +296,40 @@ export class VaultKeys {
     return key;
   }
 
+  /**
+   * Whether this account's corporate standing forbids opening it — and, when it does, the two things
+   * that must happen besides refusing.
+   *
+   * <p><b>It evicts.</b> Checking at unlock alone would leave a session that was opened while the
+   * lease was valid running for as long as the window stayed open: the cached master key answers
+   * every later read without passing here again. Clearing it means the next read has to come back
+   * through this gate, which is the only way a lease that expires while somebody works actually
+   * bites.</p>
+   *
+   * <p><b>It says so once.</b> Per account and per reason, whether or not a person is watching —
+   * a background cycle that silently stops would leave somebody wondering why their vault went quiet,
+   * and repeating it every cycle would be its own kind of noise.</p>
+   */
+  private refusedByStanding(account: StoredAccount): boolean {
+    const standing = this.standingOf?.(account) ?? '';
+    if (standing === '') {
+      this.saidStanding.delete(account.accountId);
+      return false;
+    }
+    this.cache.delete(account.accountId);
+    this.sayStandingOnce(account.accountId, standing);
+    return true;
+  }
+
+  /** Per account and per reason: said when it changes, and not again until it does. */
+  private sayStandingOnce(accountId: string, standing: string): void {
+    if (this.saidStanding.get(accountId) === standing) {
+      return;
+    }
+    this.saidStanding.set(accountId, standing);
+    void vscode.window.showWarningMessage(standing);
+  }
+
   /** The user touched a stored secret. Postpones auto-lock; does not unlock anything. */
   noteUserActivity(): void {
     this.lockState.noteUserActivity(Date.now());
@@ -307,11 +344,7 @@ export class VaultKeys {
     // The corporate standing comes first: an account an administrator deactivated, or one whose
     // offline lease has run out, is not opened by ANY route — including a person typing their PIN.
     // Nothing is deleted, and one successful sync restores it; the sentence says so.
-    const standing = this.standingOf?.(account) ?? '';
-    if (standing !== '') {
-      if (options.interactive) {
-        void vscode.window.showWarningMessage(standing);
-      }
+    if (this.refusedByStanding(account)) {
       return undefined;
     }
 
