@@ -75,7 +75,7 @@ section, and they matter more.
 |---|---|
 | MIT | `LICENSE:1`, `src_vs_code/package.json:7` |
 | .NET 10 Minimal API, **and Native AOT** | `Directory.Build.props:4`, `CredVaultServer.csproj:1,12` |
-| CLI 2.3–3.1 MB compressed, 6.8 MB on disk, no runtime, **six** RIDs | `research/README.md:61`; `.github/workflows/release.yml:260-279` |
+| CLI 2.3–3.1 MB compressed, 6.8 MB on disk, no runtime, **six** RIDs | `.github/workflows/release.yml` — six `rid:` entries: linux-x64/arm64, win-x64/arm64, osx-x64/arm64. A reviewer caught the first citation pointing at `research/README.md`, which still said *"Four RID builds"* — the stale number this table exists to catch, in the document being cited as proof of it. Corrected there too. |
 | server binary ~21 MB, chiselled image **50 MB** (from 275) | `research/module_server.md:847,873,879-880` |
 | AES-256-GCM; scrypt N=2¹⁷ (~128 MiB, ~1 s) guarding the **wrap**, HKDF for the payload key | `cryptoUtils.ts:80-81,209,232`; `keyWrap.ts:15-33` |
 | the server has no decryption routine — only SHA-256 and HMAC | `VaultStore.cs:10-11,34,52`; `Program.cs:385,556` |
@@ -257,25 +257,37 @@ well with the slot empty, because a README waiting on a photo shoot is a README 
 6. `research/module_extension.md` — a line recording that the front door now leads with the broker,
    and why the protocol claim is the one that is defensible.
 
-## Test plan
+## Test plan — as it SHIPPED
+
+Ten assertions in `src_vs_code/src/test/readmeClaims.test.ts`, listed here as written rather than as
+planned. A reviewer was right that the two disagreed; what follows is the file.
 
 | what | test |
 |---|---|
-| no false claim ships | a test asserts the README contains none of: "master password", "tenant isolation", "identity provider" near "sign", "seven kinds", "six switches" |
-| the numbers stay true | a test reads `ENTITY_KINDS.length`, `MCP_SWITCHES.length` and the `install.sh` line count and asserts the README's figures match |
-| the screenshot promise is not re-broken | a test fails if `src_vs_code/README.md` mentions screenshots while no image file is referenced |
-| links resolve | every relative markdown link in `README.md` points at a file that exists |
-| both surfaces | no ` ```mermaid ` block and no `> [!` alert in either README |
+| the suite reads the right documents | both READMEs, `install.sh` and `brokerProtocol.ts` must exist and the two READMEs must not resolve to one file, naming the resolved root when they do not |
+| no false claim ships | seven banned patterns in BOTH READMEs: `master[- ]password`, `tenant isolation`, `stamped by the (verified )?identity provider`, `eliminat\w* spoofing`, `seven kinds of entry`, `six switches`, `completely standalone offline` |
+| the numbers stay true | reads `ENTITY_KINDS.length` and `MCP_SWITCHES.length` and asserts the README's words, plus that the switch table lists at least as many rows as there are switches |
+| `install.sh` stays readable | the file is under 200 lines, and the README does **not** state an exact line count — the planned line-count assertion was replaced, because pinning it in prose makes an unrelated comment a failing build |
+| every caveat survives | six required caveats by pattern: the Linux Secret Service fallback, trust-on-first-use, the masker failing open, agents in containers, the sign-in on first run, rotation's db/ssh scope |
+| the promise detector works | fed the exact sentence that was live on the listing, plus a negative: "screenshot pipelines" is a mention, not a promise |
+| pictures promised are pictures present | no README promises one with no image referenced, and every image reference is https, is a badge or an image file, and exists on disk when it is local |
+| links resolve | every non-protocol, non-anchor link in `README.md` resolves, with query strings stripped |
+| both surfaces | no mermaid fence and no `> [!` alert in either README |
+| the guarantee holds structurally | every exported `*Response*` shape in `brokerProtocol.ts`, `interface` or `type`, is refused a secret-shaped field |
+| the storefront card | the manifest's description leads with the differentiator, stays under 220 characters, and the keywords carry `mcp` and `model context protocol` |
 
-The first two are the point: this document's whole thesis is that a marketing claim rots faster than
-code, so the claims that can be checked mechanically should be.
+The point is the second and third rows: this document's thesis is that a marketing claim rots faster
+than the code under it, so the claims that can be checked mechanically should be.
 
 ## Definition of Done
 
-- [ ] `npm test` green in `src_vs_code`, including the five new README tests.
-- [ ] Every claim in the "FALSE" list is absent from both READMEs.
-- [ ] Every caveat present today is still present.
-- [ ] The screenshot promise is either fulfilled or removed.
-- [ ] `research/module_extension.md` updated per the Knowledge Base DoD.
-- [ ] The `coai` gate: `review_plan` to `proceed`, then `review_code` on the branch.
-- [ ] The About line and topic list are handed over; applying them is the owner's step.
+- [x] `npm test` green in `src_vs_code` — 3,302 tests, 3,298 passing, 4 skipped, 0 failing.
+- [x] Every claim in the "FALSE" list is absent from both READMEs, and asserted absent.
+- [x] Every caveat present before the rewrite is still present, and asserted present.
+- [x] The screenshot promise is removed, and cannot be re-broken without an image.
+- [x] `research/module_extension.md` updated per the Knowledge Base DoD.
+- [x] The `coai` gate: plan round `good_enough` (14 findings, 9 accepted), code round **`proceed`**
+      (22 findings, 16 accepted, 6 rejected with measurements).
+- [x] The About line and topic list are handed over in the pull request; applying them is the
+      owner's step, and the repository already carries a description and ten topics, so it is *add
+      these eight*.
