@@ -278,7 +278,7 @@ public sealed class OrgProjectsStoreTests
 
         store.List().Should().BeEmpty();
 
-        log.Errors.Should().ContainSingle().Which.Should().Contain("could not be listed");
+        log.Errors.Should().ContainSingle().Which.Should().Contain("sits where the projects folder belongs");
     }
 
     [Fact]
@@ -289,5 +289,42 @@ public sealed class OrgProjectsStoreTests
         ProjectRecord.NameProblem("Atlas\nBorealis").Should().Contain("one line");
         ProjectRecord.NameProblem("Atlas\tII").Should().Contain("one line");
         ProjectRecord.NameProblem("Atlas II").Should().BeEmpty();
+    }
+
+    [Fact]
+    public void ANameThatCouldBeAPathIsRefused()
+    {
+        // The name is carried to every assigned machine and used as a folder name there. A separator
+        // in it is not a name — and an export, which writes files named after what it exports, is one
+        // step from a path nobody chose.
+        ProjectRecord.NameProblem("../../outside").Should().Contain("slashes");
+        ProjectRecord.NameProblem("..\\Secrets").Should().Contain("slashes");
+        ProjectRecord.NameProblem("a/b").Should().Contain("slashes");
+        ProjectRecord.NameProblem("Atlas II").Should().BeEmpty("an ordinary name is untouched");
+    }
+
+    [Fact]
+    public void AnAssignmentWithNoProjectIdAtAllIsAbsentRatherThanACrash()
+    {
+        // A record written by a newer server, or one hand-edited, can carry a null where the type says
+        // string — the AOT serializer does not enforce it. NameOf must answer, not throw: a document
+        // that fails whole costs the person their role, their policy and their lease.
+        var (store, _, _) = StoreIn();
+
+        store.NameOf(null!).Should().BeEmpty();
+        store.Find(null!).Status.Should().Be(ProjectLookup.Absent);
+    }
+
+    [Fact]
+    public void AServerWithNoProjectsYetIsNotAnERROR()
+    {
+        // The directory appears on the first WRITE, so on a corporate server before anybody has made a
+        // project it is simply not there. Reported as a failure to list, every fresh deployment would
+        // log an error for its ordinary first state.
+        var (store, log, _) = StoreIn();
+
+        store.List().Should().BeEmpty();
+
+        log.Errors.Should().BeEmpty();
     }
 }

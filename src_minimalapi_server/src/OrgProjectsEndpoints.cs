@@ -149,6 +149,9 @@ public static class OrgProjectsEndpoints
             return;
         }
         var created = await projects.CreateAsync(request!.Name!, admin.Value.Email, ct);
+        // CancellationToken.None, deliberately: the project is already on disk, and a row that
+        // described it must not be dropped because the caller's socket closed. The row is the only
+        // record of WHO did this, and epic 4 reads it.
         await deps.Events.AppendAsync(
             OrgEndpoints.Row(OrgEventKinds.ProjectCreated, admin.Value.Email, null, created.Name, created.Id),
             CancellationToken.None);

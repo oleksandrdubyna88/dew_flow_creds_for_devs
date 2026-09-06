@@ -70,13 +70,13 @@ public sealed class OrgProjectsStore(string dataDir, ILogger<OrgProjectsStore> l
     private readonly string _dir = Path.Combine(dataDir, "org", "projects");
 
     /// <summary>The project with this id, or why it cannot be given. Never throws.</summary>
-    public ProjectResult Find(string projectId)
+    public ProjectResult Find(string? projectId)
     {
         if (!IsUsableId(projectId))
         {
             return ProjectResult.Absent;
         }
-        var path = PathFor(projectId);
+        var path = PathFor(projectId!);
         try
         {
             if (!File.Exists(path))
@@ -84,11 +84,11 @@ public sealed class OrgProjectsStore(string dataDir, ILogger<OrgProjectsStore> l
                 return ProjectResult.Absent;
             }
             var record = JsonSerializer.Deserialize(File.ReadAllBytes(path), AppJsonContext.Default.ProjectRecord);
-            return record is null || record.Id != projectId ? Unreadable(projectId, "it does not hold the project it is named for") : ProjectResult.Of(record);
+            return record is null || record.Id != projectId ? Unreadable(projectId!, "it does not hold the project it is named for") : ProjectResult.Of(record);
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or JsonException)
         {
-            return Unreadable(projectId, e.Message);
+            return Unreadable(projectId!, e.Message);
         }
     }
 
@@ -99,7 +99,7 @@ public sealed class OrgProjectsStore(string dataDir, ILogger<OrgProjectsStore> l
     /// removed, or one this build cannot read, must not fail the whole <c>/api/org/me</c>
     /// document — the person still needs their role, their policy and their lease.</para>
     /// </summary>
-    public string NameOf(string projectId)
+    public string NameOf(string? projectId)
     {
         var found = Find(projectId);
         return found.Record?.Name ?? string.Empty;
@@ -171,9 +171,16 @@ public sealed class OrgProjectsStore(string dataDir, ILogger<OrgProjectsStore> l
 
     private string PathFor(string projectId) => Path.Combine(_dir, projectId + ".json");
 
-    /// <summary>An id this store will touch: a hex GUID, so nothing a caller sends can leave the folder.</summary>
-    private static bool IsUsableId(string projectId) =>
-        projectId.Length == 32 && projectId.All(Uri.IsHexDigit);
+    /// <summary>
+    /// An id this store will touch: a hex GUID, so nothing a caller sends can leave the folder.
+    ///
+    /// <para><b>Null is an id like any other here — absent.</b> The type says non-nullable and the AOT
+    /// serializer does not enforce it, so a record written by a newer server or edited by hand can carry
+    /// one; answering with a NullReferenceException would fail the whole <c>/api/org/me</c> document and
+    /// cost the person their role, their policy and their lease over somebody else's bad record.</para>
+    /// </summary>
+    private static bool IsUsableId(string? projectId) =>
+        projectId is not null && projectId.Length == 32 && projectId.All(Uri.IsHexDigit);
 
     private Task WriteAsync(ProjectRecord record, CancellationToken ct) =>
         VaultStore.AtomicWriteAsync(
@@ -220,6 +227,23 @@ public sealed class OrgProjectsStore(string dataDir, ILogger<OrgProjectsStore> l
     /// </summary>
     private IEnumerable<string> SafeFiles()
     {
+        // Nothing at that path is the ORDINARY first state, not a fault: the directory appears on the
+        // first write, so a corporate server nobody has made a project on yet has none. Reported as a
+        // failure to list, every fresh deployment would log an error about its own normal condition.
+        //
+        // Something that is not a directory IS a fault, and the two are not the same absence:
+        // Directory.Exists answers false for both, so the second is asked separately or a file sitting
+        // where the folder belongs would be as quiet as an empty server.
+        if (!Directory.Exists(_dir))
+        {
+            if (File.Exists(_dir))
+            {
+                log.LogError(
+                    "a FILE sits where the projects folder belongs, so this answer is EMPTY rather than complete: {Dir}",
+                    _dir);
+            }
+            return [];
+        }
         try
         {
             return Directory.EnumerateFiles(_dir, "*.json").ToArray();
