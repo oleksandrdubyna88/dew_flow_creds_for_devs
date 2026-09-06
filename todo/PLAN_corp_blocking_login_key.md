@@ -192,6 +192,14 @@ Task<UpsertResult> UpsertAsync(string email, Func<MemberRecord, MemberRecord> ed
                                string byAdmin, CancellationToken ct);
 ```
 
+**And blocking owes its own event row, at its own call site.** Story 3's code round raised this as an
+architecture finding and it was rejected there for a reason that binds this epic: the store cannot
+emit these rows, because the same `UpsertAsync` serves a sync (actor: the person) and an admin (actor:
+the admin) and only the caller knows which. So `PUT .../active` appends `member.blocked` /
+`member.unblocked` itself, after the write lands and unable to fail it — and a test asserts the row,
+because a second mutation path over one store with no row of its own is exactly how an audit log stops
+being one.
+
 **Blocking is `UpsertAsync(email, r => r with { Active = false }, admin, ct)`** — not a second
 method and not a second write path, because the per-member lock that stops two admins losing each
 other's edit lives inside that one call.
