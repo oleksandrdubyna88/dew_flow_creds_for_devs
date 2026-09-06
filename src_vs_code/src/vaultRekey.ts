@@ -1,5 +1,6 @@
-import { KeyWrap, newMasterKey, recoveryWrap, wrapWithPinAsync } from './keyWrap';
-import { encryptJsonWrapped } from './cryptoUtils';
+import { KeyWrap, LoginKeyBinding, newMasterKey, recoveryWrap, wrapWithPinAsync } from './keyWrap';
+import { BackupError, encryptJsonWrapped } from './cryptoUtils';
+import { isBoundVault } from './devLoginKeyOps';
 import { StoredAccount } from './types';
 
 /**
@@ -35,6 +36,15 @@ export interface RekeyArgs {
   previousWraps: readonly KeyWrap[];
   /** Extra openers for the FRESH master, from a caller that can prove them right now. */
   extraWraps?: (masterKey: Buffer, now: number) => KeyWrap[];
+  /**
+   * The server-held login key, when this vault belongs to a corporate developer.
+   *
+   * <p>A rotation REBUILDS the PIN wrap from nothing, which is precisely where a binding gets lost:
+   * without this the new wrap would be an ordinary one, and a vault that was dead without the server
+   * would quietly open with the PIN again. {@link rekeyUnderPin} refuses rather than doing that —
+   * see its guard.</p>
+   */
+  binding?: LoginKeyBinding;
 }
 
 export interface RekeyResult {
@@ -54,10 +64,32 @@ export interface RekeyResult {
   recoveryCodeRetired: boolean;
 }
 
+/**
+ * Never rebuild a bound vault's wraps without the key they are bound to.
+ *
+ * <p>A rotation is the one operation that writes a wrap from scratch, so it is the one place where
+ * "we could not reach the server" would otherwise turn into "this vault no longer needs one" —
+ * silently, on a PIN change the person asked for. Refusing keeps the old file, which still opens.</p>
+ */
+function refuseToUnbind(args: RekeyArgs): void {
+  if (isBoundVault(args.previousWraps) && args.binding === undefined) {
+    throw new BackupError(
+      'server-key-required',
+      'This vault is bound to your organisation server, so its PIN can only be changed while you '
+        + 'are signed in and your account is active. Sync, then try again.',
+    );
+  }
+}
+
 export async function rekeyUnderPin(args: RekeyArgs): Promise<RekeyResult> {
+  // Never rebuild a bound vault's wraps without the key they are bound to. A rotation is the one
+  // operation that writes a wrap from scratch, so it is the one place where "we could not reach the
+  // server" would otherwise turn into "this vault no longer needs one" — silently, on a PIN change
+  // the person asked for. Refusing keeps the old file, which still opens for them.
+  refuseToUnbind(args);
   const masterKey = newMasterKey();
   const wraps = [
-    await wrapWithPinAsync(masterKey, args.account.accountId, args.pin, args.now),
+    await wrapWithPinAsync(masterKey, args.account.accountId, args.pin, args.now, args.binding),
     ...(args.extraWraps?.(masterKey, args.now) ?? []),
   ];
   return {

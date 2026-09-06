@@ -90,7 +90,17 @@ interface ScryptParams {
   p: number;
 }
 
-export type BackupErrorKind = 'corrupted' | 'wrong-password' | 'unsupported-version';
+/**
+ * `server-key-required` is the corporate one, and it exists so that a missing or changed server
+ * login key can never reach a person as `wrong-password`. Both would otherwise be one AES-GCM tag
+ * failure, and being told your own PIN is wrong when the truth is that the server has not been
+ * reached is how somebody types it twenty times.
+ */
+export type BackupErrorKind =
+  | 'corrupted'
+  | 'wrong-password'
+  | 'unsupported-version'
+  | 'server-key-required';
 
 /** Typed failure so callers can show a precise, human message. */
 export class BackupError extends Error {
@@ -267,6 +277,49 @@ function payloadKey(master: Passphrase, salt: Buffer): Buffer {
 
 const PAYLOAD_INFO = Buffer.from('cred-ssh-manager/vault-payload');
 
+const LOGIN_KEY_BIND_INFO = Buffer.from('cred-ssh-manager/dev-login-key-bind');
+
+/**
+ * Fold the server-held login key into a key somebody else derived.
+ *
+ * <p>This is the whole cryptographic content of the corporate rule "a copied vault file is dead
+ * without a live login": a developer's wrap key stops being `scrypt(accountId + PIN)` and becomes
+ * `HKDF(scrypt(accountId + PIN) ‖ S)`, where S is 32 bytes the server hands only to an active
+ * developer. The file plus the PIN no longer opens anything.</p>
+ *
+ * <p><b>At the DERIVED key, not at the passphrase</b>, for two reasons. Feeding S into scrypt beside
+ * the PIN would spend the KDF's cost on material that is already 32 random bytes; and — the deciding
+ * one — a security-key wrap has no scrypt at all, its key coming from a WebAuthn PRF secret. Binding
+ * after the derivation lets ONE primitive bind both, so the two wrap kinds cannot drift into two
+ * definitions of what "bound" means.</p>
+ *
+ * <p><b>What this does not claim.</b> S is one factor of two: the server never sees the PIN and never
+ * sees the master key, so an operator holding S and a stolen file can attack the PIN offline — which
+ * they could already do against an unbound wrap. What changes is that the FILE alone stops being
+ * enough. See `research/architecture.md` §The trust boundary.</p>
+ */
+export function bindWithLoginKey(baseKey: Buffer, loginKey: Buffer): Buffer {
+  const material = Buffer.concat([baseKey, loginKey]);
+  const bound = Buffer.from(
+    crypto.hkdfSync('sha256', material, Buffer.alloc(0), LOGIN_KEY_BIND_INFO, KEY_LENGTH),
+  );
+  material.fill(0);
+  return bound;
+}
+
+/**
+ * The key a wrap actually uses: bound when this vault belongs to a developer, plain otherwise. One
+ * place, so no call site can forget the binding on one of its two branches.
+ */
+function boundIfNeeded(key: Buffer, loginKey: Buffer | undefined): Buffer {
+  if (loginKey === undefined) {
+    return key;
+  }
+  const bound = bindWithLoginKey(key, loginKey);
+  key.fill(0);
+  return bound;
+}
+
 const DEFAULT_PARAMS: ScryptParams = { N: DEFAULT_SCRYPT_N, r: SCRYPT_R, p: SCRYPT_P };
 
 /** A sealed blob that records the KDF cost it was made with, so a later raise never orphans it. */
@@ -274,18 +327,29 @@ function withKdf(blob: SealedBlob, params: ScryptParams): SealedBlob {
   return { ...blob, kdfN: params.N, kdfR: params.r, kdfP: params.p };
 }
 
-export function sealBlob(payload: unknown, passphrase: Passphrase, aad?: Buffer): SealedBlob {
+export function sealBlob(
+  payload: unknown,
+  passphrase: Passphrase,
+  aad?: Buffer,
+  /** A developer's server-held login key: present binds the wrap to it, absent writes today's format. */
+  loginKey?: Buffer,
+): SealedBlob {
   const salt = crypto.randomBytes(SALT_LENGTH);
-  return withKdf(sealWithKey(payload, deriveKey(passphrase, salt, DEFAULT_PARAMS), salt, aad), DEFAULT_PARAMS);
+  const key = boundIfNeeded(deriveKey(passphrase, salt, DEFAULT_PARAMS), loginKey);
+  return withKdf(sealWithKey(payload, key, salt, aad), DEFAULT_PARAMS);
 }
 
 /**
  * `sealBlob` with the KDF off the extension-host thread. Byte-for-byte the same format:
  * `openBlob` and `openBlobAsync` each read what either one wrote.
  */
-export async function sealBlobAsync(payload: unknown, passphrase: Passphrase): Promise<SealedBlob> {
+export async function sealBlobAsync(
+  payload: unknown,
+  passphrase: Passphrase,
+  loginKey?: Buffer,
+): Promise<SealedBlob> {
   const salt = crypto.randomBytes(SALT_LENGTH);
-  const key = await deriveKeyAsync(passphrase, salt, DEFAULT_PARAMS);
+  const key = boundIfNeeded(await deriveKeyAsync(passphrase, salt, DEFAULT_PARAMS), loginKey);
   return withKdf(sealWithKey(payload, key, salt), DEFAULT_PARAMS);
 }
 
@@ -310,18 +374,27 @@ function checkedSalt(blob: SealedBlob): Buffer {
  * Decrypt a sealed blob. Throws {@link BackupError}: 'wrong-password' when
  * GCM authentication fails, 'corrupted' for malformed pieces.
  */
-export function openBlob(blob: SealedBlob, passphrase: Passphrase, aad?: Buffer): unknown {
+export function openBlob(
+  blob: SealedBlob,
+  passphrase: Passphrase,
+  aad?: Buffer,
+  loginKey?: Buffer,
+): unknown {
   const salt = checkedSalt(blob);
-  return openWithKey(blob, deriveKey(passphrase, salt, paramsOf(blob)), aad);
+  return openWithKey(blob, boundIfNeeded(deriveKey(passphrase, salt, paramsOf(blob)), loginKey), aad);
 }
 
 /**
  * `openBlob` with the KDF off the extension-host thread — the unlock path uses this, so
  * typing a PIN no longer freezes the editor for the length of one scrypt.
  */
-export async function openBlobAsync(blob: SealedBlob, passphrase: Passphrase): Promise<unknown> {
+export async function openBlobAsync(
+  blob: SealedBlob,
+  passphrase: Passphrase,
+  loginKey?: Buffer,
+): Promise<unknown> {
   const salt = checkedSalt(blob);
-  return openWithKey(blob, await deriveKeyAsync(passphrase, salt, paramsOf(blob)));
+  return openWithKey(blob, boundIfNeeded(await deriveKeyAsync(passphrase, salt, paramsOf(blob)), loginKey));
 }
 
 /**

@@ -35,6 +35,29 @@ export interface RefreshOutcome {
   readonly rosterRead: boolean;
 }
 
+/**
+ * Assemble the host from the pieces the `vscode` layer holds.
+ *
+ * <p>Typed structurally rather than against the tree provider and the extension context, so this
+ * module still imports no `vscode` — and so `extension.ts` spells the wiring once instead of
+ * carrying a literal that grows a field per epic.</p>
+ */
+export function policyHost(
+  caches: Pick<OrgPolicyHost, 'orgPolicy' | 'orgRoster' | 'orgPolicyServer'>,
+  clientFor: (account: StoredAccount) => OrgMembersClient | undefined,
+  heartbeat: (accountId: string, at: number) => PromiseLike<void>,
+  now: () => number = Date.now,
+): OrgPolicyHost {
+  return {
+    clientFor,
+    orgPolicy: caches.orgPolicy,
+    orgRoster: caches.orgRoster,
+    orgPolicyServer: caches.orgPolicyServer,
+    heartbeat,
+    now,
+  };
+}
+
 export async function refreshOrgPolicy(host: OrgPolicyHost, account: StoredAccount): Promise<RefreshOutcome> {
   const id = account.accountId;
   const client = host.clientFor(account);

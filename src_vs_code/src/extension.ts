@@ -35,10 +35,11 @@ import { VaultKeys } from './vaultKeys';
 import { KeyAddHost, offerKeyMigration } from './securityKeyAdd';
 import { snapshotForRevision } from './revisionSnapshot';
 import { judgeOrgRecovery } from './orgRecoveryPinning';
-import { EscrowEnrolment } from './orgEscrowOps';
 import { orgRecoveryAccess } from './orgRecoveryAccess';
 import { policyHeartbeatKey } from './corpPolicy';
-import { OrgPolicyHost, refreshOrgPolicy } from './orgPolicyRefresh';
+import { policyHost, refreshOrgPolicy } from './orgPolicyRefresh';
+import { LoginKeySession } from './devLoginKeySession';
+import { wireCorpEscrow, wireDevBinding } from './corpBindingWiring';
 import { RecoverySessionKeys } from './breakGlass';
 import { CredTreeDataProvider, VIEW_ID } from './treeDataProvider';
 import { ArrivalHighlights } from './arrivalHighlight';
@@ -288,39 +289,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   );
   context.subscriptions.push(sync);
 
-  /**
-   * Corporate escrow, attached to the sync cycle.
-   *
-   * <p>Assigned here rather than passed to the constructor because the transports have to exist
-   * first, and because a `SyncManager` built without it must behave exactly as it did before
-   * this feature — which is what every deployment with no corporate recovery is.</p>
-   *
-   * <p>What it answers is a TRUST decision as much as a configuration one: `judgeOrgRecovery`
-   * turns the server's answer into a verdict against what this machine pinned, and
-   * `escrowAction` refuses to seal anything to a key the verdict rejects. Returning `undefined`
-   * means "could not ask" — an unreachable server, an older one, a folder transport — and the
-   * cycle then leaves the wraps exactly as they are.</p>
-   */
-  sync.resolveEscrow = async (account): Promise<EscrowEnrolment | undefined> => {
-    const client = transports.orgRecoveryFor(account);
-    if (client === undefined) {
-      return undefined;
-    }
-    const config = await client.readConfig(account);
-    const facts = {
-      enabled: config.enabled,
-      setupComplete: config.setupComplete,
-      orgPublicKeyFingerprint: config.orgPublicKeyFingerprint,
-      rosterFingerprint: config.rosterFingerprint,
-      location: client.location,
-    };
-    sync.escrowOfficers = config.officerEmails;
-    return {
-      orgPublicKey: Buffer.from(config.orgPublicKey, 'base64'),
-      orgPublicKeyFingerprint: config.orgPublicKeyFingerprint,
-      verdict: judgeOrgRecovery(pinStore(context), account.accountId, facts),
-    };
-  };
+  // The developer binding: the login key this window holds, the unlock path that needs it, and the
+  // sync cycle that decides what a write should bind. A blocked answer evicts the cached key and
+  // locks, so a session already open stops being one. See corpBindingWiring.ts.
+  const loginKeys = new LoginKeySession((a) => transports.orgLoginKeyFor(a), (a) => {
+    vaultKeys.clearCache(a.accountId);
+    vaultKeys.lock();
+  }, (m) => log.info('corp', m));
+  wireDevBinding({ session: loginKeys, keys: vaultKeys, sync, policyOf: (id) => provider.orgPolicy.get(id), storedPin: (a) => vaultKeys.storedPin(a) });
+
+  // Corporate escrow and the developer binding, both attached to the sync cycle after the transports
+  // exist. See corpBindingWiring.ts for what each answer means and why "could not ask" changes nothing.
+  wireCorpEscrow(sync, (a) => transports.orgRecoveryFor(a), (accountId, facts) =>
+    judgeOrgRecovery(pinStore(context), accountId, facts));
 
   // Dated snapshots, separately from sync. Constructed AFTER the sync manager because a
   // snapshot is a copy of what sync maintains — with no sync location there is nothing to
@@ -484,10 +465,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
   // The role-and-policy document, refreshed beside the recovery access in the same loop. Its rules — a
   // failure keeps the previous answer, only a success writes epic 2's heartbeat — are tests in orgPolicyRefresh.ts.
-  const orgPolicyHost: OrgPolicyHost = {
-    clientFor: (a) => transports.orgMembersFor(a), orgPolicy: provider.orgPolicy, orgRoster: provider.orgRoster, orgPolicyServer: provider.orgPolicyServer,
-    heartbeat: (accountId, at) => context.globalState.update(policyHeartbeatKey(accountId), at), now: Date.now,
-  };
+  const orgPolicyHost = policyHost(provider, (a) => transports.orgMembersFor(a), (id, at) =>
+    context.globalState.update(policyHeartbeatKey(id), at));
 
   const refreshReadiness = async (): Promise<Map<string, SyncReadiness>> => {
     const locked = vaultKeys.isLocked();

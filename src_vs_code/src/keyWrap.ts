@@ -4,6 +4,7 @@ import type { StoredAccount } from './types';
 import {
   BackupError,
   SealedBlob,
+  bindWithLoginKey,
   encryptJsonWrapped,
   openBlob,
   openBlobAsync,
@@ -73,6 +74,28 @@ export interface KeyWrap extends SealedBlob {
   ephemeralPublicKey?: string;
   /** Org-escrow only: which generation of the org recovery key this wrap is sealed to. */
   orgPublicKeyFingerprint?: string;
+  /**
+   * Corporate developers only: this wrap's key is folded with the server-held login key S, so the
+   * file does not open without a live login.
+   *
+   * <p>A FLAG rather than a new kind (`server-pin`, `server-webauthn`), following `rpId`'s
+   * precedent. New kinds would fork every dispatch site — `hasPinWrap`, `removeWrap(wraps,
+   * 'webauthn', id)`, `hasVaultKeyedWrap` — into parallel branches somebody has to keep in step by
+   * hand, and the first one forgotten is a wrap silently dropped. A boolean composes with the
+   * dispatch that already exists, and a build that has never heard of it carries it untouched
+   * through {@link isKeyWrap}'s structural guard.</p>
+   */
+  serverBound?: boolean;
+  /**
+   * Which login key this wrap was bound to — sixteen lowercase hex characters, the server's own
+   * public name for those bytes.
+   *
+   * <p>It exists so that "the server's key changed under me" is answerable BEFORE any decryption is
+   * attempted, and therefore reportable as itself. Without it, a restored older backup on the server
+   * would reach the person as `wrong-password`: they would be told their own PIN is wrong, and would
+   * type it again.</p>
+   */
+  loginKeyFingerprint?: string;
   createdAt: number;
 }
 
@@ -124,18 +147,88 @@ function prfWrappingKey(prfSecret: Buffer, salt: Buffer): Buffer {
   );
 }
 
+/**
+ * A developer's server-held login key, and its public name.
+ *
+ * <p>Carried as one value so a call site cannot pass the key without the fingerprint that says which
+ * key it is: a wrap sealed to bytes nobody can identify later is a wrap whose failure has no
+ * explanation.</p>
+ */
+export interface LoginKeyBinding {
+  key: Buffer;
+  fingerprint: string;
+}
+
+/** The fields a bound wrap carries beyond an ordinary one — and nothing when there is no binding. */
+function bindingFields(binding: LoginKeyBinding | undefined): Partial<KeyWrap> {
+  return binding === undefined
+    ? {}
+    : { serverBound: true, loginKeyFingerprint: binding.fingerprint };
+}
+
+/**
+ * The PRF wrapping key, bound to the login key when this vault belongs to a developer.
+ *
+ * <p>One function so a security-key wrap and a PIN wrap cannot end up with two different ideas of
+ * what binding means.</p>
+ */
+function boundPrfKey(prfSecret: Buffer, salt: Buffer, binding: LoginKeyBinding | undefined): Buffer {
+  const key = prfWrappingKey(prfSecret, salt);
+  if (binding === undefined) {
+    return key;
+  }
+  const bound = bindWithLoginKey(key, binding.key);
+  key.fill(0);
+  return bound;
+}
+
+/**
+ * Refuse to attempt a bound wrap without the key it is bound to — BEFORE any decryption.
+ *
+ * <p>This is what makes "the server's key is missing or has changed" a different sentence from "that
+ * is not your PIN". Both would otherwise arrive as one AES-GCM tag failure, and the person whose
+ * company restored an older backup would be told, over and over, that their own PIN is wrong. After
+ * this guard passes, a tag failure means what it has always meant.</p>
+ */
+function requireBinding(wrap: KeyWrap, loginKey: Buffer | undefined): void {
+  if (wrap.serverBound === true && loginKey === undefined) {
+    throw new BackupError(
+      'server-key-required',
+      'This vault is bound to your organisation server: it opens only while you are signed in and '
+        + 'your account is active. Sign in and sync, then try again.',
+    );
+  }
+}
+
+/**
+ * Whether a wrap can even be attempted with the login key in hand — a fingerprint comparison, never
+ * a comparison of key material.
+ *
+ * <p>Separate from {@link requireBinding} because the two answer different questions at different
+ * moments: this one is asked by the unlock cascade while CHOOSING a way in, so a vault whose binding
+ * has moved on is reported as such instead of being offered as a PIN the person can get wrong.</p>
+ */
+export function bindingMatches(wrap: KeyWrap, fingerprint: string | undefined): boolean {
+  if (wrap.serverBound !== true) {
+    return true;
+  }
+  return fingerprint !== undefined && wrap.loginKeyFingerprint === fingerprint;
+}
+
 /** Wrap the master key under a PIN (scrypt via the shared sealed-blob layer). */
 export function wrapWithPin(
   masterKey: Buffer,
   accountId: string,
   pin: string,
   createdAt: number,
+  binding?: LoginKeyBinding,
 ): KeyWrap {
   return {
     kind: 'pin',
     id: 'pin',
     createdAt,
-    ...sealBlob(masterKey.toString('base64'), accountId + pin),
+    ...bindingFields(binding),
+    ...sealBlob(masterKey.toString('base64'), accountId + pin, undefined, binding?.key),
   };
 }
 
@@ -181,9 +274,10 @@ export function wrapWithPrf(
   createdAt: number,
   /** The RP ID the credential was created under — every new registration is the current one. */
   rpId: string = CURRENT_RP_ID,
+  binding?: LoginKeyBinding,
 ): KeyWrap {
   const salt = crypto.randomBytes(16);
-  const key = prfWrappingKey(prfSecret, salt);
+  const key = boundPrfKey(prfSecret, salt, binding);
   const iv = crypto.randomBytes(12);
   const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
   const data = Buffer.concat([cipher.update(masterKey), cipher.final()]);
@@ -194,6 +288,7 @@ export function wrapWithPrf(
     prfSalt,
     rpId,
     createdAt,
+    ...bindingFields(binding),
     salt: salt.toString('base64'),
     iv: iv.toString('base64'),
     tag: cipher.getAuthTag().toString('base64'),
@@ -246,8 +341,14 @@ function masterFromPinPayload(payload: unknown): Buffer {
 }
 
 /** Recover the master key from a PIN wrap. Throws BackupError on a bad PIN. */
-export function unwrapWithPin(wrap: KeyWrap, accountId: string, pin: string): Buffer {
-  return masterFromPinPayload(openBlob(wrap, accountId + pin));
+export function unwrapWithPin(
+  wrap: KeyWrap,
+  accountId: string,
+  pin: string,
+  loginKey?: Buffer,
+): Buffer {
+  requireBinding(wrap, loginKey);
+  return masterFromPinPayload(openBlob(wrap, accountId + pin, undefined, loginKey));
 }
 
 /**
@@ -258,8 +359,14 @@ export function unwrapWithPin(wrap: KeyWrap, accountId: string, pin: string): Bu
  * a frozen editor is what they would otherwise see. The sync forms stay for the pure callers
  * and the tests, which have no event loop to protect.</p>
  */
-export async function unwrapWithPinAsync(wrap: KeyWrap, accountId: string, pin: string): Promise<Buffer> {
-  return masterFromPinPayload(await openBlobAsync(wrap, accountId + pin));
+export async function unwrapWithPinAsync(
+  wrap: KeyWrap,
+  accountId: string,
+  pin: string,
+  loginKey?: Buffer,
+): Promise<Buffer> {
+  requireBinding(wrap, loginKey);
+  return masterFromPinPayload(await openBlobAsync(wrap, accountId + pin, loginKey));
 }
 
 export async function wrapWithPinAsync(
@@ -267,12 +374,14 @@ export async function wrapWithPinAsync(
   accountId: string,
   pin: string,
   createdAt: number,
+  binding?: LoginKeyBinding,
 ): Promise<KeyWrap> {
   return {
     kind: 'pin',
     id: 'pin',
     createdAt,
-    ...(await sealBlobAsync(masterKey.toString('base64'), accountId + pin)),
+    ...bindingFields(binding),
+    ...(await sealBlobAsync(masterKey.toString('base64'), accountId + pin, binding?.key)),
   };
 }
 
@@ -325,10 +434,11 @@ function unwrapMasterKey(
 }
 
 /** Recover the master key from a security-key wrap. */
-export function unwrapWithPrf(wrap: KeyWrap, prfSecret: Buffer): Buffer {
+export function unwrapWithPrf(wrap: KeyWrap, prfSecret: Buffer, loginKey?: Buffer): Buffer {
+  requireBinding(wrap, loginKey);
   return unwrapMasterKey(
     wrap,
-    (salt) => prfWrappingKey(prfSecret, salt),
+    (salt) => boundPrfKey(prfSecret, salt, loginKey === undefined ? undefined : { key: loginKey, fingerprint: '' }),
     'Security-key wrap',
     'This security key does not open the vault (wrong key, or the wrap was replaced).',
   );
@@ -440,9 +550,16 @@ export function unwrapWithOrgEscrow(wrap: KeyWrap, orgPrivateKey: Buffer): Buffe
  * arrived, a pin+recovery vault read as a standalone PIN backup — whose write path
  * would have silently stripped the recovery wrap. A kind added later must fail
  * SAFE here without anyone remembering this function exists.</p>
+ *
+ * <p><b>A SERVER-BOUND pin wrap counts too</b>, and it is the case that comment was written for. A
+ * developer's vault can hold nothing but a pin wrap and still not be self-contained: its key is
+ * folded with the server's login key, so treating it as a standalone PIN backup would send it
+ * through a write path that rewrites the wrap under a backup PIN with no binding at all — silently
+ * undoing the one property the corporate rule exists to provide. The shape is new; the failure mode
+ * is the same one, and this is where it was supposed to fail safe.</p>
  */
 export function hasVaultKeyedWrap(wraps: readonly KeyWrap[]): boolean {
-  return wraps.some((w) => w.kind !== 'pin');
+  return wraps.some((w) => w.kind !== 'pin' || w.serverBound === true);
 }
 
 /**
