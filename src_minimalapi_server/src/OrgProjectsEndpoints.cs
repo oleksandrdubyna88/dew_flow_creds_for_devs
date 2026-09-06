@@ -89,11 +89,23 @@ public static class OrgProjectsEndpoints
         {
             return null;
         }
-        var all = projects.List().Select(p => new ProjectDto(p.Id, p.Name, p.Archived)).ToList();
+        // A developer resolves the projects they are ON, rather than reading every project on the
+        // server and discarding the rest. Archived ones are kept: a developer may still hold entities
+        // from an engagement that has closed, and an id they cannot resolve to a name helps nobody.
         return lookup is { Status: MemberLookup.Found, Record: { Role: MemberRole.Dev } developer }
-            ? [.. all.Where(p => OrgProjects.IsAssigned(developer, p.Id))]
-            : all;
+            ? Assigned(projects, developer)
+            : [.. projects.List().Select(Dto)];
     }
+
+    private static List<ProjectDto> Assigned(OrgProjectsStore projects, MemberRecord developer) =>
+    [
+        .. developer.Projects
+            .Select(p => projects.Find(p.ProjectId))
+            .Where(found => found is { Status: ProjectLookup.Found })
+            .Select(found => Dto(found.Record!)),
+    ];
+
+    private static ProjectDto Dto(ProjectRecord record) => new(record.Id, record.Name, record.Archived);
 
     private static Task WriteListAsync(HttpContext ctx, List<ProjectDto> projects, CancellationToken ct) =>
         ctx.Response.WriteAsJsonAsync(projects, AppJsonContext.Default.ListProjectDto, cancellationToken: ct);
@@ -293,7 +305,7 @@ public static class OrgProjectsEndpoints
             await OrgEndpoints.FailJson(ctx, StatusCodes.Status400BadRequest, problem);
             return;
         }
-        if (!await RegisteredAsync(ctx, deps, context.Value.Target))
+        if (!await RemovableAsync(ctx, deps, context.Value.Target, context.Value.Project.Id))
         {
             return;
         }
@@ -301,21 +313,33 @@ public static class OrgProjectsEndpoints
     }
 
     /// <summary>
-    /// Whether this person is on the roster at all — asked on the way OUT of a project, never on the
-    /// way in.
+    /// Whether there is anything here to take away from this person — asked on the way OUT of a
+    /// project, never on the way in.
     ///
-    /// <para>The asymmetry is deliberate. The member store creates what it cannot find, and on an
-    /// ASSIGNMENT that is the feature: an admin puts a new hire on a project on their first day,
-    /// before they have opened the extension, exactly as the members surface already gives them a role.
-    /// On an unassignment there is nothing to create — an admin's typo would otherwise put somebody on
-    /// the roster by removing them from something they were never on.</para>
+    /// <para><b>The asymmetry with assignment is deliberate.</b> The member store creates what it
+    /// cannot find, and on an ASSIGNMENT that is the feature: an admin puts a new hire on a project on
+    /// their first day, before they have opened the extension, exactly as the members surface already
+    /// gives them a role. On an unassignment there is nothing to create.</para>
+    ///
+    /// <para><b>Being on the roster is not enough — they must be on THIS project</b>, or hold a standing
+    /// instruction about it. The code round found what the weaker check allowed: an admin's typo naming
+    /// a real colleague answered <c>204</c>, wrote a <c>project.unassigned</c> row for something that
+    /// never happened, and queued a folder deletion against a project that person was never on, which
+    /// their client would then carry out. The standing-instruction half is what keeps an admin able to
+    /// change their mind — <c>?deleteFolder=false</c> after a removal — once the assignment is gone.</para>
     /// </summary>
-    private static async Task<bool> RegisteredAsync(HttpContext ctx, OrgEndpointDeps deps, string target)
+    private static async Task<bool> RemovableAsync(
+        HttpContext ctx,
+        OrgEndpointDeps deps,
+        string target,
+        string projectId)
     {
         var lookup = deps.Members.Find(target);
-        if (lookup.Status == MemberLookup.Found)
+        if (lookup is { Status: MemberLookup.Found, Record: { } record })
         {
-            return true;
+            return OrgProjects.IsAssigned(record, projectId)
+                || record.PendingFolderRemovals.Any(x => x.ProjectId == projectId)
+                || await RefuseUnassignmentAsync(ctx, "That person is not on that project, so there is nothing to remove them from.");
         }
         await (lookup.Status == MemberLookup.Unavailable
             ? OrgEndpoints.FailUnavailable(ctx)
@@ -323,6 +347,13 @@ public static class OrgProjectsEndpoints
                 ctx,
                 StatusCodes.Status404NotFound,
                 "Nobody with that address is registered on this server, so there is nothing to unassign."));
+        return false;
+    }
+
+    /// <summary>Writes the refusal and answers false, so the caller reads as one boolean expression.</summary>
+    private static async Task<bool> RefuseUnassignmentAsync(HttpContext ctx, string message)
+    {
+        await OrgEndpoints.FailJson(ctx, StatusCodes.Status404NotFound, message);
         return false;
     }
 
@@ -404,6 +435,15 @@ public static class OrgProjectsEndpoints
         {
             return;
         }
+        // The only route on this surface with no admin gate of its own, and it WRITES — through a store
+        // that creates what it cannot find. Without this line a caller on a personal deployment could
+        // conjure the org/ tree such a server is documented never to grow. Idempotent either way: there
+        // is nothing to acknowledge here, and saying so with 204 is the same answer as clearing one.
+        if (!deps.OrgRecovery.Enabled)
+        {
+            ctx.Response.StatusCode = StatusCodes.Status204NoContent;
+            return;
+        }
         var result = await UpsertOrFailAsync(ctx, deps, caller.Value.Email, caller.Value.Email, ct, r => r with
         {
             PendingFolderRemovals = [.. r.PendingFolderRemovals.Where(x => x.ProjectId != projectId)],
@@ -477,7 +517,7 @@ public static class OrgProjectsEndpoints
 
     private static Task WriteProjectAsync(HttpContext ctx, ProjectRecord record, CancellationToken ct) =>
         ctx.Response.WriteAsJsonAsync(
-            new ProjectDto(record.Id, record.Name, record.Archived),
+            Dto(record),
             AppJsonContext.Default.ProjectDto,
             cancellationToken: ct);
 }

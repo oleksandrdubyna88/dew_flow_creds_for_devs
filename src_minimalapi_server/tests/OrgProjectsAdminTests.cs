@@ -503,4 +503,43 @@ public sealed class OrgProjectsAdminTests
 
         Corp.ReadRecord(server, newHire).Projects.Should().ContainSingle().Which.ProjectId.Should().Be(id);
     }
+
+    [Fact]
+    public async Task UnassigningAColleagueWhoIsNotOnTheProjectIs404AndQueuesNoDeletion()
+    {
+        // The typo that names a REAL colleague. Answered 204, it wrote a project.unassigned row for
+        // something that never happened and queued a folder deletion against a project they were
+        // never on — which their client would then carry out.
+        using var server = Corp.Server();
+        using var cto = server.ClientFor(Corp.Cto);
+        using var alice = server.ClientFor(Alice);
+        using var bob = server.ClientFor(Bob);
+        await Corp.SyncAsync(alice);
+        await Corp.SyncAsync(bob);
+        var id = await NewProjectAsync(cto);
+        await AssignAsync(cto, id, Alice);
+
+        (await Corp.RefusalAsync(await UnassignAsync(cto, id, Bob, "?deleteFolder=true"), HttpStatusCode.NotFound))
+            .Should().Contain("not on that project");
+
+        Corp.ReadRecord(server, Bob).PendingFolderRemovals.Should().BeEmpty("nothing of his was ever there");
+        Corp.Rows(server, OrgEventKinds.ProjectUnassigned).Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task APersonalServerGrowsNoRecordFromTheAcknowledgementRoute()
+    {
+        // The one route on this surface with no corporate gate of its own: it wrote through the member
+        // store, and the store creates what it cannot find — so a caller on a personal deployment could
+        // conjure the org/ tree the architecture says such a server never grows.
+        using var server = new VaultServer();
+        using var alice = server.ClientFor(Alice);
+        await Corp.SyncAsync(alice);
+
+        var response = await alice.PostAsync(
+            "/api/org/members/me/pending-folder-removals/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/ack", null, Ct);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        Directory.Exists(Corp.OrgDir(server)).Should().BeFalse("a personal server grows no org/ tree");
+    }
 }

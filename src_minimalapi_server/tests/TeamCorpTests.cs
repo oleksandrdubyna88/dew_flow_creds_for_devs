@@ -211,4 +211,25 @@ public sealed class TeamCorpTests
         row.EnumerateObject().Select(p => p.Name).Should().Equal(["email"], "the old shape, for a client that claims nothing");
         row.GetProperty("email").GetString().Should().Be(Alice);
     }
+
+    [Fact]
+    public async Task ADeveloperWhoMayNotShareFromAProjectIsNotOfferedItsPeople()
+    {
+        // The discovery half has to agree with the RULE, not merely with the assignment: a developer
+        // whose share for the project is `none` cannot send anything into it, so offering them its
+        // colleagues proposes a recipient the server will refuse.
+        using var server = Corp.Server();
+        using var cto = server.ClientFor(Corp.Cto);
+        using var alice = Modern(server, Alice);
+        using var bob = server.ClientFor(Bob);
+        await Corp.SyncAsync(alice);
+        await Corp.SyncAsync(bob);
+        var ours = await NewProjectAsync(cto, "Ours");
+        await Corp.PutJsonAsync(cto, $"/api/org/projects/{ours}/members/{Alice}", """{"share":"none"}""");
+        await AssignAsync(cto, ours, Bob);
+        await Corp.SetMemberAsync(cto, Alice, role: "dev");
+
+        (await TeamAsync(alice)).EnumerateArray().Select(r => r.GetProperty("email").GetString())
+            .Should().Equal([Alice], "a project they may not share from is not a channel to its people");
+    }
 }

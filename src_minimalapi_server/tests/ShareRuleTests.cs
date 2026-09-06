@@ -37,8 +37,8 @@ public sealed class ShareRuleTests
             senderIsOfficer,
             sender,
             projectId,
-            project ?? ProjectResult.Of(new ProjectRecord(Project, "Atlas", "cto@example.com", 0, false, 0, "cto@example.com")),
-            recipient ?? MemberLookupResult.Found(Member(MemberRole.Member, ShareDefaults.Project, Project)));
+            () => project ?? ProjectResult.Of(new ProjectRecord(Project, "Atlas", "cto@example.com", 0, false, 0, "cto@example.com")),
+            () => recipient ?? MemberLookupResult.Found(Member(MemberRole.Member, ShareDefaults.Project, Project)));
 
     private static MemberLookupResult Dev(params string[] projects) =>
         MemberLookupResult.Found(Member(MemberRole.Dev, ShareDefaults.Project, projects));
@@ -211,5 +211,34 @@ public sealed class ShareRuleTests
         };
 
         refusals.Should().AllSatisfy(r => r.Message.Length.Should().BeGreaterThan(20));
+    }
+
+    [Fact]
+    public void NobodyExceptADeveloperCostsALookup()
+    {
+        // The project and the recipient are functions for this reason: an ordinary member's share is
+        // the overwhelmingly common request here, and it used to read three registry files to reach a
+        // branch that consults none of them — one of which the blocking gate had just read.
+        var projectReads = 0;
+        var recipientReads = 0;
+        ShareRuleFacts Counting(MemberLookupResult sender, string? projectId) => new(
+            CorpMode: true,
+            SenderIsOfficer: false,
+            Sender: sender,
+            ProjectId: projectId,
+            Project: () => { projectReads++; return ProjectResult.Absent; },
+            Recipient: () => { recipientReads++; return MemberLookupResult.NotRegistered; });
+
+        var member = MemberLookupResult.Found(Member(MemberRole.Member, ShareDefaults.Project, Project));
+        ShareRule.Decide(Counting(member, Project)).Verdict.Should().Be(ShareVerdict.Allow);
+        ShareRule.Decide(Counting(MemberLookupResult.NotRegistered, Project)).Verdict.Should().Be(ShareVerdict.Allow);
+        ShareRule.Decide(Counting(Dev(Project), null)).Verdict.Should().Be(ShareVerdict.Refuse);
+
+        projectReads.Should().Be(0, "nothing above reached the project");
+        recipientReads.Should().Be(0, "and nothing above reached the recipient");
+
+        ShareRule.Decide(Counting(Dev(Project), Project)).Verdict.Should().Be(ShareVerdict.Refuse);
+        projectReads.Should().Be(1, "a developer naming a project reads it");
+        recipientReads.Should().Be(0, "but stops at a project that is not there");
     }
 }
