@@ -906,13 +906,35 @@ accepted an empty PIN, locking an entry under nothing; and a folder run said not
 failed and showed no progress, so a name alone could not tell "working" from "stuck" during minutes
 of scrypt.
 
-**Two things that are NOT built, recorded rather than implied.** There is no persisted folder flag:
-"this folder is protected" is DERIVED from at least one entry inside it being protected, which cannot
-drift and is self-repairing, and the gap is a folder somebody ran the command on while it was empty.
-And §2.5's recipient half is unbuilt — the sender is asked for the PIN and every value is unwrapped
-so the recipient gets something usable, but nothing yet offers the recipient their own PIN. The mark
-is deliberately not carried in the meantime: a copy claiming `pinProtected` under a PIN nobody has
-would hide from the recipient's agents and show a "PIN — on" note for a lock that opens nothing.
+**The share, both ends (2026-09-05).** The sender types the entry's PIN and every value is
+unwrapped, because a payload wrapped under a PIN nobody at the far end has is a payload nobody can
+ever open. So the copy arrives in the clear — and 0.99.0 shipped it arriving with `pinProtected`
+still on, claiming a wrap it did not have: hidden from the recipient's agent surfaces, its form
+saying *PIN — on*, and the command that form points at reading the values, finding nothing locked,
+and contradicting it. `pinProtected` now sits in `SECRET_CLAIM_FIELDS` (which fixes the clone path
+too, since a clone copies settings and no secrets), and copies that already arrived are repaired at
+the door: a mark with nothing locked under it is self-diagnosing, so `admit` clears it on the first
+open.
+
+What travels in its place is `pinAskOnImport` — an instruction to ask, never a claim about a value —
+inside the sealed payload, so the server learns nothing. On accept the recipient chooses a PIN of
+their OWN, typed twice; declining imports nothing and says why. **The wrap happens in memory, before
+a single write**: import-then-protect leaves an unprotected copy on disk if anything fails between
+the two steps, which is exactly what "declining imports nothing" promises against.
+
+**The folder that asks (2026-09-05).** Whether an ENTRY is protected stays DERIVED from the entry —
+that cannot drift and is self-repairing. `TreeNode.folderAsksForPin` closes the one case derivation
+cannot: a folder the command ran on while it was EMPTY. It is a PREFERENCE, and the wording is
+load-bearing — "entries created here are asked for a PIN" describes no value, so it cannot disagree
+with one. *Stop Asking for a PIN Here* turns it off, because a preference with no way off is a trap;
+turning it off changes nothing about the entries, which keep their own PINs. A MOVE is not a create
+and does not ask.
+
+**One thing that is NOT built, recorded rather than implied.** The plan asked for a headless share
+import to fail fast naming its PIN argument. There is no such surface: `openShare` exists only inside
+the extension, and no CLI or MCP path imports a share — so there is nothing to fail fast, and the line
+was inherited from the plan's first draft. The two items that stood here on 2026-09-04 — the
+recipient's own PIN, and the folder that asks while empty — are the two sections above.
 
 #### A woven password (2026-09-04)
 

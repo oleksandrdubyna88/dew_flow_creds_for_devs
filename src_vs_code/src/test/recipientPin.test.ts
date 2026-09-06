@@ -4,7 +4,7 @@ import { SECRET_CLAIM_FIELDS, withoutSecretClaims } from '../secretClaims';
 import { shareableDetails } from '../shareFormat';
 import { EntityMetadata, TreeNode } from '../types';
 import { isProtected } from '../entityPin';
-import { readSecret, unlockSecret } from '../secretEnvelope';
+import { lockSecret, readSecret, unlockSecret } from '../secretEnvelope';
 import { RECIPIENT, World, sealedShare, ui, world } from './shareWorld';
 import { loadWithVscode } from './vscodeStub';
 
@@ -184,4 +184,70 @@ test('the ask-mark is INSIDE the sealed part — the server learns nothing', () 
   // them unnoticed.
   assert.ok(onTheWire.includes('"data"'), 'the sealed blob is what travels');
   assert.ok(onTheWire.includes('prod-db'), 'and the name, which the relay has always seen');
+});
+
+/**
+ * The damage 0.99.0 already did, repaired where it is cheapest to notice.
+ *
+ * <p>Anyone who accepted a protected share before the fix has a copy carrying `pinProtected` over
+ * values that were never wrapped. Stripping the mark from FUTURE shares does nothing for them, and
+ * the state is self-diagnosing: the mark says the values are locked and `readSecret` says they are
+ * not. So the door repairs it — `admit` already reads the slots to decide whether to ask, so the
+ * check costs nothing, and it heals on the first open.</p>
+ */
+test('a mark with nothing locked under it is CLEARED, not asked about', async () => {
+  const w = world();
+  await w.storage.addNode(RECIPIENT.accountId, {
+    id: 'false-mark',
+    name: 'arrived-before-the-fix',
+    type: 'entity',
+    parentId: null,
+    details: { id: 'false-mark', name: 'arrived-before-the-fix', isSshEnabled: false, pinProtected: true },
+  } as TreeNode);
+  await w.storage.setPassword(RECIPIENT.accountId, 'false-mark', 'hunter2');
+  const mod = loadWithVscode<typeof import('../pinAdmission')>('../pinAdmission', {});
+
+  const admission = await mod.admit(w.storage, RECIPIENT.accountId, 'false-mark', {
+    accountId: RECIPIENT.accountId,
+    entityId: 'false-mark',
+    entryName: 'arrived-before-the-fix',
+    ask: () => assert.fail('there is nothing locked to ask about'),
+  });
+
+  assert.equal(admission.kind, 'in');
+  assert.equal(
+    w.storage.getNode(RECIPIENT.accountId, 'false-mark')?.details?.pinProtected,
+    undefined,
+    'the mark went, so the entry stops hiding from agents and stops claiming a lock',
+  );
+});
+
+test('a TRUE mark is left alone — the repair is about the false one only', async () => {
+  const w = world();
+  await w.storage.addNode(RECIPIENT.accountId, {
+    id: 'really-locked',
+    name: 'really-locked',
+    type: 'entity',
+    parentId: null,
+    details: { id: 'really-locked', name: 'really-locked', isSshEnabled: false, pinProtected: true },
+  } as TreeNode);
+  await w.storage.setPassword(
+    RECIPIENT.accountId,
+    'really-locked',
+    await lockSecret('hunter2', RECIPIENT.accountId, 'a-real-pin-4444'),
+  );
+  const mod = loadWithVscode<typeof import('../pinAdmission')>('../pinAdmission', {});
+
+  await mod.admit(w.storage, RECIPIENT.accountId, 'really-locked', {
+    accountId: RECIPIENT.accountId,
+    entityId: 'really-locked',
+    entryName: 'really-locked',
+    ask: () => Promise.resolve('a-real-pin-4444'),
+  });
+
+  assert.equal(
+    w.storage.getNode(RECIPIENT.accountId, 'really-locked')?.details?.pinProtected,
+    true,
+    'it is locked, so the mark is true and stays',
+  );
 });

@@ -38,6 +38,7 @@ export async function admit(
 ): Promise<Admission> {
   const locked = await firstLockedStored(storage, accountId, entityId);
   if (locked === undefined) {
+    await repairFalseMark(storage, accountId, entityId);
     return { kind: 'in' };
   }
   return decided(await openStored(locked, gate));
@@ -94,4 +95,32 @@ export async function openedText(stored: string | undefined, gate: PinGate): Pro
 
 function valueOfOpen(opened: PinOpen): string | undefined {
   return opened.kind === 'value' ? opened.value : undefined;
+}
+
+/**
+ * An entry claiming a PIN over values that are not wrapped — the mark goes.
+ *
+ * <p>0.99.0 shipped a share that carried `pinProtected` while the sender had unwrapped every value
+ * at share time, so anyone who accepted one before the fix has a copy in exactly this state. And
+ * the state is self-diagnosing rather than ambiguous: the mark says the values are locked, and
+ * `readSecret` says they are not. There is nothing to guess.
+ *
+ * <p>Repaired at the DOOR because the door already read every slot to decide whether to ask, so the
+ * check costs nothing and the entry heals the first time somebody opens it. Left alone, it hides
+ * from that person's agent surfaces and offers a Remove-PIN command that answers "is not
+ * protected\" — a contradiction with no way out from inside the interface.</p>
+ */
+async function repairFalseMark(
+  storage: StorageManager,
+  accountId: string,
+  entityId: string,
+): Promise<void> {
+  const node = storage.getNode(accountId, entityId);
+  if (node?.details?.pinProtected !== true) {
+    return;
+  }
+  await storage.updateNode(accountId, {
+    ...node,
+    details: { ...node.details, pinProtected: undefined },
+  });
 }

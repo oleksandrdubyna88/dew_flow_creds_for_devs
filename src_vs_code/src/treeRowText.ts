@@ -48,8 +48,11 @@ export function describeTarget(node: TreeNode): string {
 }
 
 /** A folder row's context value: `folder`, or `folder:trashed` inside the Trash (Restore leads). */
-export function folderContextValue(trashed: boolean): string {
-  return trashed ? 'folder:trashed' : 'folder';
+export function folderContextValue(trashed: boolean, asksForPin: boolean = false): string {
+  const base = trashed ? 'folder:trashed' : 'folder';
+  // The token the menu tests for, so *Stop Asking for a PIN Here* is offered on the folders that
+  // actually ask and nowhere else — the same shape the entity pair uses.
+  return asksForPin ? `${base}:asksforpin` : base;
 }
 
 /**

@@ -4,6 +4,28 @@ All notable changes to **CredsForDevs** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.0] — a shared entry stops claiming a PIN it lost, and its recipient is offered one
+
+### Fixed
+
+- **A shared entry arrived claiming a PIN it did not have.** Sharing unwraps the values first — the
+  person receiving them does not have your PIN and never will — but the mark saying "these values
+  are wrapped" travelled anyway. Their copy was then hidden from their own agents, its form said
+  *PIN — on*, and the command that form points at reported the entry as not protected. Copies that
+  already arrived that way repair themselves the first time they are opened.
+- The same mark no longer rides along on a **cloned** entry, which copies settings and no secrets.
+
+### Added
+
+- **The recipient of a protected entry is offered a PIN of their own.** They are told the sender had
+  one, they choose theirs, and declining imports nothing — because a person who protected an entry
+  did not agree to share it unprotected. The values are wrapped before anything is written, so there
+  is no moment at which an unprotected copy exists on this machine.
+- **A folder goes on asking for a PIN after you empty it.** Running *Protect Every Entry with a PIN…*
+  now also sets the folder to ask on every entry created in it afterwards — including when the folder
+  was empty at the time, which nothing else could tell. **Stop Asking for a PIN Here** turns that back
+  off, and changes nothing about the entries, which keep their own PINs.
+
 ## [0.99.1] — an internal failure tells the agent THAT, and the journal HOW
 
 ### Fixed
