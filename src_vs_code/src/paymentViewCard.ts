@@ -80,7 +80,7 @@ function plainRow(key: PaymentFieldKey): string {
     : '';
   return `<div class="row">
       <label>${label}</label>
-      <div class="line">${valueBox(key, gated)}
+      <div class="line${key === 'brand' ? ' brandLine' : ''}">${valueBox(key, gated)}
         ${brandMark(key)}${show}<button data-field="pay_${key}" data-action="copy" class="icon" title="Copy ${label}${key === 'number' ? ' as digits, with no spaces' : ''}" aria-label="Copy ${label}">${COPY_ICON}</button>${spacedCopy(key, label)}
       </div>
     </div>`;

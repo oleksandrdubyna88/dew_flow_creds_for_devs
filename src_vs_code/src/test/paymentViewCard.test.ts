@@ -15,6 +15,7 @@ import {
 import { PaymentFields } from '../paymentFields';
 import { SHUFFLE_CODES, shuffleTokens } from '../shuffle';
 import { phraseColumns } from '../phraseLayout';
+import { BRAND_MARK_STYLES } from '../cardBrandIcons';
 
 /**
  * The read-only payment card — the surface that had never existed, which is why six modules of this
@@ -241,4 +242,21 @@ test('a copy variant is a SHAPE, never a way past the reveal gate', () => {
   assert.equal(copyVariant('number', 'spaced', '5293660594910479'), '5293 6605 9491 0479');
   assert.equal(copyVariant('number', '', '5293660594910479'), '5293660594910479', 'no variant, no change');
   assert.equal(copyVariant('cvv', 'spaced', '737'), '737', 'nothing else has a second shape');
+});
+
+/**
+ * The 64px mark needs a row that centres it, on BOTH surfaces.
+ *
+ * <p>Raised by the plan gate and true: the size lives in the shared constant, so growing the mark
+ * grew it on the read-only card too — where `.line` is `align-items: flex-start` and a 26px input
+ * would have sat pinned to the top of a 64px row. The layout rule therefore belongs in the same
+ * shared constant as the size, not in the form's stylesheet alone.</p>
+ */
+test('the card lays the payment system out as a line that centres its mark', () => {
+  const html = paymentCardMarkup(paymentCardFor('e1', 'card', CARD, random));
+
+  const rows = html.split('<div class="row">').filter((row) => row.includes('brandMark'));
+  assert.equal(rows.length, 1, 'exactly one row carries the marks');
+  assert.match(rows[0], /class="line brandLine"/, 'and it is laid out as the brand row');
+  assert.match(BRAND_MARK_STYLES, /\.brandLine\s*\{[^}]*align-items:\s*center/, 'shared, so both surfaces agree');
 });

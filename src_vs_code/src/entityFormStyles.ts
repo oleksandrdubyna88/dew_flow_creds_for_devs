@@ -1,3 +1,4 @@
+import { BRAND_MARK_STYLES } from './cardBrandIcons';
 import { PAGE_MAX_WIDTH_PX, groupsGridCss } from './webviewHtml';
 import { ZOOM_CSS, zoomStyle } from './zoomControl';
 import { FORM_SECTIONS } from './formSections';
@@ -161,6 +162,9 @@ export function formStyleSheet(uiScale: number): string {
                      color: var(--vscode-button-secondaryForeground);
                      border: 1px solid var(--vscode-button-border, var(--vscode-widget-border, #666)); }
   .row { display: grid; grid-template-columns: 2fr 1fr; gap: 10px; }
+  /* The payment system and its mark on ONE line — .brandLine comes with the marks, because the
+     select is width:100% and without it the mark wrapped onto the row below its own field. */
+  ${BRAND_MARK_STYLES}
   /* The accounts found in a pasted QR. Empty and invisible until there is more than one to
      choose between — an export picture holds every account at once. */
   .qrChoices:empty { display: none; }
