@@ -20,7 +20,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **The recipient of a protected entry is offered a PIN of their own.** They are told the sender had
   one, they choose theirs, and declining imports nothing — because a person who protected an entry
   did not agree to share it unprotected. The values are wrapped before anything is written, so there
-  is no moment at which an unprotected copy exists on this machine.
+  is no moment at which an unprotected copy exists on this machine — and if that wrapping fails, the
+  share is not imported and the reason is shown rather than swallowed. The prompt names who sent it,
+  because two people may well have sent you something called `prod-db`.
 - **A folder goes on asking for a PIN after you empty it.** Running *Protect Every Entry with a PIN…*
   now also sets the folder to ask on every entry created in it afterwards — including when the folder
   was empty at the time, which nothing else could tell. **Stop Asking for a PIN Here** turns that back

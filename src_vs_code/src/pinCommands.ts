@@ -113,6 +113,9 @@ export async function protectFolder(folder: TreeNode, deps: PinCommandDeps): Pro
     // cannot answer: there is no sibling to derive from, so without a mark the next entry created
     // here would not be asked. The mark says only that, and the message says what it did.
     await setAsksForPin(folder, true, deps);
+    // Or the row keeps its old context value and *Stop Asking for a PIN Here* is not offered until
+    // some unrelated refresh happens — a menu that lags the state it describes.
+    deps.refresh();
     void vscode.window.showInformationMessage(
       `${protectionSummary(folder.name, plan)} Entries created here will be asked for a PIN.`,
     );
@@ -129,6 +132,7 @@ export async function protectFolder(folder: TreeNode, deps: PinCommandDeps): Pro
   // Set AFTER the run, like every other mark here: a preference recorded before the work would
   // outlive a run that never finished, and start asking about a folder nobody protected.
   await setAsksForPin(folder, true, deps);
+  deps.refresh();
 }
 
 /**

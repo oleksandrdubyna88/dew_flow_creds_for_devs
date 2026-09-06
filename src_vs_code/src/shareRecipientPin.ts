@@ -1,3 +1,4 @@
+import * as vscode from 'vscode';
 import { SharePayload } from './types';
 import { lockSecret } from './secretEnvelope';
 import { newPin } from './pinPrompt';
@@ -33,11 +34,14 @@ type RecipientPin =
  * entry did not agree to share it unprotected, and importing it in the clear would be the product
  * deciding that for them.</p>
  */
-async function recipientPin(payload: SharePayload): Promise<RecipientPin> {
+async function recipientPin(payload: SharePayload, from: string): Promise<RecipientPin> {
   if (payload.node.details?.pinAskOnImport !== true) {
     return { kind: 'none' };
   }
-  const typed = await newPin(payload.node.name, RECIPIENT_PIN);
+  // The sender is named because `acceptMany` walks several shares in a row and two people may well
+  // have sent something called `prod-db` — in the PROMPT rather than the title, which `newPin` puts
+  // in quotes and which is the entry's name. (A reviewer's finding.)
+  const typed = await newPin(payload.node.name, `${from} sent this. ${RECIPIENT_PIN}`);
   return typed === undefined ? { kind: 'declined' } : { kind: 'wrap', pin: typed };
 }
 
@@ -52,10 +56,16 @@ async function wrappedPayload(
   accountId: string,
   pin: string,
 ): Promise<SharePayload> {
-  const secrets: Record<string, string | undefined> = {};
-  for (const [slot, value] of Object.entries(payload.secrets)) {
-    secrets[slot] = await lockedOrAsIs(value, accountId, pin);
-  }
+  // Built rather than accumulated into a mutable record — a reviewer's finding, and it buys the
+  // parallel wrap for free: `lockSecret` derives through the ASYNC scrypt, which runs on libuv's
+  // pool rather than on the thread painting the window, so nine slots cost roughly the pool's width
+  // instead of nine seconds in a row.
+  const sealed = await Promise.all(
+    Object.entries(payload.secrets).map(
+      async ([slot, value]) => [slot, await lockedOrAsIs(value, accountId, pin)] as const,
+    ),
+  );
+  const secrets = Object.fromEntries(sealed);
   return {
     ...payload,
     node: {
@@ -104,10 +114,29 @@ async function lockedOrAsIs(
 export async function forThisRecipient(
   payload: SharePayload,
   accountId: string,
+  from: string,
 ): Promise<SharePayload | undefined> {
-  const own = await recipientPin(payload);
+  const own = await recipientPin(payload, from);
   if (own.kind === 'declined') {
     return undefined;
   }
-  return own.kind === 'wrap' ? wrappedPayload(payload, accountId, own.pin) : payload;
+  return own.kind === 'wrap' ? sealedForImport(payload, accountId, own.pin) : payload;
+}
+
+/**
+ * The wrap, with the window told it is happening.
+ *
+ * <p>Nine slots is nine scrypt derivations, which is seconds — and a reviewer was right that an
+ * accept command sitting silent for that long reads as a hang. There is no percentage to report,
+ * deliberately: what the notification has to say is that the wait is the product working.</p>
+ */
+async function sealedForImport(
+  payload: SharePayload,
+  accountId: string,
+  pin: string,
+): Promise<SharePayload> {
+  return vscode.window.withProgress(
+    { location: vscode.ProgressLocation.Notification, title: `Protecting "${payload.node.name}"…` },
+    () => wrappedPayload(payload, accountId, pin),
+  );
 }

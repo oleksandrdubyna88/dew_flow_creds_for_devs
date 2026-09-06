@@ -3,7 +3,7 @@
 > Status: **IMPLEMENTED, 2026-09-03** — nine of its ten items, plus §7 which the owner added while
 > it ran. §6.1 (a woven password) and §6.2 (a PIN on an entry or a folder) are NOT built: their
 > foundation §6.0 shipped, and the rest was extracted into
-> [../todo/PLAN_woven_passwords_and_entity_pin.md](../todo/PLAN_woven_passwords_and_entity_pin.md)
+> [PLAN_woven_passwords_and_entity_pin.md](PLAN_woven_passwords_and_entity_pin.md)
 > with the six accepted review findings folded into it. Scope: `src_vs_code/src` — the payment form and
 > viewer, the weaving controls, the phrase and password generators, and one new secret envelope
 > shared by woven passwords and PIN-protected entries. No server change; the HTTP contract is

@@ -1,0 +1,523 @@
+# PLAN — a woven password, and a PIN on an entry or a folder
+
+> Status: **IMPLEMENTED 2026-09-06.** Part 1 shipped in extension v0.98.0, Part 2 in v0.99.0 /
+> v0.99.1, and Part 2's tail — the recipient's own PIN and the folder that goes on asking — in
+> v1.0.0. Every item of the Definition of Done below is met; the deviations are recorded in place,
+> section by section, and summarised here.
+>
+> **Four deviations worth reading before the plan itself.**
+>
+> - **§2.1's "all-or-nothing per entry" could not be built and should not have been promised.**
+>   `SecretStorage` has no transaction, so a run interrupted between two slots leaves some wrapped
+>   and some not, whatever the code intends. What shipped is stronger for being achievable:
+>   protection is IDEMPOTENT and SELF-DESCRIBING — an envelope says what it is, `readSecret` is
+>   total, a re-run finishes what an interrupted one started, and every entry stays readable
+>   throughout. The reasoning is at §2.1 where the first draft's sentence was.
+> - **§2.3's persisted folder flag became a derived signal PLUS a preference.** "This folder is
+>   protected" is derived from the entries, which cannot drift; `TreeNode.folderAsksForPin` closes
+>   the one case derivation cannot see — a folder the command ran on while it was EMPTY. And **a
+>   MOVE is not a create**: dragging an entry into such a folder does not ask, because the
+>   preference is about creation and prompting on a drag would make an ordinary reorganisation a
+>   security conversation. The line in the old `todo/README.md` row about "a move across a PIN
+>   boundary asks" was never in this plan's body — §The shape of the PIN already answered it with
+>   *"there is no boundary; protection belongs to the ENTRY, so a move is a move"*.
+> - **§2.3's mixed-PIN folder is answered with a COUNT, not with a stored PIN.** A folder may hold
+>   entries under two PINs, and nothing anywhere stores one to compare against — so what a person
+>   is told is "this PIN opens 4 of the 7 protected entries here", which they can act on, rather
+>   than "it opened at least one", which they cannot.
+> - **§2.5's headless-import fast failure does not apply.** `openShare` exists only inside the
+>   extension and no CLI or MCP path imports a share, so there is nothing to fail fast. The line was
+>   inherited from this plan's first draft and describes a surface the product does not have.
+>
+> **Part 1 (a woven password) shipped** and is documented in
+> [module_extension.md](module_extension.md) under *A woven password*. It went through
+> the coai gate twice: 14 plan findings and 29 code findings resolved, the second code round
+> `proceed`. Two deviations from what is written below, both from review:
+>
+> - §1.2 said the mark could not be switched off. What cannot be undone is UNWEAVING the stored
+>   value; replacing the password always works, and saying otherwise made the form contradict
+>   itself. The wording is now exact and the box arrives ticked for an already-woven entry.
+> - §1.4 grew a boundary the plan did not anticipate. `FieldReading` = `value | withheld(reason) |
+>   absent`, because every automatic path answered `string | undefined` and a `creds://` reference
+>   to a woven password therefore reported *"has no password stored"* — false in both halves. An
+>   agent ROTATION is refused for the same reason: it would store an unwoven value under a mark
+>   that still said `Woven — on`.
+>
+> Part 2 rests on `src_vs_code/src/secretEnvelope.ts` and its tests, from
+> [PLAN_payment_polish_and_entity_pin.md](PLAN_payment_polish_and_entity_pin.md) §6.0 — built and
+> shipped before this plan started, which is why Part 2 introduced no new cryptography.
+>
+> **The coai gate, Part 2's tail:** one plan round (10 gating findings of 14, verdict `good_enough`)
+> and one code round (9 reviewers, 18 findings, 11 gating, verdict `proceed`). Thirteen accepted,
+> five rejected with their reasoning — the rejections are worth the line they cost: the Russian help
+> text is a shipped help LANGUAGE rather than mixed-language chrome, one finding reasoned itself to
+> "this is compliant" mid-text, and two described fixes the code already contained.
+>
+> Related docs: [module_extension.md](module_extension.md),
+> [PLAN_payment_instruments.md](PLAN_payment_instruments.md),
+> [PLAN_sharing.md](PLAN_sharing.md),
+> [PLAN_mcp_server.md](PLAN_mcp_server.md).
+
+## The shape of the PIN, decided by the owner (2026-09-03)
+
+This is written first because it is what makes Part 2 buildable, and because the first draft got it
+wrong in an expensive direction.
+
+**A folder's checkbox is an ACTION, not a live property.** It does not encrypt a folder and entries
+do not inherit anything from it at read time: it walks the folder recursively and gives every entry
+inside its own PIN wrap. **Each entry therefore carries a complete, independent wrap** — and that
+one sentence is what removes most of the risk the first draft was built around:
+
+| what the first draft planned for | why it does not arise |
+|---|---|
+| a resumable folder migration with a committed marker | there is no cross-entry invariant to break. A run interrupted halfway leaves some entries protected and some not, each readable by its own means. The person runs it again. Nothing is lost, so nothing needs resuming |
+| a background sweep that lacks the children's PINs | there is no background sweep. The PIN is typed by the person, there, while they watch |
+| re-wrapping on a move across a folder boundary | there is no boundary. Protection belongs to the ENTRY, so a move is a move |
+| folder rename / delete / PIN removal transitions | the wrap was never the folder's, so none of these touch it |
+
+Two things follow that must be said out loud rather than assumed:
+
+1. **An entry that is already protected is SKIPPED by a folder run, and keeps its own PIN.** The run
+   would otherwise need that entry's existing PIN to unwrap it before re-wrapping, which is a
+   question nobody wants asked once per entry — and silently replacing an override is worse.
+   The run reports what it skipped.
+2. **A new entry created inside a flagged folder has the PIN as a REQUIRED field**, and the form
+   offers **"Use this folder's PIN", ticked by default** — untick it to set the entry its own
+   (the owner's answers, 2026-09-03). Not a prompt that can be dismissed and not a box that can be
+   left empty: the form does not save without it. The flag is persisted for this reason alone —
+   without it a folder that says "protected" quietly accumulates unprotected entries, which is a
+   promise the interface would be making and the storage would not be keeping.
+
+   **There may be no single "folder PIN", and the interface must not pretend there is.** *(Two
+   reviewers, one finding.)* A run with PIN A protects some entries; a later run with PIN B skips
+   those and protects the rest, so a folder can hold entries under two PINs — which is a legitimate
+   state, not a corruption. The checkbox therefore means **"the PIN another entry in this folder
+   already uses"**, and it is accepted when the typed value opens AT LEAST ONE protected sibling.
+   Opening none is not refused — introducing a second PIN deliberately is allowed — but it is SAID,
+   so nobody discovers it a month later. The folder run itself reports how many entries it
+   protected and how many it skipped, and that the skipped ones keep their own.
+
+   **An EMPTY or wholly unprotected folder has nothing to verify against** *(a reviewer's
+   finding)*, so there the PIN is typed TWICE, which is the only check available and the same one
+   every other new PIN in this product gets.
+
+   **The folder's PIN has to be TYPED, and checked before it is used.** It is stored nowhere, which
+   is the point of it, so "use the folder's PIN" cannot mean "fetch it" — it means the person enters
+   it. And it must be VERIFIED, by unwrapping any already-protected sibling in that folder: without
+   that check a typo creates an entry wrapped under a PIN the person believes is the folder's and
+   is not, which nothing would discover until the day they need the value. A folder whose entries
+   are all still unprotected has no sibling to check against; there the typed PIN is simply what
+   the entry gets, and the form says so.
+
+**An agent never sees a PIN-protected entry at all.** Not "refused when used" — absent from the
+listing. An agent that can see an entry it can never open will keep trying, and every one of those
+is a door somebody has to answer. This is `mcpAccess` / the door filter, not a new mechanism.
+
+**Every other operation simply asks.** View, edit, copy, use — the PIN is entered and the value is
+unwrapped for that operation.
+
+---
+
+## What is already built and can be relied on
+
+`secretEnvelope.ts` — a secret that describes itself:
+
+- a fresh random data key seals the value; the data key is wrapped under the PIN
+  (`sealBlob` + `wrapWithPin`, the vault's own primitives — no new cryptography);
+- the envelope holds ciphertext and the wrapped key, and the plaintext **nowhere** (asserted);
+- a string this build never wrote **is** a plaintext secret, so there is no migration and a
+  rollback reads its own writes;
+- envelope-SHAPED text that will not parse, and an envelope carrying both a lock and a value, are
+  answered `corrupt` — never as a plain value;
+- reading answers a typed `{ kind: 'locked' }` and **never prompts**.
+
+---
+
+## Part 1 — a woven password *(IMPLEMENTED 2026-09-04)*
+
+**Goal.** The card can store a number, a CVV or a PIN woven with a decoy under a method kept only in
+the person's memory. A password is the value most people would want that for, and cannot have it.
+
+### 1.1 A password-shaped decoy
+
+`decoyDigits.ts` knows four shapes — `card`, `iban`, `account`, `digits`. A password needs a fifth:
+**the same length and the same character classes** as the value it hides. The charset logic already
+exists in `secretGenerator.ts`, so this is a new `DecoyKind` served from the existing generator.
+
+**A reviewer proposed drawing the decoy from the full charset instead, to avoid leaking the real
+password's class composition. That was rejected, and the reasoning belongs here.** A woven value is
+the INTERLEAVING of the two halves. If the decoy carries characters from classes the real password
+does not use, every one of them is provably decoy: the halves separate by inspection, with no method
+and no guessing, and the twelve methods become irrelevant. Mirroring leaks that the pair shares a
+class set. Not mirroring collapses the mechanism. `decoyDigits` already makes this argument for a
+card's BIN, and it is the same argument.
+
+### 1.2 The mark, and where it lives
+
+**What shipped is NOT this.** The plan said the stored password becomes `plainSecret(woven, true)` —
+
+an envelope carrying `woven: true`. It became a FIELD of the entry (`EntityMetadata.passwordWoven`)
+
+instead, and the reason is an asymmetry the plan had not noticed: a PIN wrap whose mark is lost is
+
+ciphertext nobody can identify, while a woven value whose mark is lost is whole and merely
+
+mislabelled — the person sets it again. Keeping the mark outside the value meant `getPassword` went
+
+on returning a plain string, so the export, the share, the hygiene scan and `storageManager.ts` (at
+
+its size ratchet, may only shrink) needed no change at all, and Part 1 could ship without Part 2.
+
+
+
+`plainSecret`’s `woven` branch is therefore unused by shipped code. §2.6 is where the two marks
+
+meet: weave first, wrap second, so a locked woven password is `lockSecret(wovenString, …, true)`
+
+with `passwordWoven` still on the entry.
+
+### 1.3 The controls, and the read-back — specified rather than assumed
+
+*(A reviewer found this missing, and it is the finding that would have produced an unrecoverable
+password with every listed test passing.)*
+
+**Writing.** The Secret section gets the same three controls the card's weaving has, from the same
+modules: the checkbox, the method picker (twelve, shuffled in order, named by code), and the worked
+example. Nothing new is invented — the person marks the field, picks a method, and sees on two
+made-up samples what that method does before the choice becomes irreversible.
+
+**Reading.** The viewer shows the same two-column row the card shows: pick a method, and two rows
+come back. **The build never says which is real**, exactly as it never does for a card — a tick, an
+ordering or a "looks valid" would do the guessing for whoever is reading over the shoulder. The
+person knows their own password when they see it.
+
+**A wrong method** answers in the same shape as a right one. That is the property, not an omission.
+
+### 1.4 The automatic paths must refuse (owner's decision)
+
+Ticking the box **disables** this entry's env exposure (`ENV_ENTITY_PASSWORD`), terminal injection
+and agent access, and says so at the moment it is ticked. Nothing — the extension included — can
+know which half is real, so an automatic path could only hand out a guess, and a wrong password in a
+terminal or an env var is an account lockout nobody sees happen.
+
+**Where**: `envApply` / `envBinding`, the terminal launch, and `credsAgentServer`'s read path. Each
+says WHY, naming the entry, rather than returning nothing.
+
+### 1.5 Editing — and NOT making the entry immutable
+
+*(A reviewer's finding, accepted: the card's answer would be wrong here.)*
+
+A woven value cannot go back into the form: saving would weave the woven value a second time,
+doubling its length under two unknown methods. `mixedFieldGuard` refuses a woven payment record for
+this reason, and a payment record is only its fields — so refusing the whole form costs little.
+
+**A credential is not.** It carries a login, a URL, notes, env bindings, dependencies, agent doors.
+Making all of that immutable because the password is woven would be a worse defect than the one the
+guard prevents. So:
+
+- the form OPENS, with every other field editable;
+- the password box is replaced by a statement that the value is woven and is not shown here, plus
+  **Replace the password…**, which writes a new value (woven or not) without ever reading the old
+  one;
+- saving without touching that control leaves the stored secret byte-identical.
+
+---
+
+## Part 2 — a PIN on an entry or a folder
+
+### 2.0 What the readers actually need — the survey, done before the code
+
+The plan said §2.1 was "the bulk of the work" and that every reader must learn about `locked`. That
+was written before anyone read them. Every call site of a secret getter has now been enumerated and
+classified, and the shape of the work is different from what the sentence implies: **most readers
+need no change at all**, because a locked envelope is a STRING and they move strings.
+
+| Reader | What it does with the value | Verdict |
+|---|---|---|
+| `entityEditCommands` `hasStoredPassword` | asks whether one EXISTS | unchanged — an envelope exists |
+| `entityFlags` | the tree's badges | unchanged — boolean |
+| `entityViewerCommands:51` `hasPassword` | boolean | unchanged |
+| `mcpEntries.storedSecrets` | five booleans and the db string | unchanged; the entry is filtered out by §2.4 |
+| `exportSecrets` / `exportBundle` | copies bytes into a backup | **unchanged, and this is the design**: a backup of a locked entry stays locked, which is what its owner asked for |
+| `revisionSnapshot` | copies bytes into history | unchanged — history keeps what was stored |
+| **`entityViewerCommands:108`, `viewerOptions.password()`** | shows it | **asks** (§2.2) |
+| **`commands/entityCommands:89`** Copy password | copies it | **asks** |
+| **`envApply`, the terminal, `sshCredential`** | hands it to something automatic | **withheld**, with the reason — the boundary Part 1 built (`FieldReading`) already carries it |
+| **`rotateAction` `current`** | replaces it | **refused**, exactly as a woven password is |
+| **`hygieneScan`** | looks for weak and reused secrets | **skips, and says so** — scanning ciphertext would report every locked entry as a strong unique password, which is a lie in the direction that matters |
+| **`maskEntries`** | masks values appearing in output | **skips** — it cannot mask a value it cannot read, and the ciphertext will never appear |
+| **`shareInbox`** | puts it in a share payload | **asks at share time** (§2.5, and the owner asked for exactly this) |
+
+**So `storageManager`'s getters keep their signatures.** They return what is stored, which for a
+locked entry is the envelope — and `readSecret` already tells any caller which it is. What changes
+is the dozen callers above, each in its own way, and each with its own test. A blanket type change
+across ten getters would have touched forty call sites to make thirty of them re-state "pass it on
+unchanged".
+
+**The one thing that must not happen** is a reader that hands envelope JSON to something expecting a
+password. That is what the classification is FOR, and the test matrix below names every row of it.
+
+### 2.1 The PIN session, and where the wrap happens
+
+`pinSession.ts` — a per-window grant, keyed by entity id, holding the PIN for as long as the window
+is unlocked and no longer. The shape `PaymentViewHost`'s grant already has, including its "the panel
+may have been re-rendered for another entry" check, and the same reason: a grant that outlives the
+window is a PIN on disk.
+
+`entityPin.ts` — the two operations, pure of `vscode`:
+
+- **protect(entity, pin)** — every secret slot the entry has, read, `lockSecret`-ed, written back.
+  Slots, enumerated: password, private key, VPN config, notes, fields, payment, config body, db
+  connection, TOTP seed. Attachments and images are NOT wrapped: they are base64 blobs that a
+  viewer streams, and a PIN on them buys nothing a locked password does not already buy.
+- **unprotect(entity, pin)** — the same, in reverse.
+
+**They are IDEMPOTENT and SELF-DESCRIBING, not atomic** *(three reviewers, one finding, and it is
+correct)*. The first draft said "all-or-nothing per entry: transformed in memory, then written",
+which is not a guarantee anything can keep — `SecretStorage` has no transaction, so a process killed
+between two slot writes leaves an entry with some slots locked and some not, and holding the values
+in memory first does not change that by one line.
+
+What makes it survivable is the decision Part 1 already rests on: **the mark is inside each value**.
+A half-protected entry is therefore not "the state nothing can describe" — it is an entry whose
+password is locked and whose notes are not, and `readSecret` says exactly that, per slot, to anyone
+who asks. So:
+
+- **`protect` skips slots that are already locked** and locks the rest, so running it again finishes
+  an interrupted run. There is nothing to resume because re-running IS the resume.
+- **`unprotect` is the mirror**: it skips what is already plain.
+- **The entry reports its own state** — how many of its slots are locked — so an interrupted run is
+  seen rather than discovered later.
+- **A wrong PIN fails before any write.** It is verified against the first locked slot on unprotect,
+  so "wrong PIN, half the entry re-wrapped" cannot arise.
+- **The order is fixed**: on protect the password goes LAST, so an interruption leaves the
+  most-wanted value in the state the person last chose deliberately.
+
+This is weaker than atomicity and it is what is actually true. Claiming a transaction
+`SecretStorage` cannot provide would be the worse answer.
+
+### 2.2 The gate
+
+View and edit ask. The answer is remembered no longer than the window is unlocked — the shape
+`PaymentViewHost`'s grant already has, including its "the panel may have been re-rendered for
+another entry" check.
+
+**What that lifetime actually is** *(three reviewers asked; the first draft only said "while the
+window is unlocked")*:
+
+- **Per extension host.** A window reload, an extension-host restart and a crash each end it. Two
+  windows of one profile hold two independent grants — separate processes, neither seeing the
+  other's. Nothing is written anywhere, which is the point.
+- **Checked at the moment of USE, not only at the window's end.** A grant read at the start of a
+  long operation and spent at the end can be gone by then; every unwrap re-reads it, and a missing
+  one is a fresh ask — never a silent failure, and never reported as `corrupt`.
+- **No timer.** An idle timeout that re-asks mid-task is a prompt people learn to type through, and
+  the vault's own lock is the timer that matters: locking the vault ends every grant.
+- **Nothing background ever needs one.** Sync, export, backup and history move the stored bytes, and
+  the stored bytes ARE the envelope — so a lost grant cannot make a background job fail, because no
+  background job ever had one.
+
+**A forgotten PIN is an irreversible loss, and the interface says so before the wrap** *(a
+reviewer's finding)*. There is no recovery path: the data key exists only inside the wrap and the
+wrap opens with the PIN alone. The vault's recovery code opens the VAULT; it does not open an
+entry's own PIN, and pretending otherwise would be the cruellest possible bug.
+
+### 2.3 The folder run
+
+A recursive walk that wraps every unprotected entry under one PIN the person types once.
+
+**The skipped entries are named BEFORE the run, not after it** *(a reviewer's finding, and the one
+that would have cost somebody real access)*. Somebody running the folder with PIN B expects it to be
+uniformly B afterwards. It will not be: entries already wrapped under PIN A keep PIN A, and if that
+person does not know PIN A they have just locked themselves out of entries they could read
+yesterday, while believing the opposite. So the confirmation names the count first: *"3 of the 15
+entries here are already protected under a PIN of their own. They will be left exactly as they are —
+this run does not change them, and you will still need their own PIN to open them."*
+
+**A folder can legitimately hold entries under two PINs**, and the interface must never pretend
+otherwise. Four reviewers converged on the ambiguity in "accepted when it opens AT LEAST ONE
+protected sibling": with siblings under A and B either PIN is accepted, and nothing tells the person
+which one they just used.
+
+The answer is **not** a stored folder PIN (there is none by design, and storing one would undo the
+whole feature) and **not** a dropdown of sibling PINs (they cannot be listed — they are kept
+nowhere). It is a COUNT, shown the moment the PIN is typed:
+
+> *This PIN opens 4 of the 7 protected entries in this folder.*
+
+or, when it opens none:
+
+> *This PIN opens none of the 7 protected entries here. This entry will be the first under it.*
+
+Deterministic, needs nothing stored, and it turns the ambiguity into a fact while it can still be
+acted on. An empty or wholly unprotected folder has nothing to count, so there the PIN is typed
+twice — the only check available, and the one every new PIN in this product gets.
+
+**Interrupted, the run leaves a mix — all readable.** Nothing to roll back, and re-running IS the
+resume: it skips what is already locked and finishes the rest. What the first draft left out *(a
+reviewer's finding)* is how anybody DISCOVERS that, so the folder shows the count — *"12 of 15
+protected"* — where the folder is, not in a log nobody opens. A persisted progress index was
+proposed and rejected: the entries already describe their own state, and an index goes stale the
+moment somebody adds or deletes an entry between runs.
+
+**The mirror is read in ONE direction only** *(self-review, 2026-09-05)*. `pinProtected` on the entry
+exists for the AGENT surfaces, which answer synchronously and cannot read a keychain per entry per
+listing, and its staleness fails closed there: a mark lost to a crash leaves the entry listed, where
+its values still refuse. Everywhere ELSE the same staleness fails the other way, so nothing else uses
+it. The create flow in particular reads the real wrap: a folder whose mark was lost would stop
+asking, and the next entry created in it would be stored in the clear inside a folder whose whole
+point is that nothing is. That check runs once, when a person clicks Add, so it can afford the real
+answer.
+
+**CLOSED 2026-09-05.** The derived signal stays and is still what normally answers; `folderAsksForPin`
+on the folder NODE closes the one case it cannot. A PREFERENCE, and the wording is load-bearing:
+"entries created here are asked for a PIN" describes no value, so it cannot drift out of step with
+one. The folder run sets it — including on a folder that held nothing to protect, which is the whole
+case — and *Stop Asking for a PIN Here* turns it off, because a preference with no way off is a trap
+and this one can be set by a single click. Turning it off changes nothing about the entries; they
+keep their own PINs.
+
+**A MOVE is not a create.** Dragging an existing entry into such a folder does not ask, and that is
+deliberate: the preference is about creation, moving an entry is not creating one, and prompting on
+a drag would make an ordinary reorganisation a security conversation. Named here because a reviewer
+asked and the answer is a decision rather than an oversight.
+
+**The original deviation, kept for the record — 2026-09-04: there is no persisted flag, and the
+signal is DERIVED.** A folder counts
+as protected exactly when at least one entry inside it is — which is the question that actually
+matters, cannot drift out of step with the entries the way a stored boolean can, and is
+self-repairing (unprotect the last one and the folder stops asking, which is what somebody who just
+did that means). A new entry created there is asked for the PIN BEFORE the form opens, so dismissing
+the box means no entry rather than an unprotected one sitting in a folder whose whole point is that
+nothing in it is.
+
+The one case a stored flag would cover and this does not: a folder somebody ran the command on while
+it was EMPTY. Nothing was protected, so nothing marks it, and the first entry created there is not
+asked. Recorded rather than papered over — the alternative is a flag claiming protected about a
+folder where nothing is.
+**The flag rides ordinary node metadata, and ordinary node metadata is opaque to the server** — the
+vault reaches it as one client-side-encrypted blob (CLAUDE.md: *"the server never holds a key that
+opens a vault"*), so the server cannot see which folders are flagged. A reviewer asked; the plan
+should have said it.
+
+### 2.4 Agents do not see protected entries
+
+Absent from the listing, not refused on use. `mcpAccess` and the door filter already decide what an
+agent may see; this is one more reason for an entry not to appear.
+
+**One predicate, applied at the LOOKUP as well as at the listing** *(a reviewer's finding)*. Four
+filters are four places to forget one, and enumeration is not the only way in: an agent holding an
+id from a listing taken before the entry was protected can ask for it directly. So the predicate is
+written once and every surface calls it — before a listing, before a search result, before a tree
+serialisation, and before answering a direct id. A protected entry answers a direct lookup the way
+an entry that does not exist answers it, because to an agent it does not.
+
+### 2.5 Sharing: the flag is an instruction to ask, never a key
+
+Every share is *already* PIN-sealed — the sender types the PIN twice at share time and the recipient
+must enter it to open. Three of the five things the owner asked for are already shipped.
+
+What this adds is the **mark**. The recipient receives a sealed payload and a boolean, but no key
+material — so "re-apply the protection" can only mean **ask them for their own PIN** on opening.
+Re-using the share's transit PIN would wrap the entry under a one-time transfer secret the recipient
+never chose. Importing it unprotected is refused: a person who protected an entry did not agree to
+share it unprotected.
+
+**Headless import** *(a reviewer's finding)* fails fast with a message naming the required PIN
+argument, rather than blocking on a prompt nothing can answer.
+
+**WHAT SHIPPED 2026-09-04, and what did not.** The SENDER half is done: sharing a protected entry
+asks for that entry's PIN and unwraps every value through it, so the recipient receives something
+they can actually use. It has to work that way — the stored bytes are ciphertext under a key only
+the sender's PIN opens, the recipient does not have that PIN, and the share's own transit PIN is a
+one-time transfer secret rather than somebody's protection. Declining aborts the WHOLE share rather
+than quietly sending the rest of a selection, because a selection is one act to the person who made
+it.
+
+**BUILT 2026-09-05, and it found a defect on the way.** `shareableDetails` was NOT stripping
+`pinProtected`, so every share since 0.99.0 arrived claiming a wrap it did not have — hidden from the
+recipient's agent surfaces, its form saying *PIN — on*, and the command that form points at reading
+the values, finding nothing locked, and contradicting it. The mark now sits in `SECRET_CLAIM_FIELDS`,
+which also fixes the clone path, and the door repairs copies that already arrived: a mark with
+nothing locked under it is self-diagnosing, so `admit` clears it on the first open.
+
+What travels instead is `pinAskOnImport` — an instruction to ask, never a claim about a value —
+inside the sealed payload. On accept the recipient chooses a PIN of their OWN, typed twice; declining
+imports nothing and says why.
+
+**The wrap happens in memory, before a single write.** Three reviewers made the same point about the
+obvious order: import then protect leaves an unprotected copy on disk if anything fails between the
+two steps, which is exactly what "declining imports nothing" promises against.
+
+**The headless-import fast failure is NOT built, and does not apply.** `openShare` exists only inside
+the extension — there is no CLI or MCP path that imports a share — so there is nothing to fail fast.
+The line was inherited from this plan's first draft and describes a surface the product does not
+have.
+
+**Not negotiable:** the flag is a payload field, sealed with the rest. The server must not learn
+which entries are PIN-protected — repository rule 1.
+
+---
+
+### 2.6 A woven password that is also PIN-protected
+
+*(A reviewer's finding: the two marks meet and the order was undefined.)* The woven string is the
+VALUE; the envelope wraps a value. So: **weave first, wrap second** — the envelope's ciphertext is
+the woven string, and `passwordWoven` stays on the entry where it always was. Unlocking gives back
+the woven string, which is then read through the two-column row exactly as an unprotected woven
+password is. The two features compose in one direction only, and it is the one that needs no new
+code in either.
+
+## Build order
+
+1. **1.1** the password decoy shape — pure, testable on its own.
+2. **1.3** extract the woven row out of `paymentViewCard.ts`; both kinds render from it.
+3. **1.2 + 1.4 + 1.5** the checkbox, the save, the replace-not-refuse edit, and the three refusals.
+4. **2.1** the extraction out of `storageManager`, then `SecretRead` through every enumerated reader.
+5. **2.2** the gate on view and edit.
+6. **2.3** the folder run, and asking on create inside a flagged folder.
+7. **2.4** protected entries absent from an agent's listing.
+8. **2.5** the share mark and the recipient's own PIN.
+
+Steps 1–3 ship on their own. Step 4 is the one that must be finished once started.
+
+## Test plan
+
+| what | test |
+|---|---|
+| 1.1 | a password decoy matches its value's length and character classes, and is never the value |
+| 1.1 | the decoy uses no class the real value does not — otherwise the halves separate by inspection |
+| 1.3 | one woven row renders for a card and for a credential and produces the same shape |
+| 1.3 | a wrong method answers in the same shape as a right one, and nothing marks either row |
+| 1.4 | env, terminal and agent each REFUSE a woven entry, and each says why |
+| 1.5 | the form opens for a woven credential; every other field saves; the secret is untouched |
+| 1.5 | Replace the password… writes a new value without reading the old one |
+| 2.0 | EVERY row of the reader survey, by name: the six that pass an envelope through unchanged still do; the viewer and Copy ask; env, terminal and the SSH broker withhold with a reason; a rotation is refused; the hygiene scan skips and says so; the masker skips; a share asks at share time |
+| 2.1 | protect/unprotect is all-or-nothing per entry: a failure part-way writes NOTHING |
+| 2.1 | every slot an entry has is wrapped, and attachments and images deliberately are not |
+| 2.1 | a wrong PIN on unprotect fails as a wrong PIN, not as corruption |
+| 2.2 | the grant is per entry and dies with the window; a re-render for another entry drops it |
+| 2.3 | a folder run wraps every unprotected entry, SKIPS the protected ones, and says which |
+| 2.3 | a run interrupted halfway leaves every entry readable — some protected, some not |
+| 2.3 | a new entry in a flagged folder cannot be saved without a PIN |
+| 2.3 | "use the folder's PIN" is ticked by default, and a WRONG folder PIN is refused by checking it against a protected sibling |
+| 2.3 | unticking it takes a new PIN, twice, and the sibling check does not apply |
+| 2.4 | a protected entry is absent from EVERY agent-facing surface, enumerated: the MCP entry list, the MCP search, the tree an agent reads, the broker's own listing — not merely refused on use *(a reviewer's finding: "every list" tested at two of them proves nothing about the others)* |
+| 2.6 | a woven password inside a PIN wrap unlocks to the woven string, and reads back through the same row |
+| 2.5 | a shared protected entry asks the RECIPIENT for a PIN; the transit PIN is never the local one |
+| 2.5 | the share payload's flag is inside the sealed part — the server sees nothing |
+| 2.5 | a headless import of a protected share fails fast, naming the argument it needs |
+
+## Definition of Done
+
+- [x] `npm run typecheck`, `npm run lint` and `npm test` green in `src_vs_code` — 3219 tests,
+      3215 passing, 4 skipped, 0 failing at 2026-09-06.
+- [x] Every enumerated reader handles a locked secret, and none of them prompts from
+      `storageManager`.
+- [x] A woven password's automatic paths refuse and say why; its entry still EDITS.
+- [x] A folder run interrupted at any point leaves every entry readable.
+- [x] `research/module_extension.md` updated; no cross-module seam changed, so `architecture.md`
+      did not need to.
+- [x] The `coai` gate: the plan round of 2026-09-03 (nine findings accepted, one rejected with its
+      reasoning recorded in §1.1), `review_code` on `feat/entity-pin`, and for the tail a further
+      plan + code round on `feat/recipient-pin-and-folder-ask`.

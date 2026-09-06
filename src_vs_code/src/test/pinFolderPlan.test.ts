@@ -138,6 +138,7 @@ function vaultWith(nodes: readonly TreeNode[], passwords: Record<string, string>
   const nothing = (): Promise<undefined> => Promise.resolve(undefined);
   return {
     getNodes: () => nodes,
+    getNode: (_a: string, id: string) => nodes.find((n) => n.id === id),
     getPassword: (_a: string, id: string) => Promise.resolve(passwords[id]),
     getNotes: nothing,
     getFieldsRaw: nothing,

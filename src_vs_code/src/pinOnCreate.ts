@@ -58,8 +58,10 @@ export async function pinForNewEntry(
 
 /** Does this folder, or any folder above it, carry the preference? */
 function asksAnyway(storage: StorageManager, accountId: string, parentId: string | null): boolean {
-  const byId = new Map(storage.getNodes(accountId).map((n) => [n.id, n]));
-  let current = folderAt(parentId, byId);
+  // By ID, one ancestor at a time. Building a Map of every node in the account to walk at most 64 of
+  // them made an Add cost O(everything stored) — and `getNode` is already indexed. (A reviewer's
+  // finding, three times over.)
+  let current = folderAt(parentId, storage, accountId);
   for (let depth = 0; depth < MAX_FOLDER_DEPTH; depth += 1) {
     if (current === undefined) {
       return false;
@@ -67,19 +69,25 @@ function asksAnyway(storage: StorageManager, accountId: string, parentId: string
     if (current.folderAsksForPin === true) {
       return true;
     }
-    current = above(current, byId);
+    current = above(current, storage, accountId);
   }
   return false;
 }
 
 /** Where the walk starts: the parent folder, or nothing at the root. */
-function folderAt(parentId: string | null, byId: Map<string, TreeNode>): TreeNode | undefined {
-  return parentId === null ? undefined : byId.get(parentId);
+function folderAt(
+  parentId: string | null,
+  storage: StorageManager,
+  accountId: string,
+): TreeNode | undefined {
+  return parentId === null ? undefined : storage.getNode(accountId, parentId);
 }
 
 /** The folder above this one, or nothing — at the root, and when sync left a chain pointing nowhere. */
-function above(node: TreeNode, byId: Map<string, TreeNode>): TreeNode | undefined {
-  return node.parentId === null || node.parentId === undefined ? undefined : byId.get(node.parentId);
+function above(node: TreeNode, storage: StorageManager, accountId: string): TreeNode | undefined {
+  return node.parentId === null || node.parentId === undefined
+    ? undefined
+    : storage.getNode(accountId, node.parentId);
 }
 
 /** The same cap the folder walk uses; a malformed parent chain costs one answer, never the stack. */

@@ -38,6 +38,14 @@ const ui = {
   quickPickTitles: [] as (string | undefined)[],
   /** One answer per quick pick, in order; an exhausted queue answers "cancelled". */
   quickPickAnswers: [] as unknown[],
+  /**
+   * Make the next `withProgress` REJECT, with this message.
+   *
+   * <p>The recipient-side wrap runs inside it, so this is how a test says "the sealing failed" —
+   * the one failure that cannot be provoked from outside, because `lockSecret` only fails on a
+   * broken machine. What is under test is what the accept command does about it.</p>
+   */
+  progressFails: undefined as string | undefined,
 };
 
 function resetUi(): void {
@@ -50,6 +58,7 @@ function resetUi(): void {
   ui.config = { nasBackupPath: '' };
   ui.quickPickTitles = [];
   ui.quickPickAnswers = [];
+  ui.progressFails = undefined;
 }
 
 const loaded = ((): {
@@ -92,7 +101,14 @@ const loaded = ((): {
             ui.errors.push(message);
             return Promise.resolve(undefined);
           },
+          // Runs the task straight through: what the notification is for is the SECONDS the
+          // recipient-side wrap takes, and a test that skipped it would not be exercising the wrap.
+          withProgress: (_o: unknown, task: () => Promise<unknown>): Promise<unknown> =>
+            ui.progressFails === undefined
+              ? task()
+              : Promise.reject(new Error(ui.progressFails)),
         },
+        ProgressLocation: { Notification: 15 },
         workspace: {
           getConfiguration: () => ({
             get: <T>(key: string, fallback: T): T => (ui.config[key] as T) ?? fallback,
