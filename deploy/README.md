@@ -63,6 +63,17 @@ exactly like a network fault.
 > `ALLOWED_DOMAINS`. It exists for offline and air-gapped deployments and for the test suite. If you
 > have a real identity provider, leave it empty.
 
+> **On `LOGIN_KEY_KEK`:** base64 of 32 random bytes (`openssl rand -base64 32`), and the one value in
+> this file whose loss destroys data. It encrypts the per-developer **login keys** this server holds —
+> the factor that makes a developer's copied vault file useless without a live login. Empty is a
+> working configuration: no login keys are issued, `GET /api/org/login-key` answers `503`, and vault
+> sync, sharing and the members registry are untouched. Set it and every developer vault written from
+> then on is sealed to a key under it, so **it must be backed up with `DATA_DIR` and it must not be
+> rotated casually** — a vault whose login key cannot be reproduced opens for nobody, and the way back
+> is a break-glass recovery by a quorum of officers. A value that is not exactly 32 bytes is ignored
+> with an `ERROR` line rather than padded or truncated, because a nearly-right key is precisely how
+> vaults end up sealed under something nobody can reproduce.
+
 ## Decision 2 — how TLS is terminated
 
 | `TLS_MODE` | Use when | What you need | Certificate lifetime |
@@ -161,6 +172,10 @@ Three host directories, all bind mounts, all outside every container:
 
 Nothing in `update.sh` touches them, and the stack uses no anonymous volumes. Point them at storage
 you actually back up.
+
+**A fourth thing must survive, and it is not a directory:** `LOGIN_KEY_KEK` from your `.env`. Back it
+up with `DATA_DIR` or the data is only half a backup — restoring vaults without the key that opens
+their login keys leaves every developer vault unopenable except by a break-glass quorum.
 
 **`DATA_DIR` must be a local disk.** The vault store writes a new blob beside the old one and renames
 over it, and that rename is what makes a crash leave either the old vault or the new — never half

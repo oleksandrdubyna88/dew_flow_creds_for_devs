@@ -1,0 +1,115 @@
+# The login key — GET /api/org/login-key, the server's half of a developer's vault key.
+#
+# It is the only response on this server that carries key material, so two things are asserted that no
+# other file asserts: that the body actually contains 32 bytes of base64 plus a fingerprint, and that
+# nothing between here and the caller is allowed to store it (`Cache-Control: no-store`).
+#
+# Who gets what: an active DEVELOPER is minted a key on the first call and gets the same bytes ever
+# after — a second mint would orphan every wrap sealed to the first. An active member or admin is
+# served a key they already have and gets 404 when they have none, because binding is a property of a
+# VERSION rather than of a person: somebody demoted from developer still holds bound versions.
+#
+# PRECONDITION: a corp-mode server (../README.md) started with `Vault__LoginKey__Kek` set to base64 of
+# 32 bytes. Without it every request here answers 503 — which is the deployment's choice, not a
+# regression, and `org_login_key_without_a_kek_is_503` in the server suite covers that branch.
+#
+# The file promotes Bob to developer, reads his key twice, and puts him back to member at the end, so
+# a completed run leaves the roster as it found it.
+
+# @name org_login_key_makes_bob_a_developer
+PUT {{baseUrl}}/api/org/members/{{bobEmail}}
+Authorization: Bearer {{officerToken}}
+X-Creds-Contract: {{contract}}
+Content-Type: application/json
+
+{ "role": "dev" }
+
+?? status == 200
+
+###
+
+# @name org_login_key_is_minted_for_a_developer
+GET {{baseUrl}}/api/org/login-key
+Authorization: Bearer {{bobToken}}
+X-Creds-Contract: {{contract}}
+Accept: application/json
+
+?? status == 200
+?? header content-type matches ^application\/json
+
+{{
+  const assert = require('node:assert');
+  test('the key is 32 bytes of base64 and the fingerprint names it', () => {
+    const key = response.parsedBody.loginKey;
+    assert.ok(typeof key === 'string' && key.length > 0, 'a login key came back');
+    assert.strictEqual(Buffer.from(key, 'base64').length, 32);
+    assert.match(response.parsedBody.fingerprint, /^[0-9a-f]{16}$/);
+  });
+  test('nothing between here and the caller may store it', () => {
+    assert.match(response.headers['cache-control'], /no-store/);
+  });
+  // Kept for the next request: the same bytes must come back.
+  exports.mintedLoginKey = response.parsedBody.loginKey;
+}}
+
+###
+
+# @name org_login_key_is_the_same_on_a_second_call
+GET {{baseUrl}}/api/org/login-key
+Authorization: Bearer {{bobToken}}
+X-Creds-Contract: {{contract}}
+Accept: application/json
+
+?? status == 200
+
+{{
+  const assert = require('node:assert');
+  test('minting is idempotent — a second key would orphan every wrap sealed to the first', () => {
+    assert.strictEqual(response.parsedBody.loginKey, mintedLoginKey);
+  });
+}}
+
+###
+
+# @name org_login_key_is_404_for_somebody_who_has_none
+GET {{baseUrl}}/api/org/login-key
+Authorization: Bearer {{token}}
+X-Creds-Contract: {{contract}}
+Accept: application/json
+
+?? status == 404
+
+{{
+  const assert = require('node:assert');
+  test('the refusal says so in a sentence, as the rest of this surface does', () => {
+    assert.match(response.parsedBody.error, /login key/i);
+  });
+}}
+
+###
+
+# @name org_login_key_needs_a_token
+GET {{baseUrl}}/api/org/login-key
+X-Creds-Contract: {{contract}}
+Accept: application/json
+
+?? status == 401
+
+###
+
+# @name org_login_key_puts_bob_back
+PUT {{baseUrl}}/api/org/members/{{bobEmail}}
+Authorization: Bearer {{officerToken}}
+X-Creds-Contract: {{contract}}
+Content-Type: application/json
+
+{ "role": "member" }
+
+?? status == 200
+
+###
+# @uncovered 503 — a deployment with no Vault__LoginKey__Kek, and one holding a key it cannot read.
+#            Both need a server started with different configuration (or a file corrupted underneath a
+#            running one), which is machinery this tier does not ask for. LoginKeyEndpointTests and
+#            LoginKeyStoreTests cover the missing KEK, the malformed KEK, the wrong KEK and the
+#            tampered file — including that nothing is ever minted in place of a key that will not read.
