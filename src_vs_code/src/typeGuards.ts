@@ -326,16 +326,19 @@ export function isEntityMetadata(value: unknown): value is EntityMetadata {
 }
 
 /**
- * The folder-only fields: whether this is the trash, how long it keeps things, and what an agent
- * may do with what is inside. Without these three the flags are stripped by every sync and
- * import, and the trash would arrive on the second machine as an ordinary folder full of things
- * somebody thought they had deleted.
+ * The folder-only fields: whether this is the trash, how long it keeps things, what an agent may do
+ * with what is inside, and whether entries created here are asked for a PIN. Without these four the
+ * flags are stripped by every sync and import — the trash would arrive on the second machine as an
+ * ordinary folder full of things somebody thought they had deleted, and a folder protected while it
+ * was EMPTY would lose the one record of that fact, so the next entry created there would be stored
+ * with no PIN and no question asked. (Two reviewers, one finding.)
  */
 // eslint-disable-next-line complexity -- one clause per optional field, as every guard here is
 function hasValidFolderExtras(v: Record<string, unknown>): boolean {
   return (
     (v.isTrash === undefined || typeof v.isTrash === 'boolean') &&
     (v.trashRetentionDays === undefined || typeof v.trashRetentionDays === 'number') &&
+    (v.folderAsksForPin === undefined || typeof v.folderAsksForPin === 'boolean') &&
     (v.mcp === undefined || isMcpAccess(v.mcp))
   );
 }

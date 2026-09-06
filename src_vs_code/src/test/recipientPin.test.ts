@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { SECRET_CLAIM_FIELDS, withoutSecretClaims } from '../secretClaims';
 import { shareableDetails } from '../shareFormat';
-import { EntityMetadata, TreeNode } from '../types';
+import { EntityMetadata, TreeNode, isTreeNode } from '../types';
 import { isProtected } from '../entityPin';
 import { lockSecret, readSecret, unlockSecret } from '../secretEnvelope';
 import { RECIPIENT, World, sealedShare, ui, world } from './shareWorld';
@@ -106,10 +106,42 @@ test('two PINs that do not match import nothing either', async () => {
   assert.equal(imported(w), undefined);
 });
 
+/**
+ * The wrap can FAIL, and a failure must import nothing and SAY so.
+ *
+ * <p>A reviewer called this blocking, and was right about the consequence while wrong about the
+ * cause: nothing here half-wraps an entry — a rejection anywhere in the sealing rejects the whole
+ * payload, and the payload is what gets written, so there is no partial state to reach. What was
+ * missing is that the rejection escaped `acceptOne` past BOTH its try blocks, so the person got
+ * VS Code's generic command failure and no word about their share.</p>
+ */
+test('a wrap that FAILS imports nothing, and says so instead of failing silently', async () => {
+  const w = world();
+  const share = sealedShare(protectedPayload(), 'transit-pin-1111');
+  ui.inputs = ['transit-pin-1111', 'recipient-pin-2222', 'recipient-pin-2222'];
+  ui.progressFails = 'the key store is unavailable';
+
+  await w.inbox.acceptOne(share);
+
+  assert.equal(imported(w), undefined, 'nothing was written — the wrap never produced a payload');
+  assert.ok(
+    ui.errors.some((m) => m.includes('the key store is unavailable')),
+    'and the reason reaches the person: ' + ui.errors.concat(ui.infos).join(' | '),
+  );
+});
+
 test('an ORDINARY share still imports without a second question', async () => {
   const w = world();
-  const payload = protectedPayload();
-  delete (payload.node.details as { pinAskOnImport?: unknown }).pinAskOnImport;
+  // Built without the instruction rather than built and stripped — the payload is not ours to
+  // mutate, and a reviewer was right that `delete` on it is the pattern the style rule forbids.
+  const protectedOne = protectedPayload();
+  const { pinAskOnImport: _asks, ...plainDetails } = protectedOne.node.details as EntityMetadata & {
+    pinAskOnImport?: boolean;
+  };
+  const payload = {
+    ...protectedOne,
+    node: { ...protectedOne.node, details: plainDetails as EntityMetadata },
+  };
   const share = sealedShare(payload, 'transit-pin-1111');
   ui.inputs = ['transit-pin-1111'];
 
@@ -146,7 +178,10 @@ test('a folder carrying the preference asks, even with no protected sibling', as
   const nodes = [
     { id: 'f1', name: 'Production', type: 'folder', parentId: null, folderAsksForPin: true } as TreeNode,
   ];
-  const storage = { getNodes: () => nodes } as never;
+  const storage = {
+    getNodes: () => nodes,
+    getNode: (_a: string, id: string) => nodes.find((n) => n.id === id),
+  } as never;
   const mod = pinOnCreate();
 
   const answer = await mod.pinForNewEntry(storage, 'a1', 'f1');
@@ -156,7 +191,10 @@ test('a folder carrying the preference asks, even with no protected sibling', as
 
 test('a folder without the preference and without protected siblings is not asked', async () => {
   const nodes = [{ id: 'f1', name: 'Open', type: 'folder', parentId: null } as TreeNode];
-  const storage = { getNodes: () => nodes } as never;
+  const storage = {
+    getNodes: () => nodes,
+    getNode: (_a: string, id: string) => nodes.find((n) => n.id === id),
+  } as never;
   const mod = pinOnCreate(() => assert.fail('nothing here asks for a PIN'));
 
   assert.deepEqual(await mod.pinForNewEntry(storage, 'a1', 'f1'), { kind: 'none' });
@@ -249,5 +287,35 @@ test('a TRUE mark is left alone — the repair is about the false one only', asy
     w.storage.getNode(RECIPIENT.accountId, 'really-locked')?.details?.pinProtected,
     true,
     'it is locked, so the mark is true and stays',
+  );
+});
+
+/**
+ * A field a guard does not know about is STRIPPED by every sync and import.
+ *
+ * <p>Two reviewers found this independently, and `typeGuards.ts` says it about itself: "each of these
+ * is the difference between a stored value and a silently discarded one". A folder protected while
+ * empty would lose its preference the moment the node crossed a sync, and entries created on the
+ * other machine would be stored with no PIN and no question asked.</p>
+ */
+test('the folder preference SURVIVES the guard, or sync would strip it', () => {
+  const folder = {
+    id: 'f1',
+    name: 'Production',
+    type: 'folder',
+    parentId: null,
+    folderAsksForPin: true,
+  };
+
+  assert.equal(isTreeNode(folder), true, 'the node is valid');
+  assert.equal(
+    (isTreeNode(folder) ? folder : ({} as never)).folderAsksForPin,
+    true,
+    'and the preference is part of what the guard admits',
+  );
+  assert.equal(
+    isTreeNode({ ...folder, folderAsksForPin: 'yes' }),
+    false,
+    'while a non-boolean is refused rather than carried',
   );
 });

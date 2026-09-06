@@ -1,6 +1,7 @@
 import { PinGate, PinOpen, openStored } from './pinGate';
 import { SECRET_SLOTS } from './entitySlots';
 import { StorageManager } from './storageManager';
+import { TreeNode } from './types';
 import { isLockedSecret, readSecret } from './secretEnvelope';
 
 /**
@@ -119,8 +120,27 @@ async function repairFalseMark(
   if (node?.details?.pinProtected !== true) {
     return;
   }
-  await storage.updateNode(accountId, {
+  await clearMark(storage, accountId, {
     ...node,
     details: { ...node.details, pinProtected: undefined },
   });
+}
+
+/**
+ * The write, alone — best-effort, deliberately.
+ *
+ * <p>This is a repair on the way INTO an entry somebody asked to open, and a failed write must not
+ * become a failure to open: the mark is wrong either way, and the next open tries again. (A
+ * reviewer's finding — the throw would otherwise have propagated out of `admit`.)</p>
+ */
+async function clearMark(
+  storage: StorageManager,
+  accountId: string,
+  repaired: TreeNode,
+): Promise<void> {
+  try {
+    await storage.updateNode(accountId, repaired);
+  } catch {
+    /* said above: the next open tries again */
+  }
 }

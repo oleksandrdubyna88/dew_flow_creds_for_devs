@@ -824,7 +824,7 @@ answers a typed `locked` result and never prompts: the readers include backgroun
 renderer and headless tooling, none of which can show a modal.
 
 Its second consumer — a PIN on an entry or a folder — is still
-[../todo/PLAN_woven_passwords_and_entity_pin.md](../todo/PLAN_woven_passwords_and_entity_pin.md)
+[PLAN_woven_passwords_and_entity_pin.md](PLAN_woven_passwords_and_entity_pin.md)
 Part 2. The first shipped; it is the section below.
 
 #### A PIN on an entry, and on everything in a folder (2026-09-04)
@@ -918,15 +918,30 @@ open.
 
 What travels in its place is `pinAskOnImport` — an instruction to ask, never a claim about a value —
 inside the sealed payload, so the server learns nothing. On accept the recipient chooses a PIN of
-their OWN, typed twice; declining imports nothing and says why. **The wrap happens in memory, before
-a single write**: import-then-protect leaves an unprotected copy on disk if anything fails between
-the two steps, which is exactly what "declining imports nothing" promises against.
+their OWN, typed twice; and the prompt names the SENDER, because `acceptMany` walks several shares in
+a row and two people may well have sent something called `prod-db`. Declining imports nothing and says
+why. **The wrap happens in memory, before a single write**: import-then-protect leaves an unprotected
+copy on disk if anything fails between the two steps, which is exactly what "declining imports
+nothing" promises against.
+
+Two ways to get nothing, and they are DIFFERENT facts, so `ShareInbox.sealedForRecipient` is the step
+that tells them apart: a decline is a decision and the message says how to change it; a wrap that
+FAILED is a machine problem whose reason has to reach the person, and it used to escape `acceptOne`
+past both of its try blocks, leaving only VS Code's generic command failure. Either way nothing is
+written — the wrap builds a whole payload or rejects, and the payload is what the import takes, so
+there is no partial state to reach. The seconds it costs are `withProgress`'s to explain: nine slots
+is nine scrypt derivations, and an accept command sitting silent for that long reads as a hang.
 
 **The folder that asks (2026-09-05).** Whether an ENTRY is protected stays DERIVED from the entry —
 that cannot drift and is self-repairing. `TreeNode.folderAsksForPin` closes the one case derivation
 cannot: a folder the command ran on while it was EMPTY. It is a PREFERENCE, and the wording is
 load-bearing — "entries created here are asked for a PIN" describes no value, so it cannot disagree
-with one. *Stop Asking for a PIN Here* turns it off, because a preference with no way off is a trap;
+with one. It is validated in `hasValidFolderExtras` like every other stored field, and that is not a
+formality: a field the guard does not know about is stripped by every sync and import, so a folder
+protected while it was EMPTY would lose the one record of that fact and the next entry created there
+on another machine would be stored with no PIN and no question asked. The ancestor walk that reads it
+goes through `storage.getNode` one parent at a time — indexed — rather than rebuilding a map of the
+whole account on every create. *Stop Asking for a PIN Here* turns it off, because a preference with no way off is a trap;
 turning it off changes nothing about the entries, which keep their own PINs. A MOVE is not a create
 and does not ask.
 

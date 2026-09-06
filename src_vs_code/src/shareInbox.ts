@@ -428,9 +428,8 @@ export class ShareInbox {
     // import, and the values are wrapped in memory rather than written and wrapped afterwards.
     // Three reviewers made the same point: written first, a crash between the two steps leaves an
     // unprotected copy on disk, which is exactly what "declining imports nothing" promises against.
-    const arriving = await forThisRecipient(payload, share.accountId);
+    const arriving = await this.sealedForRecipient(share, payload);
     if (arriving === undefined) {
-      void vscode.window.showInformationMessage(declinedMessage(share.item.entityName));
       return;
     }
     try {
@@ -444,6 +443,33 @@ export class ShareInbox {
     this.deps.onMutated();
     void this.deps.sharing.reload();
     void vscode.window.showInformationMessage(`Accepted "${share.item.entityName}".`);
+  }
+
+  /**
+   * The payload as it should ARRIVE — or nothing, with the person already told why.
+   *
+   * <p>Its own step because there are TWO ways to get nothing and they are different facts. A
+   * decline is a decision, and the message says how to change it. A wrap that FAILED is a machine
+   * problem, and its reason has to reach the person — it used to escape `acceptOne` past both of
+   * its try blocks, so all they saw was VS Code's generic command failure. Either way nothing is
+   * written: the wrap builds a payload or rejects, and the payload is what the import takes.</p>
+   */
+  private async sealedForRecipient(
+    share: OwnedShare,
+    payload: SharePayload,
+  ): Promise<SharePayload | undefined> {
+    try {
+      const arriving = await forThisRecipient(payload, share.accountId, share.item.fromEmail);
+      if (arriving !== undefined) {
+        return arriving;
+      }
+      void vscode.window.showInformationMessage(declinedMessage(share.item.entityName));
+    } catch (error) {
+      void vscode.window.showErrorMessage(
+        `"${share.item.entityName}" was NOT imported — protecting it with your PIN failed: ${describeError(error)}`,
+      );
+    }
+    return undefined;
   }
 
   /**
