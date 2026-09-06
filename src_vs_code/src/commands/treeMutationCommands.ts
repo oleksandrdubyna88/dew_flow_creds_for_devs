@@ -1,7 +1,6 @@
 /* eslint-disable complexity, max-lines-per-function -- command registrations moved verbatim out of extension.ts
    (roadmap A1 stage 2, 2026-08-28): one function that registers a family of closures, each the size it
    was. The ceilings are a boundary for NEW code here; a handler meets them when it is next touched. */
-import { TreeNode } from '../types';
 import { DoorsFor } from '../entityEditCommands';
 import { StorageManager } from '../storageManager';
 import { applyCreatePin, pinForNewEntry } from '../pinOnCreate';
@@ -41,11 +40,7 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 import { parseImport } from '../importFormats';
 import { importEntities } from '../importCommands';
-import { buildExternalBundle } from '../externalBundle';
-import { exportSensitiveNote, paymentFieldsInExport } from '../paymentRedaction';
 import { applyExternalSecrets } from '../externalSecretsApply';
-import { pinValidator } from '../pinInput';
-import { encryptJson } from '../cryptoUtils';
 import { decryptJson } from '../cryptoUtils';
 import { describeError } from '../describeError';
 import { isExternalBundle } from '../externalBundle';
@@ -462,110 +457,6 @@ export function registerTreeMutationCommands(host: TreeMutationCommandsHost): vo
     );
   });
 
-  register('credSshManager.exportExternal', async (target, selected) => {
-    vaultKeys.noteUserActivity(); // the user is here: postpone auto-lock
-    const { targets, skippedNote } = resolveBulkTargets(storage, target, selected);
-    if (targets.length === 0) {
-      return;
-    }
-    if (skippedNote !== '') {
-      void vscode.window.showWarningMessage(skippedNote);
-    }
-    const accountId = targets[0].accountId;
-    const exportName =
-      targets.length === 1 ? targets[0].node.name : `${targets.length}-items`;
-
-    // A folder exports its whole subtree; an entity exports itself. The resolver already
-    // dropped any target contained by another, so the union cannot repeat a node.
-    const all = storage.getNodes(accountId);
-    const picked: TreeNode[] = [];
-    const collect = (n: TreeNode): void => {
-      picked.push(n);
-      if (n.type === 'folder') {
-        for (const c of all.filter((x) => x.parentId === n.id)) {
-          collect(c);
-        }
-      }
-    };
-    for (const t of targets) {
-      collect(t.node);
-    }
-
-    const secrets = await storage.exportSecretsFor(
-      accountId,
-      picked.filter((n) => n.type === 'entity').map((n) => n.id),
-    );
-    const bundle = buildExternalBundle(picked, secrets);
-
-    // An export carries a card's CVV and PIN; a SHARE removes them. That asymmetry is deliberate —
-    // an export is a full copy the person made once — and it is exactly the thing somebody who just
-    // watched a share leave the CVV behind would assume applies here too. So it is said, when there
-    // is something to say. Counted, never printed: a CVV must not reach a notification, which
-    // several UI layers log.
-    // The sentence lives beside the rule it describes, not here: both reviewers pointed out that
-    // "the CVV and PIN of N records" implies both values exist in each, and they asked for different
-    // metrics — one for records, one for occurrences — which is what made the ambiguity visible.
-    const cardNote = exportSensitiveNote(paymentFieldsInExport(Object.values(secrets)));
-
-    const mode = await vscode.window.showQuickPick(
-      [
-        {
-          label: '$(lock) Password-protected file',
-          detail: 'scrypt + AES-256-GCM under a password you tell the recipient out-of-band.',
-          plain: false,
-        },
-        {
-          label: '$(warning) Plain JSON — NOT protected',
-          detail: 'Readable by anyone who touches the file. Secrets included. Your explicit choice.',
-          plain: true,
-        },
-      ],
-      { title: `Export "${exportName}" for someone outside the organisation.${cardNote}`, ignoreFocusOut: true },
-    );
-    if (mode === undefined) {
-      return;
-    }
-
-    let content: string;
-    let ext: string;
-    if (mode.plain) {
-      const sure = await vscode.window.showWarningMessage(
-        `The plain JSON file will contain ${Object.keys(secrets).length} entities' secrets readable by ANYONE.${cardNote} Continue?`,
-        { modal: true },
-        'Write plain JSON',
-      );
-      if (sure !== 'Write plain JSON') {
-        return;
-      }
-      content = JSON.stringify(bundle, null, 2);
-      ext = 'json';
-    } else {
-      const password = await vscode.window.showInputBox({
-        title: 'Password for the export',
-        prompt: 'Tell it to the recipient out-of-band — it is the only key to this file.',
-        password: true,
-        ignoreFocusOut: true,
-        validateInput: pinValidator('choosing'),
-      });
-      if (password === undefined) {
-        return;
-      }
-      content = encryptJson(bundle, password);
-      ext = 'enc';
-    }
-    const targetUri = await vscode.window.showSaveDialog({
-      title: 'Export to file',
-      defaultUri: vscode.Uri.file(path.join(os.homedir(), `${exportName}.${ext}`)),
-      filters: mode.plain ? { JSON: ['json'] } : { 'Encrypted export': ['enc'] },
-    });
-    if (targetUri === undefined) {
-      return;
-    }
-    await vscode.workspace.fs.writeFile(targetUri, Buffer.from(content, 'utf8'));
-    void vscode.window.showInformationMessage(
-      `Exported ${picked.length} node(s) to ${targetUri.fsPath}.`,
-    );
-  });
 
   register('credSshManager.importExternal', async (target) => {
     vaultKeys.noteUserActivity(); // the user is here: postpone auto-lock

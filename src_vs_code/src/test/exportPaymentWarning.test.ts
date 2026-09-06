@@ -79,11 +79,14 @@ function exportHandler(secrets: Record<string, { payment?: string }>, node: Tree
     return request === 'vscode' ? stubbedVscode() : original.call(this, request, ...rest);
   };
   try {
-    const { registerTreeMutationCommands } = require('../commands/treeMutationCommands') as {
-      registerTreeMutationCommands(host: Record<string, unknown>): void;
+    // The handler moved to its own module when the corporate export ban pushed treeMutationCommands
+    // past its line ceiling; the guarantee under test — that an export SAYS what card fields it
+    // carries — did not move with it.
+    const { registerExportCommand } = require('../commands/exportCommand') as {
+      registerExportCommand(host: Record<string, unknown>): void;
     };
     const handlers = new Map<string, Handler>();
-    registerTreeMutationCommands({
+    registerExportCommand({
       announceArrival: () => Promise.resolve(),
       doorsFor: () => undefined,
       mutated: () => undefined,

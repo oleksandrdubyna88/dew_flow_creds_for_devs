@@ -1,0 +1,192 @@
+import * as os from 'node:os';
+import * as path from 'node:path';
+import * as vscode from 'vscode';
+import { CorpPolicyState } from '../corpPolicy';
+import { refuseExit } from '../corpExits';
+import { StorageManager } from '../storageManager';
+import { TreeNode } from '../types';
+import { VaultKeys } from '../vaultKeys';
+import { buildExternalBundle } from '../externalBundle';
+import { exportSensitiveNote, paymentFieldsInExport } from '../paymentRedaction';
+import { resolveBulkTargets } from '../commandTargets';
+import { encryptJson } from '../cryptoUtils';
+import { pinValidator } from '../pinInput';
+
+/**
+ * `credSshManager.exportExternal` — the one command that writes decrypted secrets to a file the
+ * person chooses.
+ *
+ * <p>Out of `commands/treeMutationCommands.ts`, which reached its 800-line ceiling when the
+ * corporate export ban was added here. The move is worth more than the lines it freed: this is the
+ * one place a CVV and a PIN leave the product, and it now reads as its own decision — gate, collect,
+ * choose a form, write — rather than as one of fifteen handlers in a file about tree edits. Splitting
+ * it also brought it under the complexity and function-length ceilings it had been exempt from.</p>
+ */
+export interface ExportCommandHost {
+  readonly register: (command: string, handler: (...args: unknown[]) => unknown) => void;
+  readonly storage: StorageManager;
+  readonly vaultKeys: VaultKeys;
+  /** This window's view of who each account is to its server; absent for a personal deployment. */
+  readonly corpPolicyOf?: (accountId: string) => CorpPolicyState | undefined;
+}
+
+/** What a chosen export form produces: the bytes, and what to call the file. */
+interface ExportFile {
+  readonly content: string;
+  readonly ext: string;
+}
+
+export function registerExportCommand(host: ExportCommandHost): void {
+  host.register('credSshManager.exportExternal', (target, selected) => runExport(host, target, selected));
+}
+
+async function runExport(host: ExportCommandHost, target: unknown, selected: unknown): Promise<void> {
+  host.vaultKeys.noteUserActivity(); // the user is here: postpone auto-lock
+  const { targets, skippedNote } = resolveBulkTargets(host.storage, target, selected);
+  if (targets.length === 0) {
+    return;
+  }
+  // The corporate export ban, in the HANDLER rather than only in a `when` clause: a window-global
+  // context key cannot be true for a personal account and false for a corporate one at the same
+  // time, and this window may hold both. Refusing here with a sentence also beats a button that
+  // quietly disappears, which reads as a broken feature rather than as a policy.
+  if (refused(host, targets[0].accountId)) {
+    return;
+  }
+  if (skippedNote !== '') {
+    void vscode.window.showWarningMessage(skippedNote);
+  }
+  await writeExport(host, targets);
+}
+
+/** The ban, said out loud. True when this export must not happen. */
+function refused(host: ExportCommandHost, accountId: string): boolean {
+  const refusal = refuseExit(host.corpPolicyOf?.(accountId), 'export');
+  if (refusal === '') {
+    return false;
+  }
+  void vscode.window.showWarningMessage(refusal);
+  return true;
+}
+
+/** Everything after the decision to export: what goes in the file, in what form, and where. */
+async function writeExport(
+  host: ExportCommandHost,
+  targets: readonly { accountId: string; node: TreeNode }[],
+): Promise<void> {
+  const accountId = targets[0].accountId;
+  const exportName = targets.length === 1 ? targets[0].node.name : `${targets.length}-items`;
+  const picked = subtreeOf(host.storage, accountId, targets);
+  const secrets = await host.storage.exportSecretsFor(
+    accountId,
+    picked.filter((n) => n.type === 'entity').map((n) => n.id),
+  );
+  // An export carries a card's CVV and PIN; a SHARE removes them. That asymmetry is deliberate — an
+  // export is a full copy the person made once — and it is exactly the thing somebody who just
+  // watched a share leave the CVV behind would assume applies here too. So it is said, when there is
+  // something to say. Counted, never printed: a CVV must not reach a notification, which several UI
+  // layers log. The sentence lives beside the rule it describes, not here.
+  const cardNote = exportSensitiveNote(paymentFieldsInExport(Object.values(secrets)));
+  const file = await chooseForm(
+    buildExternalBundle(picked, secrets),
+    Object.keys(secrets).length,
+    exportName,
+    cardNote,
+  );
+  if (file !== undefined) {
+    await save(file, exportName, picked.length);
+  }
+}
+
+/**
+ * A folder exports its whole subtree; an entity exports itself. The resolver already dropped any
+ * target contained by another, so the union cannot repeat a node.
+ */
+function subtreeOf(
+  storage: StorageManager,
+  accountId: string,
+  targets: readonly { node: TreeNode }[],
+): TreeNode[] {
+  const all = storage.getNodes(accountId);
+  const picked: TreeNode[] = [];
+  const collect = (n: TreeNode): void => {
+    picked.push(n);
+    if (n.type === 'folder') {
+      for (const c of all.filter((x) => x.parentId === n.id)) {
+        collect(c);
+      }
+    }
+  };
+  for (const t of targets) {
+    collect(t.node);
+  }
+  return picked;
+}
+
+/** The file this export becomes: protected under a password, or plain JSON the person insisted on. */
+async function chooseForm(
+  bundle: unknown,
+  entityCount: number,
+  exportName: string,
+  cardNote: string,
+): Promise<ExportFile | undefined> {
+  const mode = await vscode.window.showQuickPick(
+    [
+      {
+        label: '$(lock) Password-protected file',
+        detail: 'scrypt + AES-256-GCM under a password you tell the recipient out-of-band.',
+        plain: false,
+      },
+      {
+        label: '$(warning) Plain JSON — NOT protected',
+        detail: 'Readable by anyone who touches the file. Secrets included. Your explicit choice.',
+        plain: true,
+      },
+    ],
+    { title: `Export "${exportName}" for someone outside the organisation.${cardNote}`, ignoreFocusOut: true },
+  );
+  if (mode === undefined) {
+    return undefined;
+  }
+  return mode.plain ? plainForm(bundle, entityCount, cardNote) : sealedForm(bundle);
+}
+
+/** Plain JSON, behind a modal that says exactly what it will contain. */
+async function plainForm(
+  bundle: unknown,
+  entityCount: number,
+  cardNote: string,
+): Promise<ExportFile | undefined> {
+  const sure = await vscode.window.showWarningMessage(
+    `The plain JSON file will contain ${entityCount} entities' secrets readable by ANYONE.${cardNote} Continue?`,
+    { modal: true },
+    'Write plain JSON',
+  );
+  return sure === 'Write plain JSON'
+    ? { content: JSON.stringify(bundle, null, 2), ext: 'json' }
+    : undefined;
+}
+
+async function sealedForm(bundle: unknown): Promise<ExportFile | undefined> {
+  const password = await vscode.window.showInputBox({
+    title: 'Password for the export',
+    prompt: 'Tell it to the recipient out-of-band — it is the only key to this file.',
+    password: true,
+    ignoreFocusOut: true,
+    validateInput: pinValidator('choosing'),
+  });
+  return password === undefined ? undefined : { content: encryptJson(bundle, password), ext: 'enc' };
+}
+
+async function save(file: ExportFile, exportName: string, nodeCount: number): Promise<void> {
+  const targetUri = await vscode.window.showSaveDialog({
+    title: 'Export to file',
+    defaultUri: vscode.Uri.file(path.join(os.homedir(), `${exportName}.${file.ext}`)),
+    filters: file.ext === 'json' ? { JSON: ['json'] } : { 'Encrypted export': ['enc'] },
+  });
+  if (targetUri === undefined) {
+    return;
+  }
+  await vscode.workspace.fs.writeFile(targetUri, Buffer.from(file.content, 'utf8'));
+  void vscode.window.showInformationMessage(`Exported ${nodeCount} node(s) to ${targetUri.fsPath}.`);
+}

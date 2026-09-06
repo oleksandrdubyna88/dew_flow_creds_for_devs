@@ -4,6 +4,7 @@
    days. Remove this header as the LAST step of A1, when the file is a thin composition. */
 import { registerEntityCommands } from './commands/entityCommands';
 import { registerTreeMutationCommands } from './commands/treeMutationCommands';
+import { registerExportCommand } from './commands/exportCommand';
 import { registerRunCommands } from './commands/runCommands';
 import { registerRecoveryCommands } from './commands/recoveryCommands';
 import { registerKeyCommands } from './commands/keyCommands';
@@ -38,8 +39,9 @@ import { judgeOrgRecovery } from './orgRecoveryPinning';
 import { orgRecoveryAccess } from './orgRecoveryAccess';
 import { policyHeartbeatKey } from './corpPolicy';
 import { policyHost, refreshOrgPolicy } from './orgPolicyRefresh';
+import { CorpPolicyState } from './corpPolicy';
 import { LoginKeySession } from './devLoginKeySession';
-import { wireCorpEscrow, wireDevBinding } from './corpBindingWiring';
+import { evictAndLock, wireCorpEscrow, wireDevBinding } from './corpBindingWiring';
 import { RecoverySessionKeys } from './breakGlass';
 import { CredTreeDataProvider, VIEW_ID } from './treeDataProvider';
 import { ArrivalHighlights } from './arrivalHighlight';
@@ -292,11 +294,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // The developer binding: the login key this window holds, the unlock path that needs it, and the
   // sync cycle that decides what a write should bind. A blocked answer evicts the cached key and
   // locks, so a session already open stops being one. See corpBindingWiring.ts.
-  const loginKeys = new LoginKeySession((a) => transports.orgLoginKeyFor(a), (a) => {
-    vaultKeys.clearCache(a.accountId);
-    vaultKeys.lock();
-  }, (m) => log.info('corp', m));
-  wireDevBinding({ session: loginKeys, keys: vaultKeys, sync, policyOf: (id) => provider.orgPolicy.get(id), storedPin: (a) => vaultKeys.storedPin(a) });
+  const loginKeys = new LoginKeySession((a) => transports.orgLoginKeyFor(a), evictAndLock(vaultKeys), (m) => log.info('corp', m));
+  const corpPolicyOf = (accountId: string): CorpPolicyState | undefined => provider.orgPolicy.get(accountId);
+  wireDevBinding({ session: loginKeys, keys: vaultKeys, sync, policyOf: corpPolicyOf, storedPin: (a) => vaultKeys.storedPin(a), heartbeatOf: (id) => context.globalState.get<number>(policyHeartbeatKey(id)) });
 
   // Corporate escrow and the developer binding, both attached to the sync cycle after the transports
   // exist. See corpBindingWiring.ts for what each answer means and why "could not ask" changes nothing.
@@ -307,8 +307,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // snapshot is a copy of what sync maintains — with no sync location there is nothing to
   // copy, and the scheduler says so rather than inventing an export of its own.
   const backups = new BackupScheduler(storage, transports, context.globalState, (message) =>
-    log.info('backup', message),
-  );
+    log.info('backup', message), corpPolicyOf);
   context.subscriptions.push(backups);
 
   // Short-lived entries: delete what has run out of clock, and renew the lease on what this
@@ -1008,6 +1007,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
   registerEntityCommands({ doorsAt, mutated, register, storage, storageDir, vaultKeys });
   registerTreeMutationCommands({ announceArrival, doorsFor, mutated, register, storage, transports, vaultKeys });
+  registerExportCommand({ corpPolicyOf, register, storage, vaultKeys });
 
   registerShareCommands({ register, shareInbox, sharing, storage });
 
@@ -1015,7 +1015,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
   const runBackup = () => backupToNas(storage, vaultKeys);
   const runRestore = () => restoreFromBackup(storage, vaultKeys, mutated);
-  registerAccountCommands({ backups, googleAuth, mutated, refreshReadiness, register, reportTeamRefusals, runBackup, runRestore, sharing, storage, sync, transports, vaultKeys });
+  registerAccountCommands({ backups, corpPolicyOf, googleAuth, mutated, refreshReadiness, register, reportTeamRefusals, runBackup, runRestore, sharing, storage, sync, transports, vaultKeys });
   // Aliases kept for the original spec's command ids.
   register('extension.exportSecrets', runBackup);
   register('extension.importSecrets', runRestore);

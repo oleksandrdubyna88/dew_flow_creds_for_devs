@@ -1747,6 +1747,49 @@ because a key of the wrong size derives a perfectly valid AES key that opens not
 can reach into a file somebody already has. The guarantee is about versions written while bound, and
 that is what makes deactivation effective going forward rather than retroactively.
 
+#### The offline lease and the exits a developer may not use (2026-09-06)
+
+The client half of the same epic, and deliberately the cheap half: every decision is a pure predicate
+over a policy the server already derives (`corpLease.ts`, `corpExits.ts`).
+
+**The lease** (`offlineLeaseHours`, admin-settable, `0` is the legal "strictly online") says how long
+a window keeps working for a corporate account without hearing from its server. Four rows, and the
+last two are the ones that matter:
+
+| what the window holds | verdict |
+|---|---|
+| a personal account | never expires — a corporate rule must not reach an account that is not subject to one |
+| a corporate document | expired when the last successful read is older than the lease |
+| **no document, but a persisted heartbeat** | expired on the strictest window — otherwise clearing a cache buys unlimited offline use |
+| no document and no heartbeat | nothing to expire: this window has never spoken to a corporate server |
+
+`0` hours cannot honestly mean "expired one millisecond after the fetch" — the readiness loop
+refreshes on a cadence, and a predicate that expired between two refreshes would lock somebody out
+while they were online. It means **`STRICT_ONLINE_GRACE_MS`, five minutes**, the same horizon the
+login key is revalidated on so the two do not disagree about what recent means.
+
+**What expiry does**: `VaultKeys.standingOf` is consulted at the TOP of every unlock, so a
+deactivated or expired account is refused by every route — including a person typing their PIN, which
+is what makes it a lease rather than a suggestion. **Nothing is deleted**: the vault, the wraps and
+the stored PIN are untouched, one successful sync restores everything, and the sentence says so and
+names the command to run. Deactivation outranks the lease in the wording, because telling a blocked
+person to reconnect sends them to fix the wrong thing.
+
+**The three exits** — export, back up to disk, clone into another account — are one permission on the
+server (`PolicyDoc.export`), and are refused in the HANDLER rather than by hiding a button. A VS Code
+context key is window-global and cannot be true for a personal account and false for a corporate one
+at the same time, which this window may hold both of; and a button that quietly disappears reads as a
+broken feature rather than as a policy. Scheduled backups take the same gate, checked at run time
+rather than at scheduling time because the role can change in between, and the skip line names the
+policy so an operator can tell it from a missing folder.
+
+**Cloning inside your own vault is not an export** and is not gated: the permission says "clone into
+ANOTHER account", and duplicating an entry to edit it is neither an export nor a copy that leaves.
+
+**Honest-client, and the Boundaries table says so.** Somebody who runs their own build or reads their
+own keychain is outside all of this. What it provides is that the product does not hand a person a
+button that breaks their company's policy, and that pressing one anyway is refused with a reason.
+
 #### What v4 binds, and what it deliberately does not
 
 The header is plaintext and was protected only by the envelope MAC — a check a caller has to

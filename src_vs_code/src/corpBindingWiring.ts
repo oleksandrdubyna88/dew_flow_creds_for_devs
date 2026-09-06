@@ -1,4 +1,5 @@
 import { CorpPolicyState } from './corpPolicy';
+import { LeaseFacts, describeLocked, lockedReason } from './corpLease';
 import { OrgRecoveryClient } from './orgRecoveryClient';
 import { OrgRecoveryVerdict } from './orgRecoveryPinning';
 import { EscrowEnrolment } from './orgEscrowOps';
@@ -20,14 +21,22 @@ import { StoredAccount } from './types';
 export interface BindingWiring {
   /** Where the login key comes from and where it is dropped. */
   readonly session: LoginKeySession;
-  /** The unlock path — it asks the session only when a wrap says the vault is bound. */
-  readonly keys: { loginKeys: { resolve: (account: StoredAccount) => Promise<{ key: Buffer } | undefined> } | undefined };
+  /**
+   * The unlock path. It asks the session only when a wrap says the vault is bound, and it asks the
+   * standing gate before opening anything at all.
+   */
+  readonly keys: {
+    loginKeys: { resolve: (account: StoredAccount) => Promise<{ key: Buffer } | undefined> } | undefined;
+    standingOf: ((account: StoredAccount) => string) | undefined;
+  };
   /** The sync cycle — it asks for the whole context once per write. */
   readonly sync: { resolveBinding: ((account: StoredAccount) => Promise<BindingContext | undefined>) | undefined };
   /** This window's view of who each account is to its server. */
   readonly policyOf: (accountId: string) => CorpPolicyState | undefined;
   /** The account's stored sync PIN, when there is one — what decides whether a write can bind. */
   readonly storedPin: (account: StoredAccount) => Promise<string | undefined>;
+  /** The persisted time of the last successful policy read — the offline lease's evidence. */
+  readonly heartbeatOf: (accountId: string) => number | undefined;
 }
 
 /**
@@ -41,6 +50,7 @@ export interface BindingWiring {
  */
 export function wireDevBinding(w: BindingWiring): void {
   w.keys.loginKeys = { resolve: (account) => w.session.resolve(account) };
+  w.keys.standingOf = standingGate(w.policyOf, w.heartbeatOf);
   w.sync.resolveBinding = async (account) => bindingContext(w, account);
 }
 
@@ -105,5 +115,45 @@ export function wireCorpEscrow(
         location: client.location,
       }),
     };
+  };
+}
+
+/**
+ * What the unlock path asks before opening anything: why this account may not be opened, or empty.
+ *
+ * <p>Both halves of the epic's client side meet here. `deactivated` comes from the policy document
+ * the readiness loop already reads; `leaseExpired` comes from how old that document is. Neither
+ * deletes anything — a lease is a statement about how stale this window's knowledge is, not a
+ * punishment — and both sentences name what to do next.</p>
+ */
+export function standingGate(
+  policyOf: (accountId: string) => CorpPolicyState | undefined,
+  heartbeatOf: (accountId: string) => number | undefined,
+  now: () => number = Date.now,
+): (account: StoredAccount) => string {
+  return (account) => {
+    const facts: LeaseFacts = {
+      state: policyOf(account.accountId),
+      lastHeartbeat: heartbeatOf(account.accountId),
+    };
+    return describeLocked(lockedReason(facts, now()), account.email);
+  };
+}
+
+/**
+ * What a window does the moment its server says an account is deactivated: drop the cached master
+ * key and lock.
+ *
+ * <p>Named rather than inlined at the wiring because it is the whole point of blocking on the client
+ * side — forgetting the login key alone would leave an already-unlocked session reading, exporting
+ * and using everything until the window closed.</p>
+ */
+export function evictAndLock(keys: {
+  clearCache: (accountId?: string) => void;
+  lock: () => void;
+}): (account: StoredAccount) => void {
+  return (account) => {
+    keys.clearCache(account.accountId);
+    keys.lock();
   };
 }
