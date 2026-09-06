@@ -31,7 +31,10 @@ export class LeasedQueue {
   private readonly inner = new SerialQueue();
 
   /**
-   * Whether the CALLER is inside this queue's own work — not merely whether something is.
+   * The queue a nested call's SIBLINGS share — present only inside this queue's own work.
+   *
+   * <p>Named for what it holds rather than for the question it answers, because a reviewer read
+   * `inside` and expected a boolean. Its presence is the re-entrancy answer; its value is the level.</p>
    *
    * <p>Without it a nested `run` DEADLOCKS, and the shape is reachable: the inner call queues behind
    * the outer one (`SerialQueue` is `tail.then(work)`) while the outer one waits for the inner to
@@ -45,7 +48,7 @@ export class LeasedQueue {
    * prevent. `AsyncLocalStorage` answers the question actually being asked: is this call in the
    * async context of the work that holds the lease?</p>
    */
-  private readonly inside = new AsyncLocalStorage<SerialQueue>();
+  private readonly siblings = new AsyncLocalStorage<SerialQueue>();
 
   constructor(
     private readonly lock: WindowLock | undefined,
@@ -65,9 +68,9 @@ export class LeasedQueue {
    * outer call took.</p>
    */
   async run<T>(work: () => Promise<T>): Promise<T> {
-    const siblings = this.inside.getStore();
-    if (siblings !== undefined) {
-      return siblings.run(() => this.enter(work));
+    const queue = this.siblings.getStore();
+    if (queue !== undefined) {
+      return queue.run(() => this.enter(work));
     }
     return (await this.inner.run(() => this.enter(() => this.holding(work, true)))) as T;
   }
@@ -83,7 +86,7 @@ export class LeasedQueue {
    * lease was being extended to close, reintroduced one level down.</p>
    */
   private enter<T>(work: () => Promise<T>): Promise<T> {
-    return this.inside.run(new SerialQueue(), work);
+    return this.siblings.run(new SerialQueue(), work);
   }
 
   /**
