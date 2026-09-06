@@ -388,6 +388,8 @@ questions:
   too, so the wider row travels only from contract 3. Two TYPES rather than optional fields, so the
   old shape's identity is structural and cannot be lost by dropping an attribute.
 
+**A developer's own project set is the ones they may SEND from**, not merely the ones they are on: an assignment whose share is `none` puts them in a project they cannot share into, and offering them its colleagues proposes recipients the rule will refuse. `TeamRoster` and `ShareRule` ask `OrgProjects.EffectiveShare` the same question.
+
 **A developer is told only the projects they share with each colleague.** Somebody on A1 with them
 and on A5 without them yields `A1` alone: the full list would leak the engagement names this epic
 exists to fence, to exactly the role it fences. A member or an admin, who may read the roster
@@ -446,7 +448,9 @@ one document: left standing, the removal is carried out on the next cycle agains
 document has just told it that it owns. `RemovalsAfter` is the single place either is written, so the
 rule cannot hold on one path and not the other.
 
-**An unassignment names somebody on the roster, or it is a `404`.** The member store creates what it
+**An unassignment names somebody who is actually ON that project, or it is a `404`.** Being on the roster is not enough — the code round found that an admin's typo naming a real colleague answered `204`, wrote a `project.unassigned` row for something that never happened, and queued a folder deletion against a project that person had never been on, which their client would then carry out. A standing removal for the project also qualifies, which is what keeps `?deleteFolder=false` able to withdraw one after the assignment is gone.
+
+**And they must be on the roster at all.** The member store creates what it
 cannot find, and the asymmetry is deliberate: on the way IN that is the feature — an admin puts a new
 hire on a project before they have opened the extension, exactly as the members surface already gives
 them a role — while on the way out there is nothing to create, and a typo would otherwise put somebody
@@ -458,6 +462,16 @@ baseline is whatever a concurrent admin had not yet written: A starts a rename, 
 first, and A then logs a `project.archived` row for an archive it did not perform. The same shape, for
 the same reason, as `UpsertResult.Before` on the member store.
 
+
+**Three more economies and one guard, from the code round.** A developer's project listing resolves the
+ids on their own record instead of reading every project on the server and discarding the rest. The
+share rule takes its project and recipient lookups as FUNCTIONS, so an ordinary member's `POST` no
+longer reads three registry files to reach a branch that consults none of them — one of which the
+blocking gate had just read. `/api/team` hands its discoverability pass and its roster pass one
+memoized reader rather than parsing every colleague's record twice. And the acknowledgement route —
+the only write on this surface with no admin gate of its own — answers `204` on a personal server
+instead of writing through a store that creates what it cannot find, which would have conjured the
+`org/` tree such a server is documented never to grow.
 **Six kinds reach the event log** at the point of durable write — `project.created`, `project.renamed`,
 `project.archived`, `project.unarchived`, `project.assigned`, `project.unassigned` — each with a test
 that reads the row back OUT of the log rather than asserting a status code. Written in this epic rather

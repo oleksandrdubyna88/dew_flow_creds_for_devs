@@ -35,25 +35,26 @@ public readonly record struct ShareDecision(ShareVerdict Verdict, string Message
 /// Everything the rule needs, gathered by the endpoint so the rule itself touches no disk.
 /// </summary>
 /// <remarks>
-/// <para>Lookups arrive as RESULTS rather than as functions, unlike <see cref="CallerStanding.Decide"/>:
-/// there the point was that a personal server must not stat a file, and the branch that skips the read
-/// is inside the decision. Here the endpoint already holds the sender's record for other reasons and
-/// the corp-mode branch is checked before the facts are built, so passing values keeps the rule a
-/// table. The endpoint's own guard is what stops a personal server reading anything.</para>
+/// <para><b>The project and the recipient arrive as FUNCTIONS</b>, the shape
+/// <see cref="CallerStanding.Decide"/> established: only a developer's share needs either, and the
+/// overwhelmingly common case here is a member sharing with a colleague. Passed as values, that
+/// ordinary POST read three registry files — the sender, the project and a recipient the blocking
+/// gate one line above had already read — to reach a branch that allows without consulting any of
+/// them. The sender is a value because every corporate branch begins by asking what they are.</para>
 /// </remarks>
 /// <param name="CorpMode">Whether this deployment has a roster at all.</param>
 /// <param name="SenderIsOfficer">From configuration, never from a record.</param>
 /// <param name="Sender">The sender's registry record, or why there is none.</param>
 /// <param name="ProjectId">What the client said the entity came out of; null or blank means none.</param>
-/// <param name="Project">The project that id names — only consulted when there is one.</param>
-/// <param name="Recipient">The addressee's registry record, after the blocking gate has passed them.</param>
+/// <param name="Project">The project that id names — invoked only when a developer named one.</param>
+/// <param name="Recipient">The addressee's record — invoked only once the project has been allowed.</param>
 public readonly record struct ShareRuleFacts(
     bool CorpMode,
     bool SenderIsOfficer,
     MemberLookupResult Sender,
     string? ProjectId,
-    ProjectResult Project,
-    MemberLookupResult Recipient);
+    Func<ProjectResult> Project,
+    Func<MemberLookupResult> Recipient);
 
 /// <summary>
 /// The one boundary of epic 3 that the server enforces rather than asks an honest client to obey.
@@ -104,7 +105,7 @@ public static class ShareRule
                 "Developers may share only what is inside a project folder. Move the entry into one, "
                 + "or ask an administrator to assign you to the project it belongs to.");
         }
-        var available = ProjectAvailable(facts.Project);
+        var available = ProjectAvailable(facts.Project());
         if (available.Verdict != ShareVerdict.Allow)
         {
             return available;
@@ -133,7 +134,7 @@ public static class ShareRule
     /// The recipient must be on the same project. "Replying to somebody outside it is refused" needs
     /// no branch of its own — it is this check with the two people swapped.
     /// </summary>
-    private static ShareDecision RecipientOnProject(ShareRuleFacts facts) => facts.Recipient switch
+    private static ShareDecision RecipientOnProject(ShareRuleFacts facts) => facts.Recipient() switch
     {
         { Status: MemberLookup.Unavailable } => ShareDecision.Unavailable,
         { Status: MemberLookup.Found, Record: { } record } when OrgProjects.IsAssigned(record, facts.ProjectId!)

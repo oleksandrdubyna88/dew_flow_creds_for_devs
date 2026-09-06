@@ -629,10 +629,11 @@ async Task<bool> ProjectShareRefused(HttpContext ctx, string sender, ShareReques
         SenderIsOfficer: false,
         Sender: orgMembers.Find(sender),
         ProjectId: req.ProjectId,
-        // Only looked up when there is one to look up: a request naming no project must not read a file
-        // for it, and story 1's store answers "absent" for anything that is not 32 hex characters anyway.
-        Project: ShareRule.NamesAProject(req.ProjectId) ? orgProjects.Find(req.ProjectId!.Trim()) : ProjectResult.Absent,
-        Recipient: orgMembers.Find(req.ToEmail.Trim().ToLowerInvariant())));
+        // Invoked only if a developer's share gets that far: an ordinary member's POST must not pay
+        // for three registry reads to reach a branch that consults none of them — and the recipient's
+        // record was already read by the gate one line above.
+        Project: () => ShareRule.NamesAProject(req.ProjectId) ? orgProjects.Find(req.ProjectId!.Trim()) : ProjectResult.Absent,
+        Recipient: () => orgMembers.Find(req.ToEmail.Trim().ToLowerInvariant())));
     if (decision.Verdict == ShareVerdict.Allow)
     {
         return false;
@@ -867,11 +868,17 @@ app.MapGet("/api/team", async (HttpContext ctx, CancellationToken ct) =>
     var caller = RequireCaller(ctx);
     if (caller is null) return;
     var callerDomain = DomainOf(caller.Value.Email);
+    // ONE read per person for the whole request. The discoverability pass reads each record through
+    // StandingOf, and the roster below reads it again for the role and the projects — two parses of the
+    // same file per colleague, per request, to answer one question about them.
+    var seen = new Dictionary<string, MemberLookupResult>(StringComparer.Ordinal);
+    MemberLookupResult Remember(string email) =>
+        seen.TryGetValue(email, out var known) ? known : seen[email] = orgMembers.Find(email);
     var discoverable = store.ListVaultOwners()
         .Where(e => DomainOf(e) == callerDomain)
-        .Where(IsDiscoverable)
+        .Where(e => IsDiscoverable(orgRecovery.Enabled, orgRecovery.IsOfficer(e), () => Remember(e)))
         .ToList();
-    await WriteTeamAsync(ctx, caller.Value.Email, discoverable, ct);
+    await WriteTeamAsync(ctx, caller.Value.Email, discoverable, Remember, ct);
 });
 
 // Two things happen here, and they are gated on DIFFERENT questions — which is the clarification the
@@ -885,7 +892,12 @@ app.MapGet("/api/team", async (HttpContext ctx, CancellationToken ct) =>
 //     personal mode's — so the wider row travels only to a caller that says it speaks contract 3.
 //
 // Personal mode consults nothing at all and returns exactly what it always did.
-async Task WriteTeamAsync(HttpContext ctx, string caller, List<string> discoverable, CancellationToken ct)
+async Task WriteTeamAsync(
+    HttpContext ctx,
+    string caller,
+    List<string> discoverable,
+    Func<string, MemberLookupResult> find,
+    CancellationToken ct)
 {
     if (!orgRecovery.Enabled)
     {
@@ -895,7 +907,7 @@ async Task WriteTeamAsync(HttpContext ctx, string caller, List<string> discovera
             cancellationToken: ct);
         return;
     }
-    var rows = TeamRoster.For(caller, orgRecovery.IsOfficer(caller), discoverable, orgMembers.Find);
+    var rows = TeamRoster.For(caller, orgRecovery.IsOfficer(caller), discoverable, find);
     if (ContractVersion.Judge(ctx.Request.Headers[ContractVersion.Header]).Claimed < ContractVersion.OrgPolicyContract)
     {
         await ctx.Response.WriteAsJsonAsync(
@@ -912,9 +924,13 @@ async Task WriteTeamAsync(HttpContext ctx, string caller, List<string> discovera
 // a recipient, because a share to them would wait in an inbox nobody can open, and "unreadable" must
 // never read as "fine" (the escalation the plan round found). One rule in one place: this used to be
 // a private three-arm switch of its own, which is how a gate and a filter come to disagree about the
-// same person. Personal mode consults nothing and stays byte-identical. The DTO is not widened here;
-// the role and the projects join it in epic 3.
-bool IsDiscoverable(string email) => StandingOf(email) == Standing.Admitted;
+// same person. Personal mode consults nothing and stays byte-identical.
+//
+// The lookup is a PARAMETER since epic 3: the roster built from this list reads the same records
+// again for the role and the projects, so the route hands both passes one memoized reader rather
+// than parsing every colleague's file twice per request.
+static bool IsDiscoverable(bool corpMode, bool isOfficer, Func<MemberLookupResult> find) =>
+    CallerStanding.Decide(corpMode, isOfficer, find) == Standing.Admitted;
 
 // The corporate surface, mapped from its own file — Program.cs is past the size ceiling and four
 // more epics add about twenty routes. The gates stay above; only routes live there.

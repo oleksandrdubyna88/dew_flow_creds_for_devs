@@ -37,8 +37,8 @@ public static class TeamRoster
         Func<string, MemberLookupResult> find)
     {
         var self = callerIsOfficer ? MemberLookupResult.NotRegistered : find(caller);
-        var mine = ProjectsOf(self);
         var narrow = !callerIsOfficer && self is { Status: MemberLookup.Found, Record.Role: MemberRole.Dev };
+        var mine = narrow ? ShareableProjectsOf(self) : ProjectsOf(self);
         var rows = new List<TeamMemberDetailDto>();
         foreach (var email in discoverable)
         {
@@ -76,6 +76,23 @@ public static class TeamRoster
     /// </summary>
     private static string RoleOf(MemberLookupResult lookup) =>
         lookup is { Status: MemberLookup.Found, Record: { } record } ? record.Role : MemberRole.Default;
+
+    /// <summary>
+    /// The projects a developer may actually SEND from — assignment is not enough.
+    /// </summary>
+    /// <remarks>
+    /// The code round's finding, and it is the difference between agreeing with the assignment and
+    /// agreeing with the RULE: a developer whose share for a project is <c>none</c> is on it and can
+    /// send nothing into it, so offering them its colleagues proposes recipients the server will
+    /// refuse — the exact failure this whole surface exists to prevent. <see cref="ShareRule"/> and
+    /// this method therefore ask the same question of the same function.
+    /// </remarks>
+    private static IReadOnlyList<string> ShareableProjectsOf(MemberLookupResult lookup) =>
+        lookup is { Status: MemberLookup.Found, Record: { } record }
+            ? [.. record.Projects
+                .Select(p => p.ProjectId)
+                .Where(id => OrgProjects.EffectiveShare(record, id) == ShareDefaults.Project)]
+            : [];
 
     private static IReadOnlyList<string> ProjectsOf(MemberLookupResult lookup) =>
         lookup is { Status: MemberLookup.Found, Record: { } record }
