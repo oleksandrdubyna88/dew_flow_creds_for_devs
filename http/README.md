@@ -13,7 +13,7 @@ writing the endpoint, or run the whole tree headless before a release.
 | [`shares/`](shares) | `/api/shares`, `/api/shares/sent`, and both withdrawal paths |
 | [`metrics/`](metrics) | `/api/metrics` |
 | [`org-recovery/`](org-recovery) | the eleven corporate-recovery routes |
-| [`org/`](org) | `/api/org/me` — the corporate surface; the next epics add their routes here |
+| [`org/`](org) | the corporate surface: `/api/org/me`, the admin's `/api/org/members`, `/api/org/members/{email}` and `/api/org/settings`, and `active.http` — the block/unblock route `/api/org/members/{email}/active`, the blocked caller's `403` with its reason header, and the withdrawn-share receipt and its dismissal; the next epics add their routes here |
 
 ## This repository has a SECOND HTTP surface, and it is not here
 
@@ -29,7 +29,7 @@ grant, and `call()` does a real `fetch` against `http://127.0.0.1:<port>`. **65 
 way across `credsAgentServer.test.ts` and `brokerMcpRoutes.test.ts`.
 
 Written down because the numbers below invite the wrong conclusion: `http-coverage.mjs` reads C# and
-Rust route registrations, so its verdict for this repository — 27 of 27 — is a statement about the
+Rust route registrations, so its verdict for this repository — 32 of 32 — is a statement about the
 **vault server** and says nothing at all about the extension's API. An armed coverage check is not a
 claim that every HTTP surface in a repository has a suite.
 

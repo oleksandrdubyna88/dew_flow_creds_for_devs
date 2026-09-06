@@ -65,6 +65,8 @@ public sealed class OrgRegistrationTests
                 Members: new OrgMembersStore(Dir, NullLogger<OrgMembersStore>.Instance),
                 Settings: new OrgSettingsStore(Dir, NullLogger<OrgSettingsStore>.Instance),
                 Events: new OrgEventLog(Dir, NullLogger<OrgEventLog>.Instance, () => DateTimeOffset.UtcNow),
+                // The hook withdraws nothing; the store is here because the record requires one.
+                Shares: new VaultStore(Dir),
                 AllowAnyDomain: false,
                 Log: Log,
                 ServerContract: ContractVersion.Current);

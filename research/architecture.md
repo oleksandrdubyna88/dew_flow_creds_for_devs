@@ -153,13 +153,23 @@ email, which is why the deployment guide says to leave it empty wherever a real 
 
 ### Authorization
 
-Three rules, applied in this order on every authenticated request:
+Four rules, applied in this order on every authenticated request:
 
 1. **The email comes from the token**, never from the request. `TokenIdentity.Email` walks a claim
    priority list and rejects a token that explicitly marks its email unverified.
 2. **The domain must be allowed.** Outside `Vault:AllowedDomains` is 403, even with a perfectly
    valid token.
-3. **The resource is derived from the email.** There is no vault id and no inbox id in any URL —
+3. **On a corp server, the account must be active** (2026-09-06). A registry record saying
+   `active: false` is 403 with `X-Creds-Reason: account-deactivated` — a header, so a client can tell it
+   from the domain's 403 without matching prose — and a record the server cannot read is 503, never a
+   pass. Officers pass whatever their record says (the roster is configuration, and the break-glass
+   quorum must not be lockable by its own records); a personal server consults no registry at all. The
+   check sits inside the one caller gate every route opens with, so no route can forget it; the five
+   branches are in [module_server.md](module_server.md) §Authorization. One rule looks the other way
+   for the same reason: `POST /api/shares` also checks the RECIPIENT's standing, because the gate judges
+   whoever is calling and a share is addressed to somebody else — material must not be delivered into an
+   inbox its owner is locked out of.
+4. **The resource is derived from the email.** There is no vault id and no inbox id in any URL —
    `GET /api/vault` means *your* vault by construction, so there is no parameter to tamper with.
 
 ### Rate limiting
