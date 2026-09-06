@@ -577,6 +577,20 @@ otherwise the caller. `TokenIdentity.Email` walks `email` → `preferred_usernam
 carrying `email_verified: false` (Google sets it in some tenants; Microsoft does not send it at
 all, so absent means accept).
 
+**And it refuses an identity it could not print.** A value carrying a control character, or longer
+than 320 characters, is not an email this server will act on — the caller meets the `401` instead.
+The reason is a log line: the address is written into `"vault write by {Email}"`, into a registry
+record, into an audit row and into a share's stamped sender, and a newline in the MIDDLE of it (which
+trimming does not reach) puts the rest of the value at the start of a line, where it reads as an entry
+the server never wrote. A timeline the person it describes can write into is not evidence. Code
+scanning named this on the corporate log lines; the fix is at the boundary rather than at each of
+them, because the next log line would otherwise have to remember — and *a measure applied at some of
+the sites that need it* is a class of defect this repository has shipped more than once. Worth knowing
+why it matters at all when the issuer signs the token: the claim list includes `preferred_username`,
+`upn` and the name claim, which some directories let a person edit, so "signed" is not "chosen by
+nobody". A refused value is never sanitised into a different one — quietly rewriting an address is how
+somebody ends up reading another person's vault.
+
 ### The three auth schemes
 
 | Scheme | Enabled by | Validates |
@@ -716,7 +730,7 @@ what is under it:
 
 ## Tests
 
-`src_minimalapi_server/tests/` — xUnit v3 on Microsoft Testing Platform, 292 tests, ~13 s. The
+`src_minimalapi_server/tests/` — xUnit v3 on Microsoft Testing Platform, 300 tests, ~14 s. The
 endpoint suites run in-process through `WebApplicationFactory` — no free port, no background
 `dotnet run`; the store suites drive a store directly on a throwaway data directory.
 
@@ -737,6 +751,7 @@ Never `dotnet test` — there is no VSTest host here and it aborts.
 | `ContractVersionTests` | The header on every response, silent and garbled and newer clients served, a configured minimum refuses with a reason, the refusal precedes authentication; corp mode floors the minimum at 3 with the default configuration, the refusal names the policy, personal mode is unchanged, a corp server still serves a contract-3 client and a silent one, the floor never lowers a higher configured minimum, the reason names the floor from the constant, a corporate route's `426` is JSON while every older route's stays plain text |
 | `OrgMembersTests` | Registration on the first vault write and not on `/api/org/me`; the default role is member; a second sync does not re-stamp a record an admin edited; personal mode creates no `org/` and answers `corpMode: false` from constants whatever a leftover record says; a never-synced caller is computed and nothing is written; an officer reads `isOfficer: true` with no registry row |
 | `OrgRegistrationTests` | A registry that cannot be written (`org/members` is a file) does not fail the vault write; the next sync registers the person after all; two syncs leave exactly one `member.registered` row and the second emits nothing; two concurrent first syncs leave one row and one record; an admin creating the record in the hook's window keeps their stamp (the lock held by the test); a client hanging up after registration still gets its row; the swallowed failure is logged at Error naming the person |
+| `IdentityHygieneTests` | What an identity may look like before the server acts on it: a control character anywhere in the address is refused (a newline forges a log line, and trimming only reaches the ends), 320 characters is the ceiling, a name that cannot be printed is dropped rather than stamped, and a token carrying a forged address is refused at the door with nothing written |
 | `OrgAdminGateTests` | Who administers: an officer with no record passes and registers nobody, a registry admin passes, a member and a developer and a never-registered caller are refused, an admin whose record became unreadable is refused rather than guessed at, corp mode off is the same `403` to the byte, and the gate's own `401` carries a JSON body |
 | `OrgMembersAdminTests` | The roster and the upsert: scoped to the caller's domain with officers flagged, a role set before the person's first sync and left alone by it, cross-domain `403`, officer `409`, unknown role and empty body and malformed JSON and a target that is not an address `400`, a share default stored for a member and inert in the policy, `updatedBy` from the token, one row per real change and none for a change that changes nothing, and a `503` that leaves the record's bytes untouched |
 | `OrgSettingsTests` | The lease over the wire: the default without a file, written and read back, `0` accepted, negative and `{}` refused, non-admin `403`, and one `settings.changed` row |
