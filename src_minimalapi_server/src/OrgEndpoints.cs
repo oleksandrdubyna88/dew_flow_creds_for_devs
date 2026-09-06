@@ -35,6 +35,7 @@ public sealed record OrgEndpointDeps(
     OrgSettingsStore Settings,
     OrgEventLog Events,
     VaultStore Shares,
+    LoginKeyStore LoginKeys,
     bool AllowAnyDomain,
     ILogger Log,
     int ServerContract);
@@ -83,6 +84,9 @@ public static class OrgEndpoints
         // by accident (see SetActiveRequest).
         app.MapPut("/api/org/members/{email}/active", (HttpContext ctx, string email, CancellationToken ct) =>
             SetActiveAsync(ctx, deps, email, ct));
+        // The login key: the one route on this surface that hands a caller key material, and the only
+        // one whose response must never be stored by anything between here and them.
+        app.MapGet("/api/org/login-key", (HttpContext ctx, CancellationToken ct) => LoginKeyAsync(ctx, deps, ct));
         app.MapGet("/api/org/settings", (HttpContext ctx, CancellationToken ct) => SettingsAsync(ctx, deps, ct));
         app.MapPut("/api/org/settings", (HttpContext ctx, CancellationToken ct) => SetSettingsAsync(ctx, deps, ct));
         return app;
@@ -629,6 +633,95 @@ public static class OrgEndpoints
     {
         deps.Log.LogWarning("{Admin} UNBLOCKED {Target}: they are served again from now on", admin, target);
         await deps.Events.AppendAsync(Row(OrgEventKinds.MemberUnblocked, admin, target, detail: null), CancellationToken.None);
+    }
+
+    // ---------- the login key ----------
+
+    /// <summary>
+    /// <c>GET /api/org/login-key</c> — the server's half of a developer's vault key.
+    ///
+    /// <para><b>Who gets one.</b> An active developer is MINTED one on the first call and gets the same
+    /// bytes ever after. An active member or admin is served a key they already have and gets <c>404</c>
+    /// when they have none — not <c>403</c>, because <b>binding is a property of a VERSION, not of a
+    /// person</b>: somebody demoted from developer still has bound versions on this server, and refusing
+    /// them the key would leave them holding a vault nobody can open. A deactivated caller, or one whose
+    /// record cannot be read, never reaches this handler — story 1's gate answered them already.</para>
+    ///
+    /// <para><b>Never cached, anywhere.</b> This is the one response on the server that carries key
+    /// material, so it carries <c>Cache-Control: no-store</c> — set before any branch, so a refusal
+    /// cannot leave it off. A caching proxy holding a <c>200</c> here would replay somebody's factor to
+    /// whoever asked next.</para>
+    ///
+    /// <para><b>An unreadable key is <c>503</c>, and nothing is minted.</b> See
+    /// <see cref="LoginKeyStore.GetOrCreateAsync"/>: a KEK changed by a restore or a typo must not
+    /// produce a second key while the vault stays sealed to the first.</para>
+    /// </summary>
+    private static async Task LoginKeyAsync(HttpContext ctx, OrgEndpointDeps deps, CancellationToken ct)
+    {
+        ctx.Response.Headers.CacheControl = "no-store";
+        var caller = await RequireOrgCallerAsync(ctx, deps.RequireCaller);
+        if (caller is null)
+        {
+            return;
+        }
+        if (!deps.OrgRecovery.Enabled)
+        {
+            await FailJson(ctx, StatusCodes.Status404NotFound, "This deployment does not issue login keys.");
+            return;
+        }
+        if (!deps.LoginKeys.Configured)
+        {
+            await FailJson(
+                ctx,
+                StatusCodes.Status503ServiceUnavailable,
+                "This server has no login-key encryption key configured (Vault:LoginKey:Kek), so it cannot "
+                + "issue login keys. This is a server configuration problem, not a problem with your account.");
+            return;
+        }
+        await ServeLoginKeyAsync(ctx, deps, caller.Value.Email, ct);
+    }
+
+    /// <summary>
+    /// Mint for an active developer, serve what exists to anybody else active. The role comes from the
+    /// same three-answer lookup every other corporate route uses, and its unreadable branch is a
+    /// <c>503</c> here for the reason it is one there: the computed default is <c>member</c>, and
+    /// answering <c>404</c> off a half-written file would tell a developer they have no key.
+    /// </summary>
+    private static Task ServeLoginKeyAsync(HttpContext ctx, OrgEndpointDeps deps, string email, CancellationToken ct) =>
+        deps.Members.Find(email) switch
+        {
+            { Status: MemberLookup.Unavailable } => FailUnavailable(ctx),
+            { Status: MemberLookup.Found, Record.Role: MemberRole.Dev } =>
+                WriteKeyAsync(ctx, deps.LoginKeys.GetOrCreateAsync(email, ct), ct),
+            _ => WriteKeyAsync(ctx, deps.LoginKeys.FindAsync(email, ct), ct),
+        };
+
+    /// <summary>
+    /// The three answers a store lookup can carry, turned into the three a client can act on. Absent is
+    /// <c>404</c> — an honest "this server has nothing for you" that a client reads as "no binding" —
+    /// and unreadable is <c>503</c>, which says come back rather than inviting a rebind.
+    /// </summary>
+    private static async Task WriteKeyAsync(HttpContext ctx, Task<LoginKeyResult> lookup, CancellationToken ct)
+    {
+        var result = await lookup;
+        if (result.Status == LoginKeyLookup.Unreadable)
+        {
+            await FailJson(
+                ctx,
+                StatusCodes.Status503ServiceUnavailable,
+                "This server holds a login key it cannot read right now. Nothing was replaced; ask an "
+                + "administrator to check the server's configuration.");
+            return;
+        }
+        if (result.Status == LoginKeyLookup.Absent)
+        {
+            await FailJson(ctx, StatusCodes.Status404NotFound, "No login key has been issued for this account.");
+            return;
+        }
+        await ctx.Response.WriteAsJsonAsync(
+            new LoginKeyDto(Convert.ToBase64String(result.Key), result.Fingerprint),
+            AppJsonContext.Default.LoginKeyDto,
+            cancellationToken: ct);
     }
 
     // ---------- the runtime settings ----------

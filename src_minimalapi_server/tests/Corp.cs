@@ -22,12 +22,48 @@ internal static class Corp
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
-    /// <summary>A server in corp mode: a roster is configured, and that is the whole switch.</summary>
+    /// <summary>
+    /// A KEK for the tests: 32 bytes of a fixed pattern, base64. Fixed rather than random so a failing
+    /// run reproduces, and never a real one — whoever holds a KEK can open every login key on the server
+    /// it belongs to.
+    /// </summary>
+    public static readonly string Kek =
+        Convert.ToBase64String([.. Enumerable.Range(0, LoginKeyStore.KeyBytes).Select(i => (byte)(i * 7))]);
+
+    /// <summary>A second one, for the test that a key sealed under one KEK is refused under another.</summary>
+    public static readonly string OtherKek =
+        Convert.ToBase64String([.. Enumerable.Range(0, LoginKeyStore.KeyBytes).Select(i => (byte)(200 - i))]);
+
+    /// <summary>
+    /// A server in corp mode: a roster is configured, and that is the whole switch. A login-key KEK rides
+    /// along because a corporate server that issues keys has one; <see cref="ServerWithoutKek"/> is the
+    /// deployment that does not.
+    /// </summary>
     public static VaultServer Server() => new(new Dictionary<string, string?>
     {
         ["Vault__CorpRecovery__OfficerEmails"] = Officers,
         ["Vault__CorpRecovery__Threshold"] = "2",
+        ["Vault__LoginKey__Kek"] = Kek,
     });
+
+    /// <summary>
+    /// Corp mode with no usable login-key KEK — the deployment that has not configured the feature (or
+    /// has configured it wrongly), and the one property that matters about it: ONE route degrades.
+    /// </summary>
+    public static VaultServer ServerWithoutKek(string? kek = null) => new(new Dictionary<string, string?>
+    {
+        ["Vault__CorpRecovery__OfficerEmails"] = Officers,
+        ["Vault__CorpRecovery__Threshold"] = "2",
+        ["Vault__LoginKey__Kek"] = kek,
+    });
+
+    /// <summary>The documented layout: <c>org/login-keys/&lt;KeyFor(email)&gt;.bin</c>.</summary>
+    public static string LoginKeyPath(VaultServer server, string email) =>
+        Path.Combine(OrgDir(server), "login-keys", VaultStore.KeyFor(email) + ".bin");
+
+    /// <summary>A caller asking for their own login key.</summary>
+    public static Task<HttpResponseMessage> LoginKeyAsync(HttpClient client) =>
+        client.GetAsync("/api/org/login-key", Ct);
 
     public static string OrgDir(VaultServer server) => Path.Combine(server.DataDir, "org");
 

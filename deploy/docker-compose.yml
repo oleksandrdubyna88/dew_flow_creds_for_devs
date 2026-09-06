@@ -83,6 +83,14 @@ services:
       Vault__CorpRecovery__OfficerEmails: ${CORP_RECOVERY_OFFICERS:-}
       Vault__CorpRecovery__Threshold: ${CORP_RECOVERY_THRESHOLD:-2}
       Vault__CorpRecovery__SetupTtlHours: ${CORP_RECOVERY_SETUP_TTL_HOURS:-72}
+      # The key this deployment seals DEVELOPERS' login keys under: base64 of 32 random bytes
+      # (`openssl rand -base64 32`). Empty = this server issues no login keys, so a developer's
+      # vault is an ordinary vault and GET /api/org/login-key answers 503 while everything else
+      # works exactly as before. LOSING this value is not recoverable — every vault sealed to a
+      # key under it stops opening — so it belongs in the same backup as the data volume. A value
+      # that is not exactly 32 bytes is IGNORED rather than padded or truncated: a nearly-right
+      # key is how vaults end up sealed under something nobody can reproduce.
+      Vault__LoginKey__Kek: ${LOGIN_KEY_KEK:-}
       Auth__Microsoft__Tenant: ${MS_TENANT:-}
       Auth__Microsoft__Audiences: ${MS_AUDIENCES:-}
       Auth__Microsoft__ClientScope: ${MS_CLIENT_SCOPE:-}

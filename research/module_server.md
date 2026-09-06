@@ -36,6 +36,8 @@ whole server is ~2,100 lines.
 | `src/OrgMembersStore.cs` | One record per person under `org/members/`, read synchronously from a stat-checked cache, written read-modify-write under the vault's per-email lock |
 | `src/OrgSettingsStore.cs` | The runtime settings an admin edits without a restart (`org/settings.json`); absent answers the default and writes nothing |
 | `src/OrgEventLog.cs` | The append-only NDJSON event log, one file per UTC day under `org/events/` — the writer only; the reader is a later epic's |
+| `src/LoginKeyStore.cs` | Custody of the per-developer login key S under `org/login-keys/`: AES-256-GCM under the deployment KEK, minted once by create-if-absent, and a three-answer lookup whose unreadable branch NEVER mints a replacement |
+| `src/LoginKeyKek.cs` | Reading that KEK out of configuration and refusing anything that is not exactly 32 bytes of base64, plus the startup line an operator gets when theirs is unusable |
 | `src/OrgEndpoints.cs` | The corporate surface `/api/org/*`, mapped from its own file (`Program.cs` is past the size ceiling and four more epics add routes): `GET /api/org/me`, the admin's roster, role and settings routes, the block/unblock route `PUT /api/org/members/{email}/active`, the JSON `FailJson` every refusal there uses, and the registration hook `PUT /api/vault` calls. The gates stay in `Program.cs` and cross over as delegates in one `OrgEndpointDeps` record |
 | `src/Logging.cs` | Serilog wiring: the coloured console + the segmenting run file |
 | `src/AnsiConsoleSink.cs` | Hand-written ANSI colour (ported from the family — Serilog's own theme writes zero escapes once stdout is redirected, and a container's captured stdout always is) |
@@ -98,6 +100,7 @@ identifier**, so there is nothing to tamper with.
 | `GET` | `/api/org/members` | **admin** | `200` | The roster of the caller's own domain, one row per record, officers flagged. Not streamed: 200 records of about a kilobyte |
 | `PUT` | `/api/org/members/{email}` | **admin** | `200` / `400` / `403` / `409` / `503` | Set a role, a share default, or both — for somebody who may not have synced yet. See below |
 | `PUT` | `/api/org/members/{email}/active` | **admin** | `204` / `400` / `403` / `409` / `503` | `{active}` — `false` blocks, `true` re-admits. Idempotent: `204` whether or not anything changed. A real block withdraws every pending share to and from the person and appends `member.blocked`; an officer target is `409`. See below |
+| `GET` | `/api/org/login-key` | any active corporate caller | `200` / `404` / `503` | The caller's own login key and its fingerprint. Minted for an active **dev**; served to anybody active who already has one; `404` when they have none; `503` with no KEK, or when the stored key cannot be read. **`Cache-Control: no-store`** — the one response here that carries key material. See below |
 | `GET` | `/api/org/settings` | **admin** | `200` | The runtime settings; absent file → the defaults, and no file is written |
 | `PUT` | `/api/org/settings` | **admin** | `200` / `400` | `offlineLeaseHours >= 0`; `0` is the legal "strictly online" |
 | `GET` | `/api/org-recovery/config` | any allowed caller | `200` | The corporate-recovery roster this server runs under. See below |
@@ -265,6 +268,63 @@ or `""`, and a released extension's `isSentShare` checks its five fields and ign
 contract bump was needed. On the server the field is `string?` read only through `IsWithdrawn` — a
 `string` with `= ""` would still arrive `null` for a receipt lacking the key (the deserializer runs
 no initializer; measured on `ShareRequest.EntityKind`), while the type claimed otherwise.
+
+### The login key — one factor of a developer's vault key, held here (2026-09-06)
+
+A developer's copied vault file must be dead without a live login. That needs a factor this server
+holds: **S**, 32 random bytes per person, at `org/login-keys/<KeyFor(email)>.bin` as AES-256-GCM
+ciphertext under the deployment KEK (`Vault:LoginKey:Kek`, base64 of exactly 32 bytes). The client
+folds S into a developer's PIN and security-key wraps — `HKDF(scrypt(accountId + PIN) ‖ S)` — which is
+epic 2's story 3; this is the custody half.
+
+**S is one factor of two, and the sentence that changes is worth stating precisely.** The server never
+sees the PIN and never sees the master key. What an operator holding S and a stolen blob gains is an
+offline attack on the PIN — which they can already mount today against the plain `pin` wrap with no S
+at all. The operator's position is unchanged; what changes is that the FILE alone is no longer enough.
+
+**Minting is idempotent by lock and by filesystem, not by luck**, because re-minting is the worst
+thing this store can do: every wrap already sealed to the old S becomes unopenable. In-process, the
+64-way stripe every other store takes. Across processes — a rolling restart with two containers on one
+volume — the write is a **create-if-absent** (`AtomicWriteAsync(..., overwrite: false)`, which the OS
+refuses when the file exists), and the loser of the race reads the winner's key.
+
+**An unreadable key is never replaced.** The lookup has three answers, like the registry's: found,
+absent, and *unreadable* — a wrong KEK after a restore, a tampered file, a truncated write. Only
+*absent* mints. Collapsing the third into the second is what would issue a second key while the
+person's vault stayed sealed to the first, and the API would report success the whole way; the route
+answers `503` instead, and the log says nothing was replaced.
+
+**Who is served.** An active developer is minted one. An active member or admin is served a key they
+already have, and gets `404` when they have none — not `403`, because **binding is a property of a
+VERSION, not of a person**: somebody demoted from developer still holds bound versions, and refusing
+them the key would leave them with a vault nobody can open. For the same reason the key is deleted
+only with the vault, never on demotion.
+
+**No rotation, and therefore no revocation.** Rotating on unblock would orphan the vault it was meant
+to protect — every wrap is sealed to S, so a new key leaves the person's current vault openable by
+nobody and turns every unblock into a three-officer ceremony. It also protects nothing, since whoever
+kept a copy of S is the person being re-admitted. **Blocking already makes S unobtainable** — the
+caller gate refuses them before the handler runs — and that is the mechanism. Stated plainly: a copy
+of S taken while somebody was a developer stays valid until a two-key rotation exists.
+
+**`DELETE /api/vault` removes the key last**, after the vault and the registry record. The order is
+the design: a crash between steps leaves something behind either way, and a key outliving its vault is
+300 bytes of ciphertext nobody can use, while a vault outliving its key is a vault nobody can OPEN.
+Removal needs no KEK — deleting a file is not decryption — so a server that cannot issue keys can
+still delete accounts.
+
+**A missing KEK degrades this feature and nothing else**: an `ERROR` line at startup naming the
+setting, `503` on this one route, and vault sync, sharing and the registry untouched. That is the
+officer roster's lesson applied (below): refusing to boot over an optional feature took ordinary sync
+down for everyone. A KEK that is not exactly 32 bytes is **ignored rather than padded or truncated** —
+a nearly-right key is how vaults end up sealed under something nobody can reproduce.
+
+**Nothing about S is ever logged.** The two lines are `login key issued for {email} ({fingerprint})`
+and `login key removed for {email}`. The fingerprint — the first eight bytes of SHA-256(S) as sixteen
+lowercase hex characters — is a public name: it lets a client tell "the server's key changed under me"
+from "wrong PIN" without either side comparing secrets, and it is what appears in the log instead of
+the key. A store-level test asserts the material never reaches a log line, with a positive control so
+a run that logged nothing cannot pass it.
 
 ### The contract version
 
@@ -827,6 +887,7 @@ ${DataDir}/org/members/<key>.json                     one person's registry reco
 ${DataDir}/org/settings.json                          the runtime settings an admin may change; absent means the defaults
 ${DataDir}/org/events/<yyyy-MM-dd>.ndjson             the corporate event log, one file per UTC day, never swept
 ${DataDir}/org/events/.append.lock                    zero bytes; held exclusively for the length of one append, across processes
+${DataDir}/org/login-keys/<key>.bin                   one developer's login key, AES-256-GCM under the deployment KEK; written create-if-absent, removed only with the vault
 ```
 
 `key = sha256(lowercased email) hex, first 32 chars` (128 bits). Hashed so a directory listing is
@@ -922,6 +983,8 @@ Never `dotnet test` — there is no VSTest host here and it aborts.
 | `OrgBlockingWithdrawalTests` | A share to a blocked person leaves their inbox and the sender's receipt carries the reason; a receipt not withdrawn has no `withdrawnReason` key; the hourly sweep keeps a withdrawn receipt and still retires an accepted one (the positive control), end to end too; dismissing a withdrawn receipt is `204` and forgets it; the 31-day prune still retires it; a share from a blocked person leaves the recipient's inbox and the blocked sender's receipt goes too; both directions in one block with an unrelated share surviving; nothing comes back on unblock; **a repeated block finishes a withdrawal the first one could not** (the inbox file held open through the first PUT, released, and the repeat takes it); **a sender who could not be told is counted in the block row** rather than silently lost (their receipt held open for the whole block); an idempotent re-block with nothing left withdraws nothing twice |
 | `OrgBlockingShareTests` | The recipient half: `POST /api/shares` to a deactivated colleague is `403` naming the deactivation, creates no inbox and no receipt, and carries **no** `X-Creds-Reason` (which would make an honest client lock the innocent sender's own account); an unreadable recipient record is `503` with `Retry-After` and no delivery; an active colleague, somebody who never synced, and a personal server with a leftover corrupt record are all unaffected |
 | `AppJsonContextTests` | Every DTO the org routes and their refusals serialize, lists included, is in the source-generated context — the one class of bug the endpoint suites cannot see, because under JIT an unregistered type falls through to reflection and only the AOT binary fails |
+| `LoginKeyEndpointTests` | `GET /api/org/login-key`: a developer is minted one and a second call returns byte-identical bytes; the response is `no-store`; the fingerprint is sixteen hex characters and travels with the key; a member with no key is `404` **and none is minted for them**; a demoted developer is still served theirs; a blocked one is refused by the gate and gets the SAME key back on unblock (no rotation); no KEK is `503` while sync, vault reads and team all still work; a 16-byte KEK is refused rather than truncated; a personal server answers "this deployment issues no login keys" and grows no `org/`; the file on disk is ciphertext; `DELETE /api/vault` removes the key, and still succeeds on a server that cannot issue any; mixed casing is one person and one key |
+| `LoginKeyStoreTests` | The store alone: no log line carries the key material (with a positive control, so a run that logged nothing cannot pass); a key that will not decrypt under this KEK is **never replaced** and the file is byte-identical afterwards; a tampered ciphertext and garbage JSON are both `Unreadable`, never plausible bytes; two stores over one directory mint ONE key and leave no temp file; `Find` never mints, not even the folder; the fingerprint is stable, differs per key, and is empty when there is nothing to name; removing what is not there is success while removing a file held open is not, and says so at Error; the KEK is 32 bytes of base64 or nothing; the startup complaint is silent only where nobody asked for the feature |
 | `SharingTests` | Delivery, sender stamping, cross-domain refusal, traversal ids, recipient-only delete |
 | `RateLimitTests` | One caller cannot lock out another; a caller who overruns is still throttled |
 | `ForwardedHttpsTests` | A missing header is refused; health stays exempt |

@@ -51,6 +51,15 @@ C4Container
 **The server never holds a key that opens a vault.** Everything else in this document is
 downstream of that sentence.
 
+> Since 2026-09-06 a corporate server can hold one thing that is adjacent to it, and the distinction is
+> exact rather than lawyerly: a developer's **login key** S (`module_server.md` §The login key). S opens
+> nothing on its own — it is folded into a wrap key beside `scrypt(accountId + PIN)`, so the server has
+> never seen the PIN and has never seen the master key, and an operator holding S and a stolen blob can
+> mount the same offline PIN attack they could already mount against a plain `pin` wrap with no S at
+> all. Today the sentence above is still literally true, because nothing binds to S yet: the wraps do
+> that in epic 2's story 3, and **that** is when this sentence becomes "the server never holds enough to
+> open a vault alone", with its evidence beside it.
+
 | | Sees plaintext | Holds a decryption key | Can forge a sender |
 |---|---|---|---|
 | The extension | yes — it is the only one | yes, derived from a PIN or a security key | n/a |

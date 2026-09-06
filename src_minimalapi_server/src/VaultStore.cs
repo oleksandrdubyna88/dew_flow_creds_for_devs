@@ -306,10 +306,29 @@ public sealed partial class VaultStore
     /// Temp, then move, so a reader never sees a partial file. Shared with the org stores for the
     /// same reason the gate is: one write idiom in the server is one set of failure modes to learn.
     /// </summary>
-    internal static async Task AtomicWriteAsync(string path, byte[] content, CancellationToken ct)
+    /// <param name="overwrite">
+    /// Widened for the login-key store rather than copied: <c>false</c> makes this a create-if-absent,
+    /// which the OS refuses when the destination already exists. That refusal is the only thing standing
+    /// between two server processes on one volume and two different login keys for one person — an
+    /// in-memory lock says nothing across processes, and a second key orphans every wrap sealed to the
+    /// first. The temp file is cleaned up when the move is refused, so a losing race leaves no litter.
+    /// </param>
+    internal static async Task AtomicWriteAsync(
+        string path,
+        byte[] content,
+        CancellationToken ct,
+        bool overwrite = true)
     {
         var temp = path + "." + Guid.NewGuid().ToString("N")[..8] + ".tmp";
         await File.WriteAllBytesAsync(temp, content, ct);
-        File.Move(temp, path, overwrite: true);
+        try
+        {
+            File.Move(temp, path, overwrite);
+        }
+        catch
+        {
+            File.Delete(temp);
+            throw;
+        }
     }
 }

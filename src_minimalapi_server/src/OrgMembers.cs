@@ -450,3 +450,18 @@ public sealed record SetActiveRequest(bool? Active)
     /// <summary>The <c>400</c> this request earns, or empty when the server can act on it.</summary>
     public string Problem() => Active is null ? "Nothing to change: send active, true or false." : string.Empty;
 }
+/// <summary>
+/// What <c>GET /api/org/login-key</c> answers with: the caller's own login key, and its fingerprint.
+/// </summary>
+/// <remarks>
+/// <para><b>Both fields, always, and the fingerprint is not redundant.</b> A client stores the
+/// fingerprint beside a wrap it sealed; on the next unlock it compares that against the fingerprint
+/// returned here. Equal means the same key and the wrap will open; different means the server's key
+/// changed underneath the vault — a restore from an older backup, a KEK swapped by hand — and the
+/// person must be told THAT rather than being asked to try their PIN again. Without it the client's only
+/// signal would be a decryption failure, which is indistinguishable from a wrong PIN.</para>
+///
+/// <para><b>The key is base64 of 32 raw bytes</b>, and it is the one secret this server ever puts in a
+/// response body. The route sets <c>Cache-Control: no-store</c>; nothing logs either field.</para>
+/// </remarks>
+public sealed record LoginKeyDto(string LoginKey, string Fingerprint);

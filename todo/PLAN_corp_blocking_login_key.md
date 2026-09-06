@@ -69,7 +69,11 @@ is still openable, and the sender has no way to learn that the person it was add
    why, once, and the row then dismissible.
 3. **The login key S** — 32 random bytes per person, held by the server, issued only to an active
    dev, folded into that dev's PIN and security-key wraps. Without S the file does not open.
-4. **Rotation on unblock**, so a copy of the old S is worthless.
+4. **No rotation on unblock** — the owner's decision of 2026-09-06, recorded at the top of this
+   document with its reasoning. This line used to promise the opposite; it is corrected rather than
+   deleted, because a plan that argues with itself is worse than one that is merely out of date.
+   Blocking makes S unobtainable, and that is the mechanism; a copy of S taken while somebody was a
+   developer stays valid until a two-key rotation exists.
 5. **The offline lease** — how long an honest client keeps working without hearing from the server.
 6. **The export, backup and clone bans for devs**, gated in the menus *and* in the handlers.
 7. **The recovery code closed for devs** — the wrap stripped and the commands refused — because a
@@ -318,7 +322,7 @@ client about its OWN account, and an honest sender's client would lock the wrong
 
 | Surface | Size | Retired by | Interrupted |
 |---|---|---|---|
-| `org/login-keys/*.bin` | 200 × ~300 B | deleted on unblock and with the vault | atomic write; a half-minted key cannot exist |
+| `org/login-keys/*.bin` | 200 × ~300 B | deleted with the vault, and never on unblock (see decision 1) | create-if-absent: a half-minted key cannot exist, and a second process cannot mint a second one |
 | `SentShare.withdrawnReason` | one string on existing records | the sender's dismiss, or the 31-day sweep | rewritten atomically |
 | the lease memento | one number per account per machine | account removal | a lost value reads as expired, which locks — the safe direction |
 

@@ -67,6 +67,9 @@ public sealed class OrgRegistrationTests
                 Events: new OrgEventLog(Dir, NullLogger<OrgEventLog>.Instance, () => DateTimeOffset.UtcNow),
                 // The hook withdraws nothing; the store is here because the record requires one.
                 Shares: new VaultStore(Dir),
+                // Likewise: registration never touches a login key. An empty KEK is the honest value —
+                // this world could not issue one — and it proves the record needs no key to be built.
+                LoginKeys: new LoginKeyStore(Dir, [], NullLogger<LoginKeyStore>.Instance),
                 AllowAnyDomain: false,
                 Log: Log,
                 ServerContract: ContractVersion.Current);

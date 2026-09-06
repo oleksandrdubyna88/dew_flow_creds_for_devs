@@ -51,6 +51,12 @@ var shareMaxAgeDays = config.GetValue("Vault:ShareMaxAgeDays", 31);
 var orgRecovery = OrgRecoveryConfig.Read(
     SplitCsv(config["Vault:CorpRecovery:OfficerEmails"]),
     config.GetValue("Vault:CorpRecovery:Threshold", 2));
+// The key this deployment seals developers' login keys under, base64 of 32 bytes. Empty or malformed
+// disables ONE route and nothing else — the officer roster taught this lesson the expensive way
+// (module_server.md): refusing to boot over an optional feature took ordinary vault sync down for
+// everyone. What must hold instead of availability is narrower: no wrap is ever bound to a key this
+// server cannot reproduce, which is a fingerprint check in the client, not a boot refusal.
+var loginKeyKek = LoginKeyKek.Read(config["Vault:LoginKey:Kek"]);
 // How long an unacknowledged setup invite lives. A ceremony that stalls must expire rather
 // than leave a sealed share somebody accepts a year later into a key never published.
 var orgSetupTtlHours = config.GetValue("Vault:CorpRecovery:SetupTtlHours", 72);
@@ -146,6 +152,11 @@ builder.Services.AddSingleton(sp => new OrgSettingsStore(
     dataDir, sp.GetRequiredService<ILoggerFactory>().CreateLogger<OrgSettingsStore>()));
 builder.Services.AddSingleton(sp => new OrgEventLog(
     dataDir, sp.GetRequiredService<ILoggerFactory>().CreateLogger<OrgEventLog>(), () => DateTimeOffset.UtcNow));
+// Custody of the developers' login keys. Registered on EVERY deployment, personal ones included, and
+// with whatever KEK the configuration holds — including none: deleting a key is not decryption, so
+// DELETE /api/vault must be able to remove one on a server that can no longer issue any.
+builder.Services.AddSingleton(sp => new LoginKeyStore(
+    dataDir, loginKeyKek, sp.GetRequiredService<ILoggerFactory>().CreateLogger<LoginKeyStore>()));
 
 // Hard request-body ceiling (backstop; endpoints also check Content-Length).
 builder.WebHost.ConfigureKestrel(o => o.Limits.MaxRequestBodySize = maxVaultBytes + 64 * 1024);
@@ -330,6 +341,7 @@ var orgDeps = new OrgEndpointDeps(
     app.Services.GetRequiredService<OrgEventLog>(),
     // The same instance the share endpoints close over: blocking withdraws pending shares from it.
     store,
+    app.Services.GetRequiredService<LoginKeyStore>(),
     allowAnyDomain,
     log,
     ContractVersion.Current);
@@ -419,6 +431,13 @@ else if (orgRecovery.Misconfiguration.Length > 0)
     // At Error, not Warning: unlike the empty default this is a setting somebody wrote and
     // is entitled to believe is working.
     log.LogError("CORPORATE RECOVERY IS OFF: {Reason}", orgRecovery.Misconfiguration);
+}
+// The login-key KEK, same discipline: at Error when something is wrong, silent when a personal server
+// simply never wanted the feature, and never a reason to refuse to start.
+var kekComplaint = LoginKeyKek.Complaint(config["Vault:LoginKey:Kek"], orgRecovery.Enabled);
+if (kekComplaint.Length > 0)
+{
+    log.LogError("LOGIN KEYS ARE OFF: {Reason}", kekComplaint);
 }
 store.SweepStaleTempFiles();
 if ((msAudiences.Count == 0 && !string.IsNullOrWhiteSpace(msTenant))
@@ -784,6 +803,14 @@ app.MapDelete("/api/vault", async (HttpContext ctx, CancellationToken ct) =>
     // behind AND throw out of a handler whose work had already happened — watched, with the lock held
     // by a test. What this makes uncancellable is one per-member lock held for a stat and an unlink.
     await orgMembers.RemoveAsync(caller.Value.Email, CancellationToken.None);
+    // The login key goes LAST, and the order is the whole design here rather than a detail. A crash
+    // between two of these steps leaves something behind either way, and the two leftovers are not
+    // equally bad: a key that outlives its vault is 300 bytes of ciphertext nobody can use, while a
+    // vault that outlives its key is a vault nobody can OPEN. So the key is removed only once there is
+    // no vault left for it to belong to. Not gated on corp mode, for the reason the record above is
+    // not: where no org/ exists this is one stat. RemoveAsync logs at Error and answers false rather
+    // than throwing, so a file the OS will not unlink cannot turn a deletion that happened into a 500.
+    await app.Services.GetRequiredService<LoginKeyStore>().RemoveAsync(caller.Value.Email, CancellationToken.None);
     log.LogInformation("vault + inbox deleted for {Email}", caller.Value.Email);
     ctx.Response.StatusCode = StatusCodes.Status204NoContent;
 });
