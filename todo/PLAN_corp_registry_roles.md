@@ -285,6 +285,10 @@ plan rather than of somebody's memory.
 Two rules about failure, because "append-only" says nothing about what happens when the append
 cannot:
 
+0. **One row per changed PROPERTY, not per request.** A PUT that sets a role and a share default
+   leaves two rows; one that sets a value to what it already was leaves none. Written down because
+   "every change leaves exactly one row" reads as a promise about requests, and the round found the
+   two sentences contradicting each other.
 1. **The row is appended AFTER the mutation has landed, and a failed append never fails the
    mutation.** A role change that happened must not be reported as a `500`; the write is already on
    disk, and a client that retried would be acting on a lie. The failure is logged at `Error` naming
