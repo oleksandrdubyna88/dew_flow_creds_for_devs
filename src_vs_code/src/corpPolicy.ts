@@ -63,6 +63,14 @@ export interface CorpPolicyState {
   readonly isAdmin: boolean;
   readonly active: boolean;
   readonly policy: PolicyDoc;
+  /**
+   * Whether the policy above is the server's own answer or this build's fallback. A flag rather than
+   * comparing the value to {@link MOST_RESTRICTIVE_POLICY} later: identity works today, and it is the
+   * kind of subtlety that breaks the first time somebody copies the object — while the two states it
+   * separates must never blur, because one is a decision a company made about a person and the other
+   * is this build and this server disagreeing about a shape.
+   */
+  readonly policyFromServer: boolean;
   readonly projects: readonly ProjectAssignment[];
   /** Hours; `0` is strictly online. */
   readonly leaseHours: number;
@@ -92,6 +100,7 @@ export function corpPolicy(facts: CorpPolicyFacts): CorpPolicyState {
     isAdmin: isCorpAdmin(facts),
     active: facts.active,
     policy: isPolicyDoc(facts.policy) ? facts.policy : MOST_RESTRICTIVE_POLICY,
+    policyFromServer: isPolicyDoc(facts.policy),
     projects: facts.projects,
     // A negative or non-numeric lease is not a lease; strictly online is the restrictive reading.
     leaseHours: facts.offlineLeaseHours >= 0 ? facts.offlineLeaseHours : 0,

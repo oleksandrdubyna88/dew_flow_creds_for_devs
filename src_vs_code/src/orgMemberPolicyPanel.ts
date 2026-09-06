@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { CorpPolicyState, MOST_RESTRICTIVE_POLICY, PolicyDoc, describeLease, roleLabel } from './corpPolicy';
+import { CorpPolicyState, describeLease, roleLabel } from './corpPolicy';
 import { escapeHtml } from './webviewHtml';
 
 /**
@@ -82,22 +82,23 @@ function yesNo(allowed: boolean): string {
  * no way to tell "the company decided this" from "this build and this server disagree about a
  * shape". So the page says which, and only when it is the second.</p>
  */
-function policyNotice(policy: PolicyDoc): string {
-  return policy === MOST_RESTRICTIVE_POLICY
+function policyNotice(state: CorpPolicyState): string {
+  return !state.policyFromServer
     ? '<p class="warn">This build could not read the policy the server sent, so it is showing the most '
       + 'restrictive one rather than guessing. That is a version mismatch to report, not a decision '
       + 'somebody made about you.</p>'
     : '';
 }
 
-function policyRows(policy: PolicyDoc): string {
+function policyRows(state: CorpPolicyState): string {
+  const policy = state.policy;
   return `<table>
   <tr><th scope="col">Action</th><th scope="col">Policy</th></tr>
   <tr><td>Export, back up to disk, clone into another account</td><td>${yesNo(policy.export)}</td></tr>
   <tr><td>Share an entry</td><td>${shareWords(policy.share)}</td></tr>
   <tr><td>Move an entry out of a project folder</td><td>${yesNo(policy.moveOutOfProject)}</td></tr>
 </table>
-${policyNotice(policy)}
+${policyNotice(state)}
 <p class="quiet">The policy is written by the server and shown here as it arrived.
 This version of the extension displays it; applying it — refusing an export the policy forbids —
 comes in a later version. What you read here is what will be enforced, not yet what is.</p>`;
@@ -119,7 +120,7 @@ function corpBlock(state: CorpPolicyState): string {
   return `${inactive}
 ${roleBlock(state)}
 <h3>What the policy says</h3>
-${policyRows(state.policy)}
+${policyRows(state)}
 <h3>Projects</h3>
 ${projectRows(state)}
 <h3>Offline lease</h3>

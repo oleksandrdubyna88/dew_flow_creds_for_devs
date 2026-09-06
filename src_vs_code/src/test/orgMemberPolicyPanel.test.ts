@@ -59,6 +59,7 @@ function state(overrides: Partial<CorpPolicyState> = {}): CorpPolicyState {
     isAdmin: false,
     active: true,
     policy: { export: true, share: 'any', moveOutOfProject: true },
+    policyFromServer: true,
     projects: [],
     leaseHours: 24,
     fetchedAt: 1_700_000_000_000,
@@ -108,7 +109,9 @@ test('a policy this build could not read says so, instead of reading as a decisi
   // hands a developer an export. But the RESULT is indistinguishable from a legitimately restricted
   // account, and somebody reading "no" beside every row cannot tell a company's decision from a
   // version mismatch. The page says which, and only when it is the second.
-  const html = render({ role: 'member', policy: MOST_RESTRICTIVE_POLICY });
+  // The flag, not the value: a server may legitimately send the same restrictive policy, and the
+  // notice must not fire on it. What it fires on is this build having failed to read what arrived.
+  const html = render({ role: 'member', policy: MOST_RESTRICTIVE_POLICY, policyFromServer: false });
 
   assert.match(html, /could not read the policy the server sent/);
   assert.match(html, /version mismatch to report, not a decision/);

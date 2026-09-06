@@ -53,6 +53,7 @@ function host(fake: Fake | undefined, now = 1_000): OrgPolicyHost & { beats: [st
     clientFor: () => client,
     orgPolicy: new Map<string, CorpPolicyState>(),
     orgRoster: new Map<string, readonly MemberListEntry[]>(),
+    orgPolicyServer: new Map<string, string>(),
     heartbeat: (accountId, at) => {
       beats.push([accountId, at]);
       return Promise.resolve();
@@ -164,4 +165,31 @@ test('a heartbeat store that throws does not take the refresh down with it', asy
   await refreshOrgPolicy(h, account);
 
   assert.equal(h.orgPolicy.get('a1')?.role, 'member', 'the state is still cached');
+});
+
+test('an account repointed at another server loses the previous one’s answer before anything is asked', async () => {
+  // The id survives a change of sync location, so the id alone would let the old server's role
+  // outlive a failed first read against the new one — and the tree would offer management actions
+  // there on an authority nobody granted.
+  const h = host({ me: async () => ({ ...ME, role: 'admin' }), members: async () => [] });
+  await refreshOrgPolicy(h, account);
+  assert.equal(h.orgPolicy.get(account.accountId)?.isAdmin, true, 'precondition: admin on the first server');
+
+  // The same account, a different server, and that server cannot be reached.
+  const moved = host(undefined);
+  moved.orgPolicy.set(account.accountId, h.orgPolicy.get(account.accountId)!);
+  moved.orgPolicyServer.set(account.accountId, 'https://old.example.com');
+  await refreshOrgPolicy(moved, account);
+
+  assert.equal(moved.orgPolicy.has(account.accountId), false, 'the old server’s answer is gone');
+});
+
+test('the refresh reports what it managed, so a caller that just wrote knows the tree may lag', async () => {
+  // It never throws — a throw would break the repaint that draws every other row — so an outcome is
+  // the only way the role command can tell "the write landed and the view is behind" from "all done".
+  const unreachable = host({ me: async () => { throw new Error('no'); }, members: async () => [] });
+
+  const outcome = await refreshOrgPolicy(unreachable, account);
+
+  assert.deepEqual(outcome, { policyRead: false, rosterRead: false });
 });

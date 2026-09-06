@@ -485,7 +485,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // The role-and-policy document, refreshed beside the recovery access in the same loop. Its rules — a
   // failure keeps the previous answer, only a success writes epic 2's heartbeat — are tests in orgPolicyRefresh.ts.
   const orgPolicyHost: OrgPolicyHost = {
-    clientFor: (a) => transports.orgMembersFor(a), orgPolicy: provider.orgPolicy, orgRoster: provider.orgRoster,
+    clientFor: (a) => transports.orgMembersFor(a), orgPolicy: provider.orgPolicy, orgRoster: provider.orgRoster, orgPolicyServer: provider.orgPolicyServer,
     heartbeat: (accountId, at) => context.globalState.update(policyHeartbeatKey(accountId), at), now: Date.now,
   };
 
