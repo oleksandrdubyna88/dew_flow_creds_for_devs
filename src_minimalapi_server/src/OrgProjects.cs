@@ -38,6 +38,10 @@ public sealed record ProjectRecord(
         {
             return "A project name is one line: no tabs and no line breaks. It becomes a folder name on every machine.";
         }
+        if (trimmed.Contains('/') || trimmed.Contains('\\'))
+        {
+            return "A project name has no slashes: it is carried to every assigned machine as a folder name, and an export writes files named after what it exports.";
+        }
         return trimmed.Length > MaxNameLength
             ? $"A project name is at most {MaxNameLength} characters; this one is {trimmed.Length}."
             : string.Empty;

@@ -129,11 +129,23 @@ public sealed record ShareRequest
         && ToEmail.Contains('@')
         && !string.IsNullOrWhiteSpace(EntityName)
         && Kind.Length <= 64
-        && (ProjectId is null || ProjectId.Length <= MaxProjectIdLength)
+        && (ProjectId is null || IsProjectIdShaped(ProjectId))
         && IsBase64(Salt)
         && IsBase64(Iv)
         && IsBase64(Tag)
         && IsBase64(Data);
+
+    /// <summary>
+    /// A project id, or nothing that could be one.
+    ///
+    /// <para>Blank passes: every client released so far sends no project, and one that sends an empty
+    /// string means the same thing — the endpoint normalises it away before anything is stored. What is
+    /// refused is a value that is neither: it would be carried verbatim into a recipient's inbox and
+    /// into the audit log, where an id nobody minted is noise at best.</para>
+    /// </summary>
+    private static bool IsProjectIdShaped(string value) =>
+        value.Trim().Length == 0
+        || (value.Length == MaxProjectIdLength && value.All(Uri.IsHexDigit));
 
     private static bool IsBase64(string value) =>
         !string.IsNullOrWhiteSpace(value) && Convert.TryFromBase64String(value, new byte[value.Length], out _);

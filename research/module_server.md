@@ -514,6 +514,15 @@ projects folder that cannot be ENUMERATED is logged rather than swallowed — it
 server with no projects. And a developer's listing answers `503` when one of their own assigned
 projects cannot be read, instead of quietly returning a shorter list: the missing project reads as
 "you are not on it any more", a policy statement the server never made.
+
+**A project name has no slashes, no tabs and no line breaks**, because it is carried to every
+assigned machine as a folder name and an export writes files named after what it exports. **A null
+project id is absent rather than a crash** — the type says non-nullable and the AOT serializer does
+not enforce it, so a record from a newer server can carry one, and answering with an exception would
+fail the whole /api/org/me document over somebody else's bad record. **A server with no projects yet
+logs nothing**: the directory appears on the first write, so its absence is the ordinary first state
+— while a FILE sitting where the folder belongs is a fault and says so, which Directory.Exists alone
+cannot tell apart.
 **Six kinds reach the event log** at the point of durable write — `project.created`, `project.renamed`,
 `project.archived`, `project.unarchived`, `project.assigned`, `project.unassigned` — each with a test
 that reads the row back OUT of the log rather than asserting a status code. Written in this epic rather
