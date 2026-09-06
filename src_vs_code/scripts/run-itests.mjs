@@ -136,6 +136,21 @@ function runNode(args, label) {
   });
 }
 
+/**
+ * What one run amounts to: the harness said SKIP, or it exited well, or it did not.
+ *
+ * <p>A skip WINS over an exit code, because a harness that says "no WSL here, install it" and then
+ * exits 0 must not be counted as a pass — the whole point of this runner is that nothing is green
+ * for a reason nobody read.</p>
+ */
+function verdictOf(text, failure) {
+  const said = (text.match(/^SKIP — (.*)$/m) ?? [])[1];
+  if (said !== undefined) {
+    return { state: 'skipped', detail: said };
+  }
+  return failure === '' ? { state: 'pass', detail: '' } : { state: 'FAIL', detail: failure };
+}
+
 // Once, not once per harness: every `itest:*` alias begins with `npm run compile`, so nine of them
 // compile the same tree nine times. This calls the compiler itself, then the scripts.
 stdout.write('===== compile =====\n');
@@ -162,12 +177,7 @@ for (const harness of wanted) {
   }
   stdout.write(`\n===== itest:${harness.name} =====\n`);
   const { text, failure } = await runNode([join(HERE, harness.script)], harness.name);
-  const said = (text.match(/^SKIP — (.*)$/m) ?? [])[1];
-  results.push({
-    ...harness,
-    state: said !== undefined ? 'skipped' : failure === '' ? 'pass' : 'FAIL',
-    detail: said ?? failure,
-  });
+  results.push({ ...harness, ...verdictOf(text, failure) });
 }
 
 stdout.write('\n===== summary =====\n');
