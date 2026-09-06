@@ -20,7 +20,7 @@ import {
 } from './treeSearch';
 import { entityKey } from './entityFlags';
 import { describeRemaining } from './entityExpiry';
-import { resolveKind } from './entityKind';
+import { parentFolderOf, refuseMove, refuseProjectFolderChange } from './moveGate';
 import { SyncReadiness } from './syncReadiness';
 import { OrgRecoveryAccess, orgAccessWithRole } from './orgRecoveryAccess';
 import { CorpPolicyState } from './corpPolicy';
@@ -588,9 +588,9 @@ export class CredTreeDataProvider
       // A folder INSIDE the trash says so, and by that loses the exact-match items (new entity,
       // reorder, change type) while keeping the prefix-matched ones (delete, move, export) —
       // and gains Restore, first (the owner, 2026-08-28).
-      item.contextValue = trash
-        ? 'trashFolder'
-        : folderContextValue(isInTrash(node, (id) => this.storage.getNode(accountId, id)), node.folderAsksForPin === true);
+      const inTrash = isInTrash(node, (id) => this.storage.getNode(accountId, id));
+      const managed = refuseProjectFolderChange(node, this.orgPolicy.get(accountId)) !== '';
+      item.contextValue = trash ? 'trashFolder' : folderContextValue(inTrash, node.folderAsksForPin === true, managed);
       item.iconPath = trash
         ? new vscode.ThemeIcon('trash', FOLDER_COLOR)
         : folderIcon(node.folderType);
@@ -777,17 +777,18 @@ export class CredTreeDataProvider
         continue;
       }
       const moving = this.storage.getNode(payload.accountId, id);
-      // A typed folder only accepts entities of its own kind.
-      if (
-        moving?.type === 'entity' &&
-        targetFolder?.folderType !== undefined &&
-        targetFolder.folderType !== 'any' &&
-        targetFolder.folderType !== 'project' &&
-        resolveKind(moving.details) !== targetFolder.folderType
-      ) {
-        void vscode.window.showWarningMessage(
-          `Folder "${targetFolder.name}" holds only ${targetFolder.folderType} entities — "${moving.name}" is ${resolveKind(moving.details)}.`,
-        );
+      // One gate for the drop and the command — see moveGate.ts.
+      const refusal =
+        moving === undefined
+          ? ''
+          : refuseMove({
+              moving,
+              from: parentFolderOf(this.storage, payload.accountId, moving),
+              to: targetFolder,
+              policy: this.orgPolicy.get(payload.accountId),
+            });
+      if (refusal !== '') {
+        void vscode.window.showWarningMessage(refusal);
         continue;
       }
       await this.storage.moveNode(payload.accountId, id, newParentId);

@@ -12,7 +12,9 @@ import * as vscode from 'vscode';
 import { nodeAt } from '../entityViewerCommands';
 import { resolveLocation } from '../importCommands';
 import { promptFolderName } from '../dialogs';
+import { CorpPolicyState } from '../corpPolicy';
 import { folderKindOf } from '../commandTargets';
+import { parentFolderOf, refuseMove, refuseProjectFolderChange } from '../moveGate';
 import { pickFolderType } from '../dialogs';
 import { buildDefaultFolders } from '../defaultFolders';
 import { showEntityForm } from '../entityFormPanel';
@@ -31,7 +33,6 @@ import { envCollection } from '../envCollectionRef';
 import { editNode } from '../entityEditCommands';
 import { resolveBulkTargets } from '../commandTargets';
 import { pickTargetFolder } from '../dialogs';
-import { resolveKind } from '../entityKind';
 import { runBurnNow } from '../burnNowCommand';
 import { accountFromTargetOrPick } from '../accountPick';
 import { runServerMetrics } from '../serverMetricsCommand';
@@ -60,6 +61,13 @@ export interface TreeMutationCommandsHost {
   readonly announceArrival: (accountId: string, entityId: string) => Promise<void>;
   readonly doorsFor: DoorsFor;
   readonly mutated: () => void;
+  /**
+   * This account's corporate policy, or nothing for a personal one.
+   *
+   * <p>The same accessor `corpBindingWiring` and `backupScheduler` take, reading the map the tree
+   * provider already keeps — rather than a second reading of the role, which would drift.</p>
+   */
+  readonly policyOf: (accountId: string) => CorpPolicyState | undefined;
   readonly register: (command: string, handler: (...args: unknown[]) => unknown) => void;
   readonly storage: StorageManager;
   readonly transports: TransportFactory;
@@ -67,7 +75,7 @@ export interface TreeMutationCommandsHost {
 }
 
 export function registerTreeMutationCommands(host: TreeMutationCommandsHost): void {
-  const { announceArrival, doorsFor, mutated, register, storage, transports, vaultKeys } = host;
+  const { announceArrival, doorsFor, mutated, policyOf, register, storage, transports, vaultKeys } = host;
 
   /**
    * How long the trash keeps what is in it.
@@ -307,12 +315,33 @@ export function registerTreeMutationCommands(host: TreeMutationCommandsHost): vo
     if (element?.kind !== 'node') {
       return;
     }
+    // In the HANDLER, not only in the menu: F2 and the command palette reach here without one.
+    const locked = refuseProjectFolderChange(element.node, policyOf(element.accountId));
+    if (locked !== '') {
+      void vscode.window.showWarningMessage(locked);
+      return;
+    }
     await editNode(element.accountId, element.node, storage, mutated, doorsFor);
   });
 
   register('credSshManager.deleteNode', async (target, selected) => {
-    const { targets, skippedNote } = resolveBulkTargets(storage, target, selected);
+    const bulk = resolveBulkTargets(storage, target, selected);
+    // A project folder is dropped from the selection rather than failing the whole delete: somebody
+    // sweeping ten rows should not have to find which one their organisation manages.
+    const targets = bulk.targets.filter(
+      (t) => refuseProjectFolderChange(t.node, policyOf(t.accountId)) === '',
+    );
+    const lockedOut = bulk.targets.length - targets.length;
+    const skippedNote =
+      lockedOut === 0
+        ? bulk.skippedNote
+        : `${bulk.skippedNote} ${lockedOut} project folder(s) your organisation manages were left alone.`.trim();
     if (targets.length === 0) {
+      if (lockedOut > 0) {
+        void vscode.window.showWarningMessage(
+          refuseProjectFolderChange(bulk.targets[0].node, policyOf(bulk.targets[0].accountId)),
+        );
+      }
       return;
     }
     const what =
@@ -364,20 +393,15 @@ export function registerTreeMutationCommands(host: TreeMutationCommandsHost): vo
     if (picked === undefined) {
       return;
     }
-    if (element.node.type === 'entity' && picked.parentId !== null) {
-      const targetFolder = storage.getNode(element.accountId, picked.parentId);
-      const required = targetFolder?.folderType;
-      if (
-        required !== undefined &&
-        required !== 'any' &&
-        required !== 'project' &&
-        resolveKind(element.node.details) !== required
-      ) {
-        void vscode.window.showWarningMessage(
-          `Folder "${targetFolder?.name}" holds only ${required} entities — "${element.node.name}" is ${resolveKind(element.node.details)}.`,
-        );
-        return;
-      }
+    const refusal = refuseMove({
+      moving: element.node,
+      from: parentFolderOf(storage, element.accountId, element.node),
+      to: picked.parentId === null ? undefined : storage.getNode(element.accountId, picked.parentId),
+      policy: policyOf(element.accountId),
+    });
+    if (refusal !== '') {
+      void vscode.window.showWarningMessage(refusal);
+      return;
     }
     await storage.moveNode(element.accountId, element.node.id, picked.parentId);
     mutated();

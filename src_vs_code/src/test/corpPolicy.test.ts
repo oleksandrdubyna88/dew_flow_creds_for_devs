@@ -13,7 +13,7 @@ import {
   teamMemberDescription,
   teamRowRole,
 } from '../corpPolicy';
-import { MemberListEntry, MemberSelf } from '../orgMembersClient';
+import { MemberListEntry, MemberSelf, NO_ORG_POLICY } from '../orgMembersClient';
 
 /**
  * What the extension makes of the role-and-policy document — the decision layer between
@@ -31,6 +31,7 @@ function facts(overrides: Partial<CorpPolicyFacts> = {}): CorpPolicyFacts {
     active: true,
     policy: PERMISSIVE,
     projects: [],
+    pendingFolderRemovals: [],
     offlineLeaseHours: 24,
     fetchedAt: 1_700_000_000_000,
     ...overrides,
@@ -176,4 +177,21 @@ test('the description keeps the provider and adds the role only when there is on
   // Ordinary accounts must read exactly as they did: `microsoft`, nothing more.
   assert.equal(teamMemberDescription('microsoft', undefined), 'microsoft');
   assert.equal(teamMemberDescription('microsoft', 'dev'), 'microsoft · dev');
+});
+
+test('a folder-removal row this build cannot read is dropped, never guessed at', () => {
+  // The reconcile derives a NODE ID from a project id and deletes what that names, so a row from a
+  // newer server or a foreign build must not reach it half-read.
+  const rows = [
+    { projectId: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', deleteFolder: true },
+    { projectId: '', deleteFolder: true },
+    { projectId: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', deleteFolder: 'yes' },
+    { deleteFolder: true },
+  ] as unknown as MemberSelf['pendingFolderRemovals'];
+
+  const facts = factsOf({ ...NO_ORG_POLICY, corpMode: true, pendingFolderRemovals: rows }, 1);
+
+  assert.deepEqual(facts.pendingFolderRemovals, [
+    { projectId: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', deleteFolder: true },
+  ]);
 });

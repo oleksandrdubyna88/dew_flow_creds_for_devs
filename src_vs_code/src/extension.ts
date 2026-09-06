@@ -36,9 +36,10 @@ import { VaultKeys } from './vaultKeys';
 import { KeyAddHost, offerKeyMigration } from './securityKeyAdd';
 import { snapshotForRevision } from './revisionSnapshot';
 import { judgeOrgRecovery } from './orgRecoveryPinning';
-import { orgRecoveryAccess } from './orgRecoveryAccess';
+import { readOrgAccessInto } from './orgRecoveryAccess';
 import { policyHeartbeatKey } from './corpPolicy';
 import { policyHost, refreshOrgPolicy } from './orgPolicyRefresh';
+import { projectFolderReconciler, vscodeProjectFolderDeps } from './projectFolderWiring';
 import { CorpPolicyState } from './corpPolicy';
 import { LoginKeySession } from './devLoginKeySession';
 import { evictAndLock, wireCorpEscrow, wireDevBinding } from './corpBindingWiring';
@@ -440,32 +441,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
    * <p>A failure answers `none` rather than throwing: an unreachable server must hide four
    * commands for a cycle, never break the repaint that draws every other row.</p>
    */
-  const refreshOrgAccess = async (account: StoredAccount): Promise<void> => {
-    const client = transports.orgRecoveryFor(account);
-    if (client === undefined) {
-      provider.orgAccess.set(account.accountId, 'none');
-      return;
-    }
-    try {
-      const config = await client.readConfig(account);
-      provider.orgAccess.set(
-        account.accountId,
-        orgRecoveryAccess({
-          onServer: true,
-          enabled: config.enabled,
-          officerEmails: config.officerEmails,
-          accountEmail: account.email,
-        }),
-      );
-    } catch {
-      provider.orgAccess.set(account.accountId, 'none');
-    }
-  };
+  const refreshOrgAccess = (account: StoredAccount): Promise<void> =>
+    readOrgAccessInto(provider.orgAccess, transports.orgRecoveryFor(account), account);
 
   // The role-and-policy document, refreshed beside the recovery access in the same loop. Its rules — a
-  // failure keeps the previous answer, only a success writes epic 2's heartbeat — are tests in orgPolicyRefresh.ts.
-  const orgPolicyHost = policyHost(provider, (a) => transports.orgMembersFor(a), (id, at) =>
-    context.globalState.update(policyHeartbeatKey(id), at));
+  // failure keeps the previous answer, only a success writes the heartbeat and reconciles epic 3's
+  // project folders — are tests in orgPolicyRefresh.ts and projectFolderWiring.ts.
+  const orgPolicyHost = policyHost(provider, (a) => transports.orgMembersFor(a),
+    (id, at) => context.globalState.update(policyHeartbeatKey(id), at), Date.now,
+    projectFolderReconciler(vscodeProjectFolderDeps(storage, sync, transports,
+      (m) => void vscode.window.showInformationMessage(m))));
 
   const refreshReadiness = async (): Promise<Map<string, SyncReadiness>> => {
     const locked = vaultKeys.isLocked();
@@ -1006,7 +991,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   });
 
   registerEntityCommands({ doorsAt, mutated, register, storage, storageDir, vaultKeys });
-  registerTreeMutationCommands({ announceArrival, doorsFor, mutated, register, storage, transports, vaultKeys });
+  registerTreeMutationCommands({ announceArrival, doorsFor, mutated, policyOf: corpPolicyOf, register, storage, transports, vaultKeys });
   registerExportCommand({ corpPolicyOf, register, storage, vaultKeys });
 
   registerShareCommands({ register, shareInbox, sharing, storage });

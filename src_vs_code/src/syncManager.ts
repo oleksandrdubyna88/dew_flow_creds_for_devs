@@ -185,6 +185,20 @@ export class SyncManager implements vscode.Disposable {
   }
 
   /**
+   * One account's cycle with its failure REPORTED rather than warned about — `syncNow` swallows one
+   * into a toast, right for a background cycle and wrong for a caller that has to know. Epic 3 acks a
+   * folder removal only once the tombstone has reached the server: an ack after a silently failed
+   * push loses that deletion on every other machine of that person, permanently.
+   */
+  async pushAccount(account: StoredAccount): Promise<void> {
+    const transport = this.transports.forAccount(account);
+    if (transport === undefined) {
+      throw new Error(`No sync location is configured for ${account.email}.`);
+    }
+    await this.syncProfile(account, transport, false);
+  }
+
+  /**
    * Quiet, awaitable pull+merge for one account (no toasts). Used right after a
    * new account is added, so a returning user's remote data lands before we
    * decide whether to seed default folders.

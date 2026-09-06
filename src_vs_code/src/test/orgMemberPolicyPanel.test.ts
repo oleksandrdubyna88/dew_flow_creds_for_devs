@@ -61,6 +61,7 @@ function state(overrides: Partial<CorpPolicyState> = {}): CorpPolicyState {
     policy: { export: true, share: 'any', moveOutOfProject: true },
     policyFromServer: true,
     projects: [],
+    pendingFolderRemovals: [],
     leaseHours: 24,
     fetchedAt: 1_700_000_000_000,
     ...overrides,
