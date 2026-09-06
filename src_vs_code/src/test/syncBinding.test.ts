@@ -39,7 +39,7 @@ test('a developer with a key and a PIN gets a bound PIN wrap', async () => {
 
   assert.ok(wraps !== undefined);
   assert.equal(wraps[0].serverBound, true);
-  assert.deepEqual(unwrapWithPin(wraps[0], account.accountId, '1234', S.key), master);
+  assert.deepEqual(unwrapWithPin(wraps[0], account.accountId, '1234', S), master);
 });
 
 test('the same developer WITHOUT a stored PIN writes nothing', async () => {

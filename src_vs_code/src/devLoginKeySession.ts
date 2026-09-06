@@ -23,19 +23,36 @@ export interface HeldLoginKey {
   readonly fingerprint: string;
 }
 
+/**
+ * How long a held key is trusted before the server is asked again.
+ *
+ * <p>The number that decides how long a deactivated developer keeps working in a window they had
+ * already opened. Without a bound like this the answer is "until they close it": the key is cached,
+ * every later call is served from memory, and the blocked answer that evicts and locks is never
+ * fetched at all. Five minutes is short enough that an administrator blocking somebody sees it take
+ * effect while they are still watching, and long enough that an ordinary sync cycle — which runs far
+ * more often than that — does not turn into one request per write.</p>
+ *
+ * <p>Story 4's offline lease is the same question over a longer horizon and for the whole account;
+ * this is the horizon for the KEY, and the two are deliberately independent.</p>
+ */
+export const LOGIN_KEY_REVALIDATE_MS = 5 * 60 * 1000;
+
 export class LoginKeySession {
-  private readonly held = new Map<string, HeldLoginKey>();
+  private readonly held = new Map<string, { key: HeldLoginKey; at: number }>();
 
   constructor(
     private readonly clientFor: (account: StoredAccount) => OrgLoginKeyClient | undefined,
     /** Evict this account's cached master key and lock it — a blocked person keeps nothing open. */
     private readonly onBlocked: (account: StoredAccount) => void,
     private readonly log?: (message: string) => void,
+    private readonly now: () => number = Date.now,
+    private readonly revalidateAfterMs: number = LOGIN_KEY_REVALIDATE_MS,
   ) {}
 
-  /** What this window already holds, without asking anybody. */
+  /** What this window already holds, without asking anybody and without judging its age. */
   current(accountId: string): HeldLoginKey | undefined {
-    return this.held.get(accountId);
+    return this.held.get(accountId)?.key;
   }
 
   /**
@@ -45,36 +62,48 @@ export class LoginKeySession {
    * honest answer when the server cannot be reached is "nothing changed".</p>
    */
   async resolve(account: StoredAccount): Promise<HeldLoginKey | undefined> {
-    const already = this.held.get(account.accountId);
-    if (already !== undefined) {
-      return already;
+    const entry = this.held.get(account.accountId);
+    const stale = entry === undefined ? undefined : entry.key;
+    if (this.stillFresh(entry)) {
+      return stale;
     }
     const client = this.clientFor(account);
     if (client === undefined) {
-      return undefined;
+      return stale;
     }
-    return this.take(account, await client.fetchLoginKey(account));
+    return this.take(account, await client.fetchLoginKey(account), stale);
+  }
+
+  /** A key young enough to be trusted without asking again. Nothing held is never fresh. */
+  private stillFresh(entry: { at: number } | undefined): boolean {
+    return entry !== undefined && this.now() - entry.at < this.revalidateAfterMs;
   }
 
   /** Drop what is held for one account — on sign-out, or when the vault it belongs to is deleted. */
   forget(accountId: string): void {
-    const key = this.held.get(accountId);
-    key?.key.fill(0);
+    this.held.get(accountId)?.key.key.fill(0);
     this.held.delete(accountId);
   }
 
-  private take(account: StoredAccount, outcome: LoginKeyOutcome): HeldLoginKey | undefined {
+  private take(
+    account: StoredAccount,
+    outcome: LoginKeyOutcome,
+    stale: HeldLoginKey | undefined,
+  ): HeldLoginKey | undefined {
     if (outcome.kind === 'issued') {
       const held = { key: outcome.key, fingerprint: outcome.fingerprint };
-      this.held.set(account.accountId, held);
+      this.held.set(account.accountId, { key: held, at: this.now() });
       return held;
     }
     if (outcome.kind === 'blocked') {
       this.blocked(account);
+      return undefined;
     }
-    // 'none' and 'unavailable' both mean: change nothing, keep nothing new. A member has no key,
-    // and a server that could not answer has told us nothing about whether one exists.
-    return undefined;
+    // 'unavailable' keeps what we had: a server that could not answer has told us nothing, and
+    // dropping the key over one flaky request would lock somebody out of their own vault on a train.
+    // 'none' is an answer — this server has no key for this account — but it is not a reason to throw
+    // away one it issued earlier, because only 'blocked' means they may no longer have it.
+    return stale;
   }
 
   /** The moment the epic exists for. Nothing this window holds for them survives it. */

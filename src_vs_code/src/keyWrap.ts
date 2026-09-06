@@ -190,12 +190,26 @@ function boundPrfKey(prfSecret: Buffer, salt: Buffer, binding: LoginKeyBinding |
  * company restored an older backup would be told, over and over, that their own PIN is wrong. After
  * this guard passes, a tag failure means what it has always meant.</p>
  */
-function requireBinding(wrap: KeyWrap, loginKey: Buffer | undefined): void {
-  if (wrap.serverBound === true && loginKey === undefined) {
+function requireBinding(wrap: KeyWrap, binding: LoginKeyBinding | undefined): void {
+  if (wrap.serverBound !== true) {
+    return;
+  }
+  if (binding === undefined) {
     throw new BackupError(
       'server-key-required',
       'This vault is bound to your organisation server: it opens only while you are signed in and '
         + 'your account is active. Sign in and sync, then try again.',
+    );
+  }
+  if (!bindingMatches(wrap, binding.fingerprint)) {
+    // The half that had no caller until the code round found it. Without this comparison a vault
+    // sealed to key A, met by a server now issuing key B — an older backup restored on the server —
+    // fails its AES-GCM tag and reaches the person as `wrong-password`: they retype a correct PIN.
+    throw new BackupError(
+      'server-key-required',
+      "Your organisation server's login key has CHANGED since this vault was sealed, so this copy "
+        + 'cannot be opened with it. Your PIN is not the problem. An administrator may have restored '
+        + 'the server from an older backup; ask them before changing anything here.',
     );
   }
 }
@@ -345,10 +359,10 @@ export function unwrapWithPin(
   wrap: KeyWrap,
   accountId: string,
   pin: string,
-  loginKey?: Buffer,
+  binding?: LoginKeyBinding,
 ): Buffer {
-  requireBinding(wrap, loginKey);
-  return masterFromPinPayload(openBlob(wrap, accountId + pin, undefined, loginKey));
+  requireBinding(wrap, binding);
+  return masterFromPinPayload(openBlob(wrap, accountId + pin, undefined, binding?.key));
 }
 
 /**
@@ -363,10 +377,10 @@ export async function unwrapWithPinAsync(
   wrap: KeyWrap,
   accountId: string,
   pin: string,
-  loginKey?: Buffer,
+  binding?: LoginKeyBinding,
 ): Promise<Buffer> {
-  requireBinding(wrap, loginKey);
-  return masterFromPinPayload(await openBlobAsync(wrap, accountId + pin, loginKey));
+  requireBinding(wrap, binding);
+  return masterFromPinPayload(await openBlobAsync(wrap, accountId + pin, binding?.key));
 }
 
 export async function wrapWithPinAsync(
@@ -434,11 +448,11 @@ function unwrapMasterKey(
 }
 
 /** Recover the master key from a security-key wrap. */
-export function unwrapWithPrf(wrap: KeyWrap, prfSecret: Buffer, loginKey?: Buffer): Buffer {
-  requireBinding(wrap, loginKey);
+export function unwrapWithPrf(wrap: KeyWrap, prfSecret: Buffer, binding?: LoginKeyBinding): Buffer {
+  requireBinding(wrap, binding);
   return unwrapMasterKey(
     wrap,
-    (salt) => boundPrfKey(prfSecret, salt, loginKey === undefined ? undefined : { key: loginKey, fingerprint: '' }),
+    (salt) => boundPrfKey(prfSecret, salt, binding),
     'Security-key wrap',
     'This security key does not open the vault (wrong key, or the wrap was replaced).',
   );
