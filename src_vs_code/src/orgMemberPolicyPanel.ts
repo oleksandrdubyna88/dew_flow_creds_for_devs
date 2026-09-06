@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { CorpPolicyState, PolicyDoc, describeLease, roleLabel } from './corpPolicy';
+import { CorpPolicyState, MOST_RESTRICTIVE_POLICY, PolicyDoc, describeLease, roleLabel } from './corpPolicy';
 import { escapeHtml } from './webviewHtml';
 
 /**
@@ -73,6 +73,23 @@ function yesNo(allowed: boolean): string {
   return allowed ? 'allowed' : '<strong>not allowed</strong>';
 }
 
+/**
+ * The one line that separates two states a person would otherwise read as the same thing.
+ *
+ * <p>A policy this build could not read falls back to the most restrictive one — that is deliberate,
+ * because guessing "everything" on a parse error hands a developer an export. But the RESULT looks
+ * exactly like a legitimately restricted account, and somebody staring at "no" beside every row has
+ * no way to tell "the company decided this" from "this build and this server disagree about a
+ * shape". So the page says which, and only when it is the second.</p>
+ */
+function policyNotice(policy: PolicyDoc): string {
+  return policy === MOST_RESTRICTIVE_POLICY
+    ? '<p class="warn">This build could not read the policy the server sent, so it is showing the most '
+      + 'restrictive one rather than guessing. That is a version mismatch to report, not a decision '
+      + 'somebody made about you.</p>'
+    : '';
+}
+
 function policyRows(policy: PolicyDoc): string {
   return `<table>
   <tr><th scope="col">Action</th><th scope="col">Policy</th></tr>
@@ -80,6 +97,7 @@ function policyRows(policy: PolicyDoc): string {
   <tr><td>Share an entry</td><td>${shareWords(policy.share)}</td></tr>
   <tr><td>Move an entry out of a project folder</td><td>${yesNo(policy.moveOutOfProject)}</td></tr>
 </table>
+${policyNotice(policy)}
 <p class="quiet">The policy is written by the server and shown here as it arrived.
 This version of the extension displays it; applying it — refusing an export the policy forbids —
 comes in a later version. What you read here is what will be enforced, not yet what is.</p>`;

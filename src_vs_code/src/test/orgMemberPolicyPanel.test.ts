@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import Module from 'node:module';
 import { test } from 'node:test';
-import { CorpPolicyState } from '../corpPolicy';
+import { CorpPolicyState, MOST_RESTRICTIVE_POLICY } from '../corpPolicy';
 
 /**
  * The "My role and policy" page.
@@ -101,6 +101,23 @@ test('a dev sees the restrictions the policy names — and that this version onl
   assert.match(html, /not allowed/);
   assert.match(html, /inside your projects/);
   assert.match(html, /later version/);
+});
+
+test('a policy this build could not read says so, instead of reading as a decision about the person', () => {
+  // The fallback is the most restrictive one, deliberately — guessing "everything" on a parse error
+  // hands a developer an export. But the RESULT is indistinguishable from a legitimately restricted
+  // account, and somebody reading "no" beside every row cannot tell a company's decision from a
+  // version mismatch. The page says which, and only when it is the second.
+  const html = render({ role: 'member', policy: MOST_RESTRICTIVE_POLICY });
+
+  assert.match(html, /could not read the policy the server sent/);
+  assert.match(html, /version mismatch to report, not a decision/);
+});
+
+test('an ordinary restricted policy carries no such notice — it IS a decision about the person', () => {
+  const html = render({ role: 'dev', policy: { export: false, share: 'none', moveOutOfProject: false } });
+
+  assert.equal(/could not read the policy/.test(html), false);
 });
 
 test('an officer with a member record is called an officer and told they administer', () => {
