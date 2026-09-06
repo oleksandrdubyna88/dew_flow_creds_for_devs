@@ -46,6 +46,7 @@ export function registerPinCommands(deps: {
   deps.register('credSshManager.protectEntry', onNode(protectEntry));
   deps.register('credSshManager.unprotectEntry', onNode(unprotectEntry));
   deps.register('credSshManager.protectFolder', onNode(protectFolder));
+  deps.register('credSshManager.stopAskingForPin', onNode(stopAskingForPin));
 }
 
 export interface PinCommandDeps {
@@ -108,7 +109,13 @@ async function removeOne(node: TreeNode, pin: string, deps: PinCommandDeps): Pro
 export async function protectFolder(folder: TreeNode, deps: PinCommandDeps): Promise<void> {
   const plan = await folderPinPlan(deps.storage, deps.accountId, folder.id);
   if (plan.toProtect.length === 0) {
-    void vscode.window.showInformationMessage(protectionSummary(folder.name, plan));
+    // An EMPTY folder — or one where everything is already done — is the case the derived signal
+    // cannot answer: there is no sibling to derive from, so without a mark the next entry created
+    // here would not be asked. The mark says only that, and the message says what it did.
+    await setAsksForPin(folder, true, deps);
+    void vscode.window.showInformationMessage(
+      `${protectionSummary(folder.name, plan)} Entries created here will be asked for a PIN.`,
+    );
     return;
   }
   if (!(await agreedToRun(folder.name, plan))) {
@@ -119,6 +126,36 @@ export async function protectFolder(folder: TreeNode, deps: PinCommandDeps): Pro
     return;
   }
   await runProtect(plan.toProtect, pin, deps);
+  // Set AFTER the run, like every other mark here: a preference recorded before the work would
+  // outlive a run that never finished, and start asking about a folder nobody protected.
+  await setAsksForPin(folder, true, deps);
+}
+
+/**
+ * Stop asking for a PIN on entries created in this folder.
+ *
+ * <p>The counterpart a reviewer was right to insist on: a preference with no way off is a trap, and
+ * this one can be set by a single click on a folder somebody opened by accident. It changes NOTHING
+ * about the entries — those keep their own PINs, and removing one is still a per-entry act.</p>
+ */
+export async function stopAskingForPin(folder: TreeNode, deps: PinCommandDeps): Promise<void> {
+  if (folder.folderAsksForPin !== true) {
+    void vscode.window.showInformationMessage(`"${folder.name}" does not ask for a PIN on new entries.`);
+    return;
+  }
+  await setAsksForPin(folder, false, deps);
+  deps.refresh();
+  void vscode.window.showInformationMessage(
+    `"${folder.name}" will not ask for a PIN on new entries. The entries already protected keep their own.`,
+  );
+}
+
+/** The preference, on the node — a folder has no metadata record to carry it. */
+async function setAsksForPin(folder: TreeNode, on: boolean, deps: PinCommandDeps): Promise<void> {
+  if ((folder.folderAsksForPin === true) === on) {
+    return;
+  }
+  await deps.storage.updateNode(deps.accountId, { ...folder, folderAsksForPin: on ? true : undefined });
 }
 
 /** The confirmation, which says what will be SKIPPED before it says what will be done. */

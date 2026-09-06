@@ -377,6 +377,16 @@ skipped**: a folder may legitimately hold entries under two PINs, and when it al
 protected ones the PIN you type is checked against them and you are told how many it opens before
 anything is written.
 
+**Sharing one** asks you for its PIN: the values have to be unwrapped before they can travel,
+because the person receiving them does not have your PIN and never will. Their copy is therefore not
+protected by yours — they are asked to choose one of their own when they accept it, and declining
+imports nothing. Your PIN never leaves this machine.
+
+Running the folder command also sets that folder to **ask for a PIN on every entry created in it**
+afterwards, including when the folder was empty at the time — the one case nothing else could tell.
+**Stop Asking for a PIN Here** turns that back off; it changes nothing about the entries, which keep
+their own PINs.
+
 **Remove PIN Protection** takes it back off, given the PIN. And the one thing to read twice: a
 forgotten PIN is gone data. There is no recovery — the vault recovery code opens the VAULT, not an
 entry.

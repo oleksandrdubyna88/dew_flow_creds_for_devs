@@ -328,7 +328,21 @@ asking, and the next entry created in it would be stored in the clear inside a f
 point is that nothing is. That check runs once, when a person clicks Add, so it can afford the real
 answer.
 
-**DEVIATION, 2026-09-04: there is no persisted flag, and the signal is DERIVED.** A folder counts
+**CLOSED 2026-09-05.** The derived signal stays and is still what normally answers; `folderAsksForPin`
+on the folder NODE closes the one case it cannot. A PREFERENCE, and the wording is load-bearing:
+"entries created here are asked for a PIN" describes no value, so it cannot drift out of step with
+one. The folder run sets it — including on a folder that held nothing to protect, which is the whole
+case — and *Stop Asking for a PIN Here* turns it off, because a preference with no way off is a trap
+and this one can be set by a single click. Turning it off changes nothing about the entries; they
+keep their own PINs.
+
+**A MOVE is not a create.** Dragging an existing entry into such a folder does not ask, and that is
+deliberate: the preference is about creation, moving an entry is not creating one, and prompting on
+a drag would make an ordinary reorganisation a security conversation. Named here because a reviewer
+asked and the answer is a decision rather than an oversight.
+
+**The original deviation, kept for the record — 2026-09-04: there is no persisted flag, and the
+signal is DERIVED.** A folder counts
 as protected exactly when at least one entry inside it is — which is the question that actually
 matters, cannot drift out of step with the entries the way a stored boolean can, and is
 self-repairing (unprotect the last one and the folder stops asking, which is what somebody who just
@@ -379,12 +393,25 @@ one-time transfer secret rather than somebody's protection. Declining aborts the
 than quietly sending the rest of a selection, because a selection is one act to the person who made
 it.
 
-**Still open: the RECIPIENT half.** The copy that arrives is not protected, and nothing yet tells
-the recipient that the sender had it protected or offers them their own PIN on first open. The mark
-is deliberately NOT carried in the meantime: a copy claiming `pinProtected` under a PIN nobody has
-would hide from the recipient's agents and show them a "PIN — on" note for a lock that opens
-nothing — worse than an honest unprotected copy. The headless-import fast failure belongs to that
-same unbuilt half.
+**BUILT 2026-09-05, and it found a defect on the way.** `shareableDetails` was NOT stripping
+`pinProtected`, so every share since 0.99.0 arrived claiming a wrap it did not have — hidden from the
+recipient's agent surfaces, its form saying *PIN — on*, and the command that form points at reading
+the values, finding nothing locked, and contradicting it. The mark now sits in `SECRET_CLAIM_FIELDS`,
+which also fixes the clone path, and the door repairs copies that already arrived: a mark with
+nothing locked under it is self-diagnosing, so `admit` clears it on the first open.
+
+What travels instead is `pinAskOnImport` — an instruction to ask, never a claim about a value —
+inside the sealed payload. On accept the recipient chooses a PIN of their OWN, typed twice; declining
+imports nothing and says why.
+
+**The wrap happens in memory, before a single write.** Three reviewers made the same point about the
+obvious order: import then protect leaves an unprotected copy on disk if anything fails between the
+two steps, which is exactly what "declining imports nothing" promises against.
+
+**The headless-import fast failure is NOT built, and does not apply.** `openShare` exists only inside
+the extension — there is no CLI or MCP path that imports a share — so there is nothing to fail fast.
+The line was inherited from this plan's first draft and describes a surface the product does not
+have.
 
 **Not negotiable:** the flag is a payload field, sealed with the rest. The server must not learn
 which entries are PIN-protected — repository rule 1.
