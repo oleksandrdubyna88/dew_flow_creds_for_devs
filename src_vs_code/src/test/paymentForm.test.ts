@@ -10,6 +10,8 @@ import { SHUFFLE_CODES } from '../shuffle';
 import { CARD_BRANDS } from '../cardBrand';
 import { brandFor } from '../cardFormFields';
 import { cardFormScript } from '../cardFormScript';
+import { BRAND_MARK_STYLES, brandMarkSvg } from '../cardBrandIcons';
+import { formStyleSheet } from '../entityFormStyles';
 
 /**
  * The card form: a section that appears for `payment`, and a card fieldset inside it that appears
@@ -211,4 +213,44 @@ test('an example is asked for per FIELD, so a CVV and a card number are not show
 
   assert.match(script, /field: picked\[j\]/, 'one request per marked field');
   assert.match(script, /\.weaveEx\[data-field="/, 'and each answer lands in its own block');
+});
+
+/**
+ * The nine marks were all on screen at once, and the one that was not was under its field.
+ *
+ * <p>Two separate causes for what looked like one bug. On the read-only card `BRAND_MARK_STYLES`
+ * sets `display: inline-flex` on `.brandMark`, and an AUTHOR rule with `display` beats the
+ * browser's own `[hidden] { display: none }` — so every mark rendered however carefully the page
+ * script set `.hidden`. On the form the styles were absent, so hiding worked and layout did not:
+ * the select is `width: 100%`, nothing made the row a flex line, and the surviving mark wrapped
+ * onto the line below.</p>
+ *
+ * <p>Both surfaces read the same constant, which is the point of it — the fix belongs there and
+ * not in two stylesheets that would drift.</p>
+ */
+test('a hidden mark stays hidden, whatever display the class asks for', () => {
+  assert.match(
+    BRAND_MARK_STYLES,
+    /\.brandMark\[hidden\]\s*\{[^}]*display:\s*none/,
+    'the attribute needs an author rule of its own to beat an author rule',
+  );
+});
+
+test('the mark is drawn four times the size the tree glyph is', () => {
+  assert.match(BRAND_MARK_STYLES, /\.brandMark svg\s*\{[^}]*width:\s*64px/, 'four times 16');
+  assert.match(BRAND_MARK_STYLES, /\.brandMark svg\s*\{[^}]*height:\s*64px/, 'square, as the viewBox is');
+  assert.match(
+    brandMarkSvg('visa'),
+    /viewBox="0 0 16 16"/,
+    'and scaled by CSS over the viewBox, so the generated 16px files are untouched',
+  );
+});
+
+test('the form puts the mark beside the payment system, not under it', () => {
+  const markup = paymentMarkup((id) => `<fieldset id="${id}">`, 'card');
+  const styles = formStyleSheet(0);
+
+  assert.match(markup, /class="line brandLine"/, 'the row says it is the brand row');
+  assert.match(styles, /\.brandLine\s*\{[^}]*display:\s*flex/, 'and the form lays that row out as a line');
+  assert.ok(styles.includes(BRAND_MARK_STYLES), 'the form draws the marks the same way the card does');
 });

@@ -53,7 +53,7 @@ function cardMarkup(openSection: (id: string) => string, random: Random): string
     <p class="hint" id="cardBrandHint"></p>
 
     <label for="cardBrand">Payment system</label>
-    <div class="line"><select id="cardBrand">${brandOptions()}</select>${brandMarksMarkup()}</div>
+    <div class="line brandLine"><select id="cardBrand">${brandOptions()}</select>${brandMarksMarkup()}</div>
     <p class="hint">Read from the number, and yours to correct. A number stored woven with a decoy has no first digits left to read it from — which is why this is a field you confirm rather than one the build works out again on every save.</p>
 
     <div class="row">

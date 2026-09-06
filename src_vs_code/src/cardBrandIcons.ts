@@ -92,7 +92,20 @@ export function brandMarksMarkup(): string {
  */
 export const BRAND_MARK_STYLES = `
   .brandMark { display: inline-flex; align-items: center; margin-left: 6px; vertical-align: middle; }
-  .brandMark svg { display: block; }`;
+  /* An AUTHOR rule carrying display beats the browser's own [hidden] { display: none }, so the line
+     above was showing all nine marks at once however carefully a page script set .hidden. The
+     attribute needs an author rule of its own to win back. */
+  .brandMark[hidden] { display: none; }
+  /* Four times the 16px the tree glyph is drawn at. Beside a masked number the mark is the one
+     thing on the row a person identifies at a glance, and at 16px it was a smudge. Scaled by CSS
+     over the viewBox, so nothing is redrawn and the generated media/brands files stay 16. */
+  .brandMark svg { display: block; width: 64px; height: 64px; }
+  /* The row the mark sits on, on BOTH surfaces — here rather than in one stylesheet because the
+     SIZE is here: a 64px mark beside a 26px box needs a line that centres it, and the card's own
+     .line is align-items: flex-start. min-width:0 is what lets a width:100% select or input give
+     the mark its room instead of holding the whole line. */
+  .brandLine { display: flex; align-items: center; gap: 8px; }
+  .brandLine > select, .brandLine > input { flex: 1 1 auto; min-width: 0; }`;
 
 export function brandMarkSvg(brand: CardBrand, ink: string = 'currentColor'): string {
   const initials = BRAND_INITIALS[brand];

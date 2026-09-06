@@ -103,3 +103,27 @@ test('every body that exists fills all six fields', () => {
     }
   }
 });
+
+/**
+ * The fallback on an article a partial language genuinely does not have.
+ *
+ * <p>Raised by the plan gate and fair: the test above walks every language over
+ * `getting-started`, which all five carry — so it proved the *reporting* and never the case it
+ * exists for. uk, de and es are partial by design while they are translated, and what must hold is
+ * that the reader gets the ENGLISH text with the flag set, rather than an empty body or a throw.</p>
+ */
+test('a partial language falls back to the English TEXT, not to nothing', () => {
+  const partial = (['uk', 'de', 'es'] as const).find((language) =>
+    HELP_ARTICLE_IDS.some((id) => MAPS[language][id] === undefined),
+  );
+  assert.notEqual(partial, undefined, 'this test is about a language that is still being translated');
+
+  const missing = HELP_ARTICLE_IDS.find((id) => MAPS[partial!][id] === undefined)!;
+  const article = helpArticle(missing)!;
+  const shown = bodyFor(article, partial!);
+
+  assert.equal(shown.fallback, true, 'and it says so, visibly');
+  assert.equal(shown.body, article.en, 'the English body itself, not a copy and not an empty one');
+  assert.ok(shown.body.title.length > 0, 'with text in it');
+  assert.ok(shown.body.whatCanGoWrong.length > 0, 'all six fields, not just the first');
+});
