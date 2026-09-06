@@ -38,7 +38,9 @@ public static class TeamRoster
     {
         var self = callerIsOfficer ? MemberLookupResult.NotRegistered : find(caller);
         var narrow = !callerIsOfficer && self is { Status: MemberLookup.Found, Record.Role: MemberRole.Dev };
-        var mine = narrow ? ShareableProjectsOf(self) : ProjectsOf(self);
+        // A SET, not a list: this is asked once per colleague per assignment, so on a domain of any
+        // size a linear scan here is the whole response's cost multiplied by two roster sizes.
+        var mine = new HashSet<string>(narrow ? ShareableProjectsOf(self) : ProjectsOf(self), StringComparer.Ordinal);
         var rows = new List<TeamMemberDetailDto>();
         foreach (var email in discoverable)
         {
@@ -56,7 +58,7 @@ public static class TeamRoster
         string email,
         MemberLookupResult lookup,
         bool narrow,
-        IReadOnlyList<string> callerProjects,
+        HashSet<string> callerProjects,
         bool isSelf)
     {
         var theirs = ProjectsOf(lookup);

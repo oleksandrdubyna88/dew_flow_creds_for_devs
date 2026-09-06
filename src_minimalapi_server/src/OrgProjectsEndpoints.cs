@@ -97,13 +97,31 @@ public static class OrgProjectsEndpoints
             : [.. projects.List().Select(Dto)];
     }
 
-    private static List<ProjectDto> Assigned(OrgProjectsStore projects, MemberRecord developer) =>
-    [
-        .. developer.Projects
-            .Select(p => projects.Find(p.ProjectId))
-            .Where(found => found is { Status: ProjectLookup.Found })
-            .Select(found => Dto(found.Record!)),
-    ];
+    /// <summary>
+    /// The developer's own projects, or <c>null</c> when one of them cannot be read.
+    ///
+    /// <para><b>Null rather than a shorter list</b>, and it is the same fail-closed reasoning the
+    /// caller's own record already gets: silently dropping a project this build cannot read answers
+    /// <c>200</c> with the very project the developer was looking for missing — which reads as "you
+    /// are not on it any more", a policy statement the server never made. An id that resolves to
+    /// nothing at all is different and stays skipped: an assignment can outlive its project.</para>
+    /// </summary>
+    private static List<ProjectDto>? Assigned(OrgProjectsStore projects, MemberRecord developer)
+    {
+        var mine = new List<ProjectDto>();
+        foreach (var found in developer.Projects.Select(p => projects.Find(p.ProjectId)))
+        {
+            if (found.Status == ProjectLookup.Unreadable)
+            {
+                return null;
+            }
+            if (found is { Status: ProjectLookup.Found, Record: { } record })
+            {
+                mine.Add(Dto(record));
+            }
+        }
+        return mine;
+    }
 
     private static ProjectDto Dto(ProjectRecord record) => new(record.Id, record.Name, record.Archived);
 

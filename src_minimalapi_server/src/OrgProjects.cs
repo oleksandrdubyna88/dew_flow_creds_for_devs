@@ -22,12 +22,21 @@ public sealed record ProjectRecord(
     public const int MaxNameLength = 120;
 
     /// <summary>The complaint about this name, or empty when it is usable.</summary>
+    /// <remarks>
+    /// <b>One line, and that is not cosmetic.</b> This name becomes a FOLDER in every assigned
+    /// person's vault, and a newline or a tab in a folder name is a path Windows refuses outright —
+    /// so a name a person could type here would break the client that has to create it.
+    /// </remarks>
     public static string NameProblem(string? name)
     {
         var trimmed = name?.Trim() ?? string.Empty;
         if (trimmed.Length == 0)
         {
             return "A project needs a name.";
+        }
+        if (trimmed.Any(char.IsControl))
+        {
+            return "A project name is one line: no tabs and no line breaks. It becomes a folder name on every machine.";
         }
         return trimmed.Length > MaxNameLength
             ? $"A project name is at most {MaxNameLength} characters; this one is {trimmed.Length}."

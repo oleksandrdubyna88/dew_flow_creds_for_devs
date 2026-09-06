@@ -32,6 +32,15 @@ in the conventions repository. Until one is chosen, items 1–5 are what runs.
 with it rather than with the server — the two halves are deployed separately, which is the whole reason
 this file exists.
 
+**The corporate project routes (epic 3).** Every one of them — the project store, the assignments, the
+share rule, the folder-removal acknowledgement — is behind authentication, so they fall under the
+exclusion above rather than being a new item: there is no unattended way to reach them today, and
+inventing one would mean putting a token where CI can read it. They are covered before the deploy
+instead, by the `.http` contract suite against a started stack. **What the deploy DOES have to get
+right is item 2**: epic 3 raises the contract floor, so `EXPECTED_CONTRACT` moves with the release —
+a server left on the previous build serves the old number and every updated client is refused at the
+door, which is exactly the failure item 2 exists to catch.
+
 ## Running it
 
 ```bash
