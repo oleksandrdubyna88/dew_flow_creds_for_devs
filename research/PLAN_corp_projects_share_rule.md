@@ -1,21 +1,76 @@
 # PLAN — epic 3: projects, project folders, and a share rule the server can check
 
-> Status: **plan only, nothing implemented yet, 2026-09-04.** Scope: an admin creates projects and
-> assigns people to them; each assignment grows a locked folder in that person's own vault; and a
-> developer may share only what is inside such a folder, only with people in the same project. Third
-> of five epics under [PLAN_corp_control_plane.md](PLAN_corp_control_plane.md), which holds the
-> owner decisions, the invariants and the shared shapes.
+> Status: **IMPLEMENTED, 2026-09-06.** All five stories shipped: the project store and its six admin
+> routes, the server's share rule and the developer Team filter, project folders that appear in the
+> assigned person's vault and are removed on instruction, `format: 4` binding the project into a
+> share, and the admin's three actions in the tree. Third of five epics under
+> [PLAN_corp_control_plane.md](../todo/PLAN_corp_control_plane.md).
 >
-> Depends on [PLAN_corp_registry_roles.md](../research/PLAN_corp_registry_roles.md) (roles, `RequireAdmin`, the
+> **What shipped differently, and why — the part worth reading.**
+>
+> **The share vocabulary is `inherit | project | none`, not `inherit | allow | deny`.** The plan's
+> `ProjectShare` type had been reserved in epic 1 and referenced by nothing; its words could not
+> express "only inside a project", which is the rule this epic exists for. The assignment override
+> reuses `ShareDefaults`, and the dead type was deleted rather than left as a trap for the story that
+> would have reached for it.
+>
+> **`EffectiveShare` resolves `inherit` through `MemberPolicy`, never off the record's stored
+> `shareDefault`.** `PolicyDto` already documents why there may be only one source for a rule, and
+> the two disagreed exactly where it mattered: a role written by a NEWER server fails closed in the
+> policy and fell through to the stored value here.
+>
+> **An unassigned person may do nothing** — `EffectiveShare` answers `none` for an absent assignment
+> rather than the person's own default, which would have given a member with a permissive default the
+> run of every project on the server.
+>
+> **The reconcile gained two actions the plan did not have.** `toUnlock`: a folder kept after an
+> assignment quietly ended is UNLOCKED, or the person holds a folder they can never rename or move
+> again on behalf of a relationship that is over. `toRelock`: the same project given back adopts that
+> kept folder instead of creating over its derived id, which would have duplicated a node id in a
+> vault that merges by node id.
+>
+> **The reconcile PULLS before it decides.** The plan's ordering requirement was accepted and then
+> not implemented: hung off the policy refresh, a second machine could read "no assignment, no
+> instruction", unlock a folder the first machine had deleted, and resurrect it — the unlock's newer
+> version vector beats the tombstone. Found by the code round.
+>
+> **The client's share rule does not check whether a project is archived.** It cannot: the policy
+> document carries assignments with no lifecycle on them, and a second fetch on the share path is not
+> worth it. The server refuses a closed engagement, which is the half that holds the fact.
+>
+> **`corpRoleAccess.ts` was never built.** `policyOf` already existed and is what every other corporate
+> gate reads; a second reading of the same document would have drifted from it.
+>
+> **`/api/team` widened through a SECOND DTO** rather than nullable fields, so a header-less client's
+> row stays byte-identical by construction. A developer is told only the projects they SHARE with each
+> colleague — the full list would have leaked engagement names to exactly the role this epic fences —
+> and only the projects they may actually SEND from, since an assignment with `none` is not a channel.
+>
+> **The contract floor went to 4, as planned**, and it is not lowerable from configuration: rolling it
+> back means deploying the previous server build. `POST_DEPLOY.md` item 2 carries the number and
+> records that its expectation moved without being re-verified against a deployment.
+>
+> **What the server cannot verify is now written down**: `projectId` is client-supplied and the payload
+> is ciphertext, so the server cannot confirm the entity really sat in the folder it names — the same
+> trust class `entityKind` has always occupied, and the reason the client-side move gate is part of
+> this epic rather than a nicety.
+>
+> **Tails.** Epic 4's event-log reader replaces this epic's retention-bounded approximation of "who has
+> shared with me" ([PLAN_corp_event_log.md](../todo/PLAN_corp_event_log.md)); the German and Spanish
+> sentences added to the help article want a native speaker's eye; and `TimeProvider` instead of
+> ambient `DateTimeOffset.UtcNow` was raised by the gate in four rounds and rejected each time as a
+> repo-wide change rather than this epic's — it needs its own task.
+>
+> Depends on [PLAN_corp_registry_roles.md](PLAN_corp_registry_roles.md) (roles, `RequireAdmin`, the
 > member record's `projects[]` and `pendingFolderRemovals[]`) and on
-> [PLAN_corp_blocking_login_key.md](../research/PLAN_corp_blocking_login_key.md) (`active`, which the share rule
-> consults). [PLAN_corp_event_log.md](PLAN_corp_event_log.md) later replaces this epic's
+> [PLAN_corp_blocking_login_key.md](PLAN_corp_blocking_login_key.md) (`active`, which the share rule
+> consults). [PLAN_corp_event_log.md](../todo/PLAN_corp_event_log.md) later replaces this epic's
 > retention-bounded approximation of "who has shared with me".
 >
-> Related docs: [module_server.md](../research/module_server.md) §`POST /api/shares`,
-> [module_extension.md](../research/module_extension.md),
-> [PLAN_server_share_format.md](../research/PLAN_server_share_format.md) (the `format` mechanism this
-> plan extends), [PLAN_sharing.md](../research/PLAN_sharing.md).
+> Related docs: [module_server.md](module_server.md) §`POST /api/shares`,
+> [module_extension.md](module_extension.md),
+> [PLAN_server_share_format.md](PLAN_server_share_format.md) (the `format` mechanism this
+> plan extends), [PLAN_sharing.md](PLAN_sharing.md).
 
 ## The symptom
 

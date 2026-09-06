@@ -9,7 +9,7 @@
 > The log's **writer** ships in [PLAN_corp_registry_roles.md](../research/PLAN_corp_registry_roles.md) so epics
 > 1–3 record from their first commit; this plan owns the **reader**, the query endpoint, the outcome
 > reporting, the viewer tab and the Team search. Depends on epic 1 for `RequireAdmin` and on
-> [PLAN_corp_projects_share_rule.md](PLAN_corp_projects_share_rule.md) for the project a row cites.
+> [PLAN_corp_projects_share_rule.md](../research/PLAN_corp_projects_share_rule.md) for the project a row cites.
 >
 > Related docs: [module_server.md](../research/module_server.md) (the break-glass audit log, the
 > streaming helper), [module_extension.md](../research/module_extension.md) (the tree filter, the
