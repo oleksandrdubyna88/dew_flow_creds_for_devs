@@ -9,6 +9,18 @@ import { StoredAccount, TreeNode } from './types';
  */
 export interface ProjectFolderDeps {
   readonly nodesOf: (accountId: string) => readonly TreeNode[];
+  /**
+   * Pull and merge this account's vault, BEFORE anything is decided.
+   *
+   * <p>Not an optimisation — the correctness of the whole reconcile rests on it. The removal
+   * instruction is per PERSON, so the first machine to carry it out clears it for every other one;
+   * a second machine then reads a document with no assignment and no instruction, and against its
+   * own stale nodes that reads as "the assignment quietly ended". It would UNLOCK the folder, and
+   * that edit carries a newer version vector than the tombstone — so the merge would resurrect the
+   * folder the organisation had removed, unlocked. Pulling first makes the sequence impossible: by
+   * the time anything is decided, the tombstone has landed and the node is gone.</p>
+   */
+  readonly pull: (accountId: string) => Promise<void>;
   readonly host: ProjectFolderHost;
 }
 
@@ -28,6 +40,9 @@ export function projectFolderReconciler(
   deps: ProjectFolderDeps,
 ): (account: StoredAccount, state: CorpPolicyState) => Promise<ProjectFolderOutcome> {
   return async (account, state) => {
+    // First, and it throws rather than continuing: a machine that could not pull has nothing
+    // trustworthy to reconcile against, and deciding on stale nodes is the hazard above.
+    await deps.pull(account.accountId);
     const plan = reconcileProjectFolders(
       deps.nodesOf(account.accountId),
       assignmentsOf(state),
@@ -64,6 +79,7 @@ export function vscodeProjectFolderDeps(
 ): ProjectFolderDeps {
   return {
     nodesOf: (accountId) => storage.getNodes(accountId),
+    pull: (accountId) => sync.pullAccount(accountId),
     host: {
       addFolder: (accountId, node) => storage.addNode(accountId, node),
       setFields: (accountId, id, patch) => storage.updateNodeFields(accountId, id, patch),
@@ -100,6 +116,7 @@ export interface ProjectFolderStorage {
 
 export interface ProjectFolderPusher {
   pushAccount: (account: StoredAccount) => Promise<void>;
+  pullAccount: (accountId: string) => Promise<void>;
 }
 
 export interface ProjectFolderTransports {
