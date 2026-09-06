@@ -152,3 +152,59 @@ test('a folder of type project survives validation — it must sync', () => {
     true,
   );
 });
+
+/**
+ * One refused value per GROUP of the two big guards.
+ *
+ * <p>`isEntityMetadata` and `isTreeNode` were one flat list of field checks each — thirty-five and
+ * fifteen — and SonarCloud was right that nobody can read a wall like that. Splitting them into
+ * named groups made them readable and made a new failure possible: a whole group can now be
+ * dropped from the `&&` chain, and the guard goes on admitting everything it used to refuse.</p>
+ *
+ * <p>A sabotage run proved the gap was real rather than theoretical. Making `isVersionVector`
+ * return `true` for every input — so a node could arrive with `v: 'nonsense'` and be admitted —
+ * left all 3219 tests passing. These are what notice.</p>
+ */
+test('every group of isEntityMetadata refuses at least one value', () => {
+  const { isEntityMetadata: guard } = require('../types');
+  const base = { id: 'e1', name: 'n', isSshEnabled: false };
+  const refused: readonly [string, Record<string, unknown>][] = [
+    ['identity', { ...base, isSshEnabled: 'no' }],
+    ['ssh fields', { ...base, port: '22' }],
+    ['tags', { ...base, tags: ['ok', 7] }],
+    ['kind flags', { ...base, isVpn: 'yes' }],
+    ['kind discriminants', { ...base, dbType: 'not-a-database' }],
+    ['run fields', { ...base, script: 42 }],
+    ['secret marks', { ...base, pinProtected: 'on' }],
+    ['notes', { ...base, notes: 7 }],
+  ];
+  for (const [group, value] of refused) {
+    assert.equal(guard(value), false, `the ${group} group admitted a value it should refuse`);
+  }
+  assert.ok(guard(base), 'and the plain record is still admitted');
+});
+
+test('every group of isTreeNode refuses at least one value', () => {
+  const { isTreeNode: guard } = require('../types');
+  const folder = { id: 'f1', name: 'Production', type: 'folder', parentId: null };
+  const refused: readonly [string, Record<string, unknown>][] = [
+    ['identity', { ...folder, type: 'neither' }],
+    ['identity', { ...folder, parentId: 7 }],
+    ['sync fields', { ...folder, updatedAt: 'yesterday' }],
+    ['sync fields', { ...folder, sortOrder: '3' }],
+    // The one the sabotage got past: a version vector is a record of NUMBERS, and a node whose
+    // vector is a string would otherwise be merged against by `versionVector.ts`.
+    ['version vector', { ...folder, v: 'nonsense' }],
+    ['version vector', { ...folder, v: { deviceA: 'first' } }],
+    ['folder extras', { ...folder, isTrash: 'yes' }],
+    ['folder extras', { ...folder, trashRetentionDays: 'thirty' }],
+    ['folder extras', { ...folder, folderAsksForPin: 'yes' }],
+    ['folder type', { ...folder, folderType: 'not-a-kind' }],
+  ];
+  for (const [group, value] of refused) {
+    assert.equal(guard(value), false, `the ${group} group admitted a value it should refuse`);
+  }
+  assert.ok(guard(folder), 'and a plain folder is still admitted');
+  assert.ok(guard({ ...folder, v: { deviceA: 1, deviceB: 2 } }), 'a real vector is admitted');
+  assert.ok(guard({ ...folder, type: 'entity', details: { id: 'f1', name: 'n', isSshEnabled: false } }));
+});
