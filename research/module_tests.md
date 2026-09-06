@@ -17,8 +17,8 @@
 | Tier | Where | Count | What it proves |
 |---|---|---|---|
 | Unit, extension | `src_vs_code/src/test/*.test.ts`, node:test | 3,302 (4 skipped) | logic, in-process, `vscode` stubbed |
-| Unit, .NET | `src_*/tests`, xUnit | 447 | server 300, cli 78, mcp 40, broker 29 |
-| HTTP contract | `http/` | 82 requests, 9 files | the real server over HTTP, with a coverage report that refuses an unlisted route |
+| Unit, .NET | `src_minimalapi_server/tests`, `src_cli/tests`, `src_mcp/tests`, `src_broker_client/tests` — xUnit | 447 | server 300, cli 78, mcp 40, broker 29 |
+| HTTP contract | `http/http-run.mjs` over `http/*.http` | 82 requests, 9 files | the real server over HTTP, with a coverage report that refuses an unlisted route |
 | Scenario | `src_vs_code/scripts/*-itest.cjs` | 9 harnesses | a real process, a real socket, a real binary |
 
 ## The nine harnesses
@@ -28,15 +28,15 @@ what it needs is control over teardown, not a runner. `npm run itest:<name>` com
 
 | Harness | Drives | In CI | Verified 2026-09-06 |
 |---|---|---|---|
-| `agent-broker-itest.cjs` | the broker over its own loopback HTTP surface, `vscode` stubbed | **yes** — *Integration test (agent broker)* | pass |
-| `git-transport-itest.cjs` | the encrypted vault in a real git repository: commit, clone, delete | **yes** — *Integration test (git transport)* | pass |
-| `creds-cli-itest.cjs` | the real `creds` binary against a live broker | **yes** — *Integration test (creds CLI against the broker)* | pass |
-| `creds-mcp-itest.cjs` | `creds-mcp` over stdio, the full tool surface and both switch ladders | **yes, added 2026-09-06** | pass |
-| `masked-run-itest.cjs` | a masked run through a real pty, asserting no whole secret appears | **yes, added 2026-09-06** | pass |
-| `creds-mcp-wsl-itest.cjs` | the same MCP surface, bridged from inside a WSL distribution | no — see below | pass |
-| `ssh-agent-itest.cjs` | the SSH agent on a named pipe, and which ssh client can reach it | no — see below | pass |
-| `wsl-agent-relay-itest.cjs` | `ssh-keygen -Y sign` inside Linux reaching an agent in a Windows process | no — see below | pass **after repair — see below** |
-| `server-transport-itest.cjs` | `ServerTransport` against a RUNNING Cred Vault Server | no — see below | **not run** — needs a server on `127.0.0.1:5113` |
+| `src_vs_code/scripts/agent-broker-itest.cjs` | the broker over its own loopback HTTP surface, `vscode` stubbed | **yes** — *Integration test (agent broker)* | pass |
+| `src_vs_code/scripts/git-transport-itest.cjs` | the encrypted vault in a real git repository: commit, clone, delete | **yes** — *Integration test (git transport)* | pass |
+| `src_vs_code/scripts/creds-cli-itest.cjs` | the real `creds` binary against a live broker | **yes** — *Integration test (creds CLI against the broker)* | pass |
+| `src_vs_code/scripts/creds-mcp-itest.cjs` | `creds-mcp` over stdio, the full tool surface and both switch ladders | **yes, added 2026-09-06** | pass |
+| `src_vs_code/scripts/masked-run-itest.cjs` | a masked run through a real pty, asserting no whole secret appears | **yes, added 2026-09-06** | pass |
+| `src_vs_code/scripts/creds-mcp-wsl-itest.cjs` | the same MCP surface, bridged from inside a WSL distribution | no — see below | pass |
+| `src_vs_code/scripts/ssh-agent-itest.cjs` | the SSH agent on a named pipe, and which ssh client can reach it | no — see below | pass |
+| `src_vs_code/scripts/wsl-agent-relay-itest.cjs` | `ssh-keygen -Y sign` inside Linux reaching an agent in a Windows process | no — see below | pass **after repair — see below** |
+| `src_vs_code/scripts/server-transport-itest.cjs` | `ServerTransport` against a RUNNING Cred Vault Server | no — see below | **not run** — needs a server on `127.0.0.1:5113` |
 
 **Why each of the four is not in CI.** *"Not in CI" with a reason is a decision; "not in CI" alone is
 a harness rotting* — so each carries one.
@@ -73,15 +73,15 @@ these cleans up after itself on a normal exit; what follows is what to remove af
 
 | Harness | Needs | Leaves behind if killed |
 |---|---|---|
-| `agent-broker-itest.cjs` | nothing | a loopback listener and an endpoint file under the temp dir it names |
-| `git-transport-itest.cjs` | `git` | a temp directory holding a bare repository |
-| `creds-cli-itest.cjs` | `dotnet build src_cli/src/CredsCli.csproj` | a broker listener, an endpoint file |
-| `creds-mcp-itest.cjs` | `dotnet build src_mcp/src/CredsMcp.csproj` | a `creds-mcp` child on stdio |
-| `masked-run-itest.cjs` | nothing | nothing — the child dies with the pty |
-| `ssh-agent-itest.cjs` | Windows, OpenSSH on PATH | a named pipe, freed when the process exits |
-| `creds-mcp-wsl-itest.cjs` | WSL + the .NET SDK inside it | a build tree at `/tmp/creds-relay-itest-build` |
-| `wsl-agent-relay-itest.cjs` | the same | a `creds relay` process inside the distribution and `/tmp/creds-itest.*` — `wsl -e pkill -f 'creds relay'` |
-| `server-transport-itest.cjs` | a Cred Vault Server on `127.0.0.1:5113`, Local auth | nothing of its own |
+| `src_vs_code/scripts/agent-broker-itest.cjs` | nothing | a loopback listener and an endpoint file under the temp dir it names |
+| `src_vs_code/scripts/git-transport-itest.cjs` | `git` | a temp directory holding a bare repository |
+| `src_vs_code/scripts/creds-cli-itest.cjs` | `dotnet build src_cli/src/CredsCli.csproj` | a broker listener, an endpoint file |
+| `src_vs_code/scripts/creds-mcp-itest.cjs` | `dotnet build src_mcp/src/CredsMcp.csproj` | a `creds-mcp` child on stdio |
+| `src_vs_code/scripts/masked-run-itest.cjs` | nothing | nothing — the child dies with the pty |
+| `src_vs_code/scripts/ssh-agent-itest.cjs` | Windows, OpenSSH on PATH | a named pipe, freed when the process exits |
+| `src_vs_code/scripts/creds-mcp-wsl-itest.cjs` | WSL + the .NET SDK inside it | a build tree at `/tmp/creds-relay-itest-build` |
+| `src_vs_code/scripts/wsl-agent-relay-itest.cjs` | the same | a `creds relay` process inside the distribution and `/tmp/creds-itest.*` — `wsl -e pkill -f 'creds relay'` |
+| `src_vs_code/scripts/server-transport-itest.cjs` | a Cred Vault Server on `127.0.0.1:5113`, Local auth | nothing of its own |
 
 Every harness carries its own timeout on the child processes it spawns; none of them waits for ever,
 and each prints the command that would fix a missing prerequisite instead of hanging on it. Re-running
@@ -91,14 +91,35 @@ the next run wants — that is the one case worth the `pkill` above.
 ## Running them all at once
 
 ```bash
-cd src_vs_code && npm run itest:all          # every harness this platform can run
-npm run itest:all -- agent git masked-run    # or a named subset
+cd src_vs_code && npm run itest:all             # every harness this platform can run
+npm run itest:all -- agent git masked-run       # or a named subset
+npm run itest:all -- --with-server              # plus the one needing a server you started
 ```
 
-`scripts/run-itests.mjs` collects exit codes and prints a summary that separates **pass**, **skipped**
-(a prerequisite is missing and the harness said so) and **not runnable here** (Windows-only, on a
-non-Windows machine) — because a person running nine commands by hand can miss a crash among the
-passes, and one of them had been missed for months.
+`src_vs_code/scripts/run-itests.mjs` compiles once — the nine `itest:*` aliases each begin with their
+own `npm run compile` — then runs each harness, streaming its output as it arrives rather than
+holding it until the child exits, because a harness waiting on a socket looks identical to a hung one
+when its output is held back. It prints a summary separating **pass**, **skipped** (a prerequisite is
+missing and the harness said so) and **not runnable here** (Windows-only, on a non-Windows machine).
+
+Three details are there because a review round asked for them, and one because Windows refused the
+obvious answer:
+
+- **A mistyped name is refused**, by name, with the legal values and a non-zero exit — a typo that
+  quietly runs nothing must not report success.
+- **Each harness is bounded at fifteen minutes** and killed with the reason named, so a deadlock
+  inside one does not deadlock the runner.
+- **`server-transport-itest.cjs` is opt-in.** It probes `127.0.0.1:5113` first and reports *skipped*
+  when nothing is listening, because an "all tests" command that always exits 1 on a freshly built
+  checkout cannot be the routine health check it advertises.
+- **It spawns `node` on each script rather than `npm run`, with no shell.** A reviewer asked for
+  `shell: false` and was right about the smell — but dropping the shell while still calling `npm`
+  fails on Windows with `EINVAL`, measured here: since the CVE-2024-27980 mitigation Node refuses to
+  spawn a `.cmd` without a shell, and `npm` on Windows *is* `npm.cmd`. Naming the script directly
+  avoids the shell and the alias together.
+
+Verified 2026-09-06 on this machine: `npm run itest:all` — **8 passed, 0 skipped, 0 not runnable
+here**.
 
 ## What running them found
 
