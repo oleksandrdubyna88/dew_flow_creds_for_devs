@@ -73,7 +73,8 @@
     "itest:mcp": "npm run compile && node scripts/creds-mcp-itest.cjs",
     "itest:mcp-wsl": "npm run compile && node scripts/creds-mcp-wsl-itest.cjs",
     "itest:wsl-relay": "npm run compile && node scripts/wsl-agent-relay-itest.cjs",
-    "ratchet": "npm run compile && node scripts/size-ratchet.mjs"
+    "ratchet": "npm run compile && node scripts/size-ratchet.mjs",
+    "itest:all": "node scripts/run-itests.mjs"
   },
   "devDependencies": {
     "@types/node": "^20.11.0",

@@ -53,6 +53,53 @@ a harness rotting* — so each carries one.
 
 Two were added on the day this file was written, because neither had a reason — only an absence.
 
+**`masked-run-itest.cjs` on Linux was verified, not assumed.** A reviewer called adding it to an
+`ubuntu-latest` runner blocking, on the grounds that a pty harness written and run only on Windows
+usually breaks on Linux. Fair, and checkable: it was run inside a real WSL Ubuntu with node 20 and
+every check passed. There is no native pty module here — `node-pty` is not a dependency of this
+extension at all; what the harness stubs is VS Code's pseudoterminal *interface*, and the shell it
+spawns is the platform's own.
+
+**`server-transport-itest.cjs` is documented from its source, not from a run** — it is the one
+harness on this page nobody has executed while writing about it, and that is stated rather than
+implied. Its assertions and CI status are read off the file; whether they still hold is unverified
+until someone starts a server and runs it. That is the honest state, and it is why it sits last in
+`itest:all` with its prerequisite spelled out.
+
+## Prerequisites, timeouts and cleanup
+
+A harness that leaves a socket, a port or a temp directory behind makes the NEXT run lie. Each of
+these cleans up after itself on a normal exit; what follows is what to remove after one is killed.
+
+| Harness | Needs | Leaves behind if killed |
+|---|---|---|
+| `agent-broker-itest.cjs` | nothing | a loopback listener and an endpoint file under the temp dir it names |
+| `git-transport-itest.cjs` | `git` | a temp directory holding a bare repository |
+| `creds-cli-itest.cjs` | `dotnet build src_cli/src/CredsCli.csproj` | a broker listener, an endpoint file |
+| `creds-mcp-itest.cjs` | `dotnet build src_mcp/src/CredsMcp.csproj` | a `creds-mcp` child on stdio |
+| `masked-run-itest.cjs` | nothing | nothing — the child dies with the pty |
+| `ssh-agent-itest.cjs` | Windows, OpenSSH on PATH | a named pipe, freed when the process exits |
+| `creds-mcp-wsl-itest.cjs` | WSL + the .NET SDK inside it | a build tree at `/tmp/creds-relay-itest-build` |
+| `wsl-agent-relay-itest.cjs` | the same | a `creds relay` process inside the distribution and `/tmp/creds-itest.*` — `wsl -e pkill -f 'creds relay'` |
+| `server-transport-itest.cjs` | a Cred Vault Server on `127.0.0.1:5113`, Local auth | nothing of its own |
+
+Every harness carries its own timeout on the child processes it spawns; none of them waits for ever,
+and each prints the command that would fix a missing prerequisite instead of hanging on it. Re-running
+after a kill is safe for all of them except the two WSL ones, where a leftover relay holds the socket
+the next run wants — that is the one case worth the `pkill` above.
+
+## Running them all at once
+
+```bash
+cd src_vs_code && npm run itest:all          # every harness this platform can run
+npm run itest:all -- agent git masked-run    # or a named subset
+```
+
+`scripts/run-itests.mjs` collects exit codes and prints a summary that separates **pass**, **skipped**
+(a prerequisite is missing and the harness said so) and **not runnable here** (Windows-only, on a
+non-Windows machine) — because a person running nine commands by hand can miss a crash among the
+passes, and one of them had been missed for months.
+
 ## What running them found
 
 **`wsl-agent-relay-itest.cjs` could not start.** It crashed with
@@ -64,6 +111,13 @@ of which anything could have caught:
   name means the default distribution, and `refuse` skips empty entries deliberately.
 - `manager.socketPath` became `socketPathFor(distro)` when the manager gained multi-distribution
   support. The harness kept calling the old getter, got `undefined`, and crashed on `.length`.
+
+**The repair was checked for vacuousness, because a reviewer asked whether `['']` exercises
+anything.** It does: `refuse` skips empty entries rather than rejecting them, and `start` then calls
+`launch('')`, which is the default distribution. The proof is downstream in the same run — *"a real
+relay is running in the distribution"* asserts `ps -eo args | grep creds relay` finds one, and
+*"disposing the manager takes it down"* asserts it is gone afterwards. A vacuous start would fail
+both.
 
 **The lesson is structural, not incidental.** These harnesses are untyped `.cjs` requiring compiled
 `out/*.js`, so they can drift away from the API they drive with nothing to notice — no compiler, no
