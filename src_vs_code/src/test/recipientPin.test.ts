@@ -319,3 +319,54 @@ test('the folder preference SURVIVES the guard, or sync would strip it', () => {
     'while a non-boolean is refused rather than carried',
   );
 });
+
+/**
+ * The ancestor walk must reach the TOP, not a number I picked.
+ *
+ * <p>A reviewer found the false negative in the cap: `handleDrop` puts no limit on nesting depth,
+ * so a chain longer than the cap is reachable, and the walk would stop one folder short of the one
+ * carrying the preference — creating the entry with no PIN and no question asked. Silently, which
+ * is the part that matters: the person set the preference and would never learn it did not hold.</p>
+ *
+ * <p>What the cap was FOR — a parent chain that loops, which sync can produce — is what a `Set` of
+ * visited ids does properly, and it does it without inventing a depth nobody can justify.</p>
+ */
+test('a folder deeper than any fixed cap still asks — the walk ends at the root, not at a number', async () => {
+  const depth = 80;
+  const nodes: TreeNode[] = [
+    { id: 'top', name: 'Production', type: 'folder', parentId: null, folderAsksForPin: true } as TreeNode,
+  ];
+  for (let i = 0; i < depth; i += 1) {
+    nodes.push({
+      id: `f${i}`,
+      name: `level ${i}`,
+      type: 'folder',
+      parentId: i === 0 ? 'top' : `f${i - 1}`,
+    } as TreeNode);
+  }
+  const storage = {
+    getNodes: () => nodes,
+    getNode: (_a: string, id: string) => nodes.find((n) => n.id === id),
+  } as never;
+  const mod = pinOnCreate();
+
+  const answer = await mod.pinForNewEntry(storage, 'a1', `f${depth - 1}`);
+
+  assert.equal(answer.kind, 'cancelled', 'it asked, 81 folders down — and the box was dismissed');
+});
+
+test('a parent chain that LOOPS answers instead of hanging', async () => {
+  // What the depth cap was really guarding: sync can leave a cycle, and a walk with no memory
+  // would follow it for ever.
+  const nodes = [
+    { id: 'a', name: 'A', type: 'folder', parentId: 'b' } as TreeNode,
+    { id: 'b', name: 'B', type: 'folder', parentId: 'a' } as TreeNode,
+  ];
+  const storage = {
+    getNodes: () => nodes,
+    getNode: (_x: string, id: string) => nodes.find((n) => n.id === id),
+  } as never;
+  const mod = pinOnCreate(() => assert.fail('nothing in this cycle asks for a PIN'));
+
+  assert.deepEqual(await mod.pinForNewEntry(storage, 'a1', 'a'), { kind: 'none' });
+});

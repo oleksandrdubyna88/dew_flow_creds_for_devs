@@ -128,10 +128,25 @@ export async function protectFolder(folder: TreeNode, deps: PinCommandDeps): Pro
   if (pin === undefined) {
     return;
   }
-  await runProtect(plan.toProtect, pin, deps);
-  // Set AFTER the run, like every other mark here: a preference recorded before the work would
-  // outlive a run that never finished, and start asking about a folder nobody protected.
-  await setAsksForPin(folder, true, deps);
+  await afterRun(folder, await runProtect(plan.toProtect, pin, deps), deps);
+}
+
+/**
+ * The preference, recorded only by a run that actually protected something.
+ *
+ * <p>AFTER the run, because a preference written before the work would outlive a run that never
+ * finished. And only when the count is above zero, because `runProtect` keeps each failure rather
+ * than throwing — the rest of the folder deserves a try — so a run where EVERY entry failed used to
+ * reach this line and set the mark anyway, leaving the next entry created there asked for a PIN in
+ * a folder where nothing is protected. (A reviewer's finding.)</p>
+ *
+ * <p>An empty folder never arrives here: it is the deliberate exception above, and the only case
+ * where the preference is the sole record that can exist.</p>
+ */
+async function afterRun(folder: TreeNode, protectedCount: number, deps: PinCommandDeps): Promise<void> {
+  if (protectedCount > 0) {
+    await setAsksForPin(folder, true, deps);
+  }
   deps.refresh();
 }
 
@@ -242,7 +257,7 @@ async function confirmedAgainstSiblings(
  * nothing said: the rest are attempted, and the report names what could not be done. Re-running is
  * the repair, because `protectEntity` skips what is already locked.</p>
  */
-async function runProtect(nodes: readonly TreeNode[], pin: string, deps: PinCommandDeps): Promise<void> {
+async function runProtect(nodes: readonly TreeNode[], pin: string, deps: PinCommandDeps): Promise<number> {
   const done: string[] = [];
   const failed: string[] = [];
   await vscode.window.withProgress(
@@ -256,6 +271,7 @@ async function runProtect(nodes: readonly TreeNode[], pin: string, deps: PinComm
   );
   deps.refresh();
   void vscode.window.showInformationMessage(runReport(done, failed));
+  return done.length;
 }
 
 /** One entry, with its failure kept rather than thrown — the rest of the folder still deserves a try. */
