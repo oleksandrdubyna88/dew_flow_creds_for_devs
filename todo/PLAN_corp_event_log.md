@@ -6,7 +6,7 @@
 > own. Fourth of five epics under [PLAN_corp_control_plane.md](PLAN_corp_control_plane.md), which
 > holds the owner decisions, the invariants and the shared shapes.
 >
-> The log's **writer** ships in [PLAN_corp_registry_roles.md](PLAN_corp_registry_roles.md) so epics
+> The log's **writer** ships in [PLAN_corp_registry_roles.md](../research/PLAN_corp_registry_roles.md) so epics
 > 1–3 record from their first commit; this plan owns the **reader**, the query endpoint, the outcome
 > reporting, the viewer tab and the Team search. Depends on epic 1 for `RequireAdmin` and on
 > [PLAN_corp_projects_share_rule.md](PLAN_corp_projects_share_rule.md) for the project a row cites.

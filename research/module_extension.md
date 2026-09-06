@@ -3340,7 +3340,7 @@ one line the new kind costs there.
 
 ## Corporate roles — the policy document, the admin view, and one request helper (2026-09-06, epic 1 story 4)
 
-The server half of [PLAN_corp_registry_roles.md](../todo/PLAN_corp_registry_roles.md) gave every
+The server half of [PLAN_corp_registry_roles.md](PLAN_corp_registry_roles.md) gave every
 account on a corporate server a role — `admin`, `member`, `dev` — and one document,
 `GET /api/org/me`, that says what the role means ([module_server.md](module_server.md)
 §`GET /api/org/me`). This is the half that reads it. **Nothing here enforces anything.** The policy
