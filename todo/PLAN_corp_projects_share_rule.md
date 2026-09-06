@@ -220,6 +220,72 @@ it. Verified, not assumed.
 | `pendingFolderRemovals` | ≤ 1 per project ever assigned per person | the client's ack; the record dies with the member | a lost ack re-sends; the client's delete is idempotent |
 | project folders in a vault | one per assignment, inside the person's own vault | the unassign instruction | tombstone-first write order, resumable |
 
+## How this epic is built: five stories
+
+Split on 2026-09-06 against the code epics 1 and 2 actually shipped. Each story is a branch of its own
+— the review gate is keyed by branch and closes after one round per stage — and the epic gets one pull
+request.
+
+| # | Story | Risk |
+|---|---|---|
+| 1 | Projects exist, people are assigned, and the instruction to remove a folder is a record the client acknowledges | expensive: a new store, a new admin surface, and the durability contract every later story leans on |
+| 2 | The server refuses a developer's share outside the rule, and a developer's Team is their projects | expensive: the one server-enforced boundary of the epic, and it touches a pinned old-client wire shape |
+| 3 | A project folder appears in the assigned person's vault, follows the project's name, locks for a developer, and is removed on instruction on every device | expensive: it deletes a person's data on a server instruction, and its ids must merge across machines |
+| 4 | A developer's share carries and binds its project, and the UI never offers a share the server will refuse | expensive: a new AAD form is the exact failure class that broke server shares for six days |
+| 5 | Team rows say role and projects; an admin creates, assigns and removes from the tree | ordinary |
+
+### What the split found
+
+**Every line number this plan cites is stale** — it was written on 2026-09-04 and twenty-five commits
+have landed since. `isTreeNode` is not even in the file the plan names (it is `typeGuards.ts:466`).
+Corrected references are recorded per story rather than re-listed here; the lesson is the one epic 1
+already recorded: a plan's `file:line` is evidence with a shelf life.
+
+The findings that change what gets built:
+
+- **The rule must sit after epic 2's recipient check, and must not re-check `active`.** `RecipientRefused`
+  already answers `403` for a deactivated recipient and **`503`** for a record it cannot read. The
+  plan's `recipient is null || !recipient.Active` would answer `403` where the gate answers `503`, and
+  would read *unavailable* as *not a member*. The project rule checks project membership and nothing else.
+- **The plan's rule does not compile against the store.** `Find` returns a three-answer
+  `MemberLookupResult`, not a nullable record, and an officer never reaches the lookup at the gate. The
+  rule becomes `ShareRule.Decide(...)` — pure, a truth table, tested as one.
+- **The plan enforces the rule on everyone who sends a `projectId`; decision 9 says members and admins
+  share as today.** The client will send the field for any entity under a project folder whatever the
+  role, so a member sharing out of A1 would have been refused. Enforced for DEV senders only; carried
+  for everyone, because epic 4 logs it and format 4 binds it.
+- **Widening `TeamMemberDto` breaks a pinned promise.** A header-less client is served even in corp
+  mode, and a test asserts the team shape is byte-identical to personal mode for one. The new fields
+  travel only to callers that declare contract ≥ 3.
+- **No event rows.** Epic 4 assigns `project.created/renamed/archived/assigned/unassigned` to *this*
+  epic's endpoints at their point of durable write. Without them epic 4 inherits a log nothing is
+  required to write to — epic 1's sharpest finding, repeating.
+- **`{name?, archived?}` needs `bool? Archived`.** A positional `bool` the client omitted binds
+  `false`, so every rename would silently unarchive. This is `SetActiveRequest`'s lesson, one epic later.
+- **The ack is per PERSON, not per device**, so it must happen after the push, not after the local
+  delete: the first device to ack clears the instruction for every other one, which then depends on the
+  tombstone having actually reached the remote.
+- **Three files are within 2–31 lines of the 800-line ceiling** and the typed-folder move gate is
+  already duplicated in two places. A third copy carrying the project lock is what the reuse rule
+  forbids: the gate is extracted first, which also shrinks the file that hosts it.
+- **An unknown `format` opens as legacy**, so a client from the epoch of epic 2 receiving `format: 4`
+  would try the blob with no AAD and report a wrong PIN — the 0.82.1–0.87 failure exactly. Two answers
+  are needed: refuse an unknown format with an "update" sentence, and bump the contract so a corp
+  server refuses a client that cannot open what it will be sent.
+
+### The two owner questions, answered here
+
+Both were raised by the split; neither blocks the build, so each is proceeding under a stated answer.
+
+1. **A developer's Team in this epic is their project colleagues, full stop.** The alternative —
+   "everyone who has shared with me" — turns out to be *"everyone with a share pending right now"*: an
+   inbox item is deleted the moment it is accepted or declined, the sender receipts name recipients
+   rather than senders, and reading it would stream a whole inbox per Team call. Epic 4's log replaces
+   the source with one that is kept.
+2. **The contract floor goes to 4.** The mechanism exists for exactly this, and the failure it prevents
+   is the worst kind: a colleague on an older build seeing a developer's share fail as a *wrong PIN*. A
+   refusal that names the update is a better answer than a lie about a password.
+
 ## Build order
 
 1. Server: `OrgProjects.cs`, `OrgProjectsStore.cs`, the five project/assignment endpoints,
