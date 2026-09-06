@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { CorpPolicyState } from '../corpPolicy';
-import { MemberListEntry, MemberSelf, OrgMembersClient } from '../orgMembersClient';
+import { MemberListEntry, MemberSelf, OrgMembersClient, ProjectRow } from '../orgMembersClient';
 import { OrgPolicyHost, refreshOrgPolicy } from '../orgPolicyRefresh';
 import { StoredAccount } from '../types';
 
@@ -43,16 +43,19 @@ const ROW: MemberListEntry = {
 interface Fake {
   me: () => Promise<MemberSelf>;
   members: () => Promise<MemberListEntry[]>;
+  /** Optional: most tests do not care, and an absent one answers an empty list. */
+  projects?: () => Promise<ProjectRow[]>;
 }
 
 function host(fake: Fake | undefined, now = 1_000): OrgPolicyHost & { beats: [string, number][] } {
   const beats: [string, number][] = [];
-  const client = fake === undefined ? undefined : ({ readMe: fake.me, listMembers: fake.members } as unknown as OrgMembersClient);
+  const client = fake === undefined ? undefined : ({ readMe: fake.me, listMembers: fake.members, listProjects: fake.projects ?? (async () => []) } as unknown as OrgMembersClient);
   return {
     beats,
     clientFor: () => client,
     orgPolicy: new Map<string, CorpPolicyState>(),
     orgRoster: new Map<string, readonly MemberListEntry[]>(),
+    orgProjects: new Map<string, readonly ProjectRow[]>(),
     orgPolicyServer: new Map<string, string>(),
     heartbeat: (accountId, at) => {
       beats.push([accountId, at]);
@@ -191,5 +194,5 @@ test('the refresh reports what it managed, so a caller that just wrote knows the
 
   const outcome = await refreshOrgPolicy(unreachable, account);
 
-  assert.deepEqual(outcome, { policyRead: false, rosterRead: false });
+  assert.deepEqual(outcome, { policyRead: false, rosterRead: false, projectsRead: false });
 });

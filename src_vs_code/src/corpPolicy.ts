@@ -193,9 +193,42 @@ function ownRole(isSelf: boolean, viewer: CorpPolicyState | undefined): string |
   return isSelf && viewer?.corpMode === true ? roleLabel(viewer.role, viewer.isOfficer) : undefined;
 }
 
-/** `microsoft` for an ordinary account, exactly as before; `microsoft · dev` when there is a role. */
-export function teamMemberDescription(provider: string, role: string | undefined): string {
-  return role === undefined ? provider : `${provider} · ${role}`;
+/**
+ * `microsoft` for an ordinary account; `microsoft · dev` when there is a role; and from epic 3
+ * `microsoft · dev · Atlas, Borealis` when the viewer may see which projects they are on.
+ *
+ * <p><b>Three names, then a count.</b> A contractor on nine projects would push the email out of
+ * the row otherwise, and the email is what the row is FOR.</p>
+ *
+ * <p><b>An id the project list cannot name is counted but not named.</b> The count must stay true:
+ * nine projects with one unnamed reads as three names and `+6`, never `+5` — a row must not tell
+ * somebody they are on fewer projects than they are. An unnamed id happens while a list is still
+ * being read, and on a project archived out from under a cached answer.</p>
+ *
+ * <p>`undefined` projects means the server was not asked or did not say (an older server, a caller
+ * claiming no contract); an empty list means it said 'none'. Neither draws anything: there is
+ * nothing to name in either case.</p>
+ */
+export function teamMemberDescription(
+  provider: string,
+  role: string | undefined,
+  projects: readonly string[] = [],
+): string {
+  return [provider, role, projectSummary(projects)].filter((part) => part !== undefined && part !== '').join(' · ');
+}
+
+/** The most names a row can carry before it stops being a row about a person. */
+const MAX_NAMED_PROJECTS = 3;
+
+/** The names, then what is left as a count — including the ids nothing could name. */
+function projectSummary(projects: readonly string[]): string {
+  const named = projects.filter((name) => name !== '');
+  const shown = named.slice(0, MAX_NAMED_PROJECTS);
+  const rest = projects.length - shown.length;
+  if (shown.length === 0) {
+    return rest === 0 ? '' : `${rest} projects`;
+  }
+  return rest === 0 ? shown.join(', ') : `${shown.join(', ')} +${rest}`;
 }
 
 /** The lease in words. `0` is the legal strictly-online, not a missing value. */

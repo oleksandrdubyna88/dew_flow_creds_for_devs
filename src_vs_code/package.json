@@ -650,6 +650,24 @@
         "icon": "$(shield)"
       },
       {
+        "command": "credSshManager.newProject",
+        "title": "New Project…",
+        "category": "CredsForDevs",
+        "icon": "$(folder-library)"
+      },
+      {
+        "command": "credSshManager.assignToProject",
+        "title": "Assign to Project…",
+        "category": "CredsForDevs",
+        "icon": "$(person-add)"
+      },
+      {
+        "command": "credSshManager.removeFromProject",
+        "title": "Remove from Project…",
+        "category": "CredsForDevs",
+        "icon": "$(remove)"
+      },
+      {
         "command": "credSshManager.acceptShare",
         "title": "Accept…",
         "category": "CredsForDevs",
@@ -1158,6 +1176,20 @@
       }
     ],
     "menus": {
+      "commandPalette": [
+        {
+          "command": "credSshManager.newProject",
+          "when": "false"
+        },
+        {
+          "command": "credSshManager.assignToProject",
+          "when": "false"
+        },
+        {
+          "command": "credSshManager.removeFromProject",
+          "when": "false"
+        }
+      ],
       "credSshManager.install": [
         {
           "command": "credSshManager.installCli",
@@ -1439,6 +1471,26 @@
           "command": "credSshManager.setMemberRole",
           "when": "view == credSshManagerView && viewItem == teamMember-adminView",
           "group": "1_create@2"
+        },
+        {
+          "command": "credSshManager.assignToProject",
+          "when": "view == credSshManagerView && viewItem == teamMember-adminView",
+          "group": "1_create@3"
+        },
+        {
+          "command": "credSshManager.removeFromProject",
+          "when": "view == credSshManagerView && viewItem == teamMember-adminView",
+          "group": "1_create@4"
+        },
+        {
+          "command": "credSshManager.newProject",
+          "when": "view == credSshManagerView && viewItem == teamMember-adminView",
+          "group": "1_create@5"
+        },
+        {
+          "command": "credSshManager.newProject",
+          "when": "view == credSshManagerView && viewItem == teamScope",
+          "group": "1_create@1"
         },
         {
           "command": "credSshManager.acceptShare",

@@ -67,6 +67,22 @@ export interface MemberSelf {
   readonly serverContract: number;
 }
 
+/**
+ * One project as the admin surface reports it.
+ *
+ * <p>Ids are hex GUIDs, so a row that showed one would be worse than a row that said nothing —
+ * this is what turns an id on somebody's record into a name a person recognises.</p>
+ */
+export interface ProjectRow {
+  readonly id: string;
+  readonly name: string;
+  readonly archived: boolean;
+}
+
+/** What an admin sends to put somebody on a project. The server's three, and nothing else. */
+export const PROJECT_SHARES = ['inherit', 'project', 'none'] as const;
+export type ProjectShare = (typeof PROJECT_SHARES)[number];
+
 /** One row of the admin's roster — `GET /api/org/members`, and what `PUT` answers. */
 export interface MemberListEntry {
   readonly email: string;
@@ -149,6 +165,17 @@ const ROW_SHAPE = {
 
 const SETTINGS_SHAPE = { offlineLeaseHours: 'number', updatedAt: 'number', updatedBy: 'string' } as const;
 
+const PROJECT_SHAPE = { id: 'string', name: 'string', archived: 'boolean' } as const;
+
+function isProjectRow(value: unknown): value is ProjectRow {
+  return hasShape(value, PROJECT_SHAPE);
+}
+
+/** A list with one row this build cannot read fails whole, exactly as the roster does. */
+function isProjectList(value: unknown): value is ProjectRow[] {
+  return Array.isArray(value) && value.every(isProjectRow);
+}
+
 function isProjectAssignment(value: unknown): value is ProjectAssignment {
   return hasShape(value, { projectId: 'string', share: 'string' });
 }
@@ -226,6 +253,73 @@ export class OrgMembersClient {
   async ackFolderRemoval(account: StoredAccount, projectId: string): Promise<void> {
     const path = `/api/org/members/me/pending-folder-removals/${encodeURIComponent(projectId)}/ack`;
     const response = await this.api.request(account, path, { method: 'POST' });
+    if (!response.ok) {
+      throw new Error(await this.api.refusal(response));
+    }
+  }
+
+  /**
+   * Every project this caller may see — all of them for an admin, their own for a developer.
+   *
+   * <p>What turns the ids on a person's record into names. A server too old to have projects
+   * answers 404, which means the same as an empty list here and must not read as an error: the
+   * Team rows simply name nothing.</p>
+   */
+  async listProjects(account: StoredAccount): Promise<ProjectRow[]> {
+    const response = await this.api.request(account, '/api/org/projects');
+    if (response.status === 404) {
+      return [];
+    }
+    return this.parse(response, isProjectList, 'the projects');
+  }
+
+  /** Create one. The id is minted by the server, so two admins naming the same thing get two. */
+  async createProject(account: StoredAccount, name: string): Promise<ProjectRow> {
+    const response = await this.api.request(account, '/api/org/projects', {
+      method: 'POST',
+      body: JSON.stringify({ name }),
+    });
+    return this.parse(response, isProjectRow, 'the new project');
+  }
+
+  /** Put somebody on a project, or change what they may do in it. */
+  async assignToProject(
+    account: StoredAccount,
+    projectId: string,
+    email: string,
+    share: ProjectShare,
+  ): Promise<void> {
+    await this.expectNoContent(
+      await this.api.request(account, this.memberOfProject(projectId, email), {
+        method: 'PUT',
+        body: JSON.stringify({ share }),
+      }),
+    );
+  }
+
+  /**
+   * Take somebody off a project.
+   *
+   * <p><b>`deleteFolder` is required by the server</b> and therefore by this method: there is no
+   * default, because one reading deletes somebody's folder when the admin meant only to unassign
+   * and the other leaves corporate material on a machine when they meant it gone.</p>
+   */
+  async removeFromProject(
+    account: StoredAccount,
+    projectId: string,
+    email: string,
+    deleteFolder: boolean,
+  ): Promise<void> {
+    const path = `${this.memberOfProject(projectId, email)}?deleteFolder=${String(deleteFolder)}`;
+    await this.expectNoContent(await this.api.request(account, path, { method: 'DELETE' }));
+  }
+
+  private memberOfProject(projectId: string, email: string): string {
+    return `/api/org/projects/${encodeURIComponent(projectId)}/members/${encodeURIComponent(email)}`;
+  }
+
+  /** A 204 has no body to parse; a refusal is still the server's own sentence. */
+  private async expectNoContent(response: Response): Promise<void> {
     if (!response.ok) {
       throw new Error(await this.api.refusal(response));
     }
