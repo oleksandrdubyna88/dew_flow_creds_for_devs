@@ -89,3 +89,4 @@ The family-wide rules are a submodule at `.claude/rules/shared`. Repository-spec
 a plan between them, are defined in `.claude/rules/shared/common/planning-docs.md` and enforced in CI
 by `plan-lifecycle.mjs`.
 - [PLAN_payment_polish_and_entity_pin.md](PLAN_payment_polish_and_entity_pin.md) — the owner's batch of 2026-09-03: the payment surfaces, the weaving controls, the billing address as cells, generation with parameters, and the secret envelope §6 rests on.
+- [PLAN_woven_passwords_and_entity_pin.md](PLAN_woven_passwords_and_entity_pin.md) — a woven password on a credential (v0.98.0), then a PIN on an entry or a folder as a REAL wrap (v0.99.0 → v1.0.0): every read path taught about a locked secret, a folder run that is resumable rather than transactional, and a shared entry that asks its RECIPIENT for a PIN of their own.
