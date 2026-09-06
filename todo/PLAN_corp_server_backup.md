@@ -9,7 +9,7 @@
 > invariants and the shared shapes.
 >
 > Depends on [PLAN_corp_registry_roles.md](../research/PLAN_corp_registry_roles.md) (`RequireAdmin`, runtime
-> settings), [PLAN_corp_blocking_login_key.md](PLAN_corp_blocking_login_key.md) (the deployment KEK
+> settings), [PLAN_corp_blocking_login_key.md](../research/PLAN_corp_blocking_login_key.md) (the deployment KEK
 > that seals what this archive carries) and [PLAN_corp_event_log.md](PLAN_corp_event_log.md) (every
 > run leaves a row).
 >

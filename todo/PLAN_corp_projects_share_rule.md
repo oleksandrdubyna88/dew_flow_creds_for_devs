@@ -8,7 +8,7 @@
 >
 > Depends on [PLAN_corp_registry_roles.md](../research/PLAN_corp_registry_roles.md) (roles, `RequireAdmin`, the
 > member record's `projects[]` and `pendingFolderRemovals[]`) and on
-> [PLAN_corp_blocking_login_key.md](PLAN_corp_blocking_login_key.md) (`active`, which the share rule
+> [PLAN_corp_blocking_login_key.md](../research/PLAN_corp_blocking_login_key.md) (`active`, which the share rule
 > consults). [PLAN_corp_event_log.md](PLAN_corp_event_log.md) later replaces this epic's
 > retention-bounded approximation of "who has shared with me".
 >
