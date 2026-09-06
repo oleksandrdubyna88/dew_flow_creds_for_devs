@@ -118,6 +118,16 @@ export class VaultKeys {
   loginKeys: { resolve: (account: StoredAccount) => Promise<LoginKeyBinding | undefined> } | undefined;
 
   /**
+   * Why this account may not be opened right now — deactivated, or offline past its lease — or empty
+   * when it may. Set on a corporate deployment only; absent everywhere else.
+   *
+   * <p>Asked at the TOP of the unlock, before any secret is read or any prompt is shown. The plan
+   * round's finding: refusing only the silent path would have left a person free to type their PIN
+   * and carry on, which is not a lease, and would have left an already-open session running.</p>
+   */
+  standingOf: ((account: StoredAccount) => string) | undefined;
+
+  /**
    * The login key this vault's wraps need, or nothing when they need none.
    *
    * <p>Asked only when a wrap actually says it is bound: a personal vault must not cost a network
@@ -294,6 +304,17 @@ export class VaultKeys {
     vaultContent: string | undefined,
     options: { interactive: boolean },
   ): Promise<VaultKey | undefined> {
+    // The corporate standing comes first: an account an administrator deactivated, or one whose
+    // offline lease has run out, is not opened by ANY route — including a person typing their PIN.
+    // Nothing is deleted, and one successful sync restores it; the sentence says so.
+    const standing = this.standingOf?.(account) ?? '';
+    if (standing !== '') {
+      if (options.interactive) {
+        void vscode.window.showWarningMessage(standing);
+      }
+      return undefined;
+    }
+
     // While locked, only a caller that can ASK is allowed through. Background sync
     // cannot ask, so it is refused rather than quietly reopening what the user just shut.
     if (!options.interactive && !this.lockState.allowsSilentUnlock()) {

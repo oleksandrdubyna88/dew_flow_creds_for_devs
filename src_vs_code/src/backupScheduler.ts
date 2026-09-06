@@ -1,3 +1,5 @@
+import { CorpPolicyState } from './corpPolicy';
+import { refuseExit } from './corpExits';
 import { describeError } from './describeError';
 import * as crypto from 'node:crypto';
 import * as vscode from 'vscode';
@@ -51,6 +53,8 @@ export class BackupScheduler implements vscode.Disposable {
     private readonly transports: TransportFactory,
     private readonly memento: vscode.Memento,
     private readonly log: (message: string) => void = () => {},
+    /** This window's view of who each account is to its server; absent for a personal deployment. */
+    private readonly corpPolicyOf?: (accountId: string) => CorpPolicyState | undefined,
   ) {
     this.configListener = vscode.workspace.onDidChangeConfiguration((e) => {
       if (e.affectsConfiguration(CONFIG_SECTION)) {
@@ -121,6 +125,16 @@ export class BackupScheduler implements vscode.Disposable {
       return; // snapshots switched off for this account
     }
     if (!force && !dueForSnapshot(last, new Date(), hours)) {
+      return;
+    }
+
+    // A scheduled snapshot is the export ban's third route, and the only one nobody presses: it
+    // would write a developer's whole vault to a folder on a timer. Checked here rather than at
+    // scheduling time, because the role can change between the two — and named in the log, so an
+    // operator reading it can tell a policy refusal from a missing folder or a failed read.
+    const refusal = refuseExit(this.corpPolicyOf?.(account.accountId), 'backup');
+    if (refusal !== '') {
+      this.warnOnce(account, `scheduled backup skipped: ${refusal}`);
       return;
     }
 

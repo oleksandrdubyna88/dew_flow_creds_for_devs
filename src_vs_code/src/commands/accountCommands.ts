@@ -1,6 +1,8 @@
 /* eslint-disable complexity, max-lines-per-function -- command registrations moved verbatim out of extension.ts
    (roadmap A1 stage 2, 2026-08-28): one function that registers a family of closures, each the size it
    was. The ceilings are a boundary for NEW code here; a handler meets them when it is next touched. */
+import { CorpPolicyState } from '../corpPolicy';
+import { refuseExit } from '../corpExits';
 import { BackupScheduler } from '../backupScheduler';
 import { GoogleAuthProvider } from '../googleAuthProvider';
 import { SyncReadiness } from '../syncReadiness';
@@ -27,6 +29,8 @@ import { setAccountNasPath } from '../nasPaths';
 import { describeError } from '../describeError';
 export interface AccountCommandsHost {
   readonly backups: BackupScheduler;
+  /** This window's view of who each account is to its server; absent for a personal deployment. */
+  readonly corpPolicyOf?: (accountId: string) => CorpPolicyState | undefined;
   readonly googleAuth: GoogleAuthProvider;
   readonly mutated: () => void;
   readonly refreshReadiness: () => Promise<Map<string, SyncReadiness>>;
@@ -42,7 +46,7 @@ export interface AccountCommandsHost {
 }
 
 export function registerAccountCommands(host: AccountCommandsHost): void {
-  const { backups, googleAuth, mutated, refreshReadiness, register, reportTeamRefusals, runBackup, runRestore, sharing, storage, sync, transports, vaultKeys } = host;
+  const { backups, corpPolicyOf, googleAuth, mutated, refreshReadiness, register, reportTeamRefusals, runBackup, runRestore, sharing, storage, sync, transports, vaultKeys } = host;
 
   register('credSshManager.syncNow', async () => {
     vaultKeys.noteUserActivity(); // the user is here: postpone auto-lock
@@ -390,7 +394,33 @@ ${detail}
     );
   });
 
-  register('credSshManager.backupToNas', runBackup);
+  /**
+   * The same ban as the export, on the route that writes vaults to a folder.
+   *
+   * <p>A backup takes no target: it writes what this window holds, so ONE account that may not be
+   * exported is enough to refuse the whole run — writing the others and silently omitting that one
+   * would produce a backup whose name says more than its contents. Checked as late as it can be,
+   * immediately before the run, because a file already written is an export that has happened and
+   * deleting it afterwards destroys somebody's backup over a race.</p>
+   */
+  const refuseBackup = (): string => {
+    for (const account of storage.getAccounts()) {
+      const refusal = refuseExit(corpPolicyOf?.(account.accountId), 'backup');
+      if (refusal !== '') {
+        return `${account.email}: ${refusal}`;
+      }
+    }
+    return '';
+  };
+
+  register('credSshManager.backupToNas', async () => {
+    const refusal = refuseBackup();
+    if (refusal !== '') {
+      void vscode.window.showWarningMessage(refusal);
+      return undefined;
+    }
+    return runBackup();
+  });
 
   register('credSshManager.restoreBackup', runRestore);
 }
