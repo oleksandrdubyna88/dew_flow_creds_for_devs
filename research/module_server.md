@@ -22,7 +22,9 @@ whole server is ~2,100 lines.
 |---|---|
 | `src/Program.cs` | Configuration, startup guards, the pipeline, the gates, and the twenty-five endpoints of the personal and recovery surfaces; the corporate routes are mapped from `OrgEndpoints.cs` |
 | `src/VaultStore.cs` | Filesystem storage: atomic writes, hashed paths, the crash sweep |
-| `src/VaultStoreOutbox.cs` | The sender's receipts, and the two sweeps that bound both sides |
+| `src/VaultStoreOutbox.cs` | The sender's receipts, and the two sweeps that bound both sides — the reconcile sweep keeps a receipt the server withdrew |
+| `src/VaultStoreBlocking.cs` | Withdrawal at the moment of a block: every pending share to the person leaves their inbox and its sender's receipt gains a reason; every pending share from them leaves every recipient's inbox |
+| `src/CallerStanding.cs` | The blocking gate's decision as a pure function — the five branches — and the `X-Creds-Reason` header it refuses with; `RequireCaller` applies it |
 | `src/ShareMaintenance.cs` | The hourly pass: retire dealt-with receipts, prune what aged out |
 | `src/ContractVersion.cs` | The HTTP contract version, and what a mismatch does |
 | `src/TokenIdentity.cs` | Reads the verified caller identity out of JWT claims |
@@ -34,7 +36,7 @@ whole server is ~2,100 lines.
 | `src/OrgMembersStore.cs` | One record per person under `org/members/`, read synchronously from a stat-checked cache, written read-modify-write under the vault's per-email lock |
 | `src/OrgSettingsStore.cs` | The runtime settings an admin edits without a restart (`org/settings.json`); absent answers the default and writes nothing |
 | `src/OrgEventLog.cs` | The append-only NDJSON event log, one file per UTC day under `org/events/` — the writer only; the reader is a later epic's |
-| `src/OrgEndpoints.cs` | The corporate surface `/api/org/*`, mapped from its own file (`Program.cs` is past the size ceiling and four more epics add routes): `GET /api/org/me`, the JSON `FailJson` every refusal there uses, and the registration hook `PUT /api/vault` calls. The gates stay in `Program.cs` and cross over as delegates in one `OrgEndpointDeps` record |
+| `src/OrgEndpoints.cs` | The corporate surface `/api/org/*`, mapped from its own file (`Program.cs` is past the size ceiling and four more epics add routes): `GET /api/org/me`, the admin's roster, role and settings routes, the block/unblock route `PUT /api/org/members/{email}/active`, the JSON `FailJson` every refusal there uses, and the registration hook `PUT /api/vault` calls. The gates stay in `Program.cs` and cross over as delegates in one `OrgEndpointDeps` record |
 | `src/Logging.cs` | Serilog wiring: the coloured console + the segmenting run file |
 | `src/AnsiConsoleSink.cs` | Hand-written ANSI colour (ported from the family — Serilog's own theme writes zero escapes once stdout is redirected, and a container's captured stdout always is) |
 | `src/DailyRunFileSink.cs` | A file per run, segmenting at UTC midnight (`00-00-00-<pid>.log` in the next day's folder) so a never-restarting container cannot grow one file for months |
@@ -60,8 +62,13 @@ flowchart TD
     H --> I{RequireCaller}
     I -->|no email claim| J[401]
     I -->|domain not allowed| K[403]
+    I -->|"corp mode, not an officer,<br/>record says active: false"| M["403 + X-Creds-Reason:<br/>account-deactivated"]
+    I -->|"corp mode, not an officer,<br/>record cannot be read"| N[503 + Retry-After]
     I -->|ok| L[Handler]
 ```
+
+The last two are the blocking gate (2026-09-06), and they live INSIDE `RequireCaller` rather than
+beside it — see *Authorization* below for the five branches and why an officer is never refused.
 
 Two things this ordering fixes:
 
@@ -90,6 +97,7 @@ identifier**, so there is nothing to tamper with.
 | `GET` | `/api/org/me` | any allowed caller | `200` / `503` | The role-and-policy document — **a document the client obeys, not a boundary the server holds**. Corp mode off → `corpMode: false` and inert defaults. Never writes. See below |
 | `GET` | `/api/org/members` | **admin** | `200` | The roster of the caller's own domain, one row per record, officers flagged. Not streamed: 200 records of about a kilobyte |
 | `PUT` | `/api/org/members/{email}` | **admin** | `200` / `400` / `403` / `409` / `503` | Set a role, a share default, or both — for somebody who may not have synced yet. See below |
+| `PUT` | `/api/org/members/{email}/active` | **admin** | `204` / `400` / `403` / `409` / `503` | `{active}` — `false` blocks, `true` re-admits. Idempotent: `204` whether or not anything changed. A real block withdraws every pending share to and from the person and appends `member.blocked`; an officer target is `409`. See below |
 | `GET` | `/api/org/settings` | **admin** | `200` | The runtime settings; absent file → the defaults, and no file is written |
 | `PUT` | `/api/org/settings` | **admin** | `200` / `400` | `offlineLeaseHours >= 0`; `0` is the legal "strictly online" |
 | `GET` | `/api/org-recovery/config` | any allowed caller | `200` | The corporate-recovery roster this server runs under. See below |
@@ -105,11 +113,11 @@ identifier**, so there is nothing to tamper with.
 | `PUT` | `/api/org-recovery/sessions/{id}/target-vault` | **initiator, at quorum** | `204` / `412` | The re-keyed vault, written back once |
 | `DELETE` | `/api/org-recovery/sessions/{id}` | initiator | `204` / `404` | Call it off |
 | `GET` | `/api/org-recovery/audit` | officer | `200` | Who opened whose vault, **streamed** |
-| `POST` | `/api/shares` | sender = token email | `201` | Body below |
+| `POST` | `/api/shares` | sender = token email | `201` / `400` / `403` / `409` / `503` | Body below. In corp mode the RECIPIENT's standing is checked too: `403` for a deactivated recipient, `503` while their record cannot be read — see below |
 | `GET` | `/api/shares` | recipient = token email | `200` | Your inbox, **streamed** |
 | `DELETE` | `/api/shares/{id}` | recipient = token email | `204` / `404` | `id` must parse as a GUID |
-| `GET` | `/api/shares/sent` | sender = token email | `200` | Your own receipts, **streamed**. No ciphertext — see below |
-| `DELETE` | `/api/shares/sent/{id}` | sender = token email | `204` / `409` / `404` | Withdraw while pending; `409` once accepted or declined |
+| `GET` | `/api/shares/sent` | sender = token email | `200` | Your own receipts, **streamed**. No ciphertext — see below. A receipt the server withdrew when its recipient was blocked carries `withdrawnReason`; every other receipt has no such key |
+| `DELETE` | `/api/shares/sent/{id}` | sender = token email | `204` / `409` / `404` | Withdraw while pending; `409` once accepted or declined; a receipt carrying `withdrawnReason` is **dismissed** with `204` whatever the inbox says |
 
 ### `POST /api/shares`
 
@@ -180,7 +188,65 @@ else's id has nothing to look it up in, and gets `404`. Already accepted is **`4
 means the secret is now somewhere the sender cannot reach.
 
 `ShareMaintenance` retires a receipt once the inbox file is gone — the recipient acting is the
-only signal there is, because nothing tells the sender.
+only signal there is, because nothing tells the sender — **with one exception, below.**
+
+### Withdrawal at a block, and what the sender sees (2026-09-06)
+
+When an admin blocks somebody (`PUT /api/org/members/{email}/active` with `{active: false}`), the
+server withdraws their pending shares in **both directions**, inline in that request — "immediately"
+is owner decision 5, and the recipient's next sync is not something an admin can wait for
+(`VaultStoreBlocking.cs`):
+
+- **Shares TO the blocked person** are deleted from their inbox, and each sender's receipt is
+  **rewritten** with `withdrawnReason` set — a sentence, *"Withdrawn: the recipient's account was
+  deactivated by an administrator before they accepted it."* Rewritten, never deleted, because the
+  receipt is the only place the sender can learn why their share vanished. A receipt that no longer
+  exists (already dismissed, pruned, or from an older server) is not resurrected.
+- **Shares FROM the blocked person** are deleted from every recipient's inbox, and the blocked
+  sender's own receipts go with them: they need no reason, because a blocked person cannot call
+  anything to read one.
+- **Best-effort per file, never a `500`.** The block is already on disk when this runs; a file that
+  will not delete is skipped and the rest are still withdrawn, exactly as the sweeps skip one. The
+  `member.blocked` row and the Warning log line carry the two counts.
+- **Repeating the block finishes what a first one could not.** The withdrawal runs on **every**
+  `active: false` write, transition or not: it is a loop over other people's files, and a crash, a
+  handle somebody else holds or a permission flipped half-way leaves shares in an inbox the block was
+  meant to empty, with nothing retrying them on a cadence. A repeat that compared the record, saw no
+  transition and answered `204` would make the only recovery a human has — send it again — the one
+  action guaranteed to do nothing. A repeat that finds nothing costs two directory reads and writes no
+  row; one that finds leftovers logs a Warning saying it completed an unfinished withdrawal, rather
+  than appending a second `member.blocked` a reader would count as a second block.
+
+**The recipient half: a share cannot be addressed to a blocked person.** The caller gate judges
+whoever is calling, and a share is addressed to somebody else — so `POST /api/shares` consults the
+recipient's standing before anything is written: `403` *"Recipient's account has been deactivated."*,
+`503` with `Retry-After` when their record cannot be read (fail-closed for the gate's own reason: one
+corrupt file must not deliver to somebody who may be blocked), and unchanged for an active colleague,
+somebody who never synced, an officer, or any recipient on a personal server. Without this a colleague
+whose client remembers the address — a blocked person is hidden from `/api/team`, not from a client's
+memory — drops material into an inbox its owner is refused at, where it waits out the 31-day prune and
+becomes readable the day they are re-admitted, while the sender holds a receipt saying it was sent.
+**Neither refusal carries `X-Creds-Reason`**: that header tells a client to lock its OWN account and
+purge its key material, and an honest client matching it here would lock the innocent sender out.
+
+What the sender sees, in order: `GET /api/shares/sent` still lists the receipt, now with
+`withdrawnReason`; `DELETE /api/shares/sent/{id}` on it answers `204` and forgets it — a **first
+branch** ahead of the ordinary withdraw logic, which would read the missing inbox file as "already
+accepted" and answer `409`, the one thing a withdrawn share is not. Nothing comes back on unblock:
+withdrawal is not a suspension.
+
+**`ReconcileSentAsync` keeps a receipt carrying a reason.** Its "still pending" test is "the inbox
+file exists", and withdrawal deletes exactly that file — so without the exception the hourly sweep
+would erase the sender's one explanation within the hour. The story split found this by reading the
+two paths side by side; a test pins it with an accepted receipt as the positive control. The 31-day
+prune (`PruneOlderThanAsync`) still retires it by its own `createdAt`, so a sender who never opens
+their Sent view does not accumulate them.
+
+The wire shape for every other receipt is unchanged: `withdrawnReason` is **omitted**, never `null`
+or `""`, and a released extension's `isSentShare` checks its five fields and ignores extras, so no
+contract bump was needed. On the server the field is `string?` read only through `IsWithdrawn` — a
+`string` with `= ""` would still arrive `null` for a receipt lacking the key (the deserializer runs
+no initializer; measured on `ShareRequest.EntityKind`), while the type claimed otherwise.
 
 ### The contract version
 
@@ -233,12 +299,14 @@ unconditionally**: the roster is the operator's own list, an officer cannot be g
 say who can. **Everybody else passes only by their record saying `admin`.**
 
 Every refusal it decides is the **same `403` with the same JSON body** — not an admin, never
-registered, corp mode off, and a record this build cannot read. That is `RequireOfficer`'s doctrine
-for its reason: telling a caller which fact failed hands them the roster's shape for free. The
-unreadable case is the one worth naming: a record the server cannot parse is not a person whose
-standing it may guess, and guessing would mean the computed default, which is a `member` — the plan
-round's escalation, one gate later. The gate writes its own body, unlike `RequireOfficer`, because
-this surface promises a reason and an empty `403` is not one.
+registered, corp mode off. That is `RequireOfficer`'s doctrine for its reason: telling a caller which
+fact failed hands them the roster's shape for free. A record this build cannot read used to be a fourth
+cause of that `403`; since the blocking gate (2026-09-06) a non-officer with such a record is met one
+gate earlier, inside `RequireCaller`, with the `503` + `Retry-After` that `/api/org/me` answers for the
+same file — a fact about the caller's own record, not about the roster. Either way: a record the server
+cannot parse is not a person whose standing it may guess, and guessing would mean the computed default,
+which is a `member` — the plan round's escalation, one gate later. The gate writes its own body, unlike
+`RequireOfficer`, because this surface promises a reason and an empty `403` is not one.
 
 ### The admin's routes
 
@@ -281,6 +349,45 @@ deserializer runs no defaults, so a positional `int` a client omitted would bind
 is the legal "strictly online" — a body of `{}` would have switched every client's lease off in
 silence. Absent is a `400` instead.
 
+**`PUT /api/org/members/{email}/active`** (2026-09-06) is the block and the unblock — `{active: false}`
+and `{active: true}` — and its own route rather than a field on the upsert: "changed a role" and
+"locked somebody out" are different acts an audit log must tell apart, and the body's one field has to
+be impossible to omit by accident. `SetActiveRequest.Active` is **nullable for the reason
+`SetSettingsRequest` gives, with higher stakes**: a positional `bool` a client omitted would bind to
+`false`, and `false` here blocks somebody — `{}` and an explicit `null` are `400`s that name the field.
+
+It shares `TargetProblem` with the role upsert, so the two cannot disagree about whom an admin may
+reach: a non-address is `400`, a cross-domain target `403`, **an officer `409`** — the roster is
+configuration, and a gate that refused an officer would lock the break-glass quorum out of the only
+road into a blocked developer's vault, so an officer cannot be blocked at all. An unreadable record is
+`503` with the file left untouched: a default written over a blocked developer's corrupt record is an
+unblock nobody ordered. A non-admin is `403`.
+
+**`409` beats `503` when both are true.** An officer whose own record cannot be read is refused with
+`409`, not `503`: the officer check reads configuration and never opens the record, so it decides
+first — and must, because `503` invites a retry that can never succeed and makes a corrupt file look
+like the reason an officer is protected. The same precedence the caller gate applies when it passes an
+officer whose record will not parse. A test pins the order.
+
+**Idempotent, `204` either way.** The write is `UpsertAsync(email, r => r with { Active = … })` — the
+same per-member lock as every other edit, and the edit touches `Active` alone, so a developer who is
+blocked and re-admitted comes back the developer they were, not the default member who may export. A
+value the record already holds writes no row — the log records transitions — but a repeated
+`active: false` **does** re-run the withdrawal, which is how an unfinished one is completed (above). A
+real transition to `false` is the block: the caller gate refuses the person from their very next request
+(the record is on disk and the gate re-stats), both directions of pending shares are withdrawn (above),
+`member.blocked` is appended and a **Warning** names the admin, the target and the two counts — this is
+the one admin action that changes what happens to other people's inboxes, and an operator must be able
+to see who did it to whom from the server log alone. A real transition to `true` appends
+`member.unblocked` and logs likewise; nothing withdrawn comes back. The upsert creates, as the role
+upsert does, so an admin may shut a door before the person has ever opened it — the record is created
+inactive with the admin's stamp, `member.registered` names the admin, and the first sync never happens.
+
+**No client token from the moment the record has landed.** The withdrawal and the rows run under
+`CancellationToken.None`, on the precedent of `DELETE /api/vault`: the person is already refused, so the
+withdrawal is owed whether or not the admin's client is still listening — a disconnect that cancelled
+it half-way would leave shares in inboxes the block was meant to empty.
+
 ### What the admin routes write to the log
 
 **One row per changed PROPERTY, not per request** — a PUT that sets both a role and a share default
@@ -296,6 +403,8 @@ commit the mutation waits for:
 | `member.registered` | the upsert, when it created the record — with the ADMIN as actor | the role it was created with |
 | `member.role_changed` | the upsert, only when the value actually differs | `from -> to` |
 | `member.share_default_changed` | the upsert, only when the value actually differs | `from -> to` |
+| `member.blocked` | `PUT …/active` with `false`, only on the real transition — with the ADMIN as actor; the store cannot emit it, because the same `UpsertAsync` serves a sync and an admin and only the caller knows which | `withdrew N pending share(s) to them and M from them` |
+| `member.unblocked` | `PUT …/active` with `true`, only on the real transition | — |
 | `settings.changed` | `PUT /api/org/settings`, only when the value differs | `offlineLeaseHours from -> to` |
 
 "Differs" is decided against `UpsertResult.Before` — the record the write actually replaced, read
@@ -571,11 +680,43 @@ a server advertising the wrong value.
 (string Email, string? Name)? RequireCaller(HttpContext ctx)
 ```
 
-Three outcomes: `401` when no verified email claim is present, `403` when the domain is not allowed,
-otherwise the caller. `TokenIdentity.Email` walks `email` → `preferred_username` → `upn` →
-`ClaimTypes.Email` → `ClaimTypes.Name`, lowercases the result, and **rejects outright** a token
+Three outcomes before corp mode: `401` when no verified email claim is present, `403` when the domain
+is not allowed, otherwise the caller. `TokenIdentity.Email` walks `email` → `preferred_username` →
+`upn` → `ClaimTypes.Email` → `ClaimTypes.Name`, lowercases the result, and **rejects outright** a token
 carrying `email_verified: false` (Google sets it in some tenants; Microsoft does not send it at
 all, so absent means accept).
+
+### The blocking gate — five branches, inside `RequireCaller` (2026-09-06)
+
+Once the token and the domain have passed, the gate asks where the caller stands with this deployment
+(`CallerStanding.Decide`, a pure function; `RequireCaller` applies its answer):
+
+| Branch | Answer | Why that answer |
+|---|---|---|
+| corp mode off | pass, **registry not consulted** | personal mode stays byte-identical whatever a leftover `org/` holds |
+| an officer — whatever their record says, inactive or unreadable | pass, **registry not consulted** | the roster is configuration; a gate that refused an officer would lock the break-glass quorum out of the only road into a blocked developer's vault, which is the vault this feature exists for. The API cannot write such a record (an officer target is `409`); a hand-edit or a restore can |
+| not registered | pass | never synced, so the computed default applies, and the default is active |
+| found, `active: true` | pass | |
+| found, `active: false` | **`403` + `X-Creds-Reason: account-deactivated`** | a client that must lock the account and purge local key material cannot be asked to match prose, and this `403` has to stay distinguishable from the domain's, which carries no header |
+| record cannot be read | **`503` + `Retry-After: 60`**, never a pass | failing open would mean one corrupt file re-admits somebody a company has just locked out — the escalation the registry's plan round found, one gate later |
+
+**Inside `RequireCaller`, not beside it.** Every endpoint opens with `RequireCaller` —
+`RequireOfficer`, `RequireAdminAsync` and the corporate routes' `RequireOrgCallerAsync` included — so
+one edit covers every call site, and a route added tomorrow is covered by opening the way every route
+does. A sibling gate would have meant converting seventeen call sites by hand: *a measure applied at
+some of the sites that need it*, the class of defect this repository keeps finding. A test derives the
+route list from the server's own `EndpointDataSource` and asserts the `403` and the header on every
+authenticated route, so the list cannot go stale. `Find` is synchronous and answered from a stat-checked
+cache, so the gate stays synchronous and a block written under the server — by the admin route, a
+restore, an operator — is met on the very next request. The gate sets a status and a header and writes no
+body, because the older routes answer their `401` and `403` with none; `RequireOrgCallerAsync` adds the
+corporate surface's JSON sentence for the deactivated case and hands the `503` to the same sentence
+`/api/org/me` uses for that file. The rate limiter is untouched: it partitions on the email before the
+gate runs, so a blocked caller's retries punish nobody else. `/api/team`'s corp-mode filter is the same
+decision (`IsDiscoverable` → `Standing.Admitted`), so the gate and the filter cannot disagree about a
+person. One consequence worth naming: **a blocked person cannot delete their own vault** — the vault is
+kept for the officers' break-glass, and erasing it on the way out is exactly what blocking exists to
+prevent.
 
 **And it refuses an identity it could not print.** A value carrying a control character, or longer
 than 320 characters, is not an email this server will act on — the caller meets the `401` instead.
@@ -657,7 +798,8 @@ crash, and is removed.
 ```
 ${DataDir}/vaults/<key>.bin      the ciphertext
 ${DataDir}/vaults/<key>.email    the plaintext email, for team discovery
-${DataDir}/shares/<key>/<guid>.json
+${DataDir}/shares/<key>/<guid>.json                   a recipient's inbox: one sealed share
+${DataDir}/sent/<key>/<guid>.json                     the sender's receipt: no ciphertext; `withdrawnReason` once the server withdrew it
 ${DataDir}/org-recovery/setup.json                    the published org PUBLIC key
 ${DataDir}/org-recovery/invites/<key>/<guid>.json     one officer's sealed Shamir share
 ${DataDir}/org-recovery/ceremonies/<guid>.json        who ran a setup, and whom it invited
@@ -730,7 +872,7 @@ what is under it:
 
 ## Tests
 
-`src_minimalapi_server/tests/` — xUnit v3 on Microsoft Testing Platform, 300 tests, ~14 s. The
+`src_minimalapi_server/tests/` — xUnit v3 on Microsoft Testing Platform, 350 tests, ~16 s. The
 endpoint suites run in-process through `WebApplicationFactory` — no free port, no background
 `dotnet run`; the store suites drive a store directly on a throwaway data directory.
 
@@ -752,11 +894,15 @@ Never `dotnet test` — there is no VSTest host here and it aborts.
 | `OrgMembersTests` | Registration on the first vault write and not on `/api/org/me`; the default role is member; a second sync does not re-stamp a record an admin edited; personal mode creates no `org/` and answers `corpMode: false` from constants whatever a leftover record says; a never-synced caller is computed and nothing is written; an officer reads `isOfficer: true` with no registry row |
 | `OrgRegistrationTests` | A registry that cannot be written (`org/members` is a file) does not fail the vault write; the next sync registers the person after all; two syncs leave exactly one `member.registered` row and the second emits nothing; two concurrent first syncs leave one row and one record; an admin creating the record in the hook's window keeps their stamp (the lock held by the test); a client hanging up after registration still gets its row; the swallowed failure is logged at Error naming the person |
 | `IdentityHygieneTests` | What an identity may look like before the server acts on it: a control character anywhere in the address is refused (a newline forges a log line, and trimming only reaches the ends), 320 characters is the ceiling, a name that cannot be printed is dropped rather than stamped, and a token carrying a forged address is refused at the door with nothing written |
-| `OrgAdminGateTests` | Who administers: an officer with no record passes and registers nobody, a registry admin passes, a member and a developer and a never-registered caller are refused, an admin whose record became unreadable is refused rather than guessed at, corp mode off is the same `403` to the byte, and the gate's own `401` carries a JSON body |
+| `OrgAdminGateTests` | Who administers: an officer with no record passes and registers nobody, a registry admin passes, a member and a developer and a never-registered caller are refused, an admin whose record became unreadable is refused rather than guessed at (the caller gate's `503`, since epic 2), corp mode off is the same `403` to the byte, and the gate's own `401` carries a JSON body |
 | `OrgMembersAdminTests` | The roster and the upsert: scoped to the caller's domain with officers flagged, a role set before the person's first sync and left alone by it, cross-domain `403`, officer `409`, unknown role and empty body and malformed JSON and a target that is not an address `400`, a share default stored for a member and inert in the policy, `updatedBy` from the token, one row per real change and none for a change that changes nothing, and a `503` that leaves the record's bytes untouched |
 | `OrgSettingsTests` | The lease over the wire: the default without a file, written and read back, `0` accepted, negative and `{}` refused, non-admin `403`, and one `settings.changed` row |
 | `OrgMeAuthorizationTests` | No token → `401` with a JSON body; an outside-domain token → `403` with a JSON body and nothing registered; an email differing only in case and surrounding space resolves to one record, end to end |
-| `OrgUnavailableTests` | A corrupted record makes `/api/org/me` answer `503` with `Retry-After` and a JSON body — never the member default; the body says an administrator must repair it and never names the file; a sync never overwrites a record it cannot read, and still stores the vault |
+| `OrgUnavailableTests` | A corrupted record makes `/api/org/me` answer `503` with `Retry-After` and a JSON body — never the member default; the body says an administrator must repair it and never names the file; an officer's sync never overwrites a record it cannot read and still stores the vault (the officer is the one caller the gate lets reach the hook), and a non-officer's sync is refused at the door with the record left as it was |
+| `OrgBlockingGateTests` | The blocking gate: a blocked caller meets `403` + `X-Creds-Reason` on EVERY authenticated route, the list derived from the server's own `EndpointDataSource` (with a companion asserting the enumeration still sees the vault routes); a blocked person cannot delete their vault; the corporate surface's refusal is JSON naming the deactivation; a domain `403` carries no header; an unreadable record is `503` + `Retry-After` and never served; an officer whose record says inactive — or cannot be read — still passes; a never-registered caller passes and registers nobody; personal mode is byte-identical with or without a leftover record; a block written under the server is met on the very next request and an unblock likewise; the limiter still partitions a blocked caller on their own bucket; the five branches as a truth table, and the registry is not consulted for an officer or on a personal server |
+| `OrgBlockingAdminTests` | `PUT /api/org/members/{email}/active`: `204` and the roster shows inactive; the blocked person is refused on the very next request; blocking twice is idempotent and leaves exactly one `member.blocked` row; unblocking restores and leaves one `member.unblocked` row; a no-op leaves no row; blocking a never-synced person creates the record inactive with the admin's stamp; officer `409`, cross-domain `403`, non-address `400`, `{}` and `null` and garbage `400` (never a `false` the deserializer invented), corrupt record `503` with the file untouched, non-admin `403`, no token `401`; **an officer target stays `409` even when their own record cannot be read** (the precedence, pinned); `updatedBy` from the token; a block still answers `204` when the event log cannot be written; a block touches neither the role nor the share default |
+| `OrgBlockingWithdrawalTests` | A share to a blocked person leaves their inbox and the sender's receipt carries the reason; a receipt not withdrawn has no `withdrawnReason` key; the hourly sweep keeps a withdrawn receipt and still retires an accepted one (the positive control), end to end too; dismissing a withdrawn receipt is `204` and forgets it; the 31-day prune still retires it; a share from a blocked person leaves the recipient's inbox and the blocked sender's receipt goes too; both directions in one block with an unrelated share surviving; nothing comes back on unblock; **a repeated block finishes a withdrawal the first one could not** (the inbox file held open through the first PUT, released, and the repeat takes it); an idempotent re-block with nothing left withdraws nothing twice |
+| `OrgBlockingShareTests` | The recipient half: `POST /api/shares` to a deactivated colleague is `403` naming the deactivation, creates no inbox and no receipt, and carries **no** `X-Creds-Reason` (which would make an honest client lock the innocent sender's own account); an unreadable recipient record is `503` with `Retry-After` and no delivery; an active colleague, somebody who never synced, and a personal server with a leftover corrupt record are all unaffected |
 | `AppJsonContextTests` | Every DTO the org routes and their refusals serialize, lists included, is in the source-generated context — the one class of bug the endpoint suites cannot see, because under JIT an unregistered type falls through to reflection and only the AOT binary fails |
 | `SharingTests` | Delivery, sender stamping, cross-domain refusal, traversal ids, recipient-only delete |
 | `RateLimitTests` | One caller cannot lock out another; a caller who overruns is still throttled |

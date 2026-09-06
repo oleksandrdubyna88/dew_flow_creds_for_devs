@@ -1,7 +1,6 @@
 using System.Net;
 using System.Text.Json;
 using FluentAssertions;
-using Microsoft.Extensions.Logging.Abstractions;
 
 namespace CredVaultServer.Tests;
 
@@ -20,18 +19,15 @@ public sealed class TeamCorpTests
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
-    /// <summary>What epic 2's block will do, done by hand: the record says inactive.</summary>
-    private static Task BlockAsync(VaultServer server, string email) =>
-        new OrgMembersStore(server.DataDir, NullLogger<OrgMembersStore>.Instance)
-            .UpsertAsync(email, r => r with { Active = false }, "admin@example.com", Ct);
-
     private static async Task<string> TeamSeenByAliceAfterBothSyncedAndBobWasBlocked(VaultServer server)
     {
         using var alice = server.ClientFor(Alice);
         using var bob = server.ClientFor(Bob);
         await Corp.SyncAsync(alice);
         await Corp.SyncAsync(bob);
-        await BlockAsync(server, Bob);
+        // By hand rather than through the admin endpoint, so this suite stays about the team filter — and
+        // so a personal server, which has no endpoint to block with, gets the same record on disk.
+        await Corp.WriteActiveByHandAsync(server, Bob, active: false);
         return await alice.GetStringAsync("/api/team", Ct);
     }
 

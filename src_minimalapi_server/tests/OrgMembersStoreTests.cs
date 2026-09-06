@@ -54,19 +54,26 @@ public sealed class OrgMembersStoreTests : IDisposable
     {
         Directory.CreateDirectory(MembersDir);
         var path = RecordPath(email);
+        var previous = File.Exists(path) ? File.GetLastWriteTimeUtc(path) : DateTime.MinValue;
         File.WriteAllText(path, text);
-        Touch(path);
+        Touch(path, previous);
     }
 
     private void WriteRecord(string email, MemberRecord record) =>
         WriteRaw(email, JsonSerializer.Serialize(record, AppJsonContext.Default.MemberRecord));
 
     /// <summary>
-    /// Two writes inside one clock tick can share an mtime, so every out-of-process write here moves it
-    /// forward explicitly — as the seconds between a restore and the next request would.
+    /// Two writes inside one clock tick share an mtime — and bumping each write's OWN mtime by two seconds
+    /// gives them the same bumped value too, so a same-length rewrite was invisible to the store's stat
+    /// check and the cached verdict was served (watched: <c>AHigherSchemaVersionIsUnavailable</c> red in
+    /// one run of five, alone in its class). So every out-of-process write here moves the mtime past
+    /// whatever the file carried BEFORE it — as the seconds between a restore and the next request would.
     /// </summary>
-    private static void Touch(string path) =>
-        File.SetLastWriteTimeUtc(path, File.GetLastWriteTimeUtc(path).AddSeconds(2));
+    private static void Touch(string path, DateTime previous)
+    {
+        var written = File.GetLastWriteTimeUtc(path);
+        File.SetLastWriteTimeUtc(path, (written > previous ? written : previous).AddSeconds(2));
+    }
 
     /// <summary>Rewrite the record so that only the mtime could betray the change.</summary>
     private static void RewriteSameLength(

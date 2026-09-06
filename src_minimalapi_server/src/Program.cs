@@ -328,6 +328,8 @@ var orgDeps = new OrgEndpointDeps(
     orgMembers,
     app.Services.GetRequiredService<OrgSettingsStore>(),
     app.Services.GetRequiredService<OrgEventLog>(),
+    // The same instance the share endpoints close over: blocking withdraws pending shares from it.
+    store,
     allowAnyDomain,
     log,
     ContractVersion.Current);
@@ -489,7 +491,19 @@ app.Use(async (ctx, next) =>
 
 app.UseRateLimiter();
 
-// Authorize the caller resolved above; 403 for outside-domain callers.
+// Authorize the caller resolved above: 401 with no identity, 403 outside the domain — and, in corp
+// mode, the blocking gate: 403 with X-Creds-Reason for a person whose record says `active: false`,
+// 503 with Retry-After for a record this build cannot read. CallerStanding.Decide holds the five
+// branches and the reasons; this applies them.
+//
+// INSIDE this function rather than beside it, deliberately. Every endpoint opens with RequireCaller —
+// RequireOfficer, RequireAdminAsync and the corporate routes' own wrapper included — so one edit here
+// covers every call site, and a route added tomorrow is covered by opening the way every route does.
+// A sibling gate would have meant converting seventeen call sites by hand, which is "a measure
+// applied at some of the sites that need it": the class of defect this repository keeps finding
+// (security.md). Find is synchronous and answered from a stat-checked cache, so the gate stays
+// synchronous and costs microseconds; the rate limiter is untouched and still partitions on the
+// email before this runs, so a blocked caller's retries punish nobody else.
 (string Email, string? Name)? RequireCaller(HttpContext ctx)
 {
     var email = TokenIdentity.Email(ctx.User);
@@ -498,13 +512,77 @@ app.UseRateLimiter();
         ctx.Response.StatusCode = StatusCodes.Status401Unauthorized;
         return null;
     }
-    if (!allowAnyDomain && !TokenIdentity.DomainAllowed(email, allowedDomains))
+    if (!DomainServed(email))
     {
         ctx.Response.StatusCode = StatusCodes.Status403Forbidden;
         return null;
     }
-    return (email, TokenIdentity.Name(ctx.User));
+    return RefusedByStanding(ctx, email) ? null : (email, TokenIdentity.Name(ctx.User));
 }
+
+bool DomainServed(string email) => allowAnyDomain || TokenIdentity.DomainAllowed(email, allowedDomains);
+
+// The status and the header for the two refusals; the decision is CallerStanding.Decide's. No body on
+// either, because the older routes answer their 401 and 403 with none — the corporate surface adds its
+// JSON sentence in RequireOrgCallerAsync, which reads the status and the header set here.
+bool RefusedByStanding(HttpContext ctx, string email)
+{
+    switch (StandingOf(email))
+    {
+        case Standing.Deactivated:
+            ctx.Response.StatusCode = StatusCodes.Status403Forbidden;
+            ctx.Response.Headers[CallerStanding.ReasonHeader] = CallerStanding.AccountDeactivated;
+            return true;
+        case Standing.Unavailable:
+            // The same 503 and Retry-After the corporate surface answers for the same file.
+            Unavailable(ctx);
+            return true;
+        default:
+            return false;
+    }
+}
+
+// The one shape for "a record exists and this build cannot read it", so the caller gate, the recipient
+// rule below and the corporate surface cannot drift into three slightly different answers.
+static void Unavailable(HttpContext ctx)
+{
+    ctx.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
+    ctx.Response.Headers.RetryAfter =
+        OrgEndpoints.UnavailableRetryAfterSeconds.ToString(System.Globalization.CultureInfo.InvariantCulture);
+}
+
+// The RECIPIENT half of blocking, which the caller gate cannot cover: it judges whoever is calling, and
+// a share is addressed to somebody else. Without this a colleague who types the address — a blocked
+// person is hidden from /api/team, not from a client's memory — drops material into an inbox its owner
+// is refused at, where it waits out the 31-day prune and becomes readable on the day they are
+// re-admitted. Fail-closed on an unreadable record for the gate's own reason: one corrupt file must not
+// deliver to somebody who may be blocked.
+//
+// No X-Creds-Reason on either answer. That header tells a client to lock ITS OWN account and purge its
+// key material, and this response is about somebody else's standing — an honest client that matched it
+// here would lock the innocent sender out of their vault.
+async Task<bool> RecipientRefused(HttpContext ctx, string recipient, CancellationToken ct)
+{
+    switch (StandingOf(recipient))
+    {
+        case Standing.Deactivated:
+            ctx.Response.StatusCode = StatusCodes.Status403Forbidden;
+            await ctx.Response.WriteAsync("Recipient's account has been deactivated.", ct);
+            return true;
+        case Standing.Unavailable:
+            Unavailable(ctx);
+            await ctx.Response.WriteAsync("The recipient's account cannot be checked right now; try again shortly.", ct);
+            return true;
+        default:
+            return false;
+    }
+}
+
+// The registry is consulted only on the branch that needs it — the lookup is the lambda — so a personal
+// server, and an officer on any server, never stat a record: personal mode stays byte-identical, and the
+// break-glass quorum cannot be locked out by its own records.
+Standing StandingOf(string email) =>
+    CallerStanding.Decide(orgRecovery.Enabled, orgRecovery.IsOfficer(email), () => orgMembers.Find(email));
 
 // The same status-plus-plain-text shape the older endpoints spell inline three lines at a
 // time. Extracted rather than repeated because the org-recovery endpoints below have eight
@@ -724,20 +802,14 @@ app.MapGet("/api/team", async (HttpContext ctx, CancellationToken ct) =>
     await ctx.Response.WriteAsJsonAsync(members, AppJsonContext.Default.ListTeamMemberDto);
 });
 
-// Filtered, not replaced. In corp mode a colleague whose record says `active: false` — blocked, the
-// behaviour epic 2 gives the field — is not offered as a recipient, and neither is one whose record
-// this build cannot read: the caller gate will refuse that person, so a share to them would wait in
-// an inbox nobody can open, and "unreadable" must never read as "fine" (the escalation the plan round
-// found). Personal mode consults nothing and stays byte-identical — the first clause short-circuits
-// before any lookup. The DTO is not widened here; the role and the projects join it in epic 3.
-bool IsDiscoverable(string email) =>
-    !orgRecovery.Enabled
-    || orgMembers.Find(email) switch
-    {
-        { Status: MemberLookup.Unavailable } => false,
-        { Status: MemberLookup.Found, Record: { Active: false } } => false,
-        _ => true,
-    };
+// Filtered, not replaced — and by the caller gate's OWN decision, not a second reading of the record.
+// A colleague the gate would refuse — blocked, or a record this build cannot read — is not offered as
+// a recipient, because a share to them would wait in an inbox nobody can open, and "unreadable" must
+// never read as "fine" (the escalation the plan round found). One rule in one place: this used to be
+// a private three-arm switch of its own, which is how a gate and a filter come to disagree about the
+// same person. Personal mode consults nothing and stays byte-identical. The DTO is not widened here;
+// the role and the projects join it in epic 3.
+bool IsDiscoverable(string email) => StandingOf(email) == Standing.Admitted;
 
 // The corporate surface, mapped from its own file — Program.cs is past the size ceiling and four
 // more epics add about twenty routes. The gates stay above; only routes live there.
@@ -1292,6 +1364,11 @@ app.MapPost("/api/shares", async (HttpContext ctx, CancellationToken ct) =>
         await ctx.Response.WriteAsync("Recipient is outside your domain.", ct);
         return;
     }
+    // Blocking's recipient rule, before anything is written: see RecipientRefused.
+    if (await RecipientRefused(ctx, req.ToEmail.Trim().ToLowerInvariant(), ct))
+    {
+        return;
+    }
     if (req.PayloadBytes() > maxShareBytes || req.EntityName.Length > 512)
     {
         ctx.Response.StatusCode = StatusCodes.Status400BadRequest;
@@ -1394,6 +1471,16 @@ app.MapDelete("/api/shares/sent/{id}", async (HttpContext ctx, string id, Cancel
     if (receipt is null)
     {
         ctx.Response.StatusCode = StatusCodes.Status404NotFound;
+        return;
+    }
+    if (receipt.IsWithdrawn)
+    {
+        // The server already took this one out of the inbox when the recipient was blocked; the receipt
+        // stayed only so the sender could read why. Dismissing it is a 204 whatever the inbox says — the
+        // branch below would read the missing inbox file as "already accepted" and answer 409, which is
+        // the one thing a withdrawn share is not.
+        store.DeleteSent(caller.Value.Email, receipt.Id);
+        ctx.Response.StatusCode = StatusCodes.Status204NoContent;
         return;
     }
     var withdrawn = store.DeleteShare(receipt.ToEmail, receipt.Id);

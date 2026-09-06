@@ -28,6 +28,7 @@ public sealed class AppJsonContextTests
     [InlineData(typeof(List<MemberListEntryDto>))]
     [InlineData(typeof(SetMemberRequest))]
     [InlineData(typeof(SetSettingsRequest))]
+    [InlineData(typeof(SetActiveRequest))]
     [InlineData(typeof(OrgSettingsDto))]
     public void EveryOrgResponseTypeIsInTheSourceGeneratedContext(Type type)
     {

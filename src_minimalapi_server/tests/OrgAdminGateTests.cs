@@ -94,7 +94,9 @@ public sealed class OrgAdminGateTests
         // Alice administers, and the gate has said so once — so the cache holds "admin". Then the file is
         // corrupted underneath it: a restore, a bad sector. The gate must re-read (the stat check), find a
         // record it cannot act on, and refuse — never serve the cached verdict, never fall back to any
-        // default, and not 503 either: on this gate every cause is the same 403.
+        // default. Until epic 2 this was RequireAdmin's own 403; now the caller gate inside RequireCaller
+        // meets the same file first and answers the 503 with Retry-After that /api/org/me answers for it —
+        // a fact about Alice's own record, not about the roster, so it hands nobody the roster's shape.
         using var server = Corp.Server();
         using var cto = server.ClientFor(Corp.Cto);
         using var alice = server.ClientFor(Alice);
@@ -105,7 +107,8 @@ public sealed class OrgAdminGateTests
         await Corp.CorruptRecordAsync(server, Alice);
         var response = await ListAsync(alice);
 
-        (await Corp.RefusalAsync(response, HttpStatusCode.Forbidden)).Should().NotBeNullOrWhiteSpace();
+        (await Corp.RefusalAsync(response, HttpStatusCode.ServiceUnavailable)).Should().Contain("administrator");
+        response.Headers.RetryAfter.Should().NotBeNull();
     }
 
     [Fact]
