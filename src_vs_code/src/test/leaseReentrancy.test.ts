@@ -69,3 +69,54 @@ test('a throw inside the lease does not leave it believing it is still held', as
 
   assert.deepEqual(order, ['ran after the throw', 'and nested still works']);
 });
+
+/**
+ * Nested does not mean unordered — the hole a review round found in the first guard.
+ *
+ * <p>`AsyncLocalStorage` is inherited by every task the holder starts, so two writes fired
+ * CONCURRENTLY from inside the lease both see the context and, under a naive "run inline", both
+ * execute at once. Each reads before either writes, and the second erases the first — which is
+ * exactly the defect the lease was being extended to close, reintroduced one level down.</p>
+ *
+ * <p>Running inline is right for a call the holder AWAITS; it is wrong for siblings. So nested work
+ * runs on a queue of its own: no waiting for the parent that is waiting for it, and no interleaving
+ * between children.</p>
+ */
+test('two writes fired at once from INSIDE the lease still take their turns', async () => {
+  const queue = new LeasedQueue(undefined);
+  const order: string[] = [];
+  const settle = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 5));
+
+  await queue.run(async () => {
+    await Promise.all([
+      queue.run(async () => {
+        order.push('a in');
+        await settle();
+        order.push('a out');
+      }),
+      queue.run(async () => {
+        order.push('b in');
+        await settle();
+        order.push('b out');
+      }),
+    ]);
+  });
+
+  assert.deepEqual(order, ['a in', 'a out', 'b in', 'b out'], 'the two children did not interleave');
+});
+
+/** And a child awaiting a GRANDCHILD must not queue behind itself. */
+test('a grandchild of the lease runs rather than deadlocking behind its parent', async () => {
+  const queue = new LeasedQueue(undefined);
+  const order: string[] = [];
+
+  await queue.run(async () => {
+    await queue.run(async () => {
+      order.push('child');
+      await queue.run(async () => order.push('grandchild'));
+      order.push('child end');
+    });
+  });
+
+  assert.deepEqual(order, ['child', 'grandchild', 'child end']);
+});
