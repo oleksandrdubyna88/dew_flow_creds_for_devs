@@ -1743,6 +1743,20 @@ server — produces *"your organisation server's login key has CHANGED"*, not a 
 person answers by retyping a correct PIN. `bindWithLoginKey` also refuses a key that is not 32 bytes,
 because a key of the wrong size derives a perfectly valid AES key that opens nothing.
 
+**Three paths rebuild a wrap, and all three refuse to rebuild a bound one without the key**:
+`rekeyUnderPin` (a rotation), `securityKeyOps.addAroundTheSameMaster` (adding a key or a recovery
+code), and `SyncManager.rekeyToNewPin` (the Set Sync PIN command). The third was found by the
+`/security-review` pass AFTER the guard had been added to the two the plan listed — the same "applied
+at some of the sites that need it" shape this repository keeps meeting — so `refuseToUnbind` is
+exported rather than private, and a test fails if that call site ever rebuilds the wrap without a
+binding again. It mattered: a developer changing their sync PIN wrote a vault that opens with the file
+and the PIN alone, and withholding the login key — the only revocation this design has — revokes
+nothing for a copy like that.
+
+**The session hands out copies of the key, never its own buffer.** `forget` zeroes what it holds, which
+is the point; but a caller already sealing a wrap with that same `Buffer` would have written the vault
+under `HKDF(base ‖ 0^32)`, which nothing can open. Thirty-two bytes per call removes the possibility.
+
 **What this does not promise.** A copy taken *before* the binding still opens with the PIN — nothing
 can reach into a file somebody already has. The guarantee is about versions written while bound, and
 that is what makes deactivation effective going forward rather than retroactively.

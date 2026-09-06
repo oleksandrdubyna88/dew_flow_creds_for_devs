@@ -32,6 +32,7 @@ import {
   escrowAction,
 } from './orgEscrowOps';
 import { BindingContext, bindingWrapsFor } from './syncBinding';
+import { refuseToUnbind } from './vaultRekey';
 import { TransportFactory } from './transportFactory';
 import { VaultKey, VaultKeys } from './vaultKeys';
 import { pinValidator } from './pinInput';
@@ -281,10 +282,17 @@ export class SyncManager implements vscode.Disposable {
     let content: string;
     if (key.version === 2) {
       // Same master key, new PIN wrap; other (security-key) wraps untouched.
-      const master = key.masterKey;
+      const existing = readVaultWraps(raw).filter(isKeyWrap);
+      // The THIRD rewrite path, and the one the security review found unguarded. `vaultRekey` and
+      // `securityKeyOps` both refuse to rebuild a bound wrap without the key it is bound to; this one
+      // rebuilds the PIN wrap directly, so without the same guard a developer changing their sync PIN
+      // wrote a vault that opens with the file and the PIN alone — after which withholding the login
+      // key, which is the only revocation this design has, revokes nothing for that copy.
+      const binding = (await this.askBinding(account))?.loginKey;
+      refuseToUnbind({ previousWraps: existing, binding });
       const wraps = upsertWrap(
-        readVaultWraps(raw).filter(isKeyWrap),
-        await wrapWithPinAsync(master, account.accountId, newPin, Date.now()),
+        existing,
+        await wrapWithPinAsync(key.masterKey, account.accountId, newPin, Date.now(), binding),
       );
       content = encryptJsonWrapped(payload, key.masterKey, wraps, account, shares);
     } else {

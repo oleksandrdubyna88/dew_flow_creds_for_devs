@@ -38,6 +38,19 @@ export interface HeldLoginKey {
  */
 export const LOGIN_KEY_REVALIDATE_MS = 5 * 60 * 1000;
 
+/**
+ * A caller's own copy of the key.
+ *
+ * <p>{@link LoginKeySession.forget} zeroes what it holds — which is the point, since a key that is
+ * merely dropped stays in memory until a collection nobody controls. But a caller that had already
+ * been handed that same `Buffer` would then be sealing a wrap under `HKDF(base ‖ 0^32)`: a vault
+ * written under a key of zeroes, which nothing can ever open again. Handing out copies costs 32 bytes
+ * and removes the possibility.</p>
+ */
+function copyOf(held: HeldLoginKey): HeldLoginKey {
+  return { key: Buffer.from(held.key), fingerprint: held.fingerprint };
+}
+
 export class LoginKeySession {
   private readonly held = new Map<string, { key: HeldLoginKey; at: number }>();
 
@@ -52,7 +65,8 @@ export class LoginKeySession {
 
   /** What this window already holds, without asking anybody and without judging its age. */
   current(accountId: string): HeldLoginKey | undefined {
-    return this.held.get(accountId)?.key;
+    const held = this.held.get(accountId)?.key;
+    return held === undefined ? undefined : copyOf(held);
   }
 
   /**
@@ -63,7 +77,7 @@ export class LoginKeySession {
    */
   async resolve(account: StoredAccount): Promise<HeldLoginKey | undefined> {
     const entry = this.held.get(account.accountId);
-    const stale = entry === undefined ? undefined : entry.key;
+    const stale = entry === undefined ? undefined : copyOf(entry.key);
     if (this.stillFresh(entry)) {
       return stale;
     }
@@ -93,7 +107,7 @@ export class LoginKeySession {
     if (outcome.kind === 'issued') {
       const held = { key: outcome.key, fingerprint: outcome.fingerprint };
       this.held.set(account.accountId, { key: held, at: this.now() });
-      return held;
+      return copyOf(held);
     }
     if (outcome.kind === 'blocked') {
       this.blocked(account);

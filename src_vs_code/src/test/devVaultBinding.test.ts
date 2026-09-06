@@ -13,6 +13,8 @@ import {
 } from '../keyWrap';
 import { rekeyUnderPin } from '../vaultRekey';
 import { StoredAccount } from '../types';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 const account: StoredAccount = { accountId: 'acct-1', email: 'alice@example.com', provider: 'microsoft' };
 const S = { key: Buffer.alloc(32, 9), fingerprint: '0123456789abcdef' };
@@ -172,4 +174,26 @@ test('rotating an UNBOUND vault is unaffected', async () => {
   });
 
   assert.equal(rotated.wraps[0].serverBound, undefined);
+});
+
+test('the sync PIN change is guarded by the same rule as the other two rewrite paths', () => {
+  // The security review's finding, and the pattern this repository keeps meeting: the guard was added
+  // at the two sites the plan listed (`vaultRekey`, `securityKeyOps`) while a THIRD path — the Set
+  // Sync PIN command — rebuilt the PIN wrap through `wrapWithPinAsync` directly. It dropped
+  // `serverBound`, so a developer changing their PIN wrote a vault that opens with the file and the
+  // PIN alone — after which withholding the login key, the only revocation this design has, revokes
+  // nothing for that copy.
+  //
+  // Asserted on the SOURCE rather than by driving the command: `rekeyToNewPin` needs a transport, a
+  // vault, an unlock and a webview host, and what must never regress is one line — that this call
+  // site passes a binding. A grep-shaped test is honest about that, and it fails the moment somebody
+  // writes the unbound form again.
+  const source = readFileSync(join(__dirname, '..', '..', 'src', 'syncManager.ts'), 'utf8');
+
+  assert.doesNotMatch(
+    source,
+    /wrapWithPinAsync\(\s*master,\s*account\.accountId,\s*newPin,\s*Date\.now\(\),?\s*\)/,
+    'the sync PIN change must pass a login-key binding, never rebuild the wrap without one',
+  );
+  assert.match(source, /refuseToUnbind|binding/, 'and it must consult the binding at all');
 });
