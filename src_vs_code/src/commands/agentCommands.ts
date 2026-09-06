@@ -586,8 +586,7 @@ export function registerAgentCommands(host: AgentCommandsHost): void {
       void vscode.window.showWarningMessage(result.reason);
       return;
     }
-    await storage.updateNode(element.accountId, {
-      ...element.node,
+    await storage.updateNodeFields(element.accountId, element.node.id, {
       details: { ...details, sshAgent: true },
     });
     mutated();
@@ -607,8 +606,7 @@ export function registerAgentCommands(host: AgentCommandsHost): void {
       return;
     }
     sshAgent.unload(element.node.details.id);
-    await storage.updateNode(element.accountId, {
-      ...element.node,
+    await storage.updateNodeFields(element.accountId, element.node.id, {
       details: { ...element.node.details, sshAgent: undefined },
     });
     mutated();

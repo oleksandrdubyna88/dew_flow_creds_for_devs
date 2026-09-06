@@ -81,7 +81,7 @@ async function persistPin(
   const node = storage.getNode(accountId, entity.id);
   const updated: EntityMetadata = { ...entity, hostKey: pin };
   if (node !== undefined) {
-    await storage.updateNode(accountId, { ...node, details: updated });
+    await storage.updateNodeFields(accountId, node.id, { details: updated });
   }
   return updated;
 }

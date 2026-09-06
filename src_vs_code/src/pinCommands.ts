@@ -174,7 +174,7 @@ async function setAsksForPin(folder: TreeNode, on: boolean, deps: PinCommandDeps
   if ((folder.folderAsksForPin === true) === on) {
     return;
   }
-  await deps.storage.updateNode(deps.accountId, { ...folder, folderAsksForPin: on ? true : undefined });
+  await deps.storage.updateNodeFields(deps.accountId, folder.id, { folderAsksForPin: on ? true : undefined });
 }
 
 /** The confirmation, which says what will be SKIPPED before it says what will be done. */
@@ -306,8 +306,7 @@ async function markProtection(node: TreeNode, on: boolean, deps: PinCommandDeps)
   if (details === undefined) {
     return;
   }
-  await deps.storage.updateNode(deps.accountId, {
-    ...node,
+  await deps.storage.updateNodeFields(deps.accountId, node.id, {
     details: { ...details, pinProtected: on ? true : undefined },
   });
 }

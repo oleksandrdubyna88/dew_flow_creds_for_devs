@@ -250,8 +250,8 @@ test('a folder run where every entry FAILED records no preference', async () => 
     getVpnConfig: () => Promise.resolve(undefined),
     getTotp: () => Promise.resolve(undefined),
     getPrivateKey: () => Promise.resolve(undefined),
-    updateNode: (_a: string, node: TreeNode) => {
-      written.push(node);
+    updateNodeFields: (_a: string, id: string, patch: Partial<TreeNode>) => {
+      written.push({ id, ...patch } as TreeNode);
       return Promise.resolve();
     },
   } as never;
@@ -290,8 +290,8 @@ test('…but a run where at least ONE entry succeeded does record it', async () 
     getVpnConfig: nothing,
     getTotp: nothing,
     getPrivateKey: nothing,
-    updateNode: (_a: string, node: TreeNode) => {
-      written.push(node);
+    updateNodeFields: (_a: string, id: string, patch: Partial<TreeNode>) => {
+      written.push({ id, ...patch } as TreeNode);
       return Promise.resolve();
     },
   } as never;

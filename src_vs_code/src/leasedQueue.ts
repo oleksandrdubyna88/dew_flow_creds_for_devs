@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { SerialQueue } from './serialQueue';
 import { HEARTBEAT_MS, Holding, LOCK_TTL_MS, WindowLock } from './windowLock';
 
@@ -29,6 +30,23 @@ const POLL_MS = 250;
 export class LeasedQueue {
   private readonly inner = new SerialQueue();
 
+  /**
+   * Whether the CALLER is inside this queue's own work — not merely whether something is.
+   *
+   * <p>Without it a nested `run` DEADLOCKS, and the shape is reachable: the inner call queues behind
+   * the outer one (`SerialQueue` is `tail.then(work)`) while the outer one waits for the inner to
+   * finish. Neither ever does. `createEntityWithSecrets` already runs inside the lease and the node
+   * writes joined it, so this stopped being hypothetical.</p>
+   *
+   * <p><b>A boolean was tried first and is wrong</b>, which the control test in
+   * `crossWindowWrites.test.ts` caught on the first run: while the holder is suspended at an
+   * `await`, an UNRELATED caller can enter `run`, and a flag cannot tell that caller apart from a
+   * nested one. It let an import run inside a removal — the exact interleaving this class exists to
+   * prevent. `AsyncLocalStorage` answers the question actually being asked: is this call in the
+   * async context of the work that holds the lease?</p>
+   */
+  private readonly inside = new AsyncLocalStorage<true>();
+
   constructor(
     private readonly lock: WindowLock | undefined,
     private readonly deps: LeaseDeps = {},
@@ -40,9 +58,19 @@ export class LeasedQueue {
    * <p>Waits INDEFINITELY rather than on a timeout, which the review round settled: a bounded wait
    * abandons a command the person asked for while another window is still mutating the same data,
    * and that is a worse state than waiting. What makes it bearable is that the wait is visible.</p>
+   *
+   * <p>Called from INSIDE, it runs inline. Inline is the correct answer rather than the convenient
+   * one: the caller is already the exclusive holder — of this queue and of the cross-window lock —
+   * so waiting would be waiting for itself, and running now preserves exactly the exclusivity the
+   * outer call took.</p>
    */
-  run<T>(work: () => Promise<T>): Promise<T> {
-    return this.inner.run(() => this.holding(work, true)) as Promise<T>;
+  async run<T>(work: () => Promise<T>): Promise<T> {
+    if (this.inside.getStore() === true) {
+      return work();
+    }
+    return (await this.inner.run(() =>
+      this.inside.run(true, () => this.holding(work, true)),
+    )) as T;
   }
 
   /**

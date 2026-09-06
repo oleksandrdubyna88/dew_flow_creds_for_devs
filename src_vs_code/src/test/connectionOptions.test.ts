@@ -56,8 +56,12 @@ function world(options: { scanned?: HostKey; answer?: string } = {}): World {
 
   const storage = {
     getNode: (_a: string, id: string): TreeNode | undefined => nodes.get(id),
-    updateNode: (_a: string, node: TreeNode): Promise<void> => {
-      updated.push(node);
+    // Follows the seam: production writes a PATCH against an id now, so the fake composes it the
+    // way `StorageManager.updateNodeFields` does — otherwise the test asserts against a shape the
+    // product no longer produces.
+    updateNodeFields: (_a: string, id: string, patch: Partial<TreeNode>): Promise<void> => {
+      const before = nodes.get(id);
+      updated.push({ ...(before ?? ({ id } as TreeNode)), ...patch } as TreeNode);
       return Promise.resolve();
     },
     _put: (node: TreeNode): void => {

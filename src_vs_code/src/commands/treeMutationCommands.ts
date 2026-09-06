@@ -228,7 +228,7 @@ export function registerTreeMutationCommands(host: TreeMutationCommandsHost): vo
     if (folderType === undefined) {
       return;
     }
-    await storage.updateNode(element.accountId, { ...element.node, folderType });
+    await storage.updateNodeFields(element.accountId, element.node.id, { folderType });
     mutated();
   });
 

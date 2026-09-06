@@ -130,7 +130,7 @@ export function registerEntityCommands(host: EntityCommandsHost): void {
       return;
     }
     const details = { ...element.node.details, isSshEnabled: !element.node.details.isSshEnabled };
-    await storage.updateNode(element.accountId, { ...element.node, details });
+    await storage.updateNodeFields(element.accountId, element.node.id, { details });
     mutated();
     void vscode.window.showInformationMessage(
       `SSH ${details.isSshEnabled ? 'enabled' : 'disabled'} for "${element.node.name}".`,
