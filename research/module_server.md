@@ -36,6 +36,8 @@ whole server is ~2,100 lines.
 | `src/OrgMembersStore.cs` | One record per person under `org/members/`, read synchronously from a stat-checked cache, written read-modify-write under the vault's per-email lock |
 | `src/OrgSettingsStore.cs` | The runtime settings an admin edits without a restart (`org/settings.json`); absent answers the default and writes nothing |
 | `src/OrgEventLog.cs` | The append-only NDJSON event log, one file per UTC day under `org/events/` — the writer only; the reader is a later epic's |
+| `src/ShareRule.cs` | The project boundary as a pure truth table — three answers, so an unreadable record can never read as "not on that project" |
+| `src/TeamRoster.cs` | Its discovery half: who a caller may be offered, and how much of each colleague they are told |
 | `src/OrgProjects.cs` | The project records, the name rule, and `EffectiveShare` — an unassigned person may do nothing, which is not the same as having no override |
 | `src/OrgProjectsStore.cs` | One JSON file per project under `org/projects/`, three-answer lookup, striped writes, archived never deleted |
 | `src/OrgProjectsEndpoints.cs` | The six project and assignment routes, mapped from their own file so `Program.cs` gains one call |
@@ -98,7 +100,7 @@ identifier**, so there is nothing to tamper with.
 | `GET` | `/api/vault` | token email | `200` bytes / `404` | `application/octet-stream` + an `ETag`; 404 means nothing stored yet |
 | `PUT` | `/api/vault` | token email | `204` | 1..`MaxVaultBytes`; `400` outside that. Honours `If-Match` / `If-None-Match`, `412` when the precondition fails. In corp mode the first write also **registers** the caller (below) |
 | `DELETE` | `/api/vault` | token email | `204` | Deletes the vault, its `.email` sidecar, the whole inbox — and the registry record |
-| `GET` | `/api/team` | any allowed caller | `200` | `[{email}]` — vault owners in the caller's own domain; in corp mode, minus anyone whose record says `active: false` or cannot be read |
+| `GET` | `/api/team` | any allowed caller | `200` | Vault owners in the caller's own domain, minus anyone the gate would refuse. **A developer is offered only the people they share a project with.** `[{email}]` for a caller that claims no contract; `[{email, role, projectIds}]` from contract 3 |
 | `GET` | `/api/org/me` | any allowed caller | `200` / `503` | The role-and-policy document — **a document the client obeys, not a boundary the server holds**. Corp mode off → `corpMode: false` and inert defaults. Never writes. See below |
 | `GET` | `/api/org/members` | **admin** | `200` | The roster of the caller's own domain, one row per record, officers flagged. Not streamed: 200 records of about a kilobyte |
 | `PUT` | `/api/org/members/{email}` | **admin** | `200` / `400` / `403` / `409` / `503` | Set a role, a share default, or both — for somebody who may not have synced yet. See below |
@@ -125,7 +127,7 @@ identifier**, so there is nothing to tamper with.
 | `PUT` | `/api/org-recovery/sessions/{id}/target-vault` | **initiator, at quorum** | `204` / `412` | The re-keyed vault, written back once |
 | `DELETE` | `/api/org-recovery/sessions/{id}` | initiator | `204` / `404` | Call it off |
 | `GET` | `/api/org-recovery/audit` | officer | `200` | Who opened whose vault, **streamed** |
-| `POST` | `/api/shares` | sender = token email | `201` / `400` / `403` / `409` / `503` | Body below. In corp mode the RECIPIENT's standing is checked too: `403` for a deactivated recipient, `503` while their record cannot be read — see below |
+| `POST` | `/api/shares` | sender = token email | `201` / `400` / `403` / `409` / `503` | Body below. In corp mode the RECIPIENT's standing is checked (`403` deactivated, `503` unreadable) and then **the project rule** (`ShareRule`), which fences developers only — see below |
 | `GET` | `/api/shares` | recipient = token email | `200` | Your inbox, **streamed** |
 | `DELETE` | `/api/shares/{id}` | recipient = token email | `204` / `404` | `id` must parse as a GUID |
 | `GET` | `/api/shares/sent` | sender = token email | `200` | Your own receipts, **streamed**. No ciphertext — see below. A receipt the server withdrew when its recipient was blocked carries `withdrawnReason`; every other receipt has no such key |
@@ -335,6 +337,65 @@ from "wrong PIN" without either side comparing secrets, and it is what appears i
 the key. A store-level test asserts the material never reaches a log line, with a positive control so
 a run that logged nothing cannot pass it.
 
+### The project rule — the one boundary of epic 3 the server enforces (2026-09-06)
+
+`ShareRule.Decide` is a pure truth table applied in `POST /api/shares` **after** the blocking gate's
+recipient check and before the size caps. Pure for the reason `CallerStanding` is: the interesting
+part is the set of branches, and a branch nobody enumerated is the one that fails open.
+
+| The sender is | and the request | the answer |
+|---|---|---|
+| on a personal server | anything | allowed, and **no record is read at all** |
+| an officer | anything | allowed, decided from configuration; their record is never read |
+| a member or an admin | with or without a `projectId` | allowed — today's behaviour, untouched |
+| unknown to the registry | anything | allowed; no file means they never synced, and the default is `member` |
+| a record this build cannot read | anything | **`503`** — "is this person a developer" cannot be answered |
+| a **developer** | with no `projectId` | `403`: they may share only out of a project folder |
+| a **developer** | naming a project that is absent or **archived** | `403`: a closed engagement is not a channel |
+| a **developer** | naming a project file this build cannot read | **`503`**, never a refusal |
+| a **developer** | whose effective share for it is `none` | `403` |
+| a **developer** | whose recipient is not on that project | `403` |
+| a **developer** | whose recipient's record cannot be read | **`503`** |
+| a **developer** | inside their project, to somebody on it | allowed |
+
+**Developers only, and the field is carried for everybody.** The client sends `projectId` for any
+entity under a project folder whatever the sender's role, so a rule keyed on *"this request names a
+project"* would refuse a MEMBER sharing out of one — a regression on the behaviour this epic
+promises to leave alone. Epic 4 logs the field and story 4 binds it into the AAD.
+
+**It never re-reads `active`.** `RecipientRefused` already answers `403` for a deactivated recipient
+and `503` for a record it cannot read; a second reading here would answer `403` where the gate
+answers `503`, reading *unavailable* as *not a member*.
+
+**`projectId` is omitted from a stored `ShareItem` rather than written as `null`** — the trap
+`format` records one field above, which cost six days: a released extension's own shape check
+accepts a string or an absent field, and drops the whole item on a JSON null, so the recipient sees
+an empty inbox rather than anything they could investigate. It is also **counted by**
+`PayloadBytes`: the rule bounds a developer's to a real project, while a member's is stored
+verbatim, and a field nobody counts is a field an attacker fills.
+
+### Team discovery: one filter, two shapes
+
+`TeamRoster.For` is the discovery half of the same boundary — a client that proposes a recipient the
+rule will refuse teaches people the feature is broken. Two things happen, gated on **different**
+questions:
+
+- **The filter is about the caller's ROLE.** A developer is offered the colleagues they share a
+  project with, and nobody else, whatever contract they claim. **The caller is always in their own
+  list** — by a branch, not by the assumption that everybody shares their projects with themselves,
+  which is false for a developer assigned to nothing and would drop them from their own roster.
+- **The shape is about the contract they CLAIM.** A header-less client is served on a corp server
+  too, so the wider row travels only from contract 3. Two TYPES rather than optional fields, so the
+  old shape's identity is structural and cannot be lost by dropping an attribute.
+
+**A developer is told only the projects they share with each colleague.** Somebody on A1 with them
+and on A5 without them yields `A1` alone: the full list would leak the engagement names this epic
+exists to fence, to exactly the role it fences. A member or an admin, who may read the roster
+through the admin surface anyway, gets the full list.
+
+**Discovery is still vault-based** (`ListVaultOwners`): a colleague assigned to a project who has
+never synced has no vault and is not discoverable. Left as it is — changing the source of team
+discovery changes what every non-corporate deployment shows — and recorded here as a limit.
 ### Projects, assignments, and the instruction to remove a folder (2026-09-06)
 
 A project is a name people are assigned to: `${DataDir}/org/projects/<guid>.json`, one small record
@@ -1067,6 +1128,8 @@ Never `dotnet test` — there is no VSTest host here and it aborts.
 | `OrgBlockingWithdrawalTests` | A share to a blocked person leaves their inbox and the sender's receipt carries the reason; a receipt not withdrawn has no `withdrawnReason` key; the hourly sweep keeps a withdrawn receipt and still retires an accepted one (the positive control), end to end too; dismissing a withdrawn receipt is `204` and forgets it; the 31-day prune still retires it; a share from a blocked person leaves the recipient's inbox and the blocked sender's receipt goes too; both directions in one block with an unrelated share surviving; nothing comes back on unblock; **a repeated block finishes a withdrawal the first one could not** (the inbox file held open through the first PUT, released, and the repeat takes it); **a sender who could not be told is counted in the block row** rather than silently lost (their receipt held open for the whole block); an idempotent re-block with nothing left withdraws nothing twice |
 | `OrgBlockingShareTests` | The recipient half: `POST /api/shares` to a deactivated colleague is `403` naming the deactivation, creates no inbox and no receipt, and carries **no** `X-Creds-Reason` (which would make an honest client lock the innocent sender's own account); an unreadable recipient record is `503` with `Retry-After` and no delivery; an active colleague, somebody who never synced, and a personal server with a leftover corrupt record are all unaffected |
 | `AppJsonContextTests` | Every DTO the org routes and their refusals serialize, lists included, is in the source-generated context — the one class of bug the endpoint suites cannot see, because under JIT an unregistered type falls through to reflection and only the AOT binary fails |
+| `ShareRuleTests` | The project rule as a truth table, every row: a personal server and an officer allow without a lookup; a member is not fenced, with or without a project; somebody who never synced is a member; a sender whose own record is unreadable is unavailable; a developer with no project, a blank one, one they are not on, an assignment set to `none`, a role default of `none`, an absent or archived project, a project file that cannot be read, a recipient off the project, a recipient who never synced, a recipient record that cannot be read — and the one row that allows |
+| `OrgProjectShareTests` | The same rule over the wire, and the two things a status code cannot say: a refused share leaves NO inbox for the recipient and NO receipt for the sender. Plus the carrying half — the project reaches the recipient's item, a share with none carries no `projectId` field at all (the `null` that would hide a released client's whole inbox), and an oversized one is counted against the share budget |
 | `OrgProjectsStoreTests` | The store alone: a project round-trips and is named by its id; no projects means no `org/` tree at all; a file this build cannot read is **unreadable, never absent**, and says so once; a record in the wrong file is unreadable too; an id that could leave the folder simply is not there; a rename and an archive arriving together both survive (the stripe); updating something absent does not create it; the list is newest-first and skips what it cannot read; `NameOf` answers empty for anything it cannot resolve; an unassigned person may do NOTHING in a project, and `inherit` resolves through the ROLE's policy so a role this build does not know fails closed; an omitted `archived` means unchanged; an update answers with the record it replaced |
 | `OrgProjectsAdminTests` | The six routes over the wire, with every mutation's event row read back from the LOG rather than from the response: create, rename (both names in the row), archive and unarchive as two kinds, assign (replacing an override rather than repeating the project), assign to a project that does not exist → `404` with nothing written, an unassignment with no `deleteFolder` → `400` and nothing changed, `false` leaves no instruction, `true` leaves one the person can acknowledge, the ack clears exactly one and is idempotent, a developer sees only their own projects, their own document names the project, a non-admin changes nothing, officer `409` / cross-domain `403` / non-address `400` through the shared `TargetProblem`, an unknown share `400`, mixed casing is one person, and a personal server has no projects and grows no folder. The code round added five: an unreadable member record hands out no project names at all, an ARCHIVED project takes nobody new while still letting people off, a re-assignment withdraws a standing folder removal, so does `deleteFolder=false`, and an unassignment naming somebody who is on no roster is a `404` that registers nobody — while an ASSIGNMENT naming them still pre-provisions, which is a test of its own so the asymmetry is not later 'fixed' |
 | `LoginKeyEndpointTests` | `GET /api/org/login-key`: a developer is minted one and a second call returns byte-identical bytes; the response is `no-store`; the fingerprint is sixteen hex characters and travels with the key; a member with no key is `404` **and none is minted for them**; a demoted developer is still served theirs; a blocked one is refused by the gate and gets the SAME key back on unblock (no rotation); no KEK is `503` while sync, vault reads and team all still work; a 16-byte KEK is refused rather than truncated; a personal server answers "this deployment issues no login keys" and grows no `org/`; the file on disk is ciphertext; `DELETE /api/vault` removes the key, and still succeeds on a server that cannot issue any; mixed casing is one person and one key |

@@ -79,4 +79,136 @@ public sealed class TeamCorpTests
         members[0].EnumerateObject().Select(p => p.Name).Should().Equal("email");
         members[0].GetProperty("email").GetString().Should().Be(Alice);
     }
+
+    private static HttpClient Modern(VaultServer server, string email)
+    {
+        var client = server.ClientFor(email);
+        client.DefaultRequestHeaders.Add(ContractVersion.Header, ContractVersion.OrgPolicyContract.ToString());
+        return client;
+    }
+
+    private static async Task<string> NewProjectAsync(HttpClient admin, string name)
+    {
+        var response = await Corp.PostJsonAsync(admin, "/api/org/projects", $$"""{"name":"{{name}}"}""");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        return (await Corp.BodyAsync(response)).GetProperty("id").GetString()!;
+    }
+
+    private static Task<HttpResponseMessage> AssignAsync(HttpClient admin, string id, string email) =>
+        Corp.PutJsonAsync(admin, $"/api/org/projects/{id}/members/{email}", """{"share":"inherit"}""");
+
+    private static async Task<JsonElement> TeamAsync(HttpClient client)
+    {
+        var response = await client.GetAsync("/api/team", Ct);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        return JsonDocument.Parse(await response.Content.ReadAsStringAsync(Ct)).RootElement.Clone();
+    }
+
+    [Fact]
+    public async Task AModernClientIsToldTheRoleAndTheProjects()
+    {
+        using var server = Corp.Server();
+        using var cto = server.ClientFor(Corp.Cto);
+        using var alice = Modern(server, Alice);
+        await Corp.SyncAsync(alice);
+        var id = await NewProjectAsync(cto, "Atlas");
+        await AssignAsync(cto, id, Alice);
+
+        var row = (await TeamAsync(alice)).EnumerateArray().Should().ContainSingle().Subject;
+
+        row.EnumerateObject().Select(p => p.Name).Should().Equal("email", "role", "projectIds");
+        row.GetProperty("role").GetString().Should().Be("member");
+        row.GetProperty("projectIds").EnumerateArray().Select(p => p.GetString()).Should().Equal(id);
+    }
+
+    [Fact]
+    public async Task ADeveloperIsOfferedOnlyThePeopleTheyShareAProjectWith()
+    {
+        // The discovery half of the share rule: a client that proposes a recipient the rule will refuse
+        // teaches people the feature is broken.
+        using var server = Corp.Server();
+        using var cto = server.ClientFor(Corp.Cto);
+        using var alice = Modern(server, Alice);
+        using var bob = server.ClientFor(Bob);
+        await Corp.SyncAsync(alice);
+        await Corp.SyncAsync(bob);
+        var ours = await NewProjectAsync(cto, "Ours");
+        await AssignAsync(cto, ours, Alice);
+        await Corp.SetMemberAsync(cto, Alice, role: "dev");
+
+        var seenByDeveloper = await TeamAsync(alice);
+
+        seenByDeveloper.EnumerateArray().Select(r => r.GetProperty("email").GetString())
+            .Should().Equal([Alice], "Bob is on no project of theirs");
+
+        await AssignAsync(cto, ours, Bob);
+        (await TeamAsync(alice)).EnumerateArray().Select(r => r.GetProperty("email").GetString())
+            .Should().BeEquivalentTo([Alice, Bob], "and appears the moment he is put on it");
+    }
+
+    [Fact]
+    public async Task ADeveloperIsNotToldWhichOtherProjectsAColleagueIsOn()
+    {
+        // A colleague on Ours with me and on Theirs without me: handing over their whole list leaks the
+        // engagement names this epic exists to fence, to exactly the role it fences.
+        using var server = Corp.Server();
+        using var cto = server.ClientFor(Corp.Cto);
+        using var alice = Modern(server, Alice);
+        using var bob = server.ClientFor(Bob);
+        await Corp.SyncAsync(alice);
+        await Corp.SyncAsync(bob);
+        var ours = await NewProjectAsync(cto, "Ours");
+        var theirs = await NewProjectAsync(cto, "Theirs");
+        await AssignAsync(cto, ours, Alice);
+        await AssignAsync(cto, ours, Bob);
+        await AssignAsync(cto, theirs, Bob);
+        await Corp.SetMemberAsync(cto, Alice, role: "dev");
+
+        var team = await TeamAsync(alice);
+
+        var bobRow = team.EnumerateArray().Single(r => r.GetProperty("email").GetString() == Bob);
+        bobRow.GetProperty("projectIds").EnumerateArray().Select(p => p.GetString())
+            .Should().Equal([ours], "only the project they share");
+        (await TeamAsync(Modern(server, Corp.Cto))).EnumerateArray()
+            .Single(r => r.GetProperty("email").GetString() == Bob)
+            .GetProperty("projectIds").GetArrayLength()
+            .Should().Be(2, "an officer reads the roster anyway, so nothing is hidden from them");
+    }
+
+    [Fact]
+    public async Task ADeveloperOnNoProjectStillSeesThemselves()
+    {
+        // The intersection of nothing with nothing is empty, so the caller vanished from their own team
+        // and took the tree's "(you)" row with them. Found by the plan round; a branch now, not luck.
+        using var server = Corp.Server();
+        using var cto = server.ClientFor(Corp.Cto);
+        using var alice = Modern(server, Alice);
+        using var bob = server.ClientFor(Bob);
+        await Corp.SyncAsync(alice);
+        await Corp.SyncAsync(bob);
+        await Corp.SetMemberAsync(cto, Alice, role: "dev");
+
+        (await TeamAsync(alice)).EnumerateArray().Select(r => r.GetProperty("email").GetString())
+            .Should().Equal(Alice);
+    }
+
+    [Fact]
+    public async Task AnOldClientGetsTheFilteredSetInTheOldShape()
+    {
+        // The clarification the plan round earned: the FILTER is about the caller's role and applies
+        // whatever they claim; only the SHAPE is gated on the contract they declare.
+        using var server = Corp.Server();
+        using var cto = server.ClientFor(Corp.Cto);
+        using var alice = server.ClientFor(Alice);
+        using var bob = server.ClientFor(Bob);
+        await Corp.SyncAsync(alice);
+        await Corp.SyncAsync(bob);
+        await Corp.SetMemberAsync(cto, Alice, role: "dev");
+
+        var team = await TeamAsync(alice);
+
+        var row = team.EnumerateArray().Should().ContainSingle().Subject;
+        row.EnumerateObject().Select(p => p.Name).Should().Equal(["email"], "the old shape, for a client that claims nothing");
+        row.GetProperty("email").GetString().Should().Be(Alice);
+    }
 }

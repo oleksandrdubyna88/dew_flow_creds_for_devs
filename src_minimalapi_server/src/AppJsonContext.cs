@@ -37,6 +37,7 @@ public sealed record ClientConfigDto(string MicrosoftScope);
 [JsonSerializable(typeof(ClientConfigDto))]
 [JsonSerializable(typeof(WhoAmIDto))]
 [JsonSerializable(typeof(List<TeamMemberDto>))]
+[JsonSerializable(typeof(List<TeamMemberDetailDto>))]
 [JsonSerializable(typeof(ShareRequest))]
 [JsonSerializable(typeof(ShareItem))]
 [JsonSerializable(typeof(List<ShareItem>))]
