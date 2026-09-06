@@ -16,6 +16,7 @@ function state(over: Partial<CorpPolicyState> = {}): CorpPolicyState {
     policy: { export: false, share: 'project', moveOutOfProject: false },
     policyFromServer: true,
     projects: [],
+    pendingFolderRemovals: [],
     leaseHours: 24,
     fetchedAt: 1_000_000,
     ...over,

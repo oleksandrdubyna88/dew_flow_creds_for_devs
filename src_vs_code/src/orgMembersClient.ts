@@ -34,6 +34,17 @@ export interface ProjectAssignment {
 }
 
 /**
+ * A standing instruction about one project folder: remove it, and say when it has gone.
+ *
+ * <p>Durable rather than an event, and cleared only by the person's own acknowledgement — a client
+ * that was offline when an administrator unassigned them still carries it out on its next cycle.</p>
+ */
+export interface PendingFolderRemoval {
+  readonly projectId: string;
+  readonly deleteFolder: boolean;
+}
+
+/**
  * `GET /api/org/me` — the one document every client reads each cycle.
  *
  * <p>`policy` is deliberately `unknown` here. What a malformed policy MEANS (the most restrictive
@@ -49,7 +60,7 @@ export interface MemberSelf {
   readonly isOfficer: boolean;
   readonly shareDefault: string;
   readonly projects: readonly ProjectAssignment[];
-  readonly pendingFolderRemovals: readonly unknown[];
+  readonly pendingFolderRemovals: readonly PendingFolderRemoval[];
   readonly policy: unknown;
   readonly offlineLeaseHours: number;
   readonly loginKeyVersion: number;
@@ -203,6 +214,21 @@ export class OrgMembersClient {
       body: JSON.stringify(change),
     });
     return this.parse(response, isMemberListEntry, 'the changed record');
+  }
+
+  /**
+   * Tell the server this project's folder has gone from this machine AND been pushed.
+   *
+   * <p>Idempotent on the server, which matters: a cycle that dies between the push and this call
+   * repeats both next time. It throws on a refusal like every other write here, so a failed ack
+   * leaves the instruction standing rather than being read as done.</p>
+   */
+  async ackFolderRemoval(account: StoredAccount, projectId: string): Promise<void> {
+    const path = `/api/org/members/me/pending-folder-removals/${encodeURIComponent(projectId)}/ack`;
+    const response = await this.api.request(account, path, { method: 'POST' });
+    if (!response.ok) {
+      throw new Error(await this.api.refusal(response));
+    }
   }
 
   async readSettings(account: StoredAccount): Promise<OrgSettings> {

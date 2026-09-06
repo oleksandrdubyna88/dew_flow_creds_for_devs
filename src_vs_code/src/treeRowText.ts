@@ -48,11 +48,28 @@ export function describeTarget(node: TreeNode): string {
 }
 
 /** A folder row's context value: `folder`, or `folder:trashed` inside the Trash (Restore leads). */
-export function folderContextValue(trashed: boolean, asksForPin: boolean = false): string {
-  const base = trashed ? 'folder:trashed' : 'folder';
-  // The token the menu tests for, so *Stop Asking for a PIN Here* is offered on the folders that
-  // actually ask and nowhere else — the same shape the entity pair uses.
-  return asksForPin ? `${base}:asksforpin` : base;
+export function folderContextValue(
+  trashed: boolean,
+  asksForPin: boolean = false,
+  /**
+   * A corporate project folder this person may not rename, move or delete (epic 3).
+   *
+   * <p>The menu is DISCOVERABILITY: hiding the entries is what stops somebody reaching for one, and
+   * it is not what stops the operation — F2, the Delete key and the command palette all reach the
+   * handler without a menu, so the refusal lives there too (`moveGate.refuseProjectFolderChange`).</p>
+   */
+  locked: boolean = false,
+): string {
+  // One token per fact, in a fixed order, so `folder`, `folder:trashed` and `folder:asksforpin`
+  // stay byte-identical to what every `viewItem` clause in package.json already matches.
+  return ['folder', flag('trashed', trashed), flag('asksforpin', asksForPin), flag('locked', locked)]
+    .filter((token) => token !== '')
+    .join(':');
+}
+
+/** The token when the fact is true, and nothing when it is not. */
+function flag(token: string, on: boolean): string {
+  return on ? token : '';
 }
 
 /**

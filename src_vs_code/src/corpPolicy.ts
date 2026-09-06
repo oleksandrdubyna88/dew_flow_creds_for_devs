@@ -1,4 +1,4 @@
-import { MemberListEntry, MemberSelf, ProjectAssignment } from './orgMembersClient';
+import { MemberListEntry, MemberSelf, PendingFolderRemoval, ProjectAssignment } from './orgMembersClient';
 import { hasShape } from './shapeGuard';
 
 /**
@@ -49,6 +49,7 @@ export interface CorpPolicyFacts {
   readonly active: boolean;
   readonly policy: unknown;
   readonly projects: readonly ProjectAssignment[];
+  readonly pendingFolderRemovals: readonly PendingFolderRemoval[];
   readonly offlineLeaseHours: number;
   readonly fetchedAt: number;
 }
@@ -72,6 +73,12 @@ export interface CorpPolicyState {
    */
   readonly policyFromServer: boolean;
   readonly projects: readonly ProjectAssignment[];
+  /**
+   * What the server is still waiting for this person's client to carry out — epic 3's folder
+   * removals. Carried on the state rather than fetched again: it arrives in the same document the
+   * policy does, and a second read would be a second answer to disagree with.
+   */
+  readonly pendingFolderRemovals: readonly PendingFolderRemoval[];
   /** Hours; `0` is strictly online. */
   readonly leaseHours: number;
   /** When the document was read — the offline lease's heartbeat (epic 2 reads it). */
@@ -79,6 +86,20 @@ export interface CorpPolicyState {
 }
 
 /** The facts from the wire document, stamped with the time of the read. */
+/**
+ * The removals this build can act on.
+ *
+ * <p>Filtered rather than trusted whole, for the reason every guard here exists: an entry a newer
+ * server invented, or one a foreign build wrote, would otherwise reach the reconcile as a project
+ * id of the wrong type — and the reconcile derives a NODE ID from it and deletes what that names.
+ * A row it cannot read is dropped, never guessed at.</p>
+ */
+function readableRemovals(rows: readonly PendingFolderRemoval[]): readonly PendingFolderRemoval[] {
+  return rows.filter(
+    (r) => typeof r?.projectId === 'string' && r.projectId.length > 0 && typeof r.deleteFolder === 'boolean',
+  );
+}
+
 export function factsOf(me: MemberSelf, fetchedAt: number): CorpPolicyFacts {
   return {
     corpMode: me.corpMode,
@@ -87,6 +108,7 @@ export function factsOf(me: MemberSelf, fetchedAt: number): CorpPolicyFacts {
     active: me.active,
     policy: me.policy,
     projects: me.projects,
+    pendingFolderRemovals: readableRemovals(me.pendingFolderRemovals),
     offlineLeaseHours: me.offlineLeaseHours,
     fetchedAt,
   };
@@ -102,6 +124,7 @@ export function corpPolicy(facts: CorpPolicyFacts): CorpPolicyState {
     policy: isPolicyDoc(facts.policy) ? facts.policy : MOST_RESTRICTIVE_POLICY,
     policyFromServer: isPolicyDoc(facts.policy),
     projects: facts.projects,
+    pendingFolderRemovals: facts.pendingFolderRemovals,
     // A negative or non-numeric lease is not a lease; strictly online is the restrictive reading.
     leaseHours: facts.offlineLeaseHours >= 0 ? facts.offlineLeaseHours : 0,
     fetchedAt: facts.fetchedAt,

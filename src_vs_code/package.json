@@ -1472,12 +1472,12 @@
         },
         {
           "command": "credSshManager.editNode",
-          "when": "view == credSshManagerView && viewItem =~ /^(folder|entity)/ && !(viewItem =~ /:mixed/)",
+          "when": "view == credSshManagerView && viewItem =~ /^(folder|entity)/ && !(viewItem =~ /:mixed/) && !(viewItem =~ /:locked/)",
           "group": "3_manage@1"
         },
         {
           "command": "credSshManager.moveNode",
-          "when": "view == credSshManagerView && viewItem =~ /^(folder|entity)/",
+          "when": "view == credSshManagerView && viewItem =~ /^(folder|entity)/ && !(viewItem =~ /:locked/)",
           "group": "3_manage@2"
         },
         {
@@ -1487,7 +1487,7 @@
         },
         {
           "command": "credSshManager.deleteNode",
-          "when": "view == credSshManagerView && viewItem =~ /^(folder|entity)/",
+          "when": "view == credSshManagerView && viewItem =~ /^(folder|entity)/ && !(viewItem =~ /:locked/)",
           "group": "3_manage@5"
         },
         {

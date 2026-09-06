@@ -3716,6 +3716,111 @@ unchanged. Not built here, by design: `listMembers`/`readSettings`/`writeSetting
 non-refresh callers in epic 2 (blocking) and the lease editor; the `account-corpAdmin` /
 `account-corpDev` values gate nothing yet and exist for the menus those epics contribute.
 
+## Project folders — a folder per assignment, locked for a developer (2026-09-06, epic 3 story 3)
+
+An assignment on the server becomes a folder in the assigned person's own vault, follows the
+project's name, refuses to be renamed, moved or deleted by a developer, and is removed — on every
+machine of theirs — when an administrator says so.
+
+### The node id is DERIVED, and that is the load-bearing decision
+
+`projectFolderNodeId(accountId, projectId)` is `sha256('creds-for-devs/project-folder:' + … )`,
+truncated to the id width. Two machines of the same person, both offline, both seeing a new
+assignment, would otherwise mint two ids — and `syncMerge` merges by node id, so it would keep both,
+because nothing in it can know the two folders mean one thing. A derived id makes them the same node
+by construction, and the ordinary version-vector merge resolves a concurrent rename exactly as it
+resolves any other. First-wins would need a device to have synced once to own the id, which is
+precisely the offline window that breaks.
+
+It is also what lets a machine delete a folder it has never held: the id is computable from facts
+every machine has.
+
+**A tombstone does not poison it**, which the code round doubted and two tests now pin. `addNode`
+calls `forgetTombstone` outright, and independently `syncMerge` resolves node-versus-tombstone by
+version vector — a folder re-created on re-assignment carries a newer vector, so the deletion loses
+and the tombstone is dropped ("a newer edit resurrected it"). The reverse case is pinned too, so the
+first test is not merely asserting that tombstones never work.
+
+### `projectId`, and why it is not `folderType`
+
+`folderType: 'project'` already existed and means something else entirely: a client-side TEMPLATE
+that scaffolds default subfolders when a folder is created. Reusing it for a corporate assignment
+would give one field two meanings on machines that already have folders created with it. So the
+assignment is its own optional field, `TreeNode.projectId`, with the same string guard every other
+optional field has — a malformed value from a foreign build is dropped rather than trusted.
+
+### Four actions, and the one the plan round added
+
+`reconcileProjectFolders` is pure — no storage, no `vscode`, no clock — so every case is a row in a
+table rather than a reading of the sync cycle. It answers with what to **create**, **rename**,
+**unlock** and **delete**, plus what to acknowledge.
+
+| What the server says | What happens here |
+|---|---|
+| a new assignment | a folder at the root, named as the server names it |
+| the project was renamed | the node follows; a LOCAL rename does not survive (the shared name is the project's) |
+| the assignment quietly ended | nothing is deleted, and the folder is **unlocked** — it is simply theirs now |
+| `pendingFolderRemovals` names it | deleted permanently, then acknowledged |
+| a removal for a folder this machine never held | the derived id is deleted anyway, so a tombstone still travels |
+| a removal that says to KEEP the folder | nothing is deleted, and it is still acknowledged |
+
+**`toUnlock` is the plan round's finding.** Without it, a person taken off a project whose folder
+they were allowed to keep would hold a folder they could never rename or move again — locked forever
+on behalf of a relationship that had ended. It costs nothing in enforcement: the server's share rule
+refuses a developer sharing anything with no project folder above it.
+
+**A removal that says to keep the folder is still acknowledged.** This server never writes one, but a
+record from a newer server or a hand-edit must not be able to wedge the cycle by being
+unacknowledgeable on every cycle for the life of the account.
+
+### Delete, then push, then acknowledge — in that order
+
+The instruction is per PERSON: the first machine to acknowledge clears it for every other one, which
+then receives the deletion the ordinary way, as a tombstone through their own vault sync. An ack that
+ran before the push would, if this machine then died, leave the instruction gone and the tombstone
+never sent — and every other machine would keep the folder forever. A cycle that fails between two
+steps simply repeats: the delete is idempotent, and so is the ack.
+
+`SyncManager.pushAccount` exists for this and nothing else: `syncNow` swallows a per-account failure
+into a toast, which is right for a background cycle and wrong for a caller that has to know.
+
+**Deleting is permanent, through `deleteNodeRecursive`** — tombstone, node, secrets — because Trash
+would not be a removal: an unassignment that leaves the material in a folder the person still owns
+has removed nothing.
+
+**It is announced, and not confirmed.** A confirmation a developer can decline is not an instruction;
+a folder vanishing with no explanation is a support conversation about data loss. So the window says
+which folder went and why, once, after the fact.
+
+### Only on a cycle that actually read the document
+
+The reconcile hangs off `refreshOrgPolicy`'s successful read (`afterRead`), not off the caller's loop.
+A failed fetch keeps the previous answer — that module's own rule — and reading its absence as "you
+are on nothing" would unlock every project folder on the machine. Hanging the work off the one place
+that knows a read succeeded makes that structural rather than a condition somebody must remember.
+
+### The lock is one gate, and it is in the handlers
+
+`moveGate.ts` holds the whole rule. Before epic 3 the typed-folder check existed TWICE — character
+for character, in the move command and in the drag-and-drop handler — and a third copy carrying the
+project rule is what the reuse rule forbids: a rule enforced in the menu and not on the drop is not
+enforced.
+
+- **An entity may not leave a project folder** except to the Trash. The share rule is evaluated on the
+  FOLDER, so a developer allowed to share in A1 could otherwise take an entry out of A5, drop it into
+  A1 and send it, and both halves of the server's check would pass.
+- **The folder itself may not be moved, renamed or deleted** by a developer. It goes when an
+  administrator takes them off the project.
+- **The refusals live in the command HANDLERS**, not only in `package.json`. A `when` clause hides a
+  menu item; F2, the Delete key and the command palette all reach the handler without one. The
+  `:locked` token on the row is discoverability, and the code round was right that it is not a gate.
+- **A bulk delete drops a project folder from the selection** rather than failing whole: somebody
+  sweeping ten rows should not have to find which one their organisation manages.
+
+**It is a client-side promise, and the module doc says so rather than letting a reader assume.** A
+developer's own machine holds their vault key. What the SERVER enforces is the share rule, which
+depends on none of this.
+
 ## Security hardening (2026-08-25 review)
 
 The coverage pass that followed it ([SECURITY_REVIEW_2026-08-26.md](SECURITY_REVIEW_2026-08-26.md))

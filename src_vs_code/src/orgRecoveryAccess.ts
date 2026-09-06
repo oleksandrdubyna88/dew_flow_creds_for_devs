@@ -1,3 +1,5 @@
+import { StoredAccount } from './types';
+
 /**
  * What one account may see of corporate recovery, as a value the tree row carries.
  *
@@ -96,3 +98,42 @@ const CONTEXT_VALUES: Readonly<Record<OrgRecoveryAccess, string>> = {
   // matters: every other menu entry on an account row is contributed against it.
   none: 'account',
 };
+
+/** Just enough of the recovery client to read a config — so this module still imports no transport. */
+export interface OrgRecoveryConfigReader {
+  readConfig: (account: StoredAccount) => Promise<{ enabled: boolean; officerEmails: readonly string[] }>;
+}
+
+/**
+ * Read what this account may see of corporate recovery, and record it where the tree reads it.
+ *
+ * <p>Here rather than in `extension.ts` for the split `orgPolicyRefresh` documents: the `vscode`
+ * layer holds the wiring, and the decision — including what an unreachable server means — lives
+ * beside the function that makes it. <b>Any failure is `none`</b>, and deliberately: a server that
+ * cannot be asked has not granted anybody anything, and drawing five corporate commands on the
+ * strength of a timeout offers actions whose only possible outcome is a refusal.</p>
+ */
+export async function readOrgAccessInto(
+  into: Map<string, OrgRecoveryAccess>,
+  client: OrgRecoveryConfigReader | undefined,
+  account: StoredAccount,
+): Promise<void> {
+  if (client === undefined) {
+    into.set(account.accountId, 'none');
+    return;
+  }
+  try {
+    const config = await client.readConfig(account);
+    into.set(
+      account.accountId,
+      orgRecoveryAccess({
+        onServer: true,
+        enabled: config.enabled,
+        officerEmails: config.officerEmails,
+        accountEmail: account.email,
+      }),
+    );
+  } catch {
+    into.set(account.accountId, 'none');
+  }
+}

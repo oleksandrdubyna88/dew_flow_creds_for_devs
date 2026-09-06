@@ -338,6 +338,19 @@ export interface TreeNode {
   /** Folders only: the entity kind this folder holds ('any' = unrestricted). */
   folderType?: FolderType;
   /**
+   * Folders only: the corporate project this folder IS — set by the sync cycle from the person's
+   * assignments, never by hand.
+   *
+   * <p><b>Orthogonal to `folderType`, deliberately.</b> `folderType: 'project'` already exists and
+   * means something else entirely: a client-side template that scaffolds a set of default
+   * subfolders when a folder is created. Reusing that value for a corporate assignment would give
+   * one field two meanings on machines that already have folders created with it.</p>
+   *
+   * <p>Its presence is what locks the folder for a developer (`moveGate.ts`) and what story 4 will
+   * bind into a share's AAD. Absent on every folder a person made themselves.</p>
+   */
+  projectId?: string;
+  /**
    * Folders only: entries created here are asked for a PIN — a PREFERENCE, never a claim that the
    * folder is protected. Whether an ENTRY is protected stays derived from the entry; this closes the
    * one case derivation cannot, a folder the command ran on while empty. See `pinOnCreate.ts`.

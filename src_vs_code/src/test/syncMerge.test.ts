@@ -155,3 +155,30 @@ test('identical sides produce no changes in either direction', () => {
   assert.equal(localChanged, false);
   assert.equal(remoteChanged, false);
 });
+
+test('a project folder re-created after a removal survives its own tombstone', () => {
+  // Epic 3 derives a project folder's node id from the account and the project, so re-assignment
+  // yields the SAME id a removal tombstoned. The code round called that a collision that would make
+  // the folder unrestorable; it is not, and this is why: the tombstone is resolved by version
+  // vector, and a create that happened after the delete dominates it. (`addNode` also forgets the
+  // tombstone outright, so this is the second of two guards, not the only one.)
+  const id = 'derived-project-folder-id';
+  const deleted: Tombstone = { deletedAt: NOW - DAY, v: { A: 2 } };
+  const recreated = node(id, NOW, { A: 3 }, { type: 'folder', projectId: 'p1' });
+
+  const { merged } = mergeProfiles(snap({ nodes: [recreated] }), snap({ tombstones: { [id]: deleted } }), NOW);
+
+  assert.deepEqual(merged.nodes.map((n) => n.id), [id], 'the folder is back');
+  assert.equal(merged.tombstones[id], undefined, 'and the deletion it outlived is gone');
+});
+
+test('a project folder deleted after its creation stays deleted', () => {
+  // The other direction, so the test above is not just asserting that tombstones never work.
+  const id = 'derived-project-folder-id';
+  const deleted: Tombstone = { deletedAt: NOW, v: { A: 5 } };
+  const stale = node(id, NOW - DAY, { A: 4 }, { type: 'folder', projectId: 'p1' });
+
+  const { merged } = mergeProfiles(snap({ nodes: [stale] }), snap({ tombstones: { [id]: deleted } }), NOW);
+
+  assert.deepEqual(merged.nodes, []);
+});

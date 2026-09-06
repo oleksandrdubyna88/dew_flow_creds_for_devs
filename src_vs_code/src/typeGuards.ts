@@ -404,6 +404,7 @@ function hasValidFolderExtras(v: Record<string, unknown>): boolean {
     (v.isTrash === undefined || typeof v.isTrash === 'boolean') &&
     (v.trashRetentionDays === undefined || typeof v.trashRetentionDays === 'number') &&
     (v.folderAsksForPin === undefined || typeof v.folderAsksForPin === 'boolean') &&
+    (v.projectId === undefined || typeof v.projectId === 'string') &&
     (v.mcp === undefined || isMcpAccess(v.mcp))
   );
 }

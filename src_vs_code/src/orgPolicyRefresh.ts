@@ -23,6 +23,15 @@ export interface OrgPolicyHost {
    * heartbeat, which is why it lives outside the process and is written only on success.
    */
   heartbeat: (accountId: string, at: number) => PromiseLike<void>;
+  /**
+   * What else a SUCCESSFUL read should set in motion — epic 3's project folders.
+   *
+   * <p>Here rather than at the caller's loop for the rule it enforces: a failed fetch keeps the
+   * previous answer, and reading its absence as "you are on nothing" would unlock every project
+   * folder on the machine. Hanging the work off the one place that knows a read succeeded makes
+   * that structural instead of a condition somebody must remember to write.</p>
+   */
+  readonly afterRead?: (account: StoredAccount, state: CorpPolicyState) => PromiseLike<unknown>;
   readonly now: () => number;
 }
 
@@ -47,6 +56,7 @@ export function policyHost(
   clientFor: (account: StoredAccount) => OrgMembersClient | undefined,
   heartbeat: (accountId: string, at: number) => PromiseLike<void>,
   now: () => number = Date.now,
+  afterRead?: (account: StoredAccount, state: CorpPolicyState) => PromiseLike<unknown>,
 ): OrgPolicyHost {
   return {
     clientFor,
@@ -54,6 +64,7 @@ export function policyHost(
     orgRoster: caches.orgRoster,
     orgPolicyServer: caches.orgPolicyServer,
     heartbeat,
+    afterRead,
     now,
   };
 }
@@ -85,6 +96,11 @@ export async function refreshOrgPolicy(host: OrgPolicyHost, account: StoredAccou
   // thing this module promises not to do.
   await Promise.resolve()
     .then(() => host.heartbeat(id, next.fetchedAt))
+    .then(undefined, () => undefined);
+  // Wrapped for the reason the heartbeat above is: somebody else's callback, and one that threw
+  // would take the readiness loop down with it — the one thing this module promises not to do.
+  await Promise.resolve()
+    .then(() => host.afterRead?.(account, next))
     .then(undefined, () => undefined);
   const rosterRead = await refreshRoster(host, client, account, next.isAdmin);
   return { policyRead: true, rosterRead };
