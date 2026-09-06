@@ -93,15 +93,15 @@ test('a member is told their role and what the policy allows', () => {
   assert.match(html, /Export.*allowed/s);
 });
 
-test('a dev sees the restrictions the policy names — and that this version only SHOWS them', () => {
-  // Honesty about enforcement: the bans land in a later version. A page that read as "you cannot
-  // export" beside an Export menu entry that works would be the broken product the page exists
-  // to prevent, so it says which of the two states it is in.
+test('a dev sees the restrictions the policy names — and what this version does about each', () => {
+  // Honesty about enforcement, per row. It used to be one sentence saying none of it was applied;
+  // two of the rows are applied now, and a page that read "not enforced yet" over a row that IS
+  // enforced would be the broken product the page exists to prevent.
   const html = render({ role: 'dev', policy: { export: false, share: 'project', moveOutOfProject: false } });
   assert.match(html, /You are a <strong>dev<\/strong>/);
   assert.match(html, /not allowed/);
   assert.match(html, /inside your projects/);
-  assert.match(html, /later version/);
+  assert.match(html, /Refused by this version/);
 });
 
 test('a policy this build could not read says so, instead of reading as a decision about the person', () => {
@@ -167,4 +167,37 @@ test('a role or project id a server spells with markup is escaped, never parsed'
   assert.equal(html.includes('<script>'), false);
   assert.match(html, /&lt;img/);
   assert.match(html, /&lt;script&gt;/);
+});
+
+/**
+ * The page said the policy was not applied yet. It is, for two of the four rows.
+ *
+ * <p>The blanket sentence — "applying it — refusing an export the policy forbids — comes in a
+ * later version" — was true when it was written and is now the opposite of what happens:
+ * `exportCommand.ts` and `backupScheduler.ts` both call `refuseExit`, and `standingGate` refuses to
+ * open an account whose lease has run out. Sharing and moving out of a project still are not
+ * enforced. A page whose whole reason for existing is that a person can read what their server says
+ * about them must not tell them an export will work when it will be refused — so the honesty is
+ * now per ROW rather than one sentence covering rows that disagree.</p>
+ */
+test('the page says which rows are enforced today, not one sentence for rows that disagree', () => {
+  const html = render({ role: 'dev', policy: { export: false, share: 'project', moveOutOfProject: false } });
+
+  assert.ok(
+    !/comes in a later version|not yet what is/.test(html),
+    'the blanket "not enforced yet" sentence is gone — export and backup ARE refused',
+  );
+  assert.match(html, /Refused by this version/, 'the exits row says it bites');
+  assert.match(html, /Shown, not yet applied/, 'and the rows that do not say so');
+});
+
+test('the lease says it locks the account, because it does', () => {
+  const html = render({ leaseHours: 24 });
+
+  assert.match(html, /24 hours/, 'still in words');
+  assert.ok(
+    !/applied by a later version/.test(html),
+    'standingGate refuses to open an account past its lease — the page must not say otherwise',
+  );
+  assert.match(html, /will not open/, 'and it says what actually happens');
 });

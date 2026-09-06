@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { HELP_ARTICLES, HELP_LANGUAGES, HelpLanguage, bodyFor, helpArticle } from '../helpContent';
+import { HELP_ARTICLES, HELP_LANGUAGES, HelpArticle, HelpLanguage, bodyFor, helpArticle } from '../helpContent';
 import { HELP_ARTICLE_IDS } from '../helpOrder';
 import { EN_BODIES } from '../helpEn';
 import { RU_BODIES } from '../helpRu';
@@ -105,25 +105,37 @@ test('every body that exists fills all six fields', () => {
 });
 
 /**
- * The fallback on an article a partial language genuinely does not have.
+ * The fallback, checked on a gap that cannot be translated away.
  *
- * <p>Raised by the plan gate and fair: the test above walks every language over
- * `getting-started`, which all five carry — so it proved the *reporting* and never the case it
- * exists for. uk, de and es are partial by design while they are translated, and what must hold is
- * that the reader gets the ENGLISH text with the flag set, rather than an empty body or a throw.</p>
+ * <p>This was written while uk, de and es were partial, and it FOUND the gap in the catalog to
+ * check against — which meant it went red the day the last article was translated, on the guard
+ * that a gap must exist. That is the same rot as the `mcp-logs` test it sat beside: a test that
+ * fails when the work it is about succeeds. What must hold is a property of `bodyFor`, not a fact
+ * about how far the translations have got, so the gap is now CONSTRUCTED.</p>
  */
-test('a partial language falls back to the English TEXT, not to nothing', () => {
-  const partial = (['uk', 'de', 'es'] as const).find((language) =>
-    HELP_ARTICLE_IDS.some((id) => MAPS[language][id] === undefined),
-  );
-  assert.notEqual(partial, undefined, 'this test is about a language that is still being translated');
+test('a language with no body for an article falls back to the English TEXT, not to nothing', () => {
+  const article = helpArticle(HELP_ARTICLE_IDS[0])!;
+  const withoutGerman: HelpArticle = { id: article.id, en: article.en, mediaSlots: [] };
 
-  const missing = HELP_ARTICLE_IDS.find((id) => MAPS[partial!][id] === undefined)!;
-  const article = helpArticle(missing)!;
-  const shown = bodyFor(article, partial!);
+  const shown = bodyFor(withoutGerman, 'de');
 
   assert.equal(shown.fallback, true, 'and it says so, visibly');
-  assert.equal(shown.body, article.en, 'the English body itself, not a copy and not an empty one');
+  assert.equal(shown.body, withoutGerman.en, 'the English body itself, not a copy and not an empty one');
   assert.ok(shown.body.title.length > 0, 'with text in it');
   assert.ok(shown.body.whatCanGoWrong.length > 0, 'all six fields, not just the first');
+});
+
+/**
+ * Where the translations have actually got to — a fact about the catalog, written as a number.
+ *
+ * <p>Not a duplicate of the fallback test above: that one is about the RULE, this one is about the
+ * DATA, and they fail for opposite reasons. A language that loses an article — a key renamed on one
+ * side of the split, a batch regenerated from a stale file — goes on working, in English, for ever,
+ * and nothing says why. This is what says why.</p>
+ */
+test('every declared language carries every article', () => {
+  for (const language of HELP_LANGUAGES) {
+    const missing = HELP_ARTICLE_IDS.filter((id) => MAPS[language][id] === undefined);
+    assert.deepEqual(missing, [], `${language} is missing ${missing.length} of ${HELP_ARTICLE_IDS.length}`);
+  }
 });

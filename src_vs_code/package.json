@@ -255,7 +255,7 @@
             "Deutsch",
             "Español"
           ],
-          "markdownDescription": "The language of the **Help** pages only. Articles not yet translated show English with a note. The switch at the top of the help page writes this same setting."
+          "markdownDescription": "The language of the **Help** pages only. All five carry every article; one that ever loses a translation shows English with a note rather than disappearing. The switch at the top of the help page writes this same setting."
         }
       }
     },
