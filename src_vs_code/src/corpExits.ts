@@ -45,16 +45,11 @@ export function refuseExit(state: CorpPolicyState | undefined, exit: Exit): stri
 }
 
 /**
- * A clone is refused only when it LEAVES the account.
- *
- * <p>The server's permission is "export, back up to disk, clone into another account" — duplicating
- * an entry inside one's own vault is none of those, and refusing it would stop a developer from
- * copying a configuration to edit, which no rule in this epic asks for.</p>
+ * <b>There is no clone gate, deliberately.</b> The permission covers "clone into ANOTHER account",
+ * and this product has no such operation: `credSshManager.cloneNode` copies within one account, and
+ * the drag-and-drop handler moves within `payload.accountId`. A `refuseClone` was written here and
+ * the code round pointed out it had no caller — a function that claims to enforce a rule and never
+ * runs is worse than none, because the next reader believes the rule is covered. When epic 3 adds a
+ * cross-account move, the gate belongs at that call site, and `refuseExit(state, 'clone')` is
+ * already the sentence for it.
  */
-export function refuseClone(
-  state: CorpPolicyState | undefined,
-  fromAccountId: string,
-  toAccountId: string,
-): string {
-  return fromAccountId === toAccountId ? '' : refuseExit(state, 'clone');
-}

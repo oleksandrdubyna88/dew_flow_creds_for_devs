@@ -23,9 +23,11 @@ import type { TreeNode } from '../types';
 interface Captured {
   quickPickTitle: string;
   modalText: string;
+  warnings: string[];
+  secretsRead: number;
 }
 
-const captured: Captured = { quickPickTitle: '', modalText: '' };
+const captured: Captured = { quickPickTitle: '', modalText: '', warnings: [], secretsRead: 0 };
 
 /** Just enough `vscode` for the export command to reach its first dialog. */
 function stubbedVscode(): Record<string, unknown> {
@@ -39,6 +41,7 @@ function stubbedVscode(): Record<string, unknown> {
       },
       showWarningMessage: (text: string): Promise<undefined> => {
         captured.modalText = text;
+        captured.warnings.push(text);
         return Promise.resolve(undefined);
       },
       showInformationMessage: (): undefined => undefined,
@@ -72,7 +75,11 @@ function stubbedVscode(): Record<string, unknown> {
 type Handler = (...args: unknown[]) => unknown;
 
 /** Register the real commands against the stub and hand back the export one. */
-function exportHandler(secrets: Record<string, { payment?: string }>, node: TreeNode): Handler {
+function exportHandler(
+  secrets: Record<string, { payment?: string }>,
+  node: TreeNode,
+  corpPolicyOf?: (accountId: string) => unknown,
+): Handler {
   const loader = Module as unknown as { _load(request: string, ...rest: unknown[]): unknown };
   const original = loader._load;
   loader._load = function patched(request: string, ...rest: unknown[]): unknown {
@@ -91,9 +98,13 @@ function exportHandler(secrets: Record<string, { payment?: string }>, node: Tree
       doorsFor: () => undefined,
       mutated: () => undefined,
       register: (command: string, handler: Handler) => handlers.set(command, handler),
+      corpPolicyOf,
       storage: {
         getNodes: () => [node],
-        exportSecretsFor: () => Promise.resolve(secrets),
+        exportSecretsFor: () => {
+          captured.secretsRead += 1;
+          return Promise.resolve(secrets);
+        },
       },
       transports: {},
       vaultKeys: { noteUserActivity: () => undefined },
@@ -170,4 +181,59 @@ test('exporting something with no card says nothing about cards', async () => {
     false,
     'a warning about nothing trains people to dismiss the one that matters',
   );
+});
+
+/** A corporate policy document, as the tree caches it. */
+function policy(exportAllowed: boolean): Record<string, unknown> {
+  return {
+    corpMode: true,
+    role: exportAllowed ? 'member' : 'dev',
+    isOfficer: false,
+    isAdmin: false,
+    active: true,
+    policy: { export: exportAllowed, share: 'project', moveOutOfProject: false },
+    policyFromServer: true,
+    projects: [],
+    leaseHours: 24,
+    fetchedAt: 1_000_000,
+  };
+}
+
+test('a developer forbidden to export is refused before any secret is read', async () => {
+  // The gate where it is WIRED, not only where it is computed. Without this, a refactor could drop
+  // the call and every pure test would stay green while a forbidden export ran.
+  captured.warnings = [];
+  captured.secretsRead = 0;
+  captured.quickPickTitle = '';
+  const handler = exportHandler({ p1: {} }, CARD_NODE, () => policy(false));
+
+  await handler(target, undefined);
+
+  assert.equal(captured.secretsRead, 0, 'the vault must not even be read for an export that may not happen');
+  assert.equal(captured.quickPickTitle, '', 'and no export dialog may open');
+  assert.equal(captured.warnings.length, 1);
+  assert.match(captured.warnings[0], /not allowed for your role/);
+});
+
+test('a member is not refused, and the export proceeds to its first dialog', async () => {
+  // The control. A gate that refused everybody would pass the test above for the wrong reason.
+  captured.warnings = [];
+  captured.secretsRead = 0;
+  captured.quickPickTitle = '';
+  const handler = exportHandler({ p1: {} }, CARD_NODE, () => policy(true));
+
+  await handler(target, undefined);
+
+  assert.equal(captured.secretsRead, 1);
+  assert.match(captured.quickPickTitle, /^Export /);
+});
+
+test('a personal account is not asked about a policy it does not have', async () => {
+  captured.secretsRead = 0;
+  captured.quickPickTitle = '';
+  const handler = exportHandler({ p1: {} }, CARD_NODE);
+
+  await handler(target, undefined);
+
+  assert.equal(captured.secretsRead, 1);
 });

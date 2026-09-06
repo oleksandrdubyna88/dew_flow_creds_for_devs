@@ -19,6 +19,9 @@ import { CorpPolicyState } from './corpPolicy';
  */
 export const STRICT_ONLINE_GRACE_MS = 5 * 60 * 1000;
 
+/** One hour, named rather than spelled three times in a calculation about hours. */
+const HOUR_MS = 60 * 60 * 1000;
+
 /** What a window knows about an account's standing, from this session and from the last one. */
 export interface LeaseFacts {
   /** The policy document this window holds, or nothing when it has not read one this session. */
@@ -39,7 +42,7 @@ export type LockedReason = '' | 'deactivated' | 'leaseExpired';
 
 /** The window a lease allows, in milliseconds. `0` hours is strictly online, not "instantly stale". */
 export function leaseWindowMs(leaseHours: number): number {
-  return leaseHours > 0 ? leaseHours * 60 * 60 * 1000 : STRICT_ONLINE_GRACE_MS;
+  return leaseHours > 0 ? leaseHours * HOUR_MS : STRICT_ONLINE_GRACE_MS;
 }
 
 /**
