@@ -2,7 +2,7 @@ import { isBurnPolicy } from './entityExpiry';
 import { hasValidConfigFields } from './configFormat';
 import { hasValidPaymentFields } from './paymentForm';
 import { DB_TYPES, ENTITY_KINDS, VPN_TYPES } from './types';
-import type { BackupBundle } from './backupBundleType';
+export type { BackupBundle } from './backupBundleType';
 import type {
   AuthProvider,
   CommandArg,
@@ -170,20 +170,27 @@ export function isSentShare(value: unknown): value is SentShare {
   return SENT_SHARE_FIELDS.every(([key, type]) => typeof v[key] === type);
 }
 
+/**
+ * Who sent it — from the authoritative field, or from the legacy account object.
+ *
+ * <p>`fromEmail` is what a share carries today; items sealed by older builds carry only `from`.
+ * Its own function because it answers one question, and because two ternaries in a row is where a
+ * reader stops being sure which branch produced the answer.</p>
+ */
+function senderEmail(v: Record<string, unknown>): string | undefined {
+  if (typeof v.fromEmail === 'string') {
+    return v.fromEmail;
+  }
+  return isStoredAccount(v.from) ? v.from.email : undefined;
+}
+
 // eslint-disable-next-line complexity
 export function isShareItem(value: unknown): value is ShareItem {
   if (typeof value !== 'object' || value === null) {
     return false;
   }
   const v = value as Record<string, unknown>;
-  // `fromEmail` is authoritative; legacy items carry only `from`.
-  const fromEmail =
-    typeof v.fromEmail === 'string'
-      ? v.fromEmail
-      : isStoredAccount(v.from)
-        ? v.from.email
-        : undefined;
-  if (fromEmail === undefined) {
+  if (senderEmail(v) === undefined) {
     return false;
   }
   return (
@@ -232,7 +239,6 @@ export function isSharePayload(value: unknown): value is SharePayload {
   );
 }
 
-export type { BackupBundle };
 
 export function isAuthProvider(value: unknown): value is AuthProvider {
   return value === 'microsoft' || value === 'google';
@@ -267,20 +273,27 @@ function hasValidRelations(v: Record<string, unknown>): boolean {
   );
 }
 
-// eslint-disable-next-line complexity
-export function isEntityMetadata(value: unknown): value is EntityMetadata {
-  if (typeof value !== 'object' || value === null) {
-    return false;
-  }
-  const v = value as Record<string, unknown>;
+/**
+ * The three fields every entity has, whatever kind it is.
+ *
+ * <p>`kind` is loose on purpose: a vault written by a NEWER build may carry one this build has
+ * never heard of, and dropping the whole entity would lose data it can still show. `resolveKind`
+ * falls back to the flags for anything it does not know.</p>
+ */
+// eslint-disable-next-line complexity -- one clause per optional field, as every guard here is
+function hasValidIdentity(v: Record<string, unknown>): boolean {
   return (
     typeof v.id === 'string' &&
     typeof v.name === 'string' &&
     typeof v.isSshEnabled === 'boolean' &&
-    // An unknown kind is not a reason to reject the record — a vault written by a NEWER
-    // build may carry one, and dropping the whole entity would lose data this build can
-    // still show. `resolveKind` falls back to the flags for anything it does not know.
-    (v.kind === undefined || typeof v.kind === 'string') &&
+    (v.kind === undefined || typeof v.kind === 'string')
+  );
+}
+
+/** Where and how to CONNECT: the host, the key, the jump host, the forwards. */
+// eslint-disable-next-line complexity -- one clause per optional field, as every guard here is
+function hasValidSshFields(v: Record<string, unknown>): boolean {
+  return (
     (v.host === undefined || typeof v.host === 'string') &&
     (v.user === undefined || typeof v.user === 'string') &&
     (v.port === undefined || typeof v.port === 'number') &&
@@ -290,23 +303,47 @@ export function isEntityMetadata(value: unknown): value is EntityMetadata {
     (v.jumpHostEntityId === undefined || typeof v.jumpHostEntityId === 'string') &&
     (v.portForwards === undefined || isPortForwardArray(v.portForwards)) &&
     (v.agentForward === undefined || typeof v.agentForward === 'boolean') &&
-    (v.hostKey === undefined || typeof v.hostKey === 'string') &&
-    (v.tags === undefined || (Array.isArray(v.tags) && v.tags.every((t) => typeof t === 'string'))) &&
-    hasValidKindFlags(v) &&
+    (v.hostKey === undefined || typeof v.hostKey === 'string')
+  );
+}
+
+/** The kind discriminants that come from a closed list, plus the config key's hash. */
+// eslint-disable-next-line complexity -- one clause per optional field, as every guard here is
+function hasValidKindDiscriminants(v: Record<string, unknown>): boolean {
+  return (
     (v.dbType === undefined ||
       (typeof v.dbType === 'string' && (DB_TYPES as readonly string[]).includes(v.dbType))) &&
     (v.vpnType === undefined ||
       (typeof v.vpnType === 'string' && (VPN_TYPES as readonly string[]).includes(v.vpnType))) &&
     (v.vpnConfigFileName === undefined || typeof v.vpnConfigFileName === 'string') &&
-    hasValidConfigFields(v) &&
-    (v.configKeyHash === undefined || typeof v.configKeyHash === 'string') &&
-    hasValidPaymentFields(v) &&
+    (v.configKeyHash === undefined || typeof v.configKeyHash === 'string')
+  );
+}
+
+/** What an entity RUNS: a script with its variables, or a command with its arguments. */
+// eslint-disable-next-line complexity -- one clause per optional field, as every guard here is
+function hasValidRunFields(v: Record<string, unknown>): boolean {
+  return (
     (v.scriptLanguage === undefined || typeof v.scriptLanguage === 'string') &&
     (v.script === undefined || typeof v.script === 'string') &&
     (v.scriptVars === undefined || isCommandArgArray(v.scriptVars)) &&
     (v.command === undefined || typeof v.command === 'string') &&
     (v.commandNote === undefined || typeof v.commandNote === 'string') &&
-    (v.commandArgs === undefined || isCommandArgArray(v.commandArgs)) &&
+    (v.commandArgs === undefined || isCommandArgArray(v.commandArgs))
+  );
+}
+
+/**
+ * The marks that describe the SECRETS rather than the connection — and the two files.
+ *
+ * <p>Every one of these is a claim about a stored value: that it expires, that it is woven, that it
+ * is wrapped under a PIN, that the far end should be asked for one. A field a guard does not know
+ * about is stripped by every sync and import, which is why each mark is listed here by name rather
+ * than admitted by a loose object check.</p>
+ */
+// eslint-disable-next-line complexity -- one clause per optional field, as every guard here is
+function hasValidSecretMarks(v: Record<string, unknown>): boolean {
+  return (
     (v.expiresAt === undefined || typeof v.expiresAt === 'number') &&
     (v.burnPolicy === undefined || isBurnPolicy(v.burnPolicy)) &&
     (v.envBindings === undefined || isEnvBindings(v.envBindings)) &&
@@ -316,11 +353,39 @@ export function isEntityMetadata(value: unknown): value is EntityMetadata {
     (v.hasTotp === undefined || typeof v.hasTotp === 'boolean') &&
     (v.passwordWoven === undefined || typeof v.passwordWoven === 'boolean') &&
     (v.pinProtected === undefined || typeof v.pinProtected === 'boolean') &&
-    (v.pinAskOnImport === undefined || typeof v.pinAskOnImport === 'boolean') &&
+    (v.pinAskOnImport === undefined || typeof v.pinAskOnImport === 'boolean')
+  );
+}
+
+/**
+ * Everything an entity may carry, checked by GROUP.
+ *
+ * <p>The groups are the point. This was one flat list of thirty-five field checks — every clause
+ * independent, which is what a guard has to be, and completely opaque to a reader looking for
+ * whether a particular field is admitted. Named by feature, a missing field is now missing from a
+ * short list with a heading instead of from a wall. The two loose fields (`kind`, `notes`) say why
+ * they are loose where they sit.</p>
+ */
+// eslint-disable-next-line complexity -- one clause per optional field, as every guard here is
+export function isEntityMetadata(value: unknown): value is EntityMetadata {
+  if (typeof value !== 'object' || value === null) {
+    return false;
+  }
+  const v = value as Record<string, unknown>;
+  return (
+    hasValidIdentity(v) &&
+    hasValidSshFields(v) &&
+    (v.tags === undefined || (Array.isArray(v.tags) && v.tags.every((t) => typeof t === 'string'))) &&
+    hasValidKindFlags(v) &&
+    hasValidKindDiscriminants(v) &&
+    hasValidConfigFields(v) &&
+    hasValidPaymentFields(v) &&
+    hasValidRunFields(v) &&
+    hasValidSecretMarks(v) &&
     hasValidRelations(v) &&
-    // Loose on purpose, for the same reason `kind` above is: a colour key minted by a NEWER
-    // build must not make this one reject the whole entity. `isDepColorKey` (depColors.ts) is
-    // the strict gate, and it is applied where the value is USED, not where it is admitted.
+    // Loose on purpose, for the same reason `kind` is: a colour key minted by a NEWER build must
+    // not make this one reject the whole entity. `isDepColorKey` (depColors.ts) is the strict
+    // gate, and it is applied where the value is USED, not where it is admitted.
     (v.notes === undefined || typeof v.notes === 'string')
   );
 }
@@ -343,53 +408,71 @@ function hasValidFolderExtras(v: Record<string, unknown>): boolean {
   );
 }
 
-// eslint-disable-next-line complexity
+/** Identity and place: what it is, what it is called, and which folder holds it. */
+// eslint-disable-next-line complexity -- one clause per optional field, as every guard here is
+function hasValidNodeIdentity(v: Record<string, unknown>): boolean {
+  return (
+    typeof v.id === 'string' &&
+    typeof v.name === 'string' &&
+    (v.type === 'folder' || v.type === 'entity') &&
+    (v.parentId === undefined || v.parentId === null || typeof v.parentId === 'string')
+  );
+}
+
+/**
+ * What SYNC reads: the two timestamps, the per-device version vector, the manual order.
+ *
+ * <p>The vector is a record of numbers rather than a shape, because a device id this build has
+ * never seen is a normal thing to receive and must not make the node invalid.</p>
+ */
+// eslint-disable-next-line complexity -- one clause per optional field, as every guard here is
+function hasValidSyncFields(v: Record<string, unknown>): boolean {
+  return (
+    (v.createdAt === undefined || typeof v.createdAt === 'number') &&
+    (v.updatedAt === undefined || typeof v.updatedAt === 'number') &&
+    (v.sortOrder === undefined || typeof v.sortOrder === 'number') &&
+    isVersionVector(v.v)
+  );
+}
+
+/** Absent, or an object whose every value is a number. */
+function isVersionVector(value: unknown): boolean {
+  if (value === undefined) {
+    return true;
+  }
+  if (typeof value !== 'object' || value === null) {
+    return false;
+  }
+  return Object.values(value as Record<string, unknown>).every((n) => typeof n === 'number');
+}
+
+/** Absent, or one of the entity kinds plus the two folder-only ones. */
+function isFolderType(value: unknown): boolean {
+  return (
+    value === undefined ||
+    (typeof value === 'string' && ([...ENTITY_KINDS, 'any', 'project'] as string[]).includes(value))
+  );
+}
+
+/**
+ * A node of the tree, checked by GROUP for the same reason `isEntityMetadata` is.
+ *
+ * <p>`hasValidFolderExtras` is not a formality: without it the trash flag, its retention and the
+ * folder's PIN preference are stripped by every sync, import and sealed-slot read — the trash
+ * would arrive on the second machine as an ordinary folder full of things somebody thought they
+ * had deleted.</p>
+ */
+// eslint-disable-next-line complexity -- one clause per optional field, as every guard here is
 export function isTreeNode(value: unknown): value is TreeNode {
   if (typeof value !== 'object' || value === null) {
     return false;
   }
   const v = value as Record<string, unknown>;
-  if (typeof v.id !== 'string' || typeof v.name !== 'string') {
-    return false;
-  }
-  if (v.type !== 'folder' && v.type !== 'entity') {
-    return false;
-  }
-  if (v.parentId !== undefined && v.parentId !== null && typeof v.parentId !== 'string') {
-    return false;
-  }
-  if (v.createdAt !== undefined && typeof v.createdAt !== 'number') {
-    return false;
-  }
-  if (v.updatedAt !== undefined && typeof v.updatedAt !== 'number') {
-    return false;
-  }
-  if (v.v !== undefined) {
-    if (typeof v.v !== 'object' || v.v === null) {
-      return false;
-    }
-    if (!Object.values(v.v as Record<string, unknown>).every((n) => typeof n === 'number')) {
-      return false;
-    }
-  }
-  if (v.sortOrder !== undefined && typeof v.sortOrder !== 'number') {
-    return false;
-  }
-  // Without these two the trash flag and its retention are stripped by every sync, import and
-  // sealed-slot read — the folder would arrive on the second machine as an ordinary folder full
-  // of things somebody thought they had deleted.
-  if (!hasValidFolderExtras(v)) {
-    return false;
-  }
-  if (
-    v.folderType !== undefined &&
-    !(typeof v.folderType === 'string' &&
-      ([...ENTITY_KINDS, 'any', 'project'] as string[]).includes(v.folderType))
-  ) {
-    return false;
-  }
-  if (v.type === 'entity' && !isEntityMetadata(v.details)) {
-    return false;
-  }
-  return true;
+  return (
+    hasValidNodeIdentity(v) &&
+    hasValidSyncFields(v) &&
+    hasValidFolderExtras(v) &&
+    isFolderType(v.folderType) &&
+    (v.type !== 'entity' || isEntityMetadata(v.details))
+  );
 }
