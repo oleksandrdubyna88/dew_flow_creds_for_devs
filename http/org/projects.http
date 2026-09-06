@@ -2,12 +2,15 @@
 #
 # A project is a name people are assigned to. The assignment is what epic 3's later stories turn into
 # a folder in that person's vault and into a share rule; this file covers the surface that creates
-# them, and the two refusals that are decisions rather than typos:
+# them, and the refusals that are decisions rather than typos:
 #
 #   * `deleteFolder` is REQUIRED on an unassignment. Left to a default, one reading deletes somebody's
 #     folder when the admin meant only to unassign and the other leaves corporate material on a machine
 #     when they meant to remove it — and the request looks identical either way.
 #   * a rename does NOT unarchive. `archived` omitted means "leave it", never `false`.
+#   * an ARCHIVED project takes no new assignments, and still lets people off.
+#   * an unassignment names somebody who is on the roster, or it is a 404 — the member store creates
+#     what it cannot find, which is the point on the way IN and a typo's roster entry on the way out.
 #
 # PRECONDITION: a corp-mode server (../README.md — three officers). `{{officerToken}}` administers;
 # `{{token}}` (Alice) and `{{bobToken}}` do not.
@@ -42,6 +45,23 @@ Content-Type: application/json
 
 ###
 
+# @name org_projects_needs_a_token
+GET {{baseUrl}}/api/org/projects
+X-Creds-Contract: {{contract}}
+Accept: application/json
+
+?? status == 401
+?? header content-type matches ^application\/json
+
+{{
+  const assert = require('node:assert');
+  test('the refusal is a sentence, not an empty body', () => {
+    assert.ok(response.parsedBody.error.length > 0);
+  });
+}}
+
+###
+
 # @name org_projects_refuses_a_nameless_one
 POST {{baseUrl}}/api/org/projects
 Authorization: Bearer {{officerToken}}
@@ -51,6 +71,14 @@ Content-Type: application/json
 { "name": "   " }
 
 ?? status == 400
+?? header content-type matches ^application\/json
+
+{{
+  const assert = require('node:assert');
+  test('the refusal says what is wrong with it', () => {
+    assert.match(response.parsedBody.error, /needs a name/);
+  });
+}}
 
 ###
 
@@ -63,6 +91,14 @@ Content-Type: application/json
 { "name": "Sneaky" }
 
 ?? status == 403
+?? header content-type matches ^application\/json
+
+{{
+  const assert = require('node:assert');
+  test('the refusal has the shape every refusal on this server has', () => {
+    assert.ok(response.parsedBody.error.length > 0);
+  });
+}}
 
 ###
 
@@ -75,10 +111,12 @@ Content-Type: application/json
 { "name": "Atlas II" }
 
 ?? status == 200
+?? header content-type matches ^application\/json
 
 {{
   const assert = require('node:assert');
   test('the rename lands and the project is still live', () => {
+    assert.strictEqual(response.parsedBody.id, projectId);
     assert.strictEqual(response.parsedBody.name, 'Atlas II');
     assert.strictEqual(response.parsedBody.archived, false);
   });
@@ -95,6 +133,54 @@ Content-Type: application/json
 {}
 
 ?? status == 400
+?? header content-type matches ^application\/json
+
+{{
+  const assert = require('node:assert');
+  test('the refusal says what a usable change looks like', () => {
+    assert.match(response.parsedBody.error, /Nothing to change/);
+  });
+}}
+
+###
+
+# @name org_projects_refuses_a_rename_by_a_non_admin
+PUT {{baseUrl}}/api/org/projects/{{projectId}}
+Authorization: Bearer {{token}}
+X-Creds-Contract: {{contract}}
+Content-Type: application/json
+
+{ "name": "Sneaky" }
+
+?? status == 403
+?? header content-type matches ^application\/json
+
+{{
+  const assert = require('node:assert');
+  test('and the refusal carries a sentence', () => {
+    assert.ok(response.parsedBody.error.length > 0);
+  });
+}}
+
+###
+
+# @name org_projects_renaming_something_that_is_not_there_is_404
+PUT {{baseUrl}}/api/org/projects/00000000000000000000000000000000
+Authorization: Bearer {{officerToken}}
+X-Creds-Contract: {{contract}}
+Content-Type: application/json
+
+{ "name": "Ghost" }
+
+?? status == 404
+?? header content-type matches ^application\/json
+
+{{
+  const assert = require('node:assert');
+  test('a project nobody can find is a 404, never one created on the way past', () => {
+    assert.match(response.parsedBody.error, /no project with that id/);
+  });
+}}
 
 ###
 
@@ -139,6 +225,34 @@ Content-Type: application/json
 { "share": "everything" }
 
 ?? status == 400
+?? header content-type matches ^application\/json
+
+{{
+  const assert = require('node:assert');
+  test('the refusal lists what a share may be', () => {
+    assert.match(response.parsedBody.error, /inherit/);
+  });
+}}
+
+###
+
+# @name org_projects_refuses_an_assignment_by_a_non_admin
+PUT {{baseUrl}}/api/org/projects/{{projectId}}/members/{{bobEmail}}
+Authorization: Bearer {{token}}
+X-Creds-Contract: {{contract}}
+Content-Type: application/json
+
+{ "share": "project" }
+
+?? status == 403
+?? header content-type matches ^application\/json
+
+{{
+  const assert = require('node:assert');
+  test('the refusal carries a sentence', () => {
+    assert.ok(response.parsedBody.error.length > 0);
+  });
+}}
 
 ###
 
@@ -151,6 +265,14 @@ Content-Type: application/json
 { "share": "inherit" }
 
 ?? status == 409
+?? header content-type matches ^application\/json
+
+{{
+  const assert = require('node:assert');
+  test('an officer is not somebody an admin manages', () => {
+    assert.ok(response.parsedBody.error.length > 0);
+  });
+}}
 
 ###
 
@@ -163,6 +285,14 @@ Content-Type: application/json
 { "share": "inherit" }
 
 ?? status == 404
+?? header content-type matches ^application\/json
+
+{{
+  const assert = require('node:assert');
+  test('a typo writes no assignment naming nothing', () => {
+    assert.match(response.parsedBody.error, /no project with that id/);
+  });
+}}
 
 ###
 
@@ -176,6 +306,15 @@ Content-Type: application/json
 { "role": "dev" }
 
 ?? status == 200
+?? header content-type matches ^application\/json
+
+{{
+  const assert = require('node:assert');
+  test('the answer is his row, carrying the role it now holds', () => {
+    assert.strictEqual(response.parsedBody.email, bobEmail);
+    assert.strictEqual(response.parsedBody.role, 'dev');
+  });
+}}
 
 ###
 
@@ -206,6 +345,14 @@ Content-Type: application/json
 { "role": "member" }
 
 ?? status == 200
+?? header content-type matches ^application\/json
+
+{{
+  const assert = require('node:assert');
+  test('and he is a member again, or every later file runs against a different server', () => {
+    assert.strictEqual(response.parsedBody.role, 'member');
+  });
+}}
 
 ###
 
@@ -215,11 +362,63 @@ Authorization: Bearer {{officerToken}}
 X-Creds-Contract: {{contract}}
 
 ?? status == 400
+?? header content-type matches ^application\/json
 
 {{
   const assert = require('node:assert');
   test('the refusal says what to send and why there is no default', () => {
     assert.match(response.parsedBody.error, /deleteFolder/);
+  });
+}}
+
+###
+
+# @name org_projects_unassigning_a_stranger_is_404
+DELETE {{baseUrl}}/api/org/projects/{{projectId}}/members/nobody@example.com?deleteFolder=true
+Authorization: Bearer {{officerToken}}
+X-Creds-Contract: {{contract}}
+
+?? status == 404
+?? header content-type matches ^application\/json
+
+{{
+  const assert = require('node:assert');
+  test('an admin typo does not put somebody on the roster by removing them from something', () => {
+    assert.match(response.parsedBody.error, /registered/);
+  });
+}}
+
+###
+
+# @name org_projects_unassigning_an_officer_is_409
+DELETE {{baseUrl}}/api/org/projects/{{projectId}}/members/officer2@example.com?deleteFolder=false
+Authorization: Bearer {{officerToken}}
+X-Creds-Contract: {{contract}}
+
+?? status == 409
+?? header content-type matches ^application\/json
+
+{{
+  const assert = require('node:assert');
+  test('the same TargetProblem both admin surfaces share', () => {
+    assert.ok(response.parsedBody.error.length > 0);
+  });
+}}
+
+###
+
+# @name org_projects_refuses_an_unassignment_by_a_non_admin
+DELETE {{baseUrl}}/api/org/projects/{{projectId}}/members/{{bobEmail}}?deleteFolder=true
+Authorization: Bearer {{token}}
+X-Creds-Contract: {{contract}}
+
+?? status == 403
+?? header content-type matches ^application\/json
+
+{{
+  const assert = require('node:assert');
+  test('the refusal carries a sentence', () => {
+    assert.ok(response.parsedBody.error.length > 0);
   });
 }}
 
@@ -253,6 +452,48 @@ Accept: application/json
     assert.strictEqual(response.parsedBody.projects.find((p) => p.projectId === projectId), undefined);
   });
 }}
+
+###
+
+# Putting him back WITHDRAWS the instruction. Both are durable and his client reads them in one
+# document, so a removal left standing is carried out on the next cycle — against the folder it has
+# just been told he owns.
+# @name org_projects_re_assigning_withdraws_the_removal
+PUT {{baseUrl}}/api/org/projects/{{projectId}}/members/{{bobEmail}}
+Authorization: Bearer {{officerToken}}
+X-Creds-Contract: {{contract}}
+Content-Type: application/json
+
+{ "share": "project" }
+
+?? status == 204
+
+###
+
+# @name org_projects_the_instruction_is_withdrawn
+GET {{baseUrl}}/api/org/me
+Authorization: Bearer {{bobToken}}
+X-Creds-Contract: {{contract}}
+Accept: application/json
+
+?? status == 200
+
+{{
+  const assert = require('node:assert');
+  test('an assignment and an instruction to delete that folder cannot both stand', () => {
+    assert.strictEqual(response.parsedBody.pendingFolderRemovals.length, 0);
+    assert.ok(response.parsedBody.projects.some((p) => p.projectId === projectId));
+  });
+}}
+
+###
+
+# @name org_projects_unassigns_him_again
+DELETE {{baseUrl}}/api/org/projects/{{projectId}}/members/{{bobEmail}}?deleteFolder=true
+Authorization: Bearer {{officerToken}}
+X-Creds-Contract: {{contract}}
+
+?? status == 204
 
 ###
 
@@ -300,6 +541,7 @@ Content-Type: application/json
 { "archived": true }
 
 ?? status == 200
+?? header content-type matches ^application\/json
 
 {{
   const assert = require('node:assert');
@@ -309,7 +551,30 @@ Content-Type: application/json
 }}
 
 ###
+
+# @name org_projects_an_archived_project_takes_nobody_new
+PUT {{baseUrl}}/api/org/projects/{{projectId}}/members/{{bobEmail}}
+Authorization: Bearer {{officerToken}}
+X-Creds-Contract: {{contract}}
+Content-Type: application/json
+
+{ "share": "project" }
+
+?? status == 409
+?? header content-type matches ^application\/json
+
+{{
+  const assert = require('node:assert');
+  test('archiving is how a project closes, and a closed one takes no new people', () => {
+    assert.match(response.parsedBody.error, /archived/);
+  });
+}}
+
+###
 # @uncovered 503 — a project file this build cannot read, and a member record it cannot read: both
 #            need a file corrupted underneath a running server, which is machinery this tier does not
 #            ask for. OrgProjectsStoreTests writes the garbage and reads the three-answer result back;
 #            OrgProjectsAdminTests covers the 503 the admin routes answer over it.
+# @uncovered 401 on the five routes other than GET /api/org/projects — the token gate is shared by
+#            every corporate route and runs before any of them, so one request proves it for the
+#            group rather than six requests proving the same gate six times.

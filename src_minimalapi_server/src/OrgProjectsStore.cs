@@ -17,6 +17,20 @@ public enum ProjectLookup
     Unreadable,
 }
 
+/// <summary>
+/// What one guarded edit came to: the record it REPLACED, and the record it wrote.
+/// </summary>
+/// <remarks>
+/// <para>Both, because the caller writes the event rows from the difference — "renamed from X to Y",
+/// archived, unarchived — and X has to be the record the write actually replaced. Read with a
+/// <c>Find</c> before the call it is whatever a concurrent admin had not yet written: A starts a
+/// rename, B archives and commits first, and A then compares its own stale snapshot against the
+/// result and logs a <c>project.archived</c> row for an archive it did not perform. The store already
+/// holds the baseline under the lock; handing it back costs nothing. The same reasoning, and the same
+/// shape, as <see cref="UpsertResult.Before"/> on the member store.</para>
+/// </remarks>
+public readonly record struct ProjectUpdate(ProjectLookup Status, ProjectRecord? Before, ProjectRecord? After);
+
 /// <summary>One answer from the store.</summary>
 public readonly record struct ProjectResult(ProjectLookup Status, ProjectRecord? Record)
 {
@@ -110,10 +124,15 @@ public sealed class OrgProjectsStore(string dataDir, ILogger<OrgProjectsStore> l
     }
 
     /// <summary>
-    /// Change one under its own lock: read, apply, write. The edit is a function so the caller cannot
-    /// hold a record across the gate and write back something it read before somebody else's change.
+    /// Change one under its own lock: read, apply, write — and answer with BOTH records, the one
+    /// replaced and the one written.
+    ///
+    /// <para>The edit is a function so the caller cannot hold a record across the gate and write back
+    /// something it read before somebody else's change; the baseline comes back for the reason
+    /// <see cref="ProjectUpdate"/> gives, so the caller's event rows describe this write rather than
+    /// the difference from a snapshot taken outside the lock.</para>
     /// </summary>
-    public async Task<ProjectResult> UpdateAsync(
+    public async Task<ProjectUpdate> UpdateAsync(
         string projectId,
         Func<ProjectRecord, ProjectRecord> edit,
         string byAdmin,
@@ -126,7 +145,7 @@ public sealed class OrgProjectsStore(string dataDir, ILogger<OrgProjectsStore> l
             var found = Find(projectId);
             if (found.Status != ProjectLookup.Found || found.Record is null)
             {
-                return found;
+                return new ProjectUpdate(found.Status, null, null);
             }
             var updated = edit(found.Record) with
             {
@@ -134,7 +153,7 @@ public sealed class OrgProjectsStore(string dataDir, ILogger<OrgProjectsStore> l
                 UpdatedBy = byAdmin,
             };
             await WriteAsync(updated, ct);
-            return ProjectResult.Of(updated);
+            return new ProjectUpdate(ProjectLookup.Found, found.Record, updated);
         }
         finally
         {

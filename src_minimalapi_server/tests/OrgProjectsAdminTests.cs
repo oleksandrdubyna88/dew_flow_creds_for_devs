@@ -371,4 +371,136 @@ public sealed class OrgProjectsAdminTests
         (await ListAsync(alice)).GetArrayLength().Should().Be(0);
         Directory.Exists(Path.Combine(server.DataDir, "org", "projects")).Should().BeFalse();
     }
+
+    [Fact]
+    public async Task AnUnreadableMemberRecordHandsOutNoProjectNamesAtAll()
+    {
+        // Fail-OPEN was the shape of this one: when the caller's own record could not be read the
+        // developer branch was skipped and the answer was every project on the server — the single
+        // list a developer is not allowed to have. A record this build cannot read is a 503 here for
+        // the same reason it is one everywhere else the roster is consulted.
+        using var server = Corp.Server();
+        using var cto = server.ClientFor(Corp.Cto);
+        using var alice = server.ClientFor(Alice);
+        await Corp.SyncAsync(alice);
+        await NewProjectAsync(cto, "Atlas");
+        await Corp.CorruptRecordAsync(server, Alice);
+
+        var response = await alice.GetAsync("/api/org/projects", Ct);
+
+        response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+    }
+
+    [Fact]
+    public async Task AnArchivedProjectTakesNoNewAssignments()
+    {
+        // Archiving is how a project is closed, and it is the only way — it cannot be deleted. A
+        // closed project that still accepts people is not closed.
+        using var server = Corp.Server();
+        using var cto = server.ClientFor(Corp.Cto);
+        using var alice = server.ClientFor(Alice);
+        await Corp.SyncAsync(alice);
+        var id = await NewProjectAsync(cto, "Closed");
+        (await Corp.PutJsonAsync(cto, $"/api/org/projects/{id}", """{"archived":true}"""))
+            .StatusCode.Should().Be(HttpStatusCode.OK);
+
+        (await Corp.RefusalAsync(await AssignAsync(cto, id, Alice), HttpStatusCode.Conflict))
+            .Should().Contain("archived");
+
+        Corp.ReadRecord(server, Alice).Projects.Should().BeEmpty();
+        Corp.Rows(server, OrgEventKinds.ProjectAssigned).Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task TakingSomebodyOffAnArchivedProjectStillWorks()
+    {
+        // The other half of the rule above: a project closes with people still on it, and getting them
+        // off it must not require unarchiving the thing first.
+        using var server = Corp.Server();
+        using var cto = server.ClientFor(Corp.Cto);
+        using var alice = server.ClientFor(Alice);
+        await Corp.SyncAsync(alice);
+        var id = await NewProjectAsync(cto, "Closing");
+        await AssignAsync(cto, id, Alice);
+        await Corp.PutJsonAsync(cto, $"/api/org/projects/{id}", """{"archived":true}""");
+
+        (await UnassignAsync(cto, id, Alice, "?deleteFolder=true")).StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        Corp.ReadRecord(server, Alice).Projects.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task PuttingSomebodyBackOnAProjectWithdrawsTheInstructionToDeleteTheirFolder()
+    {
+        // The order that deletes a folder somebody has just been given back: unassign with the folder
+        // removed, change your mind, re-assign. The instruction is durable and their client carries it
+        // out on its next cycle — by then against the folder it has just been told it owns.
+        using var server = Corp.Server();
+        using var cto = server.ClientFor(Corp.Cto);
+        using var alice = server.ClientFor(Alice);
+        await Corp.SyncAsync(alice);
+        var id = await NewProjectAsync(cto, "Atlas");
+        await AssignAsync(cto, id, Alice);
+        await UnassignAsync(cto, id, Alice, "?deleteFolder=true");
+
+        (await AssignAsync(cto, id, Alice)).StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        var record = Corp.ReadRecord(server, Alice);
+        record.Projects.Should().ContainSingle().Which.ProjectId.Should().Be(id);
+        record.PendingFolderRemovals.Should().BeEmpty(
+            "an assignment and an instruction to delete that project's folder cannot both be true");
+    }
+
+    [Fact]
+    public async Task ChangingYourMindToKeepingTheFolderWithdrawsAStandingInstruction()
+    {
+        // Same defect from the other side: the admin unassigns with the folder removed, thinks better
+        // of it, and says so with the only request that means it — deleteFolder=false.
+        using var server = Corp.Server();
+        using var cto = server.ClientFor(Corp.Cto);
+        using var alice = server.ClientFor(Alice);
+        await Corp.SyncAsync(alice);
+        var id = await NewProjectAsync(cto, "Atlas");
+        await AssignAsync(cto, id, Alice);
+        await UnassignAsync(cto, id, Alice, "?deleteFolder=true");
+
+        (await UnassignAsync(cto, id, Alice, "?deleteFolder=false")).StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        Corp.ReadRecord(server, Alice).PendingFolderRemovals.Should().BeEmpty(
+            "the last word about their copy is the one that stands");
+    }
+
+    [Fact]
+    public async Task UnassigningSomebodyWhoIsOnNoRosterIs404AndRegistersNobody()
+    {
+        // An unassignment writes through the member store, and the store creates what it cannot find.
+        // On the way IN that is deliberate — see the test below. On the way OUT it means an admin's
+        // typo puts a person on the roster by removing them from something they were never on.
+        using var server = Corp.Server();
+        using var cto = server.ClientFor(Corp.Cto);
+        var id = await NewProjectAsync(cto);
+        var stranger = $"nobody@{VaultServer.Domain}";
+
+        (await Corp.RefusalAsync(await UnassignAsync(cto, id, stranger, "?deleteFolder=true"), HttpStatusCode.NotFound))
+            .Should().Contain("registered");
+
+        File.Exists(Corp.RecordPath(server, stranger)).Should().BeFalse("nothing was created to be removed from");
+        Corp.Rows(server, OrgEventKinds.ProjectUnassigned).Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task AssigningSomebodyWhoHasNotSyncedYetPutsThemOnTheRoster()
+    {
+        // The deliberate asymmetry, written down as a test so the next reader does not "fix" it: an
+        // admin assigns a new hire to a project on their first day, before the person has opened the
+        // extension at all. The same pre-provisioning the members surface already does for a role.
+        using var server = Corp.Server();
+        using var cto = server.ClientFor(Corp.Cto);
+        var id = await NewProjectAsync(cto);
+        var newHire = $"newhire@{VaultServer.Domain}";
+
+        (await AssignAsync(cto, id, newHire)).StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        Corp.ReadRecord(server, newHire).Projects.Should().ContainSingle().Which.ProjectId.Should().Be(id);
+    }
 }
