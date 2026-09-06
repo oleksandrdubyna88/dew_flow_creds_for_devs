@@ -1,0 +1,174 @@
+import { MemberListEntry, MemberSelf, ProjectAssignment } from './orgMembersClient';
+import { hasShape } from './shapeGuard';
+
+/**
+ * What the extension makes of the role-and-policy document — the decision layer between
+ * `GET /api/org/me` and everything that shows or gates on it.
+ *
+ * <p>Pure, so every rule here is a unit test rather than a hopeful comment in a `vscode`-bound
+ * file, exactly as `orgRecoveryAccess.ts` is. Nothing in this module ENFORCES anything: the
+ * policy is what an honest client obeys, and the obeying — refusing an export, stripping a wrap —
+ * lands in epic 2. What lives here is what the tree and the commands need to decide what to
+ * show.</p>
+ *
+ * <p>Two rules worth carrying in the head:</p>
+ * <ul>
+ * <li><b>The client TRUSTS the server's `policy` and never re-derives it from the role.</b> The
+ * server derives it; a second implementation of the same rule would drift the day either side
+ * changed, and the two would disagree with nothing to say so. The role is for the UI alone — the
+ * row's description, the page's first sentence.</li>
+ * <li><b>The admin predicate is `role === 'admin' || isOfficer`, never the role alone.</b> The
+ * server's `RequireAdmin` admits an officer unconditionally, and an officer cannot be given a
+ * registry role (that is the server's 409), so gating on the role would show the CTO no
+ * management actions while the server served every one of them.</li>
+ * </ul>
+ */
+
+/** The server's policy document. `share` is `any` | `project` | `none`. */
+export interface PolicyDoc {
+  readonly export: boolean;
+  readonly share: string;
+  readonly moveOutOfProject: boolean;
+}
+
+/**
+ * What a document with no usable policy amounts to. The one case where the client fills in, and
+ * it fills in DOWN: guessing "everything" would hand a developer an export on a parse error.
+ */
+export const MOST_RESTRICTIVE_POLICY: PolicyDoc = { export: false, share: 'none', moveOutOfProject: false };
+
+export function isPolicyDoc(value: unknown): value is PolicyDoc {
+  return hasShape(value, { export: 'boolean', share: 'string', moveOutOfProject: 'boolean' });
+}
+
+/** The document's facts, plus when they were fetched. */
+export interface CorpPolicyFacts {
+  readonly corpMode: boolean;
+  readonly role: string;
+  readonly isOfficer: boolean;
+  readonly active: boolean;
+  readonly policy: unknown;
+  readonly projects: readonly ProjectAssignment[];
+  readonly offlineLeaseHours: number;
+  readonly fetchedAt: number;
+}
+
+/** What the tree, the commands and the page read. */
+export interface CorpPolicyState {
+  readonly corpMode: boolean;
+  /** As the server said it — an unknown role from a newer server is shown, not renamed. */
+  readonly role: string;
+  readonly isOfficer: boolean;
+  /** The predicate above, evaluated once so no caller re-spells it. */
+  readonly isAdmin: boolean;
+  readonly active: boolean;
+  readonly policy: PolicyDoc;
+  readonly projects: readonly ProjectAssignment[];
+  /** Hours; `0` is strictly online. */
+  readonly leaseHours: number;
+  /** When the document was read — the offline lease's heartbeat (epic 2 reads it). */
+  readonly fetchedAt: number;
+}
+
+/** The facts from the wire document, stamped with the time of the read. */
+export function factsOf(me: MemberSelf, fetchedAt: number): CorpPolicyFacts {
+  return {
+    corpMode: me.corpMode,
+    role: me.role,
+    isOfficer: me.isOfficer,
+    active: me.active,
+    policy: me.policy,
+    projects: me.projects,
+    offlineLeaseHours: me.offlineLeaseHours,
+    fetchedAt,
+  };
+}
+
+export function corpPolicy(facts: CorpPolicyFacts): CorpPolicyState {
+  return {
+    corpMode: facts.corpMode,
+    role: facts.role,
+    isOfficer: facts.isOfficer,
+    isAdmin: isCorpAdmin(facts),
+    active: facts.active,
+    policy: isPolicyDoc(facts.policy) ? facts.policy : MOST_RESTRICTIVE_POLICY,
+    projects: facts.projects,
+    // A negative or non-numeric lease is not a lease; strictly online is the restrictive reading.
+    leaseHours: facts.offlineLeaseHours >= 0 ? facts.offlineLeaseHours : 0,
+    fetchedAt: facts.fetchedAt,
+  };
+}
+
+/**
+ * Who gets the management actions. Absent means "no document yet", which resolves to no —
+ * a command missing for a cycle is a smaller fault than one an ordinary member can see.
+ */
+export function isCorpAdmin(state: { readonly role: string; readonly isOfficer: boolean } | undefined): boolean {
+  return state !== undefined && (state.role === 'admin' || state.isOfficer);
+}
+
+/**
+ * The next cached answer after a fetch. A failed fetch (`undefined`) KEEPS the previous answer —
+ * the org-escrow rule "not knowing changes nothing": an unreachable server for one cycle must not
+ * demote an admin in the tree or hand a developer the member's view, and the heartbeat does not
+ * advance, because a heartbeat written on a failure is a lie the lease would later believe.
+ */
+export function afterPolicyFetch(
+  previous: CorpPolicyState | undefined,
+  fetched: CorpPolicyFacts | undefined,
+): CorpPolicyState | undefined {
+  return fetched === undefined ? previous : corpPolicy(fetched);
+}
+
+/** Where the success time is kept, per account, in the style of `syncReminder.lastOk`. */
+export function policyHeartbeatKey(accountId: string): string {
+  return `orgPolicy.lastOk.${accountId}`;
+}
+
+/**
+ * The word a row shows. An officer reads as `officer`, never as the registry's `member`: a list
+ * that showed the CTO as a plain member would invite exactly the edit the server refuses.
+ */
+export function roleLabel(role: string, isOfficer: boolean): string {
+  return isOfficer ? 'officer' : role;
+}
+
+/**
+ * The role a Team row can honestly show.
+ *
+ * <p>An admin's window holds the roster, so every colleague has a word. A member's window does
+ * not — `GET /api/org/members` is the admin's — so the only role it knows is its own, from
+ * `/api/org/me`, and that goes on the "(you)" row alone. Inventing one for a colleague would be a
+ * guess drawn as a fact. On a personal server nobody has a role to show.</p>
+ */
+export function teamRowRole(
+  member: { readonly email: string; readonly isSelf: boolean },
+  viewer: CorpPolicyState | undefined,
+  roster: readonly MemberListEntry[] | undefined,
+): string | undefined {
+  return rosterRole(member.email, roster) ?? ownRole(member.isSelf, viewer);
+}
+
+/** The roster's word for this address, matched without regard to case or surrounding space. */
+function rosterRole(email: string, roster: readonly MemberListEntry[] | undefined): string | undefined {
+  const wanted = email.trim().toLowerCase();
+  const listed = roster?.find((row) => row.email.trim().toLowerCase() === wanted);
+  return listed === undefined ? undefined : roleLabel(listed.role, listed.isOfficer);
+}
+
+/** The viewer's own role — on their own row only, and only where roles exist at all. */
+function ownRole(isSelf: boolean, viewer: CorpPolicyState | undefined): string | undefined {
+  return isSelf && viewer?.corpMode === true ? roleLabel(viewer.role, viewer.isOfficer) : undefined;
+}
+
+/** `microsoft` for an ordinary account, exactly as before; `microsoft · dev` when there is a role. */
+export function teamMemberDescription(provider: string, role: string | undefined): string {
+  return role === undefined ? provider : `${provider} · ${role}`;
+}
+
+/** The lease in words. `0` is the legal strictly-online, not a missing value. */
+export function describeLease(hours: number): string {
+  return hours === 0
+    ? 'strictly online — no offline grace between two successful logins'
+    : `${hours} hours offline before a corporate developer account locks`;
+}

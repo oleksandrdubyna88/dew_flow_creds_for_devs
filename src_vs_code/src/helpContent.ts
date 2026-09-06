@@ -598,6 +598,26 @@ export const HELP_ARTICLES: readonly HelpArticle[] = [
     },
   },
   {
+    id: 'corporate-roles',
+    mediaSlots: [],
+    en: {
+      title: 'Corporate roles — admin, member, dev',
+      whatItIs: 'On a self-hosted server with recovery officers, every account has a role: admin, member (today’s behaviour, the default for everybody) or dev. The server tells the extension which you are, and what the policy for that role says, on every sync.',
+      why: 'A company needs somebody in charge, and a way to say that a developer may use every credential they can see without being able to carry the vault out of the building. The role is that record; the policy is what it means.',
+      setup: 'Recovery officers administer automatically. An officer or an admin opens Team, right-clicks a colleague and runs “Set Role…” — admin, member or dev; for a dev, also whether they may share inside their projects or not at all. The server refuses to give an officer a role: their standing comes from the operator’s configuration, not from the registry.',
+      usage: '“My Role and Policy…” on your account row shows what your server says about you: your role, what the policy allows (export, sharing, moving an entry out of a project), your projects and the offline lease. Under Team, an admin sees every colleague’s role beside their name; everyone else sees only their own.',
+      whatCanGoWrong: 'This version SHOWS the policy and does not yet apply it — a dev can still export; the bans come in a later version, and the page says so. A failed check keeps the previous answer, so a laptop offline for a cycle does not lose its admin view. An extension older than the server is refused on a corporate server with a message to update: the whole company updates on the day the server does, by design.',
+    },
+    ru: {
+      title: 'Корпоративные роли — admin, member, dev',
+      whatItIs: 'На своём сервере с офицерами восстановления у каждого аккаунта есть роль: admin, member (сегодняшнее поведение, по умолчанию у всех) или dev. Сервер сообщает расширению, кто вы и что говорит политика этой роли, при каждой синхронизации.',
+      why: 'Компании нужен кто-то главный и способ сказать, что разработчик может пользоваться всем, что видит, но не может вынести сейф из здания. Роль — эта запись; политика — её смысл.',
+      setup: 'Офицеры восстановления администрируют автоматически. Офицер или admin открывает Team, правой кнопкой на коллеге — «Set Role…»: admin, member или dev; для dev — ещё и можно ли делиться внутри своих проектов или нельзя вовсе. Сервер отказывается давать роль офицеру: его статус идёт из конфигурации оператора, а не из реестра.',
+      usage: '«My Role and Policy…» на строке аккаунта показывает, что сервер говорит о вас: роль, что разрешает политика (экспорт, обмен, перенос записи из проекта), ваши проекты и офлайн-лизинг. В Team admin видит роль каждого коллеги рядом с именем; остальные — только свою.',
+      whatCanGoWrong: 'Эта версия ПОКАЗЫВАЕТ политику и пока не применяет её — dev всё ещё может экспортировать; запреты появятся в следующей версии, и страница говорит об этом. Неудачная проверка сохраняет прежний ответ, так что ноутбук без сети на один цикл не теряет вид администратора. Расширение старее сервера на корпоративном сервере получает отказ с просьбой обновиться: вся компания обновляется в день обновления сервера — так задумано.',
+    },
+  },
+  {
     id: 'filters',
     mediaSlots: [],
     en: {

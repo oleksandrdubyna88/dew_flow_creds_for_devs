@@ -1765,7 +1765,9 @@ a folder, or to a server with no roster, offered five entries whose only outcome
 an ordinary employee was shown three actions that are not theirs to run. `orgRecoveryAccess` answers
 `none` / `enrolled` / `officer` and the row's `contextValue` carries it: the disclosure page needs
 `account-corp` (anyone enrolled — it is what tells a person their vault is recoverable by the people
-it names), the four actions need `account-corpOfficer`.
+it names), the four actions need `account-corpOfficer`. Since epic 1 the registry role folds into the
+same value — `account-corpAdmin`, `account-corpDev` — through `orgAccessWithRole`, with the officer
+staying highest; see *Corporate roles* below.
 
 Per account rather than a global `setContext`, because one person may hold an account on a corporate
 server and another on a plain folder and a global flag would light both rows or neither. Ordinary
@@ -3324,6 +3326,140 @@ one line the new kind costs there.
 | *Burn Now…* | `burnNow.ts` (the decision, pure), `burnNowCommand.ts` (the modal), `:burnable` in `treeRowText.ts` | Only on an entry with a lifetime; the one delete path (`deleteNodeRecursive`) — no second way to burn |
 | The lifetime on the card | `lifetime` in `EntityViewOptions`, from `describeRemaining` | The tree and the card say it in the same words, from the same function |
 | The burn across machines | `burnAcrossMachines.test.ts`, `burnPath.test.ts` | A burn on A is gone on B after a sync — node, history, every key; an old backup does not resurrect it (tombstone + horizon) |
+
+## Corporate roles — the policy document, the admin view, and one request helper (2026-09-06, epic 1 story 4)
+
+The server half of [PLAN_corp_registry_roles.md](../todo/PLAN_corp_registry_roles.md) gave every
+account on a corporate server a role — `admin`, `member`, `dev` — and one document,
+`GET /api/org/me`, that says what the role means ([module_server.md](module_server.md)
+§`GET /api/org/me`). This is the half that reads it. **Nothing here enforces anything.** The policy
+is what an honest client obeys, and the obeying — refusing an export, stripping a wrap — is epic 2.
+What ships here is that the tree knows who administers, a colleague's row says what they are, an
+admin can set a role from that row, and every person can read what their server says about them.
+
+```mermaid
+flowchart LR
+    LOOP[extension.ts<br/>refreshReadiness loop] -->|per account| ROA[refreshOrgAccess<br/>/api/org-recovery/config]
+    LOOP -->|per account| ROP[orgPolicyRefresh.ts<br/>refreshOrgPolicy]
+    ROP --> OMC[orgMembersClient.ts<br/>readMe · listMembers · setMember · settings]
+    ORC[orgRecoveryClient.ts] --> CAC
+    OMC --> CAC[corpApiClient.ts<br/>url · headersFor · request · refusal]
+    CAC -->|bearer + X-Creds-Contract| SRV[(Cred Vault Server<br/>/api/org/*)]
+    ROP -->|facts| CP[corpPolicy.ts<br/>corpPolicy · isCorpAdmin · afterPolicyFetch]
+    CP --> CACHE[provider.orgPolicy<br/>provider.orgRoster]
+    ROP -->|on success only| HB[(globalState<br/>orgPolicy.lastOk.acct)]
+    CACHE --> ROW[accountItem<br/>orgAccessWithRole]
+    CACHE --> TEAM[teamItems.ts<br/>teamMember-adminView · role in description]
+    TEAM -.->|Set Role…| CMD[commands/orgMemberCommands.ts]
+    CMD --> OMC
+    ROW -.->|My Role and Policy…| PANEL[orgMemberPolicyPanel.ts<br/>read-only, enableScripts:false]
+```
+
+**One request helper, extracted before the second copy existed.** `orgRecoveryClient.ts` carried
+the URL join, the bearer and contract headers, the timeout and the "vault server unreachable"
+sentence as private methods. The control plane adds a corporate client per epic — members here,
+blocking in epic 2, the backup in epic 5 — so by epic 2 there would have been two copies of that
+block and by epic 5 four, each drifting from the others the day a header changed. `corpApiClient.ts`
+is that block moved, not copied; the recovery client delegates to it and behaves byte for byte as it
+did, which `orgRecoveryClient.test.ts` proves unchanged (the characterization test). The one thing
+the helper adds is `refusal()`: the `/api/org/*` surface promises a JSON `{error}` on every refusal
+because an admin UI has to show *why*, a `426` becomes the shared `tooOldMessage` so one message
+greets a person however they hit the contract floor, and a body that is neither falls back to
+`HTTP <status>` so no refusal is ever silent. The recovery client does not use it — its endpoints
+answer plain text and it reads them as it always has.
+
+**The shapes are checked at the edge, by a table.** `orgMembersClient.ts` guards every document
+through `shapeGuard.ts` (`hasShape(value, {field: kind})`, the field-list pattern of
+`isServerMetrics` made reusable because this surface has five shapes and a chain of eleven `&&` is a
+function the complexity ceiling refuses). A document this build cannot read is a sentence at the
+client, never an `undefined` three layers later that reads as "no role". Two deliberate exceptions:
+a `404` from `readMe` is `NO_ORG_POLICY` — a server too old to know the route is a server with no
+roles, indistinguishable from a personal one, and every readiness cycle against it must not report
+an error about a feature it does not have; and `policy` is carried as `unknown`, because what a
+malformed policy *means* is `corpPolicy.ts`'s decision. A roster with one unreadable row fails
+whole: a person silently missing from a list an admin reads as complete is worse than no list.
+
+**The decision layer is pure, and two rules in it are the story.** `corpPolicy.ts` imports no
+`vscode`, so each row of its table is a test (`corpPolicy.test.ts`):
+
+- **The client TRUSTS the server's `policy` and never re-derives it from the role.** The server
+  derives it; a second implementation of the same rule drifts the day either side changes it, and
+  the two would disagree with nothing to say so. `role` is for the UI alone. An unknown role from a
+  newer server is shown as it came and grants nothing. The one case where the client fills in is a
+  `policy` that is absent or malformed, and it fills in DOWN — `MOST_RESTRICTIVE_POLICY`,
+  `{export: false, share: 'none', moveOutOfProject: false}` — because guessing "everything" would
+  hand a developer an export on a parse error.
+- **The admin predicate is `role === 'admin' || isOfficer`, never the role alone.** The server's
+  `RequireAdmin` admits an officer unconditionally, and an officer cannot be given a registry role
+  (the server's `409`), so a UI gated on the role would show the CTO no management actions while the
+  server served every one of them. `isCorpAdmin` evaluates it once; the officer test in
+  `corpPolicy.test.ts` — role `member`, `isOfficer: true`, admin view — is the one the plan round
+  caught backwards.
+
+**A failed fetch keeps the previous answer.** The org-escrow rule, "not knowing changes nothing",
+applied to roles: `afterPolicyFetch(previous, undefined)` returns `previous`, so an unreachable
+server for one cycle does not demote an admin in the tree or hand a developer the member's view.
+`orgPolicyRefresh.ts` runs it per account from the same readiness loop as `refreshOrgAccess`,
+never throws (a throw would break the repaint that draws every other row), and writes the success
+time to `globalState` under `orgPolicy.lastOk.<accountId>` **on success only** — a heartbeat written
+on a failure is a lie the offline lease of epic 2 would later believe. It is a module rather than a
+closure in `extension.ts` for two reasons: those guarantees are tests (`orgPolicyRefresh.test.ts`)
+instead of hopes, and `extension.ts` sits at its size-ratchet baseline and may only shrink.
+An admin's refresh also reads the roster (`listMembers`), which is what gives a colleague's row its
+role; a member's window never asks — the route is the admin's, and the only thing the refusal
+could do is put a red message in front of an ordinary user every cycle. A demoted admin loses the
+roster on the next successful read, so no colleague's role is drawn from a list this window may no
+longer read.
+
+**The tree.** `provider.orgPolicy` and `provider.orgRoster` sit beside `orgAccess`, cached for the
+same reason (a tree item is built synchronously). The account row folds the role into the recovery
+answer with `orgAccessWithRole`: `officer` stays highest (an officer is always an admin, and the
+registry cannot say anything about them), `enrolled` becomes `admin` or `dev` by the role,
+`none` stays `none` whatever the role — so on a server with no roster the row is byte-identical to
+what it was before corporate recovery existed, which the access test pins because every other menu
+entry on that row is contributed against the string `account`. The Team rows moved out to
+`teamItems.ts` (the `accountItem.ts` move again: `treeDataProvider.ts` stood at exactly 800 lines,
+the lint ceiling). A colleague's row takes `contextValue = 'teamMember-adminView'` when the
+**viewing** account administers — the row's menu says who is looking, not who is listed — so *Set
+Role…* is gated on that value and never appears for a member looking at colleagues. **Every other
+Team-row entry is gated on the prefix** `viewItem =~ /^teamMember/`: *Create Entity for…* was
+contributed against `== teamMember` exactly, which would have vanished from an admin's rows, and
+`orgMembersWiring.test.ts` now refuses any bare `== teamMember` clause. The description keeps the
+provider and adds the role only when there is one to know: the roster's word for a colleague, the
+viewer's own for the "(you)" row, `officer` for anybody on the roster (a list showing the CTO as a
+plain `member` would invite exactly the edit the server refuses), and nothing at all on a personal
+server.
+
+**The two commands** (`commands/orgMemberCommands.ts`). *Set Role…* on a colleague's row: a
+QuickPick for the role with the current one marked from the roster, a second one for the share
+default only when the role is `dev` (it takes effect for nobody else, and a question whose answer
+changes nothing is not asked), escaping either cancels everything, then `PUT`, then the viewing
+account's policy and roster are re-read and the tree repainted so the row says the new role. A
+`409` (a recovery officer), a `403`, a `503` are shown as the server's own sentence, because that is
+the one the admin can act on. *My Role and Policy…* on any `/^account-corp/` row does a fresh read,
+not the cache — the page is where somebody goes to see what is true *now*.
+
+**The page** (`orgMemberPolicyPanel.ts`) exists for the reason the corporate-recovery page does:
+a policy nobody can see reads as a broken product. Built exactly like that page —
+`enableScripts: false`, no local resources, every server-supplied string escaped — because a role is
+a string a newer server may spell any way it likes and a project id is what an admin typed, the
+provenance behind the 2026-08-26 HIGH finding. It says the role (an officer is called an officer),
+what the policy allows, the projects, the lease in words (`0` is "strictly online"), and — in so many
+words — that **this version shows the policy and does not yet apply it**. Without that sentence the
+page would read "you cannot export" beside an Export menu entry that works, which is the broken
+product the page exists to prevent.
+
+**Wired in `activate()`, and the scan says so.** `orgMembersWiring.test.ts` requires a production
+file that *imports* `orgPolicyRefresh` and calls `refreshOrgPolicy` (the first version accepted
+`host.refreshOrgPolicy(...)` in the commands module as a caller while the readiness loop still
+called nothing — watched, and tightened), that `orgMembersFor` and `registerOrgMemberCommands` have
+callers, that both commands are registered, and that `teamMember-adminView` is assigned by a source
+file and not only named by the manifest. Tests added: `corpPolicy.test.ts`, `orgMembersClient.test.ts`,
+`orgPolicyRefresh.test.ts`, `orgMemberPolicyPanel.test.ts`, `orgMembersWiring.test.ts`, plus new cases
+in `orgRecoveryAccess.test.ts` and `transportFactory.test.ts`; `orgRecoveryClient.test.ts` is
+unchanged. Not built here, by design: `listMembers`/`readSettings`/`writeSettings` have their first
+non-refresh callers in epic 2 (blocking) and the lease editor; the `account-corpAdmin` /
+`account-corpDev` values gate nothing yet and exist for the menus those epics contribute.
 
 ## Security hardening (2026-08-25 review)
 

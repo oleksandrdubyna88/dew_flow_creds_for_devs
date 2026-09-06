@@ -144,3 +144,21 @@ test('a git location without a storage folder REFUSES, instead of making a direc
     /git sync is not available in this build/,
   );
 });
+
+// ------------------------------------------------------------- the corporate clients
+
+test('the members client exists for a server account only, and one per location', () => {
+  // Corporate roles live on the server transport alone: a folder or a git remote has no
+  // registry to ask, so the answer is "none" rather than a client that fails on use. Cached per
+  // location like the transports, so one readiness cycle reuses one client.
+  const { factory } = build({ nasBackupPath: 'https://vault.corp.com' }, '/storage');
+  const client = factory.orgMembersFor(ACCOUNT);
+
+  assert.equal(kindOf(client), 'OrgMembersClient');
+  assert.equal(client?.location, 'https://vault.corp.com');
+  assert.equal(factory.orgMembersFor(ACCOUNT), client, 'the same instance twice');
+
+  const folder = build({ nasBackupPath: '/mnt/nas/vault' }, '/storage').factory;
+  assert.equal(folder.orgMembersFor(ACCOUNT), undefined);
+  assert.equal(folder.orgRecoveryFor(ACCOUNT), undefined, 'and the recovery client agrees');
+});

@@ -12,6 +12,7 @@ import { registerWslRelayCommands } from './commands/wslRelayCommands';
 import { registerAccountCommands } from './commands/accountCommands';
 import { registerShareCommands } from './commands/shareCommands';
 import { registerViewCommands } from './commands/viewCommands';
+import { registerOrgMemberCommands } from './commands/orgMemberCommands';
 import * as vscode from 'vscode';
 import { setSecretClipboardTtl } from './secretClipboard';
 import { backupToNas, restoreFromBackup } from './backupManager';
@@ -36,6 +37,8 @@ import { snapshotForRevision } from './revisionSnapshot';
 import { judgeOrgRecovery } from './orgRecoveryPinning';
 import { EscrowEnrolment } from './orgEscrowOps';
 import { orgRecoveryAccess } from './orgRecoveryAccess';
+import { policyHeartbeatKey } from './corpPolicy';
+import { OrgPolicyHost, refreshOrgPolicy } from './orgPolicyRefresh';
 import { RecoverySessionKeys } from './breakGlass';
 import { CredTreeDataProvider, VIEW_ID } from './treeDataProvider';
 import { ArrivalHighlights } from './arrivalHighlight';
@@ -479,10 +482,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }
   };
 
+  // The role-and-policy document, refreshed beside the recovery access in the same loop. Its rules — a
+  // failure keeps the previous answer, only a success writes epic 2's heartbeat — are tests in orgPolicyRefresh.ts.
+  const orgPolicyHost: OrgPolicyHost = {
+    clientFor: (a) => transports.orgMembersFor(a), orgPolicy: provider.orgPolicy, orgRoster: provider.orgRoster,
+    heartbeat: (accountId, at) => context.globalState.update(policyHeartbeatKey(accountId), at), now: Date.now,
+  };
+
   const refreshReadiness = async (): Promise<Map<string, SyncReadiness>> => {
     const locked = vaultKeys.isLocked();
     for (const account of storage.getAccounts()) {
       await refreshOrgAccess(account);
+      await refreshOrgPolicy(orgPolicyHost, account);
       const pin = await vaultKeys.storedPin(account);
       provider.readiness.set(
         account.accountId,
@@ -972,6 +983,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // ---------- the printed recovery code (roadmap D9) ----------
 
   registerRecoveryCommands({ breakGlassSessions, context, pinStore, register, storage, transports, vaultKeys });
+  registerOrgMemberCommands({ provider, refreshOrgPolicy: (a) => refreshOrgPolicy(orgPolicyHost, a), register, storage, transports });
   registerKeyCommands({ keyHost, lockNow, refreshReadiness, register, storage, sync, transports, vaultKeys });
 
   /**

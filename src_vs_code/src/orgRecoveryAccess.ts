@@ -17,7 +17,14 @@ export type OrgRecoveryAccess =
   | 'none'
   /** A roster is configured. The disclosure page applies; the actions do not. */
   | 'enrolled'
-  /** This account is named on the roster. Everything applies. */
+  /**
+   * The registry says `dev` (epic 1). Enrolled, and the account a later version will hold to the
+   * policy — the bans themselves land in epic 2; this value exists so their menu can be gated.
+   */
+  | 'dev'
+  /** The registry says `admin` (epic 1). Enrolled, and may manage the roster. */
+  | 'admin'
+  /** This account is named on the roster. Everything applies — an officer is always an admin. */
   | 'officer';
 
 export interface OrgRecoveryAccessFacts {
@@ -44,21 +51,48 @@ export function orgRecoveryAccess(facts: OrgRecoveryAccessFacts): OrgRecoveryAcc
 }
 
 /**
- * The tree row's `contextValue`, which is what a menu `when` clause matches.
+ * The recovery answer folded together with the registry role from `GET /api/org/me`.
  *
- * <p>Prefixed rather than separate words so one clause can cover both corporate states:
- * `viewItem =~ /^account-corp/` catches the page for everybody enrolled, while
- * `viewItem == account-corpOfficer` catches the four actions for the roster alone.</p>
+ * <p>Two fetches, one row value. The officer stays highest — an officer is always an admin, and
+ * the registry cannot say anything about them (the server refuses to give an officer a role), so
+ * there is no combined state to invent. `none` stays `none` whatever the role: corp mode off
+ * means the row must read exactly as it did before corporate recovery existed, because every
+ * other menu entry on it is contributed against that string. An unknown role from a newer
+ * server is an ordinary enrolled account — a role this build cannot name is not one it can
+ * hand management actions to.</p>
  */
-export function accountContextValue(access: OrgRecoveryAccess): string {
-  switch (access) {
-    case 'officer':
-      return 'account-corpOfficer';
-    case 'enrolled':
-      return 'account-corp';
+export function orgAccessWithRole(access: OrgRecoveryAccess, role: string | undefined): OrgRecoveryAccess {
+  if (access !== 'enrolled') {
+    return access;
+  }
+  switch (role) {
+    case 'admin':
+      return 'admin';
+    case 'dev':
+      return 'dev';
     default:
-      // The value every account had before corporate recovery existed. Keeping it byte-identical
-      // matters: every other menu entry on an account row is contributed against it.
-      return 'account';
+      return 'enrolled';
   }
 }
+
+/**
+ * The tree row's `contextValue`, which is what a menu `when` clause matches.
+ *
+ * <p>Prefixed rather than separate words so one clause can cover every corporate state:
+ * `viewItem =~ /^account-corp/` catches the disclosure page and the policy page for everybody
+ * enrolled, while `viewItem == account-corpOfficer` catches the four actions for the roster
+ * alone, and `account-corpAdmin` / `account-corpDev` are there for the epics that gate on them.</p>
+ */
+export function accountContextValue(access: OrgRecoveryAccess): string {
+  return CONTEXT_VALUES[access];
+}
+
+const CONTEXT_VALUES: Readonly<Record<OrgRecoveryAccess, string>> = {
+  officer: 'account-corpOfficer',
+  admin: 'account-corpAdmin',
+  dev: 'account-corpDev',
+  enrolled: 'account-corp',
+  // The value every account had before corporate recovery existed. Keeping it byte-identical
+  // matters: every other menu entry on an account row is contributed against it.
+  none: 'account',
+};

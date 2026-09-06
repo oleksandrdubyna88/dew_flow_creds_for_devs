@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import { shareLabelTrusted } from './shareFormat';
 import { StorageManager } from './storageManager';
 import { ShareSources, sharedMatches, unverifiedSender } from './shareRows';
-import { diagnoseTeamFailure } from './teamDiagnosis';
+import { TEAM_COLOR, teamMemberItem, teamScopeItem } from './teamItems';
 import type { SharingManager } from './sharingManager';
 import { TreeElement, TreeNode } from './types';
 
@@ -22,7 +22,9 @@ import { entityKey } from './entityFlags';
 import { describeRemaining } from './entityExpiry';
 import { resolveKind } from './entityKind';
 import { SyncReadiness } from './syncReadiness';
-import { OrgRecoveryAccess } from './orgRecoveryAccess';
+import { OrgRecoveryAccess, orgAccessWithRole } from './orgRecoveryAccess';
+import { CorpPolicyState } from './corpPolicy';
+import { MemberListEntry } from './orgMembersClient';
 import { describeTarget, entityContextValue, markInvalid, folderContextValue } from './treeRowText';
 import { FOLDER_COLOR, buildTooltip, entityIcon, folderIcon, kindIcon } from './treeIcons';
 import { parentOf } from './treeParent';
@@ -89,6 +91,20 @@ export class CredTreeDataProvider
    * missing for a moment is a smaller fault than four an ordinary user cannot run.</p>
    */
   readonly orgAccess = new Map<string, OrgRecoveryAccess>();
+
+  /**
+   * The role-and-policy document per account, refreshed beside `orgAccess` and cached for the
+   * same reason. Absent means "not asked yet" or "no server": the row then reads exactly as it
+   * did before roles existed, and nobody is shown a management action. A failed refresh keeps
+   * the previous entry (`orgPolicyRefresh.ts`) — not knowing changes nothing.
+   */
+  readonly orgPolicy = new Map<string, CorpPolicyState>();
+
+  /**
+   * The roster, held only for accounts that administer — it is what gives a colleague's Team
+   * row its role. A member's window never has one, because the route is the admin's.
+   */
+  readonly orgRoster = new Map<string, readonly MemberListEntry[]>();
 
   /**
    * Kept previous versions, per entity id.
@@ -433,36 +449,21 @@ export class CredTreeDataProvider
       return this.revisionItem(element);
     }
     if (element.kind === 'teamScope') {
-      const item = new vscode.TreeItem('Team', this.collapsible(element, false));
-      item.id = `teamScope:${element.account.accountId}`;
-      item.contextValue = 'teamScope';
-      // An empty team and a refused one used to look identical. Only one of them
-      // is somebody's fault, and it is the one nobody could see.
-      const failure = this.sharing?.teamFailures.get(element.account.accountId);
-      if (failure === undefined) {
-        item.iconPath = new vscode.ThemeIcon('organization', TEAM_COLOR);
-        item.description = `${this.sharing?.teamFor(element.account).length ?? 0}`;
-      } else {
-        item.iconPath = new vscode.ThemeIcon(
-          'warning',
-          new vscode.ThemeColor('problemsWarningIcon.foreground'),
-        );
-        item.description = failure.status === undefined ? 'unreachable' : `refused (${failure.status})`;
-        item.tooltip = diagnoseTeamFailure(failure);
-      }
-      return item;
+      return teamScopeItem({
+        account: element.account,
+        collapsibleState: this.collapsible(element, false),
+        count: this.sharing?.teamFor(element.account).length ?? 0,
+        failure: this.sharing?.teamFailures.get(element.account.accountId),
+      });
     }
     if (element.kind === 'teamMember') {
-      const { account, isSelf } = element.member;
-      const item = new vscode.TreeItem(
-        isSelf ? `${account.email} (you)` : account.email,
-        vscode.TreeItemCollapsibleState.None,
-      );
-      item.id = `team:${element.viaAccountId}:${account.accountId}`;
-      item.contextValue = 'teamMember';
-      item.iconPath = new vscode.ThemeIcon('person', TEAM_COLOR);
-      item.description = account.provider;
-      return item;
+      // The VIEWING account decides the row's menu and what it knows of the colleague's role.
+      return teamMemberItem({
+        member: element.member,
+        viaAccountId: element.viaAccountId,
+        viewer: this.orgPolicy.get(element.viaAccountId),
+        roster: this.orgRoster.get(element.viaAccountId),
+      });
     }
     if (element.kind === 'sharedRoot') {
       const item = new vscode.TreeItem(
@@ -531,7 +532,10 @@ export class CredTreeDataProvider
       return accountItem({
         account: element.account,
         collapsibleState: this.collapsible(element, true),
-        orgAccess: this.orgAccess.get(element.account.accountId) ?? 'none',
+        orgAccess: orgAccessWithRole(
+          this.orgAccess.get(element.account.accountId) ?? 'none',
+          this.orgPolicy.get(element.account.accountId)?.role,
+        ),
         readiness: this.readiness.get(element.account.accountId),
         extensionUri: this.extensionUri,
         nodes: this.storage.getNodes(element.account.accountId),
@@ -789,12 +793,3 @@ export class CredTreeDataProvider
     this.onMutate?.();
   }
 }
-
-/** Team/people rows are dark blue so they read as "other people", not data. */
-const TEAM_COLOR = new vscode.ThemeColor('credSshManager.teamIcon');
-
-
-
-
-
-
