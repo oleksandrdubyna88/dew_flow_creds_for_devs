@@ -48,7 +48,7 @@ export class LeasedQueue {
    * prevent. `AsyncLocalStorage` answers the question actually being asked: is this call in the
    * async context of the work that holds the lease?</p>
    */
-  private readonly siblings = new AsyncLocalStorage<SerialQueue>();
+  private readonly siblings = new AsyncLocalStorage<Level>();
 
   constructor(
     private readonly lock: WindowLock | undefined,
@@ -68,9 +68,9 @@ export class LeasedQueue {
    * outer call took.</p>
    */
   async run<T>(work: () => Promise<T>): Promise<T> {
-    const queue = this.siblings.getStore();
-    if (queue !== undefined) {
-      return queue.run(() => this.enter(work));
+    const level = this.siblings.getStore();
+    if (level?.open === true) {
+      return level.queue.run(() => this.enter(work));
     }
     return (await this.inner.run(() => this.enter(() => this.holding(work, true)))) as T;
   }
@@ -85,8 +85,19 @@ export class LeasedQueue {
    * inside the lease execute at once — each reading before either wrote. That is the very defect the
    * lease was being extended to close, reintroduced one level down.</p>
    */
-  private enter<T>(work: () => Promise<T>): Promise<T> {
-    return this.siblings.run(new SerialQueue(), work);
+  private async enter<T>(work: () => Promise<T>): Promise<T> {
+    const level: Level = { queue: new SerialQueue(), open: true };
+    try {
+      return await this.siblings.run(level, work);
+    } finally {
+      // Closed with the work, because `AsyncLocalStorage` outlives it: anything the holder
+      // SCHEDULED keeps the store, so a `setTimeout(() => void run(...))` fired inside would still
+      // see the context long after the lock was released, and write unserialized. A reviewer found
+      // this and proposed holding the lease until such work finishes — which is worse, because a
+      // forgotten timer would then hold the lock for ever against a design whose TTL exists so a
+      // dead holder cannot. A spent context sends the late caller down the ordinary path instead.
+      level.open = false;
+    }
   }
 
   /**
@@ -198,4 +209,10 @@ export function sweepWithRetry(
     }
     return [];
   });
+}
+
+/** One nesting level: the queue its children share, and whether that level is still running. */
+interface Level {
+  readonly queue: SerialQueue;
+  open: boolean;
 }

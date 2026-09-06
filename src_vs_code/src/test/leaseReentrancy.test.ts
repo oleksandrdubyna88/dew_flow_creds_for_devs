@@ -120,3 +120,52 @@ test('a grandchild of the lease runs rather than deadlocking behind its parent',
 
   assert.deepEqual(order, ['child', 'grandchild', 'child end']);
 });
+
+/**
+ * The context dies with the lease, so late work does not slip through inline.
+ *
+ * <p>A reviewer's finding, and it is real: `AsyncLocalStorage` is kept by anything the holder
+ * SCHEDULED, so a `setTimeout(() => void queue.run(…))` fired inside the lease still sees the
+ * context when it runs — which may be long after the lock was released. Under a plain "inside means
+ * inline" it would then write unserialized against another window.</p>
+ *
+ * <p>Their proposed fix was to hold the lease until such work finishes. That is worse than the
+ * disease: a forgotten timer would hold the lock for ever, against a design whose whole point is a
+ * TTL that a dead holder cannot outlive. What closes it instead is that the context is CLOSED when
+ * the work returns — a late arrival sees a spent context and takes the ordinary path, waiting for
+ * the lease like any other caller.</p>
+ */
+test('work scheduled inside the lease but running after it does NOT run inline', async () => {
+  const queue = new LeasedQueue(undefined);
+  const order: string[] = [];
+  let late: Promise<void> | undefined;
+
+  await queue.run(async () => {
+    order.push('holder');
+    // Scheduled and NOT awaited, so it fires after the holder has returned — which is the whole
+    // case. Awaiting it here would make it an ordinary nested call, and running inline would be
+    // right; the first version of this test did exactly that and went red for the wrong reason.
+    setTimeout(() => {
+      late = queue.run(async () => {
+        order.push('late');
+      });
+    }, 10);
+  });
+
+  // The second version of the test was weak rather than wrong: the late work lands after the
+  // holder either way, so the order alone proved nothing. What discriminates is whether it can cut
+  // INTO somebody else's turn — so there is now somebody else's turn for it to try.
+  const other = queue.run(async () => {
+    order.push('other in');
+    await new Promise<void>((resolve) => setTimeout(resolve, 40));
+    order.push('other out');
+  });
+  await other;
+  await late;
+
+  assert.deepEqual(
+    order,
+    ['holder', 'other in', 'other out', 'late'],
+    'the late work waited its turn instead of running inside another operation',
+  );
+});

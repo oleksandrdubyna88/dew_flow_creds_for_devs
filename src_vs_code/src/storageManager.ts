@@ -24,32 +24,13 @@ import { PaymentFields, parsePaymentFields, serializePaymentFields } from './pay
 import { forgetTombstone, sweepOrphanSecrets } from './orphanSweep';
 import { LeasedQueue, leasedWrites, sweepWithRetry } from './leasedWrites';
 import { EntityCreate, createEntityWithSecrets } from './entityWrite';
-import {
-  CleanupPort,
-  clearSecretsPending,
-  isEmptyPending,
-  markSecretsPending,
-  parsePendingCleanup,
-  finishBeforeReuse,
-  removeWithIntent,
-  resumePending,
-} from './pendingCleanup';
+import { CleanupPort, clearSecretsPending, isEmptyPending, markSecretsPending, parsePendingCleanup,
+  finishBeforeReuse, removeWithIntent, resumePending } from './pendingCleanup';
 import { dropVanishedSecrets, readSecretMaps, secretMapsOf, storeSecretMaps } from './secretMaps';
-import {
-  attachmentSecretKey,
-  configSecretKey,
-  dbConnSecretKey,
-  entitySecretKeys,
-  fieldsSecretKey,
-  imageSecretKey,
-  notesSecretKey,
-  paymentSecretKey,
-  privateKeySecretKey,
-  secretKey,
-  totpSecretKey,
-  vpnConfigSecretKey,
-} from './secretKeys';
-import { BackupBundle, StoredAccount, TreeNode, isStoredAccount, isTreeNode } from './types';
+import { attachmentSecretKey, configSecretKey, dbConnSecretKey, entitySecretKeys, fieldsSecretKey,
+  imageSecretKey, notesSecretKey, paymentSecretKey, privateKeySecretKey, secretKey, totpSecretKey,
+  vpnConfigSecretKey } from './secretKeys';
+import { BackupBundle, EntityMetadata, StoredAccount, TreeNode, isStoredAccount, isTreeNode } from './types';
 import { EntityFields, parseFields, serializeFields } from './entityFields';
 
 const ACCOUNTS_KEY = 'credSshManager.accounts';
@@ -544,6 +525,16 @@ export class StorageManager implements vscode.Disposable {
     });
   }
 
+  /** Fields INSIDE `details`, merged at write time, so a field another window changed survives —
+   *  which `updateNodeFields` cannot promise when a caller rebuilds `details` from a snapshot. A
+   *  field NAMED with `undefined` still clears; one left out is left alone. */
+  async updateDetailsFields(accountId: string, id: string, fields: Partial<EntityMetadata>): Promise<void> {
+    await this.writes.run(async () => {
+      const was = this.getNode(accountId, id)?.details;
+      await (was === undefined ? Promise.resolve() : this.updateNodeFields(accountId, id, { details: { ...was, ...fields } }));
+    });
+  }
+
   /** Move a node under a new parent (null = root). Caller validates cycles. */
   async moveNode(accountId: string, id: string, newParentId: string | null): Promise<void> {
     await this.updateNodeFields(accountId, id, { parentId: newParentId });
@@ -583,8 +574,12 @@ export class StorageManager implements vscode.Disposable {
     if (id !== trash.id) {
       // One write for the move AND where it came from — a crash between two could not leave
       // an entry in the trash that has forgotten its folder.
-      const from = this.getNode(accountId, id)?.parentId ?? null;
-      await this.updateNodeFields(accountId, id, { trashedFrom: from, parentId: trash.id });
+      // Read and write in ONE leased turn, or another window moves the entry between them and the
+      // trash remembers the wrong folder. Nesting is safe: the lease knows it is already held.
+      await this.writes.run(async () => {
+        const from = this.getNode(accountId, id)?.parentId ?? null;
+        await this.updateNodeFields(accountId, id, { trashedFrom: from, parentId: trash.id });
+      });
     }
     return trash;
   }
@@ -595,12 +590,17 @@ export class StorageManager implements vscode.Disposable {
    * there is nothing to restore.
    */
   async restoreFromTrash(accountId: string, id: string): Promise<TreeNode | null | undefined> {
-    const node = this.getNode(accountId, id);
-    if (node === undefined) {
+    if (this.getNode(accountId, id) === undefined) {
       return undefined;
     }
-    const target = restoreTarget(node, (nodeId) => this.getNode(accountId, nodeId));
-    await this.updateNodeFields(accountId, id, { trashedFrom: undefined, parentId: target });
+    // One leased turn: the target is computed FROM the tree, so a tree that moved between the
+    // decision and the write puts the entry back in the wrong place. (A reviewer's finding.)
+    const target = await this.writes.run(async () => {
+      const at = this.getNode(accountId, id);
+      const to = at === undefined ? null : restoreTarget(at, (n) => this.getNode(accountId, n));
+      await this.updateNodeFields(accountId, id, { trashedFrom: undefined, parentId: to });
+      return to;
+    });
     return target === null ? null : this.getNode(accountId, target);
   }
 
@@ -624,7 +624,7 @@ export class StorageManager implements vscode.Disposable {
   /** Set or clear how long the trash keeps what is in it. */
   async setTrashRetention(accountId: string, days: number | undefined): Promise<void> {
     const trash = await this.ensureTrash(accountId);
-    await this.updateNode(accountId, { ...trash, trashRetentionDays: days });
+    await this.updateNodeFields(accountId, trash.id, { trashRetentionDays: days });
   }
 
   private async bumpHorizonToSeq(accountId: string): Promise<void> {

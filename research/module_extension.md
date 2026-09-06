@@ -3323,6 +3323,15 @@ that resurrects a field the person deliberately CLEARED is a worse defect than t
 and silent in the same way. Naming `details` in the patch replaces `details`; naming nothing leaves
 it alone. `nodeWriteRace.test.ts` holds both halves.
 
+**And that left the metadata undone**, which the code round found after the first half shipped:
+`details` is one top-level field, so a caller changing one thing inside it still had to rebuild the
+whole object from a snapshot — nine of them did. `updateDetailsFields` merges into the details as
+they ARE, and the clearing semantic survives because of how this product spells a clear: a field
+NAMED with `undefined` (`pinProtected: on ? true : undefined`) still clears, a field left out is
+left alone. The two methods therefore mean different things on purpose — replace a whole `details`
+when the caller genuinely has the whole new one, merge when it is changing a field — and the entity
+form keeps the first, because there a field disappearing from the object IS how it gets cleared.
+
 `updateNode` survives with exactly one caller — `shareInbox.ts`, where an accepted share genuinely IS
 the record now — and its doc comment says so, because a method that is easy to misuse and documented
 as dangerous is still going to be misused.
@@ -3353,6 +3362,17 @@ lease was being extended to close, reintroduced one level down. So each level ca
 own: nested work runs on its PARENT's queue, which makes siblings take turns, and receives a fresh
 queue for whatever it starts in turn, so a child awaiting a grandchild is never queued behind itself.
 `leaseReentrancy.test.ts` holds all five cases.
+
+**The context is closed when the work ends**, and that is a third thing the reviewers had to find.
+`AsyncLocalStorage` is kept by anything the holder SCHEDULED, so a `setTimeout(() => void run(…))`
+fired inside the lease still sees the context when it runs — possibly long after the lock was
+released — and would write unserialized. The proposed remedy, holding the lease until such work
+finishes, is worse than the disease: a forgotten timer would then hold the lock for ever, against a
+design whose TTL exists precisely so a dead holder cannot. Closing the level when its work returns
+sends the late caller down the ordinary path instead, and the test that proves it had to be written
+three times — the first fired its timer while the holder was still running, which is a legitimate
+nested call; the second landed after the lease either way, so the order proved nothing; the third
+gives the late work somebody else's turn to try to cut into.
 
 **The read happens inside the lease, and it is a fresh read.** `nodeEntry` calls
 `globalState.get(...)` on every access and reuses its cache only when the returned reference is

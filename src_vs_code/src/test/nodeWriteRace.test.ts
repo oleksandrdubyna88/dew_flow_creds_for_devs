@@ -56,6 +56,7 @@ interface Storage {
   getNodes(accountId: string): readonly TreeNode[];
   updateNode(accountId: string, node: TreeNode): Promise<void>;
   updateNodeFields?(accountId: string, id: string, patch: Partial<TreeNode>): Promise<void>;
+  updateDetailsFields?(accountId: string, id: string, fields: Record<string, unknown>): Promise<void>;
 }
 
 function manager(): Storage {
@@ -147,4 +148,47 @@ test('a patch for a node that is gone changes nothing and does not throw', async
 
   assert.equal(storage.getNodes(A).length, 1, 'no node was invented');
   assert.equal(storage.getNode(A, 'e1')!.name, 'prod-db', 'and the real one is untouched');
+});
+
+/**
+ * The other half of the same defect, and a reviewer found it after the first half shipped.
+ *
+ * <p>`updateNodeFields` composes TOP-LEVEL fields at write time, and `details` is one of them — so a
+ * caller changing one field inside `details` still has to build the whole object from a snapshot it
+ * read earlier. Six callers do exactly that: the PIN mark, the agent flag, a dependency colour. If
+ * another window changes a DIFFERENT field of the same `details` in between, this write replaces the
+ * lot and that change is gone. The fix for whole nodes left the fix for their metadata undone.</p>
+ *
+ * <p>`updateDetailsFields` merges into the details as they ARE, and an explicitly present
+ * `undefined` still clears — which is how every mark in this product is written
+ * (`pinProtected: on ? true : undefined`), so clearing keeps working and omitting stops erasing.</p>
+ */
+test('a details field written by one caller does not erase another caller’s details field', async () => {
+  const storage = manager();
+  await storage.addNode(A, entity({ details: { id: 'e1', name: 'prod-db', isSshEnabled: false } as never }));
+
+  // What a caller holds before it does its work.
+  const asItWas = storage.getNode(A, 'e1')!;
+
+  // Somebody else marks it in the meantime.
+  await storage.updateDetailsFields!(A, 'e1', { sshAgent: true } as never);
+
+  // The first caller now writes ITS field, from the snapshot it is holding.
+  await storage.updateDetailsFields!(A, 'e1', { pinProtected: true } as never);
+
+  const after = storage.getNode(A, 'e1')!.details as { sshAgent?: boolean; pinProtected?: boolean };
+  assert.equal(after.sshAgent, true, 'the other field must survive — this is the defect');
+  assert.equal(after.pinProtected, true, 'and this write must still have happened');
+  assert.equal(asItWas.details?.name, 'prod-db', 'the snapshot the caller held is untouched');
+});
+
+test('an explicit undefined still CLEARS a details field', async () => {
+  const storage = manager();
+  await storage.addNode(A, entity({ details: { id: 'e1', name: 'prod-db', isSshEnabled: false, sshAgent: true } as never }));
+
+  await storage.updateDetailsFields!(A, 'e1', { sshAgent: undefined } as never);
+
+  const after = storage.getNode(A, 'e1')!.details as { sshAgent?: boolean };
+  assert.equal(after.sshAgent, undefined, 'naming a field with undefined is how this product clears one');
+  assert.equal(storage.getNode(A, 'e1')!.details?.name, 'prod-db', 'and nothing else moved');
 });

@@ -216,9 +216,7 @@ export async function applyDependencyColors(
   for (const pick of picks) {
     const target = storage.getNode(accountId, pick.targetId);
     if (target?.details !== undefined && target.details.depColor !== pick.color) {
-      await storage.updateNodeFields(accountId, target.id, {
-        details: { ...target.details, depColor: pick.color },
-      });
+      await storage.updateDetailsFields(accountId, target.id, { depColor: pick.color });
     }
   }
 }
@@ -240,5 +238,5 @@ export async function updateConfigDetails(
   if (details === undefined) {
     return;
   }
-  await storage.updateNodeFields(element.accountId, element.node.id, { details: { ...details, ...change } });
+  await storage.updateDetailsFields(element.accountId, element.node.id, change);
 }

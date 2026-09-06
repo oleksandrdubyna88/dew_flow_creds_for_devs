@@ -586,9 +586,7 @@ export function registerAgentCommands(host: AgentCommandsHost): void {
       void vscode.window.showWarningMessage(result.reason);
       return;
     }
-    await storage.updateNodeFields(element.accountId, element.node.id, {
-      details: { ...details, sshAgent: true },
-    });
+    await storage.updateDetailsFields(element.accountId, element.node.id, { sshAgent: true });
     mutated();
     void vscode.window.showInformationMessage(
       `"${element.node.name}" (${result.fingerprint}) is served by the agent. New terminals get ` +
@@ -606,9 +604,7 @@ export function registerAgentCommands(host: AgentCommandsHost): void {
       return;
     }
     sshAgent.unload(element.node.details.id);
-    await storage.updateNodeFields(element.accountId, element.node.id, {
-      details: { ...element.node.details, sshAgent: undefined },
-    });
+    await storage.updateDetailsFields(element.accountId, element.node.id, { sshAgent: undefined });
     mutated();
     void vscode.window.showInformationMessage(
       `"${element.node.name}" is no longer served by the agent.`,
