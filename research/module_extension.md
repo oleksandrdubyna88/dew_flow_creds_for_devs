@@ -1677,6 +1677,59 @@ Four versions, all AES-256-GCM with a fresh 16-byte salt and 12-byte IV per encr
 - **v4** — v3 plus the header bound to the payload as **AEAD associated data** (audit A5). A wrapped
   write is always v4.
 
+#### The developer binding — a wrap key the server holds a factor of (2026-09-06)
+
+On a corporate server a person may be a **developer**, and a developer's vault must be dead without a
+live login. The mechanism is one function, `bindWithLoginKey` in `cryptoUtils.ts`:
+
+```
+wrap key = HKDF-SHA256(ikm = <the key this wrap would have used> ‖ S,
+                       info = "cred-ssh-manager/dev-login-key-bind", 32 bytes)
+```
+
+where **S** is the 32-byte login key `GET /api/org/login-key` serves to an active developer.
+
+**At the derived key, not at the passphrase**, for two reasons. Feeding S into scrypt beside the PIN
+would spend the KDF's cost on material that is already 32 random bytes; and a security-key wrap has no
+scrypt at all — its key comes from a WebAuthn PRF secret — so binding after the derivation is what lets
+ONE primitive bind both kinds. `sealBlob`/`openBlob` (and their async twins) take one optional
+`loginKey`; `prfWrappingKey`'s output is bound the same way.
+
+**The wrap carries a flag, not a new kind.** `KeyWrap` gains `serverBound?: boolean` and
+`loginKeyFingerprint?: string`, following `rpId`'s precedent. New kinds would fork every dispatch site
+— `hasPinWrap`, `removeWrap(wraps, 'webauthn', id)`, `hasVaultKeyedWrap` — into parallel branches
+somebody keeps in step by hand, and the first one forgotten is a wrap silently dropped. **A vault
+written without a login key is byte-identical to before**: no new keys appear in its JSON, so an older
+build reads it exactly as it always did.
+
+**`server-key-required` is decided before any decryption.** A bound wrap attempted with no key throws
+that `BackupError` from a pre-decryption guard; only after it passes can a tag failure mean what it
+always meant. Without the guard both arrive as one AES-GCM failure, and the person whose company
+restored an older backup is told their own PIN is wrong — so they type it again.
+
+**Who decides what a write should bind** is `devLoginKeyOps.ts`, pure, shaped like `orgEscrowOps.ts`:
+`unchanged` / `bind` / `unbind` / **`refuse`**. Two rules carry it. *Not knowing changes nothing* — a
+cycle that could not reach the server leaves the wraps alone, or a flaky network would strip a binding.
+And *not knowing must never downgrade*: a bound vault whose key cannot be produced is a `refuse`, so no
+path rewrites bound wraps as unbound ones. An ordinary sync write CARRIES the existing wraps, so it is
+safe either way; the paths that REBUILD a wrap refuse loudly — `rekeyUnderPin` throws
+`server-key-required` on a PIN change, and `securityKeyOps` answers `'server-bound'` rather than adding
+an unbound door.
+
+**Two doors close when a vault becomes a developer's**, and the person is told once, because both fail
+silently otherwise: the **printed recovery code** (it opens the file with no PIN and no server) and any
+**unbound security-key wrap** (it opens the file offline with the key in their pocket). Never the last
+way in, though: if dropping them would leave no usable wrap, nothing is dropped.
+
+**Binding needs the PIN, so it happens when the PIN is at hand** — from `SecretStorage`, or an unlock
+that just asked. A background cycle holds the master key and not the PIN, and must not prompt; it
+therefore defers, which is why a developer's vault binds on the first write after their next unlock
+rather than at the exact moment the role is granted.
+
+**What this does not promise.** A copy taken *before* the binding still opens with the PIN — nothing
+can reach into a file somebody already has. The guarantee is about versions written while bound, and
+that is what makes deactivation effective going forward rather than retroactively.
+
 #### What v4 binds, and what it deliberately does not
 
 The header is plaintext and was protected only by the envelope MAC — a check a caller has to

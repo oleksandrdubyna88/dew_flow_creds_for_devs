@@ -13,7 +13,17 @@ import {
   readVaultWraps,
   verifyEnvelopeMac,
 } from './cryptoUtils';
-import { KeyWrap, isKeyWrap, webauthnWraps, upsertWrap, wrapWithPinAsync, wrapPinVaultAsync } from './keyWrap';
+import {
+  KeyWrap,
+  isKeyWrap,
+  webauthnWraps,
+  upsertWrap,
+  wrapWithPinAsync,
+  wrapPinVaultAsync,
+} from './keyWrap';
+
+
+
 import {
   EscrowAction,
   EscrowEnrolment,
@@ -21,6 +31,7 @@ import {
   describeEscrowAction,
   escrowAction,
 } from './orgEscrowOps';
+import { BindingContext, bindingWrapsFor } from './syncBinding';
 import { TransportFactory } from './transportFactory';
 import { VaultKey, VaultKeys } from './vaultKeys';
 import { pinValidator } from './pinInput';
@@ -109,6 +120,15 @@ export class SyncManager implements vscode.Disposable {
 
   /** Who the officers are, for the sentence shown when a vault enrols. */
   escrowOfficers: readonly string[] = [];
+
+  /**
+   * How a cycle finds out whether this account's vault should be sealed to the server's login key,
+   * and with which key. A settable field for the reason `resolveEscrow` is one.
+   *
+   * <p>Undefined — the default, and every personal deployment — means the cycle behaves exactly as
+   * it did before the corporate control plane existed.</p>
+   */
+  resolveBinding: ((account: StoredAccount) => Promise<BindingContext | undefined>) | undefined;
   private readonly configListener: vscode.Disposable;
 
   constructor(
@@ -515,14 +535,19 @@ export class SyncManager implements vscode.Disposable {
     // Corporate escrow rides the ordinary write: enrolling is a wrap change, and a wrap change
     // is a reason to write even when nothing else moved.
     const escrow = await this.escrowFor(account, key);
-    const willWrite = remoteChanged || !remoteExists || migrateV1 || escrow.action.kind !== 'unchanged';
+    // The developer binding rides the same write, on whatever wraps escrow settled: the two decide
+    // different slots of one list, and running them in sequence is what keeps either from writing a
+    // list the other has not seen.
+    const bound = await this.bindingFor(account, key, escrow.wraps);
+    const willWrite =
+      remoteChanged || !remoteExists || migrateV1 || escrow.action.kind !== 'unchanged' || bound !== undefined;
     if (willWrite) {
       const content = await this.keys.encrypt(
         { ...merged, exportedAt: Date.now() },
         key,
         account,
         transport.embedsShares ? pendingShares : undefined,
-        escrow.wraps,
+        bound ?? escrow.wraps,
       );
       await transport.writeVault(account, content, []);
       // We just replaced the remote; its next read will not match the cached hash anyway,
@@ -570,6 +595,48 @@ export class SyncManager implements vscode.Disposable {
     };
   }
 
+  /**
+   * The wrap list this write should carry for a corporate developer, or nothing when the binding is
+   * already right — the sync half of `devLoginKeyOps`.
+   *
+   * <p><b>Only a v2 key, and only when a resolver is wired.</b> A legacy vault's write mints a fresh
+   * master of its own, so a wrap list built against the old one would seal nothing; it binds on the
+   * cycle after the upgrade, exactly as escrow does.</p>
+   *
+   * <p><b>A `refuse` does not stop the write, and that is deliberate.</b> An ordinary sync write
+   * CARRIES the existing wraps rather than rebuilding them, so a bound vault written by a client
+   * with no key stays bound — nothing is downgraded by proceeding. What must refuse are the paths
+   * that REBUILD a wrap (a PIN change, a security key added), and they do it themselves. Here the
+   * honest response is to leave the list alone and say so once.</p>
+   */
+  private async bindingFor(
+    account: StoredAccount,
+    key: VaultKey,
+    escrowed: readonly KeyWrap[] | undefined,
+  ): Promise<KeyWrap[] | undefined> {
+    if (key.version !== 2 || this.resolveBinding === undefined) {
+      return undefined;
+    }
+    return bindingWrapsFor({
+      wraps: escrowed ?? key.wraps,
+      masterKey: key.masterKey,
+      account,
+      context: await this.askBinding(account),
+      now: Date.now(),
+      log: (message) => this.log?.info('sync', message),
+      announce: (message) => this.sayOnce(message),
+    });
+  }
+
+  private async askBinding(account: StoredAccount): Promise<BindingContext | undefined> {
+    try {
+      return await this.resolveBinding?.(account);
+    } catch (error) {
+      this.log?.info('sync', `login key unreadable for ${account.email}: ${describeError(error)}`);
+      return undefined;
+    }
+  }
+
   private async askEscrow(account: StoredAccount): Promise<EscrowEnrolment | undefined> {
     try {
       return await this.resolveEscrow?.(account);
@@ -580,6 +647,15 @@ export class SyncManager implements vscode.Disposable {
   }
 
   /** Say it once per account per change, not once per sync cycle. */
+  /** One sentence per account per change, on the same gate the escrow notice uses. */
+  private sayOnce(message: string): void {
+    if (this.warnedAccounts.has(message)) {
+      return;
+    }
+    this.warnedAccounts.add(message);
+    void vscode.window.showInformationMessage(message);
+  }
+
   private announceEscrow(
     account: StoredAccount,
     action: EscrowAction,

@@ -1,5 +1,6 @@
 import {
   KeyWrap,
+  LoginKeyBinding,
   isKeyWrap,
   recoveryWrap,
   removeWrap,
@@ -10,6 +11,7 @@ import {
 } from './keyWrap';
 import { readVaultWraps, resignEnvelopeWraps } from './cryptoUtils';
 import { rekeyUnderPin } from './vaultRekey';
+import { isBoundVault } from './devLoginKeyOps';
 import type { VaultKey } from './vaultKeys';
 import { StoredAccount } from './types';
 
@@ -38,7 +40,19 @@ export interface RegisteredPrf {
 }
 
 /** Why an envelope could not be produced; the caller turns these into its own messages. */
-export type SecurityKeyRefusal = 'pin-required' | 'not-wrapped';
+export type SecurityKeyRefusal =
+  | 'pin-required'
+  | 'not-wrapped'
+  /**
+   * The vault is sealed to the organisation's login key and this operation would have written a
+   * wrap that is not.
+   *
+   * <p>Two shapes reach here. A printed recovery code is refused outright for a developer: it opens
+   * the file with no PIN and no server, which is the door the binding exists to close. And any wrap
+   * this build cannot bind — because the login key is not in hand — is refused rather than written
+   * unbound, since an unbound wrap on a bound vault is a way in that ignores the whole feature.</p>
+   */
+  | 'server-bound';
 
 export interface NextEnvelope {
   content: string;
@@ -73,6 +87,12 @@ export interface EnvelopeArgs {
   pendingShares: unknown[] | undefined;
   /** `vaultKeys.decrypt` — needed only when the payload must be re-encrypted. */
   decrypt: (raw: string, key: VaultKey) => Promise<unknown>;
+  /**
+   * The organisation's login key, when this vault belongs to a corporate developer and this window
+   * currently holds it. Absent on every personal deployment, and on a corporate one that could not
+   * reach its server — which is why the operations below refuse instead of assuming.
+   */
+  binding?: LoginKeyBinding;
 }
 
 /**
@@ -88,8 +108,8 @@ export async function envelopeWithAddedKey(
   prf: RegisteredPrf,
   label: string,
 ): Promise<NextEnvelope | SecurityKeyRefusal> {
-  return envelopeWithAddedWrap(args, (master, now) =>
-    wrapWithPrf(master, prf.credentialId, prf.prfSalt, prf.secret, label.trim(), now),
+  return envelopeWithAddedWrap(args, (master, now, binding) =>
+    wrapWithPrf(master, prf.credentialId, prf.prfSalt, prf.secret, label.trim(), now, undefined, binding),
   );
 }
 
@@ -106,7 +126,9 @@ export async function envelopeWithRecoveryCode(
   args: EnvelopeArgs,
   secret: Buffer,
 ): Promise<NextEnvelope | SecurityKeyRefusal> {
-  return envelopeWithAddedWrap(args, (master, now) => wrapWithRecoveryCode(master, secret, now));
+  // Never bindable: the code is paper, and paper cannot carry a server key. On a bound vault this
+  // refuses, which is the epic's decision — a printed code is the same door by another name.
+  return envelopeWithAddedWrap(args, (master, now) => wrapWithRecoveryCode(master, secret, now), false);
 }
 
 /**
@@ -119,17 +141,13 @@ export async function envelopeWithRecoveryCode(
  */
 async function envelopeWithAddedWrap(
   args: EnvelopeArgs,
-  build: (master: Buffer, now: number) => KeyWrap,
+  build: (master: Buffer, now: number, binding: LoginKeyBinding | undefined) => KeyWrap,
+  /** Whether the wrap this call adds can be bound at all — a printed code never can. */
+  bindable = true,
 ): Promise<NextEnvelope | SecurityKeyRefusal> {
   const { raw, key, account, storedPin, now } = args;
   if (key.version === 2) {
-    // Already wrapped: add one more wrap around the SAME master key.
-    const wraps = upsertWrap(readVaultWraps(raw).filter(isKeyWrap), build(key.masterKey, now));
-    return {
-      content: resignEnvelopeWraps(raw, wraps, key.masterKey),
-      rekeyed: false,
-      recoveryCodeRetired: false,
-    };
+    return addAroundTheSameMaster({ ...args, key }, build, bindable);
   }
   // Upgrade v1 → wrapped: new master key, payload re-encrypted, two wraps. A v1 file holds
   // no wraps at all, so this rotation has nothing it could fail to carry.
@@ -143,9 +161,36 @@ async function envelopeWithAddedWrap(
     now,
     pendingShares: args.pendingShares,
     previousWraps: [],
-    extraWraps: (master, at) => [build(master, at)],
+    binding: args.binding,
+    extraWraps: (master, at) => [build(master, at, bindable ? args.binding : undefined)],
   });
   return { content: rotated.content, rekeyed: true, recoveryCodeRetired: rotated.recoveryCodeRetired };
+}
+
+/**
+ * The wrapped-vault branch: one more wrap around the SAME master key.
+ *
+ * <p>A bound vault may only gain wraps that are bound too. A security key registered without the
+ * login key would open the file offline for anybody holding it — the exact door this feature closes
+ * — and a printed recovery code cannot be bound at all, so a developer does not get one.</p>
+ */
+function addAroundTheSameMaster(
+  args: EnvelopeArgs & { key: { version: 2; masterKey: Buffer } },
+  build: (master: Buffer, now: number, binding: LoginKeyBinding | undefined) => KeyWrap,
+  bindable: boolean,
+): NextEnvelope | SecurityKeyRefusal {
+  const { raw, key, now } = args;
+  const existing = readVaultWraps(raw).filter(isKeyWrap);
+  const binding = bindable ? args.binding : undefined;
+  if (isBoundVault(existing) && binding === undefined) {
+    return 'server-bound';
+  }
+  const wraps = upsertWrap(existing, build(key.masterKey, now, binding));
+  return {
+    content: resignEnvelopeWraps(raw, wraps, key.masterKey),
+    rekeyed: false,
+    recoveryCodeRetired: false,
+  };
 }
 
 /** The wraps currently on a vault file, typed. */

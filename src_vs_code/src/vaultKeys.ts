@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { LockState } from './lockState';
+import { isBoundVault } from './devLoginKeyOps';
 import {
   BackupError,
   decryptJsonAsync,
@@ -103,6 +104,32 @@ export class VaultKeys {
   private readonly lockState = new LockState();
 
   constructor(private readonly secrets: vscode.SecretStorage) {}
+
+  /**
+   * Where a bound vault's server key comes from — set once at activation for a corporate
+   * deployment, never present on a personal one.
+   *
+   * <p>A settable hook rather than a constructor argument, for the reason `SyncManager` gives about
+   * its own resolvers: this is wired after the transports exist, and threading it through the
+   * constructor would make every test that builds a `VaultKeys` declare a concept it does not
+   * use.</p>
+   */
+  loginKeys: { resolve: (account: StoredAccount) => Promise<{ key: Buffer } | undefined> } | undefined;
+
+  /**
+   * The login key this vault's wraps need, or nothing when they need none.
+   *
+   * <p>Asked only when a wrap actually says it is bound: a personal vault must not cost a network
+   * round trip to open, and an ordinary member's must not either. When a bound vault's key cannot be
+   * had, the unwrap itself refuses with `server-key-required` — the pre-decryption guard in
+   * `keyWrap.ts` — so a missing server never reaches the person as a wrong PIN.</p>
+   */
+  private async loginKeyFor(account: StoredAccount, wraps: readonly KeyWrap[]): Promise<Buffer | undefined> {
+    if (!isBoundVault(wraps)) {
+      return undefined;
+    }
+    return (await this.loginKeys?.resolve(account))?.key;
+  }
 
   clearCache(accountId?: string): void {
     if (accountId === undefined) {
@@ -329,7 +356,12 @@ export class VaultKeys {
 
     if (plan.kind === 'silentPin') {
       try {
-        const master = await unwrapWithPinAsync(pinWrap!, account.accountId, storedPin!);
+        const master = await unwrapWithPinAsync(
+          pinWrap!,
+          account.accountId,
+          storedPin!,
+          await this.loginKeyFor(account, wraps),
+        );
         return this.remember(account, master, wraps);
       } catch {
         // The stored PIN does not fit this vault. A person present falls through to a
@@ -375,7 +407,7 @@ export class VaultKeys {
 
     if (way === 'key') {
       const { result, used } = await this.assertKey(account, wraps);
-      const master = unwrapWithPrf(used, result.secret);
+      const master = unwrapWithPrf(used, result.secret, await this.loginKeyFor(account, wraps));
       const vaultKey = this.remember(account, master, wraps);
       if (isLegacyKeyWrap(used)) {
         // Opened by a credential bound to the bare `localhost` (pre-0.81). Said, not done: the
@@ -387,7 +419,12 @@ export class VaultKeys {
 
     const pin = await this.promptPin(account, 'Unlock vault');
     if (pin !== undefined && pinWrap !== undefined) {
-      const master = await unwrapWithPinAsync(pinWrap, account.accountId, pin);
+      const master = await unwrapWithPinAsync(
+        pinWrap,
+        account.accountId,
+        pin,
+        await this.loginKeyFor(account, wraps),
+      );
       await this.savePin(account, pin);
       return this.remember(account, master, wraps);
     }

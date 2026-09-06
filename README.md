@@ -49,8 +49,17 @@ Claude, Bitwarden's Agent Access SDK — all mediate HTTP: a forward proxy, egre
 browser autofill, an SDK. This one performs SSH commands, database queries, VPN connections and
 saved terminal commands on the agent's behalf, on the machine where the secret already lives.
 
-**Local-first.** Secrets sit in the OS keychain. The team server is optional, stores ciphertext, and
-holds no key — there is no decryption routine in it to call.
+**One qualification, on corporate servers only.** A company can mark somebody a **developer**, and a
+developer's vault is additionally sealed to a 32-byte **login key** the server holds and hands over
+only while their account is active — so the file plus the PIN stops opening once they are
+deactivated. That is one factor of two: the server still never sees the PIN and never sees the key
+that decrypts the payload, so it cannot read a vault with what it holds, and an operator with the
+login key and a stolen file can attack the PIN offline exactly as they already could. Nothing changes
+for a personal server, where no such key exists.
+
+**Local-first.** Secrets sit in the OS keychain. The team server is optional and stores ciphertext —
+there is no decryption routine in it to call. On a corporate server it holds one FACTOR of a
+developer's key (above), and never the key that decrypts a payload.
 
 ## Quickstart
 

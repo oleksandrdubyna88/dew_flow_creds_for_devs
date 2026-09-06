@@ -16,9 +16,16 @@ independently and are versioned independently:
   store and share relay: it stores ciphertext it cannot read, and stamps share sender identity from
   a verified token so it cannot be forged.
 
-The trust boundary between them is the whole product. **The server never holds a key that opens a
-vault**, and no change may make it able to. A feature that would require the server to understand a
+The trust boundary between them is the whole product. **The server never holds enough to open a vault
+alone**, and no change may make it able to. A feature that would require the server to understand a
 payload is the wrong feature.
+
+That sentence was *"never holds a key that opens a vault"* until 2026-09-06, and the qualification is
+exact rather than a softening: on a corporate server a developer's wraps are sealed to
+`HKDF(scrypt(accountId + PIN) ‖ S)`, where **S** is one factor the server mints and serves only to that
+person while their account is active — so a copied vault file stops opening the day they are
+deactivated. The server still never sees the PIN and never sees the master key. Full reasoning and the
+table that carries it: [research/architecture.md](research/architecture.md) §The trust boundary.
 
 **This repository is public and MIT-licensed.** Anything committed here is published; the deployment
 secrets live in `deploy/.env`, which is git-ignored and must stay that way.

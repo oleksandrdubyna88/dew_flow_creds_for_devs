@@ -48,23 +48,28 @@ C4Container
 
 ## The trust boundary
 
-**The server never holds a key that opens a vault.** Everything else in this document is
-downstream of that sentence.
+**The server never holds enough to open a vault alone.** Everything else in this document is
+downstream of that sentence — and it was rewritten on 2026-09-06, from *"the server never holds a key
+that opens a vault"*, because a corporate server now holds one factor of a developer's.
 
-> Since 2026-09-06 a corporate server can hold one thing that is adjacent to it, and the distinction is
-> exact rather than lawyerly: a developer's **login key** S (`module_server.md` §The login key). S opens
-> nothing on its own — it is folded into a wrap key beside `scrypt(accountId + PIN)`, so the server has
-> never seen the PIN and has never seen the master key, and an operator holding S and a stolen blob can
-> mount the same offline PIN attack they could already mount against a plain `pin` wrap with no S at
-> all. Today the sentence above is still literally true, because nothing binds to S yet: the wraps do
-> that in epic 2's story 3, and **that** is when this sentence becomes "the server never holds enough to
-> open a vault alone", with its evidence beside it.
+**What changed, exactly.** A developer's vault wraps are sealed to `HKDF(scrypt(accountId + PIN) ‖ S)`,
+where **S** is a 32-byte login key the server mints and hands only to that person while their account is
+active (`module_server.md` §The login key). The file plus the PIN no longer opens anything: without S
+there is no key to try. That is the point — a copied vault, a laptop taken home, a repository somebody
+cloned, all stop working the day the person is deactivated.
+
+**What did NOT change, and why the weaker sentence is still a strong one.** S is one factor of two. The
+server has never seen the PIN and has never seen the master key, so it cannot open a vault with what it
+holds. An operator with S and a stolen file can attack the PIN offline — which they could already do
+against an unbound `pin` wrap, with no S at all. **The operator's position is unchanged; the position of
+a stolen FILE is what changed.** Stating it as "never holds a key" would now be false, and stating it as
+"holds nothing" would be a lie by omission; this is the true version, and the table below carries it.
 
 | | Sees plaintext | Holds a decryption key | Can forge a sender |
 |---|---|---|---|
 | The extension | yes — it is the only one | yes, derived from a PIN or a security key | n/a |
-| The server | **no** | **no** | **no** — it stamps identity from a verified token |
-| Anyone with disk access to the server | no | no | no |
+| The server | **no** | **no** — one FACTOR of a developer's wrap key (S), never the wrap key and never the master key | **no** — it stamps identity from a verified token |
+| Anyone with disk access to the server | no | S, for the developers on that server — which without their PIN opens nothing | no |
 | An AI agent granted access | **no** — it holds a capability token; the extension runs `ssh` on its behalf | no | n/a — its first use of a token needs a human's click |
 
 The last row is the same sentence in a second setting: something is given the *use* of a credential
