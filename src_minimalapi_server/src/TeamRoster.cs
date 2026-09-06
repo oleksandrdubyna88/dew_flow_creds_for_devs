@@ -34,13 +34,16 @@ public static class TeamRoster
         string caller,
         bool callerIsOfficer,
         IReadOnlyList<string> discoverable,
-        Func<string, MemberLookupResult> find)
+        Func<string, MemberLookupResult> find,
+        Func<string, bool> isOpen)
     {
         var self = callerIsOfficer ? MemberLookupResult.NotRegistered : find(caller);
         var narrow = !callerIsOfficer && self is { Status: MemberLookup.Found, Record.Role: MemberRole.Dev };
         // A SET, not a list: this is asked once per colleague per assignment, so on a domain of any
         // size a linear scan here is the whole response's cost multiplied by two roster sizes.
-        var mine = new HashSet<string>(narrow ? ShareableProjectsOf(self) : ProjectsOf(self), StringComparer.Ordinal);
+        var mine = new HashSet<string>(
+            narrow ? ShareableProjectsOf(self, isOpen) : ProjectsOf(self),
+            StringComparer.Ordinal);
         var rows = new List<TeamMemberDetailDto>();
         foreach (var email in discoverable)
         {
@@ -80,20 +83,24 @@ public static class TeamRoster
         lookup is { Status: MemberLookup.Found, Record: { } record } ? record.Role : MemberRole.Default;
 
     /// <summary>
-    /// The projects a developer may actually SEND from — assignment is not enough.
+    /// The projects a developer may actually SEND from — assignment is not enough, and neither is
+    /// permission.
     /// </summary>
     /// <remarks>
-    /// The code round's finding, and it is the difference between agreeing with the assignment and
-    /// agreeing with the RULE: a developer whose share for a project is <c>none</c> is on it and can
-    /// send nothing into it, so offering them its colleagues proposes recipients the server will
-    /// refuse — the exact failure this whole surface exists to prevent. <see cref="ShareRule"/> and
-    /// this method therefore ask the same question of the same function.
+    /// <para>Two rounds of this gate found the same shape twice, and it is the difference between
+    /// agreeing with the ASSIGNMENT and agreeing with the RULE. A developer whose share for a project
+    /// is <c>none</c> is on it and can send nothing into it; a developer on a project that has been
+    /// ARCHIVED is on it and cannot send into it either, because a closed engagement is not a channel.
+    /// Offering either one's colleagues proposes a recipient <see cref="ShareRule"/> will refuse —
+    /// the exact failure this surface exists to prevent.</para>
+    /// <para>Both questions are asked of the same two places the rule asks them: permission of
+    /// <see cref="OrgProjects.EffectiveShare"/>, availability of the project store.</para>
     /// </remarks>
-    private static IReadOnlyList<string> ShareableProjectsOf(MemberLookupResult lookup) =>
+    private static IReadOnlyList<string> ShareableProjectsOf(MemberLookupResult lookup, Func<string, bool> isOpen) =>
         lookup is { Status: MemberLookup.Found, Record: { } record }
             ? [.. record.Projects
                 .Select(p => p.ProjectId)
-                .Where(id => OrgProjects.EffectiveShare(record, id) == ShareDefaults.Project)]
+                .Where(id => OrgProjects.EffectiveShare(record, id) == ShareDefaults.Project && isOpen(id))]
             : [];
 
     private static IReadOnlyList<string> ProjectsOf(MemberLookupResult lookup) =>
