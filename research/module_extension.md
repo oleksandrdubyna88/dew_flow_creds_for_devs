@@ -3773,6 +3773,20 @@ refuses a developer sharing anything with no project folder above it.
 record from a newer server or a hand-edit must not be able to wedge the cycle by being
 unacknowledgeable on every cycle for the life of the account.
 
+
+**Two more the second code round found, both of them consequences of the derived id.**
+
+*A folder the person KEPT is adopted, never created over.* When an assignment ends quietly the
+folder is unlocked and stays with them — and it keeps the node id this project derives. Put back on
+the project later, a create would mint a second node with an id already in the tree, in a vault that
+merges BY node id. The reconcile splits on that: an assignment whose derived id is already present
+becomes `toRelock` (the lock and the server's name, in one patch) rather than `toCreate`. It is also
+what a person expects — it is the same folder, with their work in it.
+
+*A blank name never renames anything.* An assigned project the SERVER cannot read answers
+`/api/org/me` with an empty name, because that document degrades on purpose rather than failing
+whole. Renaming on it would let a transient fault on one file rename somebody's folder to the
+fallback. The fallback is for a folder being created, where there is no name to keep.
 ### Delete, then push, then acknowledge — in that order
 
 The instruction is per PERSON: the first machine to acknowledge clears it for every other one, which

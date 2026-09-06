@@ -907,7 +907,14 @@ async Task WriteTeamAsync(
             cancellationToken: ct);
         return;
     }
-    var rows = TeamRoster.For(caller, orgRecovery.IsOfficer(caller), discoverable, find);
+    var rows = TeamRoster.For(
+        caller,
+        orgRecovery.IsOfficer(caller),
+        discoverable,
+        find,
+        // Open = it exists and is not archived. The same question ShareRule asks of the same store, so
+        // the picker cannot offer a recipient the share rule will then refuse.
+        id => orgProjects.Find(id) is { Status: ProjectLookup.Found, Record.Archived: false });
     if (ContractVersion.Judge(ctx.Request.Headers[ContractVersion.Header]).Claimed < ContractVersion.OrgPolicyContract)
     {
         await ctx.Response.WriteAsJsonAsync(

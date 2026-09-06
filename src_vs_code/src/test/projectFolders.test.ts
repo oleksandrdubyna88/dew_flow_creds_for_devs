@@ -146,3 +146,28 @@ test('several projects at once are each their own node', () => {
   assert.equal(plan.toCreate.length, 2);
   assert.notEqual(plan.toCreate[0].nodeId, plan.toCreate[1].nodeId);
 });
+
+test('a project the server could not name does not rename a folder that already has one', () => {
+  // The code round's chain: an assigned project file the SERVER cannot read makes /api/org/me answer
+  // 200 with an empty name — the document degrades on purpose rather than failing whole — and a blank
+  // name must therefore never be able to rename anything. A name only falls back when the folder is
+  // being CREATED and there is nothing to keep.
+  const here = folder({ id: 'node-1', projectId: ATLAS, name: 'Atlas' });
+
+  const plan = reconcile([here], [assigned(ATLAS, '')]);
+
+  assert.deepEqual(plan.toRename, []);
+  assert.equal(nothingToDo(plan), true);
+});
+
+test('re-assignment adopts the folder the person kept rather than creating a second one with its id', () => {
+  // The sequence: the assignment ended quietly so the folder was UNLOCKED and kept, then an admin put
+  // them back on the project. The node id is derived, so a create would mint a node whose id is
+  // already in the tree — a duplicate id in a vault that merges by node id.
+  const kept = folder({ id: projectFolderNodeId(ACCOUNT, ATLAS), name: 'my stuff', projectId: undefined });
+
+  const plan = reconcile([kept], [assigned(ATLAS, 'Atlas')]);
+
+  assert.deepEqual(plan.toCreate, []);
+  assert.deepEqual(plan.toRelock, [{ nodeId: kept.id, projectId: ATLAS, name: 'Atlas' }]);
+});

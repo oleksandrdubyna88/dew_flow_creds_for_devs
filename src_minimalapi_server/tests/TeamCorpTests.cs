@@ -232,4 +232,29 @@ public sealed class TeamCorpTests
         (await TeamAsync(alice)).EnumerateArray().Select(r => r.GetProperty("email").GetString())
             .Should().Equal([Alice], "a project they may not share from is not a channel to its people");
     }
+
+    [Fact]
+    public async Task ADeveloperIsNotOfferedThePeopleOnAProjectThatHasClosed()
+    {
+        // Discovery has to agree with the RULE, not merely with the assignment. An archived project
+        // is not a channel — ShareRule refuses a share into one — so offering its colleagues proposes
+        // a recipient the server will then refuse, which is the failure this surface exists to avoid.
+        using var server = Corp.Server();
+        using var cto = server.ClientFor(Corp.Cto);
+        using var alice = Modern(server, Alice);
+        using var bob = server.ClientFor(Bob);
+        await Corp.SyncAsync(alice);
+        await Corp.SyncAsync(bob);
+        var closing = await NewProjectAsync(cto, "Closing");
+        await AssignAsync(cto, closing, Alice);
+        await AssignAsync(cto, closing, Bob);
+        await Corp.SetMemberAsync(cto, Alice, role: "dev");
+        (await TeamAsync(alice)).EnumerateArray().Select(r => r.GetProperty("email").GetString())
+            .Should().BeEquivalentTo([Alice, Bob], "while it is open");
+
+        await Corp.PutJsonAsync(cto, $"/api/org/projects/{closing}", """{"archived":true}""");
+
+        (await TeamAsync(alice)).EnumerateArray().Select(r => r.GetProperty("email").GetString())
+            .Should().Equal([Alice], "a closed engagement is not a channel to its people");
+    }
 }

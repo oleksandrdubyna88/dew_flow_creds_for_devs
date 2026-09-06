@@ -395,6 +395,13 @@ and on A5 without them yields `A1` alone: the full list would leak the engagemen
 exists to fence, to exactly the role it fences. A member or an admin, who may read the roster
 through the admin surface anyway, gets the full list.
 
+
+**Discovery agrees with the rule about the PROJECT too, not only about the person.** Two rounds of
+the gate found the same shape twice: a developer whose share for a project is `none` is on it and
+can send nothing into it, and a developer on an ARCHIVED project is on it and cannot send into it
+either — a closed engagement is not a channel. Offering either one's colleagues proposes a recipient
+`ShareRule` will refuse. `TeamRoster` now asks both questions of the same two places the rule asks
+them: permission of `OrgProjects.EffectiveShare`, availability of the project store.
 **Discovery is still vault-based** (`ListVaultOwners`): a colleague assigned to a project who has
 never synced has no vault and is not discoverable. Left as it is — changing the source of team
 discovery changes what every non-corporate deployment shows — and recorded here as a limit.

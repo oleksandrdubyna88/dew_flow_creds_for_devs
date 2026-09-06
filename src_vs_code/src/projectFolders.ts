@@ -23,13 +23,22 @@ export interface PendingFolderRemovalFact {
 export interface ProjectFolderPlan {
   readonly toCreate: readonly { nodeId: string; projectId: string; name: string }[];
   readonly toRename: readonly { nodeId: string; name: string }[];
+  /**
+   * A folder the person KEPT after an assignment ended, which the same project has been given back.
+   *
+   * <p>The code round's finding, and it follows from the id being derived: the folder was unlocked
+   * rather than deleted, so it still occupies the node id this project derives — and a create would
+   * mint a second node with an id already in the tree, in a vault that merges BY node id. Adopting
+   * it is also what a person would expect: it is the same folder, with their work in it.</p>
+   */
+  readonly toRelock: readonly { nodeId: string; projectId: string; name: string }[];
   readonly toUnlock: readonly { nodeId: string }[];
   readonly toDelete: readonly { nodeId: string; projectId: string }[];
   /** Instructions to acknowledge once everything above has landed AND been pushed. */
   readonly toAck: readonly string[];
 }
 
-const EMPTY: ProjectFolderPlan = { toCreate: [], toRename: [], toUnlock: [], toDelete: [], toAck: [] };
+const EMPTY: ProjectFolderPlan = { toCreate: [], toRename: [], toRelock: [], toUnlock: [], toDelete: [], toAck: [] };
 
 /**
  * The node id for a project folder — DERIVED from the account and the project, never minted.
@@ -83,8 +92,13 @@ export function reconcileProjectFolders(
   const existing = new Map(nodes.filter(isProjectFolder).map((n) => [n.projectId as string, n]));
   const removals = new Map(pendingRemovals.map((r) => [r.projectId, r]));
   const wanted = new Map(assigned.filter((a) => a.projectId.length > 0).map((a) => [a.projectId, a]));
+  const byNodeId = new Set(nodes.map((n) => n.id));
+  const missing = [...wanted.values()].filter((a) => !existing.has(a.projectId) && !removals.has(a.projectId));
   return {
-    toCreate: creations(wanted, existing, removals, accountId),
+    // Split on whether this project's DERIVED node id is already in the tree. It is exactly when the
+    // person kept the folder after an assignment ended, and creating over it would duplicate an id.
+    toCreate: missing.filter((a) => !byNodeId.has(nodeIdOf(accountId, a))).map((a) => created(accountId, a)),
+    toRelock: missing.filter((a) => byNodeId.has(nodeIdOf(accountId, a))).map((a) => created(accountId, a)),
     toRename: renames(wanted, existing, removals),
     toUnlock: unlocks(wanted, existing, removals),
     toDelete: deletions(existing, removals, accountId),
@@ -97,6 +111,7 @@ export function nothingToDo(plan: ProjectFolderPlan): boolean {
   return (
     plan.toCreate.length +
       plan.toRename.length +
+      plan.toRelock.length +
       plan.toUnlock.length +
       plan.toDelete.length +
       plan.toAck.length ===
@@ -110,23 +125,32 @@ function isProjectFolder(node: TreeNode): boolean {
   return node.type === 'folder' && typeof node.projectId === 'string' && node.projectId.length > 0;
 }
 
-/** An assignment with no folder yet — unless the server is asking for that folder to go. */
-function creations(
-  wanted: Map<string, ProjectAssignmentFact>,
-  existing: Map<string, TreeNode>,
-  removals: Map<string, PendingFolderRemovalFact>,
-  accountId: string,
-): { nodeId: string; projectId: string; name: string }[] {
-  return [...wanted.values()]
-    .filter((a) => !existing.has(a.projectId) && !removals.has(a.projectId))
-    .map((a) => ({
-      nodeId: projectFolderNodeId(accountId, a.projectId),
-      projectId: a.projectId,
-      name: folderName(a),
-    }));
+function nodeIdOf(accountId: string, assignment: ProjectAssignmentFact): string {
+  return projectFolderNodeId(accountId, assignment.projectId);
 }
 
-/** The server's name wins; a folder about to be deleted is not renamed first. */
+/** The row a create and a re-adoption both need: where it goes, what it is, what it is called. */
+function created(accountId: string, assignment: ProjectAssignmentFact): {
+  nodeId: string;
+  projectId: string;
+  name: string;
+} {
+  return {
+    nodeId: nodeIdOf(accountId, assignment),
+    projectId: assignment.projectId,
+    name: folderName(assignment),
+  };
+}
+
+/**
+ * The server's name wins — but only when the server actually gave one.
+ *
+ * <p>A folder about to be deleted is not renamed first. And a BLANK name never renames anything: an
+ * assigned project the server itself cannot read answers `/api/org/me` with an empty name, because
+ * that document degrades on purpose rather than failing whole — so a transient fault on one file
+ * would otherwise rename a person's folder to the fallback. The fallback is for a folder being
+ * CREATED, where there is no name to keep.</p>
+ */
 function renames(
   wanted: Map<string, ProjectAssignmentFact>,
   existing: Map<string, TreeNode>,
@@ -134,8 +158,8 @@ function renames(
 ): { nodeId: string; name: string }[] {
   return [...existing.entries()]
     .filter(([projectId]) => wanted.has(projectId) && !removals.has(projectId))
-    .map(([projectId, node]) => ({ nodeId: node.id, was: node.name, name: folderName(wanted.get(projectId)!) }))
-    .filter((row) => row.was !== row.name)
+    .map(([projectId, node]) => ({ nodeId: node.id, was: node.name, name: wanted.get(projectId)!.name.trim() }))
+    .filter((row) => row.name.length > 0 && row.was !== row.name)
     .map((row) => ({ nodeId: row.nodeId, name: row.name }));
 }
 

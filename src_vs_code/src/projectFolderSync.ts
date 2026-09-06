@@ -22,13 +22,15 @@ export interface ProjectFolderHost {
 /** What one application did, for the caller's log line and for the tests. */
 export interface ProjectFolderOutcome {
   readonly created: number;
+  /** Folders the person kept, given back to the project that derived their id. */
+  readonly relocked: number;
   readonly renamed: number;
   readonly unlocked: number;
   readonly deleted: number;
   readonly acked: number;
 }
 
-const NOTHING: ProjectFolderOutcome = { created: 0, renamed: 0, unlocked: 0, deleted: 0, acked: 0 };
+const NOTHING: ProjectFolderOutcome = { created: 0, relocked: 0, renamed: 0, unlocked: 0, deleted: 0, acked: 0 };
 
 /**
  * Carry out one reconciled plan, in the only order that is safe.
@@ -53,6 +55,7 @@ export async function applyProjectFolders(
     return NOTHING;
   }
   await createFolders(accountId, plan, host);
+  await relockFolders(accountId, plan, host);
   await renameFolders(accountId, plan, host);
   await unlockFolders(accountId, plan, host);
   const deleted = await deleteFolders(accountId, plan, host);
@@ -61,6 +64,7 @@ export async function applyProjectFolders(
   announce(deleted, host);
   return {
     created: plan.toCreate.length,
+    relocked: plan.toRelock.length,
     renamed: plan.toRename.length,
     unlocked: plan.toUnlock.length,
     deleted,
@@ -79,6 +83,18 @@ async function createFolders(accountId: string, plan: ProjectFolderPlan, host: P
       createdAt: host.now(),
       updatedAt: host.now(),
     });
+  }
+}
+
+/**
+ * A folder the person kept, given back to the project whose id derived it.
+ *
+ * <p>Both fields at once: the lock and the server's name for it. Creating instead would mint a second
+ * node with an id already in the tree, and the vault merges BY node id.</p>
+ */
+async function relockFolders(accountId: string, plan: ProjectFolderPlan, host: ProjectFolderHost): Promise<void> {
+  for (const row of plan.toRelock) {
+    await host.setFields(accountId, row.nodeId, { projectId: row.projectId, name: row.name });
   }
 }
 
