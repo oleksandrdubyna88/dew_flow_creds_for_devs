@@ -161,7 +161,7 @@ Named rather than implied, because the rule asks for exactly this.
   against a stubbed transport, the server against `http/`'s 82 requests.
 - **The sync merge under real concurrency.** Version-vector merging has thorough unit tests; no
   harness runs two windows against one vault at the same time. That gap has a plan of its own —
-  [PLAN_node_writes_are_last_write_wins.md](../todo/PLAN_node_writes_are_last_write_wins.md) — and
+  [PLAN_node_writes_are_last_write_wins.md](PLAN_node_writes_are_last_write_wins.md) — and
   it is where the last-write-wins defect lives.
 - **Corporate recovery with three people.** Shamir splitting and the escrow wrap are unit-tested;
   the ceremony across three machines has never been run. It is a human task by nature:
