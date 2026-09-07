@@ -69,8 +69,8 @@ public sealed record SealedLoginKey(string Iv, string Tag, string Data, long Cre
 /// </summary>
 public sealed class LoginKeyStore(string dataDir, byte[] kek, ILogger<LoginKeyStore> log)
 {
-    /// <summary>32 bytes, because the cipher is AES-256.</summary>
-    public const int KeyBytes = 32;
+    /// <summary>32 bytes, because the cipher is AES-256. One source, shared with <see cref="Key32"/>.</summary>
+    public const int KeyBytes = Key32.Bytes;
 
     private readonly string _dir = Path.Combine(dataDir, "org", "login-keys");
 

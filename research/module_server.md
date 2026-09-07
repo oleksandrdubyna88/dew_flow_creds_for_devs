@@ -51,6 +51,12 @@ whole server is ~2,100 lines.
 | `src/InstanceFile.cs` | Publishes where this instance is listening, for the DewFlow editor panel |
 | `src/HealthProbe.cs` | The container healthcheck the binary runs against itself (no curl in the image) |
 | `src/AppJsonContext.cs` | The `JsonSerializerContext` source-gen contract that makes Native AOT possible |
+| `src/Key32.cs` | "base64 of exactly 32 bytes, or no key at all" — one decision, shared by the login-key KEK and the backup key |
+| `src/BackupArchiveFormat.cs` | What a backup archive IS: the `CVBK` marker, the version, the bounds every length is checked against, the HKDF derivation and the nonce construction, plus the header record and its reader |
+| `src/BackupChunkStreams.cs` | The two streams the format is made of: one that seals what is written to it a chunk at a time, one that opens a chunk at a time and refuses the archive the moment a tag does not check |
+| `src/BackupArchive.cs` | The two ends of the pipe: the walk that decides what enters an archive (and the one function that decides what never does), and the extraction that resolves every entry against the destination before writing a byte |
+| `src/BackupArchiveException.cs` | Every refusal the format makes, each one a sentence naming the move that fixes it |
+| `src/BackupArchiveCommand.cs` | `--decrypt-archive` and `--verify-archive`, intercepted in `Program.cs` beside `--healthcheck` |
 
 ## The request pipeline
 
@@ -1099,6 +1105,70 @@ empty list is indistinguishable from a team nobody has joined. The extension now
 endpoint and configures itself; an explicitly configured setting still wins, as the escape hatch for
 a server advertising the wrong value.
 
+### The backup archive — one file, encrypted in chunks, opened by the server binary (2026-09-07, epic 5 story 1)
+
+An archive is **tar, then gzip, then AES-256-GCM in chunks**, written and read as a stream in both
+directions, so holding hundreds of megabytes in memory is impossible by construction rather than by
+care. The shape:
+
+```
+"CVBK" | version(u16) | salt(16) | noncePrefix(8) | chunkSize(u32) | createdAtUnixMs(i64)
+then, repeated:  flags(u8) | length(u32) | ciphertext | tag(16)
+AAD of every chunk = the whole 42-byte header | counter(u32) | flags(u8)
+```
+
+Why each part is there:
+
+- **Chunked, not one-shot.** `AesGcm` encrypts a whole buffer in one call, and the container's memory
+  limit is 512 MiB. AES-CTR with a separate HMAC streams too, but it is two primitives whose failure
+  modes are ordering and comparison mistakes; per-chunk GCM is one AEAD call per chunk.
+- **The whole header is associated data.** Otherwise the created-at stamp, the chunk size and the
+  nonce prefix could all be edited without breaking a single tag. One altered bit anywhere in the
+  header fails chunk 0.
+- **The counter and the is-last flag are associated data too.** That is what turns "each chunk is
+  authentic" into "no chunk was reordered, dropped, or the file truncated". A stream that ends without
+  a chunk marked last is reported as **truncated**, never as a shorter archive.
+- **A fresh salt per archive, HKDF to that archive's own key**, so one archive's key is not the secret
+  that opens every archive ever taken. The nonce is a per-archive random prefix plus the chunk
+  counter; the counter is refused rather than wrapped, because a repeated (key, nonce) pair is the one
+  catastrophic mistake in GCM.
+- **Every length is bounded before anything is allocated.** The declared chunk size must be a power of
+  two between 1 KiB and 8 MiB, and each record's length must be inside it. A crafted header asking for
+  a two-gigabyte buffer is a denial of service written into the format, so the bound is checked in the
+  only place it can help — before the `new byte[...]`.
+- **The version is read before anything else fails.** A build meeting an archive from a later release
+  says so by number and tells the operator to fetch a newer build; it does not report corruption and
+  send them looking for a better copy of a file that is fine.
+
+**Two things never enter an archive, and one function decides it**
+(`BackupArchive.Excluded`): any `*.tmp` (a write in flight — the store writes a temporary and renames)
+and everything under `org/backup/` (an archive inside an archive, and the sealed backup key, which is
+the one secret that must never travel with the data it opens). "A measure applied at SOME of its
+sites" is this codebase's most repeated defect, so there is exactly one site.
+
+**Nothing is locked while an archive is built.** Every write in the store is atomic, so a reader sees
+the old file or the new one — the property the shell backup already relies on. What a live tree does
+produce is files that vanish between the walk and the read; those are counted as `Skipped` rather than
+being allowed to abort a backup.
+
+**Extraction is the dangerous direction.** An archive is a list of names somebody else chose, and a
+name is a path if the extractor lets it be one. Every entry is refused unless it is relative, free of
+`..` segments, and resolves canonically below the destination; only files and directories are written
+at all, so a symlink entry is a refusal rather than a redirect. The leading slash is deliberately NOT
+trimmed before that check — trimming it is how `/etc/cron.d/evil` quietly becomes an ordinary relative
+path, and a normalisation that runs before a safety check can only weaken it. The whole extraction
+lands in a staging directory renamed into place only after the last chunk authenticates, so a failure
+on chunk 20 leaves nothing that could be mistaken for a restore.
+
+**`--decrypt-archive <archive> <output-dir> <key-file>`** and **`--verify-archive <archive>
+<key-file>`** are intercepted in `Program.cs` before any host is built, the way `--healthcheck` is: the
+moment anyone needs them is the moment a server is gone, and the recovery kit should be the image and
+the key, not a second tool somebody has to find. The key file holds base64 of exactly 32 bytes,
+surrounding whitespace ignored, and anything else is refused with the contract named — a key that is
+NEARLY right opens nothing while looking like the archive's fault. Verified against the **published
+Native AOT binary**, not only the analysers: it verifies, decrypts, prints each entry as it goes, and
+answers 1 with a sentence for a wrong key.
+
 ## Authorization
 
 ```csharp
@@ -1300,7 +1370,7 @@ what is under it:
 
 ## Tests
 
-`src_minimalapi_server/tests/` — xUnit v3 on Microsoft Testing Platform, 350 tests, ~16 s. The
+`src_minimalapi_server/tests/` — xUnit v3 on Microsoft Testing Platform, 587 tests, ~23 s. The
 endpoint suites run in-process through `WebApplicationFactory` — no free port, no background
 `dotnet run`; the store suites drive a store directly on a throwaway data directory.
 
@@ -1355,6 +1425,8 @@ Configuration reaches the app through **process environment variables**, not
 `WithWebHostBuilder` — `Program.cs` reads `builder.Configuration` before `Build()`, so anything a
 `WebApplicationFactory` adds during `ConfigureWebHost` lands too late to be seen. Because process
 environment is global, the suite runs in one non-parallel collection (`ServerCollection`).
+| `BackupArchiveTests` | The archive format: a tree round-trips byte for byte including an empty file and an empty directory; a `*.tmp` file, a `*.tmp` DIRECTORY's children and everything under `org/backup/` are absent from what comes out, asserted by listing the restored tree rather than by trusting the walk; the exclusion rule answered directly over nine paths, `org/backups/` and `notes/tmp.json` included; a wrong key fails on the FIRST chunk and says so about the key; a flipped ciphertext byte fails at chunk 3 and not later; a dropped final chunk is truncation, not a shorter archive; two chunks swapped are refused; an edited created-at stamp breaks the archive (the header is associated data); a newer version names both version numbers and the move that fixes it; an oversized declared chunk size is refused before any buffer is allocated; a random binary is refused as not an archive; `../escaped.txt`, `/etc/cron.d/evil` and a symlink entry are each refused and write nothing; a failure late in the archive leaves neither a tree nor a staging directory; a destination that already holds something is refused and untouched |
+| `BackupArchiveCommandTests` | `--decrypt-archive` restores and names what came out; `--verify-archive` authenticates and writes nothing; a tampered archive, a missing archive, a missing key file and a key file that is not base64 of exactly 32 bytes each answer 1 with a sentence naming the contract; a trailing newline in the key file is still the key; the wrong number of arguments prints the usage and answers 2; the verbs claimed are its own and not `--healthcheck`; and one test leaves an archive plus its key at a fixed path so the PUBLISHED Native AOT binary can be pointed at them |
 
 ## Telling the editor panel where it is
 
@@ -1449,6 +1521,11 @@ startup-guard and log-file checks, the Linux AOT image built and running — and
 Release (`server-v*` tag): per-architecture image builds on native runners (amd64 + arm64 — AOT does
 not cross-compile under qemu) stitched into one `ghcr.io` manifest, plus four standalone binaries
 (linux-x64, linux-arm64, win-x64, win-arm64) attached to the GitHub release.
+
+`System.Formats.Tar` and `GZipStream` joined that list with epic 5 and needed no suppression of their
+own: the AOT publish is clean, and the published binary was then driven against a real archive —
+`--verify-archive`, `--decrypt-archive`, and a wrong key answering 1 — because an analyser proves a
+pattern is legal, not that it works.
 
 The runtime image is `runtime-deps:10.0-noble-chiseled` — **50 MB**, no shell, no package manager, no
 .NET; the entrypoint is the binary. That killed curl, so the container HEALTHCHECK execs the binary

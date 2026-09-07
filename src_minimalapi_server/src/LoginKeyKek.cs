@@ -17,8 +17,12 @@ namespace CredVaultServer;
 public static class LoginKeyKek
 {
     /// <summary>The configured key, or empty when this deployment has none it can use.</summary>
-    public static byte[] Read(string? configured) =>
-        Decode(configured) is { Length: LoginKeyStore.KeyBytes } key ? key : [];
+    /// <remarks>
+    /// The "base64 of exactly 32 bytes, or nothing" decision lives in <see cref="Key32"/> since the
+    /// backup archive came to need the same one. The refusal it encodes is this type's, and the reason
+    /// is in the remarks above.
+    /// </remarks>
+    public static byte[] Read(string? configured) => Key32.Decode(configured);
 
     /// <summary>
     /// What to say at startup, or empty when there is nothing to say. Silent when nothing is configured
@@ -43,19 +47,4 @@ public static class LoginKeyKek
               + "keys under something an operator cannot reproduce is how a vault becomes unopenable.";
     }
 
-    /// <summary>
-    /// Base64 in, bytes out, empty for anything else. The buffer is deliberately two bytes longer than a
-    /// key: a longer input decodes into it and then fails <see cref="Read"/>'s length check, rather than
-    /// being silently truncated to something that would seal keys nobody can open.
-    /// </summary>
-    private static byte[] Decode(string? configured)
-    {
-        var trimmed = configured?.Trim() ?? string.Empty;
-        if (trimmed.Length == 0)
-        {
-            return [];
-        }
-        var buffer = new byte[LoginKeyStore.KeyBytes + 2];
-        return Convert.TryFromBase64String(trimmed, buffer, out var written) ? buffer[..written] : [];
-    }
 }
