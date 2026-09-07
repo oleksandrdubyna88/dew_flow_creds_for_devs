@@ -120,18 +120,6 @@ jobs:
       - name: Integration test (masked run)
         run: npm run itest:masked-run
 
-      # The backup archive end to end through the REAL server binary: seal a tree, verify it, open
-      # it somewhere else, compare every file byte for byte, and then damage the archive in each of
-      # the ways that must be refused. The unit suite drives the same code in-process, which says
-      # nothing about whether the shipped entry point wired the verbs up at all - the exact shape of
-      # failure this family has already had once. It found its own version of that on its first run:
-      # a published binary from an earlier build, silently under test.
-      - name: Build the server
-        run: dotnet build ../src_minimalapi_server/src/CredVaultServer.csproj
-
-      - name: Integration test (backup archive through the server binary)
-        run: npm run itest:backup-archive
-
       # Packaging proves the manifest is publishable: a missing icon, licence or
       # repository field fails here rather than at `vsce publish` time.
       - name: Package

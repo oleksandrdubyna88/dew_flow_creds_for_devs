@@ -24,7 +24,10 @@
 ## The ten harnesses
 
 Every one is a plain `.cjs` file run by node — no framework — because each starts a real process and
-what it needs is control over teardown, not a runner. `npm run itest:<name>` compiles first.
+what it needs is control over teardown, not a runner. Nine live in `src_vs_code/scripts/`; the tenth
+drives the SERVER binary and lives in the server's tree, so that a server-only change is what re-runs
+it. Two of the nine already drive .NET products this way (`creds`, `creds-mcp`) — the harness language
+is node throughout because what these need is process control, not a test runner. `npm run itest:<name>` compiles first.
 
 | Harness | Drives | In CI | Verified 2026-09-06 |
 |---|---|---|---|
@@ -33,7 +36,7 @@ what it needs is control over teardown, not a runner. `npm run itest:<name>` com
 | `src_vs_code/scripts/creds-cli-itest.cjs` | the real `creds` binary against a live broker | **yes** — *Integration test (creds CLI against the broker)* | pass |
 | `src_vs_code/scripts/creds-mcp-itest.cjs` | `creds-mcp` over stdio, the full tool surface and both switch ladders | **yes, added 2026-09-06** | pass |
 | `src_vs_code/scripts/masked-run-itest.cjs` | a masked run through a real pty, asserting no whole secret appears | **yes, added 2026-09-06** | pass |
-| `src_vs_code/scripts/backup-archive-itest.cjs` | the REAL server binary sealing, verifying and opening a backup archive | **yes, added 2026-09-07** | pass |
+| `src_minimalapi_server/scripts/backup-archive-itest.cjs` | the REAL server binary sealing, verifying and opening a backup archive | **yes, added 2026-09-07** — in `ci · server`, on the server's own path filter | pass |
 | `src_vs_code/scripts/creds-mcp-wsl-itest.cjs` | the same MCP surface, bridged from inside a WSL distribution | no — see below | pass |
 | `src_vs_code/scripts/ssh-agent-itest.cjs` | the SSH agent on a named pipe, and which ssh client can reach it | no — see below | pass |
 | `src_vs_code/scripts/wsl-agent-relay-itest.cjs` | `ssh-keygen -Y sign` inside Linux reaching an agent in a Windows process | no — see below | pass **after repair — see below** |
@@ -207,7 +210,7 @@ The format is driven from two tiers, and the second one is the reason the first 
 |---|---|---|
 | In-process | the format itself: the round trip byte for byte, the exclusion rule, every refusal — a wrong key, a flipped byte at its own chunk, a dropped final chunk read as truncation, two chunks swapped, an edited created-at stamp, a newer version, an oversized declared chunk size, `../escaped.txt`, `/etc/cron.d/evil`, a Windows data stream, a symlink entry, a failure that must leave no staging directory | `src_minimalapi_server/tests/BackupArchiveTests.cs` |
 | In-process, the command | the three verbs, their arguments, and the sentence each refusal answers with | `src_minimalapi_server/tests/BackupArchiveCommandTests.cs` |
-| **The real binary** | `--create-archive`, `--verify-archive`, `--decrypt-archive` run as a program: seal a tree, verify it, open it elsewhere, compare every file byte for byte, and refuse a wrong key, a flipped byte, a truncation, a missing key file, a key that is not 32 bytes, an occupied destination, and the wrong number of arguments | `src_vs_code/scripts/backup-archive-itest.cjs` |
+| **The real binary** | `--create-archive`, `--verify-archive`, `--decrypt-archive` run as a program: seal a tree, verify it, open it elsewhere, compare every file byte for byte, and refuse a wrong key, a flipped byte, a truncation, a missing key file, a key that is not 32 bytes, an occupied destination, and the wrong number of arguments | `src_minimalapi_server/scripts/backup-archive-itest.cjs` |
 
 **Why the third tier exists.** The unit suites drive `BackupArchive` and `BackupArchiveCommand` in
 process, which answers "is the format right" and says nothing at all about whether the SHIPPED thing

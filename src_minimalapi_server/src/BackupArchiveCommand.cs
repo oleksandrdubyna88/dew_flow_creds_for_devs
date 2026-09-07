@@ -44,13 +44,26 @@ public static class BackupArchiveCommand
         args is [DecryptVerb, ..] or [VerifyVerb, ..] or [CreateVerb, ..];
 
     /// <summary>0 done, 1 refused with a reason, 2 the arguments were not a command.</summary>
-    public static int Run(string[] args) => Run(args, new CommandOutput(Console.Out, Console.Error));
+    public static int Run(string[] args) =>
+        Run(args, new CommandOutput(Console.Out, Console.Error), TimeProvider.System);
 
-    internal static int Run(string[] args, CommandOutput say)
+    /// <summary>
+    /// The same command with its clock and its output handed in.
+    /// </summary>
+    /// <remarks>
+    /// <para><b>The clock is a parameter because the rule says so</b> —
+    /// <c>utc-timestamps.md</c>: take the clock from an injected <see cref="TimeProvider"/>, never
+    /// from the ambient machine, so a test can control it. The stamp goes into the archive header and
+    /// is therefore persisted, which is exactly the case the rule is about.</para>
+    /// <para>This is the FIRST injected clock in this server; the other 27 ambient reads are older
+    /// code and a migration of them is its own task, not a side effect of this one. New code follows
+    /// the rule where it is written.</para>
+    /// </remarks>
+    internal static int Run(string[] args, CommandOutput say, TimeProvider clock)
     {
         try
         {
-            return Dispatch(args, say);
+            return Dispatch(args, say, clock);
         }
         catch (Exception e) when (e is BackupArchiveException or IOException or UnauthorizedAccessException)
         {
@@ -59,11 +72,11 @@ public static class BackupArchiveCommand
         }
     }
 
-    private static int Dispatch(string[] args, CommandOutput say) => args switch
+    private static int Dispatch(string[] args, CommandOutput say, TimeProvider clock) => args switch
     {
         [DecryptVerb, var archive, var output, var keyFile] => Decrypt(archive, output, keyFile, say),
         [VerifyVerb, var archive, var keyFile] => Verify(archive, keyFile, say),
-        [CreateVerb, var source, var archive, var keyFile] => CreateOne(source, archive, keyFile, say),
+        [CreateVerb, var source, var archive, var keyFile] => CreateOne(source, archive, keyFile, say, clock),
         _ => Usage(say),
     };
 
@@ -95,12 +108,13 @@ public static class BackupArchiveCommand
         return 0;
     }
 
-    private static int CreateOne(string sourceDir, string archivePath, string keyFilePath, CommandOutput say)
+    private static int CreateOne(
+        string sourceDir, string archivePath, string keyFilePath, CommandOutput say, TimeProvider clock)
     {
         var key = KeyFrom(keyFilePath);
         RefuseMissingDirectory(sourceDir);
         say.Out.WriteLine($"Sealing {sourceDir} into {archivePath}...");
-        var summary = BackupArchive.CreateFile(sourceDir, archivePath, key, DateTimeOffset.UtcNow);
+        var summary = BackupArchive.CreateFile(sourceDir, archivePath, key, clock.GetUtcNow());
         say.Out.WriteLine(
             $"Sealed {summary.Files} file(s) and {summary.Directories} director(ies), {summary.Bytes} "
             + $"bytes, into {archivePath}. {summary.Skipped} entr(ies) vanished while it was read.");

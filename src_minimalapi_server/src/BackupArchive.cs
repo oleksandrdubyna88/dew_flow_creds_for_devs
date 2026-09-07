@@ -296,10 +296,23 @@ public static class BackupArchive
         }
     }
 
-    /// <summary>The rename into place, and the one failure that must not read as a lost restore.</summary>
+    /// <summary>
+    /// The rename into place, and the one failure that must not read as a lost restore.
+    /// </summary>
+    /// <remarks>
+    /// <para><b>The move is TRIED before anything is removed.</b> An empty directory the operator had
+    /// prepared — often a mount point — is in the way of the rename and has to go, but a destination on
+    /// another filesystem makes the rename fail whatever is there, and removing their directory on the
+    /// way to that failure would take something from them for nothing. So: try, and only if an empty
+    /// directory is what stood in the way, remove it and try once more.</para>
+    /// </remarks>
     private static void Commit(string staging, string final)
     {
         RefuseOccupiedDestination(final);
+        if (Moved(staging, final))
+        {
+            return;
+        }
         RemoveEmptyDestination(final);
         try
         {
@@ -311,6 +324,20 @@ public static class BackupArchive
             // The archive is out and it is whole; what failed is the last rename, so the message says
             // where the tree is rather than implying the restore has to be run again.
             throw BackupArchiveException.CouldNotInstall(staging, final, e);
+        }
+    }
+
+    /// <summary>True when the rename went; false when something is in the way and might be removable.</summary>
+    private static bool Moved(string staging, string final)
+    {
+        try
+        {
+            Directory.Move(staging, final);
+            return true;
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            return false;
         }
     }
 
