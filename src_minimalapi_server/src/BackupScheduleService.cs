@@ -125,12 +125,19 @@ public sealed class BackupScheduleService(
         // "schedule" rather than an address: the actor of a scheduled run is the schedule, and putting
         // a person's name on something they did not press would make the history lie.
         //
-        // A scheduled run is carried out INLINE rather than queued: this loop is already the background
-        // worker, so putting it in the queue would mean handing work to itself.
-        var outcome = await runner.RunAsync("schedule", ct);
-        if (!outcome.Started)
+        // It goes through the SAME queue an administrator's run does, rather than being carried out
+        // inline here. One path means one place where a run is executed and one place where its faults
+        // are observed — and it keeps this loop free to ask its question every five minutes instead of
+        // being occupied for the length of an archive.
+        var start = await runner.BeginAsync("schedule", ct);
+        if (start.Ticket is null)
         {
-            log.LogInformation("the scheduled backup did not start: {Why}", outcome.Why);
+            log.LogInformation("the scheduled backup did not start: {Why}", start.Refusal.Why);
+            return;
+        }
+        if (!queue.Enqueue(start.Ticket))
+        {
+            await runner.AbandonAsync(start.Ticket, "the backup queue would not take it", ct);
         }
     }
 

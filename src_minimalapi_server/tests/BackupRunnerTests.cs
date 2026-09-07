@@ -331,6 +331,85 @@ public class BackupRunnerTests
         rows[0].Should().Contain(ArchiveName.For(Noon)).And.Contain("admin@corp.com");
     }
 
+    [Fact]
+    public async Task AClaimedRunThatCannotBeHandedOverIsGivenBackRatherThanLeftSpinning()
+    {
+        // Begin ANNOUNCES the run before anything long happens, which is what makes a reloaded page
+        // tell the truth. A caller that then cannot hand it over has to unsay it — otherwise the page
+        // shows a spinner for a run nobody will carry out, until a restart sweeps it.
+        var world = await Ready();
+        var start = await world.Runner.BeginAsync("admin@corp.com", Ct);
+        start.Ticket.Should().NotBeNull();
+        (await world.Backups.ReadStatusAsync(Ct)).LastResult.Should().Be(BackupRunResults.InProgress);
+
+        await world.Runner.AbandonAsync(start.Ticket!, "nothing was there to carry the run out", Ct);
+
+        var status = await world.Backups.ReadStatusAsync(Ct);
+        status.LastResult.Should().Be(BackupRunResults.Refused);
+        status.LastError.Should().Contain("nothing was there");
+        world.Backups.RunIsLive().Should().BeFalse("and the claim went with it");
+    }
+
+    [Fact]
+    public async Task AnEventLogThatCannotBeWrittenToDoesNotTurnAGoodRunIntoAFailedOne()
+    {
+        // The archive is written and the status already says ok by the time the row is appended. An
+        // append that threw would otherwise be routed through the failure path, leaving a reader with a
+        // good archive, a success and a failure about the same run, and no way to tell which is true.
+        var world = await Ready(withLog: true);
+        var events = Path.Combine(world.Dir, "org", "events");
+        Directory.CreateDirectory(events);
+        using var blocked = Unwritable(events);
+
+        var outcome = await world.Runner.RunAsync("admin@corp.com", Ct);
+
+        outcome.Started.Should().BeTrue();
+        (await world.Backups.ReadStatusAsync(Ct)).LastResult.Should().Be(
+            BackupRunResults.Succeeded, "the archive is there, whatever the history says");
+        world.Backups.NewestArchive().Exists.Should().BeTrue();
+    }
+
+    /// <summary>
+    /// A directory nothing can be written into, on both platforms.
+    /// </summary>
+    /// <remarks>
+    /// The Windows branch holds an exclusive handle on the file the log appends through; the Unix one
+    /// takes the write bit off the directory. Two branches because epic 4 already learned that
+    /// Corp's own helper is a no-op on Windows, and a test that silently does nothing on the platform
+    /// it runs on is a test that proves nothing.
+    /// </remarks>
+    private static IDisposable Unwritable(string dir) =>
+        OperatingSystem.IsWindows()
+            // The exclusive handle is on the very file the log appends through, so the append fails
+            // rather than the directory being unusable — the shape a locked file actually takes here.
+            ? new FileStream(
+                Path.Combine(dir, ".append.lock"), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None)
+            : new WritableAgain(dir);
+
+    /// <summary>Takes the write bit off a directory and puts it back.</summary>
+    private sealed class WritableAgain : IDisposable
+    {
+        private readonly string _dir;
+
+        public WritableAgain(string dir)
+        {
+            _dir = dir;
+            Chmod(dir, UnixFileMode.UserRead | UnixFileMode.UserExecute);
+        }
+
+        public void Dispose() =>
+            Chmod(_dir, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+
+        /// <summary>Guarded rather than suppressed: the analyser is right that this is Unix-only.</summary>
+        private static void Chmod(string dir, UnixFileMode mode)
+        {
+            if (!OperatingSystem.IsWindows())
+            {
+                File.SetUnixFileMode(dir, mode);
+            }
+        }
+    }
+
     private sealed record Deployment(string Dir, BackupStore Backups, BackupRunner Runner, string Words);
 
     private static Deployment World(bool withLog = false)
