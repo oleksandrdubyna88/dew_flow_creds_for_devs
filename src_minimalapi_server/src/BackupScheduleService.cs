@@ -29,12 +29,41 @@ namespace CredVaultServer;
 public sealed class BackupScheduleService(
     BackupStore backups,
     BackupRunner runner,
+    BackupQueue queue,
     TimeProvider clock,
     ILogger<BackupScheduleService> log) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stopping)
     {
         await SweepAsync(stopping);
+        // Two jobs, one service: ask every five minutes whether tonight's backup is due, and carry out
+        // the runs an administrator queued from the page. The second is why this is a queue rather than
+        // a Task.Run — a detached build needs an owner, and the thing that already owns builds is here.
+        await Task.WhenAll(TickingAsync(stopping), DrainingAsync(stopping));
+    }
+
+    /// <summary>One tick. Never throws.</summary>
+    internal async Task TickAsync(CancellationToken ct)
+    {
+        try
+        {
+            await RunIfDueAsync(ct);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        // A catch-all rather than two exception types: this loop must survive whatever one tick meets,
+        // because an exception escaping here takes the hosted service down and with it every LATER
+        // backup — a bad file on disk would quietly disable the feature for the life of the process.
+        catch (Exception e)
+        {
+            log.LogWarning(e, "a backup schedule tick failed; the next one will try again");
+        }
+    }
+
+    private async Task TickingAsync(CancellationToken stopping)
+    {
         using var timer = new PeriodicTimer(BackupSchedule.Interval);
         try
         {
@@ -50,20 +79,26 @@ public sealed class BackupScheduleService(
         }
     }
 
-    /// <summary>One tick. Never throws.</summary>
-    internal async Task TickAsync(CancellationToken ct)
+    /// <summary>
+    /// Carry out the runs the page queued, one at a time, until the host stops.
+    /// </summary>
+    /// <remarks>
+    /// The ticket owns the run claim, so a run that is never drained would hold it for ever — which is
+    /// why the enqueue is refused rather than dropped when nothing is here to read, and why this loop
+    /// disposes whatever it takes even on the way down.
+    /// </remarks>
+    private async Task DrainingAsync(CancellationToken stopping)
     {
         try
         {
-            await RunIfDueAsync(ct);
+            await foreach (var ticket in queue.ReadAllAsync(stopping).ConfigureAwait(false))
+            {
+                await runner.ContinueAsync(ticket, stopping).ConfigureAwait(false);
+            }
         }
         catch (OperationCanceledException)
         {
-            throw;
-        }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
-        {
-            log.LogWarning(e, "the backup schedule could not be read this tick; the next one will try again");
+            // The host is stopping between runs.
         }
     }
 
@@ -89,6 +124,9 @@ public sealed class BackupScheduleService(
         }
         // "schedule" rather than an address: the actor of a scheduled run is the schedule, and putting
         // a person's name on something they did not press would make the history lie.
+        //
+        // A scheduled run is carried out INLINE rather than queued: this loop is already the background
+        // worker, so putting it in the queue would mean handing work to itself.
         var outcome = await runner.RunAsync("schedule", ct);
         if (!outcome.Started)
         {

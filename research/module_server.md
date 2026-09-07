@@ -1364,8 +1364,25 @@ rewrites every mtime — the same reason the share prune reads each item's own `
 sweep cannot account for is left alone: somebody's own copy, sitting where they put it, is not this
 pass's to remove.
 
-**One archive on disk**, so the download streams a file with a known length instead of building one
-inside a request. The download opens the file BEFORE writing anything to the response, with
+**The run is handed to a QUEUE the hosted service drains**, not to a `Task.Run` nobody owns — rule 8
+names that pairing and the reliability rule says why: a detached task whose fault nobody observes is a
+worker that dies with no line in the log while the process looks healthy. The same service already
+owns scheduled builds, so it is the natural owner of an administrator's. A run it cannot take answers
+`503` rather than being accepted and never done. And the detached work ends in a **catch-all**: an
+exception that escaped would leave the status saying "in progress" until the next restart, which is a
+spinner all night and no failure row.
+
+**Retention is the only policy over the archives directory.** An earlier cut also kept just the newest
+archive on every run, which quietly made the administrator's retention setting mean nothing locally —
+two policies over one directory, and the one nobody configured winning.
+
+**The configuration snapshot is deleted after the archive is sealed.** It holds the deployment's
+secrets in PLAINTEXT — that is the point of it — so it belongs inside the sealed archive and nowhere
+else; leaving it in the data directory would put the KEK unencrypted on the volume the archive's
+encryption exists to protect.
+
+**The download streams the newest archive** with a known length instead of building one inside a
+request. The download opens the file BEFORE writing anything to the response, with
 `FileShare.Delete`, so a retention pass completing mid-download cannot truncate it. And it answers
 `404` rather than starting a run: a `GET` with a side effect is wrong HTTP, and a client that retries
 would start a run per attempt.
@@ -1578,7 +1595,7 @@ what is under it:
 
 ## Tests
 
-`src_minimalapi_server/tests/` — xUnit v3 on Microsoft Testing Platform, 698 tests, ~26 s. The
+`src_minimalapi_server/tests/` — xUnit v3 on Microsoft Testing Platform, 701 tests, ~26 s. The
 endpoint suites run in-process through `WebApplicationFactory` — no free port, no background
 `dotnet run`; the store suites drive a store directly on a throwaway data directory.
 

@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using FluentAssertions;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Primitives;
 
 namespace CredVaultServer.Tests;
 
@@ -183,19 +184,83 @@ public class BackupRunnerTests
     }
 
     [Fact]
-    public async Task OnlyTheNewestArchiveIsKeptOnDisk()
+    public async Task ARunKeepsWhateverRetentionSaysToKeepAndNothingElseDecides()
     {
+        // Retention is the ONLY policy over this directory. An earlier version also kept just the
+        // newest archive on every run, which quietly made the admin's retention setting mean nothing
+        // locally — two policies over one directory, and the one nobody configured winning.
         var world = await Ready();
         Directory.CreateDirectory(world.Backups.ArchivesDir);
-        foreach (var at in new[] { "2026-09-01T03:00:00Z", "2026-09-05T03:00:00Z" })
-        {
-            File.WriteAllText(
-                Path.Combine(world.Backups.ArchivesDir, ArchiveName.For(DateTimeOffset.Parse(at))), "older");
-        }
+        await world.Backups.WriteSettingsAsync(new BackupSettings(3, 30), Ct);
+        var recent = ArchiveName.For(DateTimeOffset.Parse("2026-09-05T03:00:00Z"));
+        var ancient = ArchiveName.For(DateTimeOffset.Parse("2026-01-01T03:00:00Z"));
+        File.WriteAllText(Path.Combine(world.Backups.ArchivesDir, recent), "inside the window");
+        File.WriteAllText(Path.Combine(world.Backups.ArchivesDir, ancient), "long past it");
 
         await world.Runner.RunAsync("admin@corp.com", Ct);
 
-        world.Backups.Archives().Should().ContainSingle().Which.Name.Should().Be(ArchiveName.For(Noon));
+        var kept = world.Backups.Archives().Select(archive => archive.Name).ToArray();
+        kept.Should().Contain(ArchiveName.For(Noon)).And.Contain(recent, "30 days keeps it");
+        kept.Should().NotContain(ancient, "and the window is what removed the other one");
+    }
+
+    [Fact]
+    public async Task TheConfigurationSnapshotDoesNotStayOnDiskAfterTheRun()
+    {
+        // It holds the deployment's secrets in PLAINTEXT — that is the point of it, and it is why it
+        // belongs inside the sealed archive and nowhere else. Leaving it in the data directory would
+        // put the KEK unencrypted on the volume the archive's encryption exists to protect.
+        var world = await Ready();
+
+        await world.Runner.RunAsync("admin@corp.com", Ct);
+
+        File.Exists(Path.Combine(world.Dir, BackupConfigSnapshot.EntryName)).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task AFailureThatIsNotAFileProblemStillEndsTheRunRatherThanLeavingASpinner()
+    {
+        // The catch-all. This runs detached, so anything not caught leaves the status saying "in
+        // progress" until the next restart sweeps it — a spinner all night and no failure row.
+        //
+        // The provocation has to be an exception the narrow catch would NOT have caught, which is the
+        // whole point: a first attempt used a key of the wrong length and proved nothing, because the
+        // archive format refuses that with a BackupArchiveException. A configuration whose read throws
+        // is a real shape — a provider backed by something that has gone away — and it is none of the
+        // three types the old catch listed.
+        var dir = TempDir();
+        var kek = RandomNumberGenerator.GetBytes(Key32.Bytes);
+        var backups = new BackupStore(dir, kek, NullLogger<BackupStore>.Instance);
+        var runner = new BackupRunner(
+            backups, dir, new ThrowingConfig(), null, Clock(), NullLogger<BackupRunner>.Instance);
+        await backups.MintKeyAsync(Ct);
+        (await backups.AcknowledgeKeyShownAsync(Ct)).Should().BeTrue();
+
+        var outcome = await runner.RunAsync("admin@corp.com", Ct);
+
+        outcome.Started.Should().BeTrue("it started; it is the finishing that went wrong");
+        var status = await backups.ReadStatusAsync(Ct);
+        status.LastResult.Should().Be(BackupRunResults.Failed);
+        status.LastError.Should().Contain("the configuration provider is gone", "the reason reaches the page");
+        backups.RunIsLive().Should().BeFalse("and the claim went with it");
+    }
+
+    [Fact]
+    public async Task ARunThatCannotRecordItsStartReleasesTheClaimRatherThanHoldingItForEver()
+    {
+        // The claim is released by the ticket, and a failed status write happens before there is one.
+        // Without this, a full disk would leave run.lock held by a live process with no run behind it
+        // and every later attempt answering "already running" for the life of the server.
+        var world = await Ready();
+        var statusPath = Path.Combine(world.Dir, "org", "backup", "status.json");
+        File.Delete(statusPath);
+        Directory.CreateDirectory(statusPath);
+
+        var start = await world.Runner.BeginAsync("admin@corp.com", Ct);
+
+        start.Ticket.Should().BeNull();
+        start.Refusal.Why.Should().Contain("could not be recorded as started");
+        world.Backups.RunIsLive().Should().BeFalse("the claim went with the failure");
     }
 
     [Fact]
@@ -318,6 +383,29 @@ public class BackupRunnerTests
         var dir = Path.Combine(Path.GetTempPath(), "cred-vault-backup-run", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(dir);
         return dir;
+    }
+
+    /// <summary>
+    /// A configuration whose reads throw — a provider backed by something that has gone away.
+    /// </summary>
+    /// <remarks>
+    /// It exists to raise an exception that is NOT one of the file exceptions, which is the only way to
+    /// tell a catch-all from a catch-three.
+    /// </remarks>
+    private sealed class ThrowingConfig : IConfiguration
+    {
+        public string? this[string key]
+        {
+            get => throw new InvalidOperationException("the configuration provider is gone");
+            set => throw new InvalidOperationException("the configuration provider is gone");
+        }
+
+        public IEnumerable<IConfigurationSection> GetChildren() => [];
+
+        public IChangeToken GetReloadToken() => throw new InvalidOperationException("the configuration provider is gone");
+
+        public IConfigurationSection GetSection(string key) =>
+            throw new InvalidOperationException("the configuration provider is gone");
     }
 
     private sealed class FrozenClock(DateTimeOffset at) : TimeProvider

@@ -30,7 +30,7 @@ public static class OrgBackupEndpoints
         OrgEndpointDeps deps,
         BackupStore backups,
         BackupRunner runner,
-        Func<Func<CancellationToken, Task>, Task> detach)
+        BackupQueue queue)
     {
         app.MapGet("/api/org/backup/status", (HttpContext ctx, CancellationToken ct) =>
             StatusAsync(ctx, deps, backups, ct));
@@ -39,7 +39,7 @@ public static class OrgBackupEndpoints
         app.MapPost("/api/org/backup/key", (HttpContext ctx, CancellationToken ct) =>
             MintAsync(ctx, deps, backups, ct));
         app.MapPost("/api/org/backup/run", (HttpContext ctx, CancellationToken ct) =>
-            RunAsync(ctx, deps, backups, runner, detach, ct));
+            RunAsync(ctx, deps, runner, queue, ct));
         app.MapGet("/api/org/backup/archive", (HttpContext ctx, CancellationToken ct) =>
             DownloadAsync(ctx, deps, backups, ct));
         app.MapPost("/api/org/backup/key/rotate", (HttpContext ctx, CancellationToken ct) =>
@@ -108,7 +108,12 @@ public static class OrgBackupEndpoints
             return;
         }
         await backups.WriteSettingsAsync(new BackupSettings(request!.ScheduleHourUtc, request.RetentionDays), ct);
-        await deps.Events.AppendAsync(OrgEndpoints.Row(OrgEventKinds.BackupSettingsChanged, admin.Value.Email, subject: null, detail: Said(request)), ct);
+        await deps.Events.AppendAsync(
+            OrgEndpoints.Row(
+                OrgEventKinds.BackupSettingsChanged, admin.Value.Email, subject: null, detail: Said(request)),
+            // The settings are already on disk. A client that hangs up at this instant must not take the
+            // history of the change with it — the same reading every other row on this server makes.
+            CancellationToken.None);
         ctx.Response.StatusCode = StatusCodes.Status204NoContent;
     }
 
@@ -138,7 +143,10 @@ public static class OrgBackupEndpoints
             await OrgEndpoints.FailJson(ctx, StatusCodes.Status409Conflict, Why(minted.Status));
             return;
         }
-        await deps.Events.AppendAsync(OrgEndpoints.Row(OrgEventKinds.BackupKeyIssued, admin.Value.Email, subject: null, detail: null), ct);
+        await deps.Events.AppendAsync(
+            OrgEndpoints.Row(OrgEventKinds.BackupKeyIssued, admin.Value.Email, subject: null, detail: null),
+            // The key is minted. A cancelled row here would leave an issued key nothing records.
+            CancellationToken.None);
         await ctx.Response.WriteAsJsonAsync(
             new BackupKeyDto(minted.Formatted, minted.EntropyBits),
             AppJsonContext.Default.BackupKeyDto,
@@ -159,9 +167,8 @@ public static class OrgBackupEndpoints
     private static async Task RunAsync(
         HttpContext ctx,
         OrgEndpointDeps deps,
-        BackupStore backups,
         BackupRunner runner,
-        Func<Func<CancellationToken, Task>, Task> detach,
+        BackupQueue queue,
         CancellationToken ct)
     {
         var admin = await Admin(ctx, deps);
@@ -179,9 +186,21 @@ public static class OrgBackupEndpoints
             await OrgEndpoints.FailJson(ctx, StatusCodes.Status409Conflict, start.Refusal.Why);
             return;
         }
-        // And only the long part is detached: a build outlives the browser by design, and a reload
-        // must not cancel a backup half way.
-        await detach(token => runner.ContinueAsync(start.Ticket, token));
+        // And only the long part is handed over — to a QUEUE a hosted service drains, not to a
+        // Task.Run nobody owns. Rule 8 asks for exactly that pairing, and the reliability rule says
+        // why: a detached task whose fault nobody observes is a worker that dies with no line in the
+        // log while the process looks healthy.
+        if (!queue.Enqueue(start.Ticket))
+        {
+            start.Ticket.Dispose();
+            await OrgEndpoints.FailJson(
+                ctx,
+                StatusCodes.Status503ServiceUnavailable,
+                "this server could not take the run: nothing is draining the backup queue. That means "
+                + "the scheduled-backup service is not running, which is a deployment problem rather "
+                + "than something to retry.");
+            return;
+        }
         ctx.Response.StatusCode = StatusCodes.Status202Accepted;
     }
 
