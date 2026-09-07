@@ -77,7 +77,11 @@ test('the page carries a CSP with a nonce, and the only script carries the same 
 
   const csp = /script-src 'nonce-([A-Za-z0-9_-]+)'/.exec(html);
   assert.ok(csp, 'the page declares a script nonce');
-  const scripts = [...html.matchAll(/<script([^>]*)>/g)].map((m) => m[1]);
+  // Case-insensitive on purpose: this counts the page's script tags, and a check that only saw the
+  // lowercase spelling would be a check the page could grow past by emitting one. (CodeQL's
+  // js/bad-tag-filter, raised on the first spelling of this line and fixed rather than dismissed —
+  // the alert is right about the pattern even where the input is our own.)
+  const scripts = [...html.matchAll(/<script([^>]*)>/gi)].map((m) => m[1]);
   assert.equal(scripts.length, 1);
   assert.match(scripts[0], new RegExp(`nonce="${csp[1]}"`), 'the script is the one the CSP allows');
 });
