@@ -53,6 +53,19 @@ jobs:
       - name: Test
         run: ./src_minimalapi_server/tests/bin/Release/net10.0/CredVaultServer.Tests
 
+      # The tier the unit suite cannot reach: the archive verbs run as a PROGRAM. Seal a tree,
+      # verify it, open it elsewhere, compare every file byte for byte, then damage the archive in
+      # each way that must be refused. These verbs are the recovery kit - the moment anybody needs
+      # them the server is gone, and there is no second chance to discover the entry point never
+      # wired them up. That is the shape of failure this repository already had once, with
+      # /v1/use/exportEnv unreachable in every released build while both sides' tests were green.
+      #
+      # It lives in THIS pipeline, on the server's own path filter, because it is the server's flow:
+      # a server-only change must be what re-runs it. Node built-ins only, so no setup step.
+      # Catalogued in research/module_tests.md.
+      - name: Integration test (backup archive through the server binary)
+        run: node src_minimalapi_server/scripts/backup-archive-itest.cjs
+
   # The tier neither the unit tests nor the compose validation can reach: real requests over the
   # wire against a running server — routing, the auth scheme, the status codes, the serialized
   # shape. Its first run found a 500 that 164 green tests could not see, because every envelope

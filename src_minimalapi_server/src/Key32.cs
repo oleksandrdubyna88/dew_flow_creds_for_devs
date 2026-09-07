@@ -15,6 +15,13 @@ namespace CredVaultServer;
 /// <para><b>The buffer is deliberately two bytes longer than a key.</b> A longer input decodes into it
 /// and then fails the length check, rather than being silently truncated into something that would
 /// work today and open nothing tomorrow.</para>
+///
+/// <para><b>What this is NOT, and must never become.</b> It is the base64 primitive and only that. The
+/// backup key gains a typed <c>BK1-</c> form — Crockford Base32, confusable folding, a checksum, because
+/// its input is a person reading a screen and typing it back a year later — and that parsing belongs to
+/// its own type, which may CALL this one for the final 32 bytes. A branch in here for one caller's
+/// spelling is how a shared primitive becomes two implementations sharing a name, and the caller that
+/// would break is the one that opens every login key in the deployment.</para>
 /// </remarks>
 public static class Key32
 {

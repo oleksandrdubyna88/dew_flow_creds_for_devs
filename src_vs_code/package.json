@@ -73,7 +73,7 @@
     "itest:mcp": "npm run compile && node scripts/creds-mcp-itest.cjs",
     "itest:mcp-wsl": "npm run compile && node scripts/creds-mcp-wsl-itest.cjs",
     "itest:wsl-relay": "npm run compile && node scripts/wsl-agent-relay-itest.cjs",
-    "itest:backup-archive": "node scripts/backup-archive-itest.cjs",
+    "itest:backup-archive": "node ../src_minimalapi_server/scripts/backup-archive-itest.cjs",
     "ratchet": "npm run compile && node scripts/size-ratchet.mjs",
     "itest:all": "node scripts/run-itests.mjs"
   },

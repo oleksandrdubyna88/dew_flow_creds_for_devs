@@ -44,8 +44,11 @@ const HARNESSES = [
   { name: 'mcp', script: 'creds-mcp-itest.cjs', needs: 'creds-mcp built — dotnet build src_mcp/src/CredsMcp.csproj', windows: false },
   { name: 'masked-run', script: 'masked-run-itest.cjs', needs: 'nothing', windows: false },
   {
+    // The one harness outside this directory: it drives the SERVER binary, so it lives in the
+    // server's tree and runs on the server's CI path filter. `itest:all` still covers it, because a
+    // catalogue with a hole in it is how a harness comes to prove nothing.
     name: 'backup-archive',
-    script: 'backup-archive-itest.cjs',
+    script: '../../src_minimalapi_server/scripts/backup-archive-itest.cjs',
     needs: 'the server built - dotnet build src_minimalapi_server/src/CredVaultServer.csproj',
     windows: false,
   },

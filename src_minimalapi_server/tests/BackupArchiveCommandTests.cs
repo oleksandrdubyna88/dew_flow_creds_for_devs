@@ -211,11 +211,36 @@ public class BackupArchiveCommandTests
         error.Should().Contain("none of it has been read");
     }
 
+    [Fact]
+    public void TheStampInTheHeaderComesFromTheClockItWasGivenAndNotFromTheMachine()
+    {
+        // The stamp is persisted — it is in the archive header and it is associated data for every
+        // chunk — so `utc-timestamps.md` applies to it: the clock is injected, never ambient. The
+        // assertion is on the byte that ends up in the file, not on the call.
+        var keyFile = KeyFile(NewKey());
+        var archive = NewPath();
+        var output = new StringWriter();
+
+        BackupArchiveCommand.Run(
+            [BackupArchiveCommand.CreateVerb, TreeWithTwoFiles(), archive, keyFile],
+            new CommandOutput(output, new StringWriter()),
+            new FrozenClock(Noon)).Should().Be(0);
+
+        using var file = File.OpenRead(archive);
+        BackupHeader.Read(file).Header.CreatedAtUnixMs.Should().Be(Noon.ToUnixTimeMilliseconds());
+    }
+
+    /// <summary>A clock that says one thing, so a persisted stamp can be asserted rather than guessed.</summary>
+    private sealed class FrozenClock(DateTimeOffset at) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => at;
+    }
+
     private static (int Code, string Output, string Error) Run(string[] args)
     {
         var output = new StringWriter();
         var error = new StringWriter();
-        var code = BackupArchiveCommand.Run(args, new CommandOutput(output, error));
+        var code = BackupArchiveCommand.Run(args, new CommandOutput(output, error), TimeProvider.System);
         return (code, output.ToString(), error.ToString());
     }
 

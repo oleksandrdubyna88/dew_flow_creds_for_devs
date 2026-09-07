@@ -20,8 +20,11 @@ const fs = require('fs');
 const crypto = require('crypto');
 const { execFile } = require('child_process');
 
-const REPO = path.join(__dirname, '..', '..');
-const SERVER_DIR = path.join(REPO, 'src_minimalapi_server', 'src');
+// In the SERVER's tree, not the extension's: this is the server's flow, and the pipeline that must
+// re-run it is the one a server-only change triggers. It is still in `run-itests.mjs` and still has
+// an `itest:backup-archive` alias, because a catalogue with a hole in it is how a harness comes to
+// prove nothing.
+const SERVER_DIR = path.join(__dirname, '..', 'src');
 
 let fails = 0;
 function check(what, ok, detail) {
