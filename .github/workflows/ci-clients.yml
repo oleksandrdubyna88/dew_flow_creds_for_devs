@@ -27,10 +27,10 @@ jobs:
       # token behind in the local git config where that code could reach it. `contents: read` bounds
       # what the token can do; `persist-credentials: false` means the code never meets it at all.
       # (CodeRabbit on this pull request; zizmor calls the pattern `artipacked`.)
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: 10.0.x
       # The three test projects are built by name: the solution file does not carry all of them, and
