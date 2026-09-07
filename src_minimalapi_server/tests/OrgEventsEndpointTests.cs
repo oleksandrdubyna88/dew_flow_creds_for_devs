@@ -183,6 +183,10 @@ public sealed class OrgEventsEndpointTests
     [InlineData("?cursor=2026-03-01", "cursor")]
     [InlineData("?since=soon", "since")]
     [InlineData("?since=2&until=1", "until")]
+    // A number no clock can hold: the day derivation throws on it, so without a range check this was a
+    // 500 for a request that is merely wrong.
+    [InlineData("?since=9223372036854775807", "since")]
+    [InlineData("?until=-9223372036854775808", "until")]
     public async Task AParameterThisServerCannotReadIs400NamingIt(string query, string named)
     {
         using var server = Corp.Server();

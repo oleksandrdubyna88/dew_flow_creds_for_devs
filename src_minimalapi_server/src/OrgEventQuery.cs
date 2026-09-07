@@ -138,10 +138,25 @@ public static class OrgEventFilter
     private static bool InRange(long at, long? since, long? until) =>
         (since is null || at >= since) && (until is null || at <= until);
 
+    /// <summary>
+    /// Every field a row carries — metadata all of it, by the umbrella's invariant — tried in turn.
+    ///
+    /// <para>Spelt out rather than iterated over an array literal, which allocated nine references and
+    /// an iterator per row: the budget lets one query reach 20,000 rows, so that was 20,000 arrays for
+    /// a substring test that short-circuits on the first hit.</para>
+    /// </summary>
     private static bool Mentions(OrgEventDto row, string? text) =>
-        text is null || Fields(row).Any(field => field is not null && field.Contains(text, StringComparison.OrdinalIgnoreCase));
+        text is null
+        || Has(row.Kind, text)
+        || Has(row.Actor, text)
+        || Has(row.Subject, text)
+        || Has(row.Project, text)
+        || Has(row.ShareId, text)
+        || Has(row.EntityName, text)
+        || Has(row.EntityKind, text)
+        || Has(row.Outcome, text)
+        || Has(row.Detail, text);
 
-    /// <summary>Every field a row carries — metadata all of it, by the umbrella's invariant.</summary>
-    private static IEnumerable<string?> Fields(OrgEventDto row) =>
-        [row.Kind, row.Actor, row.Subject, row.Project, row.ShareId, row.EntityName, row.EntityKind, row.Outcome, row.Detail];
+    private static bool Has(string? field, string text) =>
+        field is not null && field.Contains(text, StringComparison.OrdinalIgnoreCase);
 }

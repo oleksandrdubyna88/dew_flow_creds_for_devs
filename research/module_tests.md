@@ -146,6 +146,26 @@ test, and for six of the nine, no CI. A harness that cannot start proves nothing
 proving nothing silently. The repair is in `wsl-agent-relay-itest.cjs` with the reason written above
 each change.
 
+## The corporate event log's reader (2026-09-07, epic 4 story 1)
+
+`GET /api/org/events` is served by the vault server and driven from two tiers, named here because the
+flow is new and neither tier alone is evidence about it:
+
+| Tier | What it drives | Where |
+|---|---|---|
+| In-process, over real HTTP | the route: who is scoped to what, the query grammar's refusals, the cursor over the wire | `src_minimalapi_server/tests/OrgEventsEndpointTests.cs` |
+| Store-level, on real files | the reader: ordering, day-file selection, the cursor's stability under an append, a torn line, both budgets, an unopenable file | `src_minimalapi_server/tests/OrgEventLogQueryTests.cs` |
+| The wire, against a started stack | the same route as a client sends it — including a member reading their own rows and a member asking for a colleague BY NAME | `http/org/events.http` |
+
+The scenario the endpoint tests exist for, and which no unit test can state, is the scoping one: a
+member's page must never carry a row that names only somebody else, whatever they filter by. It is
+asserted twice — once in-process, once over the wire — because it is the only rule here whose failure
+is silent, and it was watched failing before it passed.
+
+**Not covered, and named rather than implied**: nothing drives the log through the EXTENSION, because
+the viewer is stories 3 and 4 of this epic and does not exist yet. Until it does, the log is a route
+with no caller in the product.
+
 ## What none of them covers
 
 Named rather than implied, because the rule asks for exactly this.
@@ -158,7 +178,7 @@ Named rather than implied, because the rule asks for exactly this.
   `.vsix` into a real editor and opens it. The publish step is verified by reading the release run.
 - **The server and the extension end to end.** `server-transport-itest.cjs` would do it, and it is
   the one harness CI does not run. Today the two halves are verified separately: the extension
-  against a stubbed transport, the server against `http/`'s 82 requests.
+  against a stubbed transport, the server against `http/`'s requests — 157 of them as of 2026-09-07.
 - **The sync merge under real concurrency.** Version-vector merging has thorough unit tests; no
   harness runs two windows against one vault at the same time. That gap has a plan of its own —
   [PLAN_node_writes_are_last_write_wins.md](PLAN_node_writes_are_last_write_wins.md) — and
@@ -173,7 +193,7 @@ Named rather than implied, because the rule asks for exactly this.
 ## How to run everything
 
 ```bash
-# .NET — 447 tests
+# .NET — 447 tests when this was written; the vault server alone is 530 as of 2026-09-07
 dotnet build dew_flow_creds_for_devs.slnx
 ./src_minimalapi_server/tests/bin/Debug/net10.0/CredVaultServer.Tests.exe
 ./src_cli/tests/bin/Debug/net10.0/CredsCli.Tests.exe
