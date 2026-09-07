@@ -202,6 +202,20 @@ public sealed record SentShare
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? WithdrawnReason { get; init; }
 
+    /// <summary>The project the shared entity came out of, when the sender named one.</summary>
+    /// <remarks>
+    /// <para>Here so that a WITHDRAWAL row can cite the project — the withdrawal paths hold the receipt
+    /// and not the inbox item, and a log an admin can filter by project must not lose half the rows
+    /// about one. Omitted rather than written as <c>null</c>, the <see cref="ShareItem.Format"/>
+    /// precedent: a released extension's <c>isSentShare</c> checks its five fields and ignores extras,
+    /// so an absent key keeps the wire byte-identical for every client alive.</para>
+    /// <para>A receipt written before this ships has no such key and reads as <c>null</c>, which is the
+    /// truthful answer — nobody recorded a project for it.</para>
+    /// </remarks>
+    [JsonPropertyName("projectId")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? ProjectId { get; init; }
+
     /// <summary>Whether the server withdrew this share — the sweep keeps such a receipt, the dismiss route removes it.</summary>
     [JsonIgnore]
     public bool IsWithdrawn => !string.IsNullOrEmpty(WithdrawnReason);

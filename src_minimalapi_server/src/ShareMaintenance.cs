@@ -59,7 +59,7 @@ public sealed class ShareMaintenance(
         {
             var retired = await store.ReconcileSentAsync(ct).ConfigureAwait(false);
             var pruned = await store.PruneOlderThanAsync(maxAge, ct).ConfigureAwait(false);
-            await RecordExpiriesAsync(pruned, ct).ConfigureAwait(false);
+            await RecordExpiriesAsync(pruned).ConfigureAwait(false);
             if (retired > 0 || pruned.Count > 0)
             {
                 log.LogInformation(
@@ -88,22 +88,24 @@ public sealed class ShareMaintenance(
     /// The RECEIPTS the prune also removed leave no row: whatever happened to their shares was recorded
     /// when it happened, and a second row would double every share in the history.</para>
     /// <para>The log is optional here for one reason only: a personal deployment has none, and this
-    /// sweep runs on every deployment. The row is appended AFTER the delete has landed, on
-    /// <c>CancellationToken.None</c>, because a sweep that stopped half-way through recording would
-    /// leave shares deleted and unrecorded.</para>
+    /// sweep runs on every deployment.</para>
+    /// <para><b>The stopping token is not honoured here, deliberately.</b> By the time this runs the
+    /// files are already deleted, so a loop that stopped half-way — a shutdown, a cancelled pass —
+    /// would leave shares gone and unrecorded, and no later sweep can find them to try again. One
+    /// append for the whole batch, on <c>CancellationToken.None</c>: a weekend of expiries is one lock
+    /// acquisition rather than one per share.</para>
     /// </remarks>
-    private async Task RecordExpiriesAsync(Prune pruned, CancellationToken ct)
+    private Task RecordExpiriesAsync(Prune pruned)
     {
         if (events is null || pruned.Expired.Count == 0)
         {
-            return;
+            return Task.CompletedTask;
         }
-        foreach (var share in pruned.Expired)
-        {
-            ct.ThrowIfCancellationRequested();
-            await events.AppendAsync(
-                OrgEndpoints.ShareRow(OrgEventKinds.ShareExpired, share.FromEmail, share.ToEmail, share),
-                CancellationToken.None).ConfigureAwait(false);
-        }
+        return events.AppendManyAsync(
+            [
+                .. pruned.Expired.Select(share =>
+                    OrgEndpoints.ShareRow(OrgEventKinds.ShareExpired, share.FromEmail, share.ToEmail, share)),
+            ],
+            CancellationToken.None);
     }
 }

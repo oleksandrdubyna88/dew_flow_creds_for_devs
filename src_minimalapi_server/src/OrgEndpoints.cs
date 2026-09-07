@@ -645,15 +645,15 @@ public static class OrgEndpoints
     /// they answer "what did this block do", and these rows answer "what happened to MY share", which
     /// is the question a number in somebody else's row cannot.
     /// </summary>
-    private static async Task RecordWithdrawalsAsync(OrgEndpointDeps deps, Withdrawal withdrawal)
-    {
-        foreach (var share in withdrawal.Shares)
-        {
-            await deps.Events.AppendAsync(
-                ShareRow(OrgEventKinds.ShareWithdrawnBlocked, share.FromEmail, share.ToEmail, share),
-                CancellationToken.None);
-        }
-    }
+    private static Task RecordWithdrawalsAsync(OrgEndpointDeps deps, Withdrawal withdrawal) =>
+        // ONE append for the batch: a full inbox is 500 shares, and one row at a time there is 500 lock
+        // acquisitions and 500 file opens inside a single admin request.
+        deps.Events.AppendManyAsync(
+            [
+                .. withdrawal.Shares.Select(share =>
+                    ShareRow(OrgEventKinds.ShareWithdrawnBlocked, share.FromEmail, share.ToEmail, share)),
+            ],
+            CancellationToken.None);
 
     /// <summary>
     /// A repeated block: silent when it found nothing, which is the ordinary case, and loud when it did —

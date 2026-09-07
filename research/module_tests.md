@@ -166,6 +166,31 @@ is silent, and it was watched failing before it passed.
 the viewer is stories 3 and 4 of this epic and does not exist yet. Until it does, the log is a route
 with no caller in the product.
 
+### What a share writes to it (story 2)
+
+`ShareEventRowTests` drives every share flow over real HTTP against the in-process server and asserts
+each row by reading it back OUT of the log, never off a status code:
+
+| Flow | What is asserted |
+|---|---|
+| a send | one `share.sent` naming both people, the entity and the id |
+| accept and decline | two different kinds, the RECIPIENT as actor, and both shares gone from the inbox |
+| a delete that says nothing, and one saying a word this build does not know | `share.unknown`, and still `204` |
+| a delete that finds nothing | `404` and no row at all |
+| a withdrawal, and one of something already taken | one row; and none, because the accept already wrote its own |
+| a block | one `share.withdrawn_blocked` per share, beside the `member.blocked` row that keeps the counts |
+| an expiry | one row per pruned inbox item, the sender as actor — and a sweep whose caller has already cancelled still records every share it deleted |
+| a project's share, withdrawn | the row cites the project, which the receipt now carries |
+| a login key | a row on the first call and none on the second |
+| a personal deployment | no rows and no `org/` folder |
+
+The one that is not about a row: **no byte of a share's sealed payload reaches the log**. The test
+posts a share whose ciphertext is a distinctive marker, reads every byte of every day file, and
+asserts the marker is absent — with a control asserting the search would have found the row.
+
+`http/shares/shares.http` covers the same parameter from the wire (accepted, an unknown value, and
+none at all); the ROWS are declared `@uncovered` there, because a row is not a response.
+
 ## What none of them covers
 
 Named rather than implied, because the rule asks for exactly this.
