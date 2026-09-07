@@ -12,6 +12,7 @@ import {
   WORD_LIST_SIZE,
   generateEd25519,
   generatePassphrase,
+  generateApiToken,
   generatePassword,
   PASSPHRASE_WORD_CHOICES,
   PASSWORD_LENGTH_CHOICES,
@@ -238,4 +239,37 @@ test('the passphrase word counts are the offered list, six by default (T14d)', (
     const made = generatePassphrase({ ...DEFAULT_PASSPHRASE, words });
     assert.equal(made.value.split('-').length, words);
   }
+});
+
+/**
+ * The API token: the value a machine reads, and the reason it is not the password generator with
+ * the length turned up.
+ */
+
+test('a token is 32 random bytes, and says so exactly', () => {
+  const made = generateApiToken();
+
+  assert.equal(made.entropyBits, 256, 'the bytes are the draw, so the arithmetic is exact');
+  assert.equal(made.value.length, 43, '32 bytes rendered base64url');
+  assert.match(made.description, /256 bits/);
+});
+
+test('every character survives a header, a URL, a .env line and a shell word', () => {
+  // The failure this avoids is not a refusal: a token carrying `#` or `%` arrives TRUNCATED at the
+  // service, and the person reads it as a wrong key.
+  for (let i = 0; i < 200; i += 1) {
+    assert.match(generateApiToken().value, /^[A-Za-z0-9_-]+$/);
+  }
+});
+
+test('two tokens are never the same one', () => {
+  const seen = new Set(Array.from({ length: 500 }, () => generateApiToken().value));
+
+  assert.equal(seen.size, 500);
+});
+
+test('it takes no options, so no page can weaken it', () => {
+  // Every dial a form could offer here has a wrong answer for one of the four places the value is
+  // about to be pasted, so there is nothing to pass and nothing to clamp.
+  assert.equal(generateApiToken.length, 0);
 });

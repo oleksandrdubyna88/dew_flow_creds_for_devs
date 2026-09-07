@@ -339,20 +339,44 @@ public sealed class OrgEventLogQueryTests : IDisposable
         // not have. The endpoint turns this into a 503.
         var log = await WithRowsAsync(Row(detail: "hidden"));
         var path = log.PathForDay(Noon);
-        using var held = Corp.Undeletable(path);
+        // Two operating systems refuse a READ in two different ways, and neither is the way they
+        // refuse a DELETE — which is what the first version of this test asked for, and why it
+        // passed on Windows and not on Linux: stripping a directory's write bit stops an unlink and
+        // lets every read through. Windows refuses an open while another handle holds the file
+        // exclusively; Unix refuses one when the file itself has no read bit (as a non-root user,
+        // which is what CI is).
+        using var held = Unreadable(path);
 
-        if (OperatingSystem.IsWindows())
+        var act = async () => await PageAsync(log, new OrgEventQuery());
+
+        (await act.Should().ThrowAsync<OrgEventLogUnreadableException>()).Which.FilePath.Should().Be(path);
+    }
+
+    /// <summary>Make one file impossible to OPEN, and put it back on dispose.</summary>
+    private static IDisposable Unreadable(string path) =>
+        OperatingSystem.IsWindows()
+            ? new FileStream(path, FileMode.Open, FileAccess.ReadWrite, FileShare.None)
+            : new ReadableAgain(path);
+
+    private sealed class ReadableAgain : IDisposable
+    {
+        private readonly string _path;
+
+        public ReadableAgain(string path)
         {
-            var act = async () => await PageAsync(log, new OrgEventQuery());
-            await act.Should().ThrowAsync<OrgEventLogUnreadableException>()
-                .Where(e => e.FilePath == path);
+            _path = path;
+            Chmod(path, UnixFileMode.None);
         }
-        else
+
+        public void Dispose() => Chmod(_path, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+
+        /// <summary>Guarded rather than suppressed: the analyzer is right that this is Unix-only.</summary>
+        private static void Chmod(string path, UnixFileMode mode)
         {
-            // Unix refuses the DIRECTORY listing rather than the open, which is the same refusal one
-            // level up and the same exception.
-            var act = async () => await PageAsync(log, new OrgEventQuery());
-            await act.Should().ThrowAsync<OrgEventLogUnreadableException>();
+            if (!OperatingSystem.IsWindows())
+            {
+                File.SetUnixFileMode(path, mode);
+            }
         }
     }
 

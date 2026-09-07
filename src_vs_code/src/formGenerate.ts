@@ -4,6 +4,7 @@ import {
   PASSWORD_LENGTH_CHOICES,
   SSH_KEY_TYPES,
   generateKeyPairOf,
+  generateApiToken,
   generatePassphrase,
   generatePassword,
   DEFAULT_PASSPHRASE,
@@ -20,7 +21,7 @@ import { parseSshPrivateKey } from './sshKeyParse';
  */
 
 export interface GenerateRequest {
-  kind?: 'password' | 'passphrase' | 'key';
+  kind?: 'password' | 'passphrase' | 'token' | 'key';
   genWords?: number;
   genLength?: number;
   genLower?: boolean;
@@ -42,6 +43,7 @@ export interface GenerateRequest {
 export function draw(message: GenerateRequest): { target: string; value: string; note: string } {
   const drawers: Record<string, (m: GenerateRequest) => { target: string; value: string; note: string }> = {
     passphrase: drawPassphrase,
+    token: drawToken,
     key: drawKey,
   };
   return (drawers[message.kind ?? ''] ?? drawPassword)(message);
@@ -53,6 +55,19 @@ function drawPassphrase(message: GenerateRequest): { target: string; value: stri
     ? (message.genWords as number)
     : DEFAULT_PASSPHRASE.words;
   const made = generatePassphrase({ ...DEFAULT_PASSPHRASE, words });
+  return { target: 'password', value: made.value, note: made.description };
+}
+
+/**
+ * An API token: no options at all, so nothing from the page is read.
+ *
+ * <p>The other drawers clamp what the page sent — a length to the offered list, a key type to a
+ * known id — because those are choices a person makes. This one has none to clamp: a machine token
+ * is 32 random bytes rendered base64url, and every dial a page could offer would make it worse
+ * somewhere it is about to be pasted.</p>
+ */
+function drawToken(): { target: string; value: string; note: string } {
+  const made = generateApiToken();
   return { target: 'password', value: made.value, note: made.description };
 }
 

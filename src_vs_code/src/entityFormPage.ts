@@ -649,6 +649,9 @@ ${formStyleSheet(options.uiScale ?? 0)}
     <div class="genRow">
       <button type="button" id="genPassword">Generate password</button>
       <button type="button" id="genPassphrase">Generate passphrase</button>
+      <!-- For a value a machine reads: an API key, a token, a webhook secret. It ignores the length
+           and the class boxes above on purpose — see generateApiToken. -->
+      <button type="button" id="genToken">Generate API key</button>
       <button type="button" id="revealPassword">Show</button>
     </div>
     <p class="hint" id="genHint">${passwordHint}</p>
