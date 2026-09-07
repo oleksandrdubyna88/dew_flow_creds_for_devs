@@ -900,8 +900,8 @@ says about you.
 **The event log.** A corporate server records what happened — shares with their outcome (taken,
 declined, withdrawn, expired), roles, blocks, projects and assignments — and ***Event Log…*** on an
 account row opens it as a tab: newest first, four buttons to narrow by, **Load more** for the page
-before. The server decides what each person sees: an admin reads the company, everybody else reads
-only the rows naming them. It records metadata — an entry's name and kind — and never a byte of what
+before. The server decides what each person sees: an admin — or a recovery officer, who administers
+unconditionally — reads the company, everybody else reads only the rows naming them. It records metadata — an entry's name and kind — and never a byte of what
 was in it.
 
 **Projects.** An admin runs ***New Project…*** from Team — that is where the first one is made —

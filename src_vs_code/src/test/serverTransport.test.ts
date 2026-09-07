@@ -469,3 +469,25 @@ test('saying nothing sends no query at all — never an empty one, never the wor
   assert.equal(urls[0], 'https://vault.example.com/api/shares/11111111-1111-1111-1111-111111111111');
   assert.equal(urls[0].includes('outcome'), false);
 });
+
+test('a removal the server refused is a failure, not a silent success', async () => {
+  // Until this check the answer was discarded: an accept imported the secret, dropped the row from
+  // the tree, and left the share in the inbox with no share.accepted recorded — the one failure the
+  // outcome exists to prevent.
+  globalThis.fetch = (() => Promise.resolve(new Response(null, { status: 500 }))) as typeof fetch;
+
+  await assert.rejects(
+    new ServerTransport('https://vault.example.com', async () => 'token', 500)
+      .removeShare(account, pending, 'accepted'),
+    /HTTP 500/,
+  );
+});
+
+test('a share that is already gone is not a failure — the end state is the one asked for', async () => {
+  // Two windows on one inbox is an ordinary Tuesday, and `deleteVault` one method below answers the
+  // same question the same way.
+  globalThis.fetch = (() => Promise.resolve(new Response(null, { status: 404 }))) as typeof fetch;
+
+  await new ServerTransport('https://vault.example.com', async () => 'token', 500)
+    .removeShare(account, pending, 'declined');
+});

@@ -55,7 +55,7 @@ export function renderOrgEvents(state: EventPageState): string {
   h2 { margin: 0 0 4px; font-size: 1.2em; }
   .lede { opacity: .8; margin: 0 0 12px; max-width: 74ch; }
   .filters { display: flex; gap: 6px; margin: 0 0 6px; flex-wrap: wrap; }
-  button { padding: 3px 10px; cursor: pointer; border: 1px solid var(--vscode-widget-border, #4444);
+  button { padding: 3px 10px; cursor: pointer; border: 1px solid var(--vscode-widget-border);
            background: transparent; color: var(--vscode-foreground); border-radius: 3px; }
   button[aria-pressed=true] { background: var(--vscode-button-background);
                               color: var(--vscode-button-foreground); border-color: transparent; }
@@ -63,12 +63,12 @@ export function renderOrgEvents(state: EventPageState): string {
   .hint { opacity: .75; margin: 0 0 12px; font-size: .9em; min-height: 1.2em; }
   table { border-collapse: collapse; width: 100%; }
   th, td { text-align: left; padding: 4px 10px 4px 0; vertical-align: top;
-           border-bottom: 1px solid var(--vscode-widget-border, #3333); }
+           border-bottom: 1px solid var(--vscode-widget-border); }
   th { opacity: .7; font-weight: 600; }
   td.when { white-space: nowrap; opacity: .8; font-family: var(--vscode-editor-font-family); }
   td.detail { opacity: .8; word-break: break-word; }
   .empty { opacity: .8; margin: 16px 0; max-width: 74ch; }
-  .error { color: var(--vscode-credSshManager-depColor3, #FF8A76); margin: 12px 0; max-width: 74ch; }
+  .error { color: var(--vscode-errorForeground); margin: 12px 0; max-width: 74ch; }
   .more { margin: 14px 0 0; }
 </style>
 </head>

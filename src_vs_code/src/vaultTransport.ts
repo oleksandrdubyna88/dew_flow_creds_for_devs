@@ -1,3 +1,4 @@
+import { parseGitRemote } from './gitRemote';
 import { OwnedShare, ShareItem, StoredAccount, TeamMember } from './types';
 
 /**
@@ -78,6 +79,19 @@ export interface VaultTransport {
  * file rather than agreed by eye — see `eventQuery.test.ts`.</p>
  */
 export type ShareOutcome = 'accepted' | 'declined';
+
+/**
+ * Whether a location is a VAULT SERVER — the one road every corporate client takes.
+ *
+ * <p>`isServerLocation` alone is not that road, and the gap was real: an `https://` git remote
+ * matches it, so a vault synced to `https://git.example.com/team/vault.git` would have been handed a
+ * corporate client that sends `Authorization: Bearer <token>` to a git host. Four factories asked
+ * the same half-question — the shape the security rule calls "a measure applied at SOME of its
+ * sites" — so the question is asked once, here, where it is a unit test.</p>
+ */
+export function isCorpServerLocation(location: string): boolean {
+  return isServerLocation(location) && parseGitRemote(location) === undefined;
+}
 
 export function isServerLocation(location: string): boolean {
   return /^https?:\/\//i.test(location.trim());

@@ -148,12 +148,19 @@ public sealed partial class VaultStore
         var cutoff = DateTimeOffset.UtcNow.Subtract(maxAge).ToUnixTimeMilliseconds();
         var expired = new List<ShareFacts>();
         var receipts = 0;
+        // STOPPING is not throwing, and the difference is a row. Files are deleted as this walks, and
+        // an OperationCanceledException here would take the list of what went with it — the caller
+        // could then write no share.expired rows for shares that are already gone, which no later
+        // sweep can find to try again. So a cancelled pass stops early and hands back what it did.
         foreach (var dir in SafeDirectories(_sharesDir))
         {
             foreach (var path in SafeFiles(dir))
             {
-                ct.ThrowIfCancellationRequested();
-                var item = await ReadShareOrNullAsync(path, ct);
+                if (ct.IsCancellationRequested)
+                {
+                    return new Prune(expired, receipts);
+                }
+                var item = await ReadShareOrNullAsync(path, CancellationToken.None);
                 if (item is not null && item.CreatedAt < cutoff && Forget(path) == 1)
                 {
                     expired.Add(ShareFacts.Of(item));
@@ -164,8 +171,11 @@ public sealed partial class VaultStore
         {
             foreach (var path in SafeFiles(dir))
             {
-                ct.ThrowIfCancellationRequested();
-                var receipt = await ReadSentOrNullAsync(path, ct);
+                if (ct.IsCancellationRequested)
+                {
+                    return new Prune(expired, receipts);
+                }
+                var receipt = await ReadSentOrNullAsync(path, CancellationToken.None);
                 receipts += receipt is not null && receipt.CreatedAt < cutoff ? Forget(path) : 0;
             }
         }

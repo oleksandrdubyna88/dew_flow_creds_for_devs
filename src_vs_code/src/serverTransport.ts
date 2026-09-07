@@ -391,9 +391,17 @@ export class ServerTransport implements VaultTransport {
    */
   async removeShare(actingAs: StoredAccount, share: OwnedShare, outcome?: ShareOutcome): Promise<void> {
     const said = outcome === undefined ? '' : `?outcome=${encodeURIComponent(outcome)}`;
-    await this.request(actingAs, `/api/shares/${encodeURIComponent(share.item.id)}${said}`, {
+    const response = await this.request(actingAs, `/api/shares/${encodeURIComponent(share.item.id)}${said}`, {
       method: 'DELETE',
     });
+    // The ANSWER decides, which it did not until now: a 500 was discarded, so an accept imported the
+    // secret, dropped the row from the tree and left the share in the inbox with no share.accepted
+    // recorded — the one failure the outcome exists to prevent. A 404 is the exception, exactly as
+    // `deleteVault` treats it one method below: the share is already gone, which is the end state
+    // this call wanted, and two windows racing one inbox is an ordinary Tuesday.
+    if (!response.ok && response.status !== 404) {
+      throw new Error(`Removing the share failed: HTTP ${response.status}.`);
+    }
   }
 
   /**
