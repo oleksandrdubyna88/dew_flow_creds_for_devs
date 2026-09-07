@@ -17,6 +17,14 @@ if (args is ["--healthcheck"])
     return await HealthProbe.RunAsync();
 }
 
+// `--decrypt-archive` / `--verify-archive` open a backup with this same binary. The moment anyone
+// needs them is the moment a server is gone, so the recovery kit is the image and the key — not a
+// second tool somebody has to find. Intercepted here for the same reason the health probe is.
+if (BackupArchiveCommand.Handles(args))
+{
+    return BackupArchiveCommand.Run(args);
+}
+
 var builder = WebApplication.CreateBuilder(args);
 
 // First statement after the builder: a host that crashes while wiring itself up is
