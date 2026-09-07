@@ -69,6 +69,11 @@ whole server is ~2,100 lines.
 | `src/BackupRunner.cs` | One run in two halves — claim and announce inside the request, build outside it — and the refusals, each a sentence naming what to do |
 | `src/BackupScheduleService.cs` | The five-minute question, the startup sweep, and a hosted service that never throws out of `ExecuteAsync`. Corp mode only |
 | `src/OrgBackupEndpoints.cs` | The six backup routes, all admin-only, from their own file |
+| `src/AwsSigV4.cs` | Signature Version 4 as a pure function, returning every intermediate the published vectors pin |
+| `src/AzureSharedKey.cs` | SharedKey the same way: the thirteen-line string to sign, the canonical headers and resource |
+| `src/ArchiveTarget.cs` | What a destination IS — four operations, the retention floor they share, and which endpoints may be used |
+| `src/S3Target.cs`, `src/AzureBlobTarget.cs` | The two clients over signed REST: upload with verification, paginated listing, delete, and a write probe |
+| `src/BackupTargets.cs` | Sealing a target's credentials under the deployment KEK, opening them again, and building the client |
 
 ## The request pipeline
 
@@ -1397,6 +1402,75 @@ either), `backup.settings_changed` with the new hour and window. They go through
 like every other row on this server, which is also what stamps them: building the record by hand is
 how three rows reached the log with `at: 0` and broke the event reader's newest-first ordering. The
 `.http` suite caught that too.
+### Somewhere off this machine to put it (2026-09-07, epic 5 story 4)
+
+A backup that lives on the same disk as the thing it backs up is not a backup. A run now uploads its
+archive to every configured target, and the status says what happened to **each** — a target that
+failed is named, not hidden behind one word.
+
+**Two kinds, both signed by hand.** S3-compatible over AWS Signature Version 4, Azure Blob over
+SharedKey. `Directory.Packages.props` still carries no cloud SDK and the csproj still carries exactly
+one suppression: an SDK is tens of megabytes built on the reflection an AOT binary refuses, while each
+signature is about a hundred lines of HMAC. **What makes that defensible is that both are published
+with worked examples**, and both are asserted at every intermediate step — the canonical request, the
+string to sign, and the signature — because one end-to-end assertion says a signature is wrong and not
+which of the four stages got it wrong. The Azure expectations were produced by an INDEPENDENT
+implementation of the documented algorithm rather than by this one.
+
+The traps each specification hides, and where they are caught:
+
+| Trap | Caught by |
+|---|---|
+| SigV4 header values collapse internal whitespace, not just trim | `get-header-value-trim` |
+| The query is sorted by the ENCODED name, then the value | `get-vanilla-query-order-key-case` |
+| Its percent-encoding is not `Uri.EscapeDataString`'s, and a path keeps its slashes | a table of five |
+| Azure writes a zero content length as an EMPTY line, not `0` | its own test |
+| Azure signs the account from the CREDENTIAL, so a custom domain still works | its own test |
+| `Put Blob` is a 400 without `x-ms-blob-type`, and its size ceiling moves with `x-ms-version` | both pinned, both asserted |
+
+**`UNSIGNED-PAYLOAD` for S3, and the check that makes it safe.** Hashing a multi-gigabyte archive into
+the canonical request means reading it twice; the sentinel is AWS's own answer and is what every SDK
+uses for large PUTs. But it leaves the body out of the signature, so a 200 means the service accepted
+a REQUEST rather than that it stored the bytes — **every upload is followed by a HEAD comparing the
+stored length against what was sent**. Without it a truncated upload reads as a good backup and the
+only moment anybody finds out is a restore.
+
+**Listings follow their continuation token** on both services. A bucket answers 1000 keys at a time,
+and retention over the first page only would leave everything past it for ever — while the floor that
+protects against deleting everything would be computing against a set that is not the set.
+
+**Retention at the destination has the local pass's floor and reads the NAME.** A pass whose every
+object is old deletes nothing, which on a destination that may be the only copy left is the difference
+between a retention window and an erasure; and ages come from each archive's name rather than the
+service's `LastModified`, which a re-upload, a lifecycle rule or a copy between buckets all rewrite.
+It runs only after a SUCCESSFUL upload: pruning a destination whose new archive did not arrive is how
+a window turns into deletion of the last copies.
+
+**A target is proved USABLE when it is saved, and the proof writes.** A `HEAD` is not enough — both
+clouds routinely grant read while denying write, so a check that only reads gives false confidence at
+save time and discovers the truth at 03:00 in a log nobody reads. The probe puts a tiny object and
+deletes it again, which is exactly what a run and a retention pass do; a target that accepts the write
+and refuses the delete is refused too, with both facts, because its archives could only accumulate.
+
+**Credentials are write-only, and omitting them KEEPS them.** Nothing returns them — not the status,
+not an error, not any route — so an administrator editing a prefix cannot copy the secret out of a GET
+and paste it back. A target is identified by its kind, endpoint, bucket and prefix; credentials left
+out of an edit are the ones already sealed. Without that rule, changing the schedule would silently
+wipe them and the next run would answer 403 at three in the morning.
+
+**The endpoint must be `https`**, because the archive's body is not covered by the request signature
+and an account key in clear is the whole deployment. Loopback is the only exception, and only
+loopback: a developer running MinIO on `127.0.0.1` has nothing between, while "it is on our network"
+is exactly the assumption that makes an interception interesting.
+
+**A single upload is the limit** — 5 GiB on S3, 5000 MiB on Azure at the pinned version — and it is
+refused BEFORE the request, because discovering it by sending five gigabytes and being told no is an
+afternoon nobody gets back.
+
+**The run's verdict is not "was an archive made".** Every configured target refusing is `failed`, some
+refusing is `partial`, and none configured is `ok`: a backup that stayed on the machine it was taken
+from is not a backup, and a page that cried failure over one target of two would train an
+administrator to ignore it.
 
 ## Authorization
 
@@ -1663,6 +1737,9 @@ environment is global, the suite runs in one non-parallel collection (`ServerCol
 | `BackupScheduleTests` | The due-math as a table: due at the hour, not at 02:59, still due at 07:00 after a window the server slept through, not twice in a day, due again tomorrow, the UTC day boundary on both sides, midnight as an ordinary hour; the archive-name round trip and the four names that have no instant (a `.partial`, somebody else's file, an unreadable stamp, a missing `Z`); and the running state derived in one place |
 | `BackupRunnerTests` | A run takes an archive and says it succeeded; the archive opens with the words the administrator wrote down; it carries the configuration snapshot and NOT the backup tree; a second run while the claim is held is refused; the claim is an OS handle released by disposal; the four refusals (no key, unacknowledged key, no KEK, already running); an in-progress status swept into a failure at startup; the sweep leaving a LIVE run alone; only the newest archive kept; retention never emptying the directory, deleting what aged out, and leaving a file it cannot account for; and a row naming the archive |
 | `BackupEndpointTests` | All six routes refused for a developer; a fresh deployment's status; minting once and the refusal for a second; the settings bounds and their row; a run reaching `ok` with an archive and a row; a run with no key refused in the RESPONSE; `409` while one is live; the page reading "running" the instant after the button; `404` with the way to get an archive; the stream with its length, filename and `CVBK` marker; the status after a real restart showing the swept failure and never the spinner; and `501` for rotation |
+| `AwsSigV4Tests` | AWS's own published vectors — `get-vanilla`, `get-vanilla-query-order-key-case`, `get-header-value-trim` — each asserted at the canonical request, the string to sign AND the signature; two headers of one name joined in order; a PUT signing the UNSIGNED-PAYLOAD sentinel rather than a body; and a table of five showing that SigV4's percent-encoding is not `Uri.EscapeDataString`'s |
+| `AzureSharedKeyTests` | The documented SharedKey algorithm at both steps, with the expected values produced by an independent implementation: the thirteen lines of a Put Blob, a zero content length as an EMPTY line, the `x-ms-` headers lower-cased and sorted and nothing else canonicalised, the query appended one per line, the account taken from the CREDENTIAL rather than the host, and the pinned version with its ceiling |
+| `BackupTargetTests` | Both clients over a stubbed transport: a path-style PUT that is then verified by a HEAD; an upload the service stored SHORT reported as a failure; a 403 becoming a sentence rather than an exception; both listings following their continuation token; the save-time probe writing and then deleting, and a target that refuses the delete refused with both facts; Azure's two mandatory headers; the endpoint rule over six spellings; and destination retention's floor |
 
 ## Telling the editor panel where it is
 

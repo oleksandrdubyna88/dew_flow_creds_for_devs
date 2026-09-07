@@ -258,6 +258,24 @@ create-if-absent write and the run-history check rather than raced in a test; th
 `LoginKeyStore`, whose discipline it copies. And the acknowledgement is exercised by calling the
 store, not by an admin pressing a button, which story 3's endpoints will add.
 
+## The cloud destinations (2026-09-07, epic 5 story 4)
+
+| Tier | What it drives | Where |
+|---|---|---|
+| Published vectors | AWS's own `aws-sig-v4-test-suite` cases and the documented worked example, at the canonical request, the string to sign AND the signature | `src_minimalapi_server/tests/AwsSigV4Tests.cs` |
+| An independent implementation | Azure's SharedKey algorithm, with expectations computed OUTSIDE this codebase | `src_minimalapi_server/tests/AzureSharedKeyTests.cs` |
+| A stubbed transport | what each client SENDS and what it makes of the answer: the path style, the two mandatory Azure headers, the post-upload verification, both pagination shapes, the write probe | `src_minimalapi_server/tests/BackupTargetTests.cs` |
+| In-process, over real HTTP | a target refused at SAVE time — plain http, an unknown kind, missing credentials, an unreachable host — and a status that carries no credential in any shape | `src_minimalapi_server/tests/BackupEndpointTests.cs` |
+| The wire | the same refusals as a client sends them, and the status's per-target list | `http/org/backup.http` |
+
+**What none of it covers, said plainly.** Nothing here proves that AWS or Azure ACCEPT what these
+clients send — only that they send what the specifications say, and that the signatures match values
+those specifications publish. A live check against a real bucket needs credentials nobody should
+commit and a network CI does not have; the honest substitute is the save-time probe, which every
+operator's first configuration runs against their own account and which fails loudly on their screen
+rather than at 03:00. When somebody does point this at a real bucket, that run IS the missing tier and
+it belongs in this file.
+
 ## What none of them covers
 
 Named rather than implied, because the rule asks for exactly this.

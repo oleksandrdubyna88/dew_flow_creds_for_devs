@@ -295,9 +295,12 @@ public sealed record SealedBackupKey(int SchemaVersion, string Iv, string Tag, s
 /// so a deployment that switches from the script to this feature keeps the same behaviour rather than
 /// silently changing schedule.
 /// </remarks>
-public sealed record BackupSettings(int ScheduleHourUtc, int RetentionDays)
+public sealed record BackupSettings(
+    int ScheduleHourUtc,
+    int RetentionDays,
+    IReadOnlyList<SealedTarget> Targets)
 {
-    public static readonly BackupSettings Default = new(3, 30);
+    public static readonly BackupSettings Default = new(3, 30, []);
 }
 
 /// <summary>
@@ -308,9 +311,14 @@ public sealed record BackupSettings(int ScheduleHourUtc, int RetentionDays)
 /// has to remember to check, and this repository's rule is that business logic does not carry null.
 /// The distinction is stated here so the page does not have to guess it.
 /// </remarks>
-public sealed record BackupStatus(long LastRunAt, string LastResult, string LastError, long Bytes)
+public sealed record BackupStatus(
+    long LastRunAt,
+    string LastResult,
+    string LastError,
+    long Bytes,
+    IReadOnlyList<BackupTargetStatus> Targets)
 {
-    public static readonly BackupStatus NeverRun = new(0, "never run", string.Empty, 0);
+    public static readonly BackupStatus NeverRun = new(0, "never run", string.Empty, 0, []);
 }
 
 /// <summary>
@@ -331,7 +339,8 @@ public sealed record BackupStatusDto(
     string LastError,
     bool Running,
     long LocalArchiveBytes,
-    string LocalArchiveName);
+    string LocalArchiveName,
+    IReadOnlyList<BackupTargetDto> Targets);
 
 /// <summary>
 /// What an admin may change: when a backup runs, and how long its archives are kept.
@@ -341,7 +350,10 @@ public sealed record BackupStatusDto(
 /// credentials for yet; an admin API that accepts secrets it does nothing with is worse than one that
 /// does not accept them.
 /// </remarks>
-public sealed record BackupSettingsRequest(int ScheduleHourUtc, int RetentionDays);
+public sealed record BackupSettingsRequest(
+    int ScheduleHourUtc,
+    int RetentionDays,
+    IReadOnlyList<BackupTargetRequest>? Targets);
 
 /// <summary>
 /// The words of a newly minted backup key, handed over the only time anybody can have them.
@@ -351,3 +363,29 @@ public sealed record BackupSettingsRequest(int ScheduleHourUtc, int RetentionDay
 /// once must not live on a route anything polls.
 /// </remarks>
 public sealed record BackupKeyDto(string Key, double EntropyBits);
+
+/// <summary>
+/// A destination as an administrator describes it, credentials included.
+/// </summary>
+/// <remarks>
+/// <para>The credential fields are nullable because leaving them out is MEANINGFUL: a target already
+/// saved keeps the credentials it has, matched by kind, endpoint, bucket and prefix. Nothing ever
+/// returns them, so an administrator editing a prefix has no way to copy them out and paste them
+/// back — and without this rule, changing a schedule would silently wipe them and the next run would
+/// answer 403 at three in the morning.</para>
+/// <para>One record for both kinds: <c>AccessKeyId</c>/<c>SecretAccessKey</c> for S3,
+/// <c>AccountName</c>/<c>AccountKey</c> for Azure, and the rest shared.</para>
+/// </remarks>
+public sealed record BackupTargetRequest(
+    string Kind,
+    string Endpoint,
+    string Region,
+    string Bucket,
+    string Prefix,
+    string? AccessKeyId,
+    string? SecretAccessKey,
+    string? AccountName,
+    string? AccountKey);
+
+/// <summary>A destination as the status page sees it — where it is and how it went, never its keys.</summary>
+public sealed record BackupTargetDto(string Kind, string Where, string Result, string Error, long At);

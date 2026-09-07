@@ -199,12 +199,21 @@ builder.Services.AddSingleton(sp => new BackupStore(
 // writes to it exists on every deployment — nothing drains it where the schedule service is not
 // registered, and the endpoint answers 503 rather than accepting work nobody will do.
 builder.Services.AddSingleton<BackupQueue>();
+// One named HttpClient for every cloud target: connection pooling, a handler lifetime, and one place
+// where a proxy or a certificate policy would be configured — rather than a socket per upload.
+builder.Services.AddHttpClient(nameof(BackupTargets));
+builder.Services.AddSingleton(sp => new BackupTargets(
+    loginKeyKek,
+    sp.GetRequiredService<IHttpClientFactory>(),
+    TimeProvider.System,
+    sp.GetRequiredService<ILoggerFactory>().CreateLogger<BackupTargets>()));
 builder.Services.AddSingleton(sp => new BackupRunner(
     sp.GetRequiredService<BackupStore>(),
     dataDir,
     config,
     // The log only where there is one: a personal deployment has no org/ tree and must not grow one.
     orgRecovery.Enabled ? sp.GetRequiredService<OrgEventLog>() : null,
+    sp.GetRequiredService<BackupTargets>(),
     TimeProvider.System,
     sp.GetRequiredService<ILoggerFactory>().CreateLogger<BackupRunner>()));
 
@@ -1003,7 +1012,8 @@ app.MapOrgBackupEndpoints(
     orgDeps,
     app.Services.GetRequiredService<BackupStore>(),
     app.Services.GetRequiredService<BackupRunner>(),
-    app.Services.GetRequiredService<BackupQueue>());
+    app.Services.GetRequiredService<BackupQueue>(),
+    app.Services.GetRequiredService<BackupTargets>());
 
 // ----- corporate recovery: what every account here is subject to -----
 //
