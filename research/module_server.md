@@ -1364,11 +1364,15 @@ rewrites every mtime — the same reason the share prune reads each item's own `
 sweep cannot account for is left alone: somebody's own copy, sitting where they put it, is not this
 pass's to remove.
 
-**The run is handed to a QUEUE the hosted service drains**, not to a `Task.Run` nobody owns — rule 8
+**Every run goes through one queue** — an administrator's and the schedule's alike, drained by the
+hosted service, not by a `Task.Run` nobody owns — rule 8
 names that pairing and the reliability rule says why: a detached task whose fault nobody observes is a
 worker that dies with no line in the log while the process looks healthy. The same service already
-owns scheduled builds, so it is the natural owner of an administrator's. A run it cannot take answers
-`503` rather than being accepted and never done. And the detached work ends in a **catch-all**: an
+owns scheduled builds, so it is the natural owner of an administrator's. A run it cannot take answers `503`, and the claim
+plus the in-progress status are GIVEN BACK — announcing a run and then failing to hand it over would
+leave a spinner for something nobody will ever carry out. **The audit row is best effort, after the
+terminal status**: an event log that cannot be appended to must not turn a run that succeeded, archive
+and all, into a failed one. And the detached work ends in a **catch-all**: an
 exception that escaped would leave the status saying "in progress" until the next restart, which is a
 spinner all night and no failure row.
 
@@ -1595,7 +1599,7 @@ what is under it:
 
 ## Tests
 
-`src_minimalapi_server/tests/` — xUnit v3 on Microsoft Testing Platform, 701 tests, ~26 s. The
+`src_minimalapi_server/tests/` — xUnit v3 on Microsoft Testing Platform, 703 tests, ~26 s. The
 endpoint suites run in-process through `WebApplicationFactory` — no free port, no background
 `dotnet run`; the store suites drive a store directly on a throwaway data directory.
 

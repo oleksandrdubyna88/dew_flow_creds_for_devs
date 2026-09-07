@@ -140,6 +140,27 @@ public sealed class BackupRunner(
     /// </remarks>
     private static string Owner() => $"{Environment.MachineName}/{Environment.ProcessId}";
 
+    /// <summary>
+    /// Give a claimed run back: a terminal status, and the claim released.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="BeginAsync"/> announces the run before anything long happens, which is what makes a
+    /// reloaded page tell the truth — and it means a caller that then cannot hand the run over has to
+    /// UNsay it. Otherwise the page shows a spinner for a run nobody will carry out, until a restart
+    /// sweeps it, which on a server that never restarts is for ever.
+    /// </remarks>
+    public async Task AbandonAsync(RunTicket ticket, string why, CancellationToken ct)
+    {
+        using (ticket)
+        {
+            await backups.WriteStatusAsync(
+                new BackupStatus(
+                    clock.GetUtcNow().ToUnixTimeMilliseconds(), BackupRunResults.Refused, why, 0),
+                ct);
+            log.LogWarning("a claimed backup run was given back before it started: {Why}", why);
+        }
+    }
+
     /// <summary>Carry out a claimed run. Never throws; releases the claim whatever happens.</summary>
     public async Task ContinueAsync(RunTicket ticket, CancellationToken ct)
     {
@@ -273,6 +294,27 @@ public sealed class BackupRunner(
     /// history mentions. The same reading the share-expiry rows make.
     /// </remarks>
     private async Task RowAsync(string kind, string actor, string detail, CancellationToken ct)
+    {
+        try
+        {
+            await AppendRowAsync(kind, actor, detail);
+        }
+        // BEST EFFORT, and only after the terminal status is on disk. Without this, an event log that
+        // could not be appended to would turn a run that SUCCEEDED — archive written, status already
+        // recorded as ok — into a failed one, because the catch-all in ContinueAsync would route the
+        // append's exception through FailAsync. A reader would then have a good archive, a success and
+        // a failure about the same run, and no way to tell which to believe.
+        catch (Exception e)
+        {
+            log.LogError(
+                e,
+                "the {Kind} row could not be written to the event log. The run itself is unaffected and "
+                + "its status stands; what is missing is the line in the history.",
+                kind);
+        }
+    }
+
+    private async Task AppendRowAsync(string kind, string actor, string detail)
     {
         if (events is null)
         {

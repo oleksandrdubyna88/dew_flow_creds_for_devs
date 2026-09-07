@@ -192,7 +192,10 @@ public static class OrgBackupEndpoints
         // log while the process looks healthy.
         if (!queue.Enqueue(start.Ticket))
         {
-            start.Ticket.Dispose();
+            // Begin has already written "in progress" — that is the whole point of it — so a rejected
+            // hand-over has to take that back, or the page shows a spinner for a run nobody will ever
+            // carry out, until a restart sweeps it. The claim goes with it.
+            await runner.AbandonAsync(start.Ticket, "nothing was there to carry the run out", ct);
             await OrgEndpoints.FailJson(
                 ctx,
                 StatusCodes.Status503ServiceUnavailable,
