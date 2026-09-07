@@ -945,6 +945,9 @@ app.MapOrgEndpoints(orgDeps);
 // The project surface, from its own file for the reason the corporate one is: this file is past
 // the size a reader can hold, and each epic adds routes.
 app.MapOrgProjectsEndpoints(orgDeps, orgProjects);
+// The event log's reader, from its own file for the same reason. Any allowed caller; the SCOPE
+// is decided there, from the same record RequireAdminAsync reads.
+app.MapOrgEventsEndpoints(orgDeps);
 
 // ----- corporate recovery: what every account here is subject to -----
 //

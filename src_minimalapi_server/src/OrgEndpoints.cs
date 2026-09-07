@@ -799,7 +799,7 @@ public static class OrgEndpoints
     /// <c>503</c> without that header invites a client into a tight loop against a wall, and because two
     /// spellings of "come back later" is how one of them ends up without the header at all.
     /// </summary>
-    private static Task FailUnavailableJson(HttpContext ctx, string message)
+    internal static Task FailUnavailableJson(HttpContext ctx, string message)
     {
         ctx.Response.Headers.RetryAfter = UnavailableRetryAfterSeconds.ToString(CultureInfo.InvariantCulture);
         return FailJson(ctx, StatusCodes.Status503ServiceUnavailable, message);

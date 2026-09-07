@@ -109,7 +109,7 @@ public static class OrgEventKinds
 /// <para>The day is the clock's at append time, and the clock is injected so a day boundary is a test
 /// rather than a wait until midnight.</para>
 /// </summary>
-public sealed class OrgEventLog(
+public sealed partial class OrgEventLog(
     string dataDir,
     ILogger<OrgEventLog> log,
     Func<DateTimeOffset> clock,

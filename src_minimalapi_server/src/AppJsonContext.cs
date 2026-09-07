@@ -60,6 +60,7 @@ public sealed record ClientConfigDto(string MicrosoftScope);
 [JsonSerializable(typeof(MemberRecord))]
 [JsonSerializable(typeof(OrgSettingsDto))]
 [JsonSerializable(typeof(OrgEventDto))]
+[JsonSerializable(typeof(OrgEventsPageDto))]
 [JsonSerializable(typeof(MemberSelfDto))]
 [JsonSerializable(typeof(ProjectSelfDto))]
 [JsonSerializable(typeof(PolicyDto))]
