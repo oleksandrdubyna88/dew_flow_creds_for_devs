@@ -809,7 +809,24 @@ deploys.
 that act already wrote `share.accepted` / `.declined` / `.unknown`; a second row would double every
 share in the history. The prune's receipt half is counted and not recorded for the same reason —
 only its INBOX half writes `share.expired`, and that item names both parties, which is why
-`SentShare` needed no new field (the epic plan expected one).
+`SentShare` needed no new address field (the epic plan expected `fromEmail`). It did gain
+`projectId`: the withdrawal paths hold the receipt rather than the inbox item, and a log an admin
+filters by project must not lose half the rows about one. Omitted when absent, so the wire stays
+byte-identical for every released client, and a receipt written before this reads as no project —
+which is the truthful answer.
+
+**Batches are one append, not one per row.** Blocking somebody withdraws up to `Vault:MaxInboxItems`
+shares and each earns a row; a weekend's expiries arrive together. `OrgEventLog.AppendManyAsync` takes
+both halves of the lock and opens the day file once for the whole batch — one at a time would be 500
+lock acquisitions and 500 opens inside one admin request. The expiry drain also **does not honour the
+stopping token**: the files are already deleted when it runs, so a loop that stopped half-way would
+leave shares gone and unrecorded, and no later sweep can find them to try again.
+
+**An append can no longer fail a request in any way.** `AppendManyAsync` catches everything rather
+than a list of types: the guarantee is that a mutation already on disk is never turned into a `500` by
+the log, and a list of anticipated types is a bet that the fourth one never comes — which on the share
+path is lost in the sender's face, with the share in the recipient's inbox and the sender told it
+failed.
 
 **A block writes one row per share and keeps the counts in `member.blocked`.** The counts answer
 "what did this block do"; the rows answer "what happened to the share I sent Boris", which a number
@@ -1207,7 +1224,7 @@ crash, and is removed.
 ${DataDir}/vaults/<key>.bin      the ciphertext
 ${DataDir}/vaults/<key>.email    the plaintext email, for team discovery
 ${DataDir}/shares/<key>/<guid>.json                   a recipient's inbox: one sealed share
-${DataDir}/sent/<key>/<guid>.json                     the sender's receipt: no ciphertext; `withdrawnReason` once the server withdrew it
+${DataDir}/sent/<key>/<guid>.json                     the sender's receipt: no ciphertext; `withdrawnReason` once the server withdrew it; `projectId` when the share named one
 ${DataDir}/org-recovery/setup.json                    the published org PUBLIC key
 ${DataDir}/org-recovery/invites/<key>/<guid>.json     one officer's sealed Shamir share
 ${DataDir}/org-recovery/ceremonies/<guid>.json        who ran a setup, and whom it invited

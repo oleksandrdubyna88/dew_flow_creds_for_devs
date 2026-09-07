@@ -1567,6 +1567,9 @@ app.MapPost("/api/shares", async (HttpContext ctx, CancellationToken ct) =>
             EntityName = item.EntityName,
             EntityKind = item.EntityKind,
             CreatedAt = item.CreatedAt,
+            // Carried so a withdrawal's row can cite the project: those paths hold the receipt, not
+            // the inbox item.
+            ProjectId = item.ProjectId,
         },
         ct);
     log.LogInformation("share {Kind} from {From} to {To}", item.EntityKind, item.FromEmail, item.ToEmail);
@@ -1681,7 +1684,10 @@ app.MapDelete("/api/shares/{id}", async (HttpContext ctx, string id, Cancellatio
     {
         // Deleted, but this build could not read it — a half-written file, or one from a newer server.
         // The share is gone either way; the row would be a fabrication.
-        log.LogWarning("a share was deleted from {Email}'s inbox that this build could not read; no row was written", caller.Value.Email);
+        log.LogWarning(
+            "share {ShareId} was deleted from {Email}'s inbox and this build could not read it; no row was written",
+            id,
+            caller.Value.Email);
         return;
     }
     var outcome = ShareOutcome.Of(ctx.Request.Query["outcome"]);

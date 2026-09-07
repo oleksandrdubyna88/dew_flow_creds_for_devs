@@ -232,6 +232,75 @@ public sealed class ShareEventRowTests
     }
 
     [Fact]
+    public async Task AnExpirySweepStoppedMidWayStillRecordsEverythingItDeleted()
+    {
+        // The files are gone before the rows are written, so a drain that honoured the stopping token
+        // would leave shares deleted and unrecorded — and no later sweep can find them to try again.
+        using var server = Corp.Server();
+        var store = new VaultStore(server.DataDir);
+        var log = new OrgEventLog(server.DataDir, NullLogger<OrgEventLog>.Instance, () => DateTimeOffset.UtcNow);
+        foreach (var name in new[] { "one", "two", "three" })
+        {
+            await store.AppendShareAsync(Bob, Expired(name), Ct);
+        }
+        using var stopping = new CancellationTokenSource();
+        await stopping.CancelAsync();
+
+        await new ShareMaintenance(
+                store, NullLogger<ShareMaintenance>.Instance, TimeSpan.FromHours(1), TimeSpan.FromDays(31), log)
+            .SweepAsync(CancellationToken.None);
+
+        Corp.Rows(server, OrgEventKinds.ShareExpired).Select(r => r.EntityName)
+            .Should().BeEquivalentTo(["one", "two", "three"]);
+    }
+
+    [Fact]
+    public async Task AWithdrawalRowCitesTheProjectTheShareCameFrom()
+    {
+        // The withdrawal paths hold the RECEIPT, not the inbox item, so the receipt carries the project
+        // — or a log an admin filters by project loses half the rows about one.
+        using var server = Corp.Server();
+        using var cto = server.ClientFor(Corp.Cto);
+        var project = (await Corp.BodyAsync(
+            await Corp.PostJsonAsync(cto, "/api/org/projects", """{"name":"Atlas"}"""))).GetProperty("id").GetString()!;
+        using var alice = server.ClientFor(Alice);
+        var body = JsonSerializer.Serialize(new ShareRequest
+        {
+            ToEmail = Bob,
+            EntityName = "in a project",
+            EntityKind = "db",
+            ProjectId = project,
+            Salt = Convert.ToBase64String(new byte[16]),
+            Iv = Convert.ToBase64String(new byte[12]),
+            Tag = Convert.ToBase64String(new byte[16]),
+            Data = Convert.ToBase64String(Encoding.UTF8.GetBytes(SecretMarker)),
+        }, AppJsonContext.Default.ShareRequest);
+        (await Corp.PostJsonAsync(alice, "/api/shares", body)).StatusCode.Should().Be(HttpStatusCode.Created);
+        var sent = Corp.Rows(server, OrgEventKinds.ShareSent).Should().ContainSingle().Subject;
+        sent.Project.Should().Be(project);
+
+        (await alice.DeleteAsync($"/api/shares/sent/{sent.ShareId}", Ct)).StatusCode
+            .Should().Be(HttpStatusCode.NoContent);
+
+        Corp.Rows(server, OrgEventKinds.ShareWithdrawn).Should().ContainSingle()
+            .Which.Project.Should().Be(project, "the receipt carries it, so the withdrawal row can cite it");
+    }
+
+    private static ShareItem Expired(string name) => new()
+    {
+        Id = Guid.NewGuid().ToString(),
+        FromEmail = Alice,
+        ToEmail = Bob,
+        EntityName = name,
+        EntityKind = "db",
+        CreatedAt = DateTimeOffset.UtcNow.AddDays(-40).ToUnixTimeMilliseconds(),
+        Salt = Convert.ToBase64String(new byte[16]),
+        Iv = Convert.ToBase64String(new byte[12]),
+        Tag = Convert.ToBase64String(new byte[16]),
+        Data = Convert.ToBase64String(Encoding.UTF8.GetBytes("sealed")),
+    };
+
+    [Fact]
     public async Task ARetiredReceiptLeavesNoRowBecauseItsShareAlreadyHasOne()
     {
         // The reconcile retires a receipt because the recipient ACTED, and that act left its own row.

@@ -139,7 +139,7 @@ public readonly record struct ShareFacts(
     /// one-way hash of it — so the caller supplies the sender it already knows.
     /// </summary>
     public static ShareFacts Of(string fromEmail, SentShare receipt) =>
-        new(receipt.Id, fromEmail, receipt.ToEmail, receipt.EntityName, receipt.EntityKind, ProjectId: null);
+        new(receipt.Id, fromEmail, receipt.ToEmail, receipt.EntityName, receipt.EntityKind, receipt.ProjectId);
 }
 
 /// <summary>
@@ -207,11 +207,29 @@ public sealed partial class OrgEventLog(
     /// <summary>
     /// Append one row. Never throws; <c>false</c> means the row was lost, and the log names the file.
     /// </summary>
-    public async Task<bool> AppendAsync(OrgEventDto row, CancellationToken ct)
+    public Task<bool> AppendAsync(OrgEventDto row, CancellationToken ct) => AppendManyAsync([row], ct);
+
+    /// <summary>
+    /// Append several rows under ONE acquisition of both halves of the lock and one open of the day
+    /// file. Never throws; <c>false</c> means the rows were lost, and the log names the file.
+    /// </summary>
+    /// <remarks>
+    /// <para>Not an optimisation of the single append — it is what makes the two callers that produce a
+    /// BATCH bounded. Blocking somebody withdraws up to <c>Vault:MaxInboxItems</c> shares (500) and each
+    /// one earns a row; the maintenance sweep can prune a weekend's worth at once. One row at a time
+    /// there is 500 lock acquisitions and 500 file opens inside one admin request.</para>
+    /// <para>All or nothing per CALL, not per row: the rows are serialized first, so a row that cannot
+    /// be written is a whole batch that was not written, and the log says so once.</para>
+    /// </remarks>
+    public async Task<bool> AppendManyAsync(IReadOnlyList<OrgEventDto> rows, CancellationToken ct)
     {
+        if (rows.Count == 0)
+        {
+            return true;
+        }
         var path = PathForDay(clock());
         var deadline = DateTime.UtcNow + _lockWait;
-        if (!await TryEnterAsync(path, row, deadline, ct))
+        if (!await TryEnterAsync(path, rows[0], deadline, ct))
         {
             return false;
         }
@@ -219,17 +237,27 @@ public sealed partial class OrgEventLog(
         {
             Directory.CreateDirectory(_dir);
             await using var held = await HoldAcrossProcessesAsync(deadline, ct);
-            await WriteRowAsync(path, JsonSerializer.SerializeToUtf8Bytes(row, AppJsonContext.Default.OrgEventDto), ct);
+            await WriteRowsAsync(
+                path,
+                [.. rows.Select(row => JsonSerializer.SerializeToUtf8Bytes(row, AppJsonContext.Default.OrgEventDto))],
+                ct);
             return true;
         }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException or OperationCanceledException)
+        // A CATCH-ALL, not a list of types. The guarantee this method makes to every caller is that a
+        // mutation already on disk is never turned into a 500 by the log — and a list of anticipated
+        // types is a bet that the fourth one never comes, which on a path this hot is a bet the product
+        // loses in the sender's face: the share is in the recipient's inbox and the sender is told it
+        // failed. The row is what may be lost here, never the request.
+        catch (Exception e)
         {
+            var row = rows[0];
             // Actor and subject ride along so that when the NDJSON append fails the trail degrades to
             // the server log instead of vanishing.
             log.LogError(
                 e,
-                "event log {Path}: a {Kind} row by {Actor} about {Subject} was lost; the log has stopped recording",
+                "event log {Path}: {Count} row(s) starting with a {Kind} by {Actor} about {Subject} were lost; the log has stopped recording",
                 path,
+                rows.Count,
                 row.Kind,
                 row.Actor,
                 row.Subject ?? "(nobody)");
@@ -316,13 +344,21 @@ public sealed partial class OrgEventLog(
     /// whole rows, which NDJSON tolerates by construction — one row per line, none depending on the
     /// one before.</para>
     /// </summary>
-    private static async Task WriteRowAsync(string path, byte[] row, CancellationToken ct)
+    private static async Task WriteRowsAsync(string path, IReadOnlyList<byte[]> rows, CancellationToken ct)
     {
-        byte[] separator = await EndsMidLineAsync(path, ct) ? Newline : [];
-        byte[] line = [.. separator, .. row, .. Newline];
+        var buffer = new List<byte>();
+        if (await EndsMidLineAsync(path, ct))
+        {
+            buffer.AddRange(Newline);
+        }
+        foreach (var row in rows)
+        {
+            buffer.AddRange(row);
+            buffer.AddRange(Newline);
+        }
         await using var stream = new FileStream(
             path, FileMode.Append, FileAccess.Write, FileShare.ReadWrite, bufferSize: 0, useAsync: true);
-        await stream.WriteAsync(line, ct);
+        await stream.WriteAsync(buffer.ToArray(), ct);
         await stream.FlushAsync(ct);
     }
 

@@ -188,6 +188,50 @@ public sealed class OrgEventLogTests : IDisposable
     }
 
     [Fact]
+    public async Task ABatchIsOneAppendAndEveryRowLandsWhole()
+    {
+        // What the batch exists for: blocking somebody withdraws up to an inbox-full of shares and each
+        // one earns a row. One at a time there is one lock acquisition and one file open per row.
+        var log = NewLog();
+        var rows = Enumerable.Range(0, 50)
+            .Select(i => Row(OrgEventKinds.MemberRoleChanged) with { Detail = $"row {i}" })
+            .ToList();
+
+        (await log.AppendManyAsync(rows, Ct)).Should().BeTrue();
+
+        var lines = await File.ReadAllLinesAsync(log.PathForDay(Noon), Ct);
+        lines.Should().HaveCount(50, "every row on its own line");
+        lines.Select(line => Parse(line).Detail).Should().Equal(rows.Select(r => r.Detail));
+    }
+
+    [Fact]
+    public async Task AnEmptyBatchWritesNothingAndSucceeds()
+    {
+        var log = NewLog();
+
+        (await log.AppendManyAsync([], Ct)).Should().BeTrue();
+
+        File.Exists(log.PathForDay(Noon)).Should().BeFalse("nothing to write is not a reason to create a file");
+    }
+
+    [Fact]
+    public async Task ABatchAfterATornLineStartsOnAFreshLineToo()
+    {
+        var log = NewLog();
+        await log.AppendAsync(Row(OrgEventKinds.MemberRegistered), Ct);
+        const string torn = "{\"at\":1,\"kind\":\"member.role_ch";
+        await File.AppendAllTextAsync(log.PathForDay(Noon), torn, Ct);
+
+        await log.AppendManyAsync([Row(OrgEventKinds.MemberBlocked), Row(OrgEventKinds.MemberUnblocked)], Ct);
+
+        var lines = await File.ReadAllLinesAsync(log.PathForDay(Noon), Ct);
+        lines.Should().HaveCount(4);
+        lines[1].Should().Be(torn);
+        Parse(lines[2]).Kind.Should().Be(OrgEventKinds.MemberBlocked);
+        Parse(lines[3]).Kind.Should().Be(OrgEventKinds.MemberUnblocked);
+    }
+
+    [Fact]
     public async Task BothMaintenanceSweepsLeaveOrgEventsAlone()
     {
         // Kept forever, by decision. The controls matter as much as the assertion: each sweep is given
