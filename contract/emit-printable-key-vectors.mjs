@@ -108,7 +108,12 @@ const rendered = `${JSON.stringify(document, null, 2)}\n`;
 // produces. Without it the file is a snapshot somebody could quietly hand-edit, and the whole point
 // of it is that it is DERIVED — from this construction, and from the shipped parser below.
 const CHECK = process.argv.includes('--check');
-if (CHECK && fs.readFileSync(out, 'utf8') !== rendered) {
+// Line endings are normalised on both sides. Git checks this file out with CRLF on Windows and LF on
+// Linux, so a byte comparison would make the check pass in CI and fail on a developer's machine —
+// which is the worst of both, because the failure nobody sees is the one that matters.
+const unified = (text) => text.split('\r\n').join('\n');
+const same = (a, b) => unified(a) === unified(b);
+if (CHECK && !same(fs.readFileSync(out, 'utf8'), rendered)) {
   console.log(`FAIL ${out} is not what this generator produces.`);
   console.log('      Run `node contract/emit-printable-key-vectors.mjs` and commit the result.');
   process.exitCode = 1;

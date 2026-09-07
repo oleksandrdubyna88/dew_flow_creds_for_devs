@@ -142,6 +142,19 @@ builder.Services.AddHostedService(sp => new ShareMaintenance(
     // tree and must never grow one — the sweep runs on every deployment there is.
     orgRecovery.Enabled ? sp.GetRequiredService<OrgEventLog>() : null));
 
+// The nightly backup, and the sweep that clears a run a restart interrupted. Corp mode only, like
+// the recovery sweep: a personal deployment has no backup key to seal an archive under, and an idle
+// timer on every one of them is noise with a cost. It asks "is it due" every five minutes rather
+// than sleeping until the hour, so a restart at 02:59 does not skip the night.
+if (orgRecovery.Enabled)
+{
+    builder.Services.AddHostedService(sp => new BackupScheduleService(
+        sp.GetRequiredService<BackupStore>(),
+        sp.GetRequiredService<BackupRunner>(),
+        TimeProvider.System,
+        sp.GetRequiredService<ILoggerFactory>().CreateLogger<BackupScheduleService>()));
+}
+
 var orgStore = new OrgRecoveryStore(dataDir);
 if (orgRecovery.Enabled)
 {
@@ -175,6 +188,20 @@ builder.Services.AddSingleton(sp => new OrgProjectsStore(
     dataDir, sp.GetRequiredService<ILoggerFactory>().CreateLogger<OrgProjectsStore>()));
 builder.Services.AddSingleton(sp => new LoginKeyStore(
     dataDir, loginKeyKek, sp.GetRequiredService<ILoggerFactory>().CreateLogger<LoginKeyStore>()));
+// The backup deployment's four files, and the thing that takes a run. Registered on every
+// deployment for the reason the login-key store is: the routes exist everywhere and answer "corp
+// mode off" from the same code, and nothing here creates a directory until something is written.
+// The KEK is the same one, deliberately — one secret to keep, not two.
+builder.Services.AddSingleton(sp => new BackupStore(
+    dataDir, loginKeyKek, sp.GetRequiredService<ILoggerFactory>().CreateLogger<BackupStore>()));
+builder.Services.AddSingleton(sp => new BackupRunner(
+    sp.GetRequiredService<BackupStore>(),
+    dataDir,
+    config,
+    // The log only where there is one: a personal deployment has no org/ tree and must not grow one.
+    orgRecovery.Enabled ? sp.GetRequiredService<OrgEventLog>() : null,
+    TimeProvider.System,
+    sp.GetRequiredService<ILoggerFactory>().CreateLogger<BackupRunner>()));
 
 // Hard request-body ceiling (backstop; endpoints also check Content-Length).
 builder.WebHost.ConfigureKestrel(o => o.Limits.MaxRequestBodySize = maxVaultBytes + 64 * 1024);
@@ -962,6 +989,20 @@ app.MapOrgProjectsEndpoints(orgDeps, orgProjects);
 // The event log's reader, from its own file for the same reason. Any allowed caller; the SCOPE
 // is decided there, from the same record RequireAdminAsync reads.
 app.MapOrgEventsEndpoints(orgDeps);
+// The backup surface, from its own file for the same reason. The run is DETACHED from the request:
+// a build outlives the browser by design, and a reload must not cancel a backup half way (rule 8).
+// `Task.Run` with the application's stopping token rather than the request's is what makes that
+// true — the request's token is cancelled the moment the client goes away.
+app.MapOrgBackupEndpoints(
+    orgDeps,
+    app.Services.GetRequiredService<BackupStore>(),
+    app.Services.GetRequiredService<BackupRunner>(),
+    work =>
+    {
+        var stopping = app.Services.GetRequiredService<IHostApplicationLifetime>().ApplicationStopping;
+        _ = Task.Run(() => work(stopping), CancellationToken.None);
+        return Task.CompletedTask;
+    });
 
 // ----- corporate recovery: what every account here is subject to -----
 //
