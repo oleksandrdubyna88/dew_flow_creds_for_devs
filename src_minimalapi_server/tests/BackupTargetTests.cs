@@ -1,6 +1,8 @@
 using System.Net;
+using System.Security.Cryptography;
 using System.Text;
 using FluentAssertions;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace CredVaultServer.Tests;
 
@@ -27,7 +29,7 @@ public class BackupTargetTests
     {
         // Path style, because every S3-compatible service accepts it and only some accept the other —
         // that one choice decides whether "S3-compatible" means what an operator thinks it does.
-        var stub = new Stub()
+        var stub = new StubTransport()
             .Answer(HttpStatusCode.OK)
             .Answer(HttpStatusCode.OK, headers: [("Content-Length", "9")]);
         var target = S3(stub);
@@ -50,7 +52,7 @@ public class BackupTargetTests
         // UNSIGNED-PAYLOAD leaves the body out of the signature, so a 200 means the request was
         // accepted rather than that the bytes are there. Without the check, a truncated upload reads as
         // a good backup and the only moment anybody finds out is a restore.
-        var stub = new Stub()
+        var stub = new StubTransport()
             .Answer(HttpStatusCode.OK)
             .Answer(HttpStatusCode.OK, headers: [("Content-Length", "5")]);
 
@@ -65,7 +67,7 @@ public class BackupTargetTests
     {
         // A run talks to every configured target and must record which one failed and carry on. An
         // exception per HTTP status would make that a try/catch at every call site.
-        var stub = new Stub().Answer(HttpStatusCode.Forbidden, "<Error><Code>AccessDenied</Code></Error>");
+        var stub = new StubTransport().Answer(HttpStatusCode.Forbidden, "<Error><Code>AccessDenied</Code></Error>");
 
         var outcome = await S3(stub).PutAsync("x.cvbk", Body(), 9, Ct);
 
@@ -79,7 +81,7 @@ public class BackupTargetTests
         // A bucket answers 1000 keys at a time. Retention over the first page only would leave
         // everything past it for ever — and the floor that protects against deleting everything would
         // be computing against a set that is not the set.
-        var stub = new Stub()
+        var stub = new StubTransport()
             .Answer(HttpStatusCode.OK, Page("cred-vault-20260101-030000Z.cvbk", truncated: true, next: "MORE"))
             .Answer(HttpStatusCode.OK, Page("cred-vault-20260901-030000Z.cvbk", truncated: false, next: ""));
 
@@ -96,7 +98,7 @@ public class BackupTargetTests
     {
         // A HEAD is not enough: both clouds routinely grant read while denying write, so a check that
         // only reads gives false confidence at save time and finds out at 03:00.
-        var stub = new Stub().Answer(HttpStatusCode.OK).Answer(HttpStatusCode.NoContent);
+        var stub = new StubTransport().Answer(HttpStatusCode.OK).Answer(HttpStatusCode.NoContent);
 
         (await S3(stub).UsableAsync(Ct)).Ok.Should().BeTrue();
 
@@ -110,7 +112,7 @@ public class BackupTargetTests
     {
         // Retention would silently stop working. Better to refuse the target than to accept one whose
         // archives can only accumulate.
-        var stub = new Stub().Answer(HttpStatusCode.OK).Answer(HttpStatusCode.Forbidden);
+        var stub = new StubTransport().Answer(HttpStatusCode.OK).Answer(HttpStatusCode.Forbidden);
 
         var usable = await S3(stub).UsableAsync(Ct);
 
@@ -121,7 +123,7 @@ public class BackupTargetTests
     [Fact]
     public async Task AnAzureUploadCarriesTheTwoHeadersWithoutWhichItIsA400()
     {
-        var stub = new Stub()
+        var stub = new StubTransport()
             .Answer(HttpStatusCode.Created)
             .Answer(HttpStatusCode.OK, headers: [("Content-Length", "9")]);
 
@@ -136,7 +138,7 @@ public class BackupTargetTests
     [Fact]
     public async Task AnAzureListingFollowsItsNextMarker()
     {
-        var stub = new Stub()
+        var stub = new StubTransport()
             .Answer(HttpStatusCode.OK, Blobs("cred-vault-20260101-030000Z.cvbk", next: "MORE"))
             .Answer(HttpStatusCode.OK, Blobs("cred-vault-20260901-030000Z.cvbk", next: ""));
 
@@ -170,7 +172,7 @@ public class BackupTargetTests
     {
         // Conflating them is how retention comes to do nothing while the run reports success: a target
         // whose list permission was revoked would accumulate archives for ever and say so nowhere.
-        var refused = await S3(new Stub().Answer(HttpStatusCode.Forbidden, "denied")).ListAsync(Ct);
+        var refused = await S3(new StubTransport().Answer(HttpStatusCode.Forbidden, "denied")).ListAsync(Ct);
 
         refused.Ok.Should().BeFalse();
         refused.Why.Should().Contain("403");
@@ -180,7 +182,7 @@ public class BackupTargetTests
     [Fact]
     public async Task ABodyThatIsNotAListingIsAFailureAndNotAnEmptyPage()
     {
-        var nonsense = await S3(new Stub().Answer(HttpStatusCode.OK, "<<not xml")).ListAsync(Ct);
+        var nonsense = await S3(new StubTransport().Answer(HttpStatusCode.OK, "<<not xml")).ListAsync(Ct);
 
         nonsense.Ok.Should().BeFalse();
         nonsense.Why.Should().Contain("could not be read");
@@ -191,7 +193,7 @@ public class BackupTargetTests
     {
         // Retention computed over "what came back before the failure" would treat the rest as absent,
         // and the floor that stops it deleting everything would be measuring the wrong set.
-        var stub = new Stub()
+        var stub = new StubTransport()
             .Answer(HttpStatusCode.OK, Page("cred-vault-20260101-030000Z.cvbk", truncated: true, next: "MORE"))
             .Answer(HttpStatusCode.InternalServerError, "boom");
 
@@ -233,19 +235,71 @@ public class BackupTargetTests
     [Fact]
     public void TheSingleUploadCeilingsAreTheOnesEachServiceDocuments()
     {
-        S3(new Stub()).MaxBytes.Should().Be(5L * 1024 * 1024 * 1024, "S3's single PUT");
-        Azure(new Stub()).MaxBytes.Should().Be(5000L * 1024 * 1024, "Put Blob at the pinned version");
+        S3(new StubTransport()).MaxBytes.Should().Be(5L * 1024 * 1024 * 1024, "S3's single PUT");
+        Azure(new StubTransport()).MaxBytes.Should().Be(5000L * 1024 * 1024, "Put Blob at the pinned version");
+    }
+
+    [Fact]
+    public void AKindThisServerDoesNotImplementIsSKIPPEDAndNeverBuiltAsAnother()
+    {
+        // The trap the second review round named: the factory was a ternary, so everything that was
+        // not S3 became Azure. Nothing can SAVE an unknown kind — the request validator refuses it —
+        // and that is not the case this guards. A settings.json restored from a deployment that has
+        // the drive targets of the next plan carries one, and a ternary would have uploaded the
+        // company's archive to Azure with credentials meant for somebody else entirely.
+        var kek = RandomNumberGenerator.GetBytes(Key32.Bytes);
+        var targets = new BackupTargets(
+            kek, new OneClient(new StubTransport()), new FrozenClock(), NullLogger<BackupTargets>.Instance);
+        var future = targets.Seal(
+            "onedrive",
+            "https://graph.microsoft.com",
+            string.Empty,
+            "vaults",
+            "backups",
+            new TargetSecrets("id", "secret", string.Empty, string.Empty));
+
+        var built = targets.Build(future);
+
+        built.Client.Should().BeNull("this server has no OneDrive client, and Azure is not a stand-in");
+        built.Why.Should().Contain("onedrive").And.Contain("will not guess");
+    }
+
+    [Fact]
+    public void ABuiltTargetForAKindThisServerHASIsTheClientForTHATKind()
+    {
+        // The other half, so the test above cannot pass by refusing everything.
+        var kek = RandomNumberGenerator.GetBytes(Key32.Bytes);
+        var targets = new BackupTargets(
+            kek, new OneClient(new StubTransport()), new FrozenClock(), NullLogger<BackupTargets>.Instance);
+
+        targets.Build(
+                targets.Seal(
+                    TargetKinds.S3, "https://s3.example.com", "eu-central-1", "vaults", "backups",
+                    new TargetSecrets("AKIDEXAMPLE", "secret", string.Empty, string.Empty)))
+            .Client.Should().BeOfType<S3Target>();
+        targets.Build(
+                targets.Seal(
+                    TargetKinds.AzureBlob, "https://myaccount.blob.core.windows.net", string.Empty,
+                    "vaults", "backups",
+                    new TargetSecrets(string.Empty, string.Empty, "myaccount", "a2V5")))
+            .Client.Should().BeOfType<AzureBlobTarget>();
+    }
+
+    /// <summary>A factory that hands every caller the same stubbed transport.</summary>
+    private sealed class OneClient(StubTransport transport) : IHttpClientFactory
+    {
+        public HttpClient CreateClient(string name) => new(transport, disposeHandler: false);
     }
 
     private static Stream Body() => new MemoryStream(Encoding.UTF8.GetBytes("some bytes"[..9]));
 
-    private static S3Target S3(Stub stub) => new(
+    private static S3Target S3(StubTransport stub) => new(
         new HttpClient(stub),
         new S3TargetConfig(
             "https://s3.example.com", "eu-central-1", "vaults", "backups", "AKIDEXAMPLE", "secret"),
         new FrozenClock());
 
-    private static AzureBlobTarget Azure(Stub stub) => new(
+    private static AzureBlobTarget Azure(StubTransport stub) => new(
         new HttpClient(stub),
         new AzureTargetConfig(
             "https://myaccount.blob.core.windows.net",
@@ -275,35 +329,6 @@ public class BackupTargetTests
           <NextMarker>{next}</NextMarker>
         </EnumerationResults>
         """;
-
-    /// <summary>A transport that answers from a queue and keeps what it was sent.</summary>
-    private sealed class Stub : HttpMessageHandler
-    {
-        private readonly Queue<HttpResponseMessage> _answers = new();
-
-        public List<HttpRequestMessage> Sent { get; } = [];
-
-        public Stub Answer(
-            HttpStatusCode status, string body = "", IReadOnlyList<(string, string)>? headers = null)
-        {
-            var response = new HttpResponseMessage(status) { Content = new StringContent(body) };
-            foreach (var (name, value) in headers ?? [])
-            {
-                response.Content.Headers.Remove(name);
-                response.Content.Headers.TryAddWithoutValidation(name, value);
-            }
-            _answers.Enqueue(response);
-            return this;
-        }
-
-        protected override Task<HttpResponseMessage> SendAsync(
-            HttpRequestMessage request, CancellationToken cancellationToken)
-        {
-            Sent.Add(request);
-            return Task.FromResult(
-                _answers.Count > 0 ? _answers.Dequeue() : new HttpResponseMessage(HttpStatusCode.OK));
-        }
-    }
 
     private sealed class FrozenClock : TimeProvider
     {

@@ -253,11 +253,16 @@ public sealed class BackupRunner(
     /// The run's own verdict, which is not the same question as "was an archive made".
     /// </summary>
     /// <remarks>
-    /// A backup that stayed on the machine it was taken from is not a backup, so a run whose every
+    /// <para>A backup that stayed on the machine it was taken from is not a backup, so a run whose every
     /// configured target refused must NOT read as ok — the review round was right that "the archive
     /// exists" is the wrong test. Some targets failing is <c>partial</c>: the copy that matters may
     /// still have left the building, and a page that cried failure would train an administrator to
-    /// ignore it.
+    /// ignore it.</para>
+    /// <para><b>A retention that did not run also costs the <c>ok</c>.</b> The second round found that
+    /// every upload succeeding made a run green even where the pass that keeps a destination bounded
+    /// could not list or delete — so the archives accumulate there for ever and the only place saying
+    /// so is a sentence on a row drawn as a success. It is <c>partial</c>, because the archive DID get
+    /// off the machine and calling that failed would be the other kind of lie.</para>
     /// </remarks>
     private string Verdict()
     {
@@ -266,16 +271,28 @@ public sealed class BackupRunner(
             return BackupRunResults.Succeeded;
         }
         var ok = _uploads.Count(upload => upload.Result == BackupRunResults.Succeeded);
-        return ok == _uploads.Count
-            ? BackupRunResults.Succeeded
-            : ok == 0 ? BackupRunResults.Failed : Partial;
+        return ok == 0
+            ? BackupRunResults.Failed
+            : ok == _uploads.Count && !_uploads.Any(upload => upload.Retention.Length > 0)
+                ? BackupRunResults.Succeeded
+                : Partial;
     }
 
+    /// <summary>Every target's complaint, uploads and retention alike, in one sentence per target.</summary>
     private string Trouble() =>
-        string.Join(
-            " ",
-            _uploads.Where(upload => upload.Result != BackupRunResults.Succeeded)
-                .Select(upload => $"{upload.Where}: {upload.Error}"));
+        string.Join(" ", _uploads.SelectMany(Complaints));
+
+    private static IEnumerable<string> Complaints(BackupTargetStatus upload)
+    {
+        if (upload.Result != BackupRunResults.Succeeded)
+        {
+            yield return $"{upload.Where}: {upload.Error}";
+        }
+        if (upload.Retention.Length > 0)
+        {
+            yield return $"{upload.Where}: {upload.Retention}";
+        }
+    }
 
     /// <summary>
     /// Send the archive to every configured target, and never let one of them fail the run's archive.
@@ -306,25 +323,23 @@ public sealed class BackupRunner(
         string path, SealedTarget configured, int retentionDays, CancellationToken ct)
     {
         var at = clock.GetUtcNow().ToUnixTimeMilliseconds();
-        var client = targets.Build(configured);
-        if (client is null)
+        var built = targets.Build(configured);
+        if (built.Client is null)
         {
+            // Its OWN sentence — a KEK that changed and a kind this server does not implement are
+            // different problems with different answers, and they used to share one line of advice.
             return new BackupTargetStatus(
-                configured.Kind,
-                configured.Describe,
-                BackupRunResults.Failed,
-                "this server cannot open the credentials for this target. Re-enter them.",
-                at);
+                configured.Kind, configured.Describe, BackupRunResults.Failed, built.Why, string.Empty, at);
         }
-        var outcome = await UploadAsync(client, path, ct);
-        var retention = outcome.Ok ? await PruneAsync(client, retentionDays, ct) : string.Empty;
+        var outcome = await UploadAsync(built.Client, path, ct);
         return new BackupTargetStatus(
             configured.Kind,
-            client.Describe,
+            built.Client.Describe,
             outcome.Ok ? BackupRunResults.Succeeded : BackupRunResults.Failed,
+            outcome.Ok ? string.Empty : outcome.Why,
             // A retention that could not run is not a failed upload — the archive IS there — but it is
-            // not nothing either, and a log line is not somewhere an administrator looks.
-            outcome.Ok ? retention : outcome.Why,
+            // not nothing either, so it gets its own field rather than borrowing the error's.
+            outcome.Ok ? await PruneAsync(built.Client, retentionDays, ct) : string.Empty,
             at);
     }
 
@@ -359,7 +374,7 @@ public sealed class BackupRunner(
             // A listing that FAILED is not an empty one. Pruning nothing and calling the run a success
             // would let a target whose list permission was revoked accumulate archives for ever with
             // nothing anywhere saying so — which is why this reaches the status rather than only a log.
-            return $"the upload succeeded and retention could not run: {listing.Why}";
+            return $"retention could not run: {listing.Why} Old archives will accumulate here until it can.";
         }
         var refused = new List<string>();
         foreach (var archive in ArchiveTargets.Expired(listing.Archives, clock.GetUtcNow(), retentionDays))
@@ -377,7 +392,7 @@ public sealed class BackupRunner(
         }
         return refused.Count == 0
             ? string.Empty
-            : $"the upload succeeded and retention could not remove {refused.Count} old archive(s).";
+            : $"retention could not remove {refused.Count} old archive(s). The next run will try again.";
     }
 
     /// <summary>Rewrite the in-progress status so the page can see the uploads landing.</summary>

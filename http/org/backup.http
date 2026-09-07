@@ -220,6 +220,16 @@ Accept: application/json
   test('and it carries a per-target list, so a page can say WHICH one failed', () => {
     assert.ok(Array.isArray(response.parsedBody.targets));
   });
+  test('every target row separates the upload from the retention that follows it', () => {
+    // They shared a field until the second review round: an archive that ARRIVED at a destination
+    // whose old archives can no longer be listed is a success and an unbounded directory at once,
+    // and one field cannot say both. A page needs them apart to draw that row honestly.
+    for (const target of response.parsedBody.targets) {
+      for (const field of ['kind', 'where', 'result', 'error', 'retention', 'at']) {
+        assert.ok(field in target, `a target row must carry ${field}`);
+      }
+    }
+  });
 }}
 
 ###

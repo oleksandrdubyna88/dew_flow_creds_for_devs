@@ -278,6 +278,17 @@ not an empty one, on both clients; a 200 carrying something that is not a listin
 an upload the service stored SHORT is a failure and not a success; and a settings file written before
 targets existed reads back with an empty list.
 
+**The second round added two more, and one shared fixture.** A kind this server does not implement is
+skipped rather than built as Azure (`AKindThisServerDoesNotImplementIsSKIPPEDAndNeverBuiltAsAnother` —
+sabotaged back to the ternary, and it failed with *"Expected built.Client to be null … but found
+CredVaultServer.AzureBlobTarget"*), paired with one asserting the two kinds it DOES implement so it
+cannot pass by refusing everything; and an upload that landed where retention could not run is
+`partial` rather than `ok` (`AnUploadThatLANDEDWhereRetentionCannotRunIsNotACleanRun` — sabotaged back
+to a verdict over uploads alone, and it failed with *"Expected status.LastResult to be "partial" …
+but "ok""*), again paired with the clean-run case. The stubbed transport moved into its own
+`StubTransport.cs` when the second suite needed it — a copy would have drifted, and the copy that
+drifts is the one nobody is looking at.
+
 **What none of it covers, said plainly.** Nothing here proves that AWS or Azure ACCEPT what these
 clients send — only that they send what the specifications say, and that the signatures match values
 those specifications publish. A live check against a real bucket needs credentials nobody should
