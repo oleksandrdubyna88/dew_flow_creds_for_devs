@@ -36,11 +36,21 @@ public sealed class OrgEventLogUnreadableException(string filePath, Exception in
 /// query. The once-per-file memory is bounded by the number of files that ever carried a torn line,
 /// which is the number of crashes mid-append, not the number of days.</para>
 ///
-/// <para><b>Every query has a scan budget</b>, <see cref="MaxLinesScannedPerQuery"/>. A substring filter
-/// with no date range would otherwise read the whole history — 18 MB a year, kept forever — on one
-/// request, and the request limiter bounds how often a caller asks, not how much one ask costs. Past
-/// the budget the page ends with a cursor at the line it stopped on, so a client simply asks again;
-/// an empty page with a cursor means "nothing yet, keep going", and only a null cursor means the end.</para>
+/// <para><b>Newest first means the order rows were APPENDED</b> — the file's own order, newest file
+/// first — not a sort on <c>at</c>. The two agree to the microsecond, because the day file is chosen
+/// from the same clock that stamps the row; where a page would show them disagreeing is a row whose
+/// caller stamped it either side of a midnight the appender crossed, and re-sorting by <c>at</c>
+/// across files would cost a merge of every file in range and a cursor that could no longer be a
+/// position. What the log records is the sequence of what happened, and that is what it answers.</para>
+///
+/// <para><b>Every query has two budgets</b>, <see cref="MaxLinesScannedPerQuery"/> and
+/// <see cref="MaxDayFilesPerQuery"/>. A substring filter with no date range would otherwise read the
+/// whole history — 18 MB a year, kept forever — on one request, and the request limiter bounds how
+/// often a caller asks, not how much one ask costs. The second budget is not the first in disguise: a
+/// deployment with two rows a day spends its cost in OPENING files, not in reading lines, and a
+/// line budget alone would let one request open a decade of them. Past either budget the page ends
+/// with a cursor where it stopped, so a client simply asks again; an empty page with a cursor means
+/// "nothing yet, keep going", and only a null cursor means the end.</para>
 ///
 /// <para>A file that vanishes between the listing and the open is skipped as gone — an operator's
 /// hand, since nothing here ever deletes one. Any other failure to open a file is
@@ -50,6 +60,13 @@ public sealed partial class OrgEventLog
 {
     /// <summary>Lines one query may read — about 8 MB, a few months of a busy company — before it hands back what it has.</summary>
     public const int MaxLinesScannedPerQuery = 20_000;
+
+    /// <summary>
+    /// Day files one query may OPEN. Over a year of days, and the budget a sparse deployment actually
+    /// spends: two rows a day never reaches the line budget, so without this one request would open
+    /// every file the server has ever written.
+    /// </summary>
+    public const int MaxDayFilesPerQuery = 400;
 
     private readonly ConcurrentDictionary<string, byte> _unparseableLogged = new();
 
@@ -74,6 +91,12 @@ public sealed partial class OrgEventLog
             if (stop is { } stopped)
             {
                 return page.Ended(stopped.Next);
+            }
+            if (f + 1 < files.Count && f + 1 >= MaxDayFilesPerQuery)
+            {
+                // Line 0 of the last file opened: the next page's walk starts BELOW it, which is the
+                // first line of the next older file — exactly where this one stopped.
+                return page.Ended(new OrgEventCursor(day, 0));
             }
         }
         return page.Ended(null);

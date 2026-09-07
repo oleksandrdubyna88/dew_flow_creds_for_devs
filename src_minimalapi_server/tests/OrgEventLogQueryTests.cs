@@ -365,7 +365,14 @@ public sealed class OrgEventLogQueryTests : IDisposable
         OrgEventCursor.TryParse(cursor.ToString(), out var parsed).Should().BeTrue();
         parsed.Should().Be(cursor);
 
-        foreach (var bad in new[] { "", "2026-03-01", "2026-03-01:", "2026-3-1:4", "not-a-day:1", "2026-03-01:-1", "2026-03-01:x" })
+        // The path-shaped ones are the security case: a day is parsed into a DateOnly and a file name is
+        // BUILT from it, so nothing a caller sends is ever a path component — but the grammar is what
+        // makes that true, and a grammar with no test for it is a grammar somebody widens.
+        foreach (var bad in new[]
+                 {
+                     "", "2026-03-01", "2026-03-01:", "2026-3-1:4", "not-a-day:1", "2026-03-01:-1", "2026-03-01:x",
+                     "../secrets:0", @"..\secrets:0", "2026-03-01:0/../x", "/etc/passwd:0", "2026-03-01:+1",
+                 })
         {
             OrgEventCursor.TryParse(bad, out _).Should().BeFalse("'{0}' is not a cursor", bad);
         }
@@ -380,6 +387,48 @@ public sealed class OrgEventLogQueryTests : IDisposable
 
         OrgEventCursor.UtcDayOf(oneAmInBerlin).Should().Be(new DateOnly(2026, 3, 1));
         OrgEventCursor.UtcDayOf(oneAmInBerlin.ToUnixTimeMilliseconds()).Should().Be(new DateOnly(2026, 3, 1));
+    }
+
+    [Fact]
+    public async Task APageCarriesOnIntoTheOlderDayFileAndTheCursorSaysWhereItStopped()
+    {
+        // A cursor names the day AND the line it stopped on, whichever file that was, so a page that
+        // spans midnight resumes in the right file rather than clamping an index into the wrong one.
+        var log = NewLog();
+        await log.AppendAsync(Row(detail: "old 1"), Ct);
+        await log.AppendAsync(Row(detail: "old 2"), Ct);
+        _now = Noon.AddDays(1);
+        await log.AppendAsync(Row(detail: "new 1"), Ct);
+        await log.AppendAsync(Row(detail: "new 2"), Ct);
+
+        var first = await PageAsync(log, new OrgEventQuery(Limit: 3));
+        first.Items.Select(r => r.Detail).Should().Equal("new 2", "new 1", "old 2");
+        first.Next!.Value.Day.Should().Be(DateOnly.FromDateTime(Noon.UtcDateTime), "it stopped in the OLDER file");
+
+        var second = await PageAsync(log, new OrgEventQuery(Limit: 3, Cursor: first.Next));
+
+        second.Items.Select(r => r.Detail).Should().Equal("old 1");
+        second.Next.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task AQueryStopsAtItsDayFileBudgetToo()
+    {
+        // The line budget is not this budget. A deployment with two rows a day never reaches it, and
+        // spends its cost OPENING files instead — a decade of them on one request, without this.
+        var log = NewLog();
+        for (var day = 0; day <= OrgEventLog.MaxDayFilesPerQuery; day++)
+        {
+            _now = Noon.AddDays(-day);
+            await log.AppendAsync(Row(detail: $"day {day}"), Ct);
+        }
+
+        var page = await PageAsync(log, new OrgEventQuery(Text: "nothing matches this"));
+
+        page.Items.Should().BeEmpty();
+        page.Next.Should().NotBeNull("there are older files this query did not open");
+        var next = await PageAsync(log, new OrgEventQuery(Text: "day 400", Cursor: page.Next));
+        next.Items.Should().ContainSingle("the next page carries on where the budget stopped it");
     }
 
     [Fact]
