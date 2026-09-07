@@ -171,7 +171,18 @@ function plant(root, files) {
   const badKeyFile = path.join(work, 'bad.b64');
   fs.writeFileSync(badKeyFile, 'hunter2');
   const badKey = await run(cmd, ['--verify-archive', archive, badKeyFile]);
-  check('a key that is not 32 bytes names the contract', /base64 of exactly 32 bytes/.test(badKey.stderr), badKey.stderr);
+  // The CODE as well as the text: a binary that printed the right sentence and exited 0 would pass a
+  // text-only check, and every other refusal here asserts both.
+  check('a key in neither accepted form is refused', badKey.code === 1, `code ${badKey.code}`);
+  check('...naming both forms it does take', /base64 of exactly 32 bytes/.test(badKey.stderr) && /BK1-/.test(badKey.stderr), badKey.stderr);
+
+  // A key that IS printable and has one character wrong: a different sentence, because it sends
+  // somebody back to the paper rather than looking for a different file.
+  const mistyped = path.join(work, 'mistyped.b64');
+  fs.writeFileSync(mistyped, 'BK1-00000-00000-00000-00000-00000-00000-XXXX');
+  const wrongChecksum = await run(cmd, ['--verify-archive', archive, mistyped]);
+  check('a mistyped printable key is refused', wrongChecksum.code === 1, `code ${wrongChecksum.code}`);
+  check('...as a CHECKSUM failure, not as "that is not a key"', /checksum/.test(wrongChecksum.stderr), wrongChecksum.stderr);
 
   const occupied = tempDir('occupied');
   fs.writeFileSync(path.join(occupied, 'someone-elses.json'), 'already here');

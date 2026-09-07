@@ -56,7 +56,14 @@ whole server is ~2,100 lines.
 | `src/BackupChunkStreams.cs` | The two streams the format is made of: one that seals what is written to it a chunk at a time, one that opens a chunk at a time and refuses the archive the moment a tag does not check |
 | `src/BackupArchive.cs` | The two ends of the pipe: the walk that decides what enters an archive (and the one function that decides what never does), and the extraction that resolves every entry against the destination before writing a byte |
 | `src/BackupArchiveException.cs` | Every refusal the format makes, each one a sentence naming the move that fixes it |
-| `src/BackupArchiveCommand.cs` | `--decrypt-archive` and `--verify-archive`, intercepted in `Program.cs` beside `--healthcheck` |
+| `src/BackupArchiveCommand.cs` | `--create-archive`, `--verify-archive` and `--decrypt-archive`, intercepted in `Program.cs` beside `--healthcheck` |
+| `src/PrintableKey.cs` | Crockford Base32, the grouping, the checksum and the normalising parser — the construction `RC1-` already uses in TypeScript, with the prefix and the domain string as parameters |
+| `src/BackupKey.cs` | The `BK1-` form: minting, parsing, and the HKDF from the words a person keeps to the 32 bytes the server seals |
+| `src/BackupKeyFile.cs` | The key FILE: the printable form or base64, decided by the prefix and never by guessing |
+| `src/KekSeal.cs` | Sealing bytes under the deployment KEK — the AEAD call, shared by the login-key store and the backup store |
+| `src/BackupStore.cs` | `org/backup/`: the sealed key, the marker saying its words were shown, the settings, the last run's status, and `archives/` |
+| `src/ConfigKeys.cs` | Every configuration key this server reads, named once, checked against the source by a test |
+| `src/BackupConfigSnapshot.cs` | That list as `KEY=value` lines, to travel inside an archive — resolved values, secrets included |
 
 ## The request pipeline
 
@@ -1198,13 +1205,107 @@ NEARLY right opens nothing while looking like the archive's fault; the file's SI
 is read, so a mistyped path pointing at a gigabyte log is a sentence rather than a gigabyte allocation.
 Verified against the **published Native AOT binary**, not only the analysers: it verifies, decrypts,
 prints each entry as it goes, and answers 1 with a sentence for a wrong key. Driven end to end in CI by
-`src_vs_code/scripts/backup-archive-itest.cjs` — see
+`src_minimalapi_server/scripts/backup-archive-itest.cjs` — see
 [module_tests.md](module_tests.md).
 
 **The walk prunes rather than filters.** An excluded directory is never entered, which matters because
 `org/backup/` holds archives and is reliably the largest directory on the disk; and the walk is
 recursive and lazy rather than "enumerate everything, then sort", which would materialise every path in
 the tree before the first byte was written.
+### The backup key, and the four files a backup deployment has (2026-09-07, epic 5 story 2)
+
+The archive format takes 32 bytes. **Nobody holds a key like that.** The person this feature exists
+for is shown a secret once, writes it down, and types it back a year later on a different machine
+while a server is down — and base64 is case-sensitive, contains `I`, `l`, `O` and `0`, and carries no
+checksum, so one mis-copied character produces *"the first chunk will not decrypt"* and no way to tell
+a bad key from a bad archive.
+
+So a backup key is **`BK1-XXXXX-XXXXX-XXXXX-XXXXX-XXXXX-XXXXX-CCCC`**: Crockford Base32 (the digits
+and letters minus `I L O U`), grouped in fives, with a four-symbol checksum. 30 symbols is **exactly
+150 bits**, reported unrounded. Parsing forgives case, spaces and dashes and folds the confusables
+(`O→0`, `I/L→1`), and it answers one of two things, never "invalid":
+
+| Answer | What it means | Why it is its own answer |
+|---|---|---|
+| `BadFormat` | not shaped like a key | go and find a different file |
+| `BadChecksum` | shaped right, one character off | go and read the paper again |
+
+**It is the same construction as the recovery code, and that is pinned rather than intended.** `RC1-`
+shipped first in TypeScript (`src_vs_code/src/recoveryCode.ts`); `PrintableKey` is that construction
+with the prefix and the checksum's domain string as parameters, because `RC1`'s string carries the
+product's old name and tidying it would change every code ever issued.
+`contract/printable-key-v1.json` holds cases for both forms and **both suites assert it** — the C#
+tests and `recoveryCode.test.ts` — so a drift is a red test in two languages rather than a key that
+will not type. The generator that writes the file feeds every `RC1` case back through the shipped
+TypeScript parser, so the vectors are taken FROM the implementation rather than typed next to it. The
+backup cases additionally carry the **derived 32 bytes**: a checksum can agree while an HKDF call
+disagrees about its salt, and the vectors pin `HKDF-SHA256(ikm = UTF-8 of the core, salt = EMPTY,
+info = "credvault-backup-key-v1", L = 32)` across both languages. A finite list is not enough on its
+own, so the round trip also runs over 500 random cores.
+
+**The words are the secret; the 32 bytes are derived from them.** That order is what makes "shown
+once" a fact rather than a promise: what `org/backup/key.sealed` holds is the DERIVED key, and HKDF
+does not run backwards. A server that could re-show the key would be a server whose compromise hands
+over every archive ever taken.
+
+**Which is exactly why there is an acknowledgement.** Sealing a key and showing it to a person are two
+steps, and a crash between them would leave a deployment taking archives sealed to words nobody has.
+So the lookup has **four** answers, and the third one is that gap:
+
+| `BackupKeyLookup` | Means | A run may seal an archive |
+|---|---|---|
+| `Absent` | no key yet | no — mint one |
+| `AwaitingAcknowledgement` | minted, nobody has confirmed seeing the words | **no**, and minting again is allowed — nothing is sealed to it yet |
+| `Ready` | the ordinary state | yes |
+| `Unreadable` | a key exists and this server cannot open it | no, and **nothing is minted in its place** |
+
+Two answers would collapse the two that matter: a KEK changed by a restore or a typo would mint a
+second key while every archive already taken stayed sealed to the first — data present and permanently
+unopenable. That is the same three-answer reading the login-key store and the members registry both
+make, and the sealed record carries a `schemaVersion` so that a record from a later build is
+unreadable BY VERSION, with the number in the message, rather than reported as corruption.
+
+The key is written with a **create that refuses to overwrite**, so a rolling restart with two
+containers on one volume ends with one key and the loser re-reads the winner's file. Only the
+awaiting-acknowledgement state overwrites, and only because nothing can be sealed to that key yet.
+
+Four files under `org/backup/` — the one directory the archive builder refuses to walk:
+
+```
+org/backup/key.sealed     the derived key, sealed under the deployment KEK, create-if-absent
+org/backup/key.shown      zero bytes; its EXISTENCE is the acknowledgement
+org/backup/settings.json  the schedule hour and the retention window an admin edits
+org/backup/status.json    the last run's outcome
+org/backup/archives/      where story 3 puts them
+```
+
+Settings and status are separate files because they have separate writers: a run writes status every
+time it runs, and one file would mean a run overwriting an admin's edit through a read-modify-write
+window. Both answer their defaults when absent — and when unreadable, deliberately: they are
+conveniences, and failing a whole backup deployment over a torn status file would be the wrong trade.
+The defaults are the shell backup's own, 03:00 UTC and 30 days, so a deployment moving from
+`deploy/backup/backup-once.sh` to this feature does not silently change schedule.
+
+**The sealing itself is shared, and the file formats are not.** `KekSeal` is the AES-256-GCM call —
+the part where a stale nonce or a short tag would be silent — used by both the login-key store and
+this one. `SealedLoginKey` and `SealedBackupKey` stay separate records, because they are files every
+existing deployment already has. `LoginKeyStore`'s 27 tests passing **unchanged** was the condition
+for that extraction.
+
+**The configuration travels with the data, secrets and all.** A restore onto a fresh host has the
+archive and nothing else — the container never sees `.env` — so without the KEK and the local signing
+key, recovering the data recovers vaults nobody can open. `ConfigKeys` names every key the server
+reads and `BackupConfigSnapshot` writes them as `KEY=value` lines in .NET's own environment spelling
+(`Vault__DataDir`), which is what makes the file comparable to an `.env` by eye. A key with no value
+is written empty rather than omitted, because "not set here" and "this snapshot forgot it" are
+different facts. **That list is a mirror, and mirrors drift**, so `ConfigKeysTests` scans the source
+for config-key-shaped literals and fails in BOTH directions — a key the code reads and the list does
+not name, and a key in the list that nothing reads. It was watched failing: dropping
+`Vault:RateLimit:ByteWindowSeconds` from the list named exactly that key.
+
+This is what makes the **backup key the highest-value secret in the system** — higher than the KEK,
+which is inside the archive while the backup key is not. The snapshot says so in its own header, and
+the admin's screen will say it at the moment the key is shown.
 
 ## Authorization
 
@@ -1407,7 +1508,7 @@ what is under it:
 
 ## Tests
 
-`src_minimalapi_server/tests/` — xUnit v3 on Microsoft Testing Platform, 605 tests, ~23 s. The
+`src_minimalapi_server/tests/` — xUnit v3 on Microsoft Testing Platform, 644 tests, ~27 s. The
 endpoint suites run in-process through `WebApplicationFactory` — no free port, no background
 `dotnet run`; the store suites drive a store directly on a throwaway data directory.
 
@@ -1464,6 +1565,10 @@ Configuration reaches the app through **process environment variables**, not
 environment is global, the suite runs in one non-parallel collection (`ServerCollection`).
 | `BackupArchiveTests` | The archive format: a tree round-trips byte for byte including an empty file and an empty directory; a `*.tmp` file, a `*.tmp` DIRECTORY's children and everything under `org/backup/` are absent from what comes out, asserted by listing the restored tree rather than by trusting the walk; the exclusion rule answered directly over nine paths, `org/backups/` and `notes/tmp.json` included; a wrong key fails on the FIRST chunk and says so about the key; a flipped ciphertext byte fails at chunk 3 and not later; a dropped final chunk is truncation, not a shorter archive; two chunks swapped are refused; an edited created-at stamp breaks the archive (the header is associated data); a newer version names both version numbers and the move that fixes it; an oversized declared chunk size is refused before any buffer is allocated; a random binary is refused as not an archive; `../escaped.txt`, `/etc/cron.d/evil` and a symlink entry are each refused and write nothing; a failure late in the archive leaves neither a tree nor a staging directory; a destination that already holds something is refused and untouched |
 | `BackupArchiveCommandTests` | `--decrypt-archive` restores and names what came out; `--verify-archive` authenticates and writes nothing; a tampered archive, a missing archive, a missing key file and a key file that is not base64 of exactly 32 bytes each answer 1 with a sentence naming the contract; a trailing newline in the key file is still the key; the wrong number of arguments prints the usage and answers 2; the verbs claimed are its own and not `--healthcheck`; and one test leaves an archive plus its key at a fixed path so the PUBLISHED Native AOT binary can be pointed at them |
+| `PrintableKeyTests` | Every vector in `contract/printable-key-v1.json` — checksum, display form and parse — for both forms; the backup vectors' DERIVED 32 bytes, which pin HKDF's salt across languages; a 500-core round trip; a key typed in lower case with spaces and confusables; one altered character as `BadChecksum` and six malformed inputs as `BadFormat`; the entropy as exactly 150 bits; and the two forms not sharing a checksum |
+| `BackupKeyFileTests` | The printable form and base64 of one key reading as the same bytes; the prefix in either case; leading and trailing whitespace; a mistyped printable key answering about the CHECKSUM and never mentioning base64; something that is neither form naming both; base64 of the wrong length; a file the size of a log refused unread; and an archive sealed from the words opening with the bytes |
+| `BackupStoreTests` | A fresh deployment minting once; a minted key NOT usable for a run until its words are acknowledged; minting again before that replacing it and after that changing nothing and handing over no words; a KEK that changed answering `Unreadable` with nothing minted over it; a record from a later build unreadable by VERSION with the number logged; a deployment with no KEK saying which key to set; the sealed key absent from an archive of its own deployment, asserted by listing what came out; settings and status round-tripping and answering defaults when absent or torn; and the words and the bytes being the same key |
+| `ConfigKeysTests` | Every configuration key the source reads is in the list, and every key in the list is read somewhere — both directions, watched failing on a dropped key; the snapshot carrying every key, its secrets unredacted, and saying so in its header; an unset key written empty rather than omitted; and the environment spelling being the one the compose stack uses |
 
 ## Telling the editor panel where it is
 

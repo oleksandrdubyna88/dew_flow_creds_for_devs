@@ -17,9 +17,12 @@ if (args is ["--healthcheck"])
     return await HealthProbe.RunAsync();
 }
 
-// `--decrypt-archive` / `--verify-archive` open a backup with this same binary. The moment anyone
-// needs them is the moment a server is gone, so the recovery kit is the image and the key — not a
-// second tool somebody has to find. Intercepted here for the same reason the health probe is.
+// `--create-archive`, `--verify-archive` and `--decrypt-archive` take, check and open a backup with
+// this same binary. The moment anyone needs them is the moment a server is gone, so the recovery kit
+// is the image and the key — not a second tool somebody has to find. Intercepted here for the same
+// reason the health probe is. `Handles` owns the list of verbs, so adding one never needs a change
+// here; a reviewer reading only this comment mistook it for the list and reported the create verb as
+// unrouted, which is why the comment now names all three.
 if (BackupArchiveCommand.Handles(args))
 {
     return BackupArchiveCommand.Run(args);

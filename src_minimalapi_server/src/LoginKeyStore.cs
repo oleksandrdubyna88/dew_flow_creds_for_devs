@@ -235,18 +235,22 @@ public sealed class LoginKeyStore(string dataDir, byte[] kek, ILogger<LoginKeySt
         }
     }
 
+    /// <summary>
+    /// The cipher call lives in <see cref="KekSeal"/>; the FORMAT stays here.
+    /// </summary>
+    /// <remarks>
+    /// The split is deliberate: <c>SealedLoginKey</c> is a file every existing deployment already has,
+    /// so it is not something to unify with another store's record — while the AEAD call, where a stale
+    /// nonce or a short tag would be silent, is exactly what two stores should not each own.
+    /// </remarks>
     private byte[] Seal(byte[] key)
     {
-        var iv = RandomNumberGenerator.GetBytes(AesGcm.NonceByteSizes.MaxSize);
-        var tag = new byte[AesGcm.TagByteSizes.MaxSize];
-        var data = new byte[key.Length];
-        using var aes = new AesGcm(kek, tag.Length);
-        aes.Encrypt(iv, key, data, tag);
+        var sealedKey = KekSeal.Seal(kek, key);
         return JsonSerializer.SerializeToUtf8Bytes(
             new SealedLoginKey(
-                Convert.ToBase64String(iv),
-                Convert.ToBase64String(tag),
-                Convert.ToBase64String(data),
+                Convert.ToBase64String(sealedKey.Iv),
+                Convert.ToBase64String(sealedKey.Tag),
+                Convert.ToBase64String(sealedKey.Data),
                 DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()),
             AppJsonContext.Default.SealedLoginKey);
     }
@@ -260,10 +264,12 @@ public sealed class LoginKeyStore(string dataDir, byte[] kek, ILogger<LoginKeySt
     {
         try
         {
-            var data = Convert.FromBase64String(sealedKey.Data);
-            var key = new byte[data.Length];
-            using var aes = new AesGcm(kek, Convert.FromBase64String(sealedKey.Tag).Length);
-            aes.Decrypt(Convert.FromBase64String(sealedKey.Iv), data, Convert.FromBase64String(sealedKey.Tag), key);
+            var key = KekSeal.Open(
+                kek,
+                new SealedBytes(
+                    Convert.FromBase64String(sealedKey.Iv),
+                    Convert.FromBase64String(sealedKey.Tag),
+                    Convert.FromBase64String(sealedKey.Data)));
             // Authenticated, and still checked. GCM proves the bytes are the ones this KEK sealed; it says
             // nothing about how many there should be. A record written by a future build, a hand-edited
             // file or a restore that meant something else by these bytes would otherwise be served as a

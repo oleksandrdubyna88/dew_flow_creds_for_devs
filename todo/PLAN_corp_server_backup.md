@@ -1,19 +1,28 @@
 # PLAN — epic 5: one encrypted archive of the whole server, and somewhere safe to put it
 
-> Status: **story 1 of 5 implemented, 2026-09-07; the rest is open work.** The archive FORMAT ships —
+> Status: **stories 1 and 2 of 5 implemented, 2026-09-07; the rest is open work.** The archive FORMAT ships —
 > `BackupArchiveFormat.cs`, `BackupChunkStreams.cs`, `BackupArchive.cs`, `BackupArchiveException.cs`,
 > `BackupArchiveCommand.cs` and the shared `Key32.cs`, with `--create-archive`, `--verify-archive` and
 > `--decrypt-archive` on the server binary, 55 unit tests and the
-> `backup-archive-itest.cjs` scenario harness driving the real binary in CI. Still to build: the `BK1-`
-> key and its store (story 2), the endpoints, the runner and the scheduler (story 3), the two cloud
-> signers (story 4), and the extension's client, the notices and the restore script (story 5).
+> `backup-archive-itest.cjs` scenario harness driving the real binary in CI. **Story 2** adds the
+> printable `BK1-` key (`PrintableKey.cs`, `BackupKey.cs`, `BackupKeyFile.cs`, the shared vectors in
+> `contract/printable-key-v1.json` asserted by both languages), the store that keeps the four files a
+> backup deployment has (`BackupStore.cs`), the extracted `KekSeal.cs`, and the configuration snapshot
+> (`ConfigKeys.cs`, `BackupConfigSnapshot.cs`). Still to build: the endpoints, the runner and the
+> scheduler (story 3), the two cloud signers (story 4), and the extension's client, the notices and the
+> restore script (story 5).
 >
 > Deviations so far, recorded here rather than in a commit message: the nonce prefix is **8 bytes with
 > a 4-byte counter**, not the 4 this plan sketched, and the counter is refused rather than wrapped; the
 > header carries a **chunk size** and every declared length is bounded before allocation; the whole
 > header is **associated data** for every chunk; and `--create-archive` and `--verify-archive` were
 > added beside the planned `--decrypt-archive`, because a format whose only writer is a component that
-> does not exist yet cannot be exercised by anything.
+> does not exist yet cannot be exercised by anything. From story 2: the printable form is HKDF INPUT
+> rather than the key itself, so what is sealed is the derived key and "shown once" is a fact rather
+> than a policy; the key lookup has **four** answers, not three, because a key minted and not yet shown
+> to a person is its own state and no run may use it; and `PrintableKey` is a generic type with the
+> prefix and the checksum's domain string as parameters, so the eventual C# port of `RC1-` cannot
+> become a second copy of the construction.
 >
 > This plan stays in `todo/` because four of its five stories are still work somebody has to do; the
 > shipped story is documented in

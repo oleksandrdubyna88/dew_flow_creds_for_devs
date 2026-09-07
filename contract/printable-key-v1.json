@@ -1,0 +1,99 @@
+{
+  "version": 1,
+  "what": "The printable-key construction, pinned across languages. See contract/README.md.",
+  "alphabet": "0123456789ABCDEFGHJKMNPQRSTVWXYZ",
+  "confusables": {
+    "O": "0",
+    "I": "1",
+    "L": "1"
+  },
+  "forms": {
+    "RC1": {
+      "prefix": "RC1",
+      "checksumInfo": "cred-ssh-manager/recovery-checksum:",
+      "coreSymbols": 30,
+      "group": 5,
+      "checksumSymbols": 4
+    },
+    "BK1": {
+      "prefix": "BK1",
+      "checksumInfo": "credvault/backup-key-checksum:",
+      "coreSymbols": 30,
+      "group": 5,
+      "checksumSymbols": 4,
+      "derive": {
+        "hash": "sha256",
+        "info": "credvault-backup-key-v1",
+        "salt": "",
+        "lengthBytes": 32
+      }
+    }
+  },
+  "vectors": [
+    {
+      "prefix": "RC1",
+      "core": "000000000000000000000000000000",
+      "checksum": "64BX",
+      "formatted": "RC1-00000-00000-00000-00000-00000-00000-64BX"
+    },
+    {
+      "prefix": "RC1",
+      "core": "ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ",
+      "checksum": "PXMQ",
+      "formatted": "RC1-ZZZZZ-ZZZZZ-ZZZZZ-ZZZZZ-ZZZZZ-ZZZZZ-PXMQ"
+    },
+    {
+      "prefix": "RC1",
+      "core": "0123456789ABCDEFGHJKMNPQRSTVWX",
+      "checksum": "QEMZ",
+      "formatted": "RC1-01234-56789-ABCDE-FGHJK-MNPQR-STVWX-QEMZ"
+    },
+    {
+      "prefix": "RC1",
+      "core": "YZ0123456789ABCDEFGHJKMNPQRSTV",
+      "checksum": "NC9F",
+      "formatted": "RC1-YZ012-34567-89ABC-DEFGH-JKMNP-QRSTV-NC9F"
+    },
+    {
+      "prefix": "RC1",
+      "core": "7QK3M9XZ2VBN5PR8TWCD4FGH6JY10S",
+      "checksum": "7K9N",
+      "formatted": "RC1-7QK3M-9XZ2V-BN5PR-8TWCD-4FGH6-JY10S-7K9N"
+    },
+    {
+      "prefix": "BK1",
+      "core": "000000000000000000000000000000",
+      "checksum": "KHV0",
+      "formatted": "BK1-00000-00000-00000-00000-00000-00000-KHV0",
+      "derivedKeyHex": "eeda1b4db82ec35cfb7a1b864597146475d46259b627106f98acf49cdb3efed0"
+    },
+    {
+      "prefix": "BK1",
+      "core": "ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ",
+      "checksum": "GQ8Y",
+      "formatted": "BK1-ZZZZZ-ZZZZZ-ZZZZZ-ZZZZZ-ZZZZZ-ZZZZZ-GQ8Y",
+      "derivedKeyHex": "13964bc55c7c47820141379649bf7c0f0444781cca18e5cb96fab3428a460715"
+    },
+    {
+      "prefix": "BK1",
+      "core": "0123456789ABCDEFGHJKMNPQRSTVWX",
+      "checksum": "YXMN",
+      "formatted": "BK1-01234-56789-ABCDE-FGHJK-MNPQR-STVWX-YXMN",
+      "derivedKeyHex": "3b25111cda127f033299a9191ff38c63bd657d01fa37a347460e23b8391b22eb"
+    },
+    {
+      "prefix": "BK1",
+      "core": "YZ0123456789ABCDEFGHJKMNPQRSTV",
+      "checksum": "SWAQ",
+      "formatted": "BK1-YZ012-34567-89ABC-DEFGH-JKMNP-QRSTV-SWAQ",
+      "derivedKeyHex": "f68bd77400304d64aae29bd5f14403b017b431b577d2ad247db2bf9afdeb8938"
+    },
+    {
+      "prefix": "BK1",
+      "core": "7QK3M9XZ2VBN5PR8TWCD4FGH6JY10S",
+      "checksum": "N105",
+      "formatted": "BK1-7QK3M-9XZ2V-BN5PR-8TWCD-4FGH6-JY10S-N105",
+      "derivedKeyHex": "7c1abf4b6b00236679813f3d9283b910e3662138cca26114315df23c662b460c"
+    }
+  ]
+}
