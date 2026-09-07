@@ -84,3 +84,63 @@ test('the input-box text distinguishes "incomplete" from "mistyped"', () => {
   const typo = code.formatted.slice(0, at) + flipped + code.formatted.slice(at + 1);
   assert.match(describeRecoveryCodeInput(typo) ?? '', /mistyped/);
 });
+
+/**
+ * The shared vectors — the same file the C# suite reads.
+ *
+ * <p>`RC1` lives here and `BK1` lives in the server, and they are one construction: the same alphabet,
+ * the same grouping, the same checksum shape with its own domain string. Two implementations of one
+ * construction drift, and the drift would be a code that will not type a year from now — so
+ * `contract/printable-key-v1.json` holds the cases and BOTH suites assert them. A vector this file
+ * copied into itself would defeat the point: it would go green while the other side went red.</p>
+ */
+test('every RC1 vector in the shared contract parses to its own core', () => {
+  const vectors = sharedVectors().filter((vector) => vector.prefix === 'RC1');
+  assert.ok(vectors.length > 0, 'the contract file carries RC1 vectors');
+  for (const vector of vectors) {
+    const parsed = parseRecoveryCode(vector.formatted);
+    assert.ok(typeof parsed === 'object' && 'secret' in parsed, `${vector.formatted} parses`);
+    assert.equal((parsed as { secret: Buffer }).secret.toString('utf8'), vector.core);
+  }
+});
+
+test('the shared contract agrees with this file about the alphabet and the confusables', () => {
+  // The two things a reader of a code relies on, pinned where both languages can see them.
+  const contract = sharedContract();
+  assert.equal(contract.alphabet, '0123456789ABCDEFGHJKMNPQRSTVWXYZ');
+  assert.deepEqual(contract.confusables, { O: '0', I: '1', L: '1' });
+  assert.equal(contract.forms.RC1.checksumInfo, 'cred-ssh-manager/recovery-checksum:');
+});
+
+test('a vector with one character altered is refused as a CHECKSUM failure', () => {
+  // The distinction is the feature, on this side as much as on the server's: "one character is wrong"
+  // sends somebody back to the paper, "that is not a code" sends them looking for a different one.
+  const vector = sharedVectors().find((v) => v.prefix === 'RC1');
+  assert.ok(vector);
+  const last = vector.formatted.slice(-1);
+  const altered = vector.formatted.slice(0, -1) + (last === 'Z' ? 'Y' : 'Z');
+
+  assert.equal(parseRecoveryCode(altered), 'bad-checksum');
+});
+
+interface SharedVector {
+  prefix: string;
+  core: string;
+  checksum: string;
+  formatted: string;
+  derivedKeyHex?: string;
+}
+
+function sharedContract(): {
+  alphabet: string;
+  confusables: Record<string, string>;
+  forms: Record<string, { checksumInfo: string }>;
+  vectors: SharedVector[];
+} {
+  const path = require('node:path').join(__dirname, '..', '..', '..', 'contract', 'printable-key-v1.json');
+  return JSON.parse(require('node:fs').readFileSync(path, 'utf8'));
+}
+
+function sharedVectors(): SharedVector[] {
+  return sharedContract().vectors;
+}

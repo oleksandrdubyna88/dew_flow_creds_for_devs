@@ -36,9 +36,6 @@ public static class BackupArchiveCommand
     /// </remarks>
     public const string CreateVerb = "--create-archive";
 
-    /// <summary>44 characters of base64, plus room for an editor's newline and stray whitespace.</summary>
-    private const int MaxKeyFileBytes = 256;
-
     /// <summary>Whether these arguments are for this command at all.</summary>
     public static bool Handles(string[] args) =>
         args is [DecryptVerb, ..] or [VerifyVerb, ..] or [CreateVerb, ..];
@@ -82,7 +79,7 @@ public static class BackupArchiveCommand
 
     private static int Decrypt(string archivePath, string outputDir, string keyFilePath, CommandOutput say)
     {
-        var key = KeyFrom(keyFilePath);
+        var key = BackupKeyFile.Read(keyFilePath);
         RefuseMissing(archivePath, "archive");
         // The first line goes out BEFORE the work, and then one per entry. An archive of a real server
         // takes minutes, and a terminal that has said nothing for four of them is indistinguishable
@@ -98,7 +95,7 @@ public static class BackupArchiveCommand
 
     private static int Verify(string archivePath, string keyFilePath, CommandOutput say)
     {
-        var key = KeyFrom(keyFilePath);
+        var key = BackupKeyFile.Read(keyFilePath);
         RefuseMissing(archivePath, "archive");
         say.Out.WriteLine($"Verifying {archivePath}...");
         var summary = BackupArchive.Verify(archivePath, key, say.Out.WriteLine);
@@ -111,7 +108,7 @@ public static class BackupArchiveCommand
     private static int CreateOne(
         string sourceDir, string archivePath, string keyFilePath, CommandOutput say, TimeProvider clock)
     {
-        var key = KeyFrom(keyFilePath);
+        var key = BackupKeyFile.Read(keyFilePath);
         RefuseMissingDirectory(sourceDir);
         say.Out.WriteLine($"Sealing {sourceDir} into {archivePath}...");
         var summary = BackupArchive.CreateFile(sourceDir, archivePath, key, clock.GetUtcNow());
@@ -119,32 +116,6 @@ public static class BackupArchiveCommand
             $"Sealed {summary.Files} file(s) and {summary.Directories} director(ies), {summary.Bytes} "
             + $"bytes, into {archivePath}. {summary.Skipped} entr(ies) vanished while it was read.");
         return 0;
-    }
-
-    /// <summary>Base64 of exactly 32 bytes, and a sentence naming the contract when it is not.</summary>
-    private static byte[] KeyFrom(string path)
-    {
-        RefuseMissing(path, "key file");
-        RefuseHugeKeyFile(path);
-        var key = Key32.Decode(File.ReadAllText(path));
-        return key.Length == Key32.Bytes ? key : throw BackupArchiveException.BadKeyFile(path);
-    }
-
-    /// <summary>
-    /// A key file has a known size, so it is checked before it is read rather than after.
-    /// </summary>
-    /// <remarks>
-    /// Base64 of 32 bytes is 44 characters; the allowance is for whatever line ending an editor added.
-    /// Pointed at a gigabyte log by a mistyped path, the unbounded read would allocate the whole thing
-    /// inside a recovery container before deciding it was not a key.
-    /// </remarks>
-    private static void RefuseHugeKeyFile(string path)
-    {
-        var length = new FileInfo(path).Length;
-        if (length > MaxKeyFileBytes)
-        {
-            throw BackupArchiveException.KeyFileTooLarge(path, length);
-        }
     }
 
     private static void RefuseMissingDirectory(string path)
@@ -170,8 +141,10 @@ public static class BackupArchiveCommand
         say.Error.WriteLine($"  CredVaultServer {VerifyVerb} <archive> <key-file>");
         say.Error.WriteLine($"  CredVaultServer {CreateVerb} <source-directory> <archive> <key-file>");
         say.Error.WriteLine(
-            "The key file holds base64 of exactly 32 bytes and nothing else; surrounding whitespace is "
-            + "ignored. The output directory must be absent or empty.");
+            $"The key file holds either form of a backup key: {BackupKey.Form.Prefix}-XXXXX-XXXXX-XXXXX-"
+            + "XXXXX-XXXXX-XXXXX-CCCC as a person writes it down (case, spaces and dashes do not "
+            + $"matter), or base64 of exactly {Key32.Bytes} bytes. The output directory must be absent "
+            + "or empty.");
         return 2;
     }
 }

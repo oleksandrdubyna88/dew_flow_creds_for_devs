@@ -309,36 +309,43 @@ public static class BackupArchive
     private static void Commit(string staging, string final)
     {
         RefuseOccupiedDestination(final);
-        if (Moved(staging, final))
-        {
-            return;
-        }
-        RemoveEmptyDestination(final);
         try
         {
-            Directory.Move(staging, final);
+            Install(staging, final);
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
-            // A destination on another filesystem, or one somebody created in the last few seconds.
-            // The archive is out and it is whole; what failed is the last rename, so the message says
-            // where the tree is rather than implying the restore has to be run again.
+            // Everything the install does is inside this: the rename, and the removal of an empty
+            // directory standing in its way. A raw IOException escaping from the removal would be the
+            // one failure that says nothing about where the restored tree is.
             throw BackupArchiveException.CouldNotInstall(staging, final, e);
         }
     }
 
-    /// <summary>True when the rename went; false when something is in the way and might be removable.</summary>
-    private static bool Moved(string staging, string final)
+    /// <summary>
+    /// The rename, and the only reason a directory is ever removed to make room for it.
+    /// </summary>
+    /// <remarks>
+    /// <para><b>The FILESYSTEM decides whether to remove anything, never an exception.</b> An earlier
+    /// version tried the rename first and removed the destination when it failed — and a rename that
+    /// fails because the destination is on another filesystem is indistinguishable, at that point, from
+    /// one that fails because an empty directory is in the way. It would have taken the operator's
+    /// prepared directory and then failed anyway. So the question is asked directly: does the
+    /// destination exist? <see cref="RefuseOccupiedDestination"/> has already established that if it
+    /// does, it is empty.</para>
+    /// <para><b>What is left, and named rather than implied.</b> A destination that exists, is empty,
+    /// and is on another filesystem is still removed before a rename that then fails — the alternative
+    /// would be moving the tree in entry by entry, which keeps their directory and gives up the
+    /// all-or-nothing install that the staging design exists for. The message says the tree is complete
+    /// at the staging path, so nothing is lost but the empty directory.</para>
+    /// </remarks>
+    private static void Install(string staging, string final)
     {
-        try
+        if (Directory.Exists(final))
         {
-            Directory.Move(staging, final);
-            return true;
+            Directory.Delete(final);
         }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
-        {
-            return false;
-        }
+        Directory.Move(staging, final);
     }
 
     private static ArchiveSummary ReadArchive(
@@ -536,19 +543,4 @@ public static class BackupArchive
         }
     }
 
-    /// <summary>
-    /// An empty directory in the way of the rename — removed at COMMIT time and not before.
-    /// </summary>
-    /// <remarks>
-    /// Doing this up front is the version that costs an operator something: a mistyped key or a corrupt
-    /// archive would take away the empty directory they had prepared, and the second attempt would
-    /// start from a worse place than the first.
-    /// </remarks>
-    private static void RemoveEmptyDestination(string final)
-    {
-        if (Directory.Exists(final))
-        {
-            Directory.Delete(final);
-        }
-    }
 }

@@ -45,10 +45,23 @@ public sealed class BackupArchiveException : Exception
         new($"A backup key is {Key32.Bytes} bytes; this one is {length}.");
 
     public static BackupArchiveException BadKeyFile(string path) =>
-        new($"The key file '{path}' does not hold base64 of exactly {Key32.Bytes} bytes. That is the "
-            + "whole contract: one base64 value, surrounding whitespace ignored, nothing else in the "
-            + "file. A key that is nearly right is refused rather than truncated into one that opens "
-            + "nothing.");
+        new($"The key file '{path}' holds neither of the two forms a backup key comes in: "
+            + $"{BackupKey.Form.Prefix}-XXXXX-XXXXX-XXXXX-XXXXX-XXXXX-XXXXX-CCCC as a person writes it "
+            + $"down, or base64 of exactly {Key32.Bytes} bytes as a script or a secret manager holds "
+            + "it. Surrounding whitespace is ignored; nothing else in the file is. A key that is nearly "
+            + "right is refused rather than truncated into one that opens nothing.");
+
+    /// <summary>
+    /// A file that IS a printable key and is wrong — which is a different sentence from "not a key".
+    /// </summary>
+    /// <remarks>
+    /// The checksum exists so that a mis-typed character is caught here, with a message that sends
+    /// somebody back to the paper. Collapsing this into the generic refusal would waste it: an operator
+    /// told "that is not a key" about something that plainly looks like one goes looking for a
+    /// different file instead of a different character.
+    /// </remarks>
+    public static BackupArchiveException BadPrintableKeyFile(string path, PrintableKeyError error) =>
+        new($"The key file '{path}' will not do. {BackupKey.Explain(error)}");
 
     public static BackupArchiveException Missing(string what, string path) =>
         new($"The {what} '{path}' does not exist.");

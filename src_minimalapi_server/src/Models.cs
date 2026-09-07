@@ -272,3 +272,43 @@ public readonly record struct VaultPrecondition(string? IfMatch, bool RequireAbs
         return new VaultPrecondition(match, requireAbsent);
     }
 }
+
+/// <summary>
+/// The sealed backup key on disk.
+/// </summary>
+/// <remarks>
+/// <para><b>What is sealed is the DERIVED key, never the words.</b> A person holds
+/// <c>BK1-XXXXX-…</c>; this file holds the 32 bytes HKDF makes of it. That is what turns "shown once"
+/// from a promise into a fact — HKDF does not run backwards — and it is why a rotation orphans
+/// archives rather than being a button.</para>
+/// <para><b>The schema version is here for the one failure that must not read as corruption.</b> A
+/// record written by a later build is unreadable BY VERSION, with a message naming the number, which
+/// sends an operator to fetch a newer build instead of throwing away a key that is fine.</para>
+/// </remarks>
+public sealed record SealedBackupKey(int SchemaVersion, string Iv, string Tag, string Data, long CreatedAt);
+
+/// <summary>
+/// What an admin chose: when a backup runs, and how long its archives are kept.
+/// </summary>
+/// <remarks>
+/// The defaults are the shell backup's own (<c>deploy/backup/backup-once.sh</c>: 03:00 and 30 days),
+/// so a deployment that switches from the script to this feature keeps the same behaviour rather than
+/// silently changing schedule.
+/// </remarks>
+public sealed record BackupSettings(int ScheduleHourUtc, int RetentionDays)
+{
+    public static readonly BackupSettings Default = new(3, 30);
+}
+
+/// <summary>
+/// The last run's outcome, in the words a person reads on the page.
+/// </summary>
+/// <remarks>
+/// <c>LastRunAt == 0</c> is "never", not "the epoch": the alternative is a nullable that every caller
+/// has to remember to check, and this repository's rule is that business logic does not carry null.
+/// The distinction is stated here so the page does not have to guess it.
+/// </remarks>
+public sealed record BackupStatus(long LastRunAt, string LastResult, string LastError, long Bytes)
+{
+    public static readonly BackupStatus NeverRun = new(0, "never run", string.Empty, 0);
+}
