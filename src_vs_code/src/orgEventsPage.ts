@@ -78,9 +78,13 @@ export function renderOrgEvents(state: EventPageState): string {
     what happened to them, roles, projects and assignments. <b>The server decides what you see</b> —
     an administrator reads the whole domain, everybody else reads only the rows naming them. It
     records what happened, never what was in a secret.</p>
+  <!-- The group buttons stay ENABLED while a request is out: a different group is a different
+       question, and the tab preempts what is in flight rather than making somebody wait for an
+       answer they no longer want. Only "load more" and "try again" are disabled, because those two
+       would append the same rows twice. -->
   <div class="filters">${EVENT_GROUPS.map((group) =>
     `<button type="button" data-group="${group.id}" data-hint="${escapeHtml(group.hint)}"`
-    + ` aria-pressed="${group.id === state.group ? 'true' : 'false'}"${state.loading ? ' disabled' : ''}>`
+    + ` aria-pressed="${group.id === state.group ? 'true' : 'false'}">`
     + `${escapeHtml(group.label)}</button>`).join('')}</div>
   <p class="hint">${escapeHtml(state.loading ? 'Reading…' : groupById(state.group).hint)}</p>
   ${body(state, lines)}
@@ -106,12 +110,15 @@ export function renderOrgEvents(state: EventPageState): string {
  * their company's history is empty when it is merely unreachable.</p>
  */
 function body(state: EventPageState, lines: readonly EventLine[]): string {
-  if (state.noLogHere) {
+  // A failure takes precedence over "no log here": the second is a fact about the server's version,
+  // and the first is one about this attempt — showing only the version would leave a person with no
+  // error and no way to try again.
+  if (state.noLogHere && state.error === undefined) {
     return `<p class="empty">This server does not keep an event log. It is older than the version
       that records one — everything below would be a history it never wrote.</p>`;
   }
   return [
-    state.error === undefined ? '' : errorBanner(state.error),
+    state.error === undefined ? '' : errorBanner(state),
     rowsOrNothing(state, lines),
     droppedNote(state),
     moreButton(state),
@@ -126,9 +133,10 @@ function rowsOrNothing(state: EventPageState, lines: readonly EventLine[]): stri
   return state.error === undefined ? emptyState(state) : '';
 }
 
-function errorBanner(error: string): string {
-  return `<p class="error">${escapeHtml(error)}</p>
-    <p class="more"><button type="button" id="retry">Try again</button></p>`;
+function errorBanner(state: EventPageState): string {
+  return `<p class="error">${escapeHtml(state.error ?? '')}</p>
+    <p class="more"><button type="button" id="retry"${state.loading ? ' disabled' : ''}>${
+    state.loading ? 'Reading…' : 'Try again'}</button></p>`;
 }
 
 function emptyState(state: EventPageState): string {

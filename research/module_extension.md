@@ -3687,8 +3687,20 @@ CSP's own nonce, and both are tests.
 
 **Four states, four different sentences**: rows; nothing yet; *this server keeps no event log* (a
 `404`, which is a server older than the feature — not an empty history); and a failure in the
-server's own words with **Try again**. A tab holds at most 2,000 loaded rows and says how many it
-dropped, because "load more" is otherwise unbounded by anything but patience.
+server's own words with **Try again**. A FAILURE outranks the no-log sentence, and a fresh request
+clears it: a `404` answered once must not outlive the question that got it, or Try again against a
+server that is merely unreachable goes on reporting its version.
+
+**A tab holds at most 2,000 loaded rows, and what it drops is the OLDEST.** The rows are
+newest-first and "load more" appends older pages, so trimming the tail would have kept the oldest
+events and thrown away the newest — the wrong half for an audit log, and the opposite of what the
+page said it had done. A code round found it; the test names its rows rather than counting them.
+
+**Only "load more" and "try again" are disabled while a request is out.** The group buttons stay
+live, because a different group is a different question and the tab preempts what is in flight; the
+other two would append the same rows twice. And a closed tab is not drawn into: a request still in
+flight when somebody closes the editor would otherwise assign to a disposed webview inside a promise
+nobody awaits.
 
 **The developer's "who has shared with me" is this tab**, not extra Team rows — the deviation is
 recorded in [PLAN_corp_event_log.md](PLAN_corp_event_log.md), with the reason: a synthetic Team row

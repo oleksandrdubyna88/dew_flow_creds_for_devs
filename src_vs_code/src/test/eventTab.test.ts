@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { OrgEventPage, OrgEventQuery } from '../eventQuery';
-import { EventTab, MAX_ROWS_IN_TAB, isEventPageMessage } from '../eventTab';
-import { OrgEventsClient } from '../orgEventsClient';
+import { EventTab, EventsReader, MAX_ROWS_IN_TAB, isEventPageMessage } from '../eventTab';
+
 import { StoredAccount } from '../types';
 
 /**
@@ -19,20 +19,29 @@ function rowAt(at: number): OrgEventPage['items'][number] {
   return { at, kind: 'share.sent', actor: 'alice@corp.com', subject: 'anna@corp.com' };
 }
 
-/** A client that answers whatever the test queues, and records what it was asked. */
-function fakeClient(answers: (OrgEventPage | Error)[]): { client: OrgEventsClient; asked: OrgEventQuery[] } {
+/**
+ * A client that answers whatever the test queued, and records what it was asked.
+ *
+ * <p>Typed as the interface `EventTab` actually needs rather than cast to the class: a fixture
+ * written `as unknown as OrgEventsClient` tells the compiler to stop checking, and the day the
+ * client grows a method this tab calls, the cast would keep the test green against a fake that
+ * cannot answer it.</p>
+ */
+function fakeClient(answers: readonly (OrgEventPage | Error)[]): { client: EventsReader; asked: OrgEventQuery[] } {
   const asked: OrgEventQuery[] = [];
-  const client = {
+  // The caller's array is not consumed: an index, so a fixture is a fixture rather than state.
+  let next = 0;
+  const client: EventsReader = {
     readEvents: (_account: StoredAccount, query: OrgEventQuery = {}) => {
       asked.push(query);
-      const next = answers.shift() ?? { items: [] };
-      return next instanceof Error ? Promise.reject(next) : Promise.resolve(next);
+      const answer = answers[next++] ?? { items: [] };
+      return answer instanceof Error ? Promise.reject(answer) : Promise.resolve(answer);
     },
-  } as unknown as OrgEventsClient;
+  };
   return { client, asked };
 }
 
-function tabWith(answers: (OrgEventPage | Error)[]): {
+function tabWith(answers: readonly (OrgEventPage | Error)[]): {
   tab: EventTab;
   asked: OrgEventQuery[];
   html: () => string;
@@ -98,12 +107,12 @@ test('an answer to a question nobody is asking any more is dropped', async () =>
   });
   const asked: OrgEventQuery[] = [];
   let last = '';
-  const client = {
+  const client: EventsReader = {
     readEvents: (_a: StoredAccount, query: OrgEventQuery = {}) => {
       asked.push(query);
       return asked.length === 1 ? slow : Promise.resolve({ items: [rowAt(9)] });
     },
-  } as unknown as OrgEventsClient;
+  };
   const tab = new EventTab(client, account, (drawn) => {
     last = drawn;
   });
@@ -152,14 +161,53 @@ test('a server with no log says so rather than showing an empty table', async ()
   assert.match(html(), /does not keep an event log/);
 });
 
-test('the tab keeps at most its cap and says how many it dropped', async () => {
-  const many = Array.from({ length: MAX_ROWS_IN_TAB + 25 }, (_, i) => rowAt(i));
+test('the tab keeps at most its cap, and what it drops is the OLDEST', async () => {
+  // The rows are newest-first and "load more" appends older pages, so trimming the tail would keep
+  // the oldest events and throw away the newest — the wrong half for an audit log, and the opposite
+  // of what the page says it did.
+  // Named rather than numbered: the instant is rendered as a local date, so a test that looked for
+  // the number would be asserting against a format instead of against a row.
+  const many = Array.from(
+    { length: MAX_ROWS_IN_TAB + 25 },
+    (_, i) => ({ ...rowAt(1_000_000 - i), entityName: `row-${i}` }),
+  );
   const { tab, html } = tabWith([{ items: many }]);
 
   await tab.start();
 
   assert.equal((html().match(/<tr /g) ?? []).length, MAX_ROWS_IN_TAB);
   assert.match(html(), /oldest 25 row\(s\)/);
+  assert.match(html(), />row-0</, 'the NEWEST row is still on screen');
+  assert.equal(html().includes('>row-' + String(MAX_ROWS_IN_TAB) + '<'), false, 'and the oldest is not');
+});
+
+test('a "more" that arrives at the end of the log does not restart it', async () => {
+  // The page hides the button when there is no cursor; this is the message that arrives anyway, and
+  // asking with no cursor would fetch the FIRST page again and append it under itself.
+  const { tab, asked, html } = tabWith([{ items: [rowAt(2)] }]);
+  await tab.start();
+
+  await tab.handle({ type: 'more' });
+
+  assert.equal(asked.length, 1, 'nothing was asked');
+  assert.equal((html().match(/<tr /g) ?? []).length, 1, 'and nothing was duplicated');
+});
+
+test('a no-log answer does not outlive the question that got it', async () => {
+  // Try again against a server that is merely unreachable must show the failure, not go on saying
+  // "this server keeps no event log".
+  const { tab, html } = tabWith([
+    { items: [], noLogHere: true },
+    new Error('Vault server unreachable (https://v): ECONNREFUSED'),
+  ]);
+  await tab.start();
+  assert.match(html(), /does not keep an event log/);
+
+  await tab.handle({ type: 'retry' });
+
+  assert.match(html(), /ECONNREFUSED/);
+  assert.match(html(), /id="retry"/);
+  assert.equal(html().includes('does not keep an event log'), false);
 });
 
 test('the message guard takes what the page sends and refuses the rest', () => {
