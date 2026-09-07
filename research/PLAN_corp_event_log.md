@@ -1,19 +1,74 @@
 # PLAN — epic 4: one event log, a query that can answer questions, and a place to read it
 
-> Status: **plan only, nothing implemented yet, 2026-09-04.** Scope: every corporate action leaves a
-> line — shares with their real outcome, roles, projects, assignments, blocks, login keys, backups,
-> settings — kept forever, metadata only. An admin can search all of it; everybody else sees their
-> own. Fourth of five epics under [PLAN_corp_control_plane.md](PLAN_corp_control_plane.md), which
-> holds the owner decisions, the invariants and the shared shapes.
+> Status: **IMPLEMENTED, 2026-09-07.** Four stories shipped, each through the review gate's plan and
+> code rounds: the reader and `GET /api/org/events` (scoped, cursor-paginated); every share kind the
+> log records plus `login_key.issued`; the client's outcome reporting, its events client and the Team
+> filter; and the viewer tab with the help article. Fourth of five epics under
+> [PLAN_corp_control_plane.md](../todo/PLAN_corp_control_plane.md), which holds the owner decisions,
+> the invariants and the shared shapes.
 >
-> The log's **writer** ships in [PLAN_corp_registry_roles.md](../research/PLAN_corp_registry_roles.md) so epics
-> 1–3 record from their first commit; this plan owns the **reader**, the query endpoint, the outcome
+> **What shipped differently, and why — the part worth reading.**
+>
+> **`SentShare.FromEmail` was dropped, not deferred.** The plan added it so the expiry sweep could
+> name a sender. Checking the prune showed the row is better built from the pruned INBOX item, which
+> carries both addresses, the entity and the project — so there is no schema addition to receipts
+> already on disk, no window of `(unknown)` senders, and the receipt half of the prune writes no row
+> at all: whatever happened to its share was recorded when it happened. The receipt did gain
+> `projectId`, for a different reason a code round found — the withdrawal paths hold the receipt
+> rather than the inbox item, and a log filtered by project must not lose half the rows about one.
+>
+> **The page is one registered DTO, not a hand-written envelope around `WriteJsonArrayAsync`.** That
+> helper is a local function inside `Program.cs`'s top-level statements and cannot be reached from
+> another file; a page is bounded at 500 rows by the cap, so materialising it is bounded too. No
+> `total`, exactly as planned.
+>
+> **The reader has TWO budgets**, not the plan's none: 20,000 lines and 400 day files. A substring
+> filter with no date range would otherwise read the whole history on one request, and a deployment
+> with two rows a day never reaches the line budget and spends its cost OPENING files instead. Past
+> either, the page ends with a cursor — so an empty page WITH a cursor means "keep going", and only a
+> null cursor is the end.
+>
+> **A day file is read as a WINDOW, never whole.** The plan said to read a file and walk it in
+> reverse; a code round asked what bounds that, and the honest answer was nothing. The reader now
+> holds at most what the query has left of its line budget: lines above the cursor are never read,
+> lines below the window are dropped as they are read.
+>
+> **A folder that exists and cannot be listed is a fault, not an empty log.** `Directory.Exists`
+> answers false for a permission failure as well as for absence, so the pre-check is gone: an audit
+> endpoint that reported "no history" for a broken mount is the silent omission this reader refuses
+> everywhere else.
+>
+> **The dev Team's "who has shared with me" is answered by the TAB, not by a Team row.** The umbrella's
+> decision 10 unions a developer's project colleagues with everyone who has shared with them, and this
+> epic's DoD said to source the second half from the log. It was never built in epic 3 either
+> (`TeamRoster.For` intersects projects and drops the rest). Building it as extra TEAM rows would put
+> people in the recipient picker whom the share rule refuses — a developer sends only inside a project
+> — which is the failure epic 3's Team filter exists to prevent, and it would need a `shareKeyId` this
+> client cannot know for somebody it has never been told about. The tab answers the question the
+> decision was about, with more than a name: what was sent, when, and what became of it. **Recorded as
+> a deviation rather than a silence; if the owner wants the Team rows as well, that is its own task.**
+>
+> **`share.expired` comes from the prune only, never the reconcile.** A reconcile retires a receipt
+> because the recipient acted, and that act already left its own row; a second would double every
+> share in the history.
+>
+> **The contract between the two halves is checked live**, not by two suites reading one file:
+> `scripts/server-transport-itest.cjs` accepts a share through the compiled `ServerTransport` saying
+> `accepted` and reads the row back through the extension's own `OrgEventsClient`, asserting the
+> server recorded `share.accepted` naming both people.
+>
+> **Still owed, and named rather than implied:** nothing drives the VIEWER end to end — the page and
+> the tab's state machine are unit-tested, and no harness opens the editor; and the German and Spanish
+> help sentences added here want a native speaker's eye, as epic 3's did.
+>
+> The log's **writer** shipped in [PLAN_corp_registry_roles.md](PLAN_corp_registry_roles.md) so epics
+> 1–3 record from their first commit; this plan owned the **reader**, the query endpoint, the outcome
 > reporting, the viewer tab and the Team search. Depends on epic 1 for `RequireAdmin` and on
-> [PLAN_corp_projects_share_rule.md](../research/PLAN_corp_projects_share_rule.md) for the project a row cites.
+> [PLAN_corp_projects_share_rule.md](PLAN_corp_projects_share_rule.md) for the project a row cites.
 >
-> Related docs: [module_server.md](../research/module_server.md) (the break-glass audit log, the
-> streaming helper), [module_extension.md](../research/module_extension.md) (the tree filter, the
-> history rows, the webview precedents).
+> Related docs: [module_server.md](module_server.md) (the endpoint, the kinds, the storage),
+> [module_extension.md](module_extension.md) (the outcome, the client, the Team filter, the tab),
+> [module_tests.md](module_tests.md) (all three tiers, and what none of them covers).
 
 ## The symptom
 

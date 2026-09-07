@@ -10,7 +10,7 @@
 >
 > Depends on [PLAN_corp_registry_roles.md](../research/PLAN_corp_registry_roles.md) (`RequireAdmin`, runtime
 > settings), [PLAN_corp_blocking_login_key.md](../research/PLAN_corp_blocking_login_key.md) (the deployment KEK
-> that seals what this archive carries) and [PLAN_corp_event_log.md](PLAN_corp_event_log.md) (every
+> that seals what this archive carries) and [PLAN_corp_event_log.md](../research/PLAN_corp_event_log.md) (every
 > run leaves a row).
 >
 > Related docs: [module_deployment.md](../research/module_deployment.md) (the container stack,

@@ -33,6 +33,7 @@ export const HELP_ARTICLE_IDS: readonly string[] = [
   'sharing',
   'corporate-recovery',
   'corporate-roles',
+  'corporate-event-log',
   'filters',
   'health',
   'secret-scan',
