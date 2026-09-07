@@ -143,44 +143,79 @@ public sealed partial class VaultStore
     /// is not an event, because whatever happened to its share already left a row of its own, and a
     /// second one would double every share in the history.</para>
     /// </remarks>
-    public async Task<Prune> PruneOlderThanAsync(TimeSpan maxAge, CancellationToken ct)
+    public Task<Prune> PruneOlderThanAsync(TimeSpan maxAge, CancellationToken ct) =>
+        PruneOlderThanAsync(maxAge, FilesUnder(_sharesDir), FilesUnder(SentDir), ct);
+
+    /// <summary>The same pass over two file sequences the caller supplies.</summary>
+    /// <remarks>
+    /// <para><b>STOPPING is not throwing, and the difference is a row.</b> Files are deleted as this
+    /// walks, and an <c>OperationCanceledException</c> here would take the list of what went with it —
+    /// the caller could then write no <c>share.expired</c> rows for shares that are already gone, and no
+    /// later sweep can find them to try again. So a cancelled pass stops where it is and hands back what
+    /// it did.</para>
+    /// <para><b>Why the two sequences are parameters.</b> The case this method exists to survive is
+    /// cancellation MID-WALK — after some files are deleted, before the pass ends — and a test cannot
+    /// steer a real directory walk to that point except by racing it. A sequence that cancels the token
+    /// as it yields puts the pass exactly there, deterministically and without a clock. Production
+    /// passes the real trees, which is what the public overload above is.</para>
+    /// </remarks>
+    internal async Task<Prune> PruneOlderThanAsync(
+        TimeSpan maxAge,
+        IEnumerable<string> inboxFiles,
+        IEnumerable<string> sentFiles,
+        CancellationToken ct)
     {
         var cutoff = DateTimeOffset.UtcNow.Subtract(maxAge).ToUnixTimeMilliseconds();
-        var expired = new List<ShareFacts>();
-        var receipts = 0;
-        // STOPPING is not throwing, and the difference is a row. Files are deleted as this walks, and
-        // an OperationCanceledException here would take the list of what went with it — the caller
-        // could then write no share.expired rows for shares that are already gone, which no later
-        // sweep can find to try again. So a cancelled pass stops early and hands back what it did.
-        foreach (var dir in SafeDirectories(_sharesDir))
-        {
-            foreach (var path in SafeFiles(dir))
-            {
-                if (ct.IsCancellationRequested)
-                {
-                    return new Prune(expired, receipts);
-                }
-                var item = await ReadShareOrNullAsync(path, CancellationToken.None);
-                if (item is not null && item.CreatedAt < cutoff && Forget(path) == 1)
-                {
-                    expired.Add(ShareFacts.Of(item));
-                }
-            }
-        }
-        foreach (var dir in SafeDirectories(SentDir))
-        {
-            foreach (var path in SafeFiles(dir))
-            {
-                if (ct.IsCancellationRequested)
-                {
-                    return new Prune(expired, receipts);
-                }
-                var receipt = await ReadSentOrNullAsync(path, CancellationToken.None);
-                receipts += receipt is not null && receipt.CreatedAt < cutoff ? Forget(path) : 0;
-            }
-        }
+        var expired = await PruneSharesAsync(inboxFiles, cutoff, ct);
+        var receipts = await PruneReceiptsAsync(sentFiles, cutoff, ct);
         return new Prune(expired, receipts);
     }
+
+    /// <summary>Inbox items older than the cutoff, deleted and named.</summary>
+    private static async Task<List<ShareFacts>> PruneSharesAsync(
+        IEnumerable<string> files, long cutoff, CancellationToken ct)
+    {
+        var expired = new List<ShareFacts>();
+        foreach (var path in files)
+        {
+            if (ct.IsCancellationRequested)
+            {
+                break;
+            }
+            expired.AddRange(Taken(path, await ReadShareOrNullAsync(path, CancellationToken.None), cutoff));
+        }
+        return expired;
+    }
+
+    /// <summary>Sender receipts older than the cutoff, deleted and counted.</summary>
+    /// <remarks>
+    /// Counted rather than named: a receipt's disappearance is not an event, because whatever happened
+    /// to its share already left a row, and a second one would double every share in the history.
+    /// </remarks>
+    private static async Task<int> PruneReceiptsAsync(
+        IEnumerable<string> files, long cutoff, CancellationToken ct)
+    {
+        var gone = 0;
+        foreach (var path in files)
+        {
+            if (ct.IsCancellationRequested)
+            {
+                break;
+            }
+            gone += ForgetIfStale(path, await ReadSentOrNullAsync(path, CancellationToken.None), cutoff);
+        }
+        return gone;
+    }
+
+    /// <summary>The share this path held, if it was expired and the delete actually took it.</summary>
+    private static IEnumerable<ShareFacts> Taken(string path, ShareItem? item, long cutoff) =>
+        item is not null && item.CreatedAt < cutoff && Forget(path) == 1 ? [ShareFacts.Of(item)] : [];
+
+    private static int ForgetIfStale(string path, SentShare? receipt, long cutoff) =>
+        receipt is not null && receipt.CreatedAt < cutoff ? Forget(path) : 0;
+
+    /// <summary>Every file in a tree that is one directory per person, lazily.</summary>
+    private static IEnumerable<string> FilesUnder(string root) => SafeDirectories(root).SelectMany(SafeFiles);
 
     private static async Task<SentShare?> ReadSentOrNullAsync(string path, CancellationToken ct)
     {
