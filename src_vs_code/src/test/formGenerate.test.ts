@@ -46,3 +46,13 @@ test('a passphrase word count off the list is clamped to the default', () => {
   const eight = draw({ kind: 'passphrase', genWords: 8 });
   assert.equal(eight.value.split('-').length, 8);
 });
+
+test('the API key button lands in the password field, whatever the option boxes say', () => {
+  // The length and the class checkboxes belong to the password draw; a token ignores them, and the
+  // test passes absurd ones to prove it rather than to describe it.
+  const made = draw({ kind: 'token', genLength: 6, genLower: false, genUpper: false, genDigits: false, genSymbols: false });
+
+  assert.equal(made.target, 'password');
+  assert.match(made.value, /^[A-Za-z0-9_-]{43}$/);
+  assert.match(made.note, /256 bits/);
+});

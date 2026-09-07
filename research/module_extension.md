@@ -3657,6 +3657,28 @@ The step lives in `teamSearch.ts` rather than the provider for the reason `teamI
 `treeDataProvider.ts` sits at its 800-line ceiling, and a function that decides text and touches no
 `vscode` belongs where it is a unit test.
 
+## Generating an API key (2026-09-07)
+
+A third button beside *Generate password* and *Generate passphrase*: **Generate API key**, for the
+value a machine reads — an API key, a personal access token, a webhook secret.
+
+**Why it is not the password generator with the length turned up.** A password is drawn from an
+alphabet a person picked classes for, and its symbol set (`!#%*+-=?@^_~`) is chosen to survive a
+shell, a URL and a CSV. That is the right trade for something typed into a login form and the wrong
+one for a value that goes into an `Authorization:` header, a `.env` file, a YAML document and a
+`curl` argument on the way to the same service: each of those has its own opinion about `#`, `%`,
+`=` and `~`, and the failure is not a refusal — it is a token that arrives truncated and reads as a
+wrong key.
+
+So `generateApiToken` draws **32 random bytes** and renders them base64url (`A-Z a-z 0-9 - _`, RFC
+4648's URL-safe alphabet): 43 characters, and the entropy is EXACT — 256 bits, because the bytes are
+the draw and the rendering is a rendering, rather than "about 250 from an alphabet of 64".
+
+**No options, deliberately.** It ignores the length select and the four class boxes above it, and a
+test passes absurd ones to prove that rather than to describe it. A token nobody types has no reason
+to be shorter, and every dial a form could offer has a wrong answer for one of the four places the
+value is about to be pasted.
+
 ## The event log's tab (2026-09-07, epic 4 story 4)
 
 ***Event Log…*** on a corporate account row opens `orgEventsPanel.ts`, and the split is the one this

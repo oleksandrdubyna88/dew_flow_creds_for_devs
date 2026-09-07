@@ -50,6 +50,44 @@ export interface GeneratedSecret {
   description: string;
 }
 
+/**
+ * How many random BYTES an API token is drawn from. 32 bytes is 256 bits, the size everything that
+ * signs or authenticates in this product already uses, and what a service issuing a token of its own
+ * would give you.
+ */
+export const TOKEN_BYTES = 32;
+
+/**
+ * A token for a machine: an API key, a personal access token, a webhook secret.
+ *
+ * <p><b>Why not the password generator with the length turned up.</b> A password is drawn from an
+ * alphabet a PERSON chose classes for, and its symbol set — `!#%*+-=?@^_~` — is chosen to survive a
+ * shell, a URL and a CSV. That is the right trade for something typed into a login form and the
+ * wrong one for a value that goes into an `Authorization:` header, a `.env` file, a YAML document
+ * and a `curl` argument on the way to the same service: every one of those has its own opinion
+ * about `#`, `%`, `=` and `~`, and the failure is not a refusal but a token that arrives
+ * truncated.</p>
+ *
+ * <p>So this draws 32 bytes and renders them base64url — `A-Z a-z 0-9 - _`, the alphabet RFC 4648
+ * defines for exactly this: safe in a URL, a header, a JSON string, a shell word and an `.env` line
+ * with no quoting anywhere. 43 characters, and the entropy is EXACT rather than approximate,
+ * because the bytes are the draw and the rendering is a rendering: 256 bits, not "about 250 from an
+ * alphabet of 64".</p>
+ *
+ * <p>No option and no dials, deliberately: a token nobody types has no reason to be shorter, and
+ * every character class question a person could be asked here has a wrong answer for one of the
+ * four places the value is about to be pasted.</p>
+ */
+export function generateApiToken(): GeneratedSecret {
+  const value = crypto.randomBytes(TOKEN_BYTES).toString('base64url');
+  return {
+    value,
+    entropyBits: TOKEN_BYTES * 8,
+    description: `${value.length} characters, ${TOKEN_BYTES} random bytes — ${TOKEN_BYTES * 8} bits. `
+      + 'Safe in a header, a URL, a .env file and a shell without quoting.',
+  };
+}
+
 /** The lengths the form offers. The owner's list, verbatim; 32 is the default. */
 export const PASSWORD_LENGTH_CHOICES: readonly number[] = [6, 8, 12, 16, 32, 64];
 

@@ -43,6 +43,8 @@ export function generateWiring(): string {
   if (genPassword) { genPassword.addEventListener('click', askFor('password')); }
   var genPassphrase = document.getElementById('genPassphrase');
   if (genPassphrase) { genPassphrase.addEventListener('click', askFor('passphrase')); }
+  var genToken = document.getElementById('genToken');
+  if (genToken) { genToken.addEventListener('click', askFor('token')); }
   var genKey = document.getElementById('genKey');
   if (genKey) { genKey.addEventListener('click', askFor('key')); }
 `;
