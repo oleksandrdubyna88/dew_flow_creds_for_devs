@@ -255,6 +255,38 @@ public sealed class ShareEventRowTests
     }
 
     [Fact]
+    public async Task APruneCancelledPartWayStillRecordsWhatItAlreadyDeleted()
+    {
+        // The files go before the rows are written, so a prune that THREW on the stopping token would
+        // take the list of what it had deleted with it — and no later sweep can find those shares to
+        // try again. A cancelled pass stops early and hands back what it did.
+        using var server = Corp.Server();
+        var store = new VaultStore(server.DataDir);
+        var log = new OrgEventLog(server.DataDir, NullLogger<OrgEventLog>.Instance, () => DateTimeOffset.UtcNow);
+        foreach (var name in new[] { "one", "two", "three" })
+        {
+            await store.AppendShareAsync(Bob, Expired(name), Ct);
+        }
+        using var stopping = new CancellationTokenSource();
+        await stopping.CancelAsync();
+
+        var pruned = await store.PruneOlderThanAsync(TimeSpan.FromDays(31), stopping.Token);
+
+        pruned.Expired.Count.Should().Be(pruned.Expired.Count, "whatever it deleted, it can name");
+        foreach (var share in pruned.Expired)
+        {
+            (await log.AppendAsync(
+                OrgEndpoints.ShareRow(OrgEventKinds.ShareExpired, share.FromEmail, share.ToEmail, share),
+                CancellationToken.None)).Should().BeTrue();
+        }
+        Corp.Rows(server, OrgEventKinds.ShareExpired).Should().HaveCount(
+            pruned.Expired.Count,
+            "every share the pass removed has a row, however early it stopped");
+        Directory.EnumerateFiles(Path.Combine(server.DataDir, "shares"), "*.json", SearchOption.AllDirectories)
+            .Should().HaveCount(3 - pruned.Expired.Count, "and nothing went unrecorded");
+    }
+
+    [Fact]
     public async Task AWithdrawalRowCitesTheProjectTheShareCameFrom()
     {
         // The withdrawal paths hold the RECEIPT, not the inbox item, so the receipt carries the project

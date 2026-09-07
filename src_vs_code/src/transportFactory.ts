@@ -14,7 +14,7 @@ import { OrgRecoveryClient } from './orgRecoveryClient';
 import { ServerTransport } from './serverTransport';
 import { StorageManager } from './storageManager';
 import { StoredAccount } from './types';
-import { VaultTransport, isServerLocation } from './vaultTransport';
+import { VaultTransport, isCorpServerLocation, isServerLocation } from './vaultTransport';
 import { microsoftServerScopes } from './msScopes';
 import { ClientConfigCache, defaultConfigFetcher, resolveMicrosoftScope } from './clientConfig';
 
@@ -79,8 +79,8 @@ export class TransportFactory {
    * is no server there to relay a share.</p>
    */
   orgRecoveryFor(account: StoredAccount): OrgRecoveryClient | undefined {
-    const location = nasPathFor(account);
-    if (location === undefined || !isServerLocation(location)) {
+    const location = corpServerFor(account);
+    if (location === undefined) {
       return undefined;
     }
     const existing = this.orgClients.get(location);
@@ -105,8 +105,8 @@ export class TransportFactory {
    * is no log to read and the command says so rather than opening an empty tab.
    */
   orgEventsFor(account: StoredAccount): OrgEventsClient | undefined {
-    const location = nasPathFor(account);
-    if (location === undefined || !isServerLocation(location)) {
+    const location = corpServerFor(account);
+    if (location === undefined) {
       return undefined;
     }
     const existing = this.eventsClients.get(location);
@@ -129,8 +129,8 @@ export class TransportFactory {
    * gets, so one window holds one client per server rather than one per call.
    */
   orgLoginKeyFor(account: StoredAccount): OrgLoginKeyClient | undefined {
-    const location = nasPathFor(account);
-    if (location === undefined || !isServerLocation(location)) {
+    const location = corpServerFor(account);
+    if (location === undefined) {
       return undefined;
     }
     const existing = this.loginKeyClients.get(location);
@@ -143,8 +143,8 @@ export class TransportFactory {
   }
 
   orgMembersFor(account: StoredAccount): OrgMembersClient | undefined {
-    const location = nasPathFor(account);
-    if (location === undefined || !isServerLocation(location)) {
+    const location = corpServerFor(account);
+    if (location === undefined) {
       return undefined;
     }
     const existing = this.membersClients.get(location);
@@ -261,10 +261,8 @@ export class TransportFactory {
    */
   /** The server this account talks to, if it talks to one at all. */
   private async locationConfig(account: StoredAccount) {
-    const location = nasPathFor(account);
-    return location === undefined || !isServerLocation(location)
-      ? undefined
-      : this.clientConfigs.forLocation(location);
+    const location = corpServerFor(account);
+    return location === undefined ? undefined : this.clientConfigs.forLocation(location);
   }
 
   // eslint-disable-next-line complexity
@@ -293,4 +291,14 @@ export class TransportFactory {
       return undefined;
     }
   }
+}
+
+/**
+ * The vault server this account syncs to, or nothing. The RULE is `isCorpServerLocation`, in
+ * `vaultTransport.ts` where it is a unit test; this is the account lookup around it, which needs
+ * VS Code's configuration and therefore cannot be one.
+ */
+export function corpServerFor(account: StoredAccount): string | undefined {
+  const location = nasPathFor(account);
+  return location !== undefined && isCorpServerLocation(location) ? location : undefined;
 }
