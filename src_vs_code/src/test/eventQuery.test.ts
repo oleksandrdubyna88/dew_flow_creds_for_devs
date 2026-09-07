@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import {
+  EVENT_QUERY_PARAMS,
   ORG_EVENTS_PATH,
   eventQueryPath,
   isOrgEvent,
@@ -41,25 +42,20 @@ test('a filter nobody set is omitted, never sent empty', () => {
   assert.equal(path, `${ORG_EVENTS_PATH}?kind=share.`);
 });
 
-test('every filter travels under the name the server reads', () => {
-  const path = eventQueryPath({
-    actor: 'a@corp.com',
-    subject: 'b@corp.com',
-    person: 'c@corp.com',
-    project: 'ab12',
-    kind: 'member.blocked',
-    since: 1,
-    until: 2,
-    text: 'prod database',
-    cursor: '2026-03-01:42',
-    limit: 50,
-  });
+test('every filter travels, under the name the table gives it', () => {
+  // The set of names is DERIVED from the table the builder itself reads, not retyped here: a
+  // parameter added to one and forgotten in the other is exactly what a retyped list cannot catch.
+  const numeric = new Set(['since', 'until', 'limit']);
+  const query: Record<string, string | number> = {};
+  for (const field of Object.keys(EVENT_QUERY_PARAMS)) {
+    query[field] = numeric.has(field) ? 7 : `value-of-${field}`;
+  }
+  const path = eventQueryPath(query as Parameters<typeof eventQueryPath>[0]);
+
   const params = new URLSearchParams(path.slice(path.indexOf('?') + 1));
-  assert.deepEqual([...params.keys()].sort(), [
-    'actor', 'cursor', 'kind', 'limit', 'person', 'project', 'q', 'since', 'subject', 'until',
-  ]);
-  assert.equal(params.get('q'), 'prod database', 'the text filter is `q` on the wire');
-  assert.equal(params.get('cursor'), '2026-03-01:42');
+  assert.deepEqual([...params.keys()].sort(), Object.values(EVENT_QUERY_PARAMS).sort());
+  assert.equal(params.get('q'), 'value-of-text', 'the text filter is `q` on the wire');
+  assert.equal(params.get('actor'), 'value-of-actor');
 });
 
 test('a cursor round-trips through the query string unchanged', () => {
@@ -103,12 +99,36 @@ test('a null cursor is the end, and an empty one is too', () => {
   assert.equal(pageOf({ items: [], nextCursor: '2026-03-01:1' }).nextCursor, '2026-03-01:1');
 });
 
+test('a number no clock can hold is not sent at all', () => {
+  // `since=NaN` reaches the server as a word it refuses with a 400, so a caller meets their own bad
+  // arithmetic dressed as a server refusal.
+  assert.equal(eventQueryPath({ since: Number.NaN }), ORG_EVENTS_PATH);
+  assert.equal(eventQueryPath({ until: Number.POSITIVE_INFINITY }), ORG_EVENTS_PATH);
+  assert.equal(eventQueryPath({ limit: Number.NaN, kind: 'share.' }), `${ORG_EVENTS_PATH}?kind=share.`);
+  assert.match(eventQueryPath({ since: 0 }), /since=0$/, 'but zero is an instant like any other');
+});
+
+test('an instant no clock can hold is not a row', () => {
+  assert.equal(isOrgEvent({ ...ROW, at: Number.NaN }), false);
+  assert.equal(isOrgEvent({ ...ROW, at: Number.POSITIVE_INFINITY }), false);
+});
+
 test('the two outcome words are the ones the SERVER is sent in its own contract suite', () => {
   // Two implementations of one contract cannot be proved consistent by two suites that each read
   // their own copy of the names. This reads the server's `.http` file — the requests that run
   // against a real server before a release — and asserts the words this client sends appear there.
   const suite = readFileSync(join(__dirname, '..', '..', '..', 'http', 'shares', 'shares.http'), 'utf8');
   assert.match(suite, /\?outcome=accepted/, 'the server suite sends `accepted`');
-  assert.match(suite, /\?outcome=declined|outcome=declined/, 'the server suite sends `declined`');
+  assert.match(suite, /\?outcome=declined/, 'the server suite sends `declined`');
   assert.match(suite, /outcome=forwarded-to-legal/, 'and one word the server does not know, which it must still accept');
+});
+
+test('the file check is the auxiliary one — the LIVE check is in the itest harness', () => {
+  // Two suites agreeing with the same file is not a contract check (testing.md). The real one sends
+  // the word to a running server and reads the row back through this build's own event client:
+  // `scripts/server-transport-itest.cjs`, which asserts `share.accepted` for what it reported. This
+  // assertion is here so that the pointer cannot rot silently.
+  const harness = readFileSync(join(__dirname, '..', '..', 'scripts', 'server-transport-itest.cjs'), 'utf8');
+  assert.match(harness, /removeShare\(bob, inbox\[0\], 'accepted'\)/);
+  assert.match(harness, /share\.accepted/);
 });

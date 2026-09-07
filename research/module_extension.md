@@ -3623,7 +3623,20 @@ have the route answers `404`, which reads as an empty log rather than a failure 
 and `listProjects` already use, so a readiness cycle against an older server does not report a
 failure about a feature that server does not have.
 
-**Nothing calls it yet.** The viewer and the tree rows are story 4; this is the client they will use.
+**An older server's silence has a name.** A `404` reads as an empty page — a readiness cycle must not
+report a failure about a feature the server does not have — but the page carries `noLogHere`, so a
+viewer can say *this server keeps no event log* rather than showing an empty history somebody would
+read as *nothing ever happened*. An ordinary empty page does not carry it.
+
+**The live contract check is in the harness, not in a file comparison.**
+`scripts/server-transport-itest.cjs` now drives the compiled `ServerTransport` against a running
+server, accepts a share saying `accepted`, and reads the row back through this build's own
+`OrgEventsClient` to assert the server recorded `share.accepted` naming both people. Two suites each
+reading their own copy of the names is not a contract check; this is. It skips loudly against a
+server with no roster, because the log only exists in corp mode. Run: `npm run itest:server` against
+a corp-mode server on a FRESH data directory.
+
+**Nothing else calls it yet.** The viewer and the tree rows are story 4; this is the client they will use.
 
 ### The Team filter matched the email and nothing else
 

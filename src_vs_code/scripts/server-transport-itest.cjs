@@ -6,6 +6,10 @@
 //     Auth__Microsoft__Tenant= Auth__Local__SigningKey=itest-key-itest-key-itest-key-32x \
 //     ASPNETCORE_URLS=http://127.0.0.1:5113 dotnet run
 //
+//   # to run the event-log half too, the server needs a roster — corp mode is what creates the log:
+//   Vault__CorpRecovery__OfficerEmails=officer@example.com,officer2@example.com,officer3@example.com \
+//     Vault__CorpRecovery__Threshold=2 ...   (the checks SKIP loudly without it)
+//
 //   # terminal 2
 //   npm run compile && node scripts/server-transport-itest.cjs
 const path = require('path');
@@ -21,6 +25,7 @@ Module._resolveFilename = (req, ...a) => (req === 'vscode' ? stub : orig.call(Mo
 
 const EXT = path.join(__dirname, '..', 'out');
 const { ServerTransport } = require(path.join(EXT, 'serverTransport.js'));
+const { OrgEventsClient } = require(path.join(EXT, 'orgEventsClient.js'));
 const { sealShare, openShare, resolveShares } = require(path.join(EXT, 'shareFormat.js'));
 // The recipient's own build. Past LEGACY_SHARES_UNTIL an unbound FOLDER share is refused, so
 // running this at 0.0.0 would hide exactly the refusal the user hit.
@@ -113,8 +118,32 @@ const check = (what, ok) => { console.log(`${ok ? '  ok' : 'FAIL'}  ${what}`); i
   const r = resolveShares(inbox, ['PIN-9'], EXT_VERSION, () => true);
   check('resolveShares opens server items', r.opened.length === 1 && r.remaining.length === 0);
 
-  await t.removeShare(bob, inbox[0]);
+  const acceptedId = inbox[0].item.id;
+  await t.removeShare(bob, inbox[0], 'accepted');
   check('accepted share is removed server-side', (await t.listShares(bob)).length === 0);
+
+  // THE LIVE CONTRACT CHECK. The word this client sends and the kind the server records are two
+  // implementations of one agreement, and two suites each reading their own copy of the names prove
+  // nothing about it (testing.md — "a contract with TWO IMPLEMENTATIONS"). So the extension's own
+  // event client reads the row back off the running server and looks for the kind the word maps to.
+  //
+  // The log exists only in corp mode. A server without a roster answers rows to nobody, so the check
+  // SKIPS LOUDLY rather than passing quietly — a skip that says why is the convention every harness
+  // here follows, and a silent pass is the failure this check exists to prevent.
+  const events = new OrgEventsClient(BASE_URL, (acc) => Promise.resolve(tokens[acc.accountId]));
+  const page = await events.readEvents(bob, { kind: 'share.', limit: 50 });
+  if (page.noLogHere) {
+    console.log('  skip  the outcome round-trip: this server is older than GET /api/org/events');
+  } else if (page.items.length === 0) {
+    console.log('  skip  the outcome round-trip: this server keeps no event log (no officer roster configured)');
+    console.log('        start it with Vault__CorpRecovery__OfficerEmails set to three addresses to run this check');
+  } else {
+    const row = page.items.find((e) => e.shareId === acceptedId && e.kind === 'share.accepted');
+    check('the server recorded the ACCEPT this client reported', row !== undefined);
+    check('and the row names both people, from the token rather than the request',
+      row !== undefined && row.actor === bob.email && row.subject === alice.email);
+    check('a send left its own row', page.items.some((e) => e.shareId === acceptedId && e.kind === 'share.sent'));
+  }
 
   console.log(fails === 0 ? '\nALL TRANSPORT CHECKS PASSED' : `\n${fails} FAILED`);
   process.exit(fails === 0 ? 0 : 1);

@@ -58,9 +58,10 @@ export function teamRowHaystack(input: {
   readonly member: TeamMember;
   readonly viewer: CorpPolicyState | undefined;
   readonly roster: readonly MemberListEntry[] | undefined;
-  readonly projects: readonly ProjectRow[] | undefined;
+  /** Project id to name, built ONCE per filter — see `matchingTeamMembers`. */
+  readonly byId: ReadonlyMap<string, string>;
 }): string {
-  const byId = new Map((input.projects ?? []).map((project) => [project.id, project.name]));
+  const { byId } = input;
   return teamMemberHaystack({
     email: input.member.account.email,
     provider: input.member.account.provider,
@@ -89,5 +90,12 @@ export function matchingTeamMembers(
     readonly projects: readonly ProjectRow[] | undefined;
   },
 ): readonly TeamMember[] {
-  return members.filter((member) => matchesTerms(teamRowHaystack({ member, ...context }), terms));
+  // The id-to-name map is built ONCE for the whole filter, not once per colleague: this runs on
+  // every keystroke, and a domain of 500 people against 200 projects would otherwise be 100,000
+  // map insertions per character, on the thread that draws the tree.
+  const byId = new Map((context.projects ?? []).map((project) => [project.id, project.name]));
+  return members.filter((member) => matchesTerms(
+    teamRowHaystack({ member, viewer: context.viewer, roster: context.roster, byId }),
+    terms,
+  ));
 }
