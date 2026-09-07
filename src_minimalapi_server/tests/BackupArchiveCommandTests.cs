@@ -158,6 +158,59 @@ public class BackupArchiveCommandTests
         output.Should().Contain("2 file(s)");
     }
 
+    [Fact]
+    public void ItSealsATreeFromTheCommandLineAndReadsItBack()
+    {
+        var keyFile = KeyFile(NewKey());
+        var archive = NewPath();
+
+        var (sealed_, sealing, _) = Run([BackupArchiveCommand.CreateVerb, TreeWithTwoFiles(), archive, keyFile]);
+        var (opened, _, _) = Run([BackupArchiveCommand.VerifyVerb, archive, keyFile]);
+
+        sealed_.Should().Be(0);
+        sealing.Should().Contain("Sealed 2 file(s)");
+        opened.Should().Be(0);
+    }
+
+    [Fact]
+    public void ASourceDirectoryThatIsNotThereIsASentence()
+    {
+        var (code, _, error) = Run(
+            [BackupArchiveCommand.CreateVerb, NewPath(), NewPath(), KeyFile(NewKey())]);
+
+        code.Should().Be(1);
+        error.Should().Contain("source directory").And.Contain("does not exist");
+    }
+
+    [Fact]
+    public void ItSaysWhatItIsDoingBeforeItStartsDoingIt()
+    {
+        // Four silent minutes and a hung process look identical from a terminal. The first line goes
+        // out before the work, not after it.
+        var key = NewKey();
+        var archive = ArchiveOf(TreeWithTwoFiles(), key);
+
+        var (_, verifying, _) = Run([BackupArchiveCommand.VerifyVerb, archive, KeyFile(key)]);
+
+        verifying.Should().StartWith("Verifying ");
+        verifying.Should().Contain("vaults/alice.json", "and then one line per entry as it goes");
+    }
+
+    [Fact]
+    public void AKeyFileTheSizeOfALogIsRefusedWithoutBeingRead()
+    {
+        // A mistyped path pointing at a gigabyte log would otherwise be allocated in full inside a
+        // recovery container before anything decided it was not a key.
+        var path = NewPath();
+        File.WriteAllText(path, new string('A', 100_000));
+
+        var (code, _, error) = Run(
+            [BackupArchiveCommand.VerifyVerb, ArchiveOf(TreeWithTwoFiles(), NewKey()), path]);
+
+        code.Should().Be(1);
+        error.Should().Contain("none of it has been read");
+    }
+
     private static (int Code, string Output, string Error) Run(string[] args)
     {
         var output = new StringWriter();

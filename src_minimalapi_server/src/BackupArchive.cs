@@ -30,11 +30,11 @@ public sealed record ArchiveSummary(int Files, int Directories, int Skipped, lon
 /// read, and those are counted as skipped rather than being allowed to abort a backup.</para>
 ///
 /// <para><b>Extraction is the dangerous direction.</b> An archive is a list of names, and a name is a
-/// path if you let it be one: <c>../../etc/cron.d/x</c>, an absolute path, a symlink pointing at
-/// somewhere else followed by a file entry landing on it. Every entry is resolved and checked against
-/// the destination before a single byte is written, and only files and directories are written at all.
-/// The whole extraction goes into a staging directory that is renamed into place at the end, so a
-/// failure on the last chunk leaves nothing behind that could be mistaken for a restore.</para>
+/// path if you let it be one: <c>../../etc/cron.d/x</c>, an absolute path, <c>notes.txt:hidden</c> on
+/// Windows, a directory replaced by a symlink between the check and the write. Every entry is resolved
+/// and checked against the destination before a single byte is written, only files and directories are
+/// written at all, and the whole tree lands in a staging directory renamed into place at the end — so
+/// a failure on the last chunk leaves nothing that could be mistaken for a restore.</para>
 /// </remarks>
 public static class BackupArchive
 {
@@ -42,6 +42,23 @@ public static class BackupArchive
     public static ArchiveSummary Create(
         string sourceDir, Stream destination, byte[] key, DateTimeOffset createdAt) =>
         Create(sourceDir, destination, key, createdAt, BackupFormat.DefaultChunkSize);
+
+    /// <summary>
+    /// Seal a tree into a FILE, written under a temporary name and renamed once it is complete.
+    /// </summary>
+    /// <remarks>
+    /// The rename is the same discipline the vault store uses for every write it makes: a reader — the
+    /// next run's retention pass, an upload, a person — sees a whole archive or no archive, never a
+    /// half-written one that would pass for a backup until the day it was needed.
+    /// </remarks>
+    public static ArchiveSummary CreateFile(
+        string sourceDir, string archivePath, byte[] key, DateTimeOffset createdAt)
+    {
+        var partial = archivePath + ".partial";
+        var summary = SealToFile(sourceDir, partial, key, createdAt);
+        File.Move(partial, archivePath, overwrite: true);
+        return summary;
+    }
 
     internal static ArchiveSummary Create(
         string sourceDir, Stream destination, byte[] key, DateTimeOffset createdAt, int chunkSize) =>
@@ -60,34 +77,31 @@ public static class BackupArchive
     /// Open an archive into a directory that does not yet hold anything.
     /// </summary>
     /// <remarks>
-    /// The extraction lands in a staging directory beside the destination and is renamed into place
-    /// only once the last chunk has authenticated. A tag that fails on chunk 20, or a process killed
-    /// half way, therefore leaves no half-tree that a later run would read as a restore — the one
-    /// failure mode where "it looked like it worked" costs the most.
+    /// <para>The extraction lands in a staging directory beside the destination and is renamed into
+    /// place only once the last chunk has authenticated. A tag that fails on chunk 20, or a process
+    /// killed half way, therefore leaves no half-tree that a later run would read as a restore — the
+    /// one failure mode where "it looked like it worked" costs the most.</para>
+    /// <para><b>The destination is checked twice and deleted only at the end.</b> Up front so that a
+    /// restore into an occupied directory fails in a second rather than after ten minutes of
+    /// decryption; again at commit time, because an empty directory the operator had prepared must not
+    /// be removed by a restore that then fails on a mistyped key and leaves them worse off than they
+    /// started.</para>
     /// </remarks>
     public static ArchiveSummary Extract(
         string archivePath, string destinationDir, byte[] key, Action<string>? onEntry = null)
     {
-        var final = Path.GetFullPath(destinationDir);
+        var final = Path.TrimEndingDirectorySeparator(Path.GetFullPath(destinationDir));
         RefuseOccupiedDestination(final);
         var staging = final + ".partial-" + Guid.NewGuid().ToString("N")[..8];
-        try
-        {
-            Directory.CreateDirectory(staging);
-            var summary = ReadArchive(archivePath, staging, key, onEntry);
-            Directory.Move(staging, final);
-            return summary;
-        }
-        catch
-        {
-            Forget(staging);
-            throw;
-        }
+        Directory.CreateDirectory(staging);
+        var summary = Opened(archivePath, staging, key, onEntry);
+        Commit(staging, final);
+        return summary;
     }
 
     /// <summary>Authenticate every chunk and every entry name, and write nothing at all.</summary>
-    public static ArchiveSummary Verify(string archivePath, byte[] key) =>
-        ReadArchive(archivePath, destination: null, key, onEntry: null);
+    public static ArchiveSummary Verify(string archivePath, byte[] key, Action<string>? onEntry = null) =>
+        ReadArchive(archivePath, destination: null, key, onEntry);
 
     /// <summary>
     /// The two things that never go into an archive. One function, one place, tested directly.
@@ -128,6 +142,13 @@ public static class BackupArchive
     /// </remarks>
     private static string EntryPath(string entryName) => entryName.Replace('\\', '/').TrimEnd('/');
 
+    private static ArchiveSummary SealToFile(
+        string sourceDir, string path, byte[] key, DateTimeOffset createdAt)
+    {
+        using var output = File.Create(path);
+        return Create(sourceDir, output, key, createdAt);
+    }
+
     private static ArchiveSummary Seal(
         Stream destination,
         byte[] key,
@@ -151,20 +172,59 @@ public static class BackupArchive
         using var tar = new TarWriter(into, TarEntryFormat.Pax, leaveOpen: true);
         var root = Path.GetFullPath(sourceDir);
         var summary = ArchiveSummary.Empty;
-        foreach (var path in Walk(root))
+        foreach (var path in Tree(root))
         {
             summary = summary.Plus(Add(tar, root, path));
         }
         return summary;
     }
 
-    /// <summary>Everything under the root, in a fixed order, minus what never travels.</summary>
-    private static IEnumerable<string> Walk(string root) =>
-        Directory.Exists(root)
-            ? Directory.EnumerateFileSystemEntries(root, "*", SearchOption.AllDirectories)
-                .Where(path => !Excluded(Path.GetRelativePath(root, path)))
-                .Order(StringComparer.Ordinal)
-            : [];
+    private static IEnumerable<string> Tree(string root) =>
+        Directory.Exists(root) ? Walk(root, root) : [];
+
+    /// <summary>
+    /// Everything under one directory and then everything under each of its own, lazily.
+    /// </summary>
+    /// <remarks>
+    /// <para>Recursive rather than <c>SearchOption.AllDirectories</c> followed by a sort, for two
+    /// reasons that both matter on a real server. That pair materialises every path in the tree before
+    /// a single byte is written, which is a large allocation next to a format whose whole point is that
+    /// it streams; and it WALKS the trees it is about to discard — <c>org/backup/</c>, which holds
+    /// archives, is reliably the largest directory on the disk. Pruning an excluded directory here
+    /// means never entering it.</para>
+    /// <para>Sorted per directory, so an archive of the same tree is the same archive twice.</para>
+    /// </remarks>
+    private static IEnumerable<string> Walk(string root, string directory)
+    {
+        foreach (var entry in Sorted(directory))
+        {
+            if (Excluded(Path.GetRelativePath(root, entry)))
+            {
+                continue;
+            }
+            yield return entry;
+            foreach (var nested in Descend(root, entry))
+            {
+                yield return nested;
+            }
+        }
+    }
+
+    private static IEnumerable<string> Descend(string root, string entry) =>
+        Directory.Exists(entry) ? Walk(root, entry) : [];
+
+    private static IEnumerable<string> Sorted(string directory)
+    {
+        try
+        {
+            return Directory.EnumerateFileSystemEntries(directory).Order(StringComparer.Ordinal).ToArray();
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            // A directory removed or locked while the walk is in it. The tree is live; see Add.
+            return [];
+        }
+    }
 
     private static ArchiveSummary Add(TarWriter tar, string root, string path)
     {
@@ -193,11 +253,65 @@ public static class BackupArchive
         // is being read is exactly the case above, and an unshared handle turns it into a failure.
         using var stream = File.Open(
             path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+        var length = stream.Length;
         tar.WriteEntry(new PaxTarEntry(TarEntryType.RegularFile, Normalised(Path.GetRelativePath(root, path)))
         {
             DataStream = stream,
         });
-        return new ArchiveSummary(1, 0, 0, stream.Length);
+        return new ArchiveSummary(1, 0, 0, length);
+    }
+
+    private static ArchiveSummary Opened(
+        string archivePath, string staging, byte[] key, Action<string>? onEntry)
+    {
+        try
+        {
+            return ReadArchive(archivePath, staging, key, onEntry);
+        }
+        catch (Exception failure)
+        {
+            throw Forget(staging, failure);
+        }
+    }
+
+    /// <summary>
+    /// Removes the staging tree, and never hides why the extraction failed.
+    /// </summary>
+    /// <remarks>
+    /// A cleanup that cannot run is not a reason to lose the original failure — but it is not something
+    /// to drop either: a partly extracted tree left beside the destination is bytes on a disk that
+    /// nobody has been given a reason to look for. So the original failure is what propagates, and when
+    /// the cleanup fails too, its message carries the original's along with the path that was stranded.
+    /// </remarks>
+    private static Exception Forget(string staging, Exception failure)
+    {
+        try
+        {
+            Directory.Delete(staging, recursive: true);
+            return failure;
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            return BackupArchiveException.StrandedStaging(staging, failure);
+        }
+    }
+
+    /// <summary>The rename into place, and the one failure that must not read as a lost restore.</summary>
+    private static void Commit(string staging, string final)
+    {
+        RefuseOccupiedDestination(final);
+        RemoveEmptyDestination(final);
+        try
+        {
+            Directory.Move(staging, final);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            // A destination on another filesystem, or one somebody created in the last few seconds.
+            // The archive is out and it is whole; what failed is the last rename, so the message says
+            // where the tree is rather than implying the restore has to be run again.
+            throw BackupArchiveException.CouldNotInstall(staging, final, e);
+        }
     }
 
     private static ArchiveSummary ReadArchive(
@@ -244,39 +358,42 @@ public static class BackupArchive
         var target = TargetFor(entry.Name, destination);
         return entry.EntryType switch
         {
-            TarEntryType.Directory => TakeDirectory(target),
-            TarEntryType.RegularFile or TarEntryType.V7RegularFile => TakeFile(entry, target),
+            TarEntryType.Directory => TakeDirectory(destination, target),
+            TarEntryType.RegularFile or TarEntryType.V7RegularFile => TakeFile(entry, destination, target),
             _ => throw BackupArchiveException.UnsupportedEntry(entry.Name, entry.EntryType),
         };
     }
 
-    private static ArchiveSummary TakeDirectory(string? target)
+    private static ArchiveSummary TakeDirectory(string? root, string? target)
     {
-        MakeDirectory(target);
+        MakeDirectory(root, target);
         return new ArchiveSummary(0, 1, 0, 0);
     }
 
-    private static void MakeDirectory(string? target)
+    private static void MakeDirectory(string? root, string? target)
     {
-        if (target is not null)
+        if (root is null || target is null)
         {
-            Directory.CreateDirectory(target);
+            return;
         }
+        Directory.CreateDirectory(target);
+        RefuseLinkedComponents(root, target);
     }
 
-    private static ArchiveSummary TakeFile(TarEntry entry, string? target)
+    private static ArchiveSummary TakeFile(TarEntry entry, string? root, string? target)
     {
-        WriteFile(entry, target);
+        WriteFile(entry, root, target);
         return new ArchiveSummary(1, 0, 0, entry.Length);
     }
 
-    private static void WriteFile(TarEntry entry, string? target)
+    private static void WriteFile(TarEntry entry, string? root, string? target)
     {
-        if (target is null)
+        if (root is null || target is null)
         {
             return;
         }
         Directory.CreateDirectory(Path.GetDirectoryName(target) ?? target);
+        RefuseLinkedComponents(root, target);
         entry.ExtractToFile(target, overwrite: false);
     }
 
@@ -302,47 +419,109 @@ public static class BackupArchive
         }
     }
 
+    private static bool Escapes(string name) => Climbs(name) || NamesAWindowsStream(name);
+
     /// <summary>Absolute, rooted, or climbing: three spellings of "not below the destination".</summary>
-    private static bool Escapes(string name) =>
+    private static bool Climbs(string name) =>
         name.StartsWith('/')
         || Path.IsPathRooted(name)
         || name.Split('/').Any(segment => segment is "..");
 
+    /// <summary>
+    /// On Windows a colon in a name is not part of the name.
+    /// </summary>
+    /// <remarks>
+    /// <c>notes.txt:hidden</c> addresses an alternate data STREAM of <c>notes.txt</c>, and <c>c:x</c> a
+    /// path relative to a drive's current directory. Neither is a file below the destination, and both
+    /// survive a containment check written in terms of directories. Refused on Windows only, because on
+    /// Linux a colon is an ordinary character in a filename and an archive taken there has to restore
+    /// there.
+    /// </remarks>
+    private static bool NamesAWindowsStream(string name) =>
+        OperatingSystem.IsWindows() && name.Contains(':');
+
     /// <summary>The canonical check: resolved, then compared against the resolved destination.</summary>
     private static string Contained(string destination, string name, string raw)
     {
-        var root = Path.GetFullPath(destination);
+        var root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(destination));
         var full = Path.GetFullPath(Path.Combine(root, name.Replace('/', Path.DirectorySeparatorChar)));
-        if (!full.StartsWith(root + Path.DirectorySeparatorChar, StringComparison.Ordinal))
+        if (Outside(root, full))
         {
             throw BackupArchiveException.UnsafeEntry(raw);
         }
         return full;
     }
 
+    /// <summary>
+    /// Asked as a RELATIVE path rather than as a string prefix.
+    /// </summary>
+    /// <remarks>
+    /// <c>full.StartsWith(root + separator)</c> is the usual spelling and it is wrong at the edges: a
+    /// destination that is a filesystem root gives <c>"//"</c> or <c>"C:\\"</c> and then refuses every
+    /// entry in a perfectly good archive. Asking for the relative path answers the actual question —
+    /// "is this below that" — for every destination, including a root and including another drive,
+    /// which comes back rooted and is refused.
+    /// </remarks>
+    internal static bool Outside(string root, string full)
+    {
+        var relative = Path.GetRelativePath(root, full);
+        return Path.IsPathRooted(relative)
+            || relative == "."
+            || relative.Split(Path.DirectorySeparatorChar, '/').Any(segment => segment is "..");
+    }
+
+    /// <summary>
+    /// No directory on the way to this file may be a link.
+    /// </summary>
+    /// <remarks>
+    /// <para>The containment check is lexical, and the staging tree is a real directory on a real
+    /// filesystem: between the check and the write, another local process can replace a directory we
+    /// just created with a symlink, and the entry then lands wherever it points. .NET exposes no
+    /// open-without-following, so this is the strongest check available here — every component below
+    /// the root is resolved and refused if it is a link.</para>
+    /// <para>It closes the ordinary case and narrows the race rather than eliminating it, which is why
+    /// a restore belongs in a directory nobody else can write to. Said plainly rather than implied,
+    /// because a defence described as complete is one nobody checks again.</para>
+    /// </remarks>
+    private static void RefuseLinkedComponents(string root, string target)
+    {
+        for (var dir = Path.GetDirectoryName(target);
+             dir is not null && dir.Length > root.Length;
+             dir = Path.GetDirectoryName(dir))
+        {
+            RefuseLink(dir);
+        }
+    }
+
+    private static void RefuseLink(string path)
+    {
+        if (new DirectoryInfo(path).LinkTarget is not null)
+        {
+            throw BackupArchiveException.LinkedComponent(path);
+        }
+    }
+
     private static void RefuseOccupiedDestination(string final)
     {
-        if (!Directory.Exists(final))
-        {
-            return;
-        }
-        if (Directory.EnumerateFileSystemEntries(final).Any())
+        if (Directory.Exists(final) && Directory.EnumerateFileSystemEntries(final).Any())
         {
             throw BackupArchiveException.DestinationExists(final);
         }
-        // Empty and in the way: the staging directory is renamed onto this name, which needs it gone.
-        Directory.Delete(final);
     }
 
-    private static void Forget(string staging)
+    /// <summary>
+    /// An empty directory in the way of the rename — removed at COMMIT time and not before.
+    /// </summary>
+    /// <remarks>
+    /// Doing this up front is the version that costs an operator something: a mistyped key or a corrupt
+    /// archive would take away the empty directory they had prepared, and the second attempt would
+    /// start from a worse place than the first.
+    /// </remarks>
+    private static void RemoveEmptyDestination(string final)
     {
-        try
+        if (Directory.Exists(final))
         {
-            Directory.Delete(staging, recursive: true);
-        }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
-        {
-            // The failure being handled is the one worth reporting; this one is swept up by the caller.
+            Directory.Delete(final);
         }
     }
 }

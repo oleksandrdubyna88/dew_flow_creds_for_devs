@@ -12,8 +12,18 @@ namespace CredVaultServer;
 /// to fetch a newer build, and the archive they were about to throw away is fine. So every message here
 /// names the thing that went wrong and, where there is one, the move that fixes it.</para>
 /// </remarks>
-public sealed class BackupArchiveException(string message) : Exception(message)
+public sealed class BackupArchiveException : Exception
 {
+    public BackupArchiveException(string message)
+        : base(message)
+    {
+    }
+
+    public BackupArchiveException(string message, Exception inner)
+        : base(message, inner)
+    {
+    }
+
     public static BackupArchiveException NotAnArchive(string why) =>
         new($"This file is not a CredVault backup archive: {why}.");
 
@@ -73,6 +83,25 @@ public sealed class BackupArchiveException(string message) : Exception(message)
         new($"Refusing to extract '{name}': it is a {type}, and only files and directories are "
             + "restored. Links and device nodes are not written, because following one is how an "
             + "extraction lands somewhere nobody asked for.");
+
+    public static BackupArchiveException LinkedComponent(string path) =>
+        new($"Refusing to extract through '{path}': it is a link, not a directory this restore made. "
+            + "Something else is writing into the output directory while the restore runs, and an entry "
+            + "written through a link lands wherever the link points. Restore into a directory nobody "
+            + "else can write to.");
+
+    public static BackupArchiveException StrandedStaging(string staging, Exception failure) =>
+        new($"{failure.Message} The partly extracted tree at '{staging}' could not be removed either, "
+            + "so it is still on disk — delete it before trying again.", failure);
+
+    public static BackupArchiveException CouldNotInstall(string staging, string final, Exception failure) =>
+        new($"The archive was opened in full and every chunk authenticated, but the result could not be "
+            + $"moved into '{final}': {failure.Message} Nothing was lost — the restored tree is complete "
+            + $"at '{staging}', and moving it yourself finishes the job.", failure);
+
+    public static BackupArchiveException KeyFileTooLarge(string path, long length) =>
+        new($"The key file '{path}' is {length} bytes. A backup key is base64 of {Key32.Bytes} bytes, so "
+            + "this is some other file and none of it has been read.");
 
     public static BackupArchiveException DestinationExists(string path) =>
         new($"The output directory '{path}' already holds something. A restore writes into an empty or "

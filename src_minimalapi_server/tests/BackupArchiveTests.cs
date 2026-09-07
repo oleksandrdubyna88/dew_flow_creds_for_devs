@@ -276,6 +276,131 @@ public class BackupArchiveTests
         File.Exists(Path.Combine(restored, "someone-elses.json")).Should().BeTrue("and nothing was touched");
     }
 
+    [Fact]
+    public void AnEntryNamingAWindowsDataStreamIsRefused()
+    {
+        // `notes.txt:hidden` is not a file called that: on NTFS it addresses an alternate data STREAM
+        // of `notes.txt`, and it survives every containment check written in terms of directories.
+        // Refused on Windows only — on Linux a colon is an ordinary character and an archive taken
+        // there has to restore there.
+        var key = NewKey();
+        var archive = SealTar(TarOfOneEntry("notes.txt:hidden", "in the stream"), key);
+        var restored = NewPath();
+
+        if (!OperatingSystem.IsWindows())
+        {
+            BackupArchive.Extract(archive, restored, key).Files.Should().Be(1, "a colon is a character here");
+            return;
+        }
+        Refusal(() => BackupArchive.Extract(archive, restored, key))
+            .Message.Should().Contain("notes.txt:hidden");
+    }
+
+    [Fact]
+    public void AnEmptyDestinationTheOperatorPreparedSurvivesAFailedRestore()
+    {
+        // Deleting it up front is the version that costs somebody something: a mistyped key would take
+        // away the empty directory they had made — often a mount point — and the second attempt would
+        // start from a worse place than the first.
+        var key = NewKey();
+        var archive = Seal(TreeOfOneFile(), key);
+        var prepared = NewPath();
+        Directory.CreateDirectory(prepared);
+
+        Refusal(() => BackupArchive.Extract(archive, prepared, NewKey()));
+
+        Directory.Exists(prepared).Should().BeTrue("the restore failed; the directory was not the restore's to remove");
+    }
+
+    [Fact]
+    public void AnEmptyDestinationIsStillRestoredInto()
+    {
+        var key = NewKey();
+        var archive = Seal(TreeOfOneFile(), key);
+        var prepared = NewPath();
+        Directory.CreateDirectory(prepared);
+
+        BackupArchive.Extract(archive, prepared, key).Files.Should().Be(1);
+
+        File.Exists(Path.Combine(prepared, "vaults", "alice.json")).Should().BeTrue();
+    }
+
+    [Fact]
+    public void AnExcludedDirectoryIsNeverEvenWalked()
+    {
+        // Not a preference: `org/backup/` holds archives, so it is reliably the largest directory on
+        // the disk, and enumerating it to throw every path away is the whole cost of a naive walk. The
+        // check is that an UNREADABLE excluded directory does not disturb a backup — which it could
+        // only do by being entered.
+        var source = NewDir();
+        WriteFile(source, "vaults/alice.json", "keep me");
+        var unreadable = Path.Combine(source, "org", "backup", "archives");
+        Directory.CreateDirectory(unreadable);
+        WriteFile(source, "org/backup/archives/older.cvbk", "an archive inside an archive");
+        var key = NewKey();
+
+        var summary = Directory.Exists(unreadable)
+            ? BackupArchive.Create(source, Stream.Null, key, Noon)
+            : ArchiveSummary.Empty;
+
+        summary.Files.Should().Be(1, "one file went in and the backup tree was not walked");
+        summary.Skipped.Should().Be(0, "nothing was reached and refused; it was never reached");
+    }
+
+    [Fact]
+    public void ADestinationThatIsAFilesystemRootDoesNotRefuseEveryEntry()
+    {
+        // Asked directly, because a destination that IS a root is not something a test can create.
+        //
+        // The usual spelling of containment is `full.StartsWith(root + separator)`, and it answers
+        // "outside" for every entry when the root already ends in a separator: the comparison is then
+        // against a doubled one that no real path contains. A restore into a container whose data
+        // volume is mounted at the root would refuse the entire archive and report it as an attack.
+        // Asked as a RELATIVE path instead, the question is right for every destination.
+        var root = OperatingSystem.IsWindows() ? "C:\\" : "/";
+        var inside = OperatingSystem.IsWindows() ? "C:\\vaults\\alice.json" : "/vaults/alice.json";
+
+        BackupArchive.Outside(root, inside).Should().BeFalse("it is below the root, which is the destination");
+    }
+
+    [Theory]
+    [InlineData("vaults/alice.json", false)]
+    [InlineData("deep/nested/one.bin", false)]
+    [InlineData("..", true)]
+    [InlineData("../escaped.txt", true)]
+    [InlineData("vaults/../../escaped.txt", true)]
+    [InlineData(".", true)]
+    public void TheContainmentQuestionIsAnsweredAboutTheDestinationItself(string relative, bool outside)
+    {
+        var root = Path.GetFullPath(NewDir());
+        var full = Path.GetFullPath(Path.Combine(root, relative.Replace('/', Path.DirectorySeparatorChar)));
+
+        BackupArchive.Outside(root, full).Should().Be(outside);
+    }
+
+    [Fact]
+    public void ADestinationWrittenWithATrailingSeparatorIsStillRestoredInto()
+    {
+        var key = NewKey();
+        var archive = Seal(TreeOfOneFile(), key);
+        var restored = NewPath() + Path.DirectorySeparatorChar;
+
+        BackupArchive.Extract(archive, restored, key).Files.Should().Be(1);
+    }
+
+    [Fact]
+    public void AFileCreatedThroughCreateFileIsWholeOrAbsentAndNeverHalfWritten()
+    {
+        var key = NewKey();
+        var path = NewPath();
+
+        var summary = BackupArchive.CreateFile(TreeOfOneFile(), path, key, Noon);
+
+        summary.Files.Should().Be(1);
+        File.Exists(path + ".partial").Should().BeFalse("the temporary name is renamed, not left behind");
+        BackupArchive.Verify(path, key).Files.Should().Be(1);
+    }
+
     private static string Seal(string sourceDir, byte[] key, int chunkSize = BackupFormat.DefaultChunkSize)
     {
         var path = NewPath();

@@ -1153,21 +1153,58 @@ being allowed to abort a backup.
 
 **Extraction is the dangerous direction.** An archive is a list of names somebody else chose, and a
 name is a path if the extractor lets it be one. Every entry is refused unless it is relative, free of
-`..` segments, and resolves canonically below the destination; only files and directories are written
-at all, so a symlink entry is a refusal rather than a redirect. The leading slash is deliberately NOT
-trimmed before that check — trimming it is how `/etc/cron.d/evil` quietly becomes an ordinary relative
-path, and a normalisation that runs before a safety check can only weaken it. The whole extraction
-lands in a staging directory renamed into place only after the last chunk authenticates, so a failure
-on chunk 20 leaves nothing that could be mistaken for a restore.
+`..` segments, and resolves below the destination; only files and directories are written at all, so a
+symlink entry is a refusal rather than a redirect. Four decisions in that sentence are worth their own
+line, because each is a way the usual version of this check is wrong:
 
-**`--decrypt-archive <archive> <output-dir> <key-file>`** and **`--verify-archive <archive>
-<key-file>`** are intercepted in `Program.cs` before any host is built, the way `--healthcheck` is: the
+- **The leading slash is not trimmed before the check.** Trimming it is how `/etc/cron.d/evil` quietly
+  becomes an ordinary relative path inside the destination and gets written instead of refused. A
+  normalisation that runs before a safety check can only weaken it.
+- **Containment is asked as a RELATIVE path**, not as a string prefix. `full.StartsWith(root +
+  separator)` is the usual spelling and it answers "outside" for every entry when the destination is a
+  filesystem root, because the root already ends in a separator — refusing an entire good archive and
+  reporting it as an attack.
+- **A colon is refused on Windows only.** `notes.txt:hidden` addresses an alternate data stream, not a
+  file below the destination; on Linux a colon is an ordinary character and an archive taken there has
+  to restore there.
+- **No directory on the way to a file may be a link.** The containment check is lexical and the staging
+  tree is real, so a component replaced by a symlink between the check and the write would redirect the
+  entry. .NET exposes no open-without-following, so every component below the root is resolved and
+  refused if it is a link — which closes the ordinary case and narrows the race rather than eliminating
+  it. Restore into a directory nobody else can write to.
+
+The whole extraction lands in a staging directory renamed into place only after the last chunk
+authenticates, so a failure on chunk 20 leaves nothing that could be mistaken for a restore. **The
+destination is checked twice and deleted only at the end**: up front so a restore into an occupied
+directory fails in a second rather than after ten minutes of decryption, and again at commit time,
+because an empty directory the operator had prepared — often a mount point — must not be taken away by
+a restore that then fails on a mistyped key. If the final rename cannot happen (a destination on
+another filesystem, or one somebody created in the last few seconds) the message says where the
+complete tree is rather than implying the work has to be done again.
+
+**Three verbs**, intercepted in `Program.cs` before any host is built, the way `--healthcheck` is:
+`--create-archive <source-dir> <archive> <key-file>`, `--verify-archive <archive> <key-file>` and
+`--decrypt-archive <archive> <output-dir> <key-file>`. Creation is here rather than waiting for the
+scheduled run of a later story, because a format whose only writer does not exist yet cannot be
+exercised by anything — it is what the scenario harness drives and what a restore rehearsal needs on a
+machine that has an image and nothing else. Each prints what it is about to do BEFORE doing it and then
+one line per entry: an archive of a real server takes minutes, and a terminal silent for four of them
+is indistinguishable from a hung one. There is no percentage, because the archive does not record its
+uncompressed size and an invented number would be worse than none. The
 moment anyone needs them is the moment a server is gone, and the recovery kit should be the image and
 the key, not a second tool somebody has to find. The key file holds base64 of exactly 32 bytes,
 surrounding whitespace ignored, and anything else is refused with the contract named — a key that is
-NEARLY right opens nothing while looking like the archive's fault. Verified against the **published
-Native AOT binary**, not only the analysers: it verifies, decrypts, prints each entry as it goes, and
-answers 1 with a sentence for a wrong key.
+NEARLY right opens nothing while looking like the archive's fault; the file's SIZE is checked before it
+is read, so a mistyped path pointing at a gigabyte log is a sentence rather than a gigabyte allocation.
+Verified against the **published Native AOT binary**, not only the analysers: it verifies, decrypts,
+prints each entry as it goes, and answers 1 with a sentence for a wrong key. Driven end to end in CI by
+`src_vs_code/scripts/backup-archive-itest.cjs` — see
+[module_tests.md](module_tests.md).
+
+**The walk prunes rather than filters.** An excluded directory is never entered, which matters because
+`org/backup/` holds archives and is reliably the largest directory on the disk; and the walk is
+recursive and lazy rather than "enumerate everything, then sort", which would materialise every path in
+the tree before the first byte was written.
 
 ## Authorization
 
@@ -1370,7 +1407,7 @@ what is under it:
 
 ## Tests
 
-`src_minimalapi_server/tests/` — xUnit v3 on Microsoft Testing Platform, 587 tests, ~23 s. The
+`src_minimalapi_server/tests/` — xUnit v3 on Microsoft Testing Platform, 604 tests, ~23 s. The
 endpoint suites run in-process through `WebApplicationFactory` — no free port, no background
 `dotnet run`; the store suites drive a store directly on a throwaway data directory.
 
