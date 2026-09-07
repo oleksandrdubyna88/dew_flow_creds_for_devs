@@ -115,6 +115,25 @@ public static class OrgEventKinds
     /// spent on the fact that somebody is still employed.
     /// </summary>
     public const string LoginKeyIssued = "login_key.issued";
+
+    /// <summary>A run finished and there is an archive. The row names it.</summary>
+    public const string BackupTaken = "backup.taken";
+
+    /// <summary>A run started and did not finish. The row carries the reason.</summary>
+    public const string BackupFailed = "backup.failed";
+
+    /// <summary>
+    /// A backup key was minted and its words handed to somebody.
+    /// </summary>
+    /// <remarks>
+    /// The row records that it HAPPENED and who did it — never the key, and never a fingerprint of it
+    /// either: this log is readable by every officer, and a fingerprint of a secret shown once is a
+    /// thing an attacker can check guesses against.
+    /// </remarks>
+    public const string BackupKeyIssued = "backup.key_issued";
+
+    /// <summary>An admin changed the schedule or the retention window.</summary>
+    public const string BackupSettingsChanged = "backup.settings_changed";
 }
 
 /// <summary>

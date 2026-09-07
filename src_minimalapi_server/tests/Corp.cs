@@ -47,6 +47,23 @@ internal static class Corp
     });
 
     /// <summary>
+    /// A SECOND server on the same data directory — a restart, as far as the disk is concerned.
+    /// </summary>
+    /// <remarks>
+    /// The only way to assert what rule 8 actually asks for: that a state written before a process
+    /// died is read correctly by the one that comes after it. Two fixtures over one directory is the
+    /// same situation as a container being replaced, and it is what makes the startup sweep testable
+    /// rather than merely written.
+    /// </remarks>
+    public static VaultServer RestartedOn(string dataDir) => new(new Dictionary<string, string?>
+    {
+        ["Vault__DataDir"] = dataDir,
+        ["Vault__CorpRecovery__OfficerEmails"] = Officers,
+        ["Vault__CorpRecovery__Threshold"] = "2",
+        ["Vault__LoginKey__Kek"] = Kek,
+    });
+
+    /// <summary>
     /// Corp mode with no usable login-key KEK — the deployment that has not configured the feature (or
     /// has configured it wrongly), and the one property that matters about it: ONE route degrades.
     /// </summary>

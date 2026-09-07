@@ -1,0 +1,231 @@
+# The encrypted backup — /api/org/backup/*, epic 5 story 3.
+#
+# Five routes an administrator presses, and every one of them is admin-only: the backup key opens
+# every vault this server holds and the download is a copy of all of them, so there is no read here a
+# developer has business making.
+#
+# The properties worth a real request rather than a unit test:
+#
+#   - the KEY is handed over exactly once, and asking again is refused with the reason it cannot be
+#     produced a second time (what the server keeps is the derived key; HKDF does not run backwards);
+#   - the RUN is detached — 202 and the work continues past the response — so the STATUS is the only
+#     place its outcome appears, and rule 8 says that status must survive a reload;
+#   - the DOWNLOAD answers 404 with a sentence when there is no archive, rather than starting a run:
+#     a GET with a side effect would start one per retry;
+#   - rotation is 501 with a decision in it, not 404 with silence.
+#
+# PRECONDITION: a corp-mode server (../README.md — three officers). `{{officerToken}}` administers;
+# `{{token}}` (Alice) does not. This file MINTS a backup key on the server it runs against and takes a
+# real archive, so run it against a scratch stack rather than anything you care about — the key it
+# prints is the only copy that will ever exist.
+
+# @name org_backup_status_is_admin_only
+GET {{baseUrl}}/api/org/backup/status
+Authorization: Bearer {{token}}
+X-Creds-Contract: {{contract}}
+Accept: application/json
+
+?? status == 403
+?? header content-type matches ^application\/json
+
+{{
+  const assert = require('node:assert');
+  test('the refusal is JSON with a reason, not an empty body', () => {
+    assert.ok(typeof response.parsedBody.error === 'string' && response.parsedBody.error.length > 0);
+  });
+}}
+
+###
+
+# @name org_backup_status_before_anything
+GET {{baseUrl}}/api/org/backup/status
+Authorization: Bearer {{officerToken}}
+X-Creds-Contract: {{contract}}
+Accept: application/json
+
+?? status == 200
+?? header content-type matches ^application\/json
+
+{{
+  const assert = require('node:assert');
+  const status = response.parsedBody;
+  test('the shape a page draws from, with running DERIVED rather than stored twice', () => {
+    for (const field of ['configured', 'keyState', 'scheduleHourUtc', 'retentionDays',
+                         'lastRunAt', 'lastResult', 'lastError', 'running',
+                         'localArchiveBytes', 'localArchiveName']) {
+      assert.ok(field in status, `${field} is part of the document`);
+    }
+    assert.equal(typeof status.running, 'boolean');
+    assert.equal(status.running, status.lastResult === 'in progress',
+      'running is derived from the persisted result — two fields could disagree');
+  });
+  test('the schedule and the window are the shell backup\'s own defaults on a fresh server', () => {
+    assert.ok(status.scheduleHourUtc >= 0 && status.scheduleHourUtc <= 23);
+    assert.ok(status.retentionDays >= 1);
+  });
+}}
+
+###
+
+# @name org_backup_settings_bounds_the_hour
+PUT {{baseUrl}}/api/org/backup/settings
+Authorization: Bearer {{officerToken}}
+X-Creds-Contract: {{contract}}
+Content-Type: application/json
+
+{ "scheduleHourUtc": 24, "retentionDays": 30 }
+
+?? status == 400
+
+{{
+  const assert = require('node:assert');
+  test('the refusal names the range rather than saying "invalid"', () => {
+    assert.match(response.parsedBody.error, /0 to 23/);
+  });
+}}
+
+###
+
+# @name org_backup_settings_bounds_the_window
+PUT {{baseUrl}}/api/org/backup/settings
+Authorization: Bearer {{officerToken}}
+X-Creds-Contract: {{contract}}
+Content-Type: application/json
+
+{ "scheduleHourUtc": 3, "retentionDays": 0 }
+
+?? status == 400
+
+{{
+  const assert = require('node:assert');
+  test('zero retention is refused, because this pass never empties the destination', () => {
+    assert.match(response.parsedBody.error, /at least one day/);
+  });
+}}
+
+###
+
+# @name org_backup_settings_accepted
+PUT {{baseUrl}}/api/org/backup/settings
+Authorization: Bearer {{officerToken}}
+X-Creds-Contract: {{contract}}
+Content-Type: application/json
+
+{ "scheduleHourUtc": 4, "retentionDays": 14 }
+
+?? status == 204
+
+###
+
+# @name org_backup_download_before_any_run
+GET {{baseUrl}}/api/org/backup/archive
+Authorization: Bearer {{officerToken}}
+X-Creds-Contract: {{contract}}
+Accept: application/json
+
+?? status == 404
+
+{{
+  const assert = require('node:assert');
+  test('404 says how to get one, rather than a GET quietly starting a run', () => {
+    assert.match(response.parsedBody.error, /POST \/api\/org\/backup\/run/);
+  });
+}}
+
+###
+
+# @name org_backup_key_minted_once
+POST {{baseUrl}}/api/org/backup/key
+Authorization: Bearer {{officerToken}}
+X-Creds-Contract: {{contract}}
+Accept: application/json
+
+?? status == 200
+?? header content-type matches ^application\/json
+
+{{
+  const assert = require('node:assert');
+  const minted = response.parsedBody;
+  test('the words are printable, checksummed, and exactly 150 bits', () => {
+    assert.match(minted.key, /^BK1(-[0-9A-HJKMNP-TV-Z]{4,5})+$/,
+      'Crockford Base32 in groups, with a checksum — no I, L, O or U');
+    assert.equal(minted.entropyBits, 150, 'reported unrounded, because it is exact');
+  });
+  test('and nothing else comes back with them', () => {
+    assert.deepEqual(Object.keys(minted).sort(), ['entropyBits', 'key']);
+  });
+}}
+
+###
+
+# @name org_backup_key_cannot_be_shown_twice
+POST {{baseUrl}}/api/org/backup/key
+Authorization: Bearer {{officerToken}}
+X-Creds-Contract: {{contract}}
+Accept: application/json
+
+?? status == 409
+
+{{
+  const assert = require('node:assert');
+  test('the refusal explains that the words are gone, not that the request was wrong', () => {
+    assert.match(response.parsedBody.error, /cannot be produced a second time/);
+  });
+}}
+
+###
+
+# @name org_backup_run_is_accepted_and_detached
+POST {{baseUrl}}/api/org/backup/run
+Authorization: Bearer {{officerToken}}
+X-Creds-Contract: {{contract}}
+
+?? status == 202
+
+###
+
+# @name org_backup_status_after_the_run
+GET {{baseUrl}}/api/org/backup/status
+Authorization: Bearer {{officerToken}}
+X-Creds-Contract: {{contract}}
+Accept: application/json
+
+?? status == 200
+
+{{
+  const assert = require('node:assert');
+  const status = response.parsedBody;
+  test('the key is ready, because delivering the words IS the acknowledgement', () => {
+    assert.equal(status.keyState, 'Ready');
+  });
+  test('the run reached a terminal state or is still going — never nothing', () => {
+    assert.ok(['in progress', 'ok', 'failed'].includes(status.lastResult),
+      `a run was started, so the status must say something about it (got ${status.lastResult})`);
+    assert.ok(status.lastRunAt > 0, 'and when it started');
+  });
+}}
+
+###
+
+# @name org_backup_rotate_is_a_decision_not_a_gap
+POST {{baseUrl}}/api/org/backup/key/rotate
+Authorization: Bearer {{officerToken}}
+X-Creds-Contract: {{contract}}
+Accept: application/json
+
+?? status == 501
+
+{{
+  const assert = require('node:assert');
+  test('501 with the reason, because 404 would read as "not built yet"', () => {
+    assert.match(response.parsedBody.error, /orphans all of them/);
+  });
+}}
+
+# The two statuses the wire cannot provoke from outside:
+#
+# @uncovered 409 POST /api/org/backup/run — a second run while one is live. Provoking it means racing
+#   a real archive build from a request file; the endpoint tests hold the claim directly instead.
+# @uncovered 200 GET /api/org/backup/archive — streaming the archive needs the run above to have
+#   FINISHED, which is a wait this suite has no way to express. Asserted over real HTTP in
+#   BackupEndpointTests, including the CVBK marker and the Content-Length matching the body.

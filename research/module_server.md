@@ -64,6 +64,11 @@ whole server is ~2,100 lines.
 | `src/BackupStore.cs` | `org/backup/`: the sealed key, the marker saying its words were shown, the settings, the last run's status, and `archives/` |
 | `src/ConfigKeys.cs` | Every configuration key this server reads, named once, checked against the source by a test |
 | `src/BackupConfigSnapshot.cs` | That list as `KEY=value` lines, to travel inside an archive — resolved values, secrets included |
+| `src/BackupRun.cs` | What a run is called and when one is due: the archive-name shape, the pure due-math, and the ONE place "is it running" is derived |
+| `src/BackupStoreRun.cs` | The run's half of the store: the claim held as an OS handle, the interrupted-run sweep, the archive listing, and retention with the shell backup's own floor |
+| `src/BackupRunner.cs` | One run in two halves — claim and announce inside the request, build outside it — and the refusals, each a sentence naming what to do |
+| `src/BackupScheduleService.cs` | The five-minute question, the startup sweep, and a hosted service that never throws out of `ExecuteAsync`. Corp mode only |
+| `src/OrgBackupEndpoints.cs` | The six backup routes, all admin-only, from their own file |
 
 ## The request pipeline
 
@@ -1306,6 +1311,71 @@ not name, and a key in the list that nothing reads. It was watched failing: drop
 This is what makes the **backup key the highest-value secret in the system** — higher than the KEK,
 which is inside the archive while the backup key is not. The snapshot says so in its own header, and
 the admin's screen will say it at the moment the key is shown.
+### Taking the backup: the run, the schedule and six routes (2026-09-07, epic 5 story 3)
+
+Everything was in place and nothing took a backup. This is the part that does, on a schedule, with a
+page an administrator can look at.
+
+| Route (all `RequireAdmin`) | Answers |
+|---|---|
+| `GET /api/org/backup/status` | Everything the page draws: the key's state, the schedule, the window, the last run and the local archive |
+| `PUT /api/org/backup/settings` | The hour (0–23) and the window (≥ 1 day), each refused with its range named |
+| `POST /api/org/backup/key` | Mints the key and hands over its words **once** — delivering them IS the acknowledgement |
+| `POST /api/org/backup/run` | `202` and the build detached, or `409` with the reason it did not start |
+| `GET /api/org/backup/archive` | Streams the newest archive with a length, or `404` saying how to get one |
+| `POST /api/org/backup/key/rotate` | `501`, with the decision in it |
+
+**The claim on a run is an open file handle**, not a boolean and not a timestamp. A boolean dies with
+the process while the state it guards — a half-built archive, a status saying "in progress" — outlives
+it. A lock file reclaimed after some "longest plausible run" starts a second build over the same tree
+on the day a vault directory grows past that guess, and a second container cannot tell a live run from
+a dead one by a file's age. `org/backup/run.lock` opened with `FileShare.None` has neither problem:
+two processes cannot hold it, a process that dies releases it because that is what the kernel does on
+exit, and "is a run live?" becomes a question with an answer — try to take it.
+
+**The startup sweep sweeps only what it can prove is orphaned.** Rule 8 requires it: a container
+killed mid-build leaves `in progress` on disk and the page shows a spinner for ever. The proof is the
+claim — if the sweep can TAKE it, nothing is running, so an in-progress status is a lie left by
+something that died. If it cannot, a run is live, possibly in another container minutes into a large
+archive, and the sweep does nothing. It also never creates `org/`: four existing tests caught an
+earlier version that did, because a probe that made the directory just to find nothing running would
+have put an `org/` on every personal deployment.
+
+**A run is claimed and announced INSIDE the request, and only the build is detached.** The first cut
+detached the whole thing, so `POST /run` answered `202` while the status still said "never run" until
+the background task got going — a page reloaded in that window saw nothing, which is precisely the
+"clicked, reloaded, state lost" rule 8 is about. The `.http` contract suite found it. Now the claim
+and the in-progress status are written before the response is sent, and the refusals ("no key yet",
+"the key nobody has acknowledged", "already running") come back as a `409` with a sentence rather than
+as silence after a cheerful `202`.
+
+**"Due" is a question about the day, asked every five minutes.** Sleeping until 03:00 means a restart
+at 02:59 skips the night. And it asks `hour >= configured`, not `==`: a server stopped through its
+whole window would otherwise skip the day entirely. So a server that comes back at 07:00 takes the
+day's backup at 07:00, and not again until tomorrow — measured in UTC on both sides, because a local
+day boundary would move the schedule for half the world.
+
+**Retention has the shell backup's floor and reads the NAME.** A pass whose every candidate is old
+deletes **nothing** — a clock that jumped, a server that was down for a month, or an upload that has
+not worked must not turn "prune old backups" into "delete every backup", which is what
+`deploy/backup/backup-once.sh:129` says in its own comment. Ages come from each archive's name
+(`cred-vault-20260907-030405Z.cvbk`, UTC and sortable) rather than its mtime, because a restore
+rewrites every mtime — the same reason the share prune reads each item's own `createdAt`. A file the
+sweep cannot account for is left alone: somebody's own copy, sitting where they put it, is not this
+pass's to remove.
+
+**One archive on disk**, so the download streams a file with a known length instead of building one
+inside a request. The download opens the file BEFORE writing anything to the response, with
+`FileShare.Delete`, so a retention pass completing mid-download cannot truncate it. And it answers
+`404` rather than starting a run: a `GET` with a side effect is wrong HTTP, and a client that retries
+would start a run per attempt.
+
+**Every run leaves a row** — `backup.taken` naming the archive, `backup.failed` carrying the reason,
+`backup.key_issued` recording that a key was handed over (never the key, and not a fingerprint of it
+either), `backup.settings_changed` with the new hour and window. They go through `OrgEndpoints.Row`
+like every other row on this server, which is also what stamps them: building the record by hand is
+how three rows reached the log with `at: 0` and broke the event reader's newest-first ordering. The
+`.http` suite caught that too.
 
 ## Authorization
 
@@ -1508,7 +1578,7 @@ what is under it:
 
 ## Tests
 
-`src_minimalapi_server/tests/` — xUnit v3 on Microsoft Testing Platform, 654 tests, ~27 s. The
+`src_minimalapi_server/tests/` — xUnit v3 on Microsoft Testing Platform, 698 tests, ~26 s. The
 endpoint suites run in-process through `WebApplicationFactory` — no free port, no background
 `dotnet run`; the store suites drive a store directly on a throwaway data directory.
 
@@ -1569,6 +1639,9 @@ environment is global, the suite runs in one non-parallel collection (`ServerCol
 | `BackupKeyFileTests` | The printable form and base64 of one key reading as the same bytes; the prefix in either case; leading and trailing whitespace; a mistyped printable key answering about the CHECKSUM and never mentioning base64; something that is neither form naming both; base64 of the wrong length; a file the size of a log refused unread; and an archive sealed from the words opening with the bytes |
 | `BackupStoreTests` | A fresh deployment minting once; a minted key NOT usable for a run until its words are acknowledged; minting again before that replacing it and after that changing nothing and handing over no words; a KEK that changed answering `Unreadable` with nothing minted over it; a record from a later build unreadable by VERSION with the number logged; a deployment with no KEK saying which key to set; the sealed key absent from an archive of its own deployment, asserted by listing what came out; settings and status round-tripping and answering defaults when absent or torn; and the words and the bytes being the same key |
 | `ConfigKeysTests` | Every configuration key the source reads is in the list, and every key in the list is read somewhere — both directions, watched failing on a dropped key; the snapshot carrying every key, its secrets unredacted, and saying so in its header; an unset key written empty rather than omitted; and the environment spelling being the one the compose stack uses |
+| `BackupScheduleTests` | The due-math as a table: due at the hour, not at 02:59, still due at 07:00 after a window the server slept through, not twice in a day, due again tomorrow, the UTC day boundary on both sides, midnight as an ordinary hour; the archive-name round trip and the four names that have no instant (a `.partial`, somebody else's file, an unreadable stamp, a missing `Z`); and the running state derived in one place |
+| `BackupRunnerTests` | A run takes an archive and says it succeeded; the archive opens with the words the administrator wrote down; it carries the configuration snapshot and NOT the backup tree; a second run while the claim is held is refused; the claim is an OS handle released by disposal; the four refusals (no key, unacknowledged key, no KEK, already running); an in-progress status swept into a failure at startup; the sweep leaving a LIVE run alone; only the newest archive kept; retention never emptying the directory, deleting what aged out, and leaving a file it cannot account for; and a row naming the archive |
+| `BackupEndpointTests` | All six routes refused for a developer; a fresh deployment's status; minting once and the refusal for a second; the settings bounds and their row; a run reaching `ok` with an archive and a row; a run with no key refused in the RESPONSE; `409` while one is live; the page reading "running" the instant after the button; `404` with the way to get an archive; the stream with its length, filename and `CVBK` marker; the status after a real restart showing the swept failure and never the spinner; and `501` for rotation |
 
 ## Telling the editor panel where it is
 

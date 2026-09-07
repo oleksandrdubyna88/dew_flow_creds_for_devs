@@ -312,3 +312,42 @@ public sealed record BackupStatus(long LastRunAt, string LastResult, string Last
 {
     public static readonly BackupStatus NeverRun = new(0, "never run", string.Empty, 0);
 }
+
+/// <summary>
+/// Everything the admin's backup page draws, from what is on disk.
+/// </summary>
+/// <remarks>
+/// <c>Running</c> is DERIVED from <c>LastResult</c> rather than stored beside it, so the page cannot be
+/// handed "finished" and a spinner at once. That is the half of rule 8 people forget: the in-flight
+/// state has to survive a reload, and it has to have exactly one source.
+/// </remarks>
+public sealed record BackupStatusDto(
+    bool Configured,
+    string KeyState,
+    int ScheduleHourUtc,
+    int RetentionDays,
+    long LastRunAt,
+    string LastResult,
+    string LastError,
+    bool Running,
+    long LocalArchiveBytes,
+    string LocalArchiveName);
+
+/// <summary>
+/// What an admin may change: when a backup runs, and how long its archives are kept.
+/// </summary>
+/// <remarks>
+/// No credential fields, deliberately. The cloud targets are story 4 and there is nothing to hold
+/// credentials for yet; an admin API that accepts secrets it does nothing with is worse than one that
+/// does not accept them.
+/// </remarks>
+public sealed record BackupSettingsRequest(int ScheduleHourUtc, int RetentionDays);
+
+/// <summary>
+/// The words of a newly minted backup key, handed over the only time anybody can have them.
+/// </summary>
+/// <remarks>
+/// Its own record rather than a field on the status: a status document is polled, and a secret shown
+/// once must not live on a route anything polls.
+/// </remarks>
+public sealed record BackupKeyDto(string Key, double EntropyBits);

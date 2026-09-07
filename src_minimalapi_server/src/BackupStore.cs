@@ -98,7 +98,7 @@ public sealed record MintOutcome(BackupKeyLookup Status, string Formatted, doubl
 /// <para><b>Every lookup reads the disk.</b> Nothing here is cached, so an operator who fixes a wrong
 /// KEK and asks again gets a fresh attempt at the same bytes rather than a remembered verdict.</para>
 /// </remarks>
-public sealed class BackupStore(string dataDir, byte[] kek, ILogger<BackupStore> log)
+public sealed partial class BackupStore(string dataDir, byte[] kek, ILogger<BackupStore> log)
 {
     /// <summary>The record layout this build writes. A higher one is not something to guess about.</summary>
     public const int SchemaVersion = 1;

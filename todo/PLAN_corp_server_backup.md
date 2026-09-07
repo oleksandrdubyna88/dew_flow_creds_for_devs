@@ -1,6 +1,6 @@
 # PLAN — epic 5: one encrypted archive of the whole server, and somewhere safe to put it
 
-> Status: **stories 1 and 2 of 5 implemented, 2026-09-07; the rest is open work.** The archive FORMAT ships —
+> Status: **stories 1, 2 and 3 of 5 implemented, 2026-09-07; the rest is open work.** The archive FORMAT ships —
 > `BackupArchiveFormat.cs`, `BackupChunkStreams.cs`, `BackupArchive.cs`, `BackupArchiveException.cs`,
 > `BackupArchiveCommand.cs` and the shared `Key32.cs`, with `--create-archive`, `--verify-archive` and
 > `--decrypt-archive` on the server binary, 55 unit tests and the
@@ -8,9 +8,11 @@
 > printable `BK1-` key (`PrintableKey.cs`, `BackupKey.cs`, `BackupKeyFile.cs`, the shared vectors in
 > `contract/printable-key-v1.json` asserted by both languages), the store that keeps the four files a
 > backup deployment has (`BackupStore.cs`), the extracted `KekSeal.cs`, and the configuration snapshot
-> (`ConfigKeys.cs`, `BackupConfigSnapshot.cs`). Still to build: the endpoints, the runner and the
-> scheduler (story 3), the two cloud signers (story 4), and the extension's client, the notices and the
-> restore script (story 5).
+> (`ConfigKeys.cs`, `BackupConfigSnapshot.cs`). **Story 3** adds the run itself (`BackupRun.cs`,
+> `BackupStoreRun.cs`, `BackupRunner.cs`), the five-minute scheduler with its interrupted-run sweep
+> (`BackupScheduleService.cs`), and six admin routes (`OrgBackupEndpoints.cs`, `http/org/backup.http`).
+> Still to build: the two cloud signers (story 4), and the extension's client, the notices and the
+> restore script (story 5) — until story 4 lands, a run writes to LOCAL disk only.
 >
 > Deviations so far, recorded here rather than in a commit message: the nonce prefix is **8 bytes with
 > a 4-byte counter**, not the 4 this plan sketched, and the counter is refused rather than wrapped; the
@@ -22,7 +24,16 @@
 > than a policy; the key lookup has **four** answers, not three, because a key minted and not yet shown
 > to a person is its own state and no run may use it; and `PrintableKey` is a generic type with the
 > prefix and the checksum's domain string as parameters, so the eventual C# port of `RC1-` cannot
-> become a second copy of the construction.
+> become a second copy of the construction. From story 3: the run claim is an OS file HANDLE rather
+> than the lock file with an age ceiling this plan sketched — a ceiling reclaims a live run on the day
+> an archive takes longer than the guess, and a second container cannot tell live from dead by a
+> timestamp; `GET /api/org/backup/archive` answers **404** when there is no archive instead of starting
+> a run and answering 202, because a GET with a side effect is wrong HTTP and a loop for any client
+> that retries; the due-math asks `hour >= configured` so a server that slept through its window still
+> takes the day's backup; and the claim plus the in-progress status are written INSIDE the request,
+> because detaching the whole run left a window where a reloaded page saw "never run" for a backup that
+> had just been started. `PUT /settings` carries no credential fields: story 4 is what will have
+> anything to hold credentials for.
 >
 > This plan stays in `todo/` because four of its five stories are still work somebody has to do; the
 > shipped story is documented in
