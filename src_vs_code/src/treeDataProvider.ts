@@ -24,6 +24,7 @@ import { parentFolderOf, refuseMove, refuseProjectFolderChange } from './moveGat
 import { SyncReadiness } from './syncReadiness';
 import { OrgRecoveryAccess, orgAccessWithRole } from './orgRecoveryAccess';
 import { CorpPolicyState } from './corpPolicy';
+import { matchingTeamMembers } from './teamSearch';
 import { MemberListEntry, ProjectRow } from './orgMembersClient';
 import { describeTarget, entityContextValue, markInvalid, folderContextValue } from './treeRowText';
 import { FOLDER_COLOR, buildTooltip, entityIcon, folderIcon, kindIcon } from './treeIcons';
@@ -357,8 +358,13 @@ export class CredTreeDataProvider
     const terms = this.terms();
     switch (element.kind) {
       case 'teamScope':
-        return (this.sharing?.teamFor(element.account) ?? [])
-          .filter((member) => matchesTerms(member.account.email.toLowerCase(), terms))
+        // Filtered on what the ROW says — address, provider, role, project names — from the maps it
+        // renders from; it used to match the address alone. Why, and the rest, in teamSearch.ts.
+        return matchingTeamMembers(this.sharing?.teamFor(element.account) ?? [], terms, {
+          viewer: this.orgPolicy.get(element.account.accountId),
+          roster: this.orgRoster.get(element.account.accountId),
+          projects: this.orgProjects.get(element.account.accountId),
+        })
           .map((member) => ({
             kind: 'teamMember' as const,
             member,

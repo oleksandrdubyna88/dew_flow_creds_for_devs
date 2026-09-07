@@ -3578,6 +3578,72 @@ one line the new kind costs there.
 | The lifetime on the card | `lifetime` in `EntityViewOptions`, from `describeRemaining` | The tree and the card say it in the same words, from the same function |
 | The burn across machines | `burnAcrossMachines.test.ts`, `burnPath.test.ts` | A burn on A is gone on B after a sync — node, history, every key; an old backup does not resurrect it (tombstone + horizon) |
 
+## The outcome a recipient reports, and a Team filter that finds what the row shows (2026-09-07, epic 4 story 3)
+
+Two things the shipped extension could not do, both of them one line from where the code already was.
+
+### `?outcome=` — the server could not tell an accept from a decline
+
+Accepting and declining a share are the same call, `DELETE /api/shares/{id}`, and until now the
+extension sent nothing to distinguish them — so a corporate server recorded `share.unknown` for every
+share anybody ever took ([module_server.md](module_server.md) §What a SHARE writes to the log).
+
+The parameter travels through the path that already existed: `sharingManager.removeOwnShare(share,
+outcome?)` → `VaultTransport.removeShare(actingAs, share, outcome?)` →
+`ServerTransport.removeShare`, which puts it in the query string. One method rather than an
+`acceptOwnShare`/`declineOwnShare` pair, because both call sites already funnel through this one and
+a second method is the duplicate that drifts. The two call sites are the two that know: the inbox's
+accept (`shareInbox.ts`) says `accepted`, the tree's decline (`commands/shareCommands.ts`) says
+`declined`.
+
+**Optional, and it stays optional.** A folder and a git remote accept the parameter and ignore it —
+there is no server to tell, and neither transport may grow a corporate concept; both rewrite a vault
+file and never build a URL, so nothing is appended to any path. And when nobody says, the query
+string is OMITTED rather than sent empty: `?outcome=` is a filter on the empty string and
+`?outcome=undefined` is the literal word, which reads like a fault in the server. A build that sends
+nothing degrades exactly as every released one does.
+
+**The two words are the server's two, and the agreement is a test rather than a habit.**
+`eventQuery.test.ts` reads `http/shares/shares.http` — the requests that run against a real server
+before a release — and asserts the words this client sends appear there. Two suites each reading
+their own copy of the names prove nothing, which is the family's rule about a contract with two
+implementations; this check found the gap the moment it was written, because the server's suite sent
+`accepted` and not `declined`.
+
+### Reading the log — `orgEventsClient.ts` and `eventQuery.ts`
+
+`GET /api/org/events`, on `CorpApiClient` like every corporate client since epic 1. `eventQuery.ts`
+is pure: the query string (an absent filter is omitted), the row and page guards, and the rule about
+the cursor — **an empty page WITH a cursor is not the end**, because the server bounds what one
+request may scan, so a caller pages while the cursor is there rather than while rows are.
+
+A page whose shape this build cannot read becomes a sentence at the edge, and ONE unreadable row
+fails the page: a row silently missing from a history is worse than an error. A server too old to
+have the route answers `404`, which reads as an empty log rather than a failure — the shape `readMe`
+and `listProjects` already use, so a readiness cycle against an older server does not report a
+failure about a feature that server does not have.
+
+**Nothing calls it yet.** The viewer and the tree rows are story 4; this is the client they will use.
+
+### The Team filter matched the email and nothing else
+
+`teamSearch.ts` builds what the filter looks in from what the ROW says about a colleague — the
+address, the provider, the role and the project names — read from the same two maps
+(`provider.orgRoster`, `provider.orgProjects`) the row renders from, so a filter and a row cannot
+disagree about who somebody is. Typing `atlas`, a project name visible on screen, used to match
+nobody; typing `dev` matched only people whose address happened to contain it.
+
+What it searches is the row's DATA, not what the row had room to render: somebody on nine projects
+renders three names and a count, and all nine are searchable. The truncation is a rendering limit,
+not a boundary — the server already decided what this viewer may know about that colleague, and for
+a developer it narrows the list to the projects they share. Fields are joined with a space, so a term
+spanning two of them matches neither, and a project id the client could not name contributes no text:
+matching an id nobody can read would be matching a fact the person cannot see.
+
+The step lives in `teamSearch.ts` rather than the provider for the reason `teamItems.ts` exists —
+`treeDataProvider.ts` sits at its 800-line ceiling, and a function that decides text and touches no
+`vscode` belongs where it is a unit test.
+
 ## Corporate roles — the policy document, the admin view, and one request helper (2026-09-06, epic 1 story 4)
 
 The server half of [PLAN_corp_registry_roles.md](PLAN_corp_registry_roles.md) gave every

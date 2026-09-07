@@ -3,7 +3,7 @@ import { planBackupFileNames } from './backupNaming';
 import { readBackupAccount } from './cryptoUtils';
 import { envelopeWithShares, sharesFromEnvelope } from './shareFormat';
 import { OwnedShare, ShareItem, StoredAccount, TeamMember } from './types';
-import { VaultTransport } from './vaultTransport';
+import { ShareOutcome, VaultTransport } from './vaultTransport';
 import { writeVaultFileAtomically } from './nasFileWrite';
 
 /**
@@ -138,8 +138,13 @@ export class FolderTransport implements VaultTransport {
     );
   }
 
+  /**
+   * <p>The outcome is accepted and IGNORED: there is no server here to tell, and a folder must not
+   * grow a corporate concept. Nothing is appended to any path — this method rewrites a vault file
+   * and never builds a URL.</p>
+   */
   // eslint-disable-next-line complexity
-  async removeShare(_actingAs: StoredAccount, share: OwnedShare): Promise<void> {
+  async removeShare(_actingAs: StoredAccount, share: OwnedShare, _outcome?: ShareOutcome): Promise<void> {
     const account = this.allAccounts().find((a) => a.accountId === share.accountId);
     const fileName = account !== undefined ? this.fileNameFor(account) : undefined;
     if (fileName === undefined) {

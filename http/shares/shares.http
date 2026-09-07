@@ -279,6 +279,54 @@ X-Creds-Contract: {{contract}}
 ?? status == 204
 
 ###
+# @name share_post_a_fifth_time_for_the_decline
+POST {{baseUrl}}/api/shares
+Authorization: Bearer {{token}}
+X-Creds-Contract: {{contract}}
+Content-Type: application/json
+
+{
+  "toEmail": "{{bobEmail}}",
+  "entityName": "a declined share",
+  "entityKind": "credential",
+  "salt": "c2FsdHNhbHRzYWx0c2FsdA==",
+  "iv": "aXZpdml2aXZpdml2aQ==",
+  "tag": "dGFndGFndGFndGFndGFndGFn",
+  "data": "ZW5jcnlwdGVkLXBheWxvYWQ="
+}
+
+?? status == 201
+
+###
+# @name shares_finds_the_declined_one
+GET {{baseUrl}}/api/shares
+Authorization: Bearer {{bobToken}}
+X-Creds-Contract: {{contract}}
+Accept: application/json
+
+?? status == 200
+
+{{
+  const assert = require('node:assert');
+  const declined = response.parsedBody.find((s) => s.entityName === 'a declined share');
+  test('the share to be declined is in the inbox', () => {
+    assert.ok(declined, 'the share posted above is not in the inbox');
+  });
+  exports.declinedShareId = declined.id;
+}}
+
+###
+# The other word. Both of them are what the extension sends — `shareInbox.ts` on an accept and
+# `shareCommands.ts` on a decline — and `eventQuery.test.ts` reads THIS file to assert the two
+# halves agree, because two suites each reading their own copy of the names prove nothing.
+# @name declining_a_share_is_204_and_says_so
+DELETE {{baseUrl}}/api/shares/{{declinedShareId}}?outcome=declined
+Authorization: Bearer {{bobToken}}
+X-Creds-Contract: {{contract}}
+
+?? status == 204
+
+###
 # @name share_post_a_fourth_time_for_the_delete_that_says_nothing
 POST {{baseUrl}}/api/shares
 Authorization: Bearer {{token}}

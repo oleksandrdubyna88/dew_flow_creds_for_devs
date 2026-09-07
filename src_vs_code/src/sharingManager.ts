@@ -5,7 +5,7 @@ import { StorageManager } from './storageManager';
 import { TeamFailure } from './teamDiagnosis';
 import { ServerTransport } from './serverTransport';
 import { ShareForm } from './shareFormat';
-import { VaultTransport } from './vaultTransport';
+import { ShareOutcome, VaultTransport } from './vaultTransport';
 
 /**
  * Team discovery and pending shares, per account, over whatever transport
@@ -175,7 +175,12 @@ export class SharingManager {
   }
 
   /** Remove one pending share of mine (after accept or decline). */
-  async removeOwnShare(share: OwnedShare): Promise<void> {
+  /**
+   * <p>`outcome` says which way it went, for the corporate log. One method rather than an
+   * `acceptOwnShare`/`declineOwnShare` pair: both call sites already funnel through here, and a
+   * second method is the duplicate that drifts.</p>
+   */
+  async removeOwnShare(share: OwnedShare, outcome?: ShareOutcome): Promise<void> {
     const account = this.storage.getAccount(share.accountId);
     if (account === undefined) {
       return;
@@ -184,7 +189,7 @@ export class SharingManager {
     if (transport === undefined) {
       return;
     }
-    await transport.removeShare(account, share);
+    await transport.removeShare(account, share, outcome);
   }
 
 }

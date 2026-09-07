@@ -133,7 +133,7 @@ export function registerShareCommands(host: ShareCommandsHost): void {
     if (confirmed !== 'Decline') {
       return;
     }
-    await sharing.removeOwnShare(element.share);
+    await sharing.removeOwnShare(element.share, 'declined');
     void sharing.reload();
   });
 
