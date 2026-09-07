@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { matchesTerms, searchTerms } from '../treeSearch';
-import { teamMemberHaystack } from '../teamSearch';
+import { matchingTeamMembers, teamMemberHaystack } from '../teamSearch';
 
 /**
  * The Team filter used to look in the email and nothing else, while the row beside it showed the
@@ -62,4 +62,34 @@ test('an absent role and an unnamed project cost nothing', () => {
 
 test('a colleague with nothing but an address yields exactly that address', () => {
   assert.equal(teamMemberHaystack({ email: 'anna@corp.com' }), 'anna@corp.com');
+});
+
+test('the filter builds the project map ONCE, not once per colleague', () => {
+  // On every keystroke, for every colleague: a domain of 500 people against 200 projects was
+  // 100,000 map insertions per character, on the thread that draws the tree.
+  let reads = 0;
+  const projects = new Proxy([{ id: 'p1', name: 'Atlas' }], {
+    get(target, key, receiver) {
+      if (key === 'map') {
+        reads += 1;
+      }
+      return Reflect.get(target, key, receiver);
+    },
+  }) as unknown as Parameters<typeof matchingTeamMembers>[2]['projects'];
+  const members = ['a', 'b', 'c', 'd'].map((id) => ({
+    account: { accountId: id, email: `${id}@corp.com`, provider: 'microsoft' },
+    location: 'https://vault.corp.com',
+    shareKeyId: `${id}@corp.com`,
+    isSelf: false,
+    projectIds: ['p1'],
+  })) as unknown as Parameters<typeof matchingTeamMembers>[0];
+
+  const kept = matchingTeamMembers(members, searchTerms('atlas'), {
+    viewer: undefined,
+    roster: undefined,
+    projects,
+  });
+
+  assert.equal(kept.length, 4, 'they are all on Atlas');
+  assert.equal(reads, 1, 'the map is built for the filter, not for each of the four');
 });

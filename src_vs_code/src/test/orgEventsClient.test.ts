@@ -79,15 +79,27 @@ test('an empty page WITH a cursor is not the end — the server bounds what one 
   assert.equal(page.nextCursor, '2026-03-01:12', 'a caller pages while the cursor is there, not while rows are');
 });
 
-test('a server too old to have the route reads as no log, not as a failure', async () => {
+test('a server too old to have the route reads as no log, not as a failure — and SAYS which', async () => {
   // The shape `readMe` and `listProjects` already use: a readiness cycle against an older server
-  // must not report a failure about a feature that server does not have.
+  // must not report a failure about a feature that server does not have. But an empty history and
+  // "this server keeps none" are different facts, and a viewer showing the first for the second
+  // tells somebody their company's history is empty when it is merely unreachable.
   respondWith(404, 'Not Found');
 
   const page = await client().readEvents(account);
 
   assert.deepEqual(page.items, []);
   assert.equal(page.nextCursor, undefined);
+  assert.equal(page.noLogHere, true);
+});
+
+test('a server that HAS the route and no rows is an ordinary empty page', async () => {
+  respondWith(200, { items: [] });
+
+  const page = await client().readEvents(account);
+
+  assert.deepEqual(page.items, []);
+  assert.equal(page.noLogHere, undefined, 'nothing happened yet is not the same as no log here');
 });
 
 test('a refusal carries the server\'s own sentence', async () => {

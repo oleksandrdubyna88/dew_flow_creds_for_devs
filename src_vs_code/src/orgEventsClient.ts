@@ -1,5 +1,5 @@
 import { CorpApiClient } from './corpApiClient';
-import { NO_EVENTS, OrgEventPage, OrgEventQuery, eventQueryPath, isOrgEventPage, pageOf } from './eventQuery';
+import { NO_LOG_HERE, OrgEventPage, OrgEventQuery, eventQueryPath, isOrgEventPage, pageOf } from './eventQuery';
 import { DEFAULT_REQUEST_TIMEOUT_MS } from './serverTransport';
 import { StoredAccount } from './types';
 
@@ -30,15 +30,16 @@ export class OrgEventsClient {
    * One page, newest first.
    *
    * <p>A server too old to have the route answers `404`, and that means the same thing as a server
-   * with no roster: there is no log here. It reads as an EMPTY PAGE rather than an error, the shape
-   * `readMe` and `listProjects` already use — a readiness cycle against an older server must not
-   * report a failure about a feature that server does not have. Every other refusal throws with the
-   * server's own sentence, so a `403` or a `426` is never silent.</p>
+   * with no roster: there is no log here. It reads as an empty page rather than an error — the shape
+   * `readMe` and `listProjects` already use, so a readiness cycle against an older server does not
+   * report a failure about a feature that server does not have — but the page says `noLogHere`, so a
+   * VIEWER can say that sentence instead of showing an empty history somebody would read as "nothing
+   * ever happened". Every other refusal throws with the server's own sentence.</p>
    */
   async readEvents(account: StoredAccount, query: OrgEventQuery = {}): Promise<OrgEventPage> {
     const response = await this.api.request(account, eventQueryPath(query));
     if (response.status === 404) {
-      return NO_EVENTS;
+      return NO_LOG_HERE;
     }
     if (!response.ok) {
       throw new Error(await this.api.refusal(response));

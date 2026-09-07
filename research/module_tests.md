@@ -162,9 +162,13 @@ member's page must never carry a row that names only somebody else, whatever the
 asserted twice — once in-process, once over the wire — because it is the only rule here whose failure
 is silent, and it was watched failing before it passed.
 
-**Not covered, and named rather than implied**: nothing drives the log through the EXTENSION, because
-the viewer is stories 3 and 4 of this epic and does not exist yet. Until it does, the log is a route
-with no caller in the product.
+**Driven through the EXTENSION since story 3**: `scripts/server-transport-itest.cjs` accepts a share
+through the compiled `ServerTransport` saying `accepted`, then reads the row back through the
+extension's own `OrgEventsClient` and asserts the server recorded `share.accepted` naming both
+people. That is the live check the contract rule asks for — the client's word and the server's kind
+are two implementations of one agreement, and two suites each reading their own copy of the names
+prove nothing about it. It skips loudly on a server with no roster, because the log exists only in
+corp mode. What is still not driven end to end is the VIEWER: story 4.
 
 ### What a share writes to it (story 2)
 

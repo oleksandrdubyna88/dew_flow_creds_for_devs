@@ -38,6 +38,15 @@ export interface OrgEvent {
 export interface OrgEventPage {
   readonly items: readonly OrgEvent[];
   readonly nextCursor?: string;
+  /**
+   * Set only when the SERVER has no such route — one too old to keep an event log at all.
+   *
+   * <p>An empty page and "this server does not keep one" are different facts, and a viewer that
+   * showed the first for the second would tell somebody their company's history is empty when it
+   * is merely unreachable. The polling callers treat it as an empty page, which is why the absence
+   * is a flag rather than a throw; the viewer says the sentence.</p>
+   */
+  readonly noLogHere?: boolean;
 }
 
 /** What a person may narrow the log by. Every field is optional and they are ANDed by the server. */
@@ -67,33 +76,57 @@ export const ORG_EVENTS_PATH = '/api/org/events';
  * apply to the empty string, and `undefined` interpolated into a template is the literal word
  * "undefined", which is a filter that matches nothing and looks like a bug in the server.</p>
  */
+/**
+ * Every filter, and the name it travels under. ONE table: the builder reads it and so does its
+ * test, so a parameter added here cannot be silently missed by a test that retyped the list.
+ */
+export const EVENT_QUERY_PARAMS: Readonly<Record<keyof OrgEventQuery, string>> = {
+  actor: 'actor',
+  subject: 'subject',
+  person: 'person',
+  project: 'project',
+  kind: 'kind',
+  since: 'since',
+  until: 'until',
+  text: 'q',
+  cursor: 'cursor',
+  limit: 'limit',
+};
+
 export function eventQueryPath(query: OrgEventQuery = {}): string {
-  const params = new URLSearchParams();
-  const put = (name: string, value: string | number | undefined): void => {
-    if (value === undefined) {
-      return;
-    }
-    const text = String(value).trim();
-    if (text.length > 0) {
-      params.set(name, text);
-    }
-  };
-  put('actor', query.actor);
-  put('subject', query.subject);
-  put('person', query.person);
-  put('project', query.project);
-  put('kind', query.kind);
-  put('since', query.since);
-  put('until', query.until);
-  put('q', query.text);
-  put('cursor', query.cursor);
-  put('limit', query.limit);
-  const search = params.toString();
+  const pairs = Object.entries(EVENT_QUERY_PARAMS)
+    .map(([field, name]) => [name, sendable(query[field as keyof OrgEventQuery])] as const)
+    .filter((pair): pair is readonly [string, string] => pair[1] !== undefined);
+  const search = new URLSearchParams(pairs.map(([name, value]): [string, string] => [name, value])).toString();
   return search.length > 0 ? `${ORG_EVENTS_PATH}?${search}` : ORG_EVENTS_PATH;
+}
+
+/**
+ * The value as it goes on the wire, or nothing when it must not travel.
+ *
+ * <p>A number that is not FINITE is dropped rather than sent: `since=NaN` — an invalid
+ * `Date.parse`, an arithmetic slip — reaches the server as a word it refuses with a `400`, so the
+ * caller meets a failure about their own bad arithmetic dressed as a server refusal. An absent or
+ * blank filter is dropped for the same class of reason: `?actor=` filters on the empty string.</p>
+ */
+function sendable(value: string | number | boolean | undefined): string | undefined {
+  if (value === undefined || unusableNumber(value)) {
+    return undefined;
+  }
+  const text = String(value).trim();
+  return text.length > 0 ? text : undefined;
+}
+
+/** A number no clock and no counter can hold: NaN from a bad `Date.parse`, an Infinity from a slip. */
+function unusableNumber(value: string | number | boolean): boolean {
+  return typeof value === 'number' && !Number.isFinite(value);
 }
 
 /** An empty page, for a server that has no log to answer with. */
 export const NO_EVENTS: OrgEventPage = { items: [] };
+
+/** What a server too old to have the route answers with — an absence a viewer can put into words. */
+export const NO_LOG_HERE: OrgEventPage = { items: [], noLogHere: true };
 
 /**
  * A row this build can read: the three fields every kind carries, and nothing assumed about the
@@ -107,6 +140,9 @@ const ROW_OPTIONAL = ['subject', 'project', 'shareId', 'entityName', 'entityKind
 
 export function isOrgEvent(value: unknown): value is OrgEvent {
   return hasShape(value, ROW_SHAPE)
+    // An instant a clock cannot hold — NaN, Infinity — is not a row: it renders as "Invalid Date"
+    // and sorts unpredictably, three layers from whatever produced it.
+    && Number.isFinite((value as { at: number }).at)
     && ROW_OPTIONAL.every((field) => optionalString((value as Record<string, unknown>)[field]));
 }
 
