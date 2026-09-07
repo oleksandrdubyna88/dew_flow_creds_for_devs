@@ -1,3 +1,4 @@
+using System.Net;
 using System.Security.Cryptography;
 using FluentAssertions;
 using Microsoft.Extensions.Configuration;
@@ -32,6 +33,52 @@ public class BackupRunnerTests
         status.LastResult.Should().Be(BackupRunResults.Succeeded);
         status.Bytes.Should().BeGreaterThan(0);
         world.Backups.NewestArchive().Name.Should().Be(ArchiveName.For(Noon));
+    }
+
+    [Fact]
+    public async Task AnUploadThatLANDEDWhereRetentionCannotRunIsNotACleanRun()
+    {
+        // The second review round's finding, and it is the failure that hides: the archive DID reach
+        // the destination, so every existing assertion is satisfied — while the pass that keeps that
+        // destination bounded could not list it, so its archives now accumulate for ever and the only
+        // place saying so is a sentence on a row the page draws green. The run is `partial`: calling it
+        // failed would be the other lie, because the copy that matters left the building.
+        var stub = new StubTransport()
+            .Answer(HttpStatusCode.OK)   // the upload is accepted
+            .AnswerStored()              // and the HEAD agrees it is all there
+            .Answer(HttpStatusCode.Forbidden, "<Error><Code>AccessDenied</Code></Error>"); // the listing is not
+        var world = await Ready(transport: stub);
+        await Configured(world);
+
+        await world.Runner.RunAsync("admin@corp.com", Ct);
+
+        var status = await world.Backups.ReadStatusAsync(Ct);
+        status.LastResult.Should().Be(
+            BackupRunner.Partial, "the archive arrived and the destination is now unbounded");
+        var target = status.Targets.Should().ContainSingle().Subject;
+        target.Result.Should().Be(BackupRunResults.Succeeded, "the upload itself was fine");
+        target.Error.Should().BeEmpty("and nothing about the upload went wrong");
+        target.Retention.Should().Contain("retention could not run").And.Contain("403");
+        status.LastError.Should().Contain("retention could not run", "the page's summary says it too");
+    }
+
+    [Fact]
+    public async Task AnUploadThatLANDEDAndWasPRUNEDIsAPlainSuccess()
+    {
+        // The other half, so the test above cannot pass by calling every run partial.
+        var stub = new StubTransport()
+            .Answer(HttpStatusCode.OK)
+            .AnswerStored()
+            .Answer(HttpStatusCode.OK, EmptyListing);
+        var world = await Ready(transport: stub);
+        await Configured(world);
+
+        await world.Runner.RunAsync("admin@corp.com", Ct);
+
+        var status = await world.Backups.ReadStatusAsync(Ct);
+        status.LastResult.Should().Be(BackupRunResults.Succeeded);
+        status.Targets.Should().ContainSingle().Which.Retention.Should().BeEmpty();
+        status.LastError.Should().BeEmpty();
     }
 
     [Fact]
@@ -410,9 +457,10 @@ public class BackupRunnerTests
         }
     }
 
-    private sealed record Deployment(string Dir, BackupStore Backups, BackupRunner Runner, string Words);
+    private sealed record Deployment(
+        string Dir, BackupStore Backups, BackupRunner Runner, string Words, BackupTargets Targets);
 
-    private static Deployment World(bool withLog = false)
+    private static Deployment World(bool withLog = false, StubTransport? transport = null)
     {
         var dir = TempDir();
         var kek = RandomNumberGenerator.GetBytes(Key32.Bytes);
@@ -420,17 +468,21 @@ public class BackupRunnerTests
         var events = withLog
             ? new OrgEventLog(dir, NullLogger<OrgEventLog>.Instance, () => Noon)
             : null;
+        // The same instance seals the target and builds its client, because a target sealed under one
+        // KEK and opened under another is a different test — the one BackupStoreTests already runs.
+        var targets = Targets(kek, transport);
         return new Deployment(
             dir,
             backups,
-            new BackupRunner(backups, dir, Config(), events, Targets(kek), Clock(), NullLogger<BackupRunner>.Instance),
-            string.Empty);
+            new BackupRunner(backups, dir, Config(), events, targets, Clock(), NullLogger<BackupRunner>.Instance),
+            string.Empty,
+            targets);
     }
 
     /// <summary>A deployment with a key somebody has written down, and one vault to archive.</summary>
-    private static async Task<Deployment> Ready(bool withLog = false)
+    private static async Task<Deployment> Ready(bool withLog = false, StubTransport? transport = null)
     {
-        var world = World(withLog);
+        var world = World(withLog, transport);
         var minted = await world.Backups.MintKeyAsync(Ct);
         (await world.Backups.AcknowledgeKeyShownAsync(Ct)).Should().BeTrue();
         Directory.CreateDirectory(Path.Combine(world.Dir, "vaults"));
@@ -451,18 +503,44 @@ public class BackupRunnerTests
     private static TimeProvider Clock() => new FrozenClock(Noon);
 
     /// <summary>
-    /// The target factory, with a client factory that answers nothing.
+    /// The target factory. Most tests here configure NO target and never ask it to build one; the ones
+    /// that do hand in a stubbed transport, so a whole run can be driven without a network.
     /// </summary>
-    /// <remarks>
-    /// Every test in this class configures NO targets, so the factory is never asked to build one.
-    /// The upload paths have their own suite, over a stubbed handler.
-    /// </remarks>
-    private static BackupTargets Targets(byte[] kek) =>
-        new(kek, new NoClients(), Clock(), NullLogger<BackupTargets>.Instance);
+    private static BackupTargets Targets(byte[] kek, StubTransport? transport = null) =>
+        new(kek, new Clients(transport), Clock(), NullLogger<BackupTargets>.Instance);
 
-    private sealed class NoClients : IHttpClientFactory
+    private sealed class Clients(StubTransport? transport) : IHttpClientFactory
     {
-        public HttpClient CreateClient(string name) => new();
+        public HttpClient CreateClient(string name) =>
+            transport is null ? new HttpClient() : new HttpClient(transport, disposeHandler: false);
+    }
+
+    private const string EmptyListing =
+        """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <ListBucketResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
+          <IsTruncated>false</IsTruncated>
+        </ListBucketResult>
+        """;
+
+    /// <summary>One S3 destination, sealed by the same factory the run will open it with.</summary>
+    private static async Task Configured(Deployment world)
+    {
+        await world.Backups.WriteSettingsAsync(
+            BackupSettings.Default with
+            {
+                Targets =
+                [
+                    world.Targets.Seal(
+                        TargetKinds.S3,
+                        "https://s3.example.com",
+                        "eu-central-1",
+                        "vaults",
+                        "backups",
+                        new TargetSecrets("AKIDEXAMPLE", "secret", string.Empty, string.Empty)),
+                ],
+            },
+            Ct);
     }
 
     private static IReadOnlyList<string> Rows(string dir, string kind) =>

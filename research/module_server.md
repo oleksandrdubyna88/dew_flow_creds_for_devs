@@ -1514,6 +1514,23 @@ refusing is `partial`, and none configured is `ok`: a backup that stayed on the 
 from is not a backup, and a page that cried failure over one target of two would train an
 administrator to ignore it.
 
+**An upload and the retention that follows it are two outcomes, not one field.** They shared one until
+the second review round, and it hid the case that matters most quietly: the archive ARRIVES at a
+destination whose old archives can then not be listed or deleted, so every assertion about the upload
+is satisfied while that destination's directory grows for ever, reported as `succeeded` with the
+problem in an error field on a row a page draws green. `BackupTargetStatus` and `BackupTargetDto` now
+carry `Retention` beside `Error`, and a run in that state is `partial` — not `failed`, because the copy
+that matters did leave the building.
+
+**A kind this server does not implement is skipped, loudly, and never built as another.** The factory
+was a ternary, so anything that was not `s3` became Azure Blob. Nothing can SAVE an unknown kind — the
+request validator refuses it — and that is not the case this guards: a `settings.json` restored from a
+deployment that has the drive targets of the next plan carries one, and a ternary would have uploaded
+the company's archive to Azure with credentials meant for somebody else. It is a `switch` over the two
+implemented kinds with a default that returns nothing, and `BuiltTarget` carries the sentence saying
+which of the two reasons applies — a KEK that changed, or a kind from the future — because both call
+sites used to invent the same wrong advice for the second.
+
 ## Authorization
 
 ```csharp

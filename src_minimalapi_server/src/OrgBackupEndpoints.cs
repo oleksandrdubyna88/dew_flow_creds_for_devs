@@ -83,7 +83,8 @@ public static class OrgBackupEndpoints
                 [
                     .. status.Targets.Select(
                         target => new BackupTargetDto(
-                            target.Kind, target.Where, target.Result, target.Error, target.At)),
+                            target.Kind, target.Where, target.Result, target.Error, target.Retention,
+                            target.At)),
                 ]),
             AppJsonContext.Default.BackupStatusDto,
             cancellationToken: ct);
@@ -205,12 +206,12 @@ public static class OrgBackupEndpoints
     private static async Task<string> UsableAsync(
         BackupTargets targets, SealedTarget record, CancellationToken ct)
     {
-        var client = targets.Build(record);
-        if (client is null)
+        var built = targets.Build(record);
+        if (built.Client is null)
         {
-            return "this server cannot open the credentials for this target.";
+            return built.Why;
         }
-        var usable = await client.UsableAsync(ct);
+        var usable = await built.Client.UsableAsync(ct);
         return usable.Ok ? string.Empty : usable.Why;
     }
 

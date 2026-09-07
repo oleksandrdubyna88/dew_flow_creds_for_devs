@@ -387,5 +387,13 @@ public sealed record BackupTargetRequest(
     string? AccountName,
     string? AccountKey);
 
-/// <summary>A destination as the status page sees it — where it is and how it went, never its keys.</summary>
-public sealed record BackupTargetDto(string Kind, string Where, string Result, string Error, long At);
+/// <summary>
+/// A destination as the status page sees it — where it is and how it went, never its keys.
+/// </summary>
+/// <remarks>
+/// <c>Retention</c> is separate from <c>Error</c> because they are separate outcomes: an archive can
+/// arrive at a destination whose old archives then cannot be listed or deleted, and a page that folded
+/// the two would draw that row green with the problem hidden in a subtitle.
+/// </remarks>
+public sealed record BackupTargetDto(
+    string Kind, string Where, string Result, string Error, string Retention, long At);

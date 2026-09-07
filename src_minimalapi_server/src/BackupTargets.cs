@@ -3,6 +3,20 @@ using Microsoft.Extensions.Logging;
 
 namespace CredVaultServer;
 
+/// <summary>
+/// A target's client, or the sentence saying why there is none.
+/// </summary>
+/// <remarks>
+/// A bare <c>null</c> made both call sites invent their own explanation, and both invented the same
+/// wrong one for a kind this server does not implement.
+/// </remarks>
+public sealed record BuiltTarget(IArchiveTarget? Client, string Why)
+{
+    public static BuiltTarget Ready(IArchiveTarget client) => new(client, string.Empty);
+
+    public static BuiltTarget No(string why) => new(null, why);
+}
+
 /// <summary>The two kinds of destination this server can talk to.</summary>
 public static class TargetKinds
 {
@@ -60,8 +74,18 @@ public sealed record SealedTarget(
         : $"azure {Bucket}/{Prefix}".TrimEnd('/');
 }
 
-/// <summary>What one target did during a run.</summary>
-public sealed record BackupTargetStatus(string Kind, string Where, string Result, string Error, long At);
+/// <summary>
+/// What one target did during a run: whether the archive got there, and whether retention then ran.
+/// </summary>
+/// <remarks>
+/// <b>Two outcomes, not one.</b> They used to share a field, and the review round was right that it
+/// loses the case that matters: an upload that succeeded while the retention pass could not list or
+/// delete is a destination whose archives now accumulate for ever, reported as <c>succeeded</c> with a
+/// sentence in the error field of a row the page draws as green. <see cref="Retention"/> empty means
+/// it ran; anything else is what stopped it, and the run's verdict accounts for it.
+/// </remarks>
+public sealed record BackupTargetStatus(
+    string Kind, string Where, string Result, string Error, string Retention, long At);
 
 /// <summary>
 /// Sealing a target's credentials, opening them again, and building the client that uses them.
@@ -120,28 +144,64 @@ public sealed class BackupTargets(byte[] kek, IHttpClientFactory clients, TimePr
         }
     }
 
-    /// <summary>The client for this target, or nothing when its credentials cannot be opened.</summary>
-    public IArchiveTarget? Build(SealedTarget target)
+    /// <summary>
+    /// The client for this target, or the sentence saying why there is none.
+    /// </summary>
+    /// <remarks>
+    /// The two reasons are DIFFERENT and used to answer with the same words: credentials this server
+    /// cannot open is a KEK that changed, and an unknown kind is a settings file from a deployment that
+    /// knows something this one does not. "Re-enter the credentials" is unhelpful advice for the second.
+    /// </remarks>
+    public BuiltTarget Build(SealedTarget target)
     {
         var secrets = Open(target);
         if (secrets.Empty)
         {
-            return null;
+            return BuiltTarget.No("this server cannot open the credentials for this target. Re-enter them.");
         }
-        var http = clients.CreateClient(nameof(BackupTargets));
-        return target.Kind == TargetKinds.S3
-            ? new S3Target(
+        var client = Client(target, secrets, clients.CreateClient(nameof(BackupTargets)));
+        if (client is null)
+        {
+            log.LogError(
+                "backup target {Where} is of kind '{Kind}', which this server does not implement. It is "
+                + "skipped, and nothing is used in its place.",
+                target.Describe,
+                target.Kind);
+        }
+        return client is null ? BuiltTarget.No(Unknown(target.Kind)) : BuiltTarget.Ready(client);
+    }
+
+    /// <summary>
+    /// The one place a kind becomes a client — a SWITCH, and never a two-way choice.
+    /// </summary>
+    /// <remarks>
+    /// It was a ternary, which made Azure the default for everything that was not S3. Nothing can save
+    /// an unknown kind today, and that is not the case this guards: a settings file restored from a
+    /// deployment that has the drive targets of the next plan carries one, and a ternary would have
+    /// uploaded it to Azure with credentials meant for somebody else. Adding a kind to
+    /// <see cref="TargetKinds"/> without a branch here now skips it loudly instead.
+    /// </remarks>
+    private IArchiveTarget? Client(SealedTarget target, TargetSecrets secrets, HttpClient http) =>
+        target.Kind switch
+        {
+            TargetKinds.S3 => new S3Target(
                 http,
                 new S3TargetConfig(
                     target.Endpoint, target.Region, target.Bucket, target.Prefix,
                     secrets.AccessKeyId, secrets.SecretAccessKey),
-                clock)
-            : new AzureBlobTarget(
+                clock),
+            TargetKinds.AzureBlob => new AzureBlobTarget(
                 http,
                 new AzureTargetConfig(
                     target.Endpoint, target.Bucket, target.Prefix, secrets.AccountName, secrets.AccountKey),
-                clock);
-    }
+                clock),
+            _ => null,
+        };
+
+    private static string Unknown(string kind) =>
+        $"'{kind}' is not a kind of target this server knows — it takes '{TargetKinds.S3}' and "
+        + $"'{TargetKinds.AzureBlob}'. A settings file written by a newer deployment can carry one, and "
+        + "this server will not guess at what it meant.";
 
     /// <summary>
     /// What is wrong with a target an administrator is trying to save, or nothing.
