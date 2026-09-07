@@ -747,9 +747,17 @@ and whether there is more, and that is `nextCursor`: null means the end. A page 
 oldest row of the oldest file answers null rather than costing a client one round trip to be told so;
 in every other case knowing would mean scanning past the page.
 
-**Every query has a scan budget** — 20,000 lines, a few months of a busy company. A substring filter
-with no date range would otherwise read the whole history, kept forever, on one request; the request
-limiter bounds how OFTEN a caller asks, never how much one ask costs. Past the budget the page ends
+**Newest first is the order rows were APPENDED** — the file's own order, newest file first — not a
+sort on `at`. They agree to the microsecond, because the day file is chosen from the same clock that
+stamps the row; sorting by `at` across files would cost a merge of every file in range and a cursor
+that could no longer be a position. The log records the sequence of what happened, and that is what
+it answers.
+
+**Every query has two budgets** — 20,000 lines and 400 day files. A substring filter with no date
+range would otherwise read the whole history, kept forever, on one request; the request limiter
+bounds how OFTEN a caller asks, never how much one ask costs. The second budget is not the first in
+disguise: a deployment with two rows a day never reaches the line budget and spends its cost OPENING
+files instead, so one request would otherwise open a decade of them. Past either budget the page ends
 early with a cursor, so an empty page WITH a cursor means "nothing yet, keep going".
 
 **A line that will not parse is skipped and counted**, and the file is named once at Warning however
