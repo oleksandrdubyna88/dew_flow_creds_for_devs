@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+
 namespace CredVaultServer;
 
 /// <summary>
@@ -28,8 +30,13 @@ public static class Key32
             return [];
         }
         var buffer = new byte[Bytes + 2];
-        return Convert.TryFromBase64String(trimmed, buffer, out var written) && written == Bytes
+        var key = Convert.TryFromBase64String(trimmed, buffer, out var written) && written == Bytes
             ? buffer[..Bytes]
             : [];
+        // The scratch buffer held the key too, and it costs nothing to stop it outliving this call.
+        // The returned array is the caller's to keep — this is hygiene on the copy nobody asked for,
+        // not a claim that key material never reaches the heap.
+        CryptographicOperations.ZeroMemory(buffer);
+        return key;
     }
 }

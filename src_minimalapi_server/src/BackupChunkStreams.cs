@@ -25,6 +25,10 @@ internal sealed class ChunkWriteStream(
     private readonly AesGcm _aes = new(BackupFormat.DeriveKey(key, header.Salt), BackupFormat.TagBytes);
     private readonly byte[] _aad = BackupFormat.NewAad(headerBytes);
     private readonly byte[] _plain = new byte[header.ChunkSize];
+    // Allocated once rather than per chunk: a hundred-gigabyte archive is a hundred thousand chunks,
+    // and a fresh megabyte buffer for each of them is garbage-collector pressure bought for nothing.
+    private readonly byte[] _cipher = new byte[header.ChunkSize];
+    private readonly byte[] _tag = new byte[BackupFormat.TagBytes];
     private int _filled;
     private uint _counter;
     private bool _closed;
@@ -93,16 +97,15 @@ internal sealed class ChunkWriteStream(
         var flags = last ? BackupFormat.LastChunkFlag : (byte)0;
         BinaryPrimitives.WriteUInt32BigEndian(_aad.AsSpan(BackupFormat.HeaderBytes), _counter);
         _aad[^1] = flags;
-        var cipher = new byte[_filled];
-        var tag = new byte[BackupFormat.TagBytes];
+        var cipher = _cipher.AsSpan(0, _filled);
         _aes.Encrypt(
-            BackupFormat.NonceFor(header.NoncePrefix, _counter), _plain.AsSpan(0, _filled), cipher, tag, _aad);
+            BackupFormat.NonceFor(header.NoncePrefix, _counter), _plain.AsSpan(0, _filled), cipher, _tag, _aad);
         Span<byte> framing = stackalloc byte[BackupFormat.FramingBytes];
         framing[0] = flags;
         BinaryPrimitives.WriteInt32BigEndian(framing[BackupFormat.FlagBytes..], _filled);
         destination.Write(framing);
         destination.Write(cipher);
-        destination.Write(tag);
+        destination.Write(_tag);
         _counter++;
         _filled = 0;
     }

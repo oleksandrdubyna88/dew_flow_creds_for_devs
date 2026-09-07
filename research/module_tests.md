@@ -21,7 +21,7 @@
 | HTTP contract | `http/http-run.mjs` over `http/*.http` | 82 requests, 9 files | the real server over HTTP, with a coverage report that refuses an unlisted route |
 | Scenario | `src_vs_code/scripts/*-itest.cjs` | 9 harnesses | a real process, a real socket, a real binary |
 
-## The nine harnesses
+## The ten harnesses
 
 Every one is a plain `.cjs` file run by node — no framework — because each starts a real process and
 what it needs is control over teardown, not a runner. `npm run itest:<name>` compiles first.
@@ -33,6 +33,7 @@ what it needs is control over teardown, not a runner. `npm run itest:<name>` com
 | `src_vs_code/scripts/creds-cli-itest.cjs` | the real `creds` binary against a live broker | **yes** — *Integration test (creds CLI against the broker)* | pass |
 | `src_vs_code/scripts/creds-mcp-itest.cjs` | `creds-mcp` over stdio, the full tool surface and both switch ladders | **yes, added 2026-09-06** | pass |
 | `src_vs_code/scripts/masked-run-itest.cjs` | a masked run through a real pty, asserting no whole secret appears | **yes, added 2026-09-06** | pass |
+| `src_vs_code/scripts/backup-archive-itest.cjs` | the REAL server binary sealing, verifying and opening a backup archive | **yes, added 2026-09-07** | pass |
 | `src_vs_code/scripts/creds-mcp-wsl-itest.cjs` | the same MCP surface, bridged from inside a WSL distribution | no — see below | pass |
 | `src_vs_code/scripts/ssh-agent-itest.cjs` | the SSH agent on a named pipe, and which ssh client can reach it | no — see below | pass |
 | `src_vs_code/scripts/wsl-agent-relay-itest.cjs` | `ssh-keygen -Y sign` inside Linux reaching an agent in a Windows process | no — see below | pass **after repair — see below** |
@@ -197,6 +198,35 @@ asserts the marker is absent — with a control asserting the search would have 
 
 `http/shares/shares.http` covers the same parameter from the wire (accepted, an unknown value, and
 none at all); the ROWS are declared `@uncovered` there, because a row is not a response.
+
+## The backup archive (2026-09-07, epic 5 story 1)
+
+The format is driven from two tiers, and the second one is the reason the first is not enough.
+
+| Tier | What it drives | Where |
+|---|---|---|
+| In-process | the format itself: the round trip byte for byte, the exclusion rule, every refusal — a wrong key, a flipped byte at its own chunk, a dropped final chunk read as truncation, two chunks swapped, an edited created-at stamp, a newer version, an oversized declared chunk size, `../escaped.txt`, `/etc/cron.d/evil`, a Windows data stream, a symlink entry, a failure that must leave no staging directory | `src_minimalapi_server/tests/BackupArchiveTests.cs` |
+| In-process, the command | the three verbs, their arguments, and the sentence each refusal answers with | `src_minimalapi_server/tests/BackupArchiveCommandTests.cs` |
+| **The real binary** | `--create-archive`, `--verify-archive`, `--decrypt-archive` run as a program: seal a tree, verify it, open it elsewhere, compare every file byte for byte, and refuse a wrong key, a flipped byte, a truncation, a missing key file, a key that is not 32 bytes, an occupied destination, and the wrong number of arguments | `src_vs_code/scripts/backup-archive-itest.cjs` |
+
+**Why the third tier exists.** The unit suites drive `BackupArchive` and `BackupArchiveCommand` in
+process, which answers "is the format right" and says nothing at all about whether the SHIPPED thing
+can be run. These verbs are the recovery kit: the moment anyone needs them the server is gone, and
+there is no second chance to discover that the entry point never wired them up. That is the exact
+shape of failure this family has already had once, with `/v1/use/exportEnv` unreachable in every
+released build while both sides' contract tests were green.
+
+It earned its keep on its first run, and not in the way intended: it picked a **published binary from
+an earlier build** and every check about the new verb failed for a reason that had nothing to do with
+the code. The harness now takes the newest candidate and prints which one it took — a stale artefact
+quietly under test is worse than no artefact.
+
+**What it does not cover.** The archive it takes is a synthetic tree, not a live server's data
+directory, so nothing here exercises a file vanishing mid-walk (the unit suite's `Skipped` path);
+and the binary it drives in CI is the framework-dependent one, not the Native AOT build that ships.
+The published AOT binary was driven through the SAME harness locally — all 24 checks pass against
+`win-x64/publish/CredVaultServer.exe` — and `CVBK_SERVER` names a binary explicitly, so CI can point at
+a published one as soon as story 5 builds one in the same job.
 
 ## What none of them covers
 

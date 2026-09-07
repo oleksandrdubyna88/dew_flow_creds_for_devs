@@ -1,6 +1,25 @@
 # PLAN — epic 5: one encrypted archive of the whole server, and somewhere safe to put it
 
-> Status: **plan only, nothing implemented yet, 2026-09-04.** Scope: an admin, without shell access
+> Status: **story 1 of 5 implemented, 2026-09-07; the rest is open work.** The archive FORMAT ships —
+> `BackupArchiveFormat.cs`, `BackupChunkStreams.cs`, `BackupArchive.cs`, `BackupArchiveException.cs`,
+> `BackupArchiveCommand.cs` and the shared `Key32.cs`, with `--create-archive`, `--verify-archive` and
+> `--decrypt-archive` on the server binary, 55 unit tests and the
+> `backup-archive-itest.cjs` scenario harness driving the real binary in CI. Still to build: the `BK1-`
+> key and its store (story 2), the endpoints, the runner and the scheduler (story 3), the two cloud
+> signers (story 4), and the extension's client, the notices and the restore script (story 5).
+>
+> Deviations so far, recorded here rather than in a commit message: the nonce prefix is **8 bytes with
+> a 4-byte counter**, not the 4 this plan sketched, and the counter is refused rather than wrapped; the
+> header carries a **chunk size** and every declared length is bounded before allocation; the whole
+> header is **associated data** for every chunk; and `--create-archive` and `--verify-archive` were
+> added beside the planned `--decrypt-archive`, because a format whose only writer is a component that
+> does not exist yet cannot be exercised by anything.
+>
+> This plan stays in `todo/` because four of its five stories are still work somebody has to do; the
+> shipped story is documented in
+> [module_server.md](../research/module_server.md) and [module_tests.md](../research/module_tests.md).
+>
+> Scope: an admin, without shell access
 > to the host, can take an encrypted archive of everything the server holds — vault blobs, sealed
 > login keys, the registry, projects, the event log, the recovery files, the server's own logs and a
 > snapshot of its configuration — download it, or have the server ship it nightly to S3 or Azure

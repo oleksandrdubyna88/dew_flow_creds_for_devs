@@ -43,6 +43,12 @@ const HARNESSES = [
   { name: 'cli', script: 'creds-cli-itest.cjs', needs: 'the .NET CLI built — dotnet build src_cli/src/CredsCli.csproj', windows: false },
   { name: 'mcp', script: 'creds-mcp-itest.cjs', needs: 'creds-mcp built — dotnet build src_mcp/src/CredsMcp.csproj', windows: false },
   { name: 'masked-run', script: 'masked-run-itest.cjs', needs: 'nothing', windows: false },
+  {
+    name: 'backup-archive',
+    script: 'backup-archive-itest.cjs',
+    needs: 'the server built - dotnet build src_minimalapi_server/src/CredVaultServer.csproj',
+    windows: false,
+  },
   { name: 'ssh-agent', script: 'ssh-agent-itest.cjs', needs: 'OpenSSH; its subject is the Windows named-pipe path', windows: true },
   { name: 'mcp-wsl', script: 'creds-mcp-wsl-itest.cjs', needs: 'a WSL distribution with the .NET SDK inside it', windows: true },
   { name: 'wsl-relay', script: 'wsl-agent-relay-itest.cjs', needs: 'a WSL distribution with the .NET SDK inside it', windows: true },
