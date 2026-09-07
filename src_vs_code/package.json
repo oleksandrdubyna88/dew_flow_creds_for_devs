@@ -840,6 +840,12 @@
         "icon": "$(shield)"
       },
       {
+        "command": "credSshManager.orgEventLog",
+        "title": "Event Log…",
+        "category": "CredsForDevs",
+        "icon": "$(history)"
+      },
+      {
         "command": "credSshManager.acceptRecoveryShare",
         "title": "Accept Recovery Share…",
         "category": "CredsForDevs"
@@ -1686,6 +1692,11 @@
           "command": "credSshManager.showMyRole",
           "when": "view == credSshManagerView && viewItem =~ /^account-corp/",
           "group": "4_corp@6"
+        },
+        {
+          "command": "credSshManager.orgEventLog",
+          "when": "view == credSshManagerView && viewItem =~ /^account-corp/",
+          "group": "4_corp@7"
         },
         {
           "command": "credSshManager.acceptRecoveryShare",

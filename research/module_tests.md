@@ -168,7 +168,10 @@ extension's own `OrgEventsClient` and asserts the server recorded `share.accepte
 people. That is the live check the contract rule asks for — the client's word and the server's kind
 are two implementations of one agreement, and two suites each reading their own copy of the names
 prove nothing about it. It skips loudly on a server with no roster, because the log exists only in
-corp mode. What is still not driven end to end is the VIEWER: story 4.
+corp mode. What is still not driven end to end is the VIEWER: `eventTab.test.ts` and `orgEventsPage.test.ts`
+cover what it asks for, what it does with a late answer and what it draws for each of its four
+states, and no harness opens an editor to look at it. Named rather than implied — nothing here drives
+VS Code itself, as this file's own gap list says.
 
 ### What a share writes to it (story 2)
 

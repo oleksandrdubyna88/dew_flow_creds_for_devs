@@ -1,4 +1,5 @@
 import * as path from 'node:path';
+import { OrgEventsClient } from './orgEventsClient';
 import * as vscode from 'vscode';
 import { FolderTransport } from './folderTransport';
 import { GitTransport } from './gitTransport';
@@ -95,6 +96,27 @@ export class TransportFactory {
   private readonly membersClients = new Map<string, OrgMembersClient>();
 
   private readonly loginKeyClients = new Map<string, OrgLoginKeyClient>();
+
+  private readonly eventsClients = new Map<string, OrgEventsClient>();
+
+  /**
+   * The corporate event-log client for this account's server — the same per-location reuse the
+   * members client gets. Nothing for a folder or a git remote: neither records anything, so there
+   * is no log to read and the command says so rather than opening an empty tab.
+   */
+  orgEventsFor(account: StoredAccount): OrgEventsClient | undefined {
+    const location = nasPathFor(account);
+    if (location === undefined || !isServerLocation(location)) {
+      return undefined;
+    }
+    const existing = this.eventsClients.get(location);
+    if (existing !== undefined) {
+      return existing;
+    }
+    const client = new OrgEventsClient(location, (a) => this.tokenFor(a));
+    this.eventsClients.set(location, client);
+    return client;
+  }
 
   /**
    * The corporate members client for this account's server — roles, the roster, the runtime

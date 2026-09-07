@@ -3657,6 +3657,44 @@ The step lives in `teamSearch.ts` rather than the provider for the reason `teamI
 `treeDataProvider.ts` sits at its 800-line ceiling, and a function that decides text and touches no
 `vscode` belongs where it is a unit test.
 
+## The event log's tab (2026-09-07, epic 4 story 4)
+
+***Event Log…*** on a corporate account row opens `orgEventsPanel.ts`, and the split is the one this
+codebase uses for anything with a message channel: `eventTab.ts` decides, `orgEventsPage.ts` draws,
+and the panel is the twenty `vscode` lines between them.
+
+**Not the MCP log's shape.** That one renders once and filters in the page, which is right for rows
+already in memory. This log lives on a server that pages AND scopes it, so a filter change and a
+"load more" are round trips, and the page's job is to say which it wants.
+
+**The state lives in the TAB, not the webview.** VS Code discards a hidden panel's DOM, so a tab
+somebody switched away from and back would otherwise lose every page they had loaded; becoming
+visible re-renders from the host's rows and asks the server nothing.
+
+**Every request carries a generation, and only one is out at a time.** A filter change PREEMPTS what
+is in flight — it is a different question — and the older answer is discarded when it arrives rather
+than being cancelled. Asking for more while a page is out is the fast double click, and it is
+dropped: the button is disabled, and two identical requests would append the same rows twice.
+
+**Four groups, and no "everything else".** The three the server can express as kind prefixes
+(`share.`, `member.`, `project.`) plus everything. The complement of three prefixes is not something
+the server's filter can say, so offering it would mean filtering the rows this page happens to hold
+and calling that the log.
+
+**What the page cannot do:** decide who sees what. The server scopes by the caller's own record; the
+page draws what it is handed. Every value goes through `escapeHtml`, the only script carries the
+CSP's own nonce, and both are tests.
+
+**Four states, four different sentences**: rows; nothing yet; *this server keeps no event log* (a
+`404`, which is a server older than the feature — not an empty history); and a failure in the
+server's own words with **Try again**. A tab holds at most 2,000 loaded rows and says how many it
+dropped, because "load more" is otherwise unbounded by anything but patience.
+
+**The developer's "who has shared with me" is this tab**, not extra Team rows — the deviation is
+recorded in [PLAN_corp_event_log.md](PLAN_corp_event_log.md), with the reason: a synthetic Team row
+would offer a recipient the share rule refuses, which is the failure the Team filter exists to
+prevent.
+
 ## Corporate roles — the policy document, the admin view, and one request helper (2026-09-06, epic 1 story 4)
 
 The server half of [PLAN_corp_registry_roles.md](PLAN_corp_registry_roles.md) gave every

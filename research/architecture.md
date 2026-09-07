@@ -226,6 +226,21 @@ that is a decision rather than laziness: an `org/` tree on disk tells an operato
 roster when it has none. What each record holds, and why each is shaped as it is, is in
 [module_server.md](module_server.md).
 
+### The corporate event log (2026-09-07, epic 4)
+
+A corporate server keeps one append-only record of what happened — shares with their outcome, roles,
+blocks, projects, assignments, login keys — as NDJSON, one file per UTC day under `org/events/`, kept
+forever and swept by nobody (about 18 MB a year at 200 people). **Metadata only**: an entry's name and
+kind, which a share already carries in plaintext, and never a byte of a payload.
+
+`GET /api/org/events` reads it back, and the one thing worth knowing at this level is that **the
+server decides the scope, not the client**: an administrator or a recovery officer reads the whole
+domain, everybody else reads only rows naming them as actor or subject, and a caller's filters can
+narrow that and never widen it. So the log is a *server-enforced* rule in the umbrella's Boundaries
+table, not an honest-client one — the extension's tab draws what it is handed and cannot ask for more.
+Full detail: [module_server.md](module_server.md) §`GET /api/org/events`,
+[PLAN_corp_event_log.md](PLAN_corp_event_log.md).
+
 ### Logging
 
 Serilog, console plus **a new file per run** under `logs/{UTC date}/{app}-{HH-mm-ss}-{pid}.log`.

@@ -56,7 +56,7 @@
 > this epic rather than a nicety.
 >
 > **Tails.** Epic 4's event-log reader replaces this epic's retention-bounded approximation of "who has
-> shared with me" ([PLAN_corp_event_log.md](../todo/PLAN_corp_event_log.md)); the German and Spanish
+> shared with me" ([PLAN_corp_event_log.md](PLAN_corp_event_log.md)); the German and Spanish
 > sentences added to the help article want a native speaker's eye; and `TimeProvider` instead of
 > ambient `DateTimeOffset.UtcNow` was raised by the gate in four rounds and rejected each time as a
 > repo-wide change rather than this epic's — it needs its own task.
@@ -64,7 +64,7 @@
 > Depends on [PLAN_corp_registry_roles.md](PLAN_corp_registry_roles.md) (roles, `RequireAdmin`, the
 > member record's `projects[]` and `pendingFolderRemovals[]`) and on
 > [PLAN_corp_blocking_login_key.md](PLAN_corp_blocking_login_key.md) (`active`, which the share rule
-> consults). [PLAN_corp_event_log.md](../todo/PLAN_corp_event_log.md) later replaces this epic's
+> consults). [PLAN_corp_event_log.md](PLAN_corp_event_log.md) later replaces this epic's
 > retention-bounded approximation of "who has shared with me".
 >
 > Related docs: [module_server.md](module_server.md) §`POST /api/shares`,
