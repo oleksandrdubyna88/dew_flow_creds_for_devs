@@ -33,8 +33,15 @@ public sealed record S3TargetConfig(
 /// retention over the first page only would leave everything past it for ever — while the floor that
 /// protects against deleting everything would be computing against a set that is not the set.</para>
 /// </remarks>
-public sealed class S3Target(HttpClient http, S3TargetConfig config, TimeProvider clock) : IArchiveTarget
+public sealed class S3Target(
+    HttpClient http,
+    S3TargetConfig config,
+    TimeProvider clock,
+    ArchiveTargets.TargetDeadlines? deadlines = null) : IArchiveTarget
 {
+    /// <summary>What this target waits, so a test can shorten it without touching the constants.</summary>
+    private readonly ArchiveTargets.TargetDeadlines _deadlines = deadlines ?? ArchiveTargets.TargetDeadlines.Default;
+
     /// <summary>5 GiB — the largest single PUT S3 accepts. Multipart is not built.</summary>
     public const long MaxSinglePutBytes = 5L * 1024 * 1024 * 1024;
 
@@ -46,7 +53,7 @@ public sealed class S3Target(HttpClient http, S3TargetConfig config, TimeProvide
     {
         var put = await SendAsync(
             Signed(HttpMethod.Put, Key(name), [], AwsSigV4.UnsignedPayload, length, Body(body, length)),
-            ArchiveTargets.UploadTimeout,
+            _deadlines.Upload,
             ct);
         return put.Ok ? await VerifiedAsync(name, length, ct) : put;
     }
@@ -75,7 +82,7 @@ public sealed class S3Target(HttpClient http, S3TargetConfig config, TimeProvide
     public Task<TargetOutcome> DeleteAsync(string name, CancellationToken ct) =>
         SendAsync(
             Signed(HttpMethod.Delete, Key(name), [], AwsSigV4.EmptyPayloadHash, 0, null),
-            ArchiveTargets.RequestTimeout,
+            _deadlines.Request,
             ct);
 
     /// <summary>Write a probe object and delete it, because reading proves nothing about writing.</summary>
@@ -91,7 +98,7 @@ public sealed class S3Target(HttpClient http, S3TargetConfig config, TimeProvide
                 AwsSigV4.UnsignedPayload,
                 probe.Length,
                 new ByteArrayContent(probe)),
-            ArchiveTargets.ProbeTimeout,
+            _deadlines.Probe,
             ct);
         if (!put.Ok)
         {
@@ -120,7 +127,7 @@ public sealed class S3Target(HttpClient http, S3TargetConfig config, TimeProvide
     {
         using var response = await TrySendAsync(
             Signed(HttpMethod.Head, Key(name), [], AwsSigV4.EmptyPayloadHash, 0, null),
-            ArchiveTargets.RequestTimeout,
+            _deadlines.Request,
             ct);
         if (response.Failure.Length > 0)
         {
@@ -148,11 +155,36 @@ public sealed class S3Target(HttpClient http, S3TargetConfig config, TimeProvide
         }
         using var response = await TrySendAsync(
             Signed(HttpMethod.Get, string.Empty, query, AwsSigV4.EmptyPayloadHash, 0, null),
-            ArchiveTargets.RequestTimeout,
+            _deadlines.Request,
             ct);
-        return response.Failure.Length > 0
-            ? ([], string.Empty, response.Failure)
-            : Parse(await response.Message!.Content.ReadAsStringAsync(response.Deadline));
+        if (response.Failure.Length > 0)
+        {
+            return ([], string.Empty, response.Failure);
+        }
+        var body = await BodyAsync(response, ct);
+        return body.Why.Length > 0 ? ([], string.Empty, body.Why) : Parse(body.Text);
+    }
+
+    /// <summary>
+    /// The body, under the deadline the request was given — or the sentence saying it never came.
+    /// </summary>
+    /// <remarks>
+    /// Reading the body is a SECOND network operation: a service can send its headers and then stall,
+    /// and the deadline that then fires arrives here as a cancellation. Without this it escapes as an
+    /// exception — and a run talks to every configured target and must record which one failed and
+    /// carry on, which an exception at this depth makes impossible. The caller's own token is passed
+    /// through, so a real shutdown still propagates rather than being turned into a sentence.
+    /// </remarks>
+    private async Task<(string Text, string Why)> BodyAsync(Answer answer, CancellationToken ct)
+    {
+        try
+        {
+            return (await answer.Message!.Content.ReadAsStringAsync(answer.Deadline), string.Empty);
+        }
+        catch (Exception e) when (Expected(e, ct))
+        {
+            return (string.Empty, Trouble(e, _deadlines.Request));
+        }
     }
 
     /// <summary>ListObjectsV2's XML: the keys, their sizes, and the token that says there is more.</summary>
@@ -253,31 +285,46 @@ public sealed class S3Target(HttpClient http, S3TargetConfig config, TimeProvide
     /// </remarks>
     private async Task<Answer> TrySendAsync(HttpRequestMessage request, TimeSpan deadline, CancellationToken ct)
     {
-        using var deadlineSource = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        // The source is OWNED BY THE ANSWER, not disposed here. Disposing it at the end of this
+        // method kills its timer, so the token the answer carries into the body read could never
+        // fire — a deadline that reads as present in the code and does not exist at run time.
+        // Measured on .NET 10: after Dispose(), the token's IsCancellationRequested stays false for
+        // ever and Register() does not even throw, so nothing anywhere would have said so.
+        var deadlineSource = CancellationTokenSource.CreateLinkedTokenSource(ct);
         deadlineSource.CancelAfter(deadline);
         try
         {
-            var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, deadlineSource.Token);
-            return response.IsSuccessStatusCode
-                ? new Answer(response, string.Empty, deadlineSource.Token)
-                : new Answer(
-                    response,
-                    await FailureAsync(response, deadlineSource.Token),
-                    deadlineSource.Token);
+            return await AnsweredAsync(request, deadlineSource);
         }
-        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        catch (Exception e) when (Expected(e, ct))
         {
-            return new Answer(
-                null,
-                $"it did not answer within {deadline.TotalMinutes:0} minute(s). The host accepted the "
-                + "connection; something between here and the service is not completing.",
-                CancellationToken.None);
-        }
-        catch (HttpRequestException e)
-        {
-            return new Answer(null, $"it could not be reached: {e.Message}", CancellationToken.None);
+            deadlineSource.Dispose();
+            return Answer.Nothing(Trouble(e, deadline));
         }
     }
+
+    /// <summary>The answer, with the deadline source handed over to it.</summary>
+    private async Task<Answer> AnsweredAsync(HttpRequestMessage request, CancellationTokenSource deadline)
+    {
+        var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, deadline.Token);
+        return response.IsSuccessStatusCode
+            ? new Answer(response, string.Empty, deadline)
+            : new Answer(response, await FailureAsync(response, deadline.Token), deadline);
+    }
+
+    /// <summary>A failure this client turns into a sentence, rather than one it must not swallow.</summary>
+    private static bool Expected(Exception e, CancellationToken ct) =>
+        e is HttpRequestException || (e is OperationCanceledException && !ct.IsCancellationRequested);
+
+    private static string Trouble(Exception e, TimeSpan deadline) => e is HttpRequestException
+        ? $"it could not be reached: {e.Message}"
+        : $"it did not answer within {Spell(deadline)}. The host accepted the connection; something "
+          + "between here and the service is not completing.";
+
+    /// <summary>A deadline in words. Seconds under a minute, because "0 minute(s)" says nothing.</summary>
+    private static string Spell(TimeSpan deadline) => deadline < TimeSpan.FromMinutes(1)
+        ? $"{deadline.TotalSeconds:0} second(s)"
+        : $"{deadline.TotalMinutes:0} minute(s)";
 
     /// <summary>The service's own words, bounded — an error body is not a place to read a novel from.</summary>
     private static async Task<string> FailureAsync(HttpResponseMessage response, CancellationToken ct)
@@ -295,9 +342,18 @@ public sealed class S3Target(HttpClient http, S3TargetConfig config, TimeProvide
     /// a service can send headers and then never finish, and a body read on the caller's token would
     /// sit past the deadline the request was given.
     /// </remarks>
-    private sealed record Answer(HttpResponseMessage? Message, string Failure, CancellationToken Deadline)
-        : IDisposable
+    private sealed record Answer(
+        HttpResponseMessage? Message, string Failure, CancellationTokenSource? Source) : IDisposable
     {
-        public void Dispose() => Message?.Dispose();
+        public static Answer Nothing(string failure) => new(null, failure, null);
+
+        /// <summary>The deadline the BODY must still be read under. Live until this answer is disposed.</summary>
+        public CancellationToken Deadline => Source?.Token ?? CancellationToken.None;
+
+        public void Dispose()
+        {
+            Message?.Dispose();
+            Source?.Dispose();
+        }
     }
 }

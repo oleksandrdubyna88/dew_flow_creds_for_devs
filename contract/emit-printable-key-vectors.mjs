@@ -16,7 +16,7 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ALPHABET = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
@@ -134,7 +134,11 @@ if (!fs.existsSync(parserPath)) {
   console.log('      run this again before trusting them.');
   process.exitCode = 3;
 } else {
-  const { parseRecoveryCode } = await import(`file://${parserPath}`);
+  // pathToFileURL, not string concatenation: a checkout under a directory containing `#` or `%`
+  // makes `file://` + path a different URL than the file it names — `#` truncates the rest as a
+  // fragment and `%` can throw URIError — so the import would load the wrong module or fail, and the
+  // vectors would be "checked" against nothing.
+  const { parseRecoveryCode } = await import(pathToFileURL(parserPath).href);
   let bad = 0;
   for (const vector of vectors.filter((v) => v.prefix === 'RC1')) {
     const parsed = parseRecoveryCode(vector.formatted);

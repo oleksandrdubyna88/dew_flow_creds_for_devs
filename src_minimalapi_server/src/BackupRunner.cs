@@ -171,10 +171,17 @@ public sealed class BackupRunner(
     {
         using (ticket)
         {
+            // Declared outside the try so the failure path can still record the targets that DID
+            // finish before whatever went wrong.
+            var uploads = new List<BackupTargetStatus>();
             try
             {
-                var summary = await BuildAsync(ticket.StartedAt, ticket.Key, ct);
-                await FinishAsync(ticket.Actor, ticket.StartedAt, summary, ct);
+                // The uploads are the RUN's, not the runner's. This class is a singleton, so a field
+                // would carry one run's target rows into the next: a second run with no destination
+                // configured would inherit the first's failures and report itself failed, with a
+                // destination list from an hour ago. Local, and passed to whoever needs it.
+                var summary = await BuildAsync(ticket.StartedAt, ticket.Key, uploads, ct);
+                await FinishAsync(ticket.Actor, ticket.StartedAt, summary, uploads, ct);
             }
             // A CATCH-ALL, deliberately, and it is the difference between a spinner that ends and one
             // that does not. This runs detached, so anything not caught here is an exception with
@@ -183,7 +190,7 @@ public sealed class BackupRunner(
             // three exception types and would have let a CryptographicException do exactly that.
             catch (Exception e)
             {
-                await FailAsync(ticket.Actor, ticket.StartedAt, e, ct);
+                await FailAsync(ticket.Actor, ticket.StartedAt, e, uploads, ct);
             }
         }
     }
@@ -216,7 +223,8 @@ public sealed class BackupRunner(
     /// into the data directory under the snapshot's own name and left there: it is not a secret the
     /// server did not already hold, and a restorer who finds one on the old disk loses nothing.
     /// </remarks>
-    private async Task<ArchiveSummary> BuildAsync(DateTimeOffset startedAt, byte[] key, CancellationToken ct)
+    private async Task<ArchiveSummary> BuildAsync(
+        DateTimeOffset startedAt, byte[] key, List<BackupTargetStatus> uploads, CancellationToken ct)
     {
         Directory.CreateDirectory(backups.ArchivesDir);
         var snapshot = Path.Combine(dataDir, BackupConfigSnapshot.EntryName);
@@ -229,7 +237,7 @@ public sealed class BackupRunner(
             // The upload lives INSIDE this lifecycle rather than beside it: one claim, one status, one
             // place where a run is finished. A second orchestration path is how two paths come to
             // disagree about completion and retention.
-            _uploads = await SendToTargetsAsync(path, settings, ct);
+            await SendToTargetsAsync(path, settings, uploads, ct);
             // Retention governs this directory, and it is the ONLY thing that does. An earlier version
             // also kept just the newest archive, which quietly made the admin's retention setting mean
             // nothing locally — two policies over one directory, and the one nobody configured winning.
@@ -246,9 +254,6 @@ public sealed class BackupRunner(
         }
     }
 
-    /// <summary>What each configured target did with this archive, in order.</summary>
-    private IReadOnlyList<BackupTargetStatus> _uploads = [];
-
     /// <summary>
     /// The run's own verdict, which is not the same question as "was an archive made".
     /// </summary>
@@ -264,23 +269,23 @@ public sealed class BackupRunner(
     /// so is a sentence on a row drawn as a success. It is <c>partial</c>, because the archive DID get
     /// off the machine and calling that failed would be the other kind of lie.</para>
     /// </remarks>
-    private string Verdict()
+    private static string Verdict(IReadOnlyList<BackupTargetStatus> uploads)
     {
-        if (_uploads.Count == 0)
+        if (uploads.Count == 0)
         {
             return BackupRunResults.Succeeded;
         }
-        var ok = _uploads.Count(upload => upload.Result == BackupRunResults.Succeeded);
+        var ok = uploads.Count(upload => upload.Result == BackupRunResults.Succeeded);
         return ok == 0
             ? BackupRunResults.Failed
-            : ok == _uploads.Count && !_uploads.Any(upload => upload.Retention.Length > 0)
+            : ok == uploads.Count && !uploads.Any(upload => upload.Retention.Length > 0)
                 ? BackupRunResults.Succeeded
                 : Partial;
     }
 
     /// <summary>Every target's complaint, uploads and retention alike, in one sentence per target.</summary>
-    private string Trouble() =>
-        string.Join(" ", _uploads.SelectMany(Complaints));
+    private static string Trouble(IReadOnlyList<BackupTargetStatus> uploads) =>
+        string.Join(" ", uploads.SelectMany(Complaints));
 
     private static IEnumerable<string> Complaints(BackupTargetStatus upload)
     {
@@ -302,21 +307,18 @@ public sealed class BackupRunner(
     /// is a target that is unreachable; throwing the local copy away over it would be the wrong trade,
     /// and it is why each target's outcome is a row in the status rather than an exception.
     /// </remarks>
-    private async Task<IReadOnlyList<BackupTargetStatus>> SendToTargetsAsync(
-        string path, BackupSettings settings, CancellationToken ct)
+    private async Task SendToTargetsAsync(
+        string path, BackupSettings settings, List<BackupTargetStatus> uploads, CancellationToken ct)
     {
-        var outcomes = new List<BackupTargetStatus>();
         foreach (var configured in settings.Targets)
         {
-            outcomes.Add(await SendOneAsync(path, configured, settings.RetentionDays, ct));
+            uploads.Add(await SendOneAsync(path, configured, settings.RetentionDays, ct));
             // The status is rewritten after EACH target, not once at the end. A three-target run over a
             // multi-gigabyte archive is hours, and an administrator polling the page would otherwise see
             // "in progress" and nothing else the whole time — and if the server were restarted in the
             // middle, no record of which targets had already taken it.
-            _uploads = [.. outcomes];
-            await ProgressAsync(ct);
+            await ProgressAsync(uploads, ct);
         }
-        return outcomes;
     }
 
     private async Task<BackupTargetStatus> SendOneAsync(
@@ -396,12 +398,12 @@ public sealed class BackupRunner(
     }
 
     /// <summary>Rewrite the in-progress status so the page can see the uploads landing.</summary>
-    private async Task ProgressAsync(CancellationToken ct)
+    private async Task ProgressAsync(IReadOnlyList<BackupTargetStatus> uploads, CancellationToken ct)
     {
         var status = await backups.ReadStatusAsync(ct);
         if (BackupRunResults.IsRunning(status.LastResult))
         {
-            await backups.WriteStatusAsync(status with { Targets = _uploads }, ct);
+            await backups.WriteStatusAsync(status with { Targets = [.. uploads] }, ct);
         }
     }
 
@@ -422,16 +424,20 @@ public sealed class BackupRunner(
     }
 
     private async Task FinishAsync(
-        string actor, DateTimeOffset startedAt, ArchiveSummary summary, CancellationToken ct)
+        string actor,
+        DateTimeOffset startedAt,
+        ArchiveSummary summary,
+        IReadOnlyList<BackupTargetStatus> uploads,
+        CancellationToken ct)
     {
         var archive = backups.NewestArchive();
         await backups.WriteStatusAsync(
             new BackupStatus(
                 clock.GetUtcNow().ToUnixTimeMilliseconds(),
-                Verdict(),
-                Trouble(),
+                Verdict(uploads),
+                Trouble(uploads),
                 archive.Bytes,
-                _uploads),
+                [.. uploads]),
             ct);
         log.LogInformation(
             "backup taken: {Files} file(s), {Bytes} bytes sealed into {Name} in {Seconds}s",
@@ -442,7 +448,12 @@ public sealed class BackupRunner(
         await RowAsync(OrgEventKinds.BackupTaken, actor, archive.Name, ct);
     }
 
-    private async Task FailAsync(string actor, DateTimeOffset startedAt, Exception failure, CancellationToken ct)
+    private async Task FailAsync(
+        string actor,
+        DateTimeOffset startedAt,
+        Exception failure,
+        IReadOnlyList<BackupTargetStatus> uploads,
+        CancellationToken ct)
     {
         await backups.WriteStatusAsync(
             new BackupStatus(
@@ -450,7 +461,7 @@ public sealed class BackupRunner(
                 BackupRunResults.Failed,
                 failure.Message,
                 0,
-                _uploads),
+                [.. uploads]),
             ct);
         log.LogError(
             failure,

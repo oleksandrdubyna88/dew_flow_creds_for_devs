@@ -101,6 +101,21 @@ public static class ArchiveTargets
     public const string ArchiveContentType = "application/octet-stream";
 
     /// <summary>
+    /// The three deadlines a target works to, as one thing a test can shorten.
+    /// </summary>
+    /// <remarks>
+    /// A deadline nothing can exercise is a deadline nobody can trust, and this feature has already
+    /// shipped one that did not work: the token carried into the body read came from a
+    /// <c>CancellationTokenSource</c> that had already been disposed, so its timer was dead and the
+    /// read had no deadline at all. Nothing could see that, because the only way to observe it is to
+    /// let a service stall — which at two minutes is not a test anybody runs.
+    /// </remarks>
+    public sealed record TargetDeadlines(TimeSpan Request, TimeSpan Upload, TimeSpan Probe)
+    {
+        public static readonly TargetDeadlines Default = new(RequestTimeout, UploadTimeout, ProbeTimeout);
+    }
+
+    /// <summary>
     /// Which objects a retention window would remove — and never all of them.
     /// </summary>
     /// <remarks>
@@ -134,11 +149,17 @@ public static class ArchiveTargets
     /// <para>HTTPS, because S3's <c>UNSIGNED-PAYLOAD</c> requires it — the body is not covered by the
     /// signature, so the transport has to be what protects it — and because an account key travelling
     /// in clear is the whole deployment.</para>
-    /// <para><b>Loopback is the exception</b>, and only loopback: a developer running MinIO on
+    /// <para><b>Loopback is the exception, and only for plain http</b>: a developer running MinIO on
     /// <c>127.0.0.1</c> has no certificate and nothing to intercept, and refusing that would mean this
-    /// feature could not be exercised outside a cloud account. Anything else — a private address, a
-    /// hostname on the LAN — is refused, because "it is on our network" is exactly the assumption that
-    /// makes an interception interesting.</para>
+    /// feature could not be exercised outside a cloud account. Any OTHER host over plain http is
+    /// refused, because "it is on our network" is exactly the assumption that makes an interception
+    /// interesting.</para>
+    /// <para><b>An https endpoint is accepted wherever it points, private addresses included</b> — a
+    /// reviewer read the paragraph above as a claim that <c>https://192.168.1.10</c> is refused. It is
+    /// not, and it should not be: this product exists to be self-hosted, and an on-premises
+    /// S3-compatible store on a private address with a certificate the deployment trusts is an
+    /// ordinary destination. What is refused is the absence of TLS, never the shape of the address.
+    /// </para>
     /// </remarks>
     public static string EndpointProblem(string endpoint)
     {
