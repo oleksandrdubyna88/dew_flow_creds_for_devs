@@ -1458,6 +1458,48 @@ and paste it back. A target is identified by its kind, endpoint, bucket and pref
 out of an edit are the ones already sealed. Without that rule, changing the schedule would silently
 wipe them and the next run would answer 403 at three in the morning.
 
+**An OMITTED `targets` member means unchanged; an empty array means remove them all.** They are
+different requests and they used to be the same one. A client that predates targets — the extension
+before story 5, a script written against story 3 — sends no `targets` member at all, and reading that
+as "remove every destination" would silently turn a configured deployment back into a local-only one
+the next time somebody edited the schedule, with the failure arriving as a missing off-site copy weeks
+later. The null-vs-empty distinction is the whole fix, and
+`ASettingsSaveThatOMITSTargetsLeavesThemAlone` is what holds it.
+
+**Credentials are complete, or absent and already sealed. Never half.** An Azure account name with no
+key made "did they send credentials?" answer yes, and the save-time probe then handed an empty string
+to a base64 decoder — a 500 where a sentence belongs. The message names the FIELD that is missing,
+because an administrator who forgot one of two has to guess otherwise.
+
+**The save-time probes run TOGETHER, and against the SEALED record.** Serially, three targets whose
+hosts each accept a connection and then say nothing would hold the administrator's `PUT` for six
+minutes, past every browser and reverse-proxy timeout there is; concurrently the worst case is one
+20-second probe deadline. And each probe builds its client from the sealed target — seal, then open,
+then use — so what is proved usable is exactly what will be stored, rather than a parallel object
+built from the request that a sealing bug could let differ from it.
+
+**Deadlines reach the BODY read, not only the request.** A service can send headers and then never
+finish sending the body, so a response read on the caller's token would sit past the deadline the
+request was given; the deadline token travels with the response and every body read uses it.
+
+**A listing that FAILED is not an empty one.** Both clients return a failed `TargetListing` — for a
+transport failure and for a 200 carrying something that is not a listing — because retention over
+"what came back before the failure" would treat the rest as absent, and the floor that stops it
+deleting everything would be measuring the wrong set. A target whose list permission was revoked now
+says so in the run's status instead of accumulating archives for ever in silence.
+
+**The status is rewritten after EACH target, not once at the end.** A three-target run over a
+multi-gigabyte archive is hours; an administrator polling the page would otherwise see "in progress"
+and nothing else the whole time, and a restart in the middle would leave no record of which targets
+had already taken it. Uploads stay sequential on purpose — one file, one uplink, and each target's
+outcome durable before the next begins — and each target opens the archive for itself, because one
+`FileStream` shared across targets would have every one after the first upload nothing.
+
+**A settings file written before targets existed reads back with an empty list, not a null one.**
+Normalised where the value is READ — `BackupStore.ReadSettingsAsync` and `ReadStatusAsync` — because a
+DTO field absent from the JSON is null whatever its initializer says, and every caller of a store that
+hands back null is one `NullReferenceException` away from a 500 on a deployment that upgraded.
+
 **The endpoint must be `https`**, because the archive's body is not covered by the request signature
 and an account key in clear is the whole deployment. Loopback is the only exception, and only
 loopback: a developer running MinIO on `127.0.0.1` has nothing between, while "it is on our network"

@@ -292,6 +292,12 @@ public sealed class BackupRunner(
         foreach (var configured in settings.Targets)
         {
             outcomes.Add(await SendOneAsync(path, configured, settings.RetentionDays, ct));
+            // The status is rewritten after EACH target, not once at the end. A three-target run over a
+            // multi-gigabyte archive is hours, and an administrator polling the page would otherwise see
+            // "in progress" and nothing else the whole time — and if the server were restarted in the
+            // middle, no record of which targets had already taken it.
+            _uploads = [.. outcomes];
+            await ProgressAsync(ct);
         }
         return outcomes;
     }
@@ -311,15 +317,14 @@ public sealed class BackupRunner(
                 at);
         }
         var outcome = await UploadAsync(client, path, ct);
-        if (outcome.Ok)
-        {
-            await PruneAsync(client, retentionDays, ct);
-        }
+        var retention = outcome.Ok ? await PruneAsync(client, retentionDays, ct) : string.Empty;
         return new BackupTargetStatus(
             configured.Kind,
             client.Describe,
             outcome.Ok ? BackupRunResults.Succeeded : BackupRunResults.Failed,
-            outcome.Why,
+            // A retention that could not run is not a failed upload — the archive IS there — but it is
+            // not nothing either, and a log line is not somewhere an administrator looks.
+            outcome.Ok ? retention : outcome.Why,
             at);
     }
 
@@ -346,20 +351,42 @@ public sealed class BackupRunner(
     /// Only after a SUCCESSFUL upload: pruning a destination whose new archive did not arrive is how a
     /// retention window turns into deletion of the only copies left.
     /// </remarks>
-    private async Task PruneAsync(IArchiveTarget client, int retentionDays, CancellationToken ct)
+    private async Task<string> PruneAsync(IArchiveTarget client, int retentionDays, CancellationToken ct)
     {
-        var expired = ArchiveTargets.Expired(await client.ListAsync(ct), clock.GetUtcNow(), retentionDays);
-        foreach (var archive in expired)
+        var listing = await client.ListAsync(ct);
+        if (!listing.Ok)
+        {
+            // A listing that FAILED is not an empty one. Pruning nothing and calling the run a success
+            // would let a target whose list permission was revoked accumulate archives for ever with
+            // nothing anywhere saying so — which is why this reaches the status rather than only a log.
+            return $"the upload succeeded and retention could not run: {listing.Why}";
+        }
+        var refused = new List<string>();
+        foreach (var archive in ArchiveTargets.Expired(listing.Archives, clock.GetUtcNow(), retentionDays))
         {
             var gone = await client.DeleteAsync(archive.Name, ct);
             if (!gone.Ok)
             {
+                refused.Add(archive.Name);
                 log.LogWarning(
                     "{Where} would not delete {Name}: {Why}. The next run will try again.",
                     client.Describe,
                     archive.Name,
                     gone.Why);
             }
+        }
+        return refused.Count == 0
+            ? string.Empty
+            : $"the upload succeeded and retention could not remove {refused.Count} old archive(s).";
+    }
+
+    /// <summary>Rewrite the in-progress status so the page can see the uploads landing.</summary>
+    private async Task ProgressAsync(CancellationToken ct)
+    {
+        var status = await backups.ReadStatusAsync(ct);
+        if (BackupRunResults.IsRunning(status.LastResult))
+        {
+            await backups.WriteStatusAsync(status with { Targets = _uploads }, ct);
         }
     }
 

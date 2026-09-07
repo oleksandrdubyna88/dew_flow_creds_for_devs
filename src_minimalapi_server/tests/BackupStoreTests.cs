@@ -192,6 +192,32 @@ public class BackupStoreTests
     }
 
     [Fact]
+    public async Task FilesWrittenBeforeTargetsExistedReadBackWithAnEmptyListAndNotANullOne()
+    {
+        // The upgrade case, and the one nobody runs locally: every deployment that configured a backup
+        // under story 3 has a settings.json and a status.json with no `targets` member at all. A DTO
+        // field the document omits is NULL whatever its initializer says, so the first `foreach` over
+        // it is a NullReferenceException and a 500 on the status page of a server that was working.
+        // Normalised where the value is READ, which is this store and not each of its callers.
+        var dir = TempDir();
+        var store = Store(dir, out _);
+        var backup = Path.Combine(dir, "org", "backup");
+        Directory.CreateDirectory(backup);
+        File.WriteAllText(Path.Combine(backup, "settings.json"), """{"scheduleHourUtc":3,"retentionDays":30}""");
+        File.WriteAllText(
+            Path.Combine(backup, "status.json"),
+            """{"lastRunAt":1234,"lastResult":"ok","lastError":"","bytes":4096}""");
+
+        var settings = await store.ReadSettingsAsync(Ct);
+        var status = await store.ReadStatusAsync(Ct);
+
+        settings.Targets.Should().NotBeNull().And.BeEmpty("a deployment that predates targets has none");
+        settings.ScheduleHourUtc.Should().Be(3, "and everything it DID configure is still there");
+        status.Targets.Should().NotBeNull().And.BeEmpty();
+        status.LastResult.Should().Be("ok");
+    }
+
+    [Fact]
     public async Task TheWordsAndTheBytesAreTheSameKey()
     {
         // The two halves have to meet: what the person writes down must open what the server sealed.

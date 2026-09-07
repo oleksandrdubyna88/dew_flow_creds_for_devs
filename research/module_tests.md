@@ -268,6 +268,16 @@ store, not by an admin pressing a button, which story 3's endpoints will add.
 | In-process, over real HTTP | a target refused at SAVE time — plain http, an unknown kind, missing credentials, an unreachable host — and a status that carries no credential in any shape | `src_minimalapi_server/tests/BackupEndpointTests.cs` |
 | The wire | the same refusals as a client sends them, and the status's per-target list | `http/org/backup.http` |
 
+**The review round's own regressions, each watched failing first.** Six of the round's findings were
+behaviours no existing test could have caught, so each is now pinned by one named after the guarantee
+rather than the defect: a settings save that OMITS `targets` leaves them alone
+(`ASettingsSaveThatOMITSTargetsLeavesThemAlone` — sabotaged to write an empty list, and it failed with
+*"Expected after.Targets to contain a single item … but the collection is empty"*); half a credential
+is refused by the field that is missing rather than reaching a base64 decoder; a listing that failed is
+not an empty one, on both clients; a 200 carrying something that is not a listing is a failure too;
+an upload the service stored SHORT is a failure and not a success; and a settings file written before
+targets existed reads back with an empty list.
+
 **What none of it covers, said plainly.** Nothing here proves that AWS or Azure ACCEPT what these
 clients send — only that they send what the specifications say, and that the signatures match values
 those specifications publish. A live check against a real bucket needs credentials nobody should
@@ -288,7 +298,8 @@ Named rather than implied, because the rule asks for exactly this.
   `.vsix` into a real editor and opens it. The publish step is verified by reading the release run.
 - **The server and the extension end to end.** `server-transport-itest.cjs` would do it, and it is
   the one harness CI does not run. Today the two halves are verified separately: the extension
-  against a stubbed transport, the server against `http/`'s requests — 157 of them as of 2026-09-07.
+  against a stubbed transport, the server against `http/`'s requests — 181 of them, 390 checks, over
+  46 of 46 registered routes, as of 2026-09-07.
 - **The sync merge under real concurrency.** Version-vector merging has thorough unit tests; no
   harness runs two windows against one vault at the same time. That gap has a plan of its own —
   [PLAN_node_writes_are_last_write_wins.md](PLAN_node_writes_are_last_write_wins.md) — and
