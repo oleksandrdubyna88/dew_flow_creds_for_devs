@@ -40,8 +40,9 @@ public static class BackupArchive
 {
     /// <summary>Seal <paramref name="sourceDir"/> into <paramref name="destination"/>.</summary>
     public static ArchiveSummary Create(
-        string sourceDir, Stream destination, byte[] key, DateTimeOffset createdAt) =>
-        Create(sourceDir, destination, key, createdAt, BackupFormat.DefaultChunkSize);
+        string sourceDir, Stream destination, byte[] key, DateTimeOffset createdAt,
+        Action<string>? onEntry = null) =>
+        Create(sourceDir, destination, key, createdAt, BackupFormat.DefaultChunkSize, onEntry);
 
     /// <summary>
     /// Seal a tree into a FILE, written under a temporary name and renamed once it is complete.
@@ -52,17 +53,19 @@ public static class BackupArchive
     /// half-written one that would pass for a backup until the day it was needed.
     /// </remarks>
     public static ArchiveSummary CreateFile(
-        string sourceDir, string archivePath, byte[] key, DateTimeOffset createdAt)
+        string sourceDir, string archivePath, byte[] key, DateTimeOffset createdAt,
+        Action<string>? onEntry = null)
     {
         var partial = archivePath + ".partial";
-        var summary = SealToFile(sourceDir, partial, key, createdAt);
+        var summary = SealToFile(sourceDir, partial, key, createdAt, onEntry);
         File.Move(partial, archivePath, overwrite: true);
         return summary;
     }
 
     internal static ArchiveSummary Create(
-        string sourceDir, Stream destination, byte[] key, DateTimeOffset createdAt, int chunkSize) =>
-        Seal(destination, key, createdAt, chunkSize, into => WriteEntries(sourceDir, into));
+        string sourceDir, Stream destination, byte[] key, DateTimeOffset createdAt, int chunkSize,
+        Action<string>? onEntry = null) =>
+        Seal(destination, key, createdAt, chunkSize, into => WriteEntries(sourceDir, into, onEntry));
 
     /// <summary>Seal a tar stream that the caller composed. The one seam the tests need.</summary>
     internal static void SealTar(
@@ -143,10 +146,10 @@ public static class BackupArchive
     private static string EntryPath(string entryName) => entryName.Replace('\\', '/').TrimEnd('/');
 
     private static ArchiveSummary SealToFile(
-        string sourceDir, string path, byte[] key, DateTimeOffset createdAt)
+        string sourceDir, string path, byte[] key, DateTimeOffset createdAt, Action<string>? onEntry)
     {
         using var output = File.Create(path);
-        return Create(sourceDir, output, key, createdAt);
+        return Create(sourceDir, output, key, createdAt, onEntry);
     }
 
     private static ArchiveSummary Seal(
@@ -167,13 +170,18 @@ public static class BackupArchive
         return body(gzip);
     }
 
-    private static ArchiveSummary WriteEntries(string sourceDir, Stream into)
+    private static ArchiveSummary WriteEntries(string sourceDir, Stream into, Action<string>? onEntry)
     {
         using var tar = new TarWriter(into, TarEntryFormat.Pax, leaveOpen: true);
         var root = Path.GetFullPath(sourceDir);
         var summary = ArchiveSummary.Empty;
         foreach (var path in Tree(root))
         {
+            // Reported as it goes, the same way the read verbs report. Sealing a real server's data
+            // directory takes minutes, and a terminal that has said nothing for four of them is
+            // indistinguishable from a hung one — which was written about the read side and is just as
+            // true here.
+            onEntry?.Invoke(Normalised(Path.GetRelativePath(root, path)));
             summary = summary.Plus(Add(tar, root, path));
         }
         return summary;
@@ -323,7 +331,8 @@ public static class BackupArchive
     }
 
     /// <summary>
-    /// The rename, and the only reason a directory is ever removed to make room for it.
+    /// The rename <see cref="Commit"/> performs, and the only reason a directory is ever removed to
+    /// make room for it.
     /// </summary>
     /// <remarks>
     /// <para><b>The FILESYSTEM decides whether to remove anything, never an exception.</b> An earlier

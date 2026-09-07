@@ -231,6 +231,33 @@ The published AOT binary was driven through the SAME harness locally — all 24 
 `win-x64/publish/CredVaultServer.exe` — and `CVBK_SERVER` names a binary explicitly, so CI can point at
 a published one as soon as story 5 builds one in the same job.
 
+## The backup key and its store (2026-09-07, epic 5 story 2)
+
+Three tiers again, and the third one is a **cross-language** contract rather than a process.
+
+| Tier | What it drives | Where |
+|---|---|---|
+| In-process | the construction: every vector, the derived 32 bytes, a 500-core round trip, a key typed with confusables, `BadChecksum` against `BadFormat`, the exact entropy | `src_minimalapi_server/tests/PrintableKeyTests.cs` |
+| In-process | the key FILE's two forms and every refusal between them, including a base64 key that happens to begin `BK1` | `src_minimalapi_server/tests/BackupKeyFileTests.cs` |
+| In-process, on real files | the store: mint-once, the acknowledgement handshake and its four holes, the run-history guard, the unreadable branches, and the key never entering an archive of its own deployment | `src_minimalapi_server/tests/BackupStoreTests.cs` |
+| In-process, over the source | the configuration list, both directions, plus the scan's own known-match companion | `src_minimalapi_server/tests/ConfigKeysTests.cs` |
+| **The real binary** | a printable key with one character wrong, and a key in neither form, refused by the shipped verbs with the right sentence and exit code | `src_minimalapi_server/scripts/backup-archive-itest.cjs` |
+| **Both languages, live** | the vectors regenerated, compared byte for byte against the committed file, and every `RC1` case fed back through the COMPILED `recoveryCode.ts` parser | `contract/emit-printable-key-vectors.mjs --check`, in `ci · extension` |
+
+**Why the last row is not optional.** `contract/printable-key-v1.json` pins one construction that is
+implemented twice — `RC1-` in the extension, `BK1-` in the server — and two suites each asserting
+their own copy of a file prove nothing about each other. The generator is the live check the
+scenario rule asks for: it derives the file from the construction, refuses a hand-edited copy, and
+runs every case through the shipped parser rather than through its own idea of it. The backup cases
+additionally carry the derived 32 bytes, so `HKDF`'s salt — the one parameter whose ambiguity would
+produce an archive nobody can open — is pinned across both languages.
+
+**What none of this covers.** Nothing drives the key through a UI, because there is no UI for it yet
+(story 5). The concurrency guard — two processes minting at once — is reasoned from the
+create-if-absent write and the run-history check rather than raced in a test; the same is true of
+`LoginKeyStore`, whose discipline it copies. And the acknowledgement is exercised by calling the
+store, not by an admin pressing a button, which story 3's endpoints will add.
+
 ## What none of them covers
 
 Named rather than implied, because the rule asks for exactly this.

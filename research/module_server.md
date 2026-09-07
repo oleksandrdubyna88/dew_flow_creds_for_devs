@@ -1508,7 +1508,7 @@ what is under it:
 
 ## Tests
 
-`src_minimalapi_server/tests/` — xUnit v3 on Microsoft Testing Platform, 644 tests, ~27 s. The
+`src_minimalapi_server/tests/` — xUnit v3 on Microsoft Testing Platform, 654 tests, ~27 s. The
 endpoint suites run in-process through `WebApplicationFactory` — no free port, no background
 `dotnet run`; the store suites drive a store directly on a throwaway data directory.
 

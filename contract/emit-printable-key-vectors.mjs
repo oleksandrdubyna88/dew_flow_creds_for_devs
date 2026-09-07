@@ -102,8 +102,22 @@ const document = {
 };
 
 const out = path.join(HERE, 'printable-key-v1.json');
-fs.writeFileSync(out, `${JSON.stringify(document, null, 2)}\n`);
-console.log(`wrote ${out} with ${vectors.length} vectors`);
+const rendered = `${JSON.stringify(document, null, 2)}\n`;
+
+// `--check` is the CI mode: write nothing, and fail if the committed file is not what this generator
+// produces. Without it the file is a snapshot somebody could quietly hand-edit, and the whole point
+// of it is that it is DERIVED — from this construction, and from the shipped parser below.
+const CHECK = process.argv.includes('--check');
+if (CHECK && fs.readFileSync(out, 'utf8') !== rendered) {
+  console.log(`FAIL ${out} is not what this generator produces.`);
+  console.log('      Run `node contract/emit-printable-key-vectors.mjs` and commit the result.');
+  process.exitCode = 1;
+} else if (CHECK) {
+  console.log(`${out} is exactly what this generator produces (${vectors.length} vectors)`);
+} else {
+  fs.writeFileSync(out, rendered);
+  console.log(`wrote ${out} with ${vectors.length} vectors`);
+}
 
 // ---- the check that makes this a generator and not a guess -------------------------------------
 // Every RC1 vector goes back through the SHIPPED parser. If the checksum formula above has drifted
@@ -128,5 +142,6 @@ if (!fs.existsSync(parserPath)) {
   console.log(bad === 0
     ? 'every RC1 vector round-trips through the shipped parser'
     : `${bad} RC1 vector(s) do not match the shipped parser`);
-  process.exitCode = bad === 0 ? 0 : 1;
+  // Never lower an exit code the file comparison already raised.
+  process.exitCode = bad === 0 ? (process.exitCode ?? 0) : 1;
 }

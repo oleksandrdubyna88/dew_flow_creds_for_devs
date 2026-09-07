@@ -53,6 +53,16 @@ public sealed record MintOutcome(BackupKeyLookup Status, string Formatted, doubl
     /// by policy: what is on the disk is the DERIVED key and HKDF does not run backwards.
     /// </summary>
     public static readonly MintOutcome AlreadyMinted = new(BackupKeyLookup.Ready, string.Empty, 0);
+
+    /// <summary>
+    /// A key exists that this server cannot open, or cannot safely replace. Nothing was minted.
+    /// </summary>
+    /// <remarks>
+    /// Its own outcome rather than <see cref="AlreadyMinted"/>, which carries
+    /// <c>Ready</c>: an admin's screen would otherwise say the backup key is fine about a deployment
+    /// whose key nothing can read.
+    /// </remarks>
+    public static readonly MintOutcome Unopenable = new(BackupKeyLookup.Unreadable, string.Empty, 0);
 }
 
 /// <summary>
@@ -108,8 +118,12 @@ public sealed class BackupStore(string dataDir, byte[] kek, ILogger<BackupStore>
         {
             return BackupKeyState.Unreadable;
         }
-        var sealedKey = await ReadSealedAsync(ct);
-        return sealedKey is null ? BackupKeyState.Absent : Open(sealedKey);
+        var onDisk = await ReadSealedAsync(ct);
+        if (onDisk.Problem.Length > 0)
+        {
+            return Unreadable(onDisk.Problem);
+        }
+        return onDisk.Record is null ? BackupKeyState.Absent : Open(onDisk.Record);
     }
 
     /// <summary>
@@ -130,9 +144,16 @@ public sealed class BackupStore(string dataDir, byte[] kek, ILogger<BackupStore>
             return MintOutcome.NotConfigured;
         }
         var existing = await FindKeyAsync(ct);
-        return existing.Status == BackupKeyLookup.Absent || existing.Status == BackupKeyLookup.AwaitingAcknowledgement
-            ? await MintOverAsync(existing.Status, ct)
-            : MintOutcome.AlreadyMinted;
+        return existing.Status switch
+        {
+            BackupKeyLookup.Absent => await MintOverAsync(replacing: false, ct),
+            BackupKeyLookup.AwaitingAcknowledgement => await ReplaceUnusedAsync(ct),
+            // A key that cannot be READ is not a key that is ready. Reporting "already minted" here
+            // would put "your backup key is fine" on an admin's screen about a deployment whose key
+            // this server cannot open — and nothing is minted over it either way.
+            BackupKeyLookup.Unreadable => MintOutcome.Unopenable,
+            _ => MintOutcome.AlreadyMinted,
+        };
     }
 
     /// <summary>
@@ -143,10 +164,20 @@ public sealed class BackupStore(string dataDir, byte[] kek, ILogger<BackupStore>
     /// that file is written with a create that refuses to overwrite precisely so that it is never
     /// rewritten. Existence is the smallest fact that answers the question.
     /// </remarks>
-    public async Task AcknowledgeKeyShownAsync(CancellationToken ct)
+    public async Task<bool> AcknowledgeKeyShownAsync(CancellationToken ct)
     {
+        // Only a key that is WAITING to be acknowledged may be acknowledged. Writing the marker on a
+        // fresh deployment would leave it lying there, and the next mint would come up Ready
+        // immediately — archives sealed under words nobody ever saw, which is the exact failure the
+        // marker exists to prevent. An Unreadable key cannot be acknowledged either: nobody has been
+        // shown words for a key this server cannot open.
+        if ((await FindKeyAsync(ct)).Status != BackupKeyLookup.AwaitingAcknowledgement)
+        {
+            return false;
+        }
         Directory.CreateDirectory(_dir);
         await VaultStore.AtomicWriteAsync(ShownPath, [], ct);
+        return true;
     }
 
     /// <summary>The settings, or this build's defaults when none have been written.</summary>
@@ -171,13 +202,44 @@ public sealed class BackupStore(string dataDir, byte[] kek, ILogger<BackupStore>
 
     private string StatusPath => Path.Combine(_dir, "status.json");
 
-    private async Task<MintOutcome> MintOverAsync(BackupKeyLookup was, CancellationToken ct)
+    /// <summary>
+    /// Replace a key nobody has acknowledged — but only once it is certain nothing was sealed to it.
+    /// </summary>
+    /// <remarks>
+    /// <para>The marker's absence is not enough on its own. A marker can be DELETED — by a restore
+    /// that copied only part of the tree, by somebody tidying, by a permissions accident — and if its
+    /// absence alone licensed a replacement, a key that months of archives are sealed to would be
+    /// overwritten and every one of them orphaned.</para>
+    /// <para>So the second half of the guard is the run history, which is persisted for its own
+    /// reasons: a deployment that has EVER completed a backup keeps its key, whatever the marker
+    /// says. The two facts together are what make replacement safe rather than merely convenient.</para>
+    /// </remarks>
+    private async Task<MintOutcome> ReplaceUnusedAsync(CancellationToken ct)
+    {
+        var status = await ReadStatusAsync(ct);
+        if (status.LastRunAt > 0)
+        {
+            log.LogError(
+                "a backup key is not acknowledged and yet this deployment has already completed a run "
+                + "(at {At}). The acknowledgement marker has gone missing rather than never existing, "
+                + "so the key is KEPT: replacing it would orphan every archive taken under it. Restore "
+                + "org/backup/key.shown, or destroy the old archives deliberately before re-minting.",
+                status.LastRunAt);
+            return MintOutcome.Unopenable;
+        }
+        return await MintOverAsync(replacing: true, ct);
+    }
+
+    private async Task<MintOutcome> MintOverAsync(bool replacing, CancellationToken ct)
     {
         var minted = BackupKey.Mint();
-        // A key whose words nobody has seen is a key with nothing sealed to it — no run has been
-        // allowed — so replacing it costs nothing. Only that state overwrites.
-        var overwrite = was == BackupKeyLookup.AwaitingAcknowledgement;
-        if (!await TryCreateKeyAsync(minted.Key, overwrite, ct))
+        // The marker goes FIRST when replacing. A stale key.shown beside a brand-new key would report
+        // Ready about words nobody has seen — the same hole from the other direction.
+        if (replacing)
+        {
+            Forget(ShownPath);
+        }
+        if (!await TryCreateKeyAsync(minted.Key, replacing, ct))
         {
             return await AfterAFailedCreateAsync(ct);
         }
@@ -185,6 +247,20 @@ public sealed class BackupStore(string dataDir, byte[] kek, ILogger<BackupStore>
             "a backup key was minted. It is shown ONCE: what this server keeps is the derived key, and "
             + "the printable form cannot be produced again from it.");
         return MintOutcome.Minted(minted);
+    }
+
+    private static void Forget(string path)
+    {
+        try
+        {
+            File.Delete(path);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            // The create below is what decides whether this mint happened; a marker that cannot be
+            // removed will make the new key read as Ready, and the guard above is what stops that
+            // mattering — nothing can have been sealed to a key with no run behind it.
+        }
     }
 
     /// <summary>
@@ -235,22 +311,45 @@ public sealed class BackupStore(string dataDir, byte[] kek, ILogger<BackupStore>
         }
     }
 
-    private async Task<SealedBackupKey?> ReadSealedAsync(CancellationToken ct)
+    /// <summary>
+    /// What is on disk: nothing, a record, or a reason it could not be read.
+    /// </summary>
+    /// <remarks>
+    /// The third case is its own answer rather than a stand-in record, because the reasons are
+    /// different advice. A permission problem or a torn file is "look at the disk"; only a blob that
+    /// will not decrypt is "look at the KEK", and telling somebody to restore their KEK over a
+    /// filesystem error would break every other secret sealed under it.
+    /// </remarks>
+    private readonly record struct SealedOnDisk(SealedBackupKey? Record, string Problem)
+    {
+        public static readonly SealedOnDisk Nothing = new(null, string.Empty);
+
+        public static SealedOnDisk Of(SealedBackupKey record) => new(record, string.Empty);
+
+        public static SealedOnDisk Broken(string problem) => new(null, problem);
+    }
+
+    private async Task<SealedOnDisk> ReadSealedAsync(CancellationToken ct)
     {
         try
         {
-            return JsonSerializer.Deserialize(
+            var record = JsonSerializer.Deserialize(
                 await File.ReadAllBytesAsync(KeyPath, ct), AppJsonContext.Default.SealedBackupKey);
+            return record is null ? SealedOnDisk.Broken("it holds no record at all") : SealedOnDisk.Of(record);
         }
         catch (Exception e) when (e is FileNotFoundException or DirectoryNotFoundException)
         {
-            return null;
+            return SealedOnDisk.Nothing;
         }
-        catch (Exception e) when (e is JsonException or IOException or UnauthorizedAccessException)
+        catch (JsonException e)
+        {
+            return SealedOnDisk.Broken($"it is not the JSON this build writes ({e.Message})");
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
             // A file that is THERE and cannot be read is never "absent": absence invites a second key.
-            log.LogError(e, "the sealed backup key at {Path} cannot be read. NOTHING is minted in its place.", KeyPath);
-            return new SealedBackupKey(SchemaVersion, string.Empty, string.Empty, string.Empty, 0);
+            return SealedOnDisk.Broken(
+                $"it could not be opened ({e.Message}) — this is a filesystem problem, not a key one");
         }
     }
 

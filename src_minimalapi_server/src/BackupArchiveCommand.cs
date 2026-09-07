@@ -111,7 +111,7 @@ public static class BackupArchiveCommand
         var key = BackupKeyFile.Read(keyFilePath);
         RefuseMissingDirectory(sourceDir);
         say.Out.WriteLine($"Sealing {sourceDir} into {archivePath}...");
-        var summary = BackupArchive.CreateFile(sourceDir, archivePath, key, clock.GetUtcNow());
+        var summary = BackupArchive.CreateFile(sourceDir, archivePath, key, clock.GetUtcNow(), say.Out.WriteLine);
         say.Out.WriteLine(
             $"Sealed {summary.Files} file(s) and {summary.Directories} director(ies), {summary.Bytes} "
             + $"bytes, into {archivePath}. {summary.Skipped} entr(ies) vanished while it was read.");
