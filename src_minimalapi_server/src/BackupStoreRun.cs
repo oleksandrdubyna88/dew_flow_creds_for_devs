@@ -125,6 +125,11 @@ public sealed partial class BackupStore
         {
             return false;
         }
+        // Holding the claim means NOTHING is running, and a configuration snapshot may only exist
+        // while a run is building. One left behind is this deployment's secrets — the KEK among them —
+        // in PLAINTEXT on the volume the archive's encryption exists to protect. The run removes it in
+        // a `finally`, and a `finally` does not run when a container is killed.
+        ForgetStaleSnapshot();
         var status = await ReadStatusAsync(ct);
         if (!BackupRunResults.IsRunning(status.LastResult))
         {
@@ -142,6 +147,42 @@ public sealed partial class BackupStore
             "a backup run was interrupted by a restart and its status said it was still in progress. It "
             + "is now recorded as failed, and nothing is holding the run claim.");
         return true;
+    }
+
+    /// <summary>
+    /// Remove a configuration snapshot a killed run left in the data directory.
+    /// </summary>
+    /// <remarks>
+    /// <para>The snapshot is the deployment's own configuration with its values RESOLVED — the
+    /// deployment KEK, the local signing key — written as plain text so that it travels inside the
+    /// sealed archive and a restore onto a fresh host can work. Inside the archive it is protected by
+    /// the archive; on the disk it is not protected by anything, which is why the run deletes it the
+    /// moment the archive is sealed.</para>
+    /// <para>Only the caller above may call this: it is correct exactly because the run claim is held,
+    /// and deleting the file while a run is mid-build would take the snapshot out from under it.</para>
+    /// </remarks>
+    private void ForgetStaleSnapshot()
+    {
+        var snapshot = Path.Combine(dataDir, BackupConfigSnapshot.EntryName);
+        if (!File.Exists(snapshot))
+        {
+            return;
+        }
+        try
+        {
+            File.Delete(snapshot);
+            log.LogWarning(
+                "a configuration snapshot was left in the data directory by a run that did not finish. "
+                + "It holds this deployment's secrets in plaintext and has been removed.");
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            log.LogError(
+                e,
+                "a configuration snapshot left by an unfinished run could not be removed from {Path}. It "
+                + "holds this deployment's secrets in PLAINTEXT — delete it by hand.",
+                snapshot);
+        }
     }
 
     /// <summary>The newest archive on disk, or none.</summary>

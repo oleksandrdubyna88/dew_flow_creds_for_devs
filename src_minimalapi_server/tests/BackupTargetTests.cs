@@ -240,6 +240,35 @@ public class BackupTargetTests
     }
 
     [Fact]
+    public async Task AServiceThatSendsHEADERSAndThenStallsIsGivenUpOnRatherThanWaitedFor()
+    {
+        // The failure CodeRabbit found and nothing here could see: the token carried into the body
+        // read came from a CancellationTokenSource that had already been disposed, and disposing a
+        // source kills its timer — so the read had NO deadline at all, and a service that answered
+        // 200 and then went quiet would hold a backup run for ever. Measured on .NET 10: after
+        // Dispose(), IsCancellationRequested stays false and Register() does not throw, so the code
+        // read as correct at every call site.
+        var stalling = new StallingBody();
+        using var http = new HttpClient(stalling);
+        var target = new S3Target(
+            http,
+            new S3TargetConfig(
+                "https://s3.example.com", "eu-central-1", "vaults", "backups", "AKIDEXAMPLE", "secret"),
+            new FrozenClock(),
+            // A quarter of a second, because the real two minutes is not a test anybody runs — which
+            // is exactly why the deadline could ship broken.
+            new ArchiveTargets.TargetDeadlines(
+                TimeSpan.FromMilliseconds(250), TimeSpan.FromMilliseconds(250), TimeSpan.FromMilliseconds(250)));
+
+        var listing = target.ListAsync(Ct);
+        var finished = await Task.WhenAny(listing, Task.Delay(TimeSpan.FromSeconds(10), Ct));
+
+        finished.Should().BeSameAs(listing, "a read with no deadline never comes back at all");
+        (await listing).Ok.Should().BeFalse();
+        (await listing).Why.Should().Contain("did not answer within");
+    }
+
+    [Fact]
     public void AKindThisServerDoesNotImplementIsSKIPPEDAndNeverBuiltAsAnother()
     {
         // The trap the second review round named: the factory was a ternary, so everything that was
@@ -289,6 +318,67 @@ public class BackupTargetTests
     private sealed class OneClient(StubTransport transport) : IHttpClientFactory
     {
         public HttpClient CreateClient(string name) => new(transport, disposeHandler: false);
+    }
+
+    /// <summary>
+    /// A service that answers 200 with its headers and then never finishes the body.
+    /// </summary>
+    /// <remarks>
+    /// The shape a hung proxy, a half-closed connection and an overloaded gateway all produce, and
+    /// the only one that can tell a request deadline from a deadline that also covers the read.
+    /// </remarks>
+    private sealed class StallingBody : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request, CancellationToken cancellationToken) =>
+            Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StreamContent(new NeverEndingStream()),
+            });
+    }
+
+    /// <summary>A stream that is never at its end and never produces a byte.</summary>
+    private sealed class NeverEndingStream : Stream
+    {
+        public override bool CanRead => true;
+
+        public override bool CanSeek => false;
+
+        public override bool CanWrite => false;
+
+        public override long Length => throw new NotSupportedException();
+
+        public override long Position
+        {
+            get => 0;
+            set => throw new NotSupportedException();
+        }
+
+        public override async ValueTask<int> ReadAsync(
+            Memory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            // Awaited rather than continued: a ContinueWith that returns 0 turns a CANCELLED wait
+            // into a clean end of stream, and the read then looks like an empty body instead of a
+            // deadline. That is a stub that would have hidden the very defect this test is for.
+            await Task.Delay(Timeout.Infinite, cancellationToken);
+            return 0;
+        }
+
+        public override Task<int> ReadAsync(
+            byte[] buffer, int offset, int count, CancellationToken cancellationToken) =>
+            ReadAsync(buffer.AsMemory(offset, count), cancellationToken).AsTask();
+
+        public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+
+        public override void Flush()
+        {
+        }
+
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+
+        public override void SetLength(long value) => throw new NotSupportedException();
+
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
     }
 
     private static Stream Body() => new MemoryStream(Encoding.UTF8.GetBytes("some bytes"[..9]));

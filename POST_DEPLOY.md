@@ -20,7 +20,7 @@ Last verified: 2026-09-03 · **the deployment**, immediately after `rsd server d
 | 3 | The certificate expires and every client fails to connect at once, with no warning and nothing to roll back | `node -e "const t=require('tls'),u=new URL(process.env.TARGET);const s=t.connect({host:u.hostname,port:u.port\|\|443,servername:u.hostname},()=>{const d=(new Date(s.getPeerCertificate().valid_to)-Date.now())/86400000;console.log(Math.round(d)+' days left');s.end();process.exitCode=+(d>14?0:1)})"` | auto |
 | 4 | Somebody's token travels in the clear because the plaintext port answers instead of redirecting | `node -e "const u=new URL(process.env.TARGET);fetch('http://'+u.hostname+'/api/health',{redirect:'manual'}).then(r=>process.exitCode=+(r.status>=300&&r.status<400?0:1)).catch(()=>process.exitCode=+(0))"` | auto |
 | 5 | Sign-in appears to work and the Team is empty with no error — the scope the server advertises is unset, so every developer must paste it into their own settings | `node -e "fetch(process.env.TARGET+'/api/client-config').then(r=>r.json()).then(c=>process.exitCode=+(c.microsoftScope?0:1))"` | auto |
-| 6 | The backups are not being written, and nobody finds out until a restore is needed | Look at `BACKUP_DIR` on the host: last night's archive exists and its size is in the usual range. `deploy/restore.sh` is what would read it | manual |
+| 6 | The backups are not being written, and nobody finds out until a restore is needed | **Both of them, since epic 5.** (a) `BACKUP_DIR` on the host: last night's tar exists and its size is in the usual range — `deploy/restore.sh` reads it. (b) The server's own encrypted backup: open ***Server Backup…*** on an admin account and read the last run. A deployment whose backup key was never minted refuses every scheduled run, which on a status page looks exactly like a server with nothing to say | manual |
 | 7 | Every vault on the server is (or is not) sealed to a recovery quorum, against the operator's intention — an escrow nobody meant to enable, or one they did | `docker compose logs vault` names `CORPORATE RECOVERY IS ON/OFF` at startup: read it and confirm it matches what this deployment is meant to do | manual |
 
 ## What is deliberately not here
@@ -36,6 +36,15 @@ in the conventions repository. Until one is chosen, items 1–5 are what runs.
 **The extension.** It ships on its own clock, to the marketplace, and its post-deploy checks belong
 with it rather than with the server — the two halves are deployed separately, which is the whole reason
 this file exists.
+
+**The six `/api/org/backup/*` routes (epic 5).** Every one is behind `RequireAdmin`, so they fall
+under the exclusion above for the same reason epic 3's do: there is no unattended way to reach them
+today, and inventing one would mean putting a token where CI can read it. They are covered before the
+deploy by the `.http` contract suite against a started stack. What a deploy CAN break and a suite
+cannot see is whether `Vault:LoginKey:Kek` reached the container — without it the server answers every
+backup route and logs `LOGIN KEYS ARE OFF` at startup, which is the same line item 7 is read for.
+That is why item 6 now names the server backup as well as the host's tar: the two fail for completely
+different reasons and only one of them is visible on the host's disk.
 
 **The corporate project routes (epic 3).** Every one of them — the project store, the assignments, the
 share rule, the folder-removal acknowledgement — is behind authentication, so they fall under the

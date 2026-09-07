@@ -63,6 +63,34 @@ public class BackupRunnerTests
     }
 
     [Fact]
+    public async Task ARunNEVERInheritsTheTargetRowsOfTheRunBeforeIt()
+    {
+        // BackupRunner is registered as a SINGLETON, so anything it keeps in a field outlives the run
+        // that put it there. The failure CodeRabbit found: a first run whose destination refused
+        // leaves two failed rows behind; an administrator then removes the destination; the next run
+        // takes a perfectly good archive, inherits the old rows, and reports itself FAILED with a
+        // destination list from an hour ago that no longer exists in the settings.
+        var stub = new StubTransport().Answer(HttpStatusCode.Forbidden, "denied");
+        var world = await Ready(transport: stub);
+        await Configured(world);
+
+        await world.Runner.RunAsync("admin@corp.com", Ct);
+        var first = await world.Backups.ReadStatusAsync(Ct);
+        first.LastResult.Should().Be(BackupRunResults.Failed, "the destination refused");
+        first.Targets.Should().ContainSingle();
+
+        // The administrator removes the destination and runs again on the SAME runner instance.
+        await world.Backups.WriteSettingsAsync(BackupSettings.Default, Ct);
+        await world.Runner.RunAsync("admin@corp.com", Ct);
+
+        var second = await world.Backups.ReadStatusAsync(Ct);
+        second.Targets.Should().BeEmpty("this run had no destination, so it has no destination rows");
+        second.LastResult.Should().Be(
+            BackupRunResults.Succeeded, "and an archive that was taken is not a failure");
+        second.LastError.Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task AnUploadThatLANDEDAndWasPRUNEDIsAPlainSuccess()
     {
         // The other half, so the test above cannot pass by calling every run partial.
@@ -228,6 +256,40 @@ public class BackupRunnerTests
         (await world.Backups.SweepOrphanedRunAsync(Ct)).Should().BeFalse();
 
         (await world.Backups.ReadStatusAsync(Ct)).LastResult.Should().Be(BackupRunResults.Succeeded);
+    }
+
+    [Fact]
+    public async Task TheSweepREMOVESAConfigurationSnapshotAKilledRunLeftInPlaintext()
+    {
+        // The run deletes it in a `finally`, and a `finally` does not run when a container is killed —
+        // so a `docker kill` mid-build leaves this deployment's KEK and its local signing key sitting
+        // in clear on the volume that the archive's encryption exists to protect. Nothing else on this
+        // server would ever look at that file again.
+        var world = await Ready();
+        var snapshot = Path.Combine(world.Dir, BackupConfigSnapshot.EntryName);
+        Directory.CreateDirectory(Path.Combine(world.Dir, "org", "backup"));
+        File.WriteAllText(snapshot, "Vault__LoginKey__Kek=the-whole-deployment");
+
+        await world.Backups.SweepOrphanedRunAsync(Ct);
+
+        File.Exists(snapshot).Should().BeFalse("nothing is running, so no snapshot may exist");
+    }
+
+    [Fact]
+    public async Task TheSweepLeavesTheSnapshotOfARunThatIsSTILLBuilding()
+    {
+        // The other side of it, and the one that would corrupt a live backup: while a run holds the
+        // claim, the snapshot belongs to it and is about to travel inside the archive.
+        var world = await Ready();
+        var snapshot = Path.Combine(world.Dir, BackupConfigSnapshot.EntryName);
+        Directory.CreateDirectory(Path.Combine(world.Dir, "org", "backup"));
+        File.WriteAllText(snapshot, "Vault__LoginKey__Kek=the-whole-deployment");
+        using var held = world.Backups.TryClaim();
+        held.Taken.Should().BeTrue();
+
+        await world.Backups.SweepOrphanedRunAsync(Ct);
+
+        File.Exists(snapshot).Should().BeTrue("a live run is still going to seal it into the archive");
     }
 
     [Fact]

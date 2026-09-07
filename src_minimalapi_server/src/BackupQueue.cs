@@ -17,13 +17,23 @@ namespace CredVaultServer;
 /// first is queued or running, because a ticket carries the run claim and only one process can hold
 /// it. The bound is therefore a belt: if it is ever hit, something has gone wrong upstream and the
 /// caller is told, rather than an unbounded queue quietly growing.</para>
+///
+/// <para><b><c>Wait</c>, never <c>DropWrite</c></b> — the review round caught this, and it is the
+/// worst failure this feature could have had. With <c>DropWrite</c> a full channel discards the
+/// ticket and <c>TryWrite</c> still answers <c>true</c>: the endpoint would answer <c>202</c>,
+/// nothing would ever carry the run out, and the ticket — which OWNS the run claim, an open file
+/// handle — would never be disposed. The claim would then be held for the life of the process, the
+/// status would say "in progress" for ever, and every later run would be told a backup is already
+/// running. <c>Wait</c> makes <c>TryWrite</c> answer <c>false</c> instead (it does not block, it
+/// simply declines), which is what the caller already handles: it takes the in-progress status back
+/// and releases the claim with the ticket.</para>
 /// </remarks>
 public sealed class BackupQueue
 {
     private readonly Channel<RunTicket> _waiting =
         Channel.CreateBounded<RunTicket>(new BoundedChannelOptions(1)
         {
-            FullMode = BoundedChannelFullMode.DropWrite,
+            FullMode = BoundedChannelFullMode.Wait,
             SingleReader = true,
         });
 
