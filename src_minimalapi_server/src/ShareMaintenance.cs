@@ -25,7 +25,8 @@ public sealed class ShareMaintenance(
     VaultStore store,
     ILogger<ShareMaintenance> log,
     TimeSpan interval,
-    TimeSpan maxAge) : BackgroundService
+    TimeSpan maxAge,
+    OrgEventLog? events = null) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stopping)
     {
@@ -58,12 +59,13 @@ public sealed class ShareMaintenance(
         {
             var retired = await store.ReconcileSentAsync(ct).ConfigureAwait(false);
             var pruned = await store.PruneOlderThanAsync(maxAge, ct).ConfigureAwait(false);
-            if (retired > 0 || pruned > 0)
+            await RecordExpiriesAsync(pruned, ct).ConfigureAwait(false);
+            if (retired > 0 || pruned.Count > 0)
             {
                 log.LogInformation(
                     "share maintenance: {Retired} receipt(s) retired, {Pruned} item(s) older than {Days} days pruned",
                     retired,
-                    pruned,
+                    pruned.Count,
                     (int)maxAge.TotalDays);
             }
         }
@@ -74,6 +76,34 @@ public sealed class ShareMaintenance(
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
             log.LogWarning(e, "share maintenance pass failed; the next one will try again");
+        }
+    }
+
+    /// <summary>
+    /// One <c>share.expired</c> per share the prune took out of an inbox, naming both people.
+    /// </summary>
+    /// <remarks>
+    /// <para><b>The sender is the actor.</b> Nobody chose an expiry — a sweep did — and the question a
+    /// reader brings to the row is "what happened to the share I sent", so the row reads from the send.
+    /// The RECEIPTS the prune also removed leave no row: whatever happened to their shares was recorded
+    /// when it happened, and a second row would double every share in the history.</para>
+    /// <para>The log is optional here for one reason only: a personal deployment has none, and this
+    /// sweep runs on every deployment. The row is appended AFTER the delete has landed, on
+    /// <c>CancellationToken.None</c>, because a sweep that stopped half-way through recording would
+    /// leave shares deleted and unrecorded.</para>
+    /// </remarks>
+    private async Task RecordExpiriesAsync(Prune pruned, CancellationToken ct)
+    {
+        if (events is null || pruned.Expired.Count == 0)
+        {
+            return;
+        }
+        foreach (var share in pruned.Expired)
+        {
+            ct.ThrowIfCancellationRequested();
+            await events.AppendAsync(
+                OrgEndpoints.ShareRow(OrgEventKinds.ShareExpired, share.FromEmail, share.ToEmail, share),
+                CancellationToken.None).ConfigureAwait(false);
         }
     }
 }

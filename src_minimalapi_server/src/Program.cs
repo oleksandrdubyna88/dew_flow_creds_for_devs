@@ -126,7 +126,10 @@ builder.Services.AddHostedService(sp => new ShareMaintenance(
     store,
     sp.GetRequiredService<ILoggerFactory>().CreateLogger<ShareMaintenance>(),
     TimeSpan.FromMinutes(Math.Max(1, maintenanceMinutes)),
-    TimeSpan.FromDays(Math.Max(1, shareMaxAgeDays))));
+    TimeSpan.FromDays(Math.Max(1, shareMaxAgeDays)),
+    // The log, so an expiry leaves a row. Only on a corporate deployment: a personal one has no org/
+    // tree and must never grow one — the sweep runs on every deployment there is.
+    orgRecovery.Enabled ? sp.GetRequiredService<OrgEventLog>() : null));
 
 var orgStore = new OrgRecoveryStore(dataDir);
 if (orgRecovery.Enabled)
@@ -1547,6 +1550,11 @@ app.MapPost("/api/shares", async (HttpContext ctx, CancellationToken ct) =>
         Format = req.Format,
     };
     await store.AppendShareAsync(item.ToEmail, item, ct);
+    // The row goes with the INBOX write, not after both: that write is the durable fact the row is
+    // about — the recipient can open it from this moment — and the receipt below is the sender's own
+    // copy. A receipt write that fails answers 500 and the client retries, which posts a second share
+    // and leaves a second row; both rows are then true, which is the property that matters.
+    await RecordShareAsync(OrgEventKinds.ShareSent, item.FromEmail, item.ToEmail, ShareFacts.Of(item));
     // The sender's own receipt — no ciphertext, just enough to name what they sent. Without it
     // a share could not be withdrawn at all: the inbox is keyed by the recipient, so the sender
     // had no way to learn the id of the thing waiting there.
@@ -1634,17 +1642,65 @@ app.MapDelete("/api/shares/sent/{id}", async (HttpContext ctx, string id, Cancel
         return;
     }
     log.LogInformation("withdrew share from {From} to {To}", caller.Value.Email, receipt.ToEmail);
+    // Only on this path: the 404, the 409 and the dismissal of a receipt the SERVER withdrew are not
+    // withdrawals by the sender, and the last of them already has a share.withdrawn_blocked row.
+    await RecordShareAsync(
+        OrgEventKinds.ShareWithdrawn,
+        caller.Value.Email,
+        receipt.ToEmail,
+        ShareFacts.Of(caller.Value.Email, receipt));
     ctx.Response.StatusCode = StatusCodes.Status204NoContent;
 });
 
-app.MapDelete("/api/shares/{id}", async (HttpContext ctx, string id) =>
+// The recipient deals with a share, and says which way — `?outcome=accepted` or `?outcome=declined`.
+//
+// The item is READ before it is deleted, because the row needs the entity's name and kind and the
+// sender's address, and the inbox file is the only place holding them together; the sent-side path
+// above has always read before it deleted, so this is that shape, not a new one. The read and the
+// delete are both keyed by the CALLER's own email, so nobody can reach another person's inbox with a
+// guessed id — the same property this route has always had.
+//
+// The row is written only when the delete actually removed the file. Two clients racing the same
+// share — a retried request, a second window — both read it, and only one deletes; without that
+// check the log would carry two answers for one share, and one of them would be a lie.
+//
+// An absent or unrecognised outcome is share.unknown, never a refusal: every released client sends
+// none, and breaking an inbox over a log field would be the tail wagging the dog.
+app.MapDelete("/api/shares/{id}", async (HttpContext ctx, string id, CancellationToken ct) =>
 {
     var caller = RequireCaller(ctx);
     if (caller is null) return;
-    ctx.Response.StatusCode = store.DeleteShare(caller.Value.Email, id)
-        ? StatusCodes.Status204NoContent
-        : StatusCodes.Status404NotFound;
+    var (removed, item) = await store.TakeShareAsync(caller.Value.Email, id, ct);
+    if (!removed)
+    {
+        ctx.Response.StatusCode = StatusCodes.Status404NotFound;
+        return;
+    }
+    ctx.Response.StatusCode = StatusCodes.Status204NoContent;
+    if (item is null)
+    {
+        // Deleted, but this build could not read it — a half-written file, or one from a newer server.
+        // The share is gone either way; the row would be a fabrication.
+        log.LogWarning("a share was deleted from {Email}'s inbox that this build could not read; no row was written", caller.Value.Email);
+        return;
+    }
+    var outcome = ShareOutcome.Of(ctx.Request.Query["outcome"]);
+    await RecordShareAsync(
+        ShareOutcome.KindFor(outcome), caller.Value.Email, item.FromEmail, ShareFacts.Of(item), outcome);
 });
+
+// One share row, appended after the write it records has landed, and never on a personal deployment —
+// which has no org/ tree and must not grow one. CancellationToken.None for the reason every other row
+// site uses it: the mutation is already durable, so a client that hung up must not cost the trail.
+async Task RecordShareAsync(string kind, string actor, string subject, ShareFacts share, string? outcome = null)
+{
+    if (!orgRecovery.Enabled)
+    {
+        return;
+    }
+    await orgDeps.Events.AppendAsync(
+        OrgEndpoints.ShareRow(kind, actor, subject, share, outcome), CancellationToken.None);
+}
 
 // Tell the DewFlow editor panel where this instance ended up, so a locally running
 // server shows up beside the family's other hosts instead of being invisible. Opt-out

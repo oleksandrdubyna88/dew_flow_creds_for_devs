@@ -91,10 +91,12 @@ Accept: application/json
 }}
 
 ###
-# The recipient deals with it: accepting or declining is the same call, and both mean "it is no
-# longer pending".
+# The recipient deals with it: accepting or declining is the same call, and `?outcome=` is how they
+# say which. The parameter exists for the event log — without it the server records that a share
+# left an inbox and cannot say whether the secret was taken or refused — and it is optional by
+# design, because every client released before contract 3 sends none.
 # @name share_delete_from_ones_own_inbox_is_204
-DELETE {{baseUrl}}/api/shares/{{acceptedShareId}}
+DELETE {{baseUrl}}/api/shares/{{acceptedShareId}}?outcome=accepted
 Authorization: Bearer {{bobToken}}
 X-Creds-Contract: {{contract}}
 
@@ -230,6 +232,100 @@ Content-Type: application/json
 ?? status == 400
 
 ###
+# @name share_post_a_third_time_so_the_outcome_paths_have_something_to_take
+POST {{baseUrl}}/api/shares
+Authorization: Bearer {{token}}
+X-Creds-Contract: {{contract}}
+Content-Type: application/json
+
+{
+  "toEmail": "{{bobEmail}}",
+  "entityName": "a third share",
+  "entityKind": "credential",
+  "salt": "c2FsdHNhbHRzYWx0c2FsdA==",
+  "iv": "aXZpdml2aXZpdml2aQ==",
+  "tag": "dGFndGFndGFndGFndGFndGFn",
+  "data": "ZW5jcnlwdGVkLXBheWxvYWQ="
+}
+
+?? status == 201
+
+###
+# @name shares_finds_the_third_one
+GET {{baseUrl}}/api/shares
+Authorization: Bearer {{bobToken}}
+X-Creds-Contract: {{contract}}
+Accept: application/json
+
+?? status == 200
+
+{{
+  const assert = require('node:assert');
+  const third = response.parsedBody.find((s) => s.entityName === 'a third share');
+  test('the third share is in the inbox', () => {
+    assert.ok(third, 'the share posted above is not in the inbox');
+  });
+  exports.thirdShareId = third.id;
+}}
+
+###
+# An outcome this server has no kind for — a NEWER client, or a typo — is recorded as unknown and the
+# share is still deleted. A 400 here would break an inbox over a log field.
+# @name deleting_with_an_outcome_this_server_does_not_know_is_still_204
+DELETE {{baseUrl}}/api/shares/{{thirdShareId}}?outcome=forwarded-to-legal
+Authorization: Bearer {{bobToken}}
+X-Creds-Contract: {{contract}}
+
+?? status == 204
+
+###
+# @name share_post_a_fourth_time_for_the_delete_that_says_nothing
+POST {{baseUrl}}/api/shares
+Authorization: Bearer {{token}}
+X-Creds-Contract: {{contract}}
+Content-Type: application/json
+
+{
+  "toEmail": "{{bobEmail}}",
+  "entityName": "a fourth share",
+  "entityKind": "credential",
+  "salt": "c2FsdHNhbHRzYWx0c2FsdA==",
+  "iv": "aXZpdml2aXZpdml2aQ==",
+  "tag": "dGFndGFndGFndGFndGFndGFn",
+  "data": "ZW5jcnlwdGVkLXBheWxvYWQ="
+}
+
+?? status == 201
+
+###
+# @name shares_finds_the_fourth_one
+GET {{baseUrl}}/api/shares
+Authorization: Bearer {{bobToken}}
+X-Creds-Contract: {{contract}}
+Accept: application/json
+
+?? status == 200
+
+{{
+  const assert = require('node:assert');
+  const fourth = response.parsedBody.find((s) => s.entityName === 'a fourth share');
+  test('the fourth share is in the inbox', () => {
+    assert.ok(fourth, 'the share posted above is not in the inbox');
+  });
+  exports.fourthShareId = fourth.id;
+}}
+
+###
+# And a delete that says NOTHING: the shape every released client sends. It deletes, and the log
+# records that the server was not told which it was, rather than inventing an answer.
+# @name deleting_without_saying_which_is_still_204
+DELETE {{baseUrl}}/api/shares/{{fourthShareId}}
+Authorization: Bearer {{bobToken}}
+X-Creds-Contract: {{contract}}
+
+?? status == 204
+
+###
 # @name deleting_a_share_that_is_not_in_your_inbox_is_404
 DELETE {{baseUrl}}/api/shares/00000000-0000-0000-0000-000000000000
 Authorization: Bearer {{bobToken}}
@@ -343,6 +439,12 @@ Content-Type: application/json
   });
 }}
 ###
+# @uncovered the event ROWS these requests leave — share.sent, share.accepted, share.unknown,
+#            share.withdrawn, share.withdrawn_blocked, share.expired and login_key.issued. A row is
+#            not a response: it is a line in a file on the server, and the only wire-visible half is
+#            GET /api/org/events, which http/org/events.http exercises. ShareEventRowTests asserts
+#            every kind by reading the row back out of the log, including that no byte of a share's
+#            sealed payload reaches it.
 # @uncovered 409 inbox full — the cap is 500 pending items per recipient. Filling an inbox to
 #            provoke it is 500 requests and leaves a store nothing in this file can clean up.
 # @uncovered 400 payload too large — the cap is 1 MiB; sending it asserts a number in a config file

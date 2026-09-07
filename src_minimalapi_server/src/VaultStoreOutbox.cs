@@ -136,19 +136,28 @@ public sealed partial class VaultStore
     /// restore from backup rewrites every mtime, and a sweep that trusted them would delete a
     /// month of shares the first time someone recovered a server — the one moment nobody can
     /// afford a second failure.</para>
-    /// <para>Returns how many files went, for the log line that makes this observable.</para>
+    /// <para><b>It answers WHAT it removed from the inboxes</b>, not only how many files went, because
+    /// the caller writes one <c>share.expired</c> row per expired share and a count cannot name the two
+    /// people it was between. The inbox item is the source: it carries both addresses, the entity and
+    /// the project. The RECEIPTS it also prunes are counted and not listed — a receipt's disappearance
+    /// is not an event, because whatever happened to its share already left a row of its own, and a
+    /// second one would double every share in the history.</para>
     /// </remarks>
-    public async Task<int> PruneOlderThanAsync(TimeSpan maxAge, CancellationToken ct)
+    public async Task<Prune> PruneOlderThanAsync(TimeSpan maxAge, CancellationToken ct)
     {
         var cutoff = DateTimeOffset.UtcNow.Subtract(maxAge).ToUnixTimeMilliseconds();
-        var removed = 0;
+        var expired = new List<ShareFacts>();
+        var receipts = 0;
         foreach (var dir in SafeDirectories(_sharesDir))
         {
             foreach (var path in SafeFiles(dir))
             {
                 ct.ThrowIfCancellationRequested();
                 var item = await ReadShareOrNullAsync(path, ct);
-                removed += item is not null && item.CreatedAt < cutoff ? Forget(path) : 0;
+                if (item is not null && item.CreatedAt < cutoff && Forget(path) == 1)
+                {
+                    expired.Add(ShareFacts.Of(item));
+                }
             }
         }
         foreach (var dir in SafeDirectories(SentDir))
@@ -157,10 +166,10 @@ public sealed partial class VaultStore
             {
                 ct.ThrowIfCancellationRequested();
                 var receipt = await ReadSentOrNullAsync(path, ct);
-                removed += receipt is not null && receipt.CreatedAt < cutoff ? Forget(path) : 0;
+                receipts += receipt is not null && receipt.CreatedAt < cutoff ? Forget(path) : 0;
             }
         }
-        return removed;
+        return new Prune(expired, receipts);
     }
 
     private static async Task<SentShare?> ReadSentOrNullAsync(string path, CancellationToken ct)
