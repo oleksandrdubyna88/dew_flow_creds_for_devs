@@ -18,7 +18,7 @@ import {
   isSentShare,
   isShareItem,
 } from './types';
-import { VaultTransport } from './vaultTransport';
+import { ShareOutcome, VaultTransport } from './vaultTransport';
 
 /**
  * Talks to the Cred Vault Server (see `cred-vault-server/`): an
@@ -382,8 +382,16 @@ export class ServerTransport implements VaultTransport {
     }
   }
 
-  async removeShare(actingAs: StoredAccount, share: OwnedShare): Promise<void> {
-    await this.request(actingAs, `/api/shares/${encodeURIComponent(share.item.id)}`, {
+  /**
+   * <p>The outcome rides in the query string, which is the route the server shipped:
+   * `DELETE /api/shares/{id}?outcome=accepted`. When there is none the parameter is OMITTED
+   * entirely rather than sent empty — `?outcome=` and `?outcome=undefined` are both filters the
+   * server would read as a word it does not know, and the second is a bug that looks like a
+   * server fault.</p>
+   */
+  async removeShare(actingAs: StoredAccount, share: OwnedShare, outcome?: ShareOutcome): Promise<void> {
+    const said = outcome === undefined ? '' : `?outcome=${encodeURIComponent(outcome)}`;
+    await this.request(actingAs, `/api/shares/${encodeURIComponent(share.item.id)}${said}`, {
       method: 'DELETE',
     });
   }

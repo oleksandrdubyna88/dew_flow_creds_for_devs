@@ -54,12 +54,30 @@ export interface VaultTransport {
     items: ShareItem[],
   ): Promise<void>;
 
-  /** Remove one of MY pending shares (after accept or decline). */
-  removeShare(actingAs: StoredAccount, share: OwnedShare): Promise<void>;
+  /**
+   * Remove one of MY pending shares, saying which way it went.
+   *
+   * <p>The outcome is for the corporate event log, which otherwise records only that a share left
+   * an inbox and cannot say whether the secret was taken or refused. It is OPTIONAL because a
+   * folder and a git remote have no server to tell, and because a client that omits it must
+   * degrade exactly as every released one does — the server records "unknown" and deletes the
+   * share.</p>
+   */
+  removeShare(actingAs: StoredAccount, share: OwnedShare, outcome?: ShareOutcome): Promise<void>;
 
   /** Permanently delete MY vault (and inbox) at this location. */
   deleteVault(account: StoredAccount): Promise<void>;
 }
+
+/**
+ * What a recipient did with a share.
+ *
+ * <p>Two values, and they are the SERVER's two: `OrgEventsEndpoints`' `ShareOutcome` maps exactly
+ * these strings to `share.accepted` and `share.declined`, and anything else to `share.unknown`.
+ * Two implementations of one contract, so the strings are asserted against the server's own `.http`
+ * file rather than agreed by eye — see `eventQuery.test.ts`.</p>
+ */
+export type ShareOutcome = 'accepted' | 'declined';
 
 export function isServerLocation(location: string): boolean {
   return /^https?:\/\//i.test(location.trim());

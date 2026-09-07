@@ -404,3 +404,68 @@ test('a server too old for the route is NOT reported as an empty outbox', async 
     },
   );
 });
+
+/**
+ * The outcome the recipient reports, on the route the server shipped for it.
+ *
+ * <p>What matters is the URL: the server reads `?outcome=` off the query string, records
+ * `share.accepted` or `share.declined` from it, and records `share.unknown` when there is none —
+ * which is what every released client sends and what this transport must keep sending when nobody
+ * says otherwise.</p>
+ */
+function recordUrls(urls: string[]): void {
+  globalThis.fetch = ((input: unknown) => {
+    urls.push(String(input));
+    return Promise.resolve(new Response(null, { status: 204 }));
+  }) as typeof fetch;
+}
+
+const pending = {
+  accountId: 'acct-1',
+  item: {
+    id: '11111111-1111-1111-1111-111111111111',
+    fromEmail: 'alice@example.com',
+    toEmail: 'bob@example.com',
+    entityName: 'prod database',
+    entityKind: 'db',
+    createdAt: 1,
+    salt: '',
+    iv: '',
+    tag: '',
+    data: '',
+  },
+} as unknown as Parameters<ServerTransport['removeShare']>[1];
+
+test('accepting a share says so on the wire', async () => {
+  const urls: string[] = [];
+  recordUrls(urls);
+
+  await new ServerTransport('https://vault.example.com', async () => 'token', 500)
+    .removeShare(account, pending, 'accepted');
+
+  assert.equal(
+    urls[0],
+    'https://vault.example.com/api/shares/11111111-1111-1111-1111-111111111111?outcome=accepted',
+  );
+});
+
+test('declining says the other word', async () => {
+  const urls: string[] = [];
+  recordUrls(urls);
+
+  await new ServerTransport('https://vault.example.com', async () => 'token', 500)
+    .removeShare(account, pending, 'declined');
+
+  assert.match(urls[0], /\?outcome=declined$/);
+});
+
+test('saying nothing sends no query at all — never an empty one, never the word undefined', async () => {
+  const urls: string[] = [];
+  recordUrls(urls);
+
+  await new ServerTransport('https://vault.example.com', async () => 'token', 500)
+    .removeShare(account, pending);
+
+  assert.equal(urls[0], 'https://vault.example.com/api/shares/11111111-1111-1111-1111-111111111111');
+  assert.equal(urls[0].includes('outcome'), false);
+});

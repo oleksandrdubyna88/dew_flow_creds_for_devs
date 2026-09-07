@@ -779,7 +779,8 @@ After this, a share signed by any other key is refused.`,
         `"${node.name}" arrived, but its payment details are in a format this version cannot read, so they were not saved. The rest of the entry is here, and the share is KEPT — check for an update and accept it again.`,
       );
     } else {
-      await this.deps.sharing.removeOwnShare(share);
+      // 'accepted': the recipient took the secret. The other outcome is in shareCommands' decline.
+      await this.deps.sharing.removeOwnShare(share, 'accepted');
     }
     this.deps.onArrived?.(share.accountId, node.id);
   }

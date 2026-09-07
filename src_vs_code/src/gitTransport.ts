@@ -5,7 +5,7 @@ import { readBackupAccount } from './cryptoUtils';
 import { envelopeWithShares, sharesFromEnvelope } from './shareFormat';
 import { SerialQueue } from './serialQueue';
 import { OwnedShare, ShareItem, StoredAccount, TeamMember } from './types';
-import { VaultTransport } from './vaultTransport';
+import { ShareOutcome, VaultTransport } from './vaultTransport';
 import {
   GitAuth,
   GitFailure,
@@ -302,7 +302,8 @@ export class GitTransport implements VaultTransport {
     );
   }
 
-  removeShare(actingAs: StoredAccount, share: OwnedShare): Promise<void> {
+  /** The outcome is accepted and IGNORED, as in the folder transport: there is no server to tell. */
+  removeShare(actingAs: StoredAccount, share: OwnedShare, _outcome?: ShareOutcome): Promise<void> {
     return this.queue.run(() =>
       this.rewriteShares(actingAs, (existing) => existing.filter((s) => s.id !== share.item.id)),
     );
