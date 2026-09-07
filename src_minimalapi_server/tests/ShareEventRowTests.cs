@@ -255,11 +255,16 @@ public sealed class ShareEventRowTests
     }
 
     [Fact]
-    public async Task APruneCancelledPartWayStillRecordsWhatItAlreadyDeleted()
+    public async Task APruneCancelledAfterOneDeletionStillNamesThatShare()
     {
-        // The files go before the rows are written, so a prune that THREW on the stopping token would
-        // take the list of what it had deleted with it — and no later sweep can find those shares to
-        // try again. A cancelled pass stops early and hands back what it did.
+        // The one ordering that loses history: the FILE is deleted, then the token is cancelled, and
+        // the pass ends before the caller has written the row. A prune that threw here would take the
+        // list of what it had already deleted with it, and no later sweep can find those shares to try
+        // again — they are gone, and nothing says they ever expired.
+        //
+        // The cancellation is placed exactly there rather than raced into place: the sequence hands the
+        // walk its first path, the walk deletes it, and the cancel happens as the sequence is asked for
+        // the second. One file gone, the pass stopped, deterministically and with no clock in it.
         using var server = Corp.Server();
         var store = new VaultStore(server.DataDir);
         var log = new OrgEventLog(server.DataDir, NullLogger<OrgEventLog>.Instance, () => DateTimeOffset.UtcNow);
@@ -267,23 +272,39 @@ public sealed class ShareEventRowTests
         {
             await store.AppendShareAsync(Bob, Expired(name), Ct);
         }
+        var inbox = InboxFiles(server).ToArray();
+        inbox.Should().HaveCount(3);
         using var stopping = new CancellationTokenSource();
-        await stopping.CancelAsync();
 
-        var pruned = await store.PruneOlderThanAsync(TimeSpan.FromDays(31), stopping.Token);
+        var pruned = await store.PruneOlderThanAsync(
+            TimeSpan.FromDays(31), CancellingAsItYields(inbox, stopping), [], stopping.Token);
 
-        pruned.Expired.Count.Should().Be(pruned.Expired.Count, "whatever it deleted, it can name");
+        pruned.Expired.Should().ContainSingle("it deleted one file before the token went, and it can name it");
+        InboxFiles(server).Should().HaveCount(2, "and it stopped where it was told rather than finishing");
         foreach (var share in pruned.Expired)
         {
             (await log.AppendAsync(
                 OrgEndpoints.ShareRow(OrgEventKinds.ShareExpired, share.FromEmail, share.ToEmail, share),
                 CancellationToken.None)).Should().BeTrue();
         }
-        Corp.Rows(server, OrgEventKinds.ShareExpired).Should().HaveCount(
-            pruned.Expired.Count,
-            "every share the pass removed has a row, however early it stopped");
-        Directory.EnumerateFiles(Path.Combine(server.DataDir, "shares"), "*.json", SearchOption.AllDirectories)
-            .Should().HaveCount(3 - pruned.Expired.Count, "and nothing went unrecorded");
+        Corp.Rows(server, OrgEventKinds.ShareExpired).Should().ContainSingle()
+            .Which.EntityName.Should().Be(
+                pruned.Expired[0].EntityName, "the share that went is the share the row is about");
+    }
+
+    private static IEnumerable<string> InboxFiles(VaultServer server) =>
+        Directory.EnumerateFiles(
+            Path.Combine(server.DataDir, "shares"), "*.json", SearchOption.AllDirectories);
+
+    /// <summary>Yields the first path, then cancels — so the walk is stopped one deletion in.</summary>
+    private static IEnumerable<string> CancellingAsItYields(
+        IEnumerable<string> paths, CancellationTokenSource cts)
+    {
+        foreach (var path in paths)
+        {
+            yield return path;
+            cts.Cancel();
+        }
     }
 
     [Fact]
