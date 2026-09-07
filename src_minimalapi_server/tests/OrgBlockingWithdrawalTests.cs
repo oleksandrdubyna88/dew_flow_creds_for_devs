@@ -193,7 +193,7 @@ public sealed class OrgBlockingWithdrawalTests
 
         var removed = await store.PruneOlderThanAsync(TimeSpan.FromDays(31), Ct);
 
-        removed.Should().Be(1);
+        removed.Count.Should().Be(1);
         File.Exists(ReceiptPath(dir, Alice, id)).Should().BeFalse();
     }
 

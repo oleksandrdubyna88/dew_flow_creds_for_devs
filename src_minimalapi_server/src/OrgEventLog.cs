@@ -73,6 +73,73 @@ public static class OrgEventKinds
     public const string ProjectAssigned = "project.assigned";
 
     public const string ProjectUnassigned = "project.unassigned";
+
+    /// <summary>
+    /// The share kinds. Every one of them names BOTH people — the actor is whoever acted, the subject is
+    /// the other party — because story 1's scope shows a person the rows where they are one or the other,
+    /// and a share is the one thing here that always has two.
+    /// </summary>
+    public const string ShareSent = "share.sent";
+
+    /// <summary>
+    /// The recipient took it. The ACTOR is the recipient and the subject is the sender: the recipient is
+    /// the one who acted, and a row that named the sender as actor would read as a second send.
+    /// </summary>
+    public const string ShareAccepted = "share.accepted";
+
+    public const string ShareDeclined = "share.declined";
+
+    /// <summary>
+    /// The share left the inbox and the client did not say which it was — an older build, or one that
+    /// forgot. Recorded rather than refused: the delete is the recipient's, and breaking their inbox over
+    /// a log field would be the tail wagging the dog.
+    /// </summary>
+    public const string ShareUnknown = "share.unknown";
+
+    /// <summary>The sender took it back while it was still pending.</summary>
+    public const string ShareWithdrawn = "share.withdrawn";
+
+    /// <summary>
+    /// The SERVER took it back, because one of the two people was blocked. One row per share, and its
+    /// actor is still the sender: nobody chose this, and putting the admin's name on a share they never
+    /// saw would answer "who sent this" with the wrong person.
+    /// </summary>
+    public const string ShareWithdrawnBlocked = "share.withdrawn_blocked";
+
+    /// <summary>Nobody acted on it for <c>Vault:ShareMaxAgeDays</c> and the sweep took it.</summary>
+    public const string ShareExpired = "share.expired";
+
+    /// <summary>
+    /// A login key was MINTED for a developer. Never a row for one merely served: the client revalidates
+    /// every five minutes, so that would be a row per developer per five minutes — the log's whole budget
+    /// spent on the fact that somebody is still employed.
+    /// </summary>
+    public const string LoginKeyIssued = "login_key.issued";
+}
+
+/// <summary>
+/// What a share row needs to say, gathered from whichever side the server is holding — the recipient's
+/// inbox item or the sender's receipt. One shape rather than two overloads of every row builder, and it
+/// carries METADATA only: the name and kind a share already exposes in plaintext, never a byte of the
+/// sealed payload.
+/// </summary>
+public readonly record struct ShareFacts(
+    string Id,
+    string FromEmail,
+    string ToEmail,
+    string EntityName,
+    string EntityKind,
+    string? ProjectId)
+{
+    public static ShareFacts Of(ShareItem item) =>
+        new(item.Id, item.FromEmail, item.ToEmail, item.EntityName, item.EntityKind, item.ProjectId);
+
+    /// <summary>
+    /// From the sender's receipt, which does not carry the sender's own address — its directory is a
+    /// one-way hash of it — so the caller supplies the sender it already knows.
+    /// </summary>
+    public static ShareFacts Of(string fromEmail, SentShare receipt) =>
+        new(receipt.Id, fromEmail, receipt.ToEmail, receipt.EntityName, receipt.EntityKind, ProjectId: null);
 }
 
 /// <summary>

@@ -130,7 +130,7 @@ identifier**, so there is nothing to tamper with.
 | `GET` | `/api/org-recovery/audit` | officer | `200` | Who opened whose vault, **streamed** |
 | `POST` | `/api/shares` | sender = token email | `201` / `400` / `403` / `409` / `503` | Body below. In corp mode the RECIPIENT's standing is checked (`403` deactivated, `503` unreadable) and then **the project rule** (`ShareRule`), which fences developers only — see below |
 | `GET` | `/api/shares` | recipient = token email | `200` | Your inbox, **streamed** |
-| `DELETE` | `/api/shares/{id}` | recipient = token email | `204` / `404` | `id` must parse as a GUID |
+| `DELETE` | `/api/shares/{id}` | recipient = token email | `204` / `404` | `id` must parse as a GUID. **`?outcome=accepted\|declined`** says which it was, for the log; absent or unknown is recorded as `share.unknown` and deletes exactly as before |
 | `GET` | `/api/shares/sent` | sender = token email | `200` | Your own receipts, **streamed**. No ciphertext — see below. A receipt the server withdrew when its recipient was blocked carries `withdrawnReason`; every other receipt has no such key |
 | `DELETE` | `/api/shares/sent/{id}` | sender = token email | `204` / `409` / `404` | Withdraw while pending; `409` once accepted or declined; a receipt carrying `withdrawnReason` is **dismissed** with `204` whatever the inbox says |
 
@@ -767,6 +767,59 @@ if it were the whole one is the one failure an audit log must not have, so the q
 caller gets a `503` naming an administrator, with the file in the server log. A file that has vanished
 between the listing and the open is gone rather than broken, and the walk carries on.
 
+### What a SHARE writes to the log (2026-09-07, epic 4 story 2)
+
+Seven kinds, and every one of them names both people — the actor is whoever acted, the subject is the
+other party — because the reader shows a person the rows where they are one or the other, so both
+sides of a share see it and nobody else does.
+
+| Kind | Written at | Actor / Subject | Detail |
+|---|---|---|---|
+| `share.sent` | `POST /api/shares`, after the INBOX write lands | sender / recipient | — |
+| `share.accepted` | `DELETE /api/shares/{id}?outcome=accepted` | **recipient** / sender | `outcome: accepted` |
+| `share.declined` | the same with `declined` | **recipient** / sender | `outcome: declined` |
+| `share.unknown` | the same with no outcome, or one this build does not know | **recipient** / sender | — |
+| `share.withdrawn` | `DELETE /api/shares/sent/{id}`, the `204` path only | sender / recipient | — |
+| `share.withdrawn_blocked` | the block handler, one row per share it took | sender / recipient | — |
+| `share.expired` | `ShareMaintenance`'s prune, one per expired inbox item | sender / recipient | — |
+| `login_key.issued` | `GET /api/org/login-key`, on the MINT only | the developer / — | `first issue` |
+
+Each row carries the share's id, the entity's plaintext name and kind, and the project when the
+sender named one. **Never a byte of the payload** — a test posts a share whose ciphertext is a
+distinctive marker and greps every byte of the log for it, with a control asserting the search would
+have found the row.
+
+**The row for a send goes with the INBOX write, not after both writes.** That write is the durable
+fact the row is about: from that moment the recipient can open it. The sender's receipt is their own
+copy, and a receipt write that fails answers `500`, after which a client retries and posts a second
+share — leaving two rows, both true.
+
+**A delete records only what actually happened.** `VaultStore.TakeShareAsync` reads the item and
+deletes it in one place, and the DELETE decides: two clients racing the same share both read it and
+only one removes it, so a row written off the read would carry two answers for one share and one of
+them would be a lie. A share deleted but unreadable by this build leaves no row and a `Warning` line
+— the share is gone either way, and the row would be a fabrication.
+
+**The outcome is the client's word and cannot be verified**, the same trust class as `entityKind` and
+`projectId`. An absent one is not an error: every client released before contract 3 sends none, and
+refusing the delete over a log field would break every inbox in the field on the day the server
+deploys.
+
+**A retired receipt leaves no row.** The reconcile retires a receipt because the recipient acted, and
+that act already wrote `share.accepted` / `.declined` / `.unknown`; a second row would double every
+share in the history. The prune's receipt half is counted and not recorded for the same reason —
+only its INBOX half writes `share.expired`, and that item names both parties, which is why
+`SentShare` needed no new field (the epic plan expected one).
+
+**A block writes one row per share and keeps the counts in `member.blocked`.** The counts answer
+"what did this block do"; the rows answer "what happened to the share I sent Boris", which a number
+in somebody else's row cannot. Bounded by the inbox cap, and only on the real transition.
+
+**`login_key.issued` fires on a mint, never on a read.** The client revalidates every five minutes,
+so a row per read would be a row per developer per five minutes — the log's whole budget spent on the
+fact that somebody is still employed. The mint decision is made under the same per-email gate the
+write is, so two calls racing for one absent key leave exactly one row.
+
 ### An operator log names the person, and code scanning is told so once
 
 The lines that name an email — a registry record refused, a record that could not be removed, an
@@ -1220,7 +1273,8 @@ what is under it:
   that sends neither header keeps the old last-write-wins behaviour, so an extension predating this
   still works.
 - **Inbox TTL is `Vault:ShareMaxAgeDays` (31).** A pending share and its sender-side receipt are
-  swept by `ShareMaintenance`, hourly and once at startup. Before it, an inbox only ever shrank
+  swept by `ShareMaintenance`, hourly and once at startup; on a corporate deployment each expired
+  INBOX item also leaves a `share.expired` row naming both people. Before it, an inbox only ever shrank
   when its owner acted — so one that reached `MaxInboxItems` refused every later share with `409`,
   a failure the SENDER saw about a state only the recipient could clear.
 - **`/api/team` enumerates.** Any authenticated caller can list every colleague's email. That is the

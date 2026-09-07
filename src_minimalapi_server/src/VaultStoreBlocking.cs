@@ -15,11 +15,26 @@ namespace CredVaultServer;
 /// designed, but it must not be invisible: the count rides back with the others into the Warning line and
 /// the <c>member.blocked</c> row, so an operator can see that a sender was left in the dark.
 /// </remarks>
-public readonly record struct Withdrawal(int ToThem, int FromThem, int UnexplainedSenders)
+public readonly record struct Withdrawal(
+    int ToThem,
+    int FromThem,
+    int UnexplainedSenders,
+    IReadOnlyList<ShareFacts> Shares)
 {
-    public static readonly Withdrawal None = new(0, 0, 0);
+    public static readonly Withdrawal None = new(0, 0, 0, []);
 
     public int Total => ToThem + FromThem;
+}
+
+/// <summary>
+/// What one prune pass removed: the expired INBOX shares, each of which earns a row, and how many
+/// sender receipts went with them, which earn none. See <see cref="VaultStore.PruneOlderThanAsync"/>
+/// for why the receipts are counted rather than listed.
+/// </summary>
+public readonly record struct Prune(IReadOnlyList<ShareFacts> Expired, int Receipts)
+{
+    /// <summary>Files removed — what the sweep's own log line has always reported.</summary>
+    public int Count => Expired.Count + Receipts;
 }
 
 /// <summary>
@@ -66,22 +81,35 @@ public sealed partial class VaultStore
     /// <summary>Withdraw every pending share to and from <paramref name="email"/>. Never throws for I/O.</summary>
     public async Task<Withdrawal> WithdrawAllInvolvingAsync(string email, CancellationToken ct)
     {
+        // Every share this took, so the caller can leave one row per share. A count in the admin's own
+        // row cannot answer "what happened to the share I sent Boris", which is the question the log
+        // exists for; the volume is bounded by the inbox cap.
+        var shares = new List<ShareFacts>();
         var toThem = 0;
         var unexplained = 0;
         foreach (var path in SafeFiles(Path.Combine(_sharesDir, KeyFor(email))))
         {
             ct.ThrowIfCancellationRequested();
-            var (withdrawn, untold) = await WithdrawInboxItemAsync(path, ct);
+            var (withdrawn, untold, facts) = await WithdrawInboxItemAsync(path, ct);
             toThem += withdrawn;
             unexplained += untold;
+            if (facts is { } taken)
+            {
+                shares.Add(taken);
+            }
         }
         var fromThem = 0;
         foreach (var path in SafeFiles(SentDirFor(email)))
         {
             ct.ThrowIfCancellationRequested();
-            fromThem += await WithdrawSentItemAsync(path, ct);
+            var (withdrawn, facts) = await WithdrawSentItemAsync(email, path, ct);
+            fromThem += withdrawn;
+            if (facts is { } taken)
+            {
+                shares.Add(taken);
+            }
         }
-        return new Withdrawal(toThem, fromThem, unexplained);
+        return new Withdrawal(toThem, fromThem, unexplained, shares);
     }
 
     /// <summary>
@@ -90,21 +118,21 @@ public sealed partial class VaultStore
     /// on. <c>Untold</c> is 1 when the share went but its sender's receipt could not be rewritten — the
     /// case that would otherwise be a silence (see <see cref="Withdrawal.UnexplainedSenders"/>).
     /// </summary>
-    private async Task<(int Withdrawn, int Untold)> WithdrawInboxItemAsync(string path, CancellationToken ct)
+    private async Task<(int Withdrawn, int Untold, ShareFacts? Facts)> WithdrawInboxItemAsync(string path, CancellationToken ct)
     {
         try
         {
             var item = await ReadShareOrNullAsync(path, ct);
             if (item is null || Forget(path) == 0)
             {
-                return (0, 0);
+                return (0, 0, null);
             }
             var told = await MarkWithdrawnAsync(item.FromEmail, item.Id, RecipientDeactivatedReason, ct);
-            return (1, told ? 0 : 1);
+            return (1, told ? 0 : 1, ShareFacts.Of(item));
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
-            return (0, 0);
+            return (0, 0, null);
         }
     }
 
@@ -148,22 +176,24 @@ public sealed partial class VaultStore
     /// One receipt the blocked person holds: delete the recipient's copy, then the receipt. Counts 1 only when
     /// the recipient's inbox file actually went.
     /// </summary>
-    private async Task<int> WithdrawSentItemAsync(string path, CancellationToken ct)
+    private async Task<(int Withdrawn, ShareFacts? Facts)> WithdrawSentItemAsync(string sender, string path, CancellationToken ct)
     {
         try
         {
             var receipt = await ReadSentOrNullAsync(path, ct);
             if (receipt is null)
             {
-                return 0;
+                return (0, null);
             }
             var withdrawn = Forget(Path.Combine(_sharesDir, KeyFor(receipt.ToEmail), receipt.Id + ".json"));
             Forget(path);
-            return withdrawn;
+            // The sender is the blocked person, which the receipt cannot say — its directory is a one-way
+            // hash of them — so it is passed in rather than derived.
+            return (withdrawn, withdrawn == 1 ? ShareFacts.Of(sender, receipt) : null);
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
-            return 0;
+            return (0, null);
         }
     }
 }

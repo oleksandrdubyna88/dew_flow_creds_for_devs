@@ -104,6 +104,37 @@ public sealed record OrgEventPage(IReadOnlyList<OrgEventDto> Items, OrgEventCurs
 public sealed record OrgEventsPageDto(IReadOnlyList<OrgEventDto> Items, string? NextCursor);
 
 /// <summary>
+/// What a recipient says they did with a share, and the kind that records it.
+/// </summary>
+/// <remarks>
+/// Two values and a silence. The silence is not an error: every client released before contract 3
+/// sends no outcome at all, and a delete refused over a log field would empty nobody's inbox and break
+/// everybody's. A value this build does not know reads the same way — a NEWER client saying something
+/// this server has no kind for is a fact about versions, not a bad request.
+/// </remarks>
+public static class ShareOutcome
+{
+    public const string Accepted = "accepted";
+
+    public const string Declined = "declined";
+
+    /// <summary>The outcome as a value this server knows, or null for absent, unknown or malformed.</summary>
+    public static string? Of(string? raw) => raw?.Trim().ToLowerInvariant() switch
+    {
+        Accepted => Accepted,
+        Declined => Declined,
+        _ => null,
+    };
+
+    public static string KindFor(string? outcome) => outcome switch
+    {
+        Accepted => OrgEventKinds.ShareAccepted,
+        Declined => OrgEventKinds.ShareDeclined,
+        _ => OrgEventKinds.ShareUnknown,
+    };
+}
+
+/// <summary>
 /// The per-row predicate, pure: scope first, then every filter. One function rather than a chain of
 /// LINQ at the call site, so the scope cannot be applied after a filter that widened the set.
 /// </summary>

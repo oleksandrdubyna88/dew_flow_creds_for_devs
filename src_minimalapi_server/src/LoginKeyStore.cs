@@ -85,18 +85,36 @@ public sealed class LoginKeyStore(string dataDir, byte[] kek, ILogger<LoginKeySt
     /// restore or a typo would otherwise silently issue a second key while the person's vault stayed
     /// sealed to the first, and the API would report success the whole way.</para>
     /// </summary>
-    public async Task<LoginKeyResult> GetOrCreateAsync(string email, CancellationToken ct)
+    public async Task<LoginKeyResult> GetOrCreateAsync(string email, CancellationToken ct) =>
+        (await GetOrMintAsync(email, ct)).Result;
+
+    /// <summary>
+    /// The same call, saying whether it MINTED. The caller leaves a <c>login_key.issued</c> row on a
+    /// mint and none on a read: a row per read would be a row per developer per five minutes, which is
+    /// the revalidation cadence — the log's whole budget spent on the fact that somebody is still
+    /// employed. <c>Minted</c> is decided under the same per-email gate the write is, so two calls
+    /// racing for one absent key leave exactly one row between them.
+    /// </summary>
+    public async Task<(LoginKeyResult Result, bool Minted)> GetOrMintAsync(string email, CancellationToken ct)
     {
         var existing = await FindAsync(email, ct);
         if (existing.Status != LoginKeyLookup.Absent)
         {
-            return existing;
+            return (existing, false);
         }
         var gate = VaultStore.GateFor(VaultStore.KeyFor(email));
         await gate.WaitAsync(ct);
         try
         {
-            return await MintAsync(email, ct);
+            // Under the gate, the answer may have changed: the loser of a race finds the winner's key and
+            // must not report a mint for it.
+            var again = await FindAsync(email, ct);
+            if (again.Status != LoginKeyLookup.Absent)
+            {
+                return (again, false);
+            }
+            var minted = await MintAsync(email, ct);
+            return (minted, minted.Status == LoginKeyLookup.Found);
         }
         finally
         {

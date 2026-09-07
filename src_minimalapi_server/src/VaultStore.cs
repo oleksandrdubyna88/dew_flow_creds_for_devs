@@ -285,6 +285,34 @@ public sealed partial class VaultStore
         }
     }
 
+    /// <summary>
+    /// Take one pending share out of a recipient's inbox: what it was, and whether this call is the one
+    /// that removed it.
+    /// </summary>
+    /// <remarks>
+    /// <para>Read then delete, in that order and in one place, because the caller needs both answers and
+    /// asking for them separately is how two of them come to disagree. <b>Only the delete decides</b>:
+    /// two clients racing the same share — a retried request, a second window — both read it and only
+    /// one removes it, so a row written on the read would carry two answers for one share and one of
+    /// them would be a lie.</para>
+    /// <para>The item is <c>null</c> when the file could not be read even though it was there — a
+    /// half-written file, or one from a newer server. The share is gone either way; the caller says so
+    /// rather than inventing what it held.</para>
+    /// </remarks>
+    public async Task<(bool Removed, ShareItem? Item)> TakeShareAsync(
+        string recipientEmail,
+        string shareId,
+        CancellationToken ct)
+    {
+        if (!Guid.TryParse(shareId, out _))
+        {
+            return (false, null);
+        }
+        var path = Path.Combine(_sharesDir, KeyFor(recipientEmail), shareId + ".json");
+        var item = File.Exists(path) ? await ReadShareOrNullAsync(path, ct) : null;
+        return (DeleteShare(recipientEmail, shareId), item);
+    }
+
     /// <summary>Delete one pending share from a recipient's inbox. True if it existed.</summary>
     public bool DeleteShare(string recipientEmail, string shareId)
     {

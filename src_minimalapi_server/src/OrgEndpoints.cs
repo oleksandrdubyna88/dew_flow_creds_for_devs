@@ -478,6 +478,33 @@ public static class OrgEndpoints
         Outcome: null,
         Detail: detail);
 
+    /// <summary>
+    /// A share row: the same stamp <see cref="Row"/> makes, plus the four fields only a share has.
+    ///
+    /// <param name="actor">Whoever ACTED — the sender on a send or a withdrawal, the recipient on an
+    /// accept or a decline, and the sender again on the two the server does by itself, because nobody
+    /// chose those and the admin who blocked never saw the share.</param>
+    /// <param name="subject">The other party. Both are named on every share row, so story 1's scope
+    /// shows it to both of them and to nobody else.</param>
+    /// <param name="outcome">What the recipient said they did with it, when they said.</param>
+    /// </summary>
+    internal static OrgEventDto ShareRow(
+        string kind,
+        string actor,
+        string subject,
+        ShareFacts share,
+        string? outcome = null) => new(
+        At: DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+        Kind: kind,
+        Actor: actor,
+        Subject: subject,
+        Project: string.IsNullOrWhiteSpace(share.ProjectId) ? null : share.ProjectId,
+        ShareId: share.Id,
+        EntityName: share.EntityName,
+        EntityKind: share.EntityKind,
+        Outcome: outcome,
+        Detail: null);
+
     // ---------- blocking ----------
 
     /// <summary>
@@ -609,6 +636,23 @@ public static class OrgEndpoints
             withdrawal.UnexplainedSenders);
         await deps.Events.AppendAsync(
             Row(OrgEventKinds.MemberBlocked, admin, target, WithdrawalDetail(withdrawal)), CancellationToken.None);
+        await RecordWithdrawalsAsync(deps, withdrawal);
+    }
+
+    /// <summary>
+    /// One <c>share.withdrawn_blocked</c> per share the block took, naming the two people it was
+    /// between — never the admin, who never saw it. The counts stay in the <c>member.blocked</c> row;
+    /// they answer "what did this block do", and these rows answer "what happened to MY share", which
+    /// is the question a number in somebody else's row cannot.
+    /// </summary>
+    private static async Task RecordWithdrawalsAsync(OrgEndpointDeps deps, Withdrawal withdrawal)
+    {
+        foreach (var share in withdrawal.Shares)
+        {
+            await deps.Events.AppendAsync(
+                ShareRow(OrgEventKinds.ShareWithdrawnBlocked, share.FromEmail, share.ToEmail, share),
+                CancellationToken.None);
+        }
     }
 
     /// <summary>
@@ -704,10 +748,26 @@ public static class OrgEndpoints
         deps.Members.Find(email) switch
         {
             { Status: MemberLookup.Unavailable } => FailUnavailable(ctx),
-            { Status: MemberLookup.Found, Record.Role: MemberRole.Dev } =>
-                WriteKeyAsync(ctx, deps.LoginKeys.GetOrCreateAsync(email, ct), ct),
+            { Status: MemberLookup.Found, Record.Role: MemberRole.Dev } => MintOrServeAsync(ctx, deps, email, ct),
             _ => WriteKeyAsync(ctx, deps.LoginKeys.FindAsync(email, ct), ct),
         };
+
+    /// <summary>
+    /// A developer's key, with a row on the MINT and none on the read. The row is appended after the key
+    /// is on disk and before it is written to the response: a caller that hangs up mid-response has still
+    /// been issued a key, and the trail must say so.
+    /// </summary>
+    private static async Task MintOrServeAsync(HttpContext ctx, OrgEndpointDeps deps, string email, CancellationToken ct)
+    {
+        var (result, minted) = await deps.LoginKeys.GetOrMintAsync(email, ct);
+        if (minted)
+        {
+            await deps.Events.AppendAsync(
+                Row(OrgEventKinds.LoginKeyIssued, email, subject: null, detail: "first issue"),
+                CancellationToken.None);
+        }
+        await WriteKeyAsync(ctx, Task.FromResult(result), ct);
+    }
 
     /// <summary>
     /// The three answers a store lookup can carry, turned into the three a client can act on. Absent is

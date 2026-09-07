@@ -68,7 +68,7 @@ public sealed class ShareMaintenanceTests
 
         var removed = await store.PruneOlderThanAsync(TimeSpan.FromDays(31), TestContext.Current.CancellationToken);
 
-        removed.Should().Be(1);
+        removed.Count.Should().Be(1);
         File.Exists(SharePath(dir, Bob, old)).Should().BeFalse();
         File.Exists(SharePath(dir, Bob, fresh)).Should().BeTrue();
     }
