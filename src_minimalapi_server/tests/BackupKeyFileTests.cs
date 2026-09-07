@@ -111,6 +111,28 @@ public class BackupKeyFileTests
         File.ReadAllText(Path.Combine(restored, "vault.json")).Should().Be("sealed with the words");
     }
 
+    [Fact]
+    public void ABase64KeyThatHappensToBeginBK1IsStillABase64Key()
+    {
+        // Base64 of 32 bytes is 44 characters over an alphabet containing B, K and 1, so about one key
+        // in a quarter of a million begins BK1. Testing the prefix without its dash would route that
+        // key to the printable parser and refuse it about a format it was never in.
+        var key = Convert.FromBase64String("BK1" + Convert.ToBase64String(RandomNumberGenerator.GetBytes(Key32.Bytes))[3..]);
+
+        BackupKeyFile.Read(FileOf(Convert.ToBase64String(key))).Should().Equal(key);
+    }
+
+    [Fact]
+    public void TheBoundIsOnTheHandleAndNotOnAStatBeforeIt()
+    {
+        // A size check and then a read are two operations on a PATH, and a file can be replaced between
+        // them. The bound is the buffer the read is given, so nothing larger than a key is ever
+        // allocated whatever the path pointed at when it was opened.
+        var refused = Refusal(() => BackupKeyFile.Read(FileOf(new string('A', BackupKeyFile.MaxBytes * 4))));
+
+        refused.Message.Should().Contain("none of it has been read");
+    }
+
     private static BackupArchiveException Refusal(Action act) =>
         act.Should().Throw<BackupArchiveException>().Which;
 

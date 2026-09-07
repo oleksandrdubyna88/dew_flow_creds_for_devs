@@ -121,6 +121,36 @@ public class ConfigKeysTests
         BackupConfigSnapshot.Env("Vault:RateLimit:PermitLimit").Should().Be("Vault__RateLimit__PermitLimit");
     }
 
+    [Fact]
+    public void TheScanStillFindsAKnownConfigurationKeyInItsOwnFile()
+    {
+        // The companion every scan needs. A prohibition test passes for ever once the pattern stops
+        // matching anything — a reformatted file, a renamed source, a regex somebody tightened — and
+        // "found nothing" reads exactly like "nothing is wrong".
+        KeysIn("Program.cs").Should().Contain("Vault:DataDir");
+        KeysIn("Logging.cs").Should().Contain("Logging:Directory");
+    }
+
+    [Fact]
+    public void ASnapshotWhoseSecretsWereNeverSetSaysSoAtTheTop()
+    {
+        // An empty line and a missing line look the same to somebody skimming, and an empty KEK is the
+        // difference between a restore that works and a server whose vaults are intact and unopenable.
+        var nothing = System.Text.Encoding.UTF8.GetString(
+            BackupConfigSnapshot.Build(new ConfigurationBuilder().Build()));
+
+        nothing.Should().Contain("WARNING").And.Contain("Vault__LoginKey__Kek");
+
+        var set = System.Text.Encoding.UTF8.GetString(BackupConfigSnapshot.Build(
+            new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Vault:LoginKey:Kek"] = "a-secret",
+                ["Auth:Local:SigningKey"] = "another",
+            }).Build()));
+
+        set.Should().NotContain("WARNING", "there is nothing to warn about when both are there");
+    }
+
     private static IEnumerable<string> KeysIn(string file)
     {
         var path = Path.Combine(PrintableKeyTests.RepoRoot(), "src_minimalapi_server", "src", file);

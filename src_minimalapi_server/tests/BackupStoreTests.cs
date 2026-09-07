@@ -44,7 +44,7 @@ public class BackupStoreTests
         awaiting.Status.Should().Be(BackupKeyLookup.AwaitingAcknowledgement);
         awaiting.UsableForARun.Should().BeFalse();
 
-        await store.AcknowledgeKeyShownAsync(Ct);
+        (await store.AcknowledgeKeyShownAsync(Ct)).Should().BeTrue();
 
         var ready = await store.FindKeyAsync(Ct);
         ready.Status.Should().Be(BackupKeyLookup.Ready);
@@ -75,7 +75,7 @@ public class BackupStoreTests
         var dir = TempDir();
         var store = Store(dir, out _);
         await store.MintKeyAsync(Ct);
-        await store.AcknowledgeKeyShownAsync(Ct);
+        (await store.AcknowledgeKeyShownAsync(Ct)).Should().BeTrue();
         var key = (await store.FindKeyAsync(Ct)).Key;
 
         var again = await store.MintKeyAsync(Ct);
@@ -93,7 +93,7 @@ public class BackupStoreTests
         var dir = TempDir();
         var mine = Store(dir, out _);
         await mine.MintKeyAsync(Ct);
-        await mine.AcknowledgeKeyShownAsync(Ct);
+        (await mine.AcknowledgeKeyShownAsync(Ct)).Should().BeTrue();
 
         var theirs = new BackupStore(dir, RandomNumberGenerator.GetBytes(Key32.Bytes), NullLogger<BackupStore>.Instance);
 
@@ -142,7 +142,7 @@ public class BackupStoreTests
         var dir = TempDir();
         var store = Store(dir, out _);
         await store.MintKeyAsync(Ct);
-        await store.AcknowledgeKeyShownAsync(Ct);
+        (await store.AcknowledgeKeyShownAsync(Ct)).Should().BeTrue();
         await store.WriteSettingsAsync(new BackupSettings(4, 14), Ct);
         Directory.CreateDirectory(Path.Combine(dir, "vaults"));
         File.WriteAllText(Path.Combine(dir, "vaults", "alice.json"), "keep me");
@@ -200,6 +200,105 @@ public class BackupStoreTests
         var typed = BackupKey.Parse(minted.Formatted);
         typed.Ok.Should().BeTrue();
         BackupKey.KeyFrom(typed.Core).Should().Equal(onDisk);
+    }
+
+    [Fact]
+    public async Task AcknowledgingWhenThereIsNoKeyYetIsRefusedAndLeavesNoMarker()
+    {
+        // The hole this closes: writing the marker on a fresh deployment leaves it lying there, and the
+        // next mint comes up Ready immediately — archives sealed under words nobody was ever shown,
+        // which is the exact failure the marker exists to prevent.
+        var dir = TempDir();
+        var store = Store(dir, out _);
+
+        (await store.AcknowledgeKeyShownAsync(Ct)).Should().BeFalse("there is nothing to acknowledge");
+
+        var minted = await store.MintKeyAsync(Ct);
+        minted.Formatted.Should().NotBeEmpty();
+        (await store.FindKeyAsync(Ct)).Status.Should().Be(
+            BackupKeyLookup.AwaitingAcknowledgement, "the fresh key still waits for its own acknowledgement");
+    }
+
+    [Fact]
+    public async Task AcknowledgingAKeyThisServerCannotOpenIsRefused()
+    {
+        // Nobody has been shown words for a key this server cannot read, so there is nothing to confirm.
+        var dir = TempDir();
+        var mine = Store(dir, out _);
+        await mine.MintKeyAsync(Ct);
+        var theirs = new BackupStore(dir, RandomNumberGenerator.GetBytes(Key32.Bytes), NullLogger<BackupStore>.Instance);
+
+        (await theirs.AcknowledgeKeyShownAsync(Ct)).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task ReMintingRemovesTheOldMarkerSoTheNewKeyStillWaitsForItsOwn()
+    {
+        // The same hole from the other side: a stale key.shown beside a brand-new key would report
+        // Ready about words nobody has seen.
+        var dir = TempDir();
+        var store = Store(dir, out _);
+        await store.MintKeyAsync(Ct);
+        (await store.AcknowledgeKeyShownAsync(Ct)).Should().BeTrue();
+        File.Delete(Path.Combine(dir, "org", "backup", "key.shown"));
+
+        var again = await store.MintKeyAsync(Ct);
+
+        again.Formatted.Should().NotBeEmpty("nothing has run, so the unacknowledged key may be replaced");
+        (await store.FindKeyAsync(Ct)).Status.Should().Be(BackupKeyLookup.AwaitingAcknowledgement);
+    }
+
+    [Fact]
+    public async Task AKeyABackupHasAlreadyRunUnderIsKeptEvenWhenItsMarkerHasGoneMissing()
+    {
+        // The marker can be DELETED — a partial restore, somebody tidying, a permissions accident — and
+        // if its absence alone licensed a replacement, a key that months of archives are sealed to would
+        // be overwritten and every one of them orphaned. So the run history is the second half of the
+        // guard: a deployment that has ever completed a backup keeps its key whatever the marker says.
+        var dir = TempDir();
+        var store = Store(dir, out _);
+        await store.MintKeyAsync(Ct);
+        (await store.AcknowledgeKeyShownAsync(Ct)).Should().BeTrue();
+        var key = (await store.FindKeyAsync(Ct)).Key;
+        await store.WriteStatusAsync(new BackupStatus(1_700_000_000_000, "ok", string.Empty, 4096), Ct);
+        File.Delete(Path.Combine(dir, "org", "backup", "key.shown"));
+
+        var again = await store.MintKeyAsync(Ct);
+
+        again.Status.Should().Be(BackupKeyLookup.Unreadable);
+        again.Formatted.Should().BeEmpty();
+        (await store.FindKeyAsync(Ct)).Key.Should().Equal(key, "the key that archives are sealed to survives");
+    }
+
+    [Fact]
+    public async Task MintingOverAKeyThisServerCannotOpenReportsThatRatherThanReady()
+    {
+        // "Already minted" carries Ready, and an admin's screen would then say the backup key is fine
+        // about a deployment whose key nothing can read.
+        var dir = TempDir();
+        var mine = Store(dir, out _);
+        await mine.MintKeyAsync(Ct);
+        var theirs = new BackupStore(dir, RandomNumberGenerator.GetBytes(Key32.Bytes), NullLogger<BackupStore>.Instance);
+
+        (await theirs.MintKeyAsync(Ct)).Status.Should().Be(BackupKeyLookup.Unreadable);
+    }
+
+    [Fact]
+    public async Task AKeyFileNobodyCanParseBlamesTheFileAndNotTheKek()
+    {
+        // Telling somebody to restore their KEK over a torn file would break every other secret sealed
+        // under it. The two problems get two sentences.
+        var dir = TempDir();
+        var store = Store(dir, out var kek);
+        await store.MintKeyAsync(Ct);
+        File.WriteAllText(Path.Combine(dir, "org", "backup", "key.sealed"), "{ not json");
+        var log = new CapturingLogger<BackupStore>();
+
+        var reader = new BackupStore(dir, kek, log);
+
+        (await reader.FindKeyAsync(Ct)).Status.Should().Be(BackupKeyLookup.Unreadable);
+        log.Errors.Should().Contain(line => line.Contains("not the JSON this build writes"));
+        log.Errors.Should().NotContain(line => line.Contains("under this server's KEK"));
     }
 
     private static BackupStore Store(string dir, out byte[] kek)

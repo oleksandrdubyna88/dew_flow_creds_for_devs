@@ -1,3 +1,5 @@
+using System.Text;
+
 namespace CredVaultServer;
 
 /// <summary>
@@ -29,22 +31,48 @@ public static class BackupKeyFile
     public static byte[] Read(string path)
     {
         RefuseMissing(path);
-        RefuseHuge(path);
-        return KeyFrom(path, File.ReadAllText(path).Trim());
+        return KeyFrom(path, Bounded(path));
+    }
+
+    /// <summary>
+    /// At most <see cref="MaxBytes"/> from one handle, and a refusal if there is more.
+    /// </summary>
+    /// <remarks>
+    /// Checking the length and then reading the file are two operations on a path, and between them the
+    /// file can be replaced — so a size check followed by an unbounded read is a bound a replacement
+    /// walks straight past. One handle, one buffer of the size a key can be, and one byte past it is
+    /// the refusal: whatever the path pointed at when it was opened, nothing larger than a key is ever
+    /// allocated for it.
+    /// </remarks>
+    private static string Bounded(string path)
+    {
+        using var file = File.OpenRead(path);
+        var buffer = new byte[MaxBytes + 1];
+        var read = file.ReadAtLeast(buffer, buffer.Length, throwOnEndOfStream: false);
+        if (read > MaxBytes)
+        {
+            throw BackupArchiveException.KeyFileTooLarge(path, file.Length);
+        }
+        return Encoding.UTF8.GetString(buffer, 0, read).Trim();
     }
 
     private static byte[] KeyFrom(string path, string text) =>
         LooksPrintable(text) ? FromPrintable(path, text) : FromBase64(path, text);
 
     /// <summary>
-    /// The prefix on the RAW text, before anything is folded — see the remarks above.
+    /// The prefix AND its dash, on the RAW text, before anything is folded.
     /// </summary>
     /// <remarks>
-    /// Case-insensitive, because a key typed in lower case is the same key, and that is the whole
-    /// premise of the printable form.
+    /// <para>Case-insensitive, because a key typed in lower case is the same key — that is the whole
+    /// premise of the printable form.</para>
+    /// <para><b>The dash is not decoration.</b> Base64 of 32 bytes is 44 characters drawn from an
+    /// alphabet that includes <c>B</c>, <c>K</c> and <c>1</c>, so a perfectly good base64 key can begin
+    /// <c>BK1</c> — about one in a quarter of a million of them does. Testing the prefix alone would
+    /// route that key to the printable parser and refuse it with a message about a format it was never
+    /// in. <c>BK1-</c> cannot occur in base64 at all.</para>
     /// </remarks>
     private static bool LooksPrintable(string text) =>
-        text.StartsWith(BackupKey.Form.Prefix, StringComparison.OrdinalIgnoreCase);
+        text.StartsWith($"{BackupKey.Form.Prefix}-", StringComparison.OrdinalIgnoreCase);
 
     private static byte[] FromPrintable(string path, string text)
     {
@@ -68,12 +96,4 @@ public static class BackupKeyFile
         }
     }
 
-    private static void RefuseHuge(string path)
-    {
-        var length = new FileInfo(path).Length;
-        if (length > MaxBytes)
-        {
-            throw BackupArchiveException.KeyFileTooLarge(path, length);
-        }
-    }
 }

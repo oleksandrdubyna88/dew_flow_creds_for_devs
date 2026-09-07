@@ -120,6 +120,15 @@ jobs:
       - name: Integration test (masked run)
         run: npm run itest:masked-run
 
+      # The LIVE half of a cross-language contract. contract/printable-key-v1.json pins one
+      # construction implemented twice - RC1- here in TypeScript, BK1- in the server - and two suites
+      # each reading their own copy of a file prove nothing about each other. This regenerates the
+      # vectors, fails if the committed file is not what the generator produces, and feeds every RC1
+      # case back through the COMPILED recoveryCode.ts parser. The server's suite asserts the same
+      # file, so a drift on either side is red on both.
+      - name: The printable-key contract, against the shipped parser
+        run: node ../contract/emit-printable-key-vectors.mjs --check
+
       # Packaging proves the manifest is publishable: a missing icon, licence or
       # repository field fails here rather than at `vsce publish` time.
       - name: Package
