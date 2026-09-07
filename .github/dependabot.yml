@@ -36,13 +36,19 @@ updates:
     # The toolchain is chosen by hand with the VS Code engine version: a major bump of TypeScript or
     # of @types/node is a decision, not an update — the first two the bot proposed (5.9 -> 7.0,
     # 20 -> 26) both failed typecheck on arrival, 2026-09-05.
+    #
+    # @types/vscode is ignored for MINOR bumps too, not only major. vsce refuses to package when the
+    # types are newer than engines.vscode ("@types/vscode ^1.136.0 greater than engines.vscode
+    # ^1.85.0"), so 1.134 -> 1.136 is a red build, and the only ways out are to raise engines — which
+    # drops every user below that VS Code build, a product decision — or to leave the types alone.
+    # PR #37, 2026-09-07.
     ignore:
       - dependency-name: "typescript"
         update-types: ["version-update:semver-major"]
       - dependency-name: "@types/node"
         update-types: ["version-update:semver-major"]
       - dependency-name: "@types/vscode"
-        update-types: ["version-update:semver-major"]
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
     labels: ["dependencies", "npm"]
     commit-message:
       prefix: "chore(deps)"
