@@ -101,12 +101,32 @@ test('an empty page WITH more to ask for still offers the button', () => {
   assert.match(html, /id="more"/);
 });
 
-test('while a request is out, nothing can be asked for twice', () => {
+test('while a request is out, load more cannot be asked for twice — but a GROUP still can', () => {
+  // A different group is a different question, and the tab preempts what is in flight rather than
+  // making somebody wait for an answer they no longer want. Load more is the one that would append
+  // the same rows twice, so it is the one that is disabled.
   const html = renderOrgEvents(state({ loading: true, hasMore: true }));
 
   assert.match(html, /id="more" disabled/);
-  assert.match(html, /data-group="all"[^>]*disabled/);
+  assert.equal(/data-group="all"[^>]*disabled/.test(html), false);
   assert.match(html, /Reading…/);
+});
+
+test('a retry that is running says so, and cannot be pressed again', () => {
+  const html = renderOrgEvents(state({ rows: [], loading: true, error: 'unreachable' }));
+
+  assert.match(html, /id="retry" disabled/);
+  assert.match(html, /Reading…/);
+});
+
+test('a failure outranks "this server keeps no log" — otherwise there is no way to try again', () => {
+  // A 404 answered once must not outlive the question that got it: a Try again against a server that
+  // is merely unreachable would keep showing the version sentence, with no error and no button.
+  const html = renderOrgEvents(state({ rows: [], noLogHere: true, error: 'Vault server unreachable' }));
+
+  assert.match(html, /unreachable/);
+  assert.match(html, /id="retry"/);
+  assert.equal(html.includes('does not keep an event log'), false);
 });
 
 test('a server that keeps no log says so, and does not show an empty table', () => {
@@ -140,7 +160,14 @@ test('rows dropped to keep the tab responsive are counted on screen', () => {
 test('the groups a person can pick are the server\'s own prefixes, and nothing it cannot express', () => {
   // "Everything else" is the COMPLEMENT of three prefixes, which the server's filter cannot say —
   // offering it would mean filtering the rows this page happens to hold and calling that the log.
-  assert.deepEqual(EVENT_GROUPS.map((g) => g.kind), [undefined, 'share.', 'member.', 'project.']);
+  // Derived rather than retyped: what must hold is that every group is something the SERVER's filter
+  // can express — a prefix ending in a dot, or nothing at all — and a list copied here would go on
+  // passing after somebody added a fourth kind of group the server cannot answer.
+  for (const group of EVENT_GROUPS) {
+    assert.ok(group.kind === undefined || group.kind.endsWith('.'), `${group.id} is not a server filter`);
+  }
+  assert.equal(EVENT_GROUPS.filter((group) => group.kind === undefined).length, 1, 'one of them is everything');
+  assert.ok(EVENT_GROUPS.every((group) => renderOrgEvents(state({ group: group.id })).includes(`data-group="${group.id}"`)));
   assert.equal(groupById('nonsense').id, 'all', 'an id nobody offers falls back to everything');
 });
 

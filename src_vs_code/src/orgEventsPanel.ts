@@ -21,8 +21,17 @@ export function showOrgEventLog(client: OrgEventsClient, account: StoredAccount)
     vscode.ViewColumn.Active,
     { enableScripts: true, localResourceRoots: [] },
   );
+  // A request in flight when somebody closes the tab still answers, and assigning to a disposed
+  // webview throws — inside a promise nobody is awaiting, which is an unhandled rejection in the
+  // extension host rather than anything a person sees. So the draw stops at the door.
+  let closed = false;
+  panel.onDidDispose(() => {
+    closed = true;
+  });
   const tab = new EventTab(client, account, (html) => {
-    panel.webview.html = html;
+    if (!closed) {
+      panel.webview.html = html;
+    }
   });
   panel.webview.onDidReceiveMessage((message: unknown) => {
     if (isEventPageMessage(message)) {
