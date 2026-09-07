@@ -6,8 +6,24 @@ namespace CredVaultServer;
 /// A run's claim on this deployment, held as an open file handle.
 /// </summary>
 /// <remarks>
-/// Disposing it releases the claim. So does dying: the operating system closes the handle when the
-/// process goes, which is the whole reason the claim is a handle and not a timestamp.
+/// <para>Disposing it releases the claim. So does dying: the operating system closes the handle when
+/// the process goes, which is the whole reason the claim is a handle and not a timestamp.</para>
+///
+/// <para><b>The residual, stated here because this is where a caller reads it.</b> Every mutual
+/// exclusion primitive leaves a window, and this one leaves two:</para>
+/// <list type="bullet">
+/// <item><description><b>It is only as strong as the filesystem underneath it.</b> On a local volume
+/// and on a Docker bind mount it is enforced by the kernel. On <b>NFS</b> — and on some network
+/// filesystems generally — mandatory locking is advisory at best, so two containers on one NFS export
+/// can both believe they hold it. A deployment that keeps its data directory on NFS should run one
+/// server, and this is why.</description></item>
+/// <item><description><b>Taking the claim and reading the status are two operations.</b> A run that
+/// finishes in the microseconds between them is not seen by the reader — which is harmless here,
+/// because both callers of that pair either write a terminal status or leave the row alone, and
+/// neither starts work on the strength of a stale read.</description></item>
+/// </list>
+/// <para>What it does NOT leave is the window a lock file has: there is no interval after which
+/// somebody decides the holder must be dead, so a slow run is never overtaken by a second one.</para>
 /// </remarks>
 public sealed class RunClaim(FileStream? held) : IDisposable
 {
@@ -130,24 +146,33 @@ public sealed partial class BackupStore
 
     /// <summary>The newest archive on disk, or none.</summary>
     /// <remarks>
-    /// Matches <see cref="ArchiveName.Pattern"/> only, so a half-written <c>*.cvbk.partial</c> is
-    /// invisible here — the download must never be handed a file that is still being written.
+    /// <para>Matches <see cref="ArchiveName.Pattern"/> only, so a half-written <c>*.cvbk.partial</c> is
+    /// invisible here — the download must never be handed a file that is still being written.</para>
+    /// <para><b>It reads names and stats exactly one file.</b> The status page polls this, and an
+    /// earlier version built the whole list — parsing every name, calling <c>FileInfo.Length</c> on
+    /// every file and sorting the lot — on every poll. The name carries the instant, so picking the
+    /// newest needs no file opened at all; only the winner's size is asked for.</para>
     /// </remarks>
-    public LocalArchive NewestArchive() =>
-        Archives().OrderByDescending(archive => archive.TakenAt).FirstOrDefault() ?? LocalArchive.None;
+    public LocalArchive NewestArchive()
+    {
+        var newest = string.Empty;
+        var at = DateTimeOffset.MinValue;
+        foreach (var path in Names())
+        {
+            var taken = ArchiveName.InstantOf(path);
+            if (taken is not null && taken.Value > at)
+            {
+                (newest, at) = (path, taken.Value);
+            }
+        }
+        return newest.Length == 0 ? LocalArchive.None : new LocalArchive(newest, at, Size(newest));
+    }
 
-    /// <summary>Every archive this store can account for, newest first.</summary>
-    public IReadOnlyList<LocalArchive> Archives()
+    private IEnumerable<string> Names()
     {
         try
         {
-            return
-            [
-                .. Directory.EnumerateFiles(ArchivesDir, ArchiveName.Pattern)
-                    .Select(Read)
-                    .Where(archive => archive.Exists)
-                    .OrderByDescending(archive => archive.TakenAt),
-            ];
+            return Directory.EnumerateFiles(ArchivesDir, ArchiveName.Pattern).ToArray();
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
@@ -155,19 +180,11 @@ public sealed partial class BackupStore
         }
     }
 
-    /// <summary>
-    /// Keep the newest archive and drop the rest — the local disk is not the backup.
-    /// </summary>
-    /// <remarks>
-    /// One archive is kept so that a download streams a file with a known length instead of building
-    /// one inside a request. The cloud targets (story 4) are where history lives; this directory is a
-    /// staging post, and letting it grow would fill the volume the vaults are on.
-    /// </remarks>
-    public int KeepOnlyNewestArchive()
-    {
-        var all = Archives();
-        return all.Count < 2 ? 0 : all.Skip(1).Sum(archive => Deleted(archive.Path) ? 1 : 0);
-    }
+    /// <summary>Every archive this store can account for, newest first.</summary>
+    public IReadOnlyList<LocalArchive> Archives() =>
+    [
+        .. Names().Select(Read).Where(archive => archive.Exists).OrderByDescending(archive => archive.TakenAt),
+    ];
 
     /// <summary>
     /// Delete archives older than the window — and never, ever all of them.

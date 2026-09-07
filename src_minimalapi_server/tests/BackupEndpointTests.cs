@@ -227,9 +227,13 @@ public sealed class BackupEndpointTests
             // keeps the restarted server's scheduler quiet, so what this test observes is the sweep
             // rather than a fresh nightly run. The first attempt used a 2023 stamp and watched the
             // scheduler correctly decide the day's backup was still owed, which is a different fact.
+            //
+            // The instant comes from TimeProvider rather than DateTimeOffset.UtcNow: the same clock the
+            // server takes its own from, per utc-timestamps.md. It cannot be a FROZEN one here, because
+            // "today" is the day the running server is in and that is the fact this fixture depends on.
             await Store(first).WriteStatusAsync(
                 new BackupStatus(
-                    DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                    TimeProvider.System.GetUtcNow().ToUnixTimeMilliseconds(),
                     BackupRunResults.InProgress,
                     string.Empty,
                     0),

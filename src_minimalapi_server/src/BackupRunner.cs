@@ -103,11 +103,42 @@ public sealed class BackupRunner(
                 null);
         }
         var startedAt = clock.GetUtcNow();
-        await backups.WriteStatusAsync(
-            new BackupStatus(startedAt.ToUnixTimeMilliseconds(), BackupRunResults.InProgress, string.Empty, 0),
-            ct);
+        try
+        {
+            await backups.WriteStatusAsync(
+                new BackupStatus(
+                    startedAt.ToUnixTimeMilliseconds(),
+                    BackupRunResults.InProgress,
+                    // WHO is running it, so the sweep's message can name the process that stopped.
+                    Owner(),
+                    0),
+                ct);
+        }
+        catch (Exception e)
+        {
+            // The claim is only ever released by the ticket, and there is no ticket yet. A full disk
+            // or a cancelled request here would otherwise leave run.lock held by a live process with
+            // no run behind it, and every later attempt answering "already running" for ever.
+            claim.Dispose();
+            log.LogError(e, "a backup run could not record that it had started, so it did not start");
+            return new RunStart(
+                RunRefusal.Because(
+                    "the run could not be recorded as started, so it was not started. This is a "
+                    + "storage problem — check the data directory's permissions and free space."),
+                null);
+        }
         return new RunStart(RunRefusal.Started_, new RunTicket(claim, key.Key, startedAt, actor));
     }
+
+    /// <summary>
+    /// The process this run belongs to, recorded in the status while it is in progress.
+    /// </summary>
+    /// <remarks>
+    /// The LIVENESS proof is the run claim — a handle a dead process cannot hold, which a recorded pid
+    /// cannot match because pids are reused. This is for the human reading the sweep's message
+    /// afterwards: "the server stopped" is more useful when it can say which one.
+    /// </remarks>
+    private static string Owner() => $"{Environment.MachineName}/{Environment.ProcessId}";
 
     /// <summary>Carry out a claimed run. Never throws; releases the claim whatever happens.</summary>
     public async Task ContinueAsync(RunTicket ticket, CancellationToken ct)
@@ -119,7 +150,12 @@ public sealed class BackupRunner(
                 var summary = await BuildAsync(ticket.StartedAt, ticket.Key, ct);
                 await FinishAsync(ticket.Actor, ticket.StartedAt, summary, ct);
             }
-            catch (Exception e) when (e is IOException or UnauthorizedAccessException or BackupArchiveException)
+            // A CATCH-ALL, deliberately, and it is the difference between a spinner that ends and one
+            // that does not. This runs detached, so anything not caught here is an exception with
+            // nowhere to go: the status stays "in progress" until the next restart sweeps it, the page
+            // shows a spinner all night, and no failure row is ever written. An earlier version caught
+            // three exception types and would have let a CryptographicException do exactly that.
+            catch (Exception e)
             {
                 await FailAsync(ticket.Actor, ticket.StartedAt, e, ct);
             }
@@ -157,13 +193,42 @@ public sealed class BackupRunner(
     private async Task<ArchiveSummary> BuildAsync(DateTimeOffset startedAt, byte[] key, CancellationToken ct)
     {
         Directory.CreateDirectory(backups.ArchivesDir);
-        await File.WriteAllBytesAsync(
-            Path.Combine(dataDir, BackupConfigSnapshot.EntryName), BackupConfigSnapshot.Build(config), ct);
-        var path = Path.Combine(backups.ArchivesDir, ArchiveName.For(startedAt));
-        var summary = BackupArchive.CreateFile(dataDir, path, key, startedAt);
-        backups.KeepOnlyNewestArchive();
-        backups.PruneArchivesOlderThan(clock.GetUtcNow(), (await backups.ReadSettingsAsync(ct)).RetentionDays);
-        return summary;
+        var snapshot = Path.Combine(dataDir, BackupConfigSnapshot.EntryName);
+        try
+        {
+            await File.WriteAllBytesAsync(snapshot, BackupConfigSnapshot.Build(config), ct);
+            var path = Path.Combine(backups.ArchivesDir, ArchiveName.For(startedAt));
+            var summary = BackupArchive.CreateFile(dataDir, path, key, startedAt);
+            // Retention governs this directory, and it is the ONLY thing that does. An earlier version
+            // also kept just the newest archive, which quietly made the admin's retention setting mean
+            // nothing locally — two policies over one directory, and the one nobody configured winning.
+            backups.PruneArchivesOlderThan(clock.GetUtcNow(), (await backups.ReadSettingsAsync(ct)).RetentionDays);
+            return summary;
+        }
+        finally
+        {
+            // The snapshot is the deployment's secrets in PLAINTEXT — it exists so a restore onto a
+            // fresh host can work, and it belongs inside the sealed archive and nowhere else. Leaving
+            // it in the data directory would put the KEK on disk unencrypted for anybody who can read
+            // the volume, which is precisely what the archive's encryption is for.
+            Forget(snapshot);
+        }
+    }
+
+    private void Forget(string path)
+    {
+        try
+        {
+            File.Delete(path);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            log.LogError(
+                e,
+                "the configuration snapshot at {Path} could not be removed after the archive was "
+                + "sealed. It holds this deployment's secrets in plaintext — delete it by hand.",
+                path);
+        }
     }
 
     private async Task FinishAsync(

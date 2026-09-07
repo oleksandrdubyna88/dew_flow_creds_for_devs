@@ -151,6 +151,7 @@ if (orgRecovery.Enabled)
     builder.Services.AddHostedService(sp => new BackupScheduleService(
         sp.GetRequiredService<BackupStore>(),
         sp.GetRequiredService<BackupRunner>(),
+        sp.GetRequiredService<BackupQueue>(),
         TimeProvider.System,
         sp.GetRequiredService<ILoggerFactory>().CreateLogger<BackupScheduleService>()));
 }
@@ -194,6 +195,10 @@ builder.Services.AddSingleton(sp => new LoginKeyStore(
 // The KEK is the same one, deliberately — one secret to keep, not two.
 builder.Services.AddSingleton(sp => new BackupStore(
     dataDir, loginKeyKek, sp.GetRequiredService<ILoggerFactory>().CreateLogger<BackupStore>()));
+// The queue a claimed run waits in. One instance, on every deployment, because the endpoint that
+// writes to it exists on every deployment — nothing drains it where the schedule service is not
+// registered, and the endpoint answers 503 rather than accepting work nobody will do.
+builder.Services.AddSingleton<BackupQueue>();
 builder.Services.AddSingleton(sp => new BackupRunner(
     sp.GetRequiredService<BackupStore>(),
     dataDir,
@@ -989,20 +994,16 @@ app.MapOrgProjectsEndpoints(orgDeps, orgProjects);
 // The event log's reader, from its own file for the same reason. Any allowed caller; the SCOPE
 // is decided there, from the same record RequireAdminAsync reads.
 app.MapOrgEventsEndpoints(orgDeps);
-// The backup surface, from its own file for the same reason. The run is DETACHED from the request:
-// a build outlives the browser by design, and a reload must not cancel a backup half way (rule 8).
-// `Task.Run` with the application's stopping token rather than the request's is what makes that
-// true — the request's token is cancelled the moment the client goes away.
+// The backup surface, from its own file for the same reason. The run is DETACHED from the request —
+// a build outlives the browser by design, and a reload must not cancel a backup half way (rule 8) —
+// and it is detached onto a QUEUE the hosted service drains, not a fire-and-forget task. The rule
+// names that pairing, and the reliability rule says why: a task whose fault nobody observes is a
+// worker that dies with no line in the log while the process looks healthy.
 app.MapOrgBackupEndpoints(
     orgDeps,
     app.Services.GetRequiredService<BackupStore>(),
     app.Services.GetRequiredService<BackupRunner>(),
-    work =>
-    {
-        var stopping = app.Services.GetRequiredService<IHostApplicationLifetime>().ApplicationStopping;
-        _ = Task.Run(() => work(stopping), CancellationToken.None);
-        return Task.CompletedTask;
-    });
+    app.Services.GetRequiredService<BackupQueue>());
 
 // ----- corporate recovery: what every account here is subject to -----
 //
