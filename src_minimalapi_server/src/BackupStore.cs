@@ -180,16 +180,33 @@ public sealed partial class BackupStore(string dataDir, byte[] kek, ILogger<Back
         return true;
     }
 
-    /// <summary>The settings, or this build's defaults when none have been written.</summary>
-    public async Task<BackupSettings> ReadSettingsAsync(CancellationToken ct) =>
-        await ReadOrDefaultAsync(SettingsPath, AppJsonContext.Default.BackupSettings, BackupSettings.Default, ct);
+    /// <summary>
+    /// The settings, or this build's defaults when none have been written.
+    /// </summary>
+    /// <remarks>
+    /// <b>The target list is normalised HERE, at the read.</b> Every deployment that ran story 3 has a
+    /// settings file with no <c>targets</c> member at all, and a record's non-nullable list
+    /// deserialises from a missing member as NULL whatever its declaration says — so the first status
+    /// request after an upgrade would have thrown. Normalising at the read rather than at one call site
+    /// is what makes that true for every reader, including the ones written next year.
+    /// </remarks>
+    public async Task<BackupSettings> ReadSettingsAsync(CancellationToken ct)
+    {
+        var settings = await ReadOrDefaultAsync(
+            SettingsPath, AppJsonContext.Default.BackupSettings, BackupSettings.Default, ct);
+        return settings.Targets is null ? settings with { Targets = [] } : settings;
+    }
 
     public async Task WriteSettingsAsync(BackupSettings settings, CancellationToken ct) =>
         await WriteAsync(SettingsPath, JsonSerializer.SerializeToUtf8Bytes(settings, AppJsonContext.Default.BackupSettings), ct);
 
-    /// <summary>The last run's outcome, or the never-run default.</summary>
-    public async Task<BackupStatus> ReadStatusAsync(CancellationToken ct) =>
-        await ReadOrDefaultAsync(StatusPath, AppJsonContext.Default.BackupStatus, BackupStatus.NeverRun, ct);
+    /// <summary>The last run's outcome, or the never-run default. Same normalisation, same reason.</summary>
+    public async Task<BackupStatus> ReadStatusAsync(CancellationToken ct)
+    {
+        var status = await ReadOrDefaultAsync(
+            StatusPath, AppJsonContext.Default.BackupStatus, BackupStatus.NeverRun, ct);
+        return status.Targets is null ? status with { Targets = [] } : status;
+    }
 
     public async Task WriteStatusAsync(BackupStatus status, CancellationToken ct) =>
         await WriteAsync(StatusPath, JsonSerializer.SerializeToUtf8Bytes(status, AppJsonContext.Default.BackupStatus), ct);

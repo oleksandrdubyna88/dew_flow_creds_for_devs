@@ -369,6 +369,89 @@ public sealed class BackupEndpointTests
         status.Should().NotContain("accountKey").And.NotContain("AKIDEXAMPLE");
     }
 
+    [Fact]
+    public async Task ASettingsSaveThatOMITSTargetsLeavesThemAlone()
+    {
+        // A client that predates targets — the extension before story 5, a script written against
+        // story 3 — sends no `targets` member at all. Treating that as "remove every destination" would
+        // silently turn a configured deployment back into a local-only one on the next schedule edit.
+        using var server = Corp.Server();
+        using var cto = server.ClientFor(Corp.Cto);
+        var store = Store(server);
+        var kek = Convert.FromBase64String(Corp.Kek);
+        var targets = new BackupTargets(
+            kek, new OneClient(), TimeProvider.System, Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance);
+        await store.WriteSettingsAsync(
+            new BackupSettings(
+                3,
+                30,
+                [targets.Seal("s3", "https://s3.example.com", "eu", "vaults", "backups",
+                    new TargetSecrets("AKIDEXAMPLE", "secret", string.Empty, string.Empty))]),
+            Ct);
+
+        (await Corp.PutJsonAsync(cto, "/api/org/backup/settings", """{"scheduleHourUtc":6,"retentionDays":21}"""))
+            .StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        var after = await store.ReadSettingsAsync(Ct);
+        after.ScheduleHourUtc.Should().Be(6, "the schedule did change");
+        after.Targets.Should().ContainSingle("and the destination did not go with it");
+    }
+
+    [Fact]
+    public async Task AnEmptyTargetsArrayDoesRemoveThemAll()
+    {
+        // The other half of the rule: omitted is unchanged, an explicit [] is "remove them".
+        using var server = Corp.Server();
+        using var cto = server.ClientFor(Corp.Cto);
+        var store = Store(server);
+        var targets = new BackupTargets(
+            Convert.FromBase64String(Corp.Kek),
+            new OneClient(),
+            TimeProvider.System,
+            Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance);
+        await store.WriteSettingsAsync(
+            new BackupSettings(
+                3,
+                30,
+                [targets.Seal("s3", "https://s3.example.com", "eu", "vaults", "backups",
+                    new TargetSecrets("AKIDEXAMPLE", "secret", string.Empty, string.Empty))]),
+            Ct);
+
+        (await Corp.PutJsonAsync(
+            cto, "/api/org/backup/settings", """{"scheduleHourUtc":6,"retentionDays":21,"targets":[]}"""))
+            .StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        (await store.ReadSettingsAsync(Ct)).Targets.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task HalfACredentialIsRefusedByNameRatherThanReachingTheCipher()
+    {
+        // An account name with no key used to make "did they send credentials?" answer yes, and the
+        // probe then handed an empty string to a base64 decoder — a 500 where a sentence belongs.
+        using var server = Corp.Server();
+        using var cto = server.ClientFor(Corp.Cto);
+
+        var refusal = await Corp.RefusalAsync(
+            await Corp.PutJsonAsync(
+                cto,
+                "/api/org/backup/settings",
+                """
+                {"scheduleHourUtc":3,"retentionDays":30,"targets":[
+                  {"kind":"azure-blob","endpoint":"https://acct.blob.core.windows.net","region":"",
+                   "bucket":"vaults","prefix":"backups","accountName":"acct"}]}
+                """),
+            HttpStatusCode.BadRequest);
+
+        refusal.Should().Contain("accountKey is missing");
+    }
+
+    /// <summary>A client factory for the tests that only need a target SEALED, never sent to.</summary>
+    private sealed class OneClient : IHttpClientFactory
+    {
+        public HttpClient CreateClient(string name) => new();
+    }
+
     /// <summary>The store the server itself is using, for the states only a restart can produce.</summary>
     private static BackupStore Store(VaultServer server) =>
         (BackupStore)server.Services.GetService(typeof(BackupStore))!;

@@ -85,8 +85,9 @@ public class BackupTargetTests
 
         var found = await S3(stub).ListAsync(Ct);
 
-        found.Should().HaveCount(2);
-        found.Select(archive => archive.Name).Should().Contain("cred-vault-20260901-030000Z.cvbk");
+        found.Ok.Should().BeTrue(found.Why);
+        found.Archives.Should().HaveCount(2);
+        found.Archives.Select(archive => archive.Name).Should().Contain("cred-vault-20260901-030000Z.cvbk");
         stub.Sent[1].RequestUri!.Query.Should().Contain("continuation-token=MORE");
     }
 
@@ -141,7 +142,8 @@ public class BackupTargetTests
 
         var found = await Azure(stub).ListAsync(Ct);
 
-        found.Should().HaveCount(2);
+        found.Ok.Should().BeTrue(found.Why);
+        found.Archives.Should().HaveCount(2);
         stub.Sent[1].RequestUri!.Query.Should().Contain("marker=MORE");
     }
 
@@ -161,6 +163,42 @@ public class BackupTargetTests
     public void AnythingElseIsRefusedWithTheReason(string endpoint, string expected, string why)
     {
         ArchiveTargets.EndpointProblem(endpoint).Should().Contain(expected, why);
+    }
+
+    [Fact]
+    public async Task AListingThatFAILEDIsNotAnEmptyListing()
+    {
+        // Conflating them is how retention comes to do nothing while the run reports success: a target
+        // whose list permission was revoked would accumulate archives for ever and say so nowhere.
+        var refused = await S3(new Stub().Answer(HttpStatusCode.Forbidden, "denied")).ListAsync(Ct);
+
+        refused.Ok.Should().BeFalse();
+        refused.Why.Should().Contain("403");
+        refused.Archives.Should().BeEmpty("and it hands back nothing to prune against");
+    }
+
+    [Fact]
+    public async Task ABodyThatIsNotAListingIsAFailureAndNotAnEmptyPage()
+    {
+        var nonsense = await S3(new Stub().Answer(HttpStatusCode.OK, "<<not xml")).ListAsync(Ct);
+
+        nonsense.Ok.Should().BeFalse();
+        nonsense.Why.Should().Contain("could not be read");
+    }
+
+    [Fact]
+    public async Task APageThatFailsPartWayThroughDiscardsTheWholeListing()
+    {
+        // Retention computed over "what came back before the failure" would treat the rest as absent,
+        // and the floor that stops it deleting everything would be measuring the wrong set.
+        var stub = new Stub()
+            .Answer(HttpStatusCode.OK, Page("cred-vault-20260101-030000Z.cvbk", truncated: true, next: "MORE"))
+            .Answer(HttpStatusCode.InternalServerError, "boom");
+
+        var listing = await S3(stub).ListAsync(Ct);
+
+        listing.Ok.Should().BeFalse();
+        listing.Archives.Should().BeEmpty("half a listing is worse than none");
     }
 
     [Fact]

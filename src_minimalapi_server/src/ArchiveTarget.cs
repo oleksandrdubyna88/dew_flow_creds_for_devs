@@ -11,6 +11,16 @@ public sealed record TargetOutcome(bool Ok, string Why)
 /// <summary>One archive as the destination holds it. The NAME carries its instant.</summary>
 public sealed record RemoteArchive(string Name, long Bytes);
 
+/// <summary>What a destination holds, or the reason it would not say.</summary>
+public sealed record TargetListing(IReadOnlyList<RemoteArchive> Archives, string Why)
+{
+    public static TargetListing Of(IReadOnlyList<RemoteArchive> archives) => new(archives, string.Empty);
+
+    public static TargetListing Failed(string why) => new([], why);
+
+    public bool Ok => Why.Length == 0;
+}
+
 /// <summary>
 /// Somewhere off this machine to put an archive.
 /// </summary>
@@ -32,7 +42,16 @@ public interface IArchiveTarget
 
     Task<TargetOutcome> PutAsync(string name, Stream body, long length, CancellationToken ct);
 
-    Task<IReadOnlyList<RemoteArchive>> ListAsync(CancellationToken ct);
+    /// <summary>
+    /// What is there — or why the question could not be answered.
+    /// </summary>
+    /// <remarks>
+    /// An empty listing and a listing that FAILED are different facts, and conflating them is how
+    /// retention comes to do nothing while the run reports success: a target whose list permission was
+    /// revoked would accumulate archives for ever and say so nowhere. The outcome travels with the
+    /// list so the caller can refuse to prune on the strength of an answer it did not get.
+    /// </remarks>
+    Task<TargetListing> ListAsync(CancellationToken ct);
 
     Task<TargetOutcome> DeleteAsync(string name, CancellationToken ct);
 
@@ -68,6 +87,16 @@ public static class ArchiveTargets
 
     /// <summary>The deadline for an UPLOAD, which is a different size of thing entirely.</summary>
     public static readonly TimeSpan UploadTimeout = TimeSpan.FromHours(2);
+
+    /// <summary>
+    /// The deadline for a save-time probe, which is shorter because a person is watching it.
+    /// </summary>
+    /// <remarks>
+    /// Twenty seconds is long enough for a round trip to any cloud region and short enough that a
+    /// browser, a reverse proxy and a human are all still waiting. The probes for several targets run
+    /// concurrently, so this is the worst case for the whole save rather than per target.
+    /// </remarks>
+    public static readonly TimeSpan ProbeTimeout = TimeSpan.FromSeconds(20);
 
     public const string ArchiveContentType = "application/octet-stream";
 

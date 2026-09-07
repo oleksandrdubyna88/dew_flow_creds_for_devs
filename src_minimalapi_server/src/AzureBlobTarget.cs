@@ -42,18 +42,25 @@ public sealed class AzureBlobTarget(HttpClient http, AzureTargetConfig config, T
         return put.Ok ? await VerifiedAsync(name, length, ct) : put;
     }
 
-    public async Task<IReadOnlyList<RemoteArchive>> ListAsync(CancellationToken ct)
+    public async Task<TargetListing> ListAsync(CancellationToken ct)
     {
         var found = new List<RemoteArchive>();
         var marker = string.Empty;
         do
         {
             var page = await PageAsync(marker, ct);
+            if (page.Why.Length > 0)
+            {
+                // A page that did not arrive makes the WHOLE listing unusable: retention computed over
+                // "what came back before the failure" would treat the rest as absent, and the floor that
+                // stops it deleting everything would be measuring the wrong set.
+                return TargetListing.Failed(page.Why);
+            }
             found.AddRange(page.Archives);
             marker = page.Next;
         }
         while (marker.Length > 0);
-        return found;
+        return TargetListing.Of(found);
     }
 
     public Task<TargetOutcome> DeleteAsync(string name, CancellationToken ct) =>
@@ -65,6 +72,7 @@ public sealed class AzureBlobTarget(HttpClient http, AzureTargetConfig config, T
     public async Task<TargetOutcome> UsableAsync(CancellationToken ct)
     {
         var probe = Encoding.UTF8.GetBytes("credvault");
+        // The probe's deadline, not a run's: somebody is watching this one.
         var put = await SendAsync(
             Signed(
                 HttpMethod.Put,
@@ -73,7 +81,7 @@ public sealed class AzureBlobTarget(HttpClient http, AzureTargetConfig config, T
                 probe.Length,
                 new ByteArrayContent(probe),
                 blockBlob: true),
-            ArchiveTargets.RequestTimeout,
+            ArchiveTargets.ProbeTimeout,
             ct);
         if (!put.Ok)
         {
@@ -111,7 +119,7 @@ public sealed class AzureBlobTarget(HttpClient http, AzureTargetConfig config, T
                 + "sent. The archive at this target is not the archive that was made.");
     }
 
-    private async Task<(IReadOnlyList<RemoteArchive> Archives, string Next)> PageAsync(
+    private async Task<(IReadOnlyList<RemoteArchive> Archives, string Next, string Why)> PageAsync(
         string marker, CancellationToken ct)
     {
         var query = new List<(string, string)>
@@ -132,12 +140,12 @@ public sealed class AzureBlobTarget(HttpClient http, AzureTargetConfig config, T
             ArchiveTargets.RequestTimeout,
             ct);
         return response.Failure.Length > 0
-            ? ([], string.Empty)
-            : Parse(await response.Message!.Content.ReadAsStringAsync(ct));
+            ? ([], string.Empty, response.Failure)
+            : Parse(await response.Message!.Content.ReadAsStringAsync(response.Deadline));
     }
 
     /// <summary>List Blobs' XML: the names, their sizes, and the marker that says there is more.</summary>
-    private static (IReadOnlyList<RemoteArchive> Archives, string Next) Parse(string xml)
+    private static (IReadOnlyList<RemoteArchive> Archives, string Next, string Why) Parse(string xml)
     {
         try
         {
@@ -149,11 +157,11 @@ public sealed class AzureBlobTarget(HttpClient http, AzureTargetConfig config, T
                         (string?)entry.Element("Properties")?.Element("Content-Length"), out var size) ? size : 0))
                 .Where(archive => archive.Name.Length > 0)
                 .ToArray();
-            return (archives, (string?)document.Root?.Element("NextMarker") ?? string.Empty);
+            return (archives, (string?)document.Root?.Element("NextMarker") ?? string.Empty, string.Empty);
         }
-        catch (System.Xml.XmlException)
+        catch (System.Xml.XmlException e)
         {
-            return ([], string.Empty);
+            return ([], string.Empty, $"its listing could not be read: {e.Message}");
         }
     }
 
@@ -214,19 +222,23 @@ public sealed class AzureBlobTarget(HttpClient http, AzureTargetConfig config, T
         {
             var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, deadlineSource.Token);
             return response.IsSuccessStatusCode
-                ? new Answer(response, string.Empty)
-                : new Answer(response, await FailureAsync(response, ct));
+                ? new Answer(response, string.Empty, deadlineSource.Token)
+                : new Answer(
+                    response,
+                    await FailureAsync(response, deadlineSource.Token),
+                    deadlineSource.Token);
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         {
             return new Answer(
                 null,
                 $"it did not answer within {deadline.TotalMinutes:0} minute(s). The host accepted the "
-                + "connection; something between here and the service is not completing.");
+                + "connection; something between here and the service is not completing.",
+                CancellationToken.None);
         }
         catch (HttpRequestException e)
         {
-            return new Answer(null, $"it could not be reached: {e.Message}");
+            return new Answer(null, $"it could not be reached: {e.Message}", CancellationToken.None);
         }
     }
 
@@ -237,7 +249,16 @@ public sealed class AzureBlobTarget(HttpClient http, AzureTargetConfig config, T
         return $"it answered {(int)response.StatusCode} {response.StatusCode}. {trimmed}".Trim();
     }
 
-    private sealed record Answer(HttpResponseMessage? Message, string Failure) : IDisposable
+    /// <summary>
+    /// One answer, and the token whose deadline it was fetched under.
+    /// </summary>
+    /// <remarks>
+    /// The deadline travels with the response because reading the BODY is a second network operation:
+    /// a service can send headers and then never finish, and a body read on the caller's token would
+    /// sit past the deadline the request was given.
+    /// </remarks>
+    private sealed record Answer(HttpResponseMessage? Message, string Failure, CancellationToken Deadline)
+        : IDisposable
     {
         public void Dispose() => Message?.Dispose();
     }

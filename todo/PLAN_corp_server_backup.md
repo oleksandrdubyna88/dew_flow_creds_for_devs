@@ -45,8 +45,10 @@
 > whose every target refused reads as `failed` rather than `ok` — a backup that stayed on the machine
 > it was taken from is not a backup.
 >
-> This plan stays in `todo/` because four of its five stories are still work somebody has to do; the
-> shipped story is documented in
+> This plan stays in `todo/` because story 5 of its five is still work somebody has to do — the
+> extension's client, the notices and `deploy/restore-archive.sh`. It is promoted the day that lands,
+> not before: a plan whose last story is open reads as outstanding work because it IS outstanding
+> work. The four shipped stories are documented in
 > [module_server.md](../research/module_server.md) and [module_tests.md](../research/module_tests.md).
 >
 > Scope: an admin, without shell access
@@ -243,6 +245,39 @@ not a second timer.
 | the cloud target | 400 MB × retention (default 10) ≈ 4 GB per target | the retention pass after a successful run; the newest is never deleted | a failed upload leaves the previous objects untouched |
 | `status.json`, `settings.json`, `key.sealed` | three small files | overwritten | atomic writes |
 | a run's own state | one flag | reset at startup, and a run older than six hours is treated as stale and cleared | the guard is in memory; a crash mid-run leaves a `*.tmp` and a failed status |
+
+### What story 4 added to that budget, as built
+
+The three rows below are the remote surface as it actually shipped, and they belong here rather than in
+the commit message because a retention chosen after the first write is a conversation about somebody's
+data. The review round was right that the table above described the destination as one line when the
+code creates three separate things at it.
+
+| Surface | Projected size | Retired by | Interrupted |
+|---|---|---|---|
+| archive objects at each target, `<prefix>/cred-vault-<stamp>.cvbk` | 400 MB × retention (default 10) = **4 GB per target**, × the number of configured targets — an unbounded list in `settings.json`, so an admin with four destinations is projecting **16 GB** off-machine | `BackupRunner.PruneAsync` after each SUCCESSFUL upload, over the FULL paginated listing; `ArchiveTargets.Expired` never returns every archive, so a misconfigured window cannot empty a destination | a failed upload prunes nothing at that target — the previous objects stay; the next successful run prunes what this one would have |
+| the write probe, `<prefix>/.credvault-write-probe` | **9 bytes**, one per target, and never more than one — the name is fixed, so a re-save overwrites rather than accumulates | deleted by the probe itself in the same call; a target that accepts the write and refuses the delete is REFUSED at save time, naming the object it left behind | the object survives a crash between the two calls. It is 9 bytes of the literal `credvault` and is not a secret; the next save overwrites it, and retention ignores it because it does not match the archive name |
+| `status.json`'s `targets` array | one row per configured target per run, rewritten in place after each upload — **not** appended; the file holds the LAST run only, so it is bounded by the target count, not by time | overwritten wholesale by the next run's first status write | a crash mid-run leaves rows for the targets that finished, which is the point of writing them per target; the startup sweep moves the run itself out of `in progress` |
+
+Two things the story deliberately did NOT make grow: cloud credentials are sealed INTO `settings.json`
+(one record per target, a few hundred bytes, replaced on edit) rather than into a store of their own,
+and no listing is cached — every retention pass re-reads the destination, because a cache of what is at
+a target is a second opinion about which archives exist and the expensive way to be wrong.
+
+## The boundary with the plans on either side
+
+Named here **and** in the other document, per
+[planning-docs.md](../.claude/rules/shared/common/planning-docs.md) § *A boundary between two plans is
+named on BOTH sides*. This is the whole division; anything not in the table belongs to this plan.
+
+| Item | Built by | The other plan's part | Order |
+|---|---|---|---|
+| the KEK that seals the backup key and every target credential | [PLAN_corp_blocking_login_key.md](../research/PLAN_corp_blocking_login_key.md) | this plan consumes `Vault:LoginKey:Kek` through `KekSeal` and adds no key of its own | that plan first; it shipped 2026-09-05 |
+| `RequireAdmin`, the runtime settings file, the corp-admin role | [PLAN_corp_registry_roles.md](../research/PLAN_corp_registry_roles.md) | every route here is behind its guard; this plan adds the `backup` block to the settings file it owns | that plan first |
+| the event log and its reader | [PLAN_corp_event_log.md](../research/PLAN_corp_event_log.md) | this plan only APPENDS four kinds (`backup.taken`, `backup.failed`, `backup.key_issued`, `backup.settings_changed`) through `OrgEndpoints.Row`; it owns no reader, no query and no retention over rows | that plan first |
+| S3 and Azure Blob targets, their signers, retention at the destination | **this plan** (story 4) | — | — |
+| OneDrive and Google Drive targets | `todo/PLAN_corp_backup_drives.md`, extracted at promotion | it implements the SAME `IArchiveTarget` this plan defines and adds nothing to it; what it needs and this plan does not have is a consent flow and a server-held refresh token | this plan first — the seam is here |
+| `deploy/backup.sh` and `deploy/backup/backup-once.sh` | [module_deployment.md](../research/module_deployment.md), already shipped | it stays, and answers a different question: a host-side tar for whoever has a shell. This plan neither replaces nor calls it | already there |
 
 ## Build order
 

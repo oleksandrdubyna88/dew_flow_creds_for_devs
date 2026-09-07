@@ -85,11 +85,11 @@ public sealed class BackupTargets(byte[] kek, IHttpClientFactory clients, TimePr
         var sealedBytes = KekSeal.Seal(
             kek, JsonSerializer.SerializeToUtf8Bytes(secrets, AppJsonContext.Default.TargetSecrets));
         return new SealedTarget(
-            kind,
-            endpoint,
-            region,
-            bucket,
-            prefix,
+            Text(kind),
+            Text(endpoint),
+            Text(region),
+            Text(bucket),
+            Text(prefix),
             Convert.ToBase64String(sealedBytes.Iv),
             Convert.ToBase64String(sealedBytes.Tag),
             Convert.ToBase64String(sealedBytes.Data));
@@ -153,50 +153,79 @@ public sealed class BackupTargets(byte[] kek, IHttpClientFactory clients, TimePr
     /// </remarks>
     public static string Problem(BackupTargetRequest target, bool hasSealedCredentials)
     {
-        if (!TargetKinds.Known(target.Kind))
+        var kind = Text(target.Kind);
+        if (!TargetKinds.Known(kind))
         {
-            return $"'{target.Kind}' is not a kind of target this server knows. It takes "
+            return $"'{kind}' is not a kind of target this server knows. It takes "
                 + $"'{TargetKinds.S3}' and '{TargetKinds.AzureBlob}'.";
         }
-        var endpoint = ArchiveTargets.EndpointProblem(target.Endpoint);
+        var endpoint = ArchiveTargets.EndpointProblem(Text(target.Endpoint));
         if (endpoint.Length > 0)
         {
             return endpoint;
         }
-        if (target.Bucket.Trim().Length == 0)
+        if (Text(target.Bucket).Length == 0)
         {
-            return target.Kind == TargetKinds.S3
-                ? "a bucket name is required."
-                : "a container name is required.";
+            return kind == TargetKinds.S3 ? "a bucket name is required." : "a container name is required.";
         }
-        return Missing(target, hasSealedCredentials);
+        return Missing(target, kind, hasSealedCredentials);
     }
 
     /// <summary>
-    /// Credentials are required unless this target already has some sealed under the same identity.
+    /// Credentials must be COMPLETE, or absent and already sealed. Never half.
     /// </summary>
-    private static string Missing(BackupTargetRequest target, bool hasSealedCredentials)
+    /// <remarks>
+    /// <para>Half a credential is the case that used to reach the cipher: an Azure account name with no
+    /// key made "did they send credentials?" answer yes, and the save-time probe then handed an empty
+    /// string to a base64 decoder — a 500 where a sentence belongs.</para>
+    /// <para>The message names the FIELD that is missing rather than the pair, because an administrator
+    /// who forgot one of two has to guess otherwise.</para>
+    /// </remarks>
+    private static string Missing(BackupTargetRequest target, string kind, bool hasSealedCredentials)
     {
-        if (hasSealedCredentials || Secrets(target) is { Empty: false })
+        var secrets = Secrets(target);
+        if (secrets.Empty)
         {
-            return string.Empty;
+            return hasSealedCredentials ? string.Empty : FirstTime(kind);
         }
-        return target.Kind == TargetKinds.S3
-            ? "an access key id and a secret access key are required the first time this target is "
-              + "saved. They are sealed and never shown again, so a later edit that leaves them out "
-              + "keeps the ones already here."
-            : "an account name and an account key are required the first time this target is saved. "
-              + "They are sealed and never shown again, so a later edit that leaves them out keeps the "
-              + "ones already here.";
+        var missing = kind == TargetKinds.S3
+            ? Named(secrets.AccessKeyId, "accessKeyId", secrets.SecretAccessKey, "secretAccessKey")
+            : Named(secrets.AccountName, "accountName", secrets.AccountKey, "accountKey");
+        return missing.Length == 0
+            ? string.Empty
+            : $"{missing} is missing. Both halves of a credential are needed, or neither — leaving both "
+              + "out keeps the ones already sealed for this target.";
     }
+
+    private static string Named(string first, string firstName, string second, string secondName) =>
+        first.Length == 0 ? firstName : second.Length == 0 ? secondName : string.Empty;
+
+    private static string FirstTime(string kind) => kind == TargetKinds.S3
+        ? "an access key id and a secret access key are required the first time this target is saved. "
+          + "They are sealed and never shown again, so a later edit that leaves them out keeps the ones "
+          + "already here."
+        : "an account name and an account key are required the first time this target is saved. They "
+          + "are sealed and never shown again, so a later edit that leaves them out keeps the ones "
+          + "already here.";
 
     /// <summary>The credentials a request carried, with the nulls flattened away.</summary>
     public static TargetSecrets Secrets(BackupTargetRequest target) => new(
-        target.AccessKeyId ?? string.Empty,
-        target.SecretAccessKey ?? string.Empty,
-        target.AccountName ?? string.Empty,
-        target.AccountKey ?? string.Empty);
+        Text(target.AccessKeyId),
+        Text(target.SecretAccessKey),
+        Text(target.AccountName),
+        Text(target.AccountKey));
 
     public static string IdentityOf(BackupTargetRequest target) =>
-        $"{target.Kind}|{target.Endpoint}|{target.Bucket}|{target.Prefix}";
+        $"{Text(target.Kind)}|{Text(target.Endpoint)}|{Text(target.Bucket)}|{Text(target.Prefix)}";
+
+    /// <summary>
+    /// A field the client omitted is NULL, whatever the record says.
+    /// </summary>
+    /// <remarks>
+    /// A non-nullable string on a DTO is a promise the deserialiser does not keep: an omitted member
+    /// arrives as null and the first <c>Trim()</c> on it is a 500 where a 400 belongs. Normalised here,
+    /// where the value is READ, so every reader gets the same answer rather than each call site
+    /// remembering.
+    /// </remarks>
+    public static string Text(string? value) => (value ?? string.Empty).Trim();
 }

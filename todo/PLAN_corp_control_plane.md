@@ -242,7 +242,8 @@ day. Each epic repeats its own line with the sweep that owns it.
 | `org/projects/*.json` | 10 × ~500 B | archived, never deleted (the log cites them) | atomic write |
 | `pendingFolderRemovals` per member | ≤ 1 per project ever assigned | removed on the client's acknowledgement, or when the member is deleted | a lost ack re-sends the instruction; the client's delete is idempotent |
 | `org/events/<yyyy-MM-dd>.ndjson` | ~120 rows/day × ~400 B ≈ 50 KB/day, **~18 MB/year, kept forever** on the same disk as the vaults | nobody, by decision 11; `ShareMaintenance` and `OrgRecoveryMaintenance` must not touch it, pinned by a test | append is a single `write` under a lock; a torn last line is skipped by the reader and logged once |
-| backup archives, cloud | archive ≈ DataDir (200 × 2 MB vaults + log) ≈ 400 MB × retention 10 = **4 GB per target** | the server's own retention pass after every successful run | a run older than 6 h is stale and reset at startup |
+| backup archives, cloud | archive ≈ DataDir (200 × 2 MB vaults + log) ≈ 400 MB × retention 10 = **4 GB per target**, and the target LIST is unbounded — four destinations project **16 GB** off-machine | the server's own retention pass after every successful upload, over the full paginated listing; `ArchiveTargets.Expired` never returns every archive, so no window can empty a destination | a failed upload prunes nothing at that target; the previous objects stay and the next successful run prunes what this one would have |
+| the save-time write probe at each target | 9 bytes, one per target, fixed name — a re-save overwrites | its own delete, in the same call; a target that will not delete it is refused at save time | it survives a crash between write and delete; it is not a secret and the next save overwrites it |
 | backup archives, downloaded | not ours — the admin's disk | the admin | — |
 
 ## Build order across epics

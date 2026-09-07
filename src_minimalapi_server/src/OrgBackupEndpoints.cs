@@ -118,22 +118,38 @@ public static class OrgBackupEndpoints
             return;
         }
         var existing = await backups.ReadSettingsAsync(ct);
-        var sealed_ = await SealedAsync(request!, existing, targets, ct);
+        // OMITTED means unchanged; an empty array means remove them all. A client that predates targets
+        // — the extension before story 5, a script somebody wrote against story 3 — sends no `targets`
+        // member at all, and treating that as "remove every destination" would silently turn a
+        // configured deployment back into a local-only one on the next schedule edit.
+        if (request!.Targets is null)
+        {
+            await backups.WriteSettingsAsync(
+                existing with { ScheduleHourUtc = request.ScheduleHourUtc, RetentionDays = request.RetentionDays },
+                ct);
+            await RecordAsync(deps, admin.Value.Email, request);
+            ctx.Response.StatusCode = StatusCodes.Status204NoContent;
+            return;
+        }
+        var sealed_ = await SealedAsync(request, existing, targets, ct);
         if (sealed_.Problem.Length > 0)
         {
             await OrgEndpoints.FailJson(ctx, StatusCodes.Status400BadRequest, sealed_.Problem);
             return;
         }
         await backups.WriteSettingsAsync(
-            new BackupSettings(request!.ScheduleHourUtc, request.RetentionDays, sealed_.Targets), ct);
-        await deps.Events.AppendAsync(
+            new BackupSettings(request.ScheduleHourUtc, request.RetentionDays, sealed_.Targets), ct);
+        await RecordAsync(deps, admin.Value.Email, request);
+        ctx.Response.StatusCode = StatusCodes.Status204NoContent;
+    }
+
+    private static Task RecordAsync(OrgEndpointDeps deps, string admin, BackupSettingsRequest request) =>
+        deps.Events.AppendAsync(
             OrgEndpoints.Row(
-                OrgEventKinds.BackupSettingsChanged, admin.Value.Email, subject: null, detail: Said(request)),
+                OrgEventKinds.BackupSettingsChanged, admin, subject: null, detail: Said(request)),
             // The settings are already on disk. A client that hangs up at this instant must not take the
             // history of the change with it — the same reading every other row on this server makes.
             CancellationToken.None);
-        ctx.Response.StatusCode = StatusCodes.Status204NoContent;
-    }
 
     /// <summary>
     /// Turn the targets a request describes into sealed ones — validating each before any are saved.
@@ -163,21 +179,27 @@ public static class OrgBackupEndpoints
             var problem = BackupTargets.Problem(wanted, kept is not null);
             if (problem.Length > 0)
             {
+                // Everything checkable without a request is checked first, and for ALL targets, so a
+                // typo never costs a round trip to somebody else's service.
                 return ([], $"{Named(wanted)}: {problem}");
             }
             var secrets = BackupTargets.Secrets(wanted);
-            var record = secrets.Empty && kept is not null
-                ? kept
-                : targets.Seal(
-                    wanted.Kind, wanted.Endpoint, wanted.Region, wanted.Bucket, wanted.Prefix, secrets);
-            var usable = await UsableAsync(targets, record, ct);
-            if (usable.Length > 0)
-            {
-                return ([], $"{Named(wanted)}: {usable}");
-            }
-            sealed_.Add(record);
+            sealed_.Add(
+                secrets.Empty && kept is not null
+                    ? kept
+                    : targets.Seal(
+                        wanted.Kind, wanted.Endpoint, wanted.Region, wanted.Bucket, wanted.Prefix, secrets));
         }
-        return (sealed_, string.Empty);
+        // The probes run TOGETHER. Serially, three targets whose hosts each accept a connection and
+        // then say nothing would hold the administrator's request for six minutes — past every browser
+        // and reverse-proxy timeout there is — and they would be waiting on three independent networks
+        // one after another for no reason. Concurrently, the worst case is one deadline.
+        var probes = await Task.WhenAll(
+            sealed_.Select(async record => (record, Why: await UsableAsync(targets, record, ct))));
+        var refused = probes.FirstOrDefault(probe => probe.Why.Length > 0);
+        return refused.Why is { Length: > 0 }
+            ? ([], $"{refused.record.Describe}: {refused.Why}")
+            : (sealed_, string.Empty);
     }
 
     private static async Task<string> UsableAsync(

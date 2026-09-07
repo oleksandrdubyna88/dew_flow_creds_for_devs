@@ -181,7 +181,17 @@ public sealed record OrgEventQuery(string? Actor, string? Subject, string? Perso
 | people | `member.registered`, `member.role_changed`, `member.share_default_changed`, `member.blocked`, `member.unblocked` |
 | projects | `project.created`, `project.renamed`, `project.archived`, `project.assigned`, `project.unassigned` |
 | keys | `login_key.issued` (there is no revocation — see epic 2's decision on rotation) |
-| operations | `settings.changed`, `backup.configured`, `backup.run`, `backup.failed` |
+| operations | `settings.changed`, `backup.taken`, `backup.failed`, `backup.key_issued`, `backup.settings_changed` |
+
+**The boundary with epic 5, named here as well as there.** The four `backup.*` kinds are APPENDED by
+[PLAN_corp_server_backup.md](../todo/PLAN_corp_server_backup.md) and by nothing in this plan; this plan
+owns the store, the reader, the query and the scoping rule that governs them, and epic 5 adds no reader,
+no query and no retention of its own. The kinds above are what shipped — the three this plan first
+sketched (`backup.configured`, `backup.run`) were named before the runner existed and were replaced by
+`backup.taken`/`backup.settings_changed` when it did, with `backup.key_issued` added because minting the
+key is a separate act from configuring the schedule. Full table:
+[PLAN_corp_server_backup.md](../todo/PLAN_corp_server_backup.md) § *The boundary with the plans on
+either side*.
 
 ## Files
 
