@@ -117,6 +117,113 @@ Content-Type: application/json
 
 ###
 
+# @name org_backup_target_over_plain_http_is_refused
+PUT {{baseUrl}}/api/org/backup/settings
+Authorization: Bearer {{officerToken}}
+X-Creds-Contract: {{contract}}
+Content-Type: application/json
+
+{
+  "scheduleHourUtc": 4,
+  "retentionDays": 14,
+  "targets": [
+    { "kind": "s3", "endpoint": "http://s3.example.com", "region": "eu-central-1",
+      "bucket": "vaults", "prefix": "backups",
+      "accessKeyId": "AKIDEXAMPLE", "secretAccessKey": "not-a-real-secret" }
+  ]
+}
+
+?? status == 400
+
+{{
+  const assert = require('node:assert');
+  test('refused without a round trip, because the archive body is not covered by the signature', () => {
+    assert.match(response.parsedBody.error, /must be https/);
+  });
+  test('and the refusal names WHICH target, since a settings document can carry several', () => {
+    assert.match(response.parsedBody.error, /s3 vaults\/backups/);
+  });
+}}
+
+###
+
+# @name org_backup_target_of_an_unknown_kind_is_refused
+PUT {{baseUrl}}/api/org/backup/settings
+Authorization: Bearer {{officerToken}}
+X-Creds-Contract: {{contract}}
+Content-Type: application/json
+
+{
+  "scheduleHourUtc": 4,
+  "retentionDays": 14,
+  "targets": [
+    { "kind": "ftp", "endpoint": "https://example.com", "region": "", "bucket": "vaults",
+      "prefix": "", "accessKeyId": "a", "secretAccessKey": "b" }
+  ]
+}
+
+?? status == 400
+
+{{
+  const assert = require('node:assert');
+  test('the refusal names the two kinds this server takes', () => {
+    assert.match(response.parsedBody.error, /s3/);
+    assert.match(response.parsedBody.error, /azure-blob/);
+  });
+}}
+
+###
+
+# @name org_backup_first_save_of_a_target_needs_its_credentials
+PUT {{baseUrl}}/api/org/backup/settings
+Authorization: Bearer {{officerToken}}
+X-Creds-Contract: {{contract}}
+Content-Type: application/json
+
+{
+  "scheduleHourUtc": 4,
+  "retentionDays": 14,
+  "targets": [
+    { "kind": "s3", "endpoint": "https://s3.example.com", "region": "eu-central-1",
+      "bucket": "vaults", "prefix": "backups" }
+  ]
+}
+
+?? status == 400
+
+{{
+  const assert = require('node:assert');
+  test('and the message says what a LATER edit does, since nothing ever shows them again', () => {
+    assert.match(response.parsedBody.error, /required the first time this target is saved/);
+    assert.match(response.parsedBody.error, /keeps the ones already here/);
+  });
+}}
+
+###
+
+# @name org_backup_status_never_carries_a_credential
+GET {{baseUrl}}/api/org/backup/status
+Authorization: Bearer {{officerToken}}
+X-Creds-Contract: {{contract}}
+Accept: application/json
+
+?? status == 200
+
+{{
+  const assert = require('node:assert');
+  test('write-only means write-only, including on the route a page polls', () => {
+    const raw = JSON.stringify(response.parsedBody);
+    for (const secret of ['accessKeyId', 'secretAccessKey', 'accountKey', 'AKIDEXAMPLE']) {
+      assert.ok(!raw.includes(secret), `the status must not carry ${secret}`);
+    }
+  });
+  test('and it carries a per-target list, so a page can say WHICH one failed', () => {
+    assert.ok(Array.isArray(response.parsedBody.targets));
+  });
+}}
+
+###
+
 # @name org_backup_download_before_any_run
 GET {{baseUrl}}/api/org/backup/archive
 Authorization: Bearer {{officerToken}}
@@ -226,6 +333,9 @@ Accept: application/json
 #
 # @uncovered 409 POST /api/org/backup/run — a second run while one is live. Provoking it means racing
 #   a real archive build from a request file; the endpoint tests hold the claim directly instead.
+# @uncovered 400 PUT /api/org/backup/settings — a target that is well-formed and UNREACHABLE. The
+#   refusal needs a host that fails to resolve, and a request file that depends on DNS failing is a
+#   request file that fails differently on every network. BackupEndpointTests drives it in-process.
 # @uncovered 200 GET /api/org/backup/archive — streaming the archive needs the run above to have
 #   FINISHED, which is a wait this suite has no way to express. Asserted over real HTTP in
 #   BackupEndpointTests, including the CVBK marker and the Content-Length matching the body.

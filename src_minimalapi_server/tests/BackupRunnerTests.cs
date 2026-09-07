@@ -133,7 +133,7 @@ public class BackupRunnerTests
         var dir = TempDir();
         var backups = new BackupStore(dir, [], NullLogger<BackupStore>.Instance);
         var runner = new BackupRunner(
-            backups, dir, Config(), null, Clock(), NullLogger<BackupRunner>.Instance);
+            backups, dir, Config(), null, Targets(RandomNumberGenerator.GetBytes(Key32.Bytes)), Clock(), NullLogger<BackupRunner>.Instance);
 
         var outcome = await runner.RunAsync("admin@corp.com", Ct);
 
@@ -148,7 +148,7 @@ public class BackupRunnerTests
         // running backup from a dead one.
         var world = await Ready();
         await world.Backups.WriteStatusAsync(
-            new BackupStatus(Noon.ToUnixTimeMilliseconds(), BackupRunResults.InProgress, string.Empty, 0), Ct);
+            new BackupStatus(Noon.ToUnixTimeMilliseconds(), BackupRunResults.InProgress, string.Empty, 0, []), Ct);
 
         (await world.Backups.SweepOrphanedRunAsync(Ct)).Should().BeTrue();
 
@@ -164,7 +164,7 @@ public class BackupRunnerTests
         // design rewrote the status whenever a server started, which would have declared that run dead.
         var world = await Ready();
         await world.Backups.WriteStatusAsync(
-            new BackupStatus(Noon.ToUnixTimeMilliseconds(), BackupRunResults.InProgress, string.Empty, 0), Ct);
+            new BackupStatus(Noon.ToUnixTimeMilliseconds(), BackupRunResults.InProgress, string.Empty, 0, []), Ct);
         using var held = world.Backups.TryClaim();
 
         (await world.Backups.SweepOrphanedRunAsync(Ct)).Should().BeFalse("something holds the claim");
@@ -191,7 +191,7 @@ public class BackupRunnerTests
         // locally — two policies over one directory, and the one nobody configured winning.
         var world = await Ready();
         Directory.CreateDirectory(world.Backups.ArchivesDir);
-        await world.Backups.WriteSettingsAsync(new BackupSettings(3, 30), Ct);
+        await world.Backups.WriteSettingsAsync(new BackupSettings(3, 30, []), Ct);
         var recent = ArchiveName.For(DateTimeOffset.Parse("2026-09-05T03:00:00Z"));
         var ancient = ArchiveName.For(DateTimeOffset.Parse("2026-01-01T03:00:00Z"));
         File.WriteAllText(Path.Combine(world.Backups.ArchivesDir, recent), "inside the window");
@@ -232,7 +232,7 @@ public class BackupRunnerTests
         var kek = RandomNumberGenerator.GetBytes(Key32.Bytes);
         var backups = new BackupStore(dir, kek, NullLogger<BackupStore>.Instance);
         var runner = new BackupRunner(
-            backups, dir, new ThrowingConfig(), null, Clock(), NullLogger<BackupRunner>.Instance);
+            backups, dir, new ThrowingConfig(), null, Targets(kek), Clock(), NullLogger<BackupRunner>.Instance);
         await backups.MintKeyAsync(Ct);
         (await backups.AcknowledgeKeyShownAsync(Ct)).Should().BeTrue();
 
@@ -423,7 +423,7 @@ public class BackupRunnerTests
         return new Deployment(
             dir,
             backups,
-            new BackupRunner(backups, dir, Config(), events, Clock(), NullLogger<BackupRunner>.Instance),
+            new BackupRunner(backups, dir, Config(), events, Targets(kek), Clock(), NullLogger<BackupRunner>.Instance),
             string.Empty);
     }
 
@@ -449,6 +449,21 @@ public class BackupRunnerTests
             .Build();
 
     private static TimeProvider Clock() => new FrozenClock(Noon);
+
+    /// <summary>
+    /// The target factory, with a client factory that answers nothing.
+    /// </summary>
+    /// <remarks>
+    /// Every test in this class configures NO targets, so the factory is never asked to build one.
+    /// The upload paths have their own suite, over a stubbed handler.
+    /// </remarks>
+    private static BackupTargets Targets(byte[] kek) =>
+        new(kek, new NoClients(), Clock(), NullLogger<BackupTargets>.Instance);
+
+    private sealed class NoClients : IHttpClientFactory
+    {
+        public HttpClient CreateClient(string name) => new();
+    }
 
     private static IReadOnlyList<string> Rows(string dir, string kind) =>
     [

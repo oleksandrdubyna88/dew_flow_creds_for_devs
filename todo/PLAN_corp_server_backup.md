@@ -1,6 +1,6 @@
 # PLAN — epic 5: one encrypted archive of the whole server, and somewhere safe to put it
 
-> Status: **stories 1, 2 and 3 of 5 implemented, 2026-09-07; the rest is open work.** The archive FORMAT ships —
+> Status: **stories 1 to 4 of 5 implemented, 2026-09-07; story 5 is open work.** The archive FORMAT ships —
 > `BackupArchiveFormat.cs`, `BackupChunkStreams.cs`, `BackupArchive.cs`, `BackupArchiveException.cs`,
 > `BackupArchiveCommand.cs` and the shared `Key32.cs`, with `--create-archive`, `--verify-archive` and
 > `--decrypt-archive` on the server binary, 55 unit tests and the
@@ -11,8 +11,11 @@
 > (`ConfigKeys.cs`, `BackupConfigSnapshot.cs`). **Story 3** adds the run itself (`BackupRun.cs`,
 > `BackupStoreRun.cs`, `BackupRunner.cs`), the five-minute scheduler with its interrupted-run sweep
 > (`BackupScheduleService.cs`), and six admin routes (`OrgBackupEndpoints.cs`, `http/org/backup.http`).
-> Still to build: the two cloud signers (story 4), and the extension's client, the notices and the
-> restore script (story 5) — until story 4 lands, a run writes to LOCAL disk only.
+> **Story 4** adds the two cloud destinations: `AwsSigV4.cs` and `AzureSharedKey.cs` (both pinned
+> against published vectors at every intermediate step), `S3Target.cs` and `AzureBlobTarget.cs` over
+> signed REST with no SDK, `ArchiveTarget.cs` for what they share, and `BackupTargets.cs` for sealing
+> their credentials. Still to build: the extension's client, the notices and the restore script
+> (story 5).
 >
 > Deviations so far, recorded here rather than in a commit message: the nonce prefix is **8 bytes with
 > a 4-byte counter**, not the 4 this plan sketched, and the counter is refused rather than wrapped; the
@@ -33,7 +36,14 @@
 > takes the day's backup; and the claim plus the in-progress status are written INSIDE the request,
 > because detaching the whole run left a window where a reloaded page saw "never run" for a backup that
 > had just been started. `PUT /settings` carries no credential fields: story 4 is what will have
-> anything to hold credentials for.
+> anything to hold credentials for. From story 4: an upload is followed by a HEAD comparing the stored
+> length, because `UNSIGNED-PAYLOAD` leaves the body out of the signature and a 200 would otherwise
+> mean "accepted" rather than "stored"; listings follow their continuation token, without which
+> retention computes against a set that is not the set; the save-time check WRITES a probe object
+> rather than doing a HEAD, because both clouds routinely grant read while denying write; credentials
+> omitted from an edit keep the ones already sealed, since nothing ever shows them again; and a run
+> whose every target refused reads as `failed` rather than `ok` — a backup that stayed on the machine
+> it was taken from is not a backup.
 >
 > This plan stays in `todo/` because four of its five stories are still work somebody has to do; the
 > shipped story is documented in

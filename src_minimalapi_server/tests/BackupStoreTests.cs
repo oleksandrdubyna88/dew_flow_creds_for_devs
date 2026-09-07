@@ -143,7 +143,7 @@ public class BackupStoreTests
         var store = Store(dir, out _);
         await store.MintKeyAsync(Ct);
         (await store.AcknowledgeKeyShownAsync(Ct)).Should().BeTrue();
-        await store.WriteSettingsAsync(new BackupSettings(4, 14), Ct);
+        await store.WriteSettingsAsync(new BackupSettings(4, 14, []), Ct);
         Directory.CreateDirectory(Path.Combine(dir, "vaults"));
         File.WriteAllText(Path.Combine(dir, "vaults", "alice.json"), "keep me");
         var archive = Path.Combine(TempDir(), "archive.cvbk");
@@ -164,14 +164,18 @@ public class BackupStoreTests
         var dir = TempDir();
         var store = Store(dir, out _);
 
-        (await store.ReadSettingsAsync(Ct)).Should().Be(BackupSettings.Default);
-        (await store.ReadStatusAsync(Ct)).Should().Be(BackupStatus.NeverRun);
+        // BeEquivalentTo rather than Be: these records carry a LIST, and a record's generated equality
+        // compares a list by reference. Two settings documents with the same targets are not `==`, which
+        // is a trap for every caller and not only for this test.
+        (await store.ReadSettingsAsync(Ct)).Should().BeEquivalentTo(BackupSettings.Default);
+        (await store.ReadStatusAsync(Ct)).Should().BeEquivalentTo(BackupStatus.NeverRun);
 
-        await store.WriteSettingsAsync(new BackupSettings(7, 90), Ct);
-        await store.WriteStatusAsync(new BackupStatus(1234, "ok", string.Empty, 4096), Ct);
+        await store.WriteSettingsAsync(new BackupSettings(7, 90, []), Ct);
+        await store.WriteStatusAsync(new BackupStatus(1234, "ok", string.Empty, 4096, []), Ct);
 
-        (await store.ReadSettingsAsync(Ct)).Should().Be(new BackupSettings(7, 90));
-        (await store.ReadStatusAsync(Ct)).Should().Be(new BackupStatus(1234, "ok", string.Empty, 4096));
+        (await store.ReadSettingsAsync(Ct)).Should().BeEquivalentTo(new BackupSettings(7, 90, []));
+        (await store.ReadStatusAsync(Ct)).Should().BeEquivalentTo(
+            new BackupStatus(1234, "ok", string.Empty, 4096, []));
     }
 
     [Fact]
@@ -181,10 +185,10 @@ public class BackupStoreTests
         // and it is stated here so that nobody "fixes" it into a throw.
         var dir = TempDir();
         var store = Store(dir, out _);
-        await store.WriteStatusAsync(new BackupStatus(1, "ok", string.Empty, 1), Ct);
+        await store.WriteStatusAsync(new BackupStatus(1, "ok", string.Empty, 1, []), Ct);
         File.WriteAllText(Path.Combine(dir, "org", "backup", "status.json"), "{ not json");
 
-        (await store.ReadStatusAsync(Ct)).Should().Be(BackupStatus.NeverRun);
+        (await store.ReadStatusAsync(Ct)).Should().BeEquivalentTo(BackupStatus.NeverRun);
     }
 
     [Fact]
@@ -260,7 +264,7 @@ public class BackupStoreTests
         await store.MintKeyAsync(Ct);
         (await store.AcknowledgeKeyShownAsync(Ct)).Should().BeTrue();
         var key = (await store.FindKeyAsync(Ct)).Key;
-        await store.WriteStatusAsync(new BackupStatus(1_700_000_000_000, "ok", string.Empty, 4096), Ct);
+        await store.WriteStatusAsync(new BackupStatus(1_700_000_000_000, "ok", string.Empty, 4096, []), Ct);
         File.Delete(Path.Combine(dir, "org", "backup", "key.shown"));
 
         var again = await store.MintKeyAsync(Ct);

@@ -236,7 +236,8 @@ public sealed class BackupEndpointTests
                     TimeProvider.System.GetUtcNow().ToUnixTimeMilliseconds(),
                     BackupRunResults.InProgress,
                     string.Empty,
-                    0),
+                    0,
+                    []),
                 Ct);
             (await StatusAsync(cto)).GetProperty("running").GetBoolean()
                 .Should().BeTrue("that is what a page reloaded mid-run must see");
@@ -263,6 +264,109 @@ public sealed class BackupEndpointTests
             await cto.PostAsync("/api/org/backup/key/rotate", null, Ct), HttpStatusCode.NotImplemented);
 
         refusal.Should().Contain("orphans all of them");
+    }
+
+    [Fact]
+    public async Task ATargetThatCannotBeReachedIsRefusedWhenItIsSAVEDAndNotAtThreeInTheMorning()
+    {
+        // The whole point of proving a target at save time: a typo, a revoked key or a bucket that is
+        // not there becomes a sentence on the admin's screen instead of a line in a 03:00 log nobody
+        // reads. The host below does not resolve, which is the cheapest true version of unreachable.
+        using var server = Corp.Server();
+        using var cto = server.ClientFor(Corp.Cto);
+
+        var refusal = await Corp.RefusalAsync(
+            await Corp.PutJsonAsync(
+                cto,
+                "/api/org/backup/settings",
+                """
+                {"scheduleHourUtc":3,"retentionDays":30,"targets":[
+                  {"kind":"s3","endpoint":"https://nowhere.invalid","region":"eu-central-1",
+                   "bucket":"vaults","prefix":"backups",
+                   "accessKeyId":"AKIDEXAMPLE","secretAccessKey":"secret"}]}
+                """),
+            HttpStatusCode.BadRequest);
+
+        refusal.Should().Contain("s3 vaults/backups", "the refusal names WHICH target");
+        (await StatusAsync(cto)).GetProperty("targets").GetArrayLength()
+            .Should().Be(0, "and nothing was saved");
+    }
+
+    [Fact]
+    public async Task ATargetWithAPlainHttpEndpointIsRefusedBeforeAnyRequestIsMade()
+    {
+        // Checkable without a round trip, so it is checked without one. The archive's body is not
+        // covered by the request signature, which is why the transport has to be.
+        using var server = Corp.Server();
+        using var cto = server.ClientFor(Corp.Cto);
+
+        var refusal = await Corp.RefusalAsync(
+            await Corp.PutJsonAsync(
+                cto,
+                "/api/org/backup/settings",
+                """
+                {"scheduleHourUtc":3,"retentionDays":30,"targets":[
+                  {"kind":"s3","endpoint":"http://s3.example.com","region":"eu-central-1",
+                   "bucket":"vaults","prefix":"backups",
+                   "accessKeyId":"AKIDEXAMPLE","secretAccessKey":"secret"}]}
+                """),
+            HttpStatusCode.BadRequest);
+
+        refusal.Should().Contain("must be https");
+    }
+
+    [Fact]
+    public async Task AnUnknownKindIsRefusedWithTheTwoThisServerTakes()
+    {
+        using var server = Corp.Server();
+        using var cto = server.ClientFor(Corp.Cto);
+
+        var refusal = await Corp.RefusalAsync(
+            await Corp.PutJsonAsync(
+                cto,
+                "/api/org/backup/settings",
+                """
+                {"scheduleHourUtc":3,"retentionDays":30,"targets":[
+                  {"kind":"ftp","endpoint":"https://example.com","region":"","bucket":"vaults",
+                   "prefix":"","accessKeyId":"a","secretAccessKey":"b"}]}
+                """),
+            HttpStatusCode.BadRequest);
+
+        refusal.Should().Contain("s3").And.Contain("azure-blob");
+    }
+
+    [Fact]
+    public async Task ATargetSavedWithNoCredentialsAtAllIsRefusedWithWhatTheFirstSaveNeeds()
+    {
+        using var server = Corp.Server();
+        using var cto = server.ClientFor(Corp.Cto);
+
+        var refusal = await Corp.RefusalAsync(
+            await Corp.PutJsonAsync(
+                cto,
+                "/api/org/backup/settings",
+                """
+                {"scheduleHourUtc":3,"retentionDays":30,"targets":[
+                  {"kind":"s3","endpoint":"https://s3.example.com","region":"eu-central-1",
+                   "bucket":"vaults","prefix":"backups"}]}
+                """),
+            HttpStatusCode.BadRequest);
+
+        refusal.Should().Contain("required the first time this target is saved");
+        refusal.Should().Contain("keeps the ones already here", "and it says what a later edit does");
+    }
+
+    [Fact]
+    public async Task TheStatusNeverCarriesACredentialInAnyShape()
+    {
+        // Write-only means write-only: not in the status, not in an error, not anywhere a page polls.
+        using var server = Corp.Server();
+        using var cto = server.ClientFor(Corp.Cto);
+
+        var status = (await StatusAsync(cto)).GetRawText();
+
+        status.Should().NotContain("accessKeyId").And.NotContain("secretAccessKey");
+        status.Should().NotContain("accountKey").And.NotContain("AKIDEXAMPLE");
     }
 
     /// <summary>The store the server itself is using, for the states only a restart can produce.</summary>

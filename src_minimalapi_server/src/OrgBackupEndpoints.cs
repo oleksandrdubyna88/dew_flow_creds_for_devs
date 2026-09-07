@@ -30,12 +30,13 @@ public static class OrgBackupEndpoints
         OrgEndpointDeps deps,
         BackupStore backups,
         BackupRunner runner,
-        BackupQueue queue)
+        BackupQueue queue,
+        BackupTargets targets)
     {
         app.MapGet("/api/org/backup/status", (HttpContext ctx, CancellationToken ct) =>
             StatusAsync(ctx, deps, backups, ct));
         app.MapPut("/api/org/backup/settings", (HttpContext ctx, CancellationToken ct) =>
-            SettingsAsync(ctx, deps, backups, ct));
+            SettingsAsync(ctx, deps, backups, targets, ct));
         app.MapPost("/api/org/backup/key", (HttpContext ctx, CancellationToken ct) =>
             MintAsync(ctx, deps, backups, ct));
         app.MapPost("/api/org/backup/run", (HttpContext ctx, CancellationToken ct) =>
@@ -78,7 +79,12 @@ public static class OrgBackupEndpoints
                 status.LastError,
                 BackupRunResults.IsRunning(status.LastResult),
                 archive.Bytes,
-                archive.Name),
+                archive.Name,
+                [
+                    .. status.Targets.Select(
+                        target => new BackupTargetDto(
+                            target.Kind, target.Where, target.Result, target.Error, target.At)),
+                ]),
             AppJsonContext.Default.BackupStatusDto,
             cancellationToken: ct);
     }
@@ -93,7 +99,11 @@ public static class OrgBackupEndpoints
     /// secrets it does nothing with is worse than one that does not accept them.
     /// </remarks>
     private static async Task SettingsAsync(
-        HttpContext ctx, OrgEndpointDeps deps, BackupStore backups, CancellationToken ct)
+        HttpContext ctx,
+        OrgEndpointDeps deps,
+        BackupStore backups,
+        BackupTargets targets,
+        CancellationToken ct)
     {
         var admin = await Admin(ctx, deps);
         if (admin is null)
@@ -107,7 +117,15 @@ public static class OrgBackupEndpoints
             await OrgEndpoints.FailJson(ctx, StatusCodes.Status400BadRequest, problem);
             return;
         }
-        await backups.WriteSettingsAsync(new BackupSettings(request!.ScheduleHourUtc, request.RetentionDays), ct);
+        var existing = await backups.ReadSettingsAsync(ct);
+        var sealed_ = await SealedAsync(request!, existing, targets, ct);
+        if (sealed_.Problem.Length > 0)
+        {
+            await OrgEndpoints.FailJson(ctx, StatusCodes.Status400BadRequest, sealed_.Problem);
+            return;
+        }
+        await backups.WriteSettingsAsync(
+            new BackupSettings(request!.ScheduleHourUtc, request.RetentionDays, sealed_.Targets), ct);
         await deps.Events.AppendAsync(
             OrgEndpoints.Row(
                 OrgEventKinds.BackupSettingsChanged, admin.Value.Email, subject: null, detail: Said(request)),
@@ -116,6 +134,66 @@ public static class OrgBackupEndpoints
             CancellationToken.None);
         ctx.Response.StatusCode = StatusCodes.Status204NoContent;
     }
+
+    /// <summary>
+    /// Turn the targets a request describes into sealed ones — validating each before any are saved.
+    /// </summary>
+    /// <remarks>
+    /// <para><b>Credentials that were left out are KEPT</b>, matched by the target's identity: kind,
+    /// endpoint, bucket and prefix. Nothing ever returns them, so an administrator editing a prefix
+    /// cannot copy the secret out of a GET and paste it back — and without this rule, changing the
+    /// schedule would silently wipe the credentials and the next run would answer 403 at three in the
+    /// morning.</para>
+    /// <para><b>Every target is proved USABLE before any of them is written.</b> Not a HEAD: both
+    /// clouds routinely grant read while denying write, so a check that only reads gives false
+    /// confidence at save time and discovers the truth at 03:00 in a log nobody reads. The probe
+    /// writes a tiny object and deletes it again, which is exactly what a run and a retention pass do.</para>
+    /// </remarks>
+    private static async Task<(IReadOnlyList<SealedTarget> Targets, string Problem)> SealedAsync(
+        BackupSettingsRequest request,
+        BackupSettings existing,
+        BackupTargets targets,
+        CancellationToken ct)
+    {
+        var sealed_ = new List<SealedTarget>();
+        foreach (var wanted in request.Targets ?? [])
+        {
+            var kept = existing.Targets.FirstOrDefault(
+                target => target.Identity == BackupTargets.IdentityOf(wanted));
+            var problem = BackupTargets.Problem(wanted, kept is not null);
+            if (problem.Length > 0)
+            {
+                return ([], $"{Named(wanted)}: {problem}");
+            }
+            var secrets = BackupTargets.Secrets(wanted);
+            var record = secrets.Empty && kept is not null
+                ? kept
+                : targets.Seal(
+                    wanted.Kind, wanted.Endpoint, wanted.Region, wanted.Bucket, wanted.Prefix, secrets);
+            var usable = await UsableAsync(targets, record, ct);
+            if (usable.Length > 0)
+            {
+                return ([], $"{Named(wanted)}: {usable}");
+            }
+            sealed_.Add(record);
+        }
+        return (sealed_, string.Empty);
+    }
+
+    private static async Task<string> UsableAsync(
+        BackupTargets targets, SealedTarget record, CancellationToken ct)
+    {
+        var client = targets.Build(record);
+        if (client is null)
+        {
+            return "this server cannot open the credentials for this target.";
+        }
+        var usable = await client.UsableAsync(ct);
+        return usable.Ok ? string.Empty : usable.Why;
+    }
+
+    private static string Named(BackupTargetRequest target) =>
+        $"{target.Kind} {target.Bucket}/{target.Prefix}".TrimEnd('/');
 
     /// <summary>
     /// <c>POST /api/org/backup/key</c> — mint the key, and hand over its words the only time anybody can.

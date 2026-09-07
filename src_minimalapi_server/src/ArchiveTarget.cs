@@ -1,0 +1,130 @@
+namespace CredVaultServer;
+
+/// <summary>What happened when a target was asked to do something.</summary>
+public sealed record TargetOutcome(bool Ok, string Why)
+{
+    public static readonly TargetOutcome Fine = new(true, string.Empty);
+
+    public static TargetOutcome Failed(string why) => new(false, why);
+}
+
+/// <summary>One archive as the destination holds it. The NAME carries its instant.</summary>
+public sealed record RemoteArchive(string Name, long Bytes);
+
+/// <summary>
+/// Somewhere off this machine to put an archive.
+/// </summary>
+/// <remarks>
+/// <para>Four operations, because retention needs three of them and honesty needs the fourth: put,
+/// list, delete, and "can you be reached with these credentials". The runner does not know which kind
+/// it is talking to, which is what keeps one lifecycle rather than two.</para>
+/// <para><b>Nothing here throws for a service's answer.</b> A 403 is a target that refused, not an
+/// exception: a backup run must record which target failed and carry on with the others, and an
+/// exception per HTTP status would make that a try/catch per call site.</para>
+/// </remarks>
+public interface IArchiveTarget
+{
+    /// <summary>What to call this in a status or a log — never a credential.</summary>
+    string Describe { get; }
+
+    /// <summary>The largest single upload this kind accepts.</summary>
+    long MaxBytes { get; }
+
+    Task<TargetOutcome> PutAsync(string name, Stream body, long length, CancellationToken ct);
+
+    Task<IReadOnlyList<RemoteArchive>> ListAsync(CancellationToken ct);
+
+    Task<TargetOutcome> DeleteAsync(string name, CancellationToken ct);
+
+    /// <summary>
+    /// Prove this target can actually be USED, before the settings that name it are saved.
+    /// </summary>
+    /// <remarks>
+    /// A <c>HEAD</c> on the container is not enough and the review round was right about why: both
+    /// clouds routinely grant read or list while denying write, so a reachability check that only
+    /// reads gives false confidence at save time and discovers the truth at 03:00 in a log nobody
+    /// reads. This writes a tiny probe object and deletes it again.
+    /// </remarks>
+    Task<TargetOutcome> UsableAsync(CancellationToken ct);
+}
+
+/// <summary>
+/// The rules every target shares, in one place so two clients cannot disagree about them.
+/// </summary>
+public static class ArchiveTargets
+{
+    /// <summary>What a probe object is called. Named so an operator who sees one knows what it was.</summary>
+    public const string ProbeName = ".credvault-write-probe";
+
+    /// <summary>
+    /// One request's deadline.
+    /// </summary>
+    /// <remarks>
+    /// Named rather than left to <c>HttpClient</c>'s ambient 100 seconds, because two of these are on
+    /// paths a person is waiting for — saving settings, and a run that must not occupy the queue for an
+    /// afternoon because a host accepted a connection and then said nothing.
+    /// </remarks>
+    public static readonly TimeSpan RequestTimeout = TimeSpan.FromMinutes(2);
+
+    /// <summary>The deadline for an UPLOAD, which is a different size of thing entirely.</summary>
+    public static readonly TimeSpan UploadTimeout = TimeSpan.FromHours(2);
+
+    public const string ArchiveContentType = "application/octet-stream";
+
+    /// <summary>
+    /// Which objects a retention window would remove — and never all of them.
+    /// </summary>
+    /// <remarks>
+    /// <para>The same floor <c>deploy/backup/backup-once.sh:129</c> encodes and story 3 reproduced
+    /// locally: a pass whose every candidate is old deletes NOTHING. A clock that jumped, a server that
+    /// was down for a month, or an upload that has not worked must not turn "prune old backups" into
+    /// "delete every backup" — and on a destination that is the only copy left, that would be the end
+    /// of it.</para>
+    /// <para><b>Age comes from the NAME</b>, exactly as it does locally, and not from the service's
+    /// <c>LastModified</c>. A re-upload, a lifecycle rule, a tier change or a copy between buckets all
+    /// rewrite that timestamp, and a sweep that trusted it would delete a month of archives the first
+    /// time somebody moved a bucket.</para>
+    /// </remarks>
+    public static IReadOnlyList<RemoteArchive> Expired(
+        IReadOnlyList<RemoteArchive> all, DateTimeOffset now, int retentionDays)
+    {
+        if (retentionDays <= 0)
+        {
+            return [];
+        }
+        var cutoff = now.AddDays(-retentionDays);
+        var ours = all.Where(archive => ArchiveName.InstantOf(archive.Name) is not null).ToArray();
+        var old = ours.Where(archive => ArchiveName.InstantOf(archive.Name) < cutoff).ToArray();
+        return old.Length == ours.Length ? [] : old;
+    }
+
+    /// <summary>
+    /// Whether an endpoint may be used, and why not.
+    /// </summary>
+    /// <remarks>
+    /// <para>HTTPS, because S3's <c>UNSIGNED-PAYLOAD</c> requires it — the body is not covered by the
+    /// signature, so the transport has to be what protects it — and because an account key travelling
+    /// in clear is the whole deployment.</para>
+    /// <para><b>Loopback is the exception</b>, and only loopback: a developer running MinIO on
+    /// <c>127.0.0.1</c> has no certificate and nothing to intercept, and refusing that would mean this
+    /// feature could not be exercised outside a cloud account. Anything else — a private address, a
+    /// hostname on the LAN — is refused, because "it is on our network" is exactly the assumption that
+    /// makes an interception interesting.</para>
+    /// </remarks>
+    public static string EndpointProblem(string endpoint)
+    {
+        if (!Uri.TryCreate(endpoint, UriKind.Absolute, out var uri))
+        {
+            return "that is not a URL. An endpoint looks like https://s3.eu-central-1.amazonaws.com.";
+        }
+        if (uri.Scheme == Uri.UriSchemeHttps)
+        {
+            return string.Empty;
+        }
+        return uri.Scheme == Uri.UriSchemeHttp && uri.IsLoopback
+            ? string.Empty
+            : "the endpoint must be https. The archive's body is not covered by the request signature, "
+              + "so the transport is what protects it, and the credentials would otherwise travel in "
+              + "clear. Plain http is accepted for loopback only, where there is nothing between.";
+    }
+}
