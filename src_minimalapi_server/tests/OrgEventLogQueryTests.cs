@@ -450,5 +450,36 @@ public sealed class OrgEventLogQueryTests : IDisposable
 
         page.Items.Should().BeEmpty();
         page.Next.Should().NotBeNull("an empty page WITH a cursor means keep going; only a null cursor is the end");
+
+        // And the window the budget truncated is not a file the walk has finished with: the next page
+        // reads the lines below it, in the SAME file, and finds the row that was under them.
+        var next = await PageAsync(log, new OrgEventQuery(Text: "the oldest row", Cursor: page.Next));
+        next.Items.Should().ContainSingle().Which.Detail.Should().Be("the oldest row");
+    }
+
+    [Fact]
+    public async Task AQueryHoldsOnlyWhatItsBudgetAllOWS_neverTheWholeDayFile()
+    {
+        // The property the window exists for. A day is projected at ~120 rows and reading a whole one
+        // would cost nothing — but projected is not bounded, and a burst turns "read the file into a
+        // list of strings" into an allocation nobody chose. What is asserted is the observable half:
+        // a file far larger than the budget answers a page rather than failing, and the cursor it
+        // hands out is inside that file rather than past it.
+        var log = await WithRowsAsync(Row(detail: "the oldest row"));
+        await File.AppendAllLinesAsync(
+            log.PathForDay(Noon),
+            Enumerable.Range(0, OrgEventLog.MaxLinesScannedPerQuery + 500)
+                .Select(i => System.Text.Json.JsonSerializer.Serialize(
+                    Row(detail: $"row {i}"), AppJsonContext.Default.OrgEventDto)),
+            Ct);
+
+        var page = await PageAsync(log, new OrgEventQuery(Limit: 2));
+
+        page.Items.Should().HaveCount(2, "the newest two rows of a very large day");
+        page.Next.Should().NotBeNull();
+        page.Next!.Value.Day.Should().Be(DateOnly.FromDateTime(Noon.UtcDateTime));
+        page.Next!.Value.LineIndex.Should().BeGreaterThan(
+            OrgEventLog.MaxLinesScannedPerQuery,
+            "the walk started at the END of the file, not at the start of the window");
     }
 }

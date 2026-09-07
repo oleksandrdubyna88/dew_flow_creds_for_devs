@@ -81,12 +81,12 @@ public sealed partial class OrgEventLog
         {
             ct.ThrowIfCancellationRequested();
             var (day, path) = files[f];
-            var lines = await ReadLinesAsync(path, ct);
-            if (lines is null)
+            var window = await ReadWindowAsync(path, CursorIndexIn(query.Cursor, day), page.LinesLeftInBudget, ct);
+            if (window is not { } opened)
             {
                 continue;
             }
-            var stop = page.Walk(day, lines, FirstIndex(query.Cursor, day, lines.Count), isOldestFile: f == files.Count - 1);
+            var stop = page.Walk(day, opened, isOldestFile: f == files.Count - 1);
             LogUnparseable(path, page.TakeUnparseableInFile());
             if (stop is { } stopped)
             {
@@ -109,10 +109,6 @@ public sealed partial class OrgEventLog
     /// </summary>
     private IReadOnlyList<(DateOnly Day, string Path)> DayFilesNewestFirst(OrgEventQuery query)
     {
-        if (!Directory.Exists(_dir))
-        {
-            return [];
-        }
         var newest = Newest(query);
         var oldest = query.Since is { } since ? OrgEventCursor.UtcDayOf(since) : (DateOnly?)null;
         try
@@ -123,11 +119,23 @@ public sealed partial class OrgEventLog
                     .Select(path => (Day: DayOf(path), Path: path))
                     .Where(file => file.Day is { } day && (newest is null || day <= newest) && (oldest is null || day >= oldest))
                     .Select(file => (file.Day!.Value, file.Path))
-                    .OrderByDescending(file => file.Item1),
+                    .OrderByDescending(file => file.Item1)
+                    // One more than the budget, so the walk can still tell "there are older files" from
+                    // "that was the last one" without materialising a decade of paths to answer it.
+                    .Take(MaxDayFilesPerQuery + 1),
             ];
+        }
+        catch (DirectoryNotFoundException)
+        {
+            // No log yet — a personal deployment, or a corporate one before its first row. The absence
+            // is the one case here that is NOT a fault, and it answers an empty page.
+            return [];
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
+            // A directory that EXISTS and cannot be listed is a fault, not an empty log. Directory.Exists
+            // answers false for both, which is why it is no longer asked: answering "no history" for a
+            // permission fault is the silent omission this reader refuses everywhere else.
             throw new OrgEventLogUnreadableException(_dir, e);
         }
     }
@@ -146,25 +154,52 @@ public sealed partial class OrgEventLog
         OrgEventCursor.TryParseDay(Path.GetFileNameWithoutExtension(path), out var day) ? day : null;
 
     /// <summary>
-    /// Where the walk starts in a file: below the cursor when the cursor names this day, else at the
-    /// last line. A cursor past the end — a file truncated by hand — is clamped to the last line.
+    /// The line this file's window ENDS at, exclusive — the walk starts below it — or <c>null</c> when
+    /// the cursor names another day and the window ends at the file's last line. A cursor past the end,
+    /// a file truncated by hand, simply reads to the end.
     /// </summary>
-    private static int FirstIndex(OrgEventCursor? cursor, DateOnly day, int lineCount) =>
-        cursor is { } c && c.Day == day ? Math.Min(c.LineIndex, lineCount) - 1 : lineCount - 1;
+    private static int? CursorIndexIn(OrgEventCursor? cursor, DateOnly day) =>
+        cursor is { } c && c.Day == day ? c.LineIndex : null;
 
-    private static async Task<List<string>?> ReadLinesAsync(string path, CancellationToken ct)
+    /// <summary>
+    /// The lines of one day file a walk may still afford, and the absolute index of the first of them.
+    /// <see cref="Truncated"/> says the window starts above line 0 because the budget ran out — an
+    /// exhausted window is not an exhausted file.
+    /// </summary>
+    private readonly record struct DayWindow(IReadOnlyList<string> Lines, int StartIndex, bool Truncated);
+
+    /// <summary>
+    /// Read the window ending at <paramref name="upTo"/> (exclusive; <c>null</c> reads to the end of the
+    /// file), keeping at most <paramref name="maxLines"/> of it. <c>null</c> when the file is gone.
+    ///
+    /// <para><b>Bounded by construction.</b> A day file is projected at ~120 rows and reading a whole one
+    /// would cost nothing — but projected is not bounded, and a burst, a loop or simply a larger company
+    /// turns "read the file into a list of strings" into an allocation the CALLER never chose. Lines
+    /// above the cursor are not read at all, lines below the window are dropped as they are read, and
+    /// what is held is what the query has left of its line budget. So a query costs the budget rather
+    /// than the file.</para>
+    /// </summary>
+    private static async Task<DayWindow?> ReadWindowAsync(string path, int? upTo, int maxLines, CancellationToken ct)
     {
         try
         {
             await using var stream = new FileStream(
                 path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, bufferSize: 4096, useAsync: true);
             using var reader = new StreamReader(stream);
-            var lines = new List<string>();
-            while (await reader.ReadLineAsync(ct) is { } line)
+            var kept = new Queue<string>(Math.Min(maxLines, 1024));
+            var dropped = 0;
+            var index = 0;
+            while ((upTo is null || index < upTo) && await reader.ReadLineAsync(ct) is { } line)
             {
-                lines.Add(line);
+                kept.Enqueue(line);
+                if (kept.Count > maxLines)
+                {
+                    kept.Dequeue();
+                    dropped++;
+                }
+                index++;
             }
-            return lines;
+            return new DayWindow([.. kept], dropped, dropped > 0);
         }
         catch (Exception e) when (e is FileNotFoundException or DirectoryNotFoundException)
         {
@@ -215,34 +250,42 @@ public sealed partial class OrgEventLog
         private int _skipped;
         private int _skippedInFile;
 
+        /// <summary>What the query has left of its line budget — at least one, so every walk advances.</summary>
+        public int LinesLeftInBudget => Math.Max(1, MaxLinesScannedPerQuery - _scanned);
+
         /// <summary>
-        /// Walk one file from <paramref name="first"/> down to line 0. Answers a stop — the cursor to
-        /// hand out, being the last line consumed, so the next page resumes on the line below it — when
-        /// the page filled or the budget ran out, and null when the file was exhausted and the walk
+        /// Walk one file's window from its newest line down to its oldest. Answers a stop — the cursor
+        /// to hand out, being the last line consumed, so the next page resumes on the line below it —
+        /// when the page filled or the budget ran out, and null when the file was exhausted and the walk
         /// moves to an older one.
         ///
         /// <para>A page that fills on line 0 of the OLDEST file stops with NO cursor: the walk knows it
         /// has nothing older to offer, and handing one out would cost a client a round trip to be told
         /// so. Knowing it in any other case would cost a scan past the page on every request, which is
         /// the second scan this reader refuses to pay for a <c>total</c>.</para>
+        ///
+        /// <para>A window the budget TRUNCATED is not an exhausted file: the walk stops at the window's
+        /// own start, so the next page picks up the lines this one could not afford to read.</para>
         /// </summary>
-        public WalkStop? Walk(DateOnly day, IReadOnlyList<string> lines, int first, bool isOldestFile)
+        public WalkStop? Walk(DateOnly day, DayWindow window, bool isOldestFile)
         {
-            for (var i = first; i >= 0; i--)
+            var lines = window.Lines;
+            for (var i = lines.Count - 1; i >= 0; i--)
             {
+                var absolute = window.StartIndex + i;
                 if (_scanned >= MaxLinesScannedPerQuery)
                 {
-                    // Line i is not consumed; the line above it was. Resuming at i is what the cursor's
-                    // "below the last consumed line" rule gives.
-                    return new WalkStop(new OrgEventCursor(day, i + 1));
+                    // This line is not consumed; the line above it was. Resuming at it is what the
+                    // cursor's "below the last consumed line" rule gives.
+                    return new WalkStop(new OrgEventCursor(day, absolute + 1));
                 }
                 _scanned++;
                 if (Take(lines[i]) && _items.Count >= query.Limit)
                 {
-                    return new WalkStop(isOldestFile && i == 0 ? null : new OrgEventCursor(day, i));
+                    return new WalkStop(isOldestFile && absolute == 0 ? null : new OrgEventCursor(day, absolute));
                 }
             }
-            return null;
+            return window.Truncated ? new WalkStop(new OrgEventCursor(day, window.StartIndex)) : null;
         }
 
         /// <summary>True when the line was a row the page took.</summary>

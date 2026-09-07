@@ -125,6 +125,10 @@ public static class OrgEventsEndpoints
 /// </summary>
 internal static class OrgEventQueryParser
 {
+    private static readonly long MinInstant = DateTimeOffset.MinValue.ToUnixTimeMilliseconds();
+
+    private static readonly long MaxInstant = DateTimeOffset.MaxValue.ToUnixTimeMilliseconds();
+
     public static (OrgEventQuery? Query, string? Problem) Parse(IQueryCollection q)
     {
         if (!TryInstant(q, "since", out var since, out var problem)
@@ -162,7 +166,7 @@ internal static class OrgEventQueryParser
             var value = q.TryGetValue(name, out var raw) && !string.IsNullOrWhiteSpace(raw) ? raw.ToString().Trim() : null;
             if (value is { Length: > OrgEventQuery.MaxFilterLength })
             {
-                problem = $"{name} is longer than {OrgEventQuery.MaxFilterLength} characters, which names nothing.";
+                problem = $"{name} must be at most {OrgEventQuery.MaxFilterLength} characters.";
                 return false;
             }
             texts[name] = value;
@@ -179,8 +183,14 @@ internal static class OrgEventQueryParser
         {
             return true;
         }
-        if (!long.TryParse(raw.ToString(), NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out var parsed))
+        if (!long.TryParse(raw.ToString(), NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out var parsed)
+            || parsed < MinInstant
+            || parsed > MaxInstant)
         {
+            // The RANGE is checked here and not only the syntax: every instant this endpoint accepts is
+            // turned into a UTC day to choose files with, and DateTimeOffset.FromUnixTimeMilliseconds
+            // THROWS outside its own range — so long.MaxValue would have left the handler as a 500 for a
+            // request that is merely wrong. A number a clock cannot hold is a 400 naming the parameter.
             problem = $"{name} must be an instant in unix milliseconds.";
             return false;
         }
