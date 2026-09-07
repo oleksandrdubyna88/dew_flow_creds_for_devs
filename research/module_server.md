@@ -114,6 +114,7 @@ identifier**, so there is nothing to tamper with.
 | `GET` | `/api/org/login-key` | any active corporate caller | `200` / `404` / `503` | The caller's own login key and its fingerprint. Minted for an active **dev**; served to anybody active who already has one; `404` when they have none; `503` with no KEK, or when the stored key cannot be read. **`Cache-Control: no-store`** — the one response here that carries key material. See below |
 | `GET` | `/api/org/settings` | **admin** | `200` | The runtime settings; absent file → the defaults, and no file is written |
 | `PUT` | `/api/org/settings` | **admin** | `200` / `400` | `offlineLeaseHours >= 0`; `0` is the legal "strictly online" |
+| `GET` | `/api/org/events` | any allowed caller | `200` / `400` / `503` | The event log, newest first, `{items, nextCursor}`. **Scoped by who the caller is**, not by a parameter they could leave out: an admin reads the domain, everybody else reads only rows naming them. Filters: `actor`, `subject`, `person`, `project`, `kind`, `since`, `until`, `q`, `cursor`, `limit`. See below |
 | `GET` | `/api/org-recovery/config` | any allowed caller | `200` | The corporate-recovery roster this server runs under. See below |
 | `POST` | `/api/org-recovery/invites` | officer | `201` | One officer's sealed Shamir share; sender stamped |
 | `GET` | `/api/org-recovery/invites` | officer | `200` | Your own pending invites, **streamed** |
@@ -702,6 +703,61 @@ commit the mutation waits for:
 under the store's own lock. A lookup at the call site would compare against whatever a concurrent
 admin had not yet written, and two admins editing one person could then log a transition that never
 happened.
+
+### `GET /api/org/events` — reading the log back, and the scope that is not a parameter
+
+Epic 4's first story. The log has been written to since epic 1; this is the only way to read a row
+back without a shell on the server.
+
+**The scope is decided from the caller's own record, never from the request.** An officer, or a
+registry record that says `admin`, reads every row in the domain. Everybody else — a member, a
+developer, somebody who has never synced — reads the rows that name them as `actor` or `subject`, and
+their filters can only NARROW that set: the scope rides into the reader as a field of the query and
+is applied by the same predicate, before any filter. A member passing `person=<a colleague>` therefore
+gets the rows naming both of them — a subset of their own — rather than an error or the colleague's
+history. A record this build cannot read is the same `503` `/api/org/me` answers for the same file:
+the record decides the scope, so a guess would be a guess about who may see what.
+
+**The query.** All optional, all ANDed:
+
+| Parameter | Reads |
+|---|---|
+| `actor`, `subject` | one email, exactly, case-insensitively |
+| `person` | actor OR subject |
+| `project` | a project id |
+| `kind` | exact — or, ending in a dot, the GROUP: `share.` is every share kind |
+| `since`, `until` | unix milliseconds, inclusive; `since > until` is `400` |
+| `q` | a case-insensitive substring over every field a row carries |
+| `cursor` | what a previous page answered in `nextCursor` |
+| `limit` | rows per page; default 100, capped at 500, and a larger number is CAPPED rather than refused |
+
+A parameter this server cannot read is `400` naming it — a limit below 1, a cursor it did not hand
+out, an instant that is not a number, a filter longer than 256 characters.
+
+**The cursor is `<utc day>:<line index>`**, the physical line of the day file the page stopped on.
+Physical, counting blank and torn lines, and that is what makes it stable: the writer only ever
+appends and never repairs a torn tail, so no line below a handed-out index can move. A page taken
+while the log is being written therefore neither repeats a row nor skips one — appended rows are
+newer than everything on the page, and the cursor walks older. A cursor whose day file is gone
+resumes at the next older day; one past a file's end resumes at its last line.
+
+**No `total`.** An exact count is a second full scan with the same filter, which is what the server
+already refused to pay when the inbox was made to stream. What a "load more" button needs is the page
+and whether there is more, and that is `nextCursor`: null means the end. A page that fills on the
+oldest row of the oldest file answers null rather than costing a client one round trip to be told so;
+in every other case knowing would mean scanning past the page.
+
+**Every query has a scan budget** — 20,000 lines, a few months of a busy company. A substring filter
+with no date range would otherwise read the whole history, kept forever, on one request; the request
+limiter bounds how OFTEN a caller asks, never how much one ask costs. Past the budget the page ends
+early with a cursor, so an empty page WITH a cursor means "nothing yet, keep going".
+
+**A line that will not parse is skipped and counted**, and the file is named once at Warning however
+many queries read it — a process killed mid-append leaves exactly one such line, and it must not end
+a query. A day file that cannot be OPENED is different and is not skipped: half a history answered as
+if it were the whole one is the one failure an audit log must not have, so the query fails and the
+caller gets a `503` naming an administrator, with the file in the server log. A file that has vanished
+between the listing and the open is gone rather than broken, and the walk carries on.
 
 ### An operator log names the person, and code scanning is told so once
 

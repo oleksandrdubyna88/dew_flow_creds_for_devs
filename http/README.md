@@ -13,7 +13,7 @@ writing the endpoint, or run the whole tree headless before a release.
 | [`shares/`](shares) | `/api/shares`, `/api/shares/sent`, and both withdrawal paths |
 | [`metrics/`](metrics) | `/api/metrics` |
 | [`org-recovery/`](org-recovery) | the eleven corporate-recovery routes |
-| [`org/`](org) | the corporate surface: `/api/org/me`, the admin's `/api/org/members`, `/api/org/members/{email}` and `/api/org/settings`, and `active.http` — the block/unblock route `/api/org/members/{email}/active`, the blocked caller's `403` with its reason header, and the withdrawn-share receipt and its dismissal; and `login-key.http` — `GET /api/org/login-key`, the one response on this server that carries key material, so it asserts the bytes AND that nothing may cache them; the next epics add their routes here |
+| [`org/`](org) | the corporate surface: `/api/org/me`, the admin's `/api/org/members`, `/api/org/members/{email}` and `/api/org/settings`, and `active.http` — the block/unblock route `/api/org/members/{email}/active`, the blocked caller's `403` with its reason header, and the withdrawn-share receipt and its dismissal; and `login-key.http` — `GET /api/org/login-key`, the one response on this server that carries key material, so it asserts the bytes AND that nothing may cache them; and `events.http` — `GET /api/org/events`, the event log's reader, whose scoped requests are the ones that matter: a member reading their own rows, and a member asking for a colleague BY NAME and still getting only their own |
 
 ## This repository has a SECOND HTTP surface, and it is not here
 

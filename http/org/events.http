@@ -1,0 +1,267 @@
+# The event log's reader — GET /api/org/events, the one route of epic 4's first story.
+#
+# The log itself has been written to since epic 1: every role change, block, project and assignment
+# leaves a row. This is the only way to read one back without a shell on the server.
+#
+# The property worth sending a real request for is the SCOPE. An officer, or a registry record that
+# says admin, reads the whole domain; everybody else reads only the rows that name them as actor or
+# subject, and a filter cannot widen that — a member asking for a colleague BY NAME gets their own
+# rows, never an error and never the colleague's. That is the request nobody would think to send by
+# hand, and it is the one that would leak an engagement's history if it ever regressed.
+#
+# PRECONDITION: a corp-mode server (../README.md — three officers). `{{officerToken}}` administers;
+# `{{token}}` (Alice) and `{{bobToken}}` (Bob) do not. The file WRITES two rows to reach the read —
+# a role set on Bob and set back — because a reader with an empty log proves nothing about ordering,
+# scoping or the cursor. It leaves Bob as it found him.
+
+# @name org_events_admin_reads_the_domain
+GET {{baseUrl}}/api/org/events
+Authorization: Bearer {{officerToken}}
+X-Creds-Contract: {{contract}}
+Accept: application/json
+
+?? status == 200
+?? header content-type matches ^application\/json
+
+{{
+  const assert = require('node:assert');
+  const page = response.parsedBody;
+  test('the envelope is items plus a cursor — and nothing else, no total', () => {
+    assert.ok(Array.isArray(page.items), 'items must be an array, never null');
+    assert.ok('nextCursor' in page, 'nextCursor is always present, null when there is nothing older');
+    assert.deepStrictEqual(Object.keys(page).sort(), ['items', 'nextCursor']);
+  });
+  test('a row carries metadata and nothing else', () => {
+    for (const row of page.items) {
+      assert.strictEqual(typeof row.at, 'number');
+      assert.strictEqual(typeof row.kind, 'string');
+      assert.strictEqual(typeof row.actor, 'string');
+      assert.ok(!('data' in row) && !('payload' in row), 'the log records what happened, never content');
+    }
+  });
+  test('rows come back newest first', () => {
+    const times = page.items.map((row) => row.at);
+    assert.deepStrictEqual(times, [...times].sort((a, b) => b - a));
+  });
+}}
+
+###
+
+# The two rows this file reads back. A role set, then set back — the registry ends as it started, and
+# the log keeps both, which is the point of an append-only log.
+
+# @name org_events_writes_a_row_to_read
+PUT {{baseUrl}}/api/org/members/{{bobEmail}}
+Authorization: Bearer {{officerToken}}
+X-Creds-Contract: {{contract}}
+Content-Type: application/json
+
+{ "role": "dev" }
+
+?? status == 200
+
+###
+
+# @name org_events_writes_the_row_back
+PUT {{baseUrl}}/api/org/members/{{bobEmail}}
+Authorization: Bearer {{officerToken}}
+X-Creds-Contract: {{contract}}
+Content-Type: application/json
+
+{ "role": "member" }
+
+?? status == 200
+
+###
+
+# @name org_events_filters_by_kind_group
+GET {{baseUrl}}/api/org/events?kind=member.
+Authorization: Bearer {{officerToken}}
+X-Creds-Contract: {{contract}}
+Accept: application/json
+
+?? status == 200
+
+{{
+  const assert = require('node:assert');
+  const page = response.parsedBody;
+  test('a kind ending in a dot is the GROUP, so every member kind matches and nothing else does', () => {
+    assert.ok(page.items.length > 0, 'the two writes above left member rows');
+    for (const row of page.items) {
+      assert.ok(row.kind.startsWith('member.'), `${row.kind} is not a member row`);
+    }
+  });
+  test('the role change names both values', () => {
+    const changed = page.items.filter((row) => row.kind === 'member.role_changed');
+    assert.ok(changed.length >= 2, 'set to dev and back');
+    assert.match(changed[0].detail, /->/);
+  });
+}}
+
+###
+
+# @name org_events_pages_with_a_cursor
+GET {{baseUrl}}/api/org/events?limit=1
+Authorization: Bearer {{officerToken}}
+X-Creds-Contract: {{contract}}
+Accept: application/json
+
+?? status == 200
+
+{{
+  const assert = require('node:assert');
+  const page = response.parsedBody;
+  test('a page of one carries one row and a cursor to carry on from', () => {
+    assert.strictEqual(page.items.length, 1);
+    assert.match(page.nextCursor, /^\d{4}-\d{2}-\d{2}:\d+$/, 'the cursor is <utc day>:<line>');
+  });
+  exports.eventsCursor = page.nextCursor;
+  exports.eventsNewestAt = page.items[0].at;
+}}
+
+###
+
+# @name org_events_the_cursor_continues_older
+GET {{baseUrl}}/api/org/events?limit=1&cursor={{eventsCursor}}
+Authorization: Bearer {{officerToken}}
+X-Creds-Contract: {{contract}}
+Accept: application/json
+
+?? status == 200
+
+{{
+  const assert = require('node:assert');
+  const page = response.parsedBody;
+  test('the next page is OLDER than the first, never the same row again', () => {
+    assert.strictEqual(page.items.length, 1);
+    assert.ok(
+      page.items[0].at <= eventsNewestAt,
+      'a cursor walks backwards through the log',
+    );
+  });
+}}
+
+###
+
+# @name org_events_a_member_reads_only_their_own_rows
+GET {{baseUrl}}/api/org/events
+Authorization: Bearer {{bobToken}}
+X-Creds-Contract: {{contract}}
+Accept: application/json
+
+?? status == 200
+
+{{
+  const assert = require('node:assert');
+  const page = response.parsedBody;
+  test('every row names the caller — as the actor, or as the person it was done to', () => {
+    for (const row of page.items) {
+      assert.ok(
+        row.actor === bobEmail || row.subject === bobEmail,
+        `${row.kind} names ${row.actor}/${row.subject}, neither of them the caller`,
+      );
+    }
+  });
+}}
+
+###
+
+# @name org_events_a_member_asking_for_a_colleague_is_narrowed_not_widened
+GET {{baseUrl}}/api/org/events?person={{aliceEmail}}
+Authorization: Bearer {{bobToken}}
+X-Creds-Contract: {{contract}}
+Accept: application/json
+
+?? status == 200
+
+{{
+  const assert = require('node:assert');
+  const page = response.parsedBody;
+  test('the filter narrows the caller\'s own rows; it can never reach somebody else\'s', () => {
+    for (const row of page.items) {
+      assert.ok(
+        row.actor === bobEmail || row.subject === bobEmail,
+        'a filter naming a colleague must not widen the scope',
+      );
+    }
+  });
+}}
+
+###
+
+# @name org_events_needs_a_token
+GET {{baseUrl}}/api/org/events
+X-Creds-Contract: {{contract}}
+Accept: application/json
+
+?? status == 401
+?? header content-type matches ^application\/json
+
+{{
+  const assert = require('node:assert');
+  test('the refusal is a sentence, not an empty body', () => {
+    assert.ok(response.parsedBody.error.length > 0);
+  });
+}}
+
+###
+
+# @name org_events_refuses_a_cursor_it_did_not_hand_out
+GET {{baseUrl}}/api/org/events?cursor=yesterday
+Authorization: Bearer {{officerToken}}
+X-Creds-Contract: {{contract}}
+Accept: application/json
+
+?? status == 400
+?? header content-type matches ^application\/json
+
+{{
+  const assert = require('node:assert');
+  test('the refusal names the parameter', () => {
+    assert.match(response.parsedBody.error, /cursor/);
+  });
+}}
+
+###
+
+# @name org_events_refuses_a_limit_that_is_not_one
+GET {{baseUrl}}/api/org/events?limit=0
+Authorization: Bearer {{officerToken}}
+X-Creds-Contract: {{contract}}
+Accept: application/json
+
+?? status == 400
+
+{{
+  const assert = require('node:assert');
+  test('the refusal names the parameter', () => {
+    assert.match(response.parsedBody.error, /limit/);
+  });
+}}
+
+###
+
+# @name org_events_refuses_a_range_that_ends_before_it_starts
+GET {{baseUrl}}/api/org/events?since=2&until=1
+Authorization: Bearer {{officerToken}}
+X-Creds-Contract: {{contract}}
+Accept: application/json
+
+?? status == 400
+
+{{
+  const assert = require('node:assert');
+  test('the refusal says which end is wrong', () => {
+    assert.match(response.parsedBody.error, /until/);
+  });
+}}
+
+###
+# @uncovered 503 — two files this build cannot read: the caller's own registry record, which decides
+#            their scope, and a day file of the log itself. Both need a file corrupted or locked
+#            underneath a running server, which is machinery this tier does not ask for.
+#            OrgEventsEndpointTests covers the record's 503 over HTTP and OrgEventLogQueryTests
+#            covers the log's, by holding the file open.
+# @uncovered 200 with a capped limit — a limit above the server's maximum is served rather than
+#            refused, which looks identical over the wire to a limit the server accepted whole. The
+#            cap is asserted in OrgEventsEndpointTests, where the page size can be observed.
