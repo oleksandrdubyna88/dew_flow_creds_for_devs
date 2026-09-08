@@ -2199,13 +2199,56 @@ discovery step would be a worse failure than the one it exists to fix.
 
 ## Sharing
 
-The moving parts split three ways (audit A1): `shareFormat.ts` is the pure crypto,
-`sharingManager.ts` is the data source (team lists, the inbox files), and `ShareInbox`
-(`shareInbox.ts`, explicit-deps constructor after the `SyncManager` pattern) is the whole
-CONVERSATION — recipient picking, the one-time PIN, delivery and its error report, the sender
-check, the accept round-robin, and the import into the tree (fresh local id; same-sender update
-recorded as a revision first). The `activate()` handlers only resolve what was clicked.
+The moving parts split four ways (audit A1, plus the PIN's own file): `shareFormat.ts` is the pure
+crypto, `sharingManager.ts` is the data source (team lists, the inbox files), `sharePin.ts` +
+`sharePinPrompt.ts` are the transit PIN and everything said about it, and `ShareInbox`
+(`shareInbox.ts`, explicit-deps constructor after the `SyncManager` pattern) is the rest of the
+CONVERSATION — recipient picking, delivery and its error report, the sender check, the accept
+round-robin, and the import into the tree (fresh local id; same-sender update recorded as a
+revision first). The `activate()` handlers only resolve what was clicked.
 `shareInbox.test.ts` drives the accept paths through the REAL seal/open crypto.
+
+### The transit PIN can be drawn, and lands on the clipboard
+
+The share PIN is the one secret the sender has to carry to the recipient by hand, and on the server
+transport it is the ENTIRE secret — `recipientKeyId` there is a public email. Asking a person to
+invent it, type it twice and then retype it into a chat is therefore both the weakest link and the
+most tedious step, so the box offers to draw one: a **sparkle** button generates
+`generatePassphrase(DEFAULT_PASSPHRASE)` — six four-letter words, 48 exact bits — and copies it,
+and an **eye** button unmasks it for reading aloud. A passphrase rather than a password because the
+PIN's job is to cross a chat, survive being read aloud, and be retyped by the recipient; 200 draws
+are asserted against `validatePin` in `sharePin.test.ts`, because the generator and the PIN policy
+had never met.
+
+`SharePin { value, generated }` is threaded through `deliverBatch`/`deliver` rather than a bare
+string, because the message that can honestly say "go paste this" is raised where the share is known
+to have LANDED, which is far from where the PIN was chosen.
+
+Four decisions worth keeping, each of which was a defect first — three of them found by the review
+gate before a line was written, and watched failing before they were fixed:
+
+- **`createInputBox` does not block Enter.** `InputBoxOptions.validateInput` refuses an Error
+  severity for free; `InputBox.validationMessage` promises nothing of the kind. The naive port
+  sealed `1234`, so the refusal is re-checked in `onDidAccept`.
+- **`generated` is DERIVED, not latched.** The field stays editable after the extension writes into
+  it and it is masked, so a keystroke afterwards changes what gets SEALED and nothing else,
+  invisibly — the recipient's paste then simply fails. The rule is "the value still equals the drawn
+  string"; a flag would have to be remembered on every path that can change the text (a keystroke, a
+  paste, an IME commit, our own assignment, which itself raises `onDidChangeValue`), and a
+  comparison cannot be forgotten. An edited value is a TYPED value and takes the whole typed path,
+  confirmation included.
+- **The notification never carries the PIN.** It is retained in the Notification Center until it is
+  dismissed, which is why `withheldNote` two methods away puts field NAMES there and nothing else.
+  `Show PIN` is a **modal** — transient, gone when dismissed — and that is what makes offering the
+  reveal at all defensible.
+- **The clipboard is written twice.** The 45 s wipe starts at the copy, and an unbounded amount of
+  time passes before the share lands, so `announceShared` re-copies immediately before showing the
+  message. A rejected `writeText` is caught and said out loud rather than assumed to have worked.
+
+The end-to-end assertion is the one that matters and the only one that could catch all of the above:
+`shareInbox.test.ts` opens the DELIVERED share using the clipboard's contents. Sabotaged with one
+extra character on the sealed PIN it fails with the error the recipient would actually meet —
+*"Decryption failed: wrong master PIN/password."*
 
 `sealShare()` encrypts a `SharePayload` under `scrypt(recipientKeyId + PIN)`, where `recipientKeyId`
 is the recipient's `accountId` for folder transport and their **email** for the server. The
@@ -3041,7 +3084,7 @@ a clean install used to show one "Search" row and nothing else.
 
 | Path | Handling |
 |---|---|
-| Clipboard | Every secret copy expires after **45 s**, and only if the clipboard still holds exactly what was copied (`secretClipboard.ts`) |
+| Clipboard | Every secret copy expires after **45 s**, and only if the clipboard still holds exactly what was copied (`secretClipboard.ts`). A generated share PIN is copied again when the share lands, so the window starts when the person actually goes to paste |
 | SSH private key on disk | Materialised only when `ssh -i` needs a path; `0600` in a `0700` directory under the extension's own storage — never the OS temp dir — and purged on activate, on deactivate, and when the terminal closes. **A key served by the SSH agent is never written at all** |
 | TOTP seed | `SecretStorage`, as the canonical `otpauth://` URI. The viewer receives the derived code, never the seed |
 | Terminal | `buildSshCommand` composes host/user/port/key-*path* only. No password ever reaches a command line |
