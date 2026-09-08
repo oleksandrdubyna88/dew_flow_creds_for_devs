@@ -100,10 +100,23 @@ class FakeInputBox {
   }
 }
 
+/**
+ * The clipboard VS Code would have given us, with the two handles the race tests need: `gate` holds
+ * a write open so a cancellation can happen WHILE the OS is taking the copy, and `failNextWrite`
+ * fails exactly one write, which is how a redraw can fail without disabling the wipe that has to
+ * clean up after it.
+ */
+interface FakeClipboard {
+  text: string;
+  failWith?: string;
+  gate?: Promise<void>;
+  failNextWrite?: boolean;
+}
+
 interface World {
   chooseSharePin(): Promise<SharePin | undefined>;
   box(): FakeInputBox;
-  clipboard: { text: string; failWith?: string };
+  clipboard: FakeClipboard;
   /** Answers handed to the repeat box, in order. */
   repeats: (string | undefined)[];
   /** Every `showInputBox` raised — the repeat prompts. */
@@ -113,7 +126,7 @@ interface World {
 
 function world(): World {
   const boxes: FakeInputBox[] = [];
-  const clipboard: { text: string; failWith?: string } = { text: '' };
+  const clipboard: FakeClipboard = { text: '' };
   const state = {
     repeats: [] as (string | undefined)[],
     repeatsAsked: 0,
@@ -138,12 +151,18 @@ function world(): World {
     env: {
       clipboard: {
         readText: (): Promise<string> => Promise.resolve(clipboard.text),
-        writeText: (value: string): Promise<void> => {
+        writeText: async (value: string): Promise<void> => {
+          if (clipboard.gate !== undefined) {
+            await clipboard.gate;
+          }
+          if (clipboard.failNextWrite === true) {
+            clipboard.failNextWrite = false;
+            throw new Error('this one write fails');
+          }
           if (clipboard.failWith !== undefined) {
-            return Promise.reject(new Error(clipboard.failWith));
+            throw new Error(clipboard.failWith);
           }
           clipboard.text = value;
-          return Promise.resolve();
         },
       },
     },
@@ -177,6 +196,13 @@ function world(): World {
 
 /** Let the module's own awaits run. */
 const settle = (): Promise<void> => new Promise((r) => setImmediate(r));
+
+/** Several turns, for the paths that chain a copy, a read and a wipe behind one another. */
+async function flush(): Promise<void> {
+  for (let i = 0; i < 6; i += 1) {
+    await settle();
+  }
+}
 
 const GOOD = 'a-good-share-pin';
 
@@ -484,6 +510,81 @@ test('a cancelled repeat box takes the drawn value with it', async () => {
   assert.equal(await done, undefined, 'backing out of the repeat cancels the whole ask');
   await settle();
   assert.notEqual(w.clipboard.text, drawn, 'and cancelling by that route leaves no secret either');
+});
+
+/**
+ * RED FIRST — the defect all three vendors found in story 1's code, from three different angles.
+ * The draw is started with `void` and the box is shown immediately, so the clipboard write is in
+ * flight while the box is already interactive. Escape during that window and the wipe runs BEFORE
+ * the copy: `clearIfUnchanged` reads a clipboard that does not hold the PIN yet, declines to touch
+ * it, and the copy then lands — a transit secret for a share that was cancelled, written by a box
+ * that no longer exists.
+ */
+test('a draw still in flight when the box closes leaves nothing behind', async () => {
+  const w = world();
+  let takeTheCopy!: () => void;
+  w.clipboard.gate = new Promise<void>((r) => {
+    takeTheCopy = r;
+  });
+
+  const done = w.chooseSharePin();
+  const box = w.box();
+  assert.notEqual(box.value, '', 'the value is drawn synchronously — only the COPY is not');
+
+  box.escape();
+  assert.equal(await done, undefined);
+  takeTheCopy(); // the OS finally accepts the write, for a box that is gone
+  await flush();
+
+  assert.equal(w.clipboard.text, '', 'a cancelled share may not leave its PIN on the clipboard');
+});
+
+/**
+ * RED FIRST. A redraw replaces the value in the box before it knows whether the new one can be
+ * copied. When that copy fails, the PREVIOUS drawn PIN is still sitting on the clipboard while the
+ * box holds — and would seal with — the new one. Same silent shape as typing over the draw.
+ */
+test('a redraw whose copy fails takes the PIN it replaced off the clipboard', async () => {
+  const w = world();
+  const done = w.chooseSharePin();
+  const box = w.box();
+  await settle();
+  const first = w.clipboard.text;
+  assert.notEqual(first, '', 'precondition: the opening draw reached the clipboard');
+
+  w.clipboard.failNextWrite = true;
+  box.press('Generate');
+  await flush();
+
+  assert.notEqual(box.value, first, 'precondition: a redraw actually happened');
+  assert.equal(w.clipboard.text, '', 'the replaced PIN seals nothing now and must not be pasteable');
+
+  box.escape();
+  assert.equal(await done, undefined);
+});
+
+/**
+ * RED FIRST. The wipe used to wait for the box to close, and a person does not: they type their own
+ * PIN, alt-tab to the chat to tell the recipient, and come back to press Enter. Between those two
+ * acts the clipboard still held the DRAWN value, so what they pasted was a PIN that opens nothing.
+ */
+test('typing over the draw takes it off the clipboard at once, not at Enter', async () => {
+  const w = world();
+  const done = w.chooseSharePin();
+  const box = w.box();
+  await settle();
+  assert.notEqual(w.clipboard.text, '', 'precondition: the opening draw reached the clipboard');
+
+  box.type(GOOD); // no accept yet — the person is still standing in the box
+  await flush();
+
+  assert.equal(w.clipboard.text, '', 'they may go and paste before they press Enter');
+
+  w.repeats = [GOOD];
+  box.accept();
+  const pin = await done;
+  assert.equal(pin?.value, GOOD);
+  assert.equal(pin?.generated, false);
 });
 
 /** The trap on the other side: `accepted` hides the box, so "hidden" alone cannot mean "cancelled". */

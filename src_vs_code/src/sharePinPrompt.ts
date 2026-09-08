@@ -51,12 +51,20 @@ interface Drawn {
    * event, and only one of them may leave the clipboard alone.
    */
   kept: boolean;
+  /** Set the moment the box goes away: nothing may be written on its behalf after this. */
+  closed: boolean;
+  /**
+   * Every draw this box has started, chained. Two jobs, and both were defects the code review
+   * found: the cancel path AWAITS it, so a wipe can never run before the copy it is meant to undo
+   * lands; and chaining serialises rapid redraws instead of racing them onto the clipboard.
+   */
+  pending: Promise<void>;
 }
 
 function askOnce(): Promise<SharePin | undefined> {
   return new Promise((resolve) => {
     const box = vscode.window.createInputBox();
-    const drawn: Drawn = { value: '', kept: false };
+    const drawn: Drawn = { value: '', kept: false, closed: false, pending: Promise.resolve() };
     box.title = TITLE;
     box.prompt = PROMPT;
     box.password = true;
@@ -68,23 +76,33 @@ function askOnce(): Promise<SharePin | undefined> {
     box.onDidTriggerButton((button) => void pressed(box, drawn, button));
     box.onDidChangeValue((value) => {
       box.validationMessage = pinValidator('choosing')(value);
+      // The moment the text stops being the drawn string, that string seals nothing — and the
+      // person may well go and paste before coming back to press Enter. Waiting for the box to
+      // close was the whole window in which they could paste a PIN that opens nothing.
+      if (drawn.value.length > 0 && value !== drawn.value) {
+        const stale = drawn.value;
+        drawn.value = '';
+        void discard(stale);
+      }
     });
     box.onDidAccept(() => accepted(box, drawn, resolve));
     box.onDidHide(() => {
+      drawn.closed = true;
       resolve(undefined);
       // Every route out of this box that is not "the drawn value is the one being delivered" is a
       // cancellation for clipboard purposes: Escape, and an accepted value the person typed over
       // the draw. The repeat box is covered too, because `accepted` hides BEFORE `confirmTyped`
       // runs, so a mismatch or an Escape there has already been taken back by this line.
       if (!drawn.kept) {
-        void discard(drawn.value);
+        void discardAfterDraw(drawn);
       }
       box.dispose();
     });
-    // Drawn before the box is shown, so it is never seen empty. The generator used to sit behind a
-    // button, and VS Code renders `InputBox.buttons` as dimmed glyphs in the TITLE row: it shipped,
-    // worked, was tested, and was not found. An affordance nobody sees is not an affordance.
-    void draw(box, drawn);
+    // Drawn before the box is shown, so it is never seen empty — `generateSharePin` is synchronous
+    // and `box.value` is assigned before the copy is even started. The generator used to sit behind
+    // a button, and VS Code renders `InputBox.buttons` as dimmed glyphs in the TITLE row: it
+    // shipped, worked, was tested, and was not found. An affordance nobody sees is not one.
+    startDraw(box, drawn);
     box.show();
   });
 }
@@ -99,17 +117,85 @@ async function pressed(
     box.password = !box.password;
     return;
   }
-  await draw(box, drawn);
+  startDraw(box, drawn);
+  await drawn.pending;
 }
 
-/** Put a fresh PIN in the box and on the clipboard — the open path and the button share it. */
-async function draw(box: vscode.InputBox, drawn: Drawn): Promise<void> {
+/**
+ * Draw a PIN: the half that must happen NOW, and the half that has to wait its turn.
+ *
+ * <p>The split is load-bearing in both directions. Generating and putting the value in the field is
+ * synchronous and runs before `box.show()`, so the box is never rendered empty — which is the whole
+ * reason the pre-fill reads as a value rather than as a form still loading. The clipboard write is
+ * the part that goes through the queue: chaining turns a rapid double-press into two ORDERED draws
+ * instead of two writes whose landing order nobody controls, and it is what lets one await on
+ * `drawn.pending` cover every copy this box has issued.</p>
+ */
+function startDraw(box: vscode.InputBox, drawn: Drawn): void {
+  if (drawn.closed) {
+    return;
+  }
+  const replaced = drawn.value;
   const pin = generateSharePin();
+  // `drawn.value` is updated BEFORE the assignment below, because assigning `box.value` fires
+  // `onDidChangeValue` — which would otherwise read our own write as the person editing the draw.
   drawn.value = pin.value;
-  // Assigning `value` fires `onDidChangeValue`, which sets the advisory message; the line below
-  // therefore runs after it and is what the person is left reading.
   box.value = pin.value;
-  box.validationMessage = await copyOrSayWhyNot(pin.value);
+  drawn.pending = drawn.pending.then(() => copyDrawn(box, drawn, pin.value, replaced));
+}
+
+/** The queued half: put the drawn PIN on the clipboard, and say honestly whether it got there. */
+async function copyDrawn(
+  box: vscode.InputBox,
+  drawn: Drawn,
+  value: string,
+  replaced: string,
+): Promise<void> {
+  const wasCopied = await copySafely(value);
+  if (drawn.closed) {
+    // The box went away while the OS was taking the copy. What landed belongs to an operation that
+    // no longer exists — and the box is disposed, so its message must not be touched either.
+    await discard(value);
+    return;
+  }
+  if (!wasCopied) {
+    // The new PIN never reached the clipboard, so the one it REPLACED may still be sitting there
+    // while the box seals with the new one. The same silent shape as typing over the draw.
+    await discard(replaced);
+  }
+  sayWhatWasDrawn(box, drawn, value, wasCopied);
+}
+
+/**
+ * The line under the field, written only by the draw that still owns the box.
+ *
+ * <p>A copy that was superseded by a later draw — or typed over while it was in flight — would
+ * otherwise describe a value the box no longer holds, which in a MASKED field is a sentence the
+ * person has no way to check.</p>
+ */
+function sayWhatWasDrawn(
+  box: vscode.InputBox,
+  drawn: Drawn,
+  value: string,
+  wasCopied: boolean,
+): void {
+  if (drawn.value !== value) {
+    return;
+  }
+  box.validationMessage = advice(wasCopied ? DRAWN : DRAWN_UNCOPIED);
+}
+
+/**
+ * The cancel path's wipe, held until every copy this box started has landed.
+ *
+ * <p>Without the await this is the race the code review found from three directions at once:
+ * Escape during the copy runs `clearIfUnchanged` against a clipboard that does not hold the PIN
+ * YET, so it correctly declines to touch it — and then the copy lands, leaving a transit secret
+ * for a share that was cancelled, written on behalf of a box that no longer exists.</p>
+ */
+async function discardAfterDraw(drawn: Drawn): Promise<void> {
+  await drawn.pending;
+  await discard(drawn.value);
 }
 
 /**
@@ -139,22 +225,18 @@ async function discard(value: string): Promise<void> {
 }
 
 /**
- * Copy the drawn PIN, and never claim a copy that did not happen.
+ * What the box says about a value it drew, and never a copy that did not happen.
  *
  * <p>`writeText` rejects on a machine with no clipboard provider or a locked session. The drawn
  * value is kept in the box regardless — throwing it away would be the worst of both — and the
  * person is pointed at the eye button, which is the way out that needs no clipboard at all.</p>
+ *
+ * <p>The second sentence of `DRAWN` is the discoverability fix itself: a pre-filled masked field
+ * reads as a fixture rather than as something the person may replace unless it says so.</p>
  */
-async function copyOrSayWhyNot(value: string): Promise<vscode.InputBoxValidationMessage> {
-  try {
-    await copySecret(vscode.env.clipboard, value);
-    return advice('Generated, and copied to your clipboard. Type over it to use your own.');
-  } catch {
-    return advice(
-      'Generated, but copying to the clipboard failed — reveal it with the eye and copy it by hand.',
-    );
-  }
-}
+const DRAWN = 'Generated, and copied to your clipboard. Type over it to use your own.';
+const DRAWN_UNCOPIED =
+  'Generated, but copying to the clipboard failed — reveal it with the eye and copy it by hand.';
 
 /** Enter: refuse what the policy refuses, and answer with what the value's ORIGIN actually is. */
 function accepted(
@@ -242,7 +324,7 @@ async function announce(
   // The clipboard sentence is composed HERE, from whether the copy actually happened, rather than
   // upstream from the intention to try it. Composing it earlier is how a message comes to promise
   // a clipboard that rejected.
-  const notice = (await copied(pin.value)) ? sharePinNotice(pin, secretClipboardTtl()) : COPY_FAILED;
+  const notice = (await copySafely(pin.value)) ? sharePinNotice(pin, secretClipboardTtl()) : COPY_FAILED;
   const choice = await show(`${headline}${notice}${withheld}`, COPY_AGAIN, SHOW_PIN);
   await actOn(choice, pin.value);
 }
@@ -257,7 +339,7 @@ async function announce(
  * went through — and take the `Show PIN` offer down with it, which is the one route left to a PIN
  * the clipboard did not accept.</p>
  */
-async function copied(value: string): Promise<boolean> {
+async function copySafely(value: string): Promise<boolean> {
   try {
     await copySecret(vscode.env.clipboard, value);
     return true;
@@ -268,7 +350,7 @@ async function copied(value: string): Promise<boolean> {
 
 async function actOn(choice: string | undefined, value: string): Promise<void> {
   if (choice === COPY_AGAIN) {
-    if (!(await copied(value))) {
+    if (!(await copySafely(value))) {
       void vscode.window.showWarningMessage(`Copying failed. ${REVEAL_INSTEAD}`);
     }
     return;
