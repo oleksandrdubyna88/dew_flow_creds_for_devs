@@ -1,4 +1,6 @@
 import * as vscode from 'vscode';
+import { describeError } from './describeError';
+import { withTimeout } from './withTimeout';
 import { LOCKED_BUTTON_LABELS, LockedButton, lockedButtons, lockedNotice, StoredPinAnswer } from './lockedNotice';
 import { StoredAccount } from './types';
 
@@ -19,7 +21,18 @@ export interface UnlockOffer {
   setPin(account: StoredAccount): Promise<void>;
   /** Where a failure goes. A notification must not become an unhandled rejection. */
   log?(message: string): void;
+  /** How long the stored-PIN lookup may take before it counts as unknown. Tests shorten it. */
+  timeoutMs?: number;
 }
+
+/**
+ * How long a keychain gets to answer "is a PIN stored" before the offer goes ahead without it.
+ *
+ * <p>Generous, because the answer is worth waiting for — but bounded, because the account has
+ * already been deduped for this session by the time we ask. A lookup that never settles would
+ * mean no notification at all, and nothing asking again until the window is reloaded.</p>
+ */
+const STORED_PIN_TIMEOUT_MS = 5_000;
 
 /** One message for however many vaults a cycle found locked, with the right buttons on it. */
 export function reportLockedVaults(locked: readonly StoredAccount[], offer: UnlockOffer): void {
@@ -34,11 +47,15 @@ export function reportLockedVaults(locked: readonly StoredAccount[], offer: Unlo
   // With several vaults the buttons cannot act on "the" account, so the one button asks
   // which — and then offers that vault exactly the choice a single one would have had.
   const unlock = LOCKED_BUTTON_LABELS.unlock;
-  void vscode.window.showWarningMessage(notice.message, unlock).then((choice) => {
-    if (choice === unlock) {
-      void pickAndUnlock(locked, offer);
-    }
-  });
+  // Detached, and every detached edge carries its own catch: the whole chain — the
+  // notification, the picker, and the offer that follows it — runs on a promise nobody
+  // awaits, so a rejection anywhere in it would surface as an unhandled one.
+  void vscode.window
+    .showWarningMessage(notice.message, unlock)
+    .then((choice) => (choice === unlock ? pickAndUnlock(locked, offer) : undefined))
+    .then(undefined, (error: unknown) => {
+      offer.log?.(`offering to unlock ${locked.length} vaults failed: ${describeError(error)}`);
+    });
 }
 
 /**
@@ -47,7 +64,7 @@ export function reportLockedVaults(locked: readonly StoredAccount[], offer: Unlo
  */
 export function showUnlockOffer(account: StoredAccount, offer: UnlockOffer): void {
   void offerUnlock(account, offer).catch((error: unknown) => {
-    offer.log?.(`offering to unlock ${account.email} failed: ${String(error)}`);
+    offer.log?.(`offering to unlock ${account.email} failed: ${describeError(error)}`);
   });
 }
 
@@ -96,10 +113,27 @@ async function act(
  * machine, so an unknown answer degrades towards the side that does not.</p>
  */
 export async function storedPinAnswer(account: StoredAccount, offer: UnlockOffer): Promise<StoredPinAnswer> {
+  const answer = await withTimeout(lookupStoredPin(account, offer), offer.timeoutMs ?? STORED_PIN_TIMEOUT_MS);
+  if (answer === undefined) {
+    offer.log?.(`the stored-PIN lookup for ${account.email} timed out — offering unlock only`);
+    return 'unknown';
+  }
+  return answer;
+}
+
+/** A stored value, as an answer: absent or empty is "no PIN on this machine". */
+function answerFor(pin: string | undefined): StoredPinAnswer {
+  return pin !== undefined && pin.length > 0 ? 'yes' : 'no';
+}
+
+/** The lookup itself, which resolves its own failures so the bound above never sees a rejection. */
+async function lookupStoredPin(account: StoredAccount, offer: UnlockOffer): Promise<StoredPinAnswer> {
   try {
-    const pin = await offer.storedPin(account);
-    return pin !== undefined && pin.length > 0 ? 'yes' : 'no';
-  } catch {
+    return answerFor(await offer.storedPin(account));
+  } catch (error: unknown) {
+    // Said out loud: an outage that silently removed the PIN offer would look exactly like an
+    // ordinary stored PIN, leaving nothing to read when somebody asks why sync stopped.
+    offer.log?.(`could not read the stored PIN for ${account.email}: ${describeError(error)}`);
     return 'unknown';
   }
 }
@@ -114,7 +148,11 @@ export async function pickAndUnlock(locked: readonly StoredAccount[], offer: Unl
     })),
     { title: 'Unlock a vault', placeHolder: 'All of these are locked on this machine' },
   );
-  if (picked !== undefined) {
-    showUnlockOffer(picked.account, offer);
+  if (picked === undefined) {
+    // Nothing will ask again this session — `warnedAccounts` has deduped every one of them —
+    // so the abandoned pick is recorded rather than being indistinguishable from silence.
+    offer.log?.(`the choice of which locked vault to unlock was cancelled (${locked.length} still locked)`);
+    return;
   }
+  showUnlockOffer(picked.account, offer);
 }

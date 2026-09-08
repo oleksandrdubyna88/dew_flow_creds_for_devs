@@ -27,8 +27,19 @@
    identically.
 4. **A third literal was already there.** The multi-vault message had its own `'Unlock…'` string
    (twice, as label and as comparison). It reads from the shared constant now.
-5. **Sixteen tests, not four** — three in `syncManager.test.ts`, four in `lockedNotice.test.ts`,
-   one in `syncReadiness.test.ts`, eight in the new `lockedVaultPrompt.test.ts`.
+5. **Twenty tests, not four** — three in `syncManager.test.ts`, four in `lockedNotice.test.ts`,
+   one in `syncReadiness.test.ts`, twelve in the new `lockedVaultPrompt.test.ts`.
+6. **The code round added a failure mode nobody had thought about: a keychain that HANGS.** The
+   notification is raised after the lookup, and `warnedAccounts` has already deduped the account
+   by then — so a lookup that never settles meant no offer at all, and nothing asking again until
+   the window was reloaded. The lookup is bounded at 5 s now (`withTimeout`, extracted from
+   `credsAgentServer` where it was private, rather than written a second time) and a timeout
+   counts as `unknown`. Three more of its findings were about the same shape of defect: the
+   multi-vault chain is detached and had no catch, a refused lookup was silently swallowed, and an
+   abandoned "which vault" pick left no trace. All four are now logged; three of its twelve
+   findings were rejected with reasons — `architecture.md` does not describe extension-internal
+   modules, one finding's own analysis concluded no change was needed, and a "disposal check" would
+   have added lifecycle semantics `SyncManager` does not have.
 
 ## The symptom
 

@@ -1,4 +1,5 @@
 import { describeError } from './describeError';
+import { withTimeout } from './withTimeout';
 import * as http from 'node:http';
 import * as vscode from 'vscode';
 import {
@@ -787,13 +788,3 @@ function readBody(req: http.IncomingMessage): Promise<string> {
   });
 }
 
-function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T | undefined> {
-  return new Promise((resolve) => {
-    const timer = setTimeout(() => resolve(undefined), ms);
-    (timer as unknown as { unref?: () => void }).unref?.();
-    void promise.then((value) => {
-      clearTimeout(timer);
-      resolve(value);
-    });
-  });
-}
