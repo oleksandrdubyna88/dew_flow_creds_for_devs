@@ -150,6 +150,8 @@ jobs:
       - name: Shell-check the operator scripts
         run: |
           sudo apt-get update && sudo apt-get install -y --no-install-recommends shellcheck
-          shellcheck deploy/update.sh deploy/backup.sh
+          # restore-archive.sh is here from the day it lands: it is the one script whose failure
+          # mode is a stack that is down with the data moved aside, so a typo in it costs an outage.
+          shellcheck deploy/update.sh deploy/backup.sh deploy/restore-archive.sh
           # The container entrypoints are POSIX sh, not bash.
           shellcheck --shell=sh deploy/nginx/entrypoint.sh deploy/certbot/entrypoint.sh

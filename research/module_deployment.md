@@ -206,6 +206,60 @@ which is worse than where the operator started.
 The whole cycle has been exercised: vault written, data directory destroyed (server returning 404),
 `restore.sh` run, vault readable again with its exact contents.
 
+### There are TWO backups now, and both stay (2026-09-07, epic 5)
+
+`backup.sh` and `restore.sh` are the HOST's. Epic 5 added the SERVER's — one encrypted `.cvbk`
+archive the server takes itself, on a schedule an administrator sets from the editor, sent to an
+S3-compatible bucket or an Azure Blob container. Neither replaces the other, and knowing which
+question each answers is the whole reason both are here:
+
+| | `backup.sh` / `restore.sh` | the server's own backup / `restore-archive.sh` |
+|---|---|---|
+| Who can take one | whoever has a shell on this host | an administrator with an editor and no ssh key |
+| Encrypted | **no** — so wherever it lands has to be trusted | yes, AES-256-GCM in chunks, under a key the server never keeps |
+| Where it lands | this host's `BACKUP_DIR` | this host's `org/backup/archives/`, and every configured cloud destination |
+| What it holds | the data directory and the certificates | every vault, the sealed login keys, the registry, projects, the event log, and the server's own configuration as a snapshot |
+| The key | none | the printable `BK1-` words, shown once and unrecoverable |
+| Certificates | yes | **no** — they belong to the host rather than to the deployment, and are reissued rather than restored |
+
+The certificate row is why `backup.sh` cannot simply be retired: a restore onto a fresh host still
+wants `restore.sh`'s certificate handling, and the server's archive deliberately carries nothing that
+belongs to the machine rather than to the deployment.
+
+### `restore-archive.sh`, and the order it does things in
+
+It takes the encrypted archive and asks for the backup key — from `--key-file`, from `CVBK_KEY`, or
+from a silent prompt, and never as an argument, because an argument is visible in `ps` to every user
+on the box and lands in the shell history. What it is handed goes into a mode-600 file in a scratch
+directory removed on every exit path.
+
+**Everything checkable happens before anything that currently works is touched.** The archive is
+verified, the key is proved to open it, and the extraction goes into the scratch directory — only
+when a complete tree exists on disk does the stack stop and the current data move aside. That
+ordering is the point, and `restore.sh` learned it the hard way: its first rehearsal died on a bad
+archive with the stack down and the data under another name. Here the same failure happens with the
+server still running and nothing moved.
+
+**A durable marker, not only a trap.** A trap does not run when the machine loses power, and the
+state in between — data moved aside, nothing put back — is the one a person coming to it fresh cannot
+read. `data.restore-in-progress` names the archive, the displaced directory and the instant, so
+finishing or undoing an interrupted restore is reading one file rather than guessing from timestamps;
+a second run refuses while it exists.
+
+**The configuration snapshot is printed by KEY and never by value**, and removed from the restored
+tree. It holds the deployment KEK and the local signing key in clear — that is what it is for, so a
+restore onto a fresh host can work — and this script's output goes to a terminal, a CI log or
+somebody's scrollback.
+
+`shellcheck` runs over it in `ci · server` from the day it landed: it is the one script whose failure
+mode is a stack that is down with the data moved aside, so a typo in it costs an outage.
+
+**Not yet rehearsed end to end.** `restore.sh`'s cycle was exercised on a real stack; this one has
+been syntax-checked and shellchecked, and its verbs are driven against the real server binary by
+`backup-archive-itest.cjs` — but nobody has yet taken an archive from a live server and restored it
+onto an empty stack. Named here rather than assumed; it is the open item in
+[PLAN_corp_server_backup.md](../todo/PLAN_corp_server_backup.md).
+
 ## Hardening summary
 
 | Control | Where |

@@ -297,6 +297,39 @@ operator's first configuration runs against their own account and which fails lo
 rather than at 03:00. When somebody does point this at a real bucket, that run IS the missing tier and
 it belongs in this file.
 
+## The extension's half of the backup (2026-09-07, epic 5 story 5)
+
+| Tier | What it drives | Where |
+|---|---|---|
+| A stubbed `fetch` | what the client SENDS and what it makes of each answer: the admin routes, the bearer and contract headers, a `404` read as "no backup here", a shape this build cannot read, and the two settings requests that look alike and are not | `src_vs_code/src/test/orgBackupClient.test.ts` |
+| Pure, in process | the tab's state machine and the page: the order the key is shown in, the mint button's gating, a failure that must end the busy state, escaping, and a target row that carries both outcomes | `src_vs_code/src/test/backupTab.test.ts` |
+| Pure, in process | the nag's cadence and its silence — the whole point of the module | `src_vs_code/src/test/backupNotice.test.ts` |
+| Pure, in process | the watch: who is polled, what a failed read may change, and one message for several accounts | `src_vs_code/src/test/backupWatch.test.ts` |
+| Real files | a download that fails halfway leaves nothing at the chosen path, and does not destroy the archive already there | `src_vs_code/src/test/archiveDownload.test.ts` |
+| The manifest, enforced | the new command has a help article in five languages and a README entry — `helpCoverage` and `listingCoverage` failed on the commit that added it, which is the moment it is cheap to fix | `src_vs_code/src/test/helpCoverage.test.ts`, `listingCoverage.test.ts` |
+
+**The two tests that exist because their absence would be invisible.** A settings save that names no
+destinations must send NO `targets` member — a client that defaulted the field to `[]` would wipe every
+configured destination each time somebody edited the schedule, and nothing on either side would say so
+until an archive failed to arrive weeks later. And the key must be SHOWN before the status is read
+back: a refresh redrawing the page underneath a dialog somebody is copying from is how a key nobody can
+reproduce is lost. Both are assertions about ORDER and absence, which no amount of clicking would
+reveal.
+
+**One real defect, found by its own test rather than by review.** The watch cleared an account's nag
+window whenever no notice came back — including when the notice was merely suppressed by the dedupe, so
+the window would be cleared on the very next cycle and the nag would return every other tick. The test
+that caught it asserts the second cycle is silent; health and dedupe now answer separately.
+
+**What none of it covers.** Nothing drives VS Code itself: the modal that shows the key once, the save
+dialog, the webview's own script and the tree menu are exercised only through their pure halves. So a
+command registered but never wired to a menu, or a `when` clause that stops matching, is caught by the
+manifest tests above and by nothing else — which is exactly why the `account-corpOfficer` case was
+found by reading `orgRecoveryAccess.ts` rather than by a test. And
+`deploy/restore-archive.sh` is syntax-checked and shellchecked in CI, with its verbs driven against the
+real binary by `backup-archive-itest.cjs`, but the end-to-end rehearsal — an archive from a live server
+restored onto an empty stack — has not been run. It is named in the plan as the open item.
+
 ## What none of them covers
 
 Named rather than implied, because the rule asks for exactly this.

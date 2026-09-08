@@ -847,6 +847,12 @@
         "icon": "$(history)"
       },
       {
+        "command": "credSshManager.orgBackup",
+        "title": "Server Backup…",
+        "category": "CredsForDevs",
+        "icon": "$(archive)"
+      },
+      {
         "command": "credSshManager.acceptRecoveryShare",
         "title": "Accept Recovery Share…",
         "category": "CredsForDevs"
@@ -1698,6 +1704,11 @@
           "command": "credSshManager.orgEventLog",
           "when": "view == credSshManagerView && viewItem =~ /^account-corp/",
           "group": "4_corp@7"
+        },
+        {
+          "command": "credSshManager.orgBackup",
+          "when": "view == credSshManagerView && (viewItem == account-corpAdmin || viewItem == account-corpOfficer)",
+          "group": "4_corp@8"
         },
         {
           "command": "credSshManager.acceptRecoveryShare",

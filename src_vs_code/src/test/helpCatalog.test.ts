@@ -40,8 +40,9 @@ test('every id in the order has an English body, and every English body is in th
 });
 
 test('the catalog kept every article the split found, in the order it documents', () => {
-  // 35 at the split, and one per article added since — epic 4's event log is the thirty-sixth.
-  assert.equal(HELP_ARTICLES.length, 36, 'a drop here is an article lost');
+  // 35 at the split, and one per article added since — epic 4's event log is the thirty-sixth and
+  // epic 5's server backup the thirty-seventh.
+  assert.equal(HELP_ARTICLES.length, 37, 'a drop here is an article lost');
   assert.deepEqual(
     HELP_ARTICLES.map((a) => a.id),
     [...HELP_ARTICLE_IDS],

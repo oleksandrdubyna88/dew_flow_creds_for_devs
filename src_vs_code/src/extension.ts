@@ -38,8 +38,9 @@ import { snapshotForRevision } from './revisionSnapshot';
 import { judgeOrgRecovery } from './orgRecoveryPinning';
 import { readOrgAccessInto } from './orgRecoveryAccess';
 import { policyHeartbeatKey } from './corpPolicy';
-import { policyHost, refreshOrgPolicy } from './orgPolicyRefresh';
-import { projectFolderReconciler, vscodeProjectFolderDeps } from './projectFolderWiring';
+import { refreshOrgPolicy } from './orgPolicyRefresh';
+import { checkBackups } from './backupWatch';
+import { corpPolicyWiring, policiedAccounts, vscodeBackupWatch } from './corpPolicyWiring';
 import { CorpPolicyState } from './corpPolicy';
 import { LoginKeySession } from './devLoginKeySession';
 import { evictAndLock, wireCorpEscrow, wireDevBinding } from './corpBindingWiring';
@@ -444,13 +445,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const refreshOrgAccess = (account: StoredAccount): Promise<void> =>
     readOrgAccessInto(provider.orgAccess, transports.orgRecoveryFor(account), account);
 
-  // The role-and-policy document, refreshed beside the recovery access in the same loop. Its rules — a
-  // failure keeps the previous answer, only a success writes the heartbeat and reconciles epic 3's
-  // project folders — are tests in orgPolicyRefresh.ts and projectFolderWiring.ts.
-  const orgPolicyHost = policyHost(provider, (a) => transports.orgMembersFor(a),
-    (id, at) => context.globalState.update(policyHeartbeatKey(id), at), Date.now,
-    projectFolderReconciler(vscodeProjectFolderDeps(storage, sync, transports,
-      (m) => void vscode.window.showInformationMessage(m))));
+  // The corporate loop's seams, and their rules, live in corpPolicyWiring.ts and backupWatch.ts.
+  const orgPolicyHost = corpPolicyWiring(context, provider, storage, sync, transports);
+  const backupWatch = vscodeBackupWatch(context, transports);
 
   const refreshReadiness = async (): Promise<Map<string, SyncReadiness>> => {
     const locked = vaultKeys.isLocked();
@@ -470,6 +467,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         }),
       );
     }
+    // After the loop, not inside it: one interruption for however many deployments have something
+    // to say (backupWatch.ts). A failed policy read leaves an account out of the pairing entirely.
+    await checkBackups(backupWatch, policiedAccounts(storage.getAccounts(), provider.orgPolicy));
     provider.refresh();
     // The status bar answers the same question the readiness icons do, so it is repainted from
     // the same place rather than from every caller that might have changed the lock.

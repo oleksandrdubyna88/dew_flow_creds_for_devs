@@ -8,6 +8,7 @@ import { materializePrivateKey } from './keyInstaller';
 import { runBounded } from './sshExecRunner';
 import { GoogleAuthProvider } from './googleAuthProvider';
 import { nasPathFor } from './nasPaths';
+import { OrgBackupClient } from './orgBackupClient';
 import { OrgMembersClient } from './orgMembersClient';
 import { OrgLoginKeyClient } from './orgLoginKeyClient';
 import { OrgRecoveryClient } from './orgRecoveryClient';
@@ -115,6 +116,29 @@ export class TransportFactory {
     }
     const client = new OrgEventsClient(location, (a) => this.tokenFor(a));
     this.eventsClients.set(location, client);
+    return client;
+  }
+
+  private readonly backupClients = new Map<string, OrgBackupClient>();
+
+  /**
+   * The server-backup client for this account's server — the same per-location reuse.
+   *
+   * <p>Nothing for a folder or a git remote: there is no server there to take a backup OF, and its
+   * own vault is covered by the local snapshot schedule. The command says so rather than opening a
+   * tab whose every button would fail.</p>
+   */
+  orgBackupFor(account: StoredAccount): OrgBackupClient | undefined {
+    const location = corpServerFor(account);
+    if (location === undefined) {
+      return undefined;
+    }
+    const existing = this.backupClients.get(location);
+    if (existing !== undefined) {
+      return existing;
+    }
+    const client = new OrgBackupClient(location, (a) => this.tokenFor(a));
+    this.backupClients.set(location, client);
     return client;
   }
 

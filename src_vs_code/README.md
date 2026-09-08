@@ -904,6 +904,18 @@ before. The server decides what each person sees: an admin — or a recovery off
 unconditionally — reads the company, everybody else reads only the rows naming them. It records metadata — an entry's name and kind — and never a byte of what
 was in it.
 
+**Server Backup.** ***Server Backup…*** on an admin's account row takes one encrypted archive of
+everything the server holds — every vault, the sealed login keys, the registry, projects, the event
+log and a snapshot of the server's own configuration — on a schedule, and sends it to an
+S3-compatible bucket or an Azure Blob container once a destination is configured. Minting the backup
+key shows its words **once**: nothing can produce them again, and without them no archive can be
+opened. The tab shows the last run, the newest archive on the server, and a row per destination
+saying whether the upload arrived and whether the retention pass could then run; **Back up now**
+starts one immediately and **Download newest archive** streams it to a file you choose. A deployment
+with no key, or whose last run failed, is said out loud — once a day, or once an hour while failing —
+because the failure this exists to end is a scheduler refusing every five minutes with nobody
+watching.
+
 **Projects.** An admin runs ***New Project…*** from Team — that is where the first one is made —
 then ***Assign to Project…*** and ***Remove from Project…*** on a colleague's row. An assignment
 becomes a folder in that person's own vault, named after the project and following its name; for a
