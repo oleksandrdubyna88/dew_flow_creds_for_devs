@@ -214,6 +214,14 @@ up_line="$(grep -n 'compose up' "$DOCKER_LOG" | head -1 | cut -d: -f1)"
 down_after="$(awk -v n="${up_line:-0}" 'NR>n && /compose down/ {print NR; exit}' "$DOCKER_LOG")"
 check "the rollback stops the stack before restoring the data" \
   "$(yesno test -n "$down_after")" "$(cat "$DOCKER_LOG")"
+# The log says the ORDER; these say the OUTCOME. A review round pointed out that scenario 8 was
+# reading `docker compose` lines and nothing else, so a rollback that swapped the directories at the
+# wrong moment would still have passed as long as it stopped the stack at some point afterwards.
+check "...and the original data is what is at the live path" \
+  "$(yesno grep -qx 'the vault that is here now' "${WORLD}/deploy/data/vaults/alice.bin")" \
+  "$(cat "${WORLD}/deploy/data/vaults/alice.bin" 2>/dev/null)"
+check "...and nothing displaced is left over" \
+  "$(yesno bash -c "! ls -d '${WORLD}/deploy/data.before-restore-'* >/dev/null 2>&1")"
 
 # ---- 9. a stack that will not stop during ROLLBACK leaves both copies alone ----------------------
 world; key
@@ -225,6 +233,18 @@ check "a rollback that cannot stop the stack says so" \
 check "...and does NOT swap the directories underneath it" \
   "$(yesno bash -c "ls -d '${WORLD}/deploy/data.before-restore-'* >/dev/null")" \
   "the displaced copy must still be where it was"
+# BOTH copies, by content. Existence alone would pass a rollback that had already half-swapped them,
+# and the state this scenario is about is precisely "the operator has to be able to tell which is
+# which by hand".
+displaced_dir="$(find "${WORLD}/deploy" -maxdepth 1 -name 'data.before-restore-*' | head -1)"
+check "...the displaced copy still holds the ORIGINAL data" \
+  "$(yesno grep -qx 'the vault that is here now' "${displaced_dir}/vaults/alice.bin")" \
+  "$(cat "${displaced_dir}/vaults/alice.bin" 2>/dev/null)"
+check "...the live path still holds what the restore put there" \
+  "$(yesno grep -qx 'the vault from the archive' "${WORLD}/deploy/data/vaults/alice.bin")" \
+  "$(cat "${WORLD}/deploy/data/vaults/alice.bin" 2>/dev/null)"
+check "...so both copies exist and neither was destroyed" \
+  "$(yesno bash -c "test -d '${displaced_dir}' && test -d '${WORLD}/deploy/data'")"
 check "...and leaves the marker, which names where the previous data is" \
   "$(yesno test -f "${WORLD}/deploy/data.restore-in-progress")"
 

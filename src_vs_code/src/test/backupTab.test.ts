@@ -102,6 +102,23 @@ test('words the person DISCARDED are not reported as a key in place', async () =
   assert.match(last, /key\.sealed/, 'and it names the file that starts the deployment again');
 });
 
+test('and the discard survives a status read that fails right after it', async () => {
+  // The ordering that keeps the message. A refresh failing after the dialog closed would otherwise
+  // replace "you discarded the words" with "the server is unreachable" — true, secondary, and not
+  // what the person has to be told. The status being stale until the next refresh is the smaller
+  // cost by a distance.
+  const w = world(
+    { readStatus: () => Promise.reject(new Error('Vault server unreachable')) },
+    { showKey: () => Promise.resolve(false) },
+  );
+
+  await w.tab.handle({ type: 'mint' });
+
+  const last = w.drawn.at(-1) ?? '';
+  assert.match(last, /discarded/, 'the discard is what reaches the screen');
+  assert.ok(!last.includes('unreachable'), 'and not the secondary failure');
+});
+
 test('a mint the server refuses leaves the words unshown and says why', async () => {
   const w = world({ mintKey: () => Promise.reject(new Error('a backup key already exists.')) });
 

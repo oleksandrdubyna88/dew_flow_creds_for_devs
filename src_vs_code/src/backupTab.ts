@@ -147,15 +147,16 @@ export class BackupTab {
     await this.attempt(async () => {
       const minted = await this.client.mintKey(this.account);
       const saved = await this.host.showKey(minted);
-      this.status = await this.client.readStatus(this.account);
       if (!saved) {
-        // NOT a cheerful notice. Delivering the response is what acknowledges the key on the server,
-        // so by now it is Ready whatever the person did with the dialog — and if they discarded the
-        // words, every archive from here on is sealed under something nobody has. Saying "the backup
-        // key is in place" there would be true and useless; what they need is the state they are in
-        // and the only way out of it, which is on the host rather than on this screen.
+        // BEFORE the status is re-read, and that ordering is a test. Delivering the response is what
+        // acknowledges the key on the server, so by now it is Ready whatever the person did with the
+        // dialog — and if they discarded the words, every archive from here on is sealed under
+        // something nobody has. A status read that then failed would replace this sentence with
+        // "the server is unreachable": true, secondary, and not the thing they have to be told. The
+        // page's status is stale until the next refresh, which is the smaller cost by a distance.
         throw new Error(DISCARDED);
       }
+      this.status = await this.client.readStatus(this.account);
       return 'The backup key is in place. Its words will not be shown again.';
     });
   }
