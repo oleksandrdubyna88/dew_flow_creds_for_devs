@@ -1279,6 +1279,16 @@ The key is written with a **create that refuses to overwrite**, so a rolling res
 containers on one volume ends with one key and the loser re-reads the winner's file. Only the
 awaiting-acknowledgement state overwrites, and only because nothing can be sealed to that key yet.
 
+**And that overwrite is why minting holds a lock.** The create-if-absent makes the `Absent` branch
+safe on its own — the loser of a race loses, and is told so. The awaiting-acknowledgement branch
+REPLACES, so two administrators pressing mint in the same second would both read "awaiting", both
+replace, and both be handed words, of which one set opens nothing while the person holding it
+believes they have the deployment's backup key. `org/backup/key.lock` is held across the
+read-decide-write, the same `FileShare.None` handle the run claim uses and for the same reason: a
+handle a dead process cannot hold, so there is no orphan to detect and no age to guess at. A second
+minter is REFUSED rather than queued, because somebody who pressed twice should be told rather than
+quietly handed the loser's words.
+
 Four files under `org/backup/` — the one directory the archive builder refuses to walk:
 
 ```

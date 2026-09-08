@@ -143,6 +143,23 @@ public sealed partial class BackupStore(string dataDir, byte[] kek, ILogger<Back
                 + "base64 of 32 random bytes; the same key seals developer login keys.");
             return MintOutcome.NotConfigured;
         }
+        // ONE minter at a time, across processes. Reading the state and writing over it are two
+        // operations, and the AwaitingAcknowledgement branch REPLACES an existing key: two
+        // administrators pressing mint in the same second would both read "awaiting", both replace,
+        // and both be handed words — of which only one set opens anything, while the other person
+        // walks away believing they hold the deployment's backup key. The Absent branch is safe on
+        // its own (create-if-absent makes the loser lose), and this is what makes the other one safe.
+        //
+        // The same primitive as the run claim, for the same reason: a handle a dead process cannot
+        // hold, so there is no orphan to detect and no age to guess at. A second minter is REFUSED
+        // rather than queued — an admin who pressed the button twice, or two admins at once, should
+        // be told, not silently handed the loser's words.
+        using var minting = TryMint();
+        if (!minting.Taken)
+        {
+            log.LogWarning("two backup keys were being minted at once; the second was refused.");
+            return MintOutcome.AlreadyMinted;
+        }
         var existing = await FindKeyAsync(ct);
         return existing.Status switch
         {
@@ -210,6 +227,32 @@ public sealed partial class BackupStore(string dataDir, byte[] kek, ILogger<Back
 
     public async Task WriteStatusAsync(BackupStatus status, CancellationToken ct) =>
         await WriteAsync(StatusPath, JsonSerializer.SerializeToUtf8Bytes(status, AppJsonContext.Default.BackupStatus), ct);
+
+    /// <summary>
+    /// Hold the right to mint, or come back refused.
+    /// </summary>
+    /// <remarks>
+    /// <c>FileShare.None</c> on a file nobody reads, exactly as <c>TryClaim</c> does for a run. It is
+    /// held only across the read-decide-write of one mint, which is microseconds — so a refusal here
+    /// really does mean somebody else is minting right now, rather than that a previous attempt left
+    /// something behind.
+    /// </remarks>
+    private RunClaim TryMint()
+    {
+        try
+        {
+            Directory.CreateDirectory(_dir);
+            return new RunClaim(new FileStream(
+                MintLockPath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None, 1,
+                FileOptions.None));
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            return RunClaim.Refused;
+        }
+    }
+
+    private string MintLockPath => Path.Combine(_dir, "key.lock");
 
     private string KeyPath => Path.Combine(_dir, "key.sealed");
 

@@ -89,6 +89,12 @@ cvbk() {
 }
 
 # ---- everything checkable, before anything is touched -------------------------------------------
+# WHICH binary is about to read the archive, said out loud. It comes from this deployment's own .env
+# and is the same image already holding every vault here — so a review round asking for a
+# digest-pinned decoder is asking for a stricter rule on the restore path than the deployment applies
+# to itself, which would be theatre. What IS worth having is the operator being able to see it and
+# override it: `VAULT_IMAGE=...@sha256:... ./restore-archive.sh ...` pins it for one run.
+log "decoding with ${IMAGE}"
 log "verifying ${ARCHIVE} — nothing is stopped and nothing is moved yet"
 if ! cvbk --verify-archive "/archive/$(basename "$ARCHIVE")" /scratch/key; then
   die "the archive did not verify. Nothing was changed. If the message named the KEY, the words are
