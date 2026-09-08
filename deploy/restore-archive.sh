@@ -155,8 +155,11 @@ read -r -p "Restore over ${DATA_DIR}? The current data is moved aside, not delet
 # person coming to this fresh cannot tell what happened. The marker names the displaced directory,
 # so finishing or undoing it by hand is reading one file rather than guessing from timestamps.
 finish_marker() { rm -f "$MARKER"; }
-# Invoked only by the EXIT trap below.
-# shellcheck disable=SC2329
+# Invoked only by the EXIT trap below, so shellcheck reads the whole body as unreachable.
+# BOTH codes: 0.11 reports this as SC2329, and every version before it as SC2317. Listing one is how
+# this file passed locally and failed in CI — a code that is never emitted is simply ignored, so
+# naming both is free and makes the script correct under whichever shellcheck somebody has.
+# shellcheck disable=SC2317,SC2329
 rollback() {
   local rc=$?
   cleanup
