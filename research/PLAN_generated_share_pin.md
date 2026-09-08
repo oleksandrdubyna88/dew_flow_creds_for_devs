@@ -245,10 +245,11 @@ and needs neither.
 
 ## Build order
 
-0. Branch `feat/generated-share-pin` from `origin/main`. **Done.** Note for whoever reads this
-   later: the checkout was sitting on `fix/locked-vault-prompt`, which is pushed, carries one
-   commit, and is **not** merged and has **no open PR** — unrelated to this work, but it is real
-   finished work and it is stranded. Still true as of the promotion of this plan.
+0. Branch `feat/generated-share-pin` from `origin/main`. **Done.** The checkout was sitting on
+   `fix/locked-vault-prompt`, which at that moment was pushed, unmerged and had no open PR; it
+   landed on `main` as `e8245b6` while this branch was being written, so the note that once warned
+   it was stranded no longer applies. Recorded because the branch this work started from is the
+   reason for deviation 1 below.
 1. `src/sharePin.ts` + `src/test/sharePin.test.ts` — pure, red → green.
 2. Extend `src/test/shareWorld.ts` (and `src/test/vscodeStub.ts` if the new prompt suite needs it)
    with `createInputBox`, `ThemeIcon`, `env.clipboard`.
