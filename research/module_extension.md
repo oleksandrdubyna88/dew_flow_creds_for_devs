@@ -2214,9 +2214,16 @@ The share PIN is the one secret the sender has to carry to the recipient by hand
 transport it is the ENTIRE secret — `recipientKeyId` there is a public email. Asking a person to
 invent it, type it twice and then retype it into a chat is therefore both the weakest link and the
 most tedious step, so the box **opens with one already drawn**:
-`generatePassphrase(DEFAULT_PASSPHRASE)` — six four-letter words, 48 exact bits — is on the
-clipboard before the field is shown, and the line under it reads *"Generated, and copied to your
-clipboard. Type over it to use your own."* A **sparkle** button redraws, and an **eye** button
+`generatePassphrase(DEFAULT_PASSPHRASE)` — six four-letter words, 48 exact bits — is in the field
+before `show()` is called, and the line under it reads *"Generated, and copied to your clipboard.
+Type over it to use your own."*
+
+**Drawn synchronously, copied asynchronously**, and the distinction is worth stating precisely
+because both halves matter. `startDraw` generates and assigns `box.value` before the box is shown,
+so the field is never rendered empty; the clipboard write is queued on `drawn.pending` and lands a
+moment later, which is when the advisory line appears. A person fast enough to paste in that gap
+gets whatever was on their clipboard before — the notification at the end of the flow re-copies for
+exactly this class of reason. A **sparkle** button redraws, and an **eye** button
 unmasks it for reading aloud. A passphrase rather than a password because the PIN's job is to cross
 a chat, survive being read aloud, and be retyped by the recipient; 200 draws are asserted against
 `validatePin` in `sharePin.test.ts`, because the generator and the PIN policy had never met.

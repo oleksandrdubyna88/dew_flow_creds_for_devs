@@ -47,24 +47,33 @@ const REVEAL = 'Show or hide the PIN';
  * value — which is the point: they ask for the same kind of secret, one that crosses to another
  * person out-of-band, once.
  */
-interface Wording {
+export interface Wording {
   readonly title: string;
   readonly prompt: string;
-}
-
-const SHARE: Wording = {
-  title: 'One-time share PIN',
-  prompt: 'Encrypts the shared item. Tell it to the recipient out-of-band.',
+  /**
+   * What the reveal modal calls this secret. Here rather than hard-coded at the reveal because
+   * that is the ONE surface the value itself appears on, and it used to say "this share" on the
+   * export path — where nothing was shared and the box two steps earlier had called the very same
+   * secret a password. One flow may not use two names for one secret.
+   */
+  readonly reveal: string;
 };
 
-const EXPORT: Wording = {
+export const SHARE_PIN: Wording = {
+  title: 'One-time share PIN',
+  prompt: 'Encrypts the shared item. Tell it to the recipient out-of-band.',
+  reveal: 'The one-time PIN for this share. Read it to the recipient, then close this.',
+};
+
+export const EXPORT_PASSWORD: Wording = {
   title: 'Password for the export',
   prompt: 'Tell it to the recipient out-of-band — it is the only key to this file.',
+  reveal: 'The password for this export. Read it to the recipient, then close this.',
 };
 
 /** The PIN to seal a share with, or nothing when the person backed out. */
 export function chooseSharePin(): Promise<SharePin | undefined> {
-  return chooseTransitPin(SHARE);
+  return chooseTransitPin(SHARE_PIN);
 }
 
 /**
@@ -76,7 +85,7 @@ export function chooseSharePin(): Promise<SharePin | undefined> {
  * discovered by the recipient who could not open it, long after the plaintext was gone.</p>
  */
 export function chooseExportPassword(): Promise<SharePin | undefined> {
-  return chooseTransitPin(EXPORT);
+  return chooseTransitPin(EXPORT_PASSWORD);
 }
 
 async function chooseTransitPin(wording: Wording): Promise<SharePin | undefined> {
@@ -344,8 +353,13 @@ const COPY_FAILED = ` Copying it to the clipboard failed. ${REVEAL_INSTEAD}`;
  *   this extension never had would be a lie about where it came from.</li>
  * </ul>
  */
-export function announceHandover(headline: string, withheld: string, pin: SharePin): Promise<void> {
-  return announce(vscode.window.showInformationMessage, headline, withheld, pin, pin.generated);
+export function announceHandover(
+  wording: Wording,
+  headline: string,
+  withheld: string,
+  pin: SharePin,
+): Promise<void> {
+  return announce(vscode.window.showInformationMessage, wording, headline, withheld, pin, pin.generated);
 }
 
 /**
@@ -362,7 +376,14 @@ export function announceDeliveredWithErrors(
   pin: SharePin,
   anyDelivered: boolean,
 ): Promise<void> {
-  return announce(vscode.window.showErrorMessage, message, '', pin, pin.generated && anyDelivered);
+  return announce(
+    vscode.window.showErrorMessage,
+    SHARE_PIN,
+    message,
+    '',
+    pin,
+    pin.generated && anyDelivered,
+  );
 }
 
 /** What either terminal message does about the PIN. */
@@ -370,6 +391,7 @@ type Show = (message: string, ...actions: string[]) => Thenable<string | undefin
 
 async function announce(
   show: Show,
+  wording: Wording,
   headline: string,
   withheld: string,
   pin: SharePin,
@@ -384,7 +406,7 @@ async function announce(
   // a clipboard that rejected.
   const notice = (await copySafely(pin.value)) ? sharePinNotice(pin, secretClipboardTtl()) : COPY_FAILED;
   const choice = await show(`${headline}${notice}${withheld}`, COPY_AGAIN, SHOW_PIN);
-  await actOn(choice, pin.value);
+  await actOn(wording, choice, pin.value);
 }
 
 /**
@@ -406,7 +428,7 @@ async function copySafely(value: string): Promise<boolean> {
   }
 }
 
-async function actOn(choice: string | undefined, value: string): Promise<void> {
+async function actOn(wording: Wording, choice: string | undefined, value: string): Promise<void> {
   if (choice === COPY_AGAIN) {
     if (!(await copySafely(value))) {
       void vscode.window.showWarningMessage(`Copying failed. ${REVEAL_INSTEAD}`);
@@ -414,10 +436,7 @@ async function actOn(choice: string | undefined, value: string): Promise<void> {
     return;
   }
   if (choice === SHOW_PIN) {
-    await vscode.window.showWarningMessage(value, {
-      modal: true,
-      detail: 'The one-time PIN for this share. Read it to the recipient, then close this.',
-    });
+    await vscode.window.showWarningMessage(value, { modal: true, detail: wording.reveal });
   }
 }
 
