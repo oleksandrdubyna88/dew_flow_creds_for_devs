@@ -42,7 +42,10 @@ const ui = {
   saveTo: '/tmp/export.enc' as string | undefined,
   /** Set to make the file write reject, the way a full or read-only disk does. */
   writeFails: false,
-  written: '',
+  /** Every filesystem operation the command performed, in order. */
+  fsOps: [] as string[],
+  /** What exists on disk afterwards, by path. */
+  files: new Map<string, string>(),
   clipboard: '',
   clipboardWrites: 0,
   infos: [] as string[],
@@ -59,7 +62,8 @@ function reset(): void {
   ui.repeatsAsked = 0;
   ui.saveTo = '/tmp/export.enc';
   ui.writeFails = false;
-  ui.written = '';
+  ui.fsOps = [];
+  ui.files = new Map<string, string>();
   ui.clipboard = '';
   ui.clipboardWrites = 0;
   ui.infos = [];
@@ -163,11 +167,26 @@ function stubbedVscode(): Record<string, unknown> {
       getConfiguration: () => ({ get: (_k: string, d: unknown) => d }),
       onDidChangeConfiguration: () => ({ dispose: (): void => undefined }),
       fs: {
-        writeFile: (_uri: unknown, bytes: Buffer): Promise<undefined> => {
+        writeFile: (uri: { fsPath: string }, bytes: Buffer): Promise<undefined> => {
+          ui.fsOps.push(`write ${uri.fsPath}`);
           if (ui.writeFails) {
             return Promise.reject(new Error('disk is full'));
           }
-          ui.written = Buffer.from(bytes).toString('utf8');
+          ui.files.set(uri.fsPath, Buffer.from(bytes).toString('utf8'));
+          return Promise.resolve(undefined);
+        },
+        rename: (from: { fsPath: string }, to: { fsPath: string }): Promise<undefined> => {
+          ui.fsOps.push(`rename ${from.fsPath} -> ${to.fsPath}`);
+          const held = ui.files.get(from.fsPath);
+          ui.files.delete(from.fsPath);
+          if (held !== undefined) {
+            ui.files.set(to.fsPath, held);
+          }
+          return Promise.resolve(undefined);
+        },
+        delete: (uri: { fsPath: string }): Promise<undefined> => {
+          ui.fsOps.push(`delete ${uri.fsPath}`);
+          ui.files.delete(uri.fsPath);
           return Promise.resolve(undefined);
         },
       },
@@ -227,6 +246,11 @@ function exportHandler(): Handler {
   }
 }
 
+/** What ended up under a path, '' when nothing did. */
+function written(path = '/tmp/export.enc'): string {
+  return ui.files.get(path) ?? '';
+}
+
 const flush = async (): Promise<void> => {
   for (let i = 0; i < 6; i += 1) {
     await new Promise((r) => setImmediate(r));
@@ -255,9 +279,9 @@ test('the file is sealed with exactly the password that reached the clipboard', 
   await exportHandler()(target, undefined);
   await flush();
 
-  assert.notEqual(ui.written, '', 'nothing was written');
+  assert.notEqual(written(), '', 'nothing was written');
   assert.notEqual(ui.clipboard, '', 'nothing reached the clipboard for the person to paste');
-  const opened = decryptJson(ui.written, ui.clipboard) as { nodes?: unknown[] };
+  const opened = decryptJson(written(), ui.clipboard) as { nodes?: unknown[] };
   assert.ok(opened !== undefined, 'the clipboard did not open the file it is supposed to open');
 });
 
@@ -271,7 +295,7 @@ test('a typed export password is confirmed, and a mismatch writes no file', asyn
   await flush();
 
   assert.equal(ui.repeatsAsked, 1, 'the only key to a file that outlives the session is confirmed');
-  assert.equal(ui.written, '', 'a mismatch must write nothing at all');
+  assert.equal(written(), '', 'a mismatch must write nothing at all');
   assert.equal(ui.errors.length, 1, 'and the person is told why');
 });
 
@@ -283,7 +307,7 @@ test('the plain JSON export says nothing about a PIN', async () => {
   await exportHandler()(target, undefined);
   await flush();
 
-  assert.notEqual(ui.written, '', 'the plain form still writes its file');
+  assert.notEqual(written('/tmp/export.json'), '', 'the plain form still writes its file');
   assert.equal(ui.boxes.length, 0, 'there is no password on that path, so no box is raised');
   assert.deepEqual(
     ui.infoActions.at(-1),
@@ -299,7 +323,7 @@ test('a cancelled save dialog takes the export password with it', async () => {
   await exportHandler()(target, undefined);
   await flush();
 
-  assert.equal(ui.written, '', 'precondition: no file was written');
+  assert.equal(written(), '', 'precondition: no file was written');
   assert.equal(ui.clipboard, '', 'no file exists, so its password must not stay on the clipboard');
 });
 
@@ -312,7 +336,7 @@ test('a write that fails takes the export password with it too', async () => {
   await Promise.resolve(exportHandler()(target, undefined)).catch(() => undefined);
   await flush();
 
-  assert.equal(ui.written, '', 'precondition: the write did not happen');
+  assert.equal(written(), '', 'precondition: the write did not happen');
   assert.equal(ui.clipboard, '', 'a password for a file that does not exist is a secret for nothing');
 });
 
@@ -326,4 +350,47 @@ test('a delivered export offers the password again, and never prints it', async 
   assert.ok(actions.includes('Copy again'), `the save dialog can outlast the 45s window: ${actions}`);
   assert.ok(actions.includes('Show PIN'), `and a masked value must be readable aloud: ${actions}`);
   assert.ok(!said.includes(ui.clipboard), 'a notification is retained — it may never carry the value');
+});
+
+/**
+ * RED FIRST, and the one real finding of story 2's plan round (codex, Blocking).
+ *
+ * <p>`workspace.fs.writeFile` truncates and then writes, so a failure partway through — a full
+ * disk, a network share dropping, a permission prompt refused — can leave a TRUNCATED file sitting
+ * under the name the person chose. An encrypted export is AES-GCM over the whole payload, so that
+ * file cannot be opened by any password: it is an artefact that looks like an export, is named like
+ * an export, and is not one. Meanwhile the failure path discards the password, on the reasoning
+ * that no file exists.</p>
+ *
+ * <p>The repository already had the answer and this export was simply not using it:
+ * `writeFileAtomically` writes a temp sibling and renames over the target, a rename being the one
+ * operation a filesystem makes atomic. Its own doc comment says why it exists — two writers of the
+ * vault file needed it and "one of them" did not have it. This is the third.</p>
+ */
+test('the export arrives by a rename, so a failed write cannot leave a half file under its name', async () => {
+  reset();
+  await exportHandler()(target, undefined);
+  await flush();
+
+  assert.notEqual(written(), '', 'precondition: the export landed');
+  const direct = ui.fsOps.filter((op) => op === `write ${'/tmp/export.enc'}`);
+  assert.deepEqual(direct, [], `the final name must never be written directly: ${ui.fsOps}`);
+  assert.ok(
+    ui.fsOps.some((op) => op.startsWith('rename ') && op.endsWith('-> /tmp/export.enc')),
+    `the content must arrive by a rename: ${ui.fsOps}`,
+  );
+});
+
+test('a failed write leaves nothing at all — no export, and no temp beside it', async () => {
+  reset();
+  ui.writeFails = true;
+
+  await Promise.resolve(exportHandler()(target, undefined)).catch(() => undefined);
+  await flush();
+
+  assert.deepEqual(
+    [...ui.files.keys()],
+    [],
+    'a truncated file under the export name would be unopenable by any password',
+  );
 });

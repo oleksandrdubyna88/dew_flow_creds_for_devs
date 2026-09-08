@@ -2250,6 +2250,15 @@ secret for nothing. `announceWritten` tests `pin !== undefined` rather than trut
 plain-JSON form — which has no password and never did — can never be offered a `Copy again` with
 nothing to copy.
 
+The export also **writes through `writeFileAtomically`** now, which it should have been doing all
+along. `fs.writeFile` truncates and then writes, so a failure partway through leaves a truncated
+file under the name the person chose — and an encrypted export is AES-GCM over the whole payload, so
+no password opens that file. It is an artefact that looks like an export, is named like one, and is
+not one, sitting next to a failure path that discards the password on the reasoning that no file
+exists. The review gate raised it against this story's plan and the answer was already in the tree:
+that helper exists because two writers of the vault file needed a temp-sibling-and-rename and, as its
+own comment records, one of them did not have it. The export is the third.
+
 Four decisions worth keeping, each of which was a defect first — three of them found by the review
 gate before a line was written, and watched failing before they were fixed:
 

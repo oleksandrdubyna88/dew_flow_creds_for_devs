@@ -10,6 +10,7 @@ import { buildExternalBundle } from '../externalBundle';
 import { exportSensitiveNote, paymentFieldsInExport } from '../paymentRedaction';
 import { resolveBulkTargets } from '../commandTargets';
 import { encryptJson } from '../cryptoUtils';
+import { writeFileAtomically } from '../atomicFileWrite';
 import { SharePin } from '../sharePin';
 import { announceHandover, chooseExportPassword, discardTransitPin } from '../transitPinPrompt';
 
@@ -213,12 +214,38 @@ async function save(file: ExportFile, exportName: string, nodeCount: number): Pr
     return;
   }
   try {
-    await vscode.workspace.fs.writeFile(targetUri, Buffer.from(file.content, 'utf8'));
+    await writeExportAtomically(targetUri, file.content);
   } catch (err) {
     await abandon(file);
     throw err;
   }
   await announceWritten(file, nodeCount, targetUri.fsPath);
+}
+
+/**
+ * Write the export through a temp sibling and a rename, never straight onto the chosen name.
+ *
+ * <p>`fs.writeFile` truncates and then writes, so a failure partway through — a full disk, a
+ * network share dropping — leaves a TRUNCATED file under the name the person picked. An encrypted
+ * export is AES-GCM over the whole payload, so no password opens that file: it is an artefact that
+ * looks like an export, is named like an export, and is not one. Meanwhile the failure path
+ * discards the password on the reasoning that no file exists.</p>
+ *
+ * <p>Raised by the review gate against this story's plan, and the answer was already in the
+ * repository: `writeFileAtomically` exists because two writers of the vault file needed exactly
+ * this and, as its own comment records, one of them did not have it. This is the third.</p>
+ */
+function writeExportAtomically(target: vscode.Uri, content: string): Promise<void> {
+  return writeFileAtomically(
+    {
+      writeFile: (uri, data) => vscode.workspace.fs.writeFile(uri, data),
+      rename: (from, to, options) => vscode.workspace.fs.rename(from, to, options),
+      remove: (uri) => vscode.workspace.fs.delete(uri),
+    },
+    vscode.Uri.file(`${target.fsPath}.tmp`),
+    target,
+    content,
+  );
 }
 
 /**
