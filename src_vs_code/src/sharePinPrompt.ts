@@ -155,24 +155,46 @@ const COPY_FAILED = ` Copying it to the clipboard failed. ${REVEAL_INSTEAD}`;
  *   this extension never had would be a lie about where it came from.</li>
  * </ul>
  */
-export async function announceShared(
+export function announceShared(headline: string, withheld: string, pin: SharePin): Promise<void> {
+  return announce(vscode.window.showInformationMessage, headline, withheld, pin, pin.generated);
+}
+
+/**
+ * The same offer on the failure path, when SOMEBODY still received the share.
+ *
+ * <p>A partial failure is the sharpest case this feature has, and the first version of it walked
+ * past: some recipients hold a sealed entry, the PIN is stored nowhere, and the window opened when
+ * it was drawn may well have closed while delivery was running. An error message with no way to
+ * reproduce the PIN leaves those recipients with something nobody alive can open. When NOTHING was
+ * delivered there is nobody to give it to, and the offer would be noise.</p>
+ */
+export function announceDeliveredWithErrors(
+  message: string,
+  pin: SharePin,
+  anyDelivered: boolean,
+): Promise<void> {
+  return announce(vscode.window.showErrorMessage, message, '', pin, pin.generated && anyDelivered);
+}
+
+/** What either terminal message does about the PIN. */
+type Show = (message: string, ...actions: string[]) => Thenable<string | undefined>;
+
+async function announce(
+  show: Show,
   headline: string,
   withheld: string,
   pin: SharePin,
+  offer: boolean,
 ): Promise<void> {
-  if (!pin.generated) {
-    void vscode.window.showInformationMessage(`${headline}${withheld}`);
+  if (!offer) {
+    void show(`${headline}${withheld}`);
     return;
   }
   // The clipboard sentence is composed HERE, from whether the copy actually happened, rather than
   // upstream from the intention to try it. Composing it earlier is how a message comes to promise
   // a clipboard that rejected.
   const notice = (await copied(pin.value)) ? sharePinNotice(pin, secretClipboardTtl()) : COPY_FAILED;
-  const choice = await vscode.window.showInformationMessage(
-    `${headline}${notice}${withheld}`,
-    COPY_AGAIN,
-    SHOW_PIN,
-  );
+  const choice = await show(`${headline}${notice}${withheld}`, COPY_AGAIN, SHOW_PIN);
   await actOn(choice, pin.value);
 }
 

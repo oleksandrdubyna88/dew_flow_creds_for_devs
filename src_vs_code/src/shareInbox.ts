@@ -22,7 +22,7 @@ import {
 import { recordOrigin, resolveOrigin } from './shareOrigin';
 import { snapshotForRevision } from './revisionSnapshot';
 import type { SharePin } from './sharePin';
-import { announceShared, chooseSharePin } from './sharePinPrompt';
+import { announceDeliveredWithErrors, announceShared, chooseSharePin } from './sharePinPrompt';
 import { redactArrivedPayment, withheldFromShare } from './paymentRedaction';
 import { OwnedShare, SharePayload, TeamMember, TreeNode } from './types';
 
@@ -146,8 +146,13 @@ export class ShareInbox {
     const what =
       payloads.length === 1 ? `"${payloads[0].node.name}"` : `${payloads.length} entities`;
     if (failed.length > 0) {
-      void vscode.window.showErrorMessage(
+      // A partial failure still has a PIN to hand over: whoever DID receive the entry cannot open
+      // it without one, and it is stored nowhere. Reporting the failure and withholding the PIN
+      // leaves them with a sealed entry nobody alive can open.
+      await announceDeliveredWithErrors(
         `Share finished with errors — delivered: ${delivered.length}, failed: ${failed.join('; ')}${delivered.length > 0 ? withheld : ''}`,
+        pin,
+        delivered.length > 0,
       );
     } else {
       // What the redaction removed, said out loud. `withheldFromShare` existed and was tested and was
