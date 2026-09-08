@@ -127,6 +127,55 @@ function advice(message: string): vscode.InputBoxValidationMessage {
   return { message, severity: vscode.InputBoxValidationSeverity.Info };
 }
 
+const COPY_AGAIN = 'Copy again';
+const SHOW_PIN = 'Show PIN';
+
+/**
+ * The end of the conversation: the share landed, and now the PIN has to reach a person.
+ *
+ * <p>Here rather than in `shareInbox` for the reason the prompt is: this file is where everything
+ * SAID about a share PIN lives, and the two halves have to agree about what the person was
+ * promised.</p>
+ *
+ * <p>Three decisions, and each of them was a defect in the first draft of the plan:</p>
+ *
+ * <ul>
+ *   <li><b>The message never contains the PIN.</b> A notification is retained in the Notification
+ *   Center until it is dismissed — `withheldNote` refuses to put anything but field NAMES there
+ *   for exactly that reason. So the value is behind `Show PIN`, and that reveal is a
+ *   <b>modal</b>: a dialog is transient and is gone when it is dismissed, which is the difference
+ *   that makes offering it at all defensible.</li>
+ *   <li><b>The clipboard is written again, here.</b> The 45-second wipe starts at the copy, and an
+ *   unbounded amount of time passes between drawing the PIN and the share landing — other prompts,
+ *   a slow transport. Re-copying restarts the window at the moment the person actually goes to
+ *   paste, which is the only way the sentence about it is true when it is read.</li>
+ *   <li><b>A typed PIN gets none of this.</b> It is already theirs; offering to re-copy something
+ *   this extension never had would be a lie about where it came from.</li>
+ * </ul>
+ */
+export async function announceShared(message: string, pin: SharePin): Promise<void> {
+  if (!pin.generated) {
+    void vscode.window.showInformationMessage(message);
+    return;
+  }
+  await copySecret(vscode.env.clipboard, pin.value);
+  const choice = await vscode.window.showInformationMessage(message, COPY_AGAIN, SHOW_PIN);
+  await actOn(choice, pin.value);
+}
+
+async function actOn(choice: string | undefined, value: string): Promise<void> {
+  if (choice === COPY_AGAIN) {
+    await copySecret(vscode.env.clipboard, value);
+    return;
+  }
+  if (choice === SHOW_PIN) {
+    await vscode.window.showWarningMessage(value, {
+      modal: true,
+      detail: 'The one-time PIN for this share. Read it to the recipient, then close this.',
+    });
+  }
+}
+
 /**
  * The second box, for a PIN a person invented. Both boxes or nothing: a mismatch answers
  * `undefined` rather than the first value, so a caller can never half-succeed into sealing a share

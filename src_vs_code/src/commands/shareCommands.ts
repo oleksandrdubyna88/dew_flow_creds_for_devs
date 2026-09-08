@@ -4,6 +4,7 @@
 import { serializePaymentFields } from '../paymentFields';
 import { redactPaymentForShare } from '../paymentRedaction';
 import { ShareInbox } from '../shareInbox';
+import { chooseSharePin } from '../sharePinPrompt';
 import { SharingManager } from '../sharingManager';
 import { StorageManager } from '../storageManager';
 import { resolveBulkTargets } from '../commandTargets';
@@ -77,7 +78,7 @@ export function registerShareCommands(host: ShareCommandsHost): void {
     if (result === undefined) {
       return;
     }
-    const pin = await shareInbox.promptSharePin(true);
+    const pin = await chooseSharePin();
     if (pin === undefined) {
       return;
     }
