@@ -1,14 +1,63 @@
 # PLAN — the transit PIN is drawn before it is asked for, and the export path gets the same box
 
-> Status: **plan only, nothing implemented yet.** Scope: the VS Code extension only —
-> `src_vs_code/src/sharePinPrompt.ts` (renamed), `src_vs_code/src/commands/exportCommand.ts`, their
-> tests, the sharing and import/export help articles in five languages, and
-> `research/module_extension.md`. **No server change, no HTTP contract change** (repo rule 6 is not
-> engaged).
+> Status: **IMPLEMENTED, 2026-09-08.** Scope: the VS Code extension only —
+> `src_vs_code/src/sharePinPrompt.ts` (renamed `transitPinPrompt.ts`),
+> `src_vs_code/src/commands/exportCommand.ts`, their tests, the sharing help article in five
+> languages, and `research/module_extension.md`. **No server change, no HTTP contract change** (repo
+> rule 6 is not engaged).
 >
-> Related docs: [module_extension.md](../research/module_extension.md),
-> [PLAN_generated_share_pin.md](../research/PLAN_generated_share_pin.md),
-> [PLAN_sharing.md](../research/PLAN_sharing.md).
+> Related docs: [module_extension.md](module_extension.md),
+> [PLAN_generated_share_pin.md](PLAN_generated_share_pin.md),
+> [PLAN_sharing.md](PLAN_sharing.md).
+
+## What shipped differently from this plan
+
+Seven deviations. Two changed the design; the rest are things the review gate found once there was
+code to look at.
+
+1. **The invariant in decision 2 did not exist when the plan was written.** It had one row — Escape
+   leaves a secret on the clipboard — and the gate's codex reviewer added the one that matters: type
+   over the drawn PIN, accept, and the clipboard still holds the DRAWN value while the item is
+   sealed with the TYPED one. That failure is silent, which is why decision 2 became a named rule
+   with a table rather than a sentence about Escape. Two more rows arrived with it (a cancelled
+   repeat box, a cancelled save dialog).
+2. **A fire-and-forget `draw` was the real defect, and all three vendors found it independently.**
+   The plan said "call `draw` from `askOnce` before `box.show()`" and stopped there. `void draw(...)`
+   leaves the clipboard write in flight while the box is interactive: Escape during that window runs
+   the wipe BEFORE the copy, `clearIfUnchanged` correctly declines to touch a clipboard that does
+   not hold the PIN yet, and the copy then lands — a secret for a cancelled share, written on behalf
+   of a disposed box, which is also where `validationMessage` would have thrown. `Drawn` gained
+   `pending` and `closed`, and the draw was split so the synchronous half still runs before `show()`.
+3. **The split was found by a test, not by reasoning.** The first fix chained the whole draw onto
+   `drawn.pending`, which made the field briefly blank — and would have made TRUE two findings that
+   had just been rejected as factually wrong ("the box renders empty"). The precondition of
+   `a draw still in flight when the box closes leaves nothing behind` caught it.
+4. **A redraw whose copy fails now discards the PIN it replaced**, and typing over the draw discards
+   at once rather than at Enter. Neither was in the plan; both are the same silent shape as
+   deviation 1, reachable while the person is still standing in the box.
+5. **`writeFileAtomically`.** The gate's plan round found that `fs.writeFile` truncates before it
+   writes, so a failed export leaves a truncated file under the chosen name — unopenable by any
+   password, next to a failure path that discards the password because "no file exists". The helper
+   already existed for the vault file; the export is its third caller. Its temp sibling then took two
+   more findings: `Uri.file()` forces the scheme back to `file:` (breaking remote workspaces), and a
+   fixed `.tmp` is shared by two concurrent exports.
+6. **A failed write now says so.** It used to throw out of the command handler, where the person
+   meets VS Code's generic failure notice or nothing at all.
+7. **`ExportFile` is a discriminated union**, not a shape with an optional `pin` as the plan said.
+   With the optional field a future form could return `{ ext: 'enc', content }` and compile, and the
+   announcement would take the plain branch — an encrypted file whose password is never offered.
+
+**The gate, in numbers.** Plan round on the whole plan: `good_enough`, 8 gating against a threshold
+of 6, all 3 reviewers, 6 accepted / 5 rejected. Code round on story 1: `good_enough`, 15 gating,
+11 of 12 reviewers (one local reviewer failed to start), 9 accepted / 12 rejected. Plan round on
+story 2: `good_enough`, 8 gating, all 3, 2 accepted / 9 rejected. Code round on story 2: **`proceed`**,
+all 12 reviewers, 4 accepted / 18 rejected.
+
+**Two follow-ups declined here on purpose**, both about the export flow rather than its password:
+`encryptJson` runs when the FORM is chosen rather than after the destination is confirmed, so a
+cancelled save dialog has already paid for encrypting the bundle; and the export command has never
+had a progress notification, which a vault of thousands of nodes would want. They belong together in
+one change.
 
 ## The symptom
 
