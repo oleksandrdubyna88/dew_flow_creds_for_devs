@@ -130,16 +130,25 @@ if [[ "$VERIFY_ONLY" -eq 1 ]]; then
   exit 0
 fi
 
-read -r -p "Restore over ${DATA_DIR}? The current data is moved aside, not deleted. [y/N] " reply
-[[ "$reply" =~ ^[Yy]$ ]] || { log "aborted; nothing was changed"; exit 0; }
-
-# ---- past this line the service is DOWN --------------------------------------------------------
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 DISPLACED=""
 MARKER="${DATA_DIR}.restore-in-progress"
 
-log "stopping the stack"
-docker compose down >/dev/null 2>&1 || true
+# BEFORE the stack is stopped, and before the confirmation. A review round found this after the
+# `docker compose down`, which meant a retry took the running stack offline and only THEN refused —
+# a second outage handed to somebody who was already recovering from the first.
+if [[ -f "$MARKER" ]]; then
+  warn "a previous restore did not finish. It left:"
+  sed 's/^/    /' "$MARKER" >&2
+  die "resolve that first — move the displaced directory back over ${DATA_DIR}, or delete it if the
+       restore it was interrupted mid-way is one you still want — then remove ${MARKER}.
+       Nothing has been stopped and nothing has been moved."
+fi
+
+read -r -p "Restore over ${DATA_DIR}? The current data is moved aside, not deleted. [y/N] " reply
+[[ "$reply" =~ ^[Yy]$ ]] || { log "aborted; nothing was changed"; exit 0; }
+
+# ---- past this line the service is DOWN --------------------------------------------------------
 
 # A DURABLE marker, not only a trap. A trap does not run when the machine loses power or the shell
 # is killed, and the state in between — data moved aside, nothing put back — is the one where a
@@ -159,17 +168,28 @@ rollback() {
     warn "original data restored to ${DATA_DIR}"
   fi
   finish_marker
-  docker compose up -d >/dev/null 2>&1 || true
+  # Reported rather than swallowed. A rollback that could not restart the stack leaves the operator
+  # with data in the right place and nothing serving it, and they have to be TOLD that, not left to
+  # discover it from a health check they may not run.
+  if ! docker compose up -d >/dev/null 2>&1; then
+    warn "the data is back at ${DATA_DIR} and the stack did NOT start again."
+    warn "run 'docker compose up -d' here and read its output."
+    return "$rc"
+  fi
   warn "the stack has been started again; nothing was lost"
   return "$rc"
 }
 trap rollback EXIT
 
-if [[ -f "$MARKER" ]]; then
-  warn "a previous restore did not finish. It left:"
-  sed 's/^/    /' "$MARKER" >&2
-  die "resolve that first — move the displaced directory back over ${DATA_DIR}, or delete it if the
-       restore it was interrupted mid-way is one you still want — then remove ${MARKER}."
+# NOT '|| true'. If the stack cannot be stopped, moving its data directory out from under a running
+# server is how a half-written vault blob and a live process meet — and the script would then report
+# a restore it had corrupted.
+log "stopping the stack"
+if ! docker compose down >/dev/null 2>&1; then
+  trap - EXIT
+  cleanup
+  die "the stack could not be stopped, so nothing was moved. Read 'docker compose down' here: while
+       a server is running, moving its data directory is how a half-written blob is produced."
 fi
 
 if [[ -d "$DATA_DIR" ]]; then

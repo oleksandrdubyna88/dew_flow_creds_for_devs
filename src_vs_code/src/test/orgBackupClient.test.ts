@@ -186,3 +186,71 @@ test('a download of an archive that does not exist yet carries the server senten
 
   await assert.rejects(() => client().downloadArchive(account), /no archive on this server yet/);
 });
+
+const HOSTILE_NAMES: readonly [string, string][] = [
+  ['/home/dev/.ssh/config', 'an absolute POSIX path'],
+  ['C:\\Users\\dev\\.ssh\\config', 'an absolute Windows path'],
+  ['../../../.bashrc', 'traversal'],
+  ['sub/dir/thing.cvbk', 'a separator of any kind'],
+  ['..', 'the parent itself'],
+  ['', 'nothing at all'],
+];
+
+test('a filename the SERVER chose can never be a path', async () => {
+  // The Save dialog opens at `defaultUri`, so a compromised or hostile server answering
+  // `Content-Disposition: attachment; filename="/home/dev/.ssh/config"` would put the administrator
+  // one Enter away from overwriting their own ssh config with archive bytes. Only a basename is
+  // taken, and anything that is not one falls back to the neutral name.
+  for (const [hostile, why] of HOSTILE_NAMES) {
+    respondWith(200, 'bytes', {
+      'content-disposition': `attachment; filename="${hostile}"`,
+    });
+
+    const download = await client().downloadArchive(account);
+
+    assert.equal(download.name, 'cred-vault-backup.cvbk', `${why} is refused: ${hostile}`);
+  }
+});
+
+test('an ordinary filename still comes through untouched', () => {
+  // So the test above cannot pass by refusing everything.
+  respondWith(200, 'bytes', {
+    'content-disposition': 'attachment; filename="cred-vault-20260907-030405Z.cvbk"',
+  });
+
+  return client().downloadArchive(account).then((download) => {
+    assert.equal(download.name, 'cred-vault-20260907-030405Z.cvbk');
+  });
+});
+
+test('a status missing a field the PAGE reads is refused, not passed on', async () => {
+  // The guard used to check five fields and that `targets` was an array. Everything else — the
+  // archive name the page measures, the error the notice reads, each target's own strings — reached
+  // the renderer unchecked, so a truncated or older answer became a broken tab rather than the
+  // sentence this client exists to produce.
+  const missing: Record<string, unknown> = { ...STATUS };
+  delete missing.localArchiveName;
+  respondWith(200, missing);
+
+  await assert.rejects(() => client().readStatus(account), /shape this build cannot read/);
+});
+
+test('a status whose TARGET rows are malformed is refused too', async () => {
+  respondWith(200, { ...STATUS, targets: [null] });
+
+  await assert.rejects(() => client().readStatus(account), /shape this build cannot read/);
+});
+
+test('a status with a well-formed target row is accepted', async () => {
+  respondWith(200, {
+    ...STATUS,
+    targets: [{
+      kind: 's3', where: 's3 vaults/backups', result: 'succeeded', error: '', retention: '', at: 1,
+    }],
+  });
+
+  const status = await client().readStatus(account);
+
+  assert.equal(status.targets.length, 1);
+  assert.equal(status.targets[0].where, 's3 vaults/backups');
+});

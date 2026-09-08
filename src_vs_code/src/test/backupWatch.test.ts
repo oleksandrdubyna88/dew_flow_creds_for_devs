@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { NoticeMemory } from '../backupNotice';
+import { BackupNotice, NoticeMemory } from '../backupNotice';
 import { BackupWatchHost, checkBackups, checkOneBackup } from '../backupWatch';
-import { CorpPolicyState } from '../corpPolicy';
+import { CorpPolicyState, MOST_RESTRICTIVE_POLICY } from '../corpPolicy';
 import { BackupStatus } from '../orgBackupClient';
 import { StoredAccount } from '../types';
 
@@ -16,8 +16,29 @@ const NOW = 1_757_260_800_000;
 const anna: StoredAccount = { accountId: 'acct-1', email: 'anna@corp.com', provider: 'microsoft' };
 const bob: StoredAccount = { accountId: 'acct-2', email: 'bob@corp.com', provider: 'microsoft' };
 
+/**
+ * A whole `CorpPolicyState`, not a cast.
+ *
+ * <p>`{ isAdmin } as CorpPolicyState` compiles today and goes on compiling the day the interface
+ * gains a required field — and what appears instead is a runtime failure in every test that used
+ * the fixture, none of them pointing at the interface that changed
+ * (`.claude/rules/shared/typescript/doctrine.md` rule 3). Real defaults cost four lines and fail at
+ * the compiler instead.</p>
+ */
 function policy(isAdmin: boolean): CorpPolicyState {
-  return { isAdmin } as CorpPolicyState;
+  return {
+    corpMode: true,
+    role: isAdmin ? 'admin' : 'member',
+    isOfficer: false,
+    isAdmin,
+    active: true,
+    policy: MOST_RESTRICTIVE_POLICY,
+    policyFromServer: true,
+    projects: [],
+    pendingFolderRemovals: [],
+    leaseHours: 0,
+    fetchedAt: NOW,
+  };
 }
 
 const BASE: BackupStatus = {
@@ -42,7 +63,10 @@ interface World {
   readonly host: BackupWatchHost;
   readonly shown: string[];
   readonly reads: string[];
-  memory: NoticeMemory;
+  /** What the host has persisted so far. Read-only here: only the host writes it. */
+  readonly memory: NoticeMemory;
+  /** How many times it was persisted — the difference between "settled" and "written per account". */
+  readonly writes: number;
 }
 
 function world(
@@ -52,18 +76,32 @@ function world(
 ): World {
   const shown: string[] = [];
   const reads: string[] = [];
-  const state = { memory, shown, reads } as unknown as World;
+  // A one-field box rather than `as unknown as World`. The host's closures need somewhere mutable to
+  // keep the persisted map, and the World the caller reads needs the same place — a cast would have
+  // bought that by turning the compiler off for this shape, which is the pattern the doctrine names.
+  const box: { memory: NoticeMemory; writes: number } = { memory, writes: 0 };
   const host: BackupWatchHost = {
     clientFor: () => (hasClient ? reader(answers, reads) : undefined),
-    shown: () => state.memory,
+    shown: () => box.memory,
     remember: (next) => {
-      state.memory = next;
+      box.memory = next;
+      box.writes += 1;
       return Promise.resolve(undefined);
     },
     show: (message) => shown.push(message),
     now: () => NOW,
   };
-  return Object.assign(state, { host, shown, reads });
+  return {
+    host,
+    shown,
+    reads,
+    get memory(): NoticeMemory {
+      return box.memory;
+    },
+    get writes(): number {
+      return box.writes;
+    },
+  };
 }
 
 /** A status reader that records who it was asked about. */
@@ -80,36 +118,40 @@ function reader(
 }
 
 /** A notice's words, so an assertion is not four operators deep. */
-function words(notice: { message: string } | undefined): string {
+function words(notice: BackupNotice | undefined): string {
   return notice === undefined ? '' : notice.message;
 }
 
-test('a member is never polled, because every backup route is admin-only', () => {
+test('a member is never polled, because every backup route is admin-only', async () => {
   // A member's poll would be refused on every cycle, and the only thing that refusal could do is put
   // a red message in front of somebody who cannot act on it.
   const w = world(() => Promise.resolve(status()));
 
-  return checkOneBackup(w.host, anna, policy(false)).then((notice) => {
-    assert.equal(notice, undefined);
-    assert.deepEqual(w.reads, [], 'nothing reached the network');
-  });
+  const check = await checkOneBackup(w.host, anna, policy(false));
+
+  assert.equal(check.notice, undefined);
+  assert.equal(check.healthy, false, 'not polled is not the same as fine');
+  assert.deepEqual(w.reads, [], 'nothing reached the network');
 });
 
 test('an account with no server is not polled either', async () => {
   const w = world(() => Promise.resolve(status()), {}, false);
 
-  assert.equal(await checkOneBackup(w.host, anna, policy(true)), undefined);
+  const check = await checkOneBackup(w.host, anna, policy(true));
+
+  assert.equal(check.notice, undefined);
+  assert.deepEqual(w.reads, []);
 });
 
 test('a FAILED read changes nothing — not the screen, not the windows, not the belief', async () => {
   // The rule that keeps a network blip from producing a nag. A notice that fires on a transient
-  // failure trains people to dismiss it, which is worse than never firing.
+  // failure trains people to dismiss it, which is worse than never firing. It must not read as
+  // HEALTHY either: that would clear the window and let the nag return on the next cycle.
   const before: NoticeMemory = { 'acct-1': NOW - 1000 };
   const w = world(() => Promise.reject(new Error('unreachable')), before);
 
-  const notice = await checkOneBackup(w.host, anna, policy(true));
+  await checkBackups(w.host, new Map([[anna, policy(true)]]));
 
-  assert.equal(notice, undefined);
   assert.deepEqual(w.memory, before, 'the window is untouched');
   assert.deepEqual(w.shown, []);
 });
@@ -117,10 +159,10 @@ test('a FAILED read changes nothing — not the screen, not the windows, not the
 test('an unconfigured deployment produces a notice naming the account', async () => {
   const w = world(() => Promise.resolve(status()));
 
-  const notice = await checkOneBackup(w.host, anna, policy(true));
+  const check = await checkOneBackup(w.host, anna, policy(true));
 
-  assert.match(words(notice), /anna@corp\.com/);
-  assert.match(words(notice), /no backup key/);
+  assert.match(words(check.notice), /anna@corp\.com/);
+  assert.match(words(check.notice), /no backup key/);
 });
 
 test('a healthy deployment FORGETS its window, so the next failure is heard at once', async () => {
@@ -129,8 +171,43 @@ test('a healthy deployment FORGETS its window, so the next failure is heard at o
     { 'acct-1': NOW - 1000 },
   );
 
-  assert.equal(await checkOneBackup(w.host, anna, policy(true)), undefined);
+  await checkBackups(w.host, new Map([[anna, policy(true)]]));
+
   assert.equal('acct-1' in w.memory, false, 'the window is cleared, not left to expire');
+});
+
+test('a cycle where nothing changed writes NOTHING', async () => {
+  // A hundred healthy accounts used to persist the notice map a hundred times per policy fetch, each
+  // write saying that nothing had changed. The map is settled once now, and only written when it
+  // actually moved.
+  const w = world(
+    () => Promise.resolve(status({ keyState: 'Ready', lastRunAt: NOW - 3_600_000, lastResult: 'ok' })),
+  );
+
+  await checkBackups(w.host, new Map([[anna, policy(true)], [bob, policy(true)]]));
+
+  assert.equal(w.writes, 0, 'two healthy accounts with no windows to clear: nothing to persist');
+});
+
+test('the accounts are checked TOGETHER, not one after another', async () => {
+  // Inside the readiness cycle that repaints the tree, and each read carries a five-second deadline:
+  // serially, one unreachable server per account delays the repaint by five seconds each.
+  let live = 0;
+  let mostAtOnce = 0;
+  const w = world(() => {
+    live += 1;
+    mostAtOnce = Math.max(mostAtOnce, live);
+    return new Promise<BackupStatus>((resolve) => {
+      setTimeout(() => {
+        live -= 1;
+        resolve(status());
+      }, 10);
+    });
+  });
+
+  await checkBackups(w.host, new Map([[anna, policy(true)], [bob, policy(true)]]));
+
+  assert.equal(mostAtOnce, 2, 'both reads were in flight at the same time');
 });
 
 test('two unhappy deployments interrupt ONCE, with both names in the message', async () => {

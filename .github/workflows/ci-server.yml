@@ -155,3 +155,12 @@ jobs:
           shellcheck deploy/update.sh deploy/backup.sh deploy/restore-archive.sh
           # The container entrypoints are POSIX sh, not bash.
           shellcheck --shell=sh deploy/nginx/entrypoint.sh deploy/certbot/entrypoint.sh
+
+      - name: Drive restore-archive.sh as a program
+        run: |
+          # Shellcheck reads it; this RUNS it, with docker shimmed. The design of that script is its
+          # ORDER — verify before stopping, refuse before moving, roll back past the point of no
+          # return — and order is exactly what reading cannot check. A review round found the
+          # unfinished-restore check sitting after `docker compose down`, so a retry took the running
+          # stack offline before refusing; scenario 4 in here is what catches that class.
+          bash deploy/restore-archive-itest.sh
