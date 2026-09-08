@@ -301,6 +301,16 @@ public sealed class S3Target(
             deadlineSource.Dispose();
             return Answer.Nothing(Trouble(e, deadline));
         }
+        catch
+        {
+            // Anything the filter above did NOT claim — the caller's own cancellation, most of all,
+            // which `Expected` deliberately lets through so a shutdown propagates rather than being
+            // reported as a target that timed out. The source is linked to `ct`, so leaving it
+            // undisposed leaves a registration on the caller's token; the answer that would have
+            // owned it was never built, so this is the only place that can.
+            deadlineSource.Dispose();
+            throw;
+        }
     }
 
     /// <summary>
