@@ -666,6 +666,8 @@ export class CredsAgentServer implements vscode.Disposable {
         ),
       ),
       CONSENT_TIMEOUT_MS,
+      // The HTTP server keeps this process alive; the timer need not.
+      { unref: true },
     );
 
     if (choice === 'Allow') {
