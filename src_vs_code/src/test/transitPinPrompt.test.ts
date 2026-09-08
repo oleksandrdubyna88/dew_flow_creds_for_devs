@@ -171,7 +171,7 @@ function world(): World {
     },
     InputBoxValidationSeverity: { Info: 1, Warning: 2, Error: 3 },
   };
-  const mod = loadWithVscode<typeof import('../sharePinPrompt')>('../sharePinPrompt', stub);
+  const mod = loadWithVscode<typeof import('../transitPinPrompt')>('../transitPinPrompt', stub);
   return {
     chooseSharePin: mod.chooseSharePin,
     box: (): FakeInputBox => {
