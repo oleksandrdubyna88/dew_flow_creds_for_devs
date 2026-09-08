@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { SharePin, generateSharePin, sharePinNotice, typedPin } from './sharePin';
-import { copySecret, secretClipboardTtl } from './secretClipboard';
+import { clearIfUnchanged, copySecret, secretClipboardTtl } from './secretClipboard';
 import { pinValidator } from './pinInput';
 import { validatePin } from './pinPolicy';
 
@@ -45,12 +45,18 @@ export async function chooseSharePin(): Promise<SharePin | undefined> {
 interface Drawn {
   /** The last value this extension generated, '' when it has generated none. */
   value: string;
+  /**
+   * True once `accepted` has resolved with the drawn value ITSELF. It is what lets `onDidHide`
+   * tell a cancellation from the hide `accepted` performs on its way out — the two are the same
+   * event, and only one of them may leave the clipboard alone.
+   */
+  kept: boolean;
 }
 
 function askOnce(): Promise<SharePin | undefined> {
   return new Promise((resolve) => {
     const box = vscode.window.createInputBox();
-    const drawn: Drawn = { value: '' };
+    const drawn: Drawn = { value: '', kept: false };
     box.title = TITLE;
     box.prompt = PROMPT;
     box.password = true;
@@ -66,13 +72,24 @@ function askOnce(): Promise<SharePin | undefined> {
     box.onDidAccept(() => accepted(box, drawn, resolve));
     box.onDidHide(() => {
       resolve(undefined);
+      // Every route out of this box that is not "the drawn value is the one being delivered" is a
+      // cancellation for clipboard purposes: Escape, and an accepted value the person typed over
+      // the draw. The repeat box is covered too, because `accepted` hides BEFORE `confirmTyped`
+      // runs, so a mismatch or an Escape there has already been taken back by this line.
+      if (!drawn.kept) {
+        void discard(drawn.value);
+      }
       box.dispose();
     });
+    // Drawn before the box is shown, so it is never seen empty. The generator used to sit behind a
+    // button, and VS Code renders `InputBox.buttons` as dimmed glyphs in the TITLE row: it shipped,
+    // worked, was tested, and was not found. An affordance nobody sees is not an affordance.
+    void draw(box, drawn);
     box.show();
   });
 }
 
-/** A button press: reveal is a toggle, anything else is the generator. */
+/** A button press: reveal is a toggle, anything else is a REdraw. */
 async function pressed(
   box: vscode.InputBox,
   drawn: Drawn,
@@ -82,12 +99,43 @@ async function pressed(
     box.password = !box.password;
     return;
   }
+  await draw(box, drawn);
+}
+
+/** Put a fresh PIN in the box and on the clipboard — the open path and the button share it. */
+async function draw(box: vscode.InputBox, drawn: Drawn): Promise<void> {
   const pin = generateSharePin();
   drawn.value = pin.value;
   // Assigning `value` fires `onDidChangeValue`, which sets the advisory message; the line below
   // therefore runs after it and is what the person is left reading.
   box.value = pin.value;
   box.validationMessage = await copyOrSayWhyNot(pin.value);
+}
+
+/**
+ * Take back a copy nobody asked for.
+ *
+ * <p>Under the button, every copy was the person's own act. Drawing on open makes it OURS, and that
+ * changes what is owed: a drawn value must never outlive the operation it was drawn for. Four ways
+ * it could — Escape, typing over the draw and accepting, cancelling the repeat box, and (in the
+ * export path) cancelling the save dialog — and the second is silent. The clipboard would hold the
+ * DRAWN value while the item was sealed with the TYPED one, so the recipient is sent a PIN that
+ * looks right, opens nothing, and reports no error anywhere.</p>
+ *
+ * <p>`clearIfUnchanged` is what makes this safe rather than destructive: it touches the clipboard
+ * only while it still holds exactly the string we put there, so work the person copied themselves
+ * while the box was open is never wiped. Nothing here may throw — it runs from `onDidHide`, where
+ * a rejection has nowhere to go.</p>
+ */
+async function discard(value: string): Promise<void> {
+  if (value.length === 0) {
+    return;
+  }
+  try {
+    await clearIfUnchanged(vscode.env.clipboard, value);
+  } catch {
+    // A clipboard that cannot be read or written is one we cannot have left anything on either.
+  }
 }
 
 /**
@@ -100,7 +148,7 @@ async function pressed(
 async function copyOrSayWhyNot(value: string): Promise<vscode.InputBoxValidationMessage> {
   try {
     await copySecret(vscode.env.clipboard, value);
-    return advice('Generated, and copied to your clipboard.');
+    return advice('Generated, and copied to your clipboard. Type over it to use your own.');
   } catch {
     return advice(
       'Generated, but copying to the clipboard failed — reveal it with the eye and copy it by hand.',
@@ -119,6 +167,7 @@ function accepted(
     return;
   }
   const untouched = drawn.value.length > 0 && box.value === drawn.value;
+  drawn.kept = untouched;
   resolve(untouched ? { value: box.value, generated: true } : typedPin(box.value));
   box.hide();
 }

@@ -360,3 +360,147 @@ test('escape resolves nothing and disposes the box', async () => {
   assert.equal(await done, undefined);
   assert.equal(box.disposed, 1, 'a box nobody disposes is a leak per prompt');
 });
+
+/**
+ * RED FIRST — the reported symptom. The generator shipped behind a button VS Code renders as a
+ * dimmed glyph in the box's TITLE row, and the sentence under the field never mentioned it. The
+ * operator opened the released build, photographed the box with both buttons in frame, and asked
+ * where the feature was. So the draw stops being something to find.
+ */
+test('the box opens with a PIN already drawn and already copied', async () => {
+  const w = world();
+  const done = w.chooseSharePin();
+  const box = w.box();
+  await settle();
+
+  assert.notEqual(box.value, '', 'the box must not open empty any more');
+  assert.equal(box.value, w.clipboard.text, 'drawn and copied are one act, or the promise is half-made');
+
+  const said = JSON.stringify(box.validationMessage ?? '');
+  assert.ok(/copied/i.test(said), `the person must be told it is on the clipboard, got: ${said}`);
+  assert.ok(
+    /type over it/i.test(said),
+    `and that it is theirs to replace — that sentence IS the discoverability fix, got: ${said}`,
+  );
+  assert.ok(!said.includes(box.value), 'saying it must not print the PIN');
+
+  box.escape();
+  assert.equal(await done, undefined);
+});
+
+// A timeout, because the RED shape of this one is a HANG: with no pre-fill, Enter on an empty box
+// is refused by the policy and the box simply stays open, so the promise never settles.
+test('Enter on the drawn value seals the drawn value, and asks nothing twice', { timeout: 5_000 }, async () => {
+  const w = world();
+  const done = w.chooseSharePin();
+  const box = w.box();
+  await settle();
+
+  const drawn = box.value;
+  box.accept();
+
+  const pin = await done;
+  assert.equal(pin?.generated, true, 'an untouched draw is a generated PIN');
+  assert.equal(pin?.value, drawn);
+  assert.equal(w.repeatsAsked, 0, 'there is nothing to mistype in a value nobody typed');
+});
+
+/**
+ * RED FIRST, and the silent one. Raised by the gate's codex reviewer against the plan: with a
+ * pre-fill the extension copies on its OWN behalf, so a person who types over the drawn PIN and
+ * accepts leaves the DRAWN value on the clipboard while the item is sealed with the TYPED one.
+ * They paste A into the chat, the recipient is sent A, the item opens only with B, and nothing
+ * anywhere reports an error. Every other failure in this box announces itself; this one does not.
+ */
+test('typing over the drawn PIN takes the typed path and takes the drawn value off the clipboard', async () => {
+  const w = world();
+  const done = w.chooseSharePin();
+  const box = w.box();
+  await settle();
+
+  const drawn = box.value;
+  assert.equal(w.clipboard.text, drawn, 'precondition: the draw reached the clipboard');
+
+  w.repeats = [GOOD];
+  box.type(GOOD);
+  box.accept();
+  const pin = await done;
+  await settle();
+
+  assert.equal(pin?.generated, false, 'an edited value is a typed value, whatever drew it first');
+  assert.equal(pin?.value, GOOD);
+  assert.equal(w.repeatsAsked, 1, 'and a typed value is confirmed');
+  assert.notEqual(
+    w.clipboard.text,
+    drawn,
+    'the clipboard must not keep a PIN that seals nothing — the recipient would be sent it',
+  );
+});
+
+test('escape takes back the copy nobody asked for', async () => {
+  const w = world();
+  const done = w.chooseSharePin();
+  const box = w.box();
+  await settle();
+  const drawn = box.value;
+
+  box.escape();
+  assert.equal(await done, undefined);
+  await settle();
+
+  assert.notEqual(w.clipboard.text, drawn, 'a share that never happened leaves no live secret behind');
+});
+
+/**
+ * The other half of the wipe, and the reason it goes through `clearIfUnchanged` rather than a bare
+ * write: what is on the clipboard at cancel time may be the person's own work, copied while the box
+ * was open. Wiping that would destroy something this extension never created.
+ */
+test('a clipboard the person has since used for their own work is left alone', async () => {
+  const w = world();
+  const done = w.chooseSharePin();
+  w.box();
+  await settle();
+
+  w.clipboard.text = 'something of their own';
+  w.box().escape();
+  assert.equal(await done, undefined);
+  await settle();
+
+  assert.equal(w.clipboard.text, 'something of their own', 'only what we wrote is ever wiped');
+});
+
+test('a cancelled repeat box takes the drawn value with it', async () => {
+  const w = world();
+  const done = w.chooseSharePin();
+  const box = w.box();
+  await settle();
+  const drawn = box.value;
+
+  w.repeats = [undefined]; // the person escapes the confirmation
+  box.type(GOOD);
+  box.accept();
+
+  assert.equal(await done, undefined, 'backing out of the repeat cancels the whole ask');
+  await settle();
+  assert.notEqual(w.clipboard.text, drawn, 'and cancelling by that route leaves no secret either');
+});
+
+/** The trap on the other side: `accepted` hides the box, so "hidden" alone cannot mean "cancelled". */
+test('accepting a generated PIN leaves the clipboard alone', { timeout: 5_000 }, async () => {
+  const w = world();
+  const done = w.chooseSharePin();
+  const box = w.box();
+  await settle();
+  const drawn = box.value;
+
+  box.accept();
+  await done;
+  await settle();
+
+  assert.equal(
+    w.clipboard.text,
+    drawn,
+    'this is the value the person is about to paste — wiping it breaks the feature',
+  );
+});

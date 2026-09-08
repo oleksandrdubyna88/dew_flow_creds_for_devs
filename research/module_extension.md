@@ -2208,17 +2208,25 @@ round-robin, and the import into the tree (fresh local id; same-sender update re
 revision first). The `activate()` handlers only resolve what was clicked.
 `shareInbox.test.ts` drives the accept paths through the REAL seal/open crypto.
 
-### The transit PIN can be drawn, and lands on the clipboard
+### The transit PIN is drawn before it is asked for, and lands on the clipboard
 
 The share PIN is the one secret the sender has to carry to the recipient by hand, and on the server
 transport it is the ENTIRE secret — `recipientKeyId` there is a public email. Asking a person to
 invent it, type it twice and then retype it into a chat is therefore both the weakest link and the
-most tedious step, so the box offers to draw one: a **sparkle** button generates
-`generatePassphrase(DEFAULT_PASSPHRASE)` — six four-letter words, 48 exact bits — and copies it,
-and an **eye** button unmasks it for reading aloud. A passphrase rather than a password because the
-PIN's job is to cross a chat, survive being read aloud, and be retyped by the recipient; 200 draws
-are asserted against `validatePin` in `sharePin.test.ts`, because the generator and the PIN policy
-had never met.
+most tedious step, so the box **opens with one already drawn**:
+`generatePassphrase(DEFAULT_PASSPHRASE)` — six four-letter words, 48 exact bits — is on the
+clipboard before the field is shown, and the line under it reads *"Generated, and copied to your
+clipboard. Type over it to use your own."* A **sparkle** button redraws, and an **eye** button
+unmasks it for reading aloud. A passphrase rather than a password because the PIN's job is to cross
+a chat, survive being read aloud, and be retyped by the recipient; 200 draws are asserted against
+`validatePin` in `sharePin.test.ts`, because the generator and the PIN policy had never met.
+
+**It was drawn on a BUTTON for one day**, and that is the part worth keeping. The button shipped in
+extension 1.3.0, worked, was tested, and was not found: VS Code renders `InputBox.buttons` as small
+dimmed glyphs in the box's TITLE row, and the operator opened the released build, photographed the
+box with both buttons in frame, and asked where the feature was. Nothing was broken — the only
+place the button was described was the help article, which nobody reads while a box is asking them
+for a PIN. For a discoverability feature, an affordance nobody sees is the same as no feature.
 
 `SharePin { value, generated }` is threaded through `deliverBatch`/`deliver` rather than a bare
 string, because the message that can honestly say "go paste this" is raised where the share is known
@@ -2251,6 +2259,19 @@ gate before a line was written, and watched failing before they were fixed:
   EVERY site and said out loud: the announcement runs after the share has already been delivered,
   so an escaping rejection would replace a success with a generic command failure and take the
   `Show PIN` offer down with it — the same trap `deliverBatch` warns about for `withheldNote`.
+
+- **A drawn value never outlives what it was drawn for.** This is what the pre-fill OWES, and the
+  button version did not: under a button every copy was the person's own act, so its consequences
+  were theirs; a copy nobody asked for is ours. `onDidHide` therefore discards the drawn value
+  through `clearIfUnchanged` unless it is exactly what was accepted — one rule covering Escape, an
+  accepted value the person typed over the draw, and a mismatched or cancelled repeat box, because
+  `accepted` hides BEFORE `confirmTyped` runs. The middle case is the only silent defect this
+  feature has ever had, and it was found by the review gate rather than by a test: type over the
+  drawn PIN, accept, and the clipboard still holds the DRAWN value while the item is sealed with
+  the TYPED one — the recipient is sent a PIN that looks right, opens nothing, and reports no error
+  anywhere. `clearIfUnchanged` is what keeps the wipe from over-reaching: it touches the clipboard
+  only while it still holds exactly what we wrote, so work the person copied themselves while the
+  box was open is never destroyed, and that is its own test.
 
 - **A PARTIAL failure still hands over the PIN.** When some recipients received the entry and
   others did not, the sender used to get a bare error: no re-copy, no reveal. Those recipients hold
