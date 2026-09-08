@@ -4,7 +4,7 @@
 > code rounds: the reader and `GET /api/org/events` (scoped, cursor-paginated); every share kind the
 > log records plus `login_key.issued`; the client's outcome reporting, its events client and the Team
 > filter; and the viewer tab with the help article. Fourth of five epics under
-> [PLAN_corp_control_plane.md](../todo/PLAN_corp_control_plane.md), which holds the owner decisions,
+> [PLAN_corp_control_plane.md](PLAN_corp_control_plane.md), which holds the owner decisions,
 > the invariants and the shared shapes.
 >
 > **What shipped differently, and why — the part worth reading.**
@@ -184,13 +184,13 @@ public sealed record OrgEventQuery(string? Actor, string? Subject, string? Perso
 | operations | `settings.changed`, `backup.taken`, `backup.failed`, `backup.key_issued`, `backup.settings_changed` |
 
 **The boundary with epic 5, named here as well as there.** The four `backup.*` kinds are APPENDED by
-[PLAN_corp_server_backup.md](../todo/PLAN_corp_server_backup.md) and by nothing in this plan; this plan
+[PLAN_corp_server_backup.md](PLAN_corp_server_backup.md) and by nothing in this plan; this plan
 owns the store, the reader, the query and the scoping rule that governs them, and epic 5 adds no reader,
 no query and no retention of its own. The kinds above are what shipped — the three this plan first
 sketched (`backup.configured`, `backup.run`) were named before the runner existed and were replaced by
 `backup.taken`/`backup.settings_changed` when it did, with `backup.key_issued` added because minting the
 key is a separate act from configuring the schedule. Full table:
-[PLAN_corp_server_backup.md](../todo/PLAN_corp_server_backup.md) § *The boundary with the plans on
+[PLAN_corp_server_backup.md](PLAN_corp_server_backup.md) § *The boundary with the plans on
 either side*.
 
 ## Files

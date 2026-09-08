@@ -4,7 +4,7 @@
 > routes, the server's share rule and the developer Team filter, project folders that appear in the
 > assigned person's vault and are removed on instruction, `format: 4` binding the project into a
 > share, and the admin's three actions in the tree. Third of five epics under
-> [PLAN_corp_control_plane.md](../todo/PLAN_corp_control_plane.md).
+> [PLAN_corp_control_plane.md](PLAN_corp_control_plane.md).
 >
 > **What shipped differently, and why — the part worth reading.**
 >

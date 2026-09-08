@@ -24,7 +24,7 @@
 > written, found to have no caller, and deleted: this product has no cross-account clone, and a
 > function that claims to enforce a rule and never runs is worse than none.
 >
-> Second of five epics under [PLAN_corp_control_plane.md](../todo/PLAN_corp_control_plane.md), which
+> Second of five epics under [PLAN_corp_control_plane.md](PLAN_corp_control_plane.md), which
 > holds the owner decisions, the invariants and the shared shapes.
 >
 > Depends on [PLAN_corp_registry_roles.md](PLAN_corp_registry_roles.md) for the registry, the roles
