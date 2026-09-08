@@ -1416,9 +1416,17 @@ surfaces now take the word from `LOCKED_BUTTON_LABELS`, so they cannot drift apa
 
 "Is a PIN stored" is a **tri-state**: `yes | no | unknown`, and `unknown` — a keychain that
 would not answer — is treated as `yes`. A failed lookup is no evidence that nothing is
-stored, and the safe side of that guess is the one that does not rewrite a vault. The offer
-also never rejects: it is raised from a cycle nobody awaits, so a failure is logged through
-the diagnostic channel instead of becoming an unhandled rejection.
+stored, and the safe side of that guess is the one that does not rewrite a vault. The lookup
+is also **bounded** (5 s, `withTimeout`, shared with `credsAgentServer`): the notification is
+raised *after* it, and `warnedAccounts` has already deduped the account by then, so a keychain
+that hangs would otherwise mean no offer at all and nothing asking again until the window is
+reloaded — a timeout counts as `unknown` and the unlock is offered anyway.
+
+Nothing here goes quiet. A refused lookup, a timed-out one, a rejected notification and an
+abandoned "which vault" pick each write a line to the diagnostic channel: every one of them
+leaves the person with the same silent screen, and the log is what tells them apart afterwards.
+Every detached promise carries its own catch — the offer is raised from a cycle nobody awaits,
+so an escaping rejection would surface in the extension host with nothing pointing back here.
 
 The unlock button is deliberately not named for the security key. `credSshManager.unlockWithSecurityKey`
 is the GENERAL unlock — `unlockPlan` decides between a key touch, a typed PIN, or a choice

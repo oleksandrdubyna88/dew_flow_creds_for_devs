@@ -25,6 +25,8 @@ interface World {
   commands: { command: string; args: unknown[] }[];
   quickPickTitles: string[];
   logs: string[];
+  /** The notification itself fails — a VS Code API error on a promise nobody awaits. */
+  rejectWarning?: boolean;
 }
 
 /** `press` is the button label the person clicks, or undefined for a dismissed notification. */
@@ -34,7 +36,9 @@ function world(press?: string, quickPick?: 'first' | 'none'): World {
     window: {
       showWarningMessage: (message: string, ...buttons: string[]): Promise<string | undefined> => {
         w.prompts.push({ message, buttons });
-        return Promise.resolve(press);
+        return w.rejectWarning === true
+          ? Promise.reject(new Error('the window is gone'))
+          : Promise.resolve(press);
       },
       showQuickPick: (items: { account: StoredAccount }[], options: { title: string }): Promise<unknown> => {
         w.quickPickTitles.push(options.title);
@@ -53,7 +57,10 @@ function world(press?: string, quickPick?: 'first' | 'none'): World {
 
 const settle = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 5));
 
-function offer(w: World, parts: { storedPin?: string; throws?: boolean; setPinThrows?: boolean }): {
+function offer(
+  w: World,
+  parts: { storedPin?: string; throws?: boolean; setPinThrows?: boolean; hangs?: boolean; timeoutMs?: number },
+): {
   offer: Parameters<Prompt['offerUnlock']>[1];
   setPinCalls: string[];
 } {
@@ -61,10 +68,15 @@ function offer(w: World, parts: { storedPin?: string; throws?: boolean; setPinTh
   return {
     setPinCalls,
     offer: {
-      storedPin: (): Promise<string | undefined> =>
-        parts.throws === true
+      timeoutMs: parts.timeoutMs,
+      storedPin: (): Promise<string | undefined> => {
+        if (parts.hangs === true) {
+          return new Promise<string | undefined>(() => undefined); // never settles
+        }
+        return parts.throws === true
           ? Promise.reject(new Error('the keychain refused'))
-          : Promise.resolve(parts.storedPin),
+          : Promise.resolve(parts.storedPin);
+      },
       setPin: (account: StoredAccount): Promise<void> => {
         setPinCalls.push(account.email);
         return parts.setPinThrows === true ? Promise.reject(new Error('cancelled')) : Promise.resolve();
@@ -162,4 +174,63 @@ test('an empty locked list says nothing', () => {
   w.mod.reportLockedVaults([], o.offer);
 
   assert.deepEqual(w.prompts, []);
+});
+
+test('a keychain that never answers does not swallow the notification', async () => {
+  // The offer is raised after the lookup, so a keychain that hangs used to mean no popup at
+  // all — and `warnedAccounts` has already deduped that account, so the session would go
+  // quiet for good. Bounded, and the timeout counts as "unknown": unlock only.
+  const w = world(undefined);
+  const o = offer(w, { hangs: true, timeoutMs: 10 });
+
+  await w.mod.offerUnlock(A, o.offer);
+
+  assert.deepEqual(w.prompts.at(-1)?.buttons, ['Unlock…'], 'the person still gets an action');
+  assert.ok(
+    w.logs.some((l) => /timed out/i.test(l)),
+    `the wait is recorded rather than invisible: ${w.logs.join(' | ')}`,
+  );
+});
+
+test('a keychain that refuses says so in the diagnostic channel', async () => {
+  // Otherwise an outage looks exactly like an ordinary stored PIN: the same one button, and
+  // nothing anywhere saying why.
+  const w = world(undefined);
+  const o = offer(w, { throws: true });
+
+  await w.mod.offerUnlock(A, o.offer);
+
+  assert.ok(
+    w.logs.some((l) => /the keychain refused/.test(l)),
+    `the caught error reaches the log: ${w.logs.join(' | ')}`,
+  );
+});
+
+test('a notification that itself rejects is logged, not left unhandled', async () => {
+  // The multi-vault path detaches its promise with `void`. Without a catch, a VS Code API
+  // failure there becomes an unhandled rejection in the extension host.
+  const w = world(undefined);
+  w.rejectWarning = true;
+  const o = offer(w, { storedPin: '4242' });
+
+  w.mod.reportLockedVaults([A, B], o.offer);
+  await settle();
+
+  assert.equal(w.logs.length, 1, w.logs.join(' | '));
+});
+
+test('dismissing the "which vault" picker is recorded, since nothing will ask again', () => {
+  // `warnedAccounts` dedupes per session, so an abandoned pick means silence until the
+  // window is reloaded. That is defensible; being unable to tell it happened is not.
+  const w = world('Unlock…', 'none');
+  const o = offer(w, { storedPin: '4242' });
+
+  w.mod.reportLockedVaults([A, B], o.offer);
+
+  return settle().then(() => {
+    assert.ok(
+      w.logs.some((l) => /cancelled|dismissed/i.test(l)),
+      `the abandoned pick is recorded: ${w.logs.join(' | ')}`,
+    );
+  });
 });

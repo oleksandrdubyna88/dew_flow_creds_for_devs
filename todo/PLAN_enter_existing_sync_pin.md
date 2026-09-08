@@ -1,6 +1,6 @@
 # PLAN — a machine can only ADOPT a Sync PIN by changing it for everyone
 
-> Status: **plan only, nothing implemented yet.** Scope: `src_vs_code/src/syncManager.ts`,
+> Status: **plan only, nothing implemented yet, 2026-09-08.** Scope: `src_vs_code/src/syncManager.ts`,
 > `src_vs_code/src/vaultKeys.ts`, `src_vs_code/package.json` (one command), plus tests.
 >
 > Extracted from [PLAN_locked_vault_prompt.md](../research/PLAN_locked_vault_prompt.md), which fixed
