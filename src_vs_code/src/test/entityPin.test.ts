@@ -61,14 +61,25 @@ const held = (storage: StorageManager): Map<string, string> =>
   (storage as unknown as { held: Map<string, string> }).held;
 
 test('every slot that holds something is wrapped, and the plaintext is gone from all of them', async () => {
-  const storage = vault({ password: 'hunter2', notes: 'the note', 'private key': 'KEY' });
+  // The probes are LONG on purpose, and one of them was not. `KEY` is three characters drawn from
+  // base64's own alphabet, and what it was searched in is base64 of random bytes: measured over
+  // 200,000 samples, a 250-character envelope contains "KEY" by chance 0.09% of the time and a
+  // 400-character one 0.15%. Three slots are checked on every run, so roughly one CI run in several
+  // hundred went red here for a reason that had nothing to do with wrapping — the kind of failure
+  // that gets re-run rather than read. A probe long enough to be impossible by accident asserts the
+  // same thing and only that thing. ("hunter2" and "the note" never collided in 200,000 samples;
+  // the second cannot, since base64 has no space.)
+  const KEY_MATERIAL = 'BEGIN-OPENSSH-PRIVATE-KEY-MATERIAL';
+  const storage = vault({ password: 'hunter2', notes: 'the note', 'private key': KEY_MATERIAL });
 
   const result = await protectEntity(storage, ACCOUNT, ENTITY, PIN);
 
   assert.deepEqual([...result.changed].sort(), ['notes', 'password', 'private key']);
   for (const [label, value] of held(storage)) {
     assert.ok(isLockedSecret(value), `${label} was left readable`);
-    assert.ok(!value.includes('hunter2') && !value.includes('the note') && !value.includes('KEY'));
+    for (const plaintext of ['hunter2', 'the note', KEY_MATERIAL]) {
+      assert.ok(!value.includes(plaintext), `${label} still carries ${plaintext}`);
+    }
   }
 });
 

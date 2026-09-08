@@ -151,11 +151,15 @@ jobs:
         run: |
           # A PINNED shellcheck, not the runner's apt one. The distribution's version moves when the
           # image does, and the two disagree about which code an unreachable trap function is
-          # (SC2317 before 0.11, SC2329 after) — which is how a script that was clean on a developer's
-          # machine failed here, on a warning neither of them can see the other's name for. `npx
-          # shellcheck@4.1.0` is upstream 0.11.0 and is the same binary in both places, so "it passes
-          # locally" means something again.
-          SHELLCHECK="npx --yes shellcheck@4.1.0"
+          # (SC2317 before 0.11, SC2329 after) — which is how a script clean on a developer's machine
+          # failed here, on a warning neither of them can see the other's name for.
+          #
+          # By IMAGE rather than by `npx shellcheck@…`. That npm package is a wrapper that downloads
+          # the binary from GitHub releases at run time, anonymously — and this job hit
+          # `403 rate limit exceeded` on a shared runner, which turned a pin into a new way to fail
+          # that has nothing to do with the scripts. The image is the same version, fetched the way
+          # every other pinned tool in this repository is.
+          SHELLCHECK="docker run --rm -v ${PWD}:/mnt -w /mnt koalaman/shellcheck:v0.11.0"
           # restore-archive.sh is here from the day it lands: it is the one script whose failure mode
           # is a stack that is down with the data moved aside, so a typo in it costs an outage. Its
           # harness is here too — one that cannot parse proves nothing and says so quietly.
