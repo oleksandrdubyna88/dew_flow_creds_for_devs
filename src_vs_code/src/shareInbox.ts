@@ -21,9 +21,8 @@ import {
   shareLabelTrusted } from './shareFormat';
 import { recordOrigin, resolveOrigin } from './shareOrigin';
 import { snapshotForRevision } from './revisionSnapshot';
-import { SharePin, sharePinNotice } from './sharePin';
+import type { SharePin } from './sharePin';
 import { announceShared, chooseSharePin } from './sharePinPrompt';
-import { secretClipboardTtl } from './secretClipboard';
 import { redactArrivedPayment, withheldFromShare } from './paymentRedaction';
 import { OwnedShare, SharePayload, TeamMember, TreeNode } from './types';
 
@@ -156,9 +155,12 @@ export class ShareInbox {
       // story earlier, found this time by four reviewers at once. Without it somebody who shares a
       // hidden phrase reads "Shared …" and believes the phrase arrived; it cannot have, because
       // unweaving needs a code the person remembers and nothing transmits.
+      // The clipboard promise is NOT composed here: only the announcement knows whether the copy
+      // it makes actually succeeded, and a sentence written before the attempt is one that can
+      // promise a clipboard which rejected.
       await announceShared(
-        `Shared ${what} with ${delivered.join(', ')}. Tell them the PIN out-of-band.`
-          + `${sharePinNotice(pin, secretClipboardTtl())}${withheld}`,
+        `Shared ${what} with ${delivered.join(', ')}. Tell them the PIN out-of-band.`,
+        withheld,
         pin,
       );
     }

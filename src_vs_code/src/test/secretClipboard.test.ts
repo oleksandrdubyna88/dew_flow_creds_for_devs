@@ -98,3 +98,38 @@ test('the configured clipboard TTL is used, and nonsense falls back to the defau
   }
   setSecretClipboardTtl(SECRET_CLIPBOARD_TTL_MS);
 });
+
+/**
+ * The share PIN is copied twice — once when it is drawn, once when the share lands, so the window
+ * the person is promised starts when they actually go to paste. Both writes are the SAME string,
+ * which is what makes this subtle: the first copy's timer still finds its own value on the
+ * clipboard and wipes it, EARLIER than the message just told them. A copy must therefore cancel
+ * the wipe it is superseding.
+ */
+test('copying the same secret again restarts its window instead of racing the first', async () => {
+  const clipboard = new FakeClipboard();
+
+  await copySecret(clipboard, 'hunter2', 30);
+  await delay(20);
+  await copySecret(clipboard, 'hunter2', 30); // the re-copy, 20ms into the first window
+
+  await delay(20); // now past the FIRST timer's deadline, well short of the second's
+  assert.equal(
+    clipboard.peek(),
+    'hunter2',
+    "the superseded copy's timer must not wipe the window the person was just promised",
+  );
+
+  await delay(30);
+  assert.equal(clipboard.peek(), '', 'and the new window still ends');
+});
+
+test('a superseded timer never wipes a DIFFERENT secret copied after it', async () => {
+  const clipboard = new FakeClipboard();
+
+  await copySecret(clipboard, 'first', 30);
+  await copySecret(clipboard, 'second', 300);
+
+  await delay(60);
+  assert.equal(clipboard.peek(), 'second', "the first copy's deadline is not the second's");
+});

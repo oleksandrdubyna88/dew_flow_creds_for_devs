@@ -2241,9 +2241,16 @@ gate before a line was written, and watched failing before they were fixed:
   dismissed, which is why `withheldNote` two methods away puts field NAMES there and nothing else.
   `Show PIN` is a **modal** — transient, gone when dismissed — and that is what makes offering the
   reveal at all defensible.
-- **The clipboard is written twice.** The 45 s wipe starts at the copy, and an unbounded amount of
-  time passes before the share lands, so `announceShared` re-copies immediately before showing the
-  message. A rejected `writeText` is caught and said out loud rather than assumed to have worked.
+- **The clipboard is written twice, and the second copy CANCELS the first wipe.** The 45 s window
+  starts at the copy and an unbounded amount of time passes before the share lands, so
+  `announceShared` re-copies immediately before showing the message. Both writes are the same
+  string, which is what made the first version wrong: the earlier timer still found its own value
+  and wiped at the earlier deadline, so the window was silently shorter than the sentence claimed.
+  `copySecret` therefore clears the wipe it supersedes — free in the other direction, since a
+  superseded timer whose value is gone was already a no-op. A rejected `writeText` is caught at
+  EVERY site and said out loud: the announcement runs after the share has already been delivered,
+  so an escaping rejection would replace a success with a generic command failure and take the
+  `Show PIN` offer down with it — the same trap `deliverBatch` warns about for `withheldNote`.
 
 The end-to-end assertion is the one that matters and the only one that could catch all of the above:
 `shareInbox.test.ts` opens the DELIVERED share using the clipboard's contents. Sabotaged with one
@@ -3084,7 +3091,7 @@ a clean install used to show one "Search" row and nothing else.
 
 | Path | Handling |
 |---|---|
-| Clipboard | Every secret copy expires after **45 s**, and only if the clipboard still holds exactly what was copied (`secretClipboard.ts`). A generated share PIN is copied again when the share lands, so the window starts when the person actually goes to paste |
+| Clipboard | Every secret copy expires after **45 s**, and only if the clipboard still holds exactly what was copied (`secretClipboard.ts`), and a copy cancels the wipe it supersedes. A generated share PIN is copied again when the share lands, so the window starts when the person actually goes to paste |
 | SSH private key on disk | Materialised only when `ssh -i` needs a path; `0600` in a `0700` directory under the extension's own storage — never the OS temp dir — and purged on activate, on deactivate, and when the terminal closes. **A key served by the SSH agent is never written at all** |
 | TOTP seed | `SecretStorage`, as the canonical `otpauth://` URI. The viewer receives the derived code, never the seed |
 | Terminal | `buildSshCommand` composes host/user/port/key-*path* only. No password ever reaches a command line |

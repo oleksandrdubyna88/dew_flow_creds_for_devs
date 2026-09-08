@@ -347,6 +347,41 @@ one was found by all three independently and was a real hole:
 | 8 | generate-then-cancel overwrites the clipboard for a share that never happened | accepted as a known, non-destructive cost of copying at generate time, which is what the feature is for; the re-copy on delivery is the mitigation that matters |
 | 9 | no unmask, so a generated PIN could not be read before sending | the `$(eye)` button |
 
+## What the CODE round changed
+
+The code gate answered with 7 of 9 reviewers (both gemini roles failed on a headless permission) and
+15 findings, of which **eight were about files this branch does not touch** — the corporate backup
+epic, already on main. Verified rather than assumed: `git diff --name-only origin/main...HEAD`
+returns eighteen files, none of them under `deploy/` or `.github/`. The gate's worktree appears to
+have held a stale `origin/main` as its baseRef, and each of those eight was rejected with that
+evidence. Four more described defects the shipped code had already fixed and which this plan had
+predicted; three were performance or debouncing advice the design makes moot, because the
+generated/typed decision is not taken in `onDidChangeValue` at all.
+
+The round that actually found things was the parallel one — this session's own reviewers, run at the
+same time as the gate rather than instead of it, which is what the rule asks for. Two real defects:
+
+1. **`copySecret` was unguarded in `announceShared` and in `Copy again`,** while the identical call
+   on the generate button was wrapped. Both run AFTER delivery has succeeded and nothing above them
+   catches — `timed()` re-throws — so a locked session would have turned a completed share into a
+   generic command failure, and taken down the `Show PIN` offer that was the last route to the PIN.
+   The clipboard sentence therefore moved INTO `announceShared`, composed from whether the copy
+   actually happened rather than upstream from the intention to try it.
+2. **The re-copy did not cancel the first wipe.** Both writes are the same string, so the earlier
+   timer found its own value and wiped at the earlier deadline — which made this plan's central
+   claim about the 45 s window false in exactly the case it was written for. `copySecret` now clears
+   the wipe it supersedes. Watched failing first.
+
+A third, smaller one: pressing Escape on the repeat box announced that the PINs did not match, which
+describes a mistake nobody had made. That behaviour was inherited verbatim from the code this plan
+moved, and `backupManager.ts` had the correct guard all along. Also watched failing first.
+
+The lesson worth keeping is about the two rounds rather than either finding: the gate's diff was
+wrong and its reviewers still produced fourteen confident findings from it. Reading a finding for
+whether it is TRUE OF THIS BRANCH, with git rather than with judgement, is the step that made the
+difference — and the reviewers that found the two real defects were the ones this session ran
+itself.
+
 ## Out of scope
 
 - **The entry-protection PIN** (`pinPrompt.newPin`). Same generator, different stakes: that PIN is

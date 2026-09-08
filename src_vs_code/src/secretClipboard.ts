@@ -61,7 +61,29 @@ export async function clearIfUnchanged(clipboard: Clipboard, written: string): P
 }
 
 /**
- * Copies a secret and schedules its removal.
+ * The wipe a copy is waiting on, so the next copy can cancel it.
+ *
+ * <p>Without this, copying the SAME value twice leaves two timers running and the older one wins:
+ * it finds its own string still on the clipboard and wipes at the earlier deadline, so the window
+ * a person was just promised is silently shorter than it says. That is not hypothetical — a
+ * generated share PIN is copied when it is drawn and again when the share lands, precisely so the
+ * promise is measured from the moment they go and paste it.</p>
+ *
+ * <p>Cancelling costs nothing in the other direction: a superseded timer whose value is no longer
+ * on the clipboard was already a no-op, because `shouldClear` refuses to wipe anything but exactly
+ * what its own call wrote.</p>
+ */
+let pendingWipe: ReturnType<typeof setTimeout> | undefined;
+
+function cancelPendingWipe(): void {
+  if (pendingWipe !== undefined) {
+    clearTimeout(pendingWipe);
+    pendingWipe = undefined;
+  }
+}
+
+/**
+ * Copies a secret and schedules its removal, cancelling whatever wipe it supersedes.
  *
  * The timer is `unref`ed so a pending clear never holds the extension host open; if the
  * window closes first the clipboard keeps the value, which is no worse than today's
@@ -73,13 +95,16 @@ export async function copySecret(
   ttlMs: number = configuredTtlMs,
 ): Promise<void> {
   await clipboard.writeText(value);
+  cancelPendingWipe();
   if (value.length === 0) {
     return;
   }
   const timer = setTimeout(() => {
+    pendingWipe = undefined;
     void clearIfUnchanged(clipboard, value);
   }, ttlMs);
   (timer as unknown as { unref?: () => void }).unref?.();
+  pendingWipe = timer;
 }
 
 /** "…copied." plus the promise we just made the user, so the UI never has to spell it out twice. */
