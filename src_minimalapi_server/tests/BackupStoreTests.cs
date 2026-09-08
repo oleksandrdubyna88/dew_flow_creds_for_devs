@@ -31,6 +31,36 @@ public class BackupStoreTests
     }
 
     [Fact]
+    public async Task TwoMintsAtOnceCannotBOTHHandOverWords()
+    {
+        // The narrow race with the widest consequence. Reading the key's state and writing over it are
+        // two operations, and the AwaitingAcknowledgement branch REPLACES: two administrators pressing
+        // mint in the same second would both read "awaiting", both replace, and both be handed
+        // words — of which one set opens nothing, while the person holding it believes they have the
+        // deployment's backup key and finds out during a restore.
+        var dir = TempDir();
+        var store = Store(dir, out _);
+        var first = await store.MintKeyAsync(Ct);
+        first.Formatted.Should().NotBeEmpty();
+        (await store.FindKeyAsync(Ct)).Status.Should().Be(BackupKeyLookup.AwaitingAcknowledgement);
+
+        // A second process, mid-mint: it holds the same handle this one would take.
+        using var held = new FileStream(
+            Path.Combine(dir, "org", "backup", "key.lock"),
+            FileMode.OpenOrCreate,
+            FileAccess.ReadWrite,
+            FileShare.None);
+
+        var second = await store.MintKeyAsync(Ct);
+
+        second.Formatted.Should().BeEmpty(
+            "a second minter is refused, never handed words that open nothing");
+        second.Status.Should().Be(BackupKeyLookup.Ready);
+        BackupKey.KeyFrom(BackupKey.Parse(first.Formatted).Core).Should().NotBeNull(
+            "and the first minter's words are still the deployment's key");
+    }
+
+    [Fact]
     public async Task AKeyIsNotUsableForARunUntilSomebodyHasSeenItsWords()
     {
         // The failure this exists for: seal the key, crash before showing it, and the deployment now
