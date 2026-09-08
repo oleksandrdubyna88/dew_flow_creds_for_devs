@@ -2,7 +2,7 @@
   "name": "creds-for-devs",
   "displayName": "CredsForDevs",
   "description": "Your coding agent can run the migration — and can never be handed the password. SSH hosts, keys, databases, VPNs, secrets and config files in VS Code, with optional end-to-end encrypted team sync.",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "publisher": "remsoftdev",
   "license": "MIT",
   "icon": "media/icon.png",
