@@ -245,26 +245,78 @@ function wholeNumberWithin(value: number, low: number, high: number): boolean {
   return Number.isInteger(value) && value >= low && value <= high;
 }
 
-/** The `filename=` of a content-disposition header, or nothing when it does not carry one. */
+/**
+ * The `filename=` of a content-disposition header — as a BASENAME, or nothing.
+ *
+ * <p><b>The server does not get to choose a path.</b> The name goes to the save dialog as its
+ * `defaultUri`, so a hostile or compromised server answering
+ * <c>filename="/home/dev/.ssh/config"</c> would put an administrator one Enter away from
+ * overwriting their own ssh config with archive bytes. Anything carrying a separator, a traversal
+ * component, or nothing at all is refused and the neutral name is used instead — a wrong-looking
+ * download name costs a rename; a right-looking one pointed somewhere else costs a file.</p>
+ */
 function filenameOf(disposition: string | null): string | undefined {
-  const match = /filename="?([^";]+)"?/.exec(disposition ?? '');
-  return match?.[1];
+  const match = FILENAME.exec(disposition ?? '');
+  const name = (match === null ? '' : match[1]).trim();
+  return isBasename(name) ? name : undefined;
 }
 
-/** The fields a status must carry, and what each must be. A table, so the guard is a loop. */
+const FILENAME = /filename="?([^";]+)"?/;
+
+/** A name and nothing else: no separator of either kind, and not a directory of its own. */
+function isBasename(name: string): boolean {
+  return name.length > 0 && !SEPARATOR.test(name) && !DOTS.has(name);
+}
+
+const SEPARATOR = /[\\/]/;
+
+const DOTS = new Set(['.', '..']);
+
+/**
+ * The fields a status must carry, and what each must be. A table, so the guard is a loop.
+ *
+ * <p><b>Every field a CONSUMER reads, not only the interesting ones.</b> It used to check five and
+ * that `targets` was an array; the page then measured `localArchiveName.length` and the notice read
+ * `lastError.length`, so a truncated answer — an older server, a proxy that mangled a body, a
+ * half-written file — became a broken tab instead of the one sentence this client exists to
+ * produce.</p>
+ */
 const STATUS_SHAPE: Readonly<Record<string, string>> = {
-  keyState: 'string',
   configured: 'boolean',
+  keyState: 'string',
   scheduleHourUtc: 'number',
   retentionDays: 'number',
+  lastRunAt: 'number',
+  lastResult: 'string',
+  lastError: 'string',
   running: 'boolean',
+  localArchiveBytes: 'number',
+  localArchiveName: 'string',
+};
+
+/** And the same for one destination row, which the table draws field by field. */
+const TARGET_SHAPE: Readonly<Record<string, string>> = {
+  kind: 'string',
+  where: 'string',
+  result: 'string',
+  error: 'string',
+  retention: 'string',
+  at: 'number',
 };
 
 function isBackupStatus(body: unknown): body is BackupStatus {
   const status = body as Record<string, unknown> | null;
-  return status !== null
+  return matches(status, STATUS_SHAPE)
     && Array.isArray(status.targets)
-    && Object.entries(STATUS_SHAPE).every(([field, kind]) => typeof status[field] === kind);
+    && status.targets.every((target: unknown) => matches(target, TARGET_SHAPE));
+}
+
+/** Every field of a shape, present and of its kind. */
+function matches(value: unknown, shape: Readonly<Record<string, string>>): value is Record<string, unknown> {
+  const record = value as Record<string, unknown> | null;
+  return record !== null
+    && typeof record === 'object'
+    && Object.entries(shape).every(([field, kind]) => typeof record[field] === kind);
 }
 
 function isMintedKey(body: unknown): body is MintedBackupKey {

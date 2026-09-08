@@ -324,6 +324,44 @@ Releases are tag-driven and per product — `server-v*` publishes a multi-arch i
 `:latest`; `extension-v*` publishes to the Marketplace and **refuses while the publisher id is
 still a placeholder**. A tag never ships both.
 
+### Where a copy of the whole deployment lives (2026-09-07, epic 5)
+
+A flow across all three modules rather than a feature of any one of them, which is why it is here as
+well as in each.
+
+```
+  extension                       server                          off the machine
+  ─────────                       ──────                          ───────────────
+  Server Backup… ──PUT settings──▶ org/backup/settings.json
+                                     │  credentials sealed under the deployment KEK
+  Mint key ──────POST key────────▶ org/backup/key.sealed ── the words, ONCE, to a modal
+                 ◀── BK1-… ─────     (what is kept is their HKDF output)
+                                     │
+  Back up now ───POST run────────▶ claim ▶ archive ▶ upload ──────▶ S3 / Azure Blob
+                                     │                              (retention at each)
+  ◀── status (polled) ────────────  org/backup/status.json
+  Download ──────GET archive─────▶ stream ─────────────────▶ a file the admin chose
+                                     │
+                            restore-archive.sh ◀── the same BK1- words, on the host
+```
+
+Four things about it are decided ACROSS modules rather than inside one:
+
+- **The backup key outranks the KEK.** The KEK is inside the archive; the backup key is not. One
+  archive and one key reconstitute every vault, every sealed login key and the local signing key —
+  which is why the words are shown once, by a modal that will not close on a dismissal, and why
+  neither half ever writes them to disk.
+- **The extension holds no policy about who may do this.** Every route is `RequireAdmin` and the
+  server decides. The menu entry appears on the corporate-admin and officer rows because those are
+  the callers the server accepts, not because the extension has an opinion about roles.
+- **The nag rides the policy fetch epic 1 already runs**, so this machine has one corporate cadence
+  rather than two — and only a SUCCESSFUL read may change what it believes, the same rule the
+  project folders rest on.
+- **The deployment gains a second restore path and keeps the first.** `restore.sh` reads the
+  host-side unencrypted tar, certificates included; `restore-archive.sh` reads the server's
+  encrypted archive and asks for the words. Neither replaces the other —
+  [module_deployment.md](module_deployment.md) has the table of what each one answers.
+
 ## Module map
 
 | Module | Document | What it owns |

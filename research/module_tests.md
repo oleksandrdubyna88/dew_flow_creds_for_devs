@@ -321,14 +321,29 @@ window whenever no notice came back — including when the notice was merely sup
 the window would be cleared on the very next cycle and the nag would return every other tick. The test
 that caught it asserts the second cycle is silent; health and dedupe now answer separately.
 
+**The review round added four more, and one whole tier.** The gate found a status validator that
+checked five fields while the page read ten (a truncated answer became a broken tab instead of the
+documented sentence); a `Content-Disposition` filename taken as-is and handed to the save dialog as
+its `defaultUri`, so a hostile server could open it at `/home/dev/.ssh/config`; account checks run
+one after another inside the cycle that repaints the tree; and a notice map persisted once per
+healthy account per cycle. Each is now pinned — the filename by a table of six hostile shapes paired
+with an ordinary one, the concurrency by counting reads in flight, the write by counting writes.
+
+**And a tier that did not exist: `deploy/restore-archive-itest.sh`.** It runs the restore script as a
+PROGRAM with `docker` replaced by a recording shim — seven scenarios, 23 assertions — because the
+script's design is its order and reading cannot check an order. It is what says *"the stack was never
+stopped"* as a fact about what reached `docker`. The round found the unfinished-restore check sitting
+after `docker compose down`; scenario 4 is what catches that class now, and it was watched failing
+against the old ordering.
+
 **What none of it covers.** Nothing drives VS Code itself: the modal that shows the key once, the save
 dialog, the webview's own script and the tree menu are exercised only through their pure halves. So a
 command registered but never wired to a menu, or a `when` clause that stops matching, is caught by the
 manifest tests above and by nothing else — which is exactly why the `account-corpOfficer` case was
-found by reading `orgRecoveryAccess.ts` rather than by a test. And
-`deploy/restore-archive.sh` is syntax-checked and shellchecked in CI, with its verbs driven against the
-real binary by `backup-archive-itest.cjs`, but the end-to-end rehearsal — an archive from a live server
-restored onto an empty stack — has not been run. It is named in the plan as the open item.
+found by reading `orgRecoveryAccess.ts` rather than by a test. And the harness above is not the
+live-stack rehearsal: no image is pulled and no server runs, so nothing yet proves that an archive
+from a live deployment restores onto a real host. That is a tracked exception rather than a silent
+gap — named in the plan, in `module_deployment.md`, and in the epic's summary.
 
 ## What none of them covers
 

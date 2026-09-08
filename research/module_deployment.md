@@ -251,14 +251,33 @@ tree. It holds the deployment KEK and the local signing key in clear — that is
 restore onto a fresh host can work — and this script's output goes to a terminal, a CI log or
 somebody's scrollback.
 
-`shellcheck` runs over it in `ci · server` from the day it landed: it is the one script whose failure
-mode is a stack that is down with the data moved aside, so a typo in it costs an outage.
+`shellcheck` runs over it in `ci · server` from the day it landed, and so does
+`deploy/restore-archive-itest.sh`, which RUNS it: it is the one script whose failure mode is a stack
+that is down with the data moved aside, so a typo in it costs an outage.
 
-**Not yet rehearsed end to end.** `restore.sh`'s cycle was exercised on a real stack; this one has
-been syntax-checked and shellchecked, and its verbs are driven against the real server binary by
-`backup-archive-itest.cjs` — but nobody has yet taken an archive from a live server and restored it
-onto an empty stack. Named here rather than assumed; it is the open item in
-[PLAN_corp_server_backup.md](../todo/PLAN_corp_server_backup.md).
+### The script is driven as a program, with `docker` shimmed
+
+Reading a script cannot check its ORDER, and the order is this script's entire design. So
+`restore-archive-itest.sh` builds a throwaway `deploy/` directory, puts a fake `docker` on `PATH`
+that records every invocation and answers from knob files, and runs the real script through seven
+scenarios — 23 assertions. What it is able to say that no other tier can: *"the stack was never
+stopped"*, as a fact about what reached `docker`, rather than *"the script printed something
+reassuring"*.
+
+The review round is what made this necessary: it found the unfinished-restore check sitting AFTER
+`docker compose down`, so a retry took the running stack offline and only then refused — a second
+outage handed to somebody already recovering from the first. Scenario 4 asserts that no
+`compose down` reaches docker when a marker exists, and it goes red the moment that check moves.
+The same round found `docker compose down` guarded with `|| true`, which would have moved a data
+directory out from under a still-running server; scenario 5 pins that too.
+
+**It is not the live-stack rehearsal, and does not claim to be.** No image is pulled, no server runs,
+and nothing in it proves that a real archive from a real deployment restores onto a real host.
+`restore.sh`'s cycle WAS exercised that way — vault written, data directory destroyed, restored,
+vault readable again — and this one has not been. That is a **tracked exception to the Definition of
+Done** rather than a checklist item quietly left unticked: the script ships with its decisions
+exercised and its live rehearsal outstanding, named here, in
+[PLAN_corp_server_backup.md](../todo/PLAN_corp_server_backup.md) and in the epic's summary.
 
 ## Hardening summary
 

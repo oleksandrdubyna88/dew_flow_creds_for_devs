@@ -24,6 +24,29 @@ import { StoredAccount } from './types';
  * only moment this may change its mind.</p>
  */
 
+/**
+ * What one account came to.
+ *
+ * <p>A verdict rather than a side effect: this used to persist the notice map itself, once per
+ * account, which meant a hundred healthy accounts wrote `globalState` a hundred times on every
+ * policy fetch to say nothing had changed. Deciding here and writing once is the same answer for
+ * less.</p>
+ */
+export interface BackupCheck {
+  /** True when this deployment is fine, so its window may be forgotten. */
+  readonly healthy: boolean;
+  /** The notice to show, when there is one that is not deduped away. */
+  readonly notice?: BackupNotice;
+}
+
+/**
+ * A member, an account with no server, or a read that FAILED.
+ *
+ * <p>Not healthy — which matters: a failed read must not clear a window either. It says nothing at
+ * all, and nothing is exactly what should change.</p>
+ */
+const SAYS_NOTHING: BackupCheck = { healthy: false };
+
 /** What the watch needs from the editor and the network. */
 export interface BackupWatchHost {
   /** The backup client for this account's server — nothing for a folder or a git remote. */
@@ -52,22 +75,23 @@ export async function checkOneBackup(
   host: BackupWatchHost,
   account: StoredAccount,
   policy: CorpPolicyState,
-): Promise<BackupNotice | undefined> {
+): Promise<BackupCheck> {
   const status = await statusOf(host, account, policy);
   if (status === undefined) {
-    return undefined;
+    return SAYS_NOTHING;
   }
   // HEALTH first, and the notice second — they answer different questions and folding them cost a
-  // real defect. A deployment that is healthy forgets its window, so the next failure is heard at
-  // once rather than an hour later, measured from trouble that is already over. A deployment that is
-  // NOT healthy but was interrupted about recently returns nothing too, and its window must SURVIVE:
+  // real defect. A healthy deployment's window is FORGOTTEN, so the next failure is heard at once
+  // rather than an hour later, measured from trouble that is already over. A deployment that is NOT
+  // healthy but was interrupted about recently also yields no notice, and its window must SURVIVE:
   // clearing it there would have made the very next cycle nag again, which is the nag-every-cycle
   // this whole module exists to avoid.
-  if (healthOf(status) === 'healthy') {
-    await host.remember(forget(host.shown(), account.accountId));
-    return undefined;
-  }
-  return backupNotice(account.accountId, account.email, status, host.shown(), host.now());
+  return healthOf(status) === 'healthy'
+    ? { healthy: true }
+    : {
+      healthy: false,
+      notice: backupNotice(account.accountId, account.email, status, host.shown(), host.now()),
+    };
 }
 
 /**
@@ -100,18 +124,44 @@ export async function checkBackups(
   host: BackupWatchHost,
   accounts: ReadonlyMap<StoredAccount, CorpPolicyState>,
 ): Promise<void> {
-  const notices: BackupNotice[] = [];
-  const ids: string[] = [];
-  for (const [account, policy] of accounts) {
-    const notice = await checkOneBackup(host, account, policy);
-    if (notice !== undefined) {
-      notices.push(notice);
-      ids.push(account.accountId);
+  const entries = [...accounts];
+  // TOGETHER, not one after another. This runs inside the readiness cycle that repaints the tree,
+  // and every read carries its own five-second deadline — so serially, one unreachable server per
+  // account delays the repaint by five seconds each. The set is the corporate accounts signed in on
+  // this machine, which is single digits; a limit would be machinery for a number that is not there.
+  const checked = await Promise.all(
+    entries.map(([account, policy]) => checkOneBackup(host, account, policy)),
+  );
+  const notices = checked.map((check) => check.notice).filter(isNotice);
+  const next = settle(host, entries, checked, notices);
+  if (next !== host.shown()) {
+    // One write per cycle, and only when something actually moved.
+    await host.remember(next);
+  }
+  if (notices.length > 0) {
+    host.show(joinNotices(notices));
+  }
+}
+
+function isNotice(notice: BackupNotice | undefined): notice is BackupNotice {
+  return notice !== undefined;
+}
+
+/** The windows after this cycle: healthy accounts forgotten, interrupted ones stamped. */
+function settle(
+  host: BackupWatchHost,
+  entries: readonly (readonly [StoredAccount, CorpPolicyState])[],
+  checked: readonly BackupCheck[],
+  notices: readonly BackupNotice[],
+): NoticeMemory {
+  let memory = host.shown();
+  entries.forEach(([account], at) => {
+    if (checked[at].healthy) {
+      memory = forget(memory, account.accountId);
     }
-  }
-  if (notices.length === 0) {
-    return;
-  }
-  await host.remember(remember(host.shown(), ids, host.now()));
-  host.show(joinNotices(notices));
+  });
+  const interrupted = entries
+    .filter((_entry, at) => checked[at].notice !== undefined)
+    .map(([account]) => account.accountId);
+  return notices.length === 0 ? memory : remember(memory, interrupted, host.now());
 }

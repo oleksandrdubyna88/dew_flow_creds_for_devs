@@ -119,6 +119,11 @@ export function remember(
  * would say nothing until 11:00 — the window would be measuring the old trouble.</p>
  */
 export function forget(shown: NoticeMemory, accountId: string): NoticeMemory {
+  if (!(accountId in shown)) {
+    // The SAME object, so a caller can tell "nothing changed" by identity and skip a write. A fresh
+    // copy every time made every healthy account persist the map on every policy fetch.
+    return shown;
+  }
   const next = { ...shown };
   delete next[accountId];
   return next;

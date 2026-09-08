@@ -1,6 +1,7 @@
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import * as fs from 'node:fs';
+import { describeError } from './describeError';
 
 /**
  * Writing a backup archive to disk: a stream, a temporary neighbour, and one rename.
@@ -43,14 +44,29 @@ export async function writeArchiveTo(
     });
     await pipeline(source, fs.createWriteStream(partial));
   } catch (failure) {
-    await forget(partial);
-    throw failure;
+    throw await withCleanup(failure, partial);
   }
   await fs.promises.rename(partial, destination);
   return written;
 }
 
-/** Remove a temporary file, and never let its absence become the error a caller sees. */
-async function forget(partial: string): Promise<void> {
-  await fs.promises.rm(partial, { force: true }).catch(() => undefined);
+/**
+ * The download's own failure, with the cleanup's added when the cleanup also failed.
+ *
+ * <p><b>Neither swallowed nor substituted.</b> Discarding the cleanup error hides a temporary file
+ * somebody will find months later and have to work out; letting it REPLACE the original hides why
+ * the download failed at all, which is the thing the person actually needs. So the download's
+ * failure is what is thrown, and the cleanup's is appended to it — a full disk usually causes both,
+ * and reading one of them alone sends you looking in the wrong place.</p>
+ */
+async function withCleanup(failure: unknown, partial: string): Promise<unknown> {
+  try {
+    await fs.promises.rm(partial, { force: true });
+    return failure;
+  } catch (cleanup) {
+    const original = failure instanceof Error ? failure : new Error(describeError(failure));
+    original.message
+      += ` (and the partial file ${partial} could not be removed: ${describeError(cleanup)})`;
+    return original;
+  }
 }
