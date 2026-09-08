@@ -13,7 +13,12 @@ import { encryptJson } from '../cryptoUtils';
 import { writeFileAtomically } from '../atomicFileWrite';
 import { describeError } from '../describeError';
 import { SharePin } from '../sharePin';
-import { announceHandover, chooseExportPassword, discardTransitPin } from '../transitPinPrompt';
+import {
+  EXPORT_PASSWORD,
+  announceHandover,
+  chooseExportPassword,
+  discardTransitPin,
+} from '../transitPinPrompt';
 
 /**
  * `credSshManager.exportExternal` — the one command that writes decrypted secrets to a file the
@@ -303,7 +308,7 @@ async function announceWritten(file: ExportFile, nodeCount: number, where: strin
     void vscode.window.showInformationMessage(headline);
     return;
   }
-  await announceHandover(headline, '', file.pin);
+  await announceHandover(EXPORT_PASSWORD, headline, '', file.pin);
 }
 
 /** A node's name as a file name: no separators, no traversal, never empty. */

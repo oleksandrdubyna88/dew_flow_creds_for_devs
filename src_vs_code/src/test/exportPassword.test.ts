@@ -50,6 +50,10 @@ const ui = {
   clipboardWrites: 0,
   infos: [] as string[],
   infoActions: [] as string[][],
+  /** Which action a test presses on the completion notification. */
+  infoAnswer: undefined as string | undefined,
+  /** Modal reveals — the one surface the secret itself may appear on. */
+  modals: [] as { text: string; detail: string }[],
   errors: [] as string[],
   boxes: [] as FakeBox[],
 };
@@ -68,6 +72,8 @@ function reset(): void {
   ui.clipboardWrites = 0;
   ui.infos = [];
   ui.infoActions = [];
+  ui.infoAnswer = undefined;
+  ui.modals = [];
   ui.errors = [];
   ui.boxes = [];
 }
@@ -146,16 +152,30 @@ function stubbedVscode(): Record<string, unknown> {
       },
       showQuickPick: (items: { plain: boolean }[]): Promise<unknown> =>
         Promise.resolve(items.find((i) => i.plain === (ui.form === 'plain'))),
-      showWarningMessage: (_text: string, ..._rest: unknown[]): Promise<string> =>
-        Promise.resolve('Write plain JSON'),
+      showWarningMessage: (
+        text: string,
+        options?: { modal?: boolean; detail?: string },
+        ...actions: string[]
+      ): Promise<string | undefined> => {
+        // The reveal is the one call with a `detail` and no actions; the plain-JSON confirmation is
+        // the one with an action to press.
+        if (options?.detail !== undefined && actions.length === 0) {
+          ui.modals.push({ text, detail: options.detail });
+          return Promise.resolve(undefined);
+        }
+        return Promise.resolve('Write plain JSON');
+      },
       showErrorMessage: (text: string): Promise<undefined> => {
         ui.errors.push(text);
         return Promise.resolve(undefined);
       },
-      showInformationMessage: (text: string, ...actions: unknown[]): Promise<undefined> => {
+      showInformationMessage: (
+        text: string,
+        ...actions: unknown[]
+      ): Promise<string | undefined> => {
         ui.infos.push(text);
         ui.infoActions.push(actions.filter((a): a is string => typeof a === 'string'));
-        return Promise.resolve(undefined);
+        return Promise.resolve(ui.infoAnswer);
       },
       showSaveDialog: (): Promise<unknown> =>
         Promise.resolve(ui.saveTo === undefined ? undefined : fakeUri(ui.saveTo, 'vault-remote')),
@@ -479,4 +499,25 @@ test('a failed write says so, in its own words', async () => {
   assert.equal(ui.errors.length, 1, `the person must be told the export failed: ${ui.errors}`);
   assert.ok(/export/i.test(ui.errors[0]), ui.errors[0]);
   assert.ok(!ui.errors[0].includes(ui.clipboard || 'never-matches'), 'and never carry the password');
+});
+
+/**
+ * RED FIRST, and found by the PR's automated reviewer. `announceHandover` is shared with the share
+ * path, and its reveal modal said *"The one-time PIN for this share"* — on an export, where nothing
+ * was shared and the box two steps earlier called the very same secret *"Password for the export"*.
+ * One flow, two names for one secret, in the one place the value itself is on screen. The module's
+ * own comment claims the two callers differ only in their `Wording`; this line made that false.
+ */
+test('the reveal calls an export password a password, not a share PIN', async () => {
+  reset();
+  ui.infoAnswer = 'Show PIN';
+
+  await exportHandler()(target, undefined);
+  await flush();
+
+  const modal = ui.modals.at(-1);
+  assert.ok(modal !== undefined, 'Show PIN must open the modal — it is the only surface for it');
+  assert.equal(modal.text, ui.clipboard, 'and reveal the value the file was sealed with');
+  assert.ok(!/share/i.test(modal.detail), `nothing was shared: ${modal.detail}`);
+  assert.ok(/export/i.test(modal.detail), `it must name what this actually is: ${modal.detail}`);
 });

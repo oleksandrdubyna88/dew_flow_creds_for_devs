@@ -26,12 +26,17 @@ export async function writeFileAtomically<T>(
   finalPath: T,
   content: string,
 ): Promise<void> {
-  await ops.writeFile(tempPath, Buffer.from(content, 'utf8'));
   try {
+    await ops.writeFile(tempPath, Buffer.from(content, 'utf8'));
     await ops.rename(tempPath, finalPath, { overwrite: true });
   } catch (error) {
-    // The rename never happened, so the target still holds the previous good file. Clear
-    // the temp we wrote and surface the failure; best-effort, a leftover temp is harmless.
+    // Whatever failed, the target still holds the previous good file — the rename is the only
+    // step that touches it. Clear the temp we may have written and surface the failure.
+    //
+    // The WRITE used to sit outside this try, on the reasoning that a stray temp is harmless.
+    // That was true while both callers wrote a fixed name: the next attempt overwrote the same
+    // stray. The export does not — its temp carries a fresh id so two exports cannot collide,
+    // so every failed attempt would drop a NEW orphan in the folder the person chose.
     await Promise.resolve(ops.remove(tempPath)).then(undefined, () => undefined);
     throw error;
   }
