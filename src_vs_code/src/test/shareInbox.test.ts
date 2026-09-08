@@ -458,3 +458,55 @@ test('a typed PIN is offered neither button — it was never ours to re-copy', a
   assert.deepEqual(ui.infoActions.at(-1), [], 'nothing to offer about a PIN the person invented');
   assert.equal(ui.clipboardWrites, 0, 'and nothing of theirs reaches the clipboard');
 });
+
+/**
+ * The share has ALREADY been delivered when the announcement runs, which is what makes these two
+ * matter: an escaping rejection here would replace a success with a generic command failure, for a
+ * share that went through, and take down the one offer that still recovers the PIN.
+ */
+test('a clipboard that rejects after delivery does not undo the share, and says so', async () => {
+  const w = world();
+  ui.clipboardFails = true;
+  await shareWithGeneratedPin(w, 'prod api');
+
+  assert.equal(w.delivered.length, 1, 'the share still went');
+  assert.equal(ui.errors.length, 0, 'and nothing surfaced as a failure');
+  const message = ui.infos.at(-1) ?? '';
+  assert.ok(/copying/i.test(message), `the failure must be said out loud, got: ${message}`);
+  assert.ok(!message.includes('45s'), 'and it must not promise a clipboard window it does not have');
+  assert.deepEqual(ui.infoActions.at(-1), ['Copy again', 'Show PIN'], 'Show PIN is the way out');
+});
+
+test('Copy again on a clipboard that rejects warns instead of throwing', async () => {
+  const w = world();
+  ui.clipboardFails = true;
+  ui.infoAnswer = 'Copy again';
+
+  await shareWithGeneratedPin(w, 'prod api');
+
+  assert.equal(w.delivered.length, 1);
+  assert.ok(ui.warningsAsked > 0, 'the person is told the second attempt failed too');
+});
+
+test('escaping the repeat box cancels quietly — it is not a mismatch', async () => {
+  const w = world();
+  const node: TreeNode = {
+    id: 'escaped',
+    name: 'escaped',
+    type: 'entity',
+    parentId: null,
+    details: { id: 'escaped', name: 'escaped', isSshEnabled: false },
+  };
+  await w.storage.addNode(RECIPIENT.accountId, node);
+  ui.quickPickAnswers = [[{ label: SENDER.email, member: TEAM_MEMBER }]];
+  ui.inputs = [PIN, undefined]; // typed once, then Escape on "Repeat the PIN"
+
+  await w.inbox.shareNodes(RECIPIENT.accountId, [node]);
+
+  assert.equal(w.delivered.length, 0, 'nothing is sealed');
+  assert.deepEqual(
+    ui.errors,
+    [],
+    'and nobody is told their PINs did not match when they simply backed out',
+  );
+});

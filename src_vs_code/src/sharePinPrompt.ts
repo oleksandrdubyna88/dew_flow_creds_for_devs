@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
-import { SharePin, generateSharePin, typedPin } from './sharePin';
-import { copySecret } from './secretClipboard';
+import { SharePin, generateSharePin, sharePinNotice, typedPin } from './sharePin';
+import { copySecret, secretClipboardTtl } from './secretClipboard';
 import { pinValidator } from './pinInput';
 import { validatePin } from './pinPolicy';
 
@@ -129,6 +129,8 @@ function advice(message: string): vscode.InputBoxValidationMessage {
 
 const COPY_AGAIN = 'Copy again';
 const SHOW_PIN = 'Show PIN';
+const REVEAL_INSTEAD = 'Use Show PIN and copy it by hand.';
+const COPY_FAILED = ` Copying it to the clipboard failed. ${REVEAL_INSTEAD}`;
 
 /**
  * The end of the conversation: the share landed, and now the PIN has to reach a person.
@@ -153,19 +155,51 @@ const SHOW_PIN = 'Show PIN';
  *   this extension never had would be a lie about where it came from.</li>
  * </ul>
  */
-export async function announceShared(message: string, pin: SharePin): Promise<void> {
+export async function announceShared(
+  headline: string,
+  withheld: string,
+  pin: SharePin,
+): Promise<void> {
   if (!pin.generated) {
-    void vscode.window.showInformationMessage(message);
+    void vscode.window.showInformationMessage(`${headline}${withheld}`);
     return;
   }
-  await copySecret(vscode.env.clipboard, pin.value);
-  const choice = await vscode.window.showInformationMessage(message, COPY_AGAIN, SHOW_PIN);
+  // The clipboard sentence is composed HERE, from whether the copy actually happened, rather than
+  // upstream from the intention to try it. Composing it earlier is how a message comes to promise
+  // a clipboard that rejected.
+  const notice = (await copied(pin.value)) ? sharePinNotice(pin, secretClipboardTtl()) : COPY_FAILED;
+  const choice = await vscode.window.showInformationMessage(
+    `${headline}${notice}${withheld}`,
+    COPY_AGAIN,
+    SHOW_PIN,
+  );
   await actOn(choice, pin.value);
+}
+
+/**
+ * Copy, and answer whether it worked.
+ *
+ * <p>Nothing here may throw. The share has ALREADY been delivered by the time this runs, and
+ * `deliverBatch` carries a comment about precisely this trap two methods away: post-delivery
+ * enrichment must never decide the outcome of an operation that already happened. An escaping
+ * rejection would replace the success message with a generic command failure — for a share that
+ * went through — and take the `Show PIN` offer down with it, which is the one route left to a PIN
+ * the clipboard did not accept.</p>
+ */
+async function copied(value: string): Promise<boolean> {
+  try {
+    await copySecret(vscode.env.clipboard, value);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 async function actOn(choice: string | undefined, value: string): Promise<void> {
   if (choice === COPY_AGAIN) {
-    await copySecret(vscode.env.clipboard, value);
+    if (!(await copied(value))) {
+      void vscode.window.showWarningMessage(`Copying failed. ${REVEAL_INSTEAD}`);
+    }
     return;
   }
   if (choice === SHOW_PIN) {
@@ -188,6 +222,11 @@ async function confirmTyped(pin: SharePin): Promise<SharePin | undefined> {
     password: true,
     ignoreFocusOut: true,
   });
+  // Escape is not a mismatch. Telling somebody their PINs did not match when they simply backed
+  // out describes a mistake they did not make, and sends them looking for a typo that is not there.
+  if (repeat === undefined) {
+    return undefined;
+  }
   if (repeat !== pin.value) {
     void vscode.window.showErrorMessage('PINs do not match — cancelled.');
     return undefined;

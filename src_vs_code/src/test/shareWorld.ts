@@ -50,6 +50,8 @@ const ui = {
   clipboard: '',
   /** How many times anything was WRITTEN to it — one copy or two is the whole question. */
   clipboardWrites: 0,
+  /** Make every clipboard write REJECT — a locked session, or no clipboard provider at all. */
+  clipboardFails: false,
   /** Which action a test presses on an information message ('Copy again', 'Show PIN'). */
   infoAnswer: undefined as string | undefined,
   /** The actions each information message offered, in order. */
@@ -146,6 +148,7 @@ function resetUi(): void {
   ui.progressFails = undefined;
   ui.clipboard = '';
   ui.clipboardWrites = 0;
+  ui.clipboardFails = false;
   ui.infoAnswer = undefined;
   ui.infoActions = [];
   ui.modals = [];
@@ -230,6 +233,9 @@ const loaded = ((): {
           clipboard: {
             readText: (): Promise<string> => Promise.resolve(ui.clipboard),
             writeText: (value: string): Promise<void> => {
+              if (ui.clipboardFails) {
+                return Promise.reject(new Error('no clipboard provider'));
+              }
               ui.clipboard = value;
               ui.clipboardWrites += 1;
               return Promise.resolve();
