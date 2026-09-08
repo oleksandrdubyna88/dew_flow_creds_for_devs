@@ -4,6 +4,50 @@ All notable changes to **CredsForDevs** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.0] — the PIN is drawn before you are asked for one, and the export gets the same box
+
+### Changed
+
+- **The *One-time share PIN* box opens with a PIN already drawn**, already on your clipboard, and
+  the line under it says so: *"Generated, and copied to your clipboard. Type over it to use your
+  own."* The sparkle button is still there and now draws a fresh one; the eye still unmasks it for
+  reading aloud.
+
+  1.3.0 put that generator behind the sparkle, and it worked — but VS Code draws an input box's
+  buttons as small dimmed glyphs in the box's title row, and the sentence under the field never
+  mentioned them. The person who opened that box was looking at an empty field. A feature you have
+  to find is not a feature; the honest default is the strong PIN, and typing over it is one
+  keystroke.
+
+- **The export password is asked for in that same box.** *Export / Share Externally…* had none of
+  this: no generator, no reveal, and — alone among the boxes here that ask for a secret meant to
+  cross to somebody else — **no confirmation of what you typed**, for a password that is the only
+  key to a file outliving the session. A typo was discovered by the person who could not open the
+  file, long after the plaintext was gone.
+
+### Fixed
+
+- **A PIN you typed over could leave the generated one on your clipboard.** Press the sparkle in
+  1.3.0, then type your own PIN over it, and the share was sealed with what you typed while the
+  clipboard still held what was drawn. Paste that into the chat and your recipient is given a PIN
+  that looks right, opens nothing, and produces no error anywhere. A drawn value is now taken back
+  the moment it stops being the one in use — when you type over it, when you press Escape, when the
+  repeat box is cancelled, and when an export's save dialog is. Only ever the exact string this
+  extension put there, so anything you copied yourself is untouched.
+
+- **An interrupted export could leave a file that looks like an export and is not one.** The
+  encrypted file was written straight onto the name you chose, and a write that fails partway — a
+  full disk, a network share dropping — leaves it truncated under that name. The whole payload is
+  one AES-GCM message, so no password opens it. Exports are now written beside the target and
+  renamed into place, the way the vault file already was.
+
+- **A failed export said nothing.** It ended the command, and what reached you was VS Code's generic
+  "running the contributed command failed", if anything. It now says what failed and that nothing
+  was written.
+
+- **A failed write left a stray temporary file behind.** This affected *Backup to NAS* and folder
+  sync as well: the cleanup ran only when the RENAME failed, never when the write itself did.
+
 ## [1.3.0] — the share PIN draws itself, and an encrypted archive of the whole server
 
 ### Added
