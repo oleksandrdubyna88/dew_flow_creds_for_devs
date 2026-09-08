@@ -2259,6 +2259,16 @@ exists. The review gate raised it against this story's plan and the answer was a
 that helper exists because two writers of the vault file needed a temp-sibling-and-rename and, as its
 own comment records, one of them did not have it. The export is the third.
 
+The temp path itself took two more findings, and both were about a line that looked obvious.
+`vscode.Uri.file()` FORCES the scheme back to `file:`, so an export to a remote or virtual workspace
+would have written its temp onto local disk and then renamed across two filesystems — atomic writing
+broken exactly where the workspace is not local; `target.with({ path })` keeps the scheme and the
+authority. And a fixed `.tmp` is the same path for every export of the same name, so two started
+together trade ciphertext and the file that lands can be paired with the password the OTHER export
+announced; the sibling carries a `StorageManager.newId()`. A failed write now also says so in its own
+words rather than throwing out of the command handler, where the person meets VS Code's generic
+"running the contributed command failed" or nothing at all.
+
 Four decisions worth keeping, each of which was a defect first — three of them found by the review
 gate before a line was written, and watched failing before they were fixed:
 

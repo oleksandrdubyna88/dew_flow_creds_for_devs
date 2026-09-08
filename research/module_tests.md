@@ -16,7 +16,7 @@
 
 | Tier | Where | Count | What it proves |
 |---|---|---|---|
-| Unit, extension | `src_vs_code/src/test/*.test.ts`, node:test | 3,302 (4 skipped) | logic, in-process, `vscode` stubbed |
+| Unit, extension | `src_vs_code/src/test/*.test.ts`, node:test | 3,702 (4 skipped) | logic, in-process, `vscode` stubbed |
 | Unit, .NET | `src_minimalapi_server/tests`, `src_cli/tests`, `src_mcp/tests`, `src_broker_client/tests` — xUnit | 447 | server 300, cli 78, mcp 40, broker 29 |
 | HTTP contract | `http/http-run.mjs` over `http/*.http` | 82 requests, 9 files | the real server over HTTP, with a coverage report that refuses an unlisted route |
 | Scenario | `src_vs_code/scripts/*-itest.cjs` | 9 harnesses | a real process, a real socket, a real binary |

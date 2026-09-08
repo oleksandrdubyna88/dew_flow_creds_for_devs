@@ -120,6 +120,21 @@ function makeInputBox(): FakeBox {
   return box;
 }
 
+/**
+ * A `Uri` that remembers its SCHEME, because that is the thing under test here: a save dialog on a
+ * remote or virtual workspace answers with something that is not `file:`, and a temp sibling built
+ * with `Uri.file()` would silently land on local disk instead of beside the target.
+ */
+function fakeUri(p: string, scheme = 'file'): Record<string, unknown> {
+  return {
+    fsPath: p,
+    path: p,
+    scheme,
+    with: (change: { path?: string }): Record<string, unknown> =>
+      fakeUri(change.path ?? p, scheme),
+  };
+}
+
 /** Just enough `vscode` for the export command to run end to end. */
 function stubbedVscode(): Record<string, unknown> {
   return {
@@ -143,7 +158,7 @@ function stubbedVscode(): Record<string, unknown> {
         return Promise.resolve(undefined);
       },
       showSaveDialog: (): Promise<unknown> =>
-        Promise.resolve(ui.saveTo === undefined ? undefined : { fsPath: ui.saveTo }),
+        Promise.resolve(ui.saveTo === undefined ? undefined : fakeUri(ui.saveTo, 'vault-remote')),
       createOutputChannel: () => ({
         appendLine: (): void => undefined,
         show: (): void => undefined,
@@ -160,23 +175,23 @@ function stubbedVscode(): Record<string, unknown> {
         },
       },
     },
-    Uri: { file: (p: string): object => ({ fsPath: p }), joinPath: (): object => ({}) },
+    Uri: { file: (p: string): object => fakeUri(p), joinPath: (): object => ({}) },
     ViewColumn: { Active: 1 },
     InputBoxValidationSeverity: { Info: 1, Warning: 2, Error: 3 },
     workspace: {
       getConfiguration: () => ({ get: (_k: string, d: unknown) => d }),
       onDidChangeConfiguration: () => ({ dispose: (): void => undefined }),
       fs: {
-        writeFile: (uri: { fsPath: string }, bytes: Buffer): Promise<undefined> => {
-          ui.fsOps.push(`write ${uri.fsPath}`);
+        writeFile: (uri: { fsPath: string; scheme: string }, bytes: Buffer): Promise<undefined> => {
+          ui.fsOps.push(`write ${uri.scheme}:${uri.fsPath}`);
           if (ui.writeFails) {
             return Promise.reject(new Error('disk is full'));
           }
           ui.files.set(uri.fsPath, Buffer.from(bytes).toString('utf8'));
           return Promise.resolve(undefined);
         },
-        rename: (from: { fsPath: string }, to: { fsPath: string }): Promise<undefined> => {
-          ui.fsOps.push(`rename ${from.fsPath} -> ${to.fsPath}`);
+        rename: (from: { fsPath: string; scheme: string }, to: { fsPath: string }): Promise<undefined> => {
+          ui.fsOps.push(`rename ${from.scheme}:${from.fsPath} -> ${to.fsPath}`);
           const held = ui.files.get(from.fsPath);
           ui.files.delete(from.fsPath);
           if (held !== undefined) {
@@ -184,8 +199,8 @@ function stubbedVscode(): Record<string, unknown> {
           }
           return Promise.resolve(undefined);
         },
-        delete: (uri: { fsPath: string }): Promise<undefined> => {
-          ui.fsOps.push(`delete ${uri.fsPath}`);
+        delete: (uri: { fsPath: string; scheme: string }): Promise<undefined> => {
+          ui.fsOps.push(`delete ${uri.scheme}:${uri.fsPath}`);
           ui.files.delete(uri.fsPath);
           return Promise.resolve(undefined);
         },
@@ -373,7 +388,7 @@ test('the export arrives by a rename, so a failed write cannot leave a half file
   await flush();
 
   assert.notEqual(written(), '', 'precondition: the export landed');
-  const direct = ui.fsOps.filter((op) => op === `write ${'/tmp/export.enc'}`);
+  const direct = ui.fsOps.filter((op) => op.endsWith(':/tmp/export.enc') && op.startsWith('write '));
   assert.deepEqual(direct, [], `the final name must never be written directly: ${ui.fsOps}`);
   assert.ok(
     ui.fsOps.some((op) => op.startsWith('rename ') && op.endsWith('-> /tmp/export.enc')),
@@ -393,4 +408,75 @@ test('a failed write leaves nothing at all — no export, and no temp beside it'
     [],
     'a truncated file under the export name would be unopenable by any password',
   );
+});
+
+/**
+ * RED FIRST — the code round's finding, from two reviewers independently. `showSaveDialog` on a
+ * remote or virtual workspace answers with a Uri whose scheme is not `file:`, and the first version
+ * built its temp sibling with `vscode.Uri.file(target.fsPath + '.tmp')` — which FORCES the scheme
+ * back to `file:`. The temp would be written to local disk and then renamed across two different
+ * filesystems, so atomic export would be permanently broken exactly where the workspace is not
+ * local. The scheme has to survive.
+ */
+test('the temp sibling stays on the target filesystem, whatever it is', async () => {
+  reset();
+  await exportHandler()(target, undefined);
+  await flush();
+
+  assert.notEqual(written(), '', 'precondition: the export landed');
+  const wrong = ui.fsOps.filter((op) => op.includes('file:'));
+  assert.deepEqual(
+    wrong,
+    [],
+    `every operation must stay on the target's own scheme: ${ui.fsOps}`,
+  );
+});
+
+/**
+ * RED FIRST — the other half, raised by codex. A fixed `${target}.tmp` is the same path for every
+ * export of the same name: two started together overwrite each other's ciphertext, and one can end
+ * up renaming the other's bytes into place, so the file that lands is paired with the password the
+ * OTHER export announced. A pre-existing `.tmp` beside somebody's file is also overwritten and then
+ * deleted on the failure path.
+ */
+test('two exports of the same file do not share a temp path', async () => {
+  reset();
+  await exportHandler()(target, undefined);
+  await flush();
+  const first = tempOf(ui.fsOps);
+
+  reset();
+  await exportHandler()(target, undefined);
+  await flush();
+  const second = tempOf(ui.fsOps);
+
+  assert.notEqual(first, '', `no temp write was recorded: ${ui.fsOps}`);
+  assert.notEqual(
+    first,
+    second,
+    'two concurrent exports would otherwise trade ciphertext and announce the wrong password',
+  );
+});
+
+/** The path a run wrote its ciphertext to before renaming it into place. */
+function tempOf(ops: readonly string[]): string {
+  const write = ops.find((op) => op.startsWith('write '));
+  return write === undefined ? '' : write.slice('write '.length);
+}
+
+/**
+ * RED FIRST. A write that fails used to end the command by rethrowing, which reaches the person as
+ * VS Code's generic "running the contributed command failed" — if they see anything at all. They
+ * chose a destination, waited, and are owed a sentence saying no file was written.
+ */
+test('a failed write says so, in its own words', async () => {
+  reset();
+  ui.writeFails = true;
+
+  await Promise.resolve(exportHandler()(target, undefined)).catch(() => undefined);
+  await flush();
+
+  assert.equal(ui.errors.length, 1, `the person must be told the export failed: ${ui.errors}`);
+  assert.ok(/export/i.test(ui.errors[0]), ui.errors[0]);
+  assert.ok(!ui.errors[0].includes(ui.clipboard || 'never-matches'), 'and never carry the password');
 });

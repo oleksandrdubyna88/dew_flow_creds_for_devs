@@ -11,6 +11,7 @@ import { exportSensitiveNote, paymentFieldsInExport } from '../paymentRedaction'
 import { resolveBulkTargets } from '../commandTargets';
 import { encryptJson } from '../cryptoUtils';
 import { writeFileAtomically } from '../atomicFileWrite';
+import { describeError } from '../describeError';
 import { SharePin } from '../sharePin';
 import { announceHandover, chooseExportPassword, discardTransitPin } from '../transitPinPrompt';
 
@@ -32,16 +33,18 @@ export interface ExportCommandHost {
   readonly corpPolicyOf?: (accountId: string) => CorpPolicyState | undefined;
 }
 
-/** What a chosen export form produces: the bytes, and what to call the file. */
-interface ExportFile {
-  readonly content: string;
-  readonly ext: string;
-  /**
-   * The password this file is sealed with. Absent on the plain-JSON form, which has none — which is
-   * what keeps `save` honest about which of the two forms it just wrote.
-   */
-  readonly pin?: SharePin;
-}
+/**
+ * What a chosen export form produces: the bytes, and what to call the file.
+ *
+ * <p>A union rather than one shape with an optional password, so that "sealed" and "has a password"
+ * cannot come apart. With an optional field a future form could return `{ ext: 'enc', content }`
+ * and compile: the file would be encrypted and `announceWritten` would take the plain branch, so
+ * the person would never be offered the password their recipient needs. Discriminating on `ext`
+ * makes that unwriteable, and costs no extra field — the two literal types already differ.</p>
+ */
+type ExportFile =
+  | { readonly content: string; readonly ext: 'json' }
+  | { readonly content: string; readonly ext: 'enc'; readonly pin: SharePin };
 
 export function registerExportCommand(host: ExportCommandHost): void {
   host.register('credSshManager.exportExternal', (target, selected) => runExport(host, target, selected));
@@ -217,7 +220,12 @@ async function save(file: ExportFile, exportName: string, nodeCount: number): Pr
     await writeExportAtomically(targetUri, file.content);
   } catch (err) {
     await abandon(file);
-    throw err;
+    // Said here rather than thrown. A rejection out of a command handler reaches the person as VS
+    // Code's generic "running the contributed command failed", if they see anything at all — and
+    // they picked a destination, waited, and are owed a sentence saying no file exists. The reason
+    // is included; the password never is.
+    void vscode.window.showErrorMessage(`Export failed: ${describeError(err)}. Nothing was written.`);
+    return;
   }
   await announceWritten(file, nodeCount, targetUri.fsPath);
 }
@@ -242,10 +250,29 @@ function writeExportAtomically(target: vscode.Uri, content: string): Promise<voi
       rename: (from, to, options) => vscode.workspace.fs.rename(from, to, options),
       remove: (uri) => vscode.workspace.fs.delete(uri),
     },
-    vscode.Uri.file(`${target.fsPath}.tmp`),
+    tempSiblingOf(target),
     target,
     content,
   );
+}
+
+/**
+ * Where the ciphertext goes before the rename puts it in place.
+ *
+ * <p>Two things the review round caught, and both are about a path that looked obvious.
+ * `vscode.Uri.file()` FORCES the scheme back to `file:`, so an export to a remote or virtual
+ * workspace would write its temp onto local disk and then rename across two filesystems — atomic
+ * writing broken exactly where the workspace is not local. `with()` keeps the scheme and the
+ * authority.</p>
+ *
+ * <p>And a fixed `.tmp` is the same path for every export of the same name: two started together
+ * trade ciphertext, and the file that lands can be paired with the password the OTHER export
+ * announced. A pre-existing `.tmp` beside somebody's file would also be overwritten and then
+ * deleted on the failure path. The id is `StorageManager.newId()` — the one this codebase already
+ * mints ids with.</p>
+ */
+function tempSiblingOf(target: vscode.Uri): vscode.Uri {
+  return target.with({ path: `${target.path}.${StorageManager.newId()}.tmp` });
 }
 
 /**
@@ -256,7 +283,7 @@ function writeExportAtomically(target: vscode.Uri, content: string): Promise<voi
  * somewhere a person can sit for minutes before backing out of it.</p>
  */
 async function abandon(file: ExportFile): Promise<void> {
-  if (file.pin !== undefined) {
+  if (file.ext === 'enc') {
     await discardTransitPin(file.pin);
   }
 }
@@ -272,7 +299,7 @@ async function abandon(file: ExportFile): Promise<void> {
  */
 async function announceWritten(file: ExportFile, nodeCount: number, where: string): Promise<void> {
   const headline = `Exported ${nodeCount} node(s) to ${where}.`;
-  if (file.pin === undefined) {
+  if (file.ext === 'json') {
     void vscode.window.showInformationMessage(headline);
     return;
   }
