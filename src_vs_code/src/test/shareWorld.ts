@@ -67,13 +67,21 @@ const ui = {
 };
 
 /**
- * The ui.inputs entry that means "press the generate button instead of typing".
+ * The ui.inputs entry that means "press the sparkle button instead of typing" — a REdraw, since
+ * the box now opens with a PIN already drawn.
  *
  * <p>A sentinel rather than a separate flag because the PIN box is one step in a queued
  * conversation — the checkbox, the recipients, the PIN — and a flag beside a queue cannot say
  * WHICH of two boxes it meant.</p>
  */
 const GENERATE = '#generate';
+
+/**
+ * The entry that means "accept what the box drew when it opened" — the default path, and after
+ * the pre-fill the one almost everybody takes. Distinct from GENERATE because pressing the button
+ * exercises a redraw that the common case never performs.
+ */
+const ACCEPT_DRAWN = '#accept-drawn';
 
 /** Whether this recipient's inbox is the one a test asked to reject. */
 function refuses(email: string): boolean {
@@ -136,6 +144,10 @@ function makeInputBox(): FakeBox {
       presses.forEach((cb) => cb(button as { tooltip?: string }));
       // The press writes the value synchronously and copies asynchronously; accepting before the
       // copy settles would test a race nobody ships.
+      await new Promise((r) => setImmediate(r));
+    } else if (next === ACCEPT_DRAWN) {
+      // Touch nothing: the value is whatever `askOnce` drew before it showed the box. The wait is
+      // the same one the press needs — the draw copies asynchronously.
       await new Promise((r) => setImmediate(r));
     } else {
       box.value = next;
@@ -419,6 +431,7 @@ function world(): World {
 export {
   ui,
   GENERATE,
+  ACCEPT_DRAWN,
   resetUi,
   loaded,
   StorageManager,

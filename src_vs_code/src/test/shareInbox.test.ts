@@ -4,6 +4,7 @@ import type { SharePayload, TreeNode } from '../types';
 import {
   ui,
   GENERATE,
+  ACCEPT_DRAWN,
   loaded,
   StorageManager,
   RECIPIENT,
@@ -379,7 +380,11 @@ test('a flag with no seed behind it never becomes a claim on the other side', as
  * an editable masked box, a record threaded through delivery, a clipboard written twice — is a
  * place where the two could part company without anything failing loudly.</p>
  */
-async function shareWithGeneratedPin(w: World, name: string): Promise<TreeNode> {
+async function shareWithGeneratedPin(
+  w: World,
+  name: string,
+  how: string = GENERATE,
+): Promise<TreeNode> {
   const node: TreeNode = {
     id: `gen-${name}`,
     name,
@@ -390,7 +395,7 @@ async function shareWithGeneratedPin(w: World, name: string): Promise<TreeNode> 
   await w.storage.addNode(RECIPIENT.accountId, node);
   await w.storage.setPassword(RECIPIENT.accountId, node.id, 'pw');
   ui.quickPickAnswers = [[{ label: SENDER.email, member: TEAM_MEMBER }]];
-  ui.inputs = [GENERATE];
+  ui.inputs = [how];
 
   await w.inbox.shareNodes(RECIPIENT.accountId, [node]);
   return node;
@@ -421,13 +426,30 @@ test('the success message offers Copy again and Show PIN, and names no PIN', asy
   );
 });
 
+/**
+ * The DEFAULT path, end to end, and the one almost everybody now takes: open the box, press Enter,
+ * paste. Nothing is clicked. The assertion is the only one that can catch a substitution anywhere
+ * in the chain, because it is exactly what the recipient does — open the delivered share with the
+ * CLIPBOARD's contents.
+ */
+test('accepting what the box drew seals the share with what the recipient will paste', async () => {
+  const w = world();
+  await shareWithGeneratedPin(w, 'prod api', ACCEPT_DRAWN);
+
+  assert.equal(w.delivered.length, 1);
+  assert.notEqual(ui.clipboard, '', 'the person pressed nothing, so the draw had to happen by itself');
+  const payload = loaded.openShare(w.delivered[0] as never, KEY_ID, ui.clipboard);
+  assert.equal(payload.secrets.password, 'pw');
+});
+
 test('Copy again writes the same PIN a second time', async () => {
   const w = world();
   ui.infoAnswer = 'Copy again';
   await shareWithGeneratedPin(w, 'prod api');
 
-  // Once when it was drawn, once when the share landed, once for the button.
-  assert.equal(ui.clipboardWrites, 3, 'the button must actually re-copy');
+  // Once when the box opened and drew, once for the sparkle press this helper makes, once when
+  // the share landed, once for the button.
+  assert.equal(ui.clipboardWrites, 4, 'the button must actually re-copy');
   const payload = loaded.openShare(w.delivered[0] as never, KEY_ID, ui.clipboard);
   assert.equal(payload.secrets.password, 'pw', 'and re-copy the RIGHT value');
 });
@@ -456,7 +478,11 @@ test('a typed PIN is offered neither button — it was never ours to re-copy', a
   await w.inbox.shareNodes(RECIPIENT.accountId, [node]);
 
   assert.deepEqual(ui.infoActions.at(-1), [], 'nothing to offer about a PIN the person invented');
-  assert.equal(ui.clipboardWrites, 0, 'and nothing of theirs reaches the clipboard');
+  // The box drew and copied when it opened, so the count is no longer 0. What matters is stronger
+  // than a count and is asserted directly: the clipboard is EMPTY. The value the person typed was
+  // never ours to copy, and the value we drew was taken back the moment they typed over it —
+  // otherwise they would paste a PIN that seals nothing into the chat where they name it.
+  assert.equal(ui.clipboard, '', 'nothing of theirs is copied, and nothing of ours is left behind');
 });
 
 /**
