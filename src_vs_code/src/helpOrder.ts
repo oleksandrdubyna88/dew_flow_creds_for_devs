@@ -34,6 +34,7 @@ export const HELP_ARTICLE_IDS: readonly string[] = [
   'corporate-recovery',
   'corporate-roles',
   'corporate-event-log',
+  'corporate-server-backup',
   'filters',
   'health',
   'secret-scan',

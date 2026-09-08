@@ -4139,6 +4139,71 @@ the same loop — **a failed read keeps the last list**, exactly as the policy d
 row that suddenly stopped naming the projects it named a minute ago is a worse answer than a slightly
 old one. Nothing decides on these names; they are a label.
 
+## Server Backup — the tab, the key shown once, and the nag (2026-09-07, epic 5 story 5)
+
+Stories 1–4 built the whole server side: the encrypted archive format and its three CLI verbs, the
+printable `BK1-` key, the run with its OS-handle claim and five-minute scheduler, six admin-only
+routes and two cloud destinations. Every one of them was reachable only by composing an HTTP request
+by hand, and nothing in the editor said the feature existed. **A deployment could therefore sit for
+months with the scheduler ticking every five minutes and refusing every tick**, because no key had
+ever been minted — logged at Information once per tick, which is the definition of a place nobody
+looks. These are the callers, and the sentence that ends that silence.
+
+| File | What it is |
+|---|---|
+| `orgBackupClient.ts` | The six routes, on epic 1's `CorpApiClient` like every corporate client since — never a fourth copy of the bearer/contract/timeout plumbing |
+| `backupPage.ts` | The markup and what it escapes. Pure, `vscode`-free |
+| `backupTab.ts` | The tab's state machine: what is asked for, what a late answer does, and above all when the key's words are handed over. Pure |
+| `orgBackupPanel.ts` | The webview, the modal and the save dialog — the `vscode` half, and only that |
+| `archiveDownload.ts` | Streaming an archive to disk, atomically. Node, no `vscode` |
+| `backupNotice.ts` | The cadence and the wording. Pure |
+| `backupWatch.ts` | The check that rides epic 1's policy fetch. Pure |
+| `corpPolicyWiring.ts` | Which concrete thing fills which seam — lifted out of `extension.ts`, which is at its size ratchet and may only shrink |
+| `commands/orgBackupCommands.ts` | `credSshManager.orgBackup`, registered through the corporate family's one entry point |
+
+**The key is shown once, and the dialog is built for the person about to lose it.** It is modal — a
+toast can be missed while somebody is looking at another window — it offers **Copy to clipboard**, and
+dismissing it does NOT count as saving it: Escape or the X raises a second modal saying what closing
+costs, and only *Discard it anyway* ends the loop. The words are never written to a file by this
+extension, never logged, and never put in the webview's DOM, because a webview's DOM outlives the
+moment and a tab can be reopened. What makes all of that necessary rather than fussy is that the words
+are unrecoverable by CONSTRUCTION: what the server keeps is their HKDF output.
+
+**The tab shows the key BEFORE it re-reads the status**, and that ordering is a test. A status refresh
+redrawing the page underneath a dialog somebody is copying from is exactly how a key is lost.
+
+**Mint is offered only where the server would accept it.** A key that is `Ready` may not be minted
+over — the server refuses — and a button that answers "already minted" teaches nobody anything. A key
+`AwaitingAcknowledgement` does offer it, because that is the safe retry after a mint whose response
+never reached a person: no run may seal an archive under it, and minting again replaces the unused
+one.
+
+**The download goes to a temporary file beside the destination and is then renamed.** A 400 MB
+download that failed halfway would otherwise leave a truncated file at the chosen path —
+indistinguishable from a good archive until a restore — and the chosen path is usually where the
+previous archive already is, so a partial write would destroy the copy that did work. The body is
+piped, never buffered: this is the largest thing the extension writes to disk.
+
+**The nag rides the policy fetch rather than owning a timer.** Once a day while unconfigured or while
+no key has been minted, once an hour while the last run failed, silent while healthy — and one message
+for however many accounts have something to say, because three popups stack in the corner and cover
+each other's buttons, the same reading `lockedNotice.ts` makes. The windows live in `globalState`, so
+a window reload does not nag about something the person already knows.
+
+**A failed read changes nothing** — not the windows, not the belief, not the screen. A notice that
+fires on a network blip trains people to dismiss it, and a dismissed notice is the same as no notice
+at all on the day it matters. Writing that rule cost a real defect, caught by its own test: an early
+version cleared an account's window whenever no notice came back, including when the notice was merely
+suppressed by the dedupe, so the nag would have returned every other cycle. Health and dedupe are
+answered separately now.
+
+**Members are never polled.** Every backup route is `RequireAdmin`, so a member's poll would be
+refused on every cycle and the only thing that refusal could do is put a red message in front of
+somebody who cannot act on it — the same reading the roster fetch already makes. The menu entry is on
+`account-corpAdmin` **and** `account-corpOfficer`, because an officer passes `RequireAdmin` on the
+server while their row carries the officer contextValue: gating on the admin value alone would have
+hidden the feature from exactly the people who administer unconditionally.
+
 ## Security hardening (2026-08-25 review)
 
 The coverage pass that followed it ([SECURITY_REVIEW_2026-08-26.md](SECURITY_REVIEW_2026-08-26.md))

@@ -6,6 +6,7 @@ import { StorageManager } from '../storageManager';
 import { StoredAccount } from '../types';
 import { TransportFactory } from '../transportFactory';
 import { OrgMemberCommandsHost, registerOrgMemberCommands } from './orgMemberCommands';
+import { registerOrgBackupCommands } from './orgBackupCommands';
 import { registerOrgEventCommands } from './orgEventCommands';
 import { asElement } from '../commandTargets';
 import { describeError } from '../describeError';
@@ -54,6 +55,8 @@ export function registerOrgCommands(host: OrgProjectCommandsHost & OrgMemberComm
   // is at its size ratchet, and a feature paid for by taking something else out of that file is a
   // feature that made an unrelated one harder to find.
   registerOrgEventCommands(host);
+  // Epic 5's, through the same door and for the same reason.
+  registerOrgBackupCommands(host);
 }
 
 export function registerOrgProjectCommands(host: OrgProjectCommandsHost): void {
