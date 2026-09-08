@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { typedPin } from '../sharePin';
 import type { TreeNode } from '../types';
 import {
   ui,
@@ -145,7 +146,7 @@ test('the sender is told which payment fields did not go, and never told a value
   const node = await cardEntry(w.storage);
   const payload = await loaded.buildSharePayload(w.storage, RECIPIENT.accountId, node, false);
 
-  await w.inbox.deliverBatch(RECIPIENT.accountId, [payload], [TEAM_MEMBER as never], PIN);
+  await w.inbox.deliverBatch(RECIPIENT.accountId, [payload], [TEAM_MEMBER as never], typedPin(PIN));
 
   const said = ui.infos.join(' | ');
   assert.match(said, /Shared "Visa"/, 'it still reports the share');
@@ -169,7 +170,7 @@ test('a share with nothing withheld says nothing about withholding', async () =>
   await w.storage.setPayment(RECIPIENT.accountId, node.id, { iban: 'PL61109010140000071219812874' });
   const payload = await loaded.buildSharePayload(w.storage, RECIPIENT.accountId, node, false);
 
-  await w.inbox.deliverBatch(RECIPIENT.accountId, [payload], [TEAM_MEMBER as never], PIN);
+  await w.inbox.deliverBatch(RECIPIENT.accountId, [payload], [TEAM_MEMBER as never], typedPin(PIN));
 
   assert.equal(/Not sent/.test(ui.infos.join(' | ')), false);
 });
@@ -239,7 +240,7 @@ test('a keychain failure while naming withheld fields does not make a delivered 
     Promise.reject(new Error('keychain unavailable'));
 
   await assert.rejects(
-    () => w.inbox.deliverBatch(RECIPIENT.accountId, [payload], [TEAM_MEMBER as never], PIN),
+    () => w.inbox.deliverBatch(RECIPIENT.accountId, [payload], [TEAM_MEMBER as never], typedPin(PIN)),
     /keychain unavailable/,
     'the failure must land before delivery, not after',
   );

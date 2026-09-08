@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import type { SharePayload, TreeNode } from '../types';
 import {
   ui,
+  GENERATE,
   loaded,
   StorageManager,
   RECIPIENT,
@@ -368,4 +369,92 @@ test('a flag with no seed behind it never becomes a claim on the other side', as
 
   assert.equal(payload.secrets.totp, undefined);
   assert.equal(payload.node.details?.hasTotp, undefined, 'the flag travels only with a seed');
+});
+
+/**
+ * The generated-PIN half of the outgoing conversation.
+ *
+ * <p>What these assert is not the button but the PROMISE the feature makes: the string the
+ * recipient will paste is the string the share was sealed with. Every step between them —
+ * an editable masked box, a record threaded through delivery, a clipboard written twice — is a
+ * place where the two could part company without anything failing loudly.</p>
+ */
+async function shareWithGeneratedPin(w: World, name: string): Promise<TreeNode> {
+  const node: TreeNode = {
+    id: `gen-${name}`,
+    name,
+    type: 'entity',
+    parentId: null,
+    details: { id: `gen-${name}`, name, isSshEnabled: false },
+  };
+  await w.storage.addNode(RECIPIENT.accountId, node);
+  await w.storage.setPassword(RECIPIENT.accountId, node.id, 'pw');
+  ui.quickPickAnswers = [[{ label: SENDER.email, member: TEAM_MEMBER }]];
+  ui.inputs = [GENERATE];
+
+  await w.inbox.shareNodes(RECIPIENT.accountId, [node]);
+  return node;
+}
+
+test('the PIN on the clipboard is the PIN the share was sealed with', async () => {
+  const w = world();
+  await shareWithGeneratedPin(w, 'prod api');
+
+  assert.equal(w.delivered.length, 1);
+  assert.notEqual(ui.clipboard, '', 'nothing was copied for the person to paste');
+  // Opening with the clipboard's contents is the only assertion that matters: it is exactly what
+  // the recipient will do, and it fails if any step in between substituted a different string.
+  const payload = loaded.openShare(w.delivered[0] as never, KEY_ID, ui.clipboard);
+  assert.equal(payload.secrets.password, 'pw');
+});
+
+test('the success message offers Copy again and Show PIN, and names no PIN', async () => {
+  const w = world();
+  await shareWithGeneratedPin(w, 'prod api');
+
+  assert.deepEqual(ui.infoActions.at(-1), ['Copy again', 'Show PIN']);
+  const message = ui.infos.at(-1) ?? '';
+  assert.ok(message.includes('45s'), message);
+  assert.ok(
+    !message.includes(ui.clipboard),
+    'a notification is retained until it is dismissed — the PIN must not be in its text',
+  );
+});
+
+test('Copy again writes the same PIN a second time', async () => {
+  const w = world();
+  ui.infoAnswer = 'Copy again';
+  await shareWithGeneratedPin(w, 'prod api');
+
+  // Once when it was drawn, once when the share landed, once for the button.
+  assert.equal(ui.clipboardWrites, 3, 'the button must actually re-copy');
+  const payload = loaded.openShare(w.delivered[0] as never, KEY_ID, ui.clipboard);
+  assert.equal(payload.secrets.password, 'pw', 'and re-copy the RIGHT value');
+});
+
+test('Show PIN reveals it in a modal, which is the one surface it may appear on', async () => {
+  const w = world();
+  ui.infoAnswer = 'Show PIN';
+  await shareWithGeneratedPin(w, 'prod api');
+
+  assert.deepEqual(ui.modals, [ui.clipboard], 'the reveal is a dialog, not another notification');
+});
+
+test('a typed PIN is offered neither button — it was never ours to re-copy', async () => {
+  const w = world();
+  const node: TreeNode = {
+    id: 'typed',
+    name: 'typed',
+    type: 'entity',
+    parentId: null,
+    details: { id: 'typed', name: 'typed', isSshEnabled: false },
+  };
+  await w.storage.addNode(RECIPIENT.accountId, node);
+  ui.quickPickAnswers = [[{ label: SENDER.email, member: TEAM_MEMBER }]];
+  ui.inputs = [PIN, PIN];
+
+  await w.inbox.shareNodes(RECIPIENT.accountId, [node]);
+
+  assert.deepEqual(ui.infoActions.at(-1), [], 'nothing to offer about a PIN the person invented');
+  assert.equal(ui.clipboardWrites, 0, 'and nothing of theirs reaches the clipboard');
 });

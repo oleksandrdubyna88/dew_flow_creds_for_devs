@@ -21,7 +21,9 @@ import {
   shareLabelTrusted } from './shareFormat';
 import { recordOrigin, resolveOrigin } from './shareOrigin';
 import { snapshotForRevision } from './revisionSnapshot';
-import { pinValidator } from './pinInput';
+import { SharePin, sharePinNotice } from './sharePin';
+import { announceShared, chooseSharePin } from './sharePinPrompt';
+import { secretClipboardTtl } from './secretClipboard';
 import { redactArrivedPayment, withheldFromShare } from './paymentRedaction';
 import { OwnedShare, SharePayload, TeamMember, TreeNode } from './types';
 
@@ -64,37 +66,6 @@ export interface ShareInboxDeps {
 export class ShareInbox {
   constructor(private readonly deps: ShareInboxDeps) {}
 
-  /** Ask for the one-time share PIN; `confirm` adds the repeat prompt used when sealing. */
-  async promptSharePin(confirm: boolean): Promise<string | undefined> {
-    const pin = await vscode.window.showInputBox({
-      title: 'One-time share PIN',
-      prompt: 'Encrypts the shared item. Tell it to the recipient out-of-band.',
-      password: true,
-      ignoreFocusOut: true,
-      // Advice only while CHOOSING (sealing a new share) — accepting types it back.
-      validateInput: pinValidator(confirm ? 'choosing' : 'entering'),
-    });
-    if (pin === undefined || !confirm) {
-      return pin;
-    }
-    return this.confirmSharePin(pin);
-  }
-
-  /** The repeat prompt: the same PIN typed twice, or nothing. */
-  private async confirmSharePin(pin: string): Promise<string | undefined> {
-    const repeat = await vscode.window.showInputBox({
-      title: 'One-time share PIN',
-      prompt: 'Repeat the PIN',
-      password: true,
-      ignoreFocusOut: true,
-    });
-    if (repeat !== pin) {
-      void vscode.window.showErrorMessage('PINs do not match — cancelled.');
-      return undefined;
-    }
-    return pin;
-  }
-
   // Moved as written (A1); the pre-existing complexity is marked, not hidden.
   // eslint-disable-next-line complexity
   async pickRecipients(
@@ -132,7 +103,7 @@ export class ShareInbox {
     senderAccountId: string,
     payloads: SharePayload[],
     recipients: TeamMember[],
-    pin: string,
+    pin: SharePin,
   ): Promise<void> {
     const sender = this.deps.storage.getAccount(senderAccountId);
     if (sender === undefined) {
@@ -167,7 +138,7 @@ export class ShareInbox {
     for (const recipient of recipients) {
       const outcome = await deliverToRecipient(
         { sharing: this.deps.sharing, policyOf: this.deps.policyOf },
-        { sender, recipient, pin, form, signing },
+        { sender, recipient, pin: pin.value, form, signing },
         payloads,
         projects,
       );
@@ -185,8 +156,10 @@ export class ShareInbox {
       // story earlier, found this time by four reviewers at once. Without it somebody who shares a
       // hidden phrase reads "Shared …" and believes the phrase arrived; it cannot have, because
       // unweaving needs a code the person remembers and nothing transmits.
-      void vscode.window.showInformationMessage(
-        `Shared ${what} with ${delivered.join(', ')}. Tell them the PIN out-of-band.${withheld}`,
+      await announceShared(
+        `Shared ${what} with ${delivered.join(', ')}. Tell them the PIN out-of-band.`
+          + `${sharePinNotice(pin, secretClipboardTtl())}${withheld}`,
+        pin,
       );
     }
     void this.deps.sharing.reload();
@@ -215,7 +188,7 @@ export class ShareInbox {
     senderAccountId: string,
     payload: SharePayload,
     recipients: TeamMember[],
-    pin: string,
+    pin: SharePin,
   ): Promise<void> {
     return this.deliverBatch(senderAccountId, [payload], recipients, pin);
   }
@@ -322,7 +295,7 @@ export class ShareInbox {
     if (recipients === undefined) {
       return;
     }
-    const pin = await this.promptSharePin(true);
+    const pin = await chooseSharePin();
     if (pin !== undefined) {
       await this.deliverBatch(accountId, [...payloads], recipients, pin);
     }

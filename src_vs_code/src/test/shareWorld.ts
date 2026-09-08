@@ -46,7 +46,92 @@ const ui = {
    * broken machine. What is under test is what the accept command does about it.</p>
    */
   progressFails: undefined as string | undefined,
+  /** What the clipboard holds — the share PIN's whole delivery route to the recipient. */
+  clipboard: '',
+  /** How many times anything was WRITTEN to it — one copy or two is the whole question. */
+  clipboardWrites: 0,
+  /** Which action a test presses on an information message ('Copy again', 'Show PIN'). */
+  infoAnswer: undefined as string | undefined,
+  /** The actions each information message offered, in order. */
+  infoActions: [] as string[][],
+  /** Message texts shown MODALLY — where the PIN is allowed to appear, and only there. */
+  modals: [] as string[],
 };
+
+/**
+ * The ui.inputs entry that means "press the generate button instead of typing".
+ *
+ * <p>A sentinel rather than a separate flag because the PIN box is one step in a queued
+ * conversation — the checkbox, the recipients, the PIN — and a flag beside a queue cannot say
+ * WHICH of two boxes it meant.</p>
+ */
+const GENERATE = '#generate';
+
+interface FakeBox {
+  value: string;
+  password: boolean;
+  buttons: { tooltip?: string }[];
+  validationMessage: unknown;
+  [key: string]: unknown;
+}
+
+/**
+ * The InputBox VS Code would have handed the prompt, driven from `ui.inputs`.
+ *
+ * <p>`value` is a real setter, because VS Code raises `onDidChangeValue` when the extension
+ * ASSIGNS the value and not only when a person types — and the generated-PIN path assigns.</p>
+ */
+function makeInputBox(): FakeBox {
+  const accepts: (() => void)[] = [];
+  const hides: (() => void)[] = [];
+  const changes: ((value: string) => void)[] = [];
+  const presses: ((button: { tooltip?: string }) => void)[] = [];
+  let current = '';
+  const box = {
+    password: false,
+    title: undefined as string | undefined,
+    prompt: undefined as string | undefined,
+    ignoreFocusOut: false,
+    buttons: [] as { tooltip?: string }[],
+    validationMessage: undefined as unknown,
+    get value(): string {
+      return current;
+    },
+    set value(next: string) {
+      current = next;
+      changes.forEach((cb) => cb(next));
+    },
+    onDidAccept: (cb: () => void) => (accepts.push(cb), { dispose(): void {} }),
+    onDidHide: (cb: () => void) => (hides.push(cb), { dispose(): void {} }),
+    onDidChangeValue: (cb: (v: string) => void) => (changes.push(cb), { dispose(): void {} }),
+    onDidTriggerButton: (cb: (b: { tooltip?: string }) => void) => (presses.push(cb), { dispose(): void {} }),
+    hide: (): void => hides.forEach((cb) => cb()),
+    dispose: (): void => {},
+    show: (): void => {
+      void drive();
+    },
+  } as unknown as FakeBox;
+
+  async function drive(): Promise<void> {
+    const next = ui.inputs.shift();
+    if (next === undefined) {
+      hides.forEach((cb) => cb());
+      return;
+    }
+    if (next === GENERATE) {
+      const button = box.buttons.find((b) => (b.tooltip ?? '').includes('Generate'));
+      presses.forEach((cb) => cb(button as { tooltip?: string }));
+      // The press writes the value synchronously and copies asynchronously; accepting before the
+      // copy settles would test a race nobody ships.
+      await new Promise((r) => setImmediate(r));
+    } else {
+      box.value = next;
+    }
+    accepts.forEach((cb) => cb());
+  }
+
+  return box;
+}
 
 function resetUi(): void {
   ui.inputs = [];
@@ -59,6 +144,11 @@ function resetUi(): void {
   ui.quickPickTitles = [];
   ui.quickPickAnswers = [];
   ui.progressFails = undefined;
+  ui.clipboard = '';
+  ui.clipboardWrites = 0;
+  ui.infoAnswer = undefined;
+  ui.infoActions = [];
+  ui.modals = [];
 }
 
 const loaded = ((): {
@@ -70,7 +160,7 @@ const loaded = ((): {
       senderAccountId: string,
       payloads: SharePayload[],
       recipients: unknown[],
-      pin: string,
+      pin: import('../sharePin').SharePin,
     ): Promise<void>;
   };
   sealShare: typeof import('../shareFormat').sealShare;
@@ -83,19 +173,36 @@ const loaded = ((): {
     if (request === 'vscode') {
       return {
         window: {
+          // The share PIN's box is a createInputBox now, and the harness drives it the way a
+          // person would: the next ui.inputs entry is TYPED into it, or, when it is the sentinel
+          // GENERATE, the generate button is pressed instead. Existing suites feed the same
+          // [PIN, PIN] they always did and are untouched by the change.
+          createInputBox: (): unknown => makeInputBox(),
           showInputBox: () => Promise.resolve(ui.inputs.shift()),
           showQuickPick: (_items: unknown, options?: { title?: string }): Promise<unknown> => {
             ui.quickPickTitles.push(options?.title);
             return Promise.resolve(ui.quickPickAnswers.shift());
           },
-          showWarningMessage: (): Promise<string | undefined> => {
+          showWarningMessage: (
+            message: string,
+            options?: { modal?: boolean },
+          ): Promise<string | undefined> => {
             ui.warningsAsked += 1;
+            // A modal is the ONE surface a live PIN may be shown on, so which messages were modal
+            // is a fact the tests need rather than a detail.
+            if (options?.modal === true) {
+              ui.modals.push(message);
+            }
             return Promise.resolve(ui.warningAnswer);
           },
-          showInformationMessage: (message: string): Promise<string | undefined> => {
+          showInformationMessage: (
+            message: string,
+            ...actions: string[]
+          ): Promise<string | undefined> => {
             ui.infosAsked += 1;
             ui.infos.push(message);
-            return Promise.resolve(undefined);
+            ui.infoActions.push(actions);
+            return Promise.resolve(ui.infoAnswer);
           },
           showErrorMessage: (message: string): Promise<undefined> => {
             ui.errors.push(message);
@@ -119,6 +226,20 @@ const loaded = ((): {
           fire(): void {}
         },
         Uri: { file: (p: string): object => ({ fsPath: p }) },
+        env: {
+          clipboard: {
+            readText: (): Promise<string> => Promise.resolve(ui.clipboard),
+            writeText: (value: string): Promise<void> => {
+              ui.clipboard = value;
+              ui.clipboardWrites += 1;
+              return Promise.resolve();
+            },
+          },
+        },
+        ThemeIcon: class {
+          constructor(public readonly id: string) {}
+        },
+        InputBoxValidationSeverity: { Info: 1, Warning: 2, Error: 3 },
       };
     }
     return original.call(this, request, ...rest);
@@ -268,6 +389,7 @@ function world(): World {
 
 export {
   ui,
+  GENERATE,
   resetUi,
   loaded,
   StorageManager,
