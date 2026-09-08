@@ -1,12 +1,34 @@
 # PLAN — the share PIN can be generated, and lands on the clipboard ready to paste
 
-> Status: **plan only, nothing implemented yet.** Scope: the VS Code extension only —
+> Status: **IMPLEMENTED, 2026-09-08.** Scope: the VS Code extension only —
 > `src_vs_code/src/shareInbox.ts`, `src_vs_code/src/commands/shareCommands.ts`, two new modules,
 > the share test harness, and the sharing help article in five languages. **No server change, no
 > HTTP contract change** (repo rule 6 is not engaged).
 >
-> Related docs: [module_extension.md](../research/module_extension.md),
-> [PLAN_sharing.md](../research/PLAN_sharing.md), [PLAN_generator.md](../research/PLAN_generator.md).
+> Related docs: [module_extension.md](module_extension.md),
+> [PLAN_sharing.md](PLAN_sharing.md), [PLAN_generator.md](PLAN_generator.md).
+
+## What shipped differently from this plan
+
+Four deviations, all found while building rather than while planning:
+
+1. **Every `file:line` reference above was verified against the WRONG BRANCH.** The checkout sat on
+   `fix/locked-vault-prompt` when the plan was written, and `origin/main` was thirty commits ahead:
+   the corporate epics had landed, `shareDelivery.ts` had been extracted, and `deliverBatch` no
+   longer calls `sealShare` itself. The design survived unchanged; the coordinates did not. The
+   check that would have caught it costs one command — branch first, verify second.
+2. **`shareInbox.ts` was 797 lines, not 769** — against a ceiling of 800. The extraction the plan
+   argued for on grounds of tidiness was in fact the only option available. It is 769 now.
+3. **`announceShared` lives in `sharePinPrompt.ts`**, which the plan described as the module for
+   ASKING. Keeping the two halves apart would have split the wording of one promise across two
+   files, which is the thing that file exists to prevent; the module's doc comment now says it
+   holds the PIN's whole conversation.
+4. **The plan named a `Copy again` action and a `Show PIN` modal; both are offered only when the
+   PIN was generated**, and `Show PIN` reveals through `showWarningMessage({ modal: true })`. A
+   typed PIN gets neither, because offering to re-copy something this extension never held would
+   misdescribe where it came from.
+
+Everything else shipped as written, including all ten accepted review-gate findings.
 
 ## The symptom
 
@@ -226,7 +248,7 @@ and needs neither.
 0. Branch `feat/generated-share-pin` from `origin/main`. **Done.** Note for whoever reads this
    later: the checkout was sitting on `fix/locked-vault-prompt`, which is pushed, carries one
    commit, and is **not** merged and has **no open PR** — unrelated to this work, but it is real
-   finished work and it is stranded.
+   finished work and it is stranded. Still true as of the promotion of this plan.
 1. `src/sharePin.ts` + `src/test/sharePin.test.ts` — pure, red → green.
 2. Extend `src/test/shareWorld.ts` (and `src/test/vscodeStub.ts` if the new prompt suite needs it)
    with `createInputBox`, `ThemeIcon`, `env.clipboard`.
