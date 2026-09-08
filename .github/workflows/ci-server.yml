@@ -149,12 +149,20 @@ jobs:
 
       - name: Shell-check the operator scripts
         run: |
-          sudo apt-get update && sudo apt-get install -y --no-install-recommends shellcheck
-          # restore-archive.sh is here from the day it lands: it is the one script whose failure
-          # mode is a stack that is down with the data moved aside, so a typo in it costs an outage.
-          shellcheck deploy/update.sh deploy/backup.sh deploy/restore-archive.sh
+          # A PINNED shellcheck, not the runner's apt one. The distribution's version moves when the
+          # image does, and the two disagree about which code an unreachable trap function is
+          # (SC2317 before 0.11, SC2329 after) — which is how a script that was clean on a developer's
+          # machine failed here, on a warning neither of them can see the other's name for. `npx
+          # shellcheck@4.1.0` is upstream 0.11.0 and is the same binary in both places, so "it passes
+          # locally" means something again.
+          SHELLCHECK="npx --yes shellcheck@4.1.0"
+          # restore-archive.sh is here from the day it lands: it is the one script whose failure mode
+          # is a stack that is down with the data moved aside, so a typo in it costs an outage. Its
+          # harness is here too — one that cannot parse proves nothing and says so quietly.
+          $SHELLCHECK deploy/update.sh deploy/backup.sh deploy/restore-archive.sh \
+            deploy/restore-archive-itest.sh
           # The container entrypoints are POSIX sh, not bash.
-          shellcheck --shell=sh deploy/nginx/entrypoint.sh deploy/certbot/entrypoint.sh
+          $SHELLCHECK --shell=sh deploy/nginx/entrypoint.sh deploy/certbot/entrypoint.sh
 
       - name: Drive restore-archive.sh as a program
         run: |
