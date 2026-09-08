@@ -4,9 +4,24 @@ All notable changes to **CredsForDevs** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.3.0] — the share PIN draws itself, and an encrypted archive of the whole server
 
 ### Added
+
+- **A share PIN you no longer have to invent.** The *One-time share PIN* box has two buttons now:
+  one draws a six-word passphrase and copies it, ready to paste into whatever chat you tell the
+  recipient in, and one unmasks it for reading aloud. When the share lands, the message offers
+  **Copy again** and **Show PIN**.
+
+  A passphrase rather than a password because the job is not entropy but travel: it crosses a chat,
+  it may be spoken, and the recipient types it back. On a vault server that PIN is the ENTIRE
+  secret — a share is sealed under the recipient's address plus the PIN, and the address is
+  public — so the weakest link was a person inventing one under time pressure.
+
+  Edit what was drawn and it becomes a PIN of your own, confirmed twice like any other. The PIN
+  never appears in the notification text: a notification is kept until it is dismissed, so
+  **Show PIN** is a modal, which is not. And the value is copied again when the share actually
+  lands, so the 45-second promise is counted from the moment you go and paste it.
 
 - **Server Backup (corporate epic 5).** *Server Backup…* on the account row of an admin — or of a
   recovery officer, who administers unconditionally — takes one encrypted archive of everything a
@@ -27,6 +42,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Restoring is `deploy/restore-archive.sh` on the host: it asks for the same words, and checks
   everything it can — the archive verifies, the key opens it, the tree extracts — before the stack is
   stopped or a byte of current data is moved.
+
+### Fixed
+
+- **Copying the same secret twice in a row cut its clipboard window short.** Every copy scheduled
+  its own wipe and none of them cancelled the one before, so a second copy of the SAME value left
+  the earlier timer running — and it still found its own string on the clipboard and cleared it at
+  the earlier deadline. The clipboard emptied before the notice said it would. A copy now cancels
+  the wipe it supersedes.
 
 ## [1.2.0] — projects, an event log you can read, and a locked vault that offers to unlock
 
