@@ -6,12 +6,22 @@ than by the code: the reverse proxy, the certificate, an environment variable, a
 happened at all. Twelve is the cap; there are seven.
 
 Target: the deployed vault, as an origin — `--target https://vault.example.com`
-Last verified: 2026-09-03 · **the deployment**, immediately after `rsd server deploy` shipped 0.5.3 · all five automated items PASS, run by the deploy workflow itself. Items 6 and 7 are a person's and were not covered by that run.
+Last verified: 2026-09-08 · **the deployment**, immediately after `rsd server deploy` shipped **0.6.0** · all five automated items PASS, run by the deploy workflow itself — including item 2 at its new expectation (see below). The certificate had 75 days left. Items 6 and 7 are a person's and were not covered by that run.
 
-> **Item 2's expectation moved on 2026-09-06 and has NOT been re-verified against a deployment.**
-> Epic 3 raised the contract floor to 4, so `EXPECTED_CONTRACT` now defaults to `4` here. The stamp
-> above is deliberately left at the last run that was actually watched: a check whose expected value
-> changed is a check nobody has seen pass. The next deploy of this epic is what re-verifies it.
+> **Item 2's new expectation has now been watched passing.** Epic 3 raised the contract floor to 4,
+> so `EXPECTED_CONTRACT` defaults to `4` here — and between 2026-09-06 and the 0.6.0 deploy that value
+> was a check nobody had seen pass, which is why the stamp was deliberately left behind until it had.
+> The 0.6.0 deploy is that run: the server answers `X-Creds-Contract: 4`.
+>
+> **What 0.6.0 does NOT cover, on this deployment specifically.** Its `.env` carries no recovery
+> officers and no login-key KEK, so corp mode is off and `Vault:LoginKey:Kek` is unset. Every
+> `/api/org/*` route is therefore refused after authentication, and the backup subsystem cannot mint
+> a key or take a run at all. The routes themselves ARE live — probed from the host,
+> `/api/org/backup/status` and `/api/org/backup/archive` answer `401` and `/api/org/backup/settings`
+> answers `405` to a GET, against `404` for a route that does not exist on this build — but item
+> 6(b) cannot be satisfied here until somebody decides to make this a corporate deployment. That is
+> a decision rather than a setting: turning on the officer roster seals every vault on the server to
+> a quorum, which is what item 7 exists to make deliberate.
 
 | # | What a person loses if this is broken | Check | Auto |
 |---|---|---|---|
