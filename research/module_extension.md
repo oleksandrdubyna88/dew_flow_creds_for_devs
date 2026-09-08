@@ -2273,6 +2273,22 @@ gate before a line was written, and watched failing before they were fixed:
   only while it still holds exactly what we wrote, so work the person copied themselves while the
   box was open is never destroyed, and that is its own test.
 
+- **A draw is TRACKED, because a fire-and-forget one outlives its box.** All three vendors' code
+  reviewers found this independently, from three different angles, and it is the reason `Drawn`
+  carries a `pending` promise and a `closed` flag. Escape while the clipboard write is in flight and
+  the wipe runs *before* the copy: `clearIfUnchanged` reads a clipboard that does not hold the PIN
+  yet, correctly declines to touch it, and the copy then lands — a transit secret for a share that
+  was cancelled, written on behalf of a box that has been disposed (which is also where the
+  `validationMessage` assignment would have thrown). So the cancel path awaits `pending` before
+  wiping, and the copy half checks `closed` and discards its own write instead of speaking. The
+  draw is deliberately **split in two**: generating the value and putting it in the field is
+  synchronous and happens before `show()`, so the box is never rendered empty; only the copy is
+  queued. Chaining that queue also serialises rapid redraws — two presses are two ordered draws
+  rather than two writes whose landing order nobody controls — and a copy that has been superseded
+  stays silent rather than describing a value the masked field no longer holds. The neighbouring
+  case, a REdraw whose copy fails, discards the PIN it replaced: without that the clipboard keeps
+  the old value while the box seals with the new one.
+
 - **A PARTIAL failure still hands over the PIN.** When some recipients received the entry and
   others did not, the sender used to get a bare error: no re-copy, no reveal. Those recipients hold
   a sealed entry, the PIN is stored nowhere, and the window opened when it was drawn may have closed
