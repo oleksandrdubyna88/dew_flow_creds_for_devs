@@ -78,6 +78,12 @@ interface World {
   warnings: string[];
   errors: string[];
   logs: string[];
+  /**
+   * Every warning WITH the buttons it offered. `warnings` keeps only the text, and the
+   * buttons are the whole question for a locked vault: what the person is invited to do
+   * about it is a different fact from what they were told.
+   */
+  prompts: { message: string; buttons: string[] }[];
   /** The wrap list `encrypt` was handed, when the cycle passed one. Undefined = it did not. */
   escrowWraps?: unknown[];
   /** What the cycle wrote back into local storage, when it applied anything. */
@@ -98,10 +104,22 @@ interface Parts {
   localFields?: Record<string, string>;
   /** Any other secret slot, by name — what the per-slot guard below varies. */
   remoteExtra?: Record<string, unknown>;
+  /** What `vaultKeys.storedPin` answers. undefined = this machine has no Sync PIN stored. */
+  storedPin?: string;
+  /** The keychain REFUSES to answer — a third state, and not the same as "no PIN stored". */
+  storedPinThrows?: boolean;
 }
 
 function world(): World {
-  const w: World = { mod: undefined as never, writes: [], applied: 0, warnings: [], errors: [], logs: [] };
+  const w: World = {
+    mod: undefined as never,
+    writes: [],
+    applied: 0,
+    warnings: [],
+    errors: [],
+    logs: [],
+    prompts: [],
+  };
   const config = configStub({ autoSync: false });
   w.mod = loadWithVscode<Sync>('../syncManager', {
     workspace: {
@@ -109,8 +127,9 @@ function world(): World {
       onDidChangeConfiguration: (): { dispose(): void } => ({ dispose: (): void => undefined }),
     },
     window: {
-      showWarningMessage: (m: string): Promise<undefined> => {
+      showWarningMessage: (m: string, ...buttons: string[]): Promise<undefined> => {
         w.warnings.push(m);
+        w.prompts.push({ message: m, buttons });
         return Promise.resolve(undefined);
       },
       showErrorMessage: (m: string): Promise<undefined> => {
@@ -148,6 +167,10 @@ function manager(w: World, parts: Parts): InstanceType<Sync['SyncManager']> {
   };
   const keys = {
     unlock: (): Promise<unknown> => Promise.resolve(parts.key),
+    storedPin: (): Promise<string | undefined> =>
+      parts.storedPinThrows === true
+        ? Promise.reject(new Error('the keychain refused'))
+        : Promise.resolve(parts.storedPin),
     decrypt: (): Promise<unknown> =>
       Promise.resolve({
         ...emptySnapshot(),
@@ -227,6 +250,64 @@ test('a locked vault is REPORTED, not silently skipped forever', async () => {
   }
 
   assert.ok(w.warnings.length > 0, 'the person is told which vault needs unlocking');
+});
+
+/** The notification is offered after an await, so let the microtasks behind it run. */
+const settle = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 5));
+
+test('a locked vault whose Sync PIN is already stored is offered UNLOCK, not a PIN change', async () => {
+  // The defect: the vault is locked because a timer elapsed, and the first button offered
+  // was "Set Sync PIN" — which does not unlock anything. It runs rekeyToNewPin, re-wrapping
+  // the vault under a NEW PIN and writing it to the sync location, after which every other
+  // machine stops opening the file. Offered to somebody whose PIN was never the problem.
+  const w = world();
+  const sync = manager(w, { raw: envelope(), key: undefined, storedPin: '4242' });
+
+  try {
+    await sync.syncNow();
+    await settle();
+  } finally {
+    sync.dispose();
+  }
+
+  const prompt = w.prompts.at(-1);
+  assert.ok(prompt, 'the locked vault raised a notification');
+  assert.deepEqual(prompt.buttons, ['Unlock…'], 'no PIN change is proposed for a lock');
+});
+
+test('a locked vault with NO stored Sync PIN still offers to set one — after unlock', async () => {
+  // Here the offer is real: background sync cannot run unattended without a stored PIN, so
+  // setting one is a fix. It is still the SECOND button, because the immediate problem is
+  // the lock and the destructive action must never be the one under the cursor.
+  const w = world();
+  const sync = manager(w, { raw: envelope(), key: undefined, storedPin: undefined });
+
+  try {
+    await sync.syncNow();
+    await settle();
+  } finally {
+    sync.dispose();
+  }
+
+  assert.deepEqual(w.prompts.at(-1)?.buttons, ['Unlock…', 'Set Sync PIN…']);
+});
+
+test('a keychain that REFUSES to say whether a PIN is stored does not offer the re-key', async () => {
+  // Three answers, not two. A lookup that failed is not evidence that no PIN is stored, and
+  // the two are only interchangeable if the extra offer is harmless — this one rewrites the
+  // vault for every machine. Raised by two review vendors against this plan's first draft,
+  // which degraded the other way.
+  const w = world();
+  const sync = manager(w, { raw: envelope(), key: undefined, storedPinThrows: true });
+
+  try {
+    await sync.syncNow();
+    await settle();
+  } finally {
+    sync.dispose();
+  }
+
+  assert.deepEqual(w.prompts.at(-1)?.buttons, ['Unlock…'], 'an unknown answer degrades to safety');
 });
 
 test('a DETECTED TAMPER fails the cycle closed — it is never healed into a valid file', async () => {

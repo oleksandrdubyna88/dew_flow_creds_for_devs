@@ -36,3 +36,43 @@ export function lockedNotice(emails: readonly string[]): LockedNotice {
     single: false,
   };
 }
+
+/** What the single-vault notification may offer, as an action rather than a label. */
+export type LockedButton = 'unlock' | 'setPin';
+
+/**
+ * Whether a Sync PIN is stored on this machine — with the third answer that matters.
+ *
+ * <p>`unknown` is a keychain that would not say: locked, unavailable, or erroring. It is not
+ * the same as `no`, and treating it as one is what the review round caught in this fix's own
+ * plan. See {@link lockedButtons}.</p>
+ */
+export type StoredPinAnswer = 'yes' | 'no' | 'unknown';
+
+/** The words on those buttons — shared, so no second surface may invent its own. */
+export const LOCKED_BUTTON_LABELS: Readonly<Record<LockedButton, string>> = {
+  // Not "Unlock with Security Key": the command behind it opens the vault by whatever the
+  // vault has — a key touch, a typed PIN, or a choice between them (see unlockPlan). Named
+  // for the key, a person without one reads it as "not for me" and presses the other button.
+  unlock: 'Unlock…',
+  setPin: 'Set Sync PIN…',
+};
+
+/**
+ * What to offer for ONE locked vault, in the order it is offered.
+ *
+ * <p>A locked vault is a LOCK, not a PIN problem, and the two must not be confused here
+ * because the PIN button is not a label — `setPin` re-wraps the vault under a new PIN and
+ * writes it to the sync location, so every other machine stops opening the file until the
+ * same new PIN is typed there. Proposing that to somebody whose auto-lock timer elapsed is
+ * offering a fleet-wide credential rotation as the fix for a five-minute idle window.</p>
+ *
+ * <p>So it is offered only where it is genuinely the fix: no PIN stored at all, where
+ * background sync cannot run unattended. And never first — the destructive action is not the
+ * one under the cursor. An `unknown` answer counts as `yes`: a lookup that failed is no
+ * evidence that nothing is stored, and the safe side of that guess is the one that does not
+ * rewrite a vault.</p>
+ */
+export function lockedButtons(storedPin: StoredPinAnswer): readonly LockedButton[] {
+  return storedPin === 'no' ? ['unlock', 'setPin'] : ['unlock'];
+}

@@ -3,7 +3,7 @@ import * as vscode from 'vscode';
 import * as crypto from 'node:crypto';
 import { BackupError } from './cryptoUtils';
 import { StorageManager } from './storageManager';
-import { lockedNotice } from './lockedNotice';
+import { UnlockOffer, reportLockedVaults } from './lockedVaultPrompt';
 import { sharesFromEnvelope } from './shareFormat';
 import { emptySnapshot, mergeProfiles, ProfileSnapshot } from './syncMerge';
 import { ConvergedMark, isIdleCycle, markAfterCycle } from './syncIdle';
@@ -734,55 +734,23 @@ export class SyncManager implements vscode.Disposable {
     this.lockedThisCycle.push(account);
   }
 
-  /** One message for everything this cycle found locked. */
+  /** One message for everything this cycle found locked. The offer itself is its own module. */
   private reportLocked(): void {
     const locked = this.lockedThisCycle;
     this.lockedThisCycle = [];
-    if (locked.length === 0) {
-      return;
-    }
-    const notice = lockedNotice(locked.map((account) => account.email));
-    if (notice.single) {
-      this.offerUnlock(locked[0]);
-      return;
-    }
-    // With several vaults the buttons cannot act on "the" account, so the one button asks
-    // which — and then offers that vault exactly the choice a single one would have had.
-    void vscode.window.showWarningMessage(notice.message, 'Unlock…').then((choice) => {
-      if (choice === 'Unlock…') {
-        void this.pickAndUnlock(locked);
-      }
-    });
+    reportLockedVaults(locked, this.unlockOffer());
   }
 
-  private offerUnlock(account: StoredAccount): void {
-    void vscode.window
-      .showWarningMessage(
-        lockedNotice([account.email]).message,
-        'Set Sync PIN',
-        'Unlock with Security Key',
-      )
-      .then((choice) => {
-        if (choice === 'Set Sync PIN') {
-          void this.setPin(account);
-        } else if (choice === 'Unlock with Security Key') {
-          void vscode.commands.executeCommand('credSshManager.unlockWithSecurityKey', account);
-        }
-      });
-  }
-
-  private async pickAndUnlock(locked: readonly StoredAccount[]): Promise<void> {
-    const picked = await vscode.window.showQuickPick(
-      locked.map((account) => ({
-        label: account.email,
-        description: account.provider,
-        account,
-      })),
-      { title: 'Unlock a vault', placeHolder: 'All of these are locked on this machine' },
-    );
-    if (picked !== undefined) {
-      this.offerUnlock(picked.account);
-    }
+  /**
+   * The two things the offer cannot know: how to read this machine's stored PIN, and how to
+   * change it. Built per call so nothing here outlives a disposed manager.
+   */
+  private unlockOffer(): UnlockOffer {
+    return {
+      storedPin: (account) => this.keys.storedPin(account),
+      setPin: (account) => this.setPin(account),
+      log: (message) => this.log?.error('sync', message),
+    };
   }
 
   private warnOnce(account: StoredAccount, error: unknown): void {

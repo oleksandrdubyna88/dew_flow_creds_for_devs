@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { LOCKED_BUTTON_LABELS, lockedButtons } from '../lockedNotice';
 import { SyncFacts, syncReadiness } from '../syncReadiness';
 
 /**
@@ -99,4 +100,16 @@ test('the ready state offers no fix, because there is nothing to fix', () => {
   const r = syncReadiness({ ...nothing, hasLocation: true, hasStoredPin: true });
 
   assert.equal(r.fixCommand, undefined);
+});
+
+test('the icon and the locked-vault popup name the unlock action identically', () => {
+  // Two surfaces, one question. They were allowed to answer it separately, and the popup
+  // answered it wrongly for months: it proposed a PIN change to somebody whose vault was
+  // merely auto-locked, while this file already knew the answer was "Unlock". A shared
+  // constant is what makes "they cannot disagree" a fact rather than an intention.
+  const r = syncReadiness({ ...nothing, hasLocation: true, hasStoredPin: true, isLocked: true });
+
+  assert.equal(r.state, 'locked');
+  assert.equal(r.fixLabel, LOCKED_BUTTON_LABELS.unlock);
+  assert.equal(r.fixLabel, LOCKED_BUTTON_LABELS[lockedButtons('yes')[0]]);
 });

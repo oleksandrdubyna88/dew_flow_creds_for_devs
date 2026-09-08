@@ -1400,9 +1400,30 @@ cannot see.
 original behaviour and the failure was structural, not cosmetic: three stack in the corner,
 each covering the previous one's buttons, and a fourth is off-screen. The message **names**
 every locked vault rather than counting them away, because the reason for interrupting
-someone is that they cannot see which. One vault keeps its own two buttons; several get one
+someone is that they cannot see which. One vault keeps its own buttons; several get one
 `Unlock…` that picks an account and then offers that vault exactly the choice a single one
 would have had. `warnedAccounts` still dedupes per account per session, so nothing nags.
+
+**What a single vault is offered (1.1.1).** `lockedVaultPrompt.ts` owns the offer, and
+`lockedButtons` is the rule: a vault whose Sync PIN is stored on this machine gets **only**
+`Unlock…`; one with no stored PIN gets `Unlock…` and then `Set Sync PIN…`, in that order.
+The second button is not a label — `setPin` → `rekeyToNewPin` re-wraps the vault under a NEW
+PIN and writes it to the sync location, after which every other machine stops opening the
+file until the same PIN is typed there. It was offered FIRST to every locked vault until
+1.1.1, which meant a five-minute auto-lock timer proposed a fleet-wide credential rotation
+as the fix, while `syncReadiness` had answered `Unlock` for the same state all along. Both
+surfaces now take the word from `LOCKED_BUTTON_LABELS`, so they cannot drift apart again.
+
+"Is a PIN stored" is a **tri-state**: `yes | no | unknown`, and `unknown` — a keychain that
+would not answer — is treated as `yes`. A failed lookup is no evidence that nothing is
+stored, and the safe side of that guess is the one that does not rewrite a vault. The offer
+also never rejects: it is raised from a cycle nobody awaits, so a failure is logged through
+the diagnostic channel instead of becoming an unhandled rejection.
+
+The unlock button is deliberately not named for the security key. `credSshManager.unlockWithSecurityKey`
+is the GENERAL unlock — `unlockPlan` decides between a key touch, a typed PIN, or a choice
+between them — and labelled for the key, a person with no key reads it as "not for me" and
+presses the other one.
 
 ### The two viewers share their arithmetic (audit A1)
 
@@ -1644,6 +1665,10 @@ the report `Sync Now` prints. Locked is reported ahead of every "you are missing
 verdict, because telling somebody to set a PIN they already set, seconds after they pressed Lock,
 is how a status line stops being believed. A registered security key with no stored PIN is
 **not** green: a timer cannot touch a key, so unattended sync would keep stopping to ask.
+
+Its `isLocked` fix label comes from `LOCKED_BUTTON_LABELS.unlock` rather than a literal of its
+own — the auto-sync popup repeated the same decision separately and got it wrong (see *One
+notification for locked vaults*), which is what a shared constant now prevents.
 
 Readiness needs `SecretStorage`, which a `getTreeItem` call cannot await — so it is cached on the
 provider and recomputed at the moments it can change: startup, a sync cycle, a PIN being set, a

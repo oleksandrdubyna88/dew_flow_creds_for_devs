@@ -12,6 +12,8 @@
  * two vaults and two separate ways in. Sharing a location shares nothing else.</p>
  */
 
+import { LOCKED_BUTTON_LABELS } from './lockedNotice';
+
 export type SyncState =
   /** Everything needed is present; background sync can run unattended. */
   | 'ready'
@@ -55,7 +57,10 @@ export function syncReadiness(facts: SyncFacts): SyncReadiness {
       ready: false,
       reason: 'Locked. Sync is paused until you unlock.',
       fixCommand: 'credSshManager.unlockWithSecurityKey',
-      fixLabel: 'Unlock',
+      // The word comes from `lockedNotice`, which is where the auto-sync popup takes it from
+      // too. Repeating it here is how the two surfaces came apart: this file said "Unlock",
+      // the popup offered a PIN change, and only one of them was right.
+      fixLabel: LOCKED_BUTTON_LABELS.unlock,
     };
   }
 
