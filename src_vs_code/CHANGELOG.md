@@ -4,6 +4,52 @@ All notable changes to **CredsForDevs** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] — projects, an event log you can read, and a locked vault that offers to unlock
+
+### Added
+
+- **Projects (corporate epic 3).** An admin creates, assigns and removes projects from the tree, and
+  a Team row says which project a person is on. The assigned developer's project folder appears in
+  their own vault at the next sync, follows the project's name, is locked for them, and is removed
+  on instruction. A developer's share carries and binds its project, so the client stops offering
+  shares that could not be accepted.
+- **An event-log tab (corporate epic 4).** *Event Log…* on a corporate account row answers who
+  shared what: newest first, four groups to narrow by, and Load more. The server had recorded and
+  served the log for two stories; this is the half a person can read. An admin sees every row, and
+  so does a recovery officer.
+- **Generate API key**, beside Generate password and Generate passphrase. Deliberately not the
+  password generator with the length turned up, and it takes no options — length and character
+  classes are ignored, because the value is meant to be pasted rather than typed.
+
+### Fixed
+
+- **A locked vault was offered a PIN change instead of an unlock.** The auto-sync notification
+  showed both buttons unconditionally, with *Set Sync PIN* FIRST — including for a vault whose PIN
+  was already stored and which had merely auto-locked. That button is not a label: it re-wraps the
+  vault under a new PIN and writes it to the sync location, so every other machine stops opening the
+  file until the same PIN is typed there. A five-minute idle timer proposed a fleet-wide credential
+  rotation as its fix, while the readiness icon had answered *Unlock* for the same state all along.
+  Now a stored PIN is offered only the unlock; the PIN offer survives where it is genuinely the fix
+  (no PIN stored at all) and is never the first button. A keychain that cannot answer counts as
+  "a PIN is stored", because a failed lookup is no evidence that none is — and the safe side of that
+  guess is the one that does not rewrite a vault.
+- **A bearer token could be sent to a git host.** `isServerLocation` accepts anything `http(s)://`,
+  which `https://git.example.com/team/vault.git` passes — so a vault synced over git could be handed
+  a corporate client that sends `Authorization: Bearer <token>` to a git remote. The question is
+  asked once now, by `isCorpServerLocation`.
+- **A failed share removal read as success.** `removeShare` discarded the server's answer, so a 500
+  left the share in the inbox with nothing recorded, after the secret had already been imported.
+- **A cancelled prune lost the record of what it had already deleted**, so no later sweep could
+  retry those shares. It now stops early and hands back what it did.
+- **The event tab kept the OLDEST rows and dropped the newest** when trimming, a "no log here" answer
+  outlived the question that caused it, and a *more* with no cursor re-fetched the first page and
+  appended it to itself. A request in flight is no longer drawn into a closed tab.
+- **The vault is pulled before any project folder is reconciled**, and a folder that was kept is
+  adopted rather than duplicated — two machines seeding one assignment offline no longer mint two.
+- The event page takes its colours from `--vscode-*` alone; the literal fallbacks were copied from
+  another page and were wrong on a contrast theme.
+- A code-scanning alert: the page test's script-tag scan reads either spelling of the tag.
+
 ## [1.1.0] — the help speaks five languages, and one payment mark instead of nine
 
 ### Fixed
