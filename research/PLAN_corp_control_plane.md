@@ -1,22 +1,48 @@
 # PLAN — the corporate control plane: roles, blocking, projects, an event log, a server backup
 
-> Status: **plan only, nothing implemented yet, 2026-09-04.** Scope: the umbrella over five epic
-> plans that together turn a Cred Vault Server with recovery officers into a company deployment —
-> a members registry with roles, a server-held login key that makes a dev's vault file dead without
-> a live login, projects with a folder-based share rule, one append-only event log, and an encrypted
-> server backup. This document holds the decisions, the invariants, the shapes every epic shares, and
-> the order. Each epic carries its own code references, tests and Definition of Done.
+> Status: **IMPLEMENTED, 2026-09-07.** All five epics ship. A Cred Vault Server with recovery
+> officers is now a company deployment: a members registry with roles, a server-held login key that
+> makes a copied developer vault dead without a live login, projects with a folder-based share rule
+> the server enforces, one append-only event log with a scoped reader, and an encrypted backup of the
+> whole server that an administrator with no shell can take, schedule, send off the machine and
+> download.
 >
-> Epics, in build order: [PLAN_corp_registry_roles.md](../research/PLAN_corp_registry_roles.md) →
-> [PLAN_corp_blocking_login_key.md](../research/PLAN_corp_blocking_login_key.md) →
-> [PLAN_corp_projects_share_rule.md](../research/PLAN_corp_projects_share_rule.md) →
-> [PLAN_corp_event_log.md](../research/PLAN_corp_event_log.md) →
+> **Three tails, all a person's rather than a suite's**, and each named where it belongs rather than
+> counted as done: the **three-machine rehearsal** of corporate recovery and of a folder removal
+> ([PLAN_org_recovery_tail.md](../todo/PLAN_org_recovery_tail.md) and
+> [ЗАДАЧА_проверка_корп_восстановления.md](../todo/ЗАДАЧА_проверка_корп_восстановления.md)); the **live restore** of a server archive onto an empty stack
+> ([PLAN_corp_server_backup.md](PLAN_corp_server_backup.md), a tracked exception to that plan's own
+> Definition of Done); and the **German and Spanish help text**, written by the implementer and
+> wanting a native speaker's eye.
+>
+> **One decision deliberately left open for the owner**: `TimeProvider` in place of ambient
+> `DateTimeOffset.UtcNow`. The gate raised it in four consecutive rounds and it was rejected each
+> time as repo-wide rather than any one epic's — new code written across these five epics injects a
+> clock, while 27 ambient reads remain across the older files. Adopting it is its own task, and the
+> decision is the owner's rather than the implementer's.
+>
+> **What the epics changed about this document.** The founding sentence of
+> [architecture.md](architecture.md) was rewritten by epic 2, as this plan said it would be: the
+> server never holds enough to open a vault alone. `ProjectShare` (inherit/allow/deny), reserved here
+> in epic 1 and referenced by nothing, was DELETED in epic 3 rather than left as a trap — the shipped
+> vocabulary is `inherit | project | none`. Rotation on unblock was dropped rather than deferred,
+> because it orphans the vault it protects. And the growth table below gained the remote surface epic
+> 5 created, with the target LIST named as its unbounded dimension.
+>
+> The *Boundaries* table is the part to read before changing anything here: it grades every rule as
+> server-enforced or honest-client, so that nobody later "fixes" an export ban by moving it to a
+> server that cannot see an export.
+>
+> Epics, in build order: [PLAN_corp_registry_roles.md](PLAN_corp_registry_roles.md) →
+> [PLAN_corp_blocking_login_key.md](PLAN_corp_blocking_login_key.md) →
+> [PLAN_corp_projects_share_rule.md](PLAN_corp_projects_share_rule.md) →
+> [PLAN_corp_event_log.md](PLAN_corp_event_log.md) →
 > [PLAN_corp_server_backup.md](PLAN_corp_server_backup.md).
 >
-> Related docs: [architecture.md](../research/architecture.md) (§The trust boundary),
-> [module_server.md](../research/module_server.md), [module_extension.md](../research/module_extension.md),
-> [PLAN_org_recovery.md](../research/PLAN_org_recovery.md) (the only corporate feature that exists),
-> [PLAN_org_recovery_tail.md](PLAN_org_recovery_tail.md) (its unpaid rehearsal — a precondition here).
+> Related docs: [architecture.md](architecture.md) (§The trust boundary),
+> [module_server.md](module_server.md), [module_extension.md](module_extension.md),
+> [PLAN_org_recovery.md](PLAN_org_recovery.md) (the only corporate feature that exists),
+> [PLAN_org_recovery_tail.md](../todo/PLAN_org_recovery_tail.md) (its unpaid rehearsal — a precondition here).
 
 ## The symptom
 
@@ -265,7 +291,7 @@ is.
 
 ## Preconditions
 
-1. **The org-recovery rehearsal** in [PLAN_org_recovery_tail.md](PLAN_org_recovery_tail.md) item 1
+1. **The org-recovery rehearsal** in [PLAN_org_recovery_tail.md](../todo/PLAN_org_recovery_tail.md) item 1
    runs *before the first dev receives a login key*. After epic 2, break-glass is the only road into
    a blocked dev's vault and into every dev vault if `.env` is lost; a feature that has never been
    run by three people on three machines must not become the only door.

@@ -246,6 +246,18 @@ read. `data.restore-in-progress` names the archive, the displaced directory and 
 finishing or undoing an interrupted restore is reading one file rather than guessing from timestamps;
 a second run refuses while it exists.
 
+**The decoder is the deployment's own image, and that puts a rule on every future release.** The
+script runs the archive verbs through `VAULT_IMAGE` — the tag from this deployment's `.env`, not a
+reach for `:latest` — because the binary that reads an archive should be the one that writes them.
+A review round asked what happens when a later release changes the format, and the answer is a rule
+rather than a mechanism: **every format version this product has ever shipped stays readable by
+every later server.** The archive carries its version in its header and a reader REFUSES a version
+it does not know, so dropping a decoder fails loudly on an old archive rather than misreading one —
+which is the property that makes the rule enforceable instead of hopeful. What is deliberately not
+done is recording the writer's image reference inside the archive: that would pin a restore to a
+registry tag that may not exist by the time somebody needs it, which is a worse dependency than a
+versioned format read by whatever binary the operator has to hand.
+
 **The configuration snapshot is printed by KEY and never by value**, and removed from the restored
 tree. It holds the deployment KEK and the local signing key in clear — that is what it is for, so a
 restore onto a fresh host can work — and this script's output goes to a terminal, a CI log or
@@ -277,7 +289,7 @@ and nothing in it proves that a real archive from a real deployment restores ont
 vault readable again — and this one has not been. That is a **tracked exception to the Definition of
 Done** rather than a checklist item quietly left unticked: the script ships with its decisions
 exercised and its live rehearsal outstanding, named here, in
-[PLAN_corp_server_backup.md](../todo/PLAN_corp_server_backup.md) and in the epic's summary.
+[PLAN_corp_server_backup.md](PLAN_corp_server_backup.md) and in the epic's summary.
 
 ## Hardening summary
 

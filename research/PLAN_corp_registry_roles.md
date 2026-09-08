@@ -28,7 +28,7 @@
 > line, and the address is written into the log, a record's filename, an audit row and a share's
 > stamped sender.
 >
-> First of five epics under [PLAN_corp_control_plane.md](../todo/PLAN_corp_control_plane.md), which
+> First of five epics under [PLAN_corp_control_plane.md](PLAN_corp_control_plane.md), which
 > holds the owner decisions, the invariants and the shared shapes this plan implemented against. The
 > next epics build on it: [PLAN_corp_blocking_login_key.md](PLAN_corp_blocking_login_key.md)
 > takes `active` and `RequireAdmin` — and owes its own event row at its own call site, a seam a code
