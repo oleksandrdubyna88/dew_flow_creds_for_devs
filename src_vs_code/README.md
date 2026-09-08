@@ -904,7 +904,7 @@ before. The server decides what each person sees: an admin — or a recovery off
 unconditionally — reads the company, everybody else reads only the rows naming them. It records metadata — an entry's name and kind — and never a byte of what
 was in it.
 
-**Server Backup.** ***Server Backup…*** on an admin's account row takes one encrypted archive of
+**Server Backup.** ***Server Backup…*** on the account row of an admin — or of a recovery officer, who administers unconditionally — takes one encrypted archive of
 everything the server holds — every vault, the sealed login keys, the registry, projects, the event
 log and a snapshot of the server's own configuration — on a schedule, and sends it to an
 S3-compatible bucket or an Azure Blob container once a destination is configured. Minting the backup

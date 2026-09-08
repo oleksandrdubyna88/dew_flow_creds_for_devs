@@ -28,12 +28,28 @@ export interface BackupTabHost {
    * Show the words, once, and answer whether the person confirmed writing them down.
    *
    * <p>It returns a promise so the tab can wait: the key must not be able to scroll away behind a
-   * status refresh while somebody is still copying it.</p>
+   * status refresh while somebody is still copying it. And it returns a BOOLEAN because a person can
+   * discard them — the dialog cannot be made un-dismissable, and reporting that as success is what
+   * this signature exists to prevent.</p>
    */
-  readonly showKey: (minted: MintedBackupKey) => Promise<void>;
+  readonly showKey: (minted: MintedBackupKey) => Promise<boolean>;
   /** Stream the archive somewhere the person chose, or do nothing if they cancelled. */
   readonly saveArchive: () => Promise<void>;
 }
+
+/**
+ * What an administrator is told when they discard the words.
+ *
+ * <p>The remedy is real and it is deliberately not a button: rotation answers `501` because a new
+ * key orphans every archive the old one opens, and that is a decision. Removing the two files makes
+ * the server mint afresh — losing whatever was taken under the discarded key, which is nothing yet
+ * if this is dealt with before the next scheduled run.</p>
+ */
+const DISCARDED = 'The key was minted and its words were discarded. The server has already accepted '
+  + 'it, so every archive taken from now on is sealed under words nobody has — and nothing on this '
+  + 'screen can undo that. To start again, remove org/backup/key.sealed and org/backup/key.shown '
+  + 'from the server\'s data directory and mint a new key here; any archive taken under the '
+  + 'discarded one is unopenable for ever.';
 
 /** What one action came to: a sentence to show, or one to apologise with. Never both. */
 interface Settled {
@@ -130,8 +146,16 @@ export class BackupTab {
   private async mint(): Promise<void> {
     await this.attempt(async () => {
       const minted = await this.client.mintKey(this.account);
-      await this.host.showKey(minted);
+      const saved = await this.host.showKey(minted);
       this.status = await this.client.readStatus(this.account);
+      if (!saved) {
+        // NOT a cheerful notice. Delivering the response is what acknowledges the key on the server,
+        // so by now it is Ready whatever the person did with the dialog — and if they discarded the
+        // words, every archive from here on is sealed under something nobody has. Saying "the backup
+        // key is in place" there would be true and useless; what they need is the state they are in
+        // and the only way out of it, which is on the host rather than on this screen.
+        throw new Error(DISCARDED);
+      }
       return 'The backup key is in place. Its words will not be shown again.';
     });
   }

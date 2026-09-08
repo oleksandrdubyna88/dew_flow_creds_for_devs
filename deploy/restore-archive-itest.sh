@@ -44,6 +44,8 @@ world() {
   # the script under test is a child process and these have to be readable from inside it.
   printf '0' > "${WORLD}/verify-rc"
   printf '0' > "${WORLD}/down-rc"
+  printf '0' > "${WORLD}/rollback-down-rc"
+  printf '0' > "${WORLD}/downs"
   printf 'healthy' > "${WORLD}/health"
   write_shim
   PATH="${WORLD}/bin:${PATH}"
@@ -59,7 +61,14 @@ printf '%s\n' "$*" >> "${WORLD}/docker.log"
 
 case "$1 $2" in
   "compose down")
-    exit "$(cat "${WORLD}/down-rc")" ;;
+    # The first stop is the restore's; a later one is the rollback's. They are knobbed separately,
+    # because "the stack would not stop while rolling back" is its own scenario.
+    downs="$(cat "${WORLD}/downs" 2>/dev/null || echo 0)"
+    printf '%s' "$((downs + 1))" > "${WORLD}/downs"
+    if [[ "$downs" -eq 0 ]]; then
+      exit "$(cat "${WORLD}/down-rc")"
+    fi
+    exit "$(cat "${WORLD}/rollback-down-rc")" ;;
   "compose up")
     exit 0 ;;
   "compose ps")
@@ -193,6 +202,31 @@ check "...the original data is back where it was" \
   "$(cat "${WORLD}/deploy/data/vaults/alice.bin" 2>/dev/null)"
 check "...and the marker was cleared, so a retry is not refused" \
   "$(yesno test ! -f "${WORLD}/deploy/data.restore-in-progress")"
+
+# ---- 8. the rollback STOPS the stack before it touches the data ---------------------------------
+world; key
+printf 'starting' > "${WORLD}/health"
+run_restore >/dev/null 2>&1
+# The order is the assertion: `compose up` starts the stack, and nothing may move the data until a
+# `compose down` has taken it away again. A rollback that swaps directories under a running server
+# damages the copy it is writing and the one it is giving back.
+up_line="$(grep -n 'compose up' "$DOCKER_LOG" | head -1 | cut -d: -f1)"
+down_after="$(awk -v n="${up_line:-0}" 'NR>n && /compose down/ {print NR; exit}' "$DOCKER_LOG")"
+check "the rollback stops the stack before restoring the data" \
+  "$(yesno test -n "$down_after")" "$(cat "$DOCKER_LOG")"
+
+# ---- 9. a stack that will not stop during ROLLBACK leaves both copies alone ----------------------
+world; key
+printf 'starting' > "${WORLD}/health"
+printf '1' > "${WORLD}/rollback-down-rc"
+out="$(run_restore)"
+check "a rollback that cannot stop the stack says so" \
+  "$(yesno grep -q 'could NOT be stopped' <<<"$out")" "$out"
+check "...and does NOT swap the directories underneath it" \
+  "$(yesno bash -c "ls -d '${WORLD}/deploy/data.before-restore-'* >/dev/null")" \
+  "the displaced copy must still be where it was"
+check "...and leaves the marker, which names where the previous data is" \
+  "$(yesno test -f "${WORLD}/deploy/data.restore-in-progress")"
 
 printf '\n'
 if [[ "$FAILS" -eq 0 ]]; then

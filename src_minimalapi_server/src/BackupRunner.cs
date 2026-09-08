@@ -190,7 +190,14 @@ public sealed class BackupRunner(
             // three exception types and would have let a CryptographicException do exactly that.
             catch (Exception e)
             {
-                await FailAsync(ticket.Actor, ticket.StartedAt, e, uploads, ct);
+                // NOT `ct`. The commonest way to reach here is that `ct` was CANCELLED — a shutdown
+                // during a long build — and handing a cancelled token to the status write abandons
+                // it before it replaces the file. The status would then stay "in progress" for ever
+                // and the cancellation would escape a detached task: precisely the spinner this
+                // catch-all exists to prevent, produced by the catch-all itself. A terminal status
+                // is the last thing a run owes anybody, so it is written unconditionally — the same
+                // reading the event row below already makes.
+                await FailAsync(ticket.Actor, ticket.StartedAt, e, uploads, CancellationToken.None);
             }
         }
     }

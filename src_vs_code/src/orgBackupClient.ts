@@ -304,11 +304,31 @@ const TARGET_SHAPE: Readonly<Record<string, string>> = {
   at: 'number',
 };
 
+/**
+ * Every field a consumer reads, of its kind — and every INSTANT within the range a `Date` has.
+ *
+ * <p>`typeof x === 'number'` accepts `1e100`, and the page then calls
+ * `new Date(at).toISOString()`, which throws `RangeError` on anything outside ±8.64e15 ms. A
+ * refresh would end with no page drawn at all, which is a worse answer than the shape-mismatch
+ * sentence this guard exists to produce. `0` stays legal: it is how "never" is spelled.</p>
+ */
 function isBackupStatus(body: unknown): body is BackupStatus {
   const status = body as Record<string, unknown> | null;
   return matches(status, STATUS_SHAPE)
+    && isInstant(status.lastRunAt)
     && Array.isArray(status.targets)
-    && status.targets.every((target: unknown) => matches(target, TARGET_SHAPE));
+    && status.targets.every(
+      (target: unknown) => matches(target, TARGET_SHAPE)
+        && isInstant((target as Record<string, unknown>).at));
+}
+
+/** The widest instant a `Date` can render, which is what every caller does with these. */
+const LATEST_INSTANT = 8.64e15;
+
+function isInstant(value: unknown): boolean {
+  return typeof value === 'number'
+    && Number.isFinite(value)
+    && Math.abs(value) <= LATEST_INSTANT;
 }
 
 /** Every field of a shape, present and of its kind. */
