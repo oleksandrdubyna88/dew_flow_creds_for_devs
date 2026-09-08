@@ -266,13 +266,32 @@ public sealed class AzureBlobTarget(
         }
     }
 
-    /// <summary>The answer, with the deadline source handed over to it.</summary>
+    /// <summary>
+    /// The answer, with the deadline source handed over to it.
+    /// </summary>
+    /// <remarks>
+    /// The response is wrapped in an <see cref="Answer"/> BEFORE its error body is read, because
+    /// reading that body can throw — the deadline fires, the connection drops — and a response that
+    /// never reached an owner is never disposed. Repeated failures would then hold connections until
+    /// the pool is exhausted, which presents as a backup that hangs rather than as a leak.
+    /// </remarks>
     private async Task<Answer> AnsweredAsync(HttpRequestMessage request, CancellationTokenSource deadline)
     {
         var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, deadline.Token);
-        return response.IsSuccessStatusCode
-            ? new Answer(response, string.Empty, deadline)
-            : new Answer(response, await FailureAsync(response, deadline.Token), deadline);
+        var answer = new Answer(response, string.Empty, deadline);
+        if (response.IsSuccessStatusCode)
+        {
+            return answer;
+        }
+        try
+        {
+            return answer with { Failure = await FailureAsync(response, deadline.Token) };
+        }
+        catch
+        {
+            answer.Dispose();
+            throw;
+        }
     }
 
     /// <summary>A failure this client turns into a sentence, rather than one it must not swallow.</summary>

@@ -165,6 +165,17 @@ rollback() {
   cleanup
   [[ $rc -eq 0 ]] && return 0
   warn "restore failed — putting everything back"
+  # STOP FIRST, and move nothing if it will not stop. By the time this runs the stack may well be UP:
+  # the commonest failure here is a health check that never goes green, and `docker compose up -d`
+  # has already handed the containers ${DATA_DIR} as a bind mount. Removing that directory and
+  # swapping another in underneath a running server damages both copies — the restored one it is
+  # writing to, and the original this function exists to give back.
+  if ! docker compose down >/dev/null 2>&1; then
+    warn "the stack could NOT be stopped, so the data was not moved back."
+    warn "the previous data is at ${DISPLACED} and ${MARKER} names it."
+    warn "stop the stack by hand, swap them, then remove the marker."
+    return "$rc"
+  fi
   if [[ -n "$DISPLACED" && -d "$DISPLACED" ]]; then
     rm -rf "$DATA_DIR"
     mv "$DISPLACED" "$DATA_DIR"

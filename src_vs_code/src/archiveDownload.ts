@@ -43,10 +43,13 @@ export async function writeArchiveTo(
       onProgress?.(written);
     });
     await pipeline(source, fs.createWriteStream(partial));
+    // INSIDE the try. The rename fails on its own account — the destination is a directory, the
+    // volume is full, a permission changed — and a rename left outside would leave the `.part` file
+    // behind on exactly the path that promises to clean up after every failure.
+    await fs.promises.rename(partial, destination);
   } catch (failure) {
     throw await withCleanup(failure, partial);
   }
-  await fs.promises.rename(partial, destination);
   return written;
 }
 

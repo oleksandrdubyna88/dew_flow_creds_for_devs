@@ -61,26 +61,37 @@ export function showOrgBackup(client: OrgBackupClient, account: StoredAccount): 
  * <p>The key is never written to a file by this extension, never logged, and never put in the
  * webview's DOM. Clipboard is the person's own choice, made by pressing a button.</p>
  */
-async function showKeyOnce(minted: MintedBackupKey, account: StoredAccount): Promise<void> {
+async function showKeyOnce(minted: MintedBackupKey, account: StoredAccount): Promise<boolean> {
   const warning = `This is the backup key for ${account.email}. It is shown ONCE — nothing can `
     + 'produce it again, and without it every archive this server takes is unopenable. It is the '
     + 'highest-value secret in the deployment: this key and one archive rebuild everything, '
     + 'including the key that seals developer logins. Write it down somewhere off this machine.';
   // Shown again and again until the person says one of the two things that end it. Copying does
   // not end it: somebody who copies still has to say they have saved it.
-  while (!(await shownOnce(warning, minted))) {
-    continue;
+  for (;;) {
+    const ending = await shownOnce(warning, minted);
+    if (ending !== 'again') {
+      // SAVED or DISCARDED, and the caller is told which. The server acknowledged this key by
+      // answering, so a discard leaves a deployment sealing archives under words nobody has — and
+      // reporting that as an ordinary success is the one thing this return value prevents.
+      return ending === 'saved';
+    }
   }
 }
 
-/** One showing. True when this dialog is finished with, false to put it up again. */
-async function shownOnce(warning: string, minted: MintedBackupKey): Promise<boolean> {
+/** How one showing ended: they saved it, they threw it away, or the dialog goes up again. */
+type KeyEnding = 'saved' | 'discarded' | 'again';
+
+async function shownOnce(warning: string, minted: MintedBackupKey): Promise<KeyEnding> {
   const answer = await askOnce(warning, minted);
   if (answer === 'Copy to clipboard') {
     await vscode.env.clipboard.writeText(minted.key);
-    return false;
+    return 'again';
   }
-  return answer === 'I have saved it' || !(await wantsItAgain());
+  if (answer === 'I have saved it') {
+    return 'saved';
+  }
+  return (await wantsItAgain()) ? 'again' : 'discarded';
 }
 
 /** The modal itself. Its own function so the loop above is a decision and not a dialog. */

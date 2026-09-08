@@ -329,6 +329,17 @@ one after another inside the cycle that repaints the tree; and a notice map pers
 healthy account per cycle. Each is now pinned — the filename by a table of six hostile shapes paired
 with an ordinary one, the concurrency by counting reads in flight, the write by counting writes.
 
+**The automated reviewer's round added six more**, each red first: a run cancelled mid-build still
+reaches a terminal status (the catch-all was handing the CANCELLED token to the status write, so
+"in progress" would have survived for ever — the spinner the catch-all exists to prevent, produced by
+the catch-all); a rename that fails leaves no `.part` file behind; an instant no `Date` can render is
+refused rather than crashing the page on `toISOString`; words the person DISCARDED are not reported
+as a key in place; and two more restore scenarios — the rollback stops the stack before it touches
+the data, and a rollback that cannot stop it moves nothing and says so. That last pair is a data-loss
+path: `docker compose up -d` has already handed the containers the data directory by the time a
+health check fails, and swapping directories underneath a running server damages the restored copy
+and the original at once.
+
 **And a tier that did not exist: `deploy/restore-archive-itest.sh`.** It runs the restore script as a
 PROGRAM with `docker` replaced by a recording shim — seven scenarios, 23 assertions — because the
 script's design is its order and reading cannot check an order. It is what says *"the stack was never

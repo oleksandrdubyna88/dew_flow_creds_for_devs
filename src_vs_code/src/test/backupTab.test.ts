@@ -57,7 +57,7 @@ function world(client: Partial<BackupReader>, over: Partial<BackupTabHost> = {})
     draw: (html) => drawn.push(html),
     showKey: () => {
       order.push('showKey');
-      return Promise.resolve();
+      return Promise.resolve(true);
     },
     saveArchive: () => Promise.resolve(),
     ...over,
@@ -82,6 +82,24 @@ test('the key is SHOWN before the status is read back, never after', async () =>
   await w.tab.handle({ type: 'mint' });
 
   assert.deepEqual(w.order, ['showKey', 'read']);
+});
+
+test('words the person DISCARDED are not reported as a key in place', async () => {
+  // Delivering the mint response is what acknowledges the key on the server, so by the time this
+  // dialog closes the key is Ready whatever was pressed. A person who discards the words therefore
+  // has a deployment that will seal every future archive under something nobody has — and telling
+  // them "the backup key is in place" would be true and useless. The screen has to say the state
+  // they are in and the only way out of it, which is on the host rather than here.
+  const w = world({}, { showKey: () => Promise.resolve(false) });
+
+  await w.tab.handle({ type: 'mint' });
+
+  const last = w.drawn.at(-1) ?? '';
+  // The status line still reads "A backup key is in place" — that is TRUE, the server accepted it.
+  // What must not appear is the mint's own success sentence, and what must appear is the state.
+  assert.ok(!last.includes('will not be shown again'), 'the success notice is not drawn');
+  assert.match(last, /discarded/);
+  assert.match(last, /key\.sealed/, 'and it names the file that starts the deployment again');
 });
 
 test('a mint the server refuses leaves the words unshown and says why', async () => {

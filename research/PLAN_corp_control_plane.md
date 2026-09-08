@@ -41,7 +41,8 @@
 >
 > Related docs: [architecture.md](architecture.md) (§The trust boundary),
 > [module_server.md](module_server.md), [module_extension.md](module_extension.md),
-> [PLAN_org_recovery.md](PLAN_org_recovery.md) (the only corporate feature that exists),
+> [PLAN_org_recovery.md](PLAN_org_recovery.md) (the corporate feature that existed BEFORE these five,
+> and the one whose roster is what makes corp mode a consequence rather than a setting),
 > [PLAN_org_recovery_tail.md](../todo/PLAN_org_recovery_tail.md) (its unpaid rehearsal — a precondition here).
 
 ## The symptom

@@ -81,6 +81,19 @@ test('a failed download does NOT destroy the archive already at that path', asyn
   assert.equal(fs.readFileSync(destination, 'utf8'), 'last week, and it opens');
 });
 
+test('a rename that fails leaves no temporary file behind either', async () => {
+  // The rename fails on its own account — the destination is a DIRECTORY here, and on a real machine
+  // it is a full volume or a permission that changed — and it used to sit outside the try, so the
+  // `.part` file survived on the one path that promises to clean up after every failure.
+  const dir = tempDir();
+  const destination = path.join(dir, 'occupied');
+  fs.mkdirSync(destination);
+
+  await assert.rejects(() => writeArchiveTo(streamOf(bytes('abc')), destination));
+
+  assert.deepEqual(fs.readdirSync(dir), ['occupied'], 'no .part file was left beside it');
+});
+
 test('progress is reported as it goes, so a 400 MB download is not a frozen window', async () => {
   const dir = tempDir();
   const seen: number[] = [];

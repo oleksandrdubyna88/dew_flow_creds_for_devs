@@ -63,6 +63,31 @@ public class BackupRunnerTests
     }
 
     [Fact]
+    public async Task ACancelledRunStillReachesATerminalStatus()
+    {
+        // The one path that could still strand a spinner, and the catch-all is what produces it: a
+        // shutdown cancels `ct` mid-build, the catch-all catches the cancellation, and then hands the
+        // SAME cancelled token to the status write — which abandons it before the file is replaced.
+        // "In progress" would survive until the next restart's sweep, and on a server that does not
+        // restart, for ever.
+        var world = await Ready();
+        using var stopping = new CancellationTokenSource();
+        var start = await world.Runner.BeginAsync("admin@corp.com", Ct);
+        start.Ticket.Should().NotBeNull();
+        (await world.Backups.ReadStatusAsync(Ct)).LastResult
+            .Should().Be(BackupRunResults.InProgress, "the run announced itself before the work");
+
+        await stopping.CancelAsync();
+        await world.Runner.ContinueAsync(start.Ticket!, stopping.Token);
+
+        var status = await world.Backups.ReadStatusAsync(Ct);
+        BackupRunResults.IsRunning(status.LastResult).Should().BeFalse(
+            "a cancelled run is finished, and a status nobody will ever advance is a spinner all night");
+        status.LastResult.Should().Be(BackupRunResults.Failed);
+        world.Backups.RunIsLive().Should().BeFalse("and the claim went with the ticket");
+    }
+
+    [Fact]
     public async Task ARunNEVERInheritsTheTargetRowsOfTheRunBeforeIt()
     {
         // BackupRunner is registered as a SINGLETON, so anything it keeps in a field outlives the run

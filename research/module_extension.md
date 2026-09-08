@@ -4172,6 +4172,16 @@ are unrecoverable by CONSTRUCTION: what the server keeps is their HKDF output.
 **The tab shows the key BEFORE it re-reads the status**, and that ordering is a test. A status refresh
 redrawing the page underneath a dialog somebody is copying from is exactly how a key is lost.
 
+**And a DISCARD is not reported as a success.** The dialog cannot be made un-dismissable — Escape
+always works — so *Discard it anyway* has to exist. What it must not do is produce "the backup key is
+in place": delivering the mint response is what acknowledges the key on the server, so by the time
+the dialog closes the key is `Ready` whatever was pressed, and a person who discarded the words now
+has a deployment that will seal every future archive under something nobody has. `showKey` therefore
+answers a BOOLEAN, and a discard draws the state they are in plus the only way out of it, which is on
+the host and not on this screen: remove `org/backup/key.sealed` and `org/backup/key.shown` from the
+data directory and mint again. Rotation is not a button — it answers `501`, because a new key orphans
+every archive the old one opens, and that is a decision.
+
 **Mint is offered only where the server would accept it.** A key that is `Ready` may not be minted
 over — the server refuses — and a button that answers "already minted" teaches nobody anything. A key
 `AwaitingAcknowledgement` does offer it, because that is the safe retry after a mint whose response

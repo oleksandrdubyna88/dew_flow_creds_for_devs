@@ -241,6 +241,26 @@ test('a status whose TARGET rows are malformed is refused too', async () => {
   await assert.rejects(() => client().readStatus(account), /shape this build cannot read/);
 });
 
+test('an instant no Date can render is refused, rather than crashing the page', async () => {
+  // `typeof x === 'number'` says yes to 1e100. `new Date(1e100).toISOString()` throws RangeError,
+  // and the page calls exactly that — so a refresh would end with nothing drawn at all, which is a
+  // worse answer than the shape-mismatch sentence this client exists to produce.
+  respondWith(200, { ...STATUS, lastRunAt: 1e100 });
+  await assert.rejects(() => client().readStatus(account), /shape this build cannot read/);
+
+  respondWith(200, {
+    ...STATUS,
+    targets: [{ kind: 's3', where: 'w', result: 'ok', error: '', retention: '', at: 1e100 }],
+  });
+  await assert.rejects(() => client().readStatus(account), /shape this build cannot read/);
+});
+
+test('and zero still means never, which is how a fresh deployment reads', async () => {
+  respondWith(200, { ...STATUS, lastRunAt: 0 });
+
+  assert.equal((await client().readStatus(account)).lastRunAt, 0);
+});
+
 test('a status with a well-formed target row is accepted', async () => {
   respondWith(200, {
     ...STATUS,
