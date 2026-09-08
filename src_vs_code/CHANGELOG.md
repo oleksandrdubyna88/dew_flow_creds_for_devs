@@ -4,6 +4,30 @@ All notable changes to **CredsForDevs** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Server Backup (corporate epic 5).** *Server Backup…* on the account row of an admin — or of a
+  recovery officer, who administers unconditionally — takes one encrypted archive of everything a
+  self-hosted server holds: every vault, the sealed login keys, the members registry, projects, the
+  event log and a snapshot of the server's own configuration. On a schedule, and off the machine
+  entirely once an S3-compatible bucket or an Azure Blob container is configured. The tab shows the
+  last run, the newest archive, and a row per destination saying whether the upload arrived **and**
+  whether the retention pass could then run — an archive that reached a destination whose old
+  archives can no longer be listed is a success and an unbounded directory at once, and one column
+  cannot say both.
+
+  Minting the backup key shows its words **once**: what the server keeps is derived from them and
+  HKDF does not run backwards, so the dialog is modal, offers Copy, and does not treat being
+  dismissed as being saved. A deployment with no key, or whose last run failed, is said out loud —
+  once a day, or once an hour while failing — because the failure this exists to end is a scheduler
+  refusing every five minutes with nobody watching.
+
+  Restoring is `deploy/restore-archive.sh` on the host: it asks for the same words, and checks
+  everything it can — the archive verifies, the key opens it, the tree extracts — before the stack is
+  stopped or a byte of current data is moved.
+
 ## [1.2.0] — projects, an event log you can read, and a locked vault that offers to unlock
 
 ### Added
