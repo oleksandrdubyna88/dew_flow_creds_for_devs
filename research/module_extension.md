@@ -2252,6 +2252,13 @@ gate before a line was written, and watched failing before they were fixed:
   so an escaping rejection would replace a success with a generic command failure and take the
   `Show PIN` offer down with it — the same trap `deliverBatch` warns about for `withheldNote`.
 
+- **A PARTIAL failure still hands over the PIN.** When some recipients received the entry and
+  others did not, the sender used to get a bare error: no re-copy, no reveal. Those recipients hold
+  a sealed entry, the PIN is stored nowhere, and the window opened when it was drawn may have closed
+  while delivery ran — so withholding it there leaves them with something nobody alive can open.
+  Both terminal messages now go through the same offer; when NOTHING was delivered there is nobody
+  to give it to and the offer is suppressed.
+
 The end-to-end assertion is the one that matters and the only one that could catch all of the above:
 `shareInbox.test.ts` opens the DELIVERED share using the clipboard's contents. Sabotaged with one
 extra character on the sealed PIN it fails with the error the recipient would actually meet —

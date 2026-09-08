@@ -510,3 +510,64 @@ test('escaping the repeat box cancels quietly — it is not a mismatch', async (
     'and nobody is told their PINs did not match when they simply backed out',
   );
 });
+
+/**
+ * A partial failure is the sharpest case the generated PIN has, and the first version of this
+ * feature walked past it: some recipients HOLD the share, the PIN is stored nowhere, and the
+ * window opened when it was drawn may well have closed while delivery was running. Handing the
+ * sender an error with no way to reproduce the PIN leaves those recipients with a sealed entry
+ * nobody alive can open.
+ */
+test('a partly failed share still offers the PIN the delivered recipients need', async () => {
+  const w = world();
+  const node: TreeNode = {
+    id: 'partly',
+    name: 'partly',
+    type: 'entity',
+    parentId: null,
+    details: { id: 'partly', name: 'partly', isSshEnabled: false },
+  };
+  await w.storage.addNode(RECIPIENT.accountId, node);
+  await w.storage.setPassword(RECIPIENT.accountId, node.id, 'pw');
+  const good = { ...TEAM_MEMBER, account: { ...SENDER, email: 'good@corp.com' } };
+  const bad = { ...TEAM_MEMBER, account: { ...SENDER, email: 'bad@corp.com' } };
+  ui.deliveryFailsFor = 'bad@';
+  ui.quickPickAnswers = [[
+    { label: good.account.email, member: good },
+    { label: bad.account.email, member: bad },
+  ]];
+  ui.inputs = [GENERATE];
+
+  await w.inbox.shareNodes(RECIPIENT.accountId, [node]);
+
+  assert.equal(w.delivered.length, 1, 'one recipient received it, one did not');
+  assert.equal(ui.errors.length, 1, 'and the failure is still reported as a failure');
+  assert.deepEqual(
+    ui.errorActions.at(-1),
+    ['Copy again', 'Show PIN'],
+    'the sender must still be able to give the PIN to whoever DID receive it',
+  );
+  const payload = loaded.openShare(w.delivered[0] as never, KEY_ID, ui.clipboard);
+  assert.equal(payload.secrets.password, 'pw', 'and the clipboard still holds the sealed PIN');
+});
+
+test('a share that reached nobody offers no PIN — there is nobody to give it to', async () => {
+  const w = world();
+  const node: TreeNode = {
+    id: 'nobody',
+    name: 'nobody',
+    type: 'entity',
+    parentId: null,
+    details: { id: 'nobody', name: 'nobody', isSshEnabled: false },
+  };
+  await w.storage.addNode(RECIPIENT.accountId, node);
+  const bad = { ...TEAM_MEMBER, account: { ...SENDER, email: 'bad@corp.com' } };
+  ui.deliveryFailsFor = 'bad@';
+  ui.quickPickAnswers = [[{ label: bad.account.email, member: bad }]];
+  ui.inputs = [GENERATE];
+
+  await w.inbox.shareNodes(RECIPIENT.accountId, [node]);
+
+  assert.equal(w.delivered.length, 0);
+  assert.deepEqual(ui.errorActions.at(-1), [], 'nothing was sealed for anyone');
+});

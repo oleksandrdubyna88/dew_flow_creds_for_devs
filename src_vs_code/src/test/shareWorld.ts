@@ -52,10 +52,16 @@ const ui = {
   clipboardWrites: 0,
   /** Make every clipboard write REJECT — a locked session, or no clipboard provider at all. */
   clipboardFails: false,
+  /** Make delivery to recipients whose email contains this REJECT — a partial failure. */
+  deliveryFailsFor: '',
   /** Which action a test presses on an information message ('Copy again', 'Show PIN'). */
   infoAnswer: undefined as string | undefined,
   /** The actions each information message offered, in order. */
   infoActions: [] as string[][],
+  /** The actions each ERROR message offered — a partial failure still has a PIN to hand over. */
+  errorActions: [] as string[][],
+  /** Which action a test presses on an error message. */
+  errorAnswer: undefined as string | undefined,
   /** Message texts shown MODALLY — where the PIN is allowed to appear, and only there. */
   modals: [] as string[],
 };
@@ -68,6 +74,11 @@ const ui = {
  * WHICH of two boxes it meant.</p>
  */
 const GENERATE = '#generate';
+
+/** Whether this recipient's inbox is the one a test asked to reject. */
+function refuses(email: string): boolean {
+  return ui.deliveryFailsFor !== '' && email.includes(ui.deliveryFailsFor);
+}
 
 interface FakeBox {
   value: string;
@@ -149,8 +160,11 @@ function resetUi(): void {
   ui.clipboard = '';
   ui.clipboardWrites = 0;
   ui.clipboardFails = false;
+  ui.deliveryFailsFor = '';
   ui.infoAnswer = undefined;
   ui.infoActions = [];
+  ui.errorActions = [];
+  ui.errorAnswer = undefined;
   ui.modals = [];
 }
 
@@ -207,9 +221,13 @@ const loaded = ((): {
             ui.infoActions.push(actions);
             return Promise.resolve(ui.infoAnswer);
           },
-          showErrorMessage: (message: string): Promise<undefined> => {
+          showErrorMessage: (
+            message: string,
+            ...actions: string[]
+          ): Promise<string | undefined> => {
             ui.errors.push(message);
-            return Promise.resolve(undefined);
+            ui.errorActions.push(actions);
+            return Promise.resolve(ui.errorAnswer);
           },
           // Runs the task straight through: what the notification is for is the SECONDS the
           // recipient-side wrap takes, and a test that skipped it would not be exercising the wrap.
@@ -366,7 +384,12 @@ function world(): World {
   const delivered: unknown[] = [];
   const sharing = {
     teamFor: () => team,
-    appendShares: (_sender: unknown, _recipient: unknown, items: unknown[]) => {
+    // `account` is not optional on a TeamMember, and spelling it as if it were cost this method
+    // three points of cyclomatic complexity for a case that cannot arise.
+    appendShares: (_sender: unknown, recipient: { account: { email: string } }, items: unknown[]) => {
+      if (refuses(recipient.account.email)) {
+        return Promise.reject(new Error('the inbox refused'));
+      }
       delivered.push(...items);
       return Promise.resolve();
     },
