@@ -10,7 +10,8 @@ import { buildExternalBundle } from '../externalBundle';
 import { exportSensitiveNote, paymentFieldsInExport } from '../paymentRedaction';
 import { resolveBulkTargets } from '../commandTargets';
 import { encryptJson } from '../cryptoUtils';
-import { pinValidator } from '../pinInput';
+import { SharePin } from '../sharePin';
+import { announceHandover, chooseExportPassword, discardTransitPin } from '../transitPinPrompt';
 
 /**
  * `credSshManager.exportExternal` — the one command that writes decrypted secrets to a file the
@@ -34,6 +35,11 @@ export interface ExportCommandHost {
 interface ExportFile {
   readonly content: string;
   readonly ext: string;
+  /**
+   * The password this file is sealed with. Absent on the plain-JSON form, which has none — which is
+   * what keeps `save` honest about which of the two forms it just wrote.
+   */
+  readonly pin?: SharePin;
 }
 
 export function registerExportCommand(host: ExportCommandHost): void {
@@ -179,15 +185,18 @@ async function plainForm(
     : undefined;
 }
 
+/**
+ * The whole password, not just its text: `SharePin` carries where the value came from, and the
+ * message at the end of this command may offer completely different things depending on that.
+ *
+ * <p>`undefined` — Escape, or a repeat box mismatched or backed out of — ends the export with
+ * nothing written, exactly as it always did. There is deliberately no retry loop: *both boxes or
+ * nothing* is `confirmTyped`'s existing contract on the share path, and the point of moving this
+ * one onto the shared box is that the two behave identically.</p>
+ */
 async function sealedForm(bundle: unknown): Promise<ExportFile | undefined> {
-  const password = await vscode.window.showInputBox({
-    title: 'Password for the export',
-    prompt: 'Tell it to the recipient out-of-band — it is the only key to this file.',
-    password: true,
-    ignoreFocusOut: true,
-    validateInput: pinValidator('choosing'),
-  });
-  return password === undefined ? undefined : { content: encryptJson(bundle, password), ext: 'enc' };
+  const pin = await chooseExportPassword();
+  return pin === undefined ? undefined : { content: encryptJson(bundle, pin.value), ext: 'enc', pin };
 }
 
 async function save(file: ExportFile, exportName: string, nodeCount: number): Promise<void> {
@@ -200,10 +209,47 @@ async function save(file: ExportFile, exportName: string, nodeCount: number): Pr
     filters: file.ext === 'json' ? { JSON: ['json'] } : { 'Encrypted export': ['enc'] },
   });
   if (targetUri === undefined) {
+    await abandon(file);
     return;
   }
-  await vscode.workspace.fs.writeFile(targetUri, Buffer.from(file.content, 'utf8'));
-  void vscode.window.showInformationMessage(`Exported ${nodeCount} node(s) to ${targetUri.fsPath}.`);
+  try {
+    await vscode.workspace.fs.writeFile(targetUri, Buffer.from(file.content, 'utf8'));
+  } catch (err) {
+    await abandon(file);
+    throw err;
+  }
+  await announceWritten(file, nodeCount, targetUri.fsPath);
+}
+
+/**
+ * The export did not happen: no file exists, so its password is a secret for nothing.
+ *
+ * <p>This is the fourth route out of a drawn value, and the only one that is not in the box's own
+ * file — the save dialog is raised long after the password is chosen, and a native file dialog is
+ * somewhere a person can sit for minutes before backing out of it.</p>
+ */
+async function abandon(file: ExportFile): Promise<void> {
+  if (file.pin !== undefined) {
+    await discardTransitPin(file.pin);
+  }
+}
+
+/**
+ * The file landed, and now its password has to reach a person.
+ *
+ * <p>Through the same announcement the share path uses, and for a sharper version of the same
+ * reason: the 45 s clipboard window starts at the copy, and between drawing the password and this
+ * line there is a form to pick and a native save dialog to walk. `announceHandover` re-copies
+ * immediately before it speaks, so the sentence about the clipboard is true when it is READ. A
+ * typed password is offered nothing — it was never ours to re-copy.</p>
+ */
+async function announceWritten(file: ExportFile, nodeCount: number, where: string): Promise<void> {
+  const headline = `Exported ${nodeCount} node(s) to ${where}.`;
+  if (file.pin === undefined) {
+    void vscode.window.showInformationMessage(headline);
+    return;
+  }
+  await announceHandover(headline, '', file.pin);
 }
 
 /** A node's name as a file name: no separators, no traversal, never empty. */

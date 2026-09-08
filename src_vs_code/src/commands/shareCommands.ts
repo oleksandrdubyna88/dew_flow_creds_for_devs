@@ -4,7 +4,7 @@
 import { serializePaymentFields } from '../paymentFields';
 import { redactPaymentForShare } from '../paymentRedaction';
 import { ShareInbox } from '../shareInbox';
-import { chooseSharePin } from '../sharePinPrompt';
+import { chooseSharePin } from '../transitPinPrompt';
 import { SharingManager } from '../sharingManager';
 import { StorageManager } from '../storageManager';
 import { resolveBulkTargets } from '../commandTargets';

@@ -5,9 +5,16 @@ import { pinValidator } from './pinInput';
 import { validatePin } from './pinPolicy';
 
 /**
- * The one place the share PIN is asked for, in `vscode`'s words — the sibling of `pinPrompt.ts`,
+ * The one place a TRANSIT secret is asked for, in `vscode`'s words — the sibling of `pinPrompt.ts`,
  * and here for the same two reasons: everything decidable about a PIN is pure and tested
  * elsewhere, and the WORDING must live in one file or the box comes to say two different things.
+ *
+ * <p>A transit secret is one that crosses to another person, out-of-band, once: the share PIN and
+ * the export password. This file was called `sharePinPrompt.ts` until the export password started
+ * asking through the same box — the name had to move with the job, or it would have been a file
+ * called `share…` holding the wording of something that is not a share. It still answers with the
+ * share transport's `SharePin` type, because the two are the same shape; the day the export path
+ * needs a field the share path does not, that is the thing to revisit.</p>
  *
  * <p>It is the extension's first `createInputBox`, which buys a button and gives away three things
  * `showInputBox` did for free. Each is a defect waiting to ship, and each is a test:</p>
@@ -31,15 +38,50 @@ import { validatePin } from './pinPolicy';
  * </ol>
  */
 
-const TITLE = 'One-time share PIN';
-const PROMPT = 'Encrypts the shared item. Tell it to the recipient out-of-band.';
 const GENERATE = 'Generate a PIN and copy it';
 const REVEAL = 'Show or hide the PIN';
 
+/**
+ * What a transit-secret box calls itself. The two callers differ in these two strings and in
+ * NOTHING else — same generator, same reveal, same strength floor, same confirmation of a typed
+ * value — which is the point: they ask for the same kind of secret, one that crosses to another
+ * person out-of-band, once.
+ */
+interface Wording {
+  readonly title: string;
+  readonly prompt: string;
+}
+
+const SHARE: Wording = {
+  title: 'One-time share PIN',
+  prompt: 'Encrypts the shared item. Tell it to the recipient out-of-band.',
+};
+
+const EXPORT: Wording = {
+  title: 'Password for the export',
+  prompt: 'Tell it to the recipient out-of-band — it is the only key to this file.',
+};
+
 /** The PIN to seal a share with, or nothing when the person backed out. */
-export async function chooseSharePin(): Promise<SharePin | undefined> {
-  const chosen = await askOnce();
-  return chosen === undefined || chosen.generated ? chosen : confirmTyped(chosen);
+export function chooseSharePin(): Promise<SharePin | undefined> {
+  return chooseTransitPin(SHARE);
+}
+
+/**
+ * The password to seal an exported file with, or nothing when the person backed out.
+ *
+ * <p>The same box, and that is the whole change: this one used to be a bare `showInputBox` with no
+ * generator, no reveal, and — alone among the transit-secret boxes here — no confirmation of a
+ * typed value, for a password that is the ONLY key to a file outliving the session. A typo was
+ * discovered by the recipient who could not open it, long after the plaintext was gone.</p>
+ */
+export function chooseExportPassword(): Promise<SharePin | undefined> {
+  return chooseTransitPin(EXPORT);
+}
+
+async function chooseTransitPin(wording: Wording): Promise<SharePin | undefined> {
+  const chosen = await askOnce(wording);
+  return chosen === undefined || chosen.generated ? chosen : confirmTyped(wording, chosen);
 }
 
 interface Drawn {
@@ -61,12 +103,12 @@ interface Drawn {
   pending: Promise<void>;
 }
 
-function askOnce(): Promise<SharePin | undefined> {
+function askOnce(wording: Wording): Promise<SharePin | undefined> {
   return new Promise((resolve) => {
     const box = vscode.window.createInputBox();
     const drawn: Drawn = { value: '', kept: false, closed: false, pending: Promise.resolve() };
-    box.title = TITLE;
-    box.prompt = PROMPT;
+    box.title = wording.title;
+    box.prompt = wording.prompt;
     box.password = true;
     box.ignoreFocusOut = true;
     box.buttons = [
@@ -199,6 +241,22 @@ async function discardAfterDraw(drawn: Drawn): Promise<void> {
 }
 
 /**
+ * Take back a drawn value when the operation it was drawn for did not happen after all.
+ *
+ * <p>Exported because the export path's last cancellation point is nowhere near this file: the save
+ * dialog is raised long AFTER the password is chosen, and a person who backs out of it — or a write
+ * that fails — is left holding the password to a file that does not exist. Same invariant as every
+ * route out of the box itself, just reached from further away.</p>
+ *
+ * <p>A TYPED value is never touched. It was never ours to copy, so it is not ours to erase.</p>
+ */
+export async function discardTransitPin(pin: SharePin): Promise<void> {
+  if (pin.generated) {
+    await discard(pin.value);
+  }
+}
+
+/**
  * Take back a copy nobody asked for.
  *
  * <p>Under the button, every copy was the person's own act. Drawing on open makes it OURS, and that
@@ -286,7 +344,7 @@ const COPY_FAILED = ` Copying it to the clipboard failed. ${REVEAL_INSTEAD}`;
  *   this extension never had would be a lie about where it came from.</li>
  * </ul>
  */
-export function announceShared(headline: string, withheld: string, pin: SharePin): Promise<void> {
+export function announceHandover(headline: string, withheld: string, pin: SharePin): Promise<void> {
   return announce(vscode.window.showInformationMessage, headline, withheld, pin, pin.generated);
 }
 
@@ -368,9 +426,9 @@ async function actOn(choice: string | undefined, value: string): Promise<void> {
  * `undefined` rather than the first value, so a caller can never half-succeed into sealing a share
  * under something typed once by accident and never reproducible.
  */
-async function confirmTyped(pin: SharePin): Promise<SharePin | undefined> {
+async function confirmTyped(wording: Wording, pin: SharePin): Promise<SharePin | undefined> {
   const repeat = await vscode.window.showInputBox({
-    title: TITLE,
+    title: wording.title,
     prompt: 'Repeat the PIN',
     password: true,
     ignoreFocusOut: true,

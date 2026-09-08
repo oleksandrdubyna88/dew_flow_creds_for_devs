@@ -22,7 +22,7 @@ import {
 import { recordOrigin, resolveOrigin } from './shareOrigin';
 import { snapshotForRevision } from './revisionSnapshot';
 import type { SharePin } from './sharePin';
-import { announceDeliveredWithErrors, announceShared, chooseSharePin } from './sharePinPrompt';
+import { announceDeliveredWithErrors, announceHandover, chooseSharePin } from './transitPinPrompt';
 import { redactArrivedPayment, withheldFromShare } from './paymentRedaction';
 import { OwnedShare, SharePayload, TeamMember, TreeNode } from './types';
 
@@ -163,7 +163,7 @@ export class ShareInbox {
       // The clipboard promise is NOT composed here: only the announcement knows whether the copy
       // it makes actually succeeded, and a sentence written before the attempt is one that can
       // promise a clipboard which rejected.
-      await announceShared(
+      await announceHandover(
         `Shared ${what} with ${delivered.join(', ')}. Tell them the PIN out-of-band.`,
         withheld,
         pin,

@@ -7,6 +7,14 @@
 >
 > Related docs: [module_extension.md](module_extension.md),
 > [PLAN_sharing.md](PLAN_sharing.md), [PLAN_generator.md](PLAN_generator.md).
+>
+> **Superseded in part, the same day, by
+> [PLAN_pin_drawn_by_default.md](PLAN_pin_drawn_by_default.md):** the sparkle button this plan
+> shipped worked and **nobody found it**, so the PIN is now drawn when the box opens and the button
+> is a redraw. That plan also moved this one's module — every `sharePinPrompt.ts` below is
+> `transitPinPrompt.ts` today, renamed when the export password started asking through the same box.
+> The file names are left as they were written, because this document records what was built on the
+> day it was built.
 
 ## What shipped differently from this plan
 

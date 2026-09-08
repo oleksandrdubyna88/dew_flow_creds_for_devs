@@ -2201,7 +2201,7 @@ discovery step would be a worse failure than the one it exists to fix.
 
 The moving parts split four ways (audit A1, plus the PIN's own file): `shareFormat.ts` is the pure
 crypto, `sharingManager.ts` is the data source (team lists, the inbox files), `sharePin.ts` +
-`sharePinPrompt.ts` are the transit PIN and everything said about it, and `ShareInbox`
+`transitPinPrompt.ts` are the transit PIN and everything said about it, and `ShareInbox`
 (`shareInbox.ts`, explicit-deps constructor after the `SyncManager` pattern) is the rest of the
 CONVERSATION — recipient picking, delivery and its error report, the sender check, the accept
 round-robin, and the import into the tree (fresh local id; same-sender update recorded as a
@@ -2231,6 +2231,24 @@ for a PIN. For a discoverability feature, an affordance nobody sees is the same 
 `SharePin { value, generated }` is threaded through `deliverBatch`/`deliver` rather than a bare
 string, because the message that can honestly say "go paste this" is raised where the share is known
 to have LANDED, which is far from where the PIN was chosen.
+
+**`Export / Share Externally…` asks through the same box**, which is why the module is called
+`transitPinPrompt.ts` and not `sharePinPrompt.ts`: a transit secret is one that crosses to another
+person, out-of-band, once, and there are two of them. `chooseSharePin()` and
+`chooseExportPassword()` are two `Wording` presets — a title and a prompt — over one
+`chooseTransitPin`; everything else is identical by construction rather than by resemblance. The
+export password gained the generator, the eye, the strength floor, and the thing it had been missing
+since long before any of this: **confirmation of a typed value**. It was the only transit-secret box
+here without one, for the sole key to a file that outlives the session, so a typo was discovered by
+the recipient who could not open it, long after the plaintext was gone.
+
+That path's cancellation point is nowhere near the box — `showSaveDialog` is a native dialog raised
+after the password is chosen, and a person can sit in it for minutes. So `ExportFile` carries the
+`SharePin`, `save` announces through `announceHandover` only after the write actually happened, and a
+cancelled dialog or a failed write calls `discardTransitPin`: no file exists, so its password is a
+secret for nothing. `announceWritten` tests `pin !== undefined` rather than truthiness, so the
+plain-JSON form — which has no password and never did — can never be offered a `Copy again` with
+nothing to copy.
 
 Four decisions worth keeping, each of which was a defect first — three of them found by the review
 gate before a line was written, and watched failing before they were fixed:
