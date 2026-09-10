@@ -1873,12 +1873,28 @@ pin-only v3 file (a `pin`-wrap with no key-wrap → `silentPin` → `unwrapWithP
 
 | Parameter | Value |
 |---|---|
-| KDF | scrypt, `N=2^17`, `r=8`, `p=1` (legacy blobs: `N=2^15`) |
+| KDF | scrypt, `N=2^17`, `r=8`, `p=1` (legacy blobs: `N=2^15`) — and an open accepts **only those two tuples**, see below |
 | Cipher | AES-256-GCM, 128-bit tag |
 | WebAuthn wrap | HKDF over the PRF secret, `info="cred-ssh-manager/webauthn"` |
 | Recovery-code wrap | HKDF over the printed code's 30-symbol core, `info="cred-ssh-manager/recovery-code"` |
 | Org-escrow wrap | X25519-ECDH to the org recovery public key → HKDF, `info="creds-for-devs/org-escrow-wrap"` |
 | Envelope MAC | HMAC-SHA256, `info="cred-ssh-manager/envelope-mac"`, compared with `timingSafeEqual` |
+
+**The recorded KDF cost is an allow-list, not a hint** (`checkedParams`, `cryptoUtils.ts`). Each sealed
+blob carries the `kdfN`/`kdfR`/`kdfP` it was made with, so raising the cost never orphans an older file.
+Read without a bound, those fields are equally an instruction from whoever can write the file: `maxmem`
+caps the memory term `N·r`, and **nothing caps `p`**, which multiplies time at constant memory —
+`kdfP: 128` measured at 40 s per open, reached by background sync with a stored PIN and no human in the
+loop. The envelope MAC does cover all three, but verifying it needs the master key that the derivation
+produces, so the check can never come first.
+
+`openBlob` and `openBlobAsync` therefore accept exactly two tuples — `{2^15, 8, 1}` and `{2^17, 8, 1}`,
+the only ones this build has written — and throw `corrupted` before deriving anything otherwise. All
+three fields absent means a pre-migration blob (`N=2^15`); a *partial* set is refused, since `withKdf`
+has always written all three. **Raising the cost is a format event:** add the tuple to `ACCEPTED_SCRYPT`
+in the release that starts writing it and bump the envelope version with it, so an older build refuses
+the file through `SUPPORTED_VERSIONS` as *newer* rather than as corrupt. Audit 2026-09-09, finding #6;
+pinned by `kdfParams.test.ts`, which asserts scrypt was never called for every refused shape.
 
 **The third wrap kind — the printed recovery code** (`recoveryCode.ts`, roadmap D9). A vault has two
 ways in that both live with one person: the PIN in a head, the security key in a pocket. The code is
