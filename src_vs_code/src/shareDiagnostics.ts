@@ -74,7 +74,10 @@ export interface AcceptFailure {
 /** An export file or an external import: one secret, no address, no bound label. */
 export interface FileSecret {
   readonly file: string;
-  /** The password's shape, reduced at the capture site — see `ShareDiagnostic.pinShape`. */
+  /**
+   * The password's shape, reduced at the capture site — see `ShareDiagnostic.pinShape`. Empty when
+   * no password was ASKED for, which is a different fact from an empty one being typed.
+   */
   readonly secretShape: string;
   readonly keyFingerprint: string;
   /** Absent when the file could not be parsed far enough to have one. */
@@ -90,6 +93,17 @@ function keyField(fingerprint: string): string {
 
 function blobField(blob: FingerprintableBlob | undefined): string {
   return `blob=${blob === undefined ? 'unavailable' : blobFingerprint(blob)}`;
+}
+
+/**
+ * What the file lines say about the password.
+ *
+ * <p>`not-asked` rather than a description of the empty string. A plain-JSON import, and a read that
+ * failed before anything was asked, have no password at all — and `len=0 … unusual=EMPTY` reads as
+ * *somebody submitted an empty password*, which is a different failure and would be chased as one.</p>
+ */
+function passwordField(shape: string): string {
+  return `password ${shape === '' ? 'not-asked' : shape}`;
 }
 
 function shareFields(diagnostic: ShareDiagnostic): string[] {
@@ -143,7 +157,7 @@ export function externalExportLine(file: FileSecret): string {
     blobField(file.blob),
     keyField(file.keyFingerprint),
     'aad=none',
-    `password ${file.secretShape}`,
+    passwordField(file.secretShape),
   ].join(SEPARATOR);
 }
 
@@ -154,7 +168,7 @@ export function externalImportFailedLine(file: FileSecret): string {
     blobField(file.blob),
     keyField(file.keyFingerprint),
     'aad=none',
-    `password ${file.secretShape}`,
+    passwordField(file.secretShape),
     `reason=${logSafe(file.reason ?? 'unknown')}`,
   ].join(SEPARATOR);
 }
@@ -220,7 +234,7 @@ export function acceptFailureOf(
       entityName: owned.item.entityName,
       // Reduced HERE, so the raw secret is an argument that dies with this call rather than a
       // field on a value the caller keeps.
-      pinShape: describeTransitSecret(attempt.secret),
+      pinShape: attempt.pinShape,
       keyFingerprint: attempt.fingerprint,
       blob: owned.item,
       form: shareFormOf(owned.item),
@@ -235,14 +249,40 @@ export interface ShareAttempt {
   readonly fingerprint: string;
   readonly reason: unknown;
   /**
-   * The transit secret THIS attempt used.
+   * The SHAPE of the transit secret this attempt used, already reduced.
    *
-   * <p>Per attempt rather than per round, because a round-robin accept tries several PINs and the
-   * one that matters for an item is the last one tried against IT. Carrying a single "the PIN" for
-   * a whole batch is how a review round found the first version attributing one sender's PIN shape
-   * to another sender's share.</p>
+   * <p>Per attempt rather than per round, because a round-robin tries several PINs and the one that
+   * matters for an item is the one tried against IT. A shape rather than the value for the reason
+   * `ShareDiagnostic.pinShape` gives: this map is held for the whole conversation, and a model that
+   * holds a plaintext PIN across that span is one a later change can persist or hand to a worker.</p>
    */
-  readonly secret: string;
+  readonly pinShape: string;
+}
+
+/** One attempt, with the secret reduced to a shape at the moment it is recorded. */
+export function attemptOf(fingerprint: string, reason: unknown, pin: string): ShareAttempt {
+  return { fingerprint, reason, pinShape: describeTransitSecret(pin) };
+}
+
+/**
+ * Keep the attempt that says the most about an item, not merely the last one.
+ *
+ * <p>A round-robin tries every PIN the person types against every item still unopened, so an item
+ * that failed for a TERMINAL reason — a form this build cannot read, a malformed blob — would have
+ * that reason overwritten by the next wrong PIN and be reported as a wrong PIN like everything
+ * else. `wrong-password` is the only retryable kind: it is the one a later PIN can change, so it is
+ * the only one a later attempt may replace. Raised by the second review round, which reached it
+ * from a PIN ORDER — a correct PIN first, a wrong one after.</p>
+ */
+export function rememberAttempt(
+  attempts: Map<string, ShareAttempt>,
+  id: string,
+  attempt: ShareAttempt,
+): void {
+  const held = attempts.get(id);
+  if (held === undefined || reasonOf(held.reason) === 'wrong-password') {
+    attempts.set(id, attempt);
+  }
 }
 
 /**

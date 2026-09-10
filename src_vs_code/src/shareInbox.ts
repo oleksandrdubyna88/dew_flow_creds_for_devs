@@ -6,7 +6,7 @@ import { declinedMessage, forThisRecipient } from './shareRecipientPin';
 import { entryPinGate } from './pinPrompt';
 import { describeError } from './describeError';
 import { DiagnosticWriter } from './diagnosticWriter';
-import { ShareAttempt, noteAcceptFailures } from './shareDiagnostics';
+import { ShareAttempt, attemptOf, noteAcceptFailures, rememberAttempt } from './shareDiagnostics';
 import * as vscode from 'vscode';
 import { BackupError } from './cryptoUtils';
 import { StorageManager } from './storageManager';
@@ -435,7 +435,7 @@ export class ShareInbox {
         this.deps.sharing.serverStamped(share), (fingerprint) => { attempted = fingerprint; },
       );
     } catch (error) {
-      this.noteFailed([share], new Map([[share.item.id, { fingerprint: attempted, reason: error, secret: pin }]]));
+      this.noteFailed([share], new Map([[share.item.id, attemptOf(attempted, error, pin)]]));
       void vscode.window.showErrorMessage(
         error instanceof BackupError && error.kind === 'unsupported-version'
           ? error.message
@@ -531,7 +531,7 @@ export class ShareInbox {
       const { opened, remaining: rest } = resolveShares(
         remaining, [pin], this.deps.extensionVersion,
         (owned) => this.deps.sharing.serverStamped(owned),
-        (owned, fingerprint, reason) => attempted.set(owned.item.id, { fingerprint, reason, secret: pin }),
+        (owned, f, reason) => rememberAttempt(attempted, owned.item.id, attemptOf(f, reason, pin)),
       );
       for (const o of opened) {
         await this.importShared(o, o.payload);

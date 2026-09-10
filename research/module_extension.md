@@ -3453,7 +3453,7 @@ safe to write down:
 
 | Field | Where it comes from | What it settles |
 |---|---|---|
-| `blob=` | `blobFingerprint` over the salt, IV, tag and ciphertext (`keyFingerprint.ts`) | **Pairs the two machines** — the server mints its own share id, so nothing else is the same on both ends — and separates *the bytes changed in transit* from everything else |
+| `blob=` | `blobFingerprint` over the salt, IV, tag, ciphertext **and the KDF parameters** (`keyFingerprint.ts`) | **Pairs the two machines** — the server mints its own share id, so nothing else is the same on both ends — and separates *the bytes changed in transit* from everything else |
 | `key=` | the key `scrypt` already derived, reported out of `sealBlob`/`openBlob` | whether the two ends derived the same key at all: the secret and the key id, together |
 | `pin len=… ws=… unusual=…` | `transitSecretReport.ts` | which HALF moved — a trailing space, a hyphen substituted for an en dash, an invisible character |
 
@@ -3495,7 +3495,16 @@ Three ordering rules make the lines true rather than merely present:
   diagnostics back on the failure path too, and writing those would claim a pairing the recipient
   can never make.
 - **A file read that fails is inside the import command's `try`**, so a deleted or locked file
-  reaches the same diagnostic and the same message instead of an unhandled command rejection.
+  reaches the same diagnostic and the same message instead of an unhandled command rejection. A path
+  where no password was ever asked for says `password not-asked` rather than describing an empty
+  one — `len=0 … unusual=EMPTY` would read as somebody having submitted a blank password.
+- **A TERMINAL failure is never relabelled by a later wrong PIN.** `wrong-password` is the only
+  retryable kind, so `rememberAttempt` lets only that one be replaced: an item that failed as
+  `unsupported-version` or `corrupted` keeps its reason however many PINs are typed afterwards.
+  Reached by the second review round from a PIN ORDER — the right PIN first, a wrong one after.
+- **The KDF parameters are inside `blob=`.** `openBlob` derives with `paramsOf(blob)`, so they decide
+  the key as surely as the salt does; left out, a change touching only that metadata would leave
+  `blob=` equal while `key=` differed and send the reader towards the secret for a change in the blob.
 
 `resolveShares` takes an `onFailedAttempt` callback so the batch path reports the item that failed
 and the real `BackupError.kind` — a form this build cannot read is no longer reported as a wrong

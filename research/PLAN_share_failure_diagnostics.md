@@ -85,6 +85,21 @@ drives the real command, and writing it found a trap of its own — a hand-rolle
 patch reused the module the previous case had bound to ITS stub, so the second case read the first
 case's file while logging into its own host and passed while proving nothing.
 
+A second code round brought it to `good_enough` with 10 findings, of which four were taken and six
+described code the first round's fixes had already changed. The two that mattered:
+
+- **A terminal failure was relabelled by a later wrong PIN.** The batch map kept the LAST attempt,
+  so an item that failed as `unsupported-version` or `corrupted` was reported as a wrong password as
+  soon as the person tried another PIN — losing exactly the distinction this change exists to make.
+  `rememberAttempt` now replaces only a `wrong-password`, the one kind a later PIN can change.
+- **`blob=` did not cover the KDF parameters**, which `openBlob` derives with. A change touching only
+  that metadata would have left `blob=` equal while `key=` differed, sending the reader towards the
+  secret for a change in the blob.
+
+Two smaller ones: `ShareAttempt` carries a shape rather than the PIN (the map is held for the whole
+conversation, which is a long time for a plaintext secret to sit in a model), and a file path where
+no password was ever asked for says `password not-asked` instead of describing an empty one.
+
 **Deliberately still not done**, unchanged from the plan: trimming or normalising the transit secret
 (it changes the derived key, so it must be symmetric across two independently released halves and
 would strand shares already sitting in an inbox), changing the drawn passphrase's separator, and

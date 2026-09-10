@@ -37,6 +37,10 @@ export interface FingerprintableBlob {
   readonly iv: string;
   readonly tag: string;
   readonly data: string;
+  /** The KDF cost this blob was sealed at. Absent means the legacy default, which is a value too. */
+  readonly kdfN?: number;
+  readonly kdfR?: number;
+  readonly kdfP?: number;
 }
 
 const KEY_CONTEXT = 'creds-for-devs/derived-key-fingerprint';
@@ -62,9 +66,15 @@ export function derivedKeyFingerprint(key: Buffer): string {
  *
  * <p>Over the ciphertext, the tag, the IV and the salt — everything a transport could damage — and
  * over nothing the sender chose, so the value is the same on both ends whenever the bytes are.</p>
+ *
+ * <p><b>The KDF parameters are in it too</b>, because `openBlob` derives with `paramsOf(blob)`: they
+ * decide the key as surely as the salt does. Left out, a change that touched only that metadata
+ * would leave `blob=` equal while `key=` differed, and the prescribed reading order would send the
+ * investigation towards the secret for a change in the blob. Raised by the second review round.</p>
  */
 export function blobFingerprint(blob: FingerprintableBlob): string {
-  return shortHash(BLOB_CONTEXT, Buffer.from([blob.salt, blob.iv, blob.tag, blob.data].join('|'), 'utf8'));
+  const parts = [blob.salt, blob.iv, blob.tag, blob.data, blob.kdfN, blob.kdfR, blob.kdfP];
+  return shortHash(BLOB_CONTEXT, Buffer.from(parts.map((part) => String(part ?? '')).join('|'), 'utf8'));
 }
 
 /**

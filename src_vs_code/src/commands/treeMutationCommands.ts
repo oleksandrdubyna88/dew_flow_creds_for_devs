@@ -536,7 +536,8 @@ export function registerTreeMutationCommands(host: TreeMutationCommandsHost): vo
     } catch (error) {
       noteImportFailed(host.log, {
         file: path.basename(uri.fsPath),
-        secretShape: describeTransitSecret(attempt.secret),
+        // Empty when nothing was asked for — a plain JSON import, or a read that failed first.
+        secretShape: attempt.secret === '' ? '' : describeTransitSecret(attempt.secret),
         keyFingerprint: attempt.keyFingerprint,
         blob: sealedBlobOf(attempt.envelope),
         reason: describeError(error),

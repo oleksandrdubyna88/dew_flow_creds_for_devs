@@ -128,5 +128,8 @@ test('a file that cannot be read at all still reaches the diagnostic and the err
   assert.match(failures(run)[0], /blob=unavailable/);
   assert.match(failures(run)[0], /key=unavailable/);
   assert.match(failures(run)[0], /reason=EBUSY/);
+  // No password was ever asked for on this path, and the line says that rather than describing
+  // an empty one — which would read as somebody having submitted a blank password.
+  assert.match(failures(run)[0], /password not-asked/);
   assert.ok(run.errors.some((message) => message.startsWith('Import failed:')), run.errors.join(' | '));
 });
