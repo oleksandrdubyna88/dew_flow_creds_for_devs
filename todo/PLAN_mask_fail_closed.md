@@ -1,0 +1,137 @@
+# PLAN — an output that cannot be masked is withheld, never sent raw
+
+> Status: **plan only, nothing implemented yet, 2026-09-10.** Scope: `src_vs_code/src/brokerResponse.ts`,
+> `credsAgentServer.ts`, `maskEntries.ts`, `package.json`, `README.md`, their tests.
+> Audit finding **#1** of [REVIEW_product_audit_2026-09-09.md](REVIEW_product_audit_2026-09-09.md), plus
+> the dead `maskAgentOutput` setting found in the 2026-09-10 re-verification (§Перепроверка).
+>
+> Related docs: [module_extension.md](../research/module_extension.md) (the broker),
+> [PLAN_ai_context_masking.md](../research/PLAN_ai_context_masking.md) (why masking is one choke point).
+
+## Symptom
+
+The broker's promise is that an agent USES a credential and never sees it. Response bodies carry the
+child's stdout (`agentUseActions.ts:143`, `:195`; `rotateAction.ts:282`), so the masker at
+`credsAgentServer.ts:574` is the only thing between a command that prints its own password and the
+agent that composed it. That masker **fails open**:
+
+- `maskedBody` catches every error and returns the original body with `hits: 0`
+  (`brokerResponse.ts:31-35`); `maskedReason` rides the same path (`:54-61`), so the journal line gets
+  the raw driver message too.
+- The table is five keychain reads under one `Promise.all` (`maskEntries.ts:52-58`): one rejection loses
+  all five values. And no exception is needed — an entry deleted or renamed during the run makes
+  `getNode` answer `undefined` (`:49`), the table comes back empty, and `hits: 0` is indistinguishable
+  from "nothing to mask".
+- The worst site is **rotation**: `commit` stores the new secret and then returns the far side's stdout
+  (`rotateAction.ts:275-282`). A keychain write immediately precedes the keychain read the masker needs,
+  so their failures are correlated — the storage hiccup that breaks the mask is the one that just
+  happened — and what leaks is a freshly committed production credential.
+- Nothing exercises the `catch`: `grep maskedBody src/test/` finds no test. The fail-open lives in a
+  comment (`brokerResponse.ts:17-21`), which argues that failing closed *would trade a possible leak for
+  a certain outage*. That argument holds for a completed action; it does not hold before the action
+  runs, and it never held for the journal.
+
+Audit reproduction: a synthetic action answering `synthetic-audit-password-ONLY`, a masker that throws —
+the real HTTP broker answered `200` with the string; `maskedReason` returned it unredacted.
+
+Separately, `credSshManager.maskAgentOutput` is declared (`package.json:222`, default `true`),
+documented (`README.md:1068`) and covered by `helpCoverage.test.ts:148` — and read by no production code
+(the twelve keys `getConfiguration('credSshManager').get(...)` reads do not include it). The switch lies
+in the safe direction: masking is always on. It still lies.
+
+## What must be true when this is done
+
+1. An agent never receives an unmasked body. If the values cannot be known, the body is not sent.
+2. A masking failure **before** the action refuses the call before any side effect.
+3. A masking failure **after** the action withholds the output and says the action may have run, so an
+   agent does not retry a side effect blindly.
+4. The journal never carries a raw reason: unmaskable → *withheld*.
+5. No user-facing setting claims to control masking unless it does.
+
+## Design
+
+### 1. Build the table before `run`, refresh it after, union the two
+
+In `perform` (`credsAgentServer.ts:563-587`):
+
+```
+table = await tableFor(grant)            // throws → respondError('internal', MASKING_UNAVAILABLE); return
+touch / reserve
+result = await useAction.run(...)
+after = await tableFor(grant).catch(() => undefined)
+sent  = maskResponseBody(result.body, after === undefined ? table : union(table, after))
+```
+
+The **pre-run** table is mandatory: the values the action is about to inject are exactly the values it
+can print, and they are readable now or the action should not start. The **post-run** refresh exists
+for rotation, whose new value is stored during the run; it is best-effort, and a failed refresh falls
+back to the pre-run table — never to an empty one. `union` keeps every entry from both, so an entry
+that vanished mid-run is still masked by what was read before it vanished.
+
+Design choice recorded: the alternative — every action returning the values it injected — would be the
+strongest possible table, and it would put the secret in an `UseActionResult` that travels through the
+same function as the response body. Rejected for that reason; the storage read stays the source.
+
+### 2. Withhold, do not fail open, when even the pre-run table exists but the response cannot be masked
+
+`maskResponseBody` is pure and does not throw on any input it is given today; the only failure is the
+table. So after step 1 the "after the action" failure is exactly "refresh failed", and it is covered by
+the fallback. The audit's *withheld* state is therefore reached only when the pre-run table is missing —
+and that is before the action, so there is nothing to withhold. If a future masker can fail after the
+run, `perform` answers `respondError('internal', OUTPUT_WITHHELD)` with the audit outcome `withheld`; the
+constant and the branch are written now so the shape exists.
+
+### 3. `maskedReason` follows
+
+`maskedReason(table, reason)` takes the table already in hand; when there is none the detail is the
+literal `[reason withheld: masking unavailable]`. The journal keeps the summary and the outcome.
+
+### 4. `maskedBody` becomes explicit about failure
+
+`brokerResponse.ts` stops catching. `maskedBody(entriesFor, where, body)` is replaced by
+`tableFor(entriesFor, where): Promise<MaskTable>` (throws) and the pure `maskResponseBody`. The comment
+that argued for failing open is rewritten to say what is true now: the table is read before the action,
+so a read failure costs a refused call, not a completed action's result.
+
+### 5. Remove `maskAgentOutput`
+
+`package.json`, `README.md`, `helpCoverage.test.ts`. A switch that turns OFF a security control is a
+liability when it works and a lie when it does not; it never worked, so removing it changes no
+behaviour. `CHANGELOG.md` says so in one sentence.
+
+## Build order
+
+1. RED: `credsAgentServer.test.ts` — `'when the masker fails before the action, nothing runs and the
+   agent gets an error — both doors'` (harness gains `maskerFails: 'before' | 'after'`); today the
+   action runs and the raw body is answered.
+2. RED: `'when the masker fails after the action, the pre-run table still masks the answer'` — a
+   secret printed by the run stub comes back as `<CREDS_MASKED:…>` even though the refresh threw.
+3. RED: `'the journal never carries the raw reason when masking is unavailable'`.
+4. RED: `brokerResponse.test.ts` (new) — `tableFor` throws through; `union` keeps both sides.
+5. Implement 1–4 → GREEN.
+6. RED: `'a rotation's new value is masked out of the rotation's own stdout'` — the run stub stores a new
+   value into the harness's secrets during `run`; the pre-run table did not have it, the post-run one does.
+7. Remove the setting; update `helpCoverage.test.ts`; `npm run typecheck`; full `npm test`;
+   `node scripts/agent-broker-itest.cjs` (the real broker/CLI path).
+8. `module_extension.md` (broker: "masking is read before the action"); `CHANGELOG.md`.
+
+## Test plan
+
+| Test | Proves |
+|---|---|
+| masker throws before run → error, `w.ran` empty, both doors | rule 2 |
+| masker throws after run → masked body from the pre-run table | rule 1, 3 |
+| entry vanishes after run (`getNode` → undefined) → still masked | union |
+| rotation: value stored during run is masked | refresh |
+| journal detail when unmaskable | rule 4 |
+| `agent-broker-itest.cjs` all checks | the real path still answers |
+| help coverage without the setting | rule 5 |
+
+## Definition of Done
+
+- [ ] All tests above; RED messages and the GREEN run reported.
+- [ ] `npm run typecheck`, `npm test`, `agent-broker-itest.cjs` green.
+- [ ] `maskAgentOutput` gone from `package.json`, `README.md`, the help test; `CHANGELOG.md` says it never
+      had an effect.
+- [ ] `module_extension.md` updated; `coai` plan → `proceed`, code round run, findings resolved.
+- [ ] Promoted to `research/` with deviations recorded.
