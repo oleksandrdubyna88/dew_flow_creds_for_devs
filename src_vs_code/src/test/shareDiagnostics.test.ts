@@ -6,8 +6,12 @@ import {
   externalImportFailedLine,
   shareAcceptFailedLine,
   shareSentLine,
+  ShareAttempt,
+  attemptOf,
+  rememberAttempt,
 } from '../shareDiagnostics';
 import { describeTransitSecret } from '../transitSecretReport';
+import { BackupError } from '../cryptoUtils';
 
 /**
  * The four lines, against the promise their module's header makes: that a reader can pair two
@@ -149,4 +153,49 @@ test('no line ever contains the secret', () => {
     assert.ok(!line.includes('able-acid'), `leaked in: ${line}`);
     assert.ok(!line.includes('avid-away'), `leaked in: ${line}`);
   }
+});
+
+test('a terminal failure is not overwritten by a later wrong PIN', () => {
+  // The PIN order a review round reached this by: the item fails for a reason no PIN can change,
+  // and the next PIN the person types would otherwise relabel it as a wrong password like the rest.
+  const attempts = new Map<string, ShareAttempt>();
+  const terminal = attemptOf('aaaaaaaa', new BackupError('unsupported-version', 'too new'), 'first-pin-here');
+  const retryable = attemptOf('bbbbbbbb', new BackupError('wrong-password', 'nope'), 'second-pin-here');
+
+  rememberAttempt(attempts, 'share-1', terminal);
+  rememberAttempt(attempts, 'share-1', retryable);
+
+  assert.equal(attempts.get('share-1'), terminal);
+});
+
+test('a wrong PIN IS replaced by the next attempt — it is the one kind a later PIN can change', () => {
+  const attempts = new Map<string, ShareAttempt>();
+  const first = attemptOf('aaaaaaaa', new BackupError('wrong-password', 'nope'), 'first-pin-here');
+  const second = attemptOf('bbbbbbbb', new BackupError('corrupted', 'malformed'), 'second-pin-here');
+
+  rememberAttempt(attempts, 'share-1', first);
+  rememberAttempt(attempts, 'share-1', second);
+
+  assert.equal(attempts.get('share-1'), second);
+});
+
+test('an attempt carries a shape and never the secret it was made with', () => {
+  const attempt = attemptOf('aaaaaaaa', undefined, 'zqxjvkbnm-the-pin');
+
+  assert.ok(!JSON.stringify(attempt).includes('zqxjvkbnm'), JSON.stringify(attempt));
+  assert.match(attempt.pinShape, /len=17/);
+});
+
+test('a file path with no password says so, instead of describing an empty one', () => {
+  // `len=0 … unusual=EMPTY` would read as "somebody submitted an empty password", which is a
+  // different failure and would be chased as one.
+  const line = externalImportFailedLine({
+    file: 'ionos-server.enc',
+    secretShape: '',
+    keyFingerprint: '',
+    reason: 'EBUSY: resource busy or locked',
+  });
+
+  assert.match(line, /password not-asked/);
+  assert.doesNotMatch(line, /len=0/);
 });
