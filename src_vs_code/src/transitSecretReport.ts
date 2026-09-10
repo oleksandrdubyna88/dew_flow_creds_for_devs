@@ -181,11 +181,23 @@ function isControlCharacter(codePoint: number): boolean {
   return codePoint < 0x20 || codePoint === 0x7f || codePoint === 0x2028 || codePoint === 0x2029;
 }
 
+/**
+ * The character a diagnostic line uses between its fields, and which therefore may not appear
+ * inside one.
+ *
+ * <p>Escaping newlines stops a name forging a whole second LINE; this stops it forging a FIELD.
+ * A share whose entity is called `x · blob=deadbeef` would otherwise put a second `blob=` ahead of
+ * the real one, and every reader that splits on the separator — a person's eye included — would
+ * take the attacker's value. Raised by a review round, which is the only way this kind of thing is
+ * ever found: it is invisible until somebody writes the malicious name down.</p>
+ */
+const FIELD_SEPARATOR = 0x00b7;
+
 function escapeControl(value: string): string {
   let escaped = '';
   for (const character of value) {
     const codePoint = codePointOf(character);
-    escaped += isControlCharacter(codePoint)
+    escaped += isControlCharacter(codePoint) || codePoint === FIELD_SEPARATOR
       ? `\\u${codePoint.toString(16).padStart(4, '0')}`
       : character;
   }

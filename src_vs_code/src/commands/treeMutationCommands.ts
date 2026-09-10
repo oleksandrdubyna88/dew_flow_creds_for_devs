@@ -3,6 +3,7 @@
    was. The ceilings are a boundary for NEW code here; a handler meets them when it is next touched. */
 import { DiagnosticWriter } from '../diagnosticWriter';
 import { noteImportFailed, sealedBlobOf } from '../shareDiagnostics';
+import { describeTransitSecret } from '../transitSecretReport';
 import { DoorsFor } from '../entityEditCommands';
 import { StorageManager } from '../storageManager';
 import { applyCreatePin, pinForNewEntry } from '../pinOnCreate';
@@ -501,14 +502,19 @@ export function registerTreeMutationCommands(host: TreeMutationCommandsHost): vo
     if (uri === undefined) {
       return;
     }
-    const raw = Buffer.from(await vscode.workspace.fs.readFile(uri)).toString('utf8');
-
     let payload: unknown;
     // Carried out of the try so the failure handler can report WHAT was attempted: without them a
     // wrong password and a file that changed in transit produce one sentence and one dead end.
-    const attempt = { secret: '', keyFingerprint: '' };
+    // `envelope` is kept so the handler need not parse a multi-megabyte export a second time.
+    const attempt: { secret: string; keyFingerprint: string; envelope?: Record<string, unknown> } =
+      { secret: '', keyFingerprint: '' };
     try {
+      // Inside the try, so a file that was deleted, locked or unreadable between the picker and
+      // here reaches the same diagnostic and the same message instead of escaping as an unhandled
+      // command rejection. Raised twice by the review round, from reliability and from UX.
+      const raw = Buffer.from(await vscode.workspace.fs.readFile(uri)).toString('utf8');
       const parsed = JSON.parse(raw) as Record<string, unknown>;
+      attempt.envelope = parsed;
       if (parsed.format === 'creds-for-devs-external') {
         payload = parsed;
       } else {
@@ -530,9 +536,9 @@ export function registerTreeMutationCommands(host: TreeMutationCommandsHost): vo
     } catch (error) {
       noteImportFailed(host.log, {
         file: path.basename(uri.fsPath),
-        secret: attempt.secret,
+        secretShape: describeTransitSecret(attempt.secret),
         keyFingerprint: attempt.keyFingerprint,
-        blob: sealedBlobOf(raw),
+        blob: sealedBlobOf(attempt.envelope),
         reason: describeError(error),
       });
       void vscode.window.showErrorMessage(

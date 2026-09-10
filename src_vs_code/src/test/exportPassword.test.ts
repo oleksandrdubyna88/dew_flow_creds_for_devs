@@ -333,7 +333,7 @@ test('the file is sealed with exactly the password that reached the clipboard', 
 test('a typed export password is confirmed, and a mismatch writes no file', async () => {
   reset();
   ui.pin = 'type';
-  ui.typed = 'a-good-export-password';
+  ui.typed = 'zqxjvkbnm-export-password';
   ui.repeats = ['something-else'];
 
   await exportHandler()(target, undefined);
@@ -347,8 +347,8 @@ test('a typed export password is confirmed, and a mismatch writes no file', asyn
 test('a written export records the password SHAPE, so its recipient can be helped later', async () => {
   reset();
   ui.pin = 'type';
-  ui.typed = 'a-good-export-password';
-  ui.repeats = ['a-good-export-password'];
+  ui.typed = 'zqxjvkbnm-export-password';
+  ui.repeats = ['zqxjvkbnm-export-password'];
 
   await exportHandler()(target, undefined);
   await flush();
@@ -359,8 +359,8 @@ test('a written export records the password SHAPE, so its recipient can be helpe
   assert.ok(line !== undefined, `nothing was recorded; got ${JSON.stringify(ui.logged)}`);
   assert.match(line, /blob=[0-9a-f]{8}/);
   assert.match(line, /key=[0-9a-f]{8}/);
-  assert.match(line, /password len=22 cp=22 ws=none unusual=none/);
-  assert.ok(!line.includes('a-good-export-password'), `the password leaked: ${line}`);
+  assert.match(line, new RegExp(`password len=${ui.typed.length} cp=${ui.typed.length} ws=none unusual=none`));
+  assert.ok(!line.includes('zqxjvkbnm-export-password'), `the password leaked: ${line}`);
 });
 
 test('a plain JSON export records nothing, because there is no password to pair', async () => {

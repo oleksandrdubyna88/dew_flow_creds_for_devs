@@ -2,8 +2,10 @@ import { CorpPolicyState } from './corpPolicy';
 import { SharingManager } from './sharingManager';
 import { SigningKeypair } from './shareSignature';
 import { describeError } from './describeError';
+import { describeTransitSecret } from './transitSecretReport';
 import { projectOfNode } from './projectFolders';
-import { ShareDiagnostic } from './shareDiagnostics';
+import { DiagnosticWriter } from './diagnosticWriter';
+import { ShareDiagnostic, noteShareSent } from './shareDiagnostics';
 import { ShareForm, sealShare, shareAadText } from './shareFormat';
 import { refuseShare } from './shareRule';
 import { ShareItem, SharePayload, StoredAccount, TeamMember, TreeNode } from './types';
@@ -65,6 +67,7 @@ export function formWithProject(form: ShareForm, projectId?: string): ShareForm 
 
 /** The two collaborators one delivery needs, so this stays callable from a test. */
 export interface DeliveryDeps {
+  readonly log: DiagnosticWriter;
   readonly sharing: Pick<SharingManager, 'appendShares'>;
   readonly policyOf?: (accountId: string) => CorpPolicyState | undefined;
 }
@@ -112,6 +115,10 @@ export async function deliverToRecipient(
       sealWithDiagnostic(sent, to, payload, formWithProject(form, projects[index]), projects[index]),
     );
     await deps.sharing.appendShares(sender, recipient, items);
+    // Recorded HERE, and only past the append: a delivery that threw has sealed items and delivered
+    // none of them, and a `share SENT` line for those would claim a pairing the recipient can never
+    // make. The caller used to decide this and a review round found it deciding it wrongly.
+    noteShareSent(deps.log, recipient.account.email, sent);
     return { ok: true, line: recipient.account.email, sent };
   } catch (error) {
     // `sent` is returned on the failure path too: whatever WAS sealed before the transport gave
@@ -151,7 +158,9 @@ function sealWithDiagnostic(
   });
   into.push({
     keyId: to.recipient.shareKeyId,
-    secret: to.pin,
+    entityName: payload.node.name,
+    // Reduced here, at the capture site, so no value this function hands back can carry a secret.
+    pinShape: describeTransitSecret(to.pin),
     keyFingerprint,
     blob: item,
     form,

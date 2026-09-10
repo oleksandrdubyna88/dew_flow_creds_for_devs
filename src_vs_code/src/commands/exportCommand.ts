@@ -14,6 +14,7 @@ import { writeFileAtomically } from '../atomicFileWrite';
 import { describeError } from '../describeError';
 import { DiagnosticWriter } from '../diagnosticWriter';
 import { noteExportWritten, sealedBlobOf } from '../shareDiagnostics';
+import { describeTransitSecret } from '../transitSecretReport';
 import { SharePin } from '../sharePin';
 import {
   EXPORT_PASSWORD,
@@ -272,7 +273,7 @@ function noteWritten(log: DiagnosticWriter, file: ExportFile, target: string): v
   }
   noteExportWritten(log, {
     file: path.basename(target),
-    secret: file.pin.value,
+    secretShape: describeTransitSecret(file.pin.value),
     keyFingerprint: file.keyFingerprint,
     blob: sealedBlobOf(file.content),
   });
