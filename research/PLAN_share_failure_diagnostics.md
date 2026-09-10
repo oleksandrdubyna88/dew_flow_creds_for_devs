@@ -161,6 +161,13 @@ from the same line and is therefore included.
 
 ## What gets logged, and why none of it is a secret
 
+> **This section is the plan AS PROPOSED, kept as the record.** Two of its rules were changed before
+> a line was written and a third after the code round; what shipped is above, under *What shipped
+> differently*, and the authority on the current behaviour is
+> [module_extension.md](module_extension.md). In particular: an unusual character is named only from
+> a fixed table and only while such characters are a strict MINORITY of the value, never "every code
+> point outside printable ASCII" as the next paragraph proposes.
+
 Three facts per line, plus context:
 
 - **The transit secret's SHAPE** — code-unit length, code-point count, whether it has leading or

@@ -18,14 +18,16 @@
  * <p>The failure this exists to catch is a secret that did not survive a chat: a hyphen turned into
  * an en dash, a non-breaking space, a zero-width character, a trailing space picked up by a
  * double-click. Naming those is the whole diagnostic, and it costs almost nothing — the table below
- * is fifteen entries long, so "there is an en dash at index 4" narrows one position to one of
- * fifteen possibilities.</p>
+ * is nineteen entries long, so "there is an en dash at index 4" narrows one position to one of
+ * nineteen possibilities.</p>
  *
  * <p>Printing an ARBITRARY code point does not cost almost nothing. A secret written entirely in a
  * non-Latin script would be reconstructed character by character in the log, which is exactly the
- * promise this module exists to keep. So an unnamed non-ASCII code point is only ever COUNTED, and
- * a value with no printable ASCII in it at all gets no per-character detail whatsoever — there is
- * no bulk left for the positions to be a small part of.</p>
+ * promise this module exists to keep. So an unnamed non-ASCII code point is only ever COUNTED.</p>
+ *
+ * <p>And a NAMED one is printed only while it is a small part of something else — see
+ * {@link namedIfSafe}. A value with no printable ASCII gets no positions at all, and neither does one
+ * where the named characters are half or more of it: in both, the positions ARE the value.</p>
  */
 
 /** One substitution worth naming, at the code-point index it was found. */
@@ -115,6 +117,31 @@ function namedCharacters(value: string): NamedCharacter[] {
   return found;
 }
 
+/**
+ * The named characters, but only while naming them says little about the value.
+ *
+ * <p>Two conditions, and the SECOND one was a security finding against the first draft. Requiring
+ * printable ASCII to be PRESENT is not enough: `A` followed by seven en dashes passes the strength
+ * floor, has one ASCII character, and would have had seven of its eight positions spelled out — very
+ * nearly the whole of a PIN somebody chose. So the named characters must also be a MINORITY of the
+ * value — strictly fewer than half, because "half the positions" is not a small part of anything. A
+ * drawn passphrase whose five separators were substituted is five names in twenty-nine characters
+ * and keeps every one of them; a value that is half substitutions or more keeps none, and its count
+ * still says something unusual is in it.</p>
+ *
+ * <p>Deliberately NOT keyed on whether the extension drew the value. That was the reviewer's
+ * suggestion and it is the wrong axis here: a TYPED PIN is precisely the one somebody re-types by
+ * hand at the far end, which is where a substitution comes from — suppressing all detail for typed
+ * values would remove the diagnostic from the case that prompted this whole change.</p>
+ */
+function namedIfSafe(value: string, printableAscii: number, codePoints: number): NamedCharacter[] {
+  if (printableAscii === 0) {
+    return [];
+  }
+  const found = namedCharacters(value);
+  return found.length * 2 < codePoints ? found : [];
+}
+
 function whitespaceEdges(value: string): TransitSecretReport['whitespace'] {
   const leading = /^\s/.test(value);
   const trailing = /\s$/.test(value);
@@ -134,7 +161,7 @@ function whitespaceEdges(value: string): TransitSecretReport['whitespace'] {
 export function transitSecretReport(value: string): TransitSecretReport {
   const printableAscii = countPrintableAscii(value);
   const codePoints = [...value].length;
-  const named = printableAscii === 0 ? [] : namedCharacters(value);
+  const named = namedIfSafe(value, printableAscii, codePoints);
   return {
     units: value.length,
     codePoints,
