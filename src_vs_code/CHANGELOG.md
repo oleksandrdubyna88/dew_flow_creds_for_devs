@@ -4,6 +4,36 @@ All notable changes to **CredsForDevs** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Security
+
+- **A vault file can no longer tell this build how long to spend opening it.** The scrypt cost a blob
+  was sealed with travels inside it (`kdfN`/`kdfR`/`kdfP`), so raising the cost never orphans an older
+  file — and, read without a bound, it was equally an instruction from whoever could write that file.
+  `maxmem` capped the memory term (`N·r`); nothing capped **`p`**, which multiplies time at constant
+  memory. Measured while writing the test that now pins this: `kdfP: 128` on an otherwise ordinary blob
+  held a thread for **40 seconds** before answering "wrong master PIN/password", and the same blob is
+  refused in **240 ms** now.
+
+  Nobody had to click anything for that to happen. A PIN wrap is opened by background sync with the
+  stored PIN, so a write-capable attacker at a shared sync location — the threat the envelope MAC exists
+  for — could make every device that syncs burn a pool thread for as long as they chose. The envelope
+  MAC does cover these three fields, but verifying it needs the master key, which needs the very
+  derivation the parameters were bounding.
+
+  So an open now accepts **only the parameter tuples this build has ever written** — `{2^15, 8, 1}` and
+  `{2^17, 8, 1}` — and refuses everything else *before* deriving anything. An allow-list rather than a
+  ceiling, because a ceiling on `p` of 16 would still let a writer make every reader sixteen times
+  slower than the owner chose. All three fields absent stays what it has always been, a pre-migration
+  blob read at `N=2^15`; a *partial* set is refused, because no writer here has ever produced one.
+  Raising the cost in a future release adds its tuple to that list in the release that starts writing
+  it, together with an envelope-version bump, so an older build refuses the file as **newer** rather
+  than as corrupted — the refusal says so.
+
+  Found by the 2026-09-09 product audit (finding #6) and reported in
+  `todo/REVIEW_product_audit_2026-09-09.md`.
+
 ## [1.5.0] — a share that will not open says which of three things went wrong
 
 ### Added

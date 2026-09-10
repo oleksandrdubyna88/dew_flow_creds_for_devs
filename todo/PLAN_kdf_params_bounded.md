@@ -35,16 +35,27 @@ it should have bounded. With the MAC stripped (finding #2) the burn is silent as
 `checkedParams(blob): ScryptParams` beside `checkedSalt` (`:371-384`), called by `openBlob` and
 `openBlobAsync` in place of `paramsOf`:
 
-- `N`: an integer power of two, `2^14 ≤ N ≤ 2^18`. `LEGACY_SCRYPT_N` and `DEFAULT_SCRYPT_N` are inside;
-  `2^18` is the most `maxmem` admits at `r=8` and leaves one doubling for a future raise.
-- `r`: exactly `SCRYPT_R` (8). `p`: exactly `SCRYPT_P` (1). No writer here has produced anything else
-  (`:83-84`; `sealWithKey` and the wrap writers all use the constants).
-- Anything else — a non-integer, `NaN`, negative, an unexpected combination —
-  `BackupError('corrupted', 'Encrypted data names KDF parameters this build does not accept.')`.
+- **All three fields absent** → legacy `{N: 2^15, r: 8, p: 1}`. **Any other mixture of absent and
+  present** → refused: no writer has ever produced a partial set (`withKdf` writes all three), so a
+  partial set is a hand-edited one (gate round 1, codex + gemini).
+- All three present → the tuple must be **one of exactly two**: `{2^15, 8, 1}` and `{2^17, 8, 1}` — the
+  only tuples this build has ever written (`LEGACY_SCRYPT_N`, `DEFAULT_SCRYPT_N`, `:80-84`). Not a range:
+  the first draft admitted `2^14` and `2^18` "for headroom", which is a tuple nobody wrote and an
+  attacker could (gate round 1, codex). Equality is on integers — `Number.isInteger` and `===`, never
+  `Number()` coercion — so `"32768"`, `NaN`, `0.5`, `-32768` are all refused (local).
+- Anything else — `BackupError('corrupted', 'Encrypted data names KDF parameters this build does not
+  accept — if it was written by a newer CredsForDevs, update this one.')`.
 
-The bound is a list of *accepted* values, not a ceiling: a ceiling on `p` of, say, 16 would still let an
-attacker make every sync sixteen times slower than the owner chose. The values live in one constant,
-`ACCEPTED_SCRYPT` (rule 3).
+The accepted tuples live in one constant, `ACCEPTED_SCRYPT` (rule 3). **A future cost raise is a format
+event, not a constant edit alone** (gate round 1, gemini): the new tuple is added to the list in the
+release that starts writing it, and — because an older client meeting it must be told *newer*, not
+*corrupted* — the same release bumps the envelope version, which older builds already refuse by
+`SUPPORTED_VERSIONS` with their own sentence. The message above names the update path so a person on
+the old build knows what to do even before that bump exists.
+
+The RED test proves the *before*, not only the *kind*: it replaces `crypto.scryptSync` and
+`crypto.scrypt` on the `node:crypto` module object with spies for the duration of the test and asserts
+neither was called when the open refused — through **both** `openBlob` and `openBlobAsync` (codex, gemini).
 
 **Not done, and why:** the audit also asks for a cap on concurrent unwraps and a cancellable execution.
 With the parameters pinned, the cost of an open is the cost the owner chose when the vault was written;
@@ -66,14 +77,19 @@ running scrypt would only add a second way to be told "slow". Recorded as the de
 
 ## Test plan
 
+Every row runs through `openBlob` **and** `openBlobAsync`; every *corrupted* row also asserts the scrypt
+spies were not called.
+
 | `kdfN` / `kdfR` / `kdfP` | Verdict |
 |---|---|
 | absent / absent / absent | opens (legacy 2^15) |
-| 2^15 / 8 / 1 · 2^17 / 8 / 1 · 2^14 / 8 / 1 · 2^18 / 8 / 1 | opens |
+| 2^15 / 8 / 1 · 2^17 / 8 / 1 | opens |
+| 2^14 / 8 / 1 · 2^18 / 8 / 1 | corrupted — in range, never written |
 | 2^17 / 8 / 128 | corrupted |
 | 2^17 / 16 / 1 | corrupted |
 | 2^20 / 8 / 1 · 3·2^15 / 8 / 1 · 2^13 / 8 / 1 | corrupted |
 | 0.5 / 8 / 1 · NaN / 8 / 1 · −2^15 / 8 / 1 · "32768" (string) / 8 / 1 | corrupted (a string is "absent" today — it becomes refused: a typed value that is not a number is not legacy) |
+| 2^15 / absent / absent · absent / absent / 128 · 2^17 / 8 / absent | corrupted — partial metadata |
 
 ## Definition of Done
 

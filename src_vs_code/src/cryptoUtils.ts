@@ -177,13 +177,48 @@ function deriveKeyAsync(passphrase: Passphrase, salt: Buffer, params: ScryptPara
   });
 }
 
-/** The scrypt params a blob was sealed with (legacy defaults when absent). */
-function paramsOf(blob: SealedBlob): ScryptParams {
-  return {
-    N: typeof blob.kdfN === 'number' ? blob.kdfN : LEGACY_SCRYPT_N,
-    r: typeof blob.kdfR === 'number' ? blob.kdfR : SCRYPT_R,
-    p: typeof blob.kdfP === 'number' ? blob.kdfP : SCRYPT_P,
-  };
+const LEGACY_PARAMS: ScryptParams = { N: LEGACY_SCRYPT_N, r: SCRYPT_R, p: SCRYPT_P };
+const DEFAULT_PARAMS: ScryptParams = { N: DEFAULT_SCRYPT_N, r: SCRYPT_R, p: SCRYPT_P };
+
+/**
+ * The scrypt parameter sets this build has ever WRITTEN — and therefore the only ones it derives with.
+ *
+ * <p>`kdfN`/`kdfR`/`kdfP` travel in the blob so a later cost raise never orphans an older file. Read
+ * without a bound they were also an instruction from whoever could write the file: `maxmem` caps
+ * `N·r`, and nothing capped `p`, which multiplies time at constant memory. Measured while writing the
+ * test that pins this: `kdfP: 128` on a blob sealed at N=2^17 held a thread for <b>40 seconds</b>
+ * before answering "wrong password" — and the PIN wrap of a synced vault reaches this through
+ * background sync with a stored PIN, so nobody had to click anything (audit 2026-09-09, finding #6).</p>
+ *
+ * <p>An allow-list of tuples, not a ceiling: a ceiling on `p` of 16 would still let a writer make every
+ * reader sixteen times slower than the owner chose. Raising the cost in a future release adds the new
+ * tuple HERE, in the release that starts writing it — and bumps the envelope version with it, so an
+ * older build refuses the file as <i>newer</i> (`SUPPORTED_VERSIONS`) rather than as corrupted.</p>
+ */
+const ACCEPTED_SCRYPT: readonly ScryptParams[] = [LEGACY_PARAMS, DEFAULT_PARAMS];
+
+const KDF_REFUSED =
+  'Encrypted data names KDF parameters this build does not accept — if it was written by a newer CredsForDevs, update this one.';
+
+/**
+ * The parameters a blob may be derived with, decided BEFORE any derivation.
+ *
+ * <p>All three fields absent is the one shape that means legacy (every blob written before the
+ * parameters were recorded; `withKdf` has always written all three, so a partial set is a hand-edited
+ * one). Otherwise the tuple must equal one of {@link ACCEPTED_SCRYPT} — integer equality, never
+ * `Number()` coercion, so `"32768"`, `NaN`, `0.5` and a negative are all refused the same way.</p>
+ */
+function checkedParams(blob: SealedBlob): ScryptParams {
+  if (blob.kdfN === undefined && blob.kdfR === undefined && blob.kdfP === undefined) {
+    return LEGACY_PARAMS;
+  }
+  const accepted = ACCEPTED_SCRYPT.find(
+    (tuple) => tuple.N === blob.kdfN && tuple.r === blob.kdfR && tuple.p === blob.kdfP,
+  );
+  if (accepted === undefined) {
+    throw new BackupError('corrupted', KDF_REFUSED);
+  }
+  return accepted;
 }
 
 /**
@@ -330,8 +365,6 @@ function boundIfNeeded(key: Buffer, loginKey: Buffer | undefined): Buffer {
   return bound;
 }
 
-const DEFAULT_PARAMS: ScryptParams = { N: DEFAULT_SCRYPT_N, r: SCRYPT_R, p: SCRYPT_P };
-
 /** A sealed blob that records the KDF cost it was made with, so a later raise never orphans it. */
 function withKdf(blob: SealedBlob, params: ScryptParams): SealedBlob {
   return { ...blob, kdfN: params.N, kdfR: params.r, kdfP: params.p };
@@ -400,7 +433,8 @@ export function openBlob(
   report?: KeyReport,
 ): unknown {
   const salt = checkedSalt(blob);
-  const key = boundIfNeeded(deriveKey(passphrase, salt, paramsOf(blob)), loginKey);
+  const params = checkedParams(blob);
+  const key = boundIfNeeded(deriveKey(passphrase, salt, params), loginKey);
   reportKey(report, key);
   return openWithKey(blob, key, aad);
 }
@@ -415,7 +449,8 @@ export async function openBlobAsync(
   loginKey?: Buffer,
 ): Promise<unknown> {
   const salt = checkedSalt(blob);
-  return openWithKey(blob, boundIfNeeded(await deriveKeyAsync(passphrase, salt, paramsOf(blob)), loginKey));
+  const params = checkedParams(blob);
+  return openWithKey(blob, boundIfNeeded(await deriveKeyAsync(passphrase, salt, params), loginKey));
 }
 
 /**
