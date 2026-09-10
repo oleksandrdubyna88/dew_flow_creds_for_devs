@@ -40,7 +40,7 @@ Two adjacent facts that make the fix cheap:
   `securityKeyOps.ts`: 190, 218, 246, 305). `envelopeWithWraps` (`cryptoUtils.ts:495-501`), which copies
   the old MAC over new wraps, is **called by no production code** — it is the one function that would
   produce an unsigned-looking v4 file, and it is dead.
-- The audit's finding #6 (`PLAN_kdf_params_bounded.md`) composes with this one: the MAC covers
+- The audit's finding #6 ([PLAN_kdf_params_bounded.md](../research/PLAN_kdf_params_bounded.md), shipped) composes with this one: the MAC covers
   `kdfN/kdfR/kdfP` (`macMaterialV3`, `:629`), so with the MAC required the KDF parameters become
   authenticated too — after the unwrap. That plan bounds them before it.
 

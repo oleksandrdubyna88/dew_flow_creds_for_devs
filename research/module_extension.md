@@ -1880,7 +1880,7 @@ pin-only v3 file (a `pin`-wrap with no key-wrap → `silentPin` → `unwrapWithP
 | Org-escrow wrap | X25519-ECDH to the org recovery public key → HKDF, `info="creds-for-devs/org-escrow-wrap"` |
 | Envelope MAC | HMAC-SHA256, `info="cred-ssh-manager/envelope-mac"`, compared with `timingSafeEqual` |
 
-**The recorded KDF cost is an allow-list, not a hint** (`checkedParams`, `cryptoUtils.ts`). Each sealed
+**The recorded KDF cost is an allow-list, not a hint** (`checkedParams`, `scryptParams.ts`). Each sealed
 blob carries the `kdfN`/`kdfR`/`kdfP` it was made with, so raising the cost never orphans an older file.
 Read without a bound, those fields are equally an instruction from whoever can write the file: `maxmem`
 caps the memory term `N·r`, and **nothing caps `p`**, which multiplies time at constant memory —
@@ -1894,7 +1894,10 @@ three fields absent means a pre-migration blob (`N=2^15`); a *partial* set is re
 has always written all three. **Raising the cost is a format event:** add the tuple to `ACCEPTED_SCRYPT`
 in the release that starts writing it and bump the envelope version with it, so an older build refuses
 the file through `SUPPORTED_VERSIONS` as *newer* rather than as corrupt. Audit 2026-09-09, finding #6;
-pinned by `kdfParams.test.ts`, which asserts scrypt was never called for every refused shape.
+pinned by `kdfParams.test.ts`, which asserts scrypt was never called for every refused shape — and, for
+the worry five reviewers raised, that a newer-versioned file is reported as *newer* rather than as
+corrupt, because every envelope path calls `parseEnvelope` before it reaches this. Full record:
+[PLAN_kdf_params_bounded.md](PLAN_kdf_params_bounded.md).
 
 **The third wrap kind — the printed recovery code** (`recoveryCode.ts`, roadmap D9). A vault has two
 ways in that both live with one person: the PIN in a head, the security key in a pocket. The code is

@@ -1,6 +1,8 @@
 import * as crypto from 'node:crypto';
 import { StoredAccount, isStoredAccount } from './types';
 import { KeyReport, reportKey } from './keyFingerprint';
+import { BackupError } from './backupError';
+import { DEFAULT_PARAMS, SCRYPT_MAXMEM, ScryptParams, checkedParams } from './scryptParams';
 
 /**
  * AES-256-GCM on top of a scrypt-derived key. Pure Node.js `crypto`.
@@ -74,45 +76,11 @@ const SALT_LENGTH = 16;
 const IV_LENGTH = 12; // recommended for GCM
 const TAG_LENGTH = 16;
 
-// scrypt cost. New blobs record the params they used (kdfN/kdfR/kdfP) so the
-// cost can be raised without breaking old data: a blob WITHOUT those fields
-// predates the change and is read at the original N=2^15; new blobs are
-// written at the OWASP-leaning N=2^17 and carry their params for the future.
-const LEGACY_SCRYPT_N = 1 << 15;
-const DEFAULT_SCRYPT_N = 1 << 17;
-const SCRYPT_R = 8;
-const SCRYPT_P = 1;
-// maxmem must cover 128*N*r bytes (~128 MiB at N=2^17) plus headroom.
-const SCRYPT_MAXMEM = 300 * 1024 * 1024;
-
-interface ScryptParams {
-  N: number;
-  r: number;
-  p: number;
-}
-
-/**
- * `server-key-required` is the corporate one, and it exists so that a missing or changed server
- * login key can never reach a person as `wrong-password`. Both would otherwise be one AES-GCM tag
- * failure, and being told your own PIN is wrong when the truth is that the server has not been
- * reached is how somebody types it twenty times.
- */
-export type BackupErrorKind =
-  | 'corrupted'
-  | 'wrong-password'
-  | 'unsupported-version'
-  | 'server-key-required';
-
-/** Typed failure so callers can show a precise, human message. */
-export class BackupError extends Error {
-  readonly kind: BackupErrorKind;
-
-  constructor(kind: BackupErrorKind, message: string) {
-    super(message);
-    this.name = 'BackupError';
-    this.kind = kind;
-  }
-}
+// The typed failure moved to its own module so `scryptParams` can throw it without importing this
+// file. Re-exported here because twenty modules import it from `cryptoUtils`, and one definition
+// reached by two names is fine where two definitions would not be.
+export { BackupError } from './backupError';
+export type { BackupErrorKind } from './backupError';
 
 /** One encrypted JSON value: scrypt(passphrase, salt) + AES-256-GCM. */
 export interface SealedBlob {
@@ -175,50 +143,6 @@ function deriveKeyAsync(passphrase: Passphrase, salt: Buffer, params: ScryptPara
       (error, key) => (error !== null ? reject(error) : resolve(key)),
     );
   });
-}
-
-const LEGACY_PARAMS: ScryptParams = { N: LEGACY_SCRYPT_N, r: SCRYPT_R, p: SCRYPT_P };
-const DEFAULT_PARAMS: ScryptParams = { N: DEFAULT_SCRYPT_N, r: SCRYPT_R, p: SCRYPT_P };
-
-/**
- * The scrypt parameter sets this build has ever WRITTEN — and therefore the only ones it derives with.
- *
- * <p>`kdfN`/`kdfR`/`kdfP` travel in the blob so a later cost raise never orphans an older file. Read
- * without a bound they were also an instruction from whoever could write the file: `maxmem` caps
- * `N·r`, and nothing capped `p`, which multiplies time at constant memory. Measured while writing the
- * test that pins this: `kdfP: 128` on a blob sealed at N=2^17 held a thread for <b>40 seconds</b>
- * before answering "wrong password" — and the PIN wrap of a synced vault reaches this through
- * background sync with a stored PIN, so nobody had to click anything (audit 2026-09-09, finding #6).</p>
- *
- * <p>An allow-list of tuples, not a ceiling: a ceiling on `p` of 16 would still let a writer make every
- * reader sixteen times slower than the owner chose. Raising the cost in a future release adds the new
- * tuple HERE, in the release that starts writing it — and bumps the envelope version with it, so an
- * older build refuses the file as <i>newer</i> (`SUPPORTED_VERSIONS`) rather than as corrupted.</p>
- */
-const ACCEPTED_SCRYPT: readonly ScryptParams[] = [LEGACY_PARAMS, DEFAULT_PARAMS];
-
-const KDF_REFUSED =
-  'Encrypted data names KDF parameters this build does not accept — if it was written by a newer CredsForDevs, update this one.';
-
-/**
- * The parameters a blob may be derived with, decided BEFORE any derivation.
- *
- * <p>All three fields absent is the one shape that means legacy (every blob written before the
- * parameters were recorded; `withKdf` has always written all three, so a partial set is a hand-edited
- * one). Otherwise the tuple must equal one of {@link ACCEPTED_SCRYPT} — integer equality, never
- * `Number()` coercion, so `"32768"`, `NaN`, `0.5` and a negative are all refused the same way.</p>
- */
-function checkedParams(blob: SealedBlob): ScryptParams {
-  if (blob.kdfN === undefined && blob.kdfR === undefined && blob.kdfP === undefined) {
-    return LEGACY_PARAMS;
-  }
-  const accepted = ACCEPTED_SCRYPT.find(
-    (tuple) => tuple.N === blob.kdfN && tuple.r === blob.kdfR && tuple.p === blob.kdfP,
-  );
-  if (accepted === undefined) {
-    throw new BackupError('corrupted', KDF_REFUSED);
-  }
-  return accepted;
 }
 
 /**
