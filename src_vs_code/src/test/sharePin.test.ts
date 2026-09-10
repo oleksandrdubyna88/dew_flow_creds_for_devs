@@ -62,7 +62,11 @@ test('the notice names the clipboard window and never contains the PIN', () => {
   assert.ok(notice.includes('45s'), notice);
   assert.ok(!notice.includes(pin.value), 'the PIN must not travel in a notification');
   for (const word of pin.value.split(DEFAULT_PASSPHRASE.separator)) {
-    assert.ok(!notice.includes(word), `a word of the PIN reached the notice: ${word}`);
+    // As a WORD, not as a substring. The draw pool is 256 four-letter words and exactly one of
+    // them — `clip` — is a substring of this notice, inside "the clipboard": six draws made this
+    // assertion fail 2.3% of the time, on a notice that never contained the PIN at all. Measured
+    // after CI drew it on 2026-09-10. A boundary is what the property actually says.
+    assert.doesNotMatch(notice, new RegExp(`\b${word}\b`), `a word of the PIN reached the notice: ${word}`);
   }
 });
 
