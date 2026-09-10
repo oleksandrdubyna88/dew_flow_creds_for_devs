@@ -56,31 +56,58 @@ Two adjacent facts that make the fix cheap:
 
 ## Design
 
-### 1. `verifyEnvelopeMac` — the version decides whether "absent" is allowed
+### 0. Prerequisite — the KDF parameters are bounded first
+
+[PLAN_kdf_params_bounded.md](PLAN_kdf_params_bounded.md) lands **before** this plan (gate round 1,
+codex): every entry point below unwraps before it can verify, so an unsigned v4 envelope with an
+extreme `kdfP` would still cost the derivation before being called tampered. With the accepted
+parameter set pinned, the unwrap costs what the owner chose, and this plan's test table gains one row:
+*an unsigned v4 envelope naming an unaccepted `kdfP` is refused before deriving* (`corrupted`, from the
+bound), not after (`tampered`).
+
+### 1. `verifyEnvelopeMac` — "absent" is legacy only for the two versions that were ever unsigned
 
 ```ts
 if (typeof mac !== 'string') {
-  return signedFormat(env.version) ? 'bad' : 'missing';
+  return unsignedLegacy(env.version) ? 'missing' : 'bad';
 }
 ```
 
-`signedFormat(v)` is `typeof v === 'number' && v >= VERSION_WRAPPED_FAST`. The cut is v3, not v2: the
-comment on `resignEnvelopeWraps` (`:685-686`) says it *replaces the older unsigned wrap-rewrite for v2
-vaults*, so an unsigned v2 file can exist on disk and must keep opening. A v3 file was never written
-unsigned (`macMaterialV3` and v3 arrived together).
+`unsignedLegacy(v)` is `v === VERSION_PIN_ONLY || v === VERSION_WRAPPED` — **exact integer equality,
+an allow-list**. Anything else — 3, 4, a future 5, a string `"2"`, `null`, absent — with no string `mac`
+is `'bad'` (gate round 1, gemini: a `>=` test with `typeof === 'number'` would let `version: "3"` read as
+legacy; a v3 file is sealed without AAD, so a mutated version still decrypts). `mac: null` and any
+non-string `mac` take the same branch as absent; the function returns before touching `mac` again, so
+there is no second read to crash on.
+
+The cut is v2, not v3: the comment on `resignEnvelopeWraps` (`:685-686`) says it *replaces the older
+unsigned wrap-rewrite for v2 vaults*, so an unsigned v2 file can exist on disk and must keep opening.
+A v3 file was never written unsigned (`macMaterialV3` and v3 arrived together).
 
 ### 2. One integrity check, before the cache — `requireIntactEnvelope`
 
 A new export in `cryptoUtils.ts`:
 
 ```ts
-/** Throws BackupError('tampered') when the envelope's own signature says it was altered. */
+/**
+ * Throws BackupError('tampered') when the envelope's own signature says it was altered.
+ * The key is the MASTER key (the MAC key is HKDF of it, `envelopeMacKey`) — which is why this can
+ * only run after an unwrap, and why it must run before anything is cached.
+ * 'ok' and 'missing' (v1/v2 only, by §1) pass; only 'bad' throws.
+ */
 export function requireIntactEnvelope(fileContent: string, masterKeyBase64: Passphrase): void
 ```
 
+The order at every call site, stated once (gate round 1, gemini): **unwrap the candidate master key
+into a local — do not cache — call `requireIntactEnvelope(raw, candidate)` — only then `remember()`.**
+A wrong PIN never reaches this: the wrap's own AES-GCM tag throws `wrong-password` inside the unwrap, so
+a key that arrives here is the right key and a mismatch under it is tampering, not a typo.
+
 `BackupErrorKind` gains `'tampered'` (`cryptoUtils.ts:99` — the union that already separates
 `server-key-required` from `wrong-password` for the same reason: two different failures must not reach a
-person as one sentence).
+person as one sentence). The sentence a person sees, in one place (`describeError` / the sync warning):
+*"The vault file's integrity signature is missing or does not match — it was altered outside
+CredsForDevs. Nothing was changed on this machine; check who can write to the sync location."*
 
 Called from:
 
@@ -94,7 +121,10 @@ Called from:
 - `backupManager.ts:294-300` (import from file) — after `unwrapWithPinAsync`, before
   `decryptJsonWithMasterKey`.
 - `commands/recoveryCommands.ts:500-509` (escrow open) — after the escrow unwrap, before the decrypt; a
-  re-key that carries `previousWraps` (`:538`) must not carry a tampered list forward.
+  re-key that carries `previousWraps` (`:538`) must not carry a tampered list forward. `recoveryCommands`
+  imports `vscode`; the three lines *find the escrow wrap → unwrap → verify → decrypt* are extracted into
+  a `vscode`-free `openEscrowedVault(content, orgPrivateKey)` in `orgEscrow.ts` (or the module that
+  already owns `unwrapWithOrgEscrow`) so the refusal is a unit test, not a hope (gate round 1, codex).
 
 ### 3. Delete `envelopeWithWraps`
 
@@ -120,12 +150,16 @@ Unused; keeping it is keeping the one way to write a v4 file whose MAC does not 
 
 | Test | Proves |
 |---|---|
-| v4 without `mac` → `'bad'` | rule 1 |
+| v4 without `mac` → `'bad'`; **v3 without `mac` → `'bad'`** (its own test, not implied by v4) | rule 1 |
 | v2 without `mac` → `'missing'`; v1 → `'missing'` | legacy files keep opening |
+| `version: "3"`, `version: null`, no `version`, `version: 5` — each without `mac` → `'bad'` | the allow-list, not a range |
+| `mac: null`, `mac: 42` on v4 → `'bad'`; on v2 → `'missing'` | a non-string `mac` is "absent" |
 | v4 with a MAC of the other material shape (v2 canonical) → `'bad'` | a downgraded signature is not accepted |
-| sync: stripped MAC + removed wrap → cycle stops, nothing cached, nothing written | rule 2, 3 |
+| sync: stripped MAC + removed wrap (v3 and v4) → cycle stops, nothing cached, nothing written | rule 2, 3 |
 | sync: warm cache, then the file is tampered → cycle stops (existing test at `syncManager.test.ts:315-331` still passes) | the cached path |
-| import: stripped MAC → `tampered` | rule 2 for files |
+| import: stripped MAC → `tampered`; import of an unsigned v2 backup → opens | rule 2 for files, legacy kept |
+| recovery: valid escrow unwrap + stripped MAC + removed security wrap → `tampered`, no re-key output | rule 2 for recovery |
+| unsigned v4 with `kdfP: 128` → `corrupted` before deriving (prerequisite plan's bound) | the unwrap cannot be made expensive first |
 | the four `securityKeyOps` rewrites still verify `'ok'` afterwards (existing `keyWrap.test.ts:366-389`) | no live path writes an unsigned v3+ file |
 
 ## Definition of Done
