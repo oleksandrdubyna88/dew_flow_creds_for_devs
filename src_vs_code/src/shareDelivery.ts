@@ -3,9 +3,10 @@ import { SharingManager } from './sharingManager';
 import { SigningKeypair } from './shareSignature';
 import { describeError } from './describeError';
 import { projectOfNode } from './projectFolders';
-import { ShareForm, sealShare } from './shareFormat';
+import { ShareDiagnostic } from './shareDiagnostics';
+import { ShareForm, sealShare, shareAadText } from './shareFormat';
 import { refuseShare } from './shareRule';
-import { SharePayload, StoredAccount, TeamMember, TreeNode } from './types';
+import { ShareItem, SharePayload, StoredAccount, TeamMember, TreeNode } from './types';
 
 /**
  * The corporate half of the share path: where an entity sits, whether that permits the share, which
@@ -68,6 +69,16 @@ export interface DeliveryDeps {
   readonly policyOf?: (accountId: string) => CorpPolicyState | undefined;
 }
 
+/**
+ * What one delivery produced: whether it landed, what to say about it, and the sender's half of
+ * the diagnostic pair for every item it sealed.
+ */
+export interface DeliveryOutcome {
+  readonly ok: boolean;
+  readonly line: string;
+  readonly sent: readonly ShareDiagnostic[];
+}
+
 /** Who is sending what to whom, and how it is to be sealed. */
 export interface DeliveryTarget {
   readonly sender: StoredAccount;
@@ -89,24 +100,63 @@ export async function deliverToRecipient(
   to: DeliveryTarget,
   payloads: readonly SharePayload[],
   projects: readonly (string | undefined)[],
-): Promise<{ ok: boolean; line: string }> {
-  const { sender, recipient, pin, form, signing } = to;
+): Promise<DeliveryOutcome> {
+  const { sender, recipient, form } = to;
   const refusal = refuseForRecipient(deps.policyOf?.(sender.accountId), recipient.projectIds, projects);
   if (refusal !== '') {
-    return { ok: false, line: `${recipient.account.email}: ${refusal}` };
+    return { ok: false, line: `${recipient.account.email}: ${refusal}`, sent: [] };
   }
+  const sent: ShareDiagnostic[] = [];
   try {
-    const items = payloads.map((p, index) =>
-      sealShare(p, recipient.shareKeyId, sender, pin, Date.now(), {
-        form: formWithProject(form, projects[index]),
-        projectId: projects[index],
-        signing,
-        toEmail: recipient.account.email,
-      }),
+    const items = payloads.map((payload, index) =>
+      sealWithDiagnostic(sent, to, payload, formWithProject(form, projects[index]), projects[index]),
     );
     await deps.sharing.appendShares(sender, recipient, items);
-    return { ok: true, line: recipient.account.email };
+    return { ok: true, line: recipient.account.email, sent };
   } catch (error) {
-    return { ok: false, line: `${recipient.account.email}: ${describeError(error)}` };
+    // `sent` is returned on the failure path too: whatever WAS sealed before the transport gave
+    // out is still the sender's half of a pair the recipient may hold.
+    return { ok: false, line: `${recipient.account.email}: ${describeError(error)}`, sent };
   }
+}
+
+/**
+ * Seal one payload, and record beside it what the sender can say about the seal.
+ *
+ * <p>The fingerprint is taken from the derivation `sealShare` already performed — reported through
+ * `SealOptions.report` rather than computed afterwards, because computing it afterwards means a
+ * second scrypt per item per recipient, and a folder share to three people would spend seconds
+ * producing a value the seal already had.</p>
+ *
+ * <p>`aad` is read back off the ITEM rather than from the label that went in. That is deliberate:
+ * the recipient can only ever compute it from the item, so building the sender's line the same way
+ * is what makes a difference between the two lines a real difference.</p>
+ */
+function sealWithDiagnostic(
+  into: ShareDiagnostic[],
+  to: DeliveryTarget,
+  payload: SharePayload,
+  form: ShareForm,
+  projectId: string | undefined,
+): ShareItem {
+  let keyFingerprint = '';
+  const item = sealShare(payload, to.recipient.shareKeyId, to.sender, to.pin, Date.now(), {
+    form,
+    projectId,
+    signing: to.signing,
+    toEmail: to.recipient.account.email,
+    report: (fingerprint) => {
+      keyFingerprint = fingerprint;
+    },
+  });
+  into.push({
+    keyId: to.recipient.shareKeyId,
+    secret: to.pin,
+    keyFingerprint,
+    blob: item,
+    form,
+    format: item.format,
+    aad: shareAadText(item),
+  });
+  return item;
 }

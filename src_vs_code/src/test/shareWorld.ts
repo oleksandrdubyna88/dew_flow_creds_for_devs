@@ -361,8 +361,17 @@ function sealedShare(payload: SharePayload, pin: string): OwnedShare {
   };
 }
 
+/** One line the extension wrote to its diagnostic channel. */
+interface Logged {
+  level: 'info' | 'warn' | 'error';
+  source: string;
+  message: string;
+}
+
 interface World {
   inbox: InstanceType<typeof loaded.ShareInbox>;
+  /** Everything the inbox reported, in order — see `shareDiagnostics.ts` for what the lines mean. */
+  logged: Logged[];
   storage: InstanceType<typeof StorageManager>;
   state: ReturnType<typeof memento>;
   mutations: () => number;
@@ -417,7 +426,14 @@ function world(): World {
     shareFormFor: () => 'bound' as const,
     serverStamped: () => false,
   };
+  const logged: Logged[] = [];
+  const log = {
+    info: (source: string, message: string) => void logged.push({ level: 'info', source, message }),
+    warn: (source: string, message: string) => void logged.push({ level: 'warn', source, message }),
+    error: (source: string, message: string) => void logged.push({ level: 'error', source, message }),
+  };
   const inbox = new loaded.ShareInbox({
+    log,
     storage,
     sharing,
     state,
@@ -425,7 +441,7 @@ function world(): World {
       mutated += 1;
     },
   });
-  return { inbox, storage, state, mutations: () => mutated, removed, delivered };
+  return { inbox, logged, storage, state, mutations: () => mutated, removed, delivered };
 }
 
 export {

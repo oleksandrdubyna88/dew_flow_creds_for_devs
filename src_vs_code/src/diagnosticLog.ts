@@ -1,6 +1,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
+import { DiagnosticWriter } from './diagnosticWriter';
 import { LogLevel, dayFolder, formatLine, isExpiredLogDay, logFilePath } from './logFormat';
 
 /**
@@ -26,10 +27,7 @@ import { LogLevel, dayFolder, formatLine, isExpiredLogDay, logFilePath } from '.
  * and diagnostics that can take the product down are worse than no diagnostics.</p>
  */
 
-export interface DiagnosticLog extends vscode.Disposable {
-  info(source: string, message: string): void;
-  warn(source: string, message: string): void;
-  error(source: string, message: string): void;
+export interface DiagnosticLog extends vscode.Disposable, DiagnosticWriter {
   /** Bring the channel forward — what the "Show Diagnostics" command calls. */
   show(): void;
   /** Absolute path of this run's file, for the message that tells a reporter where to look. */

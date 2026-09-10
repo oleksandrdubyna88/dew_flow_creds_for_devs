@@ -3430,6 +3430,58 @@ Three properties are the whole design:
 `CredsForDevs: Show Diagnostics` opens the channel and offers the file path; it is declared
 palette-only in `manifest.test.ts`, because the diagnostics belong to the window rather than to
 any row.
+
+`DiagnosticWriter` (`diagnosticWriter.ts`) is the WRITING half of that channel, as a type a
+`vscode`-free module can depend on — three methods, no `show`, no `dispose`, no file path.
+`DiagnosticLog` says `extends vscode.Disposable, DiagnosticWriter` rather than spelling them out.
+It exists because the alternative for a pure module that needs to report something was importing
+`vscode` (breaking the `vscode`-free rule) or declaring its own private sink type, which is how one
+concept becomes three names.
+
+### A failed share says which of three things went wrong (1.5.0)
+
+A share or a password-protected export that will not open at the far end has exactly three possible
+causes, and until 1.5.0 the product could distinguish none of them. `openWithKey` raises one
+sentence — *"wrong master PIN/password or the data was modified"* — `acceptOne` replaces it with
+*"does not decrypt with that PIN"*, `acceptMany` swallowed it entirely inside `resolveShares`' own
+`try/catch`, and **none of the three wrote a line anywhere**. A report arrived as a screenshot of a
+toast, and there was nothing else to read.
+
+`shareDiagnostics.ts` (pure) now assembles four lines — `share SENT`, `share ACCEPT FAILED`,
+`export WRITTEN`, `external import FAILED` — from three values, each with its own reason for being
+safe to write down:
+
+| Field | Where it comes from | What it settles |
+|---|---|---|
+| `blob=` | `blobFingerprint` over the salt, IV, tag and ciphertext (`keyFingerprint.ts`) | **Pairs the two machines** — the server mints its own share id, so nothing else is the same on both ends — and separates *the bytes changed in transit* from everything else |
+| `key=` | the key `scrypt` already derived, reported out of `sealBlob`/`openBlob` | whether the two ends derived the same key at all: the secret and the key id, together |
+| `pin len=… ws=… unusual=…` | `transitSecretReport.ts` | which HALF moved — a trailing space, a hyphen substituted for an en dash, an invisible character |
+
+Read in that order: `blob` differs → the transport; `blob` matches and `key` differs → the secret
+or the address, and the shape says which; both match → the bound label, so compare `aad=`.
+
+Three decisions are load-bearing:
+
+- **The fingerprint is of the DERIVED KEY, never of the secret.** A truncated hash of the PIN would
+  be an offline guessing oracle — a candidate testable with one SHA-256 instead of one scrypt, which
+  is the entire wall `pinPolicy.ts` argues the design rests on. Fingerprinting what scrypt already
+  produced costs an attacker exactly what they were already paying, and 32 bits of a 256-bit key is
+  not a key. It is reported through a callback on `sealBlob`/`openBlob` rather than re-derived, so it
+  costs no second KDF; on the open path it is reported BEFORE the tag is checked, because the value
+  is wanted precisely when the open is about to throw.
+- **An unusual character is NAMED only from a fixed table**, and only while the value has printable
+  ASCII in it. The table is the substitutions a transport makes — dashes, no-break and zero-width
+  spaces, curly quotes — so naming one narrows a position to one of nineteen. Naming an ARBITRARY
+  code point would spell out a secret written in a non-Latin script, character by character; those
+  are only ever counted, and a value with no ASCII bulk gets no positions at all.
+- **The logger is a REQUIRED dependency** of `ShareInbox`, the export command and the import
+  command. An optional one is a promise of diagnostics that some construction path quietly does not
+  keep, which is the failure being fixed.
+
+`resolveShares` takes an `onFailedAttempt` callback so the batch path reports the item that failed
+and the real `BackupError.kind` — a form this build cannot read is no longer reported as a wrong
+PIN alongside the rest. Every caller-supplied field goes through `logSafe`, so a newline in an
+entity name cannot forge a second log line.
 `scripts/ssh-agent-itest.cjs` (`npm run itest:ssh-agent`) drives the **real** OpenSSH tools against
 the compiled agent: `ssh-add -l` must list the key, and `ssh-keygen -Y sign` must produce a
 signature `ssh-keygen -Y verify` accepts. It needs no VS Code and no server, and it is the check

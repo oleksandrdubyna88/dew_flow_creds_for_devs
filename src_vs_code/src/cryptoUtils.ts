@@ -1,5 +1,6 @@
 import * as crypto from 'node:crypto';
 import { StoredAccount, isStoredAccount } from './types';
+import { KeyReport, reportKey } from './keyFingerprint';
 
 /**
  * AES-256-GCM on top of a scrypt-derived key. Pure Node.js `crypto`.
@@ -342,9 +343,12 @@ export function sealBlob(
   aad?: Buffer,
   /** A developer's server-held login key: present binds the wrap to it, absent writes today's format. */
   loginKey?: Buffer,
+  /** Told the fingerprint of the key this seal derived — see `keyFingerprint.ts`. Never throws. */
+  report?: KeyReport,
 ): SealedBlob {
   const salt = crypto.randomBytes(SALT_LENGTH);
   const key = boundIfNeeded(deriveKey(passphrase, salt, DEFAULT_PARAMS), loginKey);
+  reportKey(report, key);
   return withKdf(sealWithKey(payload, key, salt, aad), DEFAULT_PARAMS);
 }
 
@@ -388,9 +392,17 @@ export function openBlob(
   passphrase: Passphrase,
   aad?: Buffer,
   loginKey?: Buffer,
+  /**
+   * Told the fingerprint of the key this attempt derived — BEFORE the tag is checked, so a failed
+   * open still reports it. That ordering is the whole point: the value is wanted precisely when
+   * the open is about to throw.
+   */
+  report?: KeyReport,
 ): unknown {
   const salt = checkedSalt(blob);
-  return openWithKey(blob, boundIfNeeded(deriveKey(passphrase, salt, paramsOf(blob)), loginKey), aad);
+  const key = boundIfNeeded(deriveKey(passphrase, salt, paramsOf(blob)), loginKey);
+  reportKey(report, key);
+  return openWithKey(blob, key, aad);
 }
 
 /**
@@ -416,8 +428,9 @@ export function encryptJson(
   passphrase: string,
   account?: StoredAccount,
   shares?: unknown[],
+  report?: KeyReport,
 ): string {
-  const blob = sealBlob(payload, passphrase);
+  const blob = sealBlob(payload, passphrase, undefined, undefined, report);
   const envelope: BackupEnvelope = {
     format: FORMAT,
     version: VERSION_PIN_ONLY,
@@ -737,9 +750,9 @@ export function readBackupShares(fileContent: string): unknown[] {
 }
 
 /** Decrypt an .enc vault file produced by {@link encryptJson}. */
-export function decryptJson(fileContent: string, passphrase: string): unknown {
+export function decryptJson(fileContent: string, passphrase: string, report?: KeyReport): unknown {
   const envelope = parseEnvelope(fileContent);
-  return openBlob(envelope, passphrase);
+  return openBlob(envelope, passphrase, undefined, undefined, report);
 }
 
 /** {@link decryptJson} with scrypt off the extension-host thread — the legacy-v1 unlock path. */

@@ -12,6 +12,8 @@ import { resolveBulkTargets } from '../commandTargets';
 import { encryptJson } from '../cryptoUtils';
 import { writeFileAtomically } from '../atomicFileWrite';
 import { describeError } from '../describeError';
+import { DiagnosticWriter } from '../diagnosticWriter';
+import { noteExportWritten, sealedBlobOf } from '../shareDiagnostics';
 import { SharePin } from '../sharePin';
 import {
   EXPORT_PASSWORD,
@@ -34,6 +36,8 @@ export interface ExportCommandHost {
   readonly register: (command: string, handler: (...args: unknown[]) => unknown) => void;
   readonly storage: StorageManager;
   readonly vaultKeys: VaultKeys;
+  /** Where an export records the password's SHAPE, so a recipient who cannot open it can be helped. */
+  readonly log: DiagnosticWriter;
   /** This window's view of who each account is to its server; absent for a personal deployment. */
   readonly corpPolicyOf?: (accountId: string) => CorpPolicyState | undefined;
 }
@@ -49,7 +53,13 @@ export interface ExportCommandHost {
  */
 type ExportFile =
   | { readonly content: string; readonly ext: 'json' }
-  | { readonly content: string; readonly ext: 'enc'; readonly pin: SharePin };
+  | {
+      readonly content: string;
+      readonly ext: 'enc';
+      readonly pin: SharePin;
+      /** From the derivation `encryptJson` already performed — see `keyFingerprint.ts`. */
+      readonly keyFingerprint: string;
+    };
 
 export function registerExportCommand(host: ExportCommandHost): void {
   host.register('credSshManager.exportExternal', (target, selected) => runExport(host, target, selected));
@@ -109,7 +119,7 @@ async function writeExport(
     cardNote,
   );
   if (file !== undefined) {
-    await save(file, exportName, picked.length);
+    await save(host.log, file, exportName, picked.length);
   }
 }
 
@@ -205,10 +215,22 @@ async function plainForm(
  */
 async function sealedForm(bundle: unknown): Promise<ExportFile | undefined> {
   const pin = await chooseExportPassword();
-  return pin === undefined ? undefined : { content: encryptJson(bundle, pin.value), ext: 'enc', pin };
+  if (pin === undefined) {
+    return undefined;
+  }
+  let keyFingerprint = '';
+  const content = encryptJson(bundle, pin.value, undefined, undefined, (fingerprint) => {
+    keyFingerprint = fingerprint;
+  });
+  return { content, ext: 'enc', pin, keyFingerprint };
 }
 
-async function save(file: ExportFile, exportName: string, nodeCount: number): Promise<void> {
+async function save(
+  log: DiagnosticWriter,
+  file: ExportFile,
+  exportName: string,
+  nodeCount: number,
+): Promise<void> {
   const targetUri = await vscode.window.showSaveDialog({
     title: 'Export to file',
     // The name comes from a node the person named, so it may hold separators or dots. The dialog
@@ -232,7 +254,28 @@ async function save(file: ExportFile, exportName: string, nodeCount: number): Pr
     void vscode.window.showErrorMessage(`Export failed: ${describeError(err)}. Nothing was written.`);
     return;
   }
+  noteWritten(log, file, targetUri.fsPath);
   await announceWritten(file, nodeCount, targetUri.fsPath);
+}
+
+/**
+ * What was written, and what its password looked like — never what it was.
+ *
+ * <p>The sender's half of a pair, exactly as `share SENT` is: when a recipient reports that the
+ * file will not open, this line and their `external import FAILED` line answer between them
+ * whether the bytes changed, whether the password did, or whether neither did. A plain JSON export
+ * has no password and no key, so there is nothing to pair and nothing is written.</p>
+ */
+function noteWritten(log: DiagnosticWriter, file: ExportFile, target: string): void {
+  if (file.ext !== 'enc') {
+    return;
+  }
+  noteExportWritten(log, {
+    file: path.basename(target),
+    secret: file.pin.value,
+    keyFingerprint: file.keyFingerprint,
+    blob: sealedBlobOf(file.content),
+  });
 }
 
 /**

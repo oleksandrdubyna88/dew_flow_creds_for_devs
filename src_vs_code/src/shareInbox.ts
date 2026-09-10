@@ -5,6 +5,8 @@ import { admit } from './pinAdmission';
 import { declinedMessage, forThisRecipient } from './shareRecipientPin';
 import { entryPinGate } from './pinPrompt';
 import { describeError } from './describeError';
+import { DiagnosticWriter } from './diagnosticWriter';
+import { ShareAttempt, acceptFailureOf, noteAcceptFailed, noteShareSent } from './shareDiagnostics';
 import * as vscode from 'vscode';
 import { BackupError } from './cryptoUtils';
 import { StorageManager } from './storageManager';
@@ -12,7 +14,7 @@ import type { SharingManager } from './sharingManager';
 import { nasPathFor } from './nasPaths';
 import { isServerLocation } from './vaultTransport';
 import { describeSender } from './shareSender';
-import { judgeSender, pinSenderKey, pinnedKey, verdictBlocksAccept } from './senderPinning';
+import { judgeSender, pinSenderKey, pinnedKey, senderVerdictDetail, verdictBlocksAccept } from './senderPinning';
 import { keyFingerprint } from './shareSignature';
 import {
   openShare,
@@ -49,6 +51,12 @@ const ORIGINS_KEY = 'credSshManager.shareOrigins';
 export interface ShareInboxDeps {
   readonly storage: StorageManager;
   readonly sharing: SharingManager;
+  /**
+   * Where a share says what happened to it. REQUIRED, not optional: an optional logger is a
+   * promise of diagnostics that some construction path quietly does not keep, and this whole
+   * feature exists because a failed share left nothing behind to read.
+   */
+  readonly log: DiagnosticWriter;
   /** The extension's globalState: share origins and pinned sender keys live here. */
   readonly state: vscode.Memento;
   /** Called with each accepted entry's LOCAL id, so the tree can reveal and tint it (T13). */
@@ -146,6 +154,7 @@ export class ShareInbox {
         payloads,
         projects,
       );
+      noteShareSent(this.deps.log, recipient.account.email, outcome.sent);
       (outcome.ok ? delivered : failed).push(outcome.line);
     }
     const what =
@@ -420,15 +429,14 @@ export class ShareInbox {
     // PIN", sending the reader back to retype a PIN that was right, against a tree the failed
     // import had already half-changed — with the real error never shown anywhere.
     let payload: SharePayload;
+    let attempted = '';
     try {
       payload = openShare(
-        share.item,
-        share.shareKeyId,
-        pin,
-        this.deps.extensionVersion,
-        this.deps.sharing.serverStamped(share),
+        share.item, share.shareKeyId, pin, this.deps.extensionVersion,
+        this.deps.sharing.serverStamped(share), (fingerprint) => { attempted = fingerprint; },
       );
     } catch (error) {
+      this.noteFailed(share, pin, { fingerprint: attempted, reason: error });
       void vscode.window.showErrorMessage(
         error instanceof BackupError && error.kind === 'unsupported-version'
           ? error.message
@@ -517,12 +525,15 @@ export class ShareInbox {
       // re-trying them is pure waste: each retry is a full scrypt (~1s), and the old
       // O(items × PINs-so-far) cost froze the editor for tens of seconds on a handful of
       // shares. openShare is deterministic, so a PIN that did not open an item never will.
+      const attempted = new Map<string, ShareAttempt>();
       const { opened, remaining: rest } = resolveShares(
-        remaining,
-        [pin],
-        this.deps.extensionVersion,
+        remaining, [pin], this.deps.extensionVersion,
         (owned) => this.deps.sharing.serverStamped(owned),
+        (owned, fingerprint, reason) => attempted.set(owned.item.id, { fingerprint, reason }),
       );
+      for (const unopened of rest) {
+        this.noteFailed(unopened, pin, attempted.get(unopened.item.id));
+      }
       for (const o of opened) {
         await this.importShared(o, o.payload);
         imported++;
@@ -539,6 +550,20 @@ export class ShareInbox {
     void vscode.window.showInformationMessage(
       `Accepted ${imported} item(s)${remaining.length > 0 ? `, ${remaining.length} still pending` : ''}.`,
     );
+  }
+
+  /**
+   * One failed accept, written where it can be read after the toast is gone.
+   *
+   * <p>Both accept paths come here so that a single share and a batch leave the SAME line — the
+   * batch path is the one that used to leave nothing at all, and a diagnostic that exists in only
+   * one of two code paths is one nobody can rely on. What the line means is
+   * `shareDiagnostics.ts`'s header.</p>
+   */
+  private noteFailed(share: OwnedShare, pin: string, attempt?: ShareAttempt): void {
+    const into = this.deps.storage.getAccount(share.accountId)?.email ?? '';
+    const stamped = this.deps.sharing.serverStamped(share);
+    noteAcceptFailed(this.deps.log, acceptFailureOf(share, into, pin, attempt, stamped));
   }
 
   /**
@@ -565,17 +590,8 @@ export class ShareInbox {
 
     if (verdictBlocksAccept(verdict)) {
       const known = pinnedKey(this.deps.state, share.accountId, share.item.fromEmail);
-      const detail =
-        verdict === 'mismatch'
-          ? `This is signed by a DIFFERENT key than the one pinned for ${share.item.fromEmail}.
-
-Pinned:  ${known === undefined ? '—' : keyFingerprint(known)}
-This one: ${keyFingerprint(share.item.senderPublicKey ?? '')}
-
-Either they rotated their key, or somebody else is using their name. Compare the fingerprint with them directly before trusting it.`
-          : verdict === 'downgraded'
-            ? `${share.item.fromEmail} has signed shares before, and this one is not signed at all. That is what stripping a signature looks like.`
-            : 'The signature on this share does not verify.';
+      const detail = senderVerdictDetail(
+        verdict, share.item.fromEmail, known, share.item.senderPublicKey ?? '');
       const choice = await vscode.window.showWarningMessage(detail, { modal: true }, 'Trust this key anyway');
       if (choice !== 'Trust this key anyway') {
         return false;

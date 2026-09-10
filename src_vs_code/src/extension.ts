@@ -981,7 +981,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // round-robin, the import — lives in ShareInbox (audit A1); the handlers below only
   // resolve what was clicked.
   const shareInbox = new ShareInbox({
-    storage,
+    log, storage,
     sharing,
     state: context.globalState,
     extensionVersion: String((context.extension.packageJSON as { version?: string }).version ?? '0.0.0'),
@@ -991,8 +991,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   });
 
   registerEntityCommands({ doorsAt, mutated, register, storage, storageDir, vaultKeys });
-  registerTreeMutationCommands({ announceArrival, doorsFor, mutated, policyOf: corpPolicyOf, register, storage, transports, vaultKeys });
-  registerExportCommand({ corpPolicyOf, register, storage, vaultKeys });
+  registerTreeMutationCommands({ announceArrival, doorsFor, log, mutated, policyOf: corpPolicyOf, register, storage, transports, vaultKeys });
+  registerExportCommand({ corpPolicyOf, log, register, storage, vaultKeys });
 
   registerShareCommands({ register, shareInbox, sharing, storage });
 

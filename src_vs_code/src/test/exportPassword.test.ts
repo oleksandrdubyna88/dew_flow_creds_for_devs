@@ -48,6 +48,8 @@ const ui = {
   files: new Map<string, string>(),
   clipboard: '',
   clipboardWrites: 0,
+  /** Every diagnostic line the export wrote, in order. */
+  logged: [] as { source: string; message: string }[],
   infos: [] as string[],
   infoActions: [] as string[][],
   /** Which action a test presses on the completion notification. */
@@ -70,6 +72,7 @@ function reset(): void {
   ui.files = new Map<string, string>();
   ui.clipboard = '';
   ui.clipboardWrites = 0;
+  ui.logged = [];
   ui.infos = [];
   ui.infoActions = [];
   ui.infoAnswer = undefined;
@@ -272,6 +275,13 @@ function exportHandler(): Handler {
         exportSecretsFor: () => Promise.resolve({ e1: { password: 'pw' } }),
       },
       vaultKeys: { noteUserActivity: () => undefined },
+      // The diagnostic channel an export records the password's SHAPE on — never its value, which
+      // is what `shareDiagnostics.test.ts` asserts. Captured so this file can assert it too.
+      log: {
+        info: (source: string, message: string) => void ui.logged.push({ source, message }),
+        warn: (source: string, message: string) => void ui.logged.push({ source, message }),
+        error: (source: string, message: string) => void ui.logged.push({ source, message }),
+      },
     } as never);
     const handler = handlers.get('credSshManager.exportExternal');
     assert.ok(handler, 'the export command must be registered, or this test asserts nothing');
@@ -332,6 +342,36 @@ test('a typed export password is confirmed, and a mismatch writes no file', asyn
   assert.equal(ui.repeatsAsked, 1, 'the only key to a file that outlives the session is confirmed');
   assert.equal(written(), '', 'a mismatch must write nothing at all');
   assert.equal(ui.errors.length, 1, 'and the person is told why');
+});
+
+test('a written export records the password SHAPE, so its recipient can be helped later', async () => {
+  reset();
+  ui.pin = 'type';
+  ui.typed = 'a-good-export-password';
+  ui.repeats = ['a-good-export-password'];
+
+  await exportHandler()(target, undefined);
+  await flush();
+
+  // The sender's half of the pair `external import FAILED` completes. Without it, a recipient who
+  // cannot open the file has no way to find out whether the password or the bytes are at fault.
+  const line = ui.logged.map((entry) => entry.message).find((message) => message.includes('export WRITTEN'));
+  assert.ok(line !== undefined, `nothing was recorded; got ${JSON.stringify(ui.logged)}`);
+  assert.match(line, /blob=[0-9a-f]{8}/);
+  assert.match(line, /key=[0-9a-f]{8}/);
+  assert.match(line, /password len=22 cp=22 ws=none unusual=none/);
+  assert.ok(!line.includes('a-good-export-password'), `the password leaked: ${line}`);
+});
+
+test('a plain JSON export records nothing, because there is no password to pair', async () => {
+  reset();
+  ui.form = 'plain';
+  ui.saveTo = '/tmp/export.json';
+
+  await exportHandler()(target, undefined);
+  await flush();
+
+  assert.equal(ui.logged.filter((entry) => entry.message.includes('export WRITTEN')).length, 0);
 });
 
 test('the plain JSON export says nothing about a PIN', async () => {
