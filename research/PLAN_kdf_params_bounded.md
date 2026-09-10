@@ -1,11 +1,13 @@
 # PLAN — a blob names only the KDF costs this build has ever written
 
-> Status: **plan only, nothing implemented yet, 2026-09-10.** Scope: `src_vs_code/src/cryptoUtils.ts`, its tests.
-> Audit finding **#6** of [REVIEW_product_audit_2026-09-09.md](REVIEW_product_audit_2026-09-09.md),
+> Status: **IMPLEMENTED, 2026-09-10.** Scope as built: `src_vs_code/src/scryptParams.ts` (new),
+> `backupError.ts` (new), `cryptoUtils.ts`, `src/test/kdfParams.test.ts` (new).
+> Audit finding **#6** of [REVIEW_product_audit_2026-09-09.md](../todo/REVIEW_product_audit_2026-09-09.md),
 > re-verified 2026-09-10 (§Перепроверка).
 >
-> Related docs: [module_extension.md](../research/module_extension.md) (envelope, KDF),
-> [PLAN_envelope_mac_required.md](PLAN_envelope_mac_required.md) (the MAC that would have caught this — after the cost).
+> Related docs: [module_extension.md](module_extension.md) (envelope, KDF),
+> [PLAN_envelope_mac_required.md](../todo/PLAN_envelope_mac_required.md) (the MAC that would have caught
+> this — after the cost; **this plan is its declared prerequisite** and landed first).
 
 ## Symptom
 
@@ -93,8 +95,60 @@ spies were not called.
 
 ## Definition of Done
 
-- [ ] All tests above; RED and GREEN reported.
-- [ ] `npm run typecheck`, `npm test` green.
-- [ ] `module_extension.md` and `CHANGELOG.md` updated.
-- [ ] `coai` plan → `proceed`, code round run, findings resolved.
-- [ ] Promoted to `research/` with deviations recorded.
+- [x] All tests above; RED and GREEN reported.
+- [x] `npm run lint`, `npm run typecheck`, `npm test` green.
+- [x] `module_extension.md` and `CHANGELOG.md` updated.
+- [x] `coai` plan round (`good_enough`, 3 reviewers) and code round (`proceed`, 12 reviewers); 23
+      findings resolved.
+- [x] Promoted with deviations recorded.
+
+## What shipped differently
+
+**The RED was bigger than the audit measured.** The audit reported `p` 1 → 128 moving one open from 3 ms
+to 213 ms on a synthetic blob. Against a blob sealed at the real default (`N=2^17`) the same edit held a
+thread for **39.9 s** (`openBlob`) and **35.1 s** (`openBlobAsync`) before answering "wrong master
+PIN/password". Both refuse in ~240 ms now.
+
+**The accepted set is two tuples, not a range.** The plan's first draft admitted `2^14 ≤ N ≤ 2^18` "for
+headroom". The gate's first round (codex) pointed out that a range admits tuples nobody ever wrote, which
+is exactly the class the change exists to remove; `2^14` and `2^18` are now refused, with their own test
+rows saying why.
+
+**Two new modules, because `cryptoUtils.ts` was at its ceiling.** The lint rule caps a file at 800 lines
+and the change took it to 848. `scryptParams.ts` holds the cost question — the constants, the accepted
+list, `checkedParams`, the refusal sentence — and `backupError.ts` holds `BackupError`/`BackupErrorKind`
+so `scryptParams` can throw without importing `cryptoUtils` back. `cryptoUtils` re-exports both names, so
+the twenty modules that import `BackupError` from it are untouched. That is the repository's own
+precedent (`brokerResponse.ts` was carved out of `credsAgentServer.ts` for the same reason), and it left
+`cryptoUtils.ts` at 742 lines.
+
+**The version-ordering worry was refuted, then pinned anyway.** Five reviewers across both rounds asked
+whether the new bound would call a legitimate NEWER file "corrupted" before `SUPPORTED_VERSIONS` could
+call it "newer". It cannot: every envelope path — `decryptJson`, `decryptJsonAsync`,
+`decryptJsonWithMasterKey`, and `readVaultWraps` for the wraps route — calls `parseEnvelope` first, and
+that throws `unsupported-version` before `openBlob` is reached. Rather than answer it in prose a fifth
+time, the ordering is now a test (`an envelope from a newer format is reported as newer, not as bad KDF
+parameters`), so the day someone opens a payload without that gate the suite says so.
+
+**The refusal names the tuple it refused.** Not in the plan; taken from the code round. `N=524288, r=8,
+p=1` in the message is what lets a person tell "written by a newer build" from "somebody edited this
+file", and none of those three numbers is secret — they are plaintext in every envelope.
+
+**The acceptance tests iterate `ACCEPTED_SCRYPT` rather than naming its members.** Also from the code
+round: a test that spells out `2^15` and `2^17` is a second copy of the list, and it stops covering the
+set the day a third tuple is added. The export exists for that.
+
+**Deviations kept from the plan.** The audit's concurrency cap and cancellable execution were not built,
+and the gate raised both again in the plan round. Rejected with the same reason twice: auto-sync already
+runs one cycle at a time, so the concurrency of unwraps is the concurrency of legitimate syncs — the
+attacker's multiplier is what this change removes. A Promise timeout cannot stop a running scrypt, so it
+would only add a second way to be told "slow". Verifying the MAC before the KDF was also rejected, and it
+is not a trade-off but an impossibility: the envelope MAC key is HKDF of the master key the derivation
+produces, so there is no lighter key to check with — which is the whole reason this plan is the
+prerequisite of [PLAN_envelope_mac_required.md](../todo/PLAN_envelope_mac_required.md) rather than the
+other way round.
+
+## Open tail
+
+Nothing from this plan. The composed finding it half-closes — a stripped MAC letting a tampered wrap list
+through silently — is the other plan's, and this one is now in place beneath it.

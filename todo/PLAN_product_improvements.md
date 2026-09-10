@@ -14,7 +14,7 @@
 - [ ] F4: проверяемое удаление; сохранение login key, если vault не удалён — [PLAN_vault_delete_verified.md](PLAN_vault_delete_verified.md).
 - [ ] F9: брокер отказывает браузерам у двери (`Origin` / `Host`) — [PLAN_broker_origin_guard.md](PLAN_broker_origin_guard.md).
 - [ ] F7: согласованный backup — обход `vaults/` раньше ключей; отдельное подтверждение восстановления остаётся в §2 — [PLAN_backup_walk_order.md](PLAN_backup_walk_order.md).
-- [ ] F6: разрешённые KDF-профили; предел параллелизма и отмена признаны ненужными при закреплённых параметрах — [PLAN_kdf_params_bounded.md](PLAN_kdf_params_bounded.md).
+- [x] F6: разрешённые KDF-профили; предел параллелизма и отмена признаны ненужными при закреплённых параметрах — [PLAN_kdf_params_bounded.md](../research/PLAN_kdf_params_bounded.md), **реализовано 2026-09-10**.
 - [ ] F5: conditional create после 404 и merge после конфликта — [PLAN_first_write_conditional.md](PLAN_first_write_conditional.md).
 - [ ] F8: воспроизводимые SSH-тесты и JSON-позиции на fixtures; матрица CI не добавляется — [PLAN_test_matrix_hygiene.md](PLAN_test_matrix_hygiene.md).
 

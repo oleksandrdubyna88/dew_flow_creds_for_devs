@@ -31,8 +31,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   it, together with an envelope-version bump, so an older build refuses the file as **newer** rather
   than as corrupted — the refusal says so.
 
-  Found by the 2026-09-09 product audit (finding #6) and reported in
-  `todo/REVIEW_product_audit_2026-09-09.md`.
+  The cost question moved out of `cryptoUtils.ts` into its own `scryptParams.ts` — which file it lives
+  in is not usually changelog material, except that this one carries the rule about raising the cost,
+  and a rule nobody can find is a rule that gets broken. `BackupError` moved to `backupError.ts` so the
+  new module can throw it without importing `cryptoUtils` back; `cryptoUtils` re-exports it, so nothing
+  that imports it from there changed.
+
+  Found by the 2026-09-09 product audit (finding #6); the record, including what the review gate changed,
+  is in `research/PLAN_kdf_params_bounded.md`.
 
 ## [1.5.0] — a share that will not open says which of three things went wrong
 
