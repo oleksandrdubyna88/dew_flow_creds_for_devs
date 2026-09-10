@@ -4,6 +4,48 @@ All notable changes to **CredsForDevs** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.0] — a share that will not open says which of three things went wrong
+
+### Added
+
+- **A failed share, and a failed import of an export file, now leave something to read.** Until
+  now they left a toast and nothing else: `CredsForDevs: Show Diagnostics` had no line about either,
+  so a report arrived as a screenshot and stopped there.
+
+  There are exactly three things that can go wrong when a sealed item will not open at the far end —
+  the bytes changed on the way, the secret is not the one it was sealed with, or the label bound
+  into the ciphertext differs — and every one of them produced the same sentence about a wrong PIN.
+  Two machines can now settle it between them in one comparison each. Both ends write a line:
+  `share SENT` beside `share ACCEPT FAILED`, `export WRITTEN` beside `external import FAILED`. Pair
+  them by `blob=`, then read in order:
+
+  - **`blob=` differs** — the bytes that arrived are not the bytes that were sent.
+  - **`blob=` matches, `key=` differs** — the two ends derived different keys, so the secret or the
+    address it is combined with differs. `pin len=… ws=… unusual=…` says which: a length one
+    character longer is a trailing space, and a hyphen the chat turned into an en dash is named
+    with its position.
+  - **both match** — the secret and the address are right, and the bound label is not: compare `aad=`.
+
+  **Nothing in these lines is a secret, and that is a property rather than a filter.** The
+  fingerprint is of the key `scrypt` produced, never of the PIN: a truncated hash OF the PIN would
+  let an attacker test a candidate in a microsecond instead of the ~100 ms the KDF costs, which is
+  the whole defence the design rests on, while fingerprinting the derived key costs them exactly
+  what they were already paying. An unusual character is named only from a fixed table of the
+  substitutions a transport makes, and only while there is ordinary text around it — a secret
+  written in a non-Latin script is counted, never spelled out.
+
+### Fixed
+
+- **Accepting several shares at once hid what happened to the ones that failed.** The round-robin
+  tries each PIN against every item, and the loop that lets a wrong PIN move on to the next item was
+  discarding the reason with the exception — so an item that could not be opened for a completely
+  different reason (a form this build is too old to read, a damaged blob) was counted into the same
+  *"N still pending"* as a genuinely mistyped PIN. Each item that did not open is now reported with
+  its own reason.
+
+- **The export command could fail without saying so in the log**, and a plain-JSON export now
+  correctly records nothing at all — there is no password to pair, so there is nothing to compare.
+
 ## [1.4.0] — the PIN is drawn before you are asked for one, and the export gets the same box
 
 ### Changed

@@ -1,4 +1,4 @@
-import { ShareTranscript, verifyShare } from './shareSignature';
+import { ShareTranscript, keyFingerprint, verifyShare } from './shareSignature';
 
 /**
  * Trust-on-first-use for a share's sender, and what to conclude on every later one.
@@ -101,4 +101,35 @@ export function judgeSender(
 /** Whether a verdict should stop an import outright rather than merely colour it. */
 export function verdictBlocksAccept(verdict: SenderVerdict): boolean {
   return verdict === 'badSignature' || verdict === 'mismatch' || verdict === 'downgraded';
+}
+
+/**
+ * What a blocking verdict SAYS to the person about to accept a share.
+ *
+ * <p>Out of `shareInbox.senderCheck`, where it was a fifteen-line ternary chain inside a `vscode`
+ * method: the wording of a verdict is a property of the verdict, it is pure, and here it is
+ * testable. Nothing about the sentences changed in the move.</p>
+ *
+ * <p>`pinned` is the key already trusted for this address, absent when there is none; `incoming` is
+ * the key this share arrived with, empty when it arrived unsigned — which is itself one of the
+ * verdicts.</p>
+ */
+export function senderVerdictDetail(
+  verdict: SenderVerdict,
+  fromEmail: string,
+  pinned: string | undefined,
+  incoming: string,
+): string {
+  if (verdict === 'mismatch') {
+    return `This is signed by a DIFFERENT key than the one pinned for ${fromEmail}.
+
+Pinned:  ${pinned === undefined ? '—' : keyFingerprint(pinned)}
+This one: ${keyFingerprint(incoming)}
+
+Either they rotated their key, or somebody else is using their name. Compare the fingerprint with them directly before trusting it.`;
+  }
+  if (verdict === 'downgraded') {
+    return `${fromEmail} has signed shares before, and this one is not signed at all. That is what stripping a signature looks like.`;
+  }
+  return 'The signature on this share does not verify.';
 }

@@ -2,6 +2,7 @@ import { withoutSecretClaims } from './secretClaims';
 import { resolveKind } from './entityKind';
 import * as crypto from 'node:crypto';
 import { BackupError, openBlob, readBackupShares, sealBlob } from './cryptoUtils';
+import { KeyReport } from './keyFingerprint';
 import { ShareTranscript, SigningKeypair, signShare } from './shareSignature';
 import {
   EntityKind,
@@ -145,6 +146,18 @@ export function shareLabelAad(label: ShareLabel, form: ShareForm = 'bound'): Buf
 }
 
 /**
+ * The bytes an item's AAD actually covers, as readable text — the diagnostic form of
+ * {@link shareLabelAad}.
+ *
+ * <p>Empty for a legacy item, which binds nothing. Never computed from a label a caller supplies:
+ * it reads the ITEM, so that the two machines' log lines are built from the same source the
+ * cryptography is, and a mismatch between them is a real mismatch rather than a reporting artefact.</p>
+ */
+export function shareAadText(item: ShareItem): string {
+  return shareLabelAad(item, shareFormOf(item))?.toString('utf8') ?? '';
+}
+
+/**
  * The object each form binds, in one place so both ends build the same bytes.
  *
  * <p><b>The project form REFUSES to bind nothing.</b> `projectId` is optional on the label, and
@@ -249,6 +262,11 @@ export interface SealOptions {
    * what every share outside a project folder has always been.</p>
    */
   readonly projectId?: string;
+  /**
+   * Told the fingerprint of the key this seal derived, so the sender's diagnostic line can carry
+   * the value the recipient's line is compared against. Never throws — see `keyFingerprint.ts`.
+   */
+  readonly report?: KeyReport;
 }
 
 export function sealShare(
@@ -267,7 +285,7 @@ export function sealShare(
     createdAt,
     projectId: options.projectId,
   };
-  const blob = sealBlob(payload, recipientKeyId + pin, shareLabelAad(label, form));
+  const blob = sealBlob(payload, recipientKeyId + pin, shareLabelAad(label, form), undefined, options.report);
   const item: ShareItem = {
     id: crypto.randomUUID(),
     ...label,
@@ -324,9 +342,12 @@ export function openShare(
   pin: string,
   currentVersion: string = '0.0.0',
   serverStamped: boolean = false,
+  /** Told the key fingerprint of THIS attempt, including — especially — when the attempt fails. */
+  report?: KeyReport,
 ): SharePayload {
   refuseUnopenable(item, currentVersion, serverStamped);
-  const payload = openBlob(item, recipientKeyId + pin, shareLabelAad(item, shareFormOf(item)));
+  const aad = shareLabelAad(item, shareFormOf(item));
+  const payload = openBlob(item, recipientKeyId + pin, aad, undefined, report);
   if (!isSharePayload(payload)) {
     throw new BackupError('corrupted', 'The shared item does not match the expected schema.');
   }
@@ -429,16 +450,31 @@ export function resolveShares(
   currentVersion = '0.0.0',
   /** Per ITEM, because one round can span a folder account and a server account at once. */
   serverStamped: (share: OwnedShare) => boolean = () => false,
+  /**
+   * Told about each attempt that FAILED: which item, the key fingerprint it derived, and the error
+   * the catch below is about to discard.
+   *
+   * <p>Without it a batch accept is the one path where a failure is invisible. The per-PIN
+   * `try/catch` exists so a wrong PIN moves on to the next item, and it swallows the reason with
+   * the exception — so an item that could not be opened for a completely different reason (a form
+   * this build cannot read, a malformed blob) was reported as a wrong PIN along with the rest. The
+   * caller keeps the LAST attempt per item and writes one line for each that never opened.</p>
+   */
+  onFailedAttempt: (share: OwnedShare, fingerprint: string, reason: unknown) => void = () => undefined,
 ): ResolveResult {
   const opened: ResolveResult['opened'] = [];
   const remaining: OwnedShare[] = [];
   for (const owned of items) {
     let payload: SharePayload | undefined;
     for (const pin of pins) {
+      let fingerprint = '';
       try {
-        payload = openShare(owned.item, owned.shareKeyId, pin, currentVersion, serverStamped(owned));
+        payload = openShare(owned.item, owned.shareKeyId, pin, currentVersion, serverStamped(owned), (f) => {
+          fingerprint = f;
+        });
         break;
-      } catch {
+      } catch (reason) {
+        onFailedAttempt(owned, fingerprint, reason);
         // wrong pin for this item — try the next one
       }
     }

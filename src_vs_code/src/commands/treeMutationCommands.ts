@@ -1,6 +1,8 @@
 /* eslint-disable complexity, max-lines-per-function -- command registrations moved verbatim out of extension.ts
    (roadmap A1 stage 2, 2026-08-28): one function that registers a family of closures, each the size it
    was. The ceilings are a boundary for NEW code here; a handler meets them when it is next touched. */
+import { DiagnosticWriter } from '../diagnosticWriter';
+import { noteImportFailed, sealedBlobOf } from '../shareDiagnostics';
 import { DoorsFor } from '../entityEditCommands';
 import { StorageManager } from '../storageManager';
 import { applyCreatePin, pinForNewEntry } from '../pinOnCreate';
@@ -59,6 +61,8 @@ import { withdrawalMessage } from '../commandTargets';
 import { keyFingerprint } from '../shareSignature';
 export interface TreeMutationCommandsHost {
   readonly announceArrival: (accountId: string, entityId: string) => Promise<void>;
+  /** Where an import that failed says which of its three possible causes it was. */
+  readonly log: DiagnosticWriter;
   readonly doorsFor: DoorsFor;
   readonly mutated: () => void;
   /**
@@ -500,6 +504,9 @@ export function registerTreeMutationCommands(host: TreeMutationCommandsHost): vo
     const raw = Buffer.from(await vscode.workspace.fs.readFile(uri)).toString('utf8');
 
     let payload: unknown;
+    // Carried out of the try so the failure handler can report WHAT was attempted: without them a
+    // wrong password and a file that changed in transit produce one sentence and one dead end.
+    const attempt = { secret: '', keyFingerprint: '' };
     try {
       const parsed = JSON.parse(raw) as Record<string, unknown>;
       if (parsed.format === 'creds-for-devs-external') {
@@ -515,9 +522,19 @@ export function registerTreeMutationCommands(host: TreeMutationCommandsHost): vo
         if (password === undefined) {
           return;
         }
-        payload = decryptJson(raw, password);
+        attempt.secret = password;
+        payload = decryptJson(raw, password, (fingerprint) => {
+          attempt.keyFingerprint = fingerprint;
+        });
       }
     } catch (error) {
+      noteImportFailed(host.log, {
+        file: path.basename(uri.fsPath),
+        secret: attempt.secret,
+        keyFingerprint: attempt.keyFingerprint,
+        blob: sealedBlobOf(raw),
+        reason: describeError(error),
+      });
       void vscode.window.showErrorMessage(
         `Import failed: ${describeError(error)}`,
       );
