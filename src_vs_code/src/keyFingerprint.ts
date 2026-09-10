@@ -74,6 +74,13 @@ export function blobFingerprint(blob: FingerprintableBlob): string {
  * waiting for — including, on the open path, on the way to a throw the caller is meant to see. A
  * reporter that raised would replace a precise "wrong PIN" with whatever it threw, which is the
  * diagnostics-took-the-product-down failure `diagnosticLog.ts` is built to exclude. So it cannot.</p>
+ *
+ * <p><b>A deliberate exemption from the reliability doctrine, named as one.</b>
+ * `.claude/rules/shared/common/reliability.md` (§Where try/catch lives) forbids exactly this shape —
+ * a mid-layer catch-and-swallow — and it is right to, everywhere a failure means something. Here a
+ * failure means only that a diagnostic did not happen, and the alternative is a logger deciding
+ * whether a credential gets sealed. The exemption is this paragraph, so the next reader finds an
+ * argument rather than an oversight.</p>
  */
 export function reportKey(report: KeyReport | undefined, key: Buffer): void {
   try {

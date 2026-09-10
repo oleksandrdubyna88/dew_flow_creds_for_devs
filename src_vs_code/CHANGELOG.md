@@ -46,6 +46,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **The export command could fail without saying so in the log**, and a plain-JSON export now
   correctly records nothing at all — there is no password to pair, so there is nothing to compare.
 
+- **Importing a file that cannot be READ said nothing at all.** A file deleted, locked by another
+  process, or on a network share that dropped between the file picker and the read produced no
+  message and no diagnostic — the command ended in VS Code's generic *"running the contributed
+  command failed"*, if anything reached you.
+
 ## [1.4.0] — the PIN is drawn before you are asked for one, and the export gets the same box
 
 ### Changed

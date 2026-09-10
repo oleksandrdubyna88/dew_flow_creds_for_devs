@@ -53,6 +53,38 @@ was built to exclude.
 fit; the sentences a blocking signature verdict shows are pure, belong beside the verdict, and were
 untestable inside a `vscode` method. Nothing about the wording changed in the move.
 
+## What the CODE round then changed
+
+The code round came back `revise` with 34 findings from twelve reviewers, 24 gating. Four were real
+defects in the first implementation and every one of them was found by more than one reviewer:
+
+1. **A batch accept wrote a failure line for every item the CURRENT PIN did not open.** A
+   round-robin routinely opens those with the next PIN — so a share sealed under a second sender's
+   PIN got a permanent `ACCEPT FAILED` line, carrying the FIRST sender's PIN shape and key
+   fingerprint, moments before it imported correctly. `acceptMany` now accumulates one attempt per
+   item across the whole conversation and writes once at the end, and an item nobody ever tried is
+   not written at all.
+2. **`share SENT` was written whether the delivery landed or not.** `deliverToRecipient` returns its
+   sealed diagnostics on the failure path deliberately, and the caller wrote them unconditionally —
+   claiming a pairing for items the server accepted none of. The write moved INTO
+   `deliverToRecipient`, past the append, where `ok` is not a caller's decision to get wrong.
+3. **The import command's file read sat outside its `try`.** A file deleted, locked or on a share
+   that dropped between the picker and the read produced no diagnostic and no message at all — the
+   command rejected into VS Code's generic "running the contributed command failed".
+4. **`ShareDiagnostic` carried the plaintext PIN across module boundaries.** It is a shape now,
+   reduced at the capture site, so the type cannot carry a secret even by accident.
+
+Three smaller ones were taken: `logSafe` escapes the field separator as well as control characters
+(a name containing `·` could otherwise forge a `blob=` field ahead of the real one), both lines
+carry `entity=` so a pair can be found by eye, and the import failure handler reuses the envelope it
+already parsed instead of parsing a multi-megabyte export a second time inside a failure path.
+
+The round also asked for the integration test this change was missing: the export half was driven
+end to end and the IMPORT half only through its line format. `importExternalDiagnostics.test.ts`
+drives the real command, and writing it found a trap of its own — a hand-rolled `Module._load`
+patch reused the module the previous case had bound to ITS stub, so the second case read the first
+case's file while logging into its own host and passed while proving nothing.
+
 **Deliberately still not done**, unchanged from the plan: trimming or normalising the transit secret
 (it changes the derived key, so it must be symmetric across two independently released halves and
 would strand shares already sitting in an inbox), changing the drawn passphrase's separator, and

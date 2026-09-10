@@ -57,6 +57,13 @@ const tree: Record<string, TreeNode> = {
 
 const getNode = (id: string): TreeNode | undefined => tree[id];
 
+/** The diagnostic sink these cases do not assert on. `shareInboxDiagnostics.test.ts` asserts it. */
+const silentLog = (): { info: () => void; warn: () => void; error: () => void } => ({
+  info: (): void => undefined,
+  warn: (): void => undefined,
+  error: (): void => undefined,
+});
+
 test('an entity inherits the project of the folder above it, however deep', () => {
   const found = projectsOfPayloads(
     [payload('a', 'folder-atlas'), payload('b', 'folder-sub'), payload('c', 'folder-mine'), payload('d', null)],
@@ -78,7 +85,7 @@ test('the project form is chosen only inside the server family, and only with a 
 test('a developer sharing from outside a project is refused before anything is sealed', async () => {
   let appended = 0;
   const outcome = await deliverToRecipient(
-    { sharing: { appendShares: async () => void (appended += 1) }, policyOf: () => policy() },
+    { log: silentLog(), sharing: { appendShares: async () => void (appended += 1) }, policyOf: () => policy() },
     { sender, recipient: recipient(), pin: '1234', form: 'server' },
     [payload('a', 'folder-mine')],
     [undefined],
@@ -92,8 +99,7 @@ test('a developer sharing from outside a project is refused before anything is s
 test('a developer sharing inside their project seals the project form and delivers', async () => {
   const sent: ShareItem[] = [];
   const outcome = await deliverToRecipient(
-    {
-      sharing: { appendShares: async (_s, _r, items) => void sent.push(...items) },
+    { log: silentLog(), sharing: { appendShares: async (_s, _r, items) => void sent.push(...items) },
       policyOf: () => policy(),
     },
     { sender, recipient: recipient({ projectIds: [ATLAS] }), pin: '1234', form: 'server' },
@@ -111,8 +117,7 @@ test('a member sharing the same entity gets the ordinary server form', async () 
   const sent: ShareItem[] = [];
   const member = policy({ role: 'member', policy: { export: true, share: 'any', moveOutOfProject: true } });
   await deliverToRecipient(
-    {
-      sharing: { appendShares: async (_s, _r, items) => void sent.push(...items) },
+    { log: silentLog(), sharing: { appendShares: async (_s, _r, items) => void sent.push(...items) },
       policyOf: () => member,
     },
     { sender, recipient: recipient(), pin: '1234', form: 'server' },
@@ -126,7 +131,7 @@ test('a member sharing the same entity gets the ordinary server form', async () 
 
 test('a recipient the client can see is off the project is refused with a sentence, not an error', async () => {
   const outcome = await deliverToRecipient(
-    { sharing: { appendShares: async () => undefined }, policyOf: () => policy() },
+    { log: silentLog(), sharing: { appendShares: async () => undefined }, policyOf: () => policy() },
     { sender, recipient: recipient({ projectIds: [OTHER] }), pin: '1234', form: 'server' },
     [payload('a', 'folder-atlas')],
     [ATLAS],
@@ -139,6 +144,7 @@ test('a recipient the client can see is off the project is refused with a senten
 test('a transport failure comes back as a failed line, never as a throw', async () => {
   const outcome = await deliverToRecipient(
     {
+      log: silentLog(),
       sharing: {
         appendShares: async () => {
           throw new Error('the server said no');

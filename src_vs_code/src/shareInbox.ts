@@ -6,7 +6,7 @@ import { declinedMessage, forThisRecipient } from './shareRecipientPin';
 import { entryPinGate } from './pinPrompt';
 import { describeError } from './describeError';
 import { DiagnosticWriter } from './diagnosticWriter';
-import { ShareAttempt, acceptFailureOf, noteAcceptFailed, noteShareSent } from './shareDiagnostics';
+import { ShareAttempt, noteAcceptFailures } from './shareDiagnostics';
 import * as vscode from 'vscode';
 import { BackupError } from './cryptoUtils';
 import { StorageManager } from './storageManager';
@@ -149,12 +149,11 @@ export class ShareInbox {
     const projects = projectsOfPayloads(payloads, (id) => this.deps.storage.getNode(sender.accountId, id));
     for (const recipient of recipients) {
       const outcome = await deliverToRecipient(
-        { sharing: this.deps.sharing, policyOf: this.deps.policyOf },
+        { log: this.deps.log, sharing: this.deps.sharing, policyOf: this.deps.policyOf },
         { sender, recipient, pin: pin.value, form, signing },
         payloads,
         projects,
       );
-      noteShareSent(this.deps.log, recipient.account.email, outcome.sent);
       (outcome.ok ? delivered : failed).push(outcome.line);
     }
     const what =
@@ -436,7 +435,7 @@ export class ShareInbox {
         this.deps.sharing.serverStamped(share), (fingerprint) => { attempted = fingerprint; },
       );
     } catch (error) {
-      this.noteFailed(share, pin, { fingerprint: attempted, reason: error });
+      this.noteFailed([share], new Map([[share.item.id, { fingerprint: attempted, reason: error, secret: pin }]]));
       void vscode.window.showErrorMessage(
         error instanceof BackupError && error.kind === 'unsupported-version'
           ? error.message
@@ -501,6 +500,10 @@ export class ShareInbox {
   async acceptMany(items: OwnedShare[]): Promise<void> {
     let remaining = items;
     const pins: string[] = [];
+    // Across the WHOLE conversation, not one round: an item left unopened by this PIN is routinely
+    // opened by the next one, so reporting it now would be a permanent record of a failure that
+    // did not happen — carrying the wrong sender's PIN shape at that.
+    const attempted = new Map<string, ShareAttempt>();
     let imported = 0;
     while (remaining.length > 0) {
       const next = remaining[0];
@@ -525,15 +528,11 @@ export class ShareInbox {
       // re-trying them is pure waste: each retry is a full scrypt (~1s), and the old
       // O(items × PINs-so-far) cost froze the editor for tens of seconds on a handful of
       // shares. openShare is deterministic, so a PIN that did not open an item never will.
-      const attempted = new Map<string, ShareAttempt>();
       const { opened, remaining: rest } = resolveShares(
         remaining, [pin], this.deps.extensionVersion,
         (owned) => this.deps.sharing.serverStamped(owned),
-        (owned, fingerprint, reason) => attempted.set(owned.item.id, { fingerprint, reason }),
+        (owned, fingerprint, reason) => attempted.set(owned.item.id, { fingerprint, reason, secret: pin }),
       );
-      for (const unopened of rest) {
-        this.noteFailed(unopened, pin, attempted.get(unopened.item.id));
-      }
       for (const o of opened) {
         await this.importShared(o, o.payload);
         imported++;
@@ -543,6 +542,7 @@ export class ShareInbox {
       }
       remaining = rest;
     }
+    this.noteFailed(remaining, attempted);
     if (imported > 0) {
       this.deps.onMutated();
     }
@@ -560,10 +560,11 @@ export class ShareInbox {
    * one of two code paths is one nobody can rely on. What the line means is
    * `shareDiagnostics.ts`'s header.</p>
    */
-  private noteFailed(share: OwnedShare, pin: string, attempt?: ShareAttempt): void {
-    const into = this.deps.storage.getAccount(share.accountId)?.email ?? '';
-    const stamped = this.deps.sharing.serverStamped(share);
-    noteAcceptFailed(this.deps.log, acceptFailureOf(share, into, pin, attempt, stamped));
+  private noteFailed(shares: readonly OwnedShare[], attempted: ReadonlyMap<string, ShareAttempt>): void {
+    noteAcceptFailures(this.deps.log, shares, attempted, (share) => ({
+      intoEmail: this.deps.storage.getAccount(share.accountId)?.email ?? '',
+      serverStamped: this.deps.sharing.serverStamped(share),
+    }));
   }
 
   /**

@@ -3458,7 +3458,8 @@ safe to write down:
 | `pin len=… ws=… unusual=…` | `transitSecretReport.ts` | which HALF moved — a trailing space, a hyphen substituted for an en dash, an invisible character |
 
 Read in that order: `blob` differs → the transport; `blob` matches and `key` differs → the secret
-or the address, and the shape says which; both match → the bound label, so compare `aad=`.
+or the address, and the shape says which; both match → the bound label, so compare `aad=`. Both
+lines carry `entity=`, so a pair can be found by eye as well as by fingerprint.
 
 Three decisions are load-bearing:
 
@@ -3477,11 +3478,30 @@ Three decisions are load-bearing:
 - **The logger is a REQUIRED dependency** of `ShareInbox`, the export command and the import
   command. An optional one is a promise of diagnostics that some construction path quietly does not
   keep, which is the failure being fixed.
+- **`ShareDiagnostic` carries a SHAPE, never a secret.** `describeTransitSecret` runs at the capture
+  site — inside `sealWithDiagnostic` and `acceptFailureOf` — so the value that travels between
+  modules is already irreversible. A model holding a plaintext PIN is one a later change can
+  serialise, cache or post to a worker without anybody noticing what it holds.
+
+Three ordering rules make the lines true rather than merely present:
+
+- **A batch accept reports once, at the END of the conversation.** A round-robin leaves items
+  unopened after every round and routinely opens them with the next PIN, so reporting per round
+  wrote a permanent failure line — carrying the wrong sender's PIN shape and key fingerprint — for a
+  share that then imported correctly. `acceptMany` accumulates one `ShareAttempt` per item across
+  the whole conversation and writes at the end; an item with no attempt (the person pressed Escape
+  before typing anything) is not written at all.
+- **`share SENT` is written inside `deliverToRecipient`, past the append.** It hands its sealed
+  diagnostics back on the failure path too, and writing those would claim a pairing the recipient
+  can never make.
+- **A file read that fails is inside the import command's `try`**, so a deleted or locked file
+  reaches the same diagnostic and the same message instead of an unhandled command rejection.
 
 `resolveShares` takes an `onFailedAttempt` callback so the batch path reports the item that failed
 and the real `BackupError.kind` — a form this build cannot read is no longer reported as a wrong
-PIN alongside the rest. Every caller-supplied field goes through `logSafe`, so a newline in an
-entity name cannot forge a second log line.
+PIN alongside the rest. Every caller-supplied field goes through `logSafe`, which escapes control
+characters **and the field separator**: a newline in an entity name would forge a second LINE, and a
+`·` would forge a second FIELD, putting an attacker's `blob=` ahead of the real one.
 `scripts/ssh-agent-itest.cjs` (`npm run itest:ssh-agent`) drives the **real** OpenSSH tools against
 the compiled agent: `ssh-add -l` must list the key, and `ssh-keygen -Y sign` must produce a
 signature `ssh-keygen -Y verify` accepts. It needs no VS Code and no server, and it is the check

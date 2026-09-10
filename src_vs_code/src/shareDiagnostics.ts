@@ -42,8 +42,17 @@ import { OwnedShare } from './types';
 export interface ShareDiagnostic {
   /** The address the key was built from — the roster's spelling on one end, the account's on the other. */
   readonly keyId: string;
-  /** The EXACT string handed to the key derivation, never a copy taken before a trim. */
-  readonly secret: string;
+  /** The entity's name, on BOTH lines, so a reader pairing them does not have to work from `blob=` alone. */
+  readonly entityName: string;
+  /**
+   * The transit secret's SHAPE, already reduced by `describeTransitSecret`.
+   *
+   * <p>A shape and not the value, and reduced at the CAPTURE site rather than here: a review round
+   * pointed out that a model carrying a plaintext secret across module boundaries is one that a
+   * later change can serialise, cache or post to a worker without anybody noticing what it holds.
+   * The reduction is irreversible, so this type cannot carry a secret even by accident.</p>
+   */
+  readonly pinShape: string;
   /** From `sealBlob`/`openBlob`'s report. Empty when nothing reported one. */
   readonly keyFingerprint: string;
   readonly blob: FingerprintableBlob;
@@ -54,7 +63,6 @@ export interface ShareDiagnostic {
 }
 
 export interface AcceptFailure {
-  readonly entityName: string;
   readonly fromEmail: string;
   /** The local account the share was being accepted INTO. */
   readonly intoEmail: string;
@@ -66,7 +74,8 @@ export interface AcceptFailure {
 /** An export file or an external import: one secret, no address, no bound label. */
 export interface FileSecret {
   readonly file: string;
-  readonly secret: string;
+  /** The password's shape, reduced at the capture site — see `ShareDiagnostic.pinShape`. */
+  readonly secretShape: string;
   readonly keyFingerprint: string;
   /** Absent when the file could not be parsed far enough to have one. */
   readonly blob?: FingerprintableBlob;
@@ -85,13 +94,14 @@ function blobField(blob: FingerprintableBlob | undefined): string {
 
 function shareFields(diagnostic: ShareDiagnostic): string[] {
   return [
+    `entity=${logSafe(diagnostic.entityName)}`,
     `keyId=${logSafe(diagnostic.keyId)}`,
     `form=${logSafe(diagnostic.form)}`,
     `format=${diagnostic.format ?? 'none'}`,
     blobField(diagnostic.blob),
     keyField(diagnostic.keyFingerprint),
     `aad=${diagnostic.aad === '' ? 'none' : logSafe(diagnostic.aad)}`,
-    `pin ${describeTransitSecret(diagnostic.secret)}`,
+    `pin ${diagnostic.pinShape}`,
   ];
 }
 
@@ -110,7 +120,6 @@ export function shareSentLine(toEmail: string, diagnostic: ShareDiagnostic): str
 export function shareAcceptFailedLine(failure: AcceptFailure): string {
   return [
     'share ACCEPT FAILED',
-    `entity=${logSafe(failure.entityName)}`,
     `from=${logSafe(failure.fromEmail)}`,
     `into=${logSafe(failure.intoEmail)}`,
     `serverStamped=${failure.serverStamped}`,
@@ -134,7 +143,7 @@ export function externalExportLine(file: FileSecret): string {
     blobField(file.blob),
     keyField(file.keyFingerprint),
     'aad=none',
-    `password ${describeTransitSecret(file.secret)}`,
+    `password ${file.secretShape}`,
   ].join(SEPARATOR);
 }
 
@@ -145,7 +154,7 @@ export function externalImportFailedLine(file: FileSecret): string {
     blobField(file.blob),
     keyField(file.keyFingerprint),
     'aad=none',
-    `password ${describeTransitSecret(file.secret)}`,
+    `password ${file.secretShape}`,
     `reason=${logSafe(file.reason ?? 'unknown')}`,
   ].join(SEPARATOR);
 }
@@ -198,20 +207,21 @@ export function noteImportFailed(log: DiagnosticWriter, file: FileSecret): void 
 export function acceptFailureOf(
   owned: OwnedShare,
   intoEmail: string,
-  secret: string,
-  attempt: ShareAttempt | undefined,
+  attempt: ShareAttempt,
   serverStamped: boolean,
 ): AcceptFailure {
   return {
-    entityName: owned.item.entityName,
     fromEmail: owned.item.fromEmail,
     intoEmail,
     serverStamped,
-    reason: reasonOf(attempt?.reason),
+    reason: reasonOf(attempt.reason),
     diagnostic: {
       keyId: owned.shareKeyId,
-      secret,
-      keyFingerprint: attempt?.fingerprint ?? '',
+      entityName: owned.item.entityName,
+      // Reduced HERE, so the raw secret is an argument that dies with this call rather than a
+      // field on a value the caller keeps.
+      pinShape: describeTransitSecret(attempt.secret),
+      keyFingerprint: attempt.fingerprint,
       blob: owned.item,
       form: shareFormOf(owned.item),
       format: owned.item.format,
@@ -220,10 +230,19 @@ export function acceptFailureOf(
   };
 }
 
-/** One attempt to open one share: the key it derived, and why it did not work. */
+/** One attempt to open one share: what was tried, the key it derived, and why it did not work. */
 export interface ShareAttempt {
   readonly fingerprint: string;
   readonly reason: unknown;
+  /**
+   * The transit secret THIS attempt used.
+   *
+   * <p>Per attempt rather than per round, because a round-robin accept tries several PINs and the
+   * one that matters for an item is the last one tried against IT. Carrying a single "the PIN" for
+   * a whole batch is how a review round found the first version attributing one sender's PIN shape
+   * to another sender's share.</p>
+   */
+  readonly secret: string;
 }
 
 /**
@@ -241,21 +260,68 @@ function reasonOf(reason: unknown): string {
 }
 
 /**
- * The sealed bytes inside an export file, when the file has any.
+ * One line per share that was TRIED and never opened.
+ *
+ * <p>An item with no recorded attempt is skipped, and that is the whole correctness of the batch
+ * path: a round-robin accept leaves items unopened at the end of every round, and the first version
+ * of this reported each of them immediately — so a share sealed under a second sender's PIN got a
+ * permanent "ACCEPT FAILED" line, carrying the FIRST sender's PIN shape and key fingerprint,
+ * moments before it opened correctly. Three reviewers found it independently. Nothing is written
+ * until the conversation is over, and nothing at all is written for a person who pressed Escape
+ * before typing anything.</p>
+ */
+export function noteAcceptFailures(
+  log: DiagnosticWriter,
+  shares: readonly OwnedShare[],
+  attempts: ReadonlyMap<string, ShareAttempt>,
+  context: (share: OwnedShare) => { intoEmail: string; serverStamped: boolean },
+): void {
+  for (const share of shares) {
+    const attempt = attempts.get(share.item.id);
+    if (attempt !== undefined) {
+      const { intoEmail, serverStamped } = context(share);
+      noteAcceptFailed(log, acceptFailureOf(share, intoEmail, attempt, serverStamped));
+    }
+  }
+}
+
+/**
+ * The sealed bytes inside an export file, when the file has any — from the text, or from an
+ * envelope somebody has already parsed.
  *
  * <p>Best effort by design: it is called from a failure handler, and the file that reached the
  * handler may be truncated, re-encoded or not an export at all. Nothing here may throw — a
  * diagnostic that cannot be taken is reported as `blob=unavailable`, which is itself a fact worth
  * having, because a file with no readable envelope did not merely fail to decrypt.</p>
  */
-export function sealedBlobOf(fileContent: string): FingerprintableBlob | undefined {
+export function sealedBlobOf(
+  source: string | Record<string, unknown> | undefined,
+): FingerprintableBlob | undefined {
+  if (source === undefined) {
+    return undefined;
+  }
+  return typeof source === 'string' ? blobFromText(source) : blobFromEnvelope(source);
+}
+
+/** For a caller that has only the file. Best effort — a truncated file simply has no blob. */
+function blobFromText(text: string): FingerprintableBlob | undefined {
   try {
-    const parsed = JSON.parse(fileContent) as Record<string, unknown>;
-    const fields = ['salt', 'iv', 'tag', 'data'] as const;
-    return fields.every((field) => typeof parsed[field] === 'string')
-      ? { salt: String(parsed.salt), iv: String(parsed.iv), tag: String(parsed.tag), data: String(parsed.data) }
-      : undefined;
+    return blobFromEnvelope(JSON.parse(text) as Record<string, unknown>);
   } catch {
     return undefined;
   }
+}
+
+/**
+ * For a caller that has ALREADY parsed it — which the import path has.
+ *
+ * <p>An export can be several megabytes, and parsing it a second time inside a failure handler is a
+ * synchronous freeze on the extension host at exactly the moment the person is waiting for an error
+ * message. Raised by a review round.</p>
+ */
+function blobFromEnvelope(parsed: Record<string, unknown>): FingerprintableBlob | undefined {
+  const fields = ['salt', 'iv', 'tag', 'data'] as const;
+  return fields.every((field) => typeof parsed[field] === 'string')
+    ? { salt: String(parsed.salt), iv: String(parsed.iv), tag: String(parsed.tag), data: String(parsed.data) }
+    : undefined;
 }
