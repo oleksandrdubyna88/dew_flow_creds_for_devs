@@ -337,10 +337,13 @@ export function noteAcceptFailures(
 export function sealedBlobOf(
   source: string | Record<string, unknown> | undefined,
 ): FingerprintableBlob | undefined {
-  if (source === undefined) {
-    return undefined;
+  if (typeof source === 'string') {
+    return blobFromText(source);
   }
-  return typeof source === 'string' ? blobFromText(source) : blobFromEnvelope(source);
+  // `null` is an object and an array has numeric keys: a file whose whole content is `null` parses
+  // to one, and reading fields off it threw INSIDE the failure handler — losing the diagnostic and
+  // the message together, which is the failure this handler exists to prevent.
+  return isEnvelope(source) ? blobFromEnvelope(source) : undefined;
 }
 
 /** For a caller that has only the file. Best effort — a truncated file simply has no blob. */
@@ -359,9 +362,31 @@ function blobFromText(text: string): FingerprintableBlob | undefined {
  * synchronous freeze on the extension host at exactly the moment the person is waiting for an error
  * message. Raised by a review round.</p>
  */
+function isEnvelope(source: unknown): source is Record<string, unknown> {
+  return typeof source === 'object' && source !== null && !Array.isArray(source);
+}
+
+/** The KDF cost a file records, when it records one. Absent is a value too — see `blobFingerprint`. */
+function kdfOf(parsed: Record<string, unknown>, field: string): number | undefined {
+  return typeof parsed[field] === 'number' ? (parsed[field] as number) : undefined;
+}
+
 function blobFromEnvelope(parsed: Record<string, unknown>): FingerprintableBlob | undefined {
   const fields = ['salt', 'iv', 'tag', 'data'] as const;
-  return fields.every((field) => typeof parsed[field] === 'string')
-    ? { salt: String(parsed.salt), iv: String(parsed.iv), tag: String(parsed.tag), data: String(parsed.data) }
-    : undefined;
+  if (!fields.every((field) => typeof parsed[field] === 'string')) {
+    return undefined;
+  }
+  return {
+    salt: String(parsed.salt),
+    iv: String(parsed.iv),
+    tag: String(parsed.tag),
+    data: String(parsed.data),
+    // Carried, not dropped. Without them the file paths hash every envelope as though it had the
+    // legacy cost, so two exports differing ONLY in their KDF parameters produced one `blob=` — and
+    // the reader, told the bytes matched, would go looking at the password. Found by the automated
+    // reviewer after the KDF parameters were added to the fingerprint and only the SHARE path had them.
+    kdfN: kdfOf(parsed, 'kdfN'),
+    kdfR: kdfOf(parsed, 'kdfR'),
+    kdfP: kdfOf(parsed, 'kdfP'),
+  };
 }

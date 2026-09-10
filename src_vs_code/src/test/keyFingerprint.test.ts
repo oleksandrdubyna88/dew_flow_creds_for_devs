@@ -100,3 +100,30 @@ test('a key fingerprint is a name for a key and never a piece of one', () => {
   assert.equal(fingerprint.length, 8);
   assert.ok(!key.toString('hex').includes(fingerprint));
 });
+
+test('two blobs differing only in a KDF parameter are not the same bytes', () => {
+  // `openBlob` derives with `paramsOf(blob)`, so the cost decides the key as surely as the salt
+  // does. Reported equal, the reader would be told the bytes matched and sent to look at the
+  // password. Found by the automated reviewer on the file path, where the parameters were dropped
+  // during extraction after being added to the hash.
+  const cheap: SealedBlob = { ...sent.blob, kdfN: 1 << 15 };
+  const dear: SealedBlob = { ...sent.blob, kdfN: 1 << 17 };
+
+  assert.notEqual(blobFingerprint(cheap), blobFingerprint(dear));
+});
+
+test('an absent KDF parameter is a value of its own, not the empty string', () => {
+  const absent: SealedBlob = { salt: sent.blob.salt, iv: sent.blob.iv, tag: sent.blob.tag, data: sent.blob.data };
+  const present: SealedBlob = { ...absent, kdfN: 0 };
+
+  assert.notEqual(blobFingerprint(absent), blobFingerprint(present));
+});
+
+test('a damaged field cannot make two different blobs hash the same', () => {
+  // The fields come off a file that may be damaged — half of what this value is FOR — so one of
+  // them can contain whatever a joined string would use as its separator.
+  const left: SealedBlob = { salt: 'a|b', iv: 'c', tag: 'd', data: 'e' };
+  const right: SealedBlob = { salt: 'a', iv: 'b|c', tag: 'd', data: 'e' };
+
+  assert.notEqual(blobFingerprint(left), blobFingerprint(right));
+});

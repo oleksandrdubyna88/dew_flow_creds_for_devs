@@ -73,8 +73,12 @@ export function derivedKeyFingerprint(key: Buffer): string {
  * investigation towards the secret for a change in the blob. Raised by the second review round.</p>
  */
 export function blobFingerprint(blob: FingerprintableBlob): string {
-  const parts = [blob.salt, blob.iv, blob.tag, blob.data, blob.kdfN, blob.kdfR, blob.kdfP];
-  return shortHash(BLOB_CONTEXT, Buffer.from(parts.map((part) => String(part ?? '')).join('|'), 'utf8'));
+  // JSON rather than a joined string. The fields come off a file that may be damaged — that is half
+  // of what this value is FOR — so one of them can contain the separator, and `a|b` + `c` would then
+  // hash identically to `a` + `b|c`: two different blobs reported as the same bytes. An absent KDF
+  // parameter stays `null` here, which is a value of its own and not the empty string.
+  const parts = [blob.salt, blob.iv, blob.tag, blob.data, blob.kdfN ?? null, blob.kdfR ?? null, blob.kdfP ?? null];
+  return shortHash(BLOB_CONTEXT, Buffer.from(JSON.stringify(parts), 'utf8'));
 }
 
 /**

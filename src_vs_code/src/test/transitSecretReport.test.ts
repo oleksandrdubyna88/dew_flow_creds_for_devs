@@ -113,9 +113,11 @@ test('the secret itself never appears in the line', () => {
 });
 
 test('many named characters are capped, and the remainder is counted', () => {
-  const line = describeTransitSecret(`a${EN_DASH.repeat(12)}b`);
+  // Nine substitutions inside twenty-nine characters: a minority, so they are named — but more of
+  // them than one line prints, so the rest is a count.
+  const line = describeTransitSecret(`abcdefghijklmnopqrst${EN_DASH.repeat(9)}`);
 
-  assert.match(line, /\+4 more/);
+  assert.match(line, /\+1 more/);
 });
 
 test('logSafe turns a newline into a visible escape instead of a second log line', () => {
@@ -132,4 +134,30 @@ test('logSafe bounds a field so one enormous name cannot push the line out of vi
 
   assert.ok(safe.length < 200);
   assert.match(safe, /\.\.\.\(\+380\)/);
+});
+
+test('a value that is MOSTLY substitutions gets no positions — one ASCII character is not bulk', () => {
+  // The security finding against the first draft: `A` and seven en dashes passes the strength floor,
+  // has one printable ASCII character, and would have had seven of its eight positions spelled out.
+  const line = describeTransitSecret(`A${EN_DASH.repeat(7)}`);
+
+  assert.doesNotMatch(line, /@\d/);
+  assert.match(line, /outside-ascii x7/);
+});
+
+test('a drawn passphrase whose separators were substituted keeps every one of them', () => {
+  // The other side of the same rule: five names in twenty-nine characters is a minority, and it is
+  // the case this whole feature exists to diagnose.
+  const mangled = DRAWN.split('-').join(EN_DASH);
+
+  const line = describeTransitSecret(mangled);
+
+  assert.match(line, /U\+2013 EN DASH@4/);
+  assert.match(line, /U\+2013 EN DASH@24/);
+});
+
+test('exactly half is not a minority', () => {
+  const line = describeTransitSecret(`ab${EN_DASH.repeat(2)}`);
+
+  assert.doesNotMatch(line, /@\d/);
 });

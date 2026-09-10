@@ -3453,7 +3453,7 @@ safe to write down:
 
 | Field | Where it comes from | What it settles |
 |---|---|---|
-| `blob=` | `blobFingerprint` over the salt, IV, tag, ciphertext **and the KDF parameters** (`keyFingerprint.ts`) | **Pairs the two machines** — the server mints its own share id, so nothing else is the same on both ends — and separates *the bytes changed in transit* from everything else |
+| `blob=` | `blobFingerprint` over the salt, IV, tag, ciphertext **and the KDF parameters**, serialised as JSON so a damaged field carrying a separator cannot collide (`keyFingerprint.ts`) | **Pairs the two machines** — the server mints its own share id, so nothing else is the same on both ends — and separates *the bytes changed in transit* from everything else |
 | `key=` | the key `scrypt` already derived, reported out of `sealBlob`/`openBlob` | whether the two ends derived the same key at all: the secret and the key id, together |
 | `pin len=… ws=… unusual=…` | `transitSecretReport.ts` | which HALF moved — a trailing space, a hyphen substituted for an en dash, an invisible character |
 
@@ -3470,11 +3470,16 @@ Three decisions are load-bearing:
   not a key. It is reported through a callback on `sealBlob`/`openBlob` rather than re-derived, so it
   costs no second KDF; on the open path it is reported BEFORE the tag is checked, because the value
   is wanted precisely when the open is about to throw.
-- **An unusual character is NAMED only from a fixed table**, and only while the value has printable
-  ASCII in it. The table is the substitutions a transport makes — dashes, no-break and zero-width
-  spaces, curly quotes — so naming one narrows a position to one of nineteen. Naming an ARBITRARY
-  code point would spell out a secret written in a non-Latin script, character by character; those
-  are only ever counted, and a value with no ASCII bulk gets no positions at all.
+- **An unusual character is NAMED only from a fixed table, and only while such characters are a
+  strict MINORITY of the value.** The table is the substitutions a transport makes — dashes,
+  no-break and zero-width spaces, curly quotes — so naming one narrows a position to one of
+  nineteen. Naming an ARBITRARY code point would spell out a secret written in a non-Latin script,
+  character by character; those are only ever counted. The minority rule is the second half, and it
+  came from a security finding: requiring printable ASCII to be PRESENT is not enough, because `A`
+  followed by seven en dashes passes the strength floor with one ASCII character and would have had
+  seven of its eight positions spelled out. It is deliberately not keyed on whether the extension
+  DREW the value — a typed PIN is precisely the one somebody re-types by hand at the far end, which
+  is where a substitution comes from.
 - **The logger is a REQUIRED dependency** of `ShareInbox`, the export command and the import
   command. An optional one is a promise of diagnostics that some construction path quietly does not
   keep, which is the failure being fixed.

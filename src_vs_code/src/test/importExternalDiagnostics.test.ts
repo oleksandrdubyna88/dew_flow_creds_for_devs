@@ -133,3 +133,23 @@ test('a file that cannot be read at all still reaches the diagnostic and the err
   assert.match(failures(run)[0], /password not-asked/);
   assert.ok(run.errors.some((message) => message.startsWith('Import failed:')), run.errors.join(' | '));
 });
+
+test('a file whose entire content is `null` still reaches the diagnostic and the error', () => {
+  // `JSON.parse('null')` gives an object that is not one: reading `.format` off it throws inside
+  // the try, and reading fields off it threw again INSIDE the failure handler — losing the
+  // diagnostic and the message together, which is the one thing this handler exists to prevent.
+  // Found by the automated reviewer.
+  return importing(() => Promise.resolve(Buffer.from('null', 'utf8')), 'anything').then((run) => {
+    assert.equal(failures(run).length, 1, `nothing was recorded; got ${JSON.stringify(run.logged)}`);
+    assert.match(failures(run)[0], /blob=unavailable/);
+    assert.match(failures(run)[0], /password not-asked/);
+    assert.ok(run.errors.some((message) => message.startsWith('Import failed:')), run.errors.join(' | '));
+  });
+});
+
+test('an array at the root is not an envelope either', () => {
+  return importing(() => Promise.resolve(Buffer.from('[1,2,3]', 'utf8')), 'anything').then((run) => {
+    assert.equal(failures(run).length, 1, `nothing was recorded; got ${JSON.stringify(run.logged)}`);
+    assert.match(failures(run)[0], /blob=unavailable/);
+  });
+});
