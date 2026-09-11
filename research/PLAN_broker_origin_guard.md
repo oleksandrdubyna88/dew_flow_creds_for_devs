@@ -145,3 +145,24 @@ bridge and the pipe — passes its functional checks, as do `agent-broker-itest`
 - **Two WSL integration checks fail on this machine** — `no half of the bridge outlives the client`
   and `disposing the manager takes it down` — both naming installed WSL binaries and both failing the
   same way with this change stashed. Reported as pre-existing rather than claimed unrelated.
+
+
+## The regression it caused, and the fix
+
+**The `Host` check was applied to a listener that has no host.** Both of the broker's listeners share
+one router, and the door was wrapped around the router — so the unix socket (a named pipe on Windows)
+got the port's door. A caller reaching the broker over that socket was never told a port: the WSL
+bridge and Remote-SSH forward a socket *because* no loopback port is reachable. The URL it composes
+therefore cannot name our port, and `creds ssh <name>` over the socket started answering `403`.
+
+`NOT_ON_THE_NETWORK` is now that listener's facing, and `doorsFor` builds one wrapper per listener
+(sharing the once-per-window note). The `Host` check is skipped there; the browser-header checks are
+not. This is not a weakening: `Host` exists to close DNS rebinding, which is a browser attack, and no
+page can open a unix socket or a named pipe. The socket's guard is its file mode — 0600 on POSIX —
+and the grant token, exactly as before this plan.
+
+**Why it reached `main`.** The only thing exercising the path was one case in `creds-cli-itest.cjs`,
+guarded by `process.platform !== 'win32'`, so it could not run on the machine the change was written
+on. There are unit tests now: `brokerOrigin.test.ts` decides the headers for both facings, and
+`brokerOriginDoor.test.ts` drives the real second listener end to end on **both** platforms — the
+first unit test that has ever opened it.

@@ -1911,10 +1911,24 @@ rebinding**: the browser sends the name the page was loaded from, which is the a
 port it connected to, so both must name this listener exactly. `Sec-Fetch-Site` refuses every value
 but `none`; its *absence* admits, because no command-line client sends fetch metadata at all.
 
-`behindTheDoor` wraps the handler both listeners are given, so "every listener is covered" is true by
+`doorsFor` builds a wrapper per listener around one router, so "every listener is covered" is true by
 construction rather than by every listener happening to route through one method. A refusal is `403`
 with a sentence, sets `Connection: close` (the body was never read), and is said to the person **once
-per window**. Record: [PLAN_broker_origin_guard.md](PLAN_broker_origin_guard.md).
+per window** — once across both doors, which is why they are built together rather than separately.
+
+**There are two doors because only one listener has a port**, and getting that wrong shipped. The
+second listener is a unix socket (a named pipe on Windows) — what Remote-SSH forwards and what the
+WSL bridge relays into — and it shared the port's door, so it inherited the `Host` check. A caller
+reaching the broker that way was never told a port, so the URL it composes cannot name ours, and
+every call by NAME over the socket answered `403`. `NOT_ON_THE_NETWORK` is that listener's facing:
+the `Host` check is skipped, the browser-header checks are not. Not a hole — `Host` exists to stop
+DNS rebinding, that is a browser attack, and no page can open a socket or a pipe; what guards this
+transport is the file mode (0600 on POSIX) and the grant token, as before.
+
+It reached `main` because the only thing exercising the path was a POSIX-only case in the CLI
+integration suite. `brokerOriginDoor.test.ts` now drives the real second listener on **both**
+platforms, which is also the first unit test that ever opened it. Record:
+[PLAN_broker_origin_guard.md](PLAN_broker_origin_guard.md).
 
 **A signed envelope without its signature is tampered, not legacy** (`verifyEnvelopeMac`,
 `requireIntactEnvelope`). The envelope MAC exists for one threat, named where it is computed: on a

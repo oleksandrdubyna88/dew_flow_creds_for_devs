@@ -14,7 +14,7 @@ import {
   parseUseRoute,
   statusForErrorCode,
 } from './brokerProtocol';
-import { behindTheDoor } from './brokerOrigin';
+import { doorsFor } from './brokerOrigin';
 import { ReadRouteSources, readRouteBody } from './brokerReadRoutes';
 import { describeError } from './describeError';
 import { BrokerDoor, McpCreateHooks, mcpDoor } from './brokerMcpDoor';
@@ -250,7 +250,7 @@ export class CredsAgentServer implements vscode.Disposable {
       const { server, port } = await startLoopbackServer();
       this.server = server;
       this.port = port;
-      server.on('request', this.served);
+      server.on('request', this.doors.onThePort);
       await this.openExtraListener();
       this.announce();
     });
@@ -440,7 +440,7 @@ export class CredsAgentServer implements vscode.Disposable {
     }
     try {
       this.extra = await startExtraListener(
-        this.served,
+        this.doors.onTheSocket,
         address,
         process.platform,
       );
@@ -592,10 +592,10 @@ export class CredsAgentServer implements vscode.Disposable {
     );
   }
 
-  /** The router, behind the door — see `behindTheDoor` for why it is a wrapper and not a branch. */
-  private readonly served = behindTheDoor(
+  /** The router, behind one door per listener — see `brokerOrigin.ts` for why, and why two. */
+  private readonly doors = doorsFor(
     (req, res) => void this.handle(req, res),
-    () => ({ port: this.port }),
+    () => this.port,
     (res, status, body) => this.respond(res, status, body),
     (message) => this.note(message),
   );
