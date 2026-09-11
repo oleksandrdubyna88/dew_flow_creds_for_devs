@@ -94,12 +94,47 @@ test('a jump host and a forward reach the line through the shared composer', () 
 // the named pipe our agent listens on. The test above asserts the FLAG is composed, which was
 // true throughout. See `sshProgram.ts` for the measurement.
 
+/**
+ * A `PATH` stated rather than inherited — see `sshProgram.test.ts` for why (audit finding #8).
+ *
+ * <p>`pathProbe` has existed on `SshCommandOptions` since T20, commented "Injected only by tests",
+ * and until now no test supplied it: this one read the real `PATH` and failed on any Windows machine
+ * whose built-in OpenSSH came first, while passing in CI because CI is Linux.</p>
+ */
+function pathWith(...dirs: readonly string[]): { pathDirs: readonly string[]; hasTool: (dir: string) => boolean } {
+  return { pathDirs: dirs, hasTool: (dir) => dirs.includes(dir) };
+}
+
+const GIT_SSH = String.raw`C:\Program Files\Git\usr\bin`;
+const BUILT_IN_DIR = String.raw`C:\Windows\System32\OpenSSH`;
+
 test('on Windows a forwarding line names the client that can reach the agent', () => {
   const line = buildSshCommand(entity({ agentForward: true }), 'win32', {
     builtInExists: () => true,
+    pathProbe: pathWith(),
   });
 
   assert.equal(line, 'C:/Windows/System32/OpenSSH/ssh.exe -A deploy@example.com');
+});
+
+test('...and still does when PATH resolves ssh to GIT first', () => {
+  // The state this machine is actually in, and the one T20 exists for: an MSYS `ssh` shadowing the
+  // built-in cannot open the named pipe our agent listens on.
+  const line = buildSshCommand(entity({ agentForward: true }), 'win32', {
+    builtInExists: () => true,
+    pathProbe: pathWith(GIT_SSH, BUILT_IN_DIR),
+  });
+
+  assert.equal(line, 'C:/Windows/System32/OpenSSH/ssh.exe -A deploy@example.com');
+});
+
+test('...and drops to the bare word when PATH already resolves ssh to the built-in', () => {
+  const line = buildSshCommand(entity({ agentForward: true }), 'win32', {
+    builtInExists: () => true,
+    pathProbe: pathWith(BUILT_IN_DIR, GIT_SSH),
+  });
+
+  assert.equal(line, 'ssh -A deploy@example.com');
 });
 
 test('on Windows a line that does not forward keeps the bare word', () => {

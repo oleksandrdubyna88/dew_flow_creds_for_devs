@@ -172,7 +172,7 @@ function checkJson(body: string): ConfigProblem | undefined {
  * guesswork built on a message format that is not a contract. An absent line is honest; a wrong
  * one sends somebody to the wrong place in a file they are already unsure about.</p>
  */
-function jsonErrorLine(text: string): number | undefined {
+export function jsonErrorLine(text: string): number | undefined {
   const named = /\bline (\d+)/i.exec(text);
   return named === null ? undefined : Number(named[1]);
 }

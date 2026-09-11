@@ -1,10 +1,12 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import type { PathProbe } from '../sshProgram';
 import {
   NO_AGENT_TO_FORWARD,
   agentForwardEnv,
   builtInOpenSsh,
   openSshProgram,
+  pathDirsOf,
   pathSshIsBuiltIn,
 } from '../sshProgram';
 
@@ -22,11 +24,42 @@ test('on Windows without agent forwarding nothing is substituted', () => {
   assert.equal(openSshProgram('ssh', false, 'win32', present), 'ssh');
 });
 
-test('on Windows a forwarding connection gets the built-in client', () => {
+/**
+ * A `PATH` stated rather than inherited.
+ *
+ * <p>These two tests used to take the real one, and that is audit finding #8: the product is RIGHT
+ * to answer the bare word when `PATH` already resolves `ssh` to the built-in (that is T20), so on a
+ * Windows machine whose `PATH` puts `C:\Windows\System32\OpenSSH` first they failed — while
+ * passing in CI, which is Linux, where the probe could never fire at all.</p>
+ */
+function pathWith(...dirs: readonly string[]): PathProbe {
+  return { pathDirs: dirs, hasTool: (dir) => dirs.includes(dir) };
+}
+
+const GIT_SSH = String.raw`C:\Program Files\Git\usr\bin`;
+const BUILT_IN_DIR = String.raw`C:\Windows\System32\OpenSSH`;
+
+test('on Windows a forwarding connection gets the built-in client when PATH does not', () => {
   assert.equal(
-    openSshProgram('ssh', true, 'win32', present),
+    openSshProgram('ssh', true, 'win32', present, pathWith()),
     'C:/Windows/System32/OpenSSH/ssh.exe',
   );
+});
+
+test('...and when PATH resolves ssh to GIT first, which is the state that needs the full path', () => {
+  // The case the empty PATH does not cover, and the one that matters: an MSYS `ssh` shadowing the
+  // built-in is exactly why T20 exists — it cannot open the named pipe our agent listens on. An
+  // implementation that emitted the bare word whenever PATH held ANY ssh would pass the other two
+  // cases and break this one.
+  assert.equal(
+    openSshProgram('ssh', true, 'win32', present, pathWith(GIT_SSH, BUILT_IN_DIR)),
+    'C:/Windows/System32/OpenSSH/ssh.exe',
+  );
+});
+
+test('...and the BARE word when PATH already resolves ssh to the built-in', () => {
+  // Then the command shown in the viewer is one a person could have typed.
+  assert.equal(openSshProgram('ssh', true, 'win32', present, pathWith(BUILT_IN_DIR, GIT_SSH)), 'ssh');
 });
 
 test('a Windows install without the built-in falls back rather than failing to spawn', () => {
@@ -114,4 +147,15 @@ test('pathSshIsBuiltIn compares case-insensitively and takes the FIRST hit', () 
   );
   // No ssh anywhere on PATH: not "built-in", and the caller falls back to the full path.
   assert.equal(pathSshIsBuiltIn('win32', { pathDirs: ['C:\\bin'], hasTool: () => false }), false);
+});
+
+test('the PATH is split on the PLATFORM delimiter, not on a hard-coded semicolon', () => {
+  // The bug under the bug. The split was `;` always, so on Linux the whole colon-joined PATH became
+  // ONE entry, `hasTool` was never true, and `pathSshIsBuiltIn` always said false - which is the
+  // only reason the two tests above were ever green in CI.
+  assert.deepEqual(pathDirsOf(String.raw`C:\a;C:\b`, ';'), [String.raw`C:\a`, String.raw`C:\b`]);
+  assert.deepEqual(pathDirsOf('/usr/bin:/bin', ':'), ['/usr/bin', '/bin']);
+  assert.deepEqual(pathDirsOf('/usr/bin:/bin', ';'), ['/usr/bin:/bin'], 'the wrong delimiter is one bogus entry');
+  assert.deepEqual(pathDirsOf('', ';'), [], 'an empty PATH is no directories, never one empty one');
+  assert.deepEqual(pathDirsOf(undefined, ';'), []);
 });

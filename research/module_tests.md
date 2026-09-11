@@ -405,6 +405,37 @@ stub `fetch`; the server half of the precondition is the .NET suite's `Concurren
 storage, so it answers `false` then — and `burnAndMark` asked the question *after* the burn, so the
 lane was never marked spent and a queued second call ran the action again. Every test passed. The
 stub answers from `w.burned` now, which is what made the defect visible.
+## What the unit suite is asserted ON (2026-09-11, audit finding #8)
+
+`npm test` is `node --test out/test/*.test.js`, and CI runs it in exactly one configuration:
+**`ubuntu-latest`, Node 22** (`.github/workflows/ci-extension.yml`). There is no OS matrix and no
+Node matrix. That is a choice, not an oversight — but it has to be written down, because two tests
+were passing there **for the wrong reason**.
+
+`defaultProbe` split `PATH` on a hard-coded `;`. On Linux the whole colon-joined value became ONE
+bogus entry, `hasTool` was never true, and `pathSshIsBuiltIn` always answered false — so the two
+tests that assert Windows PATH precedence never exercised the branch they were named for, and failed
+on any Windows machine whose `PATH` puts `C:\Windows\System32\OpenSSH` ahead of Git's MSYS `ssh`.
+Reproduced here, and the product was right in both cases:
+
+```
+on Windows a forwarding line names the client that can reach the agent
+  actual:   'ssh -A deploy@example.com'
+  expected: 'C:/Windows/System32/OpenSSH/ssh.exe -A deploy@example.com'
+```
+
+What that leaves, and how it is covered now:
+
+| Branch | How it is asserted |
+|---|---|
+| Windows PATH precedence — Git first, built-in first, neither | Injected `PathProbe`, in `sshProgram.test.ts` and `sshCommand.test.ts`, through **both** entry points |
+| The REAL `defaultProbe` wiring | `sshDefaultProbe.test.ts` — real temp directories, a real `ssh.exe`, `process.env.PATH` set and restored. The built-in-first case runs only where that directory exists, i.e. on Windows |
+| The `PATH` split itself | `pathDirsOf` with `;` and `:`, and the wrong delimiter asserted to produce one bogus entry — the bug, pinned |
+| V8's JSON error text | `jsonErrorLine.test.ts` on both message shapes as fixtures. The two engine-driven tests ask the engine whether it offered a position at all, and stay strict where it did — relaxing them to "the right line or none" would have passed a regression that stopped extracting lines entirely |
+
+**A Windows CI job is the thing deliberately not added.** It would be minutes per run to exercise one
+`if` whose seam now exists, is used by both entry points, and has a real-probe test beside it. The
+day that seam proves insufficient, the job is the answer.
 
 ## What none of them covers
 
