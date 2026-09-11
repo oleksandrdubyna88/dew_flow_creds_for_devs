@@ -6,23 +6,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Fixed
-
-- **A `creds` call over the forwarded socket works again.** The browser guard added in the previous
-  change checks that `Host` names this window's own loopback address and port — and the broker's
-  second listener has no port to name. That listener is a unix socket (a named pipe on Windows),
-  which is what Remote-SSH forwards and what the WSL bridge relays into: a caller reaching the
-  broker that way was never told a port, so the URL it composes cannot match, and every call by
-  NAME over the socket was refused with 403.
-
-  The check is skipped on that listener, which is not a hole: `Host` exists to stop DNS rebinding,
-  that is a browser attack, and no page can open a unix socket or a named pipe. The browser-header
-  checks still apply there, and the port listener is unchanged. What guards the socket is its file
-  mode — 0600 on POSIX — and the grant token, as before.
-
-  It reached `main` because the only thing exercising that path was a POSIX-only case in the CLI
-  integration suite. There are unit tests now, driving the real second listener on both platforms.
-
 ### Security
 
 - **Agent forwarding on Windows now launches the built-in OpenSSH by its full path.** When the
@@ -30,27 +13,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Windows resolves a bare `ssh` the way `CreateProcess` does, searching the current directory
   before `PATH`. An `ssh.exe` left in the editor's working directory would have been the client
   that received `-A` and the address of the agent holding your keys.
-
   The command shown in the viewer is unchanged: it is still the bare word wherever your `PATH`
   already resolves it to the built-in client, so it stays a command you could have typed. Only the
   spawn names the file. Every connection that does not need the agent still resolves through your
   own `PATH`, exactly as before.
 
   Raised by CodeRabbit on the pull request.
-
-### Security
-
 - **An entry marked "until an agent uses it once" is now used once, even by two calls at the same
   moment.** The burn runs after the answer is on the wire, deliberately — a storage failure while
   burning must not cost an agent a result it already earned — so two calls that arrived together
   both ran before either burned. And the MCP door mints a grant per call, so "one token, one use"
   was never the guarantee: two different tokens reach the same entry.
-
   A one-use entry now takes its turn, and the second caller is refused *before* the action runs —
   letting it through and relying on the action's own "no longer exists" lookup is still an
   invocation. Nothing else queues: two parallel queries against an ordinary entry still run at
   once, which is a capability no entry should lose for a promise only one kind of entry makes.
-
 - **A call cap of N means N calls.** `agentGrantMaxCalls` was checked before the request body was
   read and before anybody was asked, and counted after both — and the broker shares one consent
   dialog between concurrent first calls on purpose, so under a cap of 1 two requests both passed at
@@ -58,41 +35,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   now. The cap is off by default, so this bites only somebody who turned it on.
 
   Both are audit finding #3 of 2026-09-09; record in `research/PLAN_one_use_serialized.md`.
-
 - **The agent broker now refuses requests that look like they came from a browser.** It is a loopback
   HTTP server, and a web page in your own browser is also on loopback — and nothing checked where a
   request came from. The alias door needs no token by design (a rate limit and the consent dialog are
   its authorisation), and a page can reach it without any preflight, so a site you merely visited
   could raise that dialog in your editor and — if you pressed Allow — run the stored command. It
   could not read the output, but it did not need to.
-
   A request carrying an `Origin` is refused, and so is one whose `Host` is not this window's own
   loopback address **and port**. The second is the one that matters for **DNS rebinding**, where a
   page becomes same-origin with the broker and sends no `Origin` at all: what it cannot forge is the
   name it was loaded from. The unauthenticated read routes — the alias and entry lists — are behind
   the same door.
-
   Every real client is unaffected: the CLI, the MCP host and the WSL bridge address
   `http://127.0.0.1:<port>` and send no browser headers, which the integration tests check rather
   than assume. You are told once per window if something is knocking.
-
   Found in the re-verification of the 2026-09-09 product audit; record in
   `research/PLAN_broker_origin_guard.md`.
-
 - **A vault delete that did not happen now says so, instead of reporting success and removing the
   key.** `DELETE /api/vault` promised an order — the login key is removed only once there is no vault
   left for it to belong to — and enforced it by sequence alone: the deletion returned nothing, swallowed
   a locked file in silence, and the route answered `204` and took the key anyway. On a corporate server
   every developer wrap is sealed to that key, so a vault which outlives it is a vault nobody can open,
   and the route is self-service.
-
   The vault now goes first and alone. If it will not go, **nothing else is touched** and the server
   answers `503` with a sentence this extension quotes verbatim rather than reporting `HTTP 503` and
   sending you looking for a bug. Retrying after the lock clears finishes the job.
 
   Found by the 2026-09-09 product audit (finding #4); record in
   `research/PLAN_vault_delete_verified.md`.
-
 - **Output that cannot be redacted is now withheld, never sent raw.** The broker's promise is that an
   agent USES a credential and never sees it — and a response body carries the child's stdout, so the
   masker is the only thing between a command that prints its own password and the agent that composed
@@ -100,13 +70,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the original body went out with `hits: 0`, which in the audit line is indistinguishable from *there
   was nothing to mask*. No exception was even needed — an entry deleted or renamed during a grant's
   life produced an empty table with the same result.
-
   The table is read **before** the action now. A storage read that will not answer refuses the call
   while there is still nothing to undo: an agent loses a retry instead of gaining a plaintext
   credential. The comment that defended failing open argued it would trade a possible leak for a
   certain outage, and that is true of a *completed* action — which is exactly why this moved to
   before one.
-
   **The sharpest case is a rotation, and it is the one the review gate caught this change getting
   wrong.** A rotation writes its new secret while it runs, so no table read before it can hold that
   value; falling back to the pre-run table on a failed refresh would have masked the *old* credential
@@ -115,10 +83,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   which is complete by construction. A withheld answer carries `actionRan: true`, because an agent
   that cannot tell *it did not happen* from *it happened and you cannot see it* retries, and a blind
   retry here rotates the credential twice.
-
   The journal follows the same rule: a driver's message is exactly where a credential turns up, so a
   reason that cannot be redacted is not written.
-
 - **`credSshManager.maskAgentOutput` is gone.** It was declared, documented as `true` by default, and
   read by no code — masking was always on regardless of it. A switch that would turn a security
   control off is a liability when it works and a lie when it does not; removing it changes no
@@ -132,28 +98,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   re-encrypting anything. An absent signature read as "legacy, carry on" at every version, and a
   missing signature does not stop a sync, so deleting the `mac` field along with a wrap passed every
   check.
-
   What that bought was not a read — the payload still needs a key — but a **downgrade**: strip the
   security-key wrap and the recovery wrap, leave the PIN, and every device opens by PIN alone and
   re-signs that state as legitimate. Or strip the one wrap that still opens, and the owner is locked
   out of a file that looks fine.
-
   Only versions 1 and 2 were ever written unsigned, so only those may be missing a signature now.
   Everything else without one is treated as tampered.
-
   **And the check moved to where it can do its job.** It already existed; it ran *after* the key and
   the wrap list had been cached, so a tampered list was trusted by the time it was detected and the
   next save re-signed it. Verification now happens before anything is remembered, on the one path all
   four unlock routes share — and on the backup import and the officer-quorum recovery too, because a
   recovery that accepted a shortened list would sign it with the officers' own authority.
-
   The refusal is its own kind of failure with its own sentence: not "damaged" (a person restores a
   backup) and not "wrong PIN" (a person retypes a PIN that was right), but *altered outside
   CredsForDevs — check who can write to the sync location*.
 
   Found by the 2026-09-09 product audit (finding #2); record in
   `research/PLAN_envelope_mac_required.md`.
-
 - **A vault file can no longer tell this build how long to spend opening it.** The scrypt cost a blob
   was sealed with travels inside it (`kdfN`/`kdfR`/`kdfP`), so raising the cost never orphans an older
   file — and, read without a bound, it was equally an instruction from whoever could write that file.
@@ -161,13 +122,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   memory. Measured while writing the test that now pins this: `kdfP: 128` on an otherwise ordinary blob
   held a thread for **40 seconds** before answering "wrong master PIN/password", and the same blob is
   refused in **240 ms** now.
-
   Nobody had to click anything for that to happen. A PIN wrap is opened by background sync with the
   stored PIN, so a write-capable attacker at a shared sync location — the threat the envelope MAC exists
   for — could make every device that syncs burn a pool thread for as long as they chose. The envelope
   MAC does cover these three fields, but verifying it needs the master key, which needs the very
   derivation the parameters were bounding.
-
   So an open now accepts **only the parameter tuples this build has ever written** — `{2^15, 8, 1}` and
   `{2^17, 8, 1}` — and refuses everything else *before* deriving anything. An allow-list rather than a
   ceiling, because a ceiling on `p` of 16 would still let a writer make every reader sixteen times
@@ -176,7 +135,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Raising the cost in a future release adds its tuple to that list in the release that starts writing
   it, together with an envelope-version bump, so an older build refuses the file as **newer** rather
   than as corrupted — the refusal says so.
-
   The cost question moved out of `cryptoUtils.ts` into its own `scryptParams.ts` — which file it lives
   in is not usually changelog material, except that this one carries the rule about raising the cost,
   and a rule nobody can find is a rule that gets broken. `BackupError` moved to `backupError.ts` so the
@@ -188,12 +146,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A `creds` call over the forwarded socket works again.** The browser guard added in the previous
+  change checks that `Host` names this window's own loopback address and port — and the broker's
+  second listener has no port to name. That listener is a unix socket (a named pipe on Windows),
+  which is what Remote-SSH forwards and what the WSL bridge relays into: a caller reaching the
+  broker that way was never told a port, so the URL it composes cannot match, and every call by
+  NAME over the socket was refused with 403.
+  The check is skipped on that listener, which is not a hole: `Host` exists to stop DNS rebinding,
+  that is a browser attack, and no page can open a unix socket or a named pipe. The browser-header
+  checks still apply there, and the port listener is unchanged. What guards the socket is its file
+  mode — 0600 on POSIX — and the grant token, as before.
+  It reached `main` because the only thing exercising that path was a POSIX-only case in the CLI
+  integration suite. There are unit tests now, driving the real second listener on both platforms.
 - **Two machines signing into the same account no longer lose one of the two vaults.** Every write
   carried `If-Match` except the one that *creates* the vault — which is the write a new account
   makes. Both machines read "nothing here", both wrote with no precondition, and the second
   silently replaced the first: everything only in the losing vault gone, no error anywhere, and
   nothing to merge from because that copy was never uploaded.
-
   The client now says `If-None-Match: *` when it has read the vault and found none — the server has
   understood that since conditional writes landed. And a refused write no longer just forgets the
   version it held: forgetting means "write unconditionally", so a retry that skipped the re-read
