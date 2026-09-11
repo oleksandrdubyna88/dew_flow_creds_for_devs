@@ -95,6 +95,11 @@ invisible today — exactly the shape of the 2026-08-27 month.
   interchangeable with anything: two are required and the third is a string. The defect is about
   eleven same-shaped optional callbacks.
 
+  > **Half of this was wrong, and the review gate said so before a line was written.** `storageDir`
+  > DID go into the object — see *What shipped differently* below. The reasoning above is about
+  > TYPES, and the trap is about ORDER: an optional positional in front of an options object
+  > rebuilds it exactly. `actions` and `onUserPresent` did stay positional, and that half holds.
+
 
 ## What shipped differently
 
@@ -125,6 +130,27 @@ startup.
 **`aliasEntry` came out of `extension.ts` into `cliAliases.ts`.** The alias hook was a fourteen-line
 inline lambda, and an options object reads badly with one of those in it. It also pulled
 `extension.ts` down from 1066 lines to 1052, so the size baseline came down with it.
+
+**The guard was failing at its own job, and the code round found it.** A `Map` carrying the hooks
+has no own enumerable keys, so the stray-key check saw nothing wrong and every hook came out
+switched off — silently, which is the exact shape of the August failure this change exists to end.
+Four reviewers across two vendors raised it. `checkedHooks` requires a PLAIN object now
+(`Object.prototype` or no prototype at all), and a `Map`, a `Date` and a class instance are each
+refused by name.
+
+**Values are checked as well as keys**, coarsely — `string`, `function`, `object`, one kind per
+hook in the same table the names come from. Keys alone are not enough for the five untyped callers:
+`storageDir: 123` reaches `path.join` and throws somewhere later, `listAliases: 'yes'` throws on the
+first `creds ls`, and both belong at construction. A full schema was NOT built — it would be a
+second description of the interface, which is the thing that drifts.
+
+**What the server keeps is a frozen copy.** Two reviewers: a caller reusing its options object could
+otherwise switch a running window's feature off after construction, which the repository's
+immutability rule forbids anyway.
+
+**`aliasEntry` states what it needs of storage** instead of taking `unknown` and casting. A
+reviewer's: the cast erased the contract, so narrowing what `resolveKind` accepts would not have
+forced this seam to follow.
 
 ## What was run, including what CI does not run
 
