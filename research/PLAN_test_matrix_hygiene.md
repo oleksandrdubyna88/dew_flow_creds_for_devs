@@ -79,11 +79,11 @@
 
 ## Definition of Done
 
-- [ ] The two SSH failures reproduced here, then green here and in CI.
-- [ ] `npm run typecheck`, `npm test` green.
-- [ ] `module_tests.md` updated with the runtime statement.
-- [ ] `coai` plan → `proceed`, code round run, findings resolved.
-- [ ] Promoted to `research/` with deviations recorded.
+- [x] The two SSH failures reproduced here, then green here and in CI.
+- [x] `npm run typecheck`, `npm test` green.
+- [x] `module_tests.md` updated with the runtime statement.
+- [x] `coai` plan → `proceed`, code round run, findings resolved.
+- [x] Promoted to `research/` with deviations recorded.
 
 
 ## What shipped differently
@@ -132,3 +132,29 @@ update that nothing notices was missed.
 - **The built-in-first real-probe case is skipped off Windows**, because `C:\Windows\System32\OpenSSH`
   cannot be created on a Linux runner. It runs — and is the audit's exact condition — on any Windows
   machine.
+
+
+## And one the review on the PR found, which is not test hygiene at all
+
+`openSshProgram` answers the bare word `ssh` whenever the PATH already resolves it to the built-in
+client — the T20 change above, so that the command in the viewer is one a person could have typed.
+That is right for a string somebody reads or pastes into a shell. It is wrong for the other caller:
+`sshUseActions.ts` hands the same string to `spawn(program, …, { shell: false })`, and on Windows a
+relative name is resolved the way `CreateProcess` resolves one — the **current directory is searched
+before `PATH`**. An `ssh.exe` left in the extension host's working directory would be the client
+launched with `-A` and with `SSH_AUTH_SOCK` pointing at our agent, which is the one connection where
+the client is handed keys. CWE-426, raised by CodeRabbit on the pull request.
+
+`openSshBinary` is the spawn's answer: where the built-in is REQUIRED — agent forwarding, on
+Windows, and only if it is there — it names the file, and everywhere else it is the bare word, so
+the person's own `PATH` still decides every connection that is not depending on our agent. It takes
+no `PathProbe`, because what the PATH resolves to is the viewer's question. It also closes a smaller
+hole that needs no attacker: `PATH` is read when the probe runs and again when the process starts,
+and nothing holds it still in between.
+
+It is in this change rather than a follow-up because the file it is in is the file this change
+rewrote, and shipping a known untrusted-search-path while touching the same function is the wrong
+trade. Tested three ways — that the spawn is absolute while the viewer's string stays bare, that
+neither a non-forwarding connection nor a non-Windows one is affected, and that a Windows without
+the built-in client falls back rather than failing to spawn — and watched failing with "the spawn
+names the file it means" against a version that always answered the bare word.

@@ -136,6 +136,38 @@ function mustUseBuiltIn(needsAgent: boolean, platform: NodeJS.Platform): boolean
   return needsAgent && platform === 'win32';
 }
 
+/**
+ * The binary to SPAWN — which is not always the one to show.
+ *
+ * <p>`openSshProgram` hands back the bare word whenever the PATH already resolves `ssh` to the
+ * built-in client, so that the command in the viewer is one a person could have typed. For a
+ * string that is read or pasted into a shell that is right. For `spawn(program, …, { shell: false
+ * })` it is not: on Windows a relative name is resolved the way `CreateProcess` resolves one, and
+ * the CURRENT DIRECTORY is searched ahead of `PATH`. An `ssh.exe` left in the extension host's
+ * working directory would be the client launched with `-A` and with `SSH_AUTH_SOCK` pointing at our
+ * agent — the single connection where the client is handed keys. CWE-426; found by CodeRabbit.</p>
+ *
+ * <p>It also closes a smaller hole that needs no attacker at all: `PATH` is read when the probe
+ * runs and again when the process starts, and nothing holds it still in between.</p>
+ *
+ * <p>Only where the built-in is REQUIRED — agent forwarding, on Windows, and only if it is there.
+ * Everywhere else this is the bare word, because everywhere else the person's own `PATH` should
+ * decide, exactly as it always did. It takes no `PathProbe`: what the PATH resolves to is the
+ * question the VIEWER asks, and the answer this one needs does not depend on it.</p>
+ */
+export function openSshBinary(
+  tool: OpenSshTool,
+  needsAgent: boolean,
+  platform: NodeJS.Platform,
+  exists: (candidate: string) => boolean = fs.existsSync,
+): string {
+  if (!mustUseBuiltIn(needsAgent, platform)) {
+    return tool;
+  }
+  const builtIn = builtInOpenSsh(tool);
+  return exists(builtIn) ? builtIn : tool;
+}
+
 export function openSshProgram(
   tool: OpenSshTool,
   needsAgent: boolean,
