@@ -56,9 +56,23 @@ export interface PathProbe {
   readonly hasTool: (dir: string) => boolean;
 }
 
+/**
+ * The directories a `PATH` value names.
+ *
+ * <p>Exported and given its delimiter because the split used to be a hard-coded `;`, and that is
+ * not a Windows detail that stays harmlessly wrong off Windows: on Linux the whole colon-joined
+ * `PATH` became ONE bogus entry, `hasTool` was never true, and `pathSshIsBuiltIn` always answered
+ * false. CI runs on Linux — so the two tests that assert this logic passed there for that reason and
+ * for no other, while failing on any Windows machine whose `PATH` puts the built-in client first
+ * (audit 2026-09-09, finding #8).</p>
+ */
+export function pathDirsOf(value: string | undefined, delimiter: string): string[] {
+  return (value ?? '').split(delimiter).filter((dir) => dir.length > 0);
+}
+
 function defaultProbe(): PathProbe {
   return {
-    pathDirs: (process.env.PATH ?? '').split(';').filter((dir) => dir.length > 0),
+    pathDirs: pathDirsOf(process.env.PATH, path.delimiter),
     hasTool: (dir) => fs.existsSync(path.join(dir, 'ssh.exe')),
   };
 }

@@ -46,10 +46,15 @@ test('the unclosed brace — the case this was asked for — is caught', () => {
 test('JSON says WHERE, whenever the engine says where', () => {
   // "This is not valid JSON" on a 200-line appsettings is a worse answer than none: it sends
   // somebody off to read the whole file. The line is the useful half.
-  const problem = describeConfigProblem('json', '{\n  "x": {\n}\n');
+  //
+  // The parser itself is pinned on fixtures in `jsonErrorLine.test.ts`, because the message it reads
+  // is V8's and is not a contract. What is only checkable HERE is the whole path — so the assertion
+  // is strict wherever this engine offers a position, and silent where it offers none.
+  const body = '{\n  "x": {\n}\n';
+  const problem = describeConfigProblem('json', body);
 
   assert.notEqual(problem, undefined);
-  assert.equal(problem?.line, 4, `expected line 4, got ${String(problem?.line)}`);
+  assert.equal(problem?.line, enginePositions(body) ? 4 : undefined);
 });
 
 test('and stays silent about the line when the engine does not say — a measured limit', () => {
@@ -174,3 +179,21 @@ test('the question names a line only when one is known', () => {
   assert.match(withLine, /line 7/);
   assert.equal(/line/.test(without), false, 'a guessed line is worse than no line');
 });
+
+/**
+ * Whether THIS engine offers a position for this body at all.
+ *
+ * <p>V8 has two message shapes and only one carries one; which you get depends on the engine, and the
+ * 2026-09-09 audit watched these assertions fail under Node 20 while passing under Node 24 (finding
+ * #8). Relaxing them to "the right line OR none" would have made them vacuous — a regression that
+ * stopped extracting lines entirely would pass. Asking the engine what it said keeps the assertion
+ * strict wherever an answer exists, and silent only where none does.</p>
+ */
+function enginePositions(body: string): boolean {
+  try {
+    JSON.parse(body);
+    return false;
+  } catch (error) {
+    return /\bline \d+/i.test((error as Error).message);
+  }
+}
