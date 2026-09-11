@@ -12,7 +12,7 @@
 - [x] F1: безопасный отказ при невозможности маскирования; секреты не попадают в ответы и журнал; мёртвая настройка `maskAgentOutput` (F10) убрана — [PLAN_mask_fail_closed.md](../research/PLAN_mask_fail_closed.md), **реализовано 2026-09-11**.
 - [ ] F3: атомарное резервирование grant и использования одноразовой записи — [PLAN_one_use_serialized.md](PLAN_one_use_serialized.md).
 - [x] F4: проверяемое удаление; сохранение login key, если vault не удалён — [PLAN_vault_delete_verified.md](../research/PLAN_vault_delete_verified.md), **реализовано 2026-09-11**.
-- [ ] F9: брокер отказывает браузерам у двери (`Origin` / `Host`) — [PLAN_broker_origin_guard.md](PLAN_broker_origin_guard.md).
+- [x] F9: брокер отказывает браузерам у двери (`Origin` / `Host`) — [PLAN_broker_origin_guard.md](../research/PLAN_broker_origin_guard.md), **реализовано 2026-09-11**.
 - [ ] F7: согласованный backup — обход `vaults/` раньше ключей; отдельное подтверждение восстановления остаётся в §2 — [PLAN_backup_walk_order.md](PLAN_backup_walk_order.md).
 - [x] F6: разрешённые KDF-профили; предел параллелизма и отмена признаны ненужными при закреплённых параметрах — [PLAN_kdf_params_bounded.md](../research/PLAN_kdf_params_bounded.md), **реализовано 2026-09-10**.
 - [ ] F5: conditional create после 404 и merge после конфликта — [PLAN_first_write_conditional.md](PLAN_first_write_conditional.md).

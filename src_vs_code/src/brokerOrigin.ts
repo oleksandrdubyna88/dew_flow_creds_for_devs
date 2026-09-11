@@ -156,11 +156,17 @@ function portOf(url: URL): number {
   return url.port === '' ? 80 : Number(url.port);
 }
 
-const LOOPBACK_NAMES: readonly string[] = ['127.0.0.1', 'localhost', '[::1]'];
+const LOOPBACK_NAMES: readonly string[] = ['127.0.0.1', 'localhost', '::1'];
 
-/** Exact, never a suffix: `localhost.attacker.test` is the attacker's name, not ours. */
+/**
+ * Exact, never a suffix: `localhost.attacker.test` is the attacker's name, not ours.
+ *
+ * <p>Brackets are stripped first. `new URL('http://[::1]:4123').hostname` gives `[::1]` on this
+ * runtime, and a reviewer asked whether every runtime agrees — comparing the bare address costs
+ * nothing and removes the question.</p>
+ */
 function isLoopbackName(hostname: string): boolean {
-  return LOOPBACK_NAMES.includes(hostname.toLowerCase());
+  return LOOPBACK_NAMES.includes(hostname.toLowerCase().replace(/^\[|\]$/g, ''));
 }
 
 /** Node collapses repeats, but the type says an array is possible; take the first either way. */

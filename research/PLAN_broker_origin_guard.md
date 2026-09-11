@@ -1,12 +1,13 @@
 # PLAN — the broker refuses browsers at the door
 
-> Status: **plan only, nothing implemented yet, 2026-09-10.** Scope: `src_vs_code/src/credsAgentServer.ts`,
-> a new `brokerOrigin.ts`, their tests, the broker itests.
+> Status: **IMPLEMENTED, 2026-09-11.** Scope as built: `brokerOrigin.ts` (new), `credsAgentServer.ts`,
+> `brokerProtocol.ts`, `brokerRequests.ts`, `brokerOrigin.test.ts` and `brokerOriginDoor.test.ts` (new),
+> `brokerWorld.ts`, `research/module_extension.md`.
 > Not in the 2026-09-09 audit — found in the 2026-09-10 re-verification
-> ([REVIEW_product_audit_2026-09-09.md](REVIEW_product_audit_2026-09-09.md) §Перепроверка).
+> ([REVIEW_product_audit_2026-09-09.md](../todo/REVIEW_product_audit_2026-09-09.md) §Перепроверка).
 >
-> Related docs: [module_extension.md](../research/module_extension.md) (the broker's doors),
-> [PLAN_agent_ssh_broker.md](../research/PLAN_agent_ssh_broker.md), [PLAN_cli_bridge_tail.md](../research/PLAN_cli_bridge_tail.md).
+> Related docs: [module_extension.md](module_extension.md) (the broker's doors),
+> [PLAN_agent_ssh_broker.md](PLAN_agent_ssh_broker.md), [PLAN_cli_bridge_tail.md](PLAN_cli_bridge_tail.md).
 
 ## Symptom
 
@@ -96,3 +97,51 @@ one (`brokerProtocol.ts`); `statusForErrorCode` maps it to 403.
 - [ ] `module_extension.md` and `CHANGELOG.md` updated.
 - [ ] `coai` plan → `proceed`, code round run, findings resolved.
 - [ ] Promoted to `research/` with deviations recorded.
+
+
+## What shipped differently
+
+**The plan framed `Origin` as the main defence, and it is not.** A reviewer pointed out that a browser
+omits `Origin` on a same-origin GET — and after a DNS rebind the page IS same-origin, so the read
+routes this change exists to close would have stayed open. **`Host` is what closes rebinding**: the
+browser sends the name the page was loaded from, which is the attacker's. `Origin` closes the other
+half, the ordinary cross-origin POST that reaches the token-less alias door.
+
+**The port is checked too**, which three reviewers asked for independently. A browser sends the port
+it connected to, so `Host: localhost` (meaning 80) or a mismatched port cannot come from a page that
+reached this listener. `admitsRequest` therefore takes the port it is guarding.
+
+**The door is a WRAPPER, not a branch.** The plan put the check at the top of `handle`; a reviewer
+asked for the common entry point instead, and they were right — `behindTheDoor` wraps the handler both
+listeners are given, so "every listener is covered" is true by construction rather than by every
+listener happening to route through one method.
+
+**`Connection: close` on a refusal**, also a reviewer's: the body was never read, and a keep-alive
+socket holding an unread body serves nobody.
+
+**A documentation defect of mine was found and fixed here.** `research/module_extension.md` still said
+the masker "fails open by design" — the opposite of what the code has done since the masking change.
+That edit was lost resolving a rebase conflict on that branch, so main carried a doc that contradicted
+its own source. Repaired, with the masking and door sections it should have had.
+
+**`credsAgentServer.ts` hit its 800-line ceiling again**, so the door lives entirely in
+`brokerOrigin.ts` and the bearer-token authorisation moved to `brokerRequests.ts`, which already owns
+request admission. 798 lines.
+
+## What was checked rather than assumed
+
+Four reviewers predicted that the named-pipe and Unix-socket listener would 403 everything, because an
+IPC client sends no TCP `Host`. **It does not**, and the reason is in `BrokerClient.cs`'s own comment:
+the client composes `http://127.0.0.1:<port>/…` and the transport is chosen separately, so the `Host`
+is the URL's either way. Evidence rather than argument: `creds-mcp-wsl-itest` — which crosses WSL, the
+bridge and the pipe — passes its functional checks, as do `agent-broker-itest`, `creds-cli-itest`,
+`creds-mcp-itest` and `wsl-agent-relay-itest`.
+
+## Open tail
+
+- **The pipe path is covered by the WSL integration tests, not by a unit test.** The broker harness
+  starts only the loopback listener, so the `Host` an IPC client sends is asserted indirectly. Worth
+  a direct test the day the harness can start the extra listener.
+- **Two WSL integration checks fail on this machine** — `no half of the bridge outlives the client`
+  and `disposing the manager takes it down` — both naming installed WSL binaries and both failing the
+  same way with this change stashed. Reported as pre-existing rather than claimed unrelated.
