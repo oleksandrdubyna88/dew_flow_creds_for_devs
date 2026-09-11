@@ -6,6 +6,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.6.0] — the audit's nine findings closed, and a second code where enrolment asks for two
+
 ### Added
 
 - **The next one-time code, beside the current one, where you ask for it.** Binding a virtual MFA
