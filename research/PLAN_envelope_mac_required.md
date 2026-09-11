@@ -1,12 +1,14 @@
 # PLAN — a signed envelope without its signature is tampered, not legacy
 
-> Status: **plan only, nothing implemented yet, 2026-09-10.** Scope: `src_vs_code/src/cryptoUtils.ts`,
-> `vaultKeys.ts`, `syncManager.ts`, `backupManager.ts`, `commands/recoveryCommands.ts`, their tests.
-> Audit finding **#2** of [REVIEW_product_audit_2026-09-09.md](REVIEW_product_audit_2026-09-09.md),
+> Status: **IMPLEMENTED, 2026-09-11.** Scope as built: `cryptoUtils.ts`, `backupError.ts`,
+> `vaultKeys.ts`, `syncManager.ts`, `backupManager.ts`, `keyWrap.ts`,
+> `commands/recoveryCommands.ts`, and the tests `envelopeMacRequired.test.ts` (new),
+> `vaultKeysTamper.test.ts` (new), `syncManager.test.ts`, `envelopeAad.test.ts`, `keyWrap.test.ts`.
+> Audit finding **#2** of [REVIEW_product_audit_2026-09-09.md](../todo/REVIEW_product_audit_2026-09-09.md),
 > re-verified 2026-09-10 (§Перепроверка).
 >
-> Related docs: [module_extension.md](../research/module_extension.md) (envelope, wraps, MAC),
-> [PLAN_share_metadata_aad.md](../research/PLAN_share_metadata_aad.md) (why `wraps` are not in the AAD).
+> Related docs: [module_extension.md](module_extension.md) (envelope, wraps, MAC),
+> [PLAN_share_metadata_aad.md](PLAN_share_metadata_aad.md) (why `wraps` are not in the AAD).
 
 ## Symptom
 
@@ -40,7 +42,7 @@ Two adjacent facts that make the fix cheap:
   `securityKeyOps.ts`: 190, 218, 246, 305). `envelopeWithWraps` (`cryptoUtils.ts:495-501`), which copies
   the old MAC over new wraps, is **called by no production code** — it is the one function that would
   produce an unsigned-looking v4 file, and it is dead.
-- The audit's finding #6 ([PLAN_kdf_params_bounded.md](../research/PLAN_kdf_params_bounded.md), shipped) composes with this one: the MAC covers
+- The audit's finding #6 ([PLAN_kdf_params_bounded.md](PLAN_kdf_params_bounded.md), shipped) composes with this one: the MAC covers
   `kdfN/kdfR/kdfP` (`macMaterialV3`, `:629`), so with the MAC required the KDF parameters become
   authenticated too — after the unwrap. That plan bounds them before it.
 
@@ -58,7 +60,7 @@ Two adjacent facts that make the fix cheap:
 
 ### 0. Prerequisite — the KDF parameters are bounded first
 
-[PLAN_kdf_params_bounded.md](../research/PLAN_kdf_params_bounded.md) landed **before** this plan (gate round 1,
+[PLAN_kdf_params_bounded.md](PLAN_kdf_params_bounded.md) landed **before** this plan (gate round 1,
 codex): every entry point below unwraps before it can verify, so an unsigned v4 envelope with an
 extreme `kdfP` would still cost the derivation before being called tampered. With the accepted
 parameter set pinned, the unwrap costs what the owner chose, and this plan's test table gains one row:
@@ -170,3 +172,59 @@ Unused; keeping it is keeping the one way to write a v4 file whose MAC does not 
       entry names the downgrade this closes.
 - [ ] `coai` plan round reached `proceed`; code round run on the branch; every finding resolved.
 - [ ] Promoted to `research/` with deviations recorded.
+
+
+## What shipped differently
+
+**The version number alone could not carry the rule — the gate caught it, and it was a live bypass.**
+The plan said "absent MAC is legacy only for versions 1 and 2", an allow-list of integers. A reviewer
+(codex) pointed out that `version` is unauthenticated plaintext for **v3** — only v4 binds the header
+as AAD — so relabelling a signed v3 to `version: 2` and deleting its `mac` read as a legacy file, and
+the payload still opened, because a v2 open path with `kdf: 'hkdf'` derives exactly the same key. The
+RED for it was written before the fix: `actual: 'missing', expected: 'bad'`. What closes it is that the
+two unsigned formats are also the two **scrypt** formats — v3 introduced HKDF and the MAC in the same
+release — so `unsignedLegacyShape` requires `version ∈ {1,2}` **and** `kdf === 'scrypt'`. An attacker
+who rewrites `kdf` to keep the pair consistent sends the open down the scrypt path, derives a different
+key and fails the GCM tag; the relabel costs them the file whichever half they leave alone.
+
+**The check lives inside `remember`, and `vaultContent` is REQUIRED.** The plan proposed a
+`rememberVerified` beside `remember`. A second name is a second thing to forget, so the verification
+went into `remember` itself. The gate then made the parameter mandatory rather than optional: an
+optional envelope is a gate a future unlock route walks past by not passing it, which is the same
+"applied at SOME of its sites" defect this whole change exists to remove.
+
+**A refusal no longer persists a PIN.** Also from the gate: the security-key/PIN route called
+`savePin` and *then* `remember`, so a tampered envelope still wrote to SecretStorage before throwing.
+Verification now precedes the write, with its own test.
+
+**The escrow open moved into `keyWrap.ts` and parses its own wraps.** The plan put
+`openEscrowedVault` there so the refusal could be unit-tested (`recoveryCommands.ts` imports
+`vscode`). The gate added that it should not also take a wrap list — a caller passing both raw content
+and a parsed list can pass a mismatched pair — so it reads the wraps out of the content it was given.
+
+**Three surfaces, three sentences.** `tampered` reaches sync as the existing paused-cycle warning, the
+restore as `TAMPERED_MESSAGE`, and the recovery command as its own error. The sync sentence says
+auto-sync is paused, which would be the wrong thing to tell somebody who just pressed Restore.
+
+**A fixture was wrong, and correcting it was the honest move.** `syncManager.test.ts` built **unsigned
+v3** envelopes — a file no writer can produce — and three enrolment tests had been passing against it.
+The fixture signs for real now; the check was not weakened to accommodate it.
+
+## The two things found by writing the tests, not by running them
+
+**The first version of this fix was half untested.** Removing the verification from `remember()` left
+the entire envelope-MAC suite *and* the entire sync suite green: the "before the cache" property —
+which is the actual finding — was covered by nothing. `vaultKeysTamper.test.ts` was written for
+exactly that, and asserts the cache is EMPTY after a refusal.
+
+**That new test then found a defect in this change.** `tampered` was being swallowed by the
+silent-PIN route's wrong-PIN `catch`, so a background sync cycle would have carried on as though the
+vault were merely locked — the silence this finding is about, reintroduced by its own fix. It is
+re-thrown now; the wrap's own GCM tag has already proved the PIN was right, so the two cannot be
+confused.
+
+## Open tail
+
+None from this plan. `macStatusBlocksSync` still answers `false` for `missing`, which is now reachable
+only for a genuine unsigned v1/v2 file; those migrate to v4 on their next write, so the surface
+shrinks on its own rather than needing a migration.

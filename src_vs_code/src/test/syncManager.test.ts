@@ -3,6 +3,7 @@ import * as path from 'node:path';
 import * as assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { configStub, loadWithVscode } from './vscodeStub';
+import { resignEnvelopeWraps } from '../cryptoUtils';
 import { emptySnapshot } from '../syncMerge';
 import { StoredAccount, TreeNode } from '../types';
 
@@ -69,7 +70,6 @@ function node(id: string, name: string): TreeNode {
  * their key. `mac` given explicitly still wins: that is how the tamper test presents a WRONG
  * signature, which is a different thing from an absent one.</p>
  */
-const CRYPTO = require('../cryptoUtils') as typeof import('../cryptoUtils');
 const SIGNING_MASTER = Buffer.alloc(32, 7);
 
 function envelope(options: { version?: number; mac?: string } = {}): string {
@@ -92,7 +92,7 @@ function signed(body: string, version: number, mac: string | undefined): string 
   if (mac !== undefined) {
     return JSON.stringify({ ...(JSON.parse(body) as object), mac });
   }
-  return version < 3 ? body : CRYPTO.resignEnvelopeWraps(body, [], SIGNING_MASTER);
+  return version < 3 ? body : resignEnvelopeWraps(body, [], SIGNING_MASTER);
 }
 
 interface World {

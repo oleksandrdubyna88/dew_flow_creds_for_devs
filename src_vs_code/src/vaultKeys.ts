@@ -424,7 +424,7 @@ export class VaultKeys {
           storedPin!,
           await this.loginKeyFor(account, wraps),
         );
-        return this.remember(account, master, wraps, vaultContent);
+        return this.remember(account, master, wraps, vaultContent!);
       } catch (error) {
         // A TAMPERED file is not a wrong PIN, and this catch is where the two would be confused:
         // the stored PIN opened the wrap perfectly well, and what failed afterwards was the
@@ -477,7 +477,7 @@ export class VaultKeys {
     if (way === 'key') {
       const { result, used } = await this.assertKey(account, wraps);
       const master = unwrapWithPrf(used, result.secret, await this.loginKeyFor(account, wraps));
-      const vaultKey = this.remember(account, master, wraps, vaultContent);
+      const vaultKey = this.remember(account, master, wraps, vaultContent!);
       if (isLegacyKeyWrap(used)) {
         // Opened by a credential bound to the bare `localhost` (pre-0.81). Said, not done: the
         // re-registration rewrites the envelope, and this unlock's caller may be about to as well.
@@ -494,8 +494,12 @@ export class VaultKeys {
         pin,
         await this.loginKeyFor(account, wraps),
       );
+      // The key is verified BEFORE the PIN is persisted: a refusal must leave nothing behind, and
+      // `savePin` writes to SecretStorage. Raised by the review gate against the first version,
+      // which saved first and threw second.
+      const verified = this.remember(account, master, wraps, vaultContent!);
       await this.savePin(account, pin);
-      return this.remember(account, master, wraps, vaultContent);
+      return verified;
     }
     return undefined;
   }
@@ -585,20 +589,19 @@ export class VaultKeys {
    * tampered wrap list was trusted by the time it was detected, and the next save re-signed it into
    * a legitimate-looking file. One choke point, and a fifth unlock route cannot forget it.</p>
    *
-   * <p>`vaultContent` is the raw file the wraps were read from. It is optional only because the
-   * recovery-code route can be handed a vault it has already parsed; when it is absent there is
-   * nothing to verify against and nothing was read from disk to be tampered with.</p>
+   * <p>`vaultContent` is REQUIRED, and the review gate is why: an optional parameter is a gate a
+   * future unlock route can walk past by simply not passing it, which is the same "a measure applied
+   * at SOME of its sites" defect this change exists to remove. Every route that adopts a wrap list
+   * read it from a file, so every route has the file.</p>
    */
   private remember(
     account: StoredAccount,
     masterKey: Buffer,
     wraps: KeyWrap[],
-    vaultContent?: string,
+    vaultContent: string,
   ): VaultKey {
-    if (vaultContent !== undefined) {
-      // Throws BackupError('tampered'). Before the cache, deliberately — see above.
-      requireIntactEnvelope(vaultContent, masterKey);
-    }
+    // Throws BackupError('tampered'). Before the cache, deliberately — see above.
+    requireIntactEnvelope(vaultContent, masterKey);
     const key: VaultKey = { version: 2, masterKey, wraps };
     this.cache.set(account.accountId, key);
     // Cache the original; hand back a detached copy, so a later lock() wiping the cached
