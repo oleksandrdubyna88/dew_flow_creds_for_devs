@@ -47,3 +47,10 @@ jobs:
       # paste was measured — v2 against v5 — so it is the one that most needs the check.
       - name: Gate snippet
         run: node .claude/rules/shared/tools/gate-snippet-check.mjs
+
+      # The root Directory.Build.rsp is really there and really says -nr:false. Measured on this
+      # family's machine: five sessions building at once held 72 MSBuild workers and 10.7 GB,
+      # because a worker busy in one build cannot be reused by another
+      # (see .claude/rules/shared/csharp/dotnet-build.md). A repository with no C# passes without an opinion.
+      - name: Build flags
+        run: node .claude/rules/shared/tools/build-flags-check.mjs
