@@ -1,13 +1,13 @@
 # PLAN — a vault delete that did not happen says so, and keeps the key
 
-> Status: **plan only, nothing implemented yet, 2026-09-10.** Scope: `src_minimalapi_server/src/VaultStore.cs`,
-> `Program.cs` (`DELETE /api/vault`), `src_vs_code/src/serverTransport.ts` (`deleteVault`), their tests,
-> `research/module_server.md`.
-> Audit finding **#4** of [REVIEW_product_audit_2026-09-09.md](REVIEW_product_audit_2026-09-09.md),
+> Status: **IMPLEMENTED, 2026-09-11.** Scope as built: `VaultStore.cs`, `OrgMembersStore.cs`,
+> `Program.cs` (`DELETE /api/vault`), `serverTransport.ts`, `VaultTests.cs`,
+> `serverTransport.test.ts`, `research/module_server.md`, `research/module_tests.md`.
+> Audit finding **#4** of [REVIEW_product_audit_2026-09-09.md](../todo/REVIEW_product_audit_2026-09-09.md),
 > re-verified 2026-09-10 (§Перепроверка).
 >
-> Related docs: [module_server.md](../research/module_server.md) (the login key S and why order matters),
-> [PLAN_corp_blocking_login_key.md](../research/PLAN_corp_blocking_login_key.md).
+> Related docs: [module_server.md](module_server.md) (the login key S and why order matters),
+> [PLAN_corp_blocking_login_key.md](PLAN_corp_blocking_login_key.md).
 
 ## Symptom
 
@@ -123,3 +123,54 @@ the same branch.
 - [ ] `module_server.md` documents the 503 and the checked order; client updated in the same branch.
 - [ ] `coai` plan → `proceed`, code round run, findings resolved.
 - [ ] Promoted to `research/` with deviations recorded.
+
+
+## What shipped differently
+
+**The gate had to cover MORE than the plan said, and the review gate found it twice.** The plan held
+the per-person gate inside `DeleteEverythingForAsync` and released it when the vault deletion
+returned. A concurrent `PUT` landing in that window recreates the vault before S is removed — the same
+"a vault nobody can open" outcome by a different door. Taken; then the same reviewers pointed at the
+next gap, between the key removal and the registry record, which `OrgMembersStore.RemoveAsync`
+reacquires the gate for. The whole account deletion is one serialized unit now, which needed
+`OrgMembersStore.RemoveWhileGateHeld` beside the gated `RemoveAsync` — a `SemaphoreSlim` is not
+re-entrant, and that constraint is documented on both sides so it is not rediscovered.
+
+**"Each component is attempted" contradicted the sentence the refusal sends.** The plan said the
+deletion would try every component and report; the 503 says *nothing else was removed*. A reviewer
+noticed those cannot both be true. The vault now goes first and ALONE, and a vault that will not go
+stops everything — otherwise a retry runs against a state the first attempt already changed.
+
+**The store carries the refusal out instead of logging it.** The plan had `DeleteEverythingForAsync`
+logging at Error naming the person and the path. Constructing `VaultStore` with a logger needs the
+service provider before the host is built, which the `ASP0000` analyzer refuses — correctly. The
+refusal is returned as an `Exception?` and the endpoint, which has a logger and makes the
+person-facing decision, writes the line.
+
+**The continuation reports too.** `LoginKeyStore.RemoveAsync` returns a `bool` that the first
+implementation discarded, so a key the OS would not unlink was invisible. It is carried out with the
+per-component result and named in the leftovers line. The leftover itself stays accepted — a key that
+outlives its vault is 300 bytes of ciphertext nobody can use — but an accepted leftover is still one
+to report.
+
+**A test of mine was written wrong first, and it is the one worth reading.**
+`AWriteCannotSlipBetweenTheVaultDeleteAndTheKeyRemoval` asserted only that the request had not
+finished after 250 ms — and it PASSED against the unfixed code, because the endpoint already blocked
+further down on the member record's own gate, long after the vault had been deleted ungated. It
+asserts what the vault FILE is doing now.
+
+**An existing test changed its arrangement, not its guarantee.**
+`AClientHangingUpDuringTheDeleteDoesNotAbandonTheRegistryRemoval` held the gate and waited for the
+vault to disappear while holding it — which only worked while the vault delete took no gate. It times
+the hang-up off the vault file now, and its comment says why.
+
+## Open tail
+
+- **`Directory.Delete(recursive: true)` on the inbox is synchronous and runs under the gate.** Raised
+  three times by the code round. It predates this change and is unchanged by it, and the inbox is
+  share items under an hourly maintenance sweep rather than a tree of 100,000 files — but if that ever
+  stops being true, the deletion is the request that pays for it.
+- **Partial success still answers 204.** A surviving owner sidecar, inbox or login key with the vault
+  gone is logged by component and left to the next DELETE. Reviewers asked for 207 or a structured
+  body; that is a contract change for a client that reads text, and the existing
+  `AFailedRegistryRemovalDoesNotFailTheVaultDelete` asserts the current shape.

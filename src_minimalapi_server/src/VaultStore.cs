@@ -178,7 +178,13 @@ public sealed partial class VaultStore
     /// here: the endpoint is where the person-facing decision is made and where a logger already
     /// exists, and a store that logs would have to be constructed with one before the host is built.
     /// </param>
-    public sealed record VaultDeletion(bool VaultGone, bool OwnerGone, bool InboxGone, Exception? Refusal = null);
+    /// <param name="RestDone">Whether the caller's own continuation finished — see <c>whileHeld</c>.</param>
+    public sealed record VaultDeletion(
+        bool VaultGone,
+        bool OwnerGone,
+        bool InboxGone,
+        Exception? Refusal = null,
+        bool RestDone = true);
 
     /// <summary>
     /// Delete a vault, its owner sidecar and the owner's whole inbox — and say what happened.
@@ -193,12 +199,17 @@ public sealed partial class VaultStore
     /// the caller answers "nothing else was removed", and that has to be true rather than nearly
     /// true, or a retry runs against a state the first attempt already changed.</para>
     ///
-    /// <para><b>The gate is held for the caller's continuation too</b>, through <paramref name="whileHeld"/>.
-    /// Releasing it when the vault was gone left a window for a concurrent PUT to recreate the vault
-    /// before the endpoint removed S — the same "a vault nobody can open" outcome by a different
-    /// door, and the review gate's finding against this change's first design. Whatever must be
-    /// indivisible from the deletion runs inside that callback; it must not take this gate again,
-    /// because a <see cref="SemaphoreSlim"/> is not re-entrant.</para>
+    /// <para><b>The gate is held for the caller's continuation too</b>, through <paramref name="whileHeld"/>,
+    /// and that continuation is the REST of account deletion — the login key and the registry record.
+    /// Releasing between any two of them leaves a window for a concurrent PUT to recreate the vault
+    /// and be orphaned by what follows: the same "a vault nobody can open" outcome by a different
+    /// door, raised twice by the review gate. Whatever runs in there must not take this gate again,
+    /// because a <see cref="SemaphoreSlim"/> is not re-entrant — which is why `OrgMembersStore` grew
+    /// a `RemoveWhileGateHeld` beside its gated `RemoveAsync`.</para>
+    ///
+    /// <para>The continuation answers whether it finished, and that answer is carried out with the
+    /// rest: a login key the OS will not unlink is the leftover this design accepts (300 bytes of
+    /// ciphertext nobody can use), but an accepted leftover is still one to report.</para>
     ///
     /// <para>The gate is <see cref="GateFor"/> on <see cref="KeyFor"/>(email) — the same lock identity
     /// <see cref="TryWriteVaultAsync"/> takes, which is what makes a write and a delete for one person
@@ -206,7 +217,7 @@ public sealed partial class VaultStore
     /// </remarks>
     public async Task<VaultDeletion> DeleteEverythingForAsync(
         string email,
-        Func<CancellationToken, Task> whileHeld,
+        Func<CancellationToken, Task<bool>> whileHeld,
         CancellationToken ct)
     {
         var key = KeyFor(email);
@@ -221,8 +232,8 @@ public sealed partial class VaultStore
             }
             var owner = Removed(Path.Combine(_vaultsDir, key + ".email"));
             var inbox = RemovedTree(Path.Combine(_sharesDir, key));
-            await whileHeld(ct);
-            return new VaultDeletion(true, owner is null, inbox is null, owner ?? inbox);
+            var rest = await whileHeld(ct);
+            return new VaultDeletion(true, owner is null, inbox is null, owner ?? inbox, rest);
         }
         finally
         {
