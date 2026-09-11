@@ -21,7 +21,7 @@ const path = require('path');
 const { execFile } = require('child_process');
 
 const OUT = path.join(__dirname, '..', 'out');
-const { watchStrays } = require('./wslStrays.cjs');
+const { runAndSweep, startWatch } = require('./wslStrays.cjs');
 
 /** Set once WSL is known good; the sweep at the bottom checks for it. */
 let strays;
@@ -129,8 +129,7 @@ async function main() {
   }
   // Everything matching that is alive NOW belongs to somebody else — an earlier run, or a
   // developer with the real thing open. This run is answerable for what it adds to that.
-  strays = watchStrays(wsl, '[c]reds relay', 'relay processes');
-  await strays.start();
+  strays = await startWatch(wsl, '[c]reds relay', 'relay processes');
 
   // ---- the agent, real, with a key generated here ----------------------------
   const { SshAgentServer } = require(path.join(OUT, 'sshAgentServer.js'));
@@ -333,17 +332,7 @@ async function main() {
   fs.rmSync(dir, { recursive: true, force: true });
 }
 
-// The sweep runs whatever happened — see the note in `creds-mcp-wsl-itest.cjs`.
-main()
-  .catch((error) => {
-    console.error(error);
-    failures += 1;
-  })
-  .finally(async () => {
-    const swept = strays === undefined ? [] : await strays.sweep();
-    if (swept.length > 0) {
-      console.log(`swept ${swept.length} process(es) this run left behind`);
-    }
-    console.log(failures === 0 ? '\nall WSL relay checks passed' : `\n${failures} check(s) failed`);
-    process.exit(failures === 0 ? 0 : 1);
-  });
+// The sweep runs whatever happened — a run that failed partway must not hand its processes to the
+// next one. Both halves live in `wslStrays.cjs`: the tails here were near-identical, which is the
+// same argument that put the watch itself there.
+runAndSweep({ main, strays: () => strays, failures: () => failures, label: 'WSL relay' });
