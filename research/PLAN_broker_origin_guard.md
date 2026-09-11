@@ -158,8 +158,15 @@ therefore cannot name our port, and `creds ssh <name>` over the socket started a
 `NOT_ON_THE_NETWORK` is now that listener's facing, and `doorsFor` builds one wrapper per listener
 (sharing the once-per-window note). The `Host` check is skipped there; the browser-header checks are
 not. This is not a weakening: `Host` exists to close DNS rebinding, which is a browser attack, and no
-page can open a unix socket or a named pipe. The socket's guard is its file mode — 0600 on POSIX —
-and the grant token, exactly as before this plan.
+page can open a unix socket or a named pipe.
+
+The socket's guard is its file mode — 0600 on POSIX, which refuses another user before any of our
+code runs; on Windows the pipe takes the default DACL and is a convenience rather than a boundary.
+Behind the transport, each route authorises exactly as it does on the port, because they share one
+router: the token door needs a grant token, the **alias door needs none** (its authorisation is the
+rate limit and the consent modal, and it mints its own grant), and the **read routes authenticate
+nothing** — which is precisely why the browser-header checks stay on this listener. Nothing here
+changed; a precondition that could never hold was removed.
 
 **Why it reached `main`.** The only thing exercising the path was one case in `creds-cli-itest.cjs`,
 guarded by `process.platform !== 'win32'`, so it could not run on the machine the change was written

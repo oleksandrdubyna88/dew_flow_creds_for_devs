@@ -1922,8 +1922,18 @@ WSL bridge relays into — and it shared the port's door, so it inherited the `H
 reaching the broker that way was never told a port, so the URL it composes cannot name ours, and
 every call by NAME over the socket answered `403`. `NOT_ON_THE_NETWORK` is that listener's facing:
 the `Host` check is skipped, the browser-header checks are not. Not a hole — `Host` exists to stop
-DNS rebinding, that is a browser attack, and no page can open a socket or a pipe; what guards this
-transport is the file mode (0600 on POSIX) and the grant token, as before.
+DNS rebinding, that is a browser attack, and no page can open a socket or a pipe.
+
+**What guards that transport is worth stating exactly, because "the token" is not the whole answer**
+and the two listeners share one router, so every route's own authorisation is the same on both.
+The TRANSPORT is guarded by the operating system: mode 0600 on POSIX, so another user is refused
+before a byte of ours runs — the one real boundary the loopback port never had. On Windows the pipe
+takes the default DACL, which `brokerListeners.ts` documents as a convenience rather than a
+boundary. Behind that, each route authorises as it always did: the token door requires a grant
+token; the **alias door requires none** — its authorisation is `AliasThrottle` plus the consent
+modal, and it mints its own grant — and the **read routes authenticate nothing**, which is why the
+browser-header checks stay on this listener even though no browser can reach it. This change moved
+none of that; it removed a precondition that could never hold.
 
 It reached `main` because the only thing exercising the path was a POSIX-only case in the CLI
 integration suite. `brokerOriginDoor.test.ts` now drives the real second listener on **both**
