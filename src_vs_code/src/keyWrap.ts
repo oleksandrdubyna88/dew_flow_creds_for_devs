@@ -8,6 +8,7 @@ import {
   encryptJsonWrapped,
   openBlob,
   openBlobAsync,
+  requireIntactEnvelope,
   sealBlob,
   sealBlobAsync,
 } from './cryptoUtils';
@@ -535,6 +536,34 @@ function openedEscrow(wrap: KeyWrap, ephemeralPublicKey: string, orgPrivateKey: 
     throw new BackupError('corrupted', 'Escrow wrap holds a malformed master key.');
   }
   return master;
+}
+
+/**
+ * The whole officer-quorum open of one vault: find its escrow wrap, unwrap the master key with the
+ * reconstructed organisation key, and REFUSE if the envelope's own signature says it was altered.
+ *
+ * <p>Here rather than inline in `recoveryCommands.ts` for one reason: that file imports `vscode`, so
+ * nothing in it can be unit-tested, and this is the step where a tampered wrap list would otherwise
+ * be carried into a re-key as `previousWraps` — signed afresh by the officers themselves. The
+ * refusal has to be provable, so it lives on the testable side of the line.</p>
+ *
+ * <p>Answers `no-escrow-wrap` rather than throwing for the ordinary case of a vault written before
+ * recovery was configured: that is a state to explain, not a failure.</p>
+ */
+export function openEscrowedVault(
+  content: string,
+  orgPrivateKey: Buffer,
+  wraps: readonly KeyWrap[],
+): { ok: true; master: Buffer } | { ok: false; reason: 'no-escrow-wrap' } {
+  const escrow = orgEscrowWrap(wraps);
+  if (escrow === undefined) {
+    return { ok: false, reason: 'no-escrow-wrap' };
+  }
+  const master = unwrapWithOrgEscrow(escrow, orgPrivateKey);
+  // Before the payload and long before the re-key: a list of wraps this quorum is about to re-sign
+  // must be the list the owner's own build wrote.
+  requireIntactEnvelope(content, master);
+  return { ok: true, master };
 }
 
 export function unwrapWithOrgEscrow(wrap: KeyWrap, orgPrivateKey: Buffer): Buffer {

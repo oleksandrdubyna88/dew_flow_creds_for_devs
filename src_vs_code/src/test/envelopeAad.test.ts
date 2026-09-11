@@ -5,7 +5,7 @@ import {
   CURRENT_WRAPPED_VERSION,
   decryptJsonWithMasterKey,
   encryptJsonWrapped,
-  envelopeWithWraps,
+  resignEnvelopeWraps,
   readVaultVersion,
   verifyEnvelopeMac,
 } from '../cryptoUtils';
@@ -107,10 +107,17 @@ test('WRAPS are deliberately NOT bound — a key may be added or removed without
   const master = newMasterKey();
   const file = vault(master);
 
-  const rewrapped = envelopeWithWraps(file, [
-    { kind: 'pin', id: 'p1' },
-    { kind: 'webauthn', id: 'yubikey-2' },
-  ]);
+  // Through `resignEnvelopeWraps`, which is the ONLY way production rewrites a wrap list. The
+  // unsigned rewrite this used to call was deleted with audit finding #2: it was the one function
+  // that could produce a v3+ file whose signature did not match its wraps, and nothing called it.
+  const rewrapped = resignEnvelopeWraps(
+    file,
+    [
+      { kind: 'pin', id: 'p1' },
+      { kind: 'webauthn', id: 'yubikey-2' },
+    ],
+    master.toString('base64'),
+  );
 
   assert.deepEqual(
     decryptJsonWithMasterKey(rewrapped, master.toString('base64')),

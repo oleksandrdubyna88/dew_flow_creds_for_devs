@@ -401,7 +401,14 @@ export class SyncManager implements vscode.Disposable {
         this.warnedAccounts.delete(account.accountId);
         this.onAccountSynced?.(account.accountId);
       } catch (error) {
-        this.warnOnce(account, error);
+        // A file whose signature says it was altered gets the tamper sentence and the paused
+        // cycle, not a generic failure toast: `unlock` now refuses BEFORE it caches anything
+        // (audit finding #2), so this arrives as a throw rather than as the post-hoc check below.
+        if (error instanceof BackupError && error.kind === 'tampered') {
+          this.warnTampered(account);
+        } else {
+          this.warnOnce(account, error);
+        }
       }
     }
     this.reportLocked();

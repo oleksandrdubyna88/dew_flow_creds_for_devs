@@ -7,7 +7,7 @@ import {
   decryptJsonWithMasterKey,
   encryptJson,
   encryptJsonWrapped,
-  envelopeWithWraps,
+  resignEnvelopeWraps,
   readVaultVersion,
   readVaultWraps,
   CURRENT_WRAPPED_VERSION,
@@ -100,7 +100,9 @@ test('removing one key leaves the others working and the payload untouched', () 
   const vault = encryptJsonWrapped(payload, master.toString('base64'), wraps, undefined, []);
 
   wraps = removeWrap(wraps, 'webauthn', 'key-a');
-  const rewrapped = envelopeWithWraps(vault, wraps);
+  // `resignEnvelopeWraps`, the only wrap rewrite production has — the unsigned one went with
+  // audit finding #2, which is what made an absent signature detectable at all.
+  const rewrapped = resignEnvelopeWraps(vault, wraps, master.toString('base64'));
   assert.equal(webauthnWraps(readVaultWraps(rewrapped) as never[]).length, 1);
   // payload ciphertext is carried verbatim
   const before = JSON.parse(vault) as Record<string, string>;

@@ -8,6 +8,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **A vault file that lost its integrity signature is now treated as altered, not as old.** The
+  envelope MAC is what authenticates the *list of ways into a vault* — the payload's own AEAD tag
+  deliberately does not cover `wraps`, because adding a security key rewrites them without
+  re-encrypting anything. An absent signature read as "legacy, carry on" at every version, and a
+  missing signature does not stop a sync, so deleting the `mac` field along with a wrap passed every
+  check.
+
+  What that bought was not a read — the payload still needs a key — but a **downgrade**: strip the
+  security-key wrap and the recovery wrap, leave the PIN, and every device opens by PIN alone and
+  re-signs that state as legitimate. Or strip the one wrap that still opens, and the owner is locked
+  out of a file that looks fine.
+
+  Only versions 1 and 2 were ever written unsigned, so only those may be missing a signature now.
+  Everything else without one is treated as tampered.
+
+  **And the check moved to where it can do its job.** It already existed; it ran *after* the key and
+  the wrap list had been cached, so a tampered list was trusted by the time it was detected and the
+  next save re-signed it. Verification now happens before anything is remembered, on the one path all
+  four unlock routes share — and on the backup import and the officer-quorum recovery too, because a
+  recovery that accepted a shortened list would sign it with the officers' own authority.
+
+  The refusal is its own kind of failure with its own sentence: not "damaged" (a person restores a
+  backup) and not "wrong PIN" (a person retypes a PIN that was right), but *altered outside
+  CredsForDevs — check who can write to the sync location*.
+
+  Found by the 2026-09-09 product audit (finding #2); record in
+  `research/PLAN_envelope_mac_required.md`.
+
 - **A vault file can no longer tell this build how long to spend opening it.** The scrypt cost a blob
   was sealed with travels inside it (`kdfN`/`kdfR`/`kdfP`), so raising the cost never orphans an older
   file — and, read without a bound, it was equally an instruction from whoever could write that file.

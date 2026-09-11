@@ -1880,6 +1880,35 @@ pin-only v3 file (a `pin`-wrap with no key-wrap → `silentPin` → `unwrapWithP
 | Org-escrow wrap | X25519-ECDH to the org recovery public key → HKDF, `info="creds-for-devs/org-escrow-wrap"` |
 | Envelope MAC | HMAC-SHA256, `info="cred-ssh-manager/envelope-mac"`, compared with `timingSafeEqual` |
 
+**A signed envelope without its signature is tampered, not legacy** (`verifyEnvelopeMac`,
+`requireIntactEnvelope`). The envelope MAC exists for one threat, named where it is computed: on a
+shared-folder transport a write-capable attacker can forge the owner account or **delete unlock
+wraps** to lock the owner out. `headerAad` deliberately does not bind `wraps` — adding a security key
+rewrites them without re-sealing the payload — so the MAC is the only thing authenticating the list
+of ways into a vault.
+
+Two holes, both closed 2026-09-11 (audit finding #2):
+
+- **An absent `mac` read as `missing` at every version, and `missing` does not stop a sync.** So the
+  signature could simply be deleted along with a wrap. `missing` now means only `UNSIGNED_VERSIONS` —
+  exactly 1 and 2, an allow-list of integers rather than a range, because `version: "3"` fails a
+  `typeof`-guarded `>=` test and a v3 payload is sealed without AAD, so a mutated version still
+  decrypts. Everything else without a string `mac` is `bad`.
+- **The check ran after the cache.** `VaultKeys.unlock` remembered the key together with whatever
+  wraps the file carried, and `syncManager` verified afterwards — so a tampered list was trusted by
+  the time it was detected, and the next save re-signed it into a file that verifies. Verification now
+  lives inside `VaultKeys.remember`, the one place all four unlock routes pass through, and runs
+  before the cache is written. The same gate is on the backup import and on the officer-quorum
+  recovery (`openEscrowedVault` in `keyWrap.ts`, extracted there because `recoveryCommands.ts` imports
+  `vscode` and the refusal had to be testable).
+
+The failure has its own kind, `tampered`, separate from `corrupted` and `wrong-password`: told the
+file is damaged a person restores a backup, told the PIN is wrong they retype it, and neither is the
+action the situation calls for. The silent-PIN route re-throws it rather than folding it into its
+wrong-PIN branch — the wrap's own GCM tag has already proved the PIN was right. `envelopeWithWraps`,
+which copied an old MAC over new wraps and was called by nothing, was deleted; every production
+rewrite goes through `resignEnvelopeWraps`. Record: [PLAN_envelope_mac_required.md](PLAN_envelope_mac_required.md).
+
 **The recorded KDF cost is an allow-list, not a hint** (`checkedParams`, `scryptParams.ts`). Each sealed
 blob carries the `kdfN`/`kdfR`/`kdfP` it was made with, so raising the cost never orphans an older file.
 Read without a bound, those fields are equally an instruction from whoever can write the file: `maxmem`

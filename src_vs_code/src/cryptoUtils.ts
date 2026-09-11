@@ -1,7 +1,7 @@
 import * as crypto from 'node:crypto';
 import { StoredAccount, isStoredAccount } from './types';
 import { KeyReport, reportKey } from './keyFingerprint';
-import { BackupError } from './backupError';
+import { BackupError, TAMPERED_MESSAGE } from './backupError';
 import { DEFAULT_PARAMS, SCRYPT_MAXMEM, ScryptParams, checkedParams } from './scryptParams';
 
 /**
@@ -450,15 +450,6 @@ export function readVaultWraps(fileContent: string): unknown[] {
   return Array.isArray(wraps) ? wraps : [];
 }
 
-/** Rewrite ONLY the wraps of a v2 vault, carrying everything else verbatim. */
-export function envelopeWithWraps(fileContent: string, wraps: readonly unknown[]): string {
-  const env = JSON.parse(fileContent) as Record<string, unknown>;
-  if (typeof env?.format !== 'string') {
-    throw new BackupError('corrupted', 'Not a vault file.');
-  }
-  return JSON.stringify({ ...env, wraps: [...wraps] }, null, 2);
-}
-
 /** Decrypt a v2 payload once the master key has been unwrapped. */
 export function decryptJsonWithMasterKey(fileContent: string, masterKeyBase64: Passphrase): unknown {
   const env = parseEnvelope(fileContent);
@@ -604,7 +595,29 @@ function computeEnvelopeMac(env: Record<string, unknown>, masterKeyBase64: Passp
 
 export type EnvelopeMacStatus = 'ok' | 'missing' | 'bad';
 
-/** Verify the envelope MAC with the (already unwrapped) master key. */
+/**
+ * The only two versions that were ever WRITTEN without a signature.
+ *
+ * <p>An allow-list of exact integers, never a range, and that is the whole of finding #2 of the
+ * 2026-09-09 audit. `missing` used to mean "legacy, carry on" at every version, so an attacker with
+ * write access to a shared sync location could DELETE the signature along with a wrap and the file
+ * still passed: `macStatusBlocksSync` stops only `bad`. What that buys is not a read — the payload
+ * still needs a key — but a <b>downgrade</b>: strip the security-key wrap and the recovery wrap,
+ * leave the PIN, and every device opens by PIN alone and re-signs that state as legitimate.</p>
+ *
+ * <p>A `>=` test would not do, even with `typeof === 'number'` in front of it: `version: "3"` fails
+ * that test and would read as legacy, and a v3 payload is sealed without AAD, so a mutated version
+ * still decrypts. Anything that is not exactly 1 or 2 must carry a MAC.</p>
+ */
+const UNSIGNED_VERSIONS: readonly number[] = [VERSION_PIN_ONLY, VERSION_WRAPPED];
+
+/**
+ * Verify the envelope MAC with the (already unwrapped) master key.
+ *
+ * <p>A `mac` that is absent — or `null`, or any non-string, which is what a hand-edited file carries —
+ * is `missing` only for {@link UNSIGNED_VERSIONS}. For every other version it is `bad`, because every
+ * writer of those versions signs (`encryptJsonWrapped`, `resignEnvelopeWraps`).</p>
+ */
 // eslint-disable-next-line complexity
 export function verifyEnvelopeMac(
   fileContent: string,
@@ -618,7 +631,7 @@ export function verifyEnvelopeMac(
   }
   const mac = env.mac;
   if (typeof mac !== 'string') {
-    return 'missing'; // legacy/unsigned envelope
+    return UNSIGNED_VERSIONS.includes(env.version as number) ? 'missing' : 'bad';
   }
   const expected = computeEnvelopeMac(env, masterKeyBase64);
   const a = Buffer.from(mac, 'base64');
@@ -636,6 +649,28 @@ export function verifyEnvelopeMac(
  * the decision to a person. `missing` is a legacy/unsigned envelope, not tampering, and
  * `ok` is the normal case — both proceed.</p>
  */
+/**
+ * Refuse an envelope whose own signature says it was altered — BEFORE anything adopts it.
+ *
+ * <p>The check itself is old; where it runs is the fix. `verifyEnvelopeMac` needs the master key, and
+ * the master key comes out of a wrap, so the only possible order is unwrap-then-verify. What that made
+ * easy to get wrong is the step in between: `VaultKeys.unlock` used to CACHE the key and the wrap list
+ * it had just read, and the sync cycle checked the MAC after. A tampered list was therefore already
+ * trusted by the time it was detected, and the next save re-signed it into a valid file.</p>
+ *
+ * <p>So every caller unwraps into a local, calls this, and only then remembers anything. A wrong PIN
+ * never reaches here — the wrap's own AES-GCM tag throws `wrong-password` inside the unwrap — which is
+ * what makes `tampered` an honest word at this point rather than a guess between two causes.</p>
+ *
+ * <p>`ok` and `missing` both pass; `missing` is now reachable only for the two versions that were
+ * written unsigned (see {@link UNSIGNED_VERSIONS}), so passing it is not a hole.</p>
+ */
+export function requireIntactEnvelope(fileContent: string, masterKeyBase64: Passphrase): void {
+  if (verifyEnvelopeMac(fileContent, masterKeyBase64) === 'bad') {
+    throw new BackupError('tampered', TAMPERED_MESSAGE);
+  }
+}
+
 export function macStatusBlocksSync(status: EnvelopeMacStatus): boolean {
   return status === 'bad';
 }
