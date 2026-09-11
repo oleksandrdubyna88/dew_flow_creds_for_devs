@@ -429,9 +429,13 @@ What that leaves, and how it is covered now:
 | Branch | How it is asserted |
 |---|---|
 | Windows PATH precedence — Git first, built-in first, neither | Injected `PathProbe`, in `sshProgram.test.ts` and `sshCommand.test.ts`, through **both** entry points |
-| The REAL `defaultProbe` wiring | `sshDefaultProbe.test.ts` — real temp directories, a real `ssh.exe`, `process.env.PATH` set and restored. The built-in-first case runs only where that directory exists, i.e. on Windows |
-| The `PATH` split itself | `pathDirsOf` with `;` and `:`, and the wrong delimiter asserted to produce one bogus entry — the bug, pinned |
+| The REAL `defaultProbe` wiring | `sshDefaultProbe.test.ts` — the probe is asked what it SAW (the directories it parsed, whether it found the file), not merely whether the answer came out false. Real temp directories, a real `ssh.exe`, `PATH` set and restored, the tree removed after. The built-in-first case is SKIPPED where that directory does not exist, i.e. off Windows |
+| The `PATH` split itself | `pathDirsOf` with `;` and `:`, and the wrong delimiter asserted to produce one bogus entry — the bug, pinned. The delimiter follows the TARGET platform rather than the host, so naming `win32` from a Linux runner does not reintroduce it from the other side |
 | V8's JSON error text | `jsonErrorLine.test.ts` on both message shapes as fixtures. The two engine-driven tests ask the engine whether it offered a position at all, and stay strict where it did — relaxing them to "the right line or none" would have passed a regression that stopped extracting lines entirely |
+
+Two fixtures are shared rather than copied — `sshPath.ts` (the PATH states) and `engineJson.ts`
+(whether this engine names a position) — because a second copy of either is a thing to update that
+nothing would notice was missed.
 
 **A Windows CI job is the thing deliberately not added.** It would be minutes per run to exercise one
 `if` whose seam now exists, is used by both entry points, and has a real-probe test beside it. The

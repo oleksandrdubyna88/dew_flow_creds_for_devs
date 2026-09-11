@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { describeConfigProblem, invalidSaveConfirmation } from '../configFormat';
+import { enginePositions } from './engineJson';
 
 /**
  * Whether a config body is what it claims to be.
@@ -179,21 +180,3 @@ test('the question names a line only when one is known', () => {
   assert.match(withLine, /line 7/);
   assert.equal(/line/.test(without), false, 'a guessed line is worse than no line');
 });
-
-/**
- * Whether THIS engine offers a position for this body at all.
- *
- * <p>V8 has two message shapes and only one carries one; which you get depends on the engine, and the
- * 2026-09-09 audit watched these assertions fail under Node 20 while passing under Node 24 (finding
- * #8). Relaxing them to "the right line OR none" would have made them vacuous — a regression that
- * stopped extracting lines entirely would pass. Asking the engine what it said keeps the assertion
- * strict wherever an answer exists, and silent only where none does.</p>
- */
-function enginePositions(body: string): boolean {
-  try {
-    JSON.parse(body);
-    return false;
-  } catch (error) {
-    return /\bline \d+/i.test((error as Error).message);
-  }
-}
