@@ -50,36 +50,55 @@ in the safe direction: masking is always on. It still lies.
 
 ## Design
 
-### 1. Build the table before `run`, refresh it after, union the two
+### 1. Build the table before `run`, refresh it after, and never fall back past a rotation
 
 In `perform` (`credsAgentServer.ts:563-587`):
 
 ```
-table = await tableFor(grant)            // throws → respondError('internal', MASKING_UNAVAILABLE); return
-touch / reserve
+table = await tableFor(grant)            // throws → respondError('internal', MASKING_UNAVAILABLE); nothing ran
+reserve / touch
 result = await useAction.run(...)
-after = await tableFor(grant).catch(() => undefined)
-sent  = maskResponseBody(result.body, after === undefined ? table : union(table, after))
+after  = await tableFor(grant).catch(() => undefined)
+if (after === undefined && result.storedSecretChanged) → withhold      // see below
+sent   = maskResponseBody(result.body, after === undefined ? table : union(table, after))
 ```
 
-The **pre-run** table is mandatory: the values the action is about to inject are exactly the values it
-can print, and they are readable now or the action should not start. The **post-run** refresh exists
-for rotation, whose new value is stored during the run; it is best-effort, and a failed refresh falls
-back to the pre-run table — never to an empty one. `union` keeps every entry from both, so an entry
-that vanished mid-run is still masked by what was read before it vanished.
+The PRE-RUN table is mandatory: the values the action is about to inject are exactly the values it
+can print, and they are readable now or the action should not start. `tableFor` therefore **rejects
+when the granted entity is not there at all** (gate round 1, codex) — today `getNode` answering
+`undefined` yields an empty table that is indistinguishable from "this entry has no secrets", which
+is precisely the silent path the audit describes. An entity that exists and holds no secrets still
+gives a legitimately empty table.
 
-Design choice recorded: the alternative — every action returning the values it injected — would be the
-strongest possible table, and it would put the secret in an `UseActionResult` that travels through the
-same function as the response body. Rejected for that reason; the storage read stays the source.
+**The post-run refresh may not fall back when the action changed a stored secret.** All three vendors
+found this independently in round 1, and they were right about a hole in this plan rather than in the
+code: a rotation stores its new value DURING the run, so the pre-run table cannot contain it — and
+falling back to that table on a failed refresh would send the freshly committed production credential
+out in the clear, which is the exact worst case this plan was written for.
 
-### 2. Withhold, do not fail open, when even the pre-run table exists but the response cannot be masked
+The distinction is not guesswork, and it does not have to be paid by every ordinary call either.
+`UseActionResult` gains `storedSecretChanged?: boolean`; `rotateAction.commit` is the one place that
+sets it, because it is the one place that writes a secret mid-run. Then:
 
-`maskResponseBody` is pure and does not throw on any input it is given today; the only failure is the
-table. So after step 1 the "after the action" failure is exactly "refresh failed", and it is covered by
-the fallback. The audit's *withheld* state is therefore reached only when the pre-run table is missing —
-and that is before the action, so there is nothing to withhold. If a future masker can fail after the
-run, `perform` answers `respondError('internal', OUTPUT_WITHHELD)` with the audit outcome `withheld`; the
-constant and the branch are written now so the shape exists.
+- refresh succeeded → mask with `union(table, after)`, which covers both the old value and the new;
+- refresh failed **and** `storedSecretChanged` → **withhold** (below). The one value that matters is
+  the one that cannot be in any table we hold;
+- refresh failed and nothing changed → the pre-run table is complete BY CONSTRUCTION, and using it
+  costs the agent nothing. Withholding here would be the "certain outage for a possible leak" trade
+  the old comment warned about, taken in the one case where there is no possible leak.
+
+Design choice recorded: the alternative — every action returning the values it injected — would be
+the strongest possible table, and it would put the secret in an `UseActionResult` that travels
+through the same function as the response body. Rejected for that reason; `storedSecretChanged` is a
+boolean, not a secret.
+
+### 2. Withholding says the action may have run
+
+A withheld answer is `respondError('internal', OUTPUT_WITHHELD, …)` whose body carries
+`actionRan: true` (gate round 1, all three vendors). An agent that cannot tell "it did not happen"
+from "it happened and you cannot see the output" will retry a non-idempotent side effect — and the
+action this fires for is a credential rotation, where a blind retry rotates twice. The audit line
+records the outcome as `withheld`.
 
 ### 3. `maskedReason` follows
 
@@ -89,9 +108,9 @@ literal `[reason withheld: masking unavailable]`. The journal keeps the summary 
 ### 4. `maskedBody` becomes explicit about failure
 
 `brokerResponse.ts` stops catching. `maskedBody(entriesFor, where, body)` is replaced by
-`tableFor(entriesFor, where): Promise<MaskTable>` (throws) and the pure `maskResponseBody`. The comment
-that argued for failing open is rewritten to say what is true now: the table is read before the action,
-so a read failure costs a refused call, not a completed action's result.
+`tableFor(entriesFor, where): Promise<MaskTable>` (throws) and the pure `maskResponseBody`. The
+comment that argued for failing open is rewritten to say what is true now: the table is read before
+the action, so a read failure costs a refused call rather than a completed action's result.
 
 ### 5. Remove `maskAgentOutput`
 
@@ -120,10 +139,12 @@ behaviour. `CHANGELOG.md` says so in one sentence.
 | Test | Proves |
 |---|---|
 | masker throws before run → error, `w.ran` empty, both doors | rule 2 |
-| masker throws after run → masked body from the pre-run table | rule 1, 3 |
-| entry vanishes after run (`getNode` → undefined) → still masked | union |
-| rotation: value stored during run is masked | refresh |
-| journal detail when unmaskable | rule 4 |
+| the granted ENTITY is gone before the call → error, `w.ran` empty | rule 2, the silent path |
+| an entity that exists with no secrets → the call runs normally | an empty table is not a failure |
+| masker throws after run, nothing changed → masked body from the pre-run table | rule 1 |
+| masker throws after run, `storedSecretChanged` → **withheld**, `actionRan: true`, no body | rule 1, 3 |
+| rotation: value stored during run is masked when the refresh works | refresh + union |
+| journal detail when unmaskable; outcome `withheld` | rule 4 |
 | `agent-broker-itest.cjs` all checks | the real path still answers |
 | help coverage without the setting | rule 5 |
 
