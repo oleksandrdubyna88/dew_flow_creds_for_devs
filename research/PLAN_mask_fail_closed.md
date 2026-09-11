@@ -1,12 +1,13 @@
 # PLAN — an output that cannot be masked is withheld, never sent raw
 
-> Status: **plan only, nothing implemented yet, 2026-09-10.** Scope: `src_vs_code/src/brokerResponse.ts`,
-> `credsAgentServer.ts`, `maskEntries.ts`, `package.json`, `README.md`, their tests.
-> Audit finding **#1** of [REVIEW_product_audit_2026-09-09.md](REVIEW_product_audit_2026-09-09.md), plus
+> Status: **IMPLEMENTED, 2026-09-11.** Scope as built: `brokerResponse.ts`, `credsAgentServer.ts`,
+> `brokerProtocol.ts`, `maskEntries.ts`, `useActions.ts`, `rotateAction.ts`, `package.json`,
+> `README.md`, and the tests `maskFailClosed.test.ts` (new), `brokerWorld.ts`, `helpCoverage.test.ts`.
+> Audit finding **#1** of [REVIEW_product_audit_2026-09-09.md](../todo/REVIEW_product_audit_2026-09-09.md), plus
 > the dead `maskAgentOutput` setting found in the 2026-09-10 re-verification (§Перепроверка).
 >
-> Related docs: [module_extension.md](../research/module_extension.md) (the broker),
-> [PLAN_ai_context_masking.md](../research/PLAN_ai_context_masking.md) (why masking is one choke point).
+> Related docs: [module_extension.md](module_extension.md) (the broker),
+> [PLAN_ai_context_masking.md](PLAN_ai_context_masking.md) (why masking is one choke point).
 
 ## Symptom
 
@@ -156,3 +157,43 @@ behaviour. `CHANGELOG.md` says so in one sentence.
       had an effect.
 - [ ] `module_extension.md` updated; `coai` plan → `proceed`, code round run, findings resolved.
 - [ ] Promoted to `research/` with deviations recorded.
+
+
+## What shipped differently
+
+**The plan had the rotation case wrong, and all three review vendors found it independently.** Its
+first draft fell back to the pre-run table whenever the post-run refresh failed. A rotation writes
+its new secret DURING the run, so that table cannot contain it - the fallback would have masked the
+OLD credential and sent the freshly committed one in the clear, which is precisely the worst case the
+plan was written to close.
+
+The fix is narrower than the reviewers proposed. They asked for *always withhold when the refresh
+fails*; that pays an availability cost on every ordinary exec, where the pre-run table is complete by
+construction and there is no possible leak. `UseActionResult.storedSecretChanged` - a boolean, never
+the value - marks the one action that writes mid-run, and only that case withholds.
+
+**A missing entity throws rather than answering an empty list.** Also from the gate. `maskEntriesFor`
+used to return `[]` when `getNode` found nothing, and an empty table masks nothing while reporting
+`hits: 0` - indistinguishable in the audit from a passwordless script entry. `MaskSourceUnavailable`
+separates them. The other half of that test matters as much: an entity that EXISTS and holds no
+secrets still runs normally, which is why the refusal cannot simply key on an empty list.
+
+**A withheld answer carries `actionRan: true`.** All three vendors again: an agent that cannot tell
+*it did not happen* from *it happened and you cannot see it* retries, and the only action that
+reaches this rotates a credential.
+
+**The answer sequence moved out of `credsAgentServer.ts` entirely.** Not planned, and not optional:
+the file was at its 800-line ceiling, and the change added to it. Mask - log - respond - burn, or
+withhold, is now `runAndDeliver` in `brokerResponse.ts`, which is already documented as owning what
+happens to a call's answer; `perform` splits at the side-effect seam, so everything above the split
+can refuse without a side effect and nothing below it can. The file is back to exactly 800 lines.
+
+**Deviation from the plan's step 2.** The plan reserved an `OUTPUT_WITHHELD` branch for "a future
+masker that can fail after the run" while asserting the case was unreachable. It is reachable, it is
+the rotation case, and it is now the branch's only reason to exist.
+
+## Open tail
+
+None. The one thing deliberately not built is the plan's own rejected alternative: actions returning
+the values they injected would give the strongest possible table, and it would put the secret into
+the same object as the response body - which is the one place this design keeps it out of.
