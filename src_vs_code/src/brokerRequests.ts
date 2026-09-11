@@ -1,5 +1,7 @@
 import * as http from 'node:http';
-import { ErrorCode, parseJsonObject } from './brokerProtocol';
+import { ErrorCode, parseBearer, parseJsonObject } from './brokerProtocol';
+import { Grant, GrantLimits, GrantLookup } from './grantRegistry';
+import { expiredMessage } from './grantLimits';
 import { MCP_SWITCHES } from './mcpSwitches';
 
 /**
@@ -184,4 +186,28 @@ function switchIdFor(needed: NeededSwitch): string {
   return (
     NARROWER_CONTROL[needed] ?? `mcp${needed.charAt(0).toUpperCase()}${needed.slice(1)}`
   );
+}
+
+/**
+ * The grant a bearer token names, or the sentence to refuse it with.
+ *
+ * <p>Out of `credsAgentServer.ts` because that file lives at its 800-line ceiling and this needs
+ * nothing on it — a header, a registry and the limits. An EXPIRED token says so, which is the point:
+ * "unknown" would send an agent hunting for a typo in a token that was correct an hour ago, and the
+ * two answers are already distinguished all the way out to the CLI's exit codes (91 and 92).</p>
+ */
+export function grantForToken(
+  authorization: string | undefined,
+  grants: { lookup(secret: string, now: number, limits: GrantLimits): GrantLookup },
+  limits: GrantLimits,
+): { ok: true; grant: Grant } | { ok: false; message: string } {
+  const secret = parseBearer(authorization);
+  const found: GrantLookup = secret === undefined ? { kind: 'unknown' } : grants.lookup(secret, Date.now(), limits);
+  if (found.kind === 'live') {
+    return { ok: true, grant: found.grant };
+  }
+  return {
+    ok: false,
+    message: found.kind === 'expired' ? expiredMessage(found.reason, limits) : 'Unknown or missing grant token.',
+  };
 }

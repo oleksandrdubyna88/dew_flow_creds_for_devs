@@ -8,6 +8,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **The agent broker now refuses requests that look like they came from a browser.** It is a loopback
+  HTTP server, and a web page in your own browser is also on loopback — and nothing checked where a
+  request came from. The alias door needs no token by design (a rate limit and the consent dialog are
+  its authorisation), and a page can reach it without any preflight, so a site you merely visited
+  could raise that dialog in your editor and — if you pressed Allow — run the stored command. It
+  could not read the output, but it did not need to.
+
+  A request carrying an `Origin` is refused, and so is one whose `Host` is not this window's own
+  loopback address **and port**. The second is the one that matters for **DNS rebinding**, where a
+  page becomes same-origin with the broker and sends no `Origin` at all: what it cannot forge is the
+  name it was loaded from. The unauthenticated read routes — the alias and entry lists — are behind
+  the same door.
+
+  Every real client is unaffected: the CLI, the MCP host and the WSL bridge address
+  `http://127.0.0.1:<port>` and send no browser headers, which the integration tests check rather
+  than assume. You are told once per window if something is knocking.
+
+  Found in the re-verification of the 2026-09-09 product audit; record in
+  `research/PLAN_broker_origin_guard.md`.
+
 - **A vault delete that did not happen now says so, instead of reporting success and removing the
   key.** `DELETE /api/vault` promised an order — the login key is removed only once there is no vault
   left for it to belong to — and enforced it by sequence alone: the deletion returned nothing, swallowed

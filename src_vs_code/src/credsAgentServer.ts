@@ -9,23 +9,23 @@ import {
   MAX_REQUEST_BODY_BYTES,
   errorBody,
   isConfigReadRoute,
-  parseBearer,
   parseAliasRoute,
   parseJsonObject,
   parseUseRoute,
   statusForErrorCode,
 } from './brokerProtocol';
+import { behindTheDoor } from './brokerOrigin';
 import { ReadRouteSources, readRouteBody } from './brokerReadRoutes';
 import { describeError } from './describeError';
 import { BrokerDoor, McpCreateHooks, mcpDoor } from './brokerMcpDoor';
 import { McpFolderHooks } from './brokerFolderDoor';
 import { answerMcpRoute } from './brokerMcpRoutes';
-import { McpUseLookup, aliasTarget, readNamedBody } from './brokerRequests';
-import { describeLimits, expiredMessage, grantLimits } from './grantLimits';
+import { McpUseLookup, aliasTarget, grantForToken, readNamedBody } from './brokerRequests';
+import { describeLimits, grantLimits } from './grantLimits';
 import { McpEntry } from './mcpEntries';
 import { EntityMetadata } from './types';
 import { ConfigRouteSources, answerConfigRead } from './brokerConfigRoute';
-import { Grant, GrantLookup, GrantRegistry } from './grantRegistry';
+import { Grant, GrantRegistry } from './grantRegistry';
 import { UseAction, UseActionRegistry } from './useActions';
 import { formatToken } from './grantToken';
 import { AuditDoor, formatAuditLine } from './agentAuditLog';
@@ -250,7 +250,7 @@ export class CredsAgentServer implements vscode.Disposable {
       const { server, port } = await startLoopbackServer();
       this.server = server;
       this.port = port;
-      server.on('request', (req, res) => void this.handle(req, res));
+      server.on('request', this.served);
       await this.openExtraListener();
       this.announce();
     });
@@ -440,7 +440,7 @@ export class CredsAgentServer implements vscode.Disposable {
     }
     try {
       this.extra = await startExtraListener(
-        (req, res) => void this.handle(req, res),
+        this.served,
         address,
         process.platform,
       );
@@ -492,21 +492,12 @@ export class CredsAgentServer implements vscode.Disposable {
       return;
     }
 
-    const secret = parseBearer(req.headers.authorization);
-    const limits = grantLimits();
-    const found: GrantLookup =
-      secret === undefined ? { kind: 'unknown' } : this.grants.lookup(secret, Date.now(), limits);
-    if (found.kind !== 'live') {
-      // An expired token says so. "Unknown" would send the agent hunting for a typo in a
-      // token that was correct an hour ago.
-      this.respondError(
-        res,
-        'unauthorized',
-        found.kind === 'expired' ? expiredMessage(found.reason, limits) : 'Unknown or missing grant token.',
-      );
+    const authorised = grantForToken(req.headers.authorization, this.grants, grantLimits());
+    if (!authorised.ok) {
+      this.respondError(res, 'unauthorized', authorised.message);
       return;
     }
-    const grant = found.grant;
+    const grant = authorised.grant;
 
     let raw: string;
     try {
@@ -600,6 +591,14 @@ export class CredsAgentServer implements vscode.Disposable {
       (result) => (result.status === 200 ? useAction.describeOutcome(result) : String(result.status)),
     );
   }
+
+  /** The router, behind the door — see `behindTheDoor` for why it is a wrapper and not a branch. */
+  private readonly served = behindTheDoor(
+    (req, res) => void this.handle(req, res),
+    () => ({ port: this.port }),
+    (res, status, body) => this.respond(res, status, body),
+    (message) => this.note(message),
+  );
 
   /**
    * The first-use gate. Concurrent first calls share one dialog — two modals
@@ -754,7 +753,6 @@ export class CredsAgentServer implements vscode.Disposable {
     this.output?.appendLine(line);
     this.audit.append(line);
   }
-
 
   /**
    * Take down the local traces of this window: the socket file and the endpoint note.
