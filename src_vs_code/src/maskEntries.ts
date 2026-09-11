@@ -41,12 +41,28 @@ const FIELDS = [
   { field: 'notes', label: 'NOTES' },
 ] as const;
 
+/**
+ * Thrown when the entity a grant points at is not in the vault any more.
+ *
+ * <p>Its own type because the broker must tell it apart from "this entry holds no secrets", and
+ * before audit finding #1 it could not: a missing node produced an EMPTY table, the masker then
+ * matched nothing, and the audit line said `hits: 0` — which is exactly what a passwordless script
+ * entry says. One of the two is a normal call and the other is a call that must not run.</p>
+ */
+export class MaskSourceUnavailable extends Error {}
+
 export async function maskEntriesFor(
   source: SecretSource,
   accountId: string,
   entityId: string,
 ): Promise<readonly MaskEntry[]> {
-  const details = source.getNode(accountId, entityId)?.details;
+  const node = source.getNode(accountId, entityId);
+  if (node === undefined) {
+    throw new MaskSourceUnavailable(
+      'The entry this grant points at is no longer in the vault, so its values cannot be redacted.',
+    );
+  }
+  const details = node.details;
   const bindings = details?.envBindings ?? {};
 
   const values = await Promise.all([

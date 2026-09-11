@@ -21,6 +21,20 @@ export interface UseActionContext {
 export interface UseActionResult {
   readonly status: number;
   readonly body: unknown;
+  /**
+   * Whether this action WROTE a stored secret while it ran.
+   *
+   * <p>One boolean, and it exists because of the one case that breaks the ordinary order: a
+   * rotation stores its new value DURING the run, so no table read before the run can contain it.
+   * If the read that would have found it then fails, there is nothing to redact the output with and
+   * it must be withheld rather than sent — falling back to the pre-run table would send a freshly
+   * committed production credential in the clear.</p>
+   *
+   * <p>A boolean rather than the values themselves, deliberately: handing the secret back through
+   * `UseActionResult` would put it in the same object as the response body, which is the one place
+   * this whole design keeps it out of.</p>
+   */
+  readonly storedSecretChanged?: boolean;
 }
 
 export interface UseAction {

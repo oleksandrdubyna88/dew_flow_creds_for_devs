@@ -1,10 +1,10 @@
-import { describeError } from './describeError';
 import { withTimeout } from './withTimeout';
 import * as http from 'node:http';
 import * as vscode from 'vscode';
 import {
   ErrorCode,
   INTERNAL_FAILURE,
+  MASKING_UNAVAILABLE,
   MAX_CONCURRENT_EXECS,
   MAX_REQUEST_BODY_BYTES,
   errorBody,
@@ -16,6 +16,7 @@ import {
   statusForErrorCode,
 } from './brokerProtocol';
 import { ReadRouteSources, readRouteBody } from './brokerReadRoutes';
+import { describeError } from './describeError';
 import { BrokerDoor, McpCreateHooks, mcpDoor } from './brokerMcpDoor';
 import { McpFolderHooks } from './brokerFolderDoor';
 import { answerMcpRoute } from './brokerMcpRoutes';
@@ -25,7 +26,7 @@ import { McpEntry } from './mcpEntries';
 import { EntityMetadata } from './types';
 import { ConfigRouteSources, answerConfigRead } from './brokerConfigRoute';
 import { Grant, GrantLookup, GrantRegistry } from './grantRegistry';
-import { UseActionRegistry } from './useActions';
+import { UseAction, UseActionRegistry } from './useActions';
 import { formatToken } from './grantToken';
 import { AuditDoor, formatAuditLine } from './agentAuditLog';
 import { BrokerAuditWriter } from './brokerAuditWriter';
@@ -34,8 +35,8 @@ import { ExtraListener, socketPathFor, startExtraListener } from './brokerListen
 import { removeEndpoint, writeEndpoint } from './cliEndpoint';
 import { AliasThrottle } from './aliasThrottle';
 import { startOnce } from './idempotentStart';
-import { MaskEntry } from './secretMasker';
-import { burnIfSpent, maskedBody, maskedReason } from './brokerResponse';
+import { MaskEntry, MaskTable } from './secretMasker';
+import { burnIfSpent, refreshFrom, runAndDeliver, tableOrFail } from './brokerResponse';
 
 /**
  * The broker: a loopback HTTP surface through which an agent asks this window
@@ -558,41 +559,48 @@ export class CredsAgentServer implements vscode.Disposable {
       return;
     }
 
+    // Read BEFORE anything runs, and a read that will not answer refuses the call — see `tableOrFail`.
+    const table = await tableOrFail(this.maskEntriesFor, grant, (why) =>
+      this.respondError(res, 'internal', MASKING_UNAVAILABLE, grant, action, `${summary} · ${why}`, via),
+    );
+    if (table === undefined) {
+      return;
+    }
+
+    await this.runAndDeliver(res, grant, useAction, action, body, via, summary, table);
+  }
+
+  /**
+   * Run the action and answer for it, once consent and the mask table are in hand — the seam being
+   * that everything above can refuse without a side effect and nothing below can. The sequence
+   * itself lives in `brokerResponse.ts`; this binds it to one request.
+   */
+  private async runAndDeliver(
+    res: http.ServerResponse,
+    grant: Grant,
+    useAction: UseAction,
+    action: string,
+    body: Record<string, unknown>,
+    via: AuditDoor,
+    summary: string,
+    table: MaskTable,
+  ): Promise<void> {
     // Counted and clocked only once consent is in hand: a refused or still-pending call must
     // not extend a token's idle life or spend one of its uses.
     this.grants.touch(grant.secret);
-    try {
-      const result = await useAction.run(
-        { accountId: grant.accountId, entityId: grant.entityId, entityName: grant.entityName },
-        body,
-      );
-      // The last thing before the bytes leave the extension. The broker's promise — no
-      // response field a secret can travel in — is true of the SHAPES and false of what
-      // stdout carries: an agent that composes a command can make it print the very password
-      // the broker supplied to run it. One place, so every action is covered and any future
-      // one is covered by default.
-      const { body: sent, hits } = await maskedBody(this.maskEntriesFor, grant, result.body);
-      this.log({
-        grant: GrantRegistry.describe(grant),
-        entityName: grant.entityName,
-        action,
-        via,
-        outcome:
-          result.status === 200 ? useAction.describeOutcome(result) : String(result.status),
-        detail: hits > 0 ? `${summary} · masked ${hits} secret value(s)` : summary,
-      });
-      this.respond(res, result.status, sent);
-      // After the answer is on the wire, never before: the use has happened by now, and a
-      // storage failure while burning must not cost the agent the result it already earned.
-      await burnIfSpent(this.burnAfterUse, grant, result.status, this.note);
-    } catch (error) {
-      // THAT it failed, never HOW — see INTERNAL_FAILURE. The reason is not lost, it MOVES to the
-      // journal, which is local and is where a person looks when an agent reports a failure — and
-      // through the SAME masker the response body goes through, because a driver's message is
-      // exactly where a credential turns up.
-      const why = `${summary} · ${await maskedReason(this.maskEntriesFor, grant, describeError(error))}`;
-      this.respondError(res, 'internal', INTERNAL_FAILURE, grant, action, why, via);
-    }
+    await runAndDeliver(
+      {
+        respond: (status, sent) => this.respond(res, status, sent),
+        log: (line) => this.log(line),
+        burn: (status) => burnIfSpent(this.burnAfterUse, grant, status, this.note),
+        fail: (why) => this.respondError(res, 'internal', INTERNAL_FAILURE, grant, action, `${summary} · ${why}`, via),
+        refresh: refreshFrom(this.maskEntriesFor, grant),
+        table,
+        where: { grant: GrantRegistry.describe(grant), entityName: grant.entityName, action, via, summary },
+      },
+      () => useAction.run({ accountId: grant.accountId, entityId: grant.entityId, entityName: grant.entityName }, body),
+      (result) => (result.status === 200 ? useAction.describeOutcome(result) : String(result.status)),
+    );
   }
 
   /**

@@ -145,7 +145,6 @@ const SETTING_COVERAGE: Record<string, string> = {
   'credSshManager.secretClipboardTtlSeconds': 'secretclipboardttlseconds',
   'credSshManager.agentGrantIdleMinutes': 'agentgrantidleminutes',
   'credSshManager.agentGrantMaxCalls': 'agentgrantmaxcalls',
-  'credSshManager.maskAgentOutput': 'masked on its way out',
   'credSshManager.gitDeployKeys': 'gitdeploykeys',
   'credSshManager.breachCheck': 'breach check',
   'credSshManager.wslAgentRelay': 'relay',
