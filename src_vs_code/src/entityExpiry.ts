@@ -77,6 +77,22 @@ export function burnsOnAgentUse(node: TreeNode): boolean {
   return node.details?.burnPolicy === 'oneUse';
 }
 
+/**
+ * The same question, asked by id — what the broker needs to queue calls on such an entry.
+ *
+ * <p>Here rather than at the wiring site so there is ONE answer to "is this one-use", beside the
+ * burn it decides. Two would be two things to keep in step, and the one that drifts is the one
+ * nobody is looking at.</p>
+ */
+export function oneUseIn(
+  storage: { getNode(accountId: string, entityId: string): TreeNode | undefined },
+): (accountId: string, entityId: string) => boolean {
+  return (accountId, entityId) => {
+    const node = storage.getNode(accountId, entityId);
+    return node !== undefined && burnsOnAgentUse(node);
+  };
+}
+
 /** Everything in a set whose time has come — the exact list a sweep should delete. */
 export function expiredNodes(nodes: readonly TreeNode[], nowMs: number): TreeNode[] {
   return nodes.filter((node) => node.type === 'entity' && isExpired(node, nowMs));

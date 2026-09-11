@@ -104,6 +104,32 @@ async function refusedMessage(account: StoredAccount, location: string, response
     : `Vault server refused ${account.email} (403) — outside the allowed domain, or not permitted.`;
 }
 
+/**
+ * The server had no vault for this account when we last looked.
+ *
+ * <p>A precondition, not an absence of one: `If-None-Match: *` asks the server to accept the
+ * write only if it is still the FIRST. The state the audit found missing — see `versions`.</p>
+ */
+const ABSENT = Symbol('the server had no vault when we last looked');
+
+/**
+ * The server refused this client's last write, so nothing may be written until it reads again.
+ *
+ * <p>Distinct from knowing nothing, and that distinction is the whole point: "nothing known"
+ * writes unconditionally, which after a 412 is precisely the overwrite that was just refused.</p>
+ */
+const MUST_REREAD = Symbol('the last write was refused; re-read before writing again');
+
+type KnownVersion = string | typeof ABSENT | typeof MUST_REREAD;
+
+/** What the write may honestly claim, given what this client last learned. */
+function preconditionFor(known: KnownVersion | undefined): Record<string, string> | undefined {
+  if (known === undefined || known === MUST_REREAD) {
+    return undefined;
+  }
+  return known === ABSENT ? { 'If-None-Match': '*' } : { 'If-Match': known };
+}
+
 export class ServerTransport implements VaultTransport {
   /**
    * The status behind the last empty team, if any.
@@ -119,16 +145,27 @@ export class ServerTransport implements VaultTransport {
   readonly embedsShares = false;
 
   /**
-   * The version of each account's vault as this client last saw it, so a write can
-   * say "only if nobody else changed it since". Kept per transport instance, which
-   * TransportFactory caches per location — so a sync cycle that reads and then writes
-   * uses the version from its own read.
+   * What this client last learned about each account's vault on the server, so a write can
+   * state it. Kept per transport instance, which TransportFactory caches per location — so a
+   * sync cycle that reads and then writes uses what its own read found.
    *
-   * Absent means "we have not read this account's vault yet", and the write then
-   * carries no precondition: an unconditional write is what every client did before
-   * the server understood them, and it stays correct.
+   * <p>Four states, and three of them are a precondition:</p>
+   * <ul>
+   *   <li>a <b>version string</b> — we read a vault; write it only if it is still that one;</li>
+   *   <li><b>{@link ABSENT}</b> — we read and there was NO vault; write it only if that is still
+   *     true. This is the state the audit found missing: an absent vault used to be indistinguishable
+   *     from "we never looked", so the write that CREATES a vault — the one a new account makes —
+   *     went out with no precondition at all, and two of one person's machines signing in the same
+   *     afternoon both created one, the second silently replacing the first;</li>
+   *   <li><b>{@link MUST_REREAD}</b> — the server refused our last write. Forgetting the version
+   *     is not enough, because "nothing known" means "write unconditionally": a retry that skipped
+   *     the re-read would overwrite exactly the work the refusal protected;</li>
+   *   <li><b>absent from the map</b> — we have never read this account's vault. The write then
+   *     carries no precondition, which is what every client did before the server understood them,
+   *     and it stays correct.</li>
+   * </ul>
    */
-  private readonly versions = new Map<string, string>();
+  private readonly versions = new Map<string, KnownVersion>();
 
   constructor(
     readonly location: string,
@@ -237,7 +274,8 @@ export class ServerTransport implements VaultTransport {
   async readVault(account: StoredAccount): Promise<string | undefined> {
     const response = await this.request(account, '/api/vault');
     if (response.status === 404) {
-      this.versions.delete(account.accountId); // nothing stored yet
+      // Not "we know nothing" — we know there is nothing, which is a precondition of its own.
+      this.versions.set(account.accountId, ABSENT);
       return undefined;
     }
     if (!response.ok) {
@@ -249,17 +287,25 @@ export class ServerTransport implements VaultTransport {
 
   async writeVault(account: StoredAccount, content: string): Promise<void> {
     const known = this.versions.get(account.accountId);
+    if (known === MUST_REREAD) {
+      // Refused here rather than on the wire: after a 412 there is no precondition this client
+      // can honestly state — the vault exists, and its version is one we have never seen.
+      throw new Error(
+        `The vault at ${this.location} changed under this client and has not been re-read since. `
+          + 'Re-read it before writing; nothing was sent.',
+      );
+    }
     const response = await this.request(account, '/api/vault', {
       method: 'PUT',
       rawBody: content,
-      headers: known === undefined ? undefined : { 'If-Match': known },
+      headers: preconditionFor(known),
     });
 
     if (response.status === 412) {
-      // Somebody else — another machine of yours — wrote between our read and this
-      // write. Forget the version we were holding so the next attempt re-reads and
-      // merges; keeping it would make every retry fail the same way.
-      this.versions.delete(account.accountId);
+      // Somebody else — another machine of yours — wrote between our read and this write.
+      // Remember that a re-read is owed: dropping the version alone would leave the next
+      // attempt unconditional, which is the overwrite this refusal just prevented.
+      this.versions.set(account.accountId, MUST_REREAD);
       throw new Error(
         `The vault changed on the server while this sync was running (${this.location}). ` +
           'Re-reading and merging on the next cycle; nothing was overwritten.',
@@ -271,11 +317,19 @@ export class ServerTransport implements VaultTransport {
     this.rememberVersion(account, response);
   }
 
-  /** Adopt the version the server reports, so a second write needs no extra read. */
+  /**
+   * Adopt the version the server reports, so a second write needs no extra read.
+   *
+   * <p>A response with no ETag FORGETS whatever we held — an older server, or a proxy that
+   * strips the header. Keeping the previous version would refuse every later write, and keeping
+   * an earlier {@link ABSENT} would refuse them for the opposite reason.</p>
+   */
   private rememberVersion(account: StoredAccount, response: Response): void {
     const etag = response.headers.get('ETag');
     if (etag !== null && etag.length > 0) {
       this.versions.set(account.accountId, etag);
+    } else {
+      this.versions.delete(account.accountId);
     }
   }
 
@@ -449,9 +503,20 @@ export class ServerTransport implements VaultTransport {
     return response.ok ? 'withdrawn' : 'notFound';
   }
 
+  /**
+   * After a DELETE that succeeded — or found nothing to delete — the vault is gone, so the next
+   * write is a create and can say so, instead of being the unconditional write finding #5 is about.
+   */
+  private noteVaultIsGone(account: StoredAccount, response: Response): void {
+    if (response.ok || response.status === 404) {
+      this.versions.set(account.accountId, ABSENT);
+    }
+  }
+
   async deleteVault(account: StoredAccount): Promise<void> {
     this.versions.delete(account.accountId);
     const response = await this.request(account, '/api/vault', { method: 'DELETE' });
+    this.noteVaultIsGone(account, response);
     if (!response.ok && response.status !== 404) {
       // The server's own sentence, not just the number. A 503 here means the vault file was locked
       // and NOTHING was removed — including the login key, which is the whole point of the refusal

@@ -1,12 +1,14 @@
 # PLAN — a one-use entry is used once, and a call cap is a cap
 
-> Status: **plan only, nothing implemented yet, 2026-09-10.** Scope: `src_vs_code/src/credsAgentServer.ts`,
-> `grantRegistry.ts`, `extension.ts`, their tests.
-> Audit finding **#3** of [REVIEW_product_audit_2026-09-09.md](REVIEW_product_audit_2026-09-09.md), with the
+> Status: **IMPLEMENTED, 2026-09-11.** Scope as built: `grantRegistry.ts` (`reserve`, and `touch`
+> removed), the new `oneUseLane.ts` and `brokerCall.ts`, `credsAgentServer.ts`, `entityExpiry.ts`,
+> `burnOnUse.ts`, `extension.ts`, `.size-baseline.json`, `scripts/creds-cli-itest.cjs`, the new
+> `test/oneUseAndCap.test.ts`, `test/grantTtl.test.ts`, `test/brokerWorld.ts`.
+> Audit finding **#3** of [REVIEW_product_audit_2026-09-09.md](../todo/REVIEW_product_audit_2026-09-09.md), with the
 > two halves re-ranked in the 2026-09-10 re-verification (§Перепроверка).
 >
-> Related docs: [module_extension.md](../research/module_extension.md) (grants, consent, the burn),
-> [PLAN_ephemeral_secrets.md](../research/PLAN_ephemeral_secrets.md) (where `oneUse` came from).
+> Related docs: [module_extension.md](module_extension.md) (grants, consent, the burn),
+> [PLAN_ephemeral_secrets.md](PLAN_ephemeral_secrets.md) (where `oneUse` came from).
 
 ## Symptom
 
@@ -115,3 +117,50 @@ says `internal` for that call, and the audit's own remark applies: the action ma
 - [ ] `module_extension.md` and `CHANGELOG.md` updated; the cost-of-a-use decision written in the module doc.
 - [ ] `coai` plan → `proceed`, code round run, findings resolved.
 - [ ] Promoted to `research/` with deviations recorded.
+
+
+## What shipped differently
+
+**The lane is keyed by the ENTITY, not by the token, and that was not an implementation detail.**
+The plan said "a lane per one-use entity" and the first implementation keyed ordinary entries by
+`entityId#secret` so they would not queue — which looked right and was not: every call from one
+agent reuses one token, so that key is the same key, and two parallel queries against an ordinary
+entry serialised. The test that caught it is the one that asserts OVERLAP rather than call count;
+the first version of that test counted `ran` and passed against the broken code, because a queue
+that runs both in turn leaves exactly the same two entries. Ordinary entries now skip the lane
+entirely rather than getting a private key in it.
+
+**The second caller is refused BEFORE the action runs**, which the plan left to the action's own
+"no longer exists" lookup. A reviewer pointed out that reaching that lookup is still an invocation,
+and a handler that does anything ahead of it would do it twice.
+
+**The queue advances on a rejection as well as a success** — `.then(next, next)`, not `.then(next)`.
+Also a reviewer's: one call's failure would otherwise fail every call behind it with somebody
+else's error.
+
+**`GrantRegistry.touch` is gone rather than kept.** `reserve` replaced its only production caller,
+and a second way to spend a use is the thing that would drift back into a check-then-act gap. The
+TTL tests were moved onto `reserve`, which is also what the broker does.
+
+**`extension.ts` did not get two more inline callbacks.** It would have crossed the size ratchet,
+so `oneUseIn` went to `entityExpiry.ts` and `burnOneUseIn` to `burnOnUse.ts`, beside the predicates
+they are made of — and the baseline came DOWN from 1068 to 1066 rather than up.
+
+**The CLI integration suite caught a positional-argument mistake that no type could.** `isOneUse`
+was inserted into the middle of `CredsAgentServer`'s constructor parameter list, and
+`creds-cli-itest.cjs` constructs the server positionally — so `listAliases` silently landed in the
+`isOneUse` slot and `creds ls` went blank. Fixed there, and worth naming: that constructor has
+thirteen parameters.
+
+## Open tail
+
+- **`CredsAgentServer` takes thirteen positional constructor parameters**, and this change showed
+  what that costs: inserting one in the middle hands the next one to the wrong slot, in a caller a
+  compiler cannot check because it is `.cjs`. An options object would make the next insertion free.
+  Not done here — it touches every construction site and belongs in its own change.
+- **The lane's `spent` set is never pruned.** It is bounded by the number of one-use entries a
+  window actually uses, and it must outlive the entries themselves — it is the memory that refuses
+  the second call — so it lives exactly as long as the window a grant can live in.
+- **A grant lives in one window's memory, by design.** Several reviewers asked for a durable or
+  cross-process claim; that would be a different product. The window closing is the revocation
+  story, and a claim that outlived it would outlive the revocation.

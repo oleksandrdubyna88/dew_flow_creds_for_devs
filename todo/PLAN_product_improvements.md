@@ -10,12 +10,12 @@
 
 - [x] F2: обязательная проверка MAC современного envelope до принятия доверенного состояния — [PLAN_envelope_mac_required.md](../research/PLAN_envelope_mac_required.md), **реализовано 2026-09-11**.
 - [x] F1: безопасный отказ при невозможности маскирования; секреты не попадают в ответы и журнал; мёртвая настройка `maskAgentOutput` (F10) убрана — [PLAN_mask_fail_closed.md](../research/PLAN_mask_fail_closed.md), **реализовано 2026-09-11**.
-- [ ] F3: атомарное резервирование grant и использования одноразовой записи — [PLAN_one_use_serialized.md](PLAN_one_use_serialized.md).
+- [x] F3: атомарное резервирование grant и использования одноразовой записи — [PLAN_one_use_serialized.md](../research/PLAN_one_use_serialized.md), **реализовано 2026-09-11**.
 - [x] F4: проверяемое удаление; сохранение login key, если vault не удалён — [PLAN_vault_delete_verified.md](../research/PLAN_vault_delete_verified.md), **реализовано 2026-09-11**.
 - [x] F9: брокер отказывает браузерам у двери (`Origin` / `Host`) — [PLAN_broker_origin_guard.md](../research/PLAN_broker_origin_guard.md), **реализовано 2026-09-11**.
-- [ ] F7: согласованный backup — обход `vaults/` раньше ключей; отдельное подтверждение восстановления остаётся в §2 — [PLAN_backup_walk_order.md](PLAN_backup_walk_order.md).
+- [ ] F7: согласованный backup — обход `vaults/` раньше ключей; отдельное подтверждение восстановления остаётся в §2 — [PLAN_backup_walk_order.md](PLAN_backup_walk_order.md). **Решено не делать (2026-09-11)** — причина и цена записаны в [REVIEW_product_audit_2026-09-09.md](REVIEW_product_audit_2026-09-09.md#finding-7-is-not-being-built--the-owners-decision-2026-09-11).
 - [x] F6: разрешённые KDF-профили; предел параллелизма и отмена признаны ненужными при закреплённых параметрах — [PLAN_kdf_params_bounded.md](../research/PLAN_kdf_params_bounded.md), **реализовано 2026-09-10**.
-- [ ] F5: conditional create после 404 и merge после конфликта — [PLAN_first_write_conditional.md](PLAN_first_write_conditional.md).
+- [x] F5: conditional create после 404 и merge после конфликта — [PLAN_first_write_conditional.md](../research/PLAN_first_write_conditional.md), **реализовано 2026-09-11**.
 - [ ] F8: воспроизводимые SSH-тесты и JSON-позиции на fixtures; матрица CI не добавляется — [PLAN_test_matrix_hygiene.md](PLAN_test_matrix_hygiene.md).
 
 Код и условия каждого дефекта перечислены в отчёте; связанные задачи закрываются только после повторения исходного сценария на исправленной версии.

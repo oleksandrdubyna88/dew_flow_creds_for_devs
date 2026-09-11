@@ -69,7 +69,7 @@ export type GrantLookup =
  * Why a grant would be refused now — or `undefined` while it is still good.
  *
  * <p><b>A refusal outranks every clock.</b> A denied grant is terminal: it exists only to keep
- * answering "a person said no". Nothing ever uses it, so nothing ever `touch`es it, and an idle
+ * answering "a person said no". Nothing ever uses it, so nothing ever reserves it, and an idle
  * clock measured from minting would sweep it about an hour after the Deny — at which point the
  * broker answers "unknown token" and a reasonable agent asks for a fresh one, reopening the very
  * dialog that was just refused. That is the loop the refusal tombstone exists to prevent, and a
@@ -152,15 +152,31 @@ export class GrantRegistry {
     return { kind: 'live', grant };
   }
 
-  /** Record one use: bumps the count and resets the idle clock. No-op for an unknown secret. */
-  touch(secret: string, now: number = Date.now()): Grant | undefined {
-    const current = this.grants.get(secret);
-    if (current === undefined) {
-      return undefined;
+  /**
+   * Re-check the grant and SPEND one use — in one synchronous step.
+   *
+   * <p>`lookup` happens before the body is read and before a human is asked, and `touch` happened
+   * after both. Two `await`s between a check and the count it guards is a check-then-act race, and
+   * the broker makes it reachable on purpose: concurrent first calls SHARE one consent dialog, so
+   * under `agentGrantMaxCalls: 1` two requests both passed `lookup` at `uses: 0`, both waited for
+   * the same Allow, and both ran (audit 2026-09-09, finding #3 — reproduced on the real broker as
+   * `configuredMaxCalls=1; executed=2; dialogs=1`).</p>
+   *
+   * <p>Node is single-threaded, so a read-compare-write with no `await` inside is atomic against
+   * every other request. That is the whole fix: there is no lock here because there cannot be an
+   * interleaving.</p>
+   *
+   * <p>An `expired` answer says WHICH expiry, so the caller can tell somebody their token ran out of
+   * calls rather than out of time.</p>
+   */
+  reserve(secret: string, now: number = Date.now(), limits: GrantLimits = NO_LIMITS): GrantLookup {
+    const found = this.lookup(secret, now, limits);
+    if (found.kind !== 'live') {
+      return found;
     }
-    const next: Grant = { ...current, lastUsedAt: now, uses: current.uses + 1 };
+    const next: Grant = { ...found.grant, lastUsedAt: now, uses: found.grant.uses + 1 };
     this.grants.set(secret, next);
-    return next;
+    return { kind: 'live', grant: next };
   }
 
   /**

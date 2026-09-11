@@ -58,7 +58,7 @@ import { ConfigRouteSources } from './brokerConfigRoute';
 import { EntityFlagsRefresher, entityFlagSource } from './entityFlags';
 import { createDiagnosticLog } from './diagnosticLog';
 import { resolveKind } from './entityKind';
-import { burnIfOneUse } from './burnOnUse';
+import { burnOneUseIn } from './burnOnUse';
 import { SshBridgeManager } from './sshBridgeManager';
 import { entityKey } from './entityFlags';
 import { Machine } from './installCommand';
@@ -67,6 +67,7 @@ import { toWslPath } from './wslRelay';
 import { DEFAULT_DISTRO, WslRelayManager, spawnWslRelay } from './wslRelayManager';
 import { AliasMap, aliasFor, listAliases, resolveAlias } from './cliAliases';
 import { EphemeralSweeper } from './ephemeralSweeper';
+import { oneUseIn } from './entityExpiry';
 import { maskEntriesFor } from './maskEntries';
 import { visibleConfigDetails, visibleMcpEntries } from './mcpEntries';
 import { McpEntriesCache } from './mcpEntriesCache';
@@ -522,13 +523,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     (accountId, entityId) => maskEntriesFor(storage, accountId, entityId),
     // The fifth makes "until an agent uses it once" real: a successful call destroys the
     // entry through the one deletion path, tombstone and revision history included.
-    async (accountId, entityId) => {
-      const burned = await burnIfOneUse(storage, accountId, entityId);
-      if (burned) {
-        provider.refresh();
-      }
-      return burned;
-    },
+    burnOneUseIn(storage, () => provider.refresh()),
     // The sixth lets `creds ssh prod-db` name an entry instead of pasting a token. The
     // registry holds only which entry a name points at — never a token and never a secret —
     // so an alias says WHICH, and the consent modal still says WHETHER.
@@ -547,11 +542,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             kind: resolveKind(node.details),
           };
     },
-    // The seventh answers `creds ls`. Names and kinds only — the same registry the resolver
+    // The seventh: may this entry be used exactly ONCE? The broker then queues calls on it and
+    // refuses the second. Answered where the burn is decided, so there is one answer.
+    oneUseIn(storage),
+    // The eighth answers `creds ls`. Names and kinds only — the same registry the resolver
     // reads, but a different disclosure: being handed every name is not the same as resolving
     // one you already know, which is why the broker takes them as two callbacks.
     () => listAliases(aliasMap()),
-    // The eighth answers the MCP server's one read route: the non-secret half of the entries
+    // The ninth answers the MCP server's one read route: the non-secret half of the entries
     // somebody opened to agents. Nothing appears until a switch is on, which is what stands in
     // for a token there — see `isMcpEntriesRoute`.
     () => mcpEntries.entries(),

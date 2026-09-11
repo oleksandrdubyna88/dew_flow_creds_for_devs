@@ -25,6 +25,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **An entry marked "until an agent uses it once" is now used once, even by two calls at the same
+  moment.** The burn runs after the answer is on the wire, deliberately — a storage failure while
+  burning must not cost an agent a result it already earned — so two calls that arrived together
+  both ran before either burned. And the MCP door mints a grant per call, so "one token, one use"
+  was never the guarantee: two different tokens reach the same entry.
+
+  A one-use entry now takes its turn, and the second caller is refused *before* the action runs —
+  letting it through and relying on the action's own "no longer exists" lookup is still an
+  invocation. Nothing else queues: two parallel queries against an ordinary entry still run at
+  once, which is a capability no entry should lose for a promise only one kind of entry makes.
+
+- **A call cap of N means N calls.** `agentGrantMaxCalls` was checked before the request body was
+  read and before anybody was asked, and counted after both — and the broker shares one consent
+  dialog between concurrent first calls on purpose, so under a cap of 1 two requests both passed at
+  zero uses, both waited for the same Allow, and both ran. The check and the count are one step
+  now. The cap is off by default, so this bites only somebody who turned it on.
+
+  Both are audit finding #3 of 2026-09-09; record in `research/PLAN_one_use_serialized.md`.
+
+### Fixed
+
+- **Two machines signing into the same account no longer lose one of the two vaults.** Every write
+  carried `If-Match` except the one that *creates* the vault — which is the write a new account
+  makes. Both machines read "nothing here", both wrote with no precondition, and the second
+  silently replaced the first: everything only in the losing vault gone, no error anywhere, and
+  nothing to merge from because that copy was never uploaded.
+
+  The client now says `If-None-Match: *` when it has read the vault and found none — the server has
+  understood that since conditional writes landed. And a refused write no longer just forgets the
+  version it held: forgetting means "write unconditionally", so a retry that skipped the re-read
+  used to overwrite exactly the work the refusal protected. It now says what to do and sends
+  nothing.
+
+  Audit finding #5; record in `research/PLAN_first_write_conditional.md`.
+
+### Security
+
 - **The agent broker now refuses requests that look like they came from a browser.** It is a loopback
   HTTP server, and a web page in your own browser is also on loopback — and nothing checked where a
   request came from. The alias door needs no token by design (a rate limit and the consent dialog are

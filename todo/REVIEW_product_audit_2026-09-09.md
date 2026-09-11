@@ -184,11 +184,11 @@ restoredVault = requires-generation-2
 |---|---|---|---|
 | 1 | подтверждено, **недооценено** | Худший случай — ротация: `commit` сохраняет новый секрет и тут же отдаёт stdout (`rotateAction.ts:275-282`); отказ маски здесь выдаёт агенту свежий боевой пароль, а отказы коррелированы — запись в keychain непосредственно перед чтением из него. Исключение не требуется: запись, удалённая во время exec, даёт пустую таблицу и `hits: 0`. Ветка `catch` не покрыта ни одним тестом. | [PLAN_mask_fail_closed.md](../research/PLAN_mask_fail_closed.md) - **IMPLEMENTED 2026-09-11** |
 | 2 | подтверждено дословно | Починка дешевле, чем кажется: все живые перезаписи wraps идут через `resignEnvelopeWraps` (4 вызова в `securityKeyOps.ts`), а `envelopeWithWraps`, который MAC не обновляет, — мёртвый код. Правило «v≥3 без MAC = bad» не ломает ни одного живого пути. Отдельно: `unlock` кэширует wraps **до** проверки MAC (`syncManager.ts:445` → `:452`). | [PLAN_envelope_mac_required.md](../research/PLAN_envelope_mac_required.md) — **IMPLEMENTED 2026-09-11** |
-| 3 | подтверждено, **половины перепутаны** | `agentGrantMaxCalls` по умолчанию `0` — без лимита; эта половина бьёт только тех, кто включил сам (P2). `oneUse` — пункт формы записи («Until an agent uses it once»), сжигание после ответа, два параллельных вызова тратят «одноразовую» запись дважды, и MCP-дверь минтит grant на каждый вызов. Это P1. | [PLAN_one_use_serialized.md](PLAN_one_use_serialized.md) |
+| 3 | подтверждено, **половины перепутаны** | `agentGrantMaxCalls` по умолчанию `0` — без лимита; эта половина бьёт только тех, кто включил сам (P2). `oneUse` — пункт формы записи («Until an agent uses it once»), сжигание после ответа, два параллельных вызова тратят «одноразовую» запись дважды, и MCP-дверь минтит grant на каждый вызов. Это P1. | [PLAN_one_use_serialized.md](../research/PLAN_one_use_serialized.md) - **IMPLEMENTED 2026-09-11** |
 | 4 | подтверждено, **недооценено** | Маршрут self-service без роли. `LoginKeyStore.RemoveAsync` уже возвращает `bool` и логирует Error — endpoint его выбрасывает (`Program.cs:915`). Хелпер `Corp.Undeletable()` применён к пяти соседним путям и ни разу к vault `.bin`. | [PLAN_vault_delete_verified.md](../research/PLAN_vault_delete_verified.md) - **IMPLEMENTED 2026-09-11** |
-| 5 | механика подтверждена, **последствия завышены** | `syncProfile` на каждом цикле делает read → decrypt → `mergeProfiles` → push (`syncManager.ts:552`); проигравшее устройство само вольёт свои записи. Потеря только если оно больше никогда не синхронизируется. P3. Складывается с #4: после удаления vault все устройства аккаунта ловят 404 и наперегонки пересоздают. | [PLAN_first_write_conditional.md](PLAN_first_write_conditional.md) |
+| 5 | механика подтверждена, **последствия завышены** | `syncProfile` на каждом цикле делает read → decrypt → `mergeProfiles` → push (`syncManager.ts:552`); проигравшее устройство само вольёт свои записи. Потеря только если оно больше никогда не синхронизируется. P3. Складывается с #4: после удаления vault все устройства аккаунта ловят 404 и наперегонки пересоздают. | [PLAN_first_write_conditional.md](../research/PLAN_first_write_conditional.md) - **IMPLEMENTED 2026-09-11** |
 | 6 | подтверждено | `maxmem` ограничивает `N·r`, `p` — ничем. Достижимо из фонового sync без клика (`silentPin` → `unwrapWithPinAsync` → `openBlobAsync`). Со снятым MAC (#2) — тихий remote-DoS всех синхронизирующихся машин; находки #2 и #6 друг про друга не знают. | [PLAN_kdf_params_bounded.md](../research/PLAN_kdf_params_bounded.md) — **IMPLEMENTED 2026-09-10** |
-| 7 | подтверждено, картина другая в обе стороны | Хуже: `org/login-keys` идёт в начале обхода, `vaults` — в конце; окно — почти вся длительность бэкапа. После restore ключ **тихо переминтится** при первом логине (`GetOrMintAsync`, create-if-absent), и все wraps умирают без действия админа. Лучше: S выдаётся только при `OrgRecovery.Enabled`, то есть есть break-glass через кворум. Фикс — обходить `vaults/` раньше ключей: S создаётся до vault и не ротируется. | [PLAN_backup_walk_order.md](PLAN_backup_walk_order.md) |
+| 7 | подтверждено, картина другая в обе стороны | Хуже: `org/login-keys` идёт в начале обхода, `vaults` — в конце; окно — почти вся длительность бэкапа. После restore ключ **тихо переминтится** при первом логине (`GetOrMintAsync`, create-if-absent), и все wraps умирают без действия админа. Лучше: S выдаётся только при `OrgRecovery.Enabled`, то есть есть break-glass через кворум. Фикс — обходить `vaults/` раньше ключей: S создаётся до vault и не ротируется. | [PLAN_backup_walk_order.md](PLAN_backup_walk_order.md) - **NOT BEING BUILT**, see below |
 | 8 | подтверждено, точнее | Два SSH-теста зелёные в CI **случайно**: CI — Linux, `defaultProbe` режет `PATH` по `;`, пробник никогда не срабатывает. Матрицы нет — один job, Node 22, Ubuntu. `jsonErrorLine` сам пишет «measured on Node 24». | [PLAN_test_matrix_hygiene.md](PLAN_test_matrix_hygiene.md) |
 
 ### Чего в аудите нет
@@ -203,3 +203,26 @@ restoredVault = requires-generation-2
 ### Порядок исправлений
 
 Аудит предлагает 1 → 2 → 3 → 4 → 7 → 5, 6. Принятый порядок: **#2 → #1 → #3 (oneUse) → #4 → #9 → #7 → #6 → #5 → #8** — сначала то, что снимает и связку #2+#6, потом единственная утечка в ответ, потом обещание из интерфейса.
+
+
+## Finding #7 is not being built — the owner's decision, 2026-09-11
+
+The plan for it stays in `todo/` and stays accurate. It is **not** forgotten work and it is not
+waiting on anybody: asked which of the remaining findings were worth building, the owner answered
+*"#7 не надо раз работает"* — the backup works, so leave it.
+
+What that decision costs, stated plainly so a future reader can re-take it rather than re-derive it:
+
+- The window is real and it is most of a backup run, not an instant. `org/login-keys` is read near
+  the start of the walk and `vaults` at the very end, so a developer whose login key S is minted
+  and whose vault is written in between is captured **without** the key that opens it.
+- After a restore, the missing key is re-minted silently on that developer's next login
+  (`GetOrMintAsync` is create-if-absent), and every wrap sealed to the old S dies with no error and
+  no administrator action.
+- What makes it survivable: S is only issued when `OrgRecovery.Enabled`, so there is a quorum
+  break-glass for exactly this case, and the whole scenario needs a restore to have happened.
+
+The fix the plan proposes is still the right one and still cheap — walk `vaults/` **before** the
+keys, which makes the dependency monotone, since S is created before any vault sealed to it and is
+never rotated. Nothing about the analysis is superseded. If this is ever picked up, the plan's own
+tail (roster rotation) is the condition that would change the answer.
