@@ -6,7 +6,7 @@
 > re-verified 2026-09-10 (§Перепроверка).
 >
 > Related docs: [module_extension.md](module_extension.md) (envelope, KDF),
-> [PLAN_envelope_mac_required.md](../todo/PLAN_envelope_mac_required.md) (the MAC that would have caught
+> [PLAN_envelope_mac_required.md](PLAN_envelope_mac_required.md) (the MAC that would have caught
 > this — after the cost; **this plan is its declared prerequisite** and landed first).
 
 ## Symptom
@@ -145,7 +145,7 @@ attacker's multiplier is what this change removes. A Promise timeout cannot stop
 would only add a second way to be told "slow". Verifying the MAC before the KDF was also rejected, and it
 is not a trade-off but an impossibility: the envelope MAC key is HKDF of the master key the derivation
 produces, so there is no lighter key to check with — which is the whole reason this plan is the
-prerequisite of [PLAN_envelope_mac_required.md](../todo/PLAN_envelope_mac_required.md) rather than the
+prerequisite of [PLAN_envelope_mac_required.md](PLAN_envelope_mac_required.md) rather than the
 other way round.
 
 ## Open tail

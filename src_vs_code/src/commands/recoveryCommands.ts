@@ -499,7 +499,7 @@ export function registerRecoveryCommands(host: RecoveryCommandsHost): void {
     // One step, on the testable side of the `vscode` line: find the escrow wrap, unwrap, and refuse
     // an envelope whose signature says it was altered — BEFORE the re-key below carries its wrap
     // list forward as `previousWraps` and the officers sign it themselves.
-    const opened = openEscrowedVault(content, orgPrivateKey, readVaultWraps(content).filter(isWrap));
+    const opened = openEscrowedVault(content, orgPrivateKey);
     if (!opened.ok) {
       void vscode.window.showErrorMessage(
         `${targetEmail}'s vault carries no corporate escrow wrap — it was written before `

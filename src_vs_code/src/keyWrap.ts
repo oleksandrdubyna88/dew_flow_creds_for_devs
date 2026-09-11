@@ -8,6 +8,7 @@ import {
   encryptJsonWrapped,
   openBlob,
   openBlobAsync,
+  readVaultWraps,
   requireIntactEnvelope,
   sealBlob,
   sealBlobAsync,
@@ -553,9 +554,10 @@ function openedEscrow(wrap: KeyWrap, ephemeralPublicKey: string, orgPrivateKey: 
 export function openEscrowedVault(
   content: string,
   orgPrivateKey: Buffer,
-  wraps: readonly KeyWrap[],
 ): { ok: true; master: Buffer } | { ok: false; reason: 'no-escrow-wrap' } {
-  const escrow = orgEscrowWrap(wraps);
+  // Parsed here rather than taken as an argument: a caller passing both the raw content AND a wrap
+  // list can pass a mismatched pair, and this function's whole job is to answer about ONE file.
+  const escrow = orgEscrowWrap(readVaultWraps(content).filter(isKeyWrap));
   if (escrow === undefined) {
     return { ok: false, reason: 'no-escrow-wrap' };
   }

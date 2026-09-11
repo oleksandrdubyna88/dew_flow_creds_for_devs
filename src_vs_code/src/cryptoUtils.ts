@@ -612,6 +612,24 @@ export type EnvelopeMacStatus = 'ok' | 'missing' | 'bad';
 const UNSIGNED_VERSIONS: readonly number[] = [VERSION_PIN_ONLY, VERSION_WRAPPED];
 
 /**
+ * Whether this envelope is one of the shapes that was legitimately written WITHOUT a signature.
+ *
+ * <p>The version alone is not enough, and the review gate caught the first version of this fix
+ * keying on it: `version` is unauthenticated plaintext for v3 — only v4 binds the header as AAD —
+ * so relabelling a signed v3 to `version: 2` and deleting its `mac` read as a legacy file, and the
+ * payload still opened, because a v2 open path with `kdf: 'hkdf'` derives exactly the same key.</p>
+ *
+ * <p>What closes it is that the two unsigned formats are also the two SCRYPT formats: v3 introduced
+ * HKDF and the MAC together, in the same release, for the same reason. So an unsigned file must
+ * also claim scrypt — and an attacker who rewrites `kdf` to keep the pair consistent sends the open
+ * down the scrypt path, which derives a different key and fails the GCM tag. The relabel costs them
+ * the file whichever half they leave alone.</p>
+ */
+function unsignedLegacyShape(env: Record<string, unknown>): boolean {
+  return UNSIGNED_VERSIONS.includes(env.version as number) && env.kdf === 'scrypt';
+}
+
+/**
  * Verify the envelope MAC with the (already unwrapped) master key.
  *
  * <p>A `mac` that is absent — or `null`, or any non-string, which is what a hand-edited file carries —
@@ -631,7 +649,7 @@ export function verifyEnvelopeMac(
   }
   const mac = env.mac;
   if (typeof mac !== 'string') {
-    return UNSIGNED_VERSIONS.includes(env.version as number) ? 'missing' : 'bad';
+    return unsignedLegacyShape(env) ? 'missing' : 'bad';
   }
   const expected = computeEnvelopeMac(env, masterKeyBase64);
   const a = Buffer.from(mac, 'base64');
@@ -649,6 +667,10 @@ export function verifyEnvelopeMac(
  * the decision to a person. `missing` is a legacy/unsigned envelope, not tampering, and
  * `ok` is the normal case — both proceed.</p>
  */
+export function macStatusBlocksSync(status: EnvelopeMacStatus): boolean {
+  return status === 'bad';
+}
+
 /**
  * Refuse an envelope whose own signature says it was altered — BEFORE anything adopts it.
  *
@@ -663,16 +685,12 @@ export function verifyEnvelopeMac(
  * what makes `tampered` an honest word at this point rather than a guess between two causes.</p>
  *
  * <p>`ok` and `missing` both pass; `missing` is now reachable only for the two versions that were
- * written unsigned (see {@link UNSIGNED_VERSIONS}), so passing it is not a hole.</p>
+ * written unsigned AND claim the legacy KDF (see `unsignedLegacyShape`), so passing it is not a hole.</p>
  */
 export function requireIntactEnvelope(fileContent: string, masterKeyBase64: Passphrase): void {
   if (verifyEnvelopeMac(fileContent, masterKeyBase64) === 'bad') {
     throw new BackupError('tampered', TAMPERED_MESSAGE);
   }
-}
-
-export function macStatusBlocksSync(status: EnvelopeMacStatus): boolean {
-  return status === 'bad';
 }
 
 /**

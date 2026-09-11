@@ -10,7 +10,7 @@ import {
   sealBlob,
   verifyEnvelopeMac,
 } from '../cryptoUtils';
-import { isKeyWrap, openEscrowedVault, wrapWithOrgEscrow } from '../keyWrap';
+import { openEscrowedVault, wrapWithOrgEscrow } from '../keyWrap';
 import { generateOrgRecoveryKeypair } from '../orgEscrowCrypto';
 
 /**
@@ -91,6 +91,38 @@ test('a version that is not exactly 1 or 2 never reads as legacy — it is an al
       `version ${JSON.stringify(version)} must not excuse a missing MAC`,
     );
   }
+});
+
+test('a signed v3 relabelled as unsigned v2 is BAD — the version alone cannot excuse a missing MAC', () => {
+  // Found by the review gate (codex) against the first version of this fix, which keyed "may be
+  // unsigned" on the version NUMBER alone. `version` is unauthenticated plaintext for v3 (only v4
+  // binds the header as AAD), so 3 -> 2 plus a deleted `mac` read as a legacy file — and the payload
+  // still opened, because a v2 open path with `kdf: 'hkdf'` derives exactly the same key.
+  //
+  // What stops it is that the two unsigned formats are also the two SCRYPT formats: v3 introduced
+  // hkdf and the MAC together. An attacker who also rewrites `kdf` to 'scrypt' sends the open down
+  // the scrypt path, which derives a different key and fails the GCM tag — so the relabel costs them
+  // the file either way.
+  const signedV3 = edited(v4(), { version: 3 });
+  const relabelled = edited(signedV3, { version: 2, mac: undefined });
+
+  assert.equal(verifyEnvelopeMac(relabelled, master), 'bad', 'hkdf says this was never a v2');
+  assert.throws(
+    () => requireIntactEnvelope(relabelled, master),
+    (e: unknown) => (e as { kind?: string }).kind === 'tampered',
+  );
+  // And the same relabel on a v4: its header IS bound, so it was already unopenable — but it must
+  // read as tampered rather than as legacy all the same.
+  assert.equal(verifyEnvelopeMac(edited(v4(), { version: 2, mac: undefined }), master), 'bad');
+});
+
+test('a genuine unsigned v2 is still MISSING — it is scrypt, which is what makes it genuine', () => {
+  assert.equal(verifyEnvelopeMac(unsignedV2(), master), 'missing');
+  // ...and a v2 that claims scrypt but is not one cannot be produced without losing the payload:
+  // the open path would derive through scrypt and fail the tag. Asserted here as the format fact
+  // the rule rests on.
+  assert.equal((JSON.parse(unsignedV2()) as { kdf: string }).kdf, 'scrypt');
+  assert.equal((JSON.parse(v4()) as { kdf: string }).kdf, 'hkdf');
 });
 
 test('a non-string mac is treated as absent, and answers by version', () => {
@@ -177,17 +209,14 @@ test('the recovery quorum refuses a tampered vault instead of re-signing its wra
   const pin = { kind: 'pin', id: 'pin', createdAt: 1, salt: 'x', iv: 'x', tag: 'x', data: 'x' };
   const escrow = wrapWithOrgEscrow(master, pair.publicKey, 'fingerprint', Date.now());
   const file = encryptJsonWrapped({ secret: 'the vault' }, master, [pin, escrow]);
-  const wrapsOf = (content: string) =>
-    (JSON.parse(content) as { wraps: unknown[] }).wraps.filter(isKeyWrap);
-
   // Intact: the quorum opens it.
-  assert.equal(openEscrowedVault(file, pair.privateKey, wrapsOf(file)).ok, true);
+  assert.equal(openEscrowedVault(file, pair.privateKey).ok, true);
 
   // A wrap removed and the signature deleted with it — the audit's downgrade, arriving by the
   // recovery door.
   const downgraded = edited(file, { wraps: [escrow], mac: undefined });
   assert.throws(
-    () => openEscrowedVault(downgraded, pair.privateKey, wrapsOf(downgraded)),
+    () => openEscrowedVault(downgraded, pair.privateKey),
     (e: unknown) => (e as { kind?: string }).kind === 'tampered',
     'the officers must not re-key a list somebody else shortened',
   );

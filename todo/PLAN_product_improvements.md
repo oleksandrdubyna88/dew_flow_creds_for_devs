@@ -8,7 +8,7 @@
 
 Каждый дефект получил собственный план (перепроверка 2026-09-10, порядок — принятый там):
 
-- [ ] F2: обязательная проверка MAC современного envelope до принятия доверенного состояния — [PLAN_envelope_mac_required.md](PLAN_envelope_mac_required.md).
+- [x] F2: обязательная проверка MAC современного envelope до принятия доверенного состояния — [PLAN_envelope_mac_required.md](../research/PLAN_envelope_mac_required.md), **реализовано 2026-09-11**.
 - [ ] F1: безопасный отказ при невозможности маскирования; секреты не попадают в ответы и журнал; мёртвая настройка `maskAgentOutput` (F10) убрана — [PLAN_mask_fail_closed.md](PLAN_mask_fail_closed.md).
 - [ ] F3: атомарное резервирование grant и использования одноразовой записи — [PLAN_one_use_serialized.md](PLAN_one_use_serialized.md).
 - [ ] F4: проверяемое удаление; сохранение login key, если vault не удалён — [PLAN_vault_delete_verified.md](PLAN_vault_delete_verified.md).

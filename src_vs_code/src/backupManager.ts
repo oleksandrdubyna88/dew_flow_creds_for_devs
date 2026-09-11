@@ -1,9 +1,11 @@
+import { TAMPERED_MESSAGE } from './backupError';
 import { describeError } from './describeError';
 import * as vscode from 'vscode';
 import { verifyAccountSession } from './authManager';
 import { planBackupFileNames } from './backupNaming';
 import {
   decryptJsonAsync,
+  BackupError,
   decryptJsonWithMasterKey,
   requireIntactEnvelope,
   readBackupAccount,
@@ -239,7 +241,13 @@ export async function restoreFromBackup(
     content = Buffer.from(await vscode.workspace.fs.readFile(uri)).toString('utf8');
     account = readBackupAccount(content);
   } catch (error) {
-    void vscode.window.showErrorMessage(`Restore failed: ${describeError(error)}`);
+    // A file that was ALTERED is not a file that is damaged, and the difference decides what the
+    // person does next: restore another backup, or find out who can write to where this one lives.
+    void vscode.window.showErrorMessage(
+      error instanceof BackupError && error.kind === 'tampered'
+        ? TAMPERED_MESSAGE
+        : `Restore failed: ${describeError(error)}`,
+    );
     return;
   }
   if (account === undefined) {
