@@ -243,14 +243,23 @@ function refuseStrayKeys(hooks: Record<string, unknown>): void {
 function refuseWrongKinds(hooks: Record<string, unknown>): void {
   for (const [key, value] of Object.entries(hooks)) {
     const wanted = HOOK_KINDS[key as keyof typeof HOOK_KINDS];
-    // `value !== null` is not redundant: `typeof null` is "object", so without it `mcpCreate: null`
-    // passes here and then `handleMcpCreate` — which tests `create === undefined` — calls
-    // `create.choose` on it. A TypeError on the first create request, from a value this constructor
-    // had just approved. CodeRabbit's, on the pull request.
-    if (value !== undefined && (value === null || typeof value !== wanted)) {
+    if (!isKind(value, wanted)) {
       throw new Error(`The broker hook ${key} must be a ${wanted}, not ${describe(value)}.`);
     }
   }
+}
+
+/**
+ * Whether a value is of the kind its hook wants — `undefined` always is, because switching a hook
+ * off is legal.
+ *
+ * <p>`value !== null` is not redundant: `typeof null` is `"object"`, so without it `mcpCreate: null`
+ * passes, and then `handleMcpCreate` — which tests `create === undefined`, and null is not — calls
+ * `create.choose` on it. A TypeError on the first create request, from a value this constructor had
+ * just approved. Found by CodeRabbit on the pull request.</p>
+ */
+function isKind(value: unknown, wanted: string): boolean {
+  return value === undefined || (value !== null && typeof value === wanted);
 }
 
 /**
