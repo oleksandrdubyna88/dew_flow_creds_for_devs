@@ -137,6 +137,7 @@ function overSocket(socketPath: string, route: string, headers: Record<string, s
       const hungUp = error.code === 'EPIPE' || error.code === 'ECONNRESET';
       return hungUp ? resolve('closed') : reject(error);
     });
+    onlyForSoLong(request, reject);
     request.end();
   });
 }
@@ -146,17 +147,39 @@ const saidSo = (w: { audit: string[] }): boolean =>
   w.audit.some((line) => line.includes('browser-shaped request'));
 
 /**
- * Wait for that record, briefly.
+ * Wait for that record.
  *
  * <p>Over a pipe the client can see its own write fail before the server has finished answering,
- * so "the client is back" is not "the server is done". Polling rather than sleeping: it returns as
- * soon as the note is there, and gives up in a tenth of a second so a real regression fails fast.</p>
+ * so "the client is back" is not "the server is done". Polling rather than sleeping: it returns the
+ * moment the note is there, so the green case costs a few milliseconds. The budget is generous
+ * because a tight one is a flaky test on a loaded runner and buys nothing — a real regression never
+ * produces the note at all, and then this is two seconds, once.</p>
  */
 async function refusedAtTheDoor(w: { audit: string[] }): Promise<boolean> {
-  for (let waited = 0; waited < 100 && !saidSo(w); waited += 5) {
+  for (let waited = 0; waited < WAIT_FOR_THE_NOTE_MS && !saidSo(w); waited += 5) {
     await new Promise((resolve) => setTimeout(resolve, 5));
   }
   return saidSo(w);
+}
+
+const WAIT_FOR_THE_NOTE_MS = 2_000;
+
+/**
+ * How long a socket request may take before the test gives up.
+ *
+ * <p>Without one, a listener that accepts a connection and then stalls hangs the runner for ever:
+ * `http.request` has no deadline of its own, and node:test never reaches the cleanup. A regression
+ * should fail, not wedge CI.</p>
+ */
+const SOCKET_DEADLINE_MS = 5_000;
+
+/** Destroy a request that is going nowhere, so the promise settles either way. */
+function onlyForSoLong(request: http.ClientRequest, reject: (why: Error) => void): void {
+  request.setTimeout(SOCKET_DEADLINE_MS, () => {
+    const why = new Error(`no answer over the socket within ${SOCKET_DEADLINE_MS}ms`);
+    request.destroy(why);
+    reject(why);
+  });
 }
 
 /** A window with its SECOND listener open, and the address a bridge would forward. */
@@ -188,6 +211,7 @@ function post(
       },
     );
     request.on('error', reject);
+    onlyForSoLong(request, reject);
     request.end(payload);
   });
 }
