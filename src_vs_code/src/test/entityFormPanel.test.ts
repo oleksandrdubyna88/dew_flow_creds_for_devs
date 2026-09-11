@@ -140,3 +140,43 @@ test('a woven password survives an edit that did not touch it', () => {
 
   assert.equal(values.details.passwordWoven, true);
 });
+
+test('the "show the next code too" box is kept with the seed it belongs to', () => {
+  // Binding a virtual MFA device asks for two consecutive codes. The box is a preference on the
+  // entry, so it must survive the save that set it — and it must be stored against the seed that
+  // was pasted in the SAME save, not only against one that was already there.
+  const panel = world();
+
+  const withSeed = panel.toValues(posted('credential', { totp: SEED, totpShowNext: true }), {
+    entityId: 'e1',
+  } as never);
+  assert.equal(withSeed.details.totpShowNext, true, 'a seed and the box in one save');
+
+  const stored = panel.toValues(posted('credential', { totpShowNext: true }), {
+    entityId: 'e1',
+    hasStoredTotp: true,
+  } as never);
+  assert.equal(stored.details.totpShowNext, true, 'an edit that did not retype the seed');
+});
+
+test('the preference is absent whenever there is no code for it to be about', () => {
+  // Two different ways of having no seed, because they fail differently: never had one, and
+  // removing the one there was. Either way a preference about a code that does not exist is
+  // state nothing will ever read, and leaving it behind is what makes a stale flag.
+  const panel = world();
+
+  const unchecked = panel.toValues(posted('credential', { totp: SEED }), { entityId: 'e1' } as never);
+  assert.equal(unchecked.details.totpShowNext, undefined, 'the box was not ticked');
+
+  const noSeed = panel.toValues(posted('credential', { totpShowNext: true }), {
+    entityId: 'e1',
+  } as never);
+  assert.equal(noSeed.details.totpShowNext, undefined, 'ticked, but there is no seed at all');
+
+  const removed = panel.toValues(
+    posted('credential', { totpShowNext: true, clearTotp: true }),
+    { entityId: 'e1', hasStoredTotp: true } as never,
+  );
+  assert.equal(removed.details.hasTotp, undefined, 'the seed was removed');
+  assert.equal(removed.details.totpShowNext, undefined, 'so the preference goes with it');
+});

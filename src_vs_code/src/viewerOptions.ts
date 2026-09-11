@@ -78,9 +78,19 @@ export function secretResolver(read: SecretReader): (field: ViewerSecretField) =
               : read.dbConnection();
 }
 
-/** The live code for a viewer, or undefined when the entry has no seed. */
-export function totpViewFor(read: SecretReader): () => Thenable<TotpSnapshot | undefined> {
-  return () => Promise.resolve(read.totpSeed()).then((uri) => totpSnapshot(uri, Date.now()));
+/**
+ * The live code for a viewer, or undefined when the entry has no seed.
+ *
+ * <p>`withNext` carries the following period's code as well, for the entries whose owner asked for
+ * the pair — enrolling a virtual MFA device wants two consecutive codes. It is the entry's
+ * preference rather than a default because the everyday case is one code that expires, and showing
+ * a code that is not valid yet is only worth it where somebody said it is.</p>
+ */
+export function totpViewFor(
+  read: SecretReader,
+  withNext = false,
+): () => Thenable<TotpSnapshot | undefined> {
+  return () => Promise.resolve(read.totpSeed()).then((uri) => totpSnapshot(uri, Date.now(), withNext));
 }
 
 /**

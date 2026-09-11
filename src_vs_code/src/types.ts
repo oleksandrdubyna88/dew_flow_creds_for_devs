@@ -211,6 +211,19 @@ export interface EntityMetadata {
    */
   hasTotp?: boolean;
   /**
+   * Show the NEXT one-time code beside the current one in the read-only viewer.
+   *
+   * <p>A PREFERENCE, not a secret, and it syncs — the same trade `sshAgent` above makes: an entry
+   * marked on one machine shows the pair on the next one that unlocks it. Binding a virtual MFA
+   * device asks for two consecutive codes (Huawei Cloud, AWS, Alibaba, Oracle), and one code cannot
+   * satisfy that however long you wait for it.</p>
+   *
+   * <p>Per entry and off by default, because the need is per service: with it on, the page holds a
+   * code valid for up to two periods instead of one, which is a real widening of the viewer's
+   * documented exception and is worth only where somebody asked for it.</p>
+   */
+  totpShowNext?: boolean;
+  /**
    * This entry has at least one field stored woven with a decoy.
    *
    * <p>A plaintext flag for exactly the reason `hasTotp` above is one: the tree cannot read the

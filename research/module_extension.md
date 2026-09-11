@@ -3222,7 +3222,53 @@ first: a value that must be *read* cannot round-trip through the host. What trav
 code, which expires within its period; the seed never leaves the extension host. The tree's `:totp`
 token comes from a plaintext `hasTotp` flag, never from a keychain read per row.
 
-### The seed arrives as a pasted picture (unreleased)
+### The pair an enrolment asks for (unreleased)
+
+Binding a virtual MFA device asks for **two consecutive codes** — Huawei Cloud, AWS, Alibaba and
+Oracle all do — and one code cannot satisfy that however long you wait. Until now the second field
+could only be filled by watching the row redraw and reading it again, and the failure was mute: the
+console answers "codes not accepted", which reads like a wrong seed.
+
+`EntityMetadata.totpShowNext` is the entry's own preference, a plaintext PREFERENCE beside
+`hasTotp` exactly as `sshAgent` is one, so it syncs and a machine that receives the entry shows the
+pair too. `totpSnapshot(uri, now, withNext)` carries `next` when it is asked for — the code at
+`validUntil`, which needs no arithmetic of its own because `validUntil` is already the first
+millisecond of the following period.
+
+**This WIDENS the exception the paragraph above states, and the sentence is worth keeping exact.**
+With the preference on, the page holds a code valid for up to two periods rather than one. It is
+still a derived value that expires, it is still never the seed — but it is more than the viewer used
+to hold, and that is why it is per entry and off by default rather than a global setting.
+
+**The boundary is the whole difficulty, and the first design got it wrong.** Both independent
+reviewers on the plan gate found the same defect: resolving the second code when the button is
+pressed answers whichever pair is current *then*, so copying across a period tick produces two codes
+from two different pairs — the one thing the console refuses, indistinguishable from a broken seed.
+Three things close it, and none of them alone would:
+
+- both rows come from ONE snapshot, so what is displayed is always a consecutive pair;
+- **copying one half BINDS the other half to the pair it came from** — the click stamps the other
+  button `totpNext|<validUntil>` / `totp|<validUntil>`, the `field|variant` shape `entityViewCopy.ts`
+  already uses for `pay_…` and `snippet|…` — while the button just clicked is left unbound and keeps
+  answering the live pair;
+- a copy whose binding no longer matches the live pair is **refused**, with its own sentence — the
+  generic "Nothing to copy — the field is empty" would send somebody hunting for a lost seed.
+
+**The symmetry and the "leave the clicked one live" half are both load-bearing, and the code round
+proved it.** The first version bound only the second button and latched a flag that was never
+released: after one rollover that button was dead until the panel was reopened, because nothing
+could re-bind it. It also left the other order — copying *next* first — unguarded, which yields the
+same code twice. Binding from the CLICK, symmetrically, and leaving the clicked button live makes
+every refusal recoverable by the gesture the message already asks for: copy the pair again, in
+order. Nothing is re-stamped on a redraw, because a bound button must keep its pair and an unbound
+one is already live.
+
+Two consequences worth stating. A viewer **without** the preference never enters this protocol at
+all — its button stays the bare `totp` it has always been, so a copy at a period boundary cannot be
+refused as stale. And `isPairedCodeField` is exported for one reason: the panel has to tell an empty
+field from a race, because they deserve different words.
+
+### The seed arrives as a pasted picture (0.78.0)
 
 The field above shipped with one input — the `otpauth://` URI or the base32 secret, as text — and
 that text is the one thing a person often cannot get. **Google Authenticator exports only as a QR
@@ -3258,7 +3304,7 @@ Measured on the corpus: all forty symbols decode from their matrices and from re
 by 7°, 33° and 90°. Against 44 hand-held **photographs** from a third-party test corpus — a much
 harder input than a screenshot, and not the case this feature exists for — 26 decode.
 
-### Sharing a seed is a separate decision (unreleased)
+### Sharing a seed is a separate decision (0.78.0)
 
 Found while the input above was being built: **`buildSharePayload` read every secret except the TOTP
 seed**, while the accept side has always written `payload.secrets.totp` if one arrived — so sharing

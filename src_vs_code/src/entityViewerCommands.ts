@@ -122,7 +122,8 @@ export async function openEntityViewer(
     ...db,
     sshCommand: buildSshCommand(details),
     resolveSecret: secretResolver(totpReader),
-    totp: hasTotp ? totpViewFor(totpReader) : undefined,
+    totp: hasTotp ? totpViewFor(totpReader, details.totpShowNext === true) : undefined,
+    totpShowNext: hasTotp && details.totpShowNext === true,
     copyAllText: async () =>
       formatEntityBlock(
         details,

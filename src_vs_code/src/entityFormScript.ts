@@ -713,7 +713,7 @@ export function formPageScript(
       imageContent: imageContent, imageName: imageName,
       clearAttachment: chk('clearAttachment'), clearImage: chk('clearImage'),
       clearPassword: chk('clearPassword'), clearPrivateKey: chk('clearPrivateKey'),
-      totp: val('totp'), totpSteam: chk('totpSteam'), clearTotp: chk('clearTotp'),
+      totp: val('totp'), totpSteam: chk('totpSteam'), totpShowNext: chk('totpShowNext'), clearTotp: chk('clearTotp'),
       jumpHostEntityId: val('jumpHostEntityId'), tags: val('tags'),
       agentForward: chk('agentForward'), clearHostKey: chk('clearHostKey'),
       portForwards: forwardRows,

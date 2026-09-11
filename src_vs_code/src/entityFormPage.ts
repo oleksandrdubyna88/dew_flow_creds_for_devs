@@ -342,6 +342,9 @@ export function renderHtml(options: EntityFormOptions): string {
     <div id="totpQrChoices" class="qrChoices"></div>
     <div class="check"><input id="totpSteam" type="checkbox">
       <label for="totpSteam">Steam Guard (5-character code)</label></div>
+    <div class="check"><input id="totpShowNext" type="checkbox" ${d?.totpShowNext === true ? 'checked' : ''}>
+      <label for="totpShowNext">Show the next code as well as the current one</label></div>
+    <p class="hint">For binding a virtual MFA device: Huawei Cloud, AWS, Alibaba and Oracle all ask for <strong>two consecutive codes</strong>, and one code cannot satisfy that however long you wait. Off by default — the viewer otherwise shows one code, expiring, which is the point of the field. It is kept with the seed: an entry that has none keeps no preference either, so ticking this before pasting a seed saves nothing.</p>
     ${
       options.hasStoredTotp
         ? `<div class="check"><input id="clearTotp" type="checkbox">

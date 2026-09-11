@@ -26,6 +26,23 @@ import { copyVariant, copyableValue } from './paymentViewMessages';
  * DEFAULT while the reader looks at another language would be a worse defect than the dead
  * button, because it would look fixed.</p>
  */
+
+/**
+ * A one-time code copied as one half of a PAIR, carrying the pair it belongs to.
+ *
+ * <p>Exported because the panel needs to tell the two empty answers apart: a bare field that is
+ * genuinely empty, and a pair that has rolled over since it was copied. They deserve different
+ * sentences — the second one is not an empty field, it is a race the person has to re-run.</p>
+ */
+export function isPairedCodeField(field: string): boolean {
+  return /^totp(Next)?\|\d+$/.test(field);
+}
+
+/** Either half of the pair, bound to one or answering the live one. */
+function isCodeField(field: string): boolean {
+  return field === 'totpNext' || isPairedCodeField(field);
+}
+
 // eslint-disable-next-line complexity, max-lines-per-function
 export async function copyValueFor(
   options: EntityViewOptions,
@@ -44,6 +61,22 @@ export async function copyValueFor(
       ? undefined
       : copyableValue(fields, view.form, key);
     return value === undefined ? undefined : copyVariant(key, variant, value);
+  }
+  // A one-time code copied as part of a PAIR carries the pair it belongs to, as `totp|<validUntil>`
+  // / `totpNext|<validUntil>` — the `field|variant` shape the two branches around this one already
+  // use. Re-deriving the code from the clock instead would answer whichever pair is current at the
+  // moment of the click, and two codes from two different pairs are precisely what an enrolment
+  // refuses; a refusal here costs one more copy, answering costs a failed enrolment that looks like
+  // a broken seed. A bare `totp` is untouched — an entry without the preference copies as it always did.
+  if (isCodeField(field)) {
+    // No anchor means the person has copied neither half yet, so the live pair IS the pair they
+    // are looking at; a bare `totp` never reaches here at all and keeps its old path.
+    const [name, anchor = ''] = field.split('|');
+    const snapshot = await options.totp?.();
+    if (snapshot === undefined || (anchor !== '' && String(snapshot.validUntil) !== anchor)) {
+      return undefined;
+    }
+    return name === 'totpNext' ? snapshot.next : snapshot.code;
   }
   if (field === 'snippet' || field.startsWith('snippet|')) {
     const parts = field.split('|');
