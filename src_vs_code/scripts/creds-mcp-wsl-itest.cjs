@@ -47,6 +47,10 @@ Module._resolveFilename = (request, ...rest) =>
   request === 'vscode' ? stub : originalResolve.call(Module, request, ...rest);
 
 const OUT = path.join(__dirname, '..', 'out');
+const { watchStrays } = require('./wslStrays.cjs');
+
+/** Set once WSL is known good; the sweep at the bottom checks for it. */
+let strays;
 const REPO = path.join(__dirname, '..', '..');
 const WINDOWS_MCP = path.join(REPO, 'src_mcp', 'src', 'bin', 'Debug', 'net10.0', 'creds-mcp.exe');
 const LINUX_BUILD = '/tmp/creds-mcp-wsl-itest-build';
@@ -229,6 +233,10 @@ async function main() {
   if (!(await buildLinuxMcp())) {
     skip('the Linux creds-mcp could not be built inside WSL');
   }
+  // Everything matching that is alive NOW belongs to somebody else — an earlier run, or a
+  // developer with the real thing open. This run is answerable for what it adds to that.
+  strays = watchStrays(wsl, '[c]reds-mcp', 'creds-mcp processes');
+  await strays.start();
 
   // ---- a real window on Windows ---------------------------------------------
   const { CredsAgentServer } = require(path.join(OUT, 'credsAgentServer.js'));
@@ -366,17 +374,31 @@ async function main() {
     missing.stdout.trim().slice(-40),
   );
 
-  // ---- nothing is left running ----------------------------------------------
-  const leftovers = await wsl(`ps -eo args | grep '[c]reds-mcp' | head -3`);
-  check('no half of the bridge outlives the client', leftovers.stdout.trim().length === 0, leftovers.stdout.trim());
+  // ---- nothing THIS RUN started is left running -------------------------------
+  // Asked as a difference, not as a global question. Before, this was `ps | grep creds-mcp` over
+  // the whole machine, so it failed on a process an earlier run had left behind and on a developer
+  // running the real thing in another window — neither of which is a defect here. Measured
+  // 2026-09-11: it failed identically on `main` and on a feature branch, for leftovers.
+  const leftovers = await strays.survivors();
+  check('no half of the bridge outlives the client', leftovers.length === 0, strays.describe(leftovers));
 
   server.dispose();
   fs.rmSync(storageDir, { recursive: true, force: true });
-  console.log(failures === 0 ? '\nall WSL MCP checks passed' : `\n${failures} check(s) failed`);
-  process.exit(failures === 0 ? 0 : 1);
 }
 
-main().catch((error) => {
-  console.error(error);
-  process.exit(1);
-});
+// The sweep runs whatever happened, which is the other half of the fix: a run that failed partway
+// used to stop without taking its processes down, so the NEXT run inherited them and failed the
+// same check for the same reason — a loop that got louder rather than quieter.
+main()
+  .catch((error) => {
+    console.error(error);
+    failures += 1;
+  })
+  .finally(async () => {
+    const swept = strays === undefined ? [] : await strays.sweep();
+    if (swept.length > 0) {
+      console.log(`swept ${swept.length} process(es) this run left behind`);
+    }
+    console.log(failures === 0 ? '\nall WSL MCP checks passed' : `\n${failures} check(s) failed`);
+    process.exit(failures === 0 ? 0 : 1);
+  });

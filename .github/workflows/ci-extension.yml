@@ -114,6 +114,19 @@ jobs:
       - name: Integration test (creds-mcp over stdio)
         run: npm run itest:mcp
 
+      # The SSH agent, driven by a REAL `ssh-add` against the real server: a key parsed, loaded,
+      # listed and signed for, with the dialog answered and the socket taken down afterwards.
+      #
+      # It runs the POSIX branch — a unix socket — and that is the whole of what a green here
+      # means. The script's Windows half (a named pipe, and which of the several `ssh-add` binaries
+      # on a Windows PATH can reach it) is NOT covered by this job and never can be; that is the
+      # reason `module_tests.md` gave for leaving it out entirely, and it is a good reason for
+      # reading the result narrowly rather than for running nothing. What this protects is the
+      # agent PROTOCOL — parse, load, list, sign — which no other job exercises against a real
+      # client. Catalogued in research/module_tests.md.
+      - name: Integration test (SSH agent against a real ssh-add)
+        run: npm run itest:ssh-agent
+
       # A masked run through a real pty: the value reaches the child's environment and every
       # appearance of it in the child's OUTPUT becomes a placeholder. Both platform branches are
       # written, so the Linux one is what CI exercises.
