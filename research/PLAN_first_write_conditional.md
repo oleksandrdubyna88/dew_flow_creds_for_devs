@@ -1,13 +1,13 @@
 # PLAN — after a 404 the first write says "only if I am first"
 
-> Status: **plan only, nothing implemented yet, 2026-09-10.** Scope: `src_vs_code/src/serverTransport.ts`,
-> its tests, `research/module_server.md`.
-> Audit finding **#5** of [REVIEW_product_audit_2026-09-09.md](REVIEW_product_audit_2026-09-09.md),
+> Status: **IMPLEMENTED, 2026-09-11.** Scope as built: `src_vs_code/src/serverTransport.ts`,
+> `test/serverTransport.test.ts`, `research/module_extension.md`, `research/module_server.md`.
+> Audit finding **#5** of [REVIEW_product_audit_2026-09-09.md](../todo/REVIEW_product_audit_2026-09-09.md),
 > re-verified 2026-09-10 (§Перепроверка) — impact re-rated to P3, kept because the fix is cheap and the
 > server already speaks it.
 >
-> Related docs: [module_server.md](../research/module_server.md) (`PUT /api/vault` preconditions),
-> [PLAN_cross_window_write_coordination.md](../research/PLAN_cross_window_write_coordination.md).
+> Related docs: [module_server.md](module_server.md) (`PUT /api/vault` preconditions),
+> [PLAN_cross_window_write_coordination.md](PLAN_cross_window_write_coordination.md).
 
 ## Symptom
 
@@ -81,3 +81,42 @@ doc line.
 - [ ] `module_server.md` and `CHANGELOG.md` updated.
 - [ ] `coai` plan → `proceed`, code round run, findings resolved.
 - [ ] Promoted to `research/` with deviations recorded.
+
+
+## What shipped differently
+
+**Four states, not three.** The plan named "never read / absent / present(etag)". The review gate
+found the fourth by pulling on the plan's own retry sentence: a `412` used to DROP the version, and
+"nothing known" means "write unconditionally" — so a caller that retried the write without
+re-reading sent a bare `PUT` and overwrote exactly the work the refusal had just protected.
+`MUST_REREAD` is that state, and it refuses locally rather than on the wire, because after a `412`
+there is no precondition this client can honestly state: the vault exists and its version is one we
+have never seen.
+
+**A read with no ETag now FORGETS.** Not in the plan, and it is the mirror of the same mistake: an
+older server or a proxy that strips the header would otherwise leave us holding a version that
+refuses every later write — or, worse, an earlier `ABSENT` that refuses them for the opposite
+reason.
+
+**A successful `DELETE` records `ABSENT`.** The vault is then known to be gone, so the next write is
+a create and can say so, instead of being the unconditional write this finding is about. `404` from
+a delete counts the same: the end state is the one that was asked for.
+
+**One existing test changed its assertion, and that is the point of the change.** *"after a conflict
+the stale version is dropped, so the retry re-reads"* asserted `ifMatch === null` on the retry —
+that is, that the next write goes out unconditional. It now asserts the opposite, and that the
+retry never reaches the wire at all.
+
+**Nothing changed on the server.** `VaultPrecondition.RequireAbsent` and `ConcurrencyTests` have
+covered this since conditional writes landed; the whole gap was that no client ever sent the header.
+
+## Open tail
+
+- **A write from a client that has never read is still unconditional**, unchanged: that is what
+  every client did before the server understood preconditions, and refusing it would break them.
+  Every write path in the extension reads first, so nothing production reaches it.
+- **`MUST_REREAD` is per transport instance**, which `TransportFactory` caches per location. Two
+  windows of one profile hold two of them, so a `412` seen by one does not stop the other from
+  writing — that is the cross-window question, and it is
+  [PLAN_cross_window_write_coordination.md](PLAN_cross_window_write_coordination.md)'s, not this
+  one's.

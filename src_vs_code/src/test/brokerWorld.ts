@@ -40,6 +40,14 @@ interface World {
   presence: number;
   /** Called by the run stub: a rotation writing its new value into storage mid-run. */
   rotate?: () => void;
+  /**
+   * Awaited INSIDE the action, so a test can keep a call in flight while it starts another.
+   *
+   * <p>Without it "these two ran in parallel" is unassertable: every stub answers immediately, so
+   * two calls that were serialised and two that overlapped leave exactly the same `ran`. The
+   * broker queues one-use entries and only those, and that difference is the claim.</p>
+   */
+  hold?: () => Promise<void>;
   /** Set by the run() stub to whatever the action should answer. */
   /**
    * What the wrapped action answers — or, when it is an `Error`, what it THROWS.
@@ -89,6 +97,10 @@ function world(options: {
    * the socket one — the door refused every alias call over it, and nothing here could see that.</p>
    */
   storageDir?: string;
+  /** Whether the entry is marked "until an agent uses it once" — the broker then queues calls. */
+  oneUse?: boolean;
+  /** `credSshManager.agentGrantMaxCalls`. Absent leaves the real default, which is no cap. */
+  maxCalls?: number;
   /** Whether this window can move entries to the Trash. Absent means it cannot. */
   trash?: boolean;
   /** How a create request is answered: accepted into a folder, refused, or not served at all. */
@@ -123,7 +135,7 @@ function world(options: {
         show: (): void => undefined,
       }),
     },
-    workspace: { getConfiguration: () => ({ get: <T>(_k: string, d: T): T => d }) },
+    workspace: { getConfiguration: () => ({ get: settingsFor(options.maxCalls) }) },
   });
 
   const supported = options.supports ?? ['exec'];
@@ -136,10 +148,14 @@ function world(options: {
     validate: (body: Record<string, unknown>): unknown =>
       body.command === '' ? { ok: false, message: 'no command given' } : { ok: true },
     summarize: (body: Record<string, unknown>): string => String(body.command ?? ''),
-    run: (ctx: { entityId: string }, body: Record<string, unknown>): Promise<unknown> => {
+    run: async (ctx: { entityId: string }, body: Record<string, unknown>): Promise<unknown> => {
       w.ran.push({ action: name, entityId: ctx.entityId, body });
       w.rotate?.();
-      return w.result instanceof Error ? Promise.reject(w.result) : Promise.resolve(w.result);
+      await w.hold?.();
+      if (w.result instanceof Error) {
+        throw w.result;
+      }
+      return w.result;
     },
   });
   const registry = {
@@ -157,6 +173,9 @@ function world(options: {
     maskerFor(w, options),
     burnerFor(w, options.burns),
     aliasResolverFor(options.alias),
+    // Whether the entry a grant points at may be used exactly once. `oneUse` is the option a
+    // person picks in the entry form, and the broker queues calls on such an entry.
+    oneUseFor(options.oneUse),
     options.aliasList === undefined ? undefined : () => options.aliasList ?? [],
     mcpEntriesFor(options.mcpEntries),
     options.visibleConfig,
@@ -220,6 +239,23 @@ function failingAfter(
 /** `before` refuses every read; `after` lets the pre-run one through and refuses the refresh. */
 function rejectsNow(fails: string | undefined, reads: number): boolean {
   return fails === 'before' || (fails === 'after' && reads > 1);
+}
+
+/**
+ * The window's settings, as `grantLimits()` reads them.
+ *
+ * <p>Every other test wants the shipped defaults, which is what returning `d` gives. A call cap is
+ * the exception: it is off by default (`agentGrantMaxCalls: 0`), so a test about the cap has to
+ * turn it on the way a person would — in configuration, not by reaching into the registry.</p>
+ */
+function settingsFor(maxCalls: number | undefined): <T>(key: string, fallback: T) => T {
+  return <T>(key: string, fallback: T): T =>
+    key === 'agentGrantMaxCalls' && maxCalls !== undefined ? (maxCalls as unknown as T) : fallback;
+}
+
+/** Whether the entry is one-use. Absent means this window queues nothing, which is a real build. */
+function oneUseFor(oneUse: boolean | undefined): (() => boolean) | undefined {
+  return oneUse === true ? () => true : undefined;
 }
 
 /** What a masker throws when the entity a grant points at is not in the vault any more. */
@@ -382,10 +418,45 @@ async function share(w: World): Promise<{ port: number; secret: string }> {
  */
 const SECRET = 'sk-live-9f2c41ab';
 
+/**
+ * Hold every call inside the action until `expected` of them are there, and report the most that
+ * were ever inside at once.
+ *
+ * <p>The only way to tell "ran twice" from "ran twice AT THE SAME TIME", which is the whole
+ * difference between a queued entry and an unqueued one. Bounded rather than blocking: a call
+ * that waits alone gives up after `graceMs` and finishes, so an implementation that serialises
+ * everything fails with `peak === 1` instead of hanging the suite.</p>
+ */
+function overlapping(w: World, expected: number, graceMs = 300): () => number {
+  let inFlight = 0;
+  let peak = 0;
+  let arrived = (): void => undefined;
+  const everybody = new Promise<void>((resolve) => {
+    arrived = resolve;
+  });
+  w.hold = async (): Promise<void> => {
+    inFlight += 1;
+    peak = Math.max(peak, inFlight);
+    if (inFlight >= expected) {
+      arrived();
+    }
+    await Promise.race([everybody, giveUpAfter(graceMs)]);
+    inFlight -= 1;
+  };
+  return () => peak;
+}
+
+/** Unref'd, so a test that ends while one is pending does not keep the process alive. */
+function giveUpAfter(ms: number): Promise<void> {
+  return new Promise<void>((resolve) => {
+    setTimeout(resolve, ms).unref();
+  });
+}
+
 const code = (answer: Answer): string => (answer.body.error as { code: string } | undefined)?.code ?? '';
 
 /** The sentence a refusal carries, beside the code — what the agent is actually told. */
 const message = (answer: Answer): string => (answer.body.error as { message: string } | undefined)?.message ?? '';
 
-export { world, call, share, code, message, SECRET };
+export { world, call, share, code, message, overlapping, SECRET };
 export type { World, Answer, Ran };

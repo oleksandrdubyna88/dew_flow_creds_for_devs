@@ -44,3 +44,23 @@ export async function burnIfOneUse(
   await storage.deleteNodeRecursive(accountId, entityId);
   return true;
 }
+
+/**
+ * The burn as the broker takes it: destroy a spent one-use entry, and refresh the tree if it went.
+ *
+ * <p>Here rather than inline at the wiring site because it is the same question `oneUseIn` answers,
+ * one step later — and because `extension.ts` is under a size ratchet that only ever moves down,
+ * which is a rule worth keeping rather than routing around.</p>
+ */
+export function burnOneUseIn(
+  storage: Parameters<typeof burnIfOneUse>[0],
+  refreshTree: () => void,
+): (accountId: string, entityId: string) => Promise<boolean> {
+  return async (accountId, entityId) => {
+    const burned = await burnIfOneUse(storage, accountId, entityId);
+    if (burned) {
+      refreshTree();
+    }
+    return burned;
+  };
+}

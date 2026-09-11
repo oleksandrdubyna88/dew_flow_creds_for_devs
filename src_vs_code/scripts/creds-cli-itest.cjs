@@ -140,6 +140,10 @@ const action = (kind, verb, run) => ({
     undefined,
     undefined,
     (name) => aliases[name],
+    // isOneUse: nothing here is one-use, so the broker queues nothing. Positional, and this
+    // argument is why `creds ls` went blank once: the parameter list is long enough that
+    // inserting one in the middle silently hands the NEXT one to the wrong slot.
+    undefined,
     () => Object.entries(aliases).map(([name, a]) => ({ name, kind: a.kind })),
   );
 

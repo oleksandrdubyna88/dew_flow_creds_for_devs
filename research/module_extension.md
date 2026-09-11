@@ -2276,11 +2276,38 @@ because they are different operational problems.
 
 ### Conditional writes
 
-`ServerTransport` remembers the `ETag` of each account's last read and sends it as `If-Match` on the
-next write. A `412` means another machine wrote in between: the stored version is dropped (so the
-retry re-reads rather than failing identically forever) and the error says plainly that nothing was
-overwritten. A write with no prior read carries no precondition, which is exactly what every client
-did before the server understood them.
+`ServerTransport` keeps, per account, **what it last learned about the vault on the server** — and
+that is four states rather than "an ETag or nothing", because the two states that are not an ETag
+are preconditions of their own:
+
+| state | what the next write sends | why |
+|---|---|---|
+| a version string | `If-Match: <etag>` | we read a vault; write only if it is still that one |
+| `ABSENT` | `If-None-Match: *` | we read and there was NO vault; write only if that is still true |
+| `MUST_REREAD` | **nothing is sent at all** — the write is refused locally | the server refused our last write, so there is no precondition we can honestly state |
+| not in the map | no precondition | we have never looked; this is what every client did before the server understood them, and it stays correct |
+
+**`ABSENT` is audit finding #5.** `If-Match` covers every write except the one that CREATES the
+vault, and that is the write a new account makes. An absent vault was stored as "no entry", which is
+also how "we never looked" is stored, so the create went out unconditional: two of one person's
+machines signing in on the same afternoon both read `404`, both wrote, and the second silently
+replaced the first — everything only in the losing vault gone, no error anywhere, and nothing to
+merge from because the losing copy was never uploaded. The server has understood `If-None-Match: *`
+since conditional writes landed (`VaultPrecondition.RequireAbsent`, tested in `ConcurrencyTests`);
+the client simply never sent it.
+
+**`MUST_REREAD` is the hole in "drop the stale version", which is what a `412` used to do.**
+Forgetting the version is not enough, because *nothing known* means *write unconditionally* — so a
+caller that retried the write without re-reading sent a bare `PUT` and overwrote exactly the work
+the refusal had just protected. The refusal now says what to do (`re-read it before writing;
+nothing was sent`) instead of quietly becoming the overwrite.
+
+A read that answers **without** an ETag — an older server, a proxy that strips the header — forgets
+whatever was held rather than keeping it. Keeping a version would refuse every later write; keeping
+an earlier `ABSENT` would refuse them for the opposite reason. A successful `DELETE` (or a `404`
+from one) records `ABSENT`, because the one thing we then know is that there is nothing there.
+
+Record: [PLAN_first_write_conditional.md](PLAN_first_write_conditional.md).
 
 ### Tokens
 
@@ -2754,6 +2781,28 @@ causal version on every write and a lease in the record would republish it to th
 every minute forever. An entry with no local lease is **adopted**, never swept — that is what an
 entry synced from another machine looks like, and sweeping it would destroy the other laptop’s
 live entry on arrival.
+
+**One call at a time, for a one-use entry** (`oneUseLane.ts`, `brokerCall.ts`). The burn below runs
+AFTER the answer is on the wire, deliberately — a storage failure while burning must not cost an
+agent a result it already earned — and the consequence was that two concurrent calls both ran before
+either burned (audit finding #3). "Until an agent uses it once" is an option in the entry form, so
+that is a promise the interface makes to everyone. `OneUseLane` gives such an entry a queue and
+refuses the second caller **before** `run`: letting it through and relying on the action's own "no
+longer exists" lookup is still an invocation, and a handler that does anything ahead of that lookup
+would do it twice. The queue is keyed by the **entity**, not by the token — the MCP door mints a
+grant per call, so "one token, one use" would be no guarantee at all — and the chain advances on a
+rejection as well as a success (`.then(next, next)`), or one call's failure would fail everything
+behind it with somebody else's error. Nothing else queues: two parallel queries against an ordinary
+`prod-db` still run at once, which `oneUseAndCap.test.ts` asserts by measuring OVERLAP rather than
+call count, since a queue that ran both in turn leaves the identical record.
+
+**The call cap is the other half of the same finding.** `agentGrantMaxCalls` was checked by `lookup`
+before the request body was read and before anybody was asked, and counted by `touch` after both —
+and the broker SHARES one consent dialog between concurrent first calls on purpose, so under
+`maxCalls: 1` two requests both passed at `uses: 0`, both waited for the same Allow, and both ran
+(reproduced as `configuredMaxCalls=1; executed=2; dialogs=1`). `GrantRegistry.reserve` is now one
+synchronous read-compare-write, which Node cannot interleave; `touch` is gone. Record:
+[PLAN_one_use_serialized.md](PLAN_one_use_serialized.md).
 
 `burnOnUse.ts` is the one-use half, called by `CredsAgentServer` after a successful call and only
 a successful one: an agent mistyping a command must not destroy a working credential. The broker

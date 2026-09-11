@@ -15,6 +15,8 @@ import {
   statusForErrorCode,
 } from './brokerProtocol';
 import { doorsFor } from './brokerOrigin';
+import { CallSubject, performCall } from './brokerCall';
+import { OneUseLane, burnAndMark } from './oneUseLane';
 import { ReadRouteSources, readRouteBody } from './brokerReadRoutes';
 import { describeError } from './describeError';
 import { BrokerDoor, McpCreateHooks, mcpDoor } from './brokerMcpDoor';
@@ -26,7 +28,7 @@ import { McpEntry } from './mcpEntries';
 import { EntityMetadata } from './types';
 import { ConfigRouteSources, answerConfigRead } from './brokerConfigRoute';
 import { Grant, GrantRegistry } from './grantRegistry';
-import { UseAction, UseActionRegistry } from './useActions';
+import { UseActionRegistry } from './useActions';
 import { formatToken } from './grantToken';
 import { AuditDoor, formatAuditLine } from './agentAuditLog';
 import { BrokerAuditWriter } from './brokerAuditWriter';
@@ -35,8 +37,8 @@ import { ExtraListener, socketPathFor, startExtraListener } from './brokerListen
 import { removeEndpoint, writeEndpoint } from './cliEndpoint';
 import { AliasThrottle } from './aliasThrottle';
 import { startOnce } from './idempotentStart';
-import { MaskEntry, MaskTable } from './secretMasker';
-import { burnIfSpent, refreshFrom, runAndDeliver, tableOrFail } from './brokerResponse';
+import { MaskEntry } from './secretMasker';
+import { refreshFrom, tableOrFail } from './brokerResponse';
 
 /**
  * The broker: a loopback HTTP surface through which an agent asks this window
@@ -60,6 +62,8 @@ export class CredsAgentServer implements vscode.Disposable {
   /** The rate at which a caller with NO token may make this window ask a human. */
   private readonly aliasThrottle = new AliasThrottle();
   private readonly consenting = new Map<string, Promise<boolean>>();
+  /** One call at a time for an entry that may only be used once — see `oneUseLane.ts`. */
+  private readonly oneUse = new OneUseLane();
   private readonly abort = new AbortController();
   private output: vscode.OutputChannel | undefined;
   // Shares one in-flight start, but forgets a FAILED one so a transient bind error does not
@@ -129,6 +133,13 @@ export class CredsAgentServer implements vscode.Disposable {
     private readonly resolveAlias?: (
       name: string,
     ) => { accountId: string; entityId: string; entityName: string; kind: string } | undefined,
+    /**
+     * Whether this entry may be used exactly once — asked of the side that owns storage, like
+     * {@link burnAfterUse}, because the broker holds a grant and not a stored record. One call at
+     * a time for such an entry, and the second is refused (audit 2026-09-09, finding #3). Absent
+     * means nothing queues.
+     */
+    private readonly isOneUse?: (accountId: string, entityId: string) => boolean,
     /**
      * The names enabled for the CLI, for `creds ls`. Optional like the rest: absent means this
      * window answers the listing route with an empty list rather than a crash.
@@ -558,37 +569,26 @@ export class CredsAgentServer implements vscode.Disposable {
       return;
     }
 
-    await this.runAndDeliver(res, grant, useAction, action, body, via, summary, table);
+    await this.runAndDeliver(res, { grant, useAction, action, body, via, summary, table });
   }
 
-  /** Run the action and answer for it — the sequence is `brokerResponse.runAndDeliver`. */
-  private async runAndDeliver(
-    res: http.ServerResponse,
-    grant: Grant,
-    useAction: UseAction,
-    action: string,
-    body: Record<string, unknown>,
-    via: AuditDoor,
-    summary: string,
-    table: MaskTable,
-  ): Promise<void> {
-    // Counted and clocked only once consent is in hand: a refused or still-pending call must
-    // not extend a token's idle life or spend one of its uses.
-    this.grants.touch(grant.secret);
-    await runAndDeliver(
+  /** The sequence is `brokerCall.performCall`; this binds it to one request. */
+  private async runAndDeliver(res: http.ServerResponse, call: CallSubject): Promise<void> {
+    const { grant, action, summary, via } = call;
+    await performCall(
       {
+        grants: this.grants,
+        lane: this.oneUse,
+        isOneUse: this.isOneUse,
         respond: (status, sent) => this.respond(res, status, sent),
         log: (line) => this.log(line),
-        burn: (status) => burnIfSpent(this.burnAfterUse, grant, status, this.note),
-        fail: (why, actionRan) =>
-          this.respondError(res, 'internal', INTERNAL_FAILURE, grant, action, `${summary} · ${why}`, via, actionRan),
-        mutatesSecrets: useAction.mutatesSecrets,
+        refuse: (code, message) => this.respondError(res, code, message, grant, action, summary, via),
+        failed: (why, ran) =>
+          this.respondError(res, 'internal', INTERNAL_FAILURE, grant, action, `${summary} - ${why}`, via, ran),
         refresh: refreshFrom(this.maskEntriesFor, grant),
-        table,
-        where: { grant: GrantRegistry.describe(grant), entityName: grant.entityName, action, via, summary },
+        burn: (status) => burnAndMark(this.oneUse, this.burnAfterUse, this.isOneUse, grant, status, this.note),
       },
-      () => useAction.run({ accountId: grant.accountId, entityId: grant.entityId, entityName: grant.entityName }, body),
-      (result) => (result.status === 200 ? useAction.describeOutcome(result) : String(result.status)),
+      call,
     );
   }
 

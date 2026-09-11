@@ -31,7 +31,7 @@ test('an unused token expires after the idle window, and says why', () => {
   assert.deepEqual(later, { kind: 'expired', reason: 'idle' });
 });
 
-test('a token in use never goes idle: every touch restarts the clock', () => {
+test('a token in use never goes idle: every use restarts the clock', () => {
   const registry = new GrantRegistry();
   const grant = mint(registry);
   registry.allow(grant.secret);
@@ -40,8 +40,7 @@ test('a token in use never goes idle: every touch restarts the clock', () => {
   let now = T0;
   for (let i = 0; i < 30; i += 1) {
     now += 50 * 60_000;
-    assert.equal(registry.lookup(grant.secret, now, IDLE_HOUR).kind, 'live', `call ${i}`);
-    registry.touch(grant.secret, now);
+    assert.equal(registry.reserve(grant.secret, now, IDLE_HOUR).kind, 'live', `call ${i}`);
   }
   assert.equal(registry.get(grant.secret)?.uses, 30);
 });
@@ -62,10 +61,30 @@ test('a call cap spends the token after exactly that many uses', () => {
   const limits = { idleMs: 0, maxUses: 3 };
 
   for (let i = 0; i < 3; i += 1) {
-    assert.equal(registry.lookup(grant.secret, T0, limits).kind, 'live', `use ${i + 1}`);
-    registry.touch(grant.secret, T0);
+    assert.equal(registry.reserve(grant.secret, T0, limits).kind, 'live', `use ${i + 1}`);
   }
-  assert.deepEqual(registry.lookup(grant.secret, T0, limits), { kind: 'expired', reason: 'uses' });
+  assert.deepEqual(registry.reserve(grant.secret, T0, limits), { kind: 'expired', reason: 'uses' });
+});
+
+test('reserve is ONE step: the check and the count cannot be interleaved', () => {
+  // The whole of audit finding #3's cap half. `lookup` ran before the request body was read and
+  // before a human was asked; `touch` counted after both, and the broker shares one consent
+  // dialog between concurrent first calls on purpose — so two requests under `maxCalls: 1` both
+  // passed at `uses: 0` and both ran. Node cannot interleave a function with no `await` in it.
+  const registry = new GrantRegistry();
+  const grant = mint(registry);
+  const one = { idleMs: 0, maxUses: 1 };
+
+  assert.equal(registry.reserve(grant.secret, T0, one).kind, 'live');
+  assert.deepEqual(registry.reserve(grant.secret, T0, one), { kind: 'expired', reason: 'uses' });
+  assert.equal(registry.get(grant.secret), undefined, 'and the spent grant is gone, not re-refusable');
+});
+
+test('a refused reservation spends nothing', () => {
+  // An unknown token must not mint, count, or otherwise leave a trace.
+  const registry = new GrantRegistry();
+  assert.deepEqual(registry.reserve('not-a-secret', T0, NO_LIMITS), { kind: 'unknown' });
+  assert.equal(registry.get('not-a-secret'), undefined);
 });
 
 test('the cap is checked before the clock, so a spent token reads as spent', () => {
@@ -73,12 +92,6 @@ test('the cap is checked before the clock, so a spent token reads as spent', () 
   assert.equal(grantExpiry(grant, T0, { idleMs: HOUR, maxUses: 5 }), 'uses');
   assert.equal(grantExpiry({ ...grant, uses: 1 }, T0, { idleMs: HOUR, maxUses: 5 }), 'idle');
   assert.equal(grantExpiry({ ...grant, uses: 1, lastUsedAt: T0 }, T0, { idleMs: HOUR, maxUses: 5 }), undefined);
-});
-
-test('touching an unknown secret does nothing and mints nothing', () => {
-  const registry = new GrantRegistry();
-  assert.equal(registry.touch('not-a-secret', T0), undefined);
-  assert.equal(registry.lookup('not-a-secret', T0, NO_LIMITS).kind, 'unknown');
 });
 
 test('a fresh grant is minted with its clock started and no uses', () => {
@@ -91,7 +104,7 @@ test('a fresh grant is minted with its clock started and no uses', () => {
 test('a denial outranks the idle clock — a refusal never decays into "unknown"', () => {
   // Found by an adversarial review, and it is the collision of two of this file's own
   // features: 0.57.0 gave tokens an idle life, 0.57.2 made a refusal keep answering. A denied
-  // grant is never touch()ed — nothing uses it — so its idle clock ran from mint, and an hour
+  // grant is never reserved — nothing uses it — so its idle clock ran from mint, and an hour
   // after the person pressed Deny the tombstone was swept and the broker answered 401 "ask for
   // a fresh Share with Claude Code". That is precisely the re-prompt loop the refusal
   // tombstone exists to prevent, restored by the clock.
@@ -114,8 +127,8 @@ test('a call cap does not spend a denial either', () => {
   registry.deny(refused.secret);
 
   const spent = { idleMs: 0, maxUses: 1 };
-  registry.touch(refused.secret);
-  registry.touch(refused.secret);
+  registry.reserve(refused.secret, T0, spent);
+  registry.reserve(refused.secret, T0, spent);
 
   assert.equal(registry.lookup(refused.secret, T0, spent).kind, 'live', 'denied outranks the cap');
 });

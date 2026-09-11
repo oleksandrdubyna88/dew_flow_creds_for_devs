@@ -92,12 +92,16 @@ test('a missing token is refused before any request is attempted', async () => {
 
 /** Records what the transport actually put on the wire. */
 function recordingServer(responses: Array<{ status: number; body?: string; etag?: string }>) {
-  const seen: Array<{ method: string; ifMatch: string | null }> = [];
+  const seen: Array<{ method: string; ifMatch: string | null; ifNoneMatch: string | null }> = [];
   let i = 0;
   // eslint-disable-next-line complexity
   globalThis.fetch = ((_input: unknown, init?: RequestInit) => {
     const headers = new Headers(init?.headers);
-    seen.push({ method: init?.method ?? 'GET', ifMatch: headers.get('If-Match') });
+    seen.push({
+      method: init?.method ?? 'GET',
+      ifMatch: headers.get('If-Match'),
+      ifNoneMatch: headers.get('If-None-Match'),
+    });
     const r = responses[Math.min(i++, responses.length - 1)];
     const out = new Headers();
     if (r.etag !== undefined) {
@@ -150,7 +154,11 @@ test('a refused write is reported as a conflict the sync cycle can recognise', a
   });
 });
 
-test('after a conflict the stale version is dropped, so the retry re-reads', async () => {
+test('after a conflict the retry does NOT go out unconditional', async () => {
+  // What "drop the stale version" used to mean, and the hole in it: the version was forgotten,
+  // and an absent version means no precondition — so a retry that skipped the re-read sent a
+  // bare PUT and overwrote exactly the write the 412 had just protected. Forgetting is not
+  // enough; the transport has to REMEMBER that it must look again.
   const seen = recordingServer([
     { status: 200, body: 'ciphertext', etag: '"v1"' },
     { status: 412 },
@@ -160,9 +168,124 @@ test('after a conflict the stale version is dropped, so the retry re-reads', asy
 
   await transport.readVault(account);
   await assert.rejects(() => transport.writeVault(account, 'a'));
-  await transport.writeVault(account, 'b');
 
-  assert.equal(seen[2].ifMatch, null, 'holding on to a version the server rejected would deadlock the client');
+  await assert.rejects(() => transport.writeVault(account, 'b'), (error: Error) => {
+    assert.match(error.message, /re-read/i, 'and it says what the caller has to do');
+    return true;
+  });
+  assert.equal(seen.length, 2, 'the retry never reached the wire, so nothing could be overwritten');
+});
+
+test('re-reading after a conflict restores the precondition, and the write goes through', async () => {
+  const seen = recordingServer([
+    { status: 200, body: 'ciphertext', etag: '"v1"' },
+    { status: 412 },
+    { status: 200, body: 'theirs', etag: '"v2"' },
+    { status: 204, etag: '"v3"' },
+  ]);
+  const transport = new ServerTransport('https://vault.example.com', async () => 'token');
+
+  await transport.readVault(account);
+  await assert.rejects(() => transport.writeVault(account, 'a'));
+  await transport.readVault(account);
+  await transport.writeVault(account, 'merged');
+
+  assert.equal(seen[3].ifMatch, '"v2"', 'built on what the other machine wrote, not on what we held');
+});
+
+// --- the FIRST write, when there is no vault yet (audit 2026-09-09, finding #5) -------------
+//
+// `If-Match` covers every write except the one that creates the vault, and that one is the write
+// a new account makes: two machines signed into the same account on the same afternoon both read
+// 404, both wrote with no precondition, and the second silently replaced the first. Everything
+// only in the losing vault is gone, with no error anywhere and nothing to merge from. The server
+// has understood `If-None-Match: *` since conditional writes landed; the client never sent it.
+
+test('a write after a read that found NOTHING asks to be the first, and says so', async () => {
+  const seen = recordingServer([
+    { status: 404 },
+    { status: 204, etag: '"v1"' },
+  ]);
+  const transport = new ServerTransport('https://vault.example.com', async () => 'token');
+
+  assert.equal(await transport.readVault(account), undefined);
+  await transport.writeVault(account, 'the first ciphertext');
+
+  assert.equal(seen[1].ifNoneMatch, '*', 'without this the create is a blind overwrite');
+  assert.equal(seen[1].ifMatch, null, 'and there is no version to match — nothing exists yet');
+});
+
+test('the SECOND machine creating a vault is refused rather than winning', async () => {
+  // The audit's shape, end to end: both read 404, both write, and the one that arrives second
+  // must be told rather than obeyed.
+  const seen = recordingServer([
+    { status: 404 },
+    { status: 412 },
+  ]);
+  const transport = new ServerTransport('https://vault.example.com', async () => 'token');
+
+  await transport.readVault(account);
+
+  await assert.rejects(() => transport.writeVault(account, 'mine'), (error: Error) => {
+    // Asserted here and not only above: a 412 answered to an UNCONDITIONAL put is a refusal no
+    // real server would ever send, so without this the test passes against the very bug it names.
+    assert.equal(seen[1].ifNoneMatch, '*', 'the refusal has to be one the server could actually give');
+    assert.match(error.message, /changed on the server/i);
+    assert.match(error.message, /nothing was overwritten/i, 'the one thing the person needs to know');
+    return true;
+  });
+});
+
+test('a later read that FINDS a vault clears the absence, so the write stops asking to be first', async () => {
+  // Otherwise a stale "there was nothing here" would make every subsequent write 412 forever —
+  // the create precondition is the one that gets MORE wrong the longer it is held.
+  const seen = recordingServer([
+    { status: 404 },
+    { status: 200, body: 'somebody else got there', etag: '"v7"' },
+    { status: 204, etag: '"v8"' },
+  ]);
+  const transport = new ServerTransport('https://vault.example.com', async () => 'token');
+
+  await transport.readVault(account);
+  await transport.readVault(account);
+  await transport.writeVault(account, 'merged');
+
+  assert.equal(seen[2].ifNoneMatch, null);
+  assert.equal(seen[2].ifMatch, '"v7"');
+});
+
+test('a read that answers without an ETag leaves no precondition behind', async () => {
+  // A server that does not version its answers is a real deployment — an older build, a proxy
+  // that strips the header. Holding the version from BEFORE it would refuse every write.
+  const seen = recordingServer([
+    { status: 200, body: 'ciphertext', etag: '"v1"' },
+    { status: 200, body: 'ciphertext' },
+    { status: 204 },
+  ]);
+  const transport = new ServerTransport('https://vault.example.com', async () => 'token');
+
+  await transport.readVault(account);
+  await transport.readVault(account);
+  await transport.writeVault(account, 'next');
+
+  assert.equal(seen[2].ifMatch, null, 'a version we can no longer confirm is not a version');
+  assert.equal(seen[2].ifNoneMatch, null);
+});
+
+test('after deleting the remote vault, the next write creates rather than overwrites', async () => {
+  const seen = recordingServer([
+    { status: 200, body: 'ciphertext', etag: '"v1"' },
+    { status: 204 },
+    { status: 204, etag: '"v1"' },
+  ]);
+  const transport = new ServerTransport('https://vault.example.com', async () => 'token');
+
+  await transport.readVault(account);
+  await transport.deleteVault(account);
+  await transport.writeVault(account, 'starting over');
+
+  assert.equal(seen[2].ifNoneMatch, '*', 'we know it is gone, so we can ask to be the one who creates it');
+  assert.equal(seen[2].ifMatch, null);
 });
 
 test('a successful write adopts the version the server returned', async () => {

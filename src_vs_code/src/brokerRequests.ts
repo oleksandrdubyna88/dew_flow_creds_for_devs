@@ -211,3 +211,16 @@ export function grantForToken(
     message: found.kind === 'expired' ? expiredMessage(found.reason, limits) : 'Unknown or missing grant token.',
   };
 }
+
+/**
+ * What an agent is told when a reservation does not hold.
+ *
+ * <p>An EXPIRED token says which expiry it was: "it reached its limit of N calls" is a different
+ * problem from "it went unused for N minutes", and an agent that cannot tell them apart asks for a
+ * fresh token in one case and should stop in the other.</p>
+ */
+export function reservationRefused(refused: GrantLookup, limits: GrantLimits): string {
+  return refused.kind === 'expired'
+    ? expiredMessage(refused.reason, limits)
+    : 'Unknown or missing grant token.';
+}
