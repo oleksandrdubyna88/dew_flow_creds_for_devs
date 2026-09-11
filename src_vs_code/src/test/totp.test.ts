@@ -177,6 +177,20 @@ test('a Steam seed pairs in its own alphabet', () => {
   }
 });
 
+test('a pair carries an identity that changes with the seed', () => {
+  // Without it, a seed REPLACED while the viewer is open produces a snapshot with the same
+  // validUntil — so a binding made against the old seed still matches, and the person is handed
+  // the first code of one seed and the second of another with nothing said. Raised on the pull
+  // request by CodeRabbit.
+  const now = 1_700_000_012_345;
+  const idOf = (seed: string, at: number): string => String(totpSnapshot(seed, at, true)?.pairId);
+  assert.equal(idOf(SEED, now), idOf(SEED, now + 5), 'the same seed is the same pair identity');
+  assert.notEqual(idOf(SEED, now), idOf(`${SEED}A`, now), 'another seed is another pair');
+  assert.match(idOf(SEED, now), /^[0-9a-f]{12}$/);
+  // It is never a stable fingerprint of the secret: the salt lives and dies with the process.
+  assert.equal(totpSnapshot(SEED, now)?.pairId, undefined, 'a lone code needs no pair identity');
+});
+
 test('there is no pair without a seed, and asking for one does not throw', () => {
   assert.equal(totpSnapshot(undefined, 1_000, true), undefined);
   // Not "not a seed at all" — that normalises to NOTASEEDATALL, which IS base32, exactly as

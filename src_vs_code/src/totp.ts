@@ -141,6 +141,18 @@ export interface TotpSnapshot {
    * computed because a display receives only what it shows, and every other caller shows one code.</p>
    */
   next?: string;
+  /**
+   * Which SEED this pair came from — present only alongside `next`.
+   *
+   * <p>`validUntil` alone cannot tell two pairs apart when the seed itself is replaced while the
+   * viewer is open: the new seed's snapshot lands in the same period, so a binding made against
+   * the old one still matches and the person is handed the first code of one seed and the second
+   * of another with nothing said.</p>
+   *
+   * <p>Salted per PROCESS, so it identifies a seed for as long as a window lives and is not a
+   * stable fingerprint of the secret that could outlive it or be compared across machines.</p>
+   */
+  pairId?: string;
   /** ms epoch. */
   validUntil: number;
   /** Seconds per code, so a page can draw the countdown. */
@@ -169,16 +181,40 @@ export function totpSnapshot(
   const validUntil = nowMs + totpRemainingMs(parsed.config, nowMs);
   return {
     code: totpCode(parsed.config, nowMs),
-    next: nextCodeOf(parsed.config, validUntil, withNext),
+    ...pairOf(parsed, validUntil, withNext),
     validUntil,
     period: parsed.config.period,
     description: describeTotp(parsed.config),
   };
 }
 
-/** The code the row will show once this one expires — or nothing, when nobody asked for a pair. */
-function nextCodeOf(config: TotpConfig, validUntil: number, withNext: boolean): string | undefined {
-  return withNext ? totpCode(config, validUntil) : undefined;
+/**
+ * The pair half: the code the row will show once this one expires, and which seed it came from.
+ *
+ * <p>The two travel together because they are checked together — a binding is only as good as both
+ * of them — and they are absent together when nobody asked for a pair.</p>
+ */
+function pairOf(
+  parsed: { config: TotpConfig; uri: string },
+  validUntil: number,
+  withNext: boolean,
+): { next?: string; pairId?: string } {
+  return withNext
+    ? { next: totpCode(parsed.config, validUntil), pairId: pairIdOf(parsed.uri) }
+    : {};
+}
+
+/**
+ * The salt behind {@link TotpSnapshot.pairId}, drawn once per process.
+ *
+ * <p>An unsalted hash of a seed is a stable identifier for a secret — the same twelve characters on
+ * every machine, for as long as the seed exists. Salting it per process keeps the one property the
+ * pair needs (it changes when the seed changes) and drops the one nobody asked for.</p>
+ */
+const PAIR_SALT = crypto.randomBytes(16);
+
+function pairIdOf(uri: string): string {
+  return crypto.createHmac('sha256', PAIR_SALT).update(uri).digest('hex').slice(0, 12);
 }
 
 /** What a person compares with their authenticator app's settings. */
