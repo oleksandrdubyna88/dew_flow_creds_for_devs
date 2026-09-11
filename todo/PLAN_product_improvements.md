@@ -16,7 +16,7 @@
 - [ ] F7: согласованный backup — обход `vaults/` раньше ключей; отдельное подтверждение восстановления остаётся в §2 — [PLAN_backup_walk_order.md](PLAN_backup_walk_order.md). **Решено не делать (2026-09-11)** — причина и цена записаны в [REVIEW_product_audit_2026-09-09.md](REVIEW_product_audit_2026-09-09.md#finding-7-is-not-being-built--the-owners-decision-2026-09-11).
 - [x] F6: разрешённые KDF-профили; предел параллелизма и отмена признаны ненужными при закреплённых параметрах — [PLAN_kdf_params_bounded.md](../research/PLAN_kdf_params_bounded.md), **реализовано 2026-09-10**.
 - [x] F5: conditional create после 404 и merge после конфликта — [PLAN_first_write_conditional.md](../research/PLAN_first_write_conditional.md), **реализовано 2026-09-11**.
-- [ ] F8: воспроизводимые SSH-тесты и JSON-позиции на fixtures; матрица CI не добавляется — [PLAN_test_matrix_hygiene.md](PLAN_test_matrix_hygiene.md).
+- [x] F8: воспроизводимые SSH-тесты и JSON-позиции на fixtures; матрица CI не добавляется — [PLAN_test_matrix_hygiene.md](../research/PLAN_test_matrix_hygiene.md), **реализовано 2026-09-11**.
 
 Код и условия каждого дефекта перечислены в отчёте; связанные задачи закрываются только после повторения исходного сценария на исправленной версии.
 
