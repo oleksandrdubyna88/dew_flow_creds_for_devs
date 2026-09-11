@@ -393,10 +393,35 @@ public sealed class OrgMembersStore(string dataDir, ILogger<OrgMembersStore> log
     /// </summary>
     public async Task RemoveAsync(string email, CancellationToken ct)
     {
+        var gate = VaultStore.GateFor(VaultStore.KeyFor(MemberRecord.Normalize(email)));
+        await gate.WaitAsync(ct);
+        try
+        {
+            RemoveWhileGateHeld(email);
+        }
+        finally
+        {
+            gate.Release();
+        }
+    }
+
+    /// <summary>
+    /// The removal WITHOUT taking the per-person gate, for a caller that already holds it.
+    /// </summary>
+    /// <remarks>
+    /// <para>`SemaphoreSlim` is not re-entrant, so `RemoveAsync` cannot be called from inside the gate
+    /// — and account deletion needs to be: released between the vault, the login key and this record,
+    /// a concurrent PUT can recreate the vault in the gap and the removal then orphans it (audit
+    /// 2026-09-09, finding #4, and the review gate's finding against its first fix). Splitting the
+    /// body out is what lets the whole deletion be one serialized unit.</para>
+    ///
+    /// <para>Still best-effort and still says so: a record the OS will not let us touch is logged at
+    /// Error naming the person, and the delete that already happened is not turned into a 500.</para>
+    /// </remarks>
+    public void RemoveWhileGateHeld(string email)
+    {
         var normalized = MemberRecord.Normalize(email);
         var key = VaultStore.KeyFor(normalized);
-        var gate = VaultStore.GateFor(key);
-        await gate.WaitAsync(ct);
         try
         {
             var path = TargetFor(key, normalized).FilePath;
@@ -413,11 +438,8 @@ public sealed class OrgMembersStore(string dataDir, ILogger<OrgMembersStore> log
                 "member record for {Email} could not be removed after their vault was deleted; a record with no vault stays listed until the next DELETE or an admin removes it",
                 normalized);
         }
-        finally
-        {
-            gate.Release();
-        }
     }
+
 }
 
 /// <summary>

@@ -898,19 +898,29 @@ app.MapDelete("/api/vault", async (HttpContext ctx, CancellationToken ct) =>
     // deletion returned void and swallowed a locked file, so a vault that survived still lost its key
     // (audit 2026-09-09, finding #4). It reports now, and a vault that did not go stops everything.
     //
-    // Holding the gate across BOTH is the review gate's finding against the first fix: released after
-    // the vault delete, a concurrent PUT could recreate the vault before S was removed — the same
-    // outcome by a different door. `LoginKeyStore.RemoveAsync` takes no gate of its own, which is what
-    // makes it safe to call from inside this one; `OrgMembersStore.RemoveAsync` DOES take it, so it
-    // stays outside (a SemaphoreSlim is not re-entrant), and a record with no vault is the leftover
-    // this design has always accepted.
+    // Holding the gate across ALL of it is the review gate's finding, raised against two successive
+    // designs: released after the vault delete, a concurrent PUT could recreate the vault before S was
+    // removed; released before the registry removal, the same PUT could recreate it and be orphaned by
+    // that. The whole account deletion is one serialized unit now. `LoginKeyStore.RemoveAsync` takes no
+    // gate of its own; `OrgMembersStore` grew `RemoveWhileGateHeld` beside its gated `RemoveAsync`,
+    // because a SemaphoreSlim is not re-entrant.
+    //
+    // The registry record goes with the vault so the registry cannot outgrow the people it describes.
+    // Not gated on corp mode: a record left behind by a roster since removed is still one to remove,
+    // and where no org/ exists this is one stat and nothing else. Its removal is best-effort and says
+    // so — a record with no vault stays listed until the next DELETE.
     var keys = app.Services.GetRequiredService<LoginKeyStore>();
     // CancellationToken.None for the continuation, on purpose and as before: once the vault is gone
     // the rest is owed whether or not the client is still listening. A disconnect that cancelled it
     // would leave S behind for a vault that no longer exists.
     var deleted = await store.DeleteEverythingForAsync(
         caller.Value.Email,
-        _ => keys.RemoveAsync(caller.Value.Email, CancellationToken.None),
+        async _ =>
+        {
+            var keyGone = await keys.RemoveAsync(caller.Value.Email, CancellationToken.None);
+            orgMembers.RemoveWhileGateHeld(caller.Value.Email);
+            return keyGone;
+        },
         ct);
     if (!deleted.VaultGone)
     {
@@ -923,24 +933,16 @@ app.MapDelete("/api/vault", async (HttpContext ctx, CancellationToken ct) =>
             + "Nothing else was removed, including the login key. Try again.", ct);
         return;
     }
-    if (!deleted.OwnerGone || !deleted.InboxGone)
+    if (!deleted.OwnerGone || !deleted.InboxGone || !deleted.RestDone)
     {
         // Reported rather than failed: the caller asked for the vault, and the vault is what the key
         // belongs to. A leftover sidecar or inbox is listed and removed by the next DELETE — but it is
         // named here, because the silence is what made finding #4 possible in the first place.
         log.LogError(
             deleted.Refusal,
-            "vault deleted for {Email}, but leftovers remain (owner sidecar removed: {Owner}, inbox removed: {Inbox})",
-            caller.Value.Email, deleted.OwnerGone, deleted.InboxGone);
+            "vault deleted for {Email}, but leftovers remain (owner sidecar removed: {Owner}, inbox removed: {Inbox}, login key removed: {Key})",
+            caller.Value.Email, deleted.OwnerGone, deleted.InboxGone, deleted.RestDone);
     }
-    // The registry record goes with the vault, so the registry cannot outgrow the people it describes.
-    // Not gated on corp mode: a record left behind by a roster since removed is still one to remove,
-    // and where no org/ exists this is one stat and nothing else.
-    //
-    // CancellationToken.None on purpose, and OUTSIDE the gate above: RemoveAsync takes that same gate
-    // itself. It swallows a lock or a permission (logging at Error, naming the person), so a registry
-    // the OS will not let us touch cannot turn a delete that happened into a 500.
-    await orgMembers.RemoveAsync(caller.Value.Email, CancellationToken.None);
     log.LogInformation("vault + inbox deleted for {Email}", caller.Value.Email);
     ctx.Response.StatusCode = StatusCodes.Status204NoContent;
 });

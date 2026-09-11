@@ -356,6 +356,25 @@ live-stack rehearsal: no image is pulled and no server runs, so nothing yet prov
 from a live deployment restores onto a real host. That is a tracked exception rather than a silent
 gap — named in the plan, in `module_deployment.md`, and in the epic's summary.
 
+## Account deletion, and what the gate has to make indivisible (2026-09-11, audit finding #4)
+
+`VaultTests` in the server suite. Four scenarios, three of them new, and they exist because the order
+`DELETE /api/vault` had always described was enforced by sequence alone.
+
+| Test | What it holds down |
+|---|---|
+| `AVaultTheOsWillNotReleaseIsReportedAndKeepsItsLoginKey` | A vault the OS will not unlink answers **503**, and the login key, the owner sidecar and the member record are all still there. Before the fix: `204`, with the key gone — and on a corporate server every developer wrap is sealed to that key |
+| `ASecondDeleteAfterTheLockClearsFinishesTheJob` | A refusal costs a retry and nothing else: the state it leaves is the state it started from |
+| `AWriteCannotSlipBetweenTheVaultDeleteAndTheKeyRemoval` | The per-person gate is held from the vault delete through the key and the registry record. Asserted on the **vault file**, not on the request: the first version of this test asserted only that the request had not finished and passed against the unfixed code, because the endpoint already blocked further down on the member record's own gate |
+| `AClientHangingUpDuringTheDeleteDoesNotAbandonTheRegistryRemoval` | Unchanged guarantee, **changed arrangement**: it used to hold the gate and wait for the vault to disappear while holding it, which only worked while the vault delete took no gate. It times the hang-up off the vault file now |
+
+Client half, `serverTransport.test.ts`: `a refused DELETE quotes what the server said, not just the
+number` — the 503 sentence says *nothing else was removed, including the login key*, and `HTTP 503`
+alone sends a person looking for a bug in the extension.
+
+**Run in both configurations.** This change is about ordering under concurrency, so the server suite
+was run as Debug and as the shipping Release build — 766 of 766 in each.
+
 ## What none of them covers
 
 Named rather than implied, because the rule asks for exactly this.
