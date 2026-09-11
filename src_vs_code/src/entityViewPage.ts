@@ -108,6 +108,14 @@ export interface EntityViewOptions {
    * period; the seed it was derived from never does. Undefined when there is no seed.
    */
   totp?: () => Thenable<TotpSnapshot | undefined>;
+  /**
+   * Draw the NEXT code beside the current one — the entry's own preference (`totpShowNext`).
+   *
+   * <p>Binding a virtual MFA device asks for two consecutive codes. With this on the page holds a
+   * code valid for up to two periods rather than one, which widens the exception above; it is per
+   * entry and off by default for exactly that reason.</p>
+   */
+  totpShowNext?: boolean;
   /** The payment card's shape — names only; every value it shows arrives by message. */
   payment?: PaymentCardView;
   /** The whole payment record, host-side only. The page never receives it. */
@@ -435,11 +443,22 @@ export function renderEntityViewHtml(options: EntityViewOptions): string {
     // it expires; the seed is not in this HTML and never will be.
     ...(options.totp !== undefined
       ? [
-          `<div class="row"><label>One-time code <span id="totpMeta" class="note"></span></label>
+          `<div class="row"><label>One-time code${options.totpShowNext === true ? ' (now)' : ''} <span id="totpMeta" class="note"></span></label>
       <div class="line"><input readonly id="totpCode" class="totp" value="······" aria-live="polite">
         <span id="totpLeft" class="totpLeft" aria-label="seconds until the code changes"></span>
-        <button data-field="totp" data-action="copy" class="icon" title="Copy one-time code" aria-label="Copy one-time code">${COPY_ICON}</button>
+        <button id="totpCopy" data-field="totp" data-action="copy" class="icon" title="Copy one-time code" aria-label="Copy one-time code">${COPY_ICON}</button>
       </div></div>`,
+        ]
+      : []),
+    // The pair an enrolment asks for. Labelled "now" and "next" rather than left to position,
+    // because entering them the wrong way round fails exactly the way a wrong seed does.
+    ...(options.totp !== undefined && options.totpShowNext === true
+      ? [
+          `<div class="row"><label>Next code</label>
+      <div class="line"><input readonly id="totpNextCode" class="totp" value="······" aria-live="polite">
+        <button id="totpNextCopy" data-field="totpNext" data-action="copy" class="icon" title="Copy the next code" aria-label="Copy the next code">${COPY_ICON}</button>
+      </div>
+      <p class="note" id="totpPairStatus" role="status" aria-live="polite">Some consoles ask for two consecutive codes. Copy this one second, and enter both before the countdown runs out.</p></div>`,
         ]
       : []),
     row('Private key', 'privateKey', options.hasPrivateKey ? '•' : undefined, true),
@@ -708,13 +727,44 @@ export function renderEntityViewHtml(options: EntityViewOptions): string {
   if (totpCode) {
     const totpLeft = document.getElementById('totpLeft');
     const totpMeta = document.getElementById('totpMeta');
+    // The pair, when this entry asked for one. Both rows come from ONE message and are replaced
+    // together, so what is displayed is always consecutive; what needs guarding is the person
+    // copying ACROSS the boundary between them.
+    const totpNextCode = document.getElementById('totpNextCode');
+    const totpCopy = document.getElementById('totpCopy');
+    const totpNextCopy = document.getElementById('totpNextCopy');
+    const totpPairStatus = document.getElementById('totpPairStatus');
     let validUntil = 0;
     const askForCode = () => vscode.postMessage({ type: 'totp', field: 'totp' });
+    // Copying one half of the pair BINDS the other half to the pair it came from, so the host can
+    // refuse it once that pair is gone: two codes from two different windows are what the console
+    // rejects, and it looks exactly like a broken seed. The button just clicked stays unbound, so
+    // it always answers the live pair — that is the "start again, in order" gesture, and it is what
+    // makes a refusal recoverable rather than a button that is dead until the panel is reopened.
+    // Nothing is re-stamped on a redraw: a bound button must keep its pair, and an unbound one is
+    // already live. With no pair on screen neither listener exists, so the ordinary one-code
+    // viewer's button stays the bare totp field it has always been.
+    const bind = (clicked, other, otherName) => () => {
+      if (validUntil === 0) { return; }
+      other.setAttribute('data-field', otherName + '|' + validUntil);
+      clicked.setAttribute('data-field', clicked === totpCopy ? 'totp' : 'totpNext');
+    };
+    if (totpCopy && totpNextCopy) {
+      totpCopy.addEventListener('click', bind(totpCopy, totpNextCopy, 'totpNext'));
+      totpNextCopy.addEventListener('click', bind(totpNextCopy, totpCopy, 'totp'));
+    }
     window.addEventListener('message', (event) => {
       if (event.data?.type !== 'totp') { return; }
+      const rolled = validUntil !== 0 && event.data.validUntil !== validUntil;
       totpCode.value = event.data.code;
       validUntil = event.data.validUntil;
       totpMeta.textContent = '— ' + event.data.description;
+      if (totpNextCode) {
+        totpNextCode.value = event.data.next || '······';
+        if (rolled && totpPairStatus) {
+          totpPairStatus.textContent = 'The codes just changed. Copy this pair again, in order — the previous one is no longer accepted.';
+        }
+      }
     });
     setInterval(() => {
       if (!validUntil) { return; }

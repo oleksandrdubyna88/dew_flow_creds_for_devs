@@ -665,6 +665,10 @@ export function toValues(data: Record<string, unknown>, options: EntityFormOptio
       name: str(data, 'name').trim(),
       envBindings,
       hasTotp: hasTotp || undefined,
+      // Gated on the POST-save `hasTotp` above, which already counts a seed pasted in this same
+      // save: a preference about a code that does not exist is state nothing reads, and the save
+      // that removes a seed is what must take the preference with it.
+      totpShowNext: hasTotp && bool(data, 'totpShowNext') ? true : undefined,
       dependsOn: dependsOn.length > 0 ? dependsOn : undefined,
       // Absent means "ask the folder"; present-and-empty means "decided here, and the answer is
       // nothing". The page sends `undefined` only while nobody has touched a switch on an entry

@@ -6,6 +6,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **The next one-time code, beside the current one, where you ask for it.** Binding a virtual MFA
+  device does not ask for a code — it asks for **two consecutive** codes. Huawei Cloud, AWS, Alibaba
+  and Oracle all do, and one code cannot satisfy that however long you wait for it: the only way to
+  fill the second field was to watch the row redraw and read it again. A failed binding says
+  "codes not accepted", which reads like a wrong seed, so the real cause was invisible.
+
+  The entry's form has a box — *Show the next code as well as the current one* — and with it ticked
+  the viewer draws both rows, labelled **now** and **next**, each with its own Copy button. It is
+  per entry and off by default: the everyday viewer still shows one code, expiring, which is the
+  point of the field. With it on the page holds a code valid for up to two periods rather than one,
+  which is a real widening of the viewer's documented exception and is why it is nobody's default.
+
+  **Copying one code binds the other to the pair it came from.** If the period ticks while you are
+  copying, the second copy is refused with a sentence saying so, rather than answered with a code
+  from the pair after it: two codes from two different windows are precisely what a console rejects,
+  and that failure is indistinguishable from a broken seed. The button you just pressed is left
+  answering the live pair, so the refusal is recovered by exactly the gesture the message asks for —
+  copy the pair again, in order — instead of leaving a button that does nothing until the panel is
+  reopened. An entry **without** the preference never enters any of this: its Copy button is the
+  same plain one it has always been.
+
+  Both review rounds shaped this. The plan round found, from two vendors independently, that
+  resolving the second code when the button is pressed answers whichever pair is current then; the
+  code round found that the first fix for it latched and was never released, which turned the race
+  into a dead button, and that copying the two codes in the other order was still unguarded.
+
 ### Security
 
 - **Agent forwarding on Windows now launches the built-in OpenSSH by its full path.** When the

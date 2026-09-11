@@ -6,6 +6,7 @@ import {
   parseTotpSecret,
   totpCode,
   totpRemainingMs,
+  totpSnapshot,
   describeTotp,
 } from '../totp';
 
@@ -129,4 +130,57 @@ test('describeTotp names the parameters a person would compare with their app', 
     describeTotp({ ...base, digits: 5, steam: true, secret: SHA1_SECRET, algorithm: 'SHA1' }),
     'Steam Guard · every 30 s',
   );
+});
+
+/**
+ * Enrolling a virtual MFA device asks for two CONSECUTIVE codes — Huawei Cloud, AWS, Alibaba and
+ * Oracle all do. The property worth asserting is not "some second code exists" but that the second
+ * one is exactly what the row will show after the current one expires: anything else pairs two
+ * codes the service will refuse.
+ */
+const SEED = 'otpauth://totp/x?secret=JBSWY3DPEHPK3PXP';
+
+test('the pair is consecutive — the next code is the one the following period will show', () => {
+  const now = 1_700_000_012_345;
+  const pair = totpSnapshot(SEED, now, true);
+  assert.ok(pair !== undefined);
+  const afterTheTick = totpSnapshot(SEED, pair.validUntil, true);
+  assert.ok(afterTheTick !== undefined);
+  assert.equal(pair.next, afterTheTick.code, 'the next code must become the current one');
+  assert.notEqual(pair.code, pair.next, 'two identical codes are what the service refuses');
+});
+
+test('a snapshot carries no next code unless it was asked for', () => {
+  const now = 1_700_000_012_345;
+  assert.equal(totpSnapshot(SEED, now)?.next, undefined);
+  assert.equal(totpSnapshot(SEED, now, false)?.next, undefined);
+  assert.notEqual(totpSnapshot(SEED, now, true)?.next, undefined);
+});
+
+test('the step between the pair is the period, not thirty seconds', () => {
+  const now = 1_700_000_012_345;
+  const seed = `${SEED}&period=90&digits=8`;
+  const pair = totpSnapshot(seed, now, true);
+  assert.ok(pair !== undefined);
+  assert.equal(pair.period, 90);
+  assert.match(pair.next ?? '', /^[0-9]{8}$/);
+  assert.equal(pair.next, totpSnapshot(seed, now + 90_000, true)?.code);
+});
+
+test('a Steam seed pairs in its own alphabet', () => {
+  const now = 1_700_000_012_345;
+  const pair = totpSnapshot(`${SEED}&encoder=steam`, now, true);
+  assert.ok(pair !== undefined);
+  for (const code of [pair.code, pair.next ?? '']) {
+    assert.equal(code.length, 5);
+    assert.ok([...code].every((character) => STEAM_ALPHABET.includes(character)));
+  }
+});
+
+test('there is no pair without a seed, and asking for one does not throw', () => {
+  assert.equal(totpSnapshot(undefined, 1_000, true), undefined);
+  // Not "not a seed at all" — that normalises to NOTASEEDATALL, which IS base32, exactly as
+  // `otpMigration.ts` says of HELLO WORLD. A digit outside the alphabet is what actually refuses.
+  assert.equal(totpSnapshot('seed 0', 1_000, true), undefined);
+  assert.equal(totpSnapshot('https://example.com/', 1_000, true), undefined);
 });

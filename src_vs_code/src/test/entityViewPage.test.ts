@@ -381,3 +381,98 @@ test('every page paints checkboxes with the action colour (T31)', () => {
   const html = renderEntityViewHtml(options());
   assert.ok(html.includes('input[type=checkbox] { accent-color: var(--vscode-button-background)'));
 });
+
+/**
+ * The pair of codes an enrolment asks for, and the boundary that makes it hard.
+ *
+ * <p>Two reviewers on the plan gate found the same defect independently: resolving the second code
+ * at the moment the button is pressed answers the pair AFTER the one on screen when the period
+ * ticks in between, so the console receives two codes that are not consecutive and refuses a seed
+ * that is perfectly correct. The copy therefore carries the pair's identity, and a stale one is
+ * refused rather than answered with half of a newer pair.</p>
+ */
+const PAIR = { code: '111111', next: '222222', validUntil: 1_700_000_040_000, period: 30, description: 'x' };
+
+function pairOptions(overrides: Partial<EntityViewOptions> = {}): EntityViewOptions {
+  return options({
+    details: metadata({ hasTotp: true, totpShowNext: true }),
+    totpShowNext: true,
+    totp: async () => PAIR,
+    ...overrides,
+  } as Partial<EntityViewOptions>);
+}
+
+test('the second code is drawn only where its preference is on', () => {
+  const shown = renderEntityViewHtml(pairOptions());
+  assert.ok(shown.includes('id="totpNextCode"'), 'the next-code row is missing');
+  assert.ok(shown.includes('data-field="totpNext"'), 'the next code has no Copy button');
+
+  const plain = renderEntityViewHtml(
+    options({ details: metadata({ hasTotp: true }), totp: async () => ({ ...PAIR, next: undefined }) } as never),
+  );
+  assert.ok(plain.includes('id="totpCode"'), 'the ordinary one-code row is gone');
+  assert.ok(!plain.includes('id="totpNextCode"'), 'a second row appeared without the preference');
+});
+
+test('neither page carries the seed, pair or no pair', () => {
+  for (const html of [renderEntityViewHtml(pairOptions()), renderEntityViewHtml(options())]) {
+    assert.ok(!html.includes('otpauth:'), 'a seed reached the page');
+    assert.ok(!html.includes('JBSWY3DP'), 'a base32 secret reached the page');
+  }
+});
+
+test('copying a code resolves the pair that is on screen, not a fresh one', async () => {
+  const opts = pairOptions();
+  assert.equal(await copyValueFor(opts, `totp|${PAIR.validUntil}`), '111111');
+  assert.equal(await copyValueFor(opts, `totpNext|${PAIR.validUntil}`), '222222');
+});
+
+test('a copy bound to a pair that has rolled over is refused, not answered', async () => {
+  // The defect itself: the person copied one half of the pair ending at `validUntil`, the period
+  // ticked, and the other button still belongs to a pair they never saw. Handing back that pair's
+  // code produces two codes from different windows — exactly what the console refuses, and it
+  // would look like a broken seed rather than a race.
+  const opts = pairOptions();
+  const gone = PAIR.validUntil - PAIR.period * 1000;
+  assert.equal(await copyValueFor(opts, `totpNext|${gone}`), undefined);
+  assert.equal(await copyValueFor(opts, `totp|${gone}`), undefined);
+});
+
+test('an unbound half answers the live pair, because that is the pair being looked at', async () => {
+  // Before either half is copied nothing is bound, and the initial markup carries the bare names.
+  // A bare `totpNext` that resolved to nothing would be a dead button on first click.
+  const opts = pairOptions();
+  assert.equal(await copyValueFor(opts, 'totpNext'), '222222');
+});
+
+test('an entry without the pair still copies its one code the old way', async () => {
+  const opts = options({
+    resolveSecret: async (field: string) => (field === 'totp' ? '333333' : undefined),
+  } as never);
+  assert.equal(await copyValueFor(opts, 'totp'), '333333');
+});
+
+test('the ordinary one-code viewer is never routed through the pair protocol', () => {
+  // With the preference off the button must stay the bare `totp` it has always been: an anchored
+  // one can be refused at a period boundary, and "off behaves exactly as before" is the constraint.
+  const plain = renderEntityViewHtml(
+    options({ details: metadata({ hasTotp: true }), totp: async () => ({ ...PAIR, next: undefined }) } as never),
+  );
+  assert.ok(plain.includes('data-field="totp"'), 'the one-code button lost its bare field');
+  assert.ok(!plain.includes("'totpNext|'"), 'the pair protocol leaked into a viewer with no pair');
+});
+
+test('copying either half binds the OTHER one to that pair, and leaves itself live', () => {
+  // The recoverable shape. Binding the clicked button too is what made the first version dead
+  // after one rollover: nothing could ever re-bind it, so every later copy was refused until the
+  // panel was reopened. The button just clicked is the "start again, in order" gesture.
+  const script = renderEntityViewHtml(pairOptions());
+  assert.ok(script.includes("totpCopy.addEventListener('click', bind(totpCopy, totpNextCopy, 'totpNext'))"));
+  assert.ok(script.includes("totpNextCopy.addEventListener('click', bind(totpNextCopy, totpCopy, 'totp'))"));
+  assert.ok(script.includes("if (validUntil === 0) { return; }"), 'a click before the first code binds to zero');
+  assert.ok(script.includes('totpNextCode.value = event.data.next'), 'the next row is never filled');
+  assert.ok(
+    !script.includes('anchored'),
+    'a latch that is never released is what made the button dead — the binding must come from the click',
+  );
+});

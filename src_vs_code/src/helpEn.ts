@@ -169,8 +169,8 @@ export const EN_BODIES: Readonly<Record<string, HelpBody>> = {
     whatItIs: "The second-factor seed as a first-class secret: the viewer shows the live code with a countdown, the tree has Copy One-Time Code. Steam Guard included.",
     why: "The seed on a phone dies with the phone; in the vault it syncs, snapshots and survives.",
     setup: "Paste the otpauth:// URI, the base32 secret — or just a SCREENSHOT of the QR (Ctrl+V in the form): Google Authenticator exports only as a picture, and the form reads it.",
-    usage: "Copy One-Time Code from the tree; the seed itself never reaches the webview, only the code derived from it. Whether the seed travels with a share is asked explicitly.",
-    whatCanGoWrong: "A counter-based (HOTP) QR is refused by name — a second copy of one advances a counter and desyncs the first. An export picture holds every account at once; the form lists them by issuer so you pick the right one.",
+    usage: "Copy One-Time Code from the tree; the seed itself never reaches the webview, only the code derived from it. Whether the seed travels with a share is asked explicitly.\n\n**Binding a virtual MFA device asks for TWO consecutive codes** — Huawei Cloud, AWS, Alibaba and Oracle all do, and one code cannot satisfy that however long you wait. Tick “Show the next code as well as the current one” on the entry and the viewer draws both; copy the current one first, then the next, and enter them before the countdown runs out.",
+    whatCanGoWrong: "A counter-based (HOTP) QR is refused by name — a second copy of one advances a counter and desyncs the first. An export picture holds every account at once; the form lists them by issuer so you pick the right one.\n\nIf the period ticks between the two copies of a pair, the second copy is REFUSED rather than answered with a code from the newer pair: two codes from two different pairs are exactly what the console rejects, and it would look like a broken seed. Copy both again, in order.",
   },
   'secret-references': {
     title: "Secret references and masked runs",

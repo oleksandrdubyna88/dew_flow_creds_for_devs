@@ -133,6 +133,14 @@ export function totpRemainingMs(config: TotpConfig, nowMs: number): number {
 /** What a display is sent about a one-time code: the code, when it expires, how it is configured. */
 export interface TotpSnapshot {
   code: string;
+  /**
+   * The code of the FOLLOWING period — present only when it was asked for.
+   *
+   * <p>Enrolling a virtual MFA device asks for two consecutive codes (Huawei Cloud, AWS, Alibaba,
+   * Oracle), which one code cannot satisfy however long you wait. It is optional rather than always
+   * computed because a display receives only what it shows, and every other caller shows one code.</p>
+   */
+  next?: string;
   /** ms epoch. */
   validUntil: number;
   /** Seconds per code, so a page can draw the countdown. */
@@ -141,18 +149,36 @@ export interface TotpSnapshot {
   description: string;
 }
 
-/** The current code for a stored seed; undefined when there is no seed or it does not parse. */
-export function totpSnapshot(storedUri: string | undefined, nowMs: number): TotpSnapshot | undefined {
+/**
+ * The current code for a stored seed; undefined when there is no seed or it does not parse.
+ *
+ * <p>With `withNext`, the following period's code rides along. It needs no arithmetic of its own:
+ * `validUntil` is already the first millisecond of the next period, so the code AT that instant is
+ * the one this row will show when it redraws — which is the property an enrolment checks, and the
+ * one the test asserts.</p>
+ */
+export function totpSnapshot(
+  storedUri: string | undefined,
+  nowMs: number,
+  withNext = false,
+): TotpSnapshot | undefined {
   const parsed = storedUri === undefined ? undefined : parseTotpSecret(storedUri);
   if (parsed === undefined) {
     return undefined;
   }
+  const validUntil = nowMs + totpRemainingMs(parsed.config, nowMs);
   return {
     code: totpCode(parsed.config, nowMs),
-    validUntil: nowMs + totpRemainingMs(parsed.config, nowMs),
+    next: nextCodeOf(parsed.config, validUntil, withNext),
+    validUntil,
     period: parsed.config.period,
     description: describeTotp(parsed.config),
   };
+}
+
+/** The code the row will show once this one expires — or nothing, when nobody asked for a pair. */
+function nextCodeOf(config: TotpConfig, validUntil: number, withNext: boolean): string | undefined {
+  return withNext ? totpCode(config, validUntil) : undefined;
 }
 
 /** What a person compares with their authenticator app's settings. */

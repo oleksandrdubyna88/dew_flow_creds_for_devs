@@ -6,10 +6,12 @@ import { handleWovenPassword } from './wovenPasswordHost';
 import { applyZoomDelta, currentUiScale, pushUiScaleTo } from './uiScaleHost';
 import { ViewerTab } from './viewerClicks';
 import { BINDABLE_FIELDS, BindableField } from './envBinding';
+import { isPairedCodeField } from './entityViewCopy';
 import {
   CopyMessage,
   EntityViewOptions,
   copyValueFor,
+
   renderEntityViewHtml,
   snippetAnswer,
 } from './entityViewPage';
@@ -213,7 +215,13 @@ function mountEntityView(
     }
     const value = await copyValueFor(options, message.field);
     if (value === undefined || value.length === 0) {
-      void vscode.window.showWarningMessage('Nothing to copy — the field is empty.');
+      // A paired code refuses for one reason only — the pair on screen is no longer the pair this
+      // button belongs to — and calling that "empty" would send somebody hunting for a lost seed.
+      void vscode.window.showWarningMessage(
+        isPairedCodeField(message.field)
+          ? 'The codes changed since you copied the first one. Copy both again, in order.'
+          : 'Nothing to copy — the field is empty.',
+      );
       return;
     }
     await copySecret(vscode.env.clipboard, value);
