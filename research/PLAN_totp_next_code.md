@@ -24,6 +24,12 @@
 >   stamped `totp|<validUntil>` on every code message including entries with no pair, so a copy at a
 >   period boundary would have been refused as stale in a viewer that had never asked for any of
 >   this. Caught by the code round; the bare field is now never stamped unless a pair is on screen.
+> - **The binding needed a SECOND half, found on the pull request.** `validUntil` alone cannot tell
+>   two pairs apart when the seed is REPLACED while the viewer is open: the new seed's snapshot lands
+>   in the same period, the old binding still matches, and one code from each seed is handed over in
+>   silence. `TotpSnapshot.pairId` — an HMAC of the canonical URI under a salt drawn once per process
+>   — is compared alongside it. Per-process rather than a plain hash so it identifies a seed for as
+>   long as a window lives without becoming a stable fingerprint of the secret.
 > - **`totpSnapshot` hit the complexity ceiling** at 5 and was split (`nextCodeOf`) rather than given
 >   an `eslint-disable`.
 > - **The QR reader was suspected and cleared before any code was written** — see the symptom below.
@@ -155,10 +161,20 @@ the pair after the one on screen. The console receives two codes that are not co
 refuses a seed that is perfectly correct, which is exactly the failure this feature exists to end.
 
 So the page carries the pair's identity into the copy request, using the `field|variant` convention
-`entityViewCopy.ts` already has for `pay_<key>|<variant>` and `snippet|…`: both buttons of the pair
-send `totp|<validUntil>` and `totpNext|<validUntil>`, re-stamped from every `totp` message. The host
-re-reads the snapshot, compares `validUntil`, and **refuses when they differ** — the pair the person
-is looking at is gone, and handing them half of a newer one is the bug. The refusal says so.
+`entityViewCopy.ts` already has for `pay_<key>|<variant>` and `snippet|…`. **What ships binds on the
+CLICK, not on the redraw**, and it is symmetric: copying either half stamps the OTHER button
+`totpNext|<validUntil>|<pairId>` / `totp|<validUntil>|<pairId>` and leaves the clicked one bare, so
+the clicked one always answers the live pair. Nothing is re-stamped by a `totp` message — a bound
+button must keep its pair, and an unbound one is already live. The host re-reads the snapshot and
+**refuses when either half of the binding differs**: the pair the person is looking at is gone, and
+handing them half of a newer one is the bug. The refusal says so, and because the clicked button is
+never bound, following that sentence restores the pair in one click.
+
+`pairId` is the second half, and it exists because `validUntil` alone cannot tell two pairs apart
+when the SEED is replaced while the viewer is open — the new seed's snapshot lands in the same
+period, so an old binding still matches and one code from each seed is handed over in silence. It is
+an HMAC of the canonical URI under a salt drawn once per PROCESS: it changes when the seed changes,
+which is its whole job, and it is not a stable fingerprint of the secret.
 
 This needs no new `ViewerSecretField` and no change to `secretResolver`: `options.totp()` already
 returns the whole snapshot, and the bare `'totp'` field keeps its existing, unanchored path so an
@@ -219,26 +235,30 @@ code that does not exist never enters the record.
 - `webviewHtml.test.ts` / the viewer page tests
   - With the option on, the page contains the second row and its Copy button; with it off, neither.
   - The rendered HTML contains no seed in either case — the assertion `PLAN_totp.md` established.
-  - The page script, parsed as the existing webview tests parse it, re-stamps both Copy buttons'
-    `data-field` from each `totp` message, and blanks the next row when a message carries no `next` —
-    an implementation that redraws the current code and leaves the second row stale would otherwise
-    pass every other check here while showing a pair that is not one.
+  - The page script, parsed as the existing webview tests parse it, binds the OTHER button on each
+    button's click and blanks the next row when a message carries no `next` — an implementation that
+    redraws the current code and leaves the second row stale would otherwise pass every other check
+    here while showing a pair that is not one. The absence of any released latch is asserted too:
+    that is what made the first version's button dead after one rollover.
 - Manual, because only a person has a cloud console: bind a real virtual MFA device using the two
   codes the viewer shows, in one pass, without waiting for a redraw.
 
 ## Definition of Done
 
-- [ ] `npm test` green in `src_vs_code`, with the new cases named above; `npm run typecheck` and
+- [x] `npm test` green in `src_vs_code`, with the new cases named above; `npm run typecheck` and
       `npm run lint` clean; no file over 800 lines; no new `eslint-disable`.
-- [ ] `package.json` still has no `dependencies` key.
-- [ ] The preference is off by default, and with it off the viewer renders exactly as before.
-- [ ] The widened viewer exception is recorded in `research/module_extension.md` §TOTP, alongside the
+- [x] `package.json` still has no `dependencies` key.
+- [x] The preference is off by default, and with it off the viewer renders exactly as before.
+- [x] The widened viewer exception is recorded in `research/module_extension.md` §TOTP, alongside the
       sentence it qualifies.
-- [ ] The `totp` help article says how to turn the pair on — in all five languages, changed in the
+- [x] The `totp` help article says how to turn the pair on — in all five languages, changed in the
       same commit (a stale translation is invisible to the coverage test).
-- [ ] `CHANGELOG.md` [Unreleased] gains an Added entry.
-- [ ] The stale `(unreleased)` heading on the QR-paste section of `module_extension.md` is corrected —
+- [x] `CHANGELOG.md` [Unreleased] gains an Added entry.
+- [x] The stale `(unreleased)` heading on the QR-paste section of `module_extension.md` is corrected —
       it shipped in 0.78.0.
-- [ ] `coai` gate: a `review_plan` round reached `proceed`, a `review_code` round ran on the branch,
+- [x] `coai` gate: a `review_plan` round reached `proceed`, a `review_code` round ran on the branch,
       every finding resolved, and the summary reports the verdicts and how many reviewers answered.
-- [ ] This plan promoted to `research/` with its deviations recorded.
+- [x] This plan promoted to `research/` with its deviations recorded.
+- [ ] **Still owed, and only a person can do it:** bind a real virtual MFA device using the two codes
+      the viewer shows, in one pass, without waiting for a redraw. Every box above is machine-checked;
+      this one is the reason the feature exists and no test can take it.

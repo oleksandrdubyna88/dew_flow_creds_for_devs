@@ -35,7 +35,7 @@ import { copyVariant, copyableValue } from './paymentViewMessages';
  * sentences — the second one is not an empty field, it is a race the person has to re-run.</p>
  */
 export function isPairedCodeField(field: string): boolean {
-  return /^totp(Next)?\|\d+$/.test(field);
+  return /^totp(Next)?\|\d+\|[0-9a-f]+$/.test(field);
 }
 
 /** Either half of the pair, bound to one or answering the live one. */
@@ -69,11 +69,19 @@ export async function copyValueFor(
   // refuses; a refusal here costs one more copy, answering costs a failed enrolment that looks like
   // a broken seed. A bare `totp` is untouched — an entry without the preference copies as it always did.
   if (isCodeField(field)) {
-    // No anchor means the person has copied neither half yet, so the live pair IS the pair they
+    // No binding means the person has copied neither half yet, so the live pair IS the pair they
     // are looking at; a bare `totp` never reaches here at all and keeps its old path.
-    const [name, anchor = ''] = field.split('|');
+    //
+    // BOTH halves of the binding are checked. The period alone cannot tell two pairs apart when
+    // the SEED is replaced while the viewer is open — the new seed's snapshot lands in the same
+    // period — and answering that would hand back one code from each seed without a word.
+    const [name, until = '', pairId = ''] = field.split('|');
     const snapshot = await options.totp?.();
-    if (snapshot === undefined || (anchor !== '' && String(snapshot.validUntil) !== anchor)) {
+    const bound = until !== '';
+    if (snapshot === undefined) {
+      return undefined;
+    }
+    if (bound && (String(snapshot.validUntil) !== until || snapshot.pairId !== pairId)) {
       return undefined;
     }
     return name === 'totpNext' ? snapshot.next : snapshot.code;

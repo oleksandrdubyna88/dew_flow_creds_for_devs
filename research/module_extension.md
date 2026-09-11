@@ -3254,6 +3254,13 @@ Three things close it, and none of them alone would:
 - a copy whose binding no longer matches the live pair is **refused**, with its own sentence — the
   generic "Nothing to copy — the field is empty" would send somebody hunting for a lost seed.
 
+The binding has **two** halves, and the second was found on the pull request: `validUntil` alone
+cannot tell two pairs apart when the SEED is replaced while the viewer is open, because the new
+seed's snapshot lands in the same period — the old binding still matches, and one code from each
+seed goes to the clipboard in silence. `TotpSnapshot.pairId` is compared with it: an HMAC of the
+canonical URI under a salt drawn once per PROCESS, so it changes when the seed changes and is not a
+stable fingerprint of the secret that outlives the window.
+
 **The symmetry and the "leave the clicked one live" half are both load-bearing, and the code round
 proved it.** The first version bound only the second button and latched a flag that was never
 released: after one rollover that button was dead until the panel was reopened, because nothing

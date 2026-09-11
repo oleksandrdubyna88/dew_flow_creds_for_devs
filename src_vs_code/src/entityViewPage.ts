@@ -735,6 +735,7 @@ export function renderEntityViewHtml(options: EntityViewOptions): string {
     const totpNextCopy = document.getElementById('totpNextCopy');
     const totpPairStatus = document.getElementById('totpPairStatus');
     let validUntil = 0;
+    let pairId = '';
     const askForCode = () => vscode.postMessage({ type: 'totp', field: 'totp' });
     // Copying one half of the pair BINDS the other half to the pair it came from, so the host can
     // refuse it once that pair is gone: two codes from two different windows are what the console
@@ -746,7 +747,7 @@ export function renderEntityViewHtml(options: EntityViewOptions): string {
     // viewer's button stays the bare totp field it has always been.
     const bind = (clicked, other, otherName) => () => {
       if (validUntil === 0) { return; }
-      other.setAttribute('data-field', otherName + '|' + validUntil);
+      other.setAttribute('data-field', otherName + '|' + validUntil + '|' + pairId);
       clicked.setAttribute('data-field', clicked === totpCopy ? 'totp' : 'totpNext');
     };
     if (totpCopy && totpNextCopy) {
@@ -758,6 +759,7 @@ export function renderEntityViewHtml(options: EntityViewOptions): string {
       const rolled = validUntil !== 0 && event.data.validUntil !== validUntil;
       totpCode.value = event.data.code;
       validUntil = event.data.validUntil;
+      pairId = event.data.pairId || '';
       totpMeta.textContent = '— ' + event.data.description;
       if (totpNextCode) {
         totpNextCode.value = event.data.next || '······';

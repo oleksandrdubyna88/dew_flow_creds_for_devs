@@ -391,7 +391,15 @@ test('every page paints checkboxes with the action colour (T31)', () => {
  * that is perfectly correct. The copy therefore carries the pair's identity, and a stale one is
  * refused rather than answered with half of a newer pair.</p>
  */
-const PAIR = { code: '111111', next: '222222', validUntil: 1_700_000_040_000, period: 30, description: 'x' };
+const PAIR = {
+  code: '111111',
+  next: '222222',
+  pairId: 'a1b2c3d4e5f6',
+  validUntil: 1_700_000_040_000,
+  period: 30,
+  description: 'x',
+};
+const BOUND = `${PAIR.validUntil}|${PAIR.pairId}`;
 
 function pairOptions(overrides: Partial<EntityViewOptions> = {}): EntityViewOptions {
   return options({
@@ -423,8 +431,19 @@ test('neither page carries the seed, pair or no pair', () => {
 
 test('copying a code resolves the pair that is on screen, not a fresh one', async () => {
   const opts = pairOptions();
-  assert.equal(await copyValueFor(opts, `totp|${PAIR.validUntil}`), '111111');
-  assert.equal(await copyValueFor(opts, `totpNext|${PAIR.validUntil}`), '222222');
+  assert.equal(await copyValueFor(opts, `totp|${BOUND}`), '111111');
+  assert.equal(await copyValueFor(opts, `totpNext|${BOUND}`), '222222');
+});
+
+test('a binding made against a seed that has since been REPLACED is refused', async () => {
+  // The period alone cannot tell the two apart: a seed swapped while the viewer is open produces
+  // a snapshot in the same window, so without the pair identity the person is handed the first
+  // code of one seed and the second of another and told nothing. Raised by CodeRabbit on the PR.
+  const replaced = pairOptions({
+    totp: async () => ({ ...PAIR, code: '999999', next: '888888', pairId: 'ffffffffffff' }),
+  } as never);
+  assert.equal(await copyValueFor(replaced, `totpNext|${BOUND}`), undefined);
+  assert.equal(await copyValueFor(replaced, `totp|${BOUND}`), undefined);
 });
 
 test('a copy bound to a pair that has rolled over is refused, not answered', async () => {
@@ -433,7 +452,7 @@ test('a copy bound to a pair that has rolled over is refused, not answered', asy
   // code produces two codes from different windows — exactly what the console refuses, and it
   // would look like a broken seed rather than a race.
   const opts = pairOptions();
-  const gone = PAIR.validUntil - PAIR.period * 1000;
+  const gone = `${PAIR.validUntil - PAIR.period * 1000}|${PAIR.pairId}`;
   assert.equal(await copyValueFor(opts, `totpNext|${gone}`), undefined);
   assert.equal(await copyValueFor(opts, `totp|${gone}`), undefined);
 });
