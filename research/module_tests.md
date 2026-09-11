@@ -38,24 +38,43 @@ is node throughout because what these need is process control, not a test runner
 | `src_vs_code/scripts/masked-run-itest.cjs` | a masked run through a real pty, asserting no whole secret appears | **yes, added 2026-09-06** | pass |
 | `src_minimalapi_server/scripts/backup-archive-itest.cjs` | the REAL server binary sealing, verifying and opening a backup archive | **yes, added 2026-09-07** — in `ci · server`, on the server's own path filter | pass |
 | `src_vs_code/scripts/creds-mcp-wsl-itest.cjs` | the same MCP surface, bridged from inside a WSL distribution | no — see below | pass |
-| `src_vs_code/scripts/ssh-agent-itest.cjs` | the SSH agent on a named pipe, and which ssh client can reach it | no — see below | pass |
+| `src_vs_code/scripts/ssh-agent-itest.cjs` | the SSH agent on a named pipe, and which ssh client can reach it | **yes, added 2026-09-11** — the POSIX branch only, see below | pass |
 | `src_vs_code/scripts/wsl-agent-relay-itest.cjs` | `ssh-keygen -Y sign` inside Linux reaching an agent in a Windows process | no — see below | pass **after repair — see below** |
 | `src_vs_code/scripts/server-transport-itest.cjs` | `ServerTransport` against a RUNNING Cred Vault Server | no — see below | **not run** — needs a server on `127.0.0.1:5113` |
 
-**Why each of the four is not in CI.** *"Not in CI" with a reason is a decision; "not in CI" alone is
+**Why each of the remaining three is not in CI.** *"Not in CI" with a reason is a decision; "not in CI" alone is
 a harness rotting* — so each carries one.
 
 - **`creds-mcp-wsl-itest.cjs` and `wsl-agent-relay-itest.cjs`** need a WSL distribution with the .NET
   SDK inside it. The extension job runs on `ubuntu-latest`, where WSL does not exist and the thing
   under test — the Windows↔Linux bridge — has no meaning.
-- **`ssh-agent-itest.cjs`** would run on Linux, and that is the reason not to: its subject is the
-  Windows named-pipe path and which of the several `ssh-add` binaries on a Windows PATH can reach it.
-  On Ubuntu it would exercise the branch it does not exist to protect and report a pass about it.
+- **`ssh-agent-itest.cjs`** was left out for a real reason, and the reason turned out to argue for
+  reading its result narrowly rather than for running nothing. The argument was: on Ubuntu it
+  exercises the POSIX branch, while its subject is the Windows named-pipe path and which of the
+  several `ssh-add` binaries on a Windows PATH can reach it — so a green there is a pass about the
+  branch it does not exist to protect. All true. What it misses is that the script also drives the
+  agent PROTOCOL against a REAL `ssh-add` — a key parsed, loaded, listed and signed for — and
+  nothing else in CI does that on any platform. **Added 2026-09-11**, with the step's comment saying
+  in as many words that the Windows half stays uncovered by it.
 - **`server-transport-itest.cjs`** needs a Cred Vault Server running with the Local auth scheme. CI
   states this reason in the workflow itself: adding it would mean building and running the server
   inside the extension's job.
 
 Two were added on the day this file was written, because neither had a reason — only an absence.
+
+**And the leak that made two of them unrunnable by hand is fixed** (`scripts/wslStrays.cjs`, new).
+Both WSL harnesses asserted *"nothing outlives the client"* as a GLOBAL question — `ps -eo args |
+grep '[c]reds-mcp'` over the whole machine — so they failed on a process an earlier run had left
+behind, and on a developer running the real thing in another window. Measured 2026-09-11: both
+failed that one check identically on `main` and on a feature branch, for leftovers. And the
+leftovers were their own: a run that failed partway stopped without taking its processes down, so
+the next run inherited them and failed the same check for the same reason.
+
+The question is a DIFFERENCE now — what was alive before this run, against what is alive after —
+and a sweep in a `finally` takes down whatever this run started and left, whichever way it ended. A
+stray from somebody else's session is neither asserted on nor killed: this run did not start it. The
+first check in the relay harness got stronger by the same change, since *"a real relay is running"*
+now means ours rather than any.
 
 **`masked-run-itest.cjs` on Linux was verified, not assumed.** A reviewer called adding it to an
 `ubuntu-latest` runner blocking, on the grounds that a pty harness written and run only on Windows
