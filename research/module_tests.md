@@ -64,11 +64,19 @@ Two were added on the day this file was written, because neither had a reason �
 
 **And the leak that made two of them unrunnable by hand is fixed** (`scripts/wslStrays.cjs`, new).
 Both WSL harnesses asserted *"nothing outlives the client"* as a GLOBAL question — `ps -eo args |
-grep '[c]reds-mcp'` over the whole machine — so they failed on a process an earlier run had left
-behind, and on a developer running the real thing in another window. Measured 2026-09-11: both
-failed that one check identically on `main` and on a feature branch, for leftovers. And the
-leftovers were their own: a run that failed partway stopped without taking its processes down, so
-the next run inherited them and failed the same check for the same reason.
+grep '[c]reds-mcp'` over the whole machine. Measured 2026-09-11: both failed that one check
+identically on `main` and on a feature branch.
+
+**And then the processes were looked at, which is the part worth keeping.** They were not debris.
+Thirteen of them: six `creds-mcp` servers, each the child of a LIVE Claude Code session running
+inside WSL, plus a `creds relay` holding `/run/user/1000/creds-agent.sock` — the runtime path the
+extension publishes, not the `/tmp/creds-relay-itest-<pid>.sock` the harness uses. Every one was
+somebody's working tool. So the global question was not merely fragile after a bad run: it is red on
+a working machine **always**, and the harness was unrunnable by hand for anyone who actually uses
+this product. A harness that cannot be run is a harness that rots.
+
+Its own leftovers are a real second failure, and the sweep is for those: a run that failed partway
+stopped without taking its processes down, so the next run inherited them.
 
 The question is a DIFFERENCE now — what was alive before this run, against what is alive after —
 and a sweep in a `finally` takes down whatever this run started and left, whichever way it ended. A
