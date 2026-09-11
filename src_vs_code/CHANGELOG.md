@@ -8,6 +8,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **A vault delete that did not happen now says so, instead of reporting success and removing the
+  key.** `DELETE /api/vault` promised an order — the login key is removed only once there is no vault
+  left for it to belong to — and enforced it by sequence alone: the deletion returned nothing, swallowed
+  a locked file in silence, and the route answered `204` and took the key anyway. On a corporate server
+  every developer wrap is sealed to that key, so a vault which outlives it is a vault nobody can open,
+  and the route is self-service.
+
+  The vault now goes first and alone. If it will not go, **nothing else is touched** and the server
+  answers `503` with a sentence this extension quotes verbatim rather than reporting `HTTP 503` and
+  sending you looking for a bug. Retrying after the lock clears finishes the job.
+
+  Found by the 2026-09-09 product audit (finding #4); record in
+  `research/PLAN_vault_delete_verified.md`.
+
 - **Output that cannot be redacted is now withheld, never sent raw.** The broker's promise is that an
   agent USES a credential and never sees it — and a response body carries the child's stdout, so the
   masker is the only thing between a command that prints its own password and the agent that composed

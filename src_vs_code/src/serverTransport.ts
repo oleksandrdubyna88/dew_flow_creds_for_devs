@@ -453,7 +453,11 @@ export class ServerTransport implements VaultTransport {
     this.versions.delete(account.accountId);
     const response = await this.request(account, '/api/vault', { method: 'DELETE' });
     if (!response.ok && response.status !== 404) {
-      throw new Error(`Remote vault delete failed: HTTP ${response.status}.`);
+      // The server's own sentence, not just the number. A 503 here means the vault file was locked
+      // and NOTHING was removed — including the login key, which is the whole point of the refusal
+      // (a vault that outlives its key is a vault nobody can open). "HTTP 503" alone sends a person
+      // looking for a bug; the sentence tells them to try again.
+      throw new Error(`Remote vault delete failed: ${await refusalDetail(response)}`);
     }
   }
 }

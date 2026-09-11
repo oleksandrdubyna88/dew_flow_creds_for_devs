@@ -342,9 +342,29 @@ kept a copy of S is the person being re-admitted. **Blocking already makes S uno
 caller gate refuses them before the handler runs — and that is the mechanism. Stated plainly: a copy
 of S taken while somebody was a developer stays valid until a two-key rotation exists.
 
-**`DELETE /api/vault` removes the key last**, after the vault and the registry record. The order is
-the design: a crash between steps leaves something behind either way, and a key outliving its vault is
-300 bytes of ciphertext nobody can use, while a vault outliving its key is a vault nobody can OPEN.
+**`DELETE /api/vault` removes the key last, and the order is now CHECKED rather than merely followed.**
+A crash or a refusal between steps leaves something behind either way, and the two leftovers are not
+equally bad: a key outliving its vault is 300 bytes of ciphertext nobody can use, while a vault
+outliving its key is a vault nobody can OPEN — on a corporate server every developer wrap is sealed to
+S. Until 2026-09-11 that order was enforced by sequence alone: `DeleteEverythingFor` returned `void`
+and swallowed a locked file, so a vault that survived still lost its key (audit finding #4, and the
+route is **self-service** — every developer can reach it).
+
+`DeleteEverythingForAsync` reports per component now. The vault goes **first and alone**: if it will
+not go, nothing else is attempted and the route answers **503** with a sentence the client quotes
+verbatim — *nothing else was removed, including the login key* has to be true rather than nearly true,
+or a retry runs against a state the first attempt already changed. A retry after the lock clears
+finishes the job; nothing about the refusal makes the second attempt harder.
+
+The vault and the key are removed **under one per-person gate** (`GateFor(KeyFor(email))` — the same
+lock identity `TryWriteVaultAsync` takes, which is what makes a write and a delete for one person
+mutually exclusive). That pair is indivisible because releasing between them let a concurrent `PUT`
+recreate the vault before S was removed — the same "a vault nobody can open" outcome by a different
+door. `LoginKeyStore.RemoveAsync` takes no gate of its own, which is what makes it safe to call from
+inside this one; `OrgMembersStore.RemoveAsync` **does** take it, so the registry record is removed
+outside the gate (a `SemaphoreSlim` is not re-entrant) and a record with no vault remains the one
+leftover this design accepts — listed, logged, and removed by the next `DELETE` or an admin.
+
 Removal needs no KEK — deleting a file is not decryption — so a server that cannot issue keys can
 still delete accounts.
 
