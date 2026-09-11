@@ -134,13 +134,6 @@ export class CredsAgentServer implements vscode.Disposable {
       name: string,
     ) => { accountId: string; entityId: string; entityName: string; kind: string } | undefined,
     /**
-     * Whether this entry may be used exactly once — asked of the side that owns storage, like
-     * {@link burnAfterUse}, because the broker holds a grant and not a stored record. One call at
-     * a time for such an entry, and the second is refused (audit 2026-09-09, finding #3). Absent
-     * means nothing queues.
-     */
-    private readonly isOneUse?: (accountId: string, entityId: string) => boolean,
-    /**
      * The names enabled for the CLI, for `creds ls`. Optional like the rest: absent means this
      * window answers the listing route with an empty list rather than a crash.
      *
@@ -195,6 +188,14 @@ export class CredsAgentServer implements vscode.Disposable {
     /** Where `/v1/config/read` gets its answer. Outside for the sixth time, same reason: this
      *  class holds grants, and a config key is not one. Absent serves no config to anything. */
     private readonly configRoute?: ConfigRouteSources,
+    /**
+     * Whether this entry may be used exactly once — asked of the side that owns storage, like
+     * {@link burnAfterUse}. One call at a time for such an entry (audit #3); absent queues nothing.
+     *
+     * <p>LAST on purpose: this list is positional, and inserting into the middle hands the next
+     * argument to the wrong slot — which happened, and `creds ls` went blank.</p>
+     */
+    private readonly isOneUse?: (accountId: string, entityId: string) => boolean,
   ) {}
 
   /** The signal every spawned child watches, so none outlives this window. */

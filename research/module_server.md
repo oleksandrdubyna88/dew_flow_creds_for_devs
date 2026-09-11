@@ -1752,7 +1752,7 @@ what is under it:
   that sends neither header keeps the old last-write-wins behaviour, so an extension predating this
   still works. **`RequireAbsent` sat here unused for a while, and the gap was on the client:** the
   extension sent `If-Match` on every write except the one that creates a vault, so two of one
-  person's machines could both create one and the second silently won. Extension 0.10.2 sends it
+  person's machines could both create one and the second silently won. The extension sends it now
   (see *Conditional writes* in [module_extension.md](module_extension.md)); nothing changed on this
   side, and `ConcurrencyTests` had covered the server half since the feature landed.
 - **Inbox TTL is `Vault:ShareMaxAgeDays` (31).** A pending share and its sender-side receipt are

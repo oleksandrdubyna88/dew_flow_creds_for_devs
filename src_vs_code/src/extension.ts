@@ -542,21 +542,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             kind: resolveKind(node.details),
           };
     },
-    // The seventh: may this entry be used exactly ONCE? The broker then queues calls on it and
-    // refuses the second. Answered where the burn is decided, so there is one answer.
-    oneUseIn(storage),
-    // The eighth answers `creds ls`. Names and kinds only — the same registry the resolver
+    // The seventh answers `creds ls`. Names and kinds only — the same registry the resolver
     // reads, but a different disclosure: being handed every name is not the same as resolving
     // one you already know, which is why the broker takes them as two callbacks.
     () => listAliases(aliasMap()),
-    // The ninth answers the MCP server's one read route: the non-secret half of the entries
+    // The eighth answers the MCP server's one read route: the non-secret half of the entries
     // somebody opened to agents. Nothing appears until a switch is on, which is what stands in
     // for a token there — see `isMcpEntriesRoute`.
     () => mcpEntries.entries(),
     // The snippet route's supplier (T10): the same visibility wall as the listing, answered
     // for ONE id. A config an agent cannot list is a config this cannot name.
     (entityId) => visibleConfigDetails(storage, entityId),
-    // The ninth is the same question one rung up: may an agent USE this entry. A single callback
+    // The tenth is the same question one rung up: may an agent USE this entry. A single callback
     // because the lookup and the permission are one answer, and splitting them is how a route
     // ends up asking the first and forgetting the second.
     (entryId, action) => mcpUseLookup(storage, entryId, action),
@@ -573,9 +570,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // because there is no entry yet — and the set of open folders is the person's decision, which
     // is the whole of what stops an agent choosing where to put things.
     mcpCreateHooks(storage, () => mutated()),
-    // The twelfth: the config read route. A key rather than a grant, no consent modal, and every
+    // The eleventh: the config read route. A key rather than a grant, no consent modal, and every
     // attempt audited — the reasons are in `brokerProtocol.isConfigReadRoute`.
     configRouteSources(storage),
+    // Last, on the end on purpose: may this entry be used exactly ONCE? Answered where the burn
+    // is decided, so there is one answer. It went in the middle first and `creds ls` went blank.
+    oneUseIn(storage),
   );
   // The SSH agent: keys served from memory, every use confirmed, SSH_AUTH_SOCK injected into
   // new terminals. Nothing starts until a key is actually loaded.

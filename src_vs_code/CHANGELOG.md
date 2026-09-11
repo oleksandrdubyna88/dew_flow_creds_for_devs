@@ -44,23 +44,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
   Both are audit finding #3 of 2026-09-09; record in `research/PLAN_one_use_serialized.md`.
 
-### Fixed
-
-- **Two machines signing into the same account no longer lose one of the two vaults.** Every write
-  carried `If-Match` except the one that *creates* the vault — which is the write a new account
-  makes. Both machines read "nothing here", both wrote with no precondition, and the second
-  silently replaced the first: everything only in the losing vault gone, no error anywhere, and
-  nothing to merge from because that copy was never uploaded.
-
-  The client now says `If-None-Match: *` when it has read the vault and found none — the server has
-  understood that since conditional writes landed. And a refused write no longer just forgets the
-  version it held: forgetting means "write unconditionally", so a retry that skipped the re-read
-  used to overwrite exactly the work the refusal protected. It now says what to do and sends
-  nothing.
-
-  Audit finding #5; record in `research/PLAN_first_write_conditional.md`.
-
-### Security
 
 - **The agent broker now refuses requests that look like they came from a browser.** It is a loopback
   HTTP server, and a web page in your own browser is also on loopback — and nothing checked where a
@@ -188,6 +171,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
   Found by the 2026-09-09 product audit (finding #6); the record, including what the review gate changed,
   is in `research/PLAN_kdf_params_bounded.md`.
+
+### Fixed
+
+- **Two machines signing into the same account no longer lose one of the two vaults.** Every write
+  carried `If-Match` except the one that *creates* the vault — which is the write a new account
+  makes. Both machines read "nothing here", both wrote with no precondition, and the second
+  silently replaced the first: everything only in the losing vault gone, no error anywhere, and
+  nothing to merge from because that copy was never uploaded.
+
+  The client now says `If-None-Match: *` when it has read the vault and found none — the server has
+  understood that since conditional writes landed. And a refused write no longer just forgets the
+  version it held: forgetting means "write unconditionally", so a retry that skipped the re-read
+  used to overwrite exactly the work the refusal protected. It now says what to do and sends
+  nothing.
+
+  Audit finding #5; record in `research/PLAN_first_write_conditional.md`.
 
 ## [1.5.0] — a share that will not open says which of three things went wrong
 

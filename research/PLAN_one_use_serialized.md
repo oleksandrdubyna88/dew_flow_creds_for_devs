@@ -152,6 +152,33 @@ was inserted into the middle of `CredsAgentServer`'s constructor parameter list,
 `isOneUse` slot and `creds ls` went blank. Fixed there, and worth naming: that constructor has
 thirteen parameters.
 
+**The review gate found the fix broken in production and green in every test**, which is the most
+useful thing in this record. `burnAndMark` asked `isOneUse` AFTER the burn — and `isOneUse` is
+`oneUseIn(storage)`, which looks the node up, and the burn deletes that node. So the answer was
+always "not one-use", `markSpent` never ran, and a queued second call ran the action again. The
+harness could not show it: its stub answered `true` from a boolean, forever. The stub answers from
+`w.burned` now, the question is asked before the burn, and the test goes red with "the action must
+run once, ran 2".
+
+**And that exposed a second one underneath it.** The decision to QUEUE at all was also read from
+storage, so a call arriving after the first had finished saw an entry that no longer looked
+one-use, skipped the lane entirely, and ran. The lane is asked first now: it knows what this window
+has spent, storage knows what the entry is, and those two stop agreeing at the moment of the burn.
+
+**The lane is keyed by account AND entity.** A reviewer's: storage addresses an entry by both, so a
+bare id could mark one account's entry spent and refuse another's.
+
+**`isOneUse` moved to the END of the constructor's parameter list.** Two blocking findings, and they
+are right: the list is positional and long, inserting into the middle is what broke `creds ls`, and
+putting it last makes that class of mistake impossible for this parameter. The `undefined`
+placeholder the CLI harness needed is gone again.
+
+**The spent set is bounded at 512.** Four reviewers across three vendors. It cannot be pruned when
+an entry goes — it is the memory that refuses the second call — but it can have a ceiling, which is
+the house rule next door in `GrantRegistry` (`MAX_DENIED_TOMBSTONES`). Past it the oldest marker
+falls out and a second call on that entry meets the action's own "no longer exists", which is where
+it landed before this lane existed.
+
 ## Open tail
 
 - **`CredsAgentServer` takes thirteen positional constructor parameters**, and this change showed

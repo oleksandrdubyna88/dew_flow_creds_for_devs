@@ -375,6 +375,37 @@ alone sends a person looking for a bug in the extension.
 **Run in both configurations.** This change is about ordering under concurrency, so the server suite
 was run as Debug and as the shipping Release build — 766 of 766 in each.
 
+## A one-use entry, a call cap, and a conditional create (2026-09-11, audit findings #3 and #5)
+
+`oneUseAndCap.test.ts` (new), `grantTtl.test.ts`, `serverTransport.test.ts`. Harness:
+`src/test/brokerWorld.ts` — the real broker over real HTTP. Command: `npm test`, or
+`node --test out/test/oneUseAndCap.test.js`.
+
+| Flow | Status | What it holds down |
+|---|---|---|
+| Two concurrent calls on a one-use entry | covered | The action runs ONCE, the entry burns once, and the loser is told `not_found` |
+| The same, across **both doors** | covered | The token door and the MCP door are different grants for one entry; the lane is keyed by account+entity, never by token, so "one token, one use" is not what is being promised |
+| A call **after** the first has finished | covered | The distinct path, and the one the gate found: one-use is answered from STORAGE, a burned entry is not in storage, so a later call saw an entry that no longer looked one-use and skipped the queue. The lane decides before storage does |
+| An ordinary entry runs two calls **at once** | covered | Asserted as OVERLAP, not as a call count — a queue that ran both in turn leaves the identical record, and the first version of this test passed against a lane keyed by token |
+| A call cap of one, two concurrent calls | covered | One run, one shared dialog, and the loser told it ran out of CALLS rather than out of time |
+| A refused consent under a cap | covered | Spends nothing |
+| `reserve` is one step | covered | `grantTtl.test.ts`: the check and the count cannot be interleaved, and a refused reservation leaves no trace |
+| The create after a 404 | covered | `If-None-Match: *` on the wire, and the second machine refused rather than winning |
+| A 412, and what the next write may claim | covered | The retry never reaches the wire; a re-read restores the precondition; an ETag-less re-read does **not** turn the conflict back into a blind write |
+| A read or write with no ETag | covered | Forgets the version rather than holding one it cannot confirm — except a conflict, which survives |
+
+**What these do not prove.** The harness stubs the action, so nothing here exercises a real `ssh`
+exec behind a one-use entry, and nothing exercises two VS Code WINDOWS: a grant lives in one
+window's memory by design, so the lane is per window and two windows racing one entry is a
+different question (it is `PLAN_cross_window_write_coordination.md`'s). The `serverTransport` tests
+stub `fetch`; the server half of the precondition is the .NET suite's `ConcurrencyTests`.
+
+**A fixture that lied, recorded because it is the lesson.** `brokerWorld`'s one-use stub answered
+`true` unconditionally, including after the entry had burned. The product reads a node out of
+storage, so it answers `false` then — and `burnAndMark` asked the question *after* the burn, so the
+lane was never marked spent and a queued second call ran the action again. Every test passed. The
+stub answers from `w.burned` now, which is what made the defect visible.
+
 ## What none of them covers
 
 Named rather than implied, because the rule asks for exactly this.
