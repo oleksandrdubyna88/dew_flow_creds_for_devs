@@ -6,6 +6,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **A `creds` call over the forwarded socket works again.** The browser guard added in the previous
+  change checks that `Host` names this window's own loopback address and port — and the broker's
+  second listener has no port to name. That listener is a unix socket (a named pipe on Windows),
+  which is what Remote-SSH forwards and what the WSL bridge relays into: a caller reaching the
+  broker that way was never told a port, so the URL it composes cannot match, and every call by
+  NAME over the socket was refused with 403.
+
+  The check is skipped on that listener, which is not a hole: `Host` exists to stop DNS rebinding,
+  that is a browser attack, and no page can open a unix socket or a named pipe. The browser-header
+  checks still apply there, and the port listener is unchanged. What guards the socket is its file
+  mode — 0600 on POSIX — and the grant token, as before.
+
+  It reached `main` because the only thing exercising that path was a POSIX-only case in the CLI
+  integration suite. There are unit tests now, driving the real second listener on both platforms.
+
 ### Security
 
 - **The agent broker now refuses requests that look like they came from a browser.** It is a loopback

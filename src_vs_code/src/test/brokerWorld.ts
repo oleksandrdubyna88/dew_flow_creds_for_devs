@@ -80,6 +80,15 @@ function world(options: {
   mcpEntries?: Record<string, unknown>[];
   /** How an entry id resolves for an MCP use call. Absent means this window serves none. */
   mcpUse?: 'usable' | 'closed';
+  /**
+   * Where the window stores things — and, because it is what `socketPathFor` needs, the switch
+   * that makes the server open its SECOND listener (a unix socket, or a named pipe on Windows).
+   *
+   * <p>Absent for almost every test: a port is all they need, and a real window whose storage path
+   * is too long for the OS limit runs on the port alone. Pass it when the transport under test is
+   * the socket one — the door refused every alias call over it, and nothing here could see that.</p>
+   */
+  storageDir?: string;
   /** Whether this window can move entries to the Trash. Absent means it cannot. */
   trash?: boolean;
   /** How a create request is answered: accepted into a folder, refused, or not served at all. */
@@ -144,7 +153,7 @@ function world(options: {
     () => {
       w.presence += 1;
     },
-    undefined,
+    options.storageDir,
     maskerFor(w, options),
     burnerFor(w, options.burns),
     aliasResolverFor(options.alias),

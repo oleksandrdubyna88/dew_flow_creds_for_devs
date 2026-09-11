@@ -33,25 +33,57 @@ import { errorBody, statusForErrorCode } from './brokerProtocol';
  * construction rather than by every listener happening to route through one method. Both the
  * loopback port and the pipe are handed this.</p>
  *
- * <p>`note` is called at most once per window: the first browser-shaped request is worth telling a
- * person about, and the thousandth would flood the journal that exists to show what an AGENT did.</p>
+ * <p>Two of them are built, by `doorsFor` below: the port's door checks `Host`, the socket's cannot
+ * (see {@link NOT_ON_THE_NETWORK}). They share one `note`, so a person is told once per window and
+ * not once per listener.</p>
  */
 export function behindTheDoor(
   handle: (req: IncomingMessage, res: ServerResponse) => void,
-  at: () => Loopback,
+  at: () => DoorFacing,
   respond: (res: ServerResponse, status: number, body: unknown) => void,
-  note: (message: string) => void,
-): (req: IncomingMessage, res: ServerResponse) => void {
-  let said = false;
+  note: () => void,
+): Served {
   return (req, res) => {
     if (!turnAwayAtTheDoor(req.headers, at(), (status, body) => respond(res, status, body), res)) {
       handle(req, res);
       return;
     }
+    note();
+  };
+}
+
+/** A node request handler — the shape both listeners take. */
+export type Served = (req: IncomingMessage, res: ServerResponse) => void;
+
+/** One router, two listeners, two doors — because only one of them has a port. */
+export interface Doors {
+  readonly onThePort: Served;
+  readonly onTheSocket: Served;
+}
+
+/**
+ * Both doors onto one router.
+ *
+ * <p>Built together so the note is said at most ONCE per window rather than once per listener: the
+ * first browser-shaped request is worth telling a person about, and the thousandth would flood the
+ * journal that exists to show what an agent did.</p>
+ */
+export function doorsFor(
+  handle: Served,
+  port: () => number,
+  respond: (res: ServerResponse, status: number, body: unknown) => void,
+  note: (message: string) => void,
+): Doors {
+  let said = false;
+  const once = (): void => {
     if (!said) {
       said = true;
       note(REFUSAL_NOTE);
     }
+  };
+  return {
+    onThePort: behindTheDoor(handle, () => ({ port: port() }), respond, once),
+    onTheSocket: behindTheDoor(handle, () => NOT_ON_THE_NETWORK, respond, once),
   };
 }
 
@@ -71,7 +103,7 @@ const REFUSAL_NOTE =
  */
 export function turnAwayAtTheDoor(
   headers: IncomingHttpHeaders,
-  at: Loopback,
+  at: DoorFacing,
   respond: (status: number, body: unknown) => void,
   res: { setHeader(name: string, value: string): void },
 ): boolean {
@@ -89,6 +121,25 @@ export interface Loopback {
   readonly port: number;
 }
 
+/**
+ * The listener a browser cannot reach at all: a Unix socket on POSIX, a named pipe on Windows.
+ *
+ * <p>Both listeners share one handler, so this one inherited the `Host` check — and there is no
+ * `Host` it can pass. A caller that reaches the broker this way was never told a port (that is the
+ * point: the WSL bridge and Remote-SSH forward a socket precisely because no loopback port is
+ * reachable), so the URL it composes cannot name the one we are listening on. It broke the alias
+ * call over the socket, which is the bridge's whole reason for existing.</p>
+ *
+ * <p>Skipping the check here is not a hole, because `Host` does exactly one job: it stops DNS
+ * rebinding. That is a browser attack, and no page can open a Unix socket or a named pipe. What
+ * guards this transport is the file mode — 0600 on POSIX — and the grant token, as before. The
+ * browser-header checks still apply, because they cost nothing.</p>
+ */
+export const NOT_ON_THE_NETWORK = Symbol('a unix socket or named pipe — no browser can speak it');
+
+/** Which listener a request arrived on, since only one of them has a port to name. */
+export type DoorFacing = Loopback | typeof NOT_ON_THE_NETWORK;
+
 export interface DoorRefusal {
   readonly message: string;
 }
@@ -103,8 +154,13 @@ const REFUSED =
  * <p>Applied in `handle` before every route, including the ones that authenticate nothing, and for
  * both listeners, since they share one handler.</p>
  */
-export function admitsRequest(headers: IncomingHttpHeaders, at: Loopback): DoorRefusal | undefined {
-  return browserMarked(headers) || !loopbackHost(headers.host, at) ? { message: REFUSED } : undefined;
+export function admitsRequest(headers: IncomingHttpHeaders, at: DoorFacing): DoorRefusal | undefined {
+  return browserMarked(headers) || !addressedToUs(headers.host, at) ? { message: REFUSED } : undefined;
+}
+
+/** A socket has no address a `Host` could get wrong; a port has exactly one. */
+function addressedToUs(host: string | undefined, at: DoorFacing): boolean {
+  return at === NOT_ON_THE_NETWORK || loopbackHost(host, at);
 }
 
 /**
