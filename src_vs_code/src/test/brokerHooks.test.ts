@@ -25,7 +25,7 @@ test('a misspelled hook is refused, and the message says what was meant', () => 
     () => checkedHooks({ resolveAlais: () => undefined } as never),
     (error: Error) => {
       assert.match(error.message, /resolveAlais/, 'it names the key that is wrong');
-      assert.match(error.message, /resolveAlias/, 'and the eleven that are right');
+      assert.match(error.message, /resolveAlias/, 'and the twelve that are right');
       return true;
     },
   );
@@ -62,4 +62,36 @@ test('a value that is not a hook set at all is refused, not silently ignored', (
   assert.throws(() => checkedHooks('C:/storage' as never), /hooks/i);
   assert.throws(() => checkedHooks((() => undefined) as never), /hooks/i);
   assert.throws(() => checkedHooks(null as never), /hooks/i);
+});
+
+test('an object that is not a PLAIN object is refused, whatever it carries', () => {
+  // The gate found this one, and it is the guard failing at its own job: a `Map` holding the hooks
+  // has no own enumerable keys, so the stray-key check saw nothing wrong and every hook came out
+  // switched off — silently, which is the exact shape of the August failure.
+  assert.throws(() => checkedHooks(new Map([['listAliases', () => []]]) as never), /plain object/i);
+  assert.throws(() => checkedHooks(new Date() as never), /plain object/i);
+  assert.throws(() => checkedHooks(new (class Hooks {})() as never), /plain object/i);
+});
+
+test('a hook of the wrong KIND is refused, and the message says which and what', () => {
+  // Keys alone are not enough for the five untyped callers. `storageDir: 123` reaches `path.join`
+  // and throws somewhere later; `listAliases: 'yes'` is called and throws on the first `creds ls`.
+  // Both are this constructor's business, and both are one line to catch here.
+  assert.throws(() => checkedHooks({ storageDir: 123 } as never), /storageDir.*string/i);
+  assert.throws(() => checkedHooks({ listAliases: 'yes' } as never), /listAliases.*function/i);
+  assert.throws(() => checkedHooks({ mcpCreate: () => undefined } as never), /mcpCreate.*object/i);
+});
+
+test('the hooks the server keeps are its own, and frozen', () => {
+  // A caller that reuses its options object must not be able to switch a running window's feature
+  // off after the fact — the repository's immutability rule, and cheap to hold here.
+  const mine: Record<string, unknown> = { listAliases: () => [] };
+  const kept = checkedHooks(mine as never);
+
+  mine.listAliases = undefined;
+
+  assert.notEqual(kept.listAliases, undefined, 'the server holds a copy, not the caller object');
+  assert.throws(() => {
+    (kept as Record<string, unknown>).listAliases = undefined;
+  }, TypeError);
 });

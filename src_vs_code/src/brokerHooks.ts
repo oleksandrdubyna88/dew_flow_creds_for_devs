@@ -151,33 +151,50 @@ export interface BrokerHooks {
  * here, and every typechecked caller compiles while every server construction throws at startup.
  * {@link NAMES_MATCH_THE_INTERFACE} below makes that a compile error instead.</p>
  */
-export const BROKER_HOOK_NAMES = [
-  'storageDir',
-  'maskEntriesFor',
-  'burnAfterUse',
-  'isOneUse',
-  'resolveAlias',
-  'listAliases',
-  'listMcpEntries',
-  'visibleConfig',
-  'resolveMcpUse',
-  'moveToTrash',
-  'mcpCreate',
-  'configRoute',
-] as const;
+/**
+ * Every hook by name, and the KIND its value must be — the two things the guard checks.
+ *
+ * <p>One table rather than a list and a separate switch, because a hook added to one and not the
+ * other is the drift a reviewer warned about. {@link NAMES_MATCH_THE_INTERFACE} below turns that
+ * into a compile error rather than a startup one.</p>
+ *
+ * <p>The kinds are deliberately coarse — `string`, `function`, `object`. A schema would be a second
+ * description of the interface, which is the thing that drifts; these three catch what the five
+ * untyped callers can actually get wrong, which is passing the wrong ARGUMENT, not the wrong shape
+ * of the right one.</p>
+ */
+const HOOK_KINDS = {
+  storageDir: 'string',
+  maskEntriesFor: 'function',
+  burnAfterUse: 'function',
+  isOneUse: 'function',
+  resolveAlias: 'function',
+  listAliases: 'function',
+  listMcpEntries: 'function',
+  visibleConfig: 'function',
+  resolveMcpUse: 'function',
+  moveToTrash: 'function',
+  mcpCreate: 'object',
+  configRoute: 'object',
+} as const;
+
+/** The names {@link checkedHooks} accepts. Exported so the test can assert the guard's own list. */
+export const BROKER_HOOK_NAMES = Object.keys(HOOK_KINDS) as readonly (keyof typeof HOOK_KINDS)[];
+
+const KNOWN = new Set<string>(BROKER_HOOK_NAMES);
 
 /** True only when the two sets are the same set — in either direction. */
 type SameSet<A, B> = [A] extends [B] ? ([B] extends [A] ? true : never) : never;
 
 /**
  * A compile-time assertion, not a runtime one: adding a field to {@link BrokerHooks} without adding
- * its name above stops the build here, rather than at some window's startup.
+ * it to {@link HOOK_KINDS} stops the build here, rather than at some window's startup.
  */
-const NAMES_MATCH_THE_INTERFACE: SameSet<keyof BrokerHooks, (typeof BROKER_HOOK_NAMES)[number]> = true;
+const NAMES_MATCH_THE_INTERFACE: SameSet<keyof BrokerHooks, keyof typeof HOOK_KINDS> = true;
 void NAMES_MATCH_THE_INTERFACE;
 
 /**
- * The hooks, with every key checked against the interface.
+ * The hooks, checked and made the server's own.
  *
  * <p><b>Why a runtime check for something the compiler already knows.</b> Five of the seven callers
  * are `.cjs` integration scripts. TypeScript never reads them, so the whole benefit of naming these
@@ -185,36 +202,90 @@ void NAMES_MATCH_THE_INTERFACE;
  * construction — the field is optional, so absent is legal — and silence is what made the August
  * shift last a month.</p>
  *
- * <p>An explicitly `undefined` value is fine: several windows switch a hook off that way on purpose,
- * and so does every call site migrating from the positional form. It is the KEY that is checked,
- * never the value.</p>
+ * <p>Three things are refused, and each of them used to be accepted as "no hooks at all":</p>
+ * <ul>
+ *   <li>anything that is <b>not a plain object</b>. A `Map` carrying the hooks has no own
+ *       enumerable keys, so the key check saw nothing wrong and every hook came out off — the guard
+ *       failing at its own job, found by the review gate. A string or a number in that position is
+ *       the half-migrated `.cjs` shape, still passing the old third positional argument;</li>
+ *   <li>a <b>key that is not a hook</b>, named alongside the twelve that are;</li>
+ *   <li>a <b>value of the wrong kind</b>. `storageDir: 123` reaches `path.join` and throws
+ *       somewhere later; `listAliases: 'yes'` throws on the first `creds ls`. Both belong here.</li>
+ * </ul>
  *
- * <p>Nothing at all is fine too — a build with no vault is a real build. Anything that is not a set
- * of hooks is NOT: a string in that position is the half-migrated `.cjs` shape, where the old third
- * positional argument is still being passed, and ignoring it would switch every hook off at once.</p>
+ * <p>An explicitly `undefined` value is fine throughout: several windows switch a hook off that way
+ * on purpose. Nothing at all is fine too — a build with no vault is a real build.</p>
+ *
+ * <p>What comes back is a FROZEN COPY. A caller that reuses its options object must not be able to
+ * switch a running window's feature off after the fact.</p>
  */
 export function checkedHooks(hooks: BrokerHooks | undefined): BrokerHooks {
   if (hooks === undefined) {
-    return {};
+    return Object.freeze({});
   }
-  if (!isHookSet(hooks)) {
-    throw new Error(`The broker's hooks must be an object of named hooks, not ${describe(hooks)}.`);
+  if (!isPlainObject(hooks)) {
+    throw new Error(`The broker's hooks must be a plain object of named hooks, not ${describe(hooks)}.`);
   }
-  const stray = Object.keys(hooks).filter((key) => !(BROKER_HOOK_NAMES as readonly string[]).includes(key));
+  refuseStrayKeys(hooks);
+  refuseWrongKinds(hooks);
+  return Object.freeze({ ...hooks });
+}
+
+function refuseStrayKeys(hooks: Record<string, unknown>): void {
+  const stray = Object.keys(hooks).filter((key) => !KNOWN.has(key));
   if (stray.length > 0) {
     throw new Error(
       `Not a broker hook: ${stray.join(', ')}. Expected any of: ${BROKER_HOOK_NAMES.join(', ')}.`,
     );
   }
-  return hooks;
 }
 
-/** A plain object, which is the only thing whose KEYS mean anything. */
-function isHookSet(value: unknown): value is BrokerHooks {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
+function refuseWrongKinds(hooks: Record<string, unknown>): void {
+  for (const [key, value] of Object.entries(hooks)) {
+    const wanted = HOOK_KINDS[key as keyof typeof HOOK_KINDS];
+    if (value !== undefined && typeof value !== wanted) {
+      throw new Error(`The broker hook ${key} must be a ${wanted}, not ${describe(value)}.`);
+    }
+  }
 }
 
-/** Enough to recognise what was passed, without putting a callback's source in an error. */
+/**
+ * A plain object, which is the only thing whose KEYS describe it.
+ *
+ * <p>`Object.create(null)` counts: it has no prototype, and nothing here reads one.</p>
+ */
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  if (typeof value !== 'object' || value === null) {
+    return false;
+  }
+  const proto: unknown = Object.getPrototypeOf(value);
+  return proto === Object.prototype || proto === null;
+}
+
+/**
+ * Enough to recognise what was passed — the type, and for a primitive the value itself, because a
+ * developer migrating from the positional form needs to see their own argument to recognise it.
+ * Never a function's source, and never an object's contents.
+ */
 function describe(value: unknown): string {
-  return Array.isArray(value) ? 'an array' : value === null ? 'null' : typeof value;
+  if (value === null) {
+    return 'null';
+  }
+  if (typeof value === 'function') {
+    return 'a function';
+  }
+  return typeof value === 'object' ? `a ${constructorName(value)}` : `${typeof value} ${quoted(value)}`;
+}
+
+/**
+ * The primitive itself, so a developer migrating from the positional form recognises their own
+ * argument. A string is quoted; nothing here goes through `JSON.stringify`, which this repository
+ * refuses inside a template literal — see `scriptInterpolation.test.ts`.
+ */
+function quoted(value: unknown): string {
+  return typeof value === 'string' ? `"${value}"` : String(value);
+}
+
+function constructorName(value: object): string {
+  return Array.isArray(value) ? 'array' : (value.constructor?.name ?? 'object');
 }

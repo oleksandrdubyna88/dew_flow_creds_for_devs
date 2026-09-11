@@ -1,4 +1,5 @@
 import { resolveKind } from './entityKind';
+import { EntityMetadata } from './types';
 /**
  * The names a terminal may use: `creds ssh prod-db` instead of a token pasted from a snippet.
  *
@@ -113,7 +114,7 @@ export function listAliases(map: AliasMap): { name: string; kind: string }[] {
  * every call, and this is the same rule one rung up.</p>
  */
 export function aliasEntry(
-  storage: { getNode(accountId: string, entityId: string): { name: string; details?: unknown } | undefined },
+  storage: AliasNodeSource,
   map: AliasMap,
   name: string,
 ): { accountId: string; entityId: string; entityName: string; kind: string } | undefined {
@@ -126,6 +127,20 @@ export function aliasEntry(
     accountId: alias.accountId,
     entityId: alias.entityId,
     entityName: node.name,
-    kind: resolveKind(node.details as never),
+    kind: resolveKind(node.details),
   };
+}
+
+/**
+ * What this needs of storage, and no more — the node's name and its metadata.
+ *
+ * <p>`details` is `EntityMetadata` rather than `unknown` with a cast: a reviewer pointed out that
+ * the cast erased the contract, so narrowing what `resolveKind` accepts would not force this seam
+ * to follow. Stated, it is the compiler's problem instead of a future reader's.</p>
+ */
+export interface AliasNodeSource {
+  getNode(
+    accountId: string,
+    entityId: string,
+  ): { readonly name: string; readonly details?: EntityMetadata } | undefined;
 }
