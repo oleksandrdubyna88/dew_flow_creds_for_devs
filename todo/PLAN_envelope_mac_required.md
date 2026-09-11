@@ -58,7 +58,7 @@ Two adjacent facts that make the fix cheap:
 
 ### 0. Prerequisite — the KDF parameters are bounded first
 
-[PLAN_kdf_params_bounded.md](PLAN_kdf_params_bounded.md) lands **before** this plan (gate round 1,
+[PLAN_kdf_params_bounded.md](../research/PLAN_kdf_params_bounded.md) landed **before** this plan (gate round 1,
 codex): every entry point below unwraps before it can verify, so an unsigned v4 envelope with an
 extreme `kdfP` would still cost the derivation before being called tampered. With the accepted
 parameter set pinned, the unwrap costs what the owner chose, and this plan's test table gains one row:
