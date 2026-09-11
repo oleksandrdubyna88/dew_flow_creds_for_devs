@@ -16,7 +16,6 @@ public sealed partial class VaultStore
     private readonly string _vaultsDir;
     private readonly string _sharesDir;
 
-
     public VaultStore(string dataDir)
     {
         _dataDir = dataDir;
@@ -171,20 +170,95 @@ public sealed partial class VaultStore
         return emails;
     }
 
-    /// <summary>Delete a vault, its owner sidecar, and the owner's whole inbox.</summary>
-    public void DeleteEverythingFor(string email)
+    /// <summary>
+    /// What a deletion actually managed to remove. <c>true</c> also means "was not there".
+    /// </summary>
+    /// <param name="Refusal">
+    /// Why a component would not go, for the caller to write down. Carried out rather than logged
+    /// here: the endpoint is where the person-facing decision is made and where a logger already
+    /// exists, and a store that logs would have to be constructed with one before the host is built.
+    /// </param>
+    public sealed record VaultDeletion(bool VaultGone, bool OwnerGone, bool InboxGone, Exception? Refusal = null);
+
+    /// <summary>
+    /// Delete a vault, its owner sidecar and the owner's whole inbox — and say what happened.
+    /// </summary>
+    /// <remarks>
+    /// <para>It used to return <c>void</c> and swallow a locked file in silence, so the endpoint
+    /// carried on and removed the login key S from a vault that was still there (audit 2026-09-09,
+    /// finding #4). On a corporate server every developer wrap is sealed to S, which makes a vault
+    /// that outlives its key a vault nobody can OPEN — the one leftover this design will not take.</para>
+    ///
+    /// <para><b>The vault goes FIRST and alone.</b> If it will not go, nothing else is attempted:
+    /// the caller answers "nothing else was removed", and that has to be true rather than nearly
+    /// true, or a retry runs against a state the first attempt already changed.</para>
+    ///
+    /// <para><b>The gate is held for the caller's continuation too</b>, through <paramref name="whileHeld"/>.
+    /// Releasing it when the vault was gone left a window for a concurrent PUT to recreate the vault
+    /// before the endpoint removed S — the same "a vault nobody can open" outcome by a different
+    /// door, and the review gate's finding against this change's first design. Whatever must be
+    /// indivisible from the deletion runs inside that callback; it must not take this gate again,
+    /// because a <see cref="SemaphoreSlim"/> is not re-entrant.</para>
+    ///
+    /// <para>The gate is <see cref="GateFor"/> on <see cref="KeyFor"/>(email) — the same lock identity
+    /// <see cref="TryWriteVaultAsync"/> takes, which is what makes a write and a delete for one person
+    /// mutually exclusive.</para>
+    /// </remarks>
+    public async Task<VaultDeletion> DeleteEverythingForAsync(
+        string email,
+        Func<CancellationToken, Task> whileHeld,
+        CancellationToken ct)
     {
         var key = KeyFor(email);
-        foreach (var suffix in new[] { ".bin", ".email" })
+        var gate = GateFor(key);
+        await gate.WaitAsync(ct);
+        try
         {
-            try { File.Delete(Path.Combine(_vaultsDir, key + suffix)); }
-            catch (IOException) { }
-            catch (UnauthorizedAccessException) { }
+            var vault = Removed(Path.Combine(_vaultsDir, key + ".bin"));
+            if (vault is not null)
+            {
+                return new VaultDeletion(false, false, false, vault);
+            }
+            var owner = Removed(Path.Combine(_vaultsDir, key + ".email"));
+            var inbox = RemovedTree(Path.Combine(_sharesDir, key));
+            await whileHeld(ct);
+            return new VaultDeletion(true, owner is null, inbox is null, owner ?? inbox);
         }
-        try { Directory.Delete(Path.Combine(_sharesDir, key), recursive: true); }
-        catch (DirectoryNotFoundException) { }
-        catch (IOException) { }
-        catch (UnauthorizedAccessException) { }
+        finally
+        {
+            gate.Release();
+        }
+    }
+
+    /// <summary>Delete one file. <c>null</c> means gone — absent counts as gone; otherwise, why not.</summary>
+    private static Exception? Removed(string path)
+    {
+        try
+        {
+            File.Delete(path);
+            return null;
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            return e;
+        }
+    }
+
+    private static Exception? RemovedTree(string path)
+    {
+        try
+        {
+            Directory.Delete(path, recursive: true);
+            return null;
+        }
+        catch (DirectoryNotFoundException)
+        {
+            return null;
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            return e;
+        }
     }
 
     /// <summary>Record the plaintext email beside a vault so the team can be listed.</summary>

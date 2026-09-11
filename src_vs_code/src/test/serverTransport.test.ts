@@ -491,3 +491,22 @@ test('a share that is already gone is not a failure — the end state is the one
   await new ServerTransport('https://vault.example.com', async () => 'token', 500)
     .removeShare(account, pending, 'declined');
 });
+
+test('a refused DELETE quotes what the server said, not just the number', async () => {
+  // Audit finding #4: a 503 here means the vault file was locked and NOTHING was removed — the login
+  // key included, which is the whole point of the refusal. "HTTP 503" alone sends a person looking
+  // for a bug in the extension; the server's sentence tells them to try again.
+  const said =
+    'The vault could not be deleted right now — the file is locked or not writable on the server. '
+    + 'Nothing else was removed, including the login key. Try again.';
+  globalThis.fetch = (() =>
+    Promise.resolve(new Response(said, { status: 503 }))) as unknown as typeof fetch;
+  const transport = new ServerTransport('https://vault.example.com', async () => 'token', 40);
+
+  await assert.rejects(transport.deleteVault(account), (e: unknown) => {
+    const message = (e as Error).message;
+    assert.match(message, /Nothing else was removed, including the login key/);
+    assert.match(message, /503/);
+    return true;
+  });
+});
