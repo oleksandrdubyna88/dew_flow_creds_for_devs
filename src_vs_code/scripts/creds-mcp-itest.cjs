@@ -271,27 +271,21 @@ const HANDSHAKE = [
     }),
   );
 
-  const server = new CredsAgentServer(
-    actions,
-    () => {},
+  // Named, since 2026-09-11. The warning this block used to carry is the reason: these arguments
+  // were POSITIONAL, and when `visibleConfig` was added (32d8f01, 2026-08-27) every lambda after it
+  // shifted one place, the permission gate became the config supplier, and nineteen checks here
+  // failed with "no window answered" for a MONTH, unseen. A hook cannot land in another's slot now,
+  // and a key that is not a hook is refused at construction rather than read as "switched off".
+  const server = new CredsAgentServer(actions, () => {}, {
     storageDir,
     // The masker, reading what is STORED — which after a rotation is the new value. This is the
     // last line between a statement that echoes its own argument and an agent that reads it.
-    () => Promise.resolve(storedSecrets.map((value) => ({ value, label: 'DB_PASSWORD' }))),
-    undefined,
-    undefined,
-    undefined,
-    () => Promise.resolve(ENTRIES),
-    // `visibleConfig` — no config entries in this fixture. It is spelled out rather than left to
-    // the end of the list because these arguments are POSITIONAL: when this parameter was added
-    // (32d8f01, 2026-08-27) every lambda after it silently shifted one place, the gate became the
-    // config supplier, and nineteen checks here failed with "no window answered" — for a month,
-    // unseen, because this script is not in CI. If a parameter is added again, count from here.
-    undefined,
+    maskEntriesFor: () => Promise.resolve(storedSecrets.map((value) => ({ value, label: 'DB_PASSWORD' }))),
+    listMcpEntries: () => Promise.resolve(ENTRIES),
     // The gate the whole route exists for, and it is PER ACTION: `e-1` may be used, and may be
     // rotated only because this fixture says its `edit` switch is on too; `e-use-only` may be
     // used and NOT rotated, which is the rung the ladder exists to keep apart.
-    (id, action) => {
+    resolveMcpUse: (id, action) => {
       const target = (name) => ({ accountId: 'a-1', entityId: id, entityName: name, kind: 'db' });
       if (id === 'e-1') {
         // Used and rotated, NOT deleted: an entry whose `edit` switch is on and whose delete
@@ -316,12 +310,12 @@ const HANDSHAKE = [
         : undefined;
     },
     // Moving to the Trash, recorded. Never `deleteNodeRecursive` — an agent has no route to it.
-    (_accountId, entityId) => {
+    moveToTrash: (_accountId, entityId) => {
       trashed.push(entityId);
       return Promise.resolve(true);
     },
     // One folder open to creation, so the agent names none — and could not choose another.
-    {
+    mcpCreate: {
       choose: (body) =>
         // A kind this window does not make is refused before anybody is prompted, and recorded
         // as the one outcome the journal's "could not generate" filter counts.
@@ -343,7 +337,7 @@ const HANDSHAKE = [
         return Promise.resolve({ id: 'new-1', name: String(body.name) });
       },
     },
-  );
+  });
   // Starting the broker is what writes the announcement the binary discovers. `share` is the
   // only way in, and the grant it mints is never used here — the route under test needs none.
   await server.share('a-1', 'e-1', 'orders-db', 'db');
@@ -707,7 +701,7 @@ const HANDSHAKE = [
   // what a person opening one would get. Raising the limit for the test would have deleted the
   // property being relied on everywhere else in this file.
   const folderStorageDir = fs.mkdtempSync(path.join(os.tmpdir(), 'creds-mcp-itest-folders-'));
-  const folderServer = new CredsAgentServer(new UseActionRegistry(), () => {}, folderStorageDir);
+  const folderServer = new CredsAgentServer(new UseActionRegistry(), () => {}, { storageDir: folderStorageDir });
   folderServer.setFolderHooks(folderHooks(storage, () => {}));
   await folderServer.ensureStarted();
   const folderEnv = { CREDS_ENDPOINT_DIR: path.join(folderStorageDir, 'endpoints') };

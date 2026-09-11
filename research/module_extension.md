@@ -3459,6 +3459,31 @@ arbitrary cuts: `brokerMcpRoutes.ts` holds the dispatch that `credsAgentServer.t
 can no longer carry, and `wslProcess.ts` holds `runWsl`/`runWslRaw` — extracted from `extension.ts`
 when the MCP install needed them, one of which carries a measured UTF-16LE rule.
 
+**What the broker asks of the vault's side, it asks BY NAME** (`brokerHooks.ts`). `CredsAgentServer`
+took fourteen positional constructor parameters, eleven of them optional callbacks of much the same
+shape — so inserting one in the middle handed every argument after it to the wrong slot, and no type
+could see it, because a lambda fits another lambda's hole. It happened twice, silently both times:
+`visibleConfig` in August (the permission gate became the config supplier, and nineteen checks in an
+integration script failed for a MONTH before anybody ran it) and `isOneUse` on 2026-09-11
+(`listAliases` landed in its slot and `creds ls` answered "no entry is enabled for the CLI yet").
+Five of the seven construction sites are `.cjs` integration scripts, where TypeScript never looks,
+and one of those five is still not in CI.
+
+Two required positionals now — an action registry and "somebody is here" — and one `BrokerHooks`
+object for everything else, `storageDir` included. **That last one is the part worth stating**: it
+was going to stay a third positional, and a reviewer pointed out that an optional positional in
+front of an options object rebuilds the same trap, since `new CredsAgentServer(actions, present,
+{ listAliases })` binds the object to the string and leaves every hook off.
+
+**And the keys are checked, not trusted.** Naming them trades one failure for a quieter one:
+positional got the SLOT wrong, which broke something visibly; named gets the KEY wrong, and every
+hook here is optional, so `resolveAlais` is not an error but a feature switched off in silence.
+`checkedHooks` refuses an unknown key at construction, naming it and listing the twelve — and it runs
+in the constructor rather than only in a test, which is the form three reviewers asked for
+independently. A compile-time assertion pins the name tuple to the interface, so a hook added to one
+and not the other stops the build instead of every window's startup. Record:
+[PLAN_broker_hooks_object.md](PLAN_broker_hooks_object.md).
+
 **Where each piece lives.**
 
 | Module | What it decides |

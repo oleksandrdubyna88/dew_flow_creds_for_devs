@@ -247,26 +247,19 @@ async function main() {
     run: (_ctx, body) => Promise.resolve({ status: 200, body: { exitCode: 0, rows: 1, stdout: String(body.query ?? '') } }),
   });
 
-  const server = new CredsAgentServer(
-    actions,
-    () => {},
+  // Named, since 2026-09-11: these used to be positional, and this script carried a warning about
+  // adding one in the middle because its Windows sibling spent a month reporting "no window
+  // answered" after exactly that. A key that is not a hook is now refused at construction.
+  const server = new CredsAgentServer(actions, () => {}, {
     storageDir,
-    () => Promise.resolve([{ value: WINDOW_SECRET, label: 'DB_PASSWORD' }]),
-    undefined,
-    undefined,
-    undefined,
-    () => Promise.resolve(ENTRIES),
-    // `visibleConfig` — none here. Spelled out because these arguments are positional and adding
-    // one to the constructor shifts every lambda below it; that is exactly how this script's
-    // Windows sibling spent a month reporting "no window answered" for calls the bridge carried
-    // perfectly well.
-    undefined,
-    (id, action) =>
+    maskEntriesFor: () => Promise.resolve([{ value: WINDOW_SECRET, label: 'DB_PASSWORD' }]),
+    listMcpEntries: () => Promise.resolve(ENTRIES),
+    resolveMcpUse: (id, action) =>
       id === 'e-wsl-1' && action !== 'delete'
         ? { kind: 'usable', target: { accountId: 'a-1', entityId: id, entityName: 'orders-db', kind: 'db' } }
         : { kind: 'closed', entityName: 'orders-db', needed: 'delete' },
-    () => Promise.resolve(false),
-    {
+    moveToTrash: () => Promise.resolve(false),
+    mcpCreate: {
       // One folder open to creation, so the agent names none and could not choose another.
       choose: (body) => ({
         ok: true,
@@ -284,7 +277,7 @@ async function main() {
         return Promise.resolve({ id: 'new-wsl-1', name: String(body.name) });
       },
     },
-  );
+  });
   // Sharing is what starts the broker, which is what writes the announcement the binary finds.
   await server.share('a-1', 'e-wsl-1', 'orders-db', 'db');
 

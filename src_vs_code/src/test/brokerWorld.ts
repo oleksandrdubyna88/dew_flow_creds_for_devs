@@ -105,6 +105,11 @@ function world(options: {
   trash?: boolean;
   /** How a create request is answered: accepted into a folder, refused, or not served at all. */
   create?: 'open' | 'closed';
+  /**
+   * Hooks passed STRAIGHT through, unshaped — for the one test that asks what the server does with
+   * a key that is not a hook at all. Everything else should use the options above.
+   */
+  hooks?: Record<string, unknown>;
   supports?: string[];
 }): World {
   const w: World = {
@@ -169,22 +174,34 @@ function world(options: {
     () => {
       w.presence += 1;
     },
-    options.storageDir,
-    maskerFor(w, options),
-    burnerFor(w, options.burns),
-    aliasResolverFor(options.alias),
-    options.aliasList === undefined ? undefined : () => options.aliasList ?? [],
-    mcpEntriesFor(options.mcpEntries),
-    options.visibleConfig,
-    mcpUseFor(options.mcpUse),
-    trashFor(w, options.trash),
-    createFor(w, options.create),
-    undefined,
-    // Last, where every new optional hook goes: whether the entry a grant points at may be used
-    // exactly once. `oneUse` is the option a person picks in the entry form.
-    oneUseFor(w, options.oneUse),
+    hooksFor(w, options),
   );
   return w;
+}
+
+/**
+ * The window's hooks, shaped from the options a test asked for.
+ *
+ * <p>Lifted out of `world` so it stays under the complexity limit, and named rather than positional
+ * since 2026-09-11: eleven same-shaped optional callbacks in a parameter list is how `creds ls` went
+ * blank. `options.hooks` rides through unshaped for the ONE test that asks what the server does
+ * with a key that is not a hook at all.</p>
+ */
+function hooksFor(w: World, options: Parameters<typeof world>[0]): Record<string, unknown> {
+  return {
+    ...(options.hooks ?? {}),
+    storageDir: options.storageDir,
+    maskEntriesFor: maskerFor(w, options),
+    burnAfterUse: burnerFor(w, options.burns),
+    isOneUse: oneUseFor(w, options.oneUse),
+    resolveAlias: aliasResolverFor(options.alias),
+    listAliases: options.aliasList === undefined ? undefined : () => options.aliasList ?? [],
+    listMcpEntries: mcpEntriesFor(options.mcpEntries),
+    visibleConfig: options.visibleConfig,
+    resolveMcpUse: mcpUseFor(options.mcpUse),
+    moveToTrash: trashFor(w, options.trash),
+    mcpCreate: createFor(w, options.create),
+  };
 }
 
 /* The broker's three optional collaborators, each absent unless a test asks for it — which is

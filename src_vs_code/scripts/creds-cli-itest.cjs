@@ -133,15 +133,11 @@ const action = (kind, verb, run) => ({
   actions.register(action('vpn', 'down', async () => ({ status: 200, body: { opened: false } })));
 
   const aliases = { 'itest-alias': { accountId: 'a-1', entityId: ENTITY.id, entityName: ENTITY.name, kind: 'ssh' } };
-  const server = new CredsAgentServer(
-    actions,
-    () => {},
+  const server = new CredsAgentServer(actions, () => {}, {
     storageDir,
-    undefined,
-    undefined,
-    (name) => aliases[name],
-    () => Object.entries(aliases).map(([name, a]) => ({ name, kind: a.kind })),
-  );
+    resolveAlias: (name) => aliases[name],
+    listAliases: () => Object.entries(aliases).map(([name, a]) => ({ name, kind: a.kind })),
+  });
 
   const token = await server.share('a-1', ENTITY.id, ENTITY.name, 'ssh');
   const { port } = parseToken(token);

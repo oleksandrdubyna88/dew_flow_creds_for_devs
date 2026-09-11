@@ -65,7 +65,7 @@ import { Machine } from './installCommand';
 import { PhaseTimer, timed } from './startupTiming';
 import { toWslPath } from './wslRelay';
 import { DEFAULT_DISTRO, WslRelayManager, spawnWslRelay } from './wslRelayManager';
-import { AliasMap, aliasFor, listAliases, resolveAlias } from './cliAliases';
+import { AliasMap, aliasEntry, aliasFor, listAliases } from './cliAliases';
 import { EphemeralSweeper } from './ephemeralSweeper';
 import { oneUseIn } from './entityExpiry';
 import { maskEntriesFor } from './maskEntries';
@@ -514,69 +514,55 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // a credential (run a command, open the terminal) without ever receiving it.
   // Constructed cheaply here; it opens no socket until the first share.
   const useActions = new UseActionRegistry();
-  // The fourth argument is what makes masking live: the broker asks for the grant entity's own
-  // secret values and redacts them out of whatever the agent is about to read.
-  const agentServer = new CredsAgentServer(
-    useActions,
-    () => vaultKeys.noteUserActivity(),
+  // Named rather than positional, and every one of them answered on the vault's side of the wall:
+  // this class holds grants, not stored records, so it should no more read `burnPolicy` than it
+  // reads a password. `brokerHooks.ts` carries the record of what the positional list cost.
+  const agentServer = new CredsAgentServer(useActions, () => vaultKeys.noteUserActivity(), {
     storageDir,
-    (accountId, entityId) => maskEntriesFor(storage, accountId, entityId),
-    // The fifth makes "until an agent uses it once" real: a successful call destroys the
-    // entry through the one deletion path, tombstone and revision history included.
-    burnOneUseIn(storage, () => provider.refresh()),
-    // The sixth lets `creds ssh prod-db` name an entry instead of pasting a token. The
-    // registry holds only which entry a name points at — never a token and never a secret —
-    // so an alias says WHICH, and the consent modal still says WHETHER.
-    (name) => {
-      const alias = resolveAlias(aliasMap(), name);
-      if (alias === undefined) {
-        return undefined;
-      }
-      const node = storage.getNode(alias.accountId, alias.entityId);
-      return node === undefined
-        ? undefined
-        : {
-            accountId: alias.accountId,
-            entityId: alias.entityId,
-            entityName: node.name,
-            kind: resolveKind(node.details),
-          };
-    },
-    // The seventh answers `creds ls`. Names and kinds only — the same registry the resolver
-    // reads, but a different disclosure: being handed every name is not the same as resolving
-    // one you already know, which is why the broker takes them as two callbacks.
-    () => listAliases(aliasMap()),
-    // The eighth answers the MCP server's one read route: the non-secret half of the entries
-    // somebody opened to agents. Nothing appears until a switch is on, which is what stands in
-    // for a token there — see `isMcpEntriesRoute`.
-    () => mcpEntries.entries(),
-    // The snippet route's supplier (T10): the same visibility wall as the listing, answered
-    // for ONE id. A config an agent cannot list is a config this cannot name.
-    (entityId) => visibleConfigDetails(storage, entityId),
-    // The tenth is the same question one rung up: may an agent USE this entry. A single callback
-    // because the lookup and the permission are one answer, and splitting them is how a route
-    // ends up asking the first and forgetting the second.
-    (entryId, action) => mcpUseLookup(storage, entryId, action),
-    // The tenth: an agent deleting. To the Trash, always — `deleteNodeRecursive` is the one real
-    // deletion path and an agent never reaches it, which is what made this permission grantable.
-    async (accountId, entityId) => {
+    // What makes masking live: the broker asks for the grant entity's own secret values and
+    // redacts them out of whatever the agent is about to read.
+    maskEntriesFor: (accountId, entityId) => maskEntriesFor(storage, accountId, entityId),
+    // What makes "until an agent uses it once" real: a successful call destroys the entry through
+    // the one deletion path, tombstone and revision history included.
+    burnAfterUse: burnOneUseIn(storage, () => provider.refresh()),
+    // And what makes it true for two calls that arrive together: the broker queues such an entry
+    // and refuses the second. Answered where the burn is decided, so there is one answer.
+    isOneUse: oneUseIn(storage),
+    // Lets `creds ssh prod-db` name an entry instead of pasting a token. The registry holds only
+    // which entry a name points at — never a token and never a secret — so an alias says WHICH,
+    // and the consent modal still says WHETHER.
+    resolveAlias: (name) => aliasEntry(storage, aliasMap(), name),
+    // `creds ls`. Names and kinds only — the same registry the resolver reads, but a different
+    // disclosure: being handed every name is not the same as resolving one you already know,
+    // which is why the broker takes them as two hooks.
+    listAliases: () => listAliases(aliasMap()),
+    // The MCP server's one read route: the non-secret half of the entries somebody opened to
+    // agents. Nothing appears until a switch is on, which is what stands in for a token there.
+    listMcpEntries: () => mcpEntries.entries(),
+    // The snippet route's supplier (T10): the same visibility wall as the listing, answered for
+    // ONE id. A config an agent cannot list is a config this cannot name.
+    visibleConfig: (entityId) => visibleConfigDetails(storage, entityId),
+    // The same question one rung up: may an agent USE this entry. A single hook because the
+    // lookup and the permission are one answer, and splitting them is how a route ends up asking
+    // the first and forgetting the second.
+    resolveMcpUse: (entryId, action) => mcpUseLookup(storage, entryId, action),
+    // An agent deleting. To the Trash, always — `deleteNodeRecursive` is the one real deletion
+    // path and an agent never reaches it, which is what made this permission grantable.
+    moveToTrash: async (accountId, entityId) => {
       const moved = await moveEntryToTrash(storage, accountId, entityId);
       if (moved) {
         mutated();
       }
       return moved;
     },
-    // The eleventh and last: where an agent may create, and how. The gate is a FOLDER's switch,
-    // because there is no entry yet — and the set of open folders is the person's decision, which
-    // is the whole of what stops an agent choosing where to put things.
-    mcpCreateHooks(storage, () => mutated()),
-    // The eleventh: the config read route. A key rather than a grant, no consent modal, and every
-    // attempt audited — the reasons are in `brokerProtocol.isConfigReadRoute`.
-    configRouteSources(storage),
-    // Last, on the end on purpose: may this entry be used exactly ONCE? Answered where the burn
-    // is decided, so there is one answer. It went in the middle first and `creds ls` went blank.
-    oneUseIn(storage),
-  );
+    // Where an agent may create, and how. The gate is a FOLDER's switch, because there is no entry
+    // yet — and the set of open folders is the person's decision, which is the whole of what stops
+    // an agent choosing where to put things.
+    mcpCreate: mcpCreateHooks(storage, () => mutated()),
+    // The config read route. A key rather than a grant, no consent modal, and every attempt
+    // audited — the reasons are in `brokerProtocol.isConfigReadRoute`.
+    configRoute: configRouteSources(storage),
+  });
   // The SSH agent: keys served from memory, every use confirmed, SSH_AUTH_SOCK injected into
   // new terminals. Nothing starts until a key is actually loaded.
   const sshAgent = new SshAgentManager(

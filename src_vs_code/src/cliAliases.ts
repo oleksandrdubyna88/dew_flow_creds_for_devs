@@ -1,3 +1,4 @@
+import { resolveKind } from './entityKind';
 /**
  * The names a terminal may use: `creds ssh prod-db` instead of a token pasted from a snippet.
  *
@@ -101,4 +102,30 @@ export function listAliases(map: AliasMap): { name: string; kind: string }[] {
   return Object.entries(map)
     .map(([name, alias]) => ({ name, kind: alias.kind }))
     .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/**
+ * The entry a name points at, as the broker's `resolveAlias` hook wants it.
+ *
+ * <p>Two steps that were an inline lambda at the one call site: the alias says WHICH entry, and
+ * storage says whether it is still there and what it is called now. A name pointing at a deleted
+ * entry resolves to nothing rather than to a stale label — the broker re-reads the live entity on
+ * every call, and this is the same rule one rung up.</p>
+ */
+export function aliasEntry(
+  storage: { getNode(accountId: string, entityId: string): { name: string; details?: unknown } | undefined },
+  map: AliasMap,
+  name: string,
+): { accountId: string; entityId: string; entityName: string; kind: string } | undefined {
+  const alias = resolveAlias(map, name);
+  const node = alias === undefined ? undefined : storage.getNode(alias.accountId, alias.entityId);
+  if (alias === undefined || node === undefined) {
+    return undefined;
+  }
+  return {
+    accountId: alias.accountId,
+    entityId: alias.entityId,
+    entityName: node.name,
+    kind: resolveKind(node.details as never),
+  };
 }
