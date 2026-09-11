@@ -14,19 +14,18 @@ import {
   parseUseRoute,
   statusForErrorCode,
 } from './brokerProtocol';
+import { BrokerHooks, checkedHooks } from './brokerHooks';
 import { doorsFor } from './brokerOrigin';
 import { CallSubject, performCall } from './brokerCall';
 import { OneUseLane, burnAndMark } from './oneUseLane';
 import { ReadRouteSources, readRouteBody } from './brokerReadRoutes';
 import { describeError } from './describeError';
-import { BrokerDoor, McpCreateHooks, mcpDoor } from './brokerMcpDoor';
+import { BrokerDoor, mcpDoor } from './brokerMcpDoor';
 import { McpFolderHooks } from './brokerFolderDoor';
 import { answerMcpRoute } from './brokerMcpRoutes';
-import { McpUseLookup, aliasTarget, grantForToken, readNamedBody } from './brokerRequests';
+import { aliasTarget, grantForToken, readNamedBody } from './brokerRequests';
 import { describeLimits, grantLimits } from './grantLimits';
-import { McpEntry } from './mcpEntries';
-import { EntityMetadata } from './types';
-import { ConfigRouteSources, answerConfigRead } from './brokerConfigRoute';
+import { answerConfigRead } from './brokerConfigRoute';
 import { Grant, GrantRegistry } from './grantRegistry';
 import { UseActionRegistry } from './useActions';
 import { formatToken } from './grantToken';
@@ -37,7 +36,6 @@ import { ExtraListener, socketPathFor, startExtraListener } from './brokerListen
 import { removeEndpoint, writeEndpoint } from './cliEndpoint';
 import { AliasThrottle } from './aliasThrottle';
 import { startOnce } from './idempotentStart';
-import { MaskEntry } from './secretMasker';
 import { refreshFrom, tableOrFail } from './brokerResponse';
 
 /**
@@ -93,110 +91,34 @@ export class CredsAgentServer implements vscode.Disposable {
   private readonly audit = new BrokerAuditWriter();
   private calls = 0;
 
+  /**
+   * Two things this class cannot work without, and everything else BY NAME.
+   *
+   * <p>The named half used to be eleven positional parameters, which is a shape where inserting one
+   * in the middle hands every argument after it to the wrong slot — twice, silently, both times
+   * found by an integration script rather than by a type. `brokerHooks.ts` carries that record and
+   * the reason each hook is answered outside this class.</p>
+   *
+   * <p>`storageDir` is IN the object rather than a third positional, which is where it started: an
+   * optional positional in front of an options object rebuilds the same trap, since
+   * `new CredsAgentServer(actions, present, { listAliases })` binds the object to the string.</p>
+   */
   constructor(
     private readonly actions: UseActionRegistry,
     private readonly onUserPresent: () => void,
-    private readonly storageDir?: string,
-    /**
-     * The secrets of the entity a grant points at, for masking that entity's own values out
-     * of the output it produces. Optional so the integration test and any future caller can
-     * construct a server without one; absent means no masking, never a crash.
-     *
-     * <p>Scoped to the GRANT's entity on purpose. Building a table from every secret of every
-     * unlocked account would put N keychain reads on a per-call path — exactly the cost class
-     * 0.57.0 removed from the tree and the sync cycle. For the common case the values are
-     * already in memory by the time output exists.</p>
-     */
-    private readonly maskEntriesFor?: (
-      accountId: string,
-      entityId: string,
-    ) => Promise<readonly MaskEntry[]>,
-    /**
-     * Destroy the entity if it was marked to live for exactly one agent use; answers whether
-     * it did. Optional, like the masker: absent means nothing burns, never a crash.
-     *
-     * <p>The DECISION lives outside on purpose. The broker knows a grant, not a stored
-     * record — it should no more read `burnPolicy` than it reads a password — so the caller
-     * that owns storage answers "was this one-use, and is it gone now". That also keeps the
-     * single deletion path (`deleteNodeRecursive`, tombstone and history included) on the
-     * side of the wall that already has it.</p>
-     */
-    private readonly burnAfterUse?: (accountId: string, entityId: string) => Promise<boolean>,
-    /**
-     * Resolve a CLI alias to the entry it names. Optional: absent means this window serves no
-     * alias calls at all, which is what a build or a test without the registry should do.
-     *
-     * <p>Outside again, for the same reason as the other two: the broker holds grants, not
-     * stored records. It should not know where a name is kept any more than it knows where a
-     * password is.</p>
-     */
-    private readonly resolveAlias?: (
-      name: string,
-    ) => { accountId: string; entityId: string; entityName: string; kind: string } | undefined,
-    /**
-     * The names enabled for the CLI, for `creds ls`. Optional like the rest: absent means this
-     * window answers the listing route with an empty list rather than a crash.
-     *
-     * <p>Separate from {@link resolveAlias} even though both read the same registry, because
-     * they disclose different things and a future build might well want one without the other —
-     * resolving a name you already know is not the same as being handed every name there is.</p>
-     */
-    private readonly listAliases?: () => readonly { name: string; kind: string }[],
-    /**
-     * The entries a person opened to agents, already reduced to their non-secret half.
-     *
-     * <p>Outside for the third time, and for the third time because the broker holds grants
-     * rather than stored records: deciding WHICH entries are visible means resolving a switch
-     * against its folder and against the Trash, which is a question about the vault. This side
-     * only knows how to answer a GET with whatever it is handed.</p>
-     *
-     * <p>Asynchronous unlike the other two, because "is there a password" is a keychain read.
-     * Absent means this window shows agents nothing, which is what a build or a test without
-     * the vault should do.</p>
-     */
-    private readonly listMcpEntries?: () => Promise<readonly McpEntry[]>,
-    /** An agent-VISIBLE config entry by id — the snippet route's supplier (T10), behind the
-     *  same wall as the listing above. Absent answers "no such config". */
-    private readonly visibleConfig?: (entityId: string) => EntityMetadata | undefined,
-    /**
-     * Resolve an entry id for an agent's USE call — and say whether it may.
-     *
-     * <p>One callback rather than a lookup and a separate permission check, because the two
-     * questions have one answer and splitting them is how a path ends up asking the first and
-     * forgetting the second. Outside for the fourth time, and for the same reason as the other
-     * three: this class holds grants, not stored records, and the switch it turns on is
-     * resolved against a folder and against the Trash — questions about a vault.</p>
-     */
-    private readonly resolveMcpUse?: (entryId: string, action: string) => McpUseLookup,
-    /**
-     * Move an entry to the Trash, answering whether it was still there to move.
-     *
-     * <p>Outside for the fifth time, and for the fifth time because this class holds grants and
-     * not stored records. Deliberately NOT `deleteNodeRecursive`: that is the one real deletion
-     * path, and an agent never reaches it — what makes "agents may delete" grantable at all is
-     * that the destination is a folder and not oblivion.</p>
-     */
-    private readonly moveToTrash?: (accountId: string, entityId: string) => Promise<boolean>,
-    /**
-     * Where an agent may create an entry, and how to make one.
-     *
-     * <p>The sixth and last of these, and the only one whose gate is not an entry: there is no
-     * entry yet. Which folders are open, which kinds they hold and what a request becomes are all
-     * questions about a vault, so they are answered on the other side of the wall.</p>
-     */
-    private readonly mcpCreate?: McpCreateHooks,
-    /** Where `/v1/config/read` gets its answer. Outside for the sixth time, same reason: this
-     *  class holds grants, and a config key is not one. Absent serves no config to anything. */
-    private readonly configRoute?: ConfigRouteSources,
-    /**
-     * Whether this entry may be used exactly once — asked of the side that owns storage, like
-     * {@link burnAfterUse}. One call at a time for such an entry (audit #3); absent queues nothing.
-     *
-     * <p>LAST on purpose: this list is positional, and inserting into the middle hands the next
-     * argument to the wrong slot — which happened, and `creds ls` went blank.</p>
-     */
-    private readonly isOneUse?: (accountId: string, entityId: string) => boolean,
-  ) {}
+    hooks?: BrokerHooks,
+  ) {
+    // Checked, not trusted: five of the seven callers are `.cjs`, where a misspelled key is silent
+    // by construction — every hook is optional, so `resolveAlais` reads as "switched off".
+    this.hooks = checkedHooks(hooks);
+  }
+
+  private readonly hooks: BrokerHooks;
+
+  /** Where this window keeps its journal, its endpoint note and its socket. */
+  private get storageDir(): string | undefined {
+    return this.hooks.storageDir;
+  }
 
   /** The signal every spawned child watches, so none outlives this window. */
   get signal(): AbortSignal {
@@ -309,9 +231,9 @@ export class CredsAgentServer implements vscode.Disposable {
       {
         door: this.door,
         readBody,
-        resolveUse: this.resolveMcpUse,
-        moveToTrash: this.moveToTrash,
-        create: this.mcpCreate,
+        resolveUse: this.hooks.resolveMcpUse,
+        moveToTrash: this.hooks.moveToTrash,
+        create: this.hooks.mcpCreate,
         folders: this.folderHooks,
       },
       req,
@@ -346,7 +268,7 @@ export class CredsAgentServer implements vscode.Disposable {
   /** The decision is `brokerConfigRoute.ts`; the audit sink is ours, so no door bypasses `log`. */
   private async handleConfigRead(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
     const answer = await answerConfigRead(req.method, req.headers.authorization, {
-      ...(this.configRoute ?? {}),
+      ...(this.hooks.configRoute ?? {}),
       audit: (line) => this.log({ grant: line.key, entityName: line.entityName, action: 'config', outcome: line.outcome, via: 'config' }),
     });
     if (answer.status !== 200) {
@@ -369,7 +291,7 @@ export class CredsAgentServer implements vscode.Disposable {
     const body = read.body;
     const name = body.alias as string;
 
-    const found = aliasTarget(this.resolveAlias, name);
+    const found = aliasTarget(this.hooks.resolveAlias, name);
     if (!found.ok) {
       this.respondError(res, found.code, found.message);
       return;
@@ -464,9 +386,9 @@ export class CredsAgentServer implements vscode.Disposable {
   /** The GET routes' suppliers — every read route answers from these three. */
   private readSources(): ReadRouteSources {
     return {
-      aliases: this.listAliases,
-      mcpEntries: this.listMcpEntries,
-      visibleConfig: this.visibleConfig,
+      aliases: this.hooks.listAliases,
+      mcpEntries: this.hooks.listMcpEntries,
+      visibleConfig: this.hooks.visibleConfig,
       // A closure, because the hooks arrive after construction and `list` needs its receiver.
       folders: () => this.folderHooks?.list() ?? [],
     };
@@ -563,7 +485,7 @@ export class CredsAgentServer implements vscode.Disposable {
     }
 
     // Read BEFORE anything runs, and a read that will not answer refuses the call — see `tableOrFail`.
-    const table = await tableOrFail(this.maskEntriesFor, grant, (why) =>
+    const table = await tableOrFail(this.hooks.maskEntriesFor, grant, (why) =>
       this.respondError(res, 'internal', MASKING_UNAVAILABLE, grant, action, `${summary} · ${why}`, via),
     );
     if (table === undefined) {
@@ -580,14 +502,14 @@ export class CredsAgentServer implements vscode.Disposable {
       {
         grants: this.grants,
         lane: this.oneUse,
-        isOneUse: this.isOneUse,
+        isOneUse: this.hooks.isOneUse,
         respond: (status, sent) => this.respond(res, status, sent),
         log: (line) => this.log(line),
         refuse: (code, message) => this.respondError(res, code, message, grant, action, summary, via),
         failed: (why, ran) =>
           this.respondError(res, 'internal', INTERNAL_FAILURE, grant, action, `${summary} - ${why}`, via, ran),
-        refresh: refreshFrom(this.maskEntriesFor, grant),
-        burn: (status) => burnAndMark(this.oneUse, this.burnAfterUse, this.isOneUse, grant, status, this.note),
+        refresh: refreshFrom(this.hooks.maskEntriesFor, grant),
+        burn: (status) => burnAndMark(this.oneUse, this.hooks.burnAfterUse, this.hooks.isOneUse, grant, status, this.note),
       },
       call,
     );

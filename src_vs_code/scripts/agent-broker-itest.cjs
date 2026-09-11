@@ -151,9 +151,10 @@ function runCli(args) {
   // The masking provider the extension supplies in real life. Here it is one known value, so
   // the check below proves the whole path — action output, through respond(), out to the
   // caller — not just the pure masker's unit tests.
-  const server = new CredsAgentServer(actions, () => {}, storageDir, async () => [
-    { value: MASKABLE_SECRET, label: 'DB_PASSWORD' },
-  ]);
+  const server = new CredsAgentServer(actions, () => {}, {
+    storageDir,
+    maskEntriesFor: async () => [{ value: MASKABLE_SECRET, label: 'DB_PASSWORD' }],
+  });
   const deps = {
     storage,
     storageDir,
