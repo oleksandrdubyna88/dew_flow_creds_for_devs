@@ -38,6 +38,8 @@ interface World {
   /** Names of entries an agent created. */
   created: string[];
   presence: number;
+  /** Called by the run stub: a rotation writing its new value into storage mid-run. */
+  rotate?: () => void;
   /** Set by the run() stub to whatever the action should answer. */
   /**
    * What the wrapped action answers — or, when it is an `Error`, what it THROWS.
@@ -46,12 +48,24 @@ interface World {
    * by failing, so the catch around `run` had no test at all. That is the branch that decides what
    * an agent is told about an internal failure.</p>
    */
-  result: { status: number; body: Record<string, unknown> } | Error;
+  result: { status: number; body: Record<string, unknown>; storedSecretChanged?: boolean } | Error;
 }
 
 function world(options: {
   answers?: (string | undefined)[];
   secrets?: readonly { value: string; label: string }[];
+  /**
+   * When the masker's storage read FAILS, and where.
+   *
+   * <p>`before` is a keychain that will not answer at all; `after` answers the pre-run read and
+   * then rejects the refresh — which is the shape a rotation meets, because it has just written to
+   * the same keychain it is about to read. `entityGone` is the quieter one: the read succeeds and
+   * the ENTITY is not there, which used to be indistinguishable from "this entry has no
+   * secrets".</p>
+   */
+  maskerFails?: 'before' | 'after' | 'entityGone';
+  /** A value the action writes into storage DURING the run — a rotation, in one word. */
+  rotatesTo?: string;
   burns?: boolean;
   alias?: { accountId: string; entityId: string; entityName: string; kind: string };
   /** The names `creds ls` would see. Absent means this window has no registry at all. */
@@ -109,6 +123,7 @@ function world(options: {
     summarize: (body: Record<string, unknown>): string => String(body.command ?? ''),
     run: (ctx: { entityId: string }, body: Record<string, unknown>): Promise<unknown> => {
       w.ran.push({ action: name, entityId: ctx.entityId, body });
+      w.rotate?.();
       return w.result instanceof Error ? Promise.reject(w.result) : Promise.resolve(w.result);
     },
   });
@@ -124,7 +139,7 @@ function world(options: {
       w.presence += 1;
     },
     undefined,
-    maskerFor(options.secrets),
+    maskerFor(w, options),
     burnerFor(w, options.burns),
     aliasResolverFor(options.alias),
     options.aliasList === undefined ? undefined : () => options.aliasList ?? [],
@@ -142,11 +157,58 @@ function world(options: {
  * window with no alias registry must refuse an alias call rather than crash. Lifted out of the
  * constructor call so the helper stays under the complexity limit; no test reads differently. */
 
+/**
+ * The broker's view of one entity's secrets — and the ways that read can fail.
+ *
+ * <p>A window with no masker at all is still a real configuration (`secrets` absent), and several
+ * tests are about that. What is new is that the read can FAIL, which is the whole of audit finding
+ * #1: it used to be caught and turned into an unmasked answer with `hits: 0`.</p>
+ */
 function maskerFor(
-  secrets: readonly { value: string; label: string }[] | undefined,
+  w: World,
+  options: { secrets?: readonly { value: string; label: string }[]; maskerFails?: string; rotatesTo?: string },
 ): (() => Promise<readonly { value: string; label: string }[]>) | undefined {
-  return secrets === undefined ? undefined : () => Promise.resolve(secrets);
+  const { secrets, maskerFails, rotatesTo } = options;
+  if (secrets === undefined && maskerFails === undefined) {
+    return undefined;
+  }
+  const held = [...(secrets ?? [])];
+  armRotation(w, held, rotatesTo);
+  return failingAfter(maskerFails, () => [...held]);
 }
+
+/** A run that writes a new secret into storage — what the broker's refresh is supposed to catch. */
+function armRotation(w: World, held: { value: string; label: string }[], rotatesTo: string | undefined): void {
+  if (rotatesTo === undefined) {
+    return;
+  }
+  w.rotate = (): void => {
+    held.push({ value: rotatesTo, label: 'NEW_PASSWORD' });
+  };
+}
+
+/** The read, and the two shapes of failure a test can ask for. */
+function failingAfter(
+  fails: string | undefined,
+  held: () => { value: string; label: string }[],
+): () => Promise<readonly { value: string; label: string }[]> {
+  let reads = 0;
+  return (): Promise<readonly { value: string; label: string }[]> => {
+    reads += 1;
+    if (fails === 'entityGone') {
+      return Promise.reject(new EntityGone('"prod" is no longer in the vault.'));
+    }
+    return rejectsNow(fails, reads) ? Promise.reject(new Error('the keychain would not answer')) : Promise.resolve(held());
+  };
+}
+
+/** `before` refuses every read; `after` lets the pre-run one through and refuses the refresh. */
+function rejectsNow(fails: string | undefined, reads: number): boolean {
+  return fails === 'before' || (fails === 'after' && reads > 1);
+}
+
+/** What a masker throws when the entity a grant points at is not in the vault any more. */
+class EntityGone extends Error {}
 
 function burnerFor(
   w: World,

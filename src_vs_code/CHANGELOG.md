@@ -8,6 +8,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **Output that cannot be redacted is now withheld, never sent raw.** The broker's promise is that an
+  agent USES a credential and never sees it — and a response body carries the child's stdout, so the
+  masker is the only thing between a command that prints its own password and the agent that composed
+  that command. It **failed open**: any error building the table of values to redact was caught, and
+  the original body went out with `hits: 0`, which in the audit line is indistinguishable from *there
+  was nothing to mask*. No exception was even needed — an entry deleted or renamed during a grant's
+  life produced an empty table with the same result.
+
+  The table is read **before** the action now. A storage read that will not answer refuses the call
+  while there is still nothing to undo: an agent loses a retry instead of gaining a plaintext
+  credential. The comment that defended failing open argued it would trade a possible leak for a
+  certain outage, and that is true of a *completed* action — which is exactly why this moved to
+  before one.
+
+  **The sharpest case is a rotation, and it is the one the review gate caught this change getting
+  wrong.** A rotation writes its new secret while it runs, so no table read before it can hold that
+  value; falling back to the pre-run table on a failed refresh would have masked the *old* credential
+  and sent the freshly committed one in the clear. An action now says whether it changed a stored
+  secret, and only that case withholds — an ordinary command still answers from the pre-run table,
+  which is complete by construction. A withheld answer carries `actionRan: true`, because an agent
+  that cannot tell *it did not happen* from *it happened and you cannot see it* retries, and a blind
+  retry here rotates the credential twice.
+
+  The journal follows the same rule: a driver's message is exactly where a credential turns up, so a
+  reason that cannot be redacted is not written.
+
+- **`credSshManager.maskAgentOutput` is gone.** It was declared, documented as `true` by default, and
+  read by no code — masking was always on regardless of it. A switch that would turn a security
+  control off is a liability when it works and a lie when it does not; removing it changes no
+  behaviour.
+
+  Found by the 2026-09-09 product audit (finding #1) and the re-verification that followed it; record
+  in `research/PLAN_mask_fail_closed.md`.
 - **A vault file that lost its integrity signature is now treated as altered, not as old.** The
   envelope MAC is what authenticates the *list of ways into a vault* — the payload's own AEAD tag
   deliberately does not cover `wraps`, because adding a security key rewrites them without

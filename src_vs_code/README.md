@@ -1065,7 +1065,6 @@ Two rules govern how they combine:
 |---|---|---|
 | `agentGrantIdleMinutes` | `60` | A *Share with Claude Code* token dies after this long unused. `0` disables the idle timeout — the token still dies with the window |
 | `agentGrantMaxCalls` | `0` | The most calls one token may make before it expires; `0` is no cap. Useful for a one-off task: share, let the agent make its handful of calls, and know the token is spent |
-| `maskAgentOutput` | `true` | Replace every secret this extension supplied with `<CREDS_MASKED:NAME>` in what a brokered command prints, before an agent sees it |
 | `wslAgentRelay` | `false` | Serve the SSH agent on a unix socket inside WSL distributions, so `ssh` and `git` there use vault keys with a dialog per signature. **From the UI:** *Set Up the WSL Agent Relay* |
 | `wslRelayCommand` | *(auto)* | What the relay runs inside the distribution — override only if `creds` is not on the default path there |
 | `wslRelayDistros` | `[]` | Which distributions get the relay; empty means the default distribution |

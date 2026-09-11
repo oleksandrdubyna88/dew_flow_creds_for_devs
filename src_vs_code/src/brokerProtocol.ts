@@ -78,6 +78,31 @@ export function errorBody(code: ErrorCode, message: string): ErrorBody {
  */
 export const INTERNAL_FAILURE = 'The action failed inside this window. See the agent journal for the reason.';
 
+/**
+ * What an agent is told when this window cannot read the values it would have to redact.
+ *
+ * <p>Said BEFORE the action, always: the table is built first precisely so that a storage read
+ * which will not answer costs a refused call rather than a result somebody already earned.</p>
+ */
+export const MASKING_UNAVAILABLE =
+  'This window could not read the values it would have to redact from the output, so the action was '
+  + 'not started. Nothing ran. Try again, or ask the person to check their keychain.';
+
+/**
+ * What an agent is told when the action RAN and its output cannot be shown.
+ *
+ * <p>Reached only when the action changed a stored secret — a rotation — and the read that would
+ * have found the new value failed. The new credential is in no table this window holds, so there is
+ * no safe way to show what the far side printed.</p>
+ *
+ * <p>The body carries `actionRan: true` beside this, and that is the load-bearing half: an agent
+ * that cannot tell "it did not happen" from "it happened and you cannot see it" will retry — and
+ * the action this fires for rotates a credential, so a blind retry rotates twice.</p>
+ */
+export const OUTPUT_WITHHELD =
+  'The action ran, and its output could not be redacted, so it is withheld. Do NOT retry: the '
+  + 'change has already been made. Ask the person to check the entry and the agent journal.';
+
 export interface HealthBody {
   ok: true;
   service: typeof SERVICE_NAME;

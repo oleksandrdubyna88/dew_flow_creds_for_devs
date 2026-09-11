@@ -279,7 +279,13 @@ async function commit(
   // `stdout`, not `output`: it IS the far side's stdout, and calling it anything else was how
   // this answer escaped the masker for one release (security pass, 2026-08-27). The masker
   // covers every field now, and the honest name is still the right one.
-  return { status: 200, body: { rotated: true, entity: ctx.entityName, stdout: outputOf(result) } };
+  // `storedSecretChanged`: the line above wrote a new secret, so a table read from BEFORE this call
+  // cannot contain it. If the broker's refresh fails, it must withhold rather than fall back.
+  return {
+    status: 200,
+    body: { rotated: true, entity: ctx.entityName, stdout: outputOf(result) },
+    storedSecretChanged: true,
+  };
 }
 
 /**
