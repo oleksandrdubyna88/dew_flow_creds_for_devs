@@ -376,6 +376,14 @@ export class VaultKeys {
 
     const cached = this.cache.get(account.accountId);
     if (cached?.version === 2 && !needsGesture) {
+      // The cache is a key, not a verdict about the FILE — and the file can change under it. One
+      // legitimate unlock, then a tamper at the sync location, and every later caller would have
+      // been handed the cached key for a file nobody re-checked. `syncManager` re-checks on its own
+      // cycle; nothing else did. Raised by the review gate, and it is the same order defect as the
+      // original finding, one level up.
+      if (vaultContent !== undefined) {
+        requireIntactEnvelope(vaultContent, cached.masterKey);
+      }
       // A detached copy: a caller holding this across awaits must not have its bytes
       // zeroed by an auto-lock tick wiping the cache mid-operation. See detachVaultKey.
       return detachVaultKey(cached);

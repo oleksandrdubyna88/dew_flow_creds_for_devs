@@ -33,8 +33,7 @@ const PIN = 'correct horse battery staple';
  * change to `SecretStorage` pass compilation and fail at runtime, which is the trap the TypeScript
  * rule names. The one `as never` that remains is on the event, which no test subscribes to.</p>
  */
-function secretStorage(): vscode.SecretStorage {
-  const stored = new Map<string, string>();
+function secretStorage(stored: Map<string, string>): vscode.SecretStorage {
   return {
     get: (key: string): Thenable<string | undefined> => Promise.resolve(stored.get(key)),
     store: (key: string, value: string): Thenable<void> => {
@@ -51,21 +50,31 @@ function secretStorage(): vscode.SecretStorage {
 }
 
 /** `VaultKeys` holding one stored PIN, and a window onto the cache the refusal must leave empty. */
-async function keysHolding(pin: string): Promise<{
+async function keysHolding(pin: string | undefined, typed?: string): Promise<{
   keys: InstanceType<typeof import('../vaultKeys').VaultKeys>;
   cache: Map<string, unknown>;
+  stored: Map<string, string>;
 }> {
+  const stored = new Map<string, string>();
   const mod = loadWithVscode<typeof import('../vaultKeys')>('../vaultKeys', {
-    window: { showWarningMessage: (): undefined => undefined, showErrorMessage: (): undefined => undefined },
+    window: {
+      showWarningMessage: (): undefined => undefined,
+      showErrorMessage: (): undefined => undefined,
+      // What the person types when the vault asks. Present so the INTERACTIVE PIN route — the one
+      // that persists what it was given — can be driven at all.
+      showInputBox: (): Promise<string | undefined> => Promise.resolve(typed),
+    },
     workspace: { getConfiguration: () => ({ get: <T>(_k: string, d: T): T => d }) },
   });
-  const keys = new mod.VaultKeys(secretStorage());
-  // Stored through the instance, because the key it files a PIN under is its own business.
-  await (keys as unknown as { savePin(a: StoredAccount, p: string): Promise<void> }).savePin(ACCOUNT, pin);
+  const keys = new mod.VaultKeys(secretStorage(stored));
+  if (pin !== undefined) {
+    // Stored through the instance, because the key it files a PIN under is its own business.
+    await (keys as unknown as { savePin(a: StoredAccount, p: string): Promise<void> }).savePin(ACCOUNT, pin);
+  }
   // The cache is private, and what this file asserts about is precisely that it stays empty. One
   // reach-in, named, rather than an exported accessor that exists only for a test.
   const cache = (keys as unknown as { cache: Map<string, unknown> }).cache;
-  return { keys, cache };
+  return { keys, cache, stored };
 }
 
 /** A v4 vault openable by `PIN`, carrying a PIN wrap and a second wrap worth stripping. */
@@ -104,20 +113,48 @@ test('a vault whose MAC was stripped along with a wrap is refused, and NOTHING i
   assert.equal(cache.size, 0, 'a refused vault leaves no key and no wrap list behind');
 });
 
-test('a security-key unlock refused as tampered does not leave a PIN behind either', async () => {
+test('a TYPED PIN on a tampered vault is refused, and the PIN is not stored', async () => {
   // Raised by the review gate against the first version of this fix, which called `savePin` and
   // THEN verified — so a refused envelope still wrote to SecretStorage. "The refusal writes
-  // nothing" has to include the things written on the way to it.
-  const { keys, cache } = await keysHolding(PIN);
+  // nothing" has to include what is written on the way to it.
+  //
+  // This machine has NO stored PIN, so the silent route cannot run and `unlock` reaches the
+  // interactive prompt — which is the route that persists. The first version of this test asserted
+  // only that the cache was empty while calling itself a test about the PIN; it would have passed
+  // against the defect it names.
+  const { keys, cache, stored } = await keysHolding(undefined, PIN);
   const { content } = vaultWithTwoWraps();
   const env = JSON.parse(content) as Record<string, unknown>;
   delete env.mac;
 
   await assert.rejects(
-    keys.unlock(ACCOUNT, JSON.stringify(env), { interactive: false }),
+    keys.unlock(ACCOUNT, JSON.stringify(env), { interactive: true }),
     (e: unknown) => (e as { kind?: string }).kind === 'tampered',
   );
   assert.equal(cache.size, 0, 'nothing cached');
+  assert.deepEqual([...stored.values()], [], 'and nothing written to SecretStorage');
+});
+
+test('a WARM CACHE does not excuse a file that changed underneath it', async () => {
+  // The cache holds a key, not a verdict about the file — and the file can change under it. One
+  // legitimate unlock, a tamper at the sync location, and every later caller was being handed the
+  // cached key for a file nobody re-checked. Raised by the review gate: the same order defect as
+  // the original finding, one level up.
+  const { keys, cache } = await keysHolding(PIN);
+  const { content } = vaultWithTwoWraps();
+
+  assert.notEqual(await keys.unlock(ACCOUNT, content, { interactive: false }), undefined);
+  assert.equal(cache.size, 1, 'warm');
+
+  const env = JSON.parse(content) as Record<string, unknown>;
+  env.wraps = [(env.wraps as unknown[])[0]];
+  delete env.mac;
+
+  await assert.rejects(
+    keys.unlock(ACCOUNT, JSON.stringify(env), { interactive: false }),
+    (e: unknown) => (e as { kind?: string }).kind === 'tampered',
+    'a cache hit is still a file that has to verify',
+  );
 });
 
 test('a wrap removed with the MAC left in place is refused too — and still caches nothing', async () => {

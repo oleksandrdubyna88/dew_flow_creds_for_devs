@@ -303,9 +303,13 @@ export async function restoreFromBackup(
       const pinWrap = readVaultWraps(content)
         .filter(isKeyWrap)
         .find((w) => w.kind === 'pin');
+      // Both branches, not just the wrapped one. A v1 backup carries no signature and reads as
+      // `missing`, which passes — but routing only the wrapped branch through the gate would make
+      // the invariant true by accident rather than by construction, and the accident is that a
+      // stripped-wraps v4 lands here and fails its GCM tag instead of being named tampered.
       payload =
         pinWrap === undefined
-          ? await decryptJsonAsync(content, profilePassphrase(account.accountId, pin))
+          ? await openVerifiedAsync(content, profilePassphrase(account.accountId, pin))
           : await openVerified(content, await unwrapWithPinAsync(pinWrap, account.accountId, pin));
     }
   } catch (error) {
@@ -350,4 +354,15 @@ export async function restoreFromBackup(
 async function openVerified(content: string, master: Buffer): Promise<unknown> {
   requireIntactEnvelope(content, master);
   return decryptJsonWithMasterKey(content, master);
+}
+
+/**
+ * The same gate for a legacy PIN-only backup, whose key is the passphrase itself.
+ *
+ * <p>A v1 file has no signature and answers `missing`, so this is a no-op for the format it
+ * serves. It is here so the branch cannot become the exception nobody remembers.</p>
+ */
+async function openVerifiedAsync(content: string, passphrase: string): Promise<unknown> {
+  requireIntactEnvelope(content, passphrase);
+  return decryptJsonAsync(content, passphrase);
 }
