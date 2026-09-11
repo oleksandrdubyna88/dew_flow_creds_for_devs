@@ -32,6 +32,8 @@ export type ErrorCode =
   | 'payload_too_large'
   | 'too_many_requests'
   | 'consent_timeout'
+  /** The request looks like a browser's. This is a local tool broker, not a web service. */
+  | 'forbidden'
   /** The entity and the request are both fine; a binary this machine needs is absent. */
   | 'tool_missing'
   | 'internal';
@@ -46,6 +48,7 @@ const STATUS_BY_CODE: Readonly<Record<ErrorCode, number>> = {
   payload_too_large: 413,
   too_many_requests: 429,
   consent_timeout: 504,
+  forbidden: 403,
   tool_missing: 412,
   internal: 500,
 };

@@ -1880,6 +1880,42 @@ pin-only v3 file (a `pin`-wrap with no key-wrap → `silentPin` → `unwrapWithP
 | Org-escrow wrap | X25519-ECDH to the org recovery public key → HKDF, `info="creds-for-devs/org-escrow-wrap"` |
 | Envelope MAC | HMAC-SHA256, `info="cred-ssh-manager/envelope-mac"`, compared with `timingSafeEqual` |
 
+**The masker is consulted BEFORE the action, and fails closed** (`tableOrFail`, `runAndDeliver` in
+`brokerResponse.ts`). A response body carries the child's stdout, so the masker is the only thing
+between a command that prints its own password and the agent that composed it — and it used to catch
+every error and send the original body. A missing ENTITY produced the same silence with no exception
+at all, which is why `maskEntriesFor` throws `MaskSourceUnavailable` rather than answering an empty
+list; an entity that exists and holds no secrets still runs normally.
+
+The order is the fix: the table is read first, and a read that will not answer refuses the call while
+there is still nothing to undo. Then `run` → re-read → mask → log → answer → burn. The re-read happens
+only for an action that declares `mutatesSecrets` — a ROTATION writes its new value *during* the run,
+so no earlier table can hold it, and a failed re-read there WITHHOLDS rather than falling back to a
+table that would mask the old credential and send the fresh one in the clear. The same rule covers the
+error path: a rotation that threw after writing does not put its reason in the journal unless it can
+be redacted. A withheld answer carries `actionRan: true`, so an agent does not rotate twice. Record:
+[PLAN_mask_fail_closed.md](PLAN_mask_fail_closed.md).
+
+**The broker refuses browsers at the door** (`brokerOrigin.ts`). It is a loopback HTTP server, and a
+web page in the person's own browser is also on loopback — and nothing looked at `Origin` or `Host`.
+The **alias door needs no token** (its authorisation is a rate limit and the consent modal, by
+design), and a cross-origin `fetch` with `Content-Type: text/plain` is a *simple* request — no
+preflight, and the body is parsed as JSON whatever it claims to be — so a page the person merely
+visited could raise the consent dialog in their editor for any alias it could name. And the **read
+routes authenticate nothing**, so under DNS rebinding a page could read the alias and entry lists.
+
+Which check does which job is the part to keep straight, and the review gate caught the plan for this
+getting it backwards. **`Origin` closes the cross-origin POST; it cannot close rebinding** — a browser
+omits `Origin` on a same-origin GET, and after a rebind the page *is* same-origin. **`Host` closes
+rebinding**: the browser sends the name the page was loaded from, which is the attacker's, and the
+port it connected to, so both must name this listener exactly. `Sec-Fetch-Site` refuses every value
+but `none`; its *absence* admits, because no command-line client sends fetch metadata at all.
+
+`behindTheDoor` wraps the handler both listeners are given, so "every listener is covered" is true by
+construction rather than by every listener happening to route through one method. A refusal is `403`
+with a sentence, sets `Connection: close` (the body was never read), and is said to the person **once
+per window**. Record: [PLAN_broker_origin_guard.md](PLAN_broker_origin_guard.md).
+
 **A signed envelope without its signature is tampered, not legacy** (`verifyEnvelopeMac`,
 `requireIntactEnvelope`). The envelope MAC exists for one threat, named where it is computed: on a
 shared-folder transport a write-capable attacker can forge the owner account or **delete unlock
@@ -4547,11 +4583,13 @@ the one the first screen spends its attention on.
 
 **The guarantee is stated with its edge, because the edge is real.** The structural half holds
 absolutely: no response shape in `brokerProtocol.ts` has a field a secret could travel in. The second
-half is best-effort and the README now says so — if an approved command *prints* a credential, the
-masker in `brokerResponse.ts` replaces this entry's stored values on the way out, **fails open by
-design** (a failed table lets the answer through rather than turning a working command into an
-outage), and can only mask values the vault knows. A README that claimed the whole guarantee would be
-contradicted by the product's own source comment.
+half is what an approved command *prints*, and the masker in `brokerResponse.ts` replaces this
+entity's stored values on the way out. It can only mask values the vault knows — that limit is
+permanent — but it no longer **fails open**: until 2026-09-11 a failed table let the answer through
+with `hits: 0`, which in the audit line is indistinguishable from *there was nothing to mask* (audit
+finding #1). The table is read BEFORE the action now, so a storage read that will not answer costs a
+refused call rather than a completed action's result, and an output that cannot be redacted after a
+rotation is WITHHELD rather than sent. See below.
 
 **Three claims the README may never make**, each because the code says otherwise: there is no master
 password (`keyWrap.ts:38` — the wraps are pin, webauthn, recovery, org-escrow); nothing is *"stamped

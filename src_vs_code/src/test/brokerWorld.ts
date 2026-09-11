@@ -340,11 +340,18 @@ function payloadOf(options: { body?: unknown; raw?: string }): string | undefine
 async function call(
   port: number,
   path: string,
-  options: { token?: string; body?: unknown; raw?: string; method?: string } = {},
+  options: {
+    token?: string;
+    body?: unknown;
+    raw?: string;
+    method?: string;
+    /** Headers a BROWSER would add, which is what the door is about. */
+    headers?: Record<string, string>;
+  } = {},
 ): Promise<Answer> {
   const response = await fetch(`http://127.0.0.1:${port}${path}`, {
     method: options.method ?? 'POST',
-    headers: { 'Content-Type': 'application/json', ...bearer(options.token) },
+    headers: { 'Content-Type': 'application/json', ...bearer(options.token), ...options.headers },
     body: payloadOf(options),
   });
   const text = await response.text();
