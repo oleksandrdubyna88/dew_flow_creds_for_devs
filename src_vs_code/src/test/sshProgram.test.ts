@@ -4,6 +4,7 @@ import { BUILT_IN_DIR, GIT_SSH, pathWith } from './sshPath';
 import {
   NO_AGENT_TO_FORWARD,
   agentForwardEnv,
+  openSshBinary,
   builtInOpenSsh,
   openSshProgram,
   pathDirsOf,
@@ -143,4 +144,42 @@ test('the PATH is split on the PLATFORM delimiter, not on a hard-coded semicolon
   assert.deepEqual(pathDirsOf('/usr/bin:/bin', ';'), ['/usr/bin:/bin'], 'the wrong delimiter is one bogus entry');
   assert.deepEqual(pathDirsOf('', ';'), [], 'an empty PATH is no directories, never one empty one');
   assert.deepEqual(pathDirsOf(undefined, ';'), []);
+});
+
+/**
+ * What is SPAWNED, as opposed to what is SHOWN.
+ *
+ * <p>Since T20 `openSshProgram` answers the bare word whenever the PATH already resolves `ssh` to
+ * the built-in client, so the command in the viewer is the command a person could have typed. That
+ * is right for a string somebody reads or pastes into a terminal — and wrong for `spawn(program,
+ * …, { shell: false })`, which on Windows resolves a relative name through `CreateProcess`: the
+ * CURRENT DIRECTORY is searched before `PATH`. An `ssh.exe` sitting in the extension host's working
+ * directory would then be launched with `-A` and with `SSH_AUTH_SOCK` pointing at our agent — the
+ * one connection where the client is handed the keys. CWE-426, and CodeRabbit's on PR #68.</p>
+ *
+ * <p>There is a second reason that needs no attacker: `PATH` is read when the probe runs and again
+ * when the process starts, and nothing holds it still in between.</p>
+ */
+
+test('the binary to SPAWN is absolute when the built-in is the one that must run', () => {
+  // Even though the PATH already resolves `ssh` to the built-in — which is exactly when
+  // `openSshProgram` hands back the bare word for the viewer.
+  const probe = { pathDirs: ['C:/Windows/System32/OpenSSH'], hasTool: () => true };
+
+  const shown = openSshProgram('ssh', true, 'win32', () => true, probe);
+  const spawned = openSshBinary('ssh', true, 'win32', () => true);
+
+  assert.equal(shown, 'ssh', 'the viewer still shows a command a person could type');
+  assert.equal(spawned, 'C:/Windows/System32/OpenSSH/ssh.exe', 'the spawn names the file it means');
+});
+
+test('a spawn that does not need our agent is still the bare word', () => {
+  // Nothing is being defended here: no agent, so the person's own PATH decides, as it always did.
+  assert.equal(openSshBinary('ssh', false, 'win32', () => true), 'ssh');
+  assert.equal(openSshBinary('ssh', true, 'linux', () => true), 'ssh');
+});
+
+test('a Windows without the built-in client falls back rather than failing to spawn', () => {
+  // The difference between a connection that forwards nothing and no connection at all.
+  assert.equal(openSshBinary('ssh', true, 'win32', () => false), 'ssh');
 });

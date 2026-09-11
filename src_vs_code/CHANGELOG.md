@@ -25,6 +25,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **Agent forwarding on Windows now launches the built-in OpenSSH by its full path.** When the
+  connection needs our agent, the client is spawned directly rather than through a shell — and
+  Windows resolves a bare `ssh` the way `CreateProcess` does, searching the current directory
+  before `PATH`. An `ssh.exe` left in the editor's working directory would have been the client
+  that received `-A` and the address of the agent holding your keys.
+
+  The command shown in the viewer is unchanged: it is still the bare word wherever your `PATH`
+  already resolves it to the built-in client, so it stays a command you could have typed. Only the
+  spawn names the file. Every connection that does not need the agent still resolves through your
+  own `PATH`, exactly as before.
+
+  Raised by CodeRabbit on the pull request.
+
+### Security
+
 - **An entry marked "until an agent uses it once" is now used once, even by two calls at the same
   moment.** The burn runs after the answer is on the wire, deliberately — a storage failure while
   burning must not cost an agent a result it already earned — so two calls that arrived together
@@ -43,7 +58,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   now. The cap is off by default, so this bites only somebody who turned it on.
 
   Both are audit finding #3 of 2026-09-09; record in `research/PLAN_one_use_serialized.md`.
-
 
 - **The agent broker now refuses requests that look like they came from a browser.** It is a loopback
   HTTP server, and a web page in your own browser is also on loopback — and nothing checked where a

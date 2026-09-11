@@ -15,7 +15,7 @@ import { SshExecAuth, buildSshExecArgv, validateRemoteCommand } from './sshExecC
 import { resolveJumpChain } from './sshOptions';
 import { materializeKnownHosts } from './hostKeyTrust';
 import { runSshExec } from './sshExecRunner';
-import { agentForwardEnv, openSshProgram } from './sshProgram';
+import { agentForwardEnv, openSshBinary } from './sshProgram';
 import { resolveExecAuth } from './sshExecAuth';
 import { describeSshTarget } from './terminalManager';
 import { connectEntity } from './sshConnect';
@@ -72,7 +72,10 @@ function agentAwareLaunch(
   if (forwarding.warning !== undefined) {
     deps.note(`ssh:exec — ${forwarding.warning}`);
   }
-  return { program: openSshProgram('ssh', wanted, process.platform), env: forwarding.env };
+  // `openSshBinary`, not `openSshProgram`: this string is SPAWNED with `shell: false`, and on
+  // Windows a relative name is resolved by `CreateProcess`, which searches the current directory
+  // before `PATH`. The viewer's copyable bare word belongs to the other function.
+  return { program: openSshBinary('ssh', wanted, process.platform), env: forwarding.env };
 }
 
 function fail(code: ErrorCode, message: string): UseActionResult {

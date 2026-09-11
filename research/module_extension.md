@@ -2699,6 +2699,17 @@ which means a consent dialog for a key nobody chose. A Windows install without t
 back to `PATH` rather than failing to spawn: forwarding nothing is bad, not connecting at all is
 worse. Asked for with no key loaded, the audit channel says so instead of going quiet.
 
+**Two answers, because the string that is SHOWN and the string that is SPAWNED are not the same
+question.** `openSshProgram` gives the viewer the bare word whenever the PATH already resolves `ssh`
+to the built-in (T20), so the command on screen is one a person could have typed. `openSshBinary`
+gives `sshUseActions.ts` the file's full path whenever the built-in is the one that must run,
+because that string goes to `spawn(…, { shell: false })` — and on Windows a relative name is
+resolved the way `CreateProcess` resolves one, with the **current directory searched before
+`PATH`**. An `ssh.exe` left in the extension host's working directory would otherwise be the client
+launched with `-A` and `SSH_AUTH_SOCK`, which is the one connection where the client is handed keys
+(CWE-426, raised on the pull request). It also removes a smaller gap needing no attacker: the PATH
+is read when the probe runs and again when the process starts.
+
 The decision lives inside `buildSshCommand` rather than at its five call sites, so the command
 **shown** in the viewer is the command that runs — three of those callers only display it, and a
 displayed line that differs from the executed one is the same class of defect one layer up.
