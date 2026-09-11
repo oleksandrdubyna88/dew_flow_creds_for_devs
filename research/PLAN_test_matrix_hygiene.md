@@ -1,12 +1,13 @@
 # PLAN — two SSH tests inject the PATH they assert about, and JSON positions are asserted on fixtures
 
-> Status: **plan only, nothing implemented yet, 2026-09-10.** Scope: `src_vs_code/src/test/sshProgram.test.ts`,
-> `sshCommand.test.ts`, `configValidation.test.ts`, `configFieldsOutcome.test.ts`, `sshProgram.ts`,
+> Status: **IMPLEMENTED, 2026-09-11.** Scope as built: `sshProgram.ts`, `configFormat.ts`,
+> `sshProgram.test.ts`, `sshCommand.test.ts`, `configValidation.test.ts`, `configFieldsOutcome.test.ts`,
+> and the new `sshDefaultProbe.test.ts`, `jsonErrorLine.test.ts`, `sshPath.ts`, `engineJson.ts`;
 > `research/module_tests.md`.
-> Audit finding **#8** of [REVIEW_product_audit_2026-09-09.md](REVIEW_product_audit_2026-09-09.md),
+> Audit finding **#8** of [REVIEW_product_audit_2026-09-09.md](../todo/REVIEW_product_audit_2026-09-09.md),
 > re-verified 2026-09-10 (§Перепроверка).
 >
-> Related docs: [module_tests.md](../research/module_tests.md), [PLAN_ssh_agent.md](../research/PLAN_ssh_agent.md) (T20).
+> Related docs: [module_tests.md](module_tests.md), [PLAN_ssh_agent.md](PLAN_ssh_agent.md) (T20).
 
 ## Symptom
 
@@ -83,3 +84,51 @@
 - [ ] `module_tests.md` updated with the runtime statement.
 - [ ] `coai` plan → `proceed`, code round run, findings resolved.
 - [ ] Promoted to `research/` with deviations recorded.
+
+
+## What shipped differently
+
+**The sharper half of this finding was not in the plan's symptom at first.** Two tests reading the
+real `PATH` is a hygiene problem; two tests that have **never once exercised the branch they are
+named for** is a shipped feature with no working test, and that is what the hard-coded `;` split
+made true. CI is Linux, so the colon-joined `PATH` became one bogus entry, `hasTool` was never true,
+and `pathSshIsBuiltIn` always answered false — green for a reason that had nothing to do with the
+logic.
+
+**The real probe is tested, which the plan did not propose.** Three reviewers asked for it
+independently, and they were right: every other test injects a probe, so nothing covered the wiring
+underneath — that omitting it reaches `defaultProbe`, which reads the environment and splits it the
+way the platform does.
+
+**And the first version of that test had no teeth**, which the code round caught. It asserted
+`pathSshIsBuiltIn === false` on a Linux runner, and `false` is what a probe that ignored the
+environment entirely would answer too. It now asks the probe what it SAW — the directories it
+parsed, whether it found the file — and was watched failing (3 of 5) against a probe returning an
+empty `pathDirs`.
+
+**The delimiter follows the TARGET platform, not the host.** A reviewer's, and it closes this
+change's own bug from the other side: `openSshProgram('ssh', true, 'win32', …)` from a Linux runner
+would otherwise split a Windows `PATH` on `:` into one bogus entry.
+
+**Three cases per entry point, not one.** The plan had "empty probe" and "built-in first". A reviewer
+pointed out that neither covers **Git first** — the state this machine is actually in, and the one
+T20 exists for — and that an implementation emitting the bare word whenever `PATH` held any `ssh`
+would pass both planned cases and break it.
+
+**The engine-driven JSON tests ask the engine rather than relaxing.** The plan proposed accepting
+"the right line or none"; a reviewer observed that this would pass a regression that stopped
+extracting lines entirely. They now ask whether this engine named a position at all, and stay strict
+where it did.
+
+**Two fixtures are shared rather than copied.** `sshPath.ts` and `engineJson.ts` — every vendor
+flagged the duplication, and a second copy of a regex over an engine's error text is a thing to
+update that nothing notices was missed.
+
+## Open tail
+
+- **A Windows CI job is deliberately not added**, and `module_tests.md` says so with the reason:
+  minutes per run to exercise one `if` whose seam now exists, is used by both entry points, and has a
+  real-probe test beside it. The day that seam proves insufficient, the job is the answer.
+- **The built-in-first real-probe case is skipped off Windows**, because `C:\Windows\System32\OpenSSH`
+  cannot be created on a Linux runner. It runs — and is the audit's exact condition — on any Windows
+  machine.
