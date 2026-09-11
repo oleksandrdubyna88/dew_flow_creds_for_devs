@@ -52,6 +52,7 @@ function world(
   const underlying: UseAction = {
     kind: overrides.kind ?? 'db',
     action: 'query',
+    mutatesSecrets: false,
     verb: 'run a query against',
     validate: () => ({ ok: true }),
     summarize: (body) => String((body as { query?: unknown }).query ?? ''),
@@ -188,6 +189,7 @@ function underlyingThatRecords(ran: string[]): UseAction {
   return {
     kind: 'db',
     action: 'query',
+    mutatesSecrets: false,
     verb: 'run a query against',
     validate: () => ({ ok: true }),
     summarize: () => '',

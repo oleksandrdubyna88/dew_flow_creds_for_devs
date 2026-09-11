@@ -16,6 +16,7 @@ function action(kind: string, name: string, verb: string): UseAction {
     kind,
     action: name,
     verb,
+    mutatesSecrets: false,
     validate: () => ({ ok: true }),
     summarize: () => '',
     describeOutcome: () => '',

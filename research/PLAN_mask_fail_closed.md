@@ -192,8 +192,39 @@ can refuse without a side effect and nothing below it can. The file is back to e
 masker that can fail after the run" while asserting the case was unreachable. It is reachable, it is
 the rotation case, and it is now the branch's only reason to exist.
 
+**The code round found the same leak on the ERROR path, which the plan had not covered at all.** A
+rotation can store its new credential and *then* fail, and say so in the message it throws; masking
+that reason with the pre-run table redacts the OLD value and writes the new one into a local file
+that gets read, copied and backed up. A mutating action now re-reads storage on the failure path too,
+and when that read fails the reason is not written at all — which is the rule the plan stated in its
+own §3 and the first implementation did not hold. The answer also carries `actionRan: true` there,
+because "it threw" does not mean "it did nothing".
+
+**The pre-run failure was journalling a raw storage error.** Same rule, same miss: `tableOrFail`
+passed `describeError(error)` to the journal at the exact moment nothing could redact it. It writes a
+fixed sentence now.
+
+**The flag moved from the RESULT to the ACTION, and became required.** `UseActionResult.storedSecretChanged`
+was optional and reported after the fact, so a future action that writes a credential and forgets to
+set it would fall back to the pre-run table and leak. `UseAction.mutatesSecrets` is a required
+property of the action's definition: an action that does not decide does not compile. That also
+removed a performance regression the gate measured — every ordinary exec was paying for a second full
+keychain read of five fields — because storage is now re-read only for an action that can write one.
+
 ## Open tail
 
-None. The one thing deliberately not built is the plan's own rejected alternative: actions returning
-the values they injected would give the strongest possible table, and it would put the secret into
-the same object as the response body - which is the one place this design keeps it out of.
+Three, all recorded rather than half-done:
+
+- **An absent masking provider is still treated as a successful empty table.** `tableFor` answers
+  `EMPTY_MASK_TABLE` when `entriesFor` is `undefined`, which is how a window without storage and the
+  integration test construct a server. `extension.ts` always passes one, so no shipped path is
+  affected — but closing it properly means deciding what a window with no storage may serve at all,
+  which is a product question and not this change's to answer silently.
+- **Neither table read is bounded by a timeout.** A keychain that never settles leaves the request
+  pending. This predates the change (the old code awaited the same read, after the run) and is not
+  made worse by it, but a rotation whose result is unknown is a worse shape of hang than an exec's.
+  What a fix needs is a NUMBER, and picking a keychain deadline has its own failure mode — a slow but
+  working hardware keychain answering just after it.
+- The plan's own rejected alternative stands rejected: actions returning the values they injected
+  would give the strongest possible table, and would put the secret into the same object as the
+  response body, which is the one place this design keeps it out of.

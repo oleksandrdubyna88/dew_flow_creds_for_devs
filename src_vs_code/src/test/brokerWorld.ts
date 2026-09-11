@@ -48,7 +48,7 @@ interface World {
    * by failing, so the catch around `run` had no test at all. That is the branch that decides what
    * an agent is told about an internal failure.</p>
    */
-  result: { status: number; body: Record<string, unknown>; storedSecretChanged?: boolean } | Error;
+  result: { status: number; body: Record<string, unknown> } | Error;
 }
 
 function world(options: {
@@ -64,7 +64,12 @@ function world(options: {
    * secrets".</p>
    */
   maskerFails?: 'before' | 'after' | 'entityGone';
-  /** A value the action writes into storage DURING the run — a rotation, in one word. */
+  /**
+   * A value the action writes into storage DURING the run — a rotation, in one word.
+   *
+   * <p>Setting it also makes the action declare `mutatesSecrets`, because in the product those two
+   * facts are the same fact: the flag is what says "this one writes".</p>
+   */
   rotatesTo?: string;
   burns?: boolean;
   alias?: { accountId: string; entityId: string; entityName: string; kind: string };
@@ -116,6 +121,7 @@ function world(options: {
   const action = (name: string): unknown => ({
     kind: 'ssh',
     action: name,
+    mutatesSecrets: options.rotatesTo !== undefined,
     verb: `run a command on`,
     describeOutcome: (): string => 'exit 0',
     validate: (body: Record<string, unknown>): unknown =>

@@ -121,11 +121,7 @@ test('a ROTATION whose refresh fails is WITHHELD — the new value is in no tabl
     maskerFails: 'after',
     rotatesTo: ROTATED,
   });
-  w.result = {
-    status: 200,
-    body: { rotated: true, stdout: `new password is ${ROTATED}`, exitCode: 0 },
-    storedSecretChanged: true,
-  };
+  w.result = { status: 200, body: { rotated: true, stdout: `new password is ${ROTATED}`, exitCode: 0 } };
   try {
     const { port, secret } = await share(w);
 
@@ -146,11 +142,7 @@ test('a ROTATION whose refresh fails is WITHHELD — the new value is in no tabl
 
 test('a rotation whose refresh WORKS masks the value the run wrote, not only the one it replaced', async () => {
   const w = world({ secrets: [{ value: SECRET_VALUE, label: 'PASSWORD' }], rotatesTo: ROTATED });
-  w.result = {
-    status: 200,
-    body: { rotated: true, stdout: `old ${SECRET_VALUE} new ${ROTATED}`, exitCode: 0 },
-    storedSecretChanged: true,
-  };
+  w.result = { status: 200, body: { rotated: true, stdout: `old ${SECRET_VALUE} new ${ROTATED}`, exitCode: 0 } };
   try {
     const { port, secret } = await share(w);
 
@@ -160,6 +152,52 @@ test('a rotation whose refresh WORKS masks the value the run wrote, not only the
     const stdout = String((answer.body as { stdout?: unknown }).stdout);
     assert.ok(!stdout.includes(ROTATED), `the NEW value must be masked too: ${stdout}`);
     assert.ok(!stdout.includes(SECRET_VALUE), `and the old one still is: ${stdout}`);
+  } finally {
+    w.server.dispose();
+  }
+});
+
+test('a rotation that THREW after writing does not put the new value in the journal', async () => {
+  // Found by the review gate against the first implementation, which masked the error reason with
+  // the pre-run table only. A rotation can store its new credential and THEN fail — and then say so
+  // in the message it throws. The pre-run table redacts the old value and writes the new one to a
+  // local file that gets read, copied and backed up.
+  const w = world({ secrets: [{ value: SECRET_VALUE, label: 'PASSWORD' }], rotatesTo: ROTATED });
+  w.result = new Error(`could not confirm the new password ${ROTATED}`);
+  try {
+    const { port, secret } = await share(w);
+
+    const answer = await call(port, '/v1/use/exec', { token: secret, body: { command: 'rotate' } });
+
+    const lines = w.audit.join(' | ');
+    assert.ok(!lines.includes(ROTATED), `the audit must not carry the new value: ${lines}`);
+    assert.equal(
+      (answer.body as { actionRan?: unknown }).actionRan,
+      true,
+      '"it threw" does not mean "it did nothing" — the write may already have happened',
+    );
+  } finally {
+    w.server.dispose();
+  }
+});
+
+test('when a rotation throws AND the re-read fails, the reason is not written at all', async () => {
+  // The end of that road: nothing this window holds can redact the message, so it does not go in
+  // the journal. The plan said so as a rule and the first implementation did not hold it.
+  const w = world({
+    secrets: [{ value: SECRET_VALUE, label: 'PASSWORD' }],
+    rotatesTo: ROTATED,
+    maskerFails: 'after',
+  });
+  w.result = new Error(`could not confirm the new password ${ROTATED}`);
+  try {
+    const { port, secret } = await share(w);
+
+    await call(port, '/v1/use/exec', { token: secret, body: { command: 'rotate' } });
+
+    const lines = w.audit.join(' | ');
+    assert.ok(!lines.includes(ROTATED), lines);
+    assert.match(lines, /reason withheld/);
   } finally {
     w.server.dispose();
   }

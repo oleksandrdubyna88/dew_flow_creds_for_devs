@@ -56,10 +56,23 @@ export function statusForErrorCode(code: ErrorCode): number {
 
 export interface ErrorBody {
   error: { code: ErrorCode; message: string };
+  /** Present, and always true, only when the action may have taken effect before it failed. */
+  actionRan?: true;
 }
 
-export function errorBody(code: ErrorCode, message: string): ErrorBody {
-  return { error: { code, message } };
+export function errorBody(
+  code: ErrorCode,
+  message: string,
+  /**
+   * The side effect may have happened anyway.
+   *
+   * <p>Beside the error rather than inside it, so a client reading `error.code` need not know about
+   * it to be warned. Set for an action that can write a stored secret: "it threw" does not mean "it
+   * did nothing", and a rotation that failed after writing must not be retried blindly.</p>
+   */
+  actionRan = false,
+): ErrorBody {
+  return actionRan ? { error: { code, message }, actionRan: true } : { error: { code, message } };
 }
 
 /**
@@ -99,6 +112,11 @@ export const MASKING_UNAVAILABLE =
  * that cannot tell "it did not happen" from "it happened and you cannot see it" will retry — and
  * the action this fires for rotates a credential, so a blind retry rotates twice.</p>
  */
+/** The one shape a withheld answer takes. */
+export function withheldBody(): ErrorBody {
+  return errorBody('internal', OUTPUT_WITHHELD, true);
+}
+
 export const OUTPUT_WITHHELD =
   'The action ran, and its output could not be redacted, so it is withheld. Do NOT retry: the '
   + 'change has already been made. Ask the person to check the entry and the agent journal.';
