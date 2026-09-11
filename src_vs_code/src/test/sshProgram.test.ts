@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import type { PathProbe } from '../sshProgram';
+import { BUILT_IN_DIR, GIT_SSH, pathWith } from './sshPath';
 import {
   NO_AGENT_TO_FORWARD,
   agentForwardEnv,
@@ -23,21 +23,6 @@ test('on Windows without agent forwarding nothing is substituted', () => {
   // no reason to be moved off the client the person's own config was written against.
   assert.equal(openSshProgram('ssh', false, 'win32', present), 'ssh');
 });
-
-/**
- * A `PATH` stated rather than inherited.
- *
- * <p>These two tests used to take the real one, and that is audit finding #8: the product is RIGHT
- * to answer the bare word when `PATH` already resolves `ssh` to the built-in (that is T20), so on a
- * Windows machine whose `PATH` puts `C:\Windows\System32\OpenSSH` first they failed — while
- * passing in CI, which is Linux, where the probe could never fire at all.</p>
- */
-function pathWith(...dirs: readonly string[]): PathProbe {
-  return { pathDirs: dirs, hasTool: (dir) => dirs.includes(dir) };
-}
-
-const GIT_SSH = String.raw`C:\Program Files\Git\usr\bin`;
-const BUILT_IN_DIR = String.raw`C:\Windows\System32\OpenSSH`;
 
 test('on Windows a forwarding connection gets the built-in client when PATH does not', () => {
   assert.equal(

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { buildSshCommand, describeSshTarget, isSafeSshHost, isSafeSshUser } from '../sshCommand';
 import { EntityMetadata } from '../types';
+import { BUILT_IN_DIR, GIT_SSH, pathWith } from './sshPath';
 
 const entity = (over: Partial<EntityMetadata> = {}): EntityMetadata => ({
   id: 'e1',
@@ -93,20 +94,6 @@ test('a jump host and a forward reach the line through the shared composer', () 
 // through PATH, and where Git for Windows is installed that is an MSYS build which cannot open
 // the named pipe our agent listens on. The test above asserts the FLAG is composed, which was
 // true throughout. See `sshProgram.ts` for the measurement.
-
-/**
- * A `PATH` stated rather than inherited — see `sshProgram.test.ts` for why (audit finding #8).
- *
- * <p>`pathProbe` has existed on `SshCommandOptions` since T20, commented "Injected only by tests",
- * and until now no test supplied it: this one read the real `PATH` and failed on any Windows machine
- * whose built-in OpenSSH came first, while passing in CI because CI is Linux.</p>
- */
-function pathWith(...dirs: readonly string[]): { pathDirs: readonly string[]; hasTool: (dir: string) => boolean } {
-  return { pathDirs: dirs, hasTool: (dir) => dirs.includes(dir) };
-}
-
-const GIT_SSH = String.raw`C:\Program Files\Git\usr\bin`;
-const BUILT_IN_DIR = String.raw`C:\Windows\System32\OpenSSH`;
 
 test('on Windows a forwarding line names the client that can reach the agent', () => {
   const line = buildSshCommand(entity({ agentForward: true }), 'win32', {

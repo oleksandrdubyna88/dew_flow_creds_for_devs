@@ -70,9 +70,22 @@ export function pathDirsOf(value: string | undefined, delimiter: string): string
   return (value ?? '').split(delimiter).filter((dir) => dir.length > 0);
 }
 
-function defaultProbe(): PathProbe {
+/**
+ * The probe production uses when no caller injects one.
+ *
+ * <p>Exported so a test can assert what it actually SEES. The review gate's point: a test that only
+ * checks `pathSshIsBuiltIn` on a Linux runner gets `false` whether the probe read the environment or
+ * ignored it entirely — which is the shape of a test with no teeth, and exactly the defect this
+ * change is about.</p>
+ *
+ * <p>The delimiter follows the TARGET platform, not the host. They are the same in every shipped
+ * path, and differ only for a caller that names `win32` while running elsewhere — where taking the
+ * host's `:` would split a Windows `PATH` into one bogus entry, which is the bug this change
+ * removes, reintroduced from the other side.</p>
+ */
+export function defaultProbe(platform: NodeJS.Platform = process.platform): PathProbe {
   return {
-    pathDirs: pathDirsOf(process.env.PATH, path.delimiter),
+    pathDirs: pathDirsOf(process.env.PATH, platform === 'win32' ? ';' : ':'),
     hasTool: (dir) => fs.existsSync(path.join(dir, 'ssh.exe')),
   };
 }
@@ -96,7 +109,7 @@ function normalizeDir(dir: string): string {
  */
 export function pathSshIsBuiltIn(
   platform: NodeJS.Platform,
-  probe: PathProbe = defaultProbe(),
+  probe: PathProbe = defaultProbe(platform),
 ): boolean {
   if (platform !== 'win32') {
     return false; // off Windows there is no built-in/MSYS split to detect

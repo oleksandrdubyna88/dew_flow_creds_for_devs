@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { fieldsOutcome } from '../configFields';
+import { enginePositions } from './engineJson';
 
 /**
  * Why the Fields tab has nothing to show — which is three answers, not two.
@@ -94,21 +95,3 @@ test('an empty body is rows, not a complaint', () => {
   assert.equal(outcome.kind, 'rows');
   assert.deepEqual(outcome.kind === 'rows' ? outcome.fields : undefined, []);
 });
-
-/**
- * Whether THIS engine offers a position for this body at all.
- *
- * <p>V8 has two message shapes and only one carries one; which you get depends on the engine, and the
- * 2026-09-09 audit watched these assertions fail under Node 20 while passing under Node 24 (finding
- * #8). Relaxing them to "the right line OR none" would have made them vacuous — a regression that
- * stopped extracting lines entirely would pass. Asking the engine what it said keeps the assertion
- * strict wherever an answer exists, and silent only where none does.</p>
- */
-function enginePositions(body: string): boolean {
-  try {
-    JSON.parse(body);
-    return false;
-  } catch (error) {
-    return /\bline \d+/i.test((error as Error).message);
-  }
-}
