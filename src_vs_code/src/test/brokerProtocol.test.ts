@@ -68,7 +68,7 @@ test('every error code maps to its documented status', () => {
     payload_too_large: 413,
     too_many_requests: 429,
     consent_timeout: 504,
-  forbidden: 403,
+    forbidden: 403,
     tool_missing: 412,
     internal: 500,
   };

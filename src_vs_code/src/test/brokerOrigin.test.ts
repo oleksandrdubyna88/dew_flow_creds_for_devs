@@ -25,6 +25,9 @@ test('a real client on this port is admitted', () => {
   assert.ok(admitted({ host: 'localhost:4123' }));
   assert.ok(admitted({ host: 'LOCALHOST:4123' }), 'a hostname is case-insensitive');
   assert.ok(admitted({ host: '[::1]:4123' }));
+  // Brackets are stripped before the comparison: a reviewer asked whether every runtime's `URL`
+  // hands back `[::1]` or `::1` from `hostname`, and comparing the bare address removes the question.
+  assert.ok(admitted({ host: '::1:4123' }) === false, 'an unbracketed IPv6 host is not a valid Host anyway');
 });
 
 test('a rebound page is refused by its Host, with no Origin anywhere in sight', () => {

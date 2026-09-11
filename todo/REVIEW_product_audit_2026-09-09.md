@@ -195,7 +195,7 @@ restoredVault = requires-generation-2
 
 | № | Приоритет | Проблема | Подтверждение | План |
 |---|---|---|---|---|
-| 9 | P2 | Брокер не проверяет `Origin`, `Host`, `Sec-Fetch-Site`: `POST /v1/alias/<action>` не требует токена, простой cross-origin POST (`text/plain`, без preflight) поднимает диалог согласия в чужом VS Code; без проверки `Host` DNS rebinding читает неаутентифицированные GET (`/v1/aliases`, списки записей) | `grep` по `src/` — ни одной проверки; `handleAlias` `credsAgentServer.ts:346-388`; все реальные клиенты адресуют `http://127.0.0.1:<port>` | [PLAN_broker_origin_guard.md](PLAN_broker_origin_guard.md) |
+| 9 | P2 | Брокер не проверяет `Origin`, `Host`, `Sec-Fetch-Site`: `POST /v1/alias/<action>` не требует токена, простой cross-origin POST (`text/plain`, без preflight) поднимает диалог согласия в чужом VS Code; без проверки `Host` DNS rebinding читает неаутентифицированные GET (`/v1/aliases`, списки записей) | `grep` по `src/` — ни одной проверки; `handleAlias` `credsAgentServer.ts:346-388`; все реальные клиенты адресуют `http://127.0.0.1:<port>` | [PLAN_broker_origin_guard.md](../research/PLAN_broker_origin_guard.md) - **IMPLEMENTED 2026-09-11** |
 | 10 | P3 | Настройка `credSshManager.maskAgentOutput` объявлена, задокументирована как `true` по умолчанию, покрыта help-тестом — и не читается нигде; направление безопасное (маска всегда включена), но переключатель врёт | `package.json:222`, `README.md:1068`; из 12 читаемых ключей `credSshManager.*` её нет | в [PLAN_mask_fail_closed.md](../research/PLAN_mask_fail_closed.md) |
 
 Поддерживает вывод «безусловного P0 нет»: в продакшн-коде расширения ноль `console.log/error/warn`, диагностический журнал не касается master key, PIN и парольных фраз.
