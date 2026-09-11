@@ -100,6 +100,7 @@ export function scriptRunAction(deps: AgentUseDeps): UseAction {
   return {
     kind: 'script',
     action: 'run',
+    mutatesSecrets: false,
     verb: 'run the stored script of',
     describeOutcome: execOutcome,
     validate: () => ({ ok: true }),
@@ -165,6 +166,7 @@ export function terminalRunAction(deps: AgentUseDeps): UseAction {
   return {
     kind: 'terminal',
     action: 'run',
+    mutatesSecrets: false,
     verb: 'run the stored command of',
     describeOutcome: execOutcome,
     validate: () => ({ ok: true }),
@@ -215,6 +217,7 @@ export function credentialExportEnvAction(deps: AgentUseDeps): UseAction {
   return {
     kind: 'credential',
     action: 'exportEnv',
+    mutatesSecrets: false,
     verb: 'export the stored secret of',
     describeOutcome(result) {
       const body = result.body as EnvExportResponseBody;
@@ -257,6 +260,7 @@ export function dbQueryAction(
   return {
     kind: 'db',
     action: 'query',
+    mutatesSecrets: false,
     verb: 'run a query against',
     describeOutcome: execOutcome,
     validate(body) {
@@ -352,6 +356,7 @@ export function vpnAction(
   return {
     kind: 'vpn',
     action,
+    mutatesSecrets: false,
     verb: action === 'up' ? 'start the VPN tunnel of' : 'stop the VPN tunnel of',
     describeOutcome(result) {
       return (result.body as { opened?: boolean }).opened === true ? 'opened' : 'refused';

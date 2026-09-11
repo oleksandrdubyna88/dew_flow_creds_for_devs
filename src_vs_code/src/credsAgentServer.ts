@@ -570,11 +570,7 @@ export class CredsAgentServer implements vscode.Disposable {
     await this.runAndDeliver(res, grant, useAction, action, body, via, summary, table);
   }
 
-  /**
-   * Run the action and answer for it, once consent and the mask table are in hand — the seam being
-   * that everything above can refuse without a side effect and nothing below can. The sequence
-   * itself lives in `brokerResponse.ts`; this binds it to one request.
-   */
+  /** Run the action and answer for it — the sequence is `brokerResponse.runAndDeliver`. */
   private async runAndDeliver(
     res: http.ServerResponse,
     grant: Grant,
@@ -593,7 +589,9 @@ export class CredsAgentServer implements vscode.Disposable {
         respond: (status, sent) => this.respond(res, status, sent),
         log: (line) => this.log(line),
         burn: (status) => burnIfSpent(this.burnAfterUse, grant, status, this.note),
-        fail: (why) => this.respondError(res, 'internal', INTERNAL_FAILURE, grant, action, `${summary} · ${why}`, via),
+        fail: (why, actionRan) =>
+          this.respondError(res, 'internal', INTERNAL_FAILURE, grant, action, `${summary} · ${why}`, via, actionRan),
+        mutatesSecrets: useAction.mutatesSecrets,
         refresh: refreshFrom(this.maskEntriesFor, grant),
         table,
         where: { grant: GrantRegistry.describe(grant), entityName: grant.entityName, action, via, summary },
@@ -729,6 +727,8 @@ export class CredsAgentServer implements vscode.Disposable {
     // record — what it asked for and was told no — so a line that could not say which door it
     // arrived at would be missing from exactly the view that wants it most.
     via?: AuditDoor,
+    /** The side effect may have happened anyway — see `errorBody`. */
+    actionRan?: boolean,
   ): void {
     // An unknown token is answered but never logged: the CLI legitimately
     // probes, and a log line per probe would drown the real calls.
@@ -742,7 +742,7 @@ export class CredsAgentServer implements vscode.Disposable {
         via,
       });
     }
-    this.respond(res, statusForErrorCode(code), errorBody(code, message));
+    this.respond(res, statusForErrorCode(code), errorBody(code, message, actionRan));
   }
 
   private log(entry: Omit<Parameters<typeof formatAuditLine>[0], 'at'>): void {

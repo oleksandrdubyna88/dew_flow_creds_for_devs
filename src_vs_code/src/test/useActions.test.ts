@@ -12,6 +12,7 @@ import { UseAction, UseActionRegistry } from '../useActions';
 const stub = (kind: string, action: string): UseAction => ({
   kind,
   action,
+  mutatesSecrets: false,
   verb: `${action} on`,
   validate: () => ({ ok: true }),
   summarize: () => `${kind}:${action}`,

@@ -137,6 +137,7 @@ export function sshExecAction(deps: SshUseDeps): UseAction {
   return {
     kind: 'ssh',
     action: 'exec',
+    mutatesSecrets: false,
     verb: 'run a command on',
     describeOutcome(result) {
       const body = result.body as ExecResponseBody;
@@ -215,6 +216,7 @@ export function sshTerminalAction(deps: SshUseDeps): UseAction {
   return {
     kind: 'ssh',
     action: 'terminal',
+    mutatesSecrets: false,
     verb: 'open an interactive terminal to',
     describeOutcome: () => 'opened',
     validate: () => ({ ok: true }),

@@ -21,20 +21,6 @@ export interface UseActionContext {
 export interface UseActionResult {
   readonly status: number;
   readonly body: unknown;
-  /**
-   * Whether this action WROTE a stored secret while it ran.
-   *
-   * <p>One boolean, and it exists because of the one case that breaks the ordinary order: a
-   * rotation stores its new value DURING the run, so no table read before the run can contain it.
-   * If the read that would have found it then fails, there is nothing to redact the output with and
-   * it must be withheld rather than sent — falling back to the pre-run table would send a freshly
-   * committed production credential in the clear.</p>
-   *
-   * <p>A boolean rather than the values themselves, deliberately: handing the secret back through
-   * `UseActionResult` would put it in the same object as the response body, which is the one place
-   * this whole design keeps it out of.</p>
-   */
-  readonly storedSecretChanged?: boolean;
 }
 
 export interface UseAction {
@@ -49,6 +35,25 @@ export interface UseAction {
    */
   readonly verb: string;
   /** Reject a malformed body before any dialog or side effect. */
+  /**
+   * Whether this action can WRITE a stored secret while it runs.
+   *
+   * <p>Required, not optional, and declared on the ACTION rather than reported by its result — both
+   * on the review gate's insistence, and both for the same reason: a new action that writes a
+   * credential must decide this where it is defined, or it does not compile. An optional field
+   * reported afterwards is a measure applied at some of its sites, which is this codebase's most
+   * repeated defect and exactly what audit finding #1 was.</p>
+   *
+   * <p>What it decides: a rotation stores its new value DURING the run, so no table read from
+   * before the run can contain it. Only such an action is worth re-reading storage for, and only
+   * such an action must have its output WITHHELD when that re-read fails — falling back to the
+   * pre-run table there would mask the old credential and send the fresh one in the clear.</p>
+   *
+   * <p>A boolean, never the values: handing the secret back through the result would put it in the
+   * same object as the response body, which is the one place this design keeps it out of.</p>
+   */
+  readonly mutatesSecrets: boolean;
+
   validate(body: unknown): { ok: true } | { ok: false; message: string };
   /** One line for the first-use consent dialog (e.g. the command about to run). */
   summarize(body: unknown): string;

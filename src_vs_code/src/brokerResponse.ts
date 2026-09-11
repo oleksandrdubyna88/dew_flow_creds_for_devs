@@ -1,5 +1,5 @@
 import { AuditDoor } from './agentAuditLog';
-import { OUTPUT_WITHHELD, errorBody, statusForErrorCode } from './brokerProtocol';
+import { statusForErrorCode, withheldBody } from './brokerProtocol';
 import { describeError } from './describeError';
 import { EMPTY_MASK_TABLE, MaskEntry, MaskTable, buildMaskTable, maskResponseBody } from './secretMasker';
 
@@ -92,33 +92,8 @@ export function unionTables(a: MaskTable, b: MaskTable): MaskTable {
   return { entries };
 }
 
-/**
- * The table to redact a finished action's output with — or `undefined`, meaning withhold it.
- *
- * <p>Three cases, and the middle one is what the review gate found this plan getting wrong.</p>
- *
- * <ul>
- * <li>The refresh SUCCEEDED — mask with the union, which covers both the value the action was given
- *     and any value it wrote.</li>
- * <li>The refresh FAILED and the action changed a stored secret — <b>withhold</b>. A rotation
- *     stores its new value while it runs, so no read from before it can hold that value, and the
- *     pre-run table would mask the OLD credential while sending the new one in the clear. All three
- *     review vendors found this independently; it is the exact case the whole change exists for.</li>
- * <li>The refresh failed and nothing changed — the pre-run table is complete by construction, so
- *     use it. Withholding here would be the "certain outage for a possible leak" trade taken in the
- *     one case where there is no possible leak.</li>
- * </ul>
- */
-export function maskingFor(
-  before: MaskTable,
-  after: MaskTable | undefined,
-  storedSecretChanged: boolean,
-): MaskTable | undefined {
-  if (after !== undefined) {
-    return unionTables(before, after);
-  }
-  return storedSecretChanged ? undefined : before;
-}
+/** What the journal records instead of a reason it cannot redact. */
+export const REASON_WITHHELD = '[reason withheld: the values to redact could not be read]';
 
 /**
  * The reason an action failed, as the JOURNAL may hold it.
@@ -156,13 +131,20 @@ export interface Delivery {
   /**
    * The values as they are once the action has finished; `undefined` when that read failed.
    *
-   * <p>`refreshFrom` builds this: a ROTATION writes its new value while it runs, so `table` cannot
-   * contain it. Best-effort — what a failure here costs depends entirely on whether the action
-   * wrote anything, which is `maskingFor`'s question.</p>
+   * <p>`refreshFrom` builds this. Called ONLY for an action that can write a secret: a rotation
+   * stores its new value while it runs, so `table` cannot contain it. Every other action keeps a
+   * single keychain read, because its pre-run table is complete by construction.</p>
    */
   refresh(): Promise<MaskTable | undefined>;
-  /** Answer an internal failure, with a reason for the journal that has already been masked. */
-  fail(reason: string): void;
+  /**
+   * Answer an internal failure, with a reason for the journal that has already been masked.
+   *
+   * <p>`actionRan` says the side effect may have happened anyway — true whenever the action could
+   * write a secret, because "it threw" does not mean "it did nothing".</p>
+   */
+  fail(reason: string, actionRan: boolean): void;
+  /** Whether this call's action can write a stored secret — see `UseAction.mutatesSecrets`. */
+  mutatesSecrets: boolean;
 }
 
 interface AuditLine {
@@ -191,57 +173,88 @@ interface AuditLine {
  */
 export async function runAndDeliver(
   d: Delivery,
-  run: () => Promise<{ status: number; body: unknown; storedSecretChanged?: boolean }>,
+  run: () => Promise<{ status: number; body: unknown }>,
   describeOutcome: (result: { status: number; body: unknown }) => string,
 ): Promise<void> {
-  let result: { status: number; body: unknown; storedSecretChanged?: boolean };
+  let result: { status: number; body: unknown };
   try {
     result = await run();
   } catch (error) {
-    // THAT it failed, never HOW. The reason is not lost, it MOVES to the journal — which is local,
-    // and is where a person looks when an agent reports a failure — through the SAME masker the
-    // response body goes through, because a driver's message is exactly where a credential turns up.
-    d.fail(maskedReason(d.table, describeError(error)));
+    await failed(d, error);
     return;
   }
-  // The refresh happens only once the action has finished, because what it is for is the value the
-  // action may have just written.
-  const after = await d.refresh();
-  await answer(d, result, after, () => describeOutcome(result));
+  await answered(d, result, describeOutcome(result));
 }
 
-async function answer(
+/**
+ * An action that threw — and it may have thrown AFTER writing.
+ *
+ * <p>The review gate found this path leaking what the success path no longer does: a rotation that
+ * stores its new credential and then fails can put that value in the error it throws, and masking
+ * with the pre-run table would redact the OLD one and write the new one to the journal in the clear.
+ * A mutating action therefore re-reads storage here too, and when that read fails the reason is not
+ * written at all — the rule the plan stated and this path had not been holding.</p>
+ *
+ * <p>`actionRan` rides along for a mutating action, because "it threw" does not mean "it did
+ * nothing": the write may already have happened, and a blind retry would rotate twice.</p>
+ */
+async function failed(d: Delivery, error: unknown): Promise<void> {
+  const table = d.mutatesSecrets ? await safeRefresh(d) : d.table;
+  if (table === undefined) {
+    d.fail(REASON_WITHHELD, true);
+    return;
+  }
+  // THAT it failed, never HOW. The reason is not lost, it MOVES to the journal — which is local,
+  // and is where a person looks when an agent reports a failure — through the SAME masker the
+  // response body goes through, because a driver's message is exactly where a credential turns up.
+  d.fail(maskedReason(table, describeError(error)), d.mutatesSecrets);
+}
+
+/**
+ * An action that answered: mask it, record it, send it, and spend a one-use entry — or withhold it.
+ *
+ * <p>Storage is re-read ONLY for an action that can write one, which is both the correct rule and
+ * the one that keeps an ordinary call at a single keychain read rather than two (the review gate
+ * measured the regression: every exec paying for a second full read of five fields). For every
+ * other action the pre-run table is complete by construction.</p>
+ */
+async function answered(
   d: Delivery,
-  result: { status: number; body: unknown; storedSecretChanged?: boolean },
-  afterTable: MaskTable | undefined,
-  describeOutcome: () => string,
+  result: { status: number; body: unknown },
+  outcome: string,
 ): Promise<void> {
-  const d2 = { ...d, after: afterTable };
-  return deliver(d2, result, describeOutcome);
-}
-
-async function deliver(
-  d: Delivery & { after: MaskTable | undefined },
-  result: { status: number; body: unknown; storedSecretChanged?: boolean },
-  describeOutcome: () => string,
-): Promise<void> {
-  const masking = maskingFor(d.table, d.after, result.storedSecretChanged === true);
+  const masking = d.mutatesSecrets ? await safeRefresh(d, d.table) : d.table;
   if (masking === undefined) {
     d.log({ ...d.where, outcome: 'withheld', detail: `${d.where.summary} · output withheld: the values to redact could not be re-read` });
     // `actionRan` is the load-bearing half: an agent that cannot tell "it did not happen" from "it
     // happened and you cannot see it" retries, and the only action that reaches here rotates a
     // credential — so a blind retry rotates twice and strands what the first one wrote.
-    d.respond(statusForErrorCode('internal'), { ...errorBody('internal', OUTPUT_WITHHELD), actionRan: true });
+    d.respond(statusForErrorCode('internal'), withheldBody());
     await d.burn(result.status);
     return;
   }
   const { body: sent, hits } = maskResponseBody(result.body, masking);
   // The COUNT, never which values: a journal that named them would be the thing it protects against.
-  d.log({ ...d.where, outcome: describeOutcome(), detail: hits > 0 ? `${d.where.summary} · masked ${hits} secret value(s)` : d.where.summary });
+  d.log({ ...d.where, outcome, detail: hits > 0 ? `${d.where.summary} · masked ${hits} secret value(s)` : d.where.summary });
   d.respond(result.status, sent);
   // After the answer is on the wire, never before: the use has happened by now, and a storage
   // failure while burning must not cost the agent the result it already earned.
   await d.burn(result.status);
+}
+
+/**
+ * The post-run read, unioned with what came before — or `undefined` when it could not be made.
+ *
+ * <p>Caught here rather than trusted to the caller's `refresh`: the interface allows any
+ * implementation, and a gate that depends on an unrelated function remembering to catch is not a
+ * gate. `undefined` means withhold.</p>
+ */
+async function safeRefresh(d: Delivery, before?: MaskTable): Promise<MaskTable | undefined> {
+  const after = await d.refresh().catch(() => undefined);
+  if (after === undefined) {
+    return undefined;
+  }
+  return before === undefined ? after : unionTables(before, after);
 }
 
 /**
