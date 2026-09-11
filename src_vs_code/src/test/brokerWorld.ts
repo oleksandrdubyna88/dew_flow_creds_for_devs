@@ -173,15 +173,16 @@ function world(options: {
     maskerFor(w, options),
     burnerFor(w, options.burns),
     aliasResolverFor(options.alias),
-    // Whether the entry a grant points at may be used exactly once. `oneUse` is the option a
-    // person picks in the entry form, and the broker queues calls on such an entry.
-    oneUseFor(options.oneUse),
     options.aliasList === undefined ? undefined : () => options.aliasList ?? [],
     mcpEntriesFor(options.mcpEntries),
     options.visibleConfig,
     mcpUseFor(options.mcpUse),
     trashFor(w, options.trash),
     createFor(w, options.create),
+    undefined,
+    // Last, where every new optional hook goes: whether the entry a grant points at may be used
+    // exactly once. `oneUse` is the option a person picks in the entry form.
+    oneUseFor(w, options.oneUse),
   );
   return w;
 }
@@ -253,9 +254,19 @@ function settingsFor(maxCalls: number | undefined): <T>(key: string, fallback: T
     key === 'agentGrantMaxCalls' && maxCalls !== undefined ? (maxCalls as unknown as T) : fallback;
 }
 
-/** Whether the entry is one-use. Absent means this window queues nothing, which is a real build. */
-function oneUseFor(oneUse: boolean | undefined): (() => boolean) | undefined {
-  return oneUse === true ? () => true : undefined;
+/**
+ * Whether the entry is one-use — read from storage, the way the product reads it.
+ *
+ * <p>It answers FALSE once the entry has burned, and that is not a detail: the real predicate is
+ * `oneUseIn(storage)`, which looks the node up, and a burned node is not there. A stub that kept
+ * saying `true` after the burn hid a live defect — `burnAndMark` asked this question AFTER the
+ * burn, so in production the lane was never marked spent and the second queued call ran the action
+ * a second time. Every test here passed.</p>
+ *
+ * <p>Absent means this window queues nothing, which is a real build.</p>
+ */
+function oneUseFor(w: World, oneUse: boolean | undefined): ((a: string, entityId: string) => boolean) | undefined {
+  return oneUse === true ? (_a: string, entityId: string) => !w.burned.includes(entityId) : undefined;
 }
 
 /** What a masker throws when the entity a grant points at is not in the vault any more. */

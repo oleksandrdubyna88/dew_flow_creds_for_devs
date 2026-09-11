@@ -110,6 +110,13 @@ retry never reaches the wire at all.
 **Nothing changed on the server.** `VaultPrecondition.RequireAbsent` and `ConcurrencyTests` have
 covered this since conditional writes landed; the whole gap was that no client ever sent the header.
 
+**A conflict survives an ETag-less response**, which the code round found: `rememberVersion` forgets
+the version when a response carries no ETag, and forgetting means "write unconditionally" — so a
+re-read through an older server or a header-stripping proxy turned the 412 straight back into the
+overwrite it had prevented. `MUST_REREAD` is now the one state an ETag-less response does not clear.
+The combination cannot really arise (a server that answers 412 is a server that sends ETags), and
+the safe side of it costs an error message rather than somebody's vault.
+
 ## Open tail
 
 - **A write from a client that has never read is still unconditional**, unchanged: that is what

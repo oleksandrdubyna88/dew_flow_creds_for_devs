@@ -288,6 +288,30 @@ test('after deleting the remote vault, the next write creates rather than overwr
   assert.equal(seen[2].ifMatch, null);
 });
 
+test('a re-read that carries NO version does not turn a conflict back into a blind write', async () => {
+  // The hole the gate found in the fix for the hole. `MUST_REREAD` refuses until the client looks
+  // again — but a read through an older server, or a proxy that strips the header, answers 200
+  // with no ETag, and forgetting on an ETag-less read means forgetting the conflict too. The next
+  // write would then go out with no precondition at all, which is the overwrite the 412 stopped.
+  const seen = recordingServer([
+    { status: 200, body: 'ciphertext', etag: '"v1"' },
+    { status: 412 },
+    { status: 200, body: 'theirs' },
+    { status: 204 },
+  ]);
+  const transport = new ServerTransport('https://vault.example.com', async () => 'token');
+
+  await transport.readVault(account);
+  await assert.rejects(() => transport.writeVault(account, 'a'));
+  await transport.readVault(account);
+
+  await assert.rejects(() => transport.writeVault(account, 'b'), (error: Error) => {
+    assert.match(error.message, /re-read/i);
+    return true;
+  });
+  assert.equal(seen.length, 3, 'the write never reached the wire');
+});
+
 test('a successful write adopts the version the server returned', async () => {
   const seen = recordingServer([
     { status: 200, body: 'ciphertext', etag: '"v1"' },

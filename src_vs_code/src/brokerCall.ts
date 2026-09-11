@@ -4,7 +4,7 @@ import { runAndDeliver } from './brokerResponse';
 import { reservationRefused } from './brokerRequests';
 import { Grant, GrantLimits, GrantLookup, GrantRegistry } from './grantRegistry';
 import { grantLimits } from './grantLimits';
-import { OneUseLane } from './oneUseLane';
+import { OneUseLane, laneKeyFor } from './oneUseLane';
 import { MaskTable } from './secretMasker';
 import { UseAction } from './useActions';
 
@@ -68,16 +68,33 @@ export async function performCall(deps: CallDeps, call: CallSubject): Promise<vo
  * <p>The second caller is refused BEFORE anything runs. Letting it through and relying on the
  * action's own "no longer exists" lookup is still an invocation, and a handler that does anything
  * ahead of that lookup would do it twice.</p>
+ *
+ * <p>And the SPENT check comes before the one-use question, not after. The one-use question reads
+ * storage, a burned entry is not in storage, so a call that arrives after the first has finished
+ * sees an entry that no longer looks one-use — skips the queue, and runs. The lane knows what this
+ * window has spent; storage knows what the entry is; they diverge exactly at the burn.</p>
+ *
+ * <p>Keyed by ACCOUNT and entity, since storage addresses an entry by both — see `laneKeyFor`.</p>
  */
 async function queuedIfOneUse(deps: CallDeps, call: CallSubject): Promise<void> {
+  const key = laneKeyFor(call.grant.accountId, call.grant.entityId);
+  // The lane first, because it and storage stop agreeing the moment an entry burns.
+  if (deps.lane.isSpent(key) || (await takesItsTurn(deps, call, key))) {
+    refuseSpent(deps, call);
+  }
+}
+
+/** Run it — queued if this entry is one-use — and say whether it was already spent. */
+async function takesItsTurn(deps: CallDeps, call: CallSubject, key: string): Promise<boolean> {
   if (deps.isOneUse?.(call.grant.accountId, call.grant.entityId) !== true) {
     await answer(deps, call);
-    return;
+    return false;
   }
-  const outcome = await deps.lane.run(call.grant.entityId, () => answer(deps, call));
-  if (outcome.spent) {
-    deps.refuse('not_found', `"${call.grant.entityName}" was one-use and has already been used.`);
-  }
+  return (await deps.lane.run(key, () => answer(deps, call))).spent;
+}
+
+function refuseSpent(deps: CallDeps, call: CallSubject): void {
+  deps.refuse('not_found', `"${call.grant.entityName}" was one-use and has already been used.`);
 }
 
 function answer(deps: CallDeps, call: CallSubject): Promise<void> {

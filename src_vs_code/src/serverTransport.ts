@@ -320,15 +320,21 @@ export class ServerTransport implements VaultTransport {
   /**
    * Adopt the version the server reports, so a second write needs no extra read.
    *
-   * <p>A response with no ETag FORGETS whatever we held — an older server, or a proxy that
-   * strips the header. Keeping the previous version would refuse every later write, and keeping
-   * an earlier {@link ABSENT} would refuse them for the opposite reason.</p>
+   * <p>A response with no ETag FORGETS whatever we held — an older server, or a proxy that strips
+   * the header. Keeping the previous version would refuse every later write, and keeping an
+   * earlier {@link ABSENT} would refuse them for the opposite reason.</p>
+   *
+   * <p><b>Except {@link MUST_REREAD}, which survives.</b> Forgetting means "write
+   * unconditionally", so forgetting a conflict on an ETag-less read would turn the refusal
+   * straight back into the overwrite it prevented — the same hole one rung down. The combination
+   * cannot really arise (a server that answers `412` is a server that sends ETags), and the safe
+   * side of it costs an error message rather than somebody's vault.</p>
    */
   private rememberVersion(account: StoredAccount, response: Response): void {
     const etag = response.headers.get('ETag');
     if (etag !== null && etag.length > 0) {
       this.versions.set(account.accountId, etag);
-    } else {
+    } else if (this.versions.get(account.accountId) !== MUST_REREAD) {
       this.versions.delete(account.accountId);
     }
   }

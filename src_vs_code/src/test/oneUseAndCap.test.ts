@@ -81,6 +81,27 @@ test('two DOORS onto the same one-use entry still use it once', async () => {
   }
 });
 
+test('a call that arrives AFTER the first has finished is refused, not run', async () => {
+  // The sequential case, and it is not the concurrent one with a gap in it. Whether an entry is
+  // one-use is answered from STORAGE, and a burned entry is not in storage — so by the time this
+  // call asks, the entry no longer looks one-use, and it skipped the queue entirely and ran. The
+  // lane decides first now. Found by the gate, after the harness stopped pretending a burned entry
+  // still reads as one-use.
+  const w = world({ oneUse: true, burns: true, answers: ['Allow', 'Allow'] });
+  try {
+    const { port, secret } = await share(w);
+    assert.equal((await call(port, '/v1/use/exec', { token: secret, body: { command: 'id' } })).status, 200);
+    assert.deepEqual(w.burned, ['e1'], 'the entry is gone from storage now');
+
+    const after = await call(port, '/v1/use/exec', { token: secret, body: { command: 'id' } });
+
+    assert.equal(code(after), 'not_found');
+    assert.equal(w.ran.length, 1, `nothing ran a second time, ran ${w.ran.length}`);
+  } finally {
+    w.server.dispose();
+  }
+});
+
 test('an ordinary entry still runs two calls AT ONCE — only one-use queues', async () => {
   // The cost this design refuses to pay, and the assertion has to be about overlap rather than
   // about `ran`: a queue that ran both in turn would leave exactly the same two entries. The
