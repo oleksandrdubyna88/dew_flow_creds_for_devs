@@ -47,7 +47,7 @@ Module._resolveFilename = (request, ...rest) =>
   request === 'vscode' ? stub : originalResolve.call(Module, request, ...rest);
 
 const OUT = path.join(__dirname, '..', 'out');
-const { watchStrays } = require('./wslStrays.cjs');
+const { runAndSweep, startWatch } = require('./wslStrays.cjs');
 
 /** Set once WSL is known good; the sweep at the bottom checks for it. */
 let strays;
@@ -235,8 +235,7 @@ async function main() {
   }
   // Everything matching that is alive NOW belongs to somebody else — an earlier run, or a
   // developer with the real thing open. This run is answerable for what it adds to that.
-  strays = watchStrays(wsl, '[c]reds-mcp', 'creds-mcp processes');
-  await strays.start();
+  strays = await startWatch(wsl, '[c]reds-mcp', 'creds-mcp processes');
 
   // ---- a real window on Windows ---------------------------------------------
   const { CredsAgentServer } = require(path.join(OUT, 'credsAgentServer.js'));
@@ -386,19 +385,7 @@ async function main() {
   fs.rmSync(storageDir, { recursive: true, force: true });
 }
 
-// The sweep runs whatever happened, which is the other half of the fix: a run that failed partway
-// used to stop without taking its processes down, so the NEXT run inherited them and failed the
-// same check for the same reason — a loop that got louder rather than quieter.
-main()
-  .catch((error) => {
-    console.error(error);
-    failures += 1;
-  })
-  .finally(async () => {
-    const swept = strays === undefined ? [] : await strays.sweep();
-    if (swept.length > 0) {
-      console.log(`swept ${swept.length} process(es) this run left behind`);
-    }
-    console.log(failures === 0 ? '\nall WSL MCP checks passed' : `\n${failures} check(s) failed`);
-    process.exit(failures === 0 ? 0 : 1);
-  });
+// The sweep runs whatever happened — a run that failed partway must not hand its processes to the
+// next one. Both halves live in `wslStrays.cjs`: the tails here were near-identical, which is the
+// same argument that put the watch itself there.
+runAndSweep({ main, strays: () => strays, failures: () => failures, label: 'WSL MCP' });

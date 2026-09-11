@@ -83,4 +83,51 @@ function watchStrays(wsl, pattern, what) {
   };
 }
 
-module.exports = { watchStrays, matchingPids };
+/**
+ * Start watching, in one call.
+ *
+ * <p>The two lines this replaces were identical in both harnesses, which is the same argument that
+ * put the watch here in the first place.</p>
+ */
+async function startWatch(wsl, pattern, what) {
+  const strays = watchStrays(wsl, pattern, what);
+  await strays.start();
+  return strays;
+}
+
+/**
+ * Run a harness, sweep whatever it left behind, and exit with its verdict.
+ *
+ * <p>Here rather than at the bottom of each script because the two tails were near-identical, which
+ * is what SonarCloud called duplication on the very change that extracted the watch — fair, and the
+ * fix is to finish the extraction rather than to argue about a threshold.</p>
+ *
+ * <p>The sweep is in a `finally`, which is the whole point: a run that fails partway must not hand
+ * its processes to the next one.</p>
+ *
+ * @param main the harness; it may throw, and a throw counts as one more failure
+ * @param strays a getter, because the watch starts partway through `main`
+ * @param failures a getter for the harness's own count
+ * @param label what to call this run in the closing line
+ */
+function runAndSweep({ main, strays, failures, label }) {
+  let threw = false;
+  void main()
+    .catch((error) => {
+      console.error(error);
+      threw = true;
+    })
+    .finally(async () => {
+      const watch = strays();
+      const swept = watch === undefined ? [] : await watch.sweep();
+      if (swept.length > 0) {
+        console.log(`swept ${swept.length} process(es) this run left behind`);
+      }
+      const count = failures() + (threw ? 1 : 0);
+      const verdict = count === 0 ? `all ${label} checks passed` : `${count} check(s) failed`;
+      console.log(`\n${verdict}`);
+      process.exit(count === 0 ? 0 : 1);
+    });
+}
+
+module.exports = { watchStrays, matchingPids, startWatch, runAndSweep };
