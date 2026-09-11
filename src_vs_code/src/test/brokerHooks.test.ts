@@ -95,3 +95,14 @@ test('the hooks the server keeps are its own, and frozen', () => {
     (kept as Record<string, unknown>).listAliases = undefined;
   }, TypeError);
 });
+
+test('null is not an object hook, whatever typeof says', () => {
+  // CodeRabbit's, on the pull request, and it is this guard's own blind spot: `typeof null` is
+  // "object", so `mcpCreate: null` walked straight through the kind check — and then
+  // `handleMcpCreate` tests `create === undefined`, which null is not, and calls `create.choose`.
+  // A TypeError on the first create request, from a value the constructor had just approved.
+  assert.throws(() => checkedHooks({ mcpCreate: null } as never), /mcpCreate/);
+  assert.throws(() => checkedHooks({ configRoute: null } as never), /configRoute/);
+  // And it is not the general case: undefined still means "this window does not serve that".
+  assert.doesNotThrow(() => checkedHooks({ mcpCreate: undefined, configRoute: undefined }));
+});

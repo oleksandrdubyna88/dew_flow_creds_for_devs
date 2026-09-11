@@ -55,8 +55,8 @@ invisible today — exactly the shape of the 2026-08-27 month.
 
 ## Build order
 
-1. **`brokerHooks.ts`** (new): the `BrokerHooks` interface carrying all eleven fields with the doc
-   comments they have now, and `checkedHooks(hooks)` which throws on a key that is not one of them.
+1. **`brokerHooks.ts`** (new): the `BrokerHooks` interface carrying eleven optional callbacks plus
+   `storageDir` — twelve named keys — with the doc comments they have now, and `checkedHooks(hooks)` which throws on a key that is not one of them.
    A new file rather than a section, because the ceiling is the reason `performCall` already lives
    in `brokerCall.ts` — and because the eleven doc comments are ~90 lines on their own.
 2. **RED test** `brokerHooks.test.ts`: a typo'd key is refused and names itself; a correct set is
@@ -69,21 +69,25 @@ invisible today — exactly the shape of the 2026-08-27 month.
 
 ## Test plan
 
-- The existing suite is the behaviour proof: 3875 unit tests, plus `itest:agent`, `itest:cli`,
-  `itest:mcp`, `itest:masked-run`, `itest:git` in CI.
-- **The two that are NOT in CI are run by hand here** — `itest:mcp-wsl` and `itest:ssh-agent` —
-  because `creds-mcp-wsl-itest.cjs` is one of the seven call sites and is the blind spot this plan
-  names.
+- The existing suite is the behaviour proof: the unit tests (3883 as built), plus `itest:agent`,
+  `itest:cli`, `itest:mcp`, `itest:masked-run`, `itest:git` in CI.
+- **The THREE that are not in CI are run by hand here** — `itest:ssh-agent`, `itest:mcp-wsl` and
+  `itest:wsl-relay` — because `creds-mcp-wsl-itest.cjs` is one of the seven call sites and is the
+  blind spot this plan names. What they actually reported is under *What was run* below.
 - Teeth for the new guard: watch `checkedHooks` accept a typo'd key with the check removed.
 
 ## Definition of Done
 
-- [ ] No construction site passes a positional `undefined` for a hook.
-- [ ] An unknown hook name throws at construction, naming the key and listing what was expected.
-- [ ] `npm run lint`, `npm run typecheck`, the full unit suite.
-- [ ] Every integration script, including the two CI does not run.
-- [ ] `size-ratchet.mjs`, `plan-lifecycle.mjs`.
-- [ ] `module_extension.md` updated; this plan promoted with its deviations.
+- [x] No construction site passes a positional `undefined` for a hook.
+- [x] An unknown hook name throws at construction, naming the key and listing what was expected —
+      and so does a value that is not a plain object, and a value of the wrong kind.
+- [x] `npm run lint`, `npm run typecheck`, the full unit suite (3883, 0 fail).
+- [x] Every integration script CI runs, plus `itest:ssh-agent`, which it does not.
+- [ ] **`itest:mcp-wsl` and `itest:wsl-relay` are NOT green** — one check each, identically on
+      `main` and on this branch, for stray WSL processes left by earlier runs. Recorded below
+      rather than claimed; the comparison against `main` is the evidence.
+- [x] `size-ratchet.mjs`, `plan-lifecycle.mjs`.
+- [x] `module_extension.md` updated; this plan promoted with its deviations.
 
 ## Deliberately NOT in this change
 
@@ -147,6 +151,12 @@ second description of the interface, which is the thing that drifts.
 **What the server keeps is a frozen copy.** Two reviewers: a caller reusing its options object could
 otherwise switch a running window's feature off after construction, which the repository's
 immutability rule forbids anyway.
+
+**`null` is refused for the two object hooks**, which CodeRabbit found on the pull request and is
+this guard's own blind spot: `typeof null` is `"object"`, so `mcpCreate: null` passed the kind check
+— and `handleMcpCreate` tests `create === undefined`, which `null` is not, so it called
+`create.choose` on it. A TypeError on the first create request, from a value the constructor had
+just approved.
 
 **`aliasEntry` states what it needs of storage** instead of taking `unknown` and casting. A
 reviewer's: the cast erased the contract, so narrowing what `resolveKind` accepts would not have
