@@ -8,6 +8,7 @@ import {
   encryptJsonWrapped,
   readVaultVersion,
   readVaultWraps,
+  requireIntactEnvelope,
 } from './cryptoUtils';
 import {
   KeyWrap,
@@ -250,7 +251,7 @@ export class VaultKeys {
       return 'no-recovery-code';
     }
     const master = unwrapWithRecoveryCode(wrap, parsed.secret);
-    const key = this.remember(account, master, wraps);
+    const key = this.remember(account, master, wraps, vaultContent);
     this.lockState.noteUnlocked(Date.now());
     return key;
   }
@@ -423,8 +424,15 @@ export class VaultKeys {
           storedPin!,
           await this.loginKeyFor(account, wraps),
         );
-        return this.remember(account, master, wraps);
-      } catch {
+        return this.remember(account, master, wraps, vaultContent);
+      } catch (error) {
+        // A TAMPERED file is not a wrong PIN, and this catch is where the two would be confused:
+        // the stored PIN opened the wrap perfectly well, and what failed afterwards was the
+        // envelope's own signature. Swallowing it here would send a background cycle on as though
+        // the vault were merely locked, which is the silence the audit's finding #2 is about.
+        if (error instanceof BackupError && error.kind === 'tampered') {
+          throw error;
+        }
         // The stored PIN does not fit this vault. A person present falls through to a
         // gesture; a background caller has nothing else and stops here.
         if (!options.interactive) {
@@ -469,7 +477,7 @@ export class VaultKeys {
     if (way === 'key') {
       const { result, used } = await this.assertKey(account, wraps);
       const master = unwrapWithPrf(used, result.secret, await this.loginKeyFor(account, wraps));
-      const vaultKey = this.remember(account, master, wraps);
+      const vaultKey = this.remember(account, master, wraps, vaultContent);
       if (isLegacyKeyWrap(used)) {
         // Opened by a credential bound to the bare `localhost` (pre-0.81). Said, not done: the
         // re-registration rewrites the envelope, and this unlock's caller may be about to as well.
@@ -487,7 +495,7 @@ export class VaultKeys {
         await this.loginKeyFor(account, wraps),
       );
       await this.savePin(account, pin);
-      return this.remember(account, master, wraps);
+      return this.remember(account, master, wraps, vaultContent);
     }
     return undefined;
   }
@@ -568,7 +576,29 @@ export class VaultKeys {
     throw refusal;
   }
 
-  private remember(account: StoredAccount, masterKey: Buffer, wraps: KeyWrap[]): VaultKey {
+  /**
+   * Adopt an unwrapped key and the wrap list it came with — but only if the file they came from
+   * still carries a signature that matches.
+   *
+   * <p>The verification lives HERE rather than at the four call sites for the reason the audit
+   * found it: the check existed (`syncManager` ran it) and ran AFTER the cache was written, so a
+   * tampered wrap list was trusted by the time it was detected, and the next save re-signed it into
+   * a legitimate-looking file. One choke point, and a fifth unlock route cannot forget it.</p>
+   *
+   * <p>`vaultContent` is the raw file the wraps were read from. It is optional only because the
+   * recovery-code route can be handed a vault it has already parsed; when it is absent there is
+   * nothing to verify against and nothing was read from disk to be tampered with.</p>
+   */
+  private remember(
+    account: StoredAccount,
+    masterKey: Buffer,
+    wraps: KeyWrap[],
+    vaultContent?: string,
+  ): VaultKey {
+    if (vaultContent !== undefined) {
+      // Throws BackupError('tampered'). Before the cache, deliberately — see above.
+      requireIntactEnvelope(vaultContent, masterKey);
+    }
     const key: VaultKey = { version: 2, masterKey, wraps };
     this.cache.set(account.accountId, key);
     // Cache the original; hand back a detached copy, so a later lock() wiping the cached

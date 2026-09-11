@@ -33,9 +33,8 @@ import { Contribution } from '../breakGlass';
 import { recoverOrgKey } from '../breakGlass';
 import { keyMatchesPublished } from '../breakGlass';
 import { recoveredVaultIsTheTarget } from '../breakGlass';
-import { orgEscrowWrap } from '../keyWrap';
 import { isKeyWrap as isWrap } from '../keyWrap';
-import { unwrapWithOrgEscrow } from '../keyWrap';
+import { openEscrowedVault } from '../keyWrap';
 import { decryptJsonWithMasterKey } from '../cryptoUtils';
 import { pinValidator } from '../pinInput';
 import { readBackupAccount } from '../cryptoUtils';
@@ -497,15 +496,18 @@ export function registerRecoveryCommands(host: RecoveryCommandsHost): void {
       );
       return;
     }
-    const escrow = orgEscrowWrap(readVaultWraps(content).filter(isWrap));
-    if (escrow === undefined) {
+    // One step, on the testable side of the `vscode` line: find the escrow wrap, unwrap, and refuse
+    // an envelope whose signature says it was altered — BEFORE the re-key below carries its wrap
+    // list forward as `previousWraps` and the officers sign it themselves.
+    const opened = openEscrowedVault(content, orgPrivateKey, readVaultWraps(content).filter(isWrap));
+    if (!opened.ok) {
       void vscode.window.showErrorMessage(
         `${targetEmail}'s vault carries no corporate escrow wrap — it was written before `
           + 'recovery was configured, or by a client that refused to trust this key.',
       );
       return;
     }
-    const master = unwrapWithOrgEscrow(escrow, orgPrivateKey);
+    const master = opened.master;
     const payload = decryptJsonWithMasterKey(content, master);
     const temporaryPin = await vscode.window.showInputBox({
       title: `A temporary PIN for ${targetEmail}'s vault`,

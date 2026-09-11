@@ -5,6 +5,7 @@ import { planBackupFileNames } from './backupNaming';
 import {
   decryptJsonAsync,
   decryptJsonWithMasterKey,
+  requireIntactEnvelope,
   readBackupAccount,
   readVaultWraps,
 } from './cryptoUtils';
@@ -297,7 +298,7 @@ export async function restoreFromBackup(
       payload =
         pinWrap === undefined
           ? await decryptJsonAsync(content, profilePassphrase(account.accountId, pin))
-          : decryptJsonWithMasterKey(content, await unwrapWithPinAsync(pinWrap, account.accountId, pin));
+          : await openVerified(content, await unwrapWithPinAsync(pinWrap, account.accountId, pin));
     }
   } catch (error) {
     void vscode.window.showErrorMessage(`Restore failed: ${describeError(error)}`);
@@ -330,3 +331,15 @@ export async function restoreFromBackup(
   );
 }
 
+/**
+ * Open a wrapped backup, but only once its own signature has been checked against the key that
+ * just came out of its wrap.
+ *
+ * <p>A restore is the same envelope the sync location holds, arriving by a different door, so it
+ * needs the same gate: a file whose MAC was deleted along with a wrap must be refused here too,
+ * and refused as `tampered` rather than reaching the person as a wrong backup PIN.</p>
+ */
+async function openVerified(content: string, master: Buffer): Promise<unknown> {
+  requireIntactEnvelope(content, master);
+  return decryptJsonWithMasterKey(content, master);
+}

@@ -56,19 +56,43 @@ function node(id: string, name: string): TreeNode {
   } as unknown as TreeNode;
 }
 
-/** A real envelope. `version` decides whether the MAC is even checked (v2 only). */
+/**
+ * A real envelope, SIGNED the way every writer of a v3+ file signs it.
+ *
+ * <p>It used to be built unsigned, and that was a fixture no production path can produce:
+ * `encryptJsonWrapped` and `resignEnvelopeWraps` both write a `mac`, and since the 2026-09-09
+ * audit's finding #2 an absent signature on a v3+ file is `bad` rather than "legacy, carry on".
+ * Three enrolment tests were passing against a file that could not exist.</p>
+ *
+ * <p>Signed with {@link SIGNING_MASTER}, which is also what `WRAPPED_KEY` carries — so the tests
+ * that exercise the MAC branch (`key.version === 2`) hold a file whose signature actually matches
+ * their key. `mac` given explicitly still wins: that is how the tamper test presents a WRONG
+ * signature, which is a different thing from an absent one.</p>
+ */
+const CRYPTO = require('../cryptoUtils') as typeof import('../cryptoUtils');
+const SIGNING_MASTER = Buffer.alloc(32, 7);
+
 function envelope(options: { version?: number; mac?: string } = {}): string {
-  return JSON.stringify({
+  const version = options.version ?? 3;
+  const body = JSON.stringify({
     format: 'cred-ssh-manager-backup',
-    version: options.version ?? 3,
+    version,
     kdf: 'hkdf',
     account: A,
     salt: 's',
     iv: 'i',
     tag: 't',
     data: 'd',
-    ...(options.mac === undefined ? {} : { mac: options.mac }),
   });
+  return signed(body, version, options.mac);
+}
+
+/** An explicit `mac` wins; v1 and v2 were legitimately written unsigned; v3+ is signed for real. */
+function signed(body: string, version: number, mac: string | undefined): string {
+  if (mac !== undefined) {
+    return JSON.stringify({ ...(JSON.parse(body) as object), mac });
+  }
+  return version < 3 ? body : CRYPTO.resignEnvelopeWraps(body, [], SIGNING_MASTER);
 }
 
 interface World {
@@ -500,7 +524,7 @@ type Enrolment = import('../orgEscrowOps').EscrowEnrolment;
  * for the other tests only because none of them reads it. Escrow does: a legacy key mints a fresh
  * master of its own on write, so a wrap list built against the old one would seal nothing.
  */
-const WRAPPED_KEY = { version: 2, masterKey: Buffer.alloc(32, 7), wraps: [] };
+const WRAPPED_KEY = { version: 2, masterKey: SIGNING_MASTER, wraps: [] };
 
 function enrolment(verdict: Enrolment['verdict'] = 'verified'): Enrolment {
   const pair = ORG.generateOrgRecoveryKeypair();
