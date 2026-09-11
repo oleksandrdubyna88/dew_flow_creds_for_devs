@@ -36,8 +36,12 @@ import { errorBody, statusForErrorCode } from './brokerProtocol';
  * <p>Two of them are built, by `doorsFor` below: the port's door checks `Host`, the socket's cannot
  * (see {@link NOT_ON_THE_NETWORK}). They share one `note`, so a person is told once per window and
  * not once per listener.</p>
+ *
+ * <p>NOT exported, deliberately — a reviewer pointed out that a third listener added later would
+ * reach for this and get its own `said` flag, turning "once per window" back into once per
+ * listener. `doorsFor` is the only way to obtain a door, so that invariant is structural.</p>
  */
-export function behindTheDoor(
+function behindTheDoor(
   handle: (req: IncomingMessage, res: ServerResponse) => void,
   at: () => DoorFacing,
   respond: (res: ServerResponse, status: number, body: unknown) => void,
@@ -101,7 +105,7 @@ const REFUSAL_NOTE =
  * <p>`Connection: close` because the body was never read, and a keep-alive socket holding an unread
  * body is a socket doing nothing for anybody.</p>
  */
-export function turnAwayAtTheDoor(
+function turnAwayAtTheDoor(
   headers: IncomingHttpHeaders,
   at: DoorFacing,
   respond: (status: number, body: unknown) => void,
