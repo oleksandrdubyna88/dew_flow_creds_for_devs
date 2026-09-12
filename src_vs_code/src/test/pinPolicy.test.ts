@@ -5,6 +5,7 @@ import {
   MIN_PIN_LENGTH,
   describePinStrength,
   pinFeedback,
+  typedLength,
   validateEntryPin,
   validatePin,
 } from '../pinPolicy';
@@ -152,4 +153,54 @@ test('the entry scope does not touch the vault floor — the two scopes answer d
   // must never be a way around it. `12345678` is the PIN that finding was about.
   assert.equal(pinFeedback('12345678', 'choosing', 'vault')?.kind, 'error');
   assert.equal(pinFeedback('12345678', 'choosing', 'entry'), undefined);
+});
+
+// ---------------------------------------------------------------------------
+// The floor counts what a PERSON typed. `value.length` is UTF-16 code units, so one flag emoji
+// is four of them and cleared the entry floor by itself; a woman-technologist is seven and
+// cleared the VAULT's floor of eight with one keypress. The automated reviewer on PR #78 found
+// the entry half (CWE-521); the vault half is the same defect against the stricter floor.
+//
+// It applies when a PIN is being CHOSEN and never when one is being TYPED BACK. An entry PIN is
+// stored nowhere and has no recovery, so refusing a PIN somebody already set is not a stricter
+// policy — it is a shredder.
+// ---------------------------------------------------------------------------
+
+/** One character each: a regional-indicator pair, and a ZWJ sequence of two emoji plus a joiner. */
+const FLAG = '\u{1F1FA}\u{1F1F8}';
+const CODER = '\u{1F469}‍\u{1F4BB}';
+
+test('one emoji is one character, not four: choosing an entry PIN of a single flag is refused', () => {
+  assert.match(validateEntryPin(FLAG) ?? '', /at least 4/, 'a flag is four code units and one character');
+  assert.match(validateEntryPin(CODER) ?? '', /at least 4/, 'a ZWJ sequence is one character');
+  assert.match(validateEntryPin(`ab${FLAG}`) ?? '', /at least 4/, 'three characters is three');
+  assert.equal(validateEntryPin(`ab${FLAG}c`), undefined, 'four characters is four, emoji included');
+});
+
+test('choosing a vault PIN of two emoji is refused — the eight-character floor is eight characters', () => {
+  const feedback = pinFeedback(FLAG + FLAG, 'choosing');
+  assert.equal(feedback?.kind, 'error', 'eight code units, two characters');
+  assert.match(feedback?.message ?? '', /at least 8/);
+});
+
+test('a PIN already set is never refused at the box that unlocks it', () => {
+  // `entryPinGate` blocks Enter on a refusal, and the value it guards has no recovery at all.
+  // Someone who set a one-emoji PIN before this rule existed must still be able to type it back.
+  assert.equal(pinFeedback(FLAG, 'entering', 'entry'), undefined);
+  assert.equal(pinFeedback(FLAG + FLAG, 'entering'), undefined, 'the vault box too');
+  assert.match(pinFeedback('ab', 'entering', 'entry')?.message ?? '', /at least 4/, 'and a typo is still caught');
+});
+
+test('the mode a caller does not name is the strict one', () => {
+  assert.equal(validateEntryPin(FLAG), validateEntryPin(FLAG, 'choosing'));
+  assert.equal(validatePin(FLAG + FLAG), validatePin(FLAG + FLAG, 'choosing'));
+  assert.equal(validateEntryPin(FLAG, 'entering'), undefined, 'and naming the other one is how it loosens');
+});
+
+test('typedLength counts characters, and a fallback would only ever count more', () => {
+  assert.equal(typedLength(FLAG), 1);
+  assert.equal(typedLength(CODER), 1);
+  assert.equal(typedLength('1234'), 4);
+  assert.equal(typedLength(''), 0);
+  assert.ok(typedLength(CODER) <= [...CODER].length, 'the code-point fallback under-refuses, never over-refuses');
 });

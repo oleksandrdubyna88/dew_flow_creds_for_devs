@@ -875,6 +875,18 @@ is stated in the `entity-pin` help in all five languages, and `helpCatalog.test.
 states the four-character floor in its own words, because a stale translation is invisible to the
 completeness checks.
 
+*Four CHARACTERS, and only while one is being chosen.* Both floors were written as `value.length`,
+which counts UTF-16 code units: one flag emoji is four of them and cleared the entry floor by itself,
+and a woman-technologist is seven, clearing the VAULT floor of eight with one keypress — the floor the
+M-1 finding above exists to hold. `pinPolicy.typedLength` counts graphemes through `Intl.Segmenter`,
+falling back to code points where it is missing (which still catches every surrogate pair and can only
+under-refuse). Both validators now take a `PinMode` — `'choosing' | 'entering'`, defaulting to the
+strict `choosing` — and `measuredLength` applies the grapheme count only when a PIN is being INVENTED.
+A PIN being TYPED BACK keeps the code-unit floor deliberately: an entry PIN is stored nowhere and has
+no recovery, `entryPinGate`'s validator BLOCKS Enter on a refusal, so raising the floor under an
+existing PIN would not strengthen anybody's lock — it would shred what the lock guards. Found by the
+automated reviewer on PR #78 (CWE-521); the vault half is the same defect and was fixed with it.
+
 **Idempotent and self-describing, NOT atomic.** Three reviewers said the plan's "all-or-nothing per
 entry" was a promise nothing could keep, and they were right: `SecretStorage` has no transaction, so
 a process killed between two slot writes leaves a mixture, and holding the values in memory first

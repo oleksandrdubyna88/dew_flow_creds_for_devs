@@ -43,6 +43,56 @@ export type PinScope = 'vault' | 'entry';
 export const MIN_ENTRY_PIN_LENGTH = 4;
 
 /**
+ * Whether a PIN is being INVENTED or TYPED BACK. It is not a display preference: it decides which
+ * yardstick the floor is measured with, and `entering` is the one that must never refuse more than
+ * it did yesterday — see {@link typedLength}.
+ */
+export type PinMode = 'choosing' | 'entering';
+
+/**
+ * How many characters a PERSON typed — not how many UTF-16 code units they occupy.
+ *
+ * <p><b>Why the floors cannot use `value.length`.</b> One flag emoji is four code units, so
+ * `🇺🇸` alone cleared the entry floor of four; a woman-technologist is a joined sequence of
+ * seven, so one keypress cleared the VAULT floor of eight — the floor the 2026-08-24 review's
+ * M-1 finding exists to hold. An attacker guessing emoji guesses whole characters out of a set
+ * far smaller than the code-unit arithmetic implies, so the count that matters is this one.
+ * (Found by the automated reviewer on PR #78, CWE-521.)</p>
+ *
+ * <p>The fallback counts CODE POINTS when `Intl.Segmenter` is missing. That still catches the
+ * flag and every surrogate pair; it counts a joined sequence as its parts, which under-refuses
+ * rather than over-refuses — the only direction a fallback here may be wrong in.</p>
+ */
+export function typedLength(value: string): number {
+  return GRAPHEMES === undefined ? [...value].length : [...GRAPHEMES.segment(value)].length;
+}
+
+/** Built once: an input box validates on every keystroke, and a Segmenter per keystroke is not free. */
+const GRAPHEMES = buildSegmenter();
+
+function buildSegmenter(): Intl.Segmenter | undefined {
+  try {
+    return new Intl.Segmenter(undefined, { granularity: 'grapheme' });
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * The length a floor is judged against, which depends on why the box is open.
+ *
+ * <p><b>`entering` keeps counting code units, deliberately.</b> An entry PIN is stored nowhere and
+ * has no recovery — the vault recovery code opens the VAULT, not an entry — and `entryPinGate`'s
+ * validator BLOCKS Enter on a refusal. So applying the stricter count to a PIN that already exists
+ * would not make anybody's PIN stronger; it would shred every value behind a one-emoji PIN set
+ * before this rule existed. The code-unit floor stays there as what it has always been in that
+ * box: a catch for a typo far shorter than any real PIN.</p>
+ */
+function measuredLength(value: string, mode: PinMode): number {
+  return mode === 'choosing' ? typedLength(value) : value.length;
+}
+
+/**
  * Seconds per guess at the shipped scrypt parameters. Deliberately the cost on
  * ATTACKER hardware, not ours: a memory-hard KDF is slower on a GPU per lane
  * than on a CPU, but 128 MiB per lane is what caps the parallelism, and the
@@ -83,13 +133,19 @@ function normalizeForBlocklist(value: string): string {
     .replace(/^[^a-z]+/, '');
 }
 
-/** Returns an error message for a too-weak PIN, or undefined when acceptable. */
+/**
+ * Returns an error message for a too-weak PIN, or undefined when acceptable.
+ *
+ * <p>`mode` decides only how the length floor is COUNTED ({@link measuredLength}); every other rule
+ * here reads the same in both. It defaults to `choosing`, the stricter count, so a caller that says
+ * nothing gets the floor the M-1 finding asked for rather than the one that lets an emoji through.</p>
+ */
 // eslint-disable-next-line complexity
-export function validatePin(value: string): string | undefined {
+export function validatePin(value: string, mode: PinMode = 'choosing'): string | undefined {
   if (value.length === 0) {
     return 'PIN must not be empty.';
   }
-  if (value.length < MIN_PIN_LENGTH) {
+  if (measuredLength(value, mode) < MIN_PIN_LENGTH) {
     return `Use at least ${MIN_PIN_LENGTH} characters — this PIN guards data stored off your machine.`;
   }
   if (new Set(value).size === 1) {
@@ -120,12 +176,16 @@ export function validatePin(value: string): string | undefined {
  * and this function must never be a way around it); the entry PIN is a lock against a shoulder, a
  * screen share, an agent, a colleague at an unlocked desk — and a lock nobody sets because the box
  * refuses `1234` is weaker than one that is set. The owner chose this.</p>
+ *
+ * <p><b>Four CHARACTERS, counted as a person types them</b> ({@link typedLength}) — and only while
+ * one is being chosen. A PIN being typed back is still measured in code units, because this lock
+ * has no recovery and a floor raised under an existing PIN destroys what it guards.</p>
  */
-export function validateEntryPin(value: string): string | undefined {
+export function validateEntryPin(value: string, mode: PinMode = 'choosing'): string | undefined {
   if (value.length === 0) {
     return 'PIN must not be empty.';
   }
-  if (value.length < MIN_ENTRY_PIN_LENGTH) {
+  if (measuredLength(value, mode) < MIN_ENTRY_PIN_LENGTH) {
     return `Use at least ${MIN_ENTRY_PIN_LENGTH} characters.`;
   }
   return undefined;
@@ -202,10 +262,10 @@ export interface PinFeedback {
  * <p>`choosing` — the PIN is being INVENTED here (a new sync PIN, a share PIN, an export
  * password): refusals first, and above them the live crack-time estimate, because now is the
  * one moment the person can act on it. `entering` — the PIN already exists and is merely being
- * typed back: refusals still apply (they catch typos shorter than any real PIN), but the
- * estimate is withheld. Telling someone their existing PIN is weak while they unlock with it is
- * not advice; it is nagging, and it teaches them to stop reading the box that also carries the
- * refusals.</p>
+ * typed back: refusals still apply (they catch typos shorter than any real PIN) and the floor is
+ * measured the older, looser way ({@link measuredLength}), but the estimate is withheld. Telling
+ * someone their existing PIN is weak while they unlock with it is not advice; it is nagging, and
+ * it teaches them to stop reading the box that also carries the refusals.</p>
  *
  * <p>The refusal text is `validatePin`'s own, byte for byte — one refusal rule, two callers,
  * pinned by test so the paths cannot drift. This function exists because its predecessor did
@@ -219,21 +279,27 @@ export interface PinFeedback {
  */
 export function pinFeedback(
   value: string,
-  mode: 'choosing' | 'entering',
+  mode: PinMode,
   scope: PinScope = 'vault',
 ): PinFeedback | undefined {
-  return scope === 'entry' ? entryFeedback(value) : vaultFeedback(value, mode);
+  return scope === 'entry' ? entryFeedback(value, mode) : vaultFeedback(value, mode);
 }
 
-/** The entry scope: a refusal, or silence. */
-function entryFeedback(value: string): PinFeedback | undefined {
-  const refusal = validateEntryPin(value);
+/**
+ * The entry scope: a refusal, or silence.
+ *
+ * <p>`mode` reaches the validator even though no estimate is ever shown here — it is what decides
+ * whether the floor counts characters or code units, and the box that UNLOCKS an entry is the one
+ * place that distinction protects somebody rather than lecturing them.</p>
+ */
+function entryFeedback(value: string, mode: PinMode): PinFeedback | undefined {
+  const refusal = validateEntryPin(value, mode);
   return refusal === undefined ? undefined : { message: refusal, kind: 'error' };
 }
 
 /** The vault scope — the rule every box had before scopes existed, unchanged. */
-function vaultFeedback(value: string, mode: 'choosing' | 'entering'): PinFeedback | undefined {
-  const refusal = validatePin(value);
+function vaultFeedback(value: string, mode: PinMode): PinFeedback | undefined {
+  const refusal = validatePin(value, mode);
   if (refusal !== undefined) {
     return { message: refusal, kind: 'error' };
   }

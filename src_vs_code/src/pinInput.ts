@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { PinFeedback, PinScope, pinFeedback } from './pinPolicy';
+import { PinFeedback, PinMode, PinScope, pinFeedback } from './pinPolicy';
 
 /**
  * `pinFeedback` in the shape `showInputBox` wants — the only `vscode` in the PIN story.
@@ -14,9 +14,13 @@ import { PinFeedback, PinScope, pinFeedback } from './pinPolicy';
  * gets the four-character floor; a box that forgets to say gets the vault's rules, which is the
  * safe direction — a share PIN accidentally judged as an entry PIN would be the defect, and the
  * default makes it impossible to write by omission.</p>
+ *
+ * <p>`mode` has no default on purpose. It now decides whether a floor counts characters or UTF-16
+ * code units, so the box that unlocks something and the box that invents it cannot be told apart
+ * by a guess — each one says which it is.</p>
  */
 export function pinValidator(
-  mode: 'choosing' | 'entering',
+  mode: PinMode,
   scope: PinScope = 'vault',
 ): (value: string) => vscode.InputBoxValidationMessage | undefined {
   return (value) => toValidationMessage(pinFeedback(value, mode, scope));
