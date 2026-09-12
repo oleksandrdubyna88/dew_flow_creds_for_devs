@@ -24,6 +24,7 @@ C4Container
     }
 
     System_Ext(idp, "Microsoft Entra / Google", "Issues the token that proves who the caller is")
+    System_Ext(releases, "GitHub releases", "A public list, read anonymously. What version of each binary is published")
 
     Container_Boundary(deployment, "Self-hosted, one docker compose") {
         Container(nginx, "nginx", "TLS termination", "Certificates, security headers, per-IP rate limiting, ACME webroot")
@@ -39,6 +40,7 @@ C4Container
     Rel(ext, secretstore, "Reads and writes plaintext secrets")
     Rel(ext, globalstate, "Reads and writes metadata")
     Rel(ext, idp, "Signs in", "OAuth 2.0 + PKCE")
+    Rel(ext, releases, "Asks what is published", "HTTPS GET, anonymous — no token, no email, no server location")
     Rel(ext, nginx, "Sync + share", "HTTPS, Bearer token, ciphertext bodies")
     Rel(nginx, api, "Proxies", "HTTP, X-Forwarded-Proto: https")
     Rel(api, idp, "Validates token signatures", "OIDC discovery")
@@ -142,6 +144,21 @@ is what lets two machines edit different credentials offline and both survive �
 [module_extension.md](module_extension.md).
 
 ## Cross-cutting concerns
+
+### Every host the extension reaches (2026-09-12)
+
+Three, and the third was on the diagram late rather than added late. The identity provider, the
+person's own server, and **GitHub's public release list** — read anonymously, with no token, no
+email, no account id and no server location, to answer "is a newer version published" for the four
+tag lines this repository ships. It has been called since the binary installer existed; the Server
+section's Version row made it a second caller, which is why one module owns it now
+(`githubReleases.ts`) rather than two copies that would drift.
+
+What that call must not become is a beacon. It carries an `Accept` and a `User-Agent` and nothing
+else, a test asserts that no `Authorization` header can appear on it, and the answer is memoised for
+six hours — so an editor left open for a week asks a handful of times rather than three hundred. A
+check that fails waits before asking again, which is what keeps a refusing proxy from spending the
+anonymous quota in a minute and then being unable to ask at all.
 
 ### Identity
 
