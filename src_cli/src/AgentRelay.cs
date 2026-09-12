@@ -89,6 +89,20 @@ internal static class AgentRelay
     /// <summary>Whether this path is longer than a domain socket may be on this platform.</summary>
     internal static bool TooLongForSocket(string path) => path.Length > MaxSocketPathLength;
 
+    /// <summary>
+    /// What a person is told when the path cannot be a socket — a separate function so the SENTENCE
+    /// is a test rather than a thing somebody reads once in a log.
+    /// </summary>
+    /// <remarks>
+    /// It names four things, and each earns its place: the path, because it may have come from an
+    /// environment variable the person has forgotten setting; its length and the limit, because
+    /// "too long" without the numbers leaves them guessing how much to cut; and the variable to
+    /// set, because otherwise the only remedy they can see is to move their home directory.
+    /// </remarks>
+    internal static string TooLongMessage(string path) =>
+        $"[creds-for-devs] {path} is {path.Length} characters; a unix socket path may be at most "
+            + $"{MaxSocketPathLength} on this platform. Set {SocketOverrideVariable} to something shorter.";
+
     internal static string SocketPathHere() =>
         Environment.GetEnvironmentVariable(SocketOverrideVariable) is { Length: > 0 } custom
             ? custom
@@ -145,10 +159,7 @@ internal static class AgentRelay
         // line for `eval` is the least useful failure it could have.
         if (TooLongForSocket(path))
         {
-            Console.Error.WriteLine(
-                $"[creds-for-devs] {path} is {path.Length} characters; a unix socket path may be at "
-                    + $"most {MaxSocketPathLength} on this platform. Set {SocketOverrideVariable} to "
-                    + "something shorter.");
+            Console.Error.WriteLine(TooLongMessage(path));
             return contract.Exit("usage");
         }
 
