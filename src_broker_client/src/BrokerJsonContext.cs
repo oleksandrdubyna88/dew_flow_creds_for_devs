@@ -9,11 +9,12 @@ namespace CredsBroker;
 /// <para>Native AOT has no reflection-based <c>JsonSerializer</c>, and both binaries that
 /// reference this library set <c>JsonSerializerIsReflectionEnabledByDefault=false</c> so that
 /// reaching for one is a compile-time error rather than a crash on a user's machine.</para>
-/// <para><b>Only four types, and deliberately so.</b> A context is not a place to collect every
-/// payload in the product: what belongs here is what this library deserializes on its own —
-/// the contract file, the health probe, and a window's announcement. Each binary keeps its own
-/// context for the requests and responses only it sends, so adding a verb to one of them cannot
-/// make the other's binary any larger.</para>
+/// <para><b>Only what this library itself handles, and deliberately so.</b> A context is not a
+/// place to collect every payload in the product: what belongs here is what this library reads
+/// or writes on its own — the contract file, the health probe, a window's announcement, and the
+/// caller record both binaries put in their bodies together with the session-registry entry it
+/// is built from. Each binary keeps its own context for the requests and responses only it
+/// sends, so adding a verb to one of them cannot make the other's binary any larger.</para>
 /// </remarks>
 [JsonSourceGenerationOptions(PropertyNameCaseInsensitive = false)]
 [JsonSerializable(typeof(BrokerContract))]
@@ -21,10 +22,13 @@ namespace CredsBroker;
 [JsonSerializable(typeof(ReadEndpoint))]
 [JsonSerializable(typeof(Dictionary<string, ReadEndpoint>))]
 [JsonSerializable(typeof(ConfigReadRoute))]
+[JsonSerializable(typeof(CallerContract))]
 [JsonSerializable(typeof(HealthResponse))]
 [JsonSerializable(typeof(Endpoint))]
 [JsonSerializable(typeof(Dictionary<string, int>))]
 [JsonSerializable(typeof(Dictionary<string, string>))]
+[JsonSerializable(typeof(CallerRecord))]
+[JsonSerializable(typeof(SessionFile))]
 public sealed partial class BrokerJsonContext : JsonSerializerContext;
 
 /// <summary>The unauthenticated probe a client makes before a token ever leaves the process.</summary>

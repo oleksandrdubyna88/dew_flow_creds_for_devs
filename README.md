@@ -191,8 +191,11 @@ including ones created there later.
 
 Two things hold at every level. **A secret is never handed over**: the window holds the value, uses
 it, and answers with the result — there is no field in the protocol one could travel in. And **the
-switch is not consent**: every single call still asks you, in your editor, showing the real entry and
-the real command.
+switch is not consent**: every single call still asks you, in your editor, showing the real entry,
+the real command — and **who is asking**: the agent and its version, which of its sessions, and the
+folder it works in (*Claude Code 2.1.268 · session clauderag-d6 (98bf9f23) · in ClaudeRag wants
+to…*), as the caller reports them. That name is a label, and the dialog says so in its own sentence;
+a caller that reports nothing is *An agent*, never a product by default.
 
 **Where that guarantee ends, stated rather than glossed.** The structural half — no response field
 can carry a secret — holds absolutely. The second half is different: if an approved command *prints*

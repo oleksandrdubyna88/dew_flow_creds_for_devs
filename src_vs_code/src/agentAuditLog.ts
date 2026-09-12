@@ -1,3 +1,5 @@
+import { CALLER_MAX_LABEL_CHARS } from './brokerCaller';
+
 /**
  * One line per agent call, for the output channel that IS this feature's audit
  * surface. Pure so the one rule worth asserting — the full secret never
@@ -28,6 +30,16 @@ export interface AuditEntry {
    * <p>Absent in lines written before it existed, and read back that way rather than guessed.</p>
    */
   via?: AuditDoor;
+  /**
+   * Who called, as the caller REPORTED it — `Claude Code 2.1.268 · session clauderag-d6 (98bf9f23)
+   * · in ClaudeRag`. A label the body carried, never an authorisation input; `brokerCaller.ts`
+   * strips and caps it before it gets here.
+   *
+   * <p>Optional, not required, and the asymmetry with `consent` — where the caller is a required
+   * parameter — is deliberate: the share mint is a human clicking a menu item and has no caller.
+   * Absent in lines written before it existed.</p>
+   */
+  caller?: string;
 }
 
 /**
@@ -68,8 +80,19 @@ function oneLine(text: string, max = 200): string {
 export function formatAuditLine(entry: AuditEntry): string {
   const seq = entry.seq === undefined ? '' : `#${entry.seq} `;
   const via = entry.via === undefined ? '' : ` via ${entry.via}`;
-  const head = `[${clockOf(entry.at)}] ${seq}${entry.action} ${entry.entityName} (${entry.grant})${via} → ${entry.outcome}`;
+  const head = `[${clockOf(entry.at)}] ${seq}${entry.action} ${entry.entityName} (${entry.grant})${via}${bySegment(entry.caller)} → ${entry.outcome}`;
   return entry.detail === undefined ? head : `${head}  ${oneLine(entry.detail)}`;
+}
+
+/**
+ * ` by <label>`, between the door and the outcome — or nothing.
+ *
+ * <p>One line and never the field separator, whoever built the label. The sanitiser in
+ * `brokerCaller.ts` is the guard; this is the formatter refusing to be the place where a guard
+ * bypassed by some future door breaks its own parser's round trip.</p>
+ */
+function bySegment(caller: string | undefined): string {
+  return caller === undefined ? '' : ` by ${oneLine(caller.replace(/→/g, ' '), CALLER_MAX_LABEL_CHARS)}`;
 }
 
 /**
@@ -89,7 +112,7 @@ export function parseAuditLine(line: string): AuditEntry | undefined {
   if (match === null) {
     return undefined;
   }
-  const [, clock, seq, action, entityName, grant, via, outcome, detail] = match;
+  const [, clock, seq, action, entityName, grant, via, caller, outcome, detail] = match;
   return {
     at: timeOf(clock),
     grant,
@@ -98,13 +121,19 @@ export function parseAuditLine(line: string): AuditEntry | undefined {
     outcome,
     seq: numberOrNothing(seq),
     via: via as AuditDoor | undefined,
+    caller: textOrNothing(caller),
     detail: textOrNothing(detail),
   };
 }
 
-// `[12:00:00Z] #3 query orders-db (tok…f2) via mcp → exit 0  SELECT 1`
+// `[12:00:00Z] #3 query orders-db (tok…f2) via mcp by Claude Code 2.1.268 · session x (98bf9f23) · in ClaudeRag → exit 0  SELECT 1`
+//
+// The caller group is optional, so every line written before it existed still parses (C3). Its
+// own parentheses are safe: the `(.*?) \(([^)]*)\)` pair before it backtracks, which the
+// `prod (eu-west) db` case already proves — and it can never contain the separator, because the
+// formatter above does not let one through.
 const LINE =
-  /^\[(\d\d:\d\d:\d\dZ)\] (?:#(\d+) )?(\S+) (.*?) \(([^)]*)\)(?: via (token|alias|mcp))? → ([^ ]+(?: [^ ]+)*?)(?:  (.*))?$/;
+  /^\[(\d\d:\d\d:\d\dZ)\] (?:#(\d+) )?(\S+) (.*?) \(([^)]*)\)(?: via (token|alias|mcp))?(?: by ([^→]*?))? → ([^ ]+(?: [^ ]+)*?)(?:  (.*))?$/;
 
 /** An absent capture group and an empty one both mean the line did not carry it. */
 function numberOrNothing(value: string | undefined): number | undefined {

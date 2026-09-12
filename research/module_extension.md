@@ -2549,8 +2549,22 @@ token anywhere.
 | Route | Body | 200 |
 |---|---|---|
 | `GET /v1/health` | — | `{ok, service}` |
-| `POST /v1/use/exec` | `{command, timeoutMs?}` | `{exitCode, stdout, stderr, stdoutTruncated, stderrTruncated, timedOut, durationMs}` |
-| `POST /v1/use/terminal` | `{}` | `{opened}` |
+| `POST /v1/use/exec` | `{command, timeoutMs?, caller?}` | `{exitCode, stdout, stderr, stdoutTruncated, stderrTruncated, timedOut, durationMs}` |
+| `POST /v1/use/terminal` | `{caller?}` | `{opened}` |
+
+**`caller?`** — on every body that performs something (token, alias, MCP use/delete/create, the folder
+verbs): `{agent, session, sessionName, cwd}`, who is asking *as the client reports it* — the product
+and version (`Claude Code 2.1.268`, `creds CLI`), the first eight characters of the agent's own
+session id, the session's name from `~/.claude/sessions/<pid>.json`, and the BASENAME of its working
+folder. The contract's `caller` block declares both shapes the window reads — the nested object and
+the flat `callerAgent` / `callerSession` / `callerSessionName` / `callerCwd` fallback — with
+`maxFieldChars: 80`. **The window is the guard**: `callerFrom` in `brokerCaller.ts` (a `vscode`-free
+module, so the sanitiser is a unit test) drops any field that is not a string, replaces every Unicode
+control and format character — `\n`, `\r`, `\t`, a zero-width space, a terminal escape — and the
+audit separator `→` with a space, collapses whitespace runs, trims, caps each field at 80 code points
+and the composed line at 160, and reads an all-blank record as absent, so a hostile label cannot
+append a paragraph to the modal or break the audit line's round trip. It is a label: no switch,
+route, throttle, grant lookup or permission reads it.
 
 Errors are `{error:{code,message}}`: `invalid_request` 400 · `unauthorized` 401 · `denied` 403 ·
 `not_found`/`not_supported` 404 · `no_credential` 409 · `payload_too_large` 413 ·
@@ -2562,11 +2576,25 @@ they would around a real `ssh`.
 promise, and it is why `brokerProtocol.ts` holds the shapes: an agent cannot obtain plaintext by
 asking cleverly, because there is nothing for it to arrive in.
 
-**Consent.** The first call on a token opens a modal showing the command about to run. Allow covers
-every later call on that token; Deny is sticky for its life. A *dismissed* dialog refuses only that
-call and is deliberately not recorded — a mis-click must not lock an agent out until the window
-closes. Every call, allowed or refused, writes one line to the **CredsForDevs: Agent Access** output
-channel; an unknown token is answered but never logged, since the CLI legitimately probes.
+**Consent.** The first call on a token opens a modal showing the command about to run — and, since
+2026-09-12, **who is asking**: its first sentence is *`Claude Code 2.1.268 · session clauderag-d6
+(98bf9f23) · in ClaudeRag` wants to run a command on "prod"…*, composed by `brokerCaller.ts` from
+the `caller` the body reports, each segment omitted when its field is empty, and **`An agent`** when
+nothing was reported — never a product name by default. Until then every caller was announced as
+Claude Code (issue #61): Codex, Gemini, the `creds` CLI in a plain terminal and any other MCP
+client produced the identical sentence, and nine side-by-side Claude Code sessions could not be told
+apart while Allow covers every later call on the grant. The name is a **label, not a check**, and the
+modal says so in its own sentence (*Identity as reported by the caller — a label, not a check.*);
+nothing reads the label but that sentence and the audit line. `consent()` and `perform()` take it as
+a REQUIRED parameter — `undefined` must be written, never omitted — so every door that reaches the
+funnel says who is asking or does not compile; the `BrokerDoor.consent` hook the MCP and folder
+doors call carries the same requirement. Allow covers every later call on that token; Deny is sticky
+for its life. A *dismissed* dialog refuses only that call and is deliberately not recorded — a
+mis-click must not lock an agent out until the window closes. Every call, allowed or refused, writes
+one line to the **CredsForDevs: Agent Access** output channel, with ` by <label>` between the door
+and the outcome when a caller was reported (`agentAuditLog.ts`; the group is optional, so every
+line written before it existed still parses); an unknown token is answered but never logged, since
+the CLI legitimately probes.
 
 **Auto-lock sees the human, not the agent.** Only the Allow click calls `noteUserActivity()`. A long
 unattended run of agent calls is exactly what the idle window exists to catch, so agent traffic must

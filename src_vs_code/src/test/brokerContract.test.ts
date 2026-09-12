@@ -23,6 +23,15 @@ import {
 import { readRouteBody } from '../brokerReadRoutes';
 import { EXIT } from '../agentCliOutcome';
 import { switchForAction } from '../mcpEntries';
+import {
+  CALLER_FIELD,
+  CALLER_FIELDS,
+  CALLER_FLAT_PREFIX,
+  CALLER_MAX_FIELD_CHARS,
+  CALLER_MAX_LABEL_CHARS,
+  callerFrom,
+  flatCallerKey,
+} from '../brokerCaller';
 
 /**
  * The TypeScript side of the two-sided contract check.
@@ -52,6 +61,7 @@ interface Contract {
   mcpDeleteRoute: string;
   mcpCreateRoute: string;
   mcpFolderPrefix: string;
+  caller: { field: string; fields: string[]; flatPrefix: string; maxFieldChars: number; maxLabelChars: number };
   errors: Record<string, number>;
   exitCodes: Record<string, number>;
 }
@@ -268,6 +278,35 @@ test('the MCP action list is the CLI verb set PLUS rotate, and says so', () => {
     assert.ok(mcpActions.includes(action), action);
   }
   assert.equal(mcpActions.length, cliActions.size + 1);
+});
+
+test('the caller block matches the module the window parses with, field for field', () => {
+  // The second implementation composes this object in C# from the same file; a field renamed in
+  // `brokerCaller.ts` and not regenerated fails here, and a cap changed on one side only fails on
+  // whichever side did not regenerate.
+  const { caller, version } = load();
+
+  assert.equal(caller.field, CALLER_FIELD);
+  assert.deepEqual(caller.fields, [...CALLER_FIELDS]);
+  assert.equal(caller.flatPrefix, CALLER_FLAT_PREFIX);
+  assert.equal(caller.maxFieldChars, CALLER_MAX_FIELD_CHARS);
+  assert.equal(caller.maxLabelChars, CALLER_MAX_LABEL_CHARS);
+  assert.equal(version, 1, 'additive: no route, status or verb moved');
+});
+
+test('a body shaped exactly as the contract describes it — either shape — is read back whole', () => {
+  // The contract is what a C# sender reads, so a body built FROM the contract must parse: the
+  // nested object under `field`, and the flat `<flatPrefix><Field>` fallback it also declares.
+  const { caller } = load();
+  const values = { agent: 'Claude Code 2.1.268', session: '98bf9f23', sessionName: 'clauderag-d6', cwd: 'ClaudeRag' };
+  const nested = { entry: 'e1', [caller.field]: Object.fromEntries(caller.fields.map((f) => [f, values[f as keyof typeof values]])) };
+  const flat = Object.fromEntries(caller.fields.map((f) => [flatCallerKey(f as never), values[f as keyof typeof values]]));
+
+  assert.deepEqual(callerFrom(nested), values);
+  assert.deepEqual(callerFrom({ entry: 'e1', ...flat }), values);
+  for (const field of caller.fields) {
+    assert.equal(flatCallerKey(field as never), `${caller.flatPrefix}${field.charAt(0).toUpperCase()}${field.slice(1)}`);
+  }
 });
 
 test('every MCP action asks for a switch, and rotate asks for a higher one than the rest', () => {

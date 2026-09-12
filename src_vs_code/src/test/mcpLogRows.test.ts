@@ -263,3 +263,57 @@ test('the page says how many it left out, rather than looking complete', () => {
   assert.match(html, /3 older/);
   assert.match(html, /still on disk/);
 });
+
+/**
+ * The caller on the line — and the round trip is still the contract.
+ *
+ * <p>Who called was the one field the journal could not show: nine Claude Code sessions side by
+ * side, ten `creds-mcp.exe` processes, and every line the same. The label rides between the door
+ * and the outcome; a line from before it existed must still read, and read as having no caller
+ * rather than as an unparseable row.</p>
+ */
+const CALLER = 'Claude Code 2.1.268 · session clauderag-d6 (98bf9f23) · in ClaudeRag';
+
+test('a line carrying the caller round-trips, parentheses in the label included', () => {
+  // The `(.*?) \(([^)]*)\)` pair earlier in the pattern backtracks past the label's own
+  // parentheses — the `prod (eu-west) db` case above proves the mechanism, this pins it for the
+  // caller, whose short id is ALWAYS in parentheses.
+  const entry = parseAuditLine(line({ caller: CALLER, detail: 'SELECT 1' }));
+
+  assert.ok(entry !== undefined);
+  assert.equal(entry.caller, CALLER);
+  assert.equal(entry.entityName, 'orders-db');
+  assert.equal(entry.grant, 'tok…f2');
+  assert.equal(entry.via, 'mcp');
+  assert.equal(entry.outcome, 'exit 0');
+  assert.equal(entry.detail, 'SELECT 1');
+  assert.equal(entry.seq, 3);
+});
+
+test('a line written before the caller existed still parses, and reads as having no caller', () => {
+  // A LITERAL, not `line({ caller: undefined })`: the formatter and the parser are one module, so
+  // a formatter that grew a mandatory segment would print and read its own new shape in step and
+  // this test would stay green while every existing file on disk went dark.
+  const older = parseAuditLine('[14:05:09Z] #3 query orders-db (tok…f2) via mcp → exit 0  SELECT count(*) FROM orders');
+
+  assert.ok(older !== undefined);
+  assert.equal(older.caller, undefined);
+  assert.equal(older.entityName, 'orders-db');
+  assert.equal(older.via, 'mcp');
+  assert.equal(older.outcome, 'exit 0');
+  assert.equal(older.detail, 'SELECT count(*) FROM orders');
+});
+
+test('the word "by" inside an entity name does not move the caller boundary', () => {
+  const entry = parseAuditLine(line({ entityName: 'db by me', caller: 'creds CLI · in ClaudeRag' }));
+
+  assert.equal(entry?.entityName, 'db by me');
+  assert.equal(entry?.caller, 'creds CLI · in ClaudeRag');
+});
+
+test('a row read into the journal carries the caller, so the view can show it', () => {
+  const rows = mcpRowsIn(line({ caller: CALLER }), '2026-08-27');
+
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].caller, CALLER);
+});

@@ -46,15 +46,28 @@ internal static class Program
     /// Which of the three this invocation is.
     /// </summary>
     /// <remarks>
-    /// Pure, and separate from <see cref="Main"/>, because one of its consequences is not obvious:
-    /// help and a usage error are answered on THIS side even inside WSL. Both are the same
+    /// <para>Pure, and separate from <see cref="Main"/>, because one of its consequences is not
+    /// obvious: help and a usage error are answered on THIS side even inside WSL. Both are the same
     /// sentence from either half, and launching a Windows process to print a line a person asked
-    /// for by hand — which is exactly what the release smoke check does — buys nothing.
+    /// for by hand — which is exactly what the release smoke check does — buys nothing.</para>
+    /// <para><c>--caller &lt;record&gt;</c> is the one argument that IS a session: the Linux half of
+    /// the WSL bridge forwards the caller record it computed, and this half serves with it rather
+    /// than recomputing one from an environment that belongs to <c>wsl.exe</c>. Exactly one value,
+    /// and everything else stays a usage error — an argument this build does not know must not
+    /// become a relayed session that fails on the other side with a different message.</para>
     /// </remarks>
     internal static Startup Classify(string[] args) =>
-        args.Length == 0
-            ? Startup.Serve
-            : args[0] is "--help" or "-h" or "help" ? Startup.Help : Startup.Usage;
+        args switch
+        {
+            [] => Startup.Serve,
+            ["--help" or "-h" or "help", ..] => Startup.Help,
+            [CallerForwarding.Flag, _] => Startup.Serve,
+            _ => Startup.Usage,
+        };
+
+    /// <summary>The record the Linux half forwarded, still encoded — or <c>null</c> for a plain start.</summary>
+    internal static string? ForwardedCaller(string[] args) =>
+        args is [CallerForwarding.Flag, var encoded] ? encoded : null;
 
     private static async Task<int> Main(string[] args)
     {
@@ -69,11 +82,11 @@ internal static class Program
                 return 0;
 
             case Startup.Usage:
-                Note($"unknown argument '{args[0]}' — this binary takes none; an MCP client speaks to it over stdin.");
+                Note($"unknown argument '{args[0]}' — this binary takes none by hand; an MCP client speaks to it over stdin.");
                 return contract.Exit("usage");
 
             default:
-                return await ServeAsync(contract);
+                return await ServeAsync(contract, ForwardedCaller(args));
         }
     }
 
@@ -81,20 +94,27 @@ internal static class Program
     /// Answer the protocol — from here, or from the Windows binary when we are inside WSL.
     /// </summary>
     /// <remarks>
-    /// The decision is the CLI's, unchanged and shared: two independent signals for "this is
+    /// <para>The decision is the CLI's, unchanged and shared: two independent signals for "this is
     /// WSL", plus a guard against a Windows binary that is secretly a Linux one. What differs is
-    /// what follows it — a session to carry rather than a call to relay.
+    /// what follows it — a session to carry rather than a call to relay.</para>
+    /// <para><b>The caller record is computed BEFORE the branch</b>, so under the relay it is the
+    /// LINUX half's environment that names the session — the half Claude Code actually spawned.
+    /// A record forwarded to us is taken as it came and never recomputed: this half's environment
+    /// belongs to <c>wsl.exe</c>, and a pid found in it would name somebody else's session. The
+    /// one field this half does fill is the agent, from the client that shakes hands with it
+    /// (<see cref="CallerSource"/>).</para>
     /// </remarks>
-    private static async Task<int> ServeAsync(BrokerContract contract)
+    private static async Task<int> ServeAsync(BrokerContract contract, string? forwarded)
     {
+        var caller = forwarded is null ? CallerIdentity.Current(agent: string.Empty) : CallerIdentity.Decode(forwarded);
         if (WslInterop.ShouldRelayHere())
         {
-            return await RelayAsync(contract);
+            return await RelayAsync(contract, caller);
         }
 
         try
         {
-            await RunAsync(contract);
+            await RunAsync(contract, caller);
             return 0;
         }
         catch (Exception e) when (e is IOException or ObjectDisposedException)
@@ -114,11 +134,19 @@ internal static class Program
     /// person can fix — and the message has to name the variable, since <c>creds-mcp.exe</c> is
     /// installed into the extension's own storage and deliberately not put on the PATH.
     /// </remarks>
-    private static async Task<int> RelayAsync(BrokerContract contract)
+    private static async Task<int> RelayAsync(BrokerContract contract, CallerRecord caller)
     {
         try
         {
-            return await WslPump.RunAsync();
+            // Once per session, never per call: ask the Windows half whether it knows `--caller`,
+            // and hand it the record only if it does. An old half handed the flag would die with a
+            // usage error before the handshake — a dead server, not a degraded one.
+            var args = await CallerForwarding.ArgumentsForAsync(
+                caller,
+                () => WslInterop.CredsMcp.CaptureAsync(["--help"], CallerForwarding.ProbeTimeout),
+                CallerForwarding.ProbeTimeout,
+                Note);
+            return await WslPump.RunAsync(args);
         }
         catch (Exception e) when (e is System.ComponentModel.Win32Exception or InvalidOperationException)
         {
@@ -135,7 +163,7 @@ internal static class Program
         }
     }
 
-    private static async Task RunAsync(BrokerContract contract)
+    private static async Task RunAsync(BrokerContract contract, CallerRecord caller)
     {
         var options = new McpServerOptions
         {
@@ -146,21 +174,26 @@ internal static class Program
             },
             ServerInstructions = Instructions,
         };
+        // The tools capture the holder, not a value: ClientInfo is null until the handshake this
+        // process is about to answer, so the client's name is read per call — see CallerSource.
+        var source = new CallerSource(caller);
         options.ToolCollection ??= [];
         options.ToolCollection.Add(ListTool(contract));
         options.ToolCollection.Add(ConfigSnippetTool(contract));
         options.ToolCollection.Add(FolderListTool(contract));
-        foreach (var tool in FolderTool(contract))
+        foreach (var tool in FolderTool(contract, source))
         {
             options.ToolCollection.Add(tool);
         }
         foreach (var tool in UseTools.All)
         {
-            options.ToolCollection.Add(UseTool(contract, tool));
+            options.ToolCollection.Add(UseTool(contract, tool, source));
         }
 
         await using var transport = new StdioServerTransport(ServerName);
         await using var server = McpServer.Create(transport, options);
+        // The side that spoke to the client names the client.
+        source.Bind(server);
         await server.RunAsync();
     }
 
@@ -255,18 +288,18 @@ internal static class Program
     /// no-escalation rule on this side: there is no parameter a model could put the switches in,
     /// because the delegates below declare every field that travels.</para>
     /// </remarks>
-    private static IEnumerable<McpServerTool> FolderTool(BrokerContract contract) =>
+    private static IEnumerable<McpServerTool> FolderTool(BrokerContract contract, CallerSource caller) =>
     [
         McpServerTool.Create(
             async (string name, string parent, string? folderType = null) =>
-                Answer.From(await FolderTools.InvokeAsync(contract, "create", [("name", name), ("parent", parent), ("folderType", folderType)])),
+                Answer.From(await FolderTools.InvokeAsync(contract, "create", caller.Current, [("name", name), ("parent", parent), ("folderType", folderType)])),
             FolderOptions(FolderTools.CreateName, "Create a folder", FolderTools.CreateDescription)),
         McpServerTool.Create(
             async (string folder, string? name = null, string? parent = null, string? folderType = null) =>
-                Answer.From(await FolderTools.InvokeAsync(contract, "edit", [("folder", folder), ("name", name), ("parent", parent), ("folderType", folderType)])),
+                Answer.From(await FolderTools.InvokeAsync(contract, "edit", caller.Current, [("folder", folder), ("name", name), ("parent", parent), ("folderType", folderType)])),
             FolderOptions(FolderTools.EditName, "Rename, move or retype a folder", FolderTools.EditDescription)),
         McpServerTool.Create(
-            async (string folder) => Answer.From(await FolderTools.InvokeAsync(contract, "delete", [("folder", folder)])),
+            async (string folder) => Answer.From(await FolderTools.InvokeAsync(contract, "delete", caller.Current, [("folder", folder)])),
             FolderOptions(FolderTools.DeleteName, "Move a folder to the Trash", FolderTools.DeleteDescription)),
     ];
 
@@ -319,9 +352,9 @@ internal static class Program
     /// <summary>`true`/`false` as the words the broker's reader accepts, or nothing.</summary>
     private static string? Word(bool? flag) => flag is null ? null : (flag.Value ? "true" : "false");
 
-    private static McpServerTool UseTool(BrokerContract contract, UseTools.UseTool tool) =>
+    private static McpServerTool UseTool(BrokerContract contract, UseTools.UseTool tool, CallerSource caller) =>
         McpServerTool.Create(
-            ArgumentsFor(contract, tool),
+            ArgumentsFor(contract, tool, caller),
             new McpServerToolCreateOptions
             {
                 Name = tool.Name,
@@ -339,15 +372,17 @@ internal static class Program
     /// <remarks>
     /// Three shapes, because three is how many the seven actions need: an entry alone, an entry
     /// and a command, an entry and a query. The parameter NAMES are what a model sees and fills
-    /// in, so they are the broker's own words rather than anything invented here.
+    /// in, so they are the broker's own words rather than anything invented here. The caller is
+    /// NOT a parameter — it is read from the holder on each call — so no schema here moved when
+    /// the label arrived.
     /// </remarks>
-    private static Delegate ArgumentsFor(BrokerContract contract, UseTools.UseTool tool) =>
+    private static Delegate ArgumentsFor(BrokerContract contract, UseTools.UseTool tool, CallerSource caller) =>
         tool.Action switch
         {
             "exec" => async (string entry, string command) =>
-                Answer.From(await UseTools.InvokeAsync(contract, tool, entry, "command", command)),
+                Answer.From(await UseTools.InvokeAsync(contract, tool, caller.Current, entry, "command", command)),
             "query" => async (string entry, string query) =>
-                Answer.From(await UseTools.InvokeAsync(contract, tool, entry, "query", query)),
+                Answer.From(await UseTools.InvokeAsync(contract, tool, caller.Current, entry, "query", query)),
             // `delete` takes only the entry: there is no second argument, because there is no
             // second destination. That is the permission, not a default.
             // The generation options ride along, named one by one. A model cannot add a field to
@@ -367,6 +402,7 @@ internal static class Program
                 Answer.From(await UseTools.RotateAsync(
                     contract,
                     tool,
+                    caller.Current,
                     entry,
                     statement,
                     secretKind,
@@ -396,6 +432,7 @@ internal static class Program
                 Answer.From(await UseTools.CreateAsync(
                     contract,
                     tool,
+                    caller.Current,
                     name,
                     kind,
                     secretKind,
@@ -405,7 +442,7 @@ internal static class Program
                     user,
                     port,
                     Draw(length, lower, upper, digits, symbols, avoidAmbiguous, words, separator))),
-            _ => async (string entry) => Answer.From(await UseTools.InvokeAsync(contract, tool, entry, null, null)),
+            _ => async (string entry) => Answer.From(await UseTools.InvokeAsync(contract, tool, caller.Current, entry, null, null)),
         };
 
     /// <summary>
@@ -452,14 +489,19 @@ internal static class Program
         says whether the key exists yet. You wire the code; the person mints the key.
         """;
 
-    private const string HelpText =
+    /// <summary>
+    /// What <c>--help</c> prints. Internal because the Linux half of the WSL bridge probes the
+    /// Windows half's help for the word <c>--caller</c> before passing it — the text is both the
+    /// documentation and that probe's signal, and a test pins the two together.
+    /// </summary>
+    internal const string HelpText =
         """
         creds-mcp — the MCP server for CredsForDevs.
 
-        It takes no arguments and is not run by hand: an MCP client starts it and speaks JSON-RPC
-        to it over stdin and stdout. Everything it answers comes from a running VS Code window
-        with the CredsForDevs extension, over the loopback, and only for entries whose Agent
-        access switches are on.
+        It takes no arguments by hand and is not run by hand: an MCP client starts it and speaks
+        JSON-RPC to it over stdin and stdout. Everything it answers comes from a running VS Code
+        window with the CredsForDevs extension, over the loopback, and only for entries whose
+        Agent access switches are on.
 
         Configure it in your MCP client:
 
@@ -472,6 +514,12 @@ internal static class Program
         hands the whole session to creds-mcp.exe through WSL interop and carries its stdio. Set
         CREDS_MCP_WINDOWS_BINARY to the full path when that executable is not on the interop PATH
         — which is the ordinary case, since the extension installs it into its own storage.
+
+        The consent modal in the window names who is asking — the agent (from the MCP client's
+        own name and version), its session id and name, and the folder it works in, as reported by
+        this process's environment. Under WSL the Linux half computes that record and passes it to
+        creds-mcp.exe as `--caller <base64url json>`; the Windows half never recomputes it. It is a
+        label the person sees, never a permission — the modal says so.
 
         Tools: creds_list and creds_folders, then creds_exec / creds_query / creds_run /
         creds_open_terminal / creds_vpn_up / creds_vpn_down / creds_export_env, and the folder

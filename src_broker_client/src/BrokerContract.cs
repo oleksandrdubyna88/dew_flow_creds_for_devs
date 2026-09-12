@@ -30,6 +30,7 @@ public sealed record BrokerContract(
     [property: JsonPropertyName("mcpDeleteRoute")] string? McpDeleteRoute,
     [property: JsonPropertyName("mcpCreateRoute")] string? McpCreateRoute,
     [property: JsonPropertyName("configRead")] ConfigReadRoute? ConfigRead,
+    [property: JsonPropertyName("caller")] CallerContract? Caller,
     [property: JsonPropertyName("errors")] Dictionary<string, int> Errors,
     [property: JsonPropertyName("exitCodes")] Dictionary<string, int> ExitCodes)
 {
@@ -130,6 +131,19 @@ public sealed record BrokerContract(
         ConfigRead is { Path.Length: > 0 } route ? route.Path : "/v1/config/read";
 
     /// <summary>
+    /// The body field the caller label travels in — <c>caller</c> — and its per-field cap.
+    /// </summary>
+    /// <remarks>
+    /// Nullable with a fallback for the same reason every accessor here is: a contract file
+    /// written before the block existed must degrade to what this build knows. The fallbacks are
+    /// the values the window has always been written against, so an old file still produces a
+    /// body the window reads.
+    /// </remarks>
+    public string CallerField() => Caller is { Field.Length: > 0 } block ? block.Field : "caller";
+
+    public int CallerMaxFieldChars() => Caller is { MaxFieldChars: > 0 } block ? block.MaxFieldChars : 80;
+
+    /// <summary>
     /// The exit code for a named mechanism failure.
     /// </summary>
     /// <remarks>
@@ -154,6 +168,24 @@ public sealed record ConfigReadRoute(
     [property: JsonPropertyName("path")] string Path,
     [property: JsonPropertyName("authenticated")] bool Authenticated,
     [property: JsonPropertyName("bearer")] string? Bearer);
+
+/// <summary>
+/// The caller label's place in a body, as the contract describes it.
+/// </summary>
+/// <remarks>
+/// <para>Both shapes the window reads are declared — the nested object under <see cref="Field"/>
+/// with its <see cref="Fields"/>, and the flat <c><see cref="FlatPrefix"/>&lt;Field&gt;</c>
+/// fallback — so a sender of either is served. This side sends the nested object; the AOT publish
+/// that decided so is recorded in the plan.</para>
+/// <para>The caps are the window's, repeated here so a well-behaved client sends a label the window
+/// will not have to cut. The window cuts regardless: this is courtesy, the window is the guard.</para>
+/// </remarks>
+public sealed record CallerContract(
+    [property: JsonPropertyName("field")] string? Field,
+    [property: JsonPropertyName("fields")] string[]? Fields,
+    [property: JsonPropertyName("flatPrefix")] string? FlatPrefix,
+    [property: JsonPropertyName("maxFieldChars")] int MaxFieldChars,
+    [property: JsonPropertyName("maxLabelChars")] int MaxLabelChars);
 
 /// <summary>
 /// One route that answers without a credential and performs nothing.

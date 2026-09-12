@@ -1,4 +1,5 @@
 import { AuditDoor } from './agentAuditLog';
+import type { CallerLabel } from './brokerCaller';
 import { ErrorCode, INTERNAL_FAILURE } from './brokerProtocol';
 import { runAndDeliver } from './brokerResponse';
 import { reservationRefused } from './brokerRequests';
@@ -24,7 +25,15 @@ export interface CallDeps {
   /** Whether this entry may be used exactly once; absent means this window queues nothing. */
   readonly isOneUse?: (accountId: string, entityId: string) => boolean;
   respond(status: number, body: unknown): void;
-  log(line: { grant: string; entityName: string; action: string; via: AuditDoor; outcome: string; detail: string }): void;
+  log(line: {
+    grant: string;
+    entityName: string;
+    action: string;
+    via: AuditDoor;
+    outcome: string;
+    detail: string;
+    caller: CallerLabel | undefined;
+  }): void;
   /** Answer a refusal that happened before the action ran. */
   refuse(code: ErrorCode, message: string): void;
   /** Answer a failure of the action itself, with a reason already masked for the journal. */
@@ -39,6 +48,8 @@ export interface CallSubject {
   readonly action: string;
   readonly body: Record<string, unknown>;
   readonly via: AuditDoor;
+  /** Who the body says is calling — a label for the modal and the line, never a decision. */
+  readonly caller: CallerLabel | undefined;
   readonly summary: string;
   readonly table: MaskTable;
 }
@@ -98,7 +109,7 @@ function refuseSpent(deps: CallDeps, call: CallSubject): void {
 }
 
 function answer(deps: CallDeps, call: CallSubject): Promise<void> {
-  const { grant, useAction, action, via, summary, table } = call;
+  const { grant, useAction, action, via, summary, table, caller } = call;
   return runAndDeliver(
     {
       respond: deps.respond,
@@ -108,7 +119,7 @@ function answer(deps: CallDeps, call: CallSubject): Promise<void> {
       mutatesSecrets: useAction.mutatesSecrets,
       refresh: deps.refresh,
       table,
-      where: { grant: GrantRegistry.describe(grant), entityName: grant.entityName, action, via, summary },
+      where: { grant: GrantRegistry.describe(grant), entityName: grant.entityName, action, via, summary, caller },
     },
     () => useAction.run({ accountId: grant.accountId, entityId: grant.entityId, entityName: grant.entityName }, call.body),
     (result) => (result.status === 200 ? useAction.describeOutcome(result) : String(result.status)),

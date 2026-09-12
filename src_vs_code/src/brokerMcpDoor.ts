@@ -1,4 +1,5 @@
 import * as http from 'node:http';
+import { CallerLabel, callerFrom } from './brokerCaller';
 import { ErrorCode } from './brokerProtocol';
 import { McpUseLookup, McpUseTarget, readMcpUse, readNamedBody } from './brokerRequests';
 import { NO_GENERATOR_OUTCOME } from './secretKinds';
@@ -27,6 +28,7 @@ export interface BrokerDoor {
     grant?: Grantish,
     action?: string,
     detail?: string,
+    caller?: CallerLabel,
   ): void;
   /** Whether this unauthenticated call may make the window ask a human. Answers its own refusal. */
   admit(res: http.ServerResponse): boolean;
@@ -34,14 +36,34 @@ export interface BrokerDoor {
   release(): void;
   mint(target: McpUseTarget): Grantish;
   describe(grant: Grantish): string;
-  note(entry: { grant: string; entityName: string; action: string; outcome: string; detail?: string }): void;
+  note(entry: {
+    grant: string;
+    entityName: string;
+    action: string;
+    outcome: string;
+    detail?: string;
+    /** Who the body said was calling — on the line so a person can match it to a session. */
+    caller?: CallerLabel;
+  }): void;
   perform(
     res: http.ServerResponse,
     grant: Grantish,
     action: string,
     body: Record<string, unknown>,
+    caller: CallerLabel | undefined,
   ): Promise<void>;
-  consent(grant: Grantish, action: string, verb: string, summary: string): Promise<ConsentOutcome>;
+  /**
+   * Ask the human. `caller` is REQUIRED — `undefined` must be written, never omitted — so that a
+   * door added next year is a compile error until it says who is asking. The label authorises
+   * nothing; the modal says so in its own sentence.
+   */
+  consent(
+    grant: Grantish,
+    action: string,
+    verb: string,
+    summary: string,
+    caller: CallerLabel | undefined,
+  ): Promise<ConsentOutcome>;
   respond(res: http.ServerResponse, status: number, body: unknown): void;
 }
 
@@ -93,9 +115,10 @@ export async function handleMcpUse(
   if (!door.admit(res)) {
     return;
   }
-  const grant = minted(door, read.target, 'mcp');
+  const caller = callerFrom(read.body);
+  const grant = minted(door, read.target, 'mcp', caller);
   try {
-    await door.perform(res, grant, action, read.body);
+    await door.perform(res, grant, action, read.body, caller);
   } finally {
     door.release();
   }
@@ -134,7 +157,7 @@ export async function handleMcpDelete(
     return;
   }
   try {
-    await confirmAndDelete(door, res, read.target, remove);
+    await confirmAndDelete(door, res, read.target, remove, callerFrom(read.body));
   } finally {
     door.release();
   }
@@ -151,12 +174,13 @@ async function confirmAndDelete(
   res: http.ServerResponse,
   target: McpUseTarget,
   remove: (accountId: string, entityId: string) => Promise<boolean>,
+  caller: CallerLabel | undefined,
 ): Promise<void> {
-  const grant = minted(door, target, 'mcp-delete');
-  const consent = await door.consent(grant, 'delete', 'move to the Trash', target.entityName);
+  const grant = minted(door, target, 'mcp-delete', caller);
+  const consent = await door.consent(grant, 'delete', 'move to the Trash', target.entityName, caller);
   if (consent !== 'allowed') {
     const code: ErrorCode = consent === 'timeout' ? 'consent_timeout' : 'denied';
-    door.refuse(res, code, 'The human did not allow this deletion.', grant, 'delete', target.entityName);
+    door.refuse(res, code, 'The human did not allow this deletion.', grant, 'delete', target.entityName, caller);
     return;
   }
   const moved = await remove(target.accountId, target.entityId);
@@ -166,12 +190,13 @@ async function confirmAndDelete(
     action: 'delete',
     outcome: moved ? 'moved to Trash' : 'gone already',
     detail: target.entityName,
+    caller,
   });
   door.respond(res, 200, { deleted: moved, entity: target.entityName, restorable: true });
 }
 
-/** Mint, and write the line that says a call began. */
-function minted(door: BrokerDoor, target: McpUseTarget, what: string): Grantish {
+/** Mint, and write the line that says a call began — and who the body says began it. */
+function minted(door: BrokerDoor, target: McpUseTarget, what: string, caller: CallerLabel | undefined): Grantish {
   const grant = door.mint(target);
   door.note({
     grant: door.describe(grant),
@@ -179,6 +204,7 @@ function minted(door: BrokerDoor, target: McpUseTarget, what: string): Grantish 
     action: what,
     outcome: 'minted',
     detail: `${target.entityName} · ${target.kind}`,
+    caller,
   });
   return grant;
 }
@@ -207,15 +233,16 @@ export async function handleMcpCreate(
     return;
   }
   const chosen = decide(create, read.body);
+  const caller = callerFrom(read.body);
   if (!chosen.ok) {
-    refuseCreation(door, res, chosen, String(read.body.name));
+    refuseCreation(door, res, chosen, String(read.body.name), caller);
     return;
   }
   if (!door.admit(res)) {
     return;
   }
   try {
-    await confirmAndCreate(door, res, chosen, create as McpCreateHooks, read.body);
+    await confirmAndCreate(door, res, chosen, create as McpCreateHooks, read.body, caller);
   } finally {
     door.release();
   }
@@ -234,6 +261,7 @@ function refuseCreation(
   res: http.ServerResponse,
   refusal: { code: ErrorCode; message: string; noGenerator?: boolean },
   name: string,
+  caller: CallerLabel | undefined,
 ): void {
   door.refuse(res, refusal.code, refusal.message);
   if (refusal.noGenerator === true) {
@@ -243,6 +271,7 @@ function refuseCreation(
       action: 'create',
       outcome: NO_GENERATOR_OUTCOME,
       detail: refusal.message,
+      caller,
     });
   }
 }
@@ -286,12 +315,13 @@ async function confirmAndCreate(
   decision: CreateAccepted,
   create: McpCreateHooks,
   body: Record<string, unknown>,
+  caller: CallerLabel | undefined,
 ): Promise<void> {
-  const grant = minted(door, decision.target, 'mcp-create');
-  const consent = await door.consent(grant, 'create', 'create an entry in', decision.summary);
+  const grant = minted(door, decision.target, 'mcp-create', caller);
+  const consent = await door.consent(grant, 'create', 'create an entry in', decision.summary, caller);
   if (consent !== 'allowed') {
     const code: ErrorCode = consent === 'timeout' ? 'consent_timeout' : 'denied';
-    door.refuse(res, code, 'The human did not allow this.', grant, 'create', decision.summary);
+    door.refuse(res, code, 'The human did not allow this.', grant, 'create', decision.summary, caller);
     return;
   }
   const made = await create.make(decision, body);
@@ -303,6 +333,7 @@ async function confirmAndCreate(
     // through its context, and counting those is the price of this level said out loud.
     outcome: decision.withSecret ? 'created with agent secret' : 'created',
     detail: decision.summary,
+    caller,
   });
   door.respond(res, 200, { created: true, id: made.id, name: made.name });
 }

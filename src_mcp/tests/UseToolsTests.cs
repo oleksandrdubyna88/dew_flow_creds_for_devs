@@ -1,3 +1,4 @@
+using System.Text.Json;
 using CredsBroker;
 using CredsMcp;
 using FluentAssertions;
@@ -99,10 +100,66 @@ public sealed class UseToolsTests
     {
         // A tool call with nothing in it must not become a request. The broker would refuse it,
         // but only after a round trip that says nothing useful to the model.
-        var answer = await UseTools.InvokeAsync(BrokerContract.Current, Named("creds_exec"), "  ", "command", "ls");
+        var answer = await UseTools.InvokeAsync(BrokerContract.Current, Named("creds_exec"), Caller, "  ", "command", "ls");
 
         answer.Should().Contain("No entry id was given");
         answer.Should().Contain("creds_list");
+    }
+
+    private static readonly CallerRecord Caller = new("Claude Code 2.1.268", "98bf9f23", "clauderag-d6", "ClaudeRag");
+
+    private static string[] Keys(string json)
+    {
+        using var doc = JsonDocument.Parse(json);
+        return [.. doc.RootElement.EnumerateObject().Select(p => p.Name)];
+    }
+
+    // ---- T11: the body carries the caller, and still ONLY the named fields ----------------------
+
+    [Fact]
+    public void A_use_body_is_the_entry_the_one_extra_field_and_the_caller_and_nothing_else()
+    {
+        var body = UseTools.Body(BrokerContract.Current, Caller, "e-1", "command", "uname -a");
+
+        Keys(body).Should().Equal("entry", "command", "caller");
+        using var doc = JsonDocument.Parse(body);
+        doc.RootElement.GetProperty("caller").EnumerateObject().Select(p => p.Name).Should().Equal("agent", "session", "sessionName", "cwd");
+        doc.RootElement.GetProperty("caller").GetProperty("agent").GetString().Should().Be("Claude Code 2.1.268");
+        doc.RootElement.GetProperty("caller").GetProperty("session").GetString().Should().Be("98bf9f23");
+    }
+
+    [Fact]
+    public void A_body_with_no_extra_field_and_no_caller_is_the_entry_alone_as_it_always_was()
+    {
+        // The old wire, byte for byte: an old window meets exactly what it met before.
+        UseTools.Body(BrokerContract.Current, CallerRecord.Empty, "e-1", null, null).Should().Be("""{"entry":"e-1"}""");
+    }
+
+    [Fact]
+    public void A_rotate_body_carries_its_named_fields_and_the_caller_and_nothing_else()
+    {
+        var body = UseTools.RotateBody(BrokerContract.Current, Caller, "e-1", "ALTER USER app IDENTIFIED BY '{{creds:new}}'", "passphrase", [("words", "5"), ("separator", "")]);
+
+        Keys(body).Should().Equal("entry", "statement", "secretKind", "words", "separator", "caller");
+    }
+
+    [Fact]
+    public void A_create_body_carries_its_named_fields_and_the_caller_and_nothing_else()
+    {
+        var body = UseTools.CreateBody(BrokerContract.Current, Caller, "app-03", "ssh", null, "k", null, "app-03.internal", null, 22, null);
+
+        Keys(body).Should().Equal("name", "kind", "secret", "host", "port", "caller");
+    }
+
+    [Fact]
+    public void The_caller_field_is_named_by_the_contract_and_shaped_as_the_contract_declares()
+    {
+        var contract = BrokerContract.Current;
+        var body = UseTools.Body(contract, Caller, "e-1", null, null);
+
+        using var doc = JsonDocument.Parse(body);
+        doc.RootElement.GetProperty(contract.CallerField()).EnumerateObject().Select(p => p.Name)
+            .Should().Equal(contract.Caller!.Fields);
     }
 
     private static UseTools.UseTool Named(string name) =>

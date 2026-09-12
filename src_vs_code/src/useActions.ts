@@ -28,10 +28,12 @@ export interface UseAction {
   readonly action: string;
   /**
    * How the consent dialog names this capability, as a verb phrase completing
-   * "Claude Code wants to …" — e.g. `run a command on`. It lives on the action
-   * because the broker must not know what actions exist: the first version
-   * chose the wording with `action === 'exec' ? … : …`, which would have
-   * offered to "open a terminal to" a database the day a second kind arrived.
+   * "<caller> wants to …" — e.g. `run a command on`, where the caller is whoever
+   * the request body reports (`brokerCaller.ts`) and "An agent" when it reports
+   * nothing. It lives on the action because the broker must not know what
+   * actions exist: the first version chose the wording with
+   * `action === 'exec' ? … : …`, which would have offered to "open a terminal
+   * to" a database the day a second kind arrived.
    */
   readonly verb: string;
   /** Reject a malformed body before any dialog or side effect. */

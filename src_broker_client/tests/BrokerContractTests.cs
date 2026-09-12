@@ -145,16 +145,37 @@ public class BrokerContractTests
     }
 
     [Fact]
+    public void The_caller_block_is_in_the_contract_and_names_exactly_the_fields_this_side_sends()
+    {
+        // Enumerated from the record's own JSON, never retyped: a field added to `CallerRecord`
+        // without a contract entry — or the other way round — fails here rather than arriving at
+        // the window as an unknown key it silently ignores.
+        var contract = BrokerContract.Current;
+
+        contract.Caller.Should().NotBeNull("this build's embedded contract carries the caller block");
+        contract.CallerField().Should().Be("caller");
+        var sent = CallerIdentity.ToJson(new CallerRecord("a", "s", "n", "c")).Select(p => p.Key);
+        contract.Caller!.Fields.Should().Equal(sent);
+        contract.Caller.FlatPrefix.Should().Be("caller", "the fallback shape the window also reads");
+        contract.CallerMaxFieldChars().Should().Be(CallerIdentity.MaxFieldChars, "the cap this side applies is the one the window declares");
+        contract.Caller.MaxLabelChars.Should().Be(160);
+        contract.Version.Should().Be(1, "additive: no route, status or verb moved");
+    }
+
+    [Fact]
     public void A_contract_without_the_reads_section_degrades_to_the_path_this_build_knows()
     {
         // A copy written before that section existed is a real thing to meet. Falling back to
         // the value that used to be hard-coded keeps an old file working; throwing on a missing
         // key would turn an additive change into a breaking one.
         var older = new BrokerContract(1, "creds-for-devs-agent", BrokerContract.Current.Health,
-            [], [], null, null, null, null, null, null, null, null, [], []);
+            [], [], null, null, null, null, null, null, null, null, null, [], []);
 
         older.ReadRoute("aliases", "/v1/aliases").Should().Be("/v1/aliases");
         older.ConfigReadRoutePath().Should().Be("/v1/config/read");
+        // The caller block degrades to the field name and the cap the window was written against.
+        older.CallerField().Should().Be("caller");
+        older.CallerMaxFieldChars().Should().Be(80);
         older.DeleteRoute().Should().Be("/v1/mcp/delete");
         older.CreateRoute().Should().Be("/v1/mcp/create");
         older.McpUseRoute("exec").Should().Be("/v1/mcp/use/exec");

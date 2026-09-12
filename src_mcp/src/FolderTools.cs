@@ -135,7 +135,26 @@ internal static class FolderTools
     internal static async Task<string> InvokeAsync(
         BrokerContract contract,
         string action,
+        CallerRecord caller,
         IReadOnlyList<(string Key, string? Value)> fields)
+    {
+        var reply = await Windows.PostAsync(contract, contract.FolderRoute(action), Body(contract, caller, fields));
+        if (reply is null)
+        {
+            return UseTools.Failure(
+                "No CredsForDevs window answered.",
+                Windows.Announced() == 0
+                    ? "Open the folder in VS Code with the CredsForDevs extension and unlock the vault."
+                    : "The folder id may be stale — call creds_folders again.");
+        }
+        return reply.Status == 200 ? reply.Body : UseTools.Refused(reply);
+    }
+
+    /// <summary>
+    /// The folder body: the named fields that were given, plus the caller label. Its own method so
+    /// the SET of keys — the whole no-escalation rule on this side — is a unit test.
+    /// </summary>
+    internal static string Body(BrokerContract contract, CallerRecord caller, IReadOnlyList<(string Key, string? Value)> fields)
     {
         var body = new Dictionary<string, string>();
         foreach (var (key, value) in fields)
@@ -146,18 +165,6 @@ internal static class FolderTools
             }
         }
 
-        var reply = await Windows.PostAsync(
-            contract,
-            contract.FolderRoute(action),
-            JsonSerializer.Serialize(body, McpJsonContext.Default.DictionaryStringString));
-        if (reply is null)
-        {
-            return UseTools.Failure(
-                "No CredsForDevs window answered.",
-                Windows.Announced() == 0
-                    ? "Open the folder in VS Code with the CredsForDevs extension and unlock the vault."
-                    : "The folder id may be stale — call creds_folders again.");
-        }
-        return reply.Status == 200 ? reply.Body : UseTools.Refused(reply);
+        return Bodies.Compose(body, caller, contract);
     }
 }

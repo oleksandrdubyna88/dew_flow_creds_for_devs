@@ -1,4 +1,5 @@
 import * as http from 'node:http';
+import { CallerLabel, callerFrom } from './brokerCaller';
 import { BrokerDoor, ConsentOutcome, Grantish, ReadBody } from './brokerMcpDoor';
 import { ErrorCode } from './brokerProtocol';
 import { McpUseTarget, readNamedBody } from './brokerRequests';
@@ -142,7 +143,7 @@ async function perform(
     return;
   }
   try {
-    await confirmAndRun(door, res, decision, hooks as McpFolderHooks, read.body, route);
+    await confirmAndRun(door, res, decision, hooks as McpFolderHooks, read.body, route, callerFrom(read.body));
   } finally {
     door.release();
   }
@@ -166,11 +167,12 @@ async function confirmAndRun(
   hooks: McpFolderHooks,
   body: Record<string, unknown>,
   route: FolderRoute,
+  caller: CallerLabel | undefined,
 ): Promise<void> {
-  const grant = minted(door, decision.target, `mcp-folder-${route.action}`);
-  const consent = await door.consent(grant, route.action, route.verb, decision.summary);
+  const grant = minted(door, decision.target, `mcp-folder-${route.action}`, caller);
+  const consent = await door.consent(grant, route.action, route.verb, decision.summary, caller);
   if (consent !== 'allowed') {
-    refuseConsent(door, res, consent, grant, route.action, decision.summary);
+    refuseConsent(door, res, consent, grant, route.action, decision.summary, caller);
     return;
   }
   const result = await route.run(hooks, decision, body);
@@ -180,6 +182,7 @@ async function confirmAndRun(
     action: `folder-${route.action}`,
     outcome: 'done',
     detail: decision.summary,
+    caller,
   });
   door.respond(res, 200, { folder: decision.target.entityName, ...route.answer(result) });
 }
@@ -191,13 +194,14 @@ function refuseConsent(
   grant: Grantish,
   action: string,
   summary: string,
+  caller: CallerLabel | undefined,
 ): void {
   const code: ErrorCode = consent === 'timeout' ? 'consent_timeout' : 'denied';
-  door.refuse(res, code, 'The human did not allow this.', grant, `folder-${action}`, summary);
+  door.refuse(res, code, 'The human did not allow this.', grant, `folder-${action}`, summary, caller);
 }
 
-/** Mint, and write the line that says a call began. */
-function minted(door: BrokerDoor, target: McpUseTarget, what: string): Grantish {
+/** Mint, and write the line that says a call began — and who the body says began it. */
+function minted(door: BrokerDoor, target: McpUseTarget, what: string, caller: CallerLabel | undefined): Grantish {
   const grant = door.mint(target);
   door.note({
     grant: door.describe(grant),
@@ -205,6 +209,7 @@ function minted(door: BrokerDoor, target: McpUseTarget, what: string): Grantish 
     action: what,
     outcome: 'minted',
     detail: target.entityName,
+    caller,
   });
   return grant;
 }

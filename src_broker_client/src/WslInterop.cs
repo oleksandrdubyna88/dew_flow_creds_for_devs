@@ -175,4 +175,44 @@ public sealed record WindowsBridge(string DefaultBinary, string OverrideVariable
         return Process.Start(start)
             ?? throw new InvalidOperationException($"could not start {WindowsBinary()}");
     }
+
+    /// <summary>
+    /// Run the Windows binary hermetically — every stream redirected, a bounded wait — and answer
+    /// its stdout, or <c>null</c> for a non-zero exit or a timeout.
+    /// </summary>
+    /// <remarks>
+    /// <para>For the one-shot <c>--help</c> probe the MCP relay makes before it starts a session. The
+    /// relay's OWN stdio is the live JSON-RPC channel: nothing the probe prints may touch it, and it
+    /// must not inherit the client's stdin either, so all three streams are redirected and its stdin
+    /// is closed at once. A probe that hangs is killed as a tree at the timeout and reads as
+    /// <c>null</c>; it may delay the caller by that much, never stop it.</para>
+    /// <para>A launch failure — no such binary — throws, exactly as <see cref="StartPiped"/> does,
+    /// because the caller is the one with the sentence for it.</para>
+    /// </remarks>
+    public async Task<string?> CaptureAsync(IReadOnlyList<string> args, TimeSpan timeout)
+    {
+        var start = StartInfo(args);
+        start.RedirectStandardInput = true;
+        start.RedirectStandardOutput = true;
+        start.RedirectStandardError = true;
+        using var child = Process.Start(start)
+            ?? throw new InvalidOperationException($"could not start {WindowsBinary()}");
+        child.StandardInput.Close();
+        var stdout = child.StandardOutput.ReadToEndAsync();
+        var stderr = child.StandardError.ReadToEndAsync();
+
+        using var deadline = new CancellationTokenSource(timeout);
+        try
+        {
+            await child.WaitForExitAsync(deadline.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            child.Kill(entireProcessTree: true);
+            return null;
+        }
+
+        await Task.WhenAll(stdout, stderr).ConfigureAwait(false);
+        return child.ExitCode == 0 ? stdout.Result : null;
+    }
 }

@@ -1,4 +1,5 @@
 import { AuditDoor } from './agentAuditLog';
+import type { CallerLabel } from './brokerCaller';
 import { statusForErrorCode, withheldBody } from './brokerProtocol';
 import { describeError } from './describeError';
 import { EMPTY_MASK_TABLE, MaskEntry, MaskTable, buildMaskTable, maskResponseBody } from './secretMasker';
@@ -127,7 +128,8 @@ export interface Delivery {
   burn(status: number): Promise<void>;
   /** The values read BEFORE the action — complete unless the action wrote one. */
   table: MaskTable;
-  where: { grant: string; entityName: string; action: string; via: AuditDoor; summary: string };
+  /** Where the line is written from — `caller` required-or-undefined, so no door can forget it. */
+  where: { grant: string; entityName: string; action: string; via: AuditDoor; summary: string; caller: CallerLabel | undefined };
   /**
    * The values as they are once the action has finished; `undefined` when that read failed.
    *
@@ -154,6 +156,8 @@ interface AuditLine {
   via: AuditDoor;
   outcome: string;
   detail: string;
+  /** Who the body said was calling — a label for the line, never a decision. */
+  caller: CallerLabel | undefined;
 }
 
 /**

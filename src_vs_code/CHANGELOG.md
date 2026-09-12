@@ -6,6 +6,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **The consent modal names WHO is asking.** It used to open with *Claude Code wants to…* for every
+  caller — Codex, Gemini, the `creds` CLI in a plain terminal, any other MCP client — and could not
+  say which of several side-by-side Claude Code sessions had raised it, while Allow covers every later
+  call on the grant (#61). The first sentence now reads *Claude Code 2.1.268 · session clauderag-d6
+  (98bf9f23) · in ClaudeRag wants to run a command on "prod"…*, from a `caller` object the client
+  puts in its request body: the product and version (from the MCP client's own handshake, or
+  `creds CLI`), the first eight characters of the agent's session id, the session's name from Claude
+  Code's registry, and the name of the folder it works in. A client that reports nothing is
+  **An agent** — never a product name by default.
+
+  **It is a label, and the dialog says so** in its own sentence: *Identity as reported by the
+  caller — a label, not a check.* Nothing decides anything with it: no switch, route, throttle or
+  grant reads it. Because any local process can post any `caller` it likes, the window strips
+  control and format characters, newlines and the audit separator, collapses whitespace, caps each
+  field at 80 characters and the composed line at 160, drops fields that are not strings and treats
+  an all-blank record as absent — so a hostile label cannot append a paragraph to a security
+  dialog. The **Agent Access** audit line carries the same label as ` by <label>` between the door
+  and the outcome; lines written before this release still parse. `consent` and `perform` take the
+  caller as a required parameter, so a door added later cannot leave it out.
+
+  Filled by `creds-mcp` 0.6.0 and `creds` 0.1.6 (`contract/broker-v1.json` gained an additive
+  `caller` block; the wire `version` stays 1). An older binary against this window reads *An agent*;
+  this window's binaries against an older extension send a field it ignores.
+
 ## [1.6.0] — the audit's nine findings closed, and a second code where enrolment asks for two
 
 ### Added
