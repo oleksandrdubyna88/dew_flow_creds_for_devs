@@ -10,6 +10,7 @@ import { SHUFFLE_CODES } from '../shuffle';
 import { CARD_BRANDS } from '../cardBrand';
 import { brandFor } from '../cardFormFields';
 import { cardFormScript } from '../cardFormScript';
+import { weaveExamplePainterScript } from '../weaveExampleScript';
 import { BRAND_MARK_STYLES, brandMarkSvg } from '../cardBrandIcons';
 import { formStyleSheet } from '../entityFormStyles';
 
@@ -202,17 +203,20 @@ test('the weaving controls show what a method DOES, on values nobody has to care
   assert.match(markup, /id="mixExample"/, 'there is somewhere for the picture to go');
   assert.match(markup, /never drawn here/, 'and it says out loud that the value shown is made up');
   assert.match(script, /type: 'weaveExample'/, 'the page asks the host, which is where it can be tested');
-  assert.match(script, /weaveExampleResult/, 'and paints the answer');
+  assert.match(script, /weaveExampleResult/, 'and hands the answer on');
+  // The painting itself is the SHARED painter now — one copy for the card, the password and the
+  // phrase, because two copies is how the password picture lost the class its colours hang on.
+  const painter = weaveExamplePainterScript();
   // Three columns: the value, the decoy, and where each token went.
-  assert.match(script, /What gets stored/);
-  assert.ok(!/innerHTML/.test(script.slice(script.indexOf('weaveExampleResult'))), 'painted with DOM APIs');
+  assert.match(painter, /What gets stored/);
+  assert.ok(!/innerHTML/.test(painter), 'painted with DOM APIs');
 });
 
 test('an example is asked for per FIELD, so a CVV and a card number are not shown the same shape', () => {
   const script = cardFormScript();
 
   assert.match(script, /field: picked\[j\]/, 'one request per marked field');
-  assert.match(script, /\.weaveEx\[data-field="/, 'and each answer lands in its own block');
+  assert.match(weaveExamplePainterScript(), /\.weaveEx\[data-field="/, 'and each answer lands in its own block');
 });
 
 /**
@@ -253,4 +257,55 @@ test('the form puts the mark beside the payment system, not under it', () => {
   assert.match(markup, /class="line brandLine"/, 'the row says it is the brand row');
   assert.match(styles, /\.brandLine\s*\{[^}]*display:\s*flex/, 'and the form lays that row out as a line');
   assert.ok(styles.includes(BRAND_MARK_STYLES), 'the form draws the marks the same way the card does');
+});
+
+/**
+ * The bank form's weaving controls were unreachable, and the save wove anyway.
+ *
+ * <p>`#mixControls` — the method picker, the warning, the per-field rows and the example — was
+ * emitted inside `cardMarkup`, which `formSections.ts` hides whenever the form is not `card`. The
+ * bank weave boxes live in `bankSection`, so ticking *Store the IBAN woven with a decoy* showed
+ * nothing at all: no picker, no warning, no picture. The save still wove it, because
+ * `entityFormScript.ts` reads `#mixMethod` off the hidden select and the gate accepts it. The IBAN
+ * went into the vault under a method the person never saw — and the method is stored nowhere, so
+ * that value was unreadable from the moment it was written.</p>
+ */
+test('the weaving controls are reachable from the bank form, not buried in the card section', () => {
+  const bank = paymentMarkup((id) => `<fieldset id="${id}">`, 'bank');
+
+  const cardOpens = bank.indexOf('<fieldset id="cardSection">');
+  const bankOpens = bank.indexOf('<fieldset id="bankSection">');
+  const method = bank.indexOf('id="mixMethod"');
+
+  assert.ok(cardOpens >= 0 && bankOpens >= 0 && method >= 0, 'all three are on the page');
+  assert.ok(method > bankOpens, 'the controls come after the bank fieldset, not inside the card one');
+  assert.ok(
+    !bank.slice(cardOpens, bankOpens).includes('id="mixMethod"'),
+    'and nothing between the card fieldset and the bank one holds the picker',
+  );
+});
+
+test('a ticked bank box counts as a marked field, exactly as a card box does', () => {
+  const markup = paymentMarkup((id) => `<fieldset id="${id}">`, 'bank');
+  const script = cardFormScript();
+
+  // The collector reads the CLASS, so a box in either fieldset is one of the picked fields — which
+  // is what makes one shared method picker the right answer for both forms.
+  assert.match(script, /querySelectorAll\('\.mixMark'\)/);
+  for (const id of ['mixBankIban', 'mixBankAccount']) {
+    assert.match(markup, new RegExp(`id="${id}"[^>]*class="mixMark"`), `${id} is collected`);
+  }
+  for (const id of ['mixCardNumber', 'mixCardCvv', 'mixCardPin']) {
+    assert.match(markup, new RegExp(`id="${id}"[^>]*class="mixMark"`), `${id} still is`);
+  }
+});
+
+test('the card weave boxes stay with the card fields — only the shared controls moved', () => {
+  const card = paymentMarkup((id) => `<fieldset id="${id}">`, 'card');
+
+  const cardOpens = card.indexOf('<fieldset id="cardSection">');
+  const bankOpens = card.indexOf('<fieldset id="bankSection">');
+
+  assert.ok(card.slice(cardOpens, bankOpens).includes('id="mixCardCvv"'), 'the CVV box is a card field');
+  assert.ok(!card.slice(cardOpens, bankOpens).includes('id="mixBankIban"'), 'and the IBAN box is not');
 });

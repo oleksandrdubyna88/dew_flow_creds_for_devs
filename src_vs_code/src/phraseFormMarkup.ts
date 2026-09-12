@@ -1,7 +1,9 @@
 import { WORDLIST_IDS, wordlistLabel } from './wordlists';
 import { PHRASE_WORD_CHOICES } from './phraseGenerate';
-import { SHUFFLE_CODES } from './shuffle';
+import { methodLabel } from './shuffle';
 import { PHRASE_RANGE } from './shuffle';
+import { methodOrder } from './phraseLayout';
+import { Random } from './decoyDigits';
 
 /**
  * The phrase form: two columns, a wordlist for each, a layout, and the method that will be kept
@@ -18,11 +20,11 @@ import { PHRASE_RANGE } from './shuffle';
  *
  * <p>Pure: no `vscode`.</p>
  */
-export function phraseMarkup(openSection: (id: string) => string): string {
+export function phraseMarkup(openSection: (id: string) => string, random: Random = Math.random): string {
   return `  ${openSection('phraseSection')}
 ${firstColumn()}
 ${secondColumn()}
-${weaveControls()}
+${weaveControls(random)}
   </fieldset>
 `;
 }
@@ -85,7 +87,7 @@ function secondColumn(): string {
 }
 
 /** The layout, the method, and the bargain nobody should meet for the first time at save time. */
-function weaveControls(): string {
+function weaveControls(random: Random): string {
   return `    <label for="phraseLayout">Layout</label>
     <select id="phraseLayout">
       <option value="vertical">One under the other</option>
@@ -94,13 +96,17 @@ function weaveControls(): string {
     <p class="hint" id="phraseLayoutNote"></p>
 
     <label for="phraseMethod">Weaving method</label>
-    <select id="phraseMethod">${methodOptions()}</select>
+    <select id="phraseMethod">${methodOptions(random)}</select>
     <p class="hint"><b>The method is never stored</b> — not in this vault, not in a backup, not in
     the sync. Nobody can unweave the phrase but you, from memory, and a forgotten method is a lost
     phrase. Write down which one you chose, somewhere this vault is not.<br>
     A phrase is between ${PHRASE_RANGE.min} and ${PHRASE_RANGE.max} words. Weaving protects against
     somebody <b>reading</b> an open vault; it does nothing against somebody who can try every
-    method, and there are only twelve of them.</p>`;
+    method, and there are only twelve of them.</p>
+    <p class="hint">What the method does, on six words made up for the picture. Your own phrase is
+    never drawn here — showing it beside the decoy it is woven with, under the method that wove
+    them, would put the answer on screen next to the question.</p>
+    <div id="phraseExample"></div>`;
 }
 
 /** Every list, by the name a person recognises rather than by its id. */
@@ -110,7 +116,17 @@ function listOptions(): string {
   ).join('');
 }
 
-/** The twelve methods, numbered — the same shape the card's picker uses. */
-function methodOptions(): string {
-  return SHUFFLE_CODES.map((code, index) => `<option value="${code}">Method ${index + 1}</option>`).join('');
+/**
+ * The twelve methods: a fresh ORDER every time, and a NAME that belongs to the code.
+ *
+ * <p>This picker was the last one still built straight from `SHUFFLE_CODES` and labelled by
+ * POSITION, against `shuffle.ts`'s own rule and against what the card and password pickers do. The
+ * two happened to agree, which is worse than disagreeing — they were the same by luck, and the
+ * method is stored NOWHERE, so a label naming a different algorithm on the surface where the phrase
+ * must be read back is the phrase becoming unreadable by the only route there is.</p>
+ */
+function methodOptions(random: Random): string {
+  return methodOrder(random)
+    .map((code) => `<option value="${code}">${methodLabel(code)}</option>`)
+    .join('');
 }

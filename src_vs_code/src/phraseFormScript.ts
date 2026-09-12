@@ -36,7 +36,46 @@ ${phraseRefresh()}
 ${phraseListeners()}
     refreshPhrase();
   }
+${phraseExampleScript()}
 `;
+}
+
+/**
+ * The picture of what the chosen method does, on six words made up by the host.
+ *
+ * <p>The phrase form had no example at all — twelve methods, a sentence saying the choice is stored
+ * nowhere and that forgetting it loses the phrase, and nothing whatsoever about what any of them
+ * does. The card form has shown one since that feature shipped; this is the same message, the same
+ * answer, and the SHARED painter (`weaveExampleScript.ts`), defined once ahead of this script, which
+ * creates the `.weaveEx` block the colours hang on.</p>
+ *
+ * <p>The field is `mixed` — what a woven phrase is called everywhere else here — so the host draws
+ * WORDS rather than characters, and the card form's listener leaves the answer alone.</p>
+ */
+function phraseExampleScript(): string {
+  return `  var phraseMethodPick = document.getElementById('phraseMethod');
+  if (phraseMethodPick) {
+    var askPhraseExample = function () {
+      vscode.postMessage({ type: 'weaveExample', field: 'mixed', code: phraseMethodPick.value });
+    };
+    phraseMethodPick.addEventListener('change', askPhraseExample);
+    askPhraseExample();
+
+    window.addEventListener('message', function (event) {
+      var answer = event.data;
+      if (!answer || answer.type !== 'weaveExampleResult' || answer.field !== 'mixed') { return; }
+      // Two changes are two requests and their answers can arrive in either order; a picture of a
+      // method nobody chose is worse than no picture, exactly as on the other two forms.
+      if (answer.method !== phraseMethodPick.value) { return; }
+      paintExample(
+        'phraseExample',
+        'mixed',
+        'Seed phrase — ' + answer.method,
+        answer,
+        'Your phrase (made up here)'
+      );
+    });
+  }`;
 }
 
 /** What the form says about what has been typed so far. */

@@ -370,7 +370,8 @@ tenth time.
 | `phraseLayout.ts` / `phraseReassembly.ts` | two columns, the arithmetic that decides which layouts exist, and the way back |
 | `cardNumberFormat.ts` | a number as it is READ (groups of four, 4-6-5 for Amex) against as it is STORED (digits) |
 | `addressFormat.ts` | a billing address as six cells, the parse that guesses them, and five countries' orders |
-| `weaveExample.ts` | what a weaving method does, drawn on two generated samples |
+| `weaveExample.ts` | what a weaving method does, drawn on two samples: generated characters for a card field or a password, six fixed made-up WORDS for a phrase (`mixed`) |
+| `weaveExampleScript.ts` / `formWeaveScripts.ts` | the ONE painter of that picture, and the order the weaving page scripts assemble in — painter first, exactly once |
 | `phraseGenerate.ts` | drawing a checksum-valid phrase, with the list and the length chosen |
 | `secretEnvelope.ts` | a secret that describes itself: woven, or locked under a PIN, in one write |
 | `phraseFormMarkup.ts` / `phraseFormScript.ts` / `phraseSaveGate.ts` | the phrase form, and the record a phrase save writes |
@@ -754,6 +755,35 @@ disagreement. It is the value becoming unreadable by the only route there is. `M
 which is what makes "a method remembered by position is one a later release could move" an argument
 rather than a slogan. Nothing stored needed re-reading: the form's naming was the correct one all
 along, so every value woven before the fix keeps the label it was saved under.
+
+*The PHRASE picker was missed, and agreed by luck (2026-09-12).* It was still built straight from
+`SHUFFLE_CODES` and labelled by index — which happens to produce the same pairs `methodLabel` does,
+so the two surfaces were identical and nothing was holding them so. It draws its order through
+`methodOrder` and names each code through `methodLabel` like the other two, and `phraseForm.test.ts`
+asserts both halves against a fixed draw.
+
+#### One painter, one picture, and controls the form that owns them can reach (2026-09-12, #51)
+
+Three forms draw the same "what this method does" picture, and two of them had their own copy of the
+painter. Every colour rule for it is scoped under `.weaveEx` (`entityFormStyles.ts`): the card's copy
+created that block, the password's appended three bare columns into a container with no class — so
+the password example was three grey unboxed lines under the controls. `weaveExampleScript.ts` is the
+only painter now (`exampleBlock` / `exampleColumn` / `paintExample`), `formWeaveScripts.ts` assembles
+the four fragments in the one order that works — painter first, exactly once, then the three form
+scripts — and a test asserts one definition in the composite and a call from each of the three. The
+phrase form gained the picture it never had, drawn on six fixed made-up words (`mixed`): a phrase is
+WORDS, there is no word-decoy generator here, and `shuffleLayout` is index-based, so a token is a
+word as easily as a character.
+
+Found while verifying the same family: **the bank form's weaving controls were unreachable, and the
+save wove anyway.** `#mixControls` was emitted inside `cardMarkup`, which `formSections.ts` hides
+whenever the form is not `card`, while the bank's two weave boxes live in `bankSection`. Ticking
+*Store the IBAN woven with a decoy* showed no picker, no warning and no example — and the save read
+`#mixMethod` off the hidden select and wove the IBAN under a method nobody saw. The method is stored
+nowhere, so that value was unreadable from the moment it was written. `mixControlsMarkup` is emitted
+after both fieldsets, outside either, and `cardMixMarks` keeps the card's three boxes with the card's
+fields. Visibility is unchanged and was always right: `refreshMix` shows the controls when any
+`.mixMark` is ticked, a class both fieldsets' boxes carry.
 
 #### `brand` is confirmed, not merely derived (2026-09-03)
 

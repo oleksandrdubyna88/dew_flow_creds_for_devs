@@ -37,42 +37,17 @@ export function wovenFormScript(): string {
     // Dropped when the picker has moved on: two changes are two requests and their answers can
     // arrive in either order, and a picture of a method nobody chose is worse than none.
     if (!weaveMethodPick || answer.method !== weaveMethodPick.value) { return; }
-    var host = document.getElementById('weaveExampleHost');
-    if (!host) { return; }
-    host.textContent = '';
-    host.appendChild(weaveColumn('Your password (made up here)', answer.first, 'first'));
-    host.appendChild(weaveColumn('The decoy it is woven with', answer.second, 'second'));
-    host.appendChild(weaveColumn('What gets stored', answer.woven, ''));
+    // Through the SHARED painter, which creates the .weaveEx block. The copy that used to live here
+    // appended three bare columns straight into the host, and every colour rule on this page is
+    // scoped under .weaveEx — so the password picture was three grey unboxed lines (issue #51).
+    paintExample(
+      'weaveExampleHost',
+      'password',
+      'Password — ' + answer.method,
+      answer,
+      'Your password (made up here)'
+    );
   });
-
-${weaveColumnScript()}`;
-}
-
-/**
- * One column of the picture, painted with DOM APIs.
- *
- * <p>Its own block for the fifty-line ceiling, and because it is the one part of this script that
- * writes to the page rather than deciding when to ask. (No backticks in this file.)</p>
- */
-function weaveColumnScript(): string {
-  return `  function weaveColumn(label, tokens, side) {
-    var column = document.createElement('div');
-    column.className = 'exCol';
-    var name = document.createElement('div');
-    name.className = 'exName';
-    name.textContent = label;
-    column.appendChild(name);
-    var row = document.createElement('div');
-    row.className = 'exRow';
-    for (var i = 0; i < tokens.length; i++) {
-      var cell = document.createElement('span');
-      cell.className = 'exTok ' + (side || tokens[i].side);
-      cell.textContent = side ? tokens[i] : tokens[i].text;
-      row.appendChild(cell);
-    }
-    column.appendChild(row);
-    return column;
-  }
 
   refreshWeave();
 `;

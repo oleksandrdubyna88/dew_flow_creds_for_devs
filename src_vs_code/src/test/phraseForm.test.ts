@@ -5,7 +5,8 @@ import { FORM_SECTIONS, colorCollisionsForKind } from '../formSections';
 import { phraseMarkup } from '../phraseFormMarkup';
 import { phraseFormScript } from '../phraseFormScript';
 import { horizontalCounts, layoutsFor } from '../phraseLayout';
-import { PHRASE_RANGE, SHUFFLE_CODES } from '../shuffle';
+import { PHRASE_RANGE, SHUFFLE_CODES, methodLabel } from '../shuffle';
+import { weaveExample } from '../weaveExample';
 import { readingFor, rowOf } from '../paymentViewMessages';
 import { hasMixedField } from '../mixedFieldGuard';
 import { wovenKeys } from '../paymentFields';
@@ -191,4 +192,61 @@ test('the form asks for both columns, the layout and the method — and stores n
   assert.equal((markup.match(/Method \d+<\/option>/g) ?? []).length, SHUFFLE_CODES.length);
   assert.match(markup, /never stored/, 'the bargain is on screen where it is being made');
   assert.match(phraseFormScript(), /refreshLayout/, 'and the layout follows the word count');
+});
+
+/**
+ * The phrase picker was the one that still numbered by POSITION, and it had no picture at all.
+ *
+ * <p>`shuffle.ts` records why that matters: the method is stored NOWHERE, so a label naming a
+ * different algorithm on the surface where the value must be read back is not cosmetic — it is the
+ * phrase becoming unreadable by the only route there is. The card and password pickers draw a fresh
+ * ORDER and keep the NAME bound to the code (`methodOrder` + `methodLabel`); this one built its
+ * options straight from `SHUFFLE_CODES` and labelled them by index, so its "Method 5" was the fifth
+ * code rather than the fifth-named one. That happened to agree, which is worse than disagreeing:
+ * the two surfaces were the same by luck and nothing was watching.</p>
+ */
+test('the phrase picker draws its ORDER and keeps the NAME on the code, like the other two', () => {
+  // A fixed draw, so the assertion is about the order being the drawn one rather than about luck.
+  const codes = [...SHUFFLE_CODES];
+  const reversed = [...codes].reverse();
+  let call = 0;
+  // `methodOrder` consumes the source; a descending stream reverses a Fisher-Yates shuffle's input
+  // deterministically. What is asserted is not the exact permutation but that it is NOT source order
+  // and that each option's label is the one `methodLabel` gives its own code.
+  const markup = phraseMarkup((id) => `<fieldset id="${id}">`, () => {
+    call += 1;
+    return (call % 7) / 7;
+  });
+
+  const picker = markup.slice(markup.indexOf('id="phraseMethod"'));
+  const own = picker.slice(0, picker.indexOf('</select>'));
+  const options = [...own.matchAll(/<option value="(f\d+)">([^<]+)<\/option>/g)];
+
+  assert.equal(options.length, SHUFFLE_CODES.length, 'every method is offered');
+  for (const [, code, label] of options) {
+    assert.equal(label, methodLabel(code as (typeof SHUFFLE_CODES)[number]), `${code} is labelled by its own name`);
+  }
+  assert.notDeepEqual(options.map(([, code]) => code), codes, 'the order is drawn, not the source order');
+  assert.notDeepEqual(options.map(([, code]) => code), reversed, 'and it is a draw, not a reverse');
+});
+
+test('the phrase form shows what the method does, before it is irreversible', () => {
+  const markup = phraseMarkup((id) => `<fieldset id="${id}">`);
+
+  assert.match(markup, /id="phraseExample"/, 'a host for the picture, under the method');
+  assert.match(phraseFormScript(), /type: 'weaveExample', field: 'mixed'/, 'asked per method');
+  assert.match(phraseFormScript(), /paintExample\(\s*'phraseExample',\s*'mixed'/, 'painted by the shared painter');
+});
+
+test('the phrase example is drawn from made-up WORDS, never from the person own phrase', () => {
+  const drawn = weaveExample('mixed', SHUFFLE_CODES[0], Math.random);
+
+  assert.equal(drawn.first.length, drawn.second.length, 'two columns of the same length');
+  assert.ok(drawn.first.every((word) => /^[a-z]+$/.test(word)), 'words, not characters');
+  assert.ok(drawn.first.length >= 4, 'enough of them that the method visibly moves something');
+  assert.deepEqual(
+    drawn.woven.map((slot) => slot.text).slice().sort(),
+    [...drawn.first, ...drawn.second].sort(),
+    'the weave is those two columns and nothing else',
+  );
 });

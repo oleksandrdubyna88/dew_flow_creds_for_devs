@@ -26,9 +26,17 @@ export function paymentMarkup(
 ): string {
   return [
     selectorMarkup(openSection, form),
-    cardMarkup(openSection, random),
+    cardMarkup(openSection),
     bankMarkup(openSection),
-    phraseMarkup(openSection),
+    // OUTSIDE both fieldsets, because both forms have fields it governs. It used to sit inside the
+    // card fieldset, which `formSections.ts` hides whenever the form is not `card` — so ticking
+    // "Store the IBAN woven with a decoy" on a bank form showed no picker, no warning and no
+    // picture, while the save read the hidden select and wove the IBAN under a method the person
+    // never saw. The method is stored nowhere, so that value was unreadable from the moment it was
+    // written. Its visibility is still "any weave box ticked" (`cardFormScript.refreshMix`), which
+    // is how a phrase form — whose boxes are its own — still sees nothing here.
+    mixControlsMarkup(random),
+    phraseMarkup(openSection, random),
   ].join('\n');
 }
 
@@ -45,7 +53,7 @@ function selectorMarkup(openSection: (id: string) => string, form: string | unde
 }
 
 /** The card fields. Shown only when the selector says `card` — see `formSections.ts`. */
-function cardMarkup(openSection: (id: string) => string, random: Random): string {
+function cardMarkup(openSection: (id: string) => string): string {
   return `  ${openSection('cardSection')}
     <label for="cardNumber">Card number</label>
     <input id="cardNumber" type="text" inputmode="numeric" autocomplete="off" spellcheck="false"
@@ -79,7 +87,7 @@ function cardMarkup(openSection: (id: string) => string, random: Random): string
     </div>
     <p class="hint">The CVV and the PIN are hidden as you type and stay hidden when you come back. They are the two values that turn a number somebody saw into a payment somebody made — which is why a share never carries them, and why an export says so out loud before it writes them to a file.</p>
 
-    ${mixMarkup(random)}
+    ${cardMixMarks()}
 
     ${addressMarkup()}
     <div class="row">
@@ -220,22 +228,37 @@ function methodOptions(random: Random): string {
 }
 
 /**
- * The weaving controls: one checkbox per weavable card field, the method, and the honest sentence.
+ * One checkbox per weavable CARD field. These stay with the fields they are about.
  *
- * <p>Its own function so `cardMarkup` stays under the 50-line ceiling — and because this block is
- * about a different decision from the fields above it. The paragraph is deliberately in the FORM
- * rather than only in the help: somebody about to make a value unrecoverable should read what they
- * are buying at the moment they choose it, not in a document they will not open.</p>
+ * <p>The card's three boxes belong in the card fieldset, exactly as the bank's two belong in the
+ * bank fieldset (`bankMarkup`). What moved out is the shared half below — one method for whichever
+ * boxes are ticked, wherever they live.</p>
  */
-function mixMarkup(random: Random): string {
+function cardMixMarks(): string {
   return `    <div class="check"><input id="mixCardNumber" type="checkbox" class="mixMark" data-field="number">
       <label for="mixCardNumber">Store the number woven with a decoy</label></div>
     <div class="check"><input id="mixCardCvv" type="checkbox" class="mixMark" data-field="cvv">
       <label for="mixCardCvv">Store the CVV woven with a decoy</label></div>
     <div class="check"><input id="mixCardPin" type="checkbox" class="mixMark" data-field="pin">
       <label for="mixCardPin">Store the PIN woven with a decoy</label></div>
+`;
+}
 
-    <div id="mixControls" style="display:none">
+/**
+ * The shared weaving controls: the method, the warning, the per-field rows and the picture.
+ *
+ * <p>Emitted OUTSIDE the card and bank fieldsets, after both, because both forms have fields it
+ * governs. Inside `cardMarkup` it was hidden with the card, so the bank form's two weave boxes were
+ * a switch with nothing behind it — and the save wove the IBAN anyway, under a method nobody saw.
+ * Its own visibility is unchanged: `cardFormScript.refreshMix` shows it once any `.mixMark` is
+ * ticked, which is a class both fieldsets' boxes carry.</p>
+ *
+ * <p>The paragraph is deliberately in the FORM rather than only in the help: somebody about to make
+ * a value unrecoverable should read what they are buying at the moment they choose it, not in a
+ * document they will not open.</p>
+ */
+function mixControlsMarkup(random: Random): string {
+  return `    <div id="mixControls" style="display:none">
       <label for="mixMethod">Weaving method</label>
       <select id="mixMethod">${methodOptions(random)}</select>
       <p class="hint" id="mixWarning"></p>
