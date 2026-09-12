@@ -153,14 +153,10 @@ internal static class AgentRelay
         }
 
         var path = SocketPathHere();
-        // Refused here, with the number, rather than thrown at from inside the endpoint's
-        // constructor. `CREDS_RELAY_SOCKET` and `XDG_RUNTIME_DIR` are both somebody else's strings,
-        // and an unhandled ArgumentOutOfRangeException from a binary whose whole job is to print a
-        // line for `eval` is the least useful failure it could have.
-        if (TooLongForSocket(path))
+        var tooLong = await RefuseIfTooLongAsync(path, contract).ConfigureAwait(false);
+        if (tooLong is { } refusal)
         {
-            await Console.Error.WriteLineAsync(TooLongMessage(path));
-            return contract.Exit("usage");
+            return refusal;
         }
 
         var claimed = await ClaimAsync(path, contract).ConfigureAwait(false);
@@ -205,6 +201,28 @@ internal static class AgentRelay
         await AcceptLoopAsync(listener, stopping.Token).ConfigureAwait(false);
         Remove(path);
         return 0;
+    }
+
+    /// <summary>
+    /// The exit code when this path cannot be a socket at all, or null when it can.
+    /// </summary>
+    /// <remarks>
+    /// <para>Its own function so the decision is a TEST rather than three lines inside a method
+    /// that binds a socket and then serves it — nothing can run that in a unit test, which is how
+    /// the refusal it replaces went out uncovered.</para>
+    /// <para>Refused here rather than thrown at from inside the endpoint's constructor.
+    /// <c>CREDS_RELAY_SOCKET</c> and <c>XDG_RUNTIME_DIR</c> are both somebody else's strings, and an
+    /// unhandled <c>ArgumentOutOfRangeException</c> from a binary whose whole job is to print one
+    /// line for <c>eval</c> is the least useful failure it could have.</para>
+    /// </remarks>
+    internal static async Task<int?> RefuseIfTooLongAsync(string path, BrokerContract contract)
+    {
+        if (!TooLongForSocket(path))
+        {
+            return null;
+        }
+        await Console.Error.WriteLineAsync(TooLongMessage(path)).ConfigureAwait(false);
+        return contract.Exit("usage");
     }
 
     /// <summary>Take the path, or refuse it to whoever is already serving it.</summary>
