@@ -17,6 +17,14 @@ const account: StoredAccount = {
 
 const realFetch = globalThis.fetch;
 
+/** A complete metrics document — built to pass the real `isServerMetrics`, not to look like one. */
+const METRICS = {
+  service: 'cred-vault-server', version: '0.6.0', runtime: '.NET 10.0.11', runtimeSupport: 'supported',
+  startedAt: '2026-09-11T00:00:00Z', uptimeSeconds: 60, requests: 3, status4xx: 0, status5xx: 0,
+  rateLimited: 0, vaultReads: 1, vaultWrites: 1, vaultBytesWritten: 2048, vaults: 41,
+  vaultBytesOnDisk: 1288490188, pendingShares: 0, shareBytesOnDisk: 0, dataDirFreeBytes: 99,
+};
+
 afterEach(() => {
   globalThis.fetch = realFetch;
 });
@@ -283,4 +291,44 @@ test('setup status comes back parsed', async () => {
   respondWith(200, { setupId: 's1', total: 3, pending: ['lead@example.com'] });
   const status = await client().setupStatus(account, 's1');
   assert.deepEqual(status.pending, ['lead@example.com']);
+});
+
+test('a refused metrics read names BOTH standings, not just the recovery roster', async () => {
+  // The sentence is the whole user-visible behaviour of this branch, and until 2026-09-12 it
+  // pre-empted the server: `/api/metrics` is now RequireAdminAsync, so telling an administrator
+  // that "the metrics page is theirs" would name the wrong people and send them to the wrong place.
+  respondWith(403, '');
+
+  await assert.rejects(() => client().readMetrics(account), (error: Error) => {
+    assert.doesNotMatch(error.message, /is not a recovery officer/);
+    assert.match(error.message, /an administrator or a recovery officer may/);
+    assert.match(error.message, /no recovery roster refuses everybody/, 'and the surprising cause is named');
+    return true;
+  });
+});
+
+test('a metrics read is CLASSIFIED, so the tree can draw a refusal instead of throwing it', async () => {
+  // Three outcomes the Server section has to tell apart, where the tab only needs a message.
+  respondWith(403, '');
+  assert.deepEqual(await client().probeMetrics(account), { failure: 'refused' });
+
+  respondWith(404, '');
+  assert.deepEqual(await client().probeMetrics(account), { failure: 'older' });
+
+  globalThis.fetch = (() => Promise.reject(new Error('ECONNREFUSED'))) as unknown as typeof fetch;
+  assert.deepEqual(await client().probeMetrics(account), { failure: 'unreachable' });
+});
+
+test('a metrics document this build cannot read is not a fourth state', async () => {
+  // There would be nothing to draw and nothing to press: it is a server this section cannot read,
+  // which is what `unreachable` already says.
+  respondWith(200, { service: 'cred-vault-server' });
+  assert.deepEqual(await client().probeMetrics(account), { failure: 'unreachable' });
+  await assert.rejects(() => client().readMetrics(account), /Could not read the metrics/);
+});
+
+test('a good document comes back as the document', async () => {
+  respondWith(200, METRICS);
+  assert.deepEqual(await client().probeMetrics(account), { metrics: METRICS });
+  assert.deepEqual(await client().readMetrics(account), METRICS);
 });

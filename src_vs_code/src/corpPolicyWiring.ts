@@ -2,7 +2,8 @@ import * as vscode from 'vscode';
 import { NoticeMemory } from './backupNotice';
 import { BackupWatchHost } from './backupWatch';
 import { CorpPolicyState, policyHeartbeatKey } from './corpPolicy';
-import { OrgPolicyHost, policyHost } from './orgPolicyRefresh';
+import { SERVER_TAG_PREFIX, rememberedLatestRelease } from './githubReleases';
+import { OrgPolicyHost, ServerSection, policyHost } from './orgPolicyRefresh';
 import { projectFolderReconciler, vscodeProjectFolderDeps } from './projectFolderWiring';
 import { StorageManager } from './storageManager';
 import { StoredAccount } from './types';
@@ -25,7 +26,7 @@ export const BACKUP_NOTICE_KEY = 'credSshManager.backupNoticeShown';
 /** The caches the policy loop fills, as the tree provider happens to hold them. */
 export type PolicyCaches = Pick<
   OrgPolicyHost, 'orgPolicy' | 'orgRoster' | 'orgProjects' | 'orgPolicyServer'
->;
+> & { readonly server: ServerSection };
 
 /** The policy host, with epic 3's project-folder reconciliation hung off a successful read. */
 export function corpPolicyWiring(
@@ -35,6 +36,12 @@ export function corpPolicyWiring(
   sync: Parameters<typeof vscodeProjectFolderDeps>[1],
   transports: TransportFactory,
 ): OrgPolicyHost {
+  // The Server section's two seams, filled once here — the same place and the same reason every
+  // other seam in this file is filled: which concrete thing stands where, and nothing decided.
+  caches.server.readerFor = (account) => transports.orgRecoveryFor(account);
+  // `server-v*`, and the TTL that keeps an editor left open for a week to about four requests a
+  // day. Unauthenticated and anonymous: it carries no token, no email and no server location.
+  caches.server.published = (memo, now) => rememberedLatestRelease(SERVER_TAG_PREFIX, memo, now);
   return policyHost(
     caches,
     (account) => transports.orgMembersFor(account),
@@ -56,12 +63,16 @@ export function corpPolicyWiring(
 export function vscodeBackupWatch(
   context: vscode.ExtensionContext,
   transports: TransportFactory,
+  section: ServerSection,
 ): BackupWatchHost {
   return {
     clientFor: (account) => transports.orgBackupFor(account),
     shown: () => context.globalState.get<NoticeMemory>(BACKUP_NOTICE_KEY) ?? {},
     remember: (next) => context.globalState.update(BACKUP_NOTICE_KEY, next),
     show: (message) => void vscode.window.showWarningMessage(message),
+    // The tree's Backup row, from the poll that already happens — no second timer, and no second
+    // request to a route this loop reads once per cycle for every administrator anyway.
+    record: (accountId, status) => section.backup.set(accountId, status),
     now: Date.now,
   };
 }

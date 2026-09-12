@@ -43,7 +43,31 @@ export interface BackupStatus {
   readonly running: boolean;
   readonly localArchiveBytes: number;
   readonly localArchiveName: string;
+  /**
+   * The kinds of destination that are SAVED, as of the server that answers (added 2026-09-12).
+   *
+   * <p><b>Optional, and deliberately absent from `STATUS_SHAPE`.</b> The guard requires every field
+   * it declares to be present, so declaring this one would make a new extension reject an older
+   * server's perfectly good status document — the exact asymmetry the `404` handling above exists to
+   * avoid. Absent means "this server predates the field", and `targetKindsOf` falls back to the
+   * kinds of the last RUN, which is right for a server that has run and honestly empty for one
+   * that has not.</p>
+   *
+   * <p>It is not `targets`: that list is the last run's OUTCOMES, so a deployment that saved an S3
+   * destination and has not run yet answers `[]` there while backing up to S3 from tonight.</p>
+   */
+  readonly configuredTargetKinds?: readonly string[];
   readonly targets: readonly BackupTargetView[];
+}
+
+/** The kinds this deployment backs up to — from the server that says so, or from the last run. */
+export function targetKindsOf(status: BackupStatus): readonly string[] {
+  return status.configuredTargetKinds ?? [...new Set(status.targets.map((target) => target.kind))];
+}
+
+/** Whether this is the "server too old for the feature" state rather than a real read. */
+export function isNoBackupHere(status: BackupStatus): boolean {
+  return status.lastResult === NO_BACKUP_HERE.lastResult;
 }
 
 /** A destination as an administrator describes it. Credentials omitted keep the ones already sealed. */
@@ -91,6 +115,7 @@ export const NO_BACKUP_HERE: BackupStatus = {
   running: false,
   localArchiveBytes: 0,
   localArchiveName: '',
+  configuredTargetKinds: [],
   targets: [],
 };
 

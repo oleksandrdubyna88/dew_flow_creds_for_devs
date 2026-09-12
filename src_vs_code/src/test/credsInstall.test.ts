@@ -87,6 +87,19 @@ test('a cli tag yields its version, and any other tag yields nothing', () => {
   assert.equal(versionFromTag(CREDS_CLI, 'cli-v'), undefined);
 });
 
+test('it takes a tag PREFIX, so a line that installs nothing needs no invented product', () => {
+  // Widened 2026-09-12 for the tree's Server section: the server is a fourth tag line and is never
+  // downloaded, so it has no CredsProduct — and a fake one, with a binary name and a menu label for
+  // something nobody installs, would be a lie told to satisfy a type. A real product still
+  // satisfies the parameter structurally, which is what makes this a widening rather than a fork.
+  assert.equal(versionFromTag({ tagPrefix: 'server-v' }, 'server-v0.6.0'), '0.6.0');
+  assert.equal(
+    versionFromTag(CREDS_CLI, 'server-v0.6.0'),
+    undefined,
+    'and the widened signature still refuses a foreign line',
+  );
+});
+
 test('versions compare as NUMBERS — 0.10.0 is newer than 0.9.0', () => {
   // As strings it is not, and the mistake surfaces exactly once, on the tenth minor release,
   // as an "update" that is a downgrade.

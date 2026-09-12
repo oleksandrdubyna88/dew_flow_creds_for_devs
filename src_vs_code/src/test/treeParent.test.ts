@@ -92,3 +92,26 @@ test('a shadow row answers nothing, because nothing reveals one', () => {
 test('the filter row has no parent', () => {
   assert.equal(parentOf({ kind: 'search' }, source), undefined);
 });
+
+test('the Server section walks: its three rows to the scope row, the scope row to the account', () => {
+  // The four new kinds get a REAL answer where `teamScope` still gets none, because the backup row
+  // is the first row in this tree a notification could plausibly reveal. Each element carries the
+  // whole account, so none of this needs a `ParentSource` lookup — which is also why a source that
+  // knows nothing answers exactly the same.
+  const scope = { kind: 'serverScope' as const, account: ACCOUNT };
+
+  assert.deepEqual(parentOf({ kind: 'serverVersion', account: ACCOUNT }, source), scope);
+  assert.deepEqual(parentOf({ kind: 'serverVaults', account: ACCOUNT }, source), scope);
+  assert.deepEqual(parentOf({ kind: 'serverBackup', account: ACCOUNT }, source), scope);
+  assert.deepEqual(parentOf(scope, source), { kind: 'account', account: ACCOUNT });
+
+  const blind = {
+    getNode: (): TreeNode | undefined => undefined,
+    getAccount: (): StoredAccount | undefined => undefined,
+  };
+  assert.deepEqual(
+    parentOf({ kind: 'serverBackup', account: ACCOUNT }, blind),
+    scope,
+    'the row carries the account, so the walk needs nothing looked up',
+  );
+});

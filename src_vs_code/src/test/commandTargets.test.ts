@@ -7,7 +7,11 @@ import {
   resolveBulkTargets,
   withdrawalMessage,
 } from '../commandTargets';
-import { TreeNode } from '../types';
+import { loadWithVscode } from './vscodeStub';
+import { StoredAccount, TreeElement, TreeNode } from '../types';
+
+/** The account every row in the Server section carries, and the one Team rows carry too. */
+const ACCOUNT: StoredAccount = { accountId: 'a1', email: 'one@example.com', provider: 'microsoft' };
 
 /**
  * Turning what a command was invoked with into what it may act on (audit A3).
@@ -242,4 +246,27 @@ test('"already accepted" is never dressed up as success', () => {
 
 test('nothing to withdraw is its own answer, not a failure', () => {
   assert.match(withdrawalMessage('notFound', 'prod db'), /no longer listed as sent/);
+});
+test('every row that CARRIES an account resolves to it, so a right-click never asks which server', () => {
+  // The defect this was written for: `elementAccount` knew `account` and `teamScope` only, so
+  // right-clicking a Server row and pressing *Configure backup…* fell through to `pickAccount` and
+  // asked "Which server's backup?" about the row that had just been clicked. Every row in the
+  // Server section carries the whole StoredAccount for exactly this reason.
+  const { elementAccount } = loadWithVscode<typeof import('../accountPick')>('../accountPick', {});
+
+  for (const kind of ['account', 'teamScope', 'serverScope', 'serverVersion', 'serverVaults', 'serverBackup']) {
+    assert.deepEqual(
+      elementAccount({ kind, account: ACCOUNT } as unknown as TreeElement),
+      ACCOUNT,
+      `${kind} names its account outright`,
+    );
+  }
+});
+
+test('a row that carries no account still answers nothing, so the palette pick stays reachable', () => {
+  const { elementAccount } = loadWithVscode<typeof import('../accountPick')>('../accountPick', {});
+
+  assert.equal(elementAccount(undefined), undefined);
+  assert.equal(elementAccount(nodeElement() as TreeElement), undefined);
+  assert.equal(elementAccount({ kind: 'search' }), undefined);
 });

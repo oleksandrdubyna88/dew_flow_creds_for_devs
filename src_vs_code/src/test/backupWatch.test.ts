@@ -239,3 +239,57 @@ test('nothing to say means nothing is shown and nothing is written', async () =>
 
   assert.deepEqual(w.shown, []);
 });
+
+// --- the status this poll already read, handed to whoever else wants it -------------------------
+
+test('the status the check READ is handed back, instead of being thrown away', async () => {
+  // The tree's Backup row needs exactly this document, and this loop already fetches it once per
+  // readiness cycle for every admin account. A second poll would be a second timer to get wrong
+  // about backoff, sleep and four open windows — which this module's own header argues against.
+  const healthy = status({ keyState: 'Ready', lastRunAt: NOW - 3_600_000, lastResult: 'ok' });
+  const w = world(() => Promise.resolve(healthy));
+
+  const check = await checkOneBackup(w.host, anna, policy(true));
+
+  assert.equal(check.healthy, true);
+  assert.equal(check.status, healthy, 'the same document, not a re-read of it');
+});
+
+test('a member and a failed read hand back nothing, because they answered nothing', async () => {
+  const w = world(() => Promise.reject(new Error('ECONNREFUSED')));
+
+  assert.equal(
+    (await checkOneBackup(w.host, anna, policy(true))).status,
+    undefined,
+    'a read that FAILED is not an answer, and must not be written down as one',
+  );
+  assert.deepEqual(w.reads, ['anna@corp.com'], 'the administrator was polled');
+
+  assert.equal((await checkOneBackup(w.host, bob, policy(false))).status, undefined);
+  assert.deepEqual(w.reads, ['anna@corp.com'], 'and the member was not polled at all');
+});
+
+test('every account that answered is recorded, by id, in one pass', async () => {
+  const recorded: [string, string][] = [];
+  const w = world((account) =>
+    account.accountId === 'acct-1'
+      ? Promise.resolve(status({ keyState: 'Ready', lastRunAt: NOW - 1, lastResult: 'ok' }))
+      : Promise.reject(new Error('offline')));
+  const host: BackupWatchHost = {
+    ...w.host,
+    record: (accountId, read) => recorded.push([accountId, read.lastResult]),
+  };
+
+  await checkBackups(host, new Map([[anna, policy(true)], [bob, policy(true)]]));
+
+  assert.deepEqual(recorded, [['acct-1', 'ok']], 'and the one that failed recorded nothing');
+});
+
+test('a host with no recorder behaves exactly as it did before there was one', async () => {
+  // The seam is optional, so every existing caller — and every test written before it — is unchanged.
+  const w = world(() => Promise.resolve(status()));
+
+  await checkBackups(w.host, new Map([[anna, policy(true)]]));
+
+  assert.equal(w.shown.length, 1);
+});

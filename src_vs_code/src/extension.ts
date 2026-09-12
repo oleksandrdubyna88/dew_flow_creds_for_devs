@@ -448,7 +448,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
   // The corporate loop's seams, and their rules, live in corpPolicyWiring.ts and backupWatch.ts.
   const orgPolicyHost = corpPolicyWiring(context, provider, storage, sync, transports);
-  const backupWatch = vscodeBackupWatch(context, transports);
+  const backupWatch = vscodeBackupWatch(context, transports, provider.server);
 
   const refreshReadiness = async (): Promise<Map<string, SyncReadiness>> => {
     const locked = vaultKeys.isLocked();

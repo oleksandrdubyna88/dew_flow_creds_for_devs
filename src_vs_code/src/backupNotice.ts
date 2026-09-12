@@ -54,10 +54,21 @@ function notSetUp(status: BackupStatus): boolean {
 
 /** A run that failed outright, and one that reached some destinations — both need saying. */
 function ranBadly(status: BackupStatus): BackupHealth {
-  return FAILING_RESULTS.has(status.lastResult) ? 'failing' : 'healthy';
+  return lastRunFailed(status) ? 'failing' : 'healthy';
 }
 
-const FAILING_RESULTS = new Set(['failed', 'partial']);
+/**
+ * Whether the last run left something unfixed.
+ *
+ * <p>Exported so the tree's Backup row draws from the SAME list rather than a second copy of it:
+ * a run that reached some destinations and not others is a success and a gap at once, and two
+ * lists of which results mean that is how one of them comes to be missing the third.</p>
+ */
+export function lastRunFailed(status: BackupStatus): boolean {
+  return FAILING_RESULTS.has(status.lastResult);
+}
+
+const FAILING_RESULTS: ReadonlySet<string> = new Set(['failed', 'partial']);
 
 /**
  * The notice for ONE account, or nothing.

@@ -4,6 +4,53 @@ import { StoredAccount } from './types';
 import { DEFAULT_REQUEST_TIMEOUT_MS } from './serverTransport';
 
 /**
+ * Why a metrics read did not answer.
+ *
+ * <p>`refused` is the interesting one, and on this surface it is a SPLIT RELEASE far more often
+ * than a mistake: an extension newer than the server meets `/api/metrics` still gated on
+ * `RequireOfficer`, and a deployment with no recovery roster refuses administrators too, because
+ * the admin gate sits inside that switch. `older` is a server with no such route at all.</p>
+ */
+export type ServerFailure = 'unreachable' | 'refused' | 'older';
+
+/** The metrics document, or why there is none. */
+export type MetricsProbe =
+  | { readonly metrics: ServerMetrics }
+  | { readonly failure: ServerFailure };
+
+/**
+ * The last answer AND the current standing of the read, as the tree caches it.
+ *
+ * <p>Two fields rather than one value, because "a failed read keeps the previous entry" and "the
+ * scope row shows why it failed" cannot both be true of a bare `ServerMetrics`: the first refusal
+ * has no previous value to keep and nowhere to record itself, and after one success a later failure
+ * would leave the row looking healthy for ever.</p>
+ */
+export interface ServerRead {
+  /** The last document that arrived, kept through failures. */
+  readonly value?: ServerMetrics;
+  /** The CURRENT read's outcome — absent when it succeeded. */
+  readonly failure?: ServerFailure;
+  /** When that outcome was recorded (unix ms, UTC). */
+  readonly at: number;
+}
+
+/** The two statuses that mean something specific about the SERVER rather than about the network. */
+const REFUSAL_BY_STATUS: Readonly<Record<number, ServerFailure>> = {
+  403: 'refused',
+  404: 'older',
+};
+
+/** What each failure is told to a person who asked for the page outright. */
+const METRICS_REFUSALS: Readonly<Record<ServerFailure, (email: string, location: string) => string>> = {
+  refused: (email, location) =>
+    `${email} may not read the metrics of ${location} — an administrator or a recovery officer may. `
+    + 'A deployment with no recovery roster refuses everybody, administrators included.',
+  older: (_email, location) => `${location} has no metrics endpoint; it is older than the feature.`,
+  unreachable: (_email, location) => `Could not read the metrics of ${location}.`,
+};
+
+/**
  * The corporate-recovery half of the vault server's API.
  *
  * <p>A separate client from `ServerTransport` on purpose. That class implements
@@ -164,20 +211,49 @@ export class OrgRecoveryClient {
    * roster nobody configured: no corporate recovery here. Treating it as an error would make
    * every sync against an older server report a failure about a feature nobody asked for.</p>
    */
-  /** The officers' metrics page (server-ops item 5): the server's one JSON document, checked. */
+  /**
+   * The administrators' metrics page (server-ops item 5): the server's one JSON document, checked.
+   *
+   * <p>Officer-only until 2026-09-12; `RequireAdminAsync` now answers it, so a registry
+   * administrator reads it too. The sentence a `403` produces says so rather than naming the
+   * recovery roster — the roster is one of the two ways in, not the only one.</p>
+   */
   async readMetrics(account: StoredAccount): Promise<ServerMetrics> {
-    const response = await this.request(account, '/api/metrics');
-    if (response.status === 403) {
-      throw new Error(`${account.email} is not a recovery officer on ${this.location} — the metrics page is theirs.`);
+    const probe = await this.probeMetrics(account);
+    if ('metrics' in probe) {
+      return probe.metrics;
     }
+    throw new Error(METRICS_REFUSALS[probe.failure](account.email, this.location));
+  }
+
+  /**
+   * The metrics document, or WHY there is none — classified rather than thrown.
+   *
+   * <p>The tree's Server section has to DRAW a refusal (a warning row with a reason) where the
+   * metrics tab shows a message, so the distinction between "could not reach", "refused" and "this
+   * server has no such route" has to survive as a value. `readMetrics` is built on this rather than
+   * beside it, so there is one reader and one classification.</p>
+   */
+  async probeMetrics(account: StoredAccount): Promise<MetricsProbe> {
+    const response = await this.request(account, '/api/metrics').catch(() => undefined);
+    if (response === undefined) {
+      return { failure: 'unreachable' };
+    }
+    const refused = REFUSAL_BY_STATUS[response.status];
+    if (refused !== undefined) {
+      return { failure: refused };
+    }
+    return this.readProbeBody(response);
+  }
+
+  private async readProbeBody(response: Response): Promise<MetricsProbe> {
     if (!response.ok) {
-      throw new Error(`Could not read server metrics: HTTP ${response.status}.`);
+      return { failure: 'unreachable' };
     }
-    const parsed: unknown = await response.json();
-    if (!isServerMetrics(parsed)) {
-      throw new Error('The server answered metrics in a shape this build cannot read.');
-    }
-    return parsed;
+    const parsed: unknown = await response.json().catch(() => undefined);
+    // A shape this build cannot read is not a reachable server as far as the section is concerned:
+    // it has no facts to draw, and inventing a fifth state for it would be a row nobody can act on.
+    return isServerMetrics(parsed) ? { metrics: parsed } : { failure: 'unreachable' };
   }
 
   async readConfig(account: StoredAccount): Promise<OrgRecoveryConfigResponse> {

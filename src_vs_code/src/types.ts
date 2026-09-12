@@ -504,6 +504,14 @@ export type TreeElement =
    *  keys expansion and selection on `TreeItem.id`, so two positions must not share one. */
   | { kind: 'dependentEntity'; accountId: string; targetId: string; node: TreeNode }
   | { kind: 'teamScope'; account: StoredAccount }
+  /** The deployment itself — the second corporate section, above Team and only for an
+   *  administrator. Each row carries the whole account rather than an id, for the reason
+   *  `teamScope` does: `accountPick.ts` resolves a command target straight off the element, and a
+   *  row that carried an id would send a right-click through a QuickPick asking which server. */
+  | { kind: 'serverScope'; account: StoredAccount }
+  | { kind: 'serverVersion'; account: StoredAccount }
+  | { kind: 'serverVaults'; account: StoredAccount }
+  | { kind: 'serverBackup'; account: StoredAccount }
   | { kind: 'teamMember'; member: TeamMember; viaAccountId: string }
   | { kind: 'sharedRoot' }
   | { kind: 'sharedSender'; email: string }

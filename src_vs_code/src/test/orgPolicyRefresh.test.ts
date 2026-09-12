@@ -2,7 +2,11 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { CorpPolicyState } from '../corpPolicy';
 import { MemberListEntry, MemberSelf, OrgMembersClient, ProjectRow } from '../orgMembersClient';
-import { OrgPolicyHost, refreshOrgPolicy } from '../orgPolicyRefresh';
+import { OrgPolicyHost, ServerSectionHost, refreshOrgPolicy } from '../orgPolicyRefresh';
+import { BackupStatus } from '../orgBackupClient';
+import { MetricsProbe, ServerRead } from '../orgRecoveryClient';
+import { ReleaseMemo } from '../githubReleases';
+import { ServerMetrics } from '../serverMetricsPage';
 import { StoredAccount } from '../types';
 
 /**
@@ -195,4 +199,123 @@ test('the refresh reports what it managed, so a caller that just wrote knows the
   const outcome = await refreshOrgPolicy(unreachable, account);
 
   assert.deepEqual(outcome, { policyRead: false, rosterRead: false, projectsRead: false });
+});
+
+// --- the Server section's half of the same cycle ----------------------------------------------
+
+/**
+ * The metrics half rides this loop rather than owning a timer, for the reason `backupWatch.ts`
+ * already argues: the readiness cycle runs on activation, after every unlock and after the commands
+ * that call it, so the cost is bounded by what a person does.
+ */
+type ServerFake = OrgPolicyHost & { server: ServerSectionHost; asked: number; role: { value: string } };
+
+function serverHost(
+  probes: MetricsProbe[],
+  published: ReleaseMemo = { version: '0.7.0', at: 1_000 },
+): ServerFake {
+  const role = { value: 'admin' };
+  const h = host({
+    me: () => Promise.resolve({ ...ME, role: role.value }),
+    members: () => Promise.resolve([]),
+  }) as unknown as ServerFake;
+  let at = 0;
+  h.role = role;
+  h.asked = 0;
+  h.server = {
+    readerFor: () => ({
+      probeMetrics: (): Promise<MetricsProbe> => {
+        h.asked += 1;
+        const probe = probes[Math.min(at, probes.length - 1)];
+        at += 1;
+        return probe === undefined ? Promise.reject(new Error('boom')) : Promise.resolve(probe);
+      },
+    }),
+    metrics: new Map<string, ServerRead>(),
+    backup: new Map<string, BackupStatus>(),
+    release: undefined,
+    published: () => Promise.resolve(published),
+  };
+  return h;
+}
+
+const METRICS = { version: '0.6.0', vaults: 41 } as ServerMetrics;
+const NEWER = { version: '0.7.0', vaults: 42 } as ServerMetrics;
+
+test('a first refusal records itself with no value to keep', async () => {
+  const h = serverHost([{ failure: 'refused' }]);
+
+  await refreshOrgPolicy(h, account);
+
+  assert.deepEqual(h.server.metrics.get('a1'), { value: undefined, failure: 'refused', at: 1_000 });
+});
+
+test('a success replaces it, a later failure KEEPS the value, and a success clears the failure', async () => {
+  // The whole reason the cache holds an envelope rather than a bare document: the version and the
+  // footprint must stay readable while the scope row says the answer is old, and a row that had
+  // succeeded once must not look healthy for ever afterwards.
+  const h = serverHost([
+    { failure: 'refused' },
+    { metrics: METRICS },
+    { failure: 'unreachable' },
+    { metrics: NEWER },
+  ]);
+
+  await refreshOrgPolicy(h, account);
+  await refreshOrgPolicy(h, account);
+  assert.deepEqual(h.server.metrics.get('a1'), { value: METRICS, at: 1_000 });
+
+  await refreshOrgPolicy(h, account);
+  assert.deepEqual(h.server.metrics.get('a1'), { value: METRICS, failure: 'unreachable', at: 1_000 });
+
+  await refreshOrgPolicy(h, account);
+  assert.deepEqual(h.server.metrics.get('a1'), { value: NEWER, at: 1_000 });
+});
+
+test('a reader that THROWS is an unreachable server, never an exception into the repaint', async () => {
+  // A throw here would break the repaint that draws every other row — the one thing this module
+  // promises not to do.
+  const h = serverHost([]);
+
+  await refreshOrgPolicy(h, account);
+
+  assert.deepEqual(h.server.metrics.get('a1'), { value: undefined, failure: 'unreachable', at: 1_000 });
+});
+
+test('a developer is never asked, and a demotion takes the cached facts with the section', async () => {
+  const h = serverHost([{ metrics: METRICS }]);
+  await refreshOrgPolicy(h, account);
+  h.server.backup.set('a1', { lastResult: 'ok' } as BackupStatus);
+  assert.equal(h.asked, 1);
+
+  // The next cycle says this account is a plain member: the section goes, and so do its answers —
+  // a version drawn from a server this window may no longer read is a stale fact drawn as a fresh one.
+  h.role.value = 'member';
+
+  await refreshOrgPolicy(h, account);
+
+  assert.equal(h.asked, 1, 'a developer’s window makes no outbound metrics request at all');
+  assert.equal(h.server.metrics.has('a1'), false);
+  assert.equal(h.server.backup.has('a1'), false);
+});
+
+test('the published release is read once per cycle into ONE memo, not one per account', async () => {
+  const h = serverHost([{ metrics: METRICS }]);
+
+  await refreshOrgPolicy(h, account);
+
+  assert.deepEqual(h.server.release, { version: '0.7.0', at: 1_000 });
+});
+
+test('a repoint drops the Server section’s caches with the policy ones', async () => {
+  // An account repointed at another corporate server keeps its id, so without this the previous
+  // server's version and backup state would survive the move and be drawn as this one's.
+  const h = serverHost([{ metrics: METRICS }]);
+  await refreshOrgPolicy(h, account);
+  h.server.backup.set('a1', { lastResult: 'ok' } as BackupStatus);
+
+  h.orgPolicyServer.set('a1', 'https://somewhere-else.example.com');
+  await refreshOrgPolicy(h, account);
+
+  assert.equal(h.server.backup.has('a1'), false, 'the backup answer went with the server it came from');
 });
