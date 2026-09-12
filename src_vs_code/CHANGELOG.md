@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A PIN floor now counts characters, not the bytes they happen to take.** Both floors were
+  measured in UTF-16 code units, and one emoji is several of them: a single flag cleared the
+  entry PIN's floor of four on its own, and a two-emoji PIN cleared the VAULT's floor of eight —
+  the floor that exists because a vault PIN guards ciphertext sitting on a NAS, a sync server or
+  somebody else's share inbox. Choosing a PIN now counts what you typed. Typing an existing PIN
+  back is unchanged and always will be: an entry PIN is stored nowhere and has no recovery, so a
+  floor raised under a PIN somebody already set would not strengthen their lock, it would destroy
+  what the lock holds.
+
 - **Editing an entity no longer blanks the environment variable it binds.** A field left empty in
   the form means "keep what is stored", and the save was passing that empty box on as though it
   were a new value — so changing an entity's URL wrote an EMPTY variable over its bound password,

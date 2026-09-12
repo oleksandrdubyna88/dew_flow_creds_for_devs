@@ -21,6 +21,13 @@
 > lied — an empty box carried as a held value blanked the variable, an unknown field key threw
 > mid-save, an unusable variable name was written, and each is now said with its reason.
 >
+> **After promotion, the automated reviewer found the floor itself was the wrong unit.** Both floors
+> were `value.length`, which counts UTF-16 code units, so one flag emoji cleared the entry's floor of
+> four and two cleared the VAULT's floor of eight — the floor M-1 exists to hold. `typedLength`
+> counts graphemes now, and a `PinMode` applies that count only while a PIN is being CHOSEN: the box
+> that takes an existing entry PIN keeps the looser count on purpose, because that lock has no
+> recovery and a floor raised under a PIN somebody already set destroys the values behind it.
+>
 > **The open tail**, recorded rather than fixed: a FIFTH consumer of `applyEnvBindings` exists that
 > the plan did not list — the agent's `exportEnv` verb — and it still answers `written: []` with no
 > reason for a withheld binding, because carrying `withheld` to the agent is a broker-contract change
