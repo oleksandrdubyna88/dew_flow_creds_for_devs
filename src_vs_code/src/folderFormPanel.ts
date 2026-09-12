@@ -44,7 +44,7 @@ function answeredZoom(message: FolderFormMessage): boolean {
   if (message.type !== 'zoom') {
     return false;
   }
-  void applyZoomDelta(message.delta ?? 0);
+  void applyZoomDelta(message.delta);
   return true;
 }
 

@@ -26,9 +26,15 @@ export function currentUiScale(): number {
  * and `clampScale(NaN)` is 0, so a malformed press would have WRITTEN the base size — silently
  * undoing five presses somebody made on purpose. Four pages post this message and every one of
  * them is a webview, so the guard belongs here, once, rather than in each page script.</p>
+ *
+ * <p>It takes `unknown` for the same reason, and that is why the call sites hand over
+ * `message.delta` exactly as it arrived. They used to spell it `message.delta ?? 0`, which turned
+ * a `{type:'zoom'}` carrying no delta into a real write of the size already stored — and the
+ * write raises `onDidChangeConfiguration`, so every open page is pushed a `uiScale` it already
+ * has, for a press that said nothing. A message with no delta is not a press.</p>
  */
-export async function applyZoomDelta(delta: number): Promise<void> {
-  if (!Number.isFinite(delta)) {
+export async function applyZoomDelta(delta: unknown): Promise<void> {
+  if (typeof delta !== 'number' || !Number.isFinite(delta)) {
     return;
   }
   const next = clampScale(currentUiScale() + Math.sign(delta));

@@ -1815,7 +1815,11 @@ chip: 'folder'})` and keeps only its own MCP rules (`.mcpWhy`, `.mcpBar`, `.mcpS
 through to them would have CLOSED a form somebody was filling in. `applyZoomDelta` now ignores a
 non-finite delta — `Math.sign(NaN)` is NaN and `clampScale(NaN)` is 0, so a malformed `{type:'zoom'}`
 from ANY page used to write the base size and undo five deliberate presses; one guard in the shared
-host half covers both forms, the viewer and the help page.
+host half covers both forms, the viewer and the help page. It takes `unknown` and covers a message
+with **no delta at all** on the same terms (code round, 2026-09-12): both panels used to pass
+`message.delta ?? 0`, which turned a press that named nothing into a real write of the size already
+stored — and that write raises `onDidChangeConfiguration`, pushing `uiScale` to every open page for
+nothing.
 
 **The row primitives, and the lint that keeps them used.** The viewer has had `.line` since it was
 written (`entityViewStyles.ts`); the form had fields at `width: 100%`, `button` with no margin and
@@ -1832,7 +1836,12 @@ folder page, no `<button>` may follow a `</select>`, `</textarea>` or non-checkb
 the pair sits in a `.line`, `.genRow`, `.actions` or `.buttons` wrapper. Closing tags, `</label>`,
 inline helper text and self-closing tags are transparent — `</select></div><button>` reads as
 structured markup and renders flush, which is exactly what the SSH key form did — while a block
-element or a line of prose between the two ends the pair.
+element or a line of prose between the two ends the pair. The scan has the companion every scan owes
+(`testing.md`, *a structural test that matches nothing passes forever*): *the cramped-button scanner
+still finds a button nobody wrapped* feeds it three known-cramped pairs and asserts each is reported,
+then the same three inside every spacing wrapper and asserts none is. Without it, replacing the
+scanner's body with `return []` leaves the prohibition green forever — observed, that one line turns
+the canary red and changes nothing else in the file.
 
 ### Clone
 
