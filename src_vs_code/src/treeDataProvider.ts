@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import { shareLabelTrusted } from './shareFormat';
 import { StorageManager } from './storageManager';
 import { ShareSources, sharedMatches, unverifiedSender } from './shareRows';
-import { TEAM_COLOR, sharedRootItem, teamMemberItem, teamScopeItem } from './teamItems';
+import { TEAM_COLOR, sharedRootItem, teamRowFor } from './teamItems';
 import type { SharingManager } from './sharingManager';
 import { TreeElement, TreeNode } from './types';
 
@@ -459,23 +459,8 @@ export class CredTreeDataProvider
     if (element.kind === 'revision') {
       return this.revisionItem(element);
     }
-    if (element.kind === 'teamScope') {
-      return teamScopeItem({
-        account: element.account,
-        collapsibleState: this.collapsible(element, false),
-        count: this.sharing?.teamFor(element.account).length ?? 0,
-        failure: this.sharing?.teamFailures.get(element.account.accountId),
-      });
-    }
-    if (element.kind === 'teamMember') {
-      // The VIEWING account decides the row's menu and what it knows of the colleague's role.
-      return teamMemberItem({
-        member: element.member,
-        viaAccountId: element.viaAccountId,
-        viewer: this.orgPolicy.get(element.viaAccountId),
-        roster: this.orgRoster.get(element.viaAccountId),
-        projects: this.orgProjects.get(element.viaAccountId),
-      });
+    if (element.kind === 'teamScope' || element.kind === 'teamMember') {
+      return teamRowFor(element, this, this.collapsible(element, false));
     }
     if (element.kind === 'sharedRoot') {
       return sharedRootItem(this.sharing?.ownShares.length ?? 0);

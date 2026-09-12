@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import { CorpPolicyState, isCorpAdmin, teamMemberDescription, teamRowRole } from './corpPolicy';
 import { MemberListEntry, ProjectRow } from './orgMembersClient';
 import { TeamFailure, diagnoseTeamFailure } from './teamDiagnosis';
-import { StoredAccount, TeamMember } from './types';
+import { StoredAccount, TeamMember, TreeElement } from './types';
 
 /**
  * The Team rows — the scope row and one row per colleague — out of `treeDataProvider.ts`, which
@@ -10,6 +10,62 @@ import { StoredAccount, TeamMember } from './types';
  * made for the account row, T32). Everything a row decides is taken as an argument, so the row
  * can be built in a test without the provider.
  */
+
+/**
+ * What a Team row reads off the provider, as a shape rather than as the provider.
+ *
+ * <p>Structural on purpose: the provider satisfies it by having the four fields, and a test
+ * satisfies it with four plain maps. It is what lets the dispatcher below live here instead of in
+ * `getTreeItem`, which is the point — `treeDataProvider.ts` is AT its 800-line ceiling
+ * (`eslint.config.mjs`), so the Server section could not be written until something moved out.</p>
+ */
+export interface TeamRowSource {
+  readonly sharing: {
+    teamFor(account: StoredAccount): readonly TeamMember[];
+    readonly teamFailures: ReadonlyMap<string, TeamFailure>;
+  } | undefined;
+  readonly orgPolicy: ReadonlyMap<string, CorpPolicyState>;
+  readonly orgRoster: ReadonlyMap<string, readonly MemberListEntry[]>;
+  readonly orgProjects: ReadonlyMap<string, readonly ProjectRow[]>;
+}
+
+/** Every Team row, dispatched by kind — the two arms `getTreeItem` used to spell inline. */
+export function teamRowFor(
+  element: Extract<TreeElement, { kind: 'teamScope' | 'teamMember' }>,
+  source: TeamRowSource,
+  collapsibleState: vscode.TreeItemCollapsibleState,
+): vscode.TreeItem {
+  return element.kind === 'teamScope'
+    ? scopeRow(element.account, source, collapsibleState)
+    : memberRow(element, source);
+}
+
+function scopeRow(
+  account: StoredAccount,
+  source: TeamRowSource,
+  collapsibleState: vscode.TreeItemCollapsibleState,
+): vscode.TreeItem {
+  return teamScopeItem({
+    account,
+    collapsibleState,
+    count: source.sharing?.teamFor(account).length ?? 0,
+    failure: source.sharing?.teamFailures.get(account.accountId),
+  });
+}
+
+/** The VIEWING account decides the row's menu and what it knows of the colleague's role. */
+function memberRow(
+  element: Extract<TreeElement, { kind: 'teamMember' }>,
+  source: TeamRowSource,
+): vscode.TreeItem {
+  return teamMemberItem({
+    member: element.member,
+    viaAccountId: element.viaAccountId,
+    viewer: source.orgPolicy.get(element.viaAccountId),
+    roster: source.orgRoster.get(element.viaAccountId),
+    projects: source.orgProjects.get(element.viaAccountId),
+  });
+}
 
 /** Team/people rows are dark blue so they read as "other people", not data. */
 export const TEAM_COLOR = new vscode.ThemeColor('credSshManager.teamIcon');
