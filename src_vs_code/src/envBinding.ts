@@ -49,10 +49,15 @@ export function staleEnvNames(
 }
 
 /**
- * The values a save HOLDS in memory — what the form just carried — so `applyEnvBindings` can write
- * a binding from the plaintext BEFORE the entry is sealed under its PIN, and an edit writes what was
- * just typed (issue #48). Storage is read only for the fields absent here; the public key lives in
- * the metadata and needs no entry.
+ * The values a save HOLDS in memory — what the form just carried — so an edit's binding is written
+ * from what was just typed rather than re-read (issue #48). Storage is read for the fields absent
+ * here; the public key lives in the metadata and needs no entry.
+ *
+ * <p><b>They never outrank the policy.</b> An earlier draft applied them BEFORE the entry was sealed
+ * under its PIN, so that an entry created with both would get its variable — and that was a PIN
+ * bypass. The seal runs first, `applyEnvBindings` asks the STORED reading, and a held value stands
+ * in only where that reading is not a refusal. A locked slot refuses whatever the save is holding
+ * for it.</p>
  */
 export interface EnvValues {
   readonly password?: string;

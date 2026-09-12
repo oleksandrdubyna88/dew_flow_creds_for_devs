@@ -9,7 +9,7 @@ import { EnvApplyResult, EnvWithheld } from './envApplyNotice';
 import { StorageManager } from './storageManager';
 import { EntityMetadata } from './types';
 import { FieldReading, readingOf, valueOf, withheld } from './fieldReading';
-import { automaticPinRefusal } from './pinGate';
+import { automaticPinRefusal, pinRefusalFor } from './pinGate';
 
 /**
  * Writing bound secret fields into VS Code's environment variable collection — the
@@ -68,7 +68,24 @@ export function automaticFieldRefusal(
   stored: string | undefined,
 ): string {
   const woven = automaticRefusal(details, field);
-  return woven !== '' ? woven : automaticPinRefusal(stored, details.name);
+  if (woven !== '') {
+    return woven;
+  }
+
+  // The WRAP is the truth and is asked first — a mark can be absent from an entry whose values are
+  // locked, which is why nothing here has ever keyed on it alone. The MARK is asked as well because
+  // it catches a state the wrap cannot: an entry marked protected whose stored value is, at this
+  // instant, plaintext. That state is reachable today — the EDIT path writes a newly typed secret
+  // and never re-seals it (found by the automated reviewer; its own plan) — and without this an edit
+  // would hand a protected entry's new password to every terminal opened afterwards. Either signal
+  // refuses: that cannot under-refuse, it can only refuse something the wrap would have allowed.
+  const locked = automaticPinRefusal(stored, details.name);
+  if (locked !== '') {
+    return locked;
+  }
+
+  // The same sentence the wrap earns, because it is the same fact about the same entry.
+  return details.pinProtected === true ? pinRefusalFor(details.name) : '';
 }
 
 /**
@@ -237,7 +254,18 @@ function noteReading(
   if (reading.kind === 'value') {
     exposeEnv(env, name, reading.value);
     written.push(name);
-  } else if (reading.kind === 'withheld') {
+    return;
+  }
+
+  // Anything that is not a value takes the variable WITH it. `staleEnvNames` above covers the name
+  // that stopped being BOUND; this is the other half, and it is the one with a secret in it — the
+  // name is still bound and the value behind it has become unreadable, because the entry was given
+  // a PIN, its password was woven, or the secret was cleared. The collection persists across
+  // reloads, so leaving the last value there would hand every terminal opened afterwards a secret
+  // the policy has just refused to hand anybody, while the notice said "withheld" about a variable
+  // that is still set. Found by the automated reviewer on the pull request.
+  env.delete(name);
+  if (reading.kind === 'withheld') {
     withheldNames.push({ name, reason: reading.reason });
   }
 }
