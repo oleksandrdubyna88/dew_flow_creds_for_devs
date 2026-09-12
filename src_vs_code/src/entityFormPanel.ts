@@ -298,7 +298,7 @@ export function showEntityForm(options: EntityFormOptions): Promise<EntityFormVa
         return;
       }
       if (message.type === 'zoom') {
-        await applyZoomDelta(message.zoomDelta ?? 0);
+        await applyZoomDelta(message.delta ?? 0);
         return;
       }
       if (message.type === 'command') {

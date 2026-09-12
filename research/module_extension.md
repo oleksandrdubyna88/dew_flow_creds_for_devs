@@ -1773,6 +1773,23 @@ Dates fields shipped. `webviewHtml.test.ts` parses the page script for every kin
 template-string-inside-CSS-comment trap (a backtick in a comment ends the template) is a red
 test, not a shipped form.
 
+**The ± text zoom is one script in two halves (2026-09-12, #2).** `zoomControl.ts` exports
+`zoomButtonsScript()` — the click, posting `{type:'zoom', delta}` — and `zoomApplyScript()` — the
+`uiScale` listener that writes `document.body.style.fontSize` and the `#zoomOffset` label — and
+`zoomScript()` returns exactly their concatenation, so the viewer and the help page are unchanged.
+The form carried a hand-written copy of the FIRST half and no listener at all. It is rendered once
+(`mountForm`), so `zoomStyle(uiScale)` fixed its size at render time: `pushUiScaleTo` delivered
+every press to a page where nothing was listening, an open Create or Edit form never changed size,
+and opening a NEW one made the buttons look as though they worked. The form now takes both halves
+from `zoomControl.ts`. Inlining `zoomScript()` on top of its own wiring was the shortcut that looks
+right and is not — it would bind `button[data-zoom]` twice and post two presses per click, which is
+why the split exists rather than a second call site. The wire is one spelling too: the form used to
+post `zoomDelta` while `entityViewPanel.ts` and `helpPanel.ts` read `delta`, so `FormMessage.delta`
+is now the only name and `zoomDelta` appears nowhere. What the apply half DOES is asserted, not
+merely that it exists — `zoomControl.test.ts` pins the DOM write and `entityFormScript.test.ts`
+asserts the form's script contains that fragment verbatim, so a listener that fires and repaints
+nothing is a red test.
+
 ### Clone
 
 `cloneNode` copies a folder or entity's settings and deliberately **not** its secrets. Duplicating

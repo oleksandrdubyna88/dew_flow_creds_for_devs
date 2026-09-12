@@ -8,6 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The text-size buttons now resize a form that is already open.** Pressing ± on a Create or Edit
+  form wrote the setting and moved every other page — the viewer, the help page — while the form
+  itself stayed exactly as it was. Opening a new form afterwards showed the new size, which is why
+  the buttons looked as though they worked: a form is built once, and its text size was fixed at
+  the moment it was drawn. It carried half of the machinery — the half that reports the press —
+  and nothing in it ever listened for the answer.
+  The page script is now one source in two halves, the buttons and the part that repaints, so a
+  page that already wires its own buttons takes only the half it is missing instead of binding
+  every button twice and sending two presses per click. The form also reported a press under a
+  name of its own, where every other page sends one name; there is one name now.
+
 - **A PIN floor now counts characters, not the bytes they happen to take.** Both floors were
   measured in UTF-16 code units, and one emoji is several of them: a single flag cleared the
   entry PIN's floor of four on its own, and a two-emoji PIN cleared the VAULT's floor of eight —
@@ -39,6 +50,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   integrated terminals in this window. Already-open terminals keep their old environment.` — and a
   warning per name that was not written, with why.
 
+
 ### Added
 
 - **A Server section on an administrator's account row.** Everything the tree said about a
@@ -56,6 +68,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   only, which is what made *Server Metrics…* invisible to half the people entitled to it; and the
   backup status now reports the destination kinds that are CONFIGURED, not only the ones the last
   run wrote to, so a deployment set up and not yet run can say where it will back up to.
+
 
 ### Changed
 

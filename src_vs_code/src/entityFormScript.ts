@@ -12,6 +12,7 @@ import { phraseFormScript } from './phraseFormScript';
 import { generateWiring, overlayEditorWiring } from './entityFormScriptGen';
 import { formVisibilityScript } from './formVisibilityScript';
 import { wovenFormScript } from './wovenFormScript';
+import { zoomApplyScript, zoomButtonsScript } from './zoomControl';
 
 /** What the Depends-on picker needs, gathered once when the page is built. */
 export interface DependencyPickerData {
@@ -730,13 +731,11 @@ export function formPageScript(
   // webview reaching for Math.random() would produce something that only looks random.
   ${generateWiring()}
 
-  // T28: the ± text zoom. The HOST clamps and writes the setting, then pushes the new value
-  // to every open page — this page only reports the press and applies what it is told.
-  for (const zoomButton of document.querySelectorAll('button[data-zoom]')) {
-    zoomButton.addEventListener('click', function () {
-      vscode.postMessage({ type: 'zoom', zoomDelta: Number(this.dataset.zoom) });
-    });
-  }
+  // T28: the ± text zoom. The HOST clamps and writes the setting, then pushes the value to every
+  // open page. Both halves come from zoomControl.ts: the form carried a copy of the FIRST alone,
+  // so a push reached a page where nothing listened and an open form never changed size (#2).
+  ${zoomButtonsScript()}
+  ${zoomApplyScript()}
 
   // A generated value nobody can see is a value nobody will trust; the toggle is per click and
   // never persisted, and the field goes back to a password box on save either way.

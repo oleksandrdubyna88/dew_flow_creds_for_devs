@@ -55,22 +55,44 @@ export function zoomStyle(offset: number): string {
 }
 
 /**
- * The webview-side wiring, as a script fragment: post the delta, apply pushed values live.
- * `vscode` here is the page's own `acquireVsCodeApi()` handle, not the extension host API.
+ * The webview-side wiring, in two halves — because a page may already own one of them (#2).
+ *
+ * <p>The entity form wired its own `button[data-zoom]` clicks and had no listener at all, so it
+ * reported presses and never followed the answer: the page is rendered once, and its size was
+ * frozen at `zoomStyle()` time while the viewer and the help page moved. Inlining `zoomScript()`
+ * on top of that wiring would have bound every button TWICE and posted two presses per click, so
+ * the whole is split into the half a page may already have and the half it was missing.</p>
+ *
+ * <p>`vscode` in both fragments is the page's own `acquireVsCodeApi()` handle, not the extension
+ * host API.</p>
  */
-export function zoomScript(): string {
+export function zoomButtonsScript(): string {
   return `
   for (const zoomButton of document.querySelectorAll('button[data-zoom]')) {
     zoomButton.addEventListener('click', () => {
       vscode.postMessage({ type: 'zoom', delta: Number(zoomButton.dataset.zoom), field: '' });
     });
-  }
+  }`;
+}
+
+/**
+ * The half that repaints: the host clamps and writes the setting, then pushes the new value to
+ * every open page, and this is what a page does with it. Setting `body`'s font size is the whole
+ * effect — everything sized in `em`/`%` follows the root for free.
+ */
+export function zoomApplyScript(): string {
+  return `
   window.addEventListener('message', (event) => {
     if (event.data?.type !== 'uiScale') { return; }
     document.body.style.fontSize = event.data.px + 'px';
     const offsetLabelNode = document.getElementById('zoomOffset');
     if (offsetLabelNode) { offsetLabelNode.textContent = event.data.label; }
   });`;
+}
+
+/** Both halves, for a page that owns neither — the viewer and the help page, unchanged. */
+export function zoomScript(): string {
+  return zoomButtonsScript() + zoomApplyScript();
 }
 
 /** Shared look for the control; pages inline it beside their own styles. */

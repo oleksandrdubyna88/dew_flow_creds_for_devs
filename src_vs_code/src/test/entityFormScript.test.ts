@@ -1,6 +1,7 @@
 import * as assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { formPageScript } from '../entityFormScript';
+import { zoomApplyScript } from '../zoomControl';
 import { EntityMetadata } from '../types';
 
 /**
@@ -198,4 +199,33 @@ test('the switch says what it is about to delete, in the notice the markup alrea
   // warning therefore arrived at the end, about a choice made at the beginning.
   assert.match(script, /paymentNotice/, 'the notice element is written to');
   assert.match(script, /type: 'paymentFormChanged'/, 'and the host is told, since it holds the record');
+});
+
+/**
+ * Pressing ± on an OPEN form has to resize it (#2).
+ *
+ * <p>The form carried half of T28: it wired the buttons and posted the press, and nothing in it
+ * ever listened for the `uiScale` push the host sends to every panel. The page is rendered once,
+ * so the size was frozen at render time — the viewer and the help page followed the setting, the
+ * Create and Edit forms did not, and opening a NEW form made it look as though the buttons worked.</p>
+ *
+ * <p>The second half of the same defect was a second spelling of the wire: this page posted
+ * `zoomDelta` where every other page posts `delta`, so the two halves of one feature could not
+ * share a host handler either.</p>
+ */
+test('an open form follows the text-size setting instead of freezing at the size it rendered at', () => {
+  const script = formPageScript(NONCE, undefined);
+
+  // The apply half itself, not a listener of the page's own: one source means the form cannot
+  // drift from the viewer about what a push does.
+  assert.ok(
+    script.includes(zoomApplyScript()),
+    'the form must carry zoomApplyScript() verbatim, or a push arrives at a page that ignores it',
+  );
+  assert.match(script, /type: 'zoom', delta:/, 'and report the press under the shared spelling');
+  assert.doesNotMatch(
+    script,
+    /zoomDelta/,
+    'the second spelling of the wire is gone — one name, read by every host',
+  );
 });

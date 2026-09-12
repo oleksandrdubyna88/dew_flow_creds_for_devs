@@ -49,8 +49,12 @@ export interface FormMessage {
   hlTarget?: string;
   /** `command` only (T24b): a footer link asking the host to run a command on this entry. */
   command?: string;
-  /** `zoom` only (T28): which way the press went. */
-  zoomDelta?: number;
+  /**
+   * `zoom` only (T28): which way the press went. Named `delta` because that is what
+   * `zoomControl.ts` posts and what the viewer and the help page already read; this form had a
+   * private spelling, which is how one feature came to have two wires (#2).
+   */
+  delta?: number;
   /** `generatePhrase` only: which list to draw from. The count rides on `genWords`. */
   genWordlist?: string;
   /** `generate` only: which kind of secret to draw. */
