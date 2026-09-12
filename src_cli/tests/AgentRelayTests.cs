@@ -1,4 +1,5 @@
 using System.Net.Sockets;
+using System.Text;
 
 using CredsBroker;
 using CredsCli;
@@ -205,19 +206,28 @@ public class AgentRelayTests
     [InlineData(1)]
     public void TheRefusalNamesThePathTheLengthTheLimitAndTheWayOut(int over)
     {
-        // The BOUNDARY and the overflow, parameterised — 104 and 105 on macOS, 108 and 109
+        // The BOUNDARY and the overflow, parameterised — 103 and 104 bytes on macOS, 107 and 108
         // elsewhere — rather than whatever length a runner's temporary directory happens to give.
         // Relying on that is how this defect reached a tag: the old test inherited its input from
         // the environment and so tested the corpse case on Linux and the length cap on macOS,
         // without saying either.
-        var path = new string('x', AgentRelay.MaxSocketPathBytes + over);
+        //
+        // NON-ASCII on purpose. With an all-ASCII fixture the byte count and the character count are
+        // the same number, so a regression back to `path.Length` would pass every assertion below —
+        // which is exactly the fixture blindness that let the original defect through. The accent is
+        // two bytes, so the string is one character shorter than its size.
+        var path = "é" + new string('x', AgentRelay.MaxSocketPathBytes + over - 2);
+        var bytes = Encoding.UTF8.GetByteCount(path);
+        bytes.Should().Be(AgentRelay.MaxSocketPathBytes + over, "the fixture is built in bytes");
+        path.Length.Should().NotBe(bytes, "or this test could not tell the two units apart");
 
         AgentRelay.TooLongForSocket(path).Should().Be(over > 0);
 
         // And the sentence, because a refusal nobody can act on is a crash with better manners.
         var message = AgentRelay.TooLongMessage(path);
-        message.Should().Contain(path.Length.ToString(), "the length they have");
-        message.Should().Contain(AgentRelay.MaxSocketPathBytes.ToString(), "the length they may have");
+        message.Should().Contain(bytes.ToString(), "the SIZE they have, in the unit that is measured");
+        message.Should().NotContain($"{path.Length} bytes", "never the character count labelled as bytes");
+        message.Should().Contain(AgentRelay.MaxSocketPathBytes.ToString(), "the size they may have");
         message.Should().Contain(AgentRelay.SocketOverrideVariable, "and what to set to fix it");
     }
 
