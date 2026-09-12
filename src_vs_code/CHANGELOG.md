@@ -22,20 +22,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   orange and the weave of them was three grey unboxed lines. There was one picture and two painters,
   and only one of them was right. There is one painter now.
 
-### Added
-
-- **The seed-phrase form shows what the method does, before the choice becomes irreversible.** It
-  offered twelve methods, said the choice is kept nowhere and that forgetting it loses the phrase,
-  and showed nothing whatsoever about what any of them does. It now draws the same picture the card
-  and password forms draw, on six words made up for it — your own phrase is never drawn, because
-  showing it beside the decoy it is woven with, under the method that wove them, would put the
-  answer on screen next to the question.
-
-- **The phrase form's method list is drawn in a fresh order, like the other two.** It was the last
-  picker still listing the methods in a fixed order and naming them by position. The name belongs
-  to the method now, whatever position it is drawn into, which is what makes *Method 5* mean the
-  same algorithm on every surface that has to read the phrase back.
-
 - **The text-size buttons now resize a form that is already open.** Pressing ± on a Create or Edit
   form wrote the setting and moved every other page — the viewer, the help page — while the form
   itself stayed exactly as it was. Opening a new form afterwards showed the new size, which is why
@@ -96,6 +82,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   integrated terminals in this window. Already-open terminals keep their old environment.` — and a
   warning per name that was not written, with why.
 
+### Added
+
+- **The seed-phrase form shows what the method does, before the choice becomes irreversible.** It
+  offered twelve methods, said the choice is kept nowhere and that forgetting it loses the phrase,
+  and showed nothing whatsoever about what any of them does. It now draws the same picture the card
+  and password forms draw, on six words made up for it — your own phrase is never drawn, because
+  showing it beside the decoy it is woven with, under the method that wove them, would put the
+  answer on screen next to the question.
+
+- **The phrase form's method list is drawn in a fresh order, like the other two.** It was the last
+  picker still listing the methods in a fixed order and naming them by position. The name belongs
+  to the method now, whatever position it is drawn into, which is what makes *Method 5* mean the
+  same algorithm on every surface that has to read the phrase back.
 
 ### Added
 
