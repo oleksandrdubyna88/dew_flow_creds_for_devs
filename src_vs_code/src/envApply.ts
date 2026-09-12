@@ -199,24 +199,93 @@ export async function applyEnvBindings(
   for (const name of staleEnvNames(staleBefore, details.envBindings)) {
     env.delete(name);
   }
-  const written: string[] = [];
-  const withheldNames: EnvWithheld[] = [];
-  // A closure rather than a module-level function: it captures the two accumulators and the five
+  const readings: NamedReading[] = [];
+  // A closure rather than a module-level function: it captures the accumulator and the five
   // arguments a read needs, which as parameters would be nine — and the loop below stays one line,
   // which is what keeps this function inside the complexity limit the repository sets.
-  const applyOne = async ([key, name]: [string, string]): Promise<void> => {
+  const readOne = async ([key, name]: [string, string]): Promise<void> => {
     const plan = planBinding(key, name);
-    if (plan.field === undefined) {
-      withheldNames.push({ name, reason: plan.reason });
-      return;
-    }
-    const reading = await boundReading(storage, accountId, details, plan.field, values);
-    noteReading(env, name, reading, written, withheldNames);
+    readings.push({
+      name,
+      reading: plan.field === undefined
+        ? withheld(plan.reason)
+        : await boundReading(storage, accountId, details, plan.field, values),
+    });
   };
   for (const pair of boundPairs(details)) {
-    await applyOne(pair);
+    await readOne(pair);
   }
-  return { written, withheld: withheldNames };
+  return settleReadings(env, readings);
+}
+
+/** One binding's variable name and what reading its field produced. */
+interface NamedReading {
+  readonly name: string;
+  readonly reading: FieldReading;
+}
+
+/**
+ * Every reading turned into writes and deletes — decided per NAME, not per binding.
+ *
+ * <p>Nothing stops two fields naming the same variable: `envBindings` is metadata, it syncs, and a
+ * person can type the same name into both boxes. Once anything that is not a value deletes the name,
+ * the order of `Object.entries` decides the outcome — a readable password written first and then
+ * erased by an unreadable db connection that happens to share its name, and reported as written.
+ * A name any binding can write is written; only a name NO binding can write is deleted. That is the
+ * order-independent answer, which is what a map whose key order is an implementation detail needs.
+ * (The automated reviewer on the pull request asked for exactly this qualification.)</p>
+ */
+function settleReadings(
+  env: vscode.GlobalEnvironmentVariableCollection,
+  readings: NamedReading[],
+): EnvApplyResult {
+  const valued = valuedNames(readings);
+  const withheldNames: EnvWithheld[] = [];
+  for (const { name, reading } of readings) {
+    noteUnwritten(env, name, reading, valued, withheldNames);
+  }
+  for (const [name, value] of valued) {
+    exposeEnv(env, name, value);
+  }
+  return { written: [...valued.keys()], withheld: withheldNames };
+}
+
+/** Each variable name at least one binding can actually write, with the value it writes. */
+function valuedNames(readings: NamedReading[]): Map<string, string> {
+  const valued = new Map<string, string>();
+  for (const { name, reading } of readings) {
+    if (reading.kind === 'value') {
+      valued.set(name, reading.value);
+    }
+  }
+  return valued;
+}
+
+/**
+ * A reading that is not the winner for its name: the variable goes, and a refusal is said.
+ *
+ * <p>The delete is the half with a secret in it. `staleEnvNames` above covers the name that stopped
+ * being BOUND; this is the other half — the name is still bound and the value behind it has become
+ * unreadable, because the entry was given a PIN, its password was woven, or the secret was cleared.
+ * The collection persists across reloads, so leaving the last value there would hand every terminal
+ * opened afterwards a secret the policy has just refused to hand anybody, while the notice said
+ * "withheld" about a variable that is still set. Found by the automated reviewer on the pull
+ * request. A name another binding CAN write is left alone here and written below.</p>
+ */
+function noteUnwritten(
+  env: vscode.GlobalEnvironmentVariableCollection,
+  name: string,
+  reading: FieldReading,
+  valued: Map<string, string>,
+  withheldNames: EnvWithheld[],
+): void {
+  if (valued.has(name)) {
+    return;
+  }
+  env.delete(name);
+  if (reading.kind === 'withheld') {
+    withheldNames.push({ name, reason: reading.reason });
+  }
 }
 
 /**
@@ -243,32 +312,6 @@ function boundPairs(details: EntityMetadata): [string, string][] {
   return Object.entries(details.envBindings ?? {});
 }
 
-/** Write a value, or record why it was not — `absent` is nothing to write and nothing to say. */
-function noteReading(
-  env: vscode.GlobalEnvironmentVariableCollection,
-  name: string,
-  reading: FieldReading,
-  written: string[],
-  withheldNames: EnvWithheld[],
-): void {
-  if (reading.kind === 'value') {
-    exposeEnv(env, name, reading.value);
-    written.push(name);
-    return;
-  }
-
-  // Anything that is not a value takes the variable WITH it. `staleEnvNames` above covers the name
-  // that stopped being BOUND; this is the other half, and it is the one with a secret in it — the
-  // name is still bound and the value behind it has become unreadable, because the entry was given
-  // a PIN, its password was woven, or the secret was cleared. The collection persists across
-  // reloads, so leaving the last value there would hand every terminal opened afterwards a secret
-  // the policy has just refused to hand anybody, while the notice said "withheld" about a variable
-  // that is still set. Found by the automated reviewer on the pull request.
-  env.delete(name);
-  if (reading.kind === 'withheld') {
-    withheldNames.push({ name, reason: reading.reason });
-  }
-}
 
 /**
  * One variable into the collection, with the description that says who put it there — the one road

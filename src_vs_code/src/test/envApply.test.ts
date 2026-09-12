@@ -468,3 +468,48 @@ test('the values a save holds are the three the form can carry — and only the 
   );
   assert.deepEqual(heldEnvValues({}), {});
 });
+
+/**
+ * Two bindings, one variable name — the last half of the automated reviewer's finding.
+ *
+ * <p>Nothing stops two fields naming the same variable: `envBindings` is metadata, it syncs, and a
+ * person can type the same name into both boxes. Once anything that is not a value DELETES the name,
+ * the order of `Object.entries` decides the outcome — a readable password written first and then
+ * erased by an unreadable db connection that happens to share its name, reported as written.</p>
+ *
+ * <p>So the decision is per NAME, not per binding: a name any binding can write is written, and only
+ * a name NO binding can write is deleted. That is also the only order-independent answer, which is
+ * what a map whose key order is an implementation detail needs.</p>
+ */
+test('a name two bindings share is written when either can write it, whatever the order', async () => {
+  const locked = await lockSecret('THE-PASSWORD', 'acc', 'correct-horse-battery');
+  const env = envCollection();
+
+  const result = await envApply().applyEnvBindings(
+    env as never,
+    storage({ password: locked, dbConnection: 'postgres://u:pw@h/db' }) as never,
+    'acc',
+    details({ envBindings: { password: 'SHARED', dbConnection: 'SHARED' } }),
+  );
+
+  assert.deepEqual(env.deleted, [], 'the readable binding is not erased by the refused one');
+  assert.equal(env.replaced.SHARED, 'postgres://u:pw@h/db');
+  assert.deepEqual(result.written, ['SHARED']);
+  assert.deepEqual(result.withheld, [], 'and nothing claims to have been withheld from a variable that is set');
+});
+
+test('a shared name every binding refuses is still deleted, and said once', async () => {
+  const env = envCollection();
+
+  const result = await envApply().applyEnvBindings(
+    env as never,
+    storage() as never,
+    'acc',
+    details({ envBindings: { password: 'SHARED', dbConnection: 'SHARED' }, pinProtected: true }),
+  );
+
+  assert.deepEqual(env.replaced, {});
+  assert.ok(env.deleted.includes('SHARED'), 'no binding can write it, so it goes');
+  assert.deepEqual(result.written, []);
+  assert.equal(result.withheld.length, 2, 'each refused binding still says its own reason');
+});
