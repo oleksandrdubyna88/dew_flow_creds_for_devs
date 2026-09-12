@@ -108,7 +108,7 @@ function addressMarkup(): string {
   return `    <label for="addressPaste">Billing address</label>
     <textarea id="addressPaste" rows="2" spellcheck="false" autocomplete="off"
               placeholder="Paste the whole address here — 1 Infinite Loop, Cupertino, CA, 95014, United States"></textarea>
-    <button type="button" id="splitAddress">Split pasted address into fields</button>
+    <div class="actions"><button type="button" id="splitAddress">Split pasted address into fields</button></div>
     <p class="hint">Every guess it makes lands in a box below, where you can see it and correct it — the same bargain the pasted-command rows make. Nothing is applied invisibly.</p>
 
     <label for="cardAddressLine1">Address line 1</label>
@@ -241,7 +241,7 @@ function mixMarkup(random: Random): string {
       <p class="hint" id="mixWarning"></p>
       <p class="hint"><b>What this does and does not do.</b> A woven field is stored as your value and a decoy shuffled together, and the method is <b>never stored</b> — not here, not in a backup, not in the sync. Nobody can unweave it but you, from memory, so a forgotten method is a lost value.<br>
       It protects against somebody <b>reading</b> an open vault: a shoulder, a screen share, a backup file on a laptop. It does <b>not</b> protect against somebody who can try every possibility — a CVV is a thousand values, and weaving costs them nothing.</p>
-      <button type="button" id="mixExpand">Give each field its own method…</button>
+      <div class="actions"><button type="button" id="mixExpand">Give each field its own method…</button></div>
       <div id="mixPerField" style="display:none"></div>
       <p class="hint">What the method does, on two values made up for the picture. Your own value is never drawn here — showing it beside the decoy it is woven with, under the method that wove them, would put the answer on screen next to the question.</p>
       <div id="mixExample"></div>

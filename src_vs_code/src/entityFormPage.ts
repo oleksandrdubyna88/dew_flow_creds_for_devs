@@ -3,7 +3,7 @@ import { normalizeTags } from './sshOptions';
 import { CONFIG_FORMATS, CONFIG_FORMAT_LABELS } from './configFormat';
 import { paymentMarkup } from './paymentFormMarkup';
 import { PASSPHRASE_WORD_CHOICES, PASSWORD_LENGTH_CHOICES, SSH_KEY_TYPES } from './secretGenerator';
-import { zoomControlHtml } from './zoomControl';
+import { formHeaderHtml } from './pageChrome';
 import { methodLabel } from './shuffle';
 import { methodOrder } from './phraseLayout';
 import { Random } from './decoyDigits';
@@ -338,7 +338,7 @@ export function renderHtml(options: EntityFormOptions): string {
     }
     <label>Port forwarding</label>
     <div id="forwardRows"></div>
-    <button type="button" id="addForward">+ Add forward</button>
+    <div class="actions"><button type="button" id="addForward">+ Add forward</button></div>
     <p class="hint">Local (<code>-L</code>) makes a port here reach a service there; remote (<code>-R</code>) is the reverse. Written as <code>port:host:hostport</code>.</p>
   </fieldset>`;
 
@@ -351,7 +351,7 @@ export function renderHtml(options: EntityFormOptions): string {
         ? `A seed is stored (${escapeHtml(options.storedTotpDescription ?? 'unreadable')}). Paste a new one to replace it.`
         : 'Most services offer this under "can&#39;t scan the QR code?". Kept in the OS keychain; the codes are computed here, so the second app can close.'
     }</p>
-    <button type="button" id="totpPasteQr">Paste a QR image (Ctrl+V)</button>
+    <div class="actions"><button type="button" id="totpPasteQr">Paste a QR image (Ctrl+V)</button></div>
     <p class="hint" id="totpQrHint" aria-live="polite">Snip the QR with <kbd>Win</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd> and press <kbd>Ctrl</kbd>+<kbd>V</kbd> here — an enrolment code, or a whole Google Authenticator export (<em>Transfer accounts → Export accounts</em>).</p>
     <div id="totpQrChoices" class="qrChoices"></div>
     <div class="check"><input id="totpSteam" type="checkbox">
@@ -449,30 +449,15 @@ ${formStyleSheet(options.uiScale ?? 0)}
 </style>
 </head>
 <body>
-  <div class="topBar">
-    <div class="buttons">
-      <button id="save">Save</button>
-      <button id="cancel" class="secondary">Cancel</button>
-      ${zoomControlHtml(options.uiScale ?? 0)}
-    </div>
-    <!-- The validation message rides with the buttons. Below them it would scroll out of
-         sight, and "I pressed Save and nothing happened" is exactly what it exists to
-         answer. role=alert: a screen reader is told the save was refused, not left to
-         find a red line. -->
-    <div class="error" id="error" role="alert" aria-live="assertive"></div>
-  </div>
-  <!-- Which entity, not merely that it is one: two windows on two entries of the same kind
-       were told apart only by the tab title, and the tab title is the first thing a wide
-       editor group truncates. The name is escaped like every other value on this page. -->
-  <h2>${
-    isEdit
-      ? `Edit: ${escapeHtml(d?.name?.trim() || 'entity')}<span class="kindChip">${escapeHtml(kind)}</span>`
-      // The kind, on creation too. A new entity has nothing to NAME yet, but it always has a kind,
-      // and when the folder fixes that kind there is no choice to make anywhere on the form — so
-      // this heading is the only place it registers. Somebody adding six terminal commands in a row
-      // had nothing on screen telling them what they were creating.
-      : `New entity<span class="kindChip">${escapeHtml(kind)}</span>`
-  }</h2>
+${formHeaderHtml({
+  // The kind rides beside the heading on creation too. A new entity has nothing to NAME yet,
+  // but it always has a kind, and when the folder fixes that kind there is no choice to make
+  // anywhere on the form — so this is the only place it registers. Somebody adding six terminal
+  // commands in a row had nothing on screen telling them what they were creating.
+  heading: isEdit ? `Edit: ${d?.name?.trim() || 'entity'}` : 'New entity',
+  chip: kind,
+  uiScale: options.uiScale ?? 0,
+})}
 
   <div class="formGroups">
 
@@ -522,8 +507,8 @@ ${formStyleSheet(options.uiScale ?? 0)}
       <select id="genKeyType">${SSH_KEY_TYPES.map(
         (t) => `<option value="${t.id}" title="${escapeHtml(t.note)}">${escapeHtml(t.label)}</option>`,
       ).join('')}</select>
+      <button type="button" id="genKey">Generate key pair</button>
     </div>
-    <button type="button" id="genKey">Generate key pair</button>
     <p class="hint" id="genKeyHint">A key made here is drawn in the editor and saved straight to the keychain — unlike <code>ssh-keygen</code>, which writes it to disk by definition. With <i>Add to SSH Agent</i> it can then be used without ever becoming a file.</p>
     <p class="hint">${privateKeyHint}</p>
     ${
@@ -597,8 +582,10 @@ ${formStyleSheet(options.uiScale ?? 0)}
     <label>Arguments</label>
     <p class="hint">One per row. The note is what you will actually have forgotten in a week — which value belongs to which environment, and why. Untick a row to keep an argument without using it.</p>
     <div id="argRows"></div>
-    <button type="button" id="addArg">+ Add argument</button>
-    <button type="button" id="splitCmd">Split pasted command into rows</button>
+    <div class="actions">
+      <button type="button" id="addArg">+ Add argument</button>
+      <button type="button" id="splitCmd">Split pasted command into rows</button>
+    </div>
     <p class="hint" id="splitHint">Paste a whole command into <b>Command</b> and it is split here automatically. Descriptions are read by running <code>--help</code> on the tool itself, so they are right for your version — and for a private tool that has no help, the rows are still split and the notes are yours to write. Turn the help lookup off with <code>credSshManager.readCliHelp</code>.</p>
 
     <label for="commandPreview">Full command</label>
@@ -694,7 +681,7 @@ ${formStyleSheet(options.uiScale ?? 0)}
     <p class="hint">Pull the changeable parts out as <code>${'${NAME}'}</code> and define them below — the body stays generic, the values live in rows you can edit one by one.</p>
     <label>Variables</label>
     <div id="scriptVarRows"></div>
-    <button type="button" id="addScriptVar">+ Add variable</button>
+    <div class="actions"><button type="button" id="addScriptVar">+ Add variable</button></div>
   </fieldset>
 
   ${openSection('configSection')}

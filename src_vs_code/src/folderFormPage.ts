@@ -2,6 +2,8 @@ import * as crypto from 'node:crypto';
 import { McpAccess, accessMask, normalizeMcpAccess } from './mcpAccess';
 import { MCP_SWITCHES, mcpBarHtml, mcpSwitchStyles } from './mcpSwitches';
 import { escapeHtml } from './webviewHtml';
+import { formHeaderHtml, pageChromeCss } from './pageChrome';
+import { zoomApplyScript, zoomButtonsScript } from './zoomControl';
 import { mcpSwitchScript } from './mcpSwitchScript';
 
 /**
@@ -10,6 +12,11 @@ import { mcpSwitchScript } from './mcpSwitchScript';
  * <p>Pure and free of `vscode`, exactly like `entityFormPage.ts` beside it, so the markup is a
  * unit test rather than something only a running editor can look at. The panel next door owns
  * the webview and never builds HTML.</p>
+ *
+ * <p>The page frame and the header come from `pageChrome.ts` (#53). They used to be a private
+ * copy — 760px against the entity form's 1280, an unbordered bar, 4px buttons, and no text-size
+ * control at all — and the copy had drifted on every one of those points. What is left below is
+ * this page's own: the agent-access switches, and the sentence that says what they reach.</p>
  *
  * <p>A folder had no form at all until now: it could be created and renamed through an input
  * box, and that was the whole of it. Agent access inherits from the folder, so it needed
@@ -36,6 +43,13 @@ export interface FolderFormOptions {
    * trusting the switch.</p>
    */
   inherited?: { access: McpAccess; from: string };
+  /**
+   * The text-zoom offset (T28), from `credSshManager.uiScale` — filled in by the panel, exactly
+   * as `mountForm` fills the entity form's in. Optional for the same reason it is optional on
+   * {@link EntityFormOptions}: the callers that OPEN a folder form describe a folder, and none of
+   * them should have to know that a page has a text size.
+   */
+  uiScale?: number;
   /** The Trash, or anything inside it: nothing there is reachable, whatever a switch says. */
   inTrash: boolean;
 }
@@ -46,6 +60,7 @@ export interface FolderFormOptions {
 // eslint-disable-next-line max-lines-per-function
 export function renderFolderHtml(options: FolderFormOptions): string {
   const nonce = crypto.randomBytes(16).toString('base64url');
+  const uiScale = options.uiScale ?? 0;
   const decided = options.mcp !== undefined;
   const mcp = shownAccess(options);
   const inheritedFrom = inheritedName(options);
@@ -56,27 +71,9 @@ export function renderFolderHtml(options: FolderFormOptions): string {
 <meta http-equiv="Content-Security-Policy"
       content="default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${nonce}';">
 <style>
-  body { font-family: var(--vscode-font-family); color: var(--vscode-foreground);
-         background: var(--vscode-editor-background); padding: 12px 20px 24px; max-width: 760px; }
-  h2 { margin: 0 0 12px; font-size: 1.2em; }
-  fieldset { border: 1px solid var(--vscode-widget-border, #4444); border-radius: 4px;
-             margin: 0 0 14px; padding: 10px 12px; }
-  legend { padding: 0 6px; opacity: .85; }
-  input[type=checkbox] { accent-color: var(--vscode-button-background); width: 15px; height: 15px; }
-  label { display: block; margin: 8px 0 3px; }
-  .check { display: flex; align-items: center; gap: 6px; margin: 6px 0; }
-  .check label { margin: 0; }
-  input[type=text] { width: 100%; box-sizing: border-box; padding: 4px 6px;
-    background: var(--vscode-input-background); color: var(--vscode-input-foreground);
-    border: 1px solid var(--vscode-input-border, transparent); }
-  .hint { opacity: .75; margin: 2px 0 8px; font-size: .9em; }
+  ${pageChromeCss(uiScale)}
+  /* What is left is what this page alone has: the agent-access switches and their bar. */
   .mcpWhy { margin: 0 0 10px 22px; }
-  .bar { position: sticky; top: 0; z-index: 2; background: var(--vscode-editor-background);
-         padding: 8px 0 10px; display: flex; gap: 8px; align-items: center; }
-  button { padding: 4px 12px; cursor: pointer; border: none;
-           background: var(--vscode-button-background); color: var(--vscode-button-foreground); }
-  .secondary { background: var(--vscode-button-secondaryBackground);
-               color: var(--vscode-button-secondaryForeground); }
   .sec { border-color: var(--vscode-credSshManager-depColor10, var(--vscode-widget-border, #4444)); }
   .mcpBar { display: flex; gap: 3px; margin: 2px 0 6px; }
   .mcpSeg { width: 26px; height: 4px; border-radius: 2px; opacity: .18; }
@@ -85,11 +82,7 @@ export function renderFolderHtml(options: FolderFormOptions): string {
 </style>
 </head>
 <body>
-  <div class="bar">
-    <button type="button" id="save">Save</button>
-    <button type="button" id="cancel" class="secondary">Cancel</button>
-  </div>
-  <h2>Edit folder: ${escapeHtml(options.name)}</h2>
+${formHeaderHtml({ heading: `Edit: ${options.name}`, chip: 'folder', uiScale })}
 
   <fieldset>
     <legend>General</legend>
@@ -120,6 +113,8 @@ export function renderFolderHtml(options: FolderFormOptions): string {
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') { vscode.postMessage({ type: 'cancel' }); }
   });
+  ${zoomButtonsScript()}
+  ${zoomApplyScript()}
 </script>
 </body>
 </html>`;

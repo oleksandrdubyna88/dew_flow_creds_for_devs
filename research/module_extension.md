@@ -1790,6 +1790,50 @@ merely that it exists — `zoomControl.test.ts` pins the DOM write and `entityFo
 asserts the form's script contains that fragment verbatim, so a listener that fires and repaints
 nothing is a red test.
 
+**One chrome and one header, for both forms (2026-09-12, #53 #54).** `pageChrome.ts` is pure and
+`vscode`-free and exports two things: `pageChromeCss(uiScale)` — body (font, colours,
+`PAGE_MAX_WIDTH_PX`, `zoomStyle`), headings, the kind chip, fieldsets, the themed-by-exclusion field
+rule, `ZOOM_CSS`, the sticky `.topBar` with its buttons and error line, and the row primitives below
+— and `formHeaderHtml({ heading, chip?, uiScale })`, the bar itself plus the `<h2>`. **The three
+element ids are a contract**: it emits `id="save"`, `id="cancel"` and `id="error"`, the ids both
+page scripts bind and write into, and both page tests assert all three — a header that renders
+beautifully and posts nothing on Save is precisely the regression a builder invites. It escapes the
+heading and the chip **once**, so callers hand over raw values (the entity page used to escape at
+its call site; escaping in both places is how an ampersand becomes `&amp;amp;` on screen).
+
+**The folder form joins T28 with it.** `folderFormPage.ts` had a private stylesheet and a private
+header, and the copy had drifted on every point that could drift: 760px against the form's 1280, a
+`.bar` with no border or bottom margin, 4px buttons with no radius and an unbordered Cancel, no
+text-size control at all, and a heading reading *Edit folder:* where the other reads *Edit:* with
+the kind beside it. It now renders `pageChromeCss` plus `formHeaderHtml({heading: 'Edit: …',
+chip: 'folder'})` and keeps only its own MCP rules (`.mcpWhy`, `.mcpBar`, `.mcpSeg`, `.mcpSegOn`,
+`.sec`, `mcpSwitchStyles()`); its inline script takes `zoomButtonsScript()` + `zoomApplyScript()`;
+`FolderFormOptions.uiScale` is filled in by `folderFormPanel.ts`, which now renders with
+`currentUiScale()` and hooks `pushUiScaleTo` disposed with the panel — the shape `mountForm` has in
+`entityFormHost.ts`, so no caller of `showFolderForm` changed. `FolderFormMessage.type` widened to
+`'save' | 'cancel' | 'zoom'`, handled by `answeredZoom` ahead of the other two: a press that fell
+through to them would have CLOSED a form somebody was filling in. `applyZoomDelta` now ignores a
+non-finite delta — `Math.sign(NaN)` is NaN and `clampScale(NaN)` is 0, so a malformed `{type:'zoom'}`
+from ANY page used to write the base size and undo five deliberate presses; one guard in the shared
+host half covers both forms, the viewer and the help page.
+
+**The row primitives, and the lint that keeps them used.** The viewer has had `.line` since it was
+written (`entityViewStyles.ts`); the form had fields at `width: 100%`, `button` with no margin and
+no `.line` rule at all, so a button after a field touched it and a `class="line"` written in a form
+page was dead markup — which is why the phrase form's Generate button sat flush under a full-width
+select. `pageChromeCss` now carries `.line` (flex row, 8px gap) with a child rule that makes a field
+inside one give up its 100 % width, `.genRow` (with `.genRow > select { flex: 1 1 12em; min-width: 0 }`,
+without which the select eats the row and pushes its button onto the next line), and `.actions` for a
+lone button under a field. The markup was wrapped at every bare pair — `#genKey` into the Type
+`.genRow`, and `.actions` around `#addForward`, `#totpPasteQr`, `#addArg`/`#splitCmd`, `#addScriptVar`,
+`#splitAddress` and `#mixExpand`. `entityFormPage.test.ts` carries the structural lint that stops the
+twelfth site appearing: over the create AND edit render of every kind in `ENTITY_KINDS` and over the
+folder page, no `<button>` may follow a `</select>`, `</textarea>` or non-checkbox `<input>` unless
+the pair sits in a `.line`, `.genRow`, `.actions` or `.buttons` wrapper. Closing tags, `</label>`,
+inline helper text and self-closing tags are transparent — `</select></div><button>` reads as
+structured markup and renders flush, which is exactly what the SSH key form did — while a block
+element or a line of prose between the two ends the pair.
+
 ### Clone
 
 `cloneNode` copies a folder or entity's settings and deliberately **not** its secrets. Duplicating

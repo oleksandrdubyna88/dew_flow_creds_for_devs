@@ -19,6 +19,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   every button twice and sending two presses per click. The form also reported a press under a
   name of its own, where every other page sends one name; there is one name now.
 
+- **The folder form is the same window as the entity form now, and it follows the text size.** It
+  was drawn by a second set of rules that had quietly drifted from the first: half the page width,
+  a bar with no line under it, smaller buttons, a Cancel you could not tell was a button on some
+  themes, and no ± control at all — so a person who had set the text larger everywhere opened a
+  folder and got the default size back. The heading read *Edit folder: name* where an entry reads
+  *Edit: name* with what it is beside it. Both forms are now built from one frame and one header,
+  the folder's says *Edit: name* with a **folder** chip, and pressing ± on it resizes it and every
+  other open page at once.
+  Also fixed underneath: a malformed text-size press could reset the size to the default instead of
+  being ignored, which silently undid every step somebody had taken.
+
+- **A button under a field no longer touches it.** *Generate key pair* sat flush against the key-type
+  selector, *Split pasted address into fields* against the address box and its resize grip, and the
+  phrase form's *Generate phrase* dropped underneath a full-width list rather than beside it — eleven
+  places, one missing rule: the form had no row to put a field and its button in, while the read-only
+  viewer had had one all along. There is one now, the pairs use it, and a test refuses any new button
+  placed against a field without it.
+
 - **A PIN floor now counts characters, not the bytes they happen to take.** Both floors were
   measured in UTF-16 code units, and one emoji is several of them: a single flag cleared the
   entry PIN's floor of four on its own, and a two-emoji PIN cleared the VAULT's floor of eight —
