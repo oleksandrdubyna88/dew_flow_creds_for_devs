@@ -55,10 +55,22 @@ ${phraseExampleScript()}
 function phraseExampleScript(): string {
   return `  var phraseMethodPick = document.getElementById('phraseMethod');
   if (phraseMethodPick) {
+    // Asked only while this form is the one on screen. Every payment entity carries all three
+    // fieldsets and hides the two it is not, so an unconditional request on mount asked the host a
+    // question on every card and bank form ever opened, and painted a tree nobody could see.
+    var phraseShowing = function () {
+      var section = document.getElementById('phraseSection');
+      return section !== null && section.style.display !== 'none';
+    };
     var askPhraseExample = function () {
+      if (!phraseShowing()) { return; }
       vscode.postMessage({ type: 'weaveExample', field: 'mixed', code: phraseMethodPick.value });
     };
     phraseMethodPick.addEventListener('change', askPhraseExample);
+    // Asked again when this form BECOMES the one on screen, which is when the picture is first worth
+    // drawing — the selector's own visibility handler is bound before this one and has already run.
+    var phraseFormPick = document.getElementById('paymentForm');
+    if (phraseFormPick) { phraseFormPick.addEventListener('change', askPhraseExample); }
     askPhraseExample();
 
     window.addEventListener('message', function (event) {

@@ -63,17 +63,25 @@ export class MiniElement {
     }
   }
 
-  /** The nearest ancestor of this tag, or nothing — `closest('fieldset')` is the only caller. */
-  closest(tag: string): MiniElement | undefined {
+  /**
+   * The nearest ancestor of this tag, or NULL — `closest('fieldset')` is the only caller.
+   *
+   * <p>Null, not undefined, and that is not pedantry: page scripts compare against `null` because
+   * that is what the real DOM answers, and a harness that returns `undefined` makes every such
+   * guard pass silently. One of this file's own tests was green for exactly that reason before the
+   * mismatch was found.</p>
+   */
+  closest(tag: string): MiniElement | null {
     let at: MiniElement | undefined = this.parent;
     while (at !== undefined && at.tag !== tag) {
       at = at.parent;
     }
-    return at;
+    return at ?? null;
   }
 
-  querySelector(selector: string): MiniElement | undefined {
-    return this.descendants().find((one) => matches(one, selector));
+  /** Null on a miss, for the reason `closest` is. */
+  querySelector(selector: string): MiniElement | null {
+    return this.descendants().find((one) => matches(one, selector)) ?? null;
   }
 
   querySelectorAll(selector: string): MiniElement[] {
@@ -104,7 +112,8 @@ export class MiniDocument {
     return this.root.descendants().find((one) => one.id === id) ?? null;
   }
 
-  querySelector(selector: string): MiniElement | undefined {
+  /** Null on a miss, exactly as the real one answers — see `MiniElement.closest`. */
+  querySelector(selector: string): MiniElement | null {
     return this.root.querySelector(selector);
   }
 

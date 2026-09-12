@@ -7,6 +7,8 @@ import { phraseFormScript } from '../phraseFormScript';
 import { horizontalCounts, layoutsFor } from '../phraseLayout';
 import { PHRASE_RANGE, SHUFFLE_CODES, methodLabel } from '../shuffle';
 import { weaveExample } from '../weaveExample';
+import { formWeaveScripts } from '../formWeaveScripts';
+import { MiniDocument, MiniWindow, runFragment } from './miniDom';
 import { readingFor, rowOf } from '../paymentViewMessages';
 import { hasMixedField } from '../mixedFieldGuard';
 import { wovenKeys } from '../paymentFields';
@@ -269,4 +271,42 @@ test('the phrase example halves are FIXED — no path feeds a real phrase into t
       assert.ok(!shown.includes(word), `${word} reached the ${code} example`);
     }
   }
+});
+
+/**
+ * The phrase example is asked for only while the phrase form is the one on screen.
+ *
+ * <p>The code round's finding: every payment entity carries all three fieldsets and hides the two it
+ * is not, so an unconditional request on mount asked the host a question on every card and bank form
+ * ever opened, and painted a tree nobody could see.</p>
+ */
+function phrasePage(showing: boolean): { posted: unknown[]; document: MiniDocument } {
+  const document = new MiniDocument();
+  const section = document.place('phraseSection', 'fieldset');
+  section.style.display = showing ? '' : 'none';
+  document.place('phraseExample', 'div', section);
+  document.place('phraseMethod', 'select', section).value = 'f2';
+  document.place('paymentForm', 'select').value = showing ? 'phrase' : 'card';
+  const posted: unknown[] = [];
+  runFragment(formWeaveScripts(), document, [], posted, new MiniWindow());
+  return { posted, document };
+}
+
+const exampleAsks = (posted: unknown[]): unknown[] =>
+  posted.filter((one) => (one as { type?: string; field?: string }).field === 'mixed');
+
+test('a card form does not ask the host for a phrase example it cannot show', () => {
+  assert.deepEqual(exampleAsks(phrasePage(false).posted), []);
+});
+
+test('a phrase form asks for one on mount, and again when the form becomes the chosen one', () => {
+  const shown = phrasePage(true);
+  assert.equal(exampleAsks(shown.posted).length, 1, 'asked once on mount');
+  assert.equal((exampleAsks(shown.posted)[0] as { code?: string }).code, 'f2', 'for the method on screen');
+
+  const hidden = phrasePage(false);
+  hidden.document.getElementById('phraseSection')!.style.display = '';
+  hidden.document.getElementById('paymentForm')!.fire('change');
+
+  assert.equal(exampleAsks(hidden.posted).length, 1, 'and once the form becomes visible, asked then');
 });
