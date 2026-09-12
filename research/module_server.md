@@ -1105,7 +1105,7 @@ of every line before it — carries **metadata only**, and is readable by every 
 only initiators. A recovery nobody else can see is a recovery nobody else can question, and being
 witnessed is the point of a quorum. It is never swept.
 
-### `/api/metrics` — one document, for the officers (2026-08-28)
+### `/api/metrics` — one document, for whoever administers (2026-08-28, opened to admins 2026-09-12)
 
 `ServerMetrics.cs` keeps process-lifetime counters — requests by outcome (4xx, 5xx, 429), vault
 reads and writes with bytes — fed by one middleware that records every response once its status is
@@ -1113,9 +1113,28 @@ known, and by the vault PUT for the bytes. The endpoint snapshots them together 
 directory holds (`VaultStore.VaultFootprint` / `ShareFootprint`), the free space on that disk, the
 binary's version (stamped by the release tag through `-p:Version`) and the runtime's support window
 (`RuntimeSupport.cs`, the same line the server logs at startup — a warning inside the last 90 days).
-Officer-only through `RequireOfficer`, whether or not the ceremony has run: the owner's rule is
-that whoever may read the server's load is whoever the operator named. Read by a human through the
-extension's *Server Metrics…*; not a scrape target.
+
+**The gate is `RequireAdminAsync`, not `RequireOfficer`** (changed 2026-09-12). It was officer-only
+until then, on the rule that whoever may read the server's load is whoever the operator named — and
+that rule turned out to be about the *recovery ceremony*, not about the load. What is deployed, how
+much it holds and how much room is left are an administrator's daily questions, and an admin who is
+not on the recovery roster was refused them by a gate that had no name for their standing. The same
+gate every `/api/org/backup/*` route uses now answers here: an officer passes first, a registry admin
+(`MemberRole.Admin`) second, everybody else meets one `403` **with a JSON reason** rather than the
+bare status `RequireOfficer` wrote.
+
+**The roster caveat, and it is load-bearing.** `RequireAdminAsync` opens with `orgRecovery.Enabled &&
+(…)`, so a server with **no recovery roster** has no officers *and* no administrators as far as this
+endpoint is concerned: it still answers `403` to everybody, administrators included. That is asserted
+by name in `OpsTests.WithoutACorpRoster_TheEndpointIs403ForEveryone_AdminsIncluded`, and it is the
+surprising state a new extension against a rosterless server meets. A member is still refused and an
+anonymous caller still gets `401`; those assertions are unchanged, because opening the gate to
+administrators must not open it to everybody.
+
+Read by a human through the extension — the *Server Metrics…* tab, and since 2026-09-12 the tree's
+**Server section**, which draws version, vault footprint and backup on an administrator's account row
+(`research/module_extension.md`). Still not a scrape target: the tree reads it once per readiness
+cycle, and a cycle is a human action.
 
 Two more shipped the same day. **The byte budget** (`ByteBudget.cs`, roadmap E1): the request
 limiter counted a full vault as one request, so `PUT /api/vault` now spends a per-caller byte budget
@@ -1353,12 +1372,29 @@ page an administrator can look at.
 
 | Route (all `RequireAdmin`) | Answers |
 |---|---|
-| `GET /api/org/backup/status` | Everything the page draws: the key's state, the schedule, the window, the last run and the local archive |
+| `GET /api/org/backup/status` | Everything the page draws: the key's state, the schedule, the window, the last run, the local archive — and `configuredTargetKinds`, the kinds of destination that are SAVED |
 | `PUT /api/org/backup/settings` | The hour (0–23) and the window (≥ 1 day), each refused with its range named |
 | `POST /api/org/backup/key` | Mints the key and hands over its words **once** — delivering them IS the acknowledgement |
 | `POST /api/org/backup/run` | `202` and the build detached, or `409` with the reason it did not start |
 | `GET /api/org/backup/archive` | Streams the newest archive with a length, or `404` saying how to get one |
 | `POST /api/org/backup/key/rotate` | `501`, with the decision in it |
+
+**The status carries TWO lists of destinations, and they answer different questions** (added
+2026-09-12). `targets[]` is the last RUN's per-destination outcomes — built from `BackupStatus.Targets`,
+which `BackupStatus.NeverRun` leaves empty — so a deployment that has saved an S3 destination and has
+not run yet answers `[]` there while backing up to S3 nightly from tomorrow. "Where does this server
+back up to" was therefore unanswerable from the contract in exactly the state where it matters most:
+freshly configured, never run. `configuredTargetKinds` is read from `BackupSettings.Targets` instead —
+the settings `StatusAsync` already loads — **distinct and ordered**, because two S3 buckets are one
+kind and the row a person reads says *"s3, azure-blob"*.
+
+It is a list of KINDS and will stay one. A bucket name and a prefix are operational detail that
+belongs on the backup page, where `SealedTarget.Describe` already draws them; nothing sealed travels,
+which `org_backup_status_never_carries_a_credential` in `http/org/backup.http` and
+`TheStatusNeverNamesADestinationsCredentials` both pin. And `Configured` is a third fact, not a
+synonym for either: it is `kek.Length == Key32.Bytes` — *can this server seal an archive at all* — so
+`configured: true` with no kinds is a local-archive-only deployment and `configured: false` with kinds
+saved is destinations waiting for a key. Three states, and the extension's Backup row draws them apart.
 
 **The claim on a run is an open file handle**, not a boolean and not a timestamp. A boolean dies with
 the process while the state it guards — a half-built archive, a status saying "in progress" — outlives

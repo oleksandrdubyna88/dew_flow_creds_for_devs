@@ -220,6 +220,17 @@ Accept: application/json
   test('and it carries a per-target list, so a page can say WHICH one failed', () => {
     assert.ok(Array.isArray(response.parsedBody.targets));
   });
+  test('and a SECOND list: the kinds that are configured, which the first cannot answer', () => {
+    // `targets` is the last RUN's outcomes, so a deployment that saved an S3 destination and has
+    // not run yet answers `[]` there while still backing up to S3. `configuredTargetKinds` is read
+    // from the settings instead, and is a list of KINDS — never a bucket, a prefix or a credential.
+    const kinds = response.parsedBody.configuredTargetKinds;
+    assert.ok(Array.isArray(kinds), `configuredTargetKinds is ${typeof kinds}`);
+    for (const kind of kinds) {
+      assert.ok(['s3', 'azure-blob'].includes(kind), `${kind} is not one of the two kinds`);
+    }
+    assert.strictEqual(kinds.length, new Set(kinds).size, 'distinct — two buckets are one kind');
+  });
   test('every target row separates the upload from the retention that follows it', () => {
     // They shared a field until the second review round: an archive that ARRIVED at a destination
     // whose old archives can no longer be listed is a success and an unbounded directory at once,

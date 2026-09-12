@@ -325,9 +325,16 @@ public sealed record BackupStatus(
 /// Everything the admin's backup page draws, from what is on disk.
 /// </summary>
 /// <remarks>
-/// <c>Running</c> is DERIVED from <c>LastResult</c> rather than stored beside it, so the page cannot be
-/// handed "finished" and a spinner at once. That is the half of rule 8 people forget: the in-flight
-/// state has to survive a reload, and it has to have exactly one source.
+/// <para><c>Running</c> is DERIVED from <c>LastResult</c> rather than stored beside it, so the page cannot
+/// be handed "finished" and a spinner at once. That is the half of rule 8 people forget: the in-flight
+/// state has to survive a reload, and it has to have exactly one source.</para>
+///
+/// <para><b><c>ConfiguredTargetKinds</c> and <c>Targets</c> answer different questions</b>, which is why
+/// there are two lists. <c>Targets</c> is the LAST RUN's per-destination outcomes, so a deployment that
+/// has saved an S3 destination and not run yet answers <c>[]</c> — and "where does this server back up
+/// to" is unanswerable from it in exactly the state where it matters most. The kinds come from the saved
+/// settings instead: distinct, ordered, and never a destination — a bucket and a prefix are operational
+/// detail for the backup page (<see cref="SealedTarget.Describe"/>), and a credential is for nobody.</para>
 /// </remarks>
 public sealed record BackupStatusDto(
     bool Configured,
@@ -340,6 +347,7 @@ public sealed record BackupStatusDto(
     bool Running,
     long LocalArchiveBytes,
     string LocalArchiveName,
+    IReadOnlyList<string> ConfiguredTargetKinds,
     IReadOnlyList<BackupTargetDto> Targets);
 
 /// <summary>
