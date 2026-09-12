@@ -192,4 +192,25 @@ public class AgentRelayTests
         message.Should().Contain(AgentRelay.MaxSocketPathLength.ToString(), "the length they may have");
         message.Should().Contain(AgentRelay.SocketOverrideVariable, "and what to set to fix it");
     }
+
+    [Fact]
+    public async Task APathThatFitsIsNotRefused()
+    {
+        var fits = new string('x', AgentRelay.MaxSocketPathLength);
+
+        (await AgentRelay.RefuseIfTooLongAsync(fits, BrokerContract.Current)).Should().BeNull(
+            "null means carry on — the relay has a path it can bind");
+    }
+
+    [Fact]
+    public async Task APathThatDoesNotFitIsRefusedWithTheUsageCode()
+    {
+        // The exit code matters as much as the sentence: the relay is started from a shell profile,
+        // and a wrong path is the person's mistake to correct rather than a broker that is down.
+        var tooLong = new string('x', AgentRelay.MaxSocketPathLength + 1);
+
+        var refusal = await AgentRelay.RefuseIfTooLongAsync(tooLong, BrokerContract.Current);
+
+        refusal.Should().Be(BrokerContract.Current.Exit("usage"));
+    }
 }
