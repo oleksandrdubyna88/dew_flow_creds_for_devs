@@ -1,6 +1,6 @@
 # PLAN — the entity form follows the text-size setting, the folder form shares the entity form's chrome, a button never touches a field, and the woven-password example is painted
 
-> Status: **plan only, nothing implemented yet, 2026-09-12.** Scope: `src_vs_code/src` —
+> Status: **in progress, 2026-09-12 — S1 (the zoom, §2.1) shipped in `906eb27`; S2 and S3 open.** Scope: `src_vs_code/src` —
 > `zoomControl.ts`, `entityFormScript.ts`, `formMessage.ts`, `entityFormPanel.ts`, a new
 > `pageChrome.ts`, `entityFormStyles.ts`, `entityFormPage.ts`, `folderFormPage.ts`, `folderFormPanel.ts`,
 > `wovenFormScript.ts`, `cardFormScript.ts`, a new `weaveExampleScript.ts`, `paymentFormMarkup.ts`,
@@ -75,7 +75,7 @@ over the `*Styles.ts` files hits the viewer once. Consequences, all visible in t
   and *Generate phrase* in a `.line` that is a plain block, so the button drops under the select and
   sits flush against it; `entityFormPage.ts:319` is the harmless proof of the same missing rule.
 
-"Наезжает" is *touching*, not overlapping: `position: absolute` appears once in the extension
+The reported "overlap" is *touching*, not overlapping: `position: absolute` appears once in the extension
 (`entityFormStyles.ts:100`, the syntax-highlight overlay) and no rule can put a button on top of an
 input. The dynamically built rows in `entityFormScript.ts:149-205` use `.argTop` (`entityFormStyles.ts:135-137`)
 and are spaced correctly — the in-repo proof that the fix is a class, not eleven patches.

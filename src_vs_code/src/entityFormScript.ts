@@ -12,7 +12,7 @@ import { phraseFormScript } from './phraseFormScript';
 import { generateWiring, overlayEditorWiring } from './entityFormScriptGen';
 import { formVisibilityScript } from './formVisibilityScript';
 import { wovenFormScript } from './wovenFormScript';
-import { zoomApplyScript, zoomButtonsScript } from './zoomControl';
+import { zoomScript } from './zoomControl';
 
 /** What the Depends-on picker needs, gathered once when the page is built. */
 export interface DependencyPickerData {
@@ -732,10 +732,10 @@ export function formPageScript(
   ${generateWiring()}
 
   // T28: the ± text zoom. The HOST clamps and writes the setting, then pushes the value to every
-  // open page. Both halves come from zoomControl.ts: the form carried a copy of the FIRST alone,
-  // so a push reached a page where nothing listened and an open form never changed size (#2).
-  ${zoomButtonsScript()}
-  ${zoomApplyScript()}
+  // open page. The whole script comes from zoomControl.ts, as it does for the viewer and the help
+  // page: the form used to carry a private copy of the click half alone, so a push reached a page
+  // where nothing listened and an open form never changed size (#2).
+  ${zoomScript()}
 
   // A generated value nobody can see is a value nobody will trust; the toggle is per click and
   // never persisted, and the field goes back to a password box on save either way.
