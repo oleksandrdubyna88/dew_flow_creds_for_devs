@@ -3,6 +3,7 @@ import { StorageManager } from './storageManager';
 import {
   ENTITY_KINDS,
   ENTITY_KIND_LABELS,
+  EntityKind,
   FolderType,
   StoredAccount,
   TreeNode,
@@ -26,19 +27,57 @@ import { formatEntityBlock } from './entityText';
 
 export { formatEntityBlock };
 
+/**
+ * One row per entity kind — THE kind list, derived from `ENTITY_KINDS` and shared by both pickers.
+ *
+ * <p>This used to be a hand-written copy inside `pickFolderType`, and adding a kind left it offering
+ * the old five — so a folder of the new kind could not be created at all. A second picker is exactly
+ * the moment a second copy would be written, which is why the rows are built here and nowhere else.</p>
+ */
+function kindItems(): Array<vscode.QuickPickItem & { value: EntityKind }> {
+  return ENTITY_KINDS.map((kind) => ({
+    label: `$(${ENTITY_KIND_LABELS[kind].icon}) ${ENTITY_KIND_LABELS[kind].label}`,
+    value: kind,
+  }));
+}
+
+/** The same rows with `(current)` on the one that is — new items, nothing mutated. */
+function markCurrent<T extends vscode.QuickPickItem & { value: string }>(
+  items: readonly T[],
+  current: string | undefined,
+): T[] {
+  return items.map((item) =>
+    item.value === current
+      ? { ...item, description: [item.description, '(current)'].filter(Boolean).join(' ') }
+      : item,
+  );
+}
+
+/**
+ * QuickPick of ONE entity kind — asked wherever no folder dictates it (issue #57).
+ *
+ * <p>"Create Entity for…" from a Team row has no folder, so the form opened on
+ * `resolveKind(undefined)` — `credential` — and the heading <i>New entity [credential]</i> read as a
+ * restriction that was never there. The kind is now asked, and asked FIRST — before the account and
+ * the recipients — so a dismissed pick costs nothing, the same shape `pinForNewEntry` has on Add.</p>
+ *
+ * <p>`current` marks the kind an existing entity has. A NEW entity passes none and nothing is
+ * marked: marking Credential would make the old silent default look like a choice somebody made.</p>
+ */
+export async function pickEntityKind(current?: EntityKind): Promise<EntityKind | undefined> {
+  const picked = await vscode.window.showQuickPick(markCurrent(kindItems(), current), {
+    title: 'Entity type',
+    placeHolder: 'What kind of entity this is',
+  });
+  return picked?.value;
+}
+
 /** QuickPick of a folder's content type (Credential first = default). */
-// eslint-disable-next-line complexity
 export async function pickFolderType(
   current?: FolderType,
 ): Promise<FolderType | undefined> {
-  // Derived from ENTITY_KINDS rather than restated: this list used to be a hand-written
-  // copy, and adding a kind left it offering the old five — so a folder of the new kind
-  // could not be created at all.
   const items: Array<vscode.QuickPickItem & { value: FolderType }> = [
-    ...ENTITY_KINDS.map((kind) => ({
-      label: `$(${ENTITY_KIND_LABELS[kind].icon}) ${ENTITY_KIND_LABELS[kind].label}`,
-      value: kind as FolderType,
-    })),
+    ...kindItems().map((item) => ({ ...item, value: item.value as FolderType })),
     {
       label: '$(project) Project',
       description: 'creates the full folder set inside (db, vpn, ssh keys, ssh, passwords, terminal)',
@@ -46,12 +85,7 @@ export async function pickFolderType(
     },
     { label: '$(folder) Any type', description: 'no restriction', value: 'any' as FolderType },
   ];
-  for (const item of items) {
-    if (item.value === (current ?? 'credential')) {
-      item.description = [item.description, '(current)'].filter(Boolean).join(' ');
-    }
-  }
-  const picked = await vscode.window.showQuickPick(items, {
+  const picked = await vscode.window.showQuickPick(markCurrent(items, current ?? 'credential'), {
     title: 'Folder type',
     placeHolder: 'Entities in this folder will be of this type',
   });

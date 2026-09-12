@@ -10,7 +10,7 @@ import { StorageManager } from '../storageManager';
 import { resolveBulkTargets } from '../commandTargets';
 import * as vscode from 'vscode';
 import { asElement } from '../commandTargets';
-import { pickAccount } from '../dialogs';
+import { pickAccount, pickEntityKind } from '../dialogs';
 import { showEntityForm } from '../entityFormPanel';
 import { SharePayload } from '../types';
 import { serializeFields } from '../entityFields';
@@ -40,6 +40,13 @@ export function registerShareCommands(host: ShareCommandsHost): void {
 
   // Author an entity directly FOR someone else — nothing stays local.
   register('credSshManager.createForUser', async (target) => {
+    // The kind FIRST (issue #57). There is no folder here to lock it, so the form used to open on a
+    // silent `credential` and the heading read as a restriction. Asked before the account and the
+    // recipients — the `pinForNewEntry` precedent on Add — a dismissed pick costs nothing.
+    const kind = await pickEntityKind();
+    if (kind === undefined) {
+      return;
+    }
     const element = asElement(target);
     let sender =
       element?.kind === 'teamMember' ? storage.getAccount(element.viaAccountId) : undefined;
@@ -66,6 +73,10 @@ export function registerShareCommands(host: ShareCommandsHost): void {
       hasStoredDbConnection: false,
       hasStoredTotp: false,
       hasStoredHostKey: false,
+      // `initialKind`, not `lockedKind`: a lock disables the selector and prints "Type is fixed by
+      // the folder's type", which is false here and would force a wrong pick back through account
+      // and recipients. The form opens on the pick and the selector stays alive.
+      initialKind: kind,
       keyCandidates: [],
       // Authoring an entity for somebody else: a dependency on an entry in THIS vault would
       // name an id their vault has never heard of. Same call the key and jump candidates make.

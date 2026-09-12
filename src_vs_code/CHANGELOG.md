@@ -25,6 +25,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   refuses `1234` is weaker than one that is set. The help says the rule in all five languages, and
   a test asserts each language states the four-character floor in its own words.
 
+- **"Create Entity for…" asks the type first.** From a Team row there is no folder to fix the
+  kind, so the form opened on a silent `credential` and the heading *New entity [credential]* read
+  as a restriction — the issue's "creates only a password" (#57). The click now opens a type pick
+  before anything else — before the sending profile and the recipients — from the one kind list
+  the folder-type picker is already derived from; dismissing it creates nothing. The form opens on
+  the picked kind with the selector still editable and no "fixed by the folder's type" hint, because
+  no folder fixed it: a wrong pick is corrected in the form, not by cancelling back through two
+  other prompts.
+
 - **The consent modal names WHO is asking.** It used to open with *Claude Code wants to…* for every
   caller — Codex, Gemini, the `creds` CLI in a plain terminal, any other MCP client — and could not
   say which of several side-by-side Claude Code sessions had raised it, while Allow covers every later

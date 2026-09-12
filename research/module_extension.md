@@ -4400,6 +4400,22 @@ viewer's own for the "(you)" row, `officer` for anybody on the roster (a list sh
 plain `member` would invite exactly the edit the server refuses), and nothing at all on a personal
 server.
 
+**"Create Entity for…" asks the kind first (issue #57, 2026-09-12).** `credSshManager.createForUser`
+(`commands/shareCommands.ts`) authors an entity for a teammate with no folder to lock its kind, so the
+form opened on `resolveKind(undefined)` — `credential` — and the heading *New entity [credential]* was
+read as "creates only a password". The selector was alive over all nine kinds; the default was silent.
+The handler now opens `dialogs.pickEntityKind()` as its FIRST prompt — before the sending profile and
+the recipients, the `pinForNewEntry` shape on Add — and a dismissed pick creates nothing. The rows come
+from `kindItems()`, the one `ENTITY_KINDS`-derived list `pickFolderType` is now also built on (a second
+hand-written kind list is how the folder picker once offered five kinds of seven); `markCurrent` appends
+`(current)` without mutating the rows, and a NEW entity marks nothing, because marking Credential would
+make the old default look chosen. The pick reaches `showEntityForm` as the new `initialKind` option, not
+`lockedKind`: `entityFormPage.renderHtml` resolves `lockedKind ?? initialKind ?? resolveKind(d)`, so the
+form opens on the pick with the selector editable and no *"fixed by the folder's type"* hint, and a
+folder's type still outranks a pick when both are set. `shareCommands.test.ts` records the prompt ORDER in
+the stub and asserts the kind pick is first and that a dismissal prevents every later prompt;
+`dialogs.test.ts` pins the shared list; `entityFormPage.test.ts` pins the precedence.
+
 **The two commands** (`commands/orgMemberCommands.ts`). *Set Role…* on a colleague's row: a
 QuickPick for the role with the current one marked from the roster, a second one for the share
 default only when the role is `dev` (it takes effect for nobody else, and a question whose answer
