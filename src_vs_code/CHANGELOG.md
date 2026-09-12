@@ -24,6 +24,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   A binding this build cannot act on — a field name from a newer version, a variable name no shell
   can read — is now named with its reason instead of crashing the save or vanishing from it.
 
+- **A PIN-protected entry with an env binding says why it wrote nothing.** An entry created with a
+  PIN and a binding wrote no variable and said nothing about it (#48). It still writes none — the PIN
+  outranks the binding: an environment variable is something automatic, and the *PIN — on* banner
+  promises nothing automatic can use the entry — but the save now says so, in the same sentence the
+  viewer's `ENV` button uses, instead of skipping the binding in silence. The same holds for a woven
+  password. (During this release's development the binding was briefly written from the form's
+  plaintext before the seal; the code review read that as the PIN bypass it was, and it never
+  shipped.) On edit, a field you just typed is written from what you typed, with storage read for
+  the fields you left alone.
+- **Saving an env binding says what it did.** The form wrote the variable and said nothing, so the
+  terminal that was already open showed nothing and the report read "does not work on Linux"
+  (#48). Create, edit and the viewer's `ENV` button now show one notice: `$NAME is set for NEW
+  integrated terminals in this window. Already-open terminals keep their old environment.` — and a
+  warning per name that was not written, with why.
+
 ### Changed
 
 - **An entry's PIN has its own floor: at least four characters, anything you like.** The PIN that
@@ -58,23 +73,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   outside VS Code. The mechanism is VS Code's environment collection on every OS; the report that
   expected the value in `.bashrc` (#48) was expecting something this product deliberately does not
   do, because it would put a private key into a plaintext file.
-
-### Fixed
-
-- **A PIN-protected entry with an env binding says why it wrote nothing.** An entry created with a
-  PIN and a binding wrote no variable and said nothing about it (#48). It still writes none — the PIN
-  outranks the binding: an environment variable is something automatic, and the *PIN — on* banner
-  promises nothing automatic can use the entry — but the save now says so, in the same sentence the
-  viewer's `ENV` button uses, instead of skipping the binding in silence. The same holds for a woven
-  password. (During this release's development the binding was briefly written from the form's
-  plaintext before the seal; the code review read that as the PIN bypass it was, and it never
-  shipped.) On edit, a field you just typed is written from what you typed, with storage read for
-  the fields you left alone.
-- **Saving an env binding says what it did.** The form wrote the variable and said nothing, so the
-  terminal that was already open showed nothing and the report read "does not work on Linux"
-  (#48). Create, edit and the viewer's `ENV` button now show one notice: `$NAME is set for NEW
-  integrated terminals in this window. Already-open terminals keep their old environment.` — and a
-  warning per name that was not written, with why.
 
 - **The consent modal names WHO is asking.** It used to open with *Claude Code wants to…* for every
   caller — Codex, Gemini, the `creds` CLI in a plain terminal, any other MCP client — and could not
