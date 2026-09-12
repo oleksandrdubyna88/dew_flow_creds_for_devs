@@ -39,6 +39,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   integrated terminals in this window. Already-open terminals keep their old environment.` — and a
   warning per name that was not written, with why.
 
+### Added
+
+- **A Server section on an administrator's account row.** Everything the tree said about a
+  corporate server was about people — the Team section and one row per colleague — so the three
+  facts an administrator checks most often had to be hunted for in tabs: what version is running,
+  whether something newer is published, how much the deployment holds, and whether it has ever been
+  backed up. They are four rows now, above Team, and the section is there for any administrator
+  rather than only for a recovery officer. An icon in it means something: the version row gains one
+  only when a newer release exists, and the backup row always carries one because its job is to say
+  which of five states the deployment is in. A row never claims to know something it is still
+  reading, and never shows the last good answer as the current one — when a read fails it says so
+  and keeps what it had.
+
+  Underneath: the server's metrics document opens to administrators instead of recovery officers
+  only, which is what made *Server Metrics…* invisible to half the people entitled to it; and the
+  backup status now reports the destination kinds that are CONFIGURED, not only the ones the last
+  run wrote to, so a deployment set up and not yet run can say where it will back up to.
+
 ### Changed
 
 - **An entry's PIN has its own floor: at least four characters, anything you like.** The PIN that
