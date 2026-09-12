@@ -155,7 +155,7 @@ function mountEntityView(
       return;
     }
     if ((message as { type: string }).type === 'zoom') {
-      await applyZoomDelta((message as unknown as { delta: number }).delta);
+      await applyZoomDelta((message as unknown as { delta?: number }).delta);
       return;
     }
     if (message.type === 'snippet') {
