@@ -281,7 +281,12 @@ test('the weaving controls are reachable from the bank form, not buried in the c
   const method = bank.indexOf('id="mixMethod"');
 
   assert.ok(cardOpens >= 0 && bankOpens >= 0 && method >= 0, 'all three are on the page');
-  assert.ok(method > bankOpens, 'the controls come after the bank fieldset, not inside the card one');
+  // After the bank fieldset CLOSES, not merely after it opens. "After it opens" is satisfied by the
+  // picker sitting INSIDE the bank fieldset — which would hide the shared controls from a card form
+  // instead, the same defect pointing the other way (found by the automated reviewer).
+  const bankCloses = bank.indexOf('</fieldset>', bankOpens);
+  assert.ok(bankCloses > bankOpens, 'the bank fieldset closes');
+  assert.ok(method > bankCloses, 'the controls sit outside both fieldsets, after the second');
   assert.ok(
     !bank.slice(cardOpens, bankOpens).includes('id="mixMethod"'),
     'and nothing between the card fieldset and the bank one holds the picker',
