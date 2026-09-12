@@ -6,20 +6,21 @@ import { EntityMetadata, TreeNode } from '../types';
 import { loadWithVscode } from './vscodeStub';
 
 /**
- * Issue #48 — the save applies env bindings BEFORE the seal, from the values it holds, and says
- * what it wrote and what it could not. Driven through the REAL create and edit handlers.
+ * Issue #48 — the save says what it wrote and what it could not, and the PIN outranks a binding.
+ * Driven through the REAL create and edit handlers.
  *
- * <p>Two defects, and the create path made them reachable in one sitting. `addEntity` sealed the new
- * entry under its PIN and THEN read the values back to apply the bindings — already locked — so an
- * entry created with a PIN and a binding wrote nothing; and both save paths discarded what
- * `applyEnvBindings` returned, so nothing was said either way. The viewer's `ENV` button handled
- * the same case correctly, which is why the report read as a platform bug rather than a save bug.</p>
+ * <p>The defect: both save paths discarded what `applyEnvBindings` returned, so a binding was written
+ * in silence and a withheld one was skipped in silence — an entry created with a PIN and a binding
+ * wrote nothing and said nothing. The viewer's `ENV` button handled the same case correctly, which
+ * is why the report read as a platform bug rather than a save bug. The first fix ALSO applied the
+ * create's bindings before the seal so that the variable would be written; the code round of
+ * 2026-09-12 read that as what it was — a PIN-protected secret in every later terminal, without the
+ * PIN — so the seal comes first again and the binding is withheld with the PIN's own sentence.</p>
  *
- * <p>The storage here is a real in-memory store, not a recorder: the ordering claim — the binding is
- * written from the plaintext and the stored value is locked AFTERWARDS — can only be asserted by
- * reading the value back and finding an envelope, and the PIN seal is the real `protectEntity` over
- * real `lockSecret`. A stub that answered `getPassword` with a constant would prove nothing about
- * order.</p>
+ * <p>The storage here is a real in-memory store, not a recorder: that the stored value IS sealed when
+ * the binding is refused can only be asserted by reading it back and finding an envelope, and the PIN
+ * seal is the real `protectEntity` over real `lockSecret`. A stub that answered `getPassword` with a
+ * constant would prove nothing about order.</p>
  */
 
 type Handler = (...args: unknown[]) => unknown;
@@ -290,19 +291,23 @@ const plainDetails = (bindings: EntityMetadata['envBindings'], over: Partial<Ent
 // CREATE
 // ---------------------------------------------------------------------------------------------
 
-test('CREATE with a PIN and a binding: the variable is written from the plaintext, and the stored value is sealed AFTERWARDS', async () => {
-  // THE ORDERING BUG. The seal ran first and the binding then read a locked value back — so an entry
-  // created with a PIN and a binding wrote nothing, and said nothing about it.
+test('CREATE with a PIN and a binding: the PIN outranks the binding — nothing is written, the entry is sealed, and the save SAYS why', async () => {
+  // THE BYPASS the code round found (2026-09-12). The save applied the binding from the plaintext it
+  // held, BEFORE the seal — so a PIN-protected entry's secret went into the environment collection,
+  // where every later terminal in this window read it without the PIN, while the form's "PIN — on"
+  // banner promised that nothing automatic could. The plan's own DoD wanted the binding written;
+  // this test says the opposite. The defect issue #48 named was the SILENCE, and that stays fixed:
+  // the person is told the PIN won, in the storage path's own sentence — never a second wording.
   const w = createWorld(plainDetails({ password: 'PROD_PW' }), 'PLAIN-PW', ['1234', '1234']);
 
   await w.addEntity();
 
-  assert.deepEqual(w.env.replaced, { PROD_PW: 'PLAIN-PW' }, 'the binding was applied AFTER the seal, from a locked value');
+  assert.deepEqual(w.env.replaced, {}, 'the PIN-protected plaintext was written into the environment collection');
   const stored = readSecret(w.secrets.get(`password:${w.createdId()}`));
-  assert.equal(stored.kind, 'locked', 'and the entry IS sealed under its PIN — the order changed, not the protection');
-  assert.equal(w.said.infos.length, 1, `one notice, got: ${JSON.stringify(w.said.infos)}`);
-  assert.match(w.said.infos[0], /\$PROD_PW is set for NEW integrated terminals in this window/);
-  assert.deepEqual(w.said.warnings, [], 'nothing was withheld');
+  assert.equal(stored.kind, 'locked', 'and the entry IS sealed under its PIN');
+  assert.deepEqual(w.said.infos, [], 'nothing was set, so nothing claims to be');
+  assert.equal(w.said.warnings.length, 1, `one warning, got: ${JSON.stringify(w.said.warnings)}`);
+  assert.match(w.said.warnings[0], /\$PROD_PW was not written: .*protected with its own PIN/);
 });
 
 test('CREATE with a woven password bound: nothing is written and the person is TOLD why', async () => {

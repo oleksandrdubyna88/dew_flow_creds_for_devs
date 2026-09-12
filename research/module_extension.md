@@ -1250,21 +1250,34 @@ The viewer shows env UI **only for fields whose binding is on**: the name, a cop
 `Set`. Default name shape: `ENV_<ENTITYNAME>_<FIELD>` (`defaultEnvName`), minted in the form when
 the toggle is switched on and editable after.
 
-**The save applies the bindings BEFORE the seal, from the values it holds, and says what it did
-(issue #48, 2026-09-12).** Not a Linux defect — the report's `.bashrc` expectation is out of design, and
-no platform branch exists on the path — but two real ones, and the create path made them reachable in
-one sitting. `addEntity` sealed the new entry under its PIN (`applyCreatePin`) and THEN called
-`applyEnvBindings`, which read the values back from storage — already locked — so an entry created with
-a PIN and a binding wrote nothing; and both save paths discarded what `applyEnvBindings` returned, so
-nothing was said either way, while the viewer's `ENV` button handled the same case correctly. Now:
+**The save says what it did, and the PIN outranks a binding (issue #48, 2026-09-12).** Not a Linux
+defect — the report's `.bashrc` expectation is out of design, and no platform branch exists on the path
+— but a real one: both save paths discarded what `applyEnvBindings` returned, so a written binding was
+silent and a withheld one — an entry created with a PIN and a binding — was skipped without a word,
+while the viewer's `ENV` button handled the same case correctly. Now:
 `applyEnvBindings(env, storage, accountId, details, staleBefore?, values?)` takes an optional
 `EnvValues` — `heldEnvValues(result)` (`envBinding.ts`), the password, private key and connection string
-the form just carried — reads those FIRST and storage for the rest, and answers an `EnvApplyResult`
-`{ written, withheld: [{ name, reason }] }`: the loop reads through `FieldReading` rather than `valueOf`,
-so a woven password or a PIN-locked field the form did not touch is collected with the policy's own
-sentence instead of dropped. `treeMutationCommands.ts` applies the bindings before `applyCreatePin`;
-`entityEditCommands.ts` passes the old bindings (stale names still deleted) and the held values. The
-sentences are `envApplyNotice.ts`, pure: *"$A, $B are set for NEW integrated terminals in this window.
+the form just carried — and answers an `EnvApplyResult` `{ written, withheld: [{ name, reason }] }`: the
+loop reads through `FieldReading` rather than `valueOf`, so a woven password or a PIN-locked field is
+collected with the policy's own sentence instead of dropped.
+
+*The PIN decision (code round, gemini, 2026-09-12).* The first fix applied a create's bindings BEFORE
+`applyCreatePin`, from the held plaintext, so that the variable would be written — and `boundReading`
+consulted only the woven refusal before using a held value. That was a PIN bypass: a PIN-protected
+entry's secret went into the collection, where every later terminal in the window read it without the
+PIN, against the form's *"PIN — on"* banner and the `entity-pin` help. **A PIN-protected entry writes no
+environment variable.** The seal runs first again (`treeMutationCommands.ts`: `applyCreatePin`, then
+`applyEnvBindings` — the pre-plan order), and `envApply.automaticFieldRefusal(details, field, stored)`
+is the ONE function every road asks: the woven refusal from the entry, the PIN refusal from the value's
+own wrap (`pinGate.automaticPinRefusal`) — a third policy goes there, not at a call site.
+`boundReading` takes the stored reading first and lets a held value stand in only when that reading is
+not a refusal, so a held value never outranks the policy wherever it came from; the withheld name
+carries the same sentence the viewer's `ENV` button says. The `pinProtected` mark is deliberately NOT
+consulted here — the truth is inside each value (see *Agents do not see a protected entry* above), and
+`rotateAction`/`sshExecAuth` decide from the value too. What #48 called a defect was the silence, and
+that stays fixed: the person is told the PIN won. `entityEditCommands.ts` passes the old bindings (stale
+names still deleted) and the held values, so an edit writes what was just typed. The sentences are
+`envApplyNotice.ts`, pure: *"$A, $B are set for NEW integrated terminals in this window.
 Already-open terminals keep their old environment."* and *"$X was not written: <reason>"* per withheld
 name; `envCollectionRef.showEnvNotice` is the `vscode` edge that shows them, on create, on edit and from
 the viewer's `ENV` button, which also writes through the shared `exposeEnv`. It lives in
@@ -1277,9 +1290,10 @@ it is a contract change across three codebases and is recorded here as the open 
 label reads *"Expose … in new integrated terminals as env variable"* with `ENV_ROW_HINT` under every
 row: written into every integrated terminal opened after saving, in this window only, never to a file,
 never to a shell outside VS Code. `envSaveNotice.test.ts` drives the REAL create and edit handlers over
-an in-memory vault with the real `protectEntity`/`lockSecret`, so the ordering claim is asserted by
-reading the stored value back and finding an envelope; `envApply.test.ts` pins the withheld readings and
-the held-values path; `envApplyNotice.test.ts` pins the sentences.
+an in-memory vault with the real `protectEntity`/`lockSecret`, so "the entry IS sealed when the binding
+is refused" is asserted by reading the stored value back and finding an envelope; `envApply.test.ts`
+pins the withheld readings, the held-value-over-a-sealed-slot refusal and `automaticFieldRefusal`'s
+three answers; `envApplyNotice.test.ts` pins the sentences.
 
 ### Attachments: one file, one image, per entity
 
