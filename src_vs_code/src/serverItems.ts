@@ -326,21 +326,42 @@ export function serverRowFor(
   const { account } = element;
   const read = section.metrics.get(account.accountId);
   const metrics = metricsOf(read);
-  if (element.kind === 'serverScope') {
-    return serverScopeItem({
-      account,
-      collapsibleState,
-      version: versionOf(metrics),
-      failure: failureOf(read),
-    });
-  }
-  if (element.kind === 'serverVersion') {
-    return serverVersionItem({ account, deployed: versionOf(metrics), latest: latestOf(section) });
-  }
-  return element.kind === 'serverVaults'
-    ? serverVaultsItem({ account, metrics })
-    : serverBackupItem({ account, read: section.backup.get(account.accountId), at: localInstant });
+  // A TABLE keyed by kind rather than a chain ending in a catch-all. The chain used to end in a
+  // ternary whose else branch took everything, so a fifth Server kind added to `TreeElement` would
+  // have rendered as a Backup row — its icon, its description and its Configure backup… command —
+  // with no type error anywhere to say a renderer was missing (code round, codex). A `Record` over
+  // the union has no else: adding a kind without a builder is a compile error.
+  return SERVER_ROWS[element.kind]({ account, collapsibleState, metrics, read, section });
 }
+
+/** Everything any Server row needs, so the table below is one shape rather than four. */
+interface ServerRowContext {
+  readonly account: StoredAccount;
+  readonly collapsibleState: vscode.TreeItemCollapsibleState;
+  readonly metrics: ServerMetrics | undefined;
+  readonly read: ServerRead | undefined;
+  readonly section: ServerSectionReads;
+}
+
+const SERVER_ROWS: Readonly<Record<ServerRowElement['kind'], (at: ServerRowContext) => vscode.TreeItem>> = {
+  serverScope: (at) => serverScopeItem({
+    account: at.account,
+    collapsibleState: at.collapsibleState,
+    version: versionOf(at.metrics),
+    failure: failureOf(at.read),
+  }),
+  serverVersion: (at) => serverVersionItem({
+    account: at.account,
+    deployed: versionOf(at.metrics),
+    latest: latestOf(at.section),
+  }),
+  serverVaults: (at) => serverVaultsItem({ account: at.account, metrics: at.metrics }),
+  serverBackup: (at) => serverBackupItem({
+    account: at.account,
+    read: at.section.backup.get(at.account.accountId),
+    at: localInstant,
+  }),
+};
 
 function latestOf(section: ServerSectionReads): string {
   return section.release?.version ?? '';
