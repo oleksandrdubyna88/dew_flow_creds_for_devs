@@ -1,5 +1,6 @@
 using System.Net.Sockets;
 using System.Runtime.InteropServices;
+using System.Text;
 
 using CredsBroker;
 
@@ -75,19 +76,28 @@ internal static class AgentRelay
             : Path.Combine(runtimeDir, "creds-agent.sock");
 
     /// <summary>
-    /// How long a unix socket path may be: 104 characters on macOS, 108 elsewhere.
+    /// How many BYTES a unix socket path may be: 103 on macOS, 107 elsewhere.
     /// </summary>
     /// <remarks>
-    /// The kernel's <c>sun_path</c>, and .NET enforces it in <see cref="UnixDomainSocketEndPoint"/>'s
-    /// constructor with an <see cref="ArgumentOutOfRangeException"/> — which is neither a
-    /// <c>SocketException</c> nor an <c>IOException</c>, so it escaped both of this file's guards
-    /// and took the process with it. It is not a theoretical limit on macOS: the temporary
-    /// directory alone is about fifty characters there, which is how the 1.7.0 release found it.
+    /// <para>The kernel's <c>sun_path</c>, and .NET enforces it in
+    /// <see cref="UnixDomainSocketEndPoint"/>'s constructor with an
+    /// <see cref="ArgumentOutOfRangeException"/> — which is neither a <c>SocketException</c> nor an
+    /// <c>IOException</c>, so it escaped both of this file's guards and took the process with it.
+    /// It is not a theoretical limit on macOS: the temporary directory alone is about fifty
+    /// characters there, which is how the 1.7.0 release found it.</para>
+    /// <para><b>Bytes, and one fewer than the exception says.</b> Both corrections came from review
+    /// and both were then MEASURED against the runtime rather than argued about. The path is encoded
+    /// as UTF-8 and a NUL is appended, so the exception's "must be between 1 and 108" describes the
+    /// buffer and the largest pathname actually accepted is 107. And because it is the encoded form
+    /// that is measured, a path of 107 CHARACTERS holding one two-byte character is 108 bytes and is
+    /// refused — so counting characters would let exactly the paths a non-ASCII home directory
+    /// produces through the guard and into the throw.</para>
     /// </remarks>
-    internal static int MaxSocketPathLength => OperatingSystem.IsMacOS() ? 104 : 108;
+    internal static int MaxSocketPathBytes => OperatingSystem.IsMacOS() ? 103 : 107;
 
     /// <summary>Whether this path is longer than a domain socket may be on this platform.</summary>
-    internal static bool TooLongForSocket(string path) => path.Length > MaxSocketPathLength;
+    internal static bool TooLongForSocket(string path) =>
+        Encoding.UTF8.GetByteCount(path) > MaxSocketPathBytes;
 
     /// <summary>
     /// What a person is told when the path cannot be a socket — a separate function so the SENTENCE
@@ -95,13 +105,16 @@ internal static class AgentRelay
     /// </summary>
     /// <remarks>
     /// It names four things, and each earns its place: the path, because it may have come from an
-    /// environment variable the person has forgotten setting; its length and the limit, because
-    /// "too long" without the numbers leaves them guessing how much to cut; and the variable to
-    /// set, because otherwise the only remedy they can see is to move their home directory.
+    /// environment variable the person has forgotten setting; its size and the limit, because "too
+    /// long" without the numbers leaves them guessing how much to cut; and the variable to set,
+    /// because otherwise the only remedy they can see is to move their home directory. In BYTES,
+    /// because that is what is measured — and a person whose path is short but non-ASCII would
+    /// otherwise read a number that looks like it fits.
     /// </remarks>
     internal static string TooLongMessage(string path) =>
-        $"[creds-for-devs] {path} is {path.Length} characters; a unix socket path may be at most "
-            + $"{MaxSocketPathLength} on this platform. Set {SocketOverrideVariable} to something shorter.";
+        $"[creds-for-devs] {path} is {Encoding.UTF8.GetByteCount(path)} bytes; a unix socket path "
+            + $"may be at most {MaxSocketPathBytes} on this platform. Set {SocketOverrideVariable} "
+            + "to something shorter.";
 
     internal static string SocketPathHere() =>
         Environment.GetEnvironmentVariable(SocketOverrideVariable) is { Length: > 0 } custom
@@ -133,8 +146,12 @@ internal static class AgentRelay
             await probe.ConnectAsync(new UnixDomainSocketEndPoint(path)).ConfigureAwait(false);
             return false;
         }
-        catch (SocketException)
+        catch (Exception e) when (e is SocketException or ArgumentException)
         {
+            // ArgumentException as well, and it is the belt to the guard's braces. The guard above
+            // exists to produce a SENTENCE; this exists so that being wrong about the exact limit by
+            // one byte can never again escape a method whose whole contract is to answer true or
+            // false. A path the endpoint refuses is a path nothing is serving.
             return true;
         }
     }

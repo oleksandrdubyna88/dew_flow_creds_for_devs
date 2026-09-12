@@ -1,3 +1,5 @@
+using System.Net.Sockets;
+
 using CredsBroker;
 using CredsCli;
 using FluentAssertions;
@@ -117,7 +119,7 @@ public class AgentRelayTests
         // macOS legs of the 1.7.0 release and blocked the CLI from publishing.
         var path = Path.Combine(Path.GetTempPath(), $"creds-corpse-{Environment.ProcessId}.sock");
         path.Length.Should().BeLessThanOrEqualTo(
-            AgentRelay.MaxSocketPathLength,
+            AgentRelay.MaxSocketPathBytes,
             "this test is about a corpse, not about the path limit — see APathTooLongForASocketIsNotStale");
         await File.WriteAllTextAsync(path, string.Empty, TestContext.Current.CancellationToken);
         try
@@ -134,7 +136,7 @@ public class AgentRelayTests
     /// A path too long to BE a domain socket is answered, not thrown at.
     /// </summary>
     /// <remarks>
-    /// <para>macOS caps a unix socket path at 104 characters and Linux at 108, and .NET enforces
+    /// <para>macOS caps a unix socket pathname at 103 BYTES and Linux at 107, and .NET enforces
     /// that in <c>UnixDomainSocketEndPoint</c>'s constructor with an
     /// <c>ArgumentOutOfRangeException</c> — which is neither a <c>SocketException</c> nor an
     /// <c>IOException</c>, so it escaped both guards in this file. On macOS the temporary directory
@@ -152,7 +154,7 @@ public class AgentRelayTests
         await File.WriteAllTextAsync(path, string.Empty, TestContext.Current.CancellationToken);
         try
         {
-            path.Length.Should().BeGreaterThan(AgentRelay.MaxSocketPathLength);
+            path.Length.Should().BeGreaterThan(AgentRelay.MaxSocketPathBytes);
             (await AgentRelay.IsStaleAsync(path)).Should().BeFalse();
         }
         finally
@@ -164,12 +166,38 @@ public class AgentRelayTests
     [Fact]
     public void TheLengthLimitIsThePlatformOwn()
     {
-        // 104 on macOS, 108 elsewhere. Asserted so the constant cannot drift into "whatever number
-        // made the test pass on the machine it was written on".
-        AgentRelay.MaxSocketPathLength
-            .Should().Be(OperatingSystem.IsMacOS() ? 104 : 108);
-        AgentRelay.TooLongForSocket(new string('x', AgentRelay.MaxSocketPathLength)).Should().BeFalse();
-        AgentRelay.TooLongForSocket(new string('x', AgentRelay.MaxSocketPathLength + 1)).Should().BeTrue();
+        // 103 on macOS, 107 elsewhere — one BELOW the number the exception quotes, because the path
+        // is encoded and a NUL appended, so the buffer limit and the pathname limit are not the same
+        // number. Asserted against the runtime rather than against the constant, so neither can
+        // drift into "whatever made the test pass on the machine it was written on".
+        AgentRelay.MaxSocketPathBytes.Should().Be(OperatingSystem.IsMacOS() ? 103 : 107);
+
+        var fits = new string('x', AgentRelay.MaxSocketPathBytes);
+        var over = new string('x', AgentRelay.MaxSocketPathBytes + 1);
+        AgentRelay.TooLongForSocket(fits).Should().BeFalse();
+        AgentRelay.TooLongForSocket(over).Should().BeTrue();
+
+        // The endpoint itself agrees, on whatever platform this is running. Without this the two
+        // constants are a claim about the runtime that nothing checks.
+        var _ = new UnixDomainSocketEndPoint(fits);
+        var refused = () => new UnixDomainSocketEndPoint(over);
+        refused.Should().Throw<ArgumentException>("the runtime is where this limit actually lives");
+    }
+
+    [Fact]
+    public void TheLimitIsBYTES_SoANonAsciiPathIsNotMeasuredInCharacters()
+    {
+        // The correction that matters most, and it is the same mistake as counting a PIN in UTF-16
+        // code units: the path is encoded as UTF-8 before it is measured. A path one character under
+        // the limit holding a single two-byte character is one byte OVER it — and counting
+        // characters would wave through exactly the paths a non-ASCII home directory produces.
+        var accented = "é" + new string('x', AgentRelay.MaxSocketPathBytes - 1);
+
+        accented.Length.Should().Be(AgentRelay.MaxSocketPathBytes, "it fits, counted the wrong way");
+        AgentRelay.TooLongForSocket(accented).Should().BeTrue("but it is one byte too long");
+
+        var refused = () => new UnixDomainSocketEndPoint(accented);
+        refused.Should().Throw<ArgumentException>("which is what the runtime says too");
     }
 
     [Theory]
@@ -182,21 +210,21 @@ public class AgentRelayTests
         // Relying on that is how this defect reached a tag: the old test inherited its input from
         // the environment and so tested the corpse case on Linux and the length cap on macOS,
         // without saying either.
-        var path = new string('x', AgentRelay.MaxSocketPathLength + over);
+        var path = new string('x', AgentRelay.MaxSocketPathBytes + over);
 
         AgentRelay.TooLongForSocket(path).Should().Be(over > 0);
 
         // And the sentence, because a refusal nobody can act on is a crash with better manners.
         var message = AgentRelay.TooLongMessage(path);
         message.Should().Contain(path.Length.ToString(), "the length they have");
-        message.Should().Contain(AgentRelay.MaxSocketPathLength.ToString(), "the length they may have");
+        message.Should().Contain(AgentRelay.MaxSocketPathBytes.ToString(), "the length they may have");
         message.Should().Contain(AgentRelay.SocketOverrideVariable, "and what to set to fix it");
     }
 
     [Fact]
     public async Task APathThatFitsIsNotRefused()
     {
-        var fits = new string('x', AgentRelay.MaxSocketPathLength);
+        var fits = new string('x', AgentRelay.MaxSocketPathBytes);
 
         (await AgentRelay.RefuseIfTooLongAsync(fits, BrokerContract.Current)).Should().BeNull(
             "null means carry on — the relay has a path it can bind");
@@ -207,7 +235,7 @@ public class AgentRelayTests
     {
         // The exit code matters as much as the sentence: the relay is started from a shell profile,
         // and a wrong path is the person's mistake to correct rather than a broker that is down.
-        var tooLong = new string('x', AgentRelay.MaxSocketPathLength + 1);
+        var tooLong = new string('x', AgentRelay.MaxSocketPathBytes + 1);
 
         var refusal = await AgentRelay.RefuseIfTooLongAsync(tooLong, BrokerContract.Current);
 
@@ -233,7 +261,7 @@ public class AgentRelayTests
         var before = Environment.GetEnvironmentVariable(AgentRelay.SocketOverrideVariable);
         Environment.SetEnvironmentVariable(
             AgentRelay.SocketOverrideVariable,
-            "/tmp/" + new string('x', AgentRelay.MaxSocketPathLength) + ".sock");
+            "/tmp/" + new string('x', AgentRelay.MaxSocketPathBytes) + ".sock");
         try
         {
             var code = await AgentRelay.RunAsync(BrokerContract.Current);
