@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { PinGate } from './pinGate';
 import { pinValidator } from './pinInput';
+import { PinScope } from './pinPolicy';
 
 /**
  * The one place an entry's PIN is asked for, in `vscode`'s words.
@@ -41,16 +42,28 @@ export function entryPinGate(accountId: string, entityId: string, entryName: str
  * <p>Here rather than in `pinCommands` because the accept flow needs the same two boxes with the
  * same wording, and a second copy is how the two would come to disagree about the stakes.</p>
  */
-export async function newPin(subject: string, prompt: string = NEW_PIN): Promise<string | undefined> {
+export async function newPin(
+  subject: string,
+  scope: PinScope = 'vault',
+  prompt: string = NEW_PIN,
+): Promise<string | undefined> {
   const first = await vscode.window.showInputBox({
     title: `A PIN for "${subject}"`,
     prompt,
     password: true,
     ignoreFocusOut: true,
-    // The entry scope (issue #55): one entry's second lock, behind an open vault — not the vault's rule.
-    validateInput: pinValidator('choosing', 'entry'),
+    // The scope is the CALLER's to state, and the default is the stricter one. This used to be
+    // hardcoded to `entry` because every caller was an entry PIN (issue #55) — and a caller added
+    // later that wanted the vault's floor would have got the four-character one in silence, which
+    // is the one direction a PIN policy must never drift in.
+    validateInput: pinValidator('choosing', scope),
   });
-  return first === undefined || first.length === 0 ? undefined : confirmed(subject, first);
+  return typedNothing(first) ? undefined : confirmed(subject, first as string);
+}
+
+/** Dismissed, or an empty box: either way there is no PIN to confirm and nothing to wrap. */
+function typedNothing(value: string | undefined): boolean {
+  return value === undefined || value.length === 0;
 }
 
 /** The second box. A mismatch answers `undefined`, so a caller can never half-succeed. */

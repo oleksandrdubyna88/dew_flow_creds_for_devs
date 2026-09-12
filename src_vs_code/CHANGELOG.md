@@ -6,6 +6,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Editing an entity no longer blanks the environment variable it binds.** A field left empty in
+  the form means "keep what is stored", and the save was passing that empty box on as though it
+  were a new value — so changing an entity's URL wrote an EMPTY variable over its bound password,
+  into every terminal opened afterwards, and reported it as set. The stored value is used again.
+  A binding this build cannot act on — a field name from a newer version, a variable name no shell
+  can read — is now named with its reason instead of crashing the save or vanishing from it.
+
 ### Changed
 
 - **An entry's PIN has its own floor: at least four characters, anything you like.** The PIN that

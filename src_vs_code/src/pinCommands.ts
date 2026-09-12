@@ -63,7 +63,7 @@ export async function protectEntry(node: TreeNode, deps: PinCommandDeps): Promis
     void vscode.window.showInformationMessage(ALREADY_PROTECTED);
     return;
   }
-  const pin = await newPin(details.name);
+  const pin = await newPin(details.name, 'entry');
   if (pin === undefined) {
     return;
   }
@@ -206,7 +206,7 @@ async function folderPin(
   deps: PinCommandDeps,
 ): Promise<string | undefined> {
   if (plan.alreadyProtected.length === 0) {
-    return newPin(folderName);
+    return newPin(folderName, 'entry');
   }
   const typed = await vscode.window.showInputBox({
     title: `PIN for the entries in "${folderName}"`,

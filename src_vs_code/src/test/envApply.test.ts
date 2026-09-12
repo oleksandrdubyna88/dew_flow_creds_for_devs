@@ -321,6 +321,41 @@ test('ONE function answers whether a field may be used automatically at all — 
   assert.equal(mod.automaticFieldRefusal(details(), 'password', undefined), '', 'and nothing stored is not a refusal');
 });
 
+/**
+ * A binding this build cannot act on is SAID, not skipped (the code round of 2026-09-12).
+ *
+ * <p>Two ways one arrives, and neither is reachable from this build's own form. `envBindings` is
+ * metadata, so it SYNCS: a newer build's field name can land in an older build's vault, where the
+ * held-value table has no entry for it and calling that entry throws in the middle of a save. And a
+ * name that is not a shell identifier — a space, an `=`, a leading digit — can arrive the same way
+ * or from a hand-edited file, and writing it would set a variable no shell can read.</p>
+ *
+ * <p>Both are withheld WITH a reason rather than dropped, because a binding that is on screen and
+ * does nothing, silently, is the whole shape of issue #48.</p>
+ */
+test('a binding this build does not understand is withheld with its reason, never thrown and never dropped', async () => {
+  const env = envCollection();
+  const result = await envApply().applyEnvBindings(
+    env as never,
+    storage() as never,
+    'acc',
+    details({
+      envBindings: {
+        password: 'GOOD_NAME',
+        // A field from a build this one does not have — `Object.entries` hands it over all the same.
+        apiToken: 'API_TOKEN',
+        // A name no shell can read, so writing it would be a variable nobody can use.
+        privateKey: 'NOT A NAME',
+      } as never,
+    }),
+  );
+
+  assert.deepEqual(env.replaced, { GOOD_NAME: 'THE-PASSWORD' }, 'the binding it understands is written');
+  const withheld = Object.fromEntries(result.withheld.map((one) => [one.name, one.reason]));
+  assert.match(String(withheld.API_TOKEN), /apiToken|does not know|newer/i, 'the unknown field is named');
+  assert.match(String(withheld['NOT A NAME']), /letter|name|underscore/i, 'the unusable name is named');
+});
+
 test('a held connection string feeds the db-password binding, and a held value never overrides a woven refusal', async () => {
   const env = envCollection();
   await envApply().applyEnvBindings(
@@ -353,6 +388,16 @@ test('the values a save holds are the three the form can carry — and only the 
   assert.deepEqual(
     heldEnvValues({ newPassword: 'typed', newDbConnection: 'postgresql://u:p@h/db' }),
     { password: 'typed', dbConnection: 'postgresql://u:p@h/db' },
+  );
+
+  // An EMPTY box is not a value. The form uses it to mean "keep what is stored" — that is
+  // `wovenSave`'s first row, and the password box says so in its own hint. Carried through as a
+  // held value it would out-rank storage and write an EMPTY variable, reported as written: editing
+  // an entity's URL would silently blank its bound password in every terminal opened afterwards.
+  assert.deepEqual(
+    heldEnvValues({ newPassword: '', newPrivateKey: 'typed', newDbConnection: '' }),
+    { privateKey: 'typed' },
+    'an empty box means "keep what is stored", so it is not a held value',
   );
   assert.deepEqual(heldEnvValues({}), {});
 });

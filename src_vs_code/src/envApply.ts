@@ -4,7 +4,7 @@
 // this story is `envCollectionRef.showEnvNotice`, and it is there for exactly this reason.
 import * as vscode from 'vscode';
 import { parseDbConnectionString } from './dbConnString';
-import { BindableField, EnvBindings, EnvValues, staleEnvNames } from './envBinding';
+import { BINDABLE_FIELDS, BindableField, EnvBindings, EnvValues, isValidEnvName, staleEnvNames } from './envBinding';
 import { EnvApplyResult, EnvWithheld } from './envApplyNotice';
 import { StorageManager } from './storageManager';
 import { EntityMetadata } from './types';
@@ -184,16 +184,46 @@ export async function applyEnvBindings(
   }
   const written: string[] = [];
   const withheldNames: EnvWithheld[] = [];
-  for (const [field, name] of boundPairs(details)) {
-    const reading = await boundReading(storage, accountId, details, field, values);
+  // A closure rather than a module-level function: it captures the two accumulators and the five
+  // arguments a read needs, which as parameters would be nine — and the loop below stays one line,
+  // which is what keeps this function inside the complexity limit the repository sets.
+  const applyOne = async ([key, name]: [string, string]): Promise<void> => {
+    const plan = planBinding(key, name);
+    if (plan.field === undefined) {
+      withheldNames.push({ name, reason: plan.reason });
+      return;
+    }
+    const reading = await boundReading(storage, accountId, details, plan.field, values);
     noteReading(env, name, reading, written, withheldNames);
+  };
+  for (const pair of boundPairs(details)) {
+    await applyOne(pair);
   }
   return { written, withheld: withheldNames };
 }
 
-/** Every `field → variable name` pair the entity binds; none when it binds nothing. */
-function boundPairs(details: EntityMetadata): [BindableField, string][] {
-  return Object.entries(details.envBindings ?? {}) as [BindableField, string][];
+/**
+ * What to do with ONE stored binding: read this field, or withhold with this sentence.
+ *
+ * <p>Neither refusal is reachable from this build's own form, and both are reachable from a VAULT.
+ * `envBindings` is metadata, so it syncs: a newer build's field name lands here as a key this one
+ * has no table entry for, and calling that entry threw in the middle of a save. A name that is not
+ * a shell identifier arrives the same way, or from a hand-edited file, and writing it would set a
+ * variable no shell can read. Both are SAID rather than skipped — a binding that is on screen and
+ * does nothing, silently, is the shape of the defect this whole module was fixed for.</p>
+ */
+function planBinding(key: string, name: string): { field?: BindableField; reason: string } {
+  if (!BINDABLE_FIELDS.includes(key as BindableField)) {
+    return { reason: `"${name}" is bound to "${key}", which this build does not know — it may come from a newer version. Nothing was written.` };
+  }
+  return isValidEnvName(name)
+    ? { field: key as BindableField, reason: '' }
+    : { reason: `"${name}" is not a name a shell can read: a variable name starts with a letter or underscore, then letters, digits or underscores. Nothing was written.` };
+}
+
+/** Every `key → variable name` pair the entity binds, as STORED — a key this build does not know included. */
+function boundPairs(details: EntityMetadata): [string, string][] {
+  return Object.entries(details.envBindings ?? {});
 }
 
 /** Write a value, or record why it was not — `absent` is nothing to write and nothing to say. */

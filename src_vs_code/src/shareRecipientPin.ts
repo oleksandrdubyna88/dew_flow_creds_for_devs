@@ -41,7 +41,7 @@ async function recipientPin(payload: SharePayload, from: string): Promise<Recipi
   // The sender is named because `acceptMany` walks several shares in a row and two people may well
   // have sent something called `prod-db` — in the PROMPT rather than the title, which `newPin` puts
   // in quotes and which is the entry's name. (A reviewer's finding.)
-  const typed = await newPin(payload.node.name, `${from} sent this. ${RECIPIENT_PIN}`);
+  const typed = await newPin(payload.node.name, 'entry', `${from} sent this. ${RECIPIENT_PIN}`);
   return typed === undefined ? { kind: 'declined' } : { kind: 'wrap', pin: typed };
 }
 

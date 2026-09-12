@@ -98,7 +98,7 @@ function above(node: TreeNode, storage: StorageManager, accountId: string): Tree
 
 /** The first PIN in a folder that asks: typed twice, because there is nothing here to check it against. */
 async function firstPinHere(): Promise<CreatePin> {
-  const typed = await newPin('this entry', FIRST_HERE);
+  const typed = await newPin('this entry', 'entry', FIRST_HERE);
   return typed === undefined ? { kind: 'cancelled' } : { kind: 'pin', pin: typed };
 }
 
