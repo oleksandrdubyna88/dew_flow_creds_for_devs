@@ -34,7 +34,7 @@ function fakeDeps(over: Record<string, unknown> = {}) {
     acquireExecSlot: () => () => undefined,
     note: () => undefined,
     trustStore: { get: () => [] as string[], update: async () => undefined },
-    applyEnv: async () => [] as string[],
+    applyEnv: async () => ({ written: [] as string[], withheld: [] }),
     onPath: () => false,
   };
   return { ...base, ...over } as never;

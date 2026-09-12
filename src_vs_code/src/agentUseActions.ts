@@ -9,6 +9,7 @@ import {
   statusForErrorCode,
 } from './brokerProtocol';
 import { UseAction, UseActionContext, UseActionResult } from './useActions';
+import { EnvApplyResult } from './envApplyNotice';
 import { StorageManager } from './storageManager';
 import { EntityMetadata } from './types';
 import { runBounded } from './sshExecRunner';
@@ -46,8 +47,12 @@ export interface AgentUseDeps {
     get(key: string): string[] | undefined;
     update(key: string, value: string[]): Thenable<void>;
   };
-  /** Writes an entity's bound secrets into the terminal environment; returns the NAMES. */
-  applyEnv(details: EntityMetadata, accountId: string): Promise<string[]>;
+  /**
+   * Writes an entity's bound secrets into the terminal environment; answers what was written and
+   * what the policy withheld. Only the NAMES written cross the broker today — `EnvExportResponseBody`
+   * is a contract the CLI and the MCP read, and widening it is not part of #48.
+   */
+  applyEnv(details: EntityMetadata, accountId: string): Promise<EnvApplyResult>;
 }
 
 function fail(code: ErrorCode, message: string): UseActionResult {
@@ -237,8 +242,8 @@ export function credentialExportEnvAction(deps: AgentUseDeps): UseAction {
           `"${ctx.entityName}" exports no environment variable. Open Edit and switch one on first.`,
         );
       }
-      const written = await deps.applyEnv(entity, ctx.accountId);
-      const body: EnvExportResponseBody = { written };
+      const { written } = await deps.applyEnv(entity, ctx.accountId);
+      const body: EnvExportResponseBody = { written: [...written] };
       return { status: 200, body };
     },
   };

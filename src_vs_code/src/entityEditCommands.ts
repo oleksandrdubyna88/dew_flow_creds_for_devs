@@ -23,12 +23,13 @@ import { carryThroughDetails } from './attachmentMeta';
 import { applyAdditions, applyRemovals } from './applyFormSecrets';
 import { warnIfTrackedCopy } from './configCommands';
 import { applyEnvBindings } from './envApply';
+import { heldEnvValues } from './envBinding';
 import { showFolderForm } from './folderFormPanel';
 import { isInTrash } from './trash';
 import { KeyCandidate } from './entityFormPanel';
 import { EntityMetadata } from './types';
 import type { EntityFormOptions } from './entityFormPanel';
-import { envCollection } from './envCollectionRef';
+import { envCollection, showEnvNotice } from './envCollectionRef';
 export async function editNode(
   accountId: string,
   node: TreeNode,
@@ -127,9 +128,22 @@ export async function editNode(
   await applyRemovals(storage, accountId, node.id, result);
   void warnIfTrackedCopy(result.details);
   await applyDependencyColors(storage, accountId, result.dependsOnColors);
-  // AFTER the secrets land, so the values written are the ones just saved. The old
-  // bindings are passed so a renamed or switched-off variable is deleted, not orphaned.
-  await applyEnvBindings(envCollection(), storage, accountId, result.details, node.details.envBindings);
+  // AFTER the secrets land, so the values written are the ones just saved — and FROM the values the
+  // form carried, so a field the person just typed is written from what they typed, while a field
+  // they left alone is read from storage and, if that value is PIN-locked, reported as withheld
+  // rather than skipped (issue #48). The old bindings are passed so a renamed or switched-off
+  // variable is deleted, not orphaned. What was written and what was not is SAID: the checkbox used
+  // to write in silence, and the person looked at an already-open terminal and saw nothing.
+  showEnvNotice(
+    await applyEnvBindings(
+      envCollection(),
+      storage,
+      accountId,
+      result.details,
+      node.details.envBindings,
+      heldEnvValues(result),
+    ),
+  );
   onMutated();
 }
 

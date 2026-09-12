@@ -21,7 +21,7 @@ import * as vscode from 'vscode';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import { envProbeCommand } from './envProbe';
-import { bindableFieldReading } from './envApply';
+import { bindableFieldReading, exposeEnv } from './envApply';
 import { entityKey } from './entityFlags';
 import { Revision } from './revisionHistory';
 import { mcpAsOfVersion } from './viewerOptions';
@@ -29,7 +29,7 @@ import { parseFields } from './entityFields';
 import { revisionSecretReader } from './viewerOptions';
 import { saveTextAs } from './saveTextAs';
 import { TreeElement } from './types';
-import { envCollection } from './envCollectionRef';
+import { envCollection, showEnvNotice } from './envCollectionRef';
 import { paymentViewFor } from './viewerOptions';
 import { paymentCardFor } from './paymentViewMessages';
 import { parsePaymentFields } from './paymentFields';
@@ -174,20 +174,22 @@ export async function openEntityViewer(
       terminal.sendText(envProbeCommand(vscode.env.shell, name), true);
     },
     setEnv: async (field, name) => {
-      // One question, three answers. Withheld is said in the words the policy chose — there IS a
-      // password, and "nothing stored" would be a false answer to somebody looking at the card.
+      // One question, three answers. `absent` is said here — there is nothing to set and nothing the
+      // policy refused, so "nothing stored" is the true answer. `withheld` and `value` go through the
+      // SAME notice the create and edit saves show (issue #48): there IS a password, and the sentence
+      // that says why it was not written is the policy's own — and the three surfaces that apply a
+      // binding must say one thing, or this button keeps a second wording that drifts.
       const reading = await bindableFieldReading(storage, accountId, details, field);
-      if (reading.kind !== 'value') {
-        void vscode.window.showWarningMessage(
-          reading.kind === 'withheld' ? reading.reason : 'Nothing stored in that field — nothing was set.',
-        );
+      if (reading.kind === 'absent') {
+        void vscode.window.showWarningMessage('Nothing stored in that field — nothing was set.');
         return false;
       }
-      envCollection().replace(name, reading.value);
-      envCollection().description = 'CredsForDevs: secrets exposed as terminal variables';
-      void vscode.window.showInformationMessage(
-        `$${name} is set for NEW integrated terminals. Already-open terminals keep their old environment.`,
-      );
+      if (reading.kind === 'withheld') {
+        showEnvNotice({ written: [], withheld: [{ name, reason: reading.reason }] });
+        return false;
+      }
+      exposeEnv(envCollection(), name, reading.value);
+      showEnvNotice({ written: [name], withheld: [] });
       return true;
     },
   }, { tab, key: entityKey(accountId, details.id) });

@@ -47,3 +47,28 @@ export function staleEnvNames(
   const keep = new Set(Object.values(after ?? {}));
   return [...new Set(Object.values(before ?? {}))].filter((name) => !keep.has(name));
 }
+
+/**
+ * The values a save HOLDS in memory — what the form just carried — so `applyEnvBindings` can write
+ * a binding from the plaintext BEFORE the entry is sealed under its PIN, and an edit writes what was
+ * just typed (issue #48). Storage is read only for the fields absent here; the public key lives in
+ * the metadata and needs no entry.
+ */
+export interface EnvValues {
+  readonly password?: string;
+  readonly privateKey?: string;
+  readonly dbConnection?: string;
+}
+
+/** The three fields the form can carry, as `EnvValues` — an absent field stays ABSENT, so storage is read for it. */
+export function heldEnvValues(form: {
+  readonly newPassword?: string;
+  readonly newPrivateKey?: string;
+  readonly newDbConnection?: string;
+}): EnvValues {
+  return {
+    ...(form.newPassword === undefined ? {} : { password: form.newPassword }),
+    ...(form.newPrivateKey === undefined ? {} : { privateKey: form.newPrivateKey }),
+    ...(form.newDbConnection === undefined ? {} : { dbConnection: form.newDbConnection }),
+  };
+}
