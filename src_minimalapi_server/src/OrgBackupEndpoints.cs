@@ -80,6 +80,10 @@ public static class OrgBackupEndpoints
                 BackupRunResults.IsRunning(status.LastResult),
                 archive.Bytes,
                 archive.Name,
+                // The CONFIGURED destinations, from the settings this method already read — distinct
+                // and ordered, because the row a person reads says "s3, azure-blob" and two S3 buckets
+                // are one kind. Never the destinations themselves: nothing sealed travels.
+                [.. settings.Targets.Select(target => target.Kind).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal)],
                 [
                     .. status.Targets.Select(
                         target => new BackupTargetDto(

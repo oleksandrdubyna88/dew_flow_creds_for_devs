@@ -1132,13 +1132,19 @@ async Task<(string Email, string? Name)?> RequireAdminAsync(HttpContext ctx)
     return caller;
 }
 
-// The officers' metrics page (item 5, the owner's shape): one JSON document for a human, read
-// through the extension, for whoever is on the recovery roster — whether or not the ceremony
-// has run. Officer-only for the same reason the ceremony is: whoever can read the server's
-// load and disk is whoever the operator named.
+// The administrators' metrics page (item 5, the owner's shape): one JSON document for a human,
+// read through the extension — both as the *Server Metrics…* tab and, since 2026-09-12, as the
+// tree's Server section, which is why it is no longer officer-only. What the server is running,
+// how much it holds and how much room is left are the facts of whoever administers the
+// deployment, and an admin who is not on the recovery roster administers it every day.
+//
+// RequireAdminAsync, not a second gate: it is what every /api/org/backup/* route already uses, it
+// accepts an officer FIRST, and it writes a JSON reason instead of a bare 403. One consequence is
+// load-bearing and is asserted in OpsTests: it sits inside `orgRecovery.Enabled`, so a server with
+// no roster still answers 403 to everybody — administrators included.
 app.MapGet("/api/metrics", async (HttpContext ctx, CancellationToken ct) =>
 {
-    var caller = RequireOfficer(ctx);
+    var caller = await RequireAdminAsync(ctx);
     if (caller is null) return;
     await ctx.Response.WriteAsJsonAsync(
         metrics.Snapshot(store, dataDir, DateTimeOffset.UtcNow, serverVersion, runtimeSupport),

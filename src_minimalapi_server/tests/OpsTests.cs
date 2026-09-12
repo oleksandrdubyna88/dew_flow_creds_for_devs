@@ -1,13 +1,15 @@
 using System.Net;
 using System.Text.Json;
 using FluentAssertions;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace CredVaultServer.Tests;
 
 /// <summary>
 /// Server-ops items 2, 5 and 6 and roadmap E1 (2026-08-28): the health verdict is cached while
-/// good, a network data directory is refused at startup, the officers' metrics page answers
-/// officers only, vault writes have a byte budget, and the runtime's support window is a line.
+/// good, a network data directory is refused at startup, the metrics page answers whoever
+/// ADMINISTERS the deployment (2026-09-12 — it was officer-only until then), vault writes have a
+/// byte budget, and the runtime's support window is a line.
 /// </summary>
 public sealed class HealthCacheTests
 {
@@ -152,6 +154,8 @@ public sealed class MetricsEndpointTests
     private const string Lead = "lead@example.com";
     private const string Devops = "devops@example.com";
 
+    private static string Alice => $"alice@{VaultServer.Domain}";
+
     private static VaultServer Server() => new(new Dictionary<string, string?>
     {
         ["Vault__CorpRecovery__OfficerEmails"] = $"{Cto},{Lead},{Devops}",
@@ -183,8 +187,31 @@ public sealed class MetricsEndpointTests
     }
 
     [Fact]
-    public async Task AMemberIsRefused_AnAnonymousCallerToo()
+    public async Task AnAdministratorWhoIsNotAnOfficerIsServed()
     {
+        // The owner's decision, 2026-09-12: what the server is running, how much it holds and whether
+        // it is backed up are an ADMINISTRATOR's facts. Alice is enrolled through the route an admin
+        // really uses and is on no recovery roster — the standing the old gate had no name for.
+        using var server = Server();
+        using var alice = server.ClientFor(Alice);
+        await Corp.SyncAsync(alice);
+        using var officer = server.ClientFor(Cto);
+        (await Corp.SetMemberAsync(officer, Alice, role: MemberRole.Admin))
+            .StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var response = await alice.GetAsync("/api/metrics", Ct);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync(Ct));
+        doc.RootElement.GetProperty("service").GetString().Should().Be("cred-vault-server");
+    }
+
+    [Fact]
+    public async Task AMemberIsStillRefused_AnAnonymousCallerToo()
+    {
+        // The security-relevant half of opening the gate: an administrator gets in, a member does not.
+        // The assertions are byte-identical to the ones this test carried when the gate was
+        // officer-only, and that is the point of keeping it rather than rewriting it.
         using var server = Server();
         using var member = server.ClientFor("alice@example.com");
         (await member.GetAsync("/api/metrics", Ct)).StatusCode.Should().Be(HttpStatusCode.Forbidden);
@@ -193,11 +220,20 @@ public sealed class MetricsEndpointTests
     }
 
     [Fact]
-    public async Task WithoutARoster_ThereAreNoOfficers_AndTheEndpointIs403ForEveryone()
+    public async Task WithoutACorpRoster_TheEndpointIs403ForEveryone_AdminsIncluded()
     {
+        // RequireAdminAsync opens with `orgRecovery.Enabled && (…)`, so a server with no roster has no
+        // officers AND no administrators as far as this gate is concerned. The leftover record saying
+        // "admin" — a roster since removed, an operator's editor — is consulted by nothing.
         using var server = new VaultServer();
         using var alice = server.ClientFor("alice@example.com");
         (await alice.GetAsync("/api/metrics", Ct)).StatusCode.Should().Be(HttpStatusCode.Forbidden);
+
+        await new OrgMembersStore(server.DataDir, NullLogger<OrgMembersStore>.Instance)
+            .UpsertAsync(Alice, r => r with { Role = MemberRole.Admin }, "admin@example.com", Ct);
+        using var leftoverAdmin = server.ClientFor(Alice);
+
+        (await leftoverAdmin.GetAsync("/api/metrics", Ct)).StatusCode.Should().Be(HttpStatusCode.Forbidden);
     }
 }
 

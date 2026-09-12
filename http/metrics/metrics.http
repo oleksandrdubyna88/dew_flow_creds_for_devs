@@ -1,9 +1,37 @@
-# The operators' metrics document. Officer-only — whoever the operator named on the recovery roster
-# is whoever may read this server's load and disk.
+# The operators' metrics document. Administrators and recovery officers — whoever administers this
+# deployment is whoever may read its load and disk. It was officer-only until 2026-09-12, when the
+# extension started drawing the same facts as a Server section in the tree: version, footprint and
+# backup are an administrator's daily questions, and an admin who is not on the recovery roster was
+# being refused them.
 #
 # PRECONDITION: corporate recovery must be configured with `officer@<domain>` on the roster, per
 # ../README.md. Without a roster the server answers 403 to every caller including this one, and the
 # first assertion below fails for an environmental reason rather than a contractual one.
+#
+# `admin@<domain>` is enrolled below, once, by the officer. It is a DEDICATED identity: nothing else
+# in this tree uses it, so it is never demoted. Promoting alice for two requests and putting her
+# back was the alternative, and httpyac has no `finally` — a run killed in between would leave a
+# shared server's alice an administrator, and every later "a member is refused" in this tree would
+# then pass for the wrong reason.
+
+# @name metrics_enrol_the_administrator
+PUT {{baseUrl}}/api/org/members/{{adminEmail}}
+Authorization: Bearer {{officerToken}}
+X-Creds-Contract: {{contract}}
+Content-Type: application/json
+
+{ "role": "admin" }
+
+?? status == 200
+
+{{
+  const assert = require('node:assert');
+  test('idempotent — a PUT of the same role twice is the same state, so a re-run needs no cleanup', () => {
+    assert.strictEqual(response.parsedBody.role, 'admin');
+  });
+}}
+
+###
 
 # @name metrics_are_readable_by_a_recovery_officer
 GET {{baseUrl}}/api/metrics
@@ -30,9 +58,35 @@ Accept: application/json
 }}
 
 ###
-# One answer for "you are not an officer" and "the feature is off here": telling a caller which of
-# the two it is hands them the roster's shape for free.
-# @name metrics_for_a_caller_who_is_not_an_officer_is_403
+# The change of 2026-09-12, over the wire: an administrator who is on no recovery roster reads the
+# same document. `RequireAdminAsync` accepts an officer first and a registry admin second, so this
+# request and the one above are the two halves of one gate.
+# @name metrics_are_readable_by_an_administrator
+GET {{baseUrl}}/api/metrics
+Authorization: Bearer {{adminToken}}
+X-Creds-Contract: {{contract}}
+Accept: application/json
+
+?? status == 200
+?? header content-type matches ^application\/json
+
+{{
+  const assert = require('node:assert');
+  const body = response.parsedBody;
+  test('the same document, not a reduced one — the tree draws version and footprint from it', () => {
+    assert.strictEqual(body.service, 'cred-vault-server');
+    assert.ok(typeof body.version === 'string' && body.version.length > 0,
+      `no version in the metrics document: ${JSON.stringify(Object.keys(body))}`);
+    assert.strictEqual(typeof body.vaults, 'number');
+    assert.strictEqual(typeof body.vaultBytesOnDisk, 'number');
+  });
+}}
+
+###
+# One answer for "you do not administer here" and "the feature is off here": telling a caller which
+# of the two it is hands them the roster's shape for free. Alice is a member and stays one — opening
+# the gate to administrators must not open it to everybody, and this is the request that says so.
+# @name metrics_for_a_caller_who_does_not_administer_is_403
 GET {{baseUrl}}/api/metrics
 Authorization: Bearer {{token}}
 X-Creds-Contract: {{contract}}
@@ -44,3 +98,10 @@ X-Creds-Contract: {{contract}}
 GET {{baseUrl}}/api/metrics
 
 ?? status == 401
+
+###
+# @uncovered 403 for an administrator on a corp server with NO recovery roster — `RequireAdminAsync`
+#            sits inside `orgRecovery.Enabled`, so a rosterless deployment refuses admins too. This
+#            suite's server is started WITH a roster (../README.md), and starting a second one
+#            without it is machinery rather than a request. Asserted in-process instead, by
+#            `MetricsEndpointTests.WithoutACorpRoster_TheEndpointIs403ForEveryone_AdminsIncluded`.

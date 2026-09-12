@@ -446,6 +446,69 @@ public sealed class BackupEndpointTests
         refusal.Should().Contain("accountKey is missing");
     }
 
+    [Fact]
+    public async Task TheStatusNamesTheKindsThatAreCONFIGURED_BeforeAnyRunHasHappened()
+    {
+        // `targets[]` is the LAST RUN's per-destination outcomes, so a deployment that has SAVED a
+        // destination and not run yet answers `[]` — and "to which kinds does this server back up"
+        // is then unanswerable in exactly the state where it matters most: freshly configured, never
+        // run. The configured kinds are a second, separate list because they answer a second,
+        // separate question. Written through the store rather than the route because the PUT proves
+        // every destination over the network before it writes one.
+        using var server = Corp.Server();
+        using var cto = server.ClientFor(Corp.Cto);
+        await Store(server).WriteSettingsAsync(new BackupSettings(3, 30, TwoBucketsAndAContainer()), Ct);
+
+        var status = await StatusAsync(cto);
+
+        Kinds(status).Should().Equal(
+            ["azure-blob", "s3"], "distinct and ordered — two S3 buckets are one KIND");
+        status.GetProperty("targets").GetArrayLength().Should().Be(
+            0, "nothing has run, which is the whole reason the configured list exists");
+    }
+
+    [Fact]
+    public async Task TheStatusNeverNamesADestinationsCredentials()
+    {
+        // The new field is a list of kinds, forever. A bucket and a prefix are operational detail that
+        // belongs on the backup tab (SealedTarget.Describe already draws them there); a credential
+        // belongs nowhere a page polls.
+        using var server = Corp.Server();
+        using var cto = server.ClientFor(Corp.Cto);
+        await Store(server).WriteSettingsAsync(new BackupSettings(3, 30, TwoBucketsAndAContainer()), Ct);
+
+        var status = await StatusAsync(cto);
+        var raw = status.GetRawText();
+
+        Kinds(status).Should().Equal(["azure-blob", "s3"], "a KIND list, and only ever a kind list");
+        raw.Should().NotContain("AKIDEXAMPLE").And.NotContain("accessKeyId").And.NotContain("accountKey");
+        raw.Should().NotContain("vaults", "a bucket name is not a kind")
+            .And.NotContain("nightly", "and neither is a prefix");
+    }
+
+    /// <summary>Two S3 buckets and one Azure container, sealed — three destinations, two kinds.</summary>
+    private static IReadOnlyList<SealedTarget> TwoBucketsAndAContainer()
+    {
+        var targets = new BackupTargets(
+            Convert.FromBase64String(Corp.Kek),
+            new OneClient(),
+            TimeProvider.System,
+            Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance);
+        var s3 = new TargetSecrets("AKIDEXAMPLE", "shh", string.Empty, string.Empty);
+        return
+        [
+            targets.Seal("s3", "https://s3.example.com", "eu-central-1", "vaults", "nightly", s3),
+            targets.Seal("s3", "https://s3.example.com", "eu-central-1", "vaults", "weekly", s3),
+            targets.Seal(
+                "azure-blob", "https://acct.blob.core.windows.net", string.Empty, "vaults", "nightly",
+                new TargetSecrets(string.Empty, string.Empty, "acct", "a2V5")),
+        ];
+    }
+
+    /// <summary>The configured kinds, read off the status document.</summary>
+    private static IEnumerable<string?> Kinds(JsonElement status) =>
+        status.GetProperty("configuredTargetKinds").EnumerateArray().Select(kind => kind.GetString());
+
     /// <summary>A client factory for the tests that only need a target SEALED, never sent to.</summary>
     private sealed class OneClient : IHttpClientFactory
     {

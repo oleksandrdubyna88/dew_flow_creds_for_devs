@@ -13,9 +13,18 @@
 // without it, because a suite that runs with an empty key produces a wall of 401s that reads
 // exactly like an authentication regression.
 //
-// Four identities, because the server's refusals are ABOUT identity and cannot be exercised with
+// Five identities, because the server's refusals are ABOUT identity and cannot be exercised with
 // one: a member of the allowed domain, a second member (a share needs a recipient), somebody
-// outside the domain (403), and a recovery officer (the officer-only endpoints).
+// outside the domain (403), a recovery officer (the officer-only endpoints), and — since
+// 2026-09-12, when `/api/metrics` opened from officer to administrator — a registry ADMINISTRATOR
+// who is on no roster.
+//
+// `admin@<domain>` is a DEDICATED identity rather than a role borrowed from alice for a request or
+// two. Promoting alice inside a file and demoting her afterwards was the first draft, and it has a
+// failure mode with no floor: httpyac has no `finally`, so a run killed between the promote and the
+// put-back leaves a shared server's alice an administrator, and every later "a member is refused"
+// assertion in this tree then passes for the wrong reason. This identity exists for nothing else,
+// is enrolled once at the top of `metrics/metrics.http`, and is never demoted.
 
 const crypto = require('node:crypto');
 
@@ -47,10 +56,12 @@ module.exports = {
       aliceEmail: `alice@${DOMAIN}`,
       bobEmail: `bob@${DOMAIN}`,
       officerEmail: `officer@${DOMAIN}`,
+      adminEmail: `admin@${DOMAIN}`,
 
       token: mint(`alice@${DOMAIN}`, 'Alice Example'),
       bobToken: mint(`bob@${DOMAIN}`, 'Bob Example'),
       officerToken: mint(`officer@${DOMAIN}`, 'Olivia Officer'),
+      adminToken: mint(`admin@${DOMAIN}`, 'Adrian Admin'),
 
       // Deliberately a domain the server under test does not allow: this is the only way to reach
       // the 403 branch of RequireCaller, which is a different refusal from the 401 above it.
