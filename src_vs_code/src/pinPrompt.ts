@@ -22,9 +22,10 @@ export function entryPinGate(accountId: string, entityId: string, entryName: str
         prompt,
         password: true,
         ignoreFocusOut: true,
+        // `entry`, not the vault default: the second lock has its own floor (issue #55, `pinPolicy.ts`).
         // `entering`, not `choosing`: this box takes a PIN that already exists, so it must not
         // lecture somebody about the strength of a value they cannot change from here.
-        validateInput: pinValidator('entering'),
+        validateInput: pinValidator('entering', 'entry'),
       }),
   };
 }
@@ -46,7 +47,8 @@ export async function newPin(subject: string, prompt: string = NEW_PIN): Promise
     prompt,
     password: true,
     ignoreFocusOut: true,
-    validateInput: pinValidator('choosing'),
+    // The entry scope (issue #55): one entry's second lock, behind an open vault — not the vault's rule.
+    validateInput: pinValidator('choosing', 'entry'),
   });
   return first === undefined || first.length === 0 ? undefined : confirmed(subject, first);
 }

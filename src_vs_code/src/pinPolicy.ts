@@ -31,6 +31,18 @@ export const MIN_PIN_LENGTH = 8;
 export const MIN_DIGITS_ONLY_LENGTH = 12;
 
 /**
+ * Which lock a PIN is for. `vault` is every box that seals ciphertext leaving the machine — the
+ * vault itself, a sync, a backup, a share in transit. `entry` is the second lock on one entry
+ * behind an already-open vault (`validateEntryPin` says why it is judged differently). The
+ * DEFAULT everywhere is `vault`: a caller that forgets to say gets the stricter rule, which is the
+ * safe direction to be wrong in.
+ */
+export type PinScope = 'vault' | 'entry';
+
+/** The entry PIN's floor — half the vault's, for the reason `validateEntryPin` records. */
+export const MIN_ENTRY_PIN_LENGTH = 4;
+
+/**
  * Seconds per guess at the shipped scrypt parameters. Deliberately the cost on
  * ATTACKER hardware, not ours: a memory-hard KDF is slower on a GPU per lane
  * than on a CPU, but 128 MiB per lane is what caps the parallelism, and the
@@ -88,6 +100,33 @@ export function validatePin(value: string): string | undefined {
   }
   if (COMMON.has(normalizeForBlocklist(value))) {
     return 'That PIN is too common — it is in every guessing list, and the file it guards is offline-attackable.';
+  }
+  return undefined;
+}
+
+/**
+ * The refusal for a PIN on ONE ENTRY — the second lock, asked after the vault is open.
+ *
+ * <p>Issue #55: this PIN reached `validatePin` and was judged by the vault's rules, so `1234` was
+ * refused with <i>"this PIN guards data stored off your machine"</i> — a sentence about the vault,
+ * shown for an entry. Here the only rule is a floor of {@link MIN_ENTRY_PIN_LENGTH}: any characters,
+ * digits included, repeats included, no blocklist, no crack-time estimate.</p>
+ *
+ * <p><b>The trade-off, so it is a decision and not an oversight.</b> The entry wrap uses the vault's
+ * own scrypt primitive, and the wrapped envelope DOES leave the machine — backups and sync carry it.
+ * A four-character entry PIN is therefore offline-attackable by somebody who holds the file <b>and</b>
+ * has the vault open. That is a weaker position than the vault PIN's, by design: the vault PIN is the
+ * first lock and keeps its floor (the 2026-08-24 security review's M-1 is why that floor is eight,
+ * and this function must never be a way around it); the entry PIN is a lock against a shoulder, a
+ * screen share, an agent, a colleague at an unlocked desk — and a lock nobody sets because the box
+ * refuses `1234` is weaker than one that is set. The owner chose this.</p>
+ */
+export function validateEntryPin(value: string): string | undefined {
+  if (value.length === 0) {
+    return 'PIN must not be empty.';
+  }
+  if (value.length < MIN_ENTRY_PIN_LENGTH) {
+    return `Use at least ${MIN_ENTRY_PIN_LENGTH} characters.`;
   }
   return undefined;
 }
@@ -172,8 +211,28 @@ export interface PinFeedback {
  * pinned by test so the paths cannot drift. This function exists because its predecessor did
  * not: `describePinStrength` was documented as "shown live in the input box" while nothing but
  * its own test ever called it ([PLAN_tails.md] T1).</p>
+ *
+ * <p>`scope` (issue #55) picks the lock: the `entry` scope answers with `validateEntryPin`'s refusal
+ * or nothing at all — no estimate in either mode, because the estimate is computed for an attacker
+ * who holds the file and no PIN, which is not the threat that lock faces. It defaults to `vault`,
+ * so the four boxes that ask for an entry's PIN have to SAY so, and every other box is unchanged.</p>
  */
-export function pinFeedback(value: string, mode: 'choosing' | 'entering'): PinFeedback | undefined {
+export function pinFeedback(
+  value: string,
+  mode: 'choosing' | 'entering',
+  scope: PinScope = 'vault',
+): PinFeedback | undefined {
+  return scope === 'entry' ? entryFeedback(value) : vaultFeedback(value, mode);
+}
+
+/** The entry scope: a refusal, or silence. */
+function entryFeedback(value: string): PinFeedback | undefined {
+  const refusal = validateEntryPin(value);
+  return refusal === undefined ? undefined : { message: refusal, kind: 'error' };
+}
+
+/** The vault scope — the rule every box had before scopes existed, unchanged. */
+function vaultFeedback(value: string, mode: 'choosing' | 'entering'): PinFeedback | undefined {
   const refusal = validatePin(value);
   if (refusal !== undefined) {
     return { message: refusal, kind: 'error' };

@@ -136,7 +136,9 @@ deletion to every machine that syncs — never merely flagged as spent.
 Any entry, or a whole folder, can also take **a PIN of its own** — a real second wrap inside the
 vault, not a prompt in front of it. A protected entry disappears from every agent-facing surface
 rather than refusing on use, and a shared one asks its recipient to choose a PIN of *their* own,
-because your PIN was never sent and cannot be.
+because your PIN was never sent and cannot be. An entry PIN needs **at least four characters,
+anything you like** — it is a second lock behind an open vault, not the vault's own, whose PIN
+keeps its stricter rules.
 
 Around them: folders with types, **project** folders that create the whole set at once, multi-select
 for bulk delete, export and share, per-entry created and changed dates, the **last three versions**

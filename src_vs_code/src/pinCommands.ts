@@ -213,7 +213,8 @@ async function folderPin(
     prompt: PIN_FOR_FOLDER,
     password: true,
     ignoreFocusOut: true,
-    validateInput: pinValidator('entering'),
+    // The entry scope (issue #55): this PIN is checked against SIBLINGS, never against the vault's floor.
+    validateInput: pinValidator('entering', 'entry'),
   });
   return typed === undefined || typed.length === 0 ? undefined : checkedPin(typed, plan, deps);
 }

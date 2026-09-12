@@ -849,6 +849,32 @@ inherited at read time.
 | `pinOnCreate.ts` | a new entry in a folder whose entries are protected |
 | `sharePayloadBuild.ts` | the payload builder, lifted out of `shareInbox` when this pushed it over its ceiling |
 
+**The entry PIN has its own floor (issue #55, 2026-09-12).** `pinPolicy.ts` carries a `PinScope` —
+`'vault' | 'entry'` — and `pinFeedback` / `pinInput.pinValidator` take it as a third argument that
+DEFAULTS to `vault`, so a box that forgets to say gets the stricter rule. The `entry` scope is
+`validateEntryPin`: empty refused, fewer than `MIN_ENTRY_PIN_LENGTH` (4) refused with *"Use at least 4
+characters."*, and nothing else — digits alone, one character repeated, the blocklist and the crack-time
+estimate are all the vault's and do not apply. Exactly four boxes pass `'entry'`: the two in
+`pinPrompt.ts` (opening a protected entry; choosing a new PIN — which the recipient of a protected share
+reaches through `shareRecipientPin.ts`, and is an entry PIN by nature: one imported entry, wrapped on
+their own machine behind their own open vault), the sibling check in `pinCommands.ts` (*"type the PIN
+the others use"*) and the one in `pinOnCreate.ts` (a new entry in a protected folder). Every vault box —
+`vaultKeys`, `syncManager`, `backupManager`, `recoveryCommands` — and the transit PIN in
+`transitPinPrompt.ts` keep the vault policy, and `transitPinPrompt.test.ts` drives `1234` through that
+box and watches it refused with the vault's own sentence; `pinPrompt.test.ts` drives the four entry boxes
+through their REAL `validateInput` and watches `1234` accepted.
+
+*The trade-off, recorded so it is a decision.* The entry wrap uses the vault's scrypt primitive and the
+wrapped envelope DOES leave the machine — backups and sync carry it — so a four-character entry PIN is
+offline-attackable by somebody who holds the file **and** has the vault open. That is weaker than the
+vault PIN's position by design: the vault PIN is the first lock and keeps its floor (the 2026-08-24
+review's M-1 is why that floor is eight, and the scope must never become a way around it); the entry PIN
+is a lock against a shoulder, a screen share, an agent, a colleague at an unlocked desk — and a lock
+nobody sets because the box refuses `1234` is weaker than one that is set. The owner chose this. The rule
+is stated in the `entity-pin` help in all five languages, and `helpCatalog.test.ts` asserts each language
+states the four-character floor in its own words, because a stale translation is invisible to the
+completeness checks.
+
 **Idempotent and self-describing, NOT atomic.** Three reviewers said the plan's "all-or-nothing per
 entry" was a promise nothing could keep, and they were right: `SecretStorage` has no transaction, so
 a process killed between two slot writes leaves a mixture, and holding the values in memory first
