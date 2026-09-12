@@ -384,10 +384,10 @@ test('painting the password example makes a .weaveEx block with coloured tokens 
   );
 
   const block = document.querySelector('.weaveEx[data-field="password"]');
-  assert.ok(block !== undefined, 'no .weaveEx block — this is issue #51 exactly');
+  assert.ok(block !== null, 'no .weaveEx block — this is issue #51 exactly');
   assert.equal(block.parent?.id, 'weaveExampleHost', 'and it is inside the password host');
-  assert.ok(block.querySelector('.exTok.first') !== undefined, 'the green half');
-  assert.ok(block.querySelector('.exTok.second') !== undefined, 'the orange half');
+  assert.ok(block.querySelector('.exTok.first') !== null, 'the green half');
+  assert.ok(block.querySelector('.exTok.second') !== null, 'the orange half');
   assert.match(block.textContent, /Password — f1/, 'and it is titled');
   assert.match(block.textContent, /Your password \(made up here\)/, 'with the column label the caller chose');
 });
@@ -404,8 +404,8 @@ test('the card example paints into its own host, under the same rules', () => {
   );
 
   const block = document.querySelector('.weaveEx[data-field="iban"]');
-  assert.ok(block !== undefined, 'a bank field is painted by the same painter');
-  assert.ok(block.querySelector('.exTok.first') !== undefined);
+  assert.ok(block !== null, 'a bank field is painted by the same painter');
+  assert.ok(block.querySelector('.exTok.first') !== null);
   assert.match(block.textContent, /Your value \(made up here\)/, 'and falls back to the shared column label');
 });
 

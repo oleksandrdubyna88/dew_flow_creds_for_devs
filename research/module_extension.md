@@ -783,7 +783,29 @@ whenever the form is not `card`, while the bank's two weave boxes live in `bankS
 nowhere, so that value was unreadable from the moment it was written. `mixControlsMarkup` is emitted
 after both fieldsets, outside either, and `cardMixMarks` keeps the card's three boxes with the card's
 fields. Visibility is unchanged and was always right: `refreshMix` shows the controls when any
-`.mixMark` is ticked, a class both fieldsets' boxes carry.
+`.mixMark` is ticked, a class both fieldsets' boxes carry — except that a box in a fieldset the chosen
+form HIDES no longer counts (`visibleMark`). Ticking *store the number woven* on a card and switching
+the entry to bank details left that box ticked in a hidden fieldset, which put the controls on a bank
+form with no bank box ticked, offering a method for a field `clearForForm` is about to drop. The SAVE
+was already safe; this is about not asking the question.
+
+*What the code round added.* **A page script is now RUN, not only read.** Every test here matched
+strings against a page script's generated SOURCE, and every one of them passed while the password
+example was three grey lines — a string cannot see a missing ancestor. `src/test/miniDom.ts` is a DOM
+small enough to execute a fragment: the handful of APIs these scripts use, a `querySelector` that
+understands exactly the selector shapes they pass, listeners a test can fire, and a window that
+delivers one host answer. It answers `null` on a miss like the real one, which is not pedantry — it
+first answered `undefined`, and every `!== null` guard in a page script passed silently until that was
+found. It is deliberately tiny and must stay so; when a test needs something real, the answer is a real
+integration test. **The card listener asks positively**: a field belongs to the payment form iff this
+form has a `.mixMark` box for it (`ownMark`), rather than a list of the other forms' fields to skip — a
+list somebody must remember to extend, and a fourth weaving form would have been painted into
+`#mixExample` as well as its own host. **And the phrase example is asked for only while the phrase form
+is on screen**, because every payment entity carries all three fieldsets and hides two: an
+unconditional request on mount asked the host a question on every card and bank form ever opened.
+Both visibility checks read `style.display`, which is what the page's own `show` helper writes; a test
+pins that coupling, so a later move to a CSS class is a red test rather than two checks that answer
+"visible" forever after.
 
 #### `brand` is confirmed, not merely derived (2026-09-03)
 

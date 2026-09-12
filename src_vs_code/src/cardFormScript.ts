@@ -136,7 +136,14 @@ function markScript(): string {
  * <p>(No backticks in this file: it IS a template literal.)</p>
  */
 function markCollectorScript(): string {
-  return `  function visibleMark(mark) {
+  return `  // Whether this form owns a field at all — it does iff it has a weave box for it. The card's
+  // three and the bank's two answer yes; a password or a seed phrase answers no, and so would any
+  // field a form added later, with nothing here to remember to update.
+  function ownMark(field) {
+    return document.querySelector('.mixMark[data-field="' + field + '"]') !== null;
+  }
+
+  function visibleMark(mark) {
     var section = mark.closest ? mark.closest('fieldset') : null;
     return section === null || section.style.display !== 'none';
   }
@@ -270,13 +277,15 @@ function examplePaintScript(): string {
   return `  window.addEventListener('message', function (event) {
     var answer = event.data;
     if (!answer || answer.type !== 'weaveExampleResult' || !answer.field) { return; }
+    // MINE, asked positively. Every listener in this composite script hears every answer, and a
+    // list of the other forms' fields to skip is a list somebody must remember to extend: a fourth
+    // weaving form would have its picture painted into #mixExample as well as its own host, or lost
+    // into a host this page does not have. A field is this form's iff this form has a box for it.
+    if (!ownMark(answer.field)) { return; }
     // Two changes are two requests, and their answers can arrive in either order. An answer for a
     // method the controls no longer show would leave somebody choosing from a picture of a
     // different algorithm with nothing saying so — the same guard the reassembly answers carry.
     if (answer.method !== methodNow(answer.field)) { return; }
-    // The password and the seed phrase have their own hosts and their own listeners. Every listener
-    // in this composite script hears every answer, so each says which fields are its own.
-    if (answer.field === 'password' || answer.field === 'mixed') { return; }
     paintExample(
       'mixExample',
       answer.field,

@@ -10,10 +10,12 @@ import { SHUFFLE_CODES } from '../shuffle';
 import { CARD_BRANDS } from '../cardBrand';
 import { brandFor } from '../cardFormFields';
 import { cardFormScript } from '../cardFormScript';
+import { formWeaveScripts } from '../formWeaveScripts';
 import { weaveExamplePainterScript } from '../weaveExampleScript';
-import { MiniDocument, MiniElement, runFragment } from './miniDom';
+import { MiniDocument, MiniElement, MiniWindow, runFragment } from './miniDom';
 import { BRAND_MARK_STYLES, brandMarkSvg } from '../cardBrandIcons';
 import { formStyleSheet } from '../entityFormStyles';
+import { formPageScript } from '../entityFormScript';
 
 /**
  * The card form: a section that appears for `payment`, and a card fieldset inside it that appears
@@ -320,7 +322,12 @@ test('the card weave boxes stay with the card fields — only the shared control
  * the fragment against `miniDom`: tick a bank box, call `refreshMix`, and read what the page would
  * actually show.</p>
  */
-function mixPage(): { document: MiniDocument; posted: unknown[]; api: Record<string, (...a: never[]) => unknown> } {
+function mixPage(): {
+  document: MiniDocument;
+  posted: unknown[];
+  window: MiniWindow;
+  api: Record<string, (...a: never[]) => unknown>;
+} {
   const document = new MiniDocument();
   const cardSection = document.place('cardSection', 'fieldset');
   const bankSection = document.place('bankSection', 'fieldset');
@@ -339,13 +346,17 @@ function mixPage(): { document: MiniDocument; posted: unknown[]; api: Record<str
   const method = document.place('mixMethod', 'select', controls);
   method.value = 'f3';
   const posted: unknown[] = [];
+  const window = new MiniWindow();
+  // The REAL assembly, not the card fragment alone: `paintExample` is defined by the painter ahead
+  // of it, which is the whole ordering rule `formWeaveScripts` exists to hold.
   const api = runFragment(
-    cardFormScript(),
+    formWeaveScripts(),
     document,
     ['refreshMix', 'markedFields', 'collectMixFields'],
     posted,
+    window,
   );
-  return { document, posted, api };
+  return { document, posted, window, api };
 }
 
 test('ticking the IBAN box on a bank form shows the method, the warning and the picture', () => {
@@ -387,4 +398,48 @@ test('a visible card box still counts, which is the half that must not break', (
 
   assert.deepEqual(page.api.markedFields(), ['number']);
   assert.notEqual(page.document.getElementById('mixControls')?.style.display, 'none');
+});
+
+/**
+ * Three findings from the code round, each asserted by running the fragment.
+ */
+test('the card listener takes the fields this form OWNS, and asks positively', () => {
+  // The round's finding: skipping `password` and `mixed` by name is a list somebody must remember to
+  // extend. A fourth weaving form's answer would be painted into #mixExample as well as into its own
+  // host. A field belongs to this form iff this form has a weave box for it.
+  const page = mixPage();
+  const window = page.window;
+
+  window.deliver({ type: 'weaveExampleResult', field: 'recovery', method: 'f3', first: ['a'], second: ['b'], woven: [{ text: 'a', side: 'first' }] });
+
+  assert.equal(page.document.querySelectorAll('.weaveEx').length, 0, 'a field with no box here is not this form business');
+
+  window.deliver({ type: 'weaveExampleResult', field: 'iban', method: 'f3', first: ['a'], second: ['b'], woven: [{ text: 'a', side: 'first' }] });
+
+  assert.equal(page.document.querySelectorAll('.weaveEx').length, 1, 'and a field with a box here is');
+  assert.equal(page.document.querySelector('.weaveEx')?.dataset.field, 'iban');
+});
+
+test('neither the password nor the phrase answer is painted into the payment host', () => {
+  const page = mixPage();
+
+  for (const field of ['password', 'mixed']) {
+    page.window.deliver({ type: 'weaveExampleResult', field, method: 'f3', first: ['a'], second: ['b'], woven: [{ text: 'a', side: 'first' }] });
+  }
+
+  assert.equal(page.document.querySelectorAll('.weaveEx').length, 0, 'each form paints its own picture only');
+});
+
+test('a section is hidden by an INLINE display, which is what the visibility checks read', () => {
+  // `visibleMark` and the phrase form's `phraseShowing` both read `style.display`. That is correct
+  // here because the page's own `show` helper hides a section by writing exactly that — and this
+  // assertion is the pin, so a later switch to a CSS class is a red test rather than two silent
+  // checks that answer "visible" forever after.
+  const page = formPageScript('n', undefined);
+  const showHelper = page.slice(page.indexOf('const show = '), page.indexOf('const show = ') + 200);
+  assert.match(showHelper, /el\.style\.display = visible/, 'sections are hidden by an inline display');
+  assert.ok(
+    !/classList/.test(showHelper),
+    'and not by a class, which neither visibility check would see',
+  );
 });
