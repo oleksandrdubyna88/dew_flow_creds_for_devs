@@ -56,6 +56,18 @@ jobs:
           # meaning, and the only way to satisfy it would be to stop shipping the languages. Still
           # analysed for defects; only the "is this block a copy of that one" question is
           # meaningless about it.
+          #
+          # `typescript:S1523` — "make sure this dynamic execution of code is safe" — is ignored in
+          # the extension's TEST folder and nowhere else. `src/test/miniDom.ts` exists to RUN a page
+          # script: the form's behaviour lives in a generated JavaScript string, and issue #51 was a
+          # painting bug that every string-matching test in this repository was structurally unable
+          # to see. Executing that string in `node:vm` with an explicit six-name context is the
+          # narrowest way to do it — narrower than `new Function`, which shares this file's scope —
+          # and the string is what the build just produced from its own source, never input.
+          #
+          # This does NOT exempt the shipped extension: the rule still applies to every file under
+          # `src_vs_code/src` that is not in `test/`, which is where a real one would be. Nothing is
+          # excluded from ANALYSIS here, only this one rule in one folder.
           dotnet-sonarscanner begin \
             /k:"remsoftdev_dew_flow_creds_for_devs" \
             /o:"remsoftdev" \
@@ -66,7 +78,10 @@ jobs:
             /d:sonar.typescript.lcov.reportPaths="coverage/extension.lcov" \
             /d:sonar.exclusions="**/bin/**,**/obj/**,**/node_modules/**,deploy/**" \
             /d:sonar.coverage.exclusions="**/tests/**,**/*.Tests/**,**/scripts/**,**/http/**" \
-            /d:sonar.cpd.exclusions="src_vs_code/src/help*.ts"
+            /d:sonar.cpd.exclusions="src_vs_code/src/help*.ts" \
+            /d:sonar.issue.ignore.multicriteria="e1" \
+            /d:sonar.issue.ignore.multicriteria.e1.ruleKey="typescript:S1523" \
+            /d:sonar.issue.ignore.multicriteria.e1.resourceKey="src_vs_code/src/test/**"
       - name: Build
         run: |
           dotnet build dew_flow_creds_for_devs.slnx -c Release --no-incremental
