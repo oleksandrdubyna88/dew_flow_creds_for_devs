@@ -19,8 +19,18 @@ export function currentUiScale(): number {
   return clampScale(vscode.workspace.getConfiguration(SECTION).get(KEY));
 }
 
-/** Apply one press. Clamped here — the page reports the press, never the result. */
+/**
+ * Apply one press. Clamped here — the page reports the press, never the result.
+ *
+ * <p>A delta that is not a finite number is IGNORED rather than clamped. `Math.sign(NaN)` is NaN
+ * and `clampScale(NaN)` is 0, so a malformed press would have WRITTEN the base size — silently
+ * undoing five presses somebody made on purpose. Four pages post this message and every one of
+ * them is a webview, so the guard belongs here, once, rather than in each page script.</p>
+ */
 export async function applyZoomDelta(delta: number): Promise<void> {
+  if (!Number.isFinite(delta)) {
+    return;
+  }
   const next = clampScale(currentUiScale() + Math.sign(delta));
   await vscode.workspace
     .getConfiguration(SECTION)

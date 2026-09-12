@@ -1,29 +1,24 @@
 import { BRAND_MARK_STYLES } from './cardBrandIcons';
-import { PAGE_MAX_WIDTH_PX, groupsGridCss } from './webviewHtml';
-import { ZOOM_CSS, zoomStyle } from './zoomControl';
+import { groupsGridCss } from './webviewHtml';
+import { pageChromeCss } from './pageChrome';
 import { FORM_SECTIONS } from './formSections';
 import { mcpSwitchStyles } from './mcpSwitches';
 
 /**
  * The entity form's stylesheet, out of `entityFormPage.ts` for the recurring reason: the page
  * crossed the 800-line ceiling, and a stylesheet is the one part of a page that reads as a unit
- * on its own. The rules are unchanged; only the file moved.
+ * on its own.
+ *
+ * <p>What is left here is what belongs to THIS form. The page frame — body, headings, fieldsets,
+ * fields, buttons, the sticky bar and the row primitives — moved to `pageChrome.ts` when the
+ * folder form stopped keeping a private copy of it (#53, #54); the two pages had already drifted
+ * to two page widths and two button paddings, which is what a copy does.</p>
  */
 // One template literal — a stylesheet — so it is one "function" only in the way TypeScript counts.
 // eslint-disable-next-line max-lines-per-function
 export function formStyleSheet(uiScale: number): string {
   return `
-  body { font-family: var(--vscode-font-family); color: var(--vscode-foreground);
-         background: var(--vscode-editor-background); padding: 16px 24px;
-         max-width: ${PAGE_MAX_WIDTH_PX}px; ${zoomStyle(uiScale)} }
-  h2 { margin: 0 0 12px; font-size: 1.2em; }
-  /* The kind beside the name: two entries can share a name and be different things. */
-  .kindChip { margin-left: 10px; font-size: .62em; letter-spacing: .08em;
-              text-transform: uppercase; opacity: .55; vertical-align: middle; }
-  fieldset { border: 1px solid var(--vscode-widget-border, #4444); border-radius: 4px;
-             margin: 0 0 14px; padding: 10px 12px; }
-  legend { padding: 0 6px; opacity: .85; }
-  ${ZOOM_CSS}
+  ${pageChromeCss(uiScale)}
   .agentDoors { margin-top: 10px; border-top: 1px solid var(--vscode-widget-border, #3c3c3c); padding-top: 8px; }
   .agentDoorsHead { font-weight: 600; opacity: .9; }
   .agentDoor { margin: 6px 0; font-size: .92em; }
@@ -33,15 +28,6 @@ export function formStyleSheet(uiScale: number): string {
               font-family: var(--vscode-editor-font-family, monospace); margin: 4px 0 2px; }
   .formPreview { max-width: 220px; max-height: 160px; display: block; margin: 6px 0;
                  border: 1px solid var(--vscode-widget-border, #3c3c3c); border-radius: 4px; }
-  /* The native checkbox tinted by webview defaults is nearly invisible on dark themes
-     (tails T31): checked gets the action colour, and the size raise is what helps the
-     UNCHECKED box, whose border the browser draws thicker at 15px than at the 13px default.
-     The per-switch mcpSwitch rules override the colour, deliberately. */
-  input[type=checkbox] { accent-color: var(--vscode-button-background); width: 15px; height: 15px; }
-  label { display: block; margin: 8px 0 3px; }
-  .check { display: flex; align-items: center; gap: 6px; margin: 6px 0; }
-  .genRow { display: flex; gap: 8px; margin: 6px 0 0; flex-wrap: wrap; }
-  .check label { margin: 0; }
   .envRow { margin: 4px 0 0 2px; padding: 4px 8px;
             border-left: 2px solid var(--vscode-focusBorder, #007fd4); opacity: .95; }
   /* Two columns as a FLOW, not a two-column grid: the sections have wildly different heights,
@@ -120,47 +106,14 @@ export function formStyleSheet(uiScale: number): string {
   .tok-key { color: var(--vscode-debugTokenExpression-name, #9CDCFE); }
   .fieldDivider { border: 0; border-top: 1px solid var(--vscode-widget-border, #4444);
                   margin: 12px 0; }
-  /* input:not(...) rather than a list of input[type=…]: an attribute selector does not
-     match an input with no type attribute at all, and the browser default for one of those is a
-     WHITE box in a dark theme. That is how the read-only Dates fields shipped looking like
-     they belonged to a different application. Named exclusions instead, so the next input
-     someone adds is themed whether or not they remember the attribute. */
-  input:not([type=checkbox]):not([type=radio]):not([type=file]), textarea, select {
-    width: 100%; box-sizing: border-box; padding: 5px 7px;
-    background: var(--vscode-input-background); color: var(--vscode-input-foreground);
-    border: 1px solid var(--vscode-input-border, transparent); border-radius: 3px;
-    font-family: var(--vscode-editor-font-family, monospace); }
-  textarea { resize: vertical; }
   .argRow { border: 1px solid var(--vscode-widget-border, #3c3c3c); border-radius: 4px; padding: 6px; margin-bottom: 6px; }
 .argTop { display: flex; gap: 6px; align-items: center; }
 .argTop input[type=text] { flex: 1; }
 .argTop button { flex: 0 0 auto; min-width: 28px; }
 .argNote { width: 100%; margin-top: 4px; font-size: 0.9em; opacity: 0.85; }
 #commandPreview { font-family: var(--vscode-editor-font-family, monospace); opacity: 0.9; }
-.hint { font-size: .85em; opacity: .7; margin: 3px 0 0; }
-  .error { color: var(--vscode-errorForeground); margin: 10px 0; min-height: 1.2em; white-space: pre-wrap; }
-  /* Inside the sticky bar the message must not reserve an empty line forever. */
-  .topBar .error { margin: 6px 0 0; min-height: 0; }
   /* A field you cannot type in should look like it: same box, dimmer text, no caret. */
   .readonly { opacity: .75; cursor: default; }
-  /* Save and Cancel sit ABOVE the heading, and stay there: a long form (a terminal command
-     with a dozen argument rows, a script with its variables) put them below the fold, so
-     saving meant scrolling to the bottom to find out where they had gone. Sticky, because
-     moving them to the top of the document alone would only relocate the same problem. */
-  .topBar { position: sticky; top: 0; z-index: 2; padding: 4px 0 8px;
-            background: var(--vscode-editor-background);
-            border-bottom: 1px solid var(--vscode-widget-border, #4444); margin-bottom: 14px; }
-  .buttons { display: flex; gap: 10px; }
-  button { padding: 6px 18px; border: none; border-radius: 3px; cursor: pointer;
-           background: var(--vscode-button-background); color: var(--vscode-button-foreground); }
-  /* Secondary = DISMISS (Cancel), nothing else: the action buttons wear the primary palette,
-     because a control nobody recognises as a button is a missing control (tails T14c — the
-     owner read "+ Add argument" and "Generate password" as plain text). The border is what
-     keeps Cancel readable as a button on themes where the secondary fill sits within a few
-     percent of the panel background. */
-  button.secondary { background: var(--vscode-button-secondaryBackground);
-                     color: var(--vscode-button-secondaryForeground);
-                     border: 1px solid var(--vscode-button-border, var(--vscode-widget-border, #666)); }
   .row { display: grid; grid-template-columns: 2fr 1fr; gap: 10px; }
   /* The payment system and its mark on ONE line — .brandLine comes with the marks, because the
      select is width:100% and without it the mark wrapped onto the row below its own field. */

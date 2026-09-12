@@ -2,6 +2,8 @@ import * as assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { FolderFormOptions, renderFolderHtml } from '../folderFormPage';
 import { MCP_SWITCHES } from '../mcpSwitches';
+import { PAGE_MAX_WIDTH_PX } from '../webviewHtml';
+import { zoomApplyScript, zoomButtonsScript, zoomStyle } from '../zoomControl';
 import { accessMask, normalizeMcpAccess, readMcpAccess, resolveMcpAccess } from '../mcpAccess';
 import type { TreeNode } from '../types';
 
@@ -27,7 +29,7 @@ function options(overrides: Partial<FolderFormOptions> = {}): FolderFormOptions 
   // No cast: a new required option must break this file rather than pass through it. The entity
   // form's fixtures carry an `as EntityFormOptions` and it hid two new required fields until
   // eleven tests threw at runtime.
-  return { name: 'Databases', entryCount: 3, inTrash: false, ...overrides };
+  return { name: 'Databases', entryCount: 3, inTrash: false, uiScale: 0, ...overrides };
 }
 
 function checkedIds(html: string): string[] {
@@ -148,4 +150,41 @@ test('the blast radius sentence counts the folders inside, not just the entries 
     renderFolderHtml(options({ mcp: {}, entryCount: 7 })),
     /each of the 7 entries in this folder and the folders inside it/,
   );
+});
+
+/**
+ * The chrome (#53). The folder form was a second, hand-rolled page: 760px against the entity
+ * form's 1280, a `.bar` with no border against a `.topBar` with one, 4px buttons against 6px,
+ * no text-size control at all, and a heading that read "Edit folder:" where the other reads
+ * "Edit:" with the kind beside it. Nothing shared the chrome, so it drifted — and the tests
+ * below are what stops it drifting again: they assert the page wears the SHARED frame, not that
+ * it happens to look a particular way.
+ */
+test('the folder form wears the shared page chrome, not a private copy of it', () => {
+  const html = renderFolderHtml(options({ uiScale: 2 }));
+
+  assert.ok(html.includes('.topBar'), 'the sticky bar is the shared one');
+  assert.ok(html.includes(`max-width: ${PAGE_MAX_WIDTH_PX}px`), 'one page width for both forms');
+  assert.ok(html.includes(zoomStyle(2)), 'and the body is rooted in the shared text-size setting');
+  assert.doesNotMatch(html, /max-width: 760px/, 'the private width is gone');
+});
+
+test('the folder form carries the text-size control and both halves of its script (T28)', () => {
+  const html = renderFolderHtml(options({ uiScale: 0 }));
+
+  assert.ok(html.includes('data-zoom="-1"') && html.includes('data-zoom="1"'), 'the ± buttons');
+  // Verbatim, not "something that mentions uiScale": a page that reports presses and never
+  // repaints is exactly the defect #2 closed on the entity form.
+  assert.ok(html.includes(zoomButtonsScript()), 'the press is reported');
+  assert.ok(html.includes(zoomApplyScript()), 'and the answer is applied');
+});
+
+test('the folder form is headed like the entity form, with its kind beside the name', () => {
+  const html = renderFolderHtml(options({ name: 'Databases' }));
+
+  assert.match(html, /<h2>Edit: Databases/, 'the same heading shape both forms now share');
+  assert.match(html, /<span class="kindChip">folder<\/span>/, 'and what is being edited');
+  for (const id of ['save', 'cancel', 'error']) {
+    assert.ok(html.includes(`id="${id}"`), `the folder form's header lost id="${id}"`);
+  }
 });

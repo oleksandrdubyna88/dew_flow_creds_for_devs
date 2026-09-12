@@ -1,6 +1,7 @@
 import * as assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { renderHtml } from '../entityFormPage';
+import { renderFolderHtml } from '../folderFormPage';
 import {
   COLUMN_MAX_PX,
   GROUP_GAP_PX,
@@ -377,4 +378,160 @@ test('every env row says WHERE the value goes — new integrated terminals, this
   assert.equal(hints, rows, 'one hint under every env row');
   assert.ok(html.includes('Expose this secret in new integrated terminals as env variable'), 'the label carries the qualifier');
   assert.ok(html.includes('Never to a file, never to a shell outside VS Code.'), 'and the hint says what it never does');
+});
+
+/**
+ * The structural lint behind #54: a button that sits under a field TOUCHES it.
+ *
+ * <p>The form has no margin on `button`, no row primitive of its own, and its fields are
+ * `width: 100%` — so `<select>…</select><button>` renders the button flush against the box
+ * above it, and a `<select>` in a plain block pushes it onto the next line entirely. That is
+ * one class of defect with eleven sites, and eleven patches would be eleven places for the
+ * twelfth to appear. The rule is therefore structural: a field and the button after it belong
+ * to a spacing wrapper — `.line`, `.genRow`, `.actions` or `.buttons` — and anything else is
+ * reported here rather than found in a screenshot.</p>
+ *
+ * <p>What separates the pair is deliberately NOT literal adjacency (plan round): closing tags,
+ * a `</label>`, an inline run of helper text and a self-closing `<input …/>` all leave the pair
+ * a pair. `</select></div><button>` is the SSH key form's Generate key pair — the row closes and
+ * the button drops out of it, which reads as structured markup and renders flush. What DOES end
+ * the pair is a block element or ordinary prose between them, because that is a gap on screen.</p>
+ */
+const SPACING_WRAPPERS = ['line', 'genRow', 'actions', 'buttons'];
+
+/** Void elements never open a wrapper — an `<input>` has no children to space. */
+const VOID_TAGS = new Set(['area', 'base', 'br', 'col', 'hr', 'img', 'input', 'link', 'meta', 'source']);
+
+/** Inline elements do not separate a field from its button; they sit on the same line as both. */
+const INLINE_TAGS = new Set(['a', 'b', 'code', 'em', 'i', 'kbd', 'label', 'small', 'span', 'strong', 'sub', 'sup']);
+
+/**
+ * The tags that END a field, matching the stylesheet's own themed set: a checkbox, a radio and
+ * a file picker are excluded there and are not what a button collides with here either.
+ */
+const FIELD_END = /^(?:<\/select>|<\/textarea>|<input\b(?![^>]*type="(?:checkbox|radio|file)"))/;
+
+interface OpenTag {
+  name: string;
+  classes: string[];
+}
+
+interface CrampState {
+  /** The elements currently open, outermost first. */
+  stack: OpenTag[];
+  /** Whether the last field is still unseparated from whatever comes next. */
+  afterField: boolean;
+  offenders: string[];
+}
+
+function tagName(tag: string): string {
+  return (/^<\/?([a-zA-Z][a-zA-Z0-9]*)/.exec(tag)?.[1] ?? '').toLowerCase();
+}
+
+function classesOf(tag: string): string[] {
+  const match = /\bclass="([^"]*)"/.exec(tag);
+  return match === null ? [] : match[1].split(/\s+/);
+}
+
+function isSpacingWrapper(open: OpenTag): boolean {
+  return open.classes.some((name) => SPACING_WRAPPERS.includes(name));
+}
+
+function insideInlineRun(state: CrampState): boolean {
+  return state.stack.some((open) => INLINE_TAGS.has(open.name));
+}
+
+/** Comments and the page script are not markup — and the script is full of `<` inside strings. */
+function markupOnly(html: string): string {
+  return html.replace(/<!--[\s\S]*?-->/g, '').replace(/<script[\s\S]*?<\/script>/g, '');
+}
+
+function stepText(state: CrampState, token: string): void {
+  if (token.trim() !== '' && !insideInlineRun(state)) {
+    state.afterField = false;
+  }
+}
+
+function stepClosing(state: CrampState, token: string): void {
+  state.stack.pop();
+  state.afterField = state.afterField || FIELD_END.test(token);
+}
+
+function recordIfCramped(state: CrampState, token: string): void {
+  if (tagName(token) !== 'button' || !state.afterField) {
+    return;
+  }
+  if (state.stack.some(isSpacingWrapper)) {
+    return;
+  }
+  state.offenders.push(token);
+}
+
+/** Void and self-closing tags have no children, so they never become a wrapper. */
+function pushFrame(state: CrampState, token: string): void {
+  const name = tagName(token);
+  if (name === '' || VOID_TAGS.has(name) || token.endsWith('/>')) {
+    return;
+  }
+  state.stack.push({ name, classes: classesOf(token) });
+}
+
+function stepOpening(state: CrampState, token: string): void {
+  recordIfCramped(state, token);
+  state.afterField = FIELD_END.test(token) || (state.afterField && INLINE_TAGS.has(tagName(token)));
+  pushFrame(state, token);
+}
+
+function stepToken(state: CrampState, token: string): void {
+  if (!token.startsWith('<')) {
+    stepText(state, token);
+    return;
+  }
+  if (token.startsWith('</')) {
+    stepClosing(state, token);
+    return;
+  }
+  stepOpening(state, token);
+}
+
+/** Every button that follows a field without a block element or a line of prose between them. */
+function crampedButtons(html: string): string[] {
+  const state: CrampState = { stack: [], afterField: false, offenders: [] };
+  for (const token of markupOnly(html).match(/<[^>]*>|[^<]+/g) ?? []) {
+    stepToken(state, token);
+  }
+  return state.offenders;
+}
+
+test('no button anywhere in a form sits flush against the field above it (#54)', () => {
+  const offenders = new Set<string>();
+  const collect = (html: string): void => {
+    for (const button of crampedButtons(html)) {
+      offenders.add(button);
+    }
+  };
+
+  for (const kind of ENTITY_KINDS) {
+    collect(renderHtml(options({ lockedKind: kind })));
+    // The edit render too: some sections only exist once there is something stored to edit.
+    collect(renderHtml(options({ mode: 'edit', initial: { id: 'e1', name: 'sample', kind } as EntityMetadata })));
+  }
+  // The folder form is linted by the same rule: it has no field/button pair today, and this is
+  // what keeps that true now that it renders through the shared chrome.
+  collect(renderFolderHtml({ name: 'Databases', entryCount: 3, inTrash: false }));
+
+  assert.deepEqual(
+    [...offenders],
+    [],
+    `these buttons touch the field above them — wrap each pair in .line / .genRow / .actions: ${[...offenders].join('  ')}`,
+  );
+});
+
+test('the shared header carries the three ids both forms bind', () => {
+  // Save, Cancel and the error line are a contract, not decoration: a header that renders
+  // beautifully and posts nothing on Save is the regression a builder invites.
+  const html = renderHtml(options());
+  for (const id of ['save', 'cancel', 'error']) {
+    assert.ok(html.includes(`id="${id}"`), `the entity form's header lost id="${id}"`);
+  }
 });
