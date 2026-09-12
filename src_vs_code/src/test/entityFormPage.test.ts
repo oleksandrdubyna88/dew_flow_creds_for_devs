@@ -437,6 +437,19 @@ function isSpacingWrapper(open: OpenTag): boolean {
   return open.classes.some((name) => SPACING_WRAPPERS.includes(name));
 }
 
+/**
+ * Whether this button's OWN container is a spacing wrapper — its parent, not any ancestor.
+ *
+ * <p>A `.line` gives a gap to its own children and to nobody else's, so
+ * `<div class="line"><div><select></select><button>…</button></div></div>` satisfies an ancestor
+ * test while rendering the button flush against the box above it. That is this lint's whole
+ * subject, wrapped in one more div.</p>
+ */
+function spacedByItsOwnParent(state: CrampState): boolean {
+  const parent = state.stack[state.stack.length - 1];
+  return parent !== undefined && isSpacingWrapper(parent);
+}
+
 function insideInlineRun(state: CrampState): boolean {
   return state.stack.some((open) => INLINE_TAGS.has(open.name));
 }
@@ -484,7 +497,12 @@ function recordIfCramped(state: CrampState, token: string): void {
   if (tagName(token) !== 'button' || !state.afterField) {
     return;
   }
-  if (state.stack.some(isSpacingWrapper)) {
+  // The IMMEDIATE container, not any ancestor. A `.line` gives a gap to its OWN children and to
+  // nobody else's, so `<div class="line"><div><select></select><button>…</button></div></div>`
+  // satisfies an ancestor test while rendering the button flush against the box above it — the
+  // exact defect this lint exists to catch, wrapped in one more div (found by the automated
+  // reviewer on the pull request).
+  if (spacedByItsOwnParent(state)) {
     return;
   }
   state.offenders.push(token);
@@ -577,6 +595,15 @@ test('the cramped-button scanner still finds a button nobody wrapped', () => {
         crampedButtons(`<form><div class="${wrapper}">${pair}</div></form>`),
         [],
         `a pair wrapped in .${wrapper} was reported as cramped: ${JSON.stringify(pair)}`,
+      );
+      // And the nested case, which an ANCESTOR test cannot tell from the one above it. A `.line`
+      // gives a gap to its own children and to nobody else's, so a plain div between the wrapper
+      // and the pair renders the button flush against the field — this lint's whole subject,
+      // wrapped in one more div (found by the automated reviewer on the pull request).
+      assert.equal(
+        crampedButtons(`<form><div class="${wrapper}"><div>${pair}</div></div></form>`).length,
+        1,
+        `a pair nested one div INSIDE .${wrapper} went unreported: ${JSON.stringify(pair)}`,
       );
     }
   }
