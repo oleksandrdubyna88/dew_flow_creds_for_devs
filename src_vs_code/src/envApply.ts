@@ -17,9 +17,11 @@ import { automaticPinRefusal } from './pinGate';
  * persisted across reloads.
  *
  * <p>Values come from THIS machine's SecretStorage at the moment of writing — or, on a save, from
- * the values the save still HOLDS (issue #48): the form's plaintext is handed in first, so a create
- * applies its bindings before the entry is sealed under its PIN and an edit writes what was just
- * typed. A binding synced from another machine is a name with no value until someone presses
+ * the values the save still HOLDS (issue #48), so an edit writes what was just typed. A held value
+ * never outranks the policy: the STORED reading is taken first and carries every refusal, and the
+ * held value stands in for it only when it is not one (the code round of 2026-09-12 found the held
+ * road consulting the woven refusal alone, so a PIN-protected entry's plaintext went into the
+ * collection). A binding synced from another machine is a name with no value until someone presses
  * `Set env` here or saves the entity — which is also the recovery path the operator asked for
  * when the collection is lost.</p>
  */
@@ -48,6 +50,28 @@ export function automaticRefusal(details: EntityMetadata, field: BindableField):
 }
 
 /**
+ * Why NOTHING automatic may use this field, or `''` when it may — every refusal in ONE place.
+ *
+ * <p>Two policies today. The woven one is a fact about the ENTRY (`passwordWoven` is a field) and
+ * needs no value; the PIN one is a fact about the VALUE — the wrap is inside it, which is the whole
+ * reason the mark cannot be lost — so it can only be decided after the read. Both come back as one
+ * sentence, because to an automatic caller they are the same fact: the value is there and it may
+ * not have it. A third policy belongs HERE, not at a call site: the code round of 2026-09-12 found
+ * the held-value road asking the woven refusal alone, so a PIN-protected entry's plaintext, carried
+ * in memory by the save, went into the environment collection and every later terminal in the
+ * window read it without the PIN — the one thing the form's "PIN — on" banner promises cannot
+ * happen. One function to ask is how a fourth road cannot make the same omission.</p>
+ */
+export function automaticFieldRefusal(
+  details: EntityMetadata,
+  field: BindableField,
+  stored: string | undefined,
+): string {
+  const woven = automaticRefusal(details, field);
+  return woven !== '' ? woven : automaticPinRefusal(stored, details.name);
+}
+
+/**
  * One bindable field, as one of the three answers.
  *
  * <p>The refusal is decided HERE and nowhere else. It used to be checked by each caller before
@@ -62,21 +86,9 @@ export async function bindableFieldReading(
   details: EntityMetadata,
   field: BindableField,
 ): Promise<FieldReading> {
-  const refusal = automaticRefusal(details, field);
-  return refusal === '' ? afterReading(await storedField(storage, accountId, details, field), details) : withheld(refusal);
-}
-
-/**
- * The second refusal, and it can only be decided AFTER the read.
- *
- * <p>A woven password is known from the entry (`passwordWoven` is a field). A PIN-protected value
- * is known only from the VALUE — the wrap is inside it, which is the whole reason the mark cannot
- * be lost — so this is where it is seen. Both come back as `withheld`, because to an automatic
- * caller they are the same fact: the value is there and it may not have it.</p>
- */
-function afterReading(stored: string | undefined, details: EntityMetadata): FieldReading {
-  const locked = automaticPinRefusal(stored, details.name);
-  return locked === '' ? readingOf(stored) : withheld(locked);
+  const stored = await storedField(storage, accountId, details, field);
+  const refusal = automaticFieldRefusal(details, field, stored);
+  return refusal === '' ? readingOf(stored) : withheld(refusal);
 }
 
 // eslint-disable-next-line complexity
@@ -127,10 +139,11 @@ const HELD: Readonly<Record<BindableField, (values: EnvValues) => string | undef
 };
 
 /**
- * One binding's reading: the held value when the save has one and the policy allows the field at
- * all, storage otherwise. The woven refusal is about the ENTRY, not about where a value came from,
- * so it is decided before the held value is looked at — a save cannot hand over a woven password by
- * carrying it in memory.
+ * One binding's reading: the STORED reading first — it carries every refusal — and the value the
+ * save holds only when that reading is not one. A refusal is about the entry or the slot, never
+ * about where a value came from, so a save cannot hand over a woven password OR a PIN-protected
+ * one by carrying it in memory. (The first shape of this asked the woven refusal alone before using
+ * the held value; the code round of 2026-09-12 read that as a PIN bypass, and it was.)
  */
 async function boundReading(
   storage: StorageManager,
@@ -139,11 +152,9 @@ async function boundReading(
   field: BindableField,
   values: EnvValues,
 ): Promise<FieldReading> {
+  const stored = await bindableFieldReading(storage, accountId, details, field);
   const held = HELD[field](values);
-  if (held === undefined || automaticRefusal(details, field) !== '') {
-    return bindableFieldReading(storage, accountId, details, field);
-  }
-  return readingOf(held);
+  return stored.kind === 'withheld' || held === undefined ? stored : readingOf(held);
 }
 
 /**
@@ -155,9 +166,10 @@ async function boundReading(
  * and skipped it in silence: an entry created with a PIN and a binding wrote nothing and said
  * nothing. Now the reading is kept whole and a withheld name is returned for the caller to say.</p>
  *
- * <p>`values` are what the save holds in memory — the form's plaintext — and are read FIRST, so a
- * create can apply its bindings before sealing the entry under its PIN and an edit writes what was
- * just typed; storage is read for the rest, which is also the whole of the viewer's `ENV` path.</p>
+ * <p>`values` are what the save holds in memory — the form's plaintext — so an edit writes what was
+ * just typed; storage is read for the rest, which is also the whole of the viewer's `ENV` path. They
+ * never outrank the policy: a slot the PIN seals refuses whatever the save is holding for it, in the
+ * same sentence the viewer's `ENV` button says (`boundReading`).</p>
  */
 export async function applyEnvBindings(
   env: vscode.GlobalEnvironmentVariableCollection,

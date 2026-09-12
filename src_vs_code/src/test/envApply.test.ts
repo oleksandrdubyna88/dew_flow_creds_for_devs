@@ -285,9 +285,11 @@ test('a woven password is WITHHELD with the woven reason', async () => {
   assert.deepEqual(env.replaced, {});
 });
 
-test('a value the save HOLDS is written even while storage holds a locked one — the create-before-seal shape', async () => {
-  // On create the plaintext is in the form's result; the seal follows. Reading storage would be
-  // reading the value the seal is about to (or already did) lock.
+test('a value the save HOLDS is WITHHELD while storage holds a locked one — the PIN outranks the binding wherever the value came from', async () => {
+  // The code round's finding (2026-09-12): the held road consulted the woven refusal alone, so a
+  // PIN-protected entry's plaintext, carried in memory by the save, went into the collection and
+  // every later terminal read it without the PIN. The stored reading carries EVERY refusal; a held
+  // value may stand in for it only when it is not one — and the reason is the storage path's own.
   const env = envCollection();
   const locked = await lockSecret('THE-PASSWORD', 'acc', 'correct-horse-battery');
 
@@ -300,8 +302,23 @@ test('a value the save HOLDS is written even while storage holds a locked one �
     { password: 'FROM-THE-FORM' },
   );
 
-  assert.deepEqual(result, { written: ['PROD_PW'], withheld: [] });
-  assert.deepEqual(env.replaced, { PROD_PW: 'FROM-THE-FORM' });
+  assert.deepEqual(result.written, [], 'the held plaintext was written over a sealed slot');
+  assert.equal(result.withheld[0]?.name, 'PROD_PW');
+  assert.match(result.withheld[0]?.reason ?? '', /protected with its own PIN/);
+  assert.deepEqual(env.replaced, {});
+});
+
+test('ONE function answers whether a field may be used automatically at all — woven, PIN, or neither', async () => {
+  // The code round's ask: a third policy gets one home, not two call sites. Both roads in — the
+  // storage reading and the held-value reading — ask this and nothing else, so the notice prints the
+  // same sentence whichever road the value took.
+  const mod = envApply();
+  const locked = await lockSecret('THE-PASSWORD', 'acc', 'correct-horse-battery');
+
+  assert.match(mod.automaticFieldRefusal(details({ passwordWoven: true }), 'password', 'plain'), /woven with a decoy/);
+  assert.match(mod.automaticFieldRefusal(details(), 'password', locked), /protected with its own PIN/);
+  assert.equal(mod.automaticFieldRefusal(details(), 'password', 'plain'), '', 'an ordinary value is handed over');
+  assert.equal(mod.automaticFieldRefusal(details(), 'password', undefined), '', 'and nothing stored is not a refusal');
 });
 
 test('a held connection string feeds the db-password binding, and a held value never overrides a woven refusal', async () => {

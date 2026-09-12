@@ -305,10 +305,18 @@ export function registerTreeMutationCommands(host: TreeMutationCommandsHost): vo
       undoSecrets: () => storage.forgetEntitySecrets(location.accountId, id),
     }));
     await applyRemovals(storage, location.accountId, id, result);
-    // BEFORE the seal, from the values the form holds (issue #48). This used to run after
-    // `applyCreatePin` and read the values back from storage — already locked — so an entry created
-    // with a PIN and a binding wrote nothing, and said nothing. The plaintext is in `result`; the
-    // binding is written from it, and what could not be written is said, not dropped.
+    // After the secrets are written, because it wraps what is THERE: applied earlier it would wrap
+    // nothing and leave the real values in the clear beside a mark saying otherwise.
+    await applyCreatePin(createPin, storage, location.accountId, id);
+    // AFTER the seal, deliberately (the code round of 2026-09-12). For one release this ran BEFORE
+    // `applyCreatePin`, from the plaintext in `result`, so that an entry created with a PIN and a
+    // binding would get its variable written — and that is exactly the bypass: the secret went into
+    // the environment collection, where every later terminal read it without the PIN, while the
+    // form's "PIN — on" banner promised nothing automatic could. Sealed first, the policy reads the
+    // truth from the wrap itself and needs no claim from this caller: a PIN-protected entry's
+    // binding is WITHHELD, and the notice says so. What issue #48 called a defect was the SILENCE,
+    // and that is what stays fixed — nothing is skipped without a word. The held values are the
+    // ones `applyAdditions` just wrote, handed in so the create and the edit read through one shape.
     const envApplied = await applyEnvBindings(
       envCollection(),
       storage,
@@ -317,9 +325,6 @@ export function registerTreeMutationCommands(host: TreeMutationCommandsHost): vo
       undefined,
       heldEnvValues(result),
     );
-    // After the secrets are written, because it wraps what is THERE: applied earlier it would wrap
-    // nothing and leave the real values in the clear beside a mark saying otherwise.
-    await applyCreatePin(createPin, storage, location.accountId, id);
     void warnIfTrackedCopy(result.details);
     await applyDependencyColors(storage, location.accountId, result.dependsOnColors);
     showEnvNotice(envApplied);
