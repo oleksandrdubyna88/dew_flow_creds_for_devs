@@ -250,3 +250,23 @@ test('the phrase example is drawn from made-up WORDS, never from the person own 
     'the weave is those two columns and nothing else',
   );
 });
+
+test('the phrase example halves are FIXED — no path feeds a real phrase into the picture', () => {
+  // The gate's finding, and it is right: "lowercase words of equal length" is satisfied by the
+  // person's own phrase lowercased. So the halves are asserted exactly, and a sentinel phrase is
+  // driven through every argument the example takes to prove none of it can reach the output.
+  const drawn = weaveExample('mixed', SHUFFLE_CODES[0], Math.random);
+
+  assert.deepEqual([...drawn.first], ['apple', 'river', 'stone', 'cloud', 'maple', 'frost']);
+  assert.deepEqual([...drawn.second], ['tiger', 'candle', 'orbit', 'meadow', 'silver', 'pine']);
+
+  const sentinel = ['correct', 'horse', 'battery', 'staple', 'abandon', 'zoo'];
+  for (const code of SHUFFLE_CODES) {
+    // The random source is the only thing an example takes from outside, and a phrase is not it.
+    const again = weaveExample('mixed', code, () => 0.5);
+    const shown = [...again.first, ...again.second, ...again.woven.map((slot) => slot.text)];
+    for (const word of sentinel) {
+      assert.ok(!shown.includes(word), `${word} reached the ${code} example`);
+    }
+  }
+});
