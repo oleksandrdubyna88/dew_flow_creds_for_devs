@@ -96,8 +96,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   to the method now, whatever position it is drawn into, which is what makes *Method 5* mean the
   same algorithm on every surface that has to read the phrase back.
 
-### Added
-
 - **A Server section on an administrator's account row.** Everything the tree said about a
   corporate server was about people — the Team section and one row per colleague — so the three
   facts an administrator checks most often had to be hunted for in tabs: what version is running,
