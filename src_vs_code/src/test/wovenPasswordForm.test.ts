@@ -5,6 +5,8 @@ import { wovenFormScript } from '../wovenFormScript';
 import { cardFormScript } from '../cardFormScript';
 import { phraseFormScript } from '../phraseFormScript';
 import { formPageScript } from '../entityFormScript';
+import { weaveExamplePainterScript } from '../weaveExampleScript';
+import { MiniDocument, runFragment } from './miniDom';
 import { EntityFormOptions } from '../entityFormPanel';
 import { EntityMetadata } from '../types';
 import { SHUFFLE_CODES } from '../shuffle';
@@ -344,4 +346,90 @@ test('the password picture is painted into a .weaveEx block, which is what colou
   // generated call happens to wrap.
   assert.match(script, /paintExample\(\s*'weaveExampleHost',\s*'password'/);
   assert.ok(!/host\.appendChild\(weaveColumn/.test(script), 'the classless three-column append is gone');
+});
+
+/**
+ * The painter asserted by what it MAKES, not by what its source says.
+ *
+ * <p>The gate's own finding, and it is the sharpest one in the round: a shared `paintExample` can be
+ * called with the right host and the right field and still emit a block without the `.weaveEx`
+ * ancestor or without the token classes — and every string assertion above would pass while the
+ * password example stayed grey. That is precisely how issue #51 survived a test suite. So this runs
+ * the fragment against `miniDom` and reads the tree that comes out.</p>
+ */
+const painterOf = (document: MiniDocument) =>
+  runFragment(weaveExamplePainterScript(), document, ['paintExample', 'exampleBlock']);
+
+const answerOf = () => ({
+  first: ['a', 'b'],
+  second: ['c', 'd'],
+  woven: [
+    { text: 'a', side: 'first' },
+    { text: 'c', side: 'second' },
+    { text: 'b', side: 'first' },
+    { text: 'd', side: 'second' },
+  ],
+});
+
+test('painting the password example makes a .weaveEx block with coloured tokens in it', () => {
+  const document = new MiniDocument();
+  document.place('weaveExampleHost');
+
+  painterOf(document).paintExample(
+    'weaveExampleHost' as never,
+    'password' as never,
+    'Password — f1' as never,
+    answerOf() as never,
+    'Your password (made up here)' as never,
+  );
+
+  const block = document.querySelector('.weaveEx[data-field="password"]');
+  assert.ok(block !== undefined, 'no .weaveEx block — this is issue #51 exactly');
+  assert.equal(block.parent?.id, 'weaveExampleHost', 'and it is inside the password host');
+  assert.ok(block.querySelector('.exTok.first') !== undefined, 'the green half');
+  assert.ok(block.querySelector('.exTok.second') !== undefined, 'the orange half');
+  assert.match(block.textContent, /Password — f1/, 'and it is titled');
+  assert.match(block.textContent, /Your password \(made up here\)/, 'with the column label the caller chose');
+});
+
+test('the card example paints into its own host, under the same rules', () => {
+  const document = new MiniDocument();
+  document.place('mixExample');
+
+  painterOf(document).paintExample(
+    'mixExample' as never,
+    'iban' as never,
+    'IBAN — f1' as never,
+    answerOf() as never,
+  );
+
+  const block = document.querySelector('.weaveEx[data-field="iban"]');
+  assert.ok(block !== undefined, 'a bank field is painted by the same painter');
+  assert.ok(block.querySelector('.exTok.first') !== undefined);
+  assert.match(block.textContent, /Your value \(made up here\)/, 'and falls back to the shared column label');
+});
+
+test('repainting the same field reuses its block and replaces what was in it', () => {
+  const document = new MiniDocument();
+  document.place('mixExample');
+  const painter = painterOf(document);
+
+  painter.paintExample('mixExample' as never, 'cvv' as never, 'CVV — f1' as never, answerOf() as never);
+  painter.paintExample('mixExample' as never, 'cvv' as never, 'CVV — f9' as never, answerOf() as never);
+
+  const shown = document.querySelector('.weaveEx')?.textContent ?? '';
+  assert.equal(document.querySelectorAll('.weaveEx').length, 1, 'one block per field, not one per answer');
+  assert.match(shown, /CVV — f9/);
+  assert.ok(!/CVV — f1/.test(shown), 'the old answer is gone');
+});
+
+test('a host that is not on this form is silence, not a thrown page script', () => {
+  // Every form kind runs the one composite script, so a painter called for a host this page does not
+  // have must do nothing at all. A throw here kills the whole script and with it the Save button.
+  const document = new MiniDocument();
+
+  assert.doesNotThrow(() => {
+    painterOf(document).paintExample('mixExample' as never, 'cvv' as never, 't' as never, answerOf() as never);
+  });
+  assert.equal(document.querySelectorAll('.weaveEx').length, 0);
 });

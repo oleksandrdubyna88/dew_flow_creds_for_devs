@@ -124,6 +124,35 @@ function markScript(): string {
 }
 
 /**
+ * Which weave boxes count as ticked — and why a hidden one does not.
+ *
+ * <p>A box in a fieldset the chosen form HIDES is not a choice anybody is making. Ticking <i>store
+ * the number woven</i> on a card and then switching the entry to bank details leaves that box ticked
+ * in a hidden fieldset, and counting it put the shared controls on a bank form with no bank box
+ * ticked — offering a method for a field the record is about to drop. The SAVE was already safe
+ * (`paymentSaveGate` clears what the chosen form does not own before weaving), so this is about the
+ * question rather than the answer: do not ask it about a field nobody can see.</p>
+ *
+ * <p>(No backticks in this file: it IS a template literal.)</p>
+ */
+function markCollectorScript(): string {
+  return `  function visibleMark(mark) {
+    var section = mark.closest ? mark.closest('fieldset') : null;
+    return section === null || section.style.display !== 'none';
+  }
+
+  function markedFields() {
+    var marks = document.querySelectorAll('.mixMark');
+    var picked = [];
+    for (var i = 0; i < marks.length; i++) {
+      if (marks[i].checked && visibleMark(marks[i])) { picked.push(marks[i].getAttribute('data-field')); }
+    }
+    return picked;
+  }
+`;
+}
+
+/**
  * The weaving controls' own script: which fields are marked, which method each gets, and when the
  * controls are on screen at all.
  *
@@ -135,15 +164,7 @@ function mixScript(): string {
   // Collected here and read by the save payload. The CODE never comes back from the host and is never
   // stored — see paymentWeaving.ts. What the page owns is the choice; what it must never own is a
   // memory of it.
-  function markedFields() {
-    var marks = document.querySelectorAll('.mixMark');
-    var picked = [];
-    for (var i = 0; i < marks.length; i++) {
-      if (marks[i].checked) { picked.push(marks[i].getAttribute('data-field')); }
-    }
-    return picked;
-  }
-
+${markCollectorScript()}
   function collectMixFields() { return markedFields(); }
 
   function collectMixMethods() {

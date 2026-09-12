@@ -11,6 +11,7 @@ import { CARD_BRANDS } from '../cardBrand';
 import { brandFor } from '../cardFormFields';
 import { cardFormScript } from '../cardFormScript';
 import { weaveExamplePainterScript } from '../weaveExampleScript';
+import { MiniDocument, MiniElement, runFragment } from './miniDom';
 import { BRAND_MARK_STYLES, brandMarkSvg } from '../cardBrandIcons';
 import { formStyleSheet } from '../entityFormStyles';
 
@@ -308,4 +309,82 @@ test('the card weave boxes stay with the card fields — only the shared control
 
   assert.ok(card.slice(cardOpens, bankOpens).includes('id="mixCardCvv"'), 'the CVV box is a card field');
   assert.ok(!card.slice(cardOpens, bankOpens).includes('id="mixBankIban"'), 'and the IBAN box is not');
+});
+
+/**
+ * The weaving controls, RUN rather than read — the gate's finding, and it is right.
+ *
+ * <p>Markup can put `#mixMethod` after the bank fieldset and give every checkbox `mixMark` while the
+ * controls still never appear at runtime: an unbound listener, a wrapper left at `display:none`, a
+ * collector that skips the bank boxes. The index assertions above would all pass. So this executes
+ * the fragment against `miniDom`: tick a bank box, call `refreshMix`, and read what the page would
+ * actually show.</p>
+ */
+function mixPage(): { document: MiniDocument; posted: unknown[]; api: Record<string, (...a: never[]) => unknown> } {
+  const document = new MiniDocument();
+  const cardSection = document.place('cardSection', 'fieldset');
+  const bankSection = document.place('bankSection', 'fieldset');
+  const mark = (id: string, field: string, into: MiniElement): MiniElement => {
+    const box = document.place(id, 'input', into);
+    box.className = 'mixMark';
+    box.dataset.field = field;
+    return box;
+  };
+  mark('mixCardNumber', 'number', cardSection);
+  mark('mixBankIban', 'iban', bankSection);
+  const controls = document.place('mixControls');
+  controls.style.display = 'none';
+  document.place('mixWarning');
+  document.place('mixExample', 'div', controls);
+  const method = document.place('mixMethod', 'select', controls);
+  method.value = 'f3';
+  const posted: unknown[] = [];
+  const api = runFragment(
+    cardFormScript(),
+    document,
+    ['refreshMix', 'markedFields', 'collectMixFields'],
+    posted,
+  );
+  return { document, posted, api };
+}
+
+test('ticking the IBAN box on a bank form shows the method, the warning and the picture', () => {
+  const page = mixPage();
+  page.document.getElementById('cardSection')!.style.display = 'none';
+  page.document.getElementById('mixBankIban')!.checked = true;
+
+  page.api.refreshMix();
+
+  assert.notEqual(page.document.getElementById('mixControls')?.style.display, 'none', 'the controls are on screen');
+  assert.match(page.document.getElementById('mixWarning')?.textContent ?? '', /stored nowhere/, 'and say what it costs');
+  assert.deepEqual(page.api.markedFields(), ['iban'], 'the bank box is a marked field');
+  assert.ok(
+    page.posted.some((m) => (m as { type?: string; field?: string }).field === 'iban'),
+    'and an example is asked for, for the IBAN',
+  );
+});
+
+test('a box ticked in a fieldset this form hides is not a choice anybody is making', () => {
+  // Tick "store the number woven" on a card, then switch the entry to bank details. The card box
+  // stays ticked in a hidden fieldset. Counting it put the method picker on a bank form with no bank
+  // box ticked, offering a method for a field the record is about to drop.
+  const page = mixPage();
+  page.document.getElementById('mixCardNumber')!.checked = true;
+  page.document.getElementById('cardSection')!.style.display = 'none';
+
+  page.api.refreshMix();
+
+  assert.deepEqual(page.api.markedFields(), [], 'a hidden mark counts for nothing');
+  assert.equal(page.document.getElementById('mixControls')?.style.display, 'none', 'so the controls stay away');
+});
+
+test('a visible card box still counts, which is the half that must not break', () => {
+  const page = mixPage();
+  page.document.getElementById('bankSection')!.style.display = 'none';
+  page.document.getElementById('mixCardNumber')!.checked = true;
+
+  page.api.refreshMix();
+
+  assert.deepEqual(page.api.markedFields(), ['number']);
+  assert.notEqual(page.document.getElementById('mixControls')?.style.display, 'none');
 });
