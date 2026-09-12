@@ -85,8 +85,13 @@ internal static class RelayPipe
                 ? await ConnectPipeAsync(name).ConfigureAwait(false)
                 : await ConnectUnixAsync(address).ConfigureAwait(false);
         }
+        // ArgumentException among them: the address is ANNOUNCED by another process, and a unix
+        // path longer than the platform's `sun_path` makes the endpoint's constructor refuse the
+        // value rather than the connection — an ArgumentOutOfRangeException, which is none of the
+        // others and would take the process down instead of meaning "could not connect". The same
+        // escape crashed `creds relay` on macOS; found by the 1.7.0 release.
         catch (Exception e) when (e is IOException or SocketException or TimeoutException
-            or UnauthorizedAccessException or PlatformNotSupportedException)
+            or UnauthorizedAccessException or PlatformNotSupportedException or ArgumentException)
         {
             return null;
         }
