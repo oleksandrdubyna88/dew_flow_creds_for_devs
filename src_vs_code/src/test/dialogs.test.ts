@@ -1,7 +1,7 @@
 import * as assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { loadWithVscode } from './vscodeStub';
-import { ENTITY_KINDS, StoredAccount, TreeNode } from '../types';
+import { ENTITY_KINDS, ENTITY_KIND_LABELS, StoredAccount, TreeNode } from '../types';
 
 /**
  * The QuickPicks and input boxes the tree's commands put in front of a person (audit A3).
@@ -219,4 +219,44 @@ test('with several accounts each is offered by email, and the provider is shown'
 
   assert.equal(picked?.accountId, 'a2');
   assert.equal(w.offered[0][0].description, 'google', 'two accounts of one provider are told apart');
+});
+
+// ---------------------------------------------------------------------------
+// Issue #57 — "Create Entity for…" opened on `credential` without asking. From a Team row there
+// is no folder to lock the kind, so the form's default was a silent one, and the heading "New
+// entity [credential]" read as a restriction. The kind is now ASKED, from the one list the
+// folder picker is already derived from — never a second hand-written copy, which is how the
+// folder picker once came to offer five kinds of seven.
+// ---------------------------------------------------------------------------
+
+test('pickEntityKind offers EVERY entity kind from the one list — and nothing that is not a kind', async () => {
+  const w = world(first);
+  await w.mod.pickEntityKind();
+
+  assert.deepEqual(
+    w.offered[0].map((i) => i.value),
+    [...ENTITY_KINDS],
+    'no project row and no "any" row: an entity is of exactly one kind',
+  );
+  assert.equal(w.offered.length, 1, 'one QuickPick, not two');
+});
+
+test('pickEntityKind marks the kind an entity already has, and marks nothing for a NEW one', async () => {
+  const editing = world(first);
+  await editing.mod.pickEntityKind('ssh');
+  const marked = editing.offered[0].filter((i) => String(i.description).includes('(current)'));
+  assert.deepEqual(marked.map((i) => i.value), ['ssh']);
+
+  // A new entity has no current kind; marking Credential would make the default look chosen.
+  const creating = world(first);
+  await creating.mod.pickEntityKind();
+  assert.deepEqual(
+    creating.offered[0].filter((i) => String(i.description).includes('(current)')),
+    [],
+  );
+});
+
+test('picking answers the kind itself, and dismissing answers undefined', async () => {
+  assert.equal(await world(byLabel(ENTITY_KIND_LABELS.db.label)).mod.pickEntityKind(), 'db');
+  assert.equal(await world(none).mod.pickEntityKind('ssh'), undefined);
 });

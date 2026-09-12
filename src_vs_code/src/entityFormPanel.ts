@@ -115,6 +115,8 @@ export interface EntityFormOptions {
   storedTotpDescription?: string;
   /** Set when the parent folder dictates the entity kind (selector locked). */
   lockedKind?: EntityKind;
+  /** The kind the form OPENS on when no folder locks it (issue #57) — a suggestion: selector alive, no folder hint; `lockedKind` outranks it. Why: `dialogs.pickEntityKind`. */
+  initialKind?: EntityKind;
   /** Other entities of the same account usable as a key source. */
   keyCandidates: KeyCandidate[];
   /** Other SSH entities of the same account usable as a jump host (audit D7). */

@@ -348,3 +348,20 @@ test('the form selector offers every form the model has, and nothing else', () =
     assert.ok(html.includes(`value="${form}"`), `${form} cannot be chosen`);
   }
 });
+
+test('a kind picked BEFORE the form opens is selected, with the selector still editable and no folder hint (issue #57)', () => {
+  // From a Team row there is no folder, so the kind used to be a silent default of `credential`
+  // and the heading read as a restriction. `initialKind` opens the form on the picked kind and
+  // leaves the selector alive; `lockedKind` — a folder's type — still wins when both are given,
+  // because a folder's type is a fact about where the entity lives, not a suggestion.
+  const picked = renderHtml(options({ initialKind: 'db' } as Partial<EntityFormOptions>));
+
+  assert.ok(picked.includes('<option value="db" selected>'), 'the picked kind is the selected one');
+  assert.ok(!picked.includes('<select id="entityType" disabled>'), 'the selector stays editable');
+  assert.ok(!picked.includes('fixed by the folder'), 'no folder dictated this kind, so no hint says one did');
+  assert.ok(picked.includes('New entity<span class="kindChip">db</span>'), 'and the heading names it');
+
+  const both = renderHtml(options({ lockedKind: 'ssh', initialKind: 'db' } as Partial<EntityFormOptions>));
+  assert.ok(both.includes('<option value="ssh" selected>'), 'a folder type outranks a pick');
+  assert.ok(both.includes('<select id="entityType" disabled>'));
+});

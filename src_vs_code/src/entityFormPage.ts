@@ -207,7 +207,10 @@ export function renderHtml(options: EntityFormOptions): string {
   const nonce = crypto.randomBytes(16).toString('base64url');
   const d = options.initial;
   const isEdit = options.mode === 'edit';
-  const kind = options.lockedKind ?? resolveKind(d);
+  // A folder's type is a fact and wins; a kind picked before the form opened is a suggestion
+  // (issue #57); only with neither does the stored record — or, for a new entity, the default —
+  // decide.
+  const kind = options.lockedKind ?? options.initialKind ?? resolveKind(d);
 
   // Built from the kind table, never a copy of it. The copy is exactly how `script` came
   // to be missing from this selector: the seventh kind was added to ENTITY_KINDS and the
