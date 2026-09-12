@@ -72,6 +72,18 @@
     "edit",
     "delete"
   ],
+  "caller": {
+    "field": "caller",
+    "fields": [
+      "agent",
+      "session",
+      "sessionName",
+      "cwd"
+    ],
+    "flatPrefix": "caller",
+    "maxFieldChars": 80,
+    "maxLabelChars": 160
+  },
   "errors": {
     "invalid_request": 400,
     "unauthorized": 401,

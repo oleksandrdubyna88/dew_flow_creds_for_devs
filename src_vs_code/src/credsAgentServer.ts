@@ -24,12 +24,13 @@ import { BrokerDoor, mcpDoor } from './brokerMcpDoor';
 import { McpFolderHooks } from './brokerFolderDoor';
 import { answerMcpRoute } from './brokerMcpRoutes';
 import { aliasTarget, grantForToken, readNamedBody } from './brokerRequests';
+import { CALLER_DISCLAIMER, CallerLabel, callerForAudit, callerFrom, callerLine } from './brokerCaller';
 import { describeLimits, grantLimits } from './grantLimits';
 import { answerConfigRead } from './brokerConfigRoute';
 import { Grant, GrantRegistry } from './grantRegistry';
 import { UseActionRegistry } from './useActions';
 import { formatToken } from './grantToken';
-import { AuditDoor, formatAuditLine } from './agentAuditLog';
+import { AuditDoor, AuditEntry, formatAuditLine } from './agentAuditLog';
 import { BrokerAuditWriter } from './brokerAuditWriter';
 import { startLoopbackServer } from './loopbackServer';
 import { ExtraListener, socketPathFor, startExtraListener } from './brokerListeners';
@@ -252,15 +253,15 @@ export class CredsAgentServer implements vscode.Disposable {
   /** The pieces the MCP door needs, and nothing else — see `brokerMcpDoor.ts`. */
   private get door(): BrokerDoor {
     return mcpDoor({
-      refuse: (res, code, message, grant, action, detail) =>
-        this.respondError(res, code, message, grant as Grant | undefined, action, detail, 'mcp'),
+      refuse: (res, code, message, grant, action, detail, caller) =>
+        this.respondError(res, code, message, grant as Grant | undefined, action, detail, 'mcp', caller),
       admit: (res) => this.admitAliasCall(res),
       release: () => this.aliasThrottle.release(),
       mint: (t) => this.grants.mint(t.accountId, t.entityId, t.entityName, t.kind),
       describe: (grant) => GrantRegistry.describe(grant as Grant),
       note: (entry) => this.log(entry),
-      perform: (res, grant, action, body) => this.perform(res, grant as Grant, action, body, 'mcp'),
-      consent: (grant, action, verb, summary) => this.consent(grant as Grant, action, verb, summary),
+      perform: (res, grant, action, body, caller) => this.perform(res, grant as Grant, action, body, 'mcp', caller),
+      consent: (grant, action, verb, summary, caller) => this.consent(grant as Grant, action, verb, summary, caller),
       respond: (res, status, body) => this.respond(res, status, body),
     });
   }
@@ -290,6 +291,7 @@ export class CredsAgentServer implements vscode.Disposable {
     }
     const body = read.body;
     const name = body.alias as string;
+    const caller = callerFrom(body);
 
     const found = aliasTarget(this.hooks.resolveAlias, name);
     if (!found.ok) {
@@ -312,9 +314,10 @@ export class CredsAgentServer implements vscode.Disposable {
       action: 'alias',
       outcome: 'minted',
       detail: `${name} · ${target.kind}`,
+      caller,
     });
     try {
-      await this.perform(res, grant, action, body, 'alias');
+      await this.perform(res, grant, action, body, 'alias', caller);
     } finally {
       // In a `finally`, because a prompt that timed out or threw has still been shown and the
       // slot must come back — otherwise one failed call closes this route for the session.
@@ -446,7 +449,7 @@ export class CredsAgentServer implements vscode.Disposable {
       return;
     }
 
-    await this.perform(res, grant, action, body, 'token');
+    await this.perform(res, grant, action, body, 'token', callerFrom(body));
   }
 
   /**
@@ -464,40 +467,44 @@ export class CredsAgentServer implements vscode.Disposable {
     action: string,
     body: Record<string, unknown>,
     via: AuditDoor,
+    // Who the body says is calling. REQUIRED — `undefined` must be written, never omitted — so
+    // every door that reaches this funnel says who is asking, or does not compile. It is a label
+    // for the modal and the audit line; nothing below decides anything with it.
+    caller: CallerLabel | undefined,
   ): Promise<void> {
     const useAction = this.actions.resolve(grant.kind, action);
     if (useAction === undefined) {
-      this.respondError(res, 'not_supported', `"${grant.kind}" entities cannot ${action}.`, grant, action, undefined, via);
+      this.respondError(res, 'not_supported', `"${grant.kind}" entities cannot ${action}.`, grant, action, undefined, via, caller);
       return;
     }
     const validated = useAction.validate(body);
     if (!validated.ok) {
-      this.respondError(res, 'invalid_request', validated.message, grant, action, undefined, via);
+      this.respondError(res, 'invalid_request', validated.message, grant, action, undefined, via, caller);
       return;
     }
 
     const summary = useAction.summarize(body);
-    const consent = await this.consent(grant, action, useAction.verb, summary);
+    const consent = await this.consent(grant, action, useAction.verb, summary, caller);
     if (consent !== 'allowed') {
       const code: ErrorCode = consent === 'timeout' ? 'consent_timeout' : 'denied';
-      this.respondError(res, code, 'The human did not allow this grant.', grant, action, summary, via);
+      this.respondError(res, code, 'The human did not allow this grant.', grant, action, summary, via, caller);
       return;
     }
 
     // Read BEFORE anything runs, and a read that will not answer refuses the call — see `tableOrFail`.
     const table = await tableOrFail(this.hooks.maskEntriesFor, grant, (why) =>
-      this.respondError(res, 'internal', MASKING_UNAVAILABLE, grant, action, `${summary} · ${why}`, via),
+      this.respondError(res, 'internal', MASKING_UNAVAILABLE, grant, action, `${summary} · ${why}`, via, caller),
     );
     if (table === undefined) {
       return;
     }
 
-    await this.runAndDeliver(res, { grant, useAction, action, body, via, summary, table });
+    await this.runAndDeliver(res, { grant, useAction, action, body, via, caller, summary, table });
   }
 
   /** The sequence is `brokerCall.performCall`; this binds it to one request. */
   private async runAndDeliver(res: http.ServerResponse, call: CallSubject): Promise<void> {
-    const { grant, action, summary, via } = call;
+    const { grant, action, summary, via, caller } = call;
     await performCall(
       {
         grants: this.grants,
@@ -505,9 +512,9 @@ export class CredsAgentServer implements vscode.Disposable {
         isOneUse: this.hooks.isOneUse,
         respond: (status, sent) => this.respond(res, status, sent),
         log: (line) => this.log(line),
-        refuse: (code, message) => this.respondError(res, code, message, grant, action, summary, via),
+        refuse: (code, message) => this.respondError(res, code, message, grant, action, summary, via, caller),
         failed: (why, ran) =>
-          this.respondError(res, 'internal', INTERNAL_FAILURE, grant, action, `${summary} - ${why}`, via, ran),
+          this.respondError(res, 'internal', INTERNAL_FAILURE, grant, action, `${summary} - ${why}`, via, caller, ran),
         refresh: refreshFrom(this.hooks.maskEntriesFor, grant),
         burn: (status) => burnAndMark(this.oneUse, this.hooks.burnAfterUse, this.hooks.isOneUse, grant, status, this.note),
       },
@@ -538,6 +545,7 @@ export class CredsAgentServer implements vscode.Disposable {
     action: string,
     verb: string,
     summary: string,
+    caller: CallerLabel | undefined,
   ): Promise<'allowed' | 'denied' | 'timeout'> {
     const current = this.grants.get(grant.secret);
     if (current?.status === 'allowed') {
@@ -547,7 +555,7 @@ export class CredsAgentServer implements vscode.Disposable {
       return 'denied';
     }
 
-    const pending = this.consenting.get(grant.secret) ?? this.ask(grant, action, verb, summary);
+    const pending = this.consenting.get(grant.secret) ?? this.ask(grant, action, verb, summary, caller);
     this.consenting.set(grant.secret, pending);
     let allowed: boolean;
     try {
@@ -571,6 +579,7 @@ export class CredsAgentServer implements vscode.Disposable {
     action: string,
     verb: string,
     summary: string,
+    caller: CallerLabel | undefined,
   ): Promise<boolean> {
     // Consent is per GRANT, so one Allow authorises every action of this kind — not only the
     // one that triggered the dialog. The dialog has to say so in those actions' own words,
@@ -580,11 +589,15 @@ export class CredsAgentServer implements vscode.Disposable {
       .map((a) => a.verb)
       .join(', or ');
     const limits = grantLimits();
+    // WHO is asking comes from the body — "An agent" when it says nothing, never a product name
+    // by default — and is a label, not a check. The next sentence tells the person so, because a
+    // name mistaken for a verification is worse than no name.
     const choice = await withTimeout(
       Promise.resolve(
         vscode.window.showWarningMessage(
-          `Claude Code wants to ${verb} ` +
+          `${callerLine(caller)} wants to ${verb} ` +
             `"${grant.entityName}" using its stored credential.\n\n${summary}\n\n` +
+            `${CALLER_DISCLAIMER}\n\n` +
             `Allowing covers every later call on this token, not just this one: with it the agent can ${everything} "${grant.entityName}" ` +
             `${describeLimits(limits)}. ` +
             'Each call is logged in the "CredsForDevs: Agent Access" output panel.',
@@ -610,6 +623,7 @@ export class CredsAgentServer implements vscode.Disposable {
         action,
         outcome: 'ALLOWED',
         detail: 'first use consented',
+        caller,
       });
       return true;
     }
@@ -622,6 +636,7 @@ export class CredsAgentServer implements vscode.Disposable {
         action,
         outcome: 'DENIED',
         detail: 'first use refused',
+        caller,
       });
       return false;
     }
@@ -649,6 +664,8 @@ export class CredsAgentServer implements vscode.Disposable {
     // record — what it asked for and was told no — so a line that could not say which door it
     // arrived at would be missing from exactly the view that wants it most.
     via?: AuditDoor,
+    /** Who the body said was calling — on the line, so a refusal can be matched to a session. */
+    caller?: CallerLabel,
     /** The side effect may have happened anyway — see `errorBody`. */
     actionRan?: boolean,
   ): void {
@@ -662,17 +679,22 @@ export class CredsAgentServer implements vscode.Disposable {
         outcome: code,
         detail: detail ?? message,
         via,
+        caller,
       });
     }
     this.respond(res, statusForErrorCode(code), errorBody(code, message, actionRan));
   }
 
-  private log(entry: Omit<Parameters<typeof formatAuditLine>[0], 'at'>): void {
+  /**
+   * The one funnel every line goes through — with the caller still a LABEL, composed into its
+   * audit form here and nowhere else, so no door can render it differently from the modal.
+   */
+  private log(entry: Omit<AuditEntry, 'at' | 'caller'> & { caller?: CallerLabel }): void {
     // Numbered because nothing caps how many calls one grant may make. A ceiling
     // would have to guess a number; a running count costs nothing and shows a
     // runaway agent loop to whoever reads the file afterwards.
     this.calls += 1;
-    const line = formatAuditLine({ ...entry, at: new Date(), seq: this.calls });
+    const line = formatAuditLine({ ...entry, caller: callerForAudit(entry.caller), at: new Date(), seq: this.calls });
     this.output?.appendLine(line);
     this.audit.append(line);
   }

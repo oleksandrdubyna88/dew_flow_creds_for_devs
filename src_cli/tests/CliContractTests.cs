@@ -1,3 +1,4 @@
+using System.Text.Json;
 using CredsBroker;
 using CredsCli;
 using FluentAssertions;
@@ -83,5 +84,57 @@ public sealed class CliContractTests
     {
         AliasName.IsValid(new string('a', AliasName.MaxLength)).Should().BeTrue();
         AliasName.IsValid(new string('a', AliasName.MaxLength + 1)).Should().BeFalse();
+    }
+
+    // ---- T11: every body this binary posts carries the caller, and still only its named fields ----
+
+    private static readonly CallerRecord Caller = new("creds CLI", "98bf9f23", "clauderag-d6", "ClaudeRag");
+
+    private static string[] Keys(string json)
+    {
+        using var doc = JsonDocument.Parse(json);
+        return [.. doc.RootElement.EnumerateObject().Select(p => p.Name)];
+    }
+
+    [Fact]
+    public void The_cli_names_itself_creds_CLI_and_never_a_product_it_is_not()
+    {
+        // Not `creds CLI <version>`: the binary is not version-stamped at publish, so a version
+        // here would read `1.0.0` on every release, which is worse than none (plan §5.4).
+        Program.CliAgent.Should().Be("creds CLI");
+    }
+
+    [Fact]
+    public void An_alias_body_carries_the_alias_its_payload_and_the_caller_and_nothing_else()
+    {
+        Keys(Program.AliasBody("prod", "exec", "uname -a", Caller)).Should().Equal("alias", "command", "caller");
+        Keys(Program.AliasBody("prod", "db", "select 1", Caller)).Should().Equal("alias", "query", "caller");
+        Keys(Program.AliasBody("prod", "terminal", null, Caller)).Should().Equal("alias", "caller");
+    }
+
+    [Fact]
+    public void A_token_body_carries_the_payload_and_the_caller_and_nothing_else()
+    {
+        Keys(Program.RequestBody("exec", "uname -a", Caller)).Should().Equal("command", "caller");
+        Keys(Program.RequestBody("db", "select 1", Caller)).Should().Equal("query", "caller");
+        Keys(Program.RequestBody("terminal", null, Caller)).Should().Equal("caller");
+    }
+
+    [Fact]
+    public void The_caller_object_is_the_contract_s_four_fields_in_the_contract_s_order()
+    {
+        using var doc = JsonDocument.Parse(Program.AliasBody("prod", "exec", "uptime", Caller));
+
+        var caller = doc.RootElement.GetProperty(BrokerContract.Current.CallerField());
+        caller.EnumerateObject().Select(p => p.Name).Should().Equal(BrokerContract.Current.Caller!.Fields);
+        caller.GetProperty("agent").GetString().Should().Be("creds CLI");
+        caller.GetProperty("cwd").GetString().Should().Be("ClaudeRag");
+    }
+
+    [Fact]
+    public void An_empty_record_sends_no_caller_field_so_an_old_wire_is_byte_for_byte_the_old_wire()
+    {
+        Program.RequestBody("terminal", null, CallerRecord.Empty).Should().Be("{}");
+        Program.AliasBody("prod", "exec", "uptime", CallerRecord.Empty).Should().Be("""{"alias":"prod","command":"uptime"}""");
     }
 }

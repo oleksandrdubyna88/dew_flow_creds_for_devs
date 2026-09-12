@@ -74,6 +74,16 @@ holds only which entry that name points at — no token, no secret. An alias say
 consent modal still says WHETHER, and it is rate-limited precisely because a name is not a
 secret and the modal is the whole gate.
 
+The modal also says WHO. Every body `creds` posts carries a `caller` label: **`creds CLI`**, the
+first eight characters of the session id an agent's shell inherits (`CLAUDE_CODE_SESSION_ID`,
+`CODEX_SESSION_ID`, `GEMINI_CLI_SESSION_ID` — or `CREDS_CALLER_SESSION` to set one by hand), the
+session's name from `~/.claude/sessions/<CLAUDE_PID>.json` when there is one, and the NAME of the
+working folder — never its path. A call from an agent's terminal therefore reads *creds CLI ·
+session 98bf9f23 · in ClaudeRag wants to…* and one from your own reads *creds CLI · in ClaudeRag
+wants to…*. Not versioned, deliberately: the binary is not stamped at publish, and `1.0.0` on every
+release would be worse than nothing. The window renders and records the label and decides nothing
+with it.
+
 Inside **WSL** the Linux binary hands the call to the Windows one through interop: no networking
 to configure and nothing new listening anywhere. On a **Remote-SSH** host, *Open Remote Bridge*
 holds an `ssh -R` open and `CREDS_BROKER_SOCKET` points this binary at the forwarded socket —

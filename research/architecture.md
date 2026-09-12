@@ -398,8 +398,21 @@ Three consequences worth stating, because each was a decision:
 - **The Windows half does the finding.** No Linux-side guess at `/mnt/c/Users/…`, which breaks on
   the first machine whose disk is not `C:`.
 
+- **Who is asking is computed on the Linux side and forwarded as an ARGUMENT (2026-09-12).** The
+  consent modal names its caller — agent, session, folder — and the Linux half is the process the
+  MCP client actually spawned, so its environment holds the session; the Windows half's belongs to
+  `wsl.exe`, and a pid found there would name somebody else's session. The record crosses as
+  `--caller <base64url json>` (environment variables do not cross the bridge — measured), and only
+  after a once-per-session hermetic `creds-mcp.exe --help` probe shows the Windows half knows the
+  flag: an old half handed an unknown argument dies with a usage error before the handshake, which
+  is a dead server rather than a degraded one. Every failure of the probe starts the Windows half
+  without the flag. The Windows half fills only the agent's name, from the client that shakes hands
+  with it — *the side that spoke to the environment names the session; the side that spoke to the
+  client names the client.*
+
 `CREDS_MCP_WINDOWS_BINARY` overrides the executable — its own variable, never the CLI's. Design
-record and what the build taught: [PLAN_mcp_wsl_bridge.md](PLAN_mcp_wsl_bridge.md).
+record and what the build taught: [PLAN_mcp_wsl_bridge.md](PLAN_mcp_wsl_bridge.md); the caller
+record: [PLAN_caller_identity_in_consent.md](../todo/PLAN_caller_identity_in_consent.md).
 
 ## Where the contract lives
 
@@ -416,7 +429,10 @@ used to be a TypeScript module shared by its only two callers, which made it a s
 implementation rather than a specification. With `src_cli/` it gained a second implementation in
 another language, so since 2026-08-26 it is a generated file: `contract/broker-v1.json`, emitted
 from `brokerProtocol.ts` by `npm run contract`, embedded into the CLI binary at build time, with
-a test on **each** side asserting its own tables match it.
+a test on **each** side asserting its own tables match it. Since 2026-09-12 it also carries a
+`caller` block — the optional label every performing body may carry so the consent modal can name
+who is asking: its field name, the four sub-fields, the flat fallback prefix and the 80-character
+cap, read off `brokerCaller.ts` rather than retyped. Additive, so the wire's `version` stays 1.
 
 That check earns its place because this class of drift is silent. A client posting `vpn-up` to a
 route the broker renamed, or reporting exit 95 where the other reports 0, raises no error

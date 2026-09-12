@@ -32,6 +32,7 @@ namespace CredsCli;
 [JsonSerializable(typeof(AliasQueryRequest))]
 [JsonSerializable(typeof(AliasListResponse))]
 [JsonSerializable(typeof(AliasListEntry))]
+[JsonSerializable(typeof(CallerRecord))]
 internal sealed partial class CredsJsonContext : JsonSerializerContext;
 
 internal sealed record ErrorEnvelope([property: JsonPropertyName("error")] ErrorDetail? Error);
@@ -57,22 +58,39 @@ internal sealed record EnvExportResponse(
 /// <summary>A terminal or a tunnel: it happened, or the person declined.</summary>
 internal sealed record OpenedResponse([property: JsonPropertyName("opened")] bool Opened);
 
-internal sealed record ExecRequest([property: JsonPropertyName("command")] string Command);
+/*
+ * Every request carries the caller label LAST and optionally — `null` writes no field, so a body
+ * from a record that knows nothing is byte for byte the body this binary always sent. The label is
+ * what the window's consent modal names and its audit line records; the window strips, caps and
+ * decides nothing with it (CallerIdentity).
+ */
 
-internal sealed record QueryRequest([property: JsonPropertyName("query")] string Query);
+internal sealed record ExecRequest(
+    [property: JsonPropertyName("command")] string Command,
+    [property: JsonPropertyName("caller"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] CallerRecord? Caller = null);
 
-internal sealed record EmptyRequest;
+internal sealed record QueryRequest(
+    [property: JsonPropertyName("query")] string Query,
+    [property: JsonPropertyName("caller"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] CallerRecord? Caller = null);
+
+/// <summary>A verb with no payload of its own — the label is the only thing it can say.</summary>
+internal sealed record EmptyRequest(
+    [property: JsonPropertyName("caller"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] CallerRecord? Caller = null);
 
 /// <summary>A call that names its entry rather than holding a token.</summary>
-internal sealed record AliasRequest([property: JsonPropertyName("alias")] string Alias);
+internal sealed record AliasRequest(
+    [property: JsonPropertyName("alias")] string Alias,
+    [property: JsonPropertyName("caller"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] CallerRecord? Caller = null);
 
 internal sealed record AliasExecRequest(
     [property: JsonPropertyName("alias")] string Alias,
-    [property: JsonPropertyName("command")] string Command);
+    [property: JsonPropertyName("command")] string Command,
+    [property: JsonPropertyName("caller"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] CallerRecord? Caller = null);
 
 internal sealed record AliasQueryRequest(
     [property: JsonPropertyName("alias")] string Alias,
-    [property: JsonPropertyName("query")] string Query);
+    [property: JsonPropertyName("query")] string Query,
+    [property: JsonPropertyName("caller"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] CallerRecord? Caller = null);
 
 /// <summary>What `creds ls` reads: names and kinds, and by design nothing else.</summary>
 internal sealed record AliasListResponse(

@@ -1,3 +1,4 @@
+using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 
 namespace CredsMcp;
@@ -26,7 +27,10 @@ namespace CredsMcp;
 [JsonSerializable(typeof(ToolFailure))]
 [JsonSerializable(typeof(BrokerErrorEnvelope))]
 [JsonSerializable(typeof(BrokerErrorDetail))]
-[JsonSerializable(typeof(Dictionary<string, string>))]
+// The request bodies: named string fields plus the caller label as a nested object, which a
+// dictionary of strings could not hold. AOT-publishes with zero trim warnings — measured, plan
+// PLAN_caller_identity_in_consent §5.2 — so the reflection-off rule this project keeps is intact.
+[JsonSerializable(typeof(Dictionary<string, JsonNode>))]
 internal sealed partial class McpJsonContext : JsonSerializerContext;
 
 /// <summary>What <c>GET /v1/mcp/entries</c> answers with.</summary>

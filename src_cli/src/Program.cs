@@ -19,6 +19,18 @@ namespace CredsCli;
 /// </remarks>
 internal static class Program
 {
+    /// <summary>
+    /// What the consent modal calls this binary.
+    /// </summary>
+    /// <remarks>
+    /// Not <c>creds CLI &lt;version&gt;</c>: the binary is not version-stamped at publish and has no
+    /// <c>--version</c>, so any version printed here would read <c>1.0.0</c> on every release, which
+    /// is worse than none. A shell Claude Code spawned inherits its session id, so a call from an
+    /// agent's terminal reads <c>creds CLI · session … · in …</c> and one from a person's own
+    /// terminal reads <c>creds CLI · in …</c> — never "An agent".
+    /// </remarks>
+    internal const string CliAgent = "creds CLI";
+
     private static void Note(string message) =>
         Console.Error.WriteLine($"[creds-for-devs] {message}");
 
@@ -47,6 +59,11 @@ internal static class Program
             }
         }
 
+        // Who is asking, for the window's consent modal and audit line: this binary's own label,
+        // the session id an agent's shell inherits, and the working folder's name. A label the
+        // window strips, caps and decides nothing with — see CallerIdentity.
+        var caller = CallerIdentity.Current(CliAgent);
+
         switch (CommandLine.Parse(args))
         {
             case Request.Help help:
@@ -58,7 +75,7 @@ internal static class Program
                 return contract.Exit("usage");
 
             case Request.Use use:
-                return await RunAsync(use, contract);
+                return await RunAsync(use, contract, caller);
 
             case Request.ReadConfig config:
                 return await ReadConfigAsync(config.Key, contract);
@@ -82,7 +99,7 @@ internal static class Program
     /// is what lets <c>creds ssh 4242.abc -- x</c> and <c>creds ssh prod-db -- x</c> be the same
     /// command rather than two.
     /// </remarks>
-    private static async Task<int> RunAsync(Request.Use use, BrokerContract contract)
+    private static async Task<int> RunAsync(Request.Use use, BrokerContract contract, CallerRecord caller)
     {
         if (use.Verb == "ls")
         {
@@ -99,8 +116,8 @@ internal static class Program
 
         var token = GrantToken.Parse(use.Token);
         return token is not null
-            ? await CallWithTokenAsync(token, route, wireVerb, use.Payload, contract)
-            : await CallWithAliasAsync(use.Token, wireVerb, use.Payload, contract);
+            ? await CallWithTokenAsync(token, route, wireVerb, use.Payload, contract, caller)
+            : await CallWithAliasAsync(use.Token, wireVerb, use.Payload, contract, caller);
     }
 
     private static async Task<int> CallWithTokenAsync(
@@ -108,7 +125,8 @@ internal static class Program
         string route,
         string wireVerb,
         string? payload,
-        BrokerContract contract)
+        BrokerContract contract,
+        CallerRecord caller)
     {
         using var client = BrokerClient.Create(contract);
 
@@ -123,7 +141,7 @@ internal static class Program
         }
 
         return await SendAsync(
-            () => client.PostAsync(token, route, RequestBody(wireVerb, payload)),
+            () => client.PostAsync(token, route, RequestBody(wireVerb, payload, caller)),
             wireVerb,
             contract);
     }
@@ -141,7 +159,8 @@ internal static class Program
         string alias,
         string wireVerb,
         string? payload,
-        BrokerContract contract)
+        BrokerContract contract,
+        CallerRecord caller)
     {
         if (!AliasName.IsValid(alias))
         {
@@ -167,7 +186,7 @@ internal static class Program
 
         using var client = BrokerClient.Create(contract);
         var aliasRoute = "/v1/alias/" + wireVerb;
-        var body = AliasBody(alias, wireVerb, payload);
+        var body = AliasBody(alias, wireVerb, payload, caller);
 
         foreach (var endpoint in endpoints)
         {
@@ -212,13 +231,27 @@ internal static class Program
             : ReportError(reply.Body, contract);
     }
 
-    private static string AliasBody(string alias, string wireVerb, string? payload) =>
-        wireVerb switch
+    /// <summary>
+    /// The alias body: the name, the verb's one payload field, and the caller label — nothing else.
+    /// Internal so the SET of keys is a unit test.
+    /// </summary>
+    internal static string AliasBody(string alias, string wireVerb, string? payload, CallerRecord caller)
+    {
+        var who = CallerOrNull(caller);
+        return wireVerb switch
         {
-            "exec" => JsonSerializer.Serialize(new AliasExecRequest(alias, payload ?? string.Empty), CredsJsonContext.Default.AliasExecRequest),
-            "db" => JsonSerializer.Serialize(new AliasQueryRequest(alias, payload ?? string.Empty), CredsJsonContext.Default.AliasQueryRequest),
-            _ => JsonSerializer.Serialize(new AliasRequest(alias), CredsJsonContext.Default.AliasRequest),
+            "exec" => JsonSerializer.Serialize(new AliasExecRequest(alias, payload ?? string.Empty, who), CredsJsonContext.Default.AliasExecRequest),
+            "db" => JsonSerializer.Serialize(new AliasQueryRequest(alias, payload ?? string.Empty, who), CredsJsonContext.Default.AliasQueryRequest),
+            _ => JsonSerializer.Serialize(new AliasRequest(alias, who), CredsJsonContext.Default.AliasRequest),
         };
+    }
+
+    /// <summary>
+    /// An empty record sends no field at all, so an old window meets byte for byte the wire it
+    /// always met. This binary's record is never empty — it always names itself — but the shape
+    /// must hold for a record that is.
+    /// </summary>
+    private static CallerRecord? CallerOrNull(CallerRecord caller) => caller.IsEmpty ? null : caller;
 
     /// <summary>
     /// Print the names this window has enabled for the CLI.
@@ -343,13 +376,17 @@ internal static class Program
         return 0;
     }
 
-    private static string RequestBody(string wireVerb, string? payload) =>
-        wireVerb switch
+    /// <summary>The token body: the verb's one payload field and the caller label — nothing else.</summary>
+    internal static string RequestBody(string wireVerb, string? payload, CallerRecord caller)
+    {
+        var who = CallerOrNull(caller);
+        return wireVerb switch
         {
-            "exec" => JsonSerializer.Serialize(new ExecRequest(payload ?? string.Empty), CredsJsonContext.Default.ExecRequest),
-            "db" => JsonSerializer.Serialize(new QueryRequest(payload ?? string.Empty), CredsJsonContext.Default.QueryRequest),
-            _ => "{}",
+            "exec" => JsonSerializer.Serialize(new ExecRequest(payload ?? string.Empty, who), CredsJsonContext.Default.ExecRequest),
+            "db" => JsonSerializer.Serialize(new QueryRequest(payload ?? string.Empty, who), CredsJsonContext.Default.QueryRequest),
+            _ => JsonSerializer.Serialize(new EmptyRequest(who), CredsJsonContext.Default.EmptyRequest),
         };
+    }
 
     private static int Report(Outcome outcome)
     {

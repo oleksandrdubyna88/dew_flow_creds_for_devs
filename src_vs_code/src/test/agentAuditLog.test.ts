@@ -93,3 +93,40 @@ test('a call number renders as a #N prefix; its absence omits it (legacy channel
   assert.doesNotMatch(legacy, /#\d/);
   assert.match(legacy, /^\[09:08:07Z\] exec prod/);
 });
+
+test('the caller sits between the door and the outcome, as "by <label>"', () => {
+  // Who called is the half of the record the journal could not say: nine sessions side by side
+  // and every line reading the same. The label is what the caller REPORTED — it authorises
+  // nothing, and the line does not pretend otherwise.
+  const line = formatAuditLine({
+    at,
+    grant: 'A1b2C3…',
+    entityName: 'prod-db',
+    action: 'exec',
+    outcome: 'exit 0',
+    detail: 'uname -a',
+    seq: 3,
+    via: 'mcp',
+    caller: 'Claude Code 2.1.268 · session clauderag-d6 (98bf9f23) · in ClaudeRag',
+  });
+
+  assert.equal(
+    line,
+    '[09:05:03Z] #3 exec prod-db (A1b2C3…) via mcp by Claude Code 2.1.268 · session clauderag-d6 (98bf9f23) · in ClaudeRag → exit 0  uname -a',
+  );
+});
+
+test('a line with no caller is byte for byte the line written before the field existed', () => {
+  const line = formatAuditLine({ at, grant: 'A1b2C3…', entityName: 'prod-db', action: 'exec', outcome: 'exit 0', seq: 3, via: 'token' });
+
+  assert.equal(line, '[09:05:03Z] #3 exec prod-db (A1b2C3…) via token → exit 0');
+});
+
+test('a caller label is one line and cannot carry the field separator, whoever built it', () => {
+  // The sanitiser on the request side is the guard; this is the formatter refusing to be the
+  // place where a bypassed guard breaks the round trip.
+  const line = formatAuditLine({ at, grant: 'g…', entityName: 'x', action: 'exec', outcome: 'exit 0', caller: 'a\nb → c' });
+
+  assert.equal(line.includes('\n'), false);
+  assert.equal(line.split('→').length, 2, line);
+});

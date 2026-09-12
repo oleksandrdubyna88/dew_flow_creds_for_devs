@@ -39,13 +39,17 @@ internal static class WslPump
     /// <summary>
     /// Run the Windows binary and be its stdio for as long as the client keeps us.
     /// </summary>
+    /// <param name="args">
+    /// What the Windows half is started with — <c>--caller &lt;record&gt;</c> when it knows the flag,
+    /// nothing otherwise; decided by <see cref="CallerForwarding"/> before this is called.
+    /// </param>
     /// <remarks>
     /// The exit code is the child's, so a client that reads one learns what the half that did the
     /// work decided rather than what the pump felt about it.
     /// </remarks>
-    internal static async Task<int> RunAsync()
+    internal static async Task<int> RunAsync(IReadOnlyList<string> args)
     {
-        using var child = WslInterop.CredsMcp.StartPiped([]);
+        using var child = WslInterop.CredsMcp.StartPiped(args);
         // Neither half may outlive the other: an MCP client considers a server alive for exactly
         // as long as the process it started, so a Windows copy left behind would hold a window's
         // consent machinery open for a session nobody is in any more.

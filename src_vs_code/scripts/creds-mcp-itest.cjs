@@ -24,6 +24,16 @@ const Module = require('module');
 /** Consent answers the fake window gives, in order, and how often it was asked. */
 const consent = { answers: ['Allow'], asked: 0 };
 global.__CREDS_MCP_CONSENT__ = consent;
+/**
+ * Every line the broker wrote to its output channel — the audit surface.
+ *
+ * <p>Recorded rather than dropped since the consent modal started naming its caller: the one
+ * claim about that label nothing else can make is that the name the MCP client sent in its
+ * `initialize` reaches the window's audit line through the real binary, and the line is where it
+ * can be read back.</p>
+ */
+const audit = [];
+global.__CREDS_MCP_AUDIT__ = audit;
 
 // ---- vscode stub -----------------------------------------------------------
 // The modal is real here: an MCP use call raises one, and whether it does — and how often — is
@@ -40,7 +50,7 @@ fs.writeFileSync(
        },
        showInformationMessage: () => Promise.resolve(undefined),
        showErrorMessage: () => Promise.resolve(undefined),
-       createOutputChannel: () => ({ appendLine(){}, dispose(){} }),
+       createOutputChannel: () => ({ appendLine(line){ global.__CREDS_MCP_AUDIT__.push(line); }, dispose(){} }),
      },
      workspace: { getConfiguration: () => ({ get: (_k, d) => d }) },
      Uri: { file: (p) => ({ fsPath: p }) },
@@ -203,7 +213,9 @@ const HANDSHAKE = [
     params: {
       protocolVersion: '2024-11-05',
       capabilities: {},
-      clientInfo: { name: 'creds-mcp-itest', version: '1' },
+      // What the binary names the caller by: the modal's `creds-itest 9.9` is THIS, read off the
+      // handshake through McpServer.ClientInfo — the check below proves the route end to end.
+      clientInfo: { name: 'creds-itest', version: '9.9' },
     },
   },
   { jsonrpc: '2.0', method: 'notifications/initialized' },
@@ -436,13 +448,34 @@ const HANDSHAKE = [
 
   consent.answers = ['Allow'];
   consent.asked = 0;
-  const used = await speak(env, [
+  audit.length = 0;
+  // The caller identity rides on THIS call rather than one of its own (T14). An unauthenticated
+  // caller may make a window prompt five times a minute (`aliasThrottle.ts`), the levels below
+  // spend that budget, and a sixth prompt added here STARVED level 4 — which is how this check was
+  // first written, and what running it found. `CLAUDE_PID` is blanked so the session registry on
+  // THIS machine — a real one whenever the script runs under Claude Code — cannot make the label
+  // depend on who ran the test.
+  const used = await speak({ ...env, CLAUDE_CODE_SESSION_ID: '98bf9f23-81ff-4bba-beaf-1fd8269ddc97', CLAUDE_PID: '' }, [
     ...HANDSHAKE,
     { jsonrpc: '2.0', id: 6, method: 'tools/call', params: { name: 'creds_query', arguments: { entry: 'e-1', query: 'select 1' } } },
   ]);
   const usedText = used.byId.get(6)?.result?.content?.[0]?.text ?? '';
   check('an open entry can be used, end to end', usedText.includes('"rows":1'), usedText.slice(0, 200));
   check('and the human was asked, exactly once', consent.asked === 1, `asked ${consent.asked}`);
+
+  // ---- who is asking (research/PLAN_caller_identity_in_consent.md, T14) ---------------------
+  // The clientInfo route proven end to end rather than assumed from the SDK's metadata: the name
+  // the client sent in its handshake, and the session id the binary read from its environment,
+  // both arrive on the window's audit line through the real binary.
+  const byLine = audit.find((line) => line.includes(' by ') && line.includes('select 1')) ?? '';
+  check(
+    'the audit line names the MCP client by the name and version it sent in its handshake',
+    byLine.includes(' by creds-itest 9.9'),
+    audit.join('\n').slice(0, 700),
+  );
+  check('and the short session id the binary read from its environment', byLine.includes('session 98bf9f23'), byLine);
+  const label = byLine.split(' by ')[1]?.split(' → ')[0] ?? '/';
+  check('and the folder by its name only — never a path', label.includes(' · in ') && !/[\\/]/.test(label), label);
 
   consent.answers = ['Allow'];
   consent.asked = 0;

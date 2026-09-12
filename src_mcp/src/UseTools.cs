@@ -224,6 +224,7 @@ internal static class UseTools
     internal static async Task<string> InvokeAsync(
         BrokerContract contract,
         UseTool tool,
+        CallerRecord caller,
         string entryId,
         string? extraName,
         string? extraValue)
@@ -234,7 +235,7 @@ internal static class UseTools
         }
 
         var route = RouteFor(contract, tool);
-        var reply = await Windows.PostAsync(contract, route, Body(entryId, extraName, extraValue));
+        var reply = await Windows.PostAsync(contract, route, Body(contract, caller, entryId, extraName, extraValue));
         if (reply is null)
         {
             return Failure(
@@ -258,6 +259,7 @@ internal static class UseTools
     internal static async Task<string> CreateAsync(
         BrokerContract contract,
         UseTool tool,
+        CallerRecord caller,
         string name,
         string kind,
         string? secretKind,
@@ -273,6 +275,33 @@ internal static class UseTools
             return Failure("No name was given.", "Give the new entry a name the person will recognise.");
         }
 
+        var reply = await Windows.PostAsync(
+            contract,
+            RouteFor(contract, tool),
+            CreateBody(contract, caller, name, kind, secretKind, secret, folder, host, user, port, draw));
+        if (reply is null)
+        {
+            return Failure(
+                "No CredsForDevs window answered.",
+                "Open the folder in VS Code with the CredsForDevs extension and unlock the vault.");
+        }
+        return reply.Status == 200 ? reply.Body : Refused(reply);
+    }
+
+    /// <summary>The create body, field by field. Its own method so the SET of keys is a unit test.</summary>
+    internal static string CreateBody(
+        BrokerContract contract,
+        CallerRecord caller,
+        string name,
+        string kind,
+        string? secretKind,
+        string? secret,
+        string? folder,
+        string? host,
+        string? user,
+        int? port,
+        IReadOnlyList<(string Key, string? Value)>? draw)
+    {
         var fields = new Dictionary<string, string> { ["name"] = name, ["kind"] = kind };
         Put(fields, "secretKind", secretKind);
         Put(fields, "secret", secret);
@@ -281,18 +310,7 @@ internal static class UseTools
         Put(fields, "user", user);
         Put(fields, "port", port?.ToString());
         PutAll(fields, draw);
-
-        var reply = await Windows.PostAsync(
-            contract,
-            RouteFor(contract, tool),
-            JsonSerializer.Serialize(fields, McpJsonContext.Default.DictionaryStringString));
-        if (reply is null)
-        {
-            return Failure(
-                "No CredsForDevs window answered.",
-                "Open the folder in VS Code with the CredsForDevs extension and unlock the vault.");
-        }
-        return reply.Status == 200 ? reply.Body : Refused(reply);
+        return Bodies.Compose(fields, caller, contract);
     }
 
     /// <summary>
@@ -307,6 +325,7 @@ internal static class UseTools
     internal static async Task<string> RotateAsync(
         BrokerContract contract,
         UseTool tool,
+        CallerRecord caller,
         string entryId,
         string statement,
         string? secretKind,
@@ -317,14 +336,10 @@ internal static class UseTools
             return Failure("No entry id was given.", "Call creds_list first and pass an entry's `id`.");
         }
 
-        var fields = new Dictionary<string, string> { ["entry"] = entryId, ["statement"] = statement };
-        Put(fields, "secretKind", secretKind);
-        PutAll(fields, draw);
-
         var reply = await Windows.PostAsync(
             contract,
             RouteFor(contract, tool),
-            JsonSerializer.Serialize(fields, McpJsonContext.Default.DictionaryStringString));
+            RotateBody(contract, caller, entryId, statement, secretKind, draw));
         if (reply is null)
         {
             return Failure(
@@ -364,15 +379,33 @@ internal static class UseTools
         }
     }
 
-    /// <summary>The request body, built field by field — never a blob handed over by a model.</summary>
-    private static string Body(string entryId, string? extraName, string? extraValue)
+    /// <summary>The rotate body, field by field. Its own method so the SET of keys is a unit test.</summary>
+    internal static string RotateBody(
+        BrokerContract contract,
+        CallerRecord caller,
+        string entryId,
+        string statement,
+        string? secretKind,
+        IReadOnlyList<(string Key, string? Value)>? draw)
+    {
+        var fields = new Dictionary<string, string> { ["entry"] = entryId, ["statement"] = statement };
+        Put(fields, "secretKind", secretKind);
+        PutAll(fields, draw);
+        return Bodies.Compose(fields, caller, contract);
+    }
+
+    /// <summary>
+    /// The request body, built field by field — never a blob handed over by a model — plus the
+    /// caller label, attached by <see cref="Bodies.Compose"/> under the contract's field name.
+    /// </summary>
+    internal static string Body(BrokerContract contract, CallerRecord caller, string entryId, string? extraName, string? extraValue)
     {
         var fields = new Dictionary<string, string> { ["entry"] = entryId };
         if (extraName is not null && extraValue is not null)
         {
             fields[extraName] = extraValue;
         }
-        return JsonSerializer.Serialize(fields, McpJsonContext.Default.DictionaryStringString);
+        return Bodies.Compose(fields, caller, contract);
     }
 
     /// <summary>
