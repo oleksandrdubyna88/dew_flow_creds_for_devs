@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import { lastRunFailed } from './backupNotice';
 import { CorpPolicyState, isCorpAdmin } from './corpPolicy';
 import { compareVersions } from './credsInstall';
-import { BackupStatus, isNoBackupHere, targetKindsOf } from './orgBackupClient';
+import { BackupRead, BackupStatus, isNoBackupHere, targetKindsOf } from './orgBackupClient';
 import { ServerFailure, ServerRead } from './orgRecoveryClient';
 import { ServerMetrics, formatBytes } from './serverMetricsPage';
 import { StoredAccount, TreeElement } from './types';
@@ -42,9 +42,11 @@ const FAILURE_WORDS: Readonly<Record<ServerFailure, string>> = {
 
 const FAILURE_REASONS: Readonly<Record<ServerFailure, string>> = {
   unreachable: 'This server could not be reached. The version and footprint below are the last ones it gave.',
-  refused: 'This server refused to show its metrics. Either it is older than the change that opened metrics '
-    + 'to administrators (it was recovery-officer-only until 2026-09-12), or this deployment has no recovery '
-    + 'roster at all — the admin gate sits inside that switch, so a server without one refuses everybody.',
+  refused: 'This server refused to show its metrics. Three things look the same from here: your '
+    + 'administrator role may have been taken away on this server since this window last read the '
+    + 'roster; the deployment may be older than the change that opened metrics to administrators (it '
+    + 'was recovery-officer-only until 2026-09-12); or it may have no recovery roster at all — the '
+    + 'admin gate sits inside that switch, so a server without one refuses everybody.',
   older: 'This server has no metrics endpoint; it predates the feature.',
 };
 
@@ -109,7 +111,22 @@ export function serverVersionItem(input: ServerVersionRowInput): vscode.TreeItem
  * announce that every development server is out of date.</p>
  */
 function isBehind(deployed: string, latest: string): boolean {
-  return latest !== '' && /^\d+\.\d+/.test(deployed) && compareVersions(deployed, latest) < 0;
+  const clean = numericVersion(deployed);
+  return latest !== '' && clean !== '' && compareVersions(clean, latest) < 0;
+}
+
+/**
+ * The comparable part of a reported version, or `''` when there is none.
+ *
+ * <p>A leading `v` and a build suffix both appear in the wild — `AssemblyInformationalVersion`
+ * carries `0.6.0+2f1c9ab` for a build stamped from git — and neither is part of the number. The
+ * plain test refused the first outright and let the second through to a comparison that reads
+ * `0+2f1c9ab` as zero. Stripped here rather than at the comparison, so the ROW still shows exactly
+ * what the server said it is running.</p>
+ */
+function numericVersion(reported: string): string {
+  const core = reported.trim().replace(/^v/i, '').split(/[+\s-]/)[0] ?? '';
+  return /^\d+\.\d+/.test(core) ? core : '';
 }
 
 export interface ServerVaultsRowInput {
@@ -132,8 +149,8 @@ export function serverVaultsItem(input: ServerVaultsRowInput): vscode.TreeItem {
 
 export interface ServerBackupRowInput {
   readonly account: StoredAccount;
-  /** The last status read, or nothing when none has arrived yet. */
-  readonly status: BackupStatus | undefined;
+  /** The last read — its value, and whether the CURRENT attempt landed. */
+  readonly read: BackupRead | undefined;
   /**
    * The instant, in the reader's own locale.
    *
@@ -156,9 +173,9 @@ export function serverBackupItem(input: ServerBackupRowInput): vscode.TreeItem {
   const item = new vscode.TreeItem('Backup', vscode.TreeItemCollapsibleState.None);
   item.id = `serverBackup:${input.account.accountId}`;
   item.contextValue = 'serverBackup';
-  const drawn = backupState(input.status, input.at);
+  const drawn = withStaleness(backupState(input.read?.value, input.at), input.read);
   item.description = drawn.description;
-  item.iconPath = new vscode.ThemeIcon(drawn.icon, drawn.warn ? WARNING_COLOR : SERVER_COLOR);
+  item.iconPath = new vscode.ThemeIcon(drawn.icon, drawn.warn === true ? WARNING_COLOR : SERVER_COLOR);
   // The row answers a left click with the same tab its context menu offers, so selecting it or
   // pressing Enter lands somewhere. The EXISTING command — nothing new was registered for this.
   item.command = {
@@ -173,6 +190,21 @@ interface BackupDrawing {
   readonly icon: string;
   readonly description: string;
   readonly warn?: boolean;
+}
+
+/**
+ * The same drawing, marked when the read that produced it did NOT land.
+ *
+ * <p>The row kept drawing the last good status as the current one — a green check and yesterday's
+ * timestamp against an endpoint that was unreachable — because only successes ever reached the
+ * cache. Found by the code round, by three reviewers independently. The value is still kept, the
+ * failure is named beside it, and the icon stops claiming health.</p>
+ */
+function withStaleness(drawn: BackupDrawing, read: BackupRead | undefined): BackupDrawing {
+  if (read?.failed !== true || read.value === undefined) {
+    return drawn;
+  }
+  return { icon: 'warning', description: `${drawn.description} · last read failed`, warn: true };
 }
 
 function backupState(
@@ -253,7 +285,7 @@ export function serverChildren(account: StoredAccount): TreeElement[] {
  */
 export interface ServerSectionReads {
   readonly metrics: ReadonlyMap<string, ServerRead>;
-  readonly backup: ReadonlyMap<string, BackupStatus>;
+  readonly backup: ReadonlyMap<string, BackupRead>;
   /** The newest published `server-v*` release, or nothing when GitHub has not been asked. */
   readonly release: { readonly version: string } | undefined;
 }
@@ -307,7 +339,7 @@ export function serverRowFor(
   }
   return element.kind === 'serverVaults'
     ? serverVaultsItem({ account, metrics })
-    : serverBackupItem({ account, status: section.backup.get(account.accountId), at: localInstant });
+    : serverBackupItem({ account, read: section.backup.get(account.accountId), at: localInstant });
 }
 
 function latestOf(section: ServerSectionReads): string {

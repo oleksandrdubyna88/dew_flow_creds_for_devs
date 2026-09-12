@@ -1,6 +1,6 @@
 import { CorpPolicyFacts, CorpPolicyState, afterPolicyFetch, factsOf } from './corpPolicy';
 import { ReleaseMemo } from './githubReleases';
-import { BackupStatus } from './orgBackupClient';
+import { BackupRead } from './orgBackupClient';
 import { MemberListEntry, OrgMembersClient, ProjectRow } from './orgMembersClient';
 import { MetricsProbe, ServerRead } from './orgRecoveryClient';
 import { StoredAccount } from './types';
@@ -25,7 +25,7 @@ export interface ServerSectionHost {
   readonly readerFor: (account: StoredAccount) => MetricsReader | undefined;
   readonly metrics: Map<string, ServerRead>;
   /** Filled by the backup watch, dropped here — one section, one lifetime for its answers. */
-  readonly backup: Map<string, BackupStatus>;
+  readonly backup: Map<string, BackupRead>;
   /** ONE remembered answer for the window, not one per account: the repository is the same. */
   release: ReleaseMemo | undefined;
   /** The published-release check, as an argument so a test drives it without a network. */
@@ -86,7 +86,7 @@ export interface OrgPolicyHost {
 export class ServerSection implements ServerSectionHost {
   readonly metrics = new Map<string, ServerRead>();
 
-  readonly backup = new Map<string, BackupStatus>();
+  readonly backup = new Map<string, BackupRead>();
 
   release: ReleaseMemo | undefined;
 
@@ -200,13 +200,17 @@ export async function refreshServerMetrics(
   }
   const reader = isAdmin ? server.readerFor(account) : undefined;
   if (reader === undefined) {
-    server.metrics.delete(account.accountId);
-    server.backup.delete(account.accountId);
+    forgetSection(server, account.accountId);
     return false;
   }
+  // The server this read is ABOUT, taken BEFORE the await. An account keeps its id when it is
+  // repointed at another deployment, so a read still in flight against the old one would otherwise
+  // land under the same key after the repoint had already cleared it — and the tree would draw the
+  // old server's version and footprint as the new one's, with nothing on the row saying so.
+  const asked = host.orgPolicyServer.get(account.accountId);
   const probe = await reader.probeMetrics(account).catch(unreachable);
   const at = host.now();
-  server.metrics.set(account.accountId, nextRead(server.metrics.get(account.accountId), probe, at));
+  commitRead(host, server, { accountId: account.accountId, asked, probe, at });
   // One memo for the window: the repository is the same for everybody, and the check is TTL'd.
   server.release = await server.published(server.release, at).catch(() => server.release);
   return true;
@@ -215,6 +219,35 @@ export async function refreshServerMetrics(
 /** Offline, a refused proxy, a timeout — all of them are a server this section could not read. */
 function unreachable(): MetricsProbe {
   return { failure: 'unreachable' };
+}
+
+/** A demotion, or an account with no reader: the section's answers go with the section. */
+function forgetSection(server: ServerSectionHost, accountId: string): void {
+  server.metrics.delete(accountId);
+  server.backup.delete(accountId);
+}
+
+/** One read, with the server it was asked of — so the commit below can tell whether it still is. */
+interface MetricsCommit {
+  readonly accountId: string;
+  readonly asked: string | undefined;
+  readonly probe: MetricsProbe;
+  readonly at: number;
+}
+
+/**
+ * Write the answer down, unless it is about a server this account has left.
+ *
+ * <p>An account keeps its id when it is repointed at another deployment, so a read still in flight
+ * against the old one would land under the same key after the repoint had already cleared it — and
+ * the tree would draw the old server's version and footprint as the new one's, with nothing on the
+ * row saying otherwise. The location is part of what the answer IS.</p>
+ */
+function commitRead(host: OrgPolicyHost, server: ServerSectionHost, read: MetricsCommit): void {
+  if (host.orgPolicyServer.get(read.accountId) !== read.asked) {
+    return;
+  }
+  server.metrics.set(read.accountId, nextRead(server.metrics.get(read.accountId), read.probe, read.at));
 }
 
 /**

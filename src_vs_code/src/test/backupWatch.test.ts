@@ -277,12 +277,30 @@ test('every account that answered is recorded, by id, in one pass', async () => 
       : Promise.reject(new Error('offline')));
   const host: BackupWatchHost = {
     ...w.host,
-    record: (accountId, read) => recorded.push([accountId, read.lastResult]),
+    record: (accountId, read) => recorded.push([accountId, read.value?.lastResult ?? 'no read']),
   };
 
   await checkBackups(host, new Map([[anna, policy(true)], [bob, policy(true)]]));
 
-  assert.deepEqual(recorded, [['acct-1', 'ok']], 'and the one that failed recorded nothing');
+  // EVERY account, the one that failed included — the change the code round asked for. Recording
+  // successes alone left the row drawing the last good status as the current one: a green check and
+  // yesterday's timestamp against a server that could not be reached at all.
+  assert.deepEqual(recorded, [['acct-1', 'ok'], ['acct-2', 'no read']]);
+});
+
+test('a read that failed is recorded as a failure, keeping whatever the cache already held', async () => {
+  const recorded: [string, boolean, string][] = [];
+  const w = world(() => Promise.reject(new Error('offline')));
+  const host: BackupWatchHost = {
+    ...w.host,
+    lastRead: () => ({ value: status({ lastResult: 'ok' }), at: 1 }),
+    record: (accountId, read) =>
+      recorded.push([accountId, read.failed === true, read.value?.lastResult ?? 'nothing']),
+  };
+
+  await checkBackups(host, new Map([[anna, policy(true)]]));
+
+  assert.deepEqual(recorded, [['acct-1', true, 'ok']], 'the failure is named and the value survives');
 });
 
 test('a host with no recorder behaves exactly as it did before there was one', async () => {

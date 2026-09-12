@@ -212,7 +212,7 @@ test('nothing cached yet is "checking…", not "not configured"', () => {
   // They are opposite statements about somebody's deployment, and only one of them is a problem.
   const { serverBackupItem } = world();
 
-  const item = serverBackupItem({ account: ACCOUNT, status: undefined, at: AT }) as Item;
+  const item = serverBackupItem({ account: ACCOUNT, read: undefined, at: AT }) as Item;
 
   assert.equal(item.label, 'Backup');
   assert.equal(item.contextValue, 'serverBackup');
@@ -223,13 +223,13 @@ test('nothing cached yet is "checking…", not "not configured"', () => {
 test('a server too old for the feature is told apart from one that is simply not set up', () => {
   const { serverBackupItem } = world();
 
-  const old = serverBackupItem({ account: ACCOUNT, status: NO_BACKUP_HERE, at: AT }) as Item;
+  const old = serverBackupItem({ account: ACCOUNT, read: { value: NO_BACKUP_HERE, at: 0 }, at: AT }) as Item;
   assert.equal(old.description, 'not available on this server');
   assert.equal(old.iconPath?.id, 'circle-slash');
 
   const unset = serverBackupItem({
     account: ACCOUNT,
-    status: status({ configured: false, configuredTargetKinds: [] }),
+    read: { value: status({ configured: false, configuredTargetKinds: [] }), at: 0 },
     at: AT,
   }) as Item;
   assert.equal(unset.description, 'not configured');
@@ -243,7 +243,7 @@ test('destinations saved with no key are a THIRD state, and the row must not hid
 
   const item = serverBackupItem({
     account: ACCOUNT,
-    status: status({ configured: false, configuredTargetKinds: ['s3'] }),
+    read: { value: status({ configured: false, configuredTargetKinds: ['s3'] }), at: 0 },
     at: AT,
   }) as Item;
 
@@ -254,7 +254,7 @@ test('destinations saved with no key are a THIRD state, and the row must not hid
 test('a configured deployment names its kinds and when it last ran', () => {
   const { serverBackupItem } = world();
 
-  const item = serverBackupItem({ account: ACCOUNT, status: status(), at: AT }) as Item;
+  const item = serverBackupItem({ account: ACCOUNT, read: { value: status(), at: 0 }, at: AT }) as Item;
 
   assert.equal(item.description, 's3, azure-blob · stamped(1757000000000)');
   assert.equal(item.iconPath?.id, 'check');
@@ -265,7 +265,7 @@ test('never run says "never", and local-only says what it is', () => {
 
   const never = serverBackupItem({
     account: ACCOUNT,
-    status: status({ lastRunAt: 0, lastResult: 'never run', configuredTargetKinds: [] }),
+    read: { value: status({ lastRunAt: 0, lastResult: 'never run', configuredTargetKinds: [] }), at: 0 },
     at: AT,
   }) as Item;
 
@@ -276,7 +276,7 @@ test('a run that failed or only half-ran is not drawn green', () => {
   const { serverBackupItem } = world();
 
   for (const lastResult of ['failed', 'partial']) {
-    const item = serverBackupItem({ account: ACCOUNT, status: status({ lastResult }), at: AT }) as Item;
+    const item = serverBackupItem({ account: ACCOUNT, read: { value: status({ lastResult }), at: 0 }, at: AT }) as Item;
     assert.equal(item.iconPath?.id, 'warning', `${lastResult} is not a success`);
   }
 });
@@ -295,7 +295,7 @@ test('a server that predates configuredTargetKinds falls back to the kinds of th
     ],
   } as BackupStatus;
 
-  const item = serverBackupItem({ account: ACCOUNT, status: withRuns, at: AT }) as Item;
+  const item = serverBackupItem({ account: ACCOUNT, read: { value: withRuns, at: 0 }, at: AT }) as Item;
 
   assert.equal(item.description, 's3 · stamped(1757000000000)', 'distinct: two buckets are one kind');
 });
@@ -305,7 +305,7 @@ test('the row answers a left click with the tab its context menu offers', () => 
   // and it is the EXISTING command, so nothing new was registered.
   const { serverBackupItem } = world();
 
-  const item = serverBackupItem({ account: ACCOUNT, status: status(), at: AT }) as Item;
+  const item = serverBackupItem({ account: ACCOUNT, read: { value: status(), at: 0 }, at: AT }) as Item;
 
   assert.equal(item.command?.command, 'credSshManager.orgBackup');
   assert.deepEqual(item.command?.arguments, [{ kind: 'serverBackup', account: ACCOUNT }]);
@@ -335,4 +335,60 @@ test('a developer’s row is byte-identical to what it was before this section e
     ['teamScope'],
   );
   assert.deepEqual(corpSections(ACCOUNT, { policy: undefined, teamCount: 0 }), []);
+});
+
+/**
+ * The code round's findings on the rows themselves.
+ */
+
+test('a read that did not land says so, and keeps the value it had', () => {
+  // Three reviewers, independently: recording only successes left this row drawing a green check
+  // and yesterday's timestamp against an endpoint that was unreachable. The value is still kept —
+  // forgetting it on one timeout would be the other defect — but the row must not present it as
+  // the current state of the world.
+  const { serverBackupItem } = world();
+  const healthy = status({ keyState: 'Ready', lastRunAt: 1_000, lastResult: 'ok' });
+  const fresh = serverBackupItem({ account: ACCOUNT, read: { value: healthy, at: 1 }, at: AT }) as Item;
+  const stale = serverBackupItem({
+    account: ACCOUNT,
+    read: { value: healthy, failed: true, at: 2 },
+    at: AT,
+  }) as Item;
+
+  assert.ok(!/last read failed/.test(String(fresh.description)), 'a read that landed says nothing extra');
+  assert.match(String(stale.description), /last read failed/, 'and one that did not, says so');
+  assert.ok(
+    String(stale.description).startsWith(String(fresh.description)),
+    'while still showing exactly what it last knew, with the failure appended',
+  );
+  assert.notEqual(
+    (stale.iconPath as { id?: string })?.id,
+    (fresh.iconPath as { id?: string })?.id,
+    'and it stops wearing the healthy icon',
+  );
+});
+
+test('a version with a build stamp or a v is still compared', () => {
+  const { serverVersionItem } = world();
+  // `AssemblyInformationalVersion` carries `0.6.0+2f1c9ab` for a build stamped from git, and the
+  // plain numeric test let that through to a comparison reading `0+2f1c9ab` as zero. A leading `v`
+  // it refused outright, so no upgrade was ever offered for one.
+  for (const deployed of ['0.6.0', 'v0.6.0', '0.6.0+2f1c9ab', ' 0.6.0 ']) {
+    const item = serverVersionItem({ account: ACCOUNT, deployed, latest: '0.7.0' }) as Item;
+    assert.match(String(item.description), /0\.7\.0 available/, `${deployed} should read as behind`);
+    assert.ok(String(item.description).startsWith(deployed), 'and the row still shows what the server said, verbatim');
+  }
+  // The guard that must survive all of it: a build with no version stamp is never compared.
+  const unknown = serverVersionItem({ account: ACCOUNT, deployed: 'unknown', latest: '0.7.0' }) as Item;
+  assert.equal(String(unknown.description), 'unknown', 'a development build is not announced as out of date');
+});
+
+test('a malformed configuredTargetKinds is treated as absent, not drawn into the row', () => {
+  // The field is deliberately outside STATUS_SHAPE so an older server's good document is not
+  // rejected — but "not declared" must not mean "not checked": this value is drawn into a row.
+  const { serverBackupItem } = world();
+  const bent = { ...status({ configured: false }), configuredTargetKinds: 's3' } as unknown as BackupStatus;
+  const item = serverBackupItem({ account: ACCOUNT, read: { value: bent, at: 1 }, at: AT }) as Item;
+
+  assert.equal(String(item.description), 'not configured', 'it falls back, rather than joining a string');
 });

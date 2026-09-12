@@ -29,6 +29,23 @@ export interface BackupTargetView {
   readonly at: number;
 }
 
+/**
+ * One backup-status read: the last status that ARRIVED, and whether the current read landed.
+ *
+ * <p>The same envelope `ServerRead` is, for the reason the code round named: a map that only ever
+ * took successes left the Backup row showing a green check and yesterday's timestamp while the
+ * endpoint was unreachable. The value must survive a failure — losing it would be the other defect
+ * — but the row has to be able to SAY that the last attempt did not land.</p>
+ */
+export interface BackupRead {
+  /** The last status that arrived, kept through failures. */
+  readonly value?: BackupStatus;
+  /** `true` when the CURRENT read did not land; absent when it did. */
+  readonly failed?: true;
+  /** When that outcome was recorded (unix ms, UTC). */
+  readonly at: number;
+}
+
 /** Everything the backup page draws, as `GET /api/org/backup/status` answers it. */
 export interface BackupStatus {
   /** Whether this server can seal an archive at all — false when no deployment KEK is configured. */
@@ -60,9 +77,20 @@ export interface BackupStatus {
   readonly targets: readonly BackupTargetView[];
 }
 
-/** The kinds this deployment backs up to — from the server that says so, or from the last run. */
+/**
+ * The kinds this deployment backs up to — from the server that says so, or from the last run.
+ *
+ * <p><b>The optional field is checked here rather than in `STATUS_SHAPE`</b>, and the distinction
+ * matters: the shape guard requires every field it declares, so declaring this one would make a new
+ * extension reject an older server's perfectly good status document. But "not declared" must not
+ * mean "not checked" — this value is drawn into a tree row, and a malformed one reached `join` as
+ * whatever the server sent. Present and an array of strings, or treated as absent (code round).</p>
+ */
 export function targetKindsOf(status: BackupStatus): readonly string[] {
-  return status.configuredTargetKinds ?? [...new Set(status.targets.map((target) => target.kind))];
+  const said = status.configuredTargetKinds;
+  return Array.isArray(said) && said.every((kind) => typeof kind === 'string')
+    ? said
+    : [...new Set(status.targets.map((target) => target.kind))];
 }
 
 /** Whether this is the "server too old for the feature" state rather than a real read. */
