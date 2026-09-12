@@ -1,6 +1,36 @@
 import { CorpPolicyFacts, CorpPolicyState, afterPolicyFetch, factsOf } from './corpPolicy';
+import { ReleaseMemo } from './githubReleases';
+import { BackupStatus } from './orgBackupClient';
 import { MemberListEntry, OrgMembersClient, ProjectRow } from './orgMembersClient';
+import { MetricsProbe, ServerRead } from './orgRecoveryClient';
 import { StoredAccount } from './types';
+
+/** As much of the recovery client as the Server section's refresh needs. */
+export interface MetricsReader {
+  probeMetrics(account: StoredAccount): Promise<MetricsProbe>;
+}
+
+/**
+ * What the tree's Server section adds to this loop: a reader, two caches, and the release memo.
+ *
+ * <p>It rides the readiness cycle rather than owning a timer, for the reason `backupWatch.ts`
+ * argues for its own half: the cycle runs on activation, after every unlock and lock, and after the
+ * commands that call it — it is not periodic, so the cost is bounded by what a person does.</p>
+ *
+ * <p>Optional on the host, so every test of the policy loop that predates the section still builds
+ * one with four maps and nothing else.</p>
+ */
+export interface ServerSectionHost {
+  /** The metrics reader for this account's server — nothing for a folder or a git remote. */
+  readonly readerFor: (account: StoredAccount) => MetricsReader | undefined;
+  readonly metrics: Map<string, ServerRead>;
+  /** Filled by the backup watch, dropped here — one section, one lifetime for its answers. */
+  readonly backup: Map<string, BackupStatus>;
+  /** ONE remembered answer for the window, not one per account: the repository is the same. */
+  release: ReleaseMemo | undefined;
+  /** The published-release check, as an argument so a test drives it without a network. */
+  readonly published: (memo: ReleaseMemo | undefined, now: number) => Promise<ReleaseMemo>;
+}
 
 /**
  * The per-account refresh that fills the tree's `orgPolicy` and `orgRoster` caches — the
@@ -38,7 +68,32 @@ export interface OrgPolicyHost {
    * that structural instead of a condition somebody must remember to write.</p>
    */
   readonly afterRead?: (account: StoredAccount, state: CorpPolicyState) => PromiseLike<unknown>;
+  /** The tree's Server section, when the caller has one. Absent = nothing to refresh. */
+  readonly server?: ServerSectionHost;
   readonly now: () => number;
+}
+
+/**
+ * The Server section's state, as the tree provider holds it.
+ *
+ * <p>One object rather than three fields on the provider, because all three have exactly one
+ * lifetime and are handed to this refresh together — and because `treeDataProvider.ts` sits at its
+ * 800-line ceiling, where three documented caches do not fit.</p>
+ *
+ * <p>The two callbacks are filled by the `vscode` wiring. Until they are, the section simply never
+ * refreshes, which is what a test that builds a bare provider wants.</p>
+ */
+export class ServerSection implements ServerSectionHost {
+  readonly metrics = new Map<string, ServerRead>();
+
+  readonly backup = new Map<string, BackupStatus>();
+
+  release: ReleaseMemo | undefined;
+
+  readerFor: (account: StoredAccount) => MetricsReader | undefined = () => undefined;
+
+  published: (memo: ReleaseMemo | undefined, now: number) => Promise<ReleaseMemo> =
+    (memo) => Promise.resolve(memo ?? { version: '', at: 0 });
 }
 
 /**
@@ -60,7 +115,8 @@ export interface RefreshOutcome {
  * carrying a literal that grows a field per epic.</p>
  */
 export function policyHost(
-  caches: Pick<OrgPolicyHost, 'orgPolicy' | 'orgRoster' | 'orgProjects' | 'orgPolicyServer'>,
+  caches: Pick<OrgPolicyHost, 'orgPolicy' | 'orgRoster' | 'orgProjects' | 'orgPolicyServer'>
+    & { readonly server?: ServerSectionHost },
   clientFor: (account: StoredAccount) => OrgMembersClient | undefined,
   heartbeat: (accountId: string, at: number) => PromiseLike<void>,
   now: () => number = Date.now,
@@ -72,6 +128,7 @@ export function policyHost(
     orgRoster: caches.orgRoster,
     orgProjects: caches.orgProjects,
     orgPolicyServer: caches.orgPolicyServer,
+    server: caches.server,
     heartbeat,
     afterRead,
     now,
@@ -113,8 +170,64 @@ export async function refreshOrgPolicy(host: OrgPolicyHost, account: StoredAccou
     .then(() => host.afterRead?.(account, next))
     .then(undefined, () => undefined);
   const rosterRead = await refreshRoster(host, client, account, next.isAdmin);
+  await refreshServerMetrics(host, account, next.isAdmin);
   const projectsRead = await refreshProjects(host, client, account);
   return { policyRead: true, rosterRead, projectsRead };
+}
+
+/**
+ * What the tree's Server section draws, refreshed on the same cycle.
+ *
+ * <p><b>Administrators only</b>, exactly as the roster above and the backup watch are: `/api/metrics`
+ * is `RequireAdminAsync`, so a developer's poll would be refused every cycle and the only thing that
+ * refusal could do is put a warning row in front of somebody who cannot act on it. A developer's
+ * window therefore makes no outbound metrics request at all.</p>
+ *
+ * <p><b>A demotion takes the cached facts with the section.</b> Both entries go, because a version
+ * and a backup state drawn from a server this window may no longer read are stale facts rendered as
+ * current ones — the same reading `refreshRoster` makes about colleagues' roles.</p>
+ *
+ * <p>It never throws: a throw here would break the repaint that draws every other row.</p>
+ */
+export async function refreshServerMetrics(
+  host: OrgPolicyHost,
+  account: StoredAccount,
+  isAdmin: boolean,
+): Promise<boolean> {
+  const server = host.server;
+  if (server === undefined) {
+    return false;
+  }
+  const reader = isAdmin ? server.readerFor(account) : undefined;
+  if (reader === undefined) {
+    server.metrics.delete(account.accountId);
+    server.backup.delete(account.accountId);
+    return false;
+  }
+  const probe = await reader.probeMetrics(account).catch(unreachable);
+  const at = host.now();
+  server.metrics.set(account.accountId, nextRead(server.metrics.get(account.accountId), probe, at));
+  // One memo for the window: the repository is the same for everybody, and the check is TTL'd.
+  server.release = await server.published(server.release, at).catch(() => server.release);
+  return true;
+}
+
+/** Offline, a refused proxy, a timeout — all of them are a server this section could not read. */
+function unreachable(): MetricsProbe {
+  return { failure: 'unreachable' };
+}
+
+/**
+ * A failure KEEPS the last document and records itself; a success replaces both.
+ *
+ * <p>This is the whole reason the cache holds an envelope: the version and the footprint must stay
+ * readable while the scope row says the answer is old, and a row that succeeded once must not look
+ * healthy for ever after the next refusal.</p>
+ */
+function nextRead(previous: ServerRead | undefined, probe: MetricsProbe, at: number): ServerRead {
+  return 'metrics' in probe
+    ? { value: probe.metrics, at }
+    : { value: previous?.value, failure: probe.failure, at };
 }
 
 /**
@@ -130,6 +243,11 @@ function forgetAnswersFromAnotherServer(host: OrgPolicyHost, id: string, locatio
   host.orgPolicy.delete(id);
   host.orgRoster.delete(id);
   host.orgProjects.delete(id);
+  // The Server section's answers are about the server, so they are the LEAST survivable of all:
+  // a version and a backup state from the deployment this account has left would be drawn as this
+  // one's, and nothing on the row would say otherwise.
+  host.server?.metrics.delete(id);
+  host.server?.backup.delete(id);
   host.orgPolicyServer.set(id, location);
 }
 

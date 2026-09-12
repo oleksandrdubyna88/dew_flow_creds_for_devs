@@ -60,16 +60,24 @@ export function expansionKey(element: TreeElement): string | undefined {
 }
 
 function sharingKey(element: TreeElement): string | undefined {
+  return scopeKey(element) ?? sharedKey(element);
+}
+
+/** The two corporate section headers. Split from the shared rows to stay under complexity 4. */
+function scopeKey(element: TreeElement): string | undefined {
   if (element.kind === 'teamScope') {
     return `teamScope:${element.account.accountId}`;
   }
+  // The Server section's three children are LEAVES and fall through to undefined, which is the
+  // rule stated above: a caller cannot remember a row that has no twisty.
+  return element.kind === 'serverScope' ? `serverScope:${element.account.accountId}` : undefined;
+}
+
+function sharedKey(element: TreeElement): string | undefined {
   if (element.kind === 'sharedRoot') {
     return 'sharedRoot';
   }
-  if (element.kind === 'sharedSender') {
-    return `sharedSender:${element.email}`;
-  }
-  return undefined;
+  return element.kind === 'sharedSender' ? `sharedSender:${element.email}` : undefined;
 }
 
 /**

@@ -37,6 +37,15 @@ export interface BackupCheck {
   readonly healthy: boolean;
   /** The notice to show, when there is one that is not deduped away. */
   readonly notice?: BackupNotice;
+  /**
+   * The status this check READ, for the caller that draws it. Absent = the read said nothing.
+   *
+   * <p>Added for the tree's Backup row (2026-09-12): this loop already fetches exactly that
+   * document once per readiness cycle for every admin account, and then threw it away. Handing it
+   * back is a field; a second poll would be a second timer to get wrong about backoff, about sleep
+   * and about an editor with four windows open — which this module's header argues against.</p>
+   */
+  readonly status?: BackupStatus;
 }
 
 /**
@@ -56,6 +65,13 @@ export interface BackupWatchHost {
   /** Persist the windows. `globalState`, so a reload does not nag on every startup. */
   readonly remember: (next: NoticeMemory) => PromiseLike<unknown>;
   readonly show: (message: string) => void;
+  /**
+   * Where a status that ARRIVED should be written down, for a caller that draws it.
+   *
+   * <p>Optional, so every host built before this existed is unchanged. The tree provider fills it
+   * with its own cache; nothing here decides what that cache is for.</p>
+   */
+  readonly record?: (accountId: string, status: BackupStatus) => void;
   readonly now: () => number;
 }
 
@@ -87,9 +103,10 @@ export async function checkOneBackup(
   // clearing it there would have made the very next cycle nag again, which is the nag-every-cycle
   // this whole module exists to avoid.
   return healthOf(status) === 'healthy'
-    ? { healthy: true }
+    ? { healthy: true, status }
     : {
       healthy: false,
+      status,
       notice: backupNotice(account.accountId, account.email, status, host.shown(), host.now()),
     };
 }
@@ -132,6 +149,7 @@ export async function checkBackups(
   const checked = await Promise.all(
     entries.map(([account, policy]) => checkOneBackup(host, account, policy)),
   );
+  record(host, entries, checked);
   const notices = checked.map((check) => check.notice).filter(isNotice);
   const next = settle(host, entries, checked, notices);
   if (next !== host.shown()) {
@@ -145,6 +163,26 @@ export async function checkBackups(
 
 function isNotice(notice: BackupNotice | undefined): notice is BackupNotice {
   return notice !== undefined;
+}
+
+/**
+ * Hand every status that ARRIVED to whoever asked to be told, keyed by account.
+ *
+ * <p>The pairing is already here: `entries` and `checked` are parallel, because `settle` below
+ * needs them that way. A read that said nothing records nothing — the row it feeds keeps whatever
+ * it had, which is the same rule the notices follow.</p>
+ */
+function record(
+  host: BackupWatchHost,
+  entries: readonly (readonly [StoredAccount, CorpPolicyState])[],
+  checked: readonly BackupCheck[],
+): void {
+  entries.forEach(([account], at) => {
+    const status = checked[at].status;
+    if (status !== undefined) {
+      host.record?.(account.accountId, status);
+    }
+  });
 }
 
 /** The windows after this cycle: healthy accounts forgotten, interrupted ones stamped. */

@@ -287,6 +287,16 @@
         }
       },
       {
+        "id": "credSshManager.serverIcon",
+        "description": "Server section icons in the Cred SSH tree - the deployment, not the people on it",
+        "defaults": {
+          "dark": "#2E9B8F",
+          "light": "#136B60",
+          "highContrast": "#4FC4B6",
+          "highContrastLight": "#0F564D"
+        }
+      },
+      {
         "id": "credSshManager.folderIcon",
         "description": "Folder icons in the Cred SSH tree",
         "defaults": {
@@ -1302,7 +1312,7 @@
         },
         {
           "command": "credSshManager.serverMetrics",
-          "when": "view == credSshManagerView && viewItem == account-corpOfficer",
+          "when": "view == credSshManagerView && (viewItem == account-corpAdmin || viewItem == account-corpOfficer)",
           "group": "5_server@1"
         },
         {
@@ -1704,6 +1714,11 @@
           "command": "credSshManager.orgBackup",
           "when": "view == credSshManagerView && (viewItem == account-corpAdmin || viewItem == account-corpOfficer)",
           "group": "4_corp@8"
+        },
+        {
+          "command": "credSshManager.orgBackup",
+          "when": "view == credSshManagerView && viewItem == serverBackup",
+          "group": "1_backup@1"
         },
         {
           "command": "credSshManager.acceptRecoveryShare",

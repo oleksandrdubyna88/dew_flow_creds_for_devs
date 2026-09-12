@@ -20,12 +20,29 @@ function accountOf(target: unknown): StoredAccount | undefined {
   return elementAccount(asElement(target)) ?? (looksLikeAccount(target) ? (target as StoredAccount) : undefined);
 }
 
-function elementAccount(element: ReturnType<typeof asElement>): StoredAccount | undefined {
-  if (element === undefined) {
-    return undefined;
-  }
-  return element.kind === 'account' || element.kind === 'teamScope' ? element.account : undefined;
+/**
+ * The account a tree row names outright, or nothing.
+ *
+ * <p>Exported so it is a unit test rather than something discovered by right-clicking: this module
+ * reaches `vscode` through `dialogs`, so the test loads it under a stub.</p>
+ */
+export function elementAccount(element: ReturnType<typeof asElement>): StoredAccount | undefined {
+  return element !== undefined && WITH_ACCOUNT.has(element.kind)
+    ? (element as { account: StoredAccount }).account
+    : undefined;
 }
+
+/**
+ * The row kinds that carry a whole `StoredAccount`.
+ *
+ * <p>A SET rather than a growing `||` chain, because `complexity: 4` is an eslint error here and
+ * six alternatives are not four. The Server section's four kinds joined in 2026-09-12: without
+ * them, right-clicking the Backup row and pressing *Configure backup…* fell through to
+ * `pickAccount` and asked "Which server's backup?" about the row just clicked.</p>
+ */
+const WITH_ACCOUNT: ReadonlySet<string> = new Set([
+  'account', 'teamScope', 'serverScope', 'serverVersion', 'serverVaults', 'serverBackup',
+]);
 
 function looksLikeAccount(target: unknown): boolean {
   return (

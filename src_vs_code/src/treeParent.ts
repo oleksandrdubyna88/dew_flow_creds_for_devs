@@ -27,7 +27,31 @@ export function parentOf(element: TreeElement, source: ParentSource): TreeElemen
   if (element.kind === 'dependentsFolder') {
     return dependentsParent(element, source);
   }
-  return ownerEntityOf(element);
+  return serverParentOf(element) ?? ownerEntityOf(element);
+}
+
+/**
+ * The Server section walks properly, where `teamScope` still does not.
+ *
+ * <p>Every other unhandled kind falls to `ownerEntityOf` and answers nothing, which is why
+ * `TreeView.reveal` cannot get to a Team row. These four get a real answer because the backup row
+ * is the first row in this tree a NOTIFICATION could plausibly want to reveal — and it costs
+ * nothing to give, since each element carries its whole account rather than an id.</p>
+ */
+function serverParentOf(element: TreeElement): TreeElement | undefined {
+  if (element.kind === 'serverScope') {
+    return { kind: 'account', account: element.account };
+  }
+  return isServerLeaf(element) ? { kind: 'serverScope', account: element.account } : undefined;
+}
+
+/** The three rows under the scope row — a set rather than a growing `||` chain (complexity ≤ 4). */
+const SERVER_LEAF_KINDS: ReadonlySet<string> = new Set(['serverVersion', 'serverVaults', 'serverBackup']);
+
+function isServerLeaf(
+  element: TreeElement,
+): element is Extract<TreeElement, { kind: 'serverVersion' | 'serverVaults' | 'serverBackup' }> {
+  return SERVER_LEAF_KINDS.has(element.kind);
 }
 
 function parentOfNode(

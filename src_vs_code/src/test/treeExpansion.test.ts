@@ -118,11 +118,15 @@ test('every expandable row kind has a key, and every leaf has none', () => {
     'dependents:a1:e1',
   );
   assert.equal(expansionKey({ kind: 'teamScope', account: ACCOUNT }), 'teamScope:a1');
+  assert.equal(expansionKey({ kind: 'serverScope', account: ACCOUNT }), 'serverScope:a1');
   assert.equal(expansionKey({ kind: 'sharedRoot' }), 'sharedRoot');
   assert.equal(expansionKey({ kind: 'sharedSender', email: 'b@x.com' }), 'sharedSender:b@x.com');
 
   // Leaves answer nothing, so a caller cannot remember a row that has no twisty.
   assert.equal(expansionKey({ kind: 'search' }), undefined);
+  assert.equal(expansionKey({ kind: 'serverVersion', account: ACCOUNT }), undefined);
+  assert.equal(expansionKey({ kind: 'serverVaults', account: ACCOUNT }), undefined);
+  assert.equal(expansionKey({ kind: 'serverBackup', account: ACCOUNT }), undefined);
   assert.equal(
     expansionKey({ kind: 'revision', accountId: 'a1', node: entity, index: 0 }),
     undefined,

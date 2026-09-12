@@ -2,9 +2,11 @@ import * as vscode from 'vscode';
 import { shareLabelTrusted } from './shareFormat';
 import { StorageManager } from './storageManager';
 import { ShareSources, sharedMatches, unverifiedSender } from './shareRows';
-import { TEAM_COLOR, sharedRootItem, teamRowFor } from './teamItems';
+import { sharedRootItem, sharedSenderItem, teamRowFor } from './teamItems';
 import type { SharingManager } from './sharingManager';
-import { TreeElement, TreeNode } from './types';
+import { StoredAccount, TreeElement, TreeNode } from './types';
+import { ServerSection } from './orgPolicyRefresh';
+import { corpSections, isServerRow, serverChildren, serverRowFor } from './serverItems';
 
 import { DepIndexCache } from './depIndexCache';
 import { dependentGroups, dependentsFolderItem, dependentsItem } from './depTreeItems';
@@ -111,6 +113,12 @@ export class CredTreeDataProvider
 
   /** Which server each cached answer came from — a repointed account must not keep the old one. */
   readonly orgPolicyServer = new Map<string, string>();
+
+  /**
+   * Everything the Server section draws and reads — two caches and the published-release memo,
+   * filled by the readiness cycle and by the backup watch that already polls (`orgPolicyRefresh`).
+   */
+  readonly server = new ServerSection();
 
   /**
    * Kept previous versions, per entity id.
@@ -378,6 +386,13 @@ export class CredTreeDataProvider
         return sharedMatches(this.sharing?.ownShares ?? [], terms)
           .filter((s) => s.item.fromEmail === element.email)
           .map((share) => ({ kind: 'sharedItem' as const, share }));
+      // Always all three, whatever the caches hold: a row with nothing cached draws `checking…`,
+      // so the section's SHAPE is constant and a person learns where to look.
+      case 'serverScope':
+        return serverChildren(element.account);
+      case 'serverVersion':
+      case 'serverVaults':
+      case 'serverBackup':
       case 'teamMember':
       case 'sharedItem':
         return [];
@@ -439,14 +454,20 @@ export class CredTreeDataProvider
       parentMatched,
       this.filterMemo,
     ).map((node) => ({ kind: 'node' as const, accountId, node }));
-    // Each account carries ITS OWN team (the people on its NAS folder).
-    if (
-      element.kind === 'account' &&
-      (this.sharing?.teamFor(element.account).length ?? 0) > 0
-    ) {
-      return [{ kind: 'teamScope', account: element.account }, ...children];
+    // The corporate sections — the deployment, then the people on it. Each account carries ITS OWN
+    // team (the people on its NAS folder), and only an administrator gets a Server section.
+    if (element.kind === 'account') {
+      return [...this.corpSectionsFor(element.account), ...children];
     }
     return children;
+  }
+
+  /** Server then Team, or neither — `serverItems.corpSections` decides, this only looks things up. */
+  private corpSectionsFor(account: StoredAccount): TreeElement[] {
+    return corpSections(account, {
+      policy: this.orgPolicy.get(account.accountId),
+      teamCount: this.sharing?.teamFor(account).length ?? 0,
+    });
   }
 
   // Synchronous on purpose: everything a row needs is in memory. The one answer that used
@@ -462,29 +483,14 @@ export class CredTreeDataProvider
     if (element.kind === 'teamScope' || element.kind === 'teamMember') {
       return teamRowFor(element, this, this.collapsible(element, false));
     }
+    if (isServerRow(element)) {
+      return serverRowFor(element, this.server, this.collapsible(element, false));
+    }
     if (element.kind === 'sharedRoot') {
       return sharedRootItem(this.sharing?.ownShares.length ?? 0);
     }
     if (element.kind === 'sharedSender') {
-      const item = new vscode.TreeItem(
-        element.email,
-        vscode.TreeItemCollapsibleState.Expanded,
-      );
-      item.id = `sender:${element.email}`;
-      item.contextValue = 'sharedSender';
-      // A name is the first thing the eye lands on, and on a shared folder it is a
-      // string the writer chose rather than an identity anyone checked. The accept
-      // dialog says so too, but by then the reader has already decided who this is
-      // from.
-      const unverified = unverifiedSender(this.shareSources(), element.email);
-      item.iconPath = unverified
-        ? new vscode.ThemeIcon('unverified', new vscode.ThemeColor('problemsWarningIcon.foreground'))
-        : new vscode.ThemeIcon('account', TEAM_COLOR);
-      item.description = unverified ? 'unverified sender' : undefined;
-      item.tooltip = unverified
-        ? `${element.email} — claimed, not verified. This share came through a shared folder, where anyone with write access can put any name here. A share through the vault server carries a sender stamped from a verified sign-in.`
-        : `${element.email} — stamped by the vault server from a verified sign-in.`;
-      return item;
+      return sharedSenderItem(element.email, unverifiedSender(this.shareSources(), element.email));
     }
     if (element.kind === 'sharedItem') {
       const { item: share } = element.share;

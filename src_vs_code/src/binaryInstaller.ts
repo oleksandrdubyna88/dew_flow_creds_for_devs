@@ -10,13 +10,12 @@ import {
   assetNameFor,
   binaryNameFor,
   choicesFor,
-  compareVersions,
   digestIn,
   entryPathIn,
   ridFor,
-  versionFromTag,
 } from './credsInstall';
 import { describeError } from './describeError';
+import { latestRelease } from './githubReleases';
 
 /**
  * Putting a published binary on this machine, and the menu that offers to.
@@ -59,44 +58,6 @@ export interface InstallHost {
   /** The extension's own storage — created if absent, removed when the extension is. */
   readonly storage: vscode.Uri;
   readonly state: vscode.Memento;
-}
-
-/** The GitHub release this product's latest tag points at, or nothing when unreachable. */
-async function latestVersion(product: CredsProduct): Promise<string | undefined> {
-  try {
-    const response = await fetch(
-      'https://api.github.com/repos/oleksandrdubyna88/dew_flow_creds_for_devs/releases?per_page=30',
-      { headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'creds-for-devs' } },
-    );
-    if (!response.ok) {
-      return undefined;
-    }
-    const releases = (await response.json()) as { tag_name?: unknown }[];
-    return newestOf(product, releases);
-  } catch {
-    // Offline, rate-limited, or behind a proxy that refuses. All of them mean the same thing to
-    // the person — "cannot tell you what is published" — and none is worth a stack trace.
-    return undefined;
-  }
-}
-
-/**
- * The highest version among this product's tags.
- *
- * <p>The list is newest-first by publication, which is nearly always version order and is not
- * guaranteed to be: a patch cut for an older line publishes last. Compared numerically for the
- * same reason `compareVersions` exists at all.</p>
- */
-function newestOf(product: CredsProduct, releases: { tag_name?: unknown }[]): string | undefined {
-  const versions = releases.flatMap((release) => {
-    const tag = typeof release.tag_name === 'string' ? release.tag_name : '';
-    const version = versionFromTag(product, tag);
-    return version === undefined ? [] : [version];
-  });
-  // `compareVersions`, not a second numeric comparison written here: it is the one that already
-  // knows `0.10.0` is newer than `0.9.0`, which a string sort gets backwards exactly once the
-  // tenth minor ships.
-  return versions.length === 0 ? undefined : versions.sort((a, b) => compareVersions(b, a))[0];
 }
 
 /** Where this product's binary lives once installed. */
@@ -246,7 +207,7 @@ export async function installMenu(
 ): Promise<{ rid: CredsRid | undefined; action: CredsAction; choices: string[] }> {
   const rid = ridFor(process.platform, process.arch);
   const installed = rid === undefined ? undefined : await installedRecord(host, product, rid);
-  const action = actionFor(rid, process.platform, await latestVersion(product), installed);
+  const action = actionFor(rid, process.platform, await latestRelease(product.tagPrefix), installed);
   return { rid, action, choices: choicesFor(product, action) };
 }
 

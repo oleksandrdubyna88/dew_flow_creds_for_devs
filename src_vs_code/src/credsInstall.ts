@@ -129,8 +129,13 @@ export function binaryNameFor(product: CredsProduct, rid: CredsRid): string {
  * <p>A tag belonging to another product yields nothing rather than a wrong version, and that is
  * load-bearing now that there are four tag lines: `mcp-v0.2.0` read as a `creds` release would
  * offer an update that downloads an asset which does not exist.</p>
+ *
+ * <p><b>It takes a tag PREFIX, not a product</b> (widened 2026-09-12). The server is a fourth tag
+ * line and installs nothing, so it has no `CredsProduct` and inventing a fake one — a binary name
+ * and a menu label for something that is never downloaded — would be a lie told to satisfy a type.
+ * Every existing call site compiles unchanged, because `CredsProduct` satisfies this structurally.</p>
  */
-export function versionFromTag(product: CredsProduct, tag: string): string | undefined {
+export function versionFromTag(product: { readonly tagPrefix: string }, tag: string): string | undefined {
   return tag.startsWith(product.tagPrefix) && tag.length > product.tagPrefix.length
     ? tag.slice(product.tagPrefix.length)
     : undefined;

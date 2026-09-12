@@ -147,6 +147,33 @@ export function teamMemberItem(input: TeamMemberRowInput): vscode.TreeItem {
 }
 
 /**
+ * One sender's row under *Shared with me*.
+ *
+ * <p>Here with the other people rows, and moved out of `treeDataProvider.ts` for the reason this
+ * file's header gives: that file is at the 800-line ceiling, and a row that decides nothing beyond
+ * its own text belongs with the ones already moved for the same reason.</p>
+ *
+ * <p>`unverified` is taken as an ARGUMENT rather than computed here, because answering it needs the
+ * provider's share sources — and a row that can be built without them is a row a test can build.</p>
+ */
+export function sharedSenderItem(email: string, unverified: boolean): vscode.TreeItem {
+  const item = new vscode.TreeItem(email, vscode.TreeItemCollapsibleState.Expanded);
+  item.id = `sender:${email}`;
+  item.contextValue = 'sharedSender';
+  // A name is the first thing the eye lands on, and on a shared folder it is a string the writer
+  // chose rather than an identity anyone checked. The accept dialog says so too, but by then the
+  // reader has already decided who this is from.
+  item.iconPath = unverified
+    ? new vscode.ThemeIcon('unverified', new vscode.ThemeColor('problemsWarningIcon.foreground'))
+    : new vscode.ThemeIcon('account', TEAM_COLOR);
+  item.description = unverified ? 'unverified sender' : undefined;
+  item.tooltip = unverified
+    ? `${email} — claimed, not verified. This share came through a shared folder, where anyone with write access can put any name here. A share through the vault server carries a sender stamped from a verified sign-in.`
+    : `${email} — stamped by the vault server from a verified sign-in.`;
+  return item;
+}
+
+/**
  * The inbox root — what other people have sent this window.
  *
  * <p>Here with the Team rows for the reason the file's own note gives: `treeDataProvider.ts` sits
