@@ -218,8 +218,8 @@ function matches(element: MiniElement, selector: string): boolean {
 /** The `tag.class.class` half: an empty tag matches any element, and every class must be present. */
 function plainOk(element: MiniElement, plain: string): boolean {
   const [tag, ...classes] = plain.split('.');
-  const worn = element.className.split(' ');
-  return (tag === '' || element.tag === tag) && classes.every((one) => worn.includes(one));
+  const worn = new Set(element.className.split(' '));
+  return (tag === '' || element.tag === tag) && classes.every((one) => worn.has(one));
 }
 
 /** The one attribute shape these selectors use, read by index rather than by a nested pattern. */
