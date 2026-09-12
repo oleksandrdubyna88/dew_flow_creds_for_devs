@@ -222,6 +222,18 @@ test('an open form follows the text-size setting instead of freezing at the size
     script.includes(zoomApplyScript()),
     'the form must carry zoomApplyScript() verbatim, or a push arrives at a page that ignores it',
   );
+  // Exactly once: a second copy would be a second listener, and the page would repaint twice per
+  // push — the shape of the double-binding the split exists to prevent, on the other half.
+  assert.equal(
+    script.split(zoomApplyScript()).length - 1,
+    1,
+    'the apply half is bound once per page',
+  );
+  assert.equal(
+    script.split("querySelectorAll('button[data-zoom]')").length - 1,
+    1,
+    'and the buttons are bound once — the private wiring is gone, not merely joined',
+  );
   assert.match(script, /type: 'zoom', delta:/, 'and report the press under the shared spelling');
   assert.doesNotMatch(
     script,

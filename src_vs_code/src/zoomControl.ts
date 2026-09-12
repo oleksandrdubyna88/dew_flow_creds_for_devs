@@ -84,7 +84,9 @@ export function zoomApplyScript(): string {
   return `
   window.addEventListener('message', (event) => {
     if (event.data?.type !== 'uiScale') { return; }
-    document.body.style.fontSize = event.data.px + 'px';
+    // Only a finite number reaches the style: the host always sends one (scalePx), and a page
+    // that wrote 'NaNpx' or 'undefinedpx' would lose its root size for the rest of its life.
+    if (Number.isFinite(event.data.px)) { document.body.style.fontSize = event.data.px + 'px'; }
     const offsetLabelNode = document.getElementById('zoomOffset');
     if (offsetLabelNode) { offsetLabelNode.textContent = event.data.label; }
   });`;
