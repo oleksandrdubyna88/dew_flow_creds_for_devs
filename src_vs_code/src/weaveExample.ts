@@ -63,7 +63,7 @@ export interface WeaveExample {
  * samples shown is ever one of these strings, because `generateDecoy` refuses to return its own
  * input.</p>
  */
-const SHAPES: Readonly<Record<ExampleField, { readonly kind: DecoyKind; readonly shape: string }>> = {
+const SHAPES: Readonly<Record<CharacterField, { readonly kind: DecoyKind; readonly shape: string }>> = {
   number: { kind: 'card', shape: '4111111111111111' },
   cvv: { kind: 'digits', shape: '000' },
   pin: { kind: 'digits', shape: '0000' },
@@ -75,24 +75,45 @@ const SHAPES: Readonly<Record<ExampleField, { readonly kind: DecoyKind; readonly
   password: { kind: 'password', shape: 'aB3xY9qWmK7pR2sT' },
 };
 
-/** The fields an example can be drawn FOR — the weavable payment keys, and a password. */
-export type ExampleField = ShuffleableKey | 'password';
+/** The fields whose tokens are CHARACTERS, drawn by the decoy generator against a shape. */
+type CharacterField = ShuffleableKey | 'password';
 
-export const EXAMPLE_FIELDS: readonly ExampleField[] = [...SHUFFLEABLE_KEYS, 'password'];
+/** The fields an example can be drawn FOR — the weavable payment keys, a password, and a phrase. */
+export type ExampleField = CharacterField | 'mixed';
+
+export const EXAMPLE_FIELDS: readonly ExampleField[] = [...SHUFFLEABLE_KEYS, 'password', 'mixed'];
 
 /**
- * Two generated samples and the weave of them under `code`.
+ * The seed phrase's two columns — six made-up words each, FIXED rather than generated.
+ *
+ * <p>Every other field's sample is drawn by `generateDecoy`, which knows how to make something of
+ * the right shape out of digits and letters. A phrase is WORDS, and there is no decoy generator for
+ * those here — the real one draws from whichever wordlist the person picked, which is a choice the
+ * example has no business making. Fixed words are the honest answer: the picture is about what the
+ * METHOD does to six tokens, and any six tokens show that.</p>
+ *
+ * <p>They are made up here and never drawn from the person's own phrase, for the reason the header
+ * gives: their words beside the decoy they are woven with, under the method that wove them, is the
+ * answer printed next to the question. These twelve words exist only in this file.</p>
+ */
+const PHRASE_EXAMPLE_WORDS = {
+  first: ['apple', 'river', 'stone', 'cloud', 'maple', 'frost'],
+  second: ['tiger', 'candle', 'orbit', 'meadow', 'silver', 'pine'],
+} as const;
+
+/**
+ * Two samples and the weave of them under `code`.
  *
  * <p>The second sample is drawn against the FIRST rather than against the seed, which is what makes
  * the two columns certainly different: `generateDecoy` guarantees only that it differs from what it
  * was given, so drawing both against the same seed could hand back a matching pair and an example
  * in which the method appears to do nothing.</p>
+ *
+ * <p>`shuffleLayout` is index-based and `halves` is indexed by side, so a token is a word as easily
+ * as a character — which is the whole reason the phrase form needed no second weaver.</p>
  */
 export function weaveExample(field: ExampleField, code: ShuffleCode, random: Random): WeaveExample {
-  const { kind, shape } = SHAPES[field];
-  const first = generateDecoy({ kind, original: shape }, random);
-  const second = generateDecoy({ kind, original: first }, random);
-  const halves = { first: [...first], second: [...second] };
+  const halves = exampleHalves(field, random);
   return {
     field,
     method: code,
@@ -105,4 +126,14 @@ export function weaveExample(field: ExampleField, code: ShuffleCode, random: Ran
       side: slot.side,
     })),
   };
+}
+
+/** The two columns for one field: drawn characters, or the phrase's fixed words. */
+function exampleHalves(field: ExampleField, random: Random): { first: string[]; second: string[] } {
+  if (field === 'mixed') {
+    return { first: [...PHRASE_EXAMPLE_WORDS.first], second: [...PHRASE_EXAMPLE_WORDS.second] };
+  }
+  const { kind, shape } = SHAPES[field];
+  const first = generateDecoy({ kind, original: shape }, random);
+  return { first: [...first], second: [...generateDecoy({ kind, original: first }, random)] };
 }

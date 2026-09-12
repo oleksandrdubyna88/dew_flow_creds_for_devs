@@ -7,11 +7,9 @@ import { dependencyPickerScript } from './depPickerScript';
 import { mcpSwitchScript } from './mcpSwitchScript';
 import { configTabsScript } from './configTabsScript';
 import { qrPasteScript } from './qrPasteScript';
-import { cardFormScript } from './cardFormScript';
-import { phraseFormScript } from './phraseFormScript';
+import { formWeaveScripts } from './formWeaveScripts';
 import { generateWiring, overlayEditorWiring } from './entityFormScriptGen';
 import { formVisibilityScript } from './formVisibilityScript';
-import { wovenFormScript } from './wovenFormScript';
 import { zoomScript } from './zoomControl';
 
 /** What the Depends-on picker needs, gathered once when the page is built. */
@@ -749,9 +747,7 @@ export function formPageScript(
     });
   }
 
-  ${cardFormScript()}
-${wovenFormScript()}
-  ${phraseFormScript()}
+${formWeaveScripts()}
 
   window.addEventListener('message', function (event) {
     if (event.data && event.data.type === 'paymentSwitchNotice') {

@@ -238,59 +238,30 @@ ${examplePaintScript()}`;
 }
 
 /**
- * Painting one answer: a heading, then three columns.
+ * Taking one answer to the shared painter.
  *
- * <p>DOM APIs rather than `innerHTML`, like everything else on this page that puts a value on
- * screen. Nothing here is a secret — both columns were made up by the host — but this page has one
- * way of doing it and a second one would be the exception somebody copies. (No backticks.)</p>
+ * <p>The painter itself lives in `weaveExampleScript.ts` and is inlined once, ahead of this script.
+ * It used to live here, and the password form had a near-verbatim copy that forgot to create the
+ * `.weaveEx` block every colour rule is scoped under — three grey unboxed lines (issue #51). One
+ * painter is how that cannot recur. (No backticks.)</p>
  */
 function examplePaintScript(): string {
-  return `  function exampleBlock(field) {
-    var host = document.getElementById('mixExample');
-    var found = host.querySelector('.weaveEx[data-field="' + field + '"]');
-    if (found) { return found; }
-    var block = document.createElement('div');
-    block.className = 'weaveEx';
-    block.dataset.field = field;
-    host.appendChild(block);
-    return block;
-  }
-
-  function exampleColumn(label, tokens, side) {
-    var column = document.createElement('div');
-    column.className = 'exCol';
-    var name = document.createElement('div');
-    name.className = 'exName';
-    name.textContent = label;
-    column.appendChild(name);
-    var row = document.createElement('div');
-    row.className = 'exRow';
-    for (var i = 0; i < tokens.length; i++) {
-      var cell = document.createElement('span');
-      cell.className = 'exTok ' + (side || tokens[i].side);
-      cell.textContent = side ? tokens[i] : tokens[i].text;
-      row.appendChild(cell);
-    }
-    column.appendChild(row);
-    return column;
-  }
-
-  window.addEventListener('message', function (event) {
+  return `  window.addEventListener('message', function (event) {
     var answer = event.data;
     if (!answer || answer.type !== 'weaveExampleResult' || !answer.field) { return; }
     // Two changes are two requests, and their answers can arrive in either order. An answer for a
     // method the controls no longer show would leave somebody choosing from a picture of a
     // different algorithm with nothing saying so — the same guard the reassembly answers carry.
     if (answer.method !== methodNow(answer.field)) { return; }
-    var block = exampleBlock(answer.field);
-    block.textContent = '';
-    var title = document.createElement('div');
-    title.className = 'exTitle';
-    title.textContent = (FIELD_LABELS[answer.field] || answer.field) + ' — ' + answer.method;
-    block.appendChild(title);
-    block.appendChild(exampleColumn('Your value (made up here)', answer.first, 'first'));
-    block.appendChild(exampleColumn('The decoy it is woven with', answer.second, 'second'));
-    block.appendChild(exampleColumn('What gets stored', answer.woven, ''));
+    // The password and the seed phrase have their own hosts and their own listeners. Every listener
+    // in this composite script hears every answer, so each says which fields are its own.
+    if (answer.field === 'password' || answer.field === 'mixed') { return; }
+    paintExample(
+      'mixExample',
+      answer.field,
+      (FIELD_LABELS[answer.field] || answer.field) + ' — ' + answer.method,
+      answer
+    );
   });
 `;
 }

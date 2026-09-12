@@ -2,6 +2,9 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { renderHtml } from '../entityFormPage';
 import { wovenFormScript } from '../wovenFormScript';
+import { cardFormScript } from '../cardFormScript';
+import { phraseFormScript } from '../phraseFormScript';
+import { formPageScript } from '../entityFormScript';
 import { EntityFormOptions } from '../entityFormPanel';
 import { EntityMetadata } from '../types';
 import { SHUFFLE_CODES } from '../shuffle';
@@ -295,4 +298,50 @@ test('a share tells the recipient the password is woven', () => {
   const shared = shareableDetails(details, false);
 
   assert.equal(shared?.passwordWoven, true, 'or they get gibberish with no explanation');
+});
+
+/**
+ * One painter, and the password picture inside the box that carries the colours (#51).
+ *
+ * <p>Every colour rule on this page is scoped under `.weaveEx` (`entityFormStyles.ts`). The card
+ * painter created that block; the password painter appended three bare columns into a host with no
+ * class, so the screenshot in the issue is three grey unboxed lines under the controls. Two copies
+ * of one picture, one of them inside the box and one outside — which is the whole reason there is
+ * now a shared painter and no copy at all.</p>
+ *
+ * <p>The fragment is inlined ONCE, ahead of the three sub-scripts. A sub-script that forgot it
+ * would throw at the first method pick, so both halves are asserted: exactly one definition in the
+ * composite, and every sub-script reaching for it.</p>
+ */
+test('the picture has ONE painter, defined once in the page script', () => {
+  const composite = formPageScript('n1', undefined);
+
+  assert.equal(
+    (composite.match(/function paintExample\(/g) ?? []).length,
+    1,
+    'one definition — two would be the state this fixes, in a new shape',
+  );
+  assert.equal((composite.match(/function exampleBlock\(/g) ?? []).length, 1);
+  assert.equal((composite.match(/function exampleColumn\(/g) ?? []).length, 1);
+  assert.match(composite, /className = 'weaveEx'/, 'and the block the colours hang on is made here');
+});
+
+test('no sub-script defines a painter of its own, and each one calls the shared painter', () => {
+  for (const [name, script] of [
+    ['card', cardFormScript()],
+    ['woven', wovenFormScript()],
+    ['phrase', phraseFormScript()],
+  ] as const) {
+    assert.ok(!/function exampleColumn\(|function weaveColumn\(/.test(script), `${name} still defines a column painter`);
+    assert.match(script, /paintExample\(/, `${name} never calls the shared painter`);
+  }
+});
+
+test('the password picture is painted into a .weaveEx block, which is what colours it', () => {
+  const script = wovenFormScript();
+
+  // Whitespace-tolerant: the assertion is about which host and which field, not about where the
+  // generated call happens to wrap.
+  assert.match(script, /paintExample\(\s*'weaveExampleHost',\s*'password'/);
+  assert.ok(!/host\.appendChild\(weaveColumn/.test(script), 'the classless three-column append is gone');
 });
