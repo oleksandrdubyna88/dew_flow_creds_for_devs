@@ -412,7 +412,7 @@ Three consequences worth stating, because each was a decision:
 
 `CREDS_MCP_WINDOWS_BINARY` overrides the executable — its own variable, never the CLI's. Design
 record and what the build taught: [PLAN_mcp_wsl_bridge.md](PLAN_mcp_wsl_bridge.md); the caller
-record: [PLAN_caller_identity_in_consent.md](../todo/PLAN_caller_identity_in_consent.md).
+record: [PLAN_caller_identity_in_consent.md](PLAN_caller_identity_in_consent.md).
 
 ## Where the contract lives
 
