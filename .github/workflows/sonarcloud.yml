@@ -65,6 +65,12 @@ jobs:
           # narrowest way to do it — narrower than `new Function`, which shares this file's scope —
           # and the string is what the build just produced from its own source, never input.
           #
+          # Listed FILE BY FILE rather than as `test/**`, so a dynamic execution appearing in some
+          # other test tomorrow is still flagged — a directory-wide ignore would have exempted a
+          # file nobody has argued about yet. These four are the only ones that execute generated
+          # script today, and `grep -rln "new Function\|runInNewContext\|eval("` over `src/test`
+          # returns exactly them.
+          #
           # This does NOT exempt the shipped extension: the rule still applies to every file under
           # `src_vs_code/src` that is not in `test/`, which is where a real one would be. Nothing is
           # excluded from ANALYSIS here, only this one rule in one folder.
@@ -79,9 +85,15 @@ jobs:
             /d:sonar.exclusions="**/bin/**,**/obj/**,**/node_modules/**,deploy/**" \
             /d:sonar.coverage.exclusions="**/tests/**,**/*.Tests/**,**/scripts/**,**/http/**" \
             /d:sonar.cpd.exclusions="src_vs_code/src/help*.ts" \
-            /d:sonar.issue.ignore.multicriteria="e1" \
+            /d:sonar.issue.ignore.multicriteria="e1,e2,e3,e4" \
             /d:sonar.issue.ignore.multicriteria.e1.ruleKey="typescript:S1523" \
-            /d:sonar.issue.ignore.multicriteria.e1.resourceKey="src_vs_code/src/test/**"
+            /d:sonar.issue.ignore.multicriteria.e1.resourceKey="src_vs_code/src/test/miniDom.ts" \
+            /d:sonar.issue.ignore.multicriteria.e2.ruleKey="typescript:S1523" \
+            /d:sonar.issue.ignore.multicriteria.e2.resourceKey="src_vs_code/src/test/webviewHtml.test.ts" \
+            /d:sonar.issue.ignore.multicriteria.e3.ruleKey="typescript:S1523" \
+            /d:sonar.issue.ignore.multicriteria.e3.resourceKey="src_vs_code/src/test/entityFormScript.test.ts" \
+            /d:sonar.issue.ignore.multicriteria.e4.ruleKey="typescript:S1523" \
+            /d:sonar.issue.ignore.multicriteria.e4.resourceKey="src_vs_code/src/test/depPickerScript.test.ts"
       - name: Build
         run: |
           dotnet build dew_flow_creds_for_devs.slnx -c Release --no-incremental
