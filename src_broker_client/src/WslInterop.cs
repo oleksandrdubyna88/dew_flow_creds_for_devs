@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text;
 
 namespace CredsBroker;
 
@@ -198,8 +199,12 @@ public sealed record WindowsBridge(string DefaultBinary, string OverrideVariable
         using var child = Process.Start(start)
             ?? throw new InvalidOperationException($"could not start {WindowsBinary()}");
         child.StandardInput.Close();
-        var stdout = child.StandardOutput.ReadToEndAsync();
-        var stderr = child.StandardError.ReadToEndAsync();
+        // BOUNDED, not `ReadToEndAsync` (code round, 2026-09-12): a stale or broken binary that
+        // writes continuously would otherwise be buffered whole, and this runs at the start of
+        // every WSL session, before the MCP server. A probe reads a help text — anything past the
+        // cap is not one, and the answer is the same as any other failure: start without the flag.
+        var stdout = ReadCappedAsync(child.StandardOutput);
+        var stderr = ReadCappedAsync(child.StandardError);
 
         using var deadline = new CancellationTokenSource(timeout);
         try
@@ -209,10 +214,47 @@ public sealed record WindowsBridge(string DefaultBinary, string OverrideVariable
         catch (OperationCanceledException)
         {
             child.Kill(entireProcessTree: true);
+            // The two reads are still pending on pipes the kill is about to close. Awaiting them
+            // here is what keeps their faults observed rather than raised on the finalizer thread.
+            await Settled(stdout, stderr).ConfigureAwait(false);
             return null;
         }
 
-        await Task.WhenAll(stdout, stderr).ConfigureAwait(false);
-        return child.ExitCode == 0 ? stdout.Result : null;
+        await Settled(stdout, stderr).ConfigureAwait(false);
+        return child.ExitCode == 0 ? await stdout.ConfigureAwait(false) : null;
     }
+
+    /// <summary>At most <see cref="MaxProbeChars"/>, then stop reading — an oversized probe is a failed one.</summary>
+    private static async Task<string?> ReadCappedAsync(TextReader reader)
+    {
+        var buffer = new char[4096];
+        var text = new StringBuilder();
+        int read;
+        while ((read = await reader.ReadAsync(buffer, 0, buffer.Length).ConfigureAwait(false)) > 0)
+        {
+            text.Append(buffer, 0, read);
+            if (text.Length > MaxProbeChars)
+            {
+                return null;
+            }
+        }
+
+        return text.ToString();
+    }
+
+    /// <summary>Wait for both reads and swallow what a killed pipe throws — never a fault nobody sees.</summary>
+    private static async Task Settled(params Task[] reads)
+    {
+        try
+        {
+            await Task.WhenAll(reads).ConfigureAwait(false);
+        }
+        catch (Exception e) when (e is IOException or ObjectDisposedException or OperationCanceledException or InvalidOperationException)
+        {
+            // The child was killed mid-write. That is the timeout path doing its job.
+        }
+    }
+
+    /// <summary>A help text is a few hundred characters; past this it is not a help text.</summary>
+    private const int MaxProbeChars = 64 * 1024;
 }

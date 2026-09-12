@@ -102,6 +102,9 @@ public static class CallerIdentity
     /// <summary>Claude Code's own pid, which names its entry in the session registry.</summary>
     public const string PidVariable = "CLAUDE_PID";
 
+    /// <summary>The one rung whose session has a registry on disk — see <see cref="Build"/>.</summary>
+    public const string ClaudeSessionVariable = "CLAUDE_CODE_SESSION_ID";
+
     /// <summary>Per field — the same number the contract carries as <c>caller.maxFieldChars</c>.</summary>
     public const int MaxFieldChars = 80;
 
@@ -130,10 +133,20 @@ public static class CallerIdentity
         string home,
         string processCwd)
     {
-        var session = Clean(SessionFrom(env));
-        // No session, no session file: a session NAME without a session id would be a name for
-        // nothing, and the plain CLI in a person's own terminal then costs no file read at all.
-        var file = session.Length == 0 ? null : ReadSessionFile(env(PidVariable), home, readFile);
+        var source = SessionSourceFrom(env);
+        var session = Clean(source.Value);
+        // The registry belongs to ONE product, so only THAT product's session id may open it.
+        // `CLAUDE_PID` is inherited by everything Claude Code spawns — a terminal, a shell, another
+        // vendor's CLI started inside one — so a Codex or Gemini session running there carries its
+        // own id and somebody else's pid beside it. Reading on the strength of any rung put one
+        // agent's session name and folder onto another agent's call, in the label a person reads
+        // before allowing a credential (found by two reviewers independently, 2026-09-12). The
+        // generic override is excluded for the same reason: it says which id to use, not whose
+        // registry to read. And a session NAME without a session id would be a name for nothing, so
+        // the plain CLI in a person's own terminal still costs no file read at all.
+        var file = source.Variable == ClaudeSessionVariable && session.Length > 0
+            ? ReadSessionFile(env(PidVariable), home, readFile)
+            : null;
         var folder = Basename(file?.Cwd ?? string.Empty);
         return new CallerRecord(
             Clean(agent),
@@ -143,17 +156,27 @@ public static class CallerIdentity
     }
 
     /// <summary>The first rung of the ladder that is set and not blank, trimmed — or empty.</summary>
-    public static string SessionFrom(Func<string, string?> env)
+    public static string SessionFrom(Func<string, string?> env) => SessionSourceFrom(env).Value;
+
+    /// <summary>
+    /// The first rung that answers, WITH the name of the variable it came from.
+    /// </summary>
+    /// <remarks>
+    /// The name is not decoration: the session registry belongs to one product, and which rung
+    /// answered is the only thing that says whether this session has one at all — see
+    /// <see cref="Build"/>.
+    /// </remarks>
+    public static (string Variable, string Value) SessionSourceFrom(Func<string, string?> env)
     {
         foreach (var name in SessionLadder)
         {
             if (env(name) is { } value && !string.IsNullOrWhiteSpace(value))
             {
-                return value.Trim();
+                return (name, value.Trim());
             }
         }
 
-        return string.Empty;
+        return (string.Empty, string.Empty);
     }
 
     /// <summary>
@@ -161,11 +184,15 @@ public static class CallerIdentity
     /// interpolate.
     /// </summary>
     /// <remarks>
-    /// The pid comes from the environment, and a path segment built from environment data is
-    /// exactly the shape that is repeatedly mis-sanitised: one to ten ASCII digits, or no read.
+    /// <para>The pid comes from the environment, and a path segment built from environment data is
+    /// exactly the shape that is repeatedly mis-sanitised: one to ten ASCII digits, or no read.</para>
+    /// <para>The home must be ROOTED for the same reason (code round, 2026-09-12). A machine where
+    /// neither the profile folder nor <c>HOME</c> answers leaves it empty, and
+    /// <c>Path.Combine</c> would then resolve the registry against this process's WORKING folder —
+    /// which for the CLI is whatever repository somebody happens to be standing in.</para>
     /// </remarks>
     public static string? SessionFilePath(string? pid, string home) =>
-        pid is { Length: >= 1 and <= 10 } && pid.All(char.IsAsciiDigit)
+        pid is { Length: >= 1 and <= 10 } && pid.All(char.IsAsciiDigit) && Path.IsPathRooted(home)
             ? Path.Combine(home, ".claude", "sessions", $"{pid}.json")
             : null;
 
@@ -270,24 +297,54 @@ public static class CallerIdentity
             var record = JsonSerializer.Deserialize(Base64Url.DecodeFromChars(encoded), BrokerJsonContext.Default.CallerRecord);
             return record?.Cleaned() ?? CallerRecord.Empty;
         }
-        catch (Exception e) when (e is FormatException or JsonException)
+        // `ArgumentException` beside the two that are actually thrown today: this string arrives on
+        // a command line from another binary, and a decoder's refusal shape is not something to
+        // depend on across versions when the cost of being wrong is a server that will not start.
+        catch (Exception e) when (e is FormatException or JsonException or ArgumentException)
         {
             return CallerRecord.Empty;
         }
     }
 
-    /// <summary>The production reader: exists, small enough, readable — or nothing.</summary>
+    /// <summary>The production reader: readable, and small enough while it is being read — or nothing.</summary>
+    /// <remarks>
+    /// The cap is enforced on the STREAM rather than on a length taken beforehand (code round,
+    /// 2026-09-12). Asking the file how big it is and then opening it are two operations, and a
+    /// local process can replace a small file with a large one in between — so the check would pass
+    /// and the read would not be bounded by anything. Reading until the cap is exceeded cannot be
+    /// raced: the limit is applied to what actually arrives.
+    /// </remarks>
     private static string? ReadBounded(string path)
     {
         try
         {
-            var info = new FileInfo(path);
-            return info.Exists && info.Length <= MaxSessionFileBytes ? File.ReadAllText(path) : null;
+            using var stream = new FileStream(
+                path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+            using var reader = new StreamReader(stream);
+            return ReadCapped(reader, MaxSessionFileBytes);
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
         {
             return null;
         }
+    }
+
+    /// <summary>Everything up to the cap, or <c>null</c> the moment there is more than that.</summary>
+    private static string? ReadCapped(TextReader reader, int cap)
+    {
+        var buffer = new char[4096];
+        var text = new StringBuilder();
+        int read;
+        while ((read = reader.Read(buffer, 0, buffer.Length)) > 0)
+        {
+            text.Append(buffer, 0, read);
+            if (text.Length > cap)
+            {
+                return null; // not a registry entry, whatever it is
+            }
+        }
+
+        return text.ToString();
     }
 
     private static string HomeDirectory()

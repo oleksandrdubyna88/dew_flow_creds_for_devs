@@ -298,6 +298,8 @@ public sealed class CallerIdentityTests
     [InlineData(null)]
     [InlineData("")]
     [InlineData("not base64!!")]
+    [InlineData("=====")] // padding where base64url has none — ArgumentException, not FormatException
+    [InlineData("ÿþ")] // not ASCII at all
     [InlineData("WzEsMl0")] // [1,2]
     [InlineData("bnVsbA")] // null
     [InlineData("e30")] // {}
@@ -318,5 +320,71 @@ public sealed class CallerIdentityTests
 
         record.Agent.Should().Be("X (verified)");
         record.Cwd.Should().Be("ClaudeRag");
+    }
+
+    // ---- the code round of 2026-09-12 -------------------------------------------------------
+
+    /// <summary>
+    /// The registry belongs to ONE product, so only that product's session id may open it.
+    /// </summary>
+    /// <remarks>
+    /// Found independently by two reviewers. <c>CLAUDE_PID</c> is inherited by everything Claude
+    /// Code spawns — a terminal, a shell, another vendor's CLI started inside one — so a Codex or
+    /// Gemini session running there has its OWN session id and somebody else's pid beside it.
+    /// Opening the registry on the strength of any rung attributed one agent's session name and
+    /// folder to another agent's call, in the label a person reads before allowing a credential.
+    /// </remarks>
+    [Fact]
+    public void Another_agents_session_never_opens_Claude_Codes_registry_even_with_its_pid_inherited()
+    {
+        var reader = new RecordingReader(GoodFile);
+
+        var record = CallerIdentity.Build(
+            "creds CLI",
+            Env(("CODEX_SESSION_ID", "codex-1"), ("CLAUDE_PID", "29960")),
+            reader.Read,
+            Home,
+            "/home/strug/other-repo");
+
+        reader.Asked.Should().BeEmpty("the registry is Claude Code's, and this is not its session");
+        record.SessionName.Should().BeEmpty();
+        record.Session.Should().Be("codex-1");
+        record.Cwd.Should().Be("other-repo", "the folder falls back to this process's own");
+    }
+
+    /// <summary>The override says which id to use; it says nothing about whose registry to read.</summary>
+    [Fact]
+    public void The_generic_override_does_not_open_the_registry_either()
+    {
+        var reader = new RecordingReader(GoodFile);
+
+        CallerIdentity.Build("", Env(("CREDS_CALLER_SESSION", "mine"), ("CLAUDE_PID", "29960")), reader.Read, Home, "/x/y");
+
+        reader.Asked.Should().BeEmpty();
+    }
+
+    /// <summary>Claude Code's own session still reads it — a fix must not close the door it opens.</summary>
+    [Fact]
+    public void Claude_Codes_own_session_still_reads_the_registry()
+    {
+        var reader = new RecordingReader(GoodFile);
+
+        var record = CallerIdentity.Build(
+            "", Env(("CLAUDE_CODE_SESSION_ID", Session), ("CLAUDE_PID", "29960")), reader.Read, Home, "/x/y");
+
+        reader.Asked.Should().ContainSingle();
+        record.SessionName.Should().Be("clauderag-d6");
+    }
+
+    /// <summary>
+    /// A home that is not an absolute path would resolve the registry against the WORKING folder —
+    /// which, for a CLI, is whatever repository somebody happens to be standing in.
+    /// </summary>
+    [Fact]
+    public void A_home_that_is_not_an_absolute_path_opens_nothing()
+    {
+        CallerIdentity.SessionFilePath("29960", string.Empty).Should().BeNull();
+        CallerIdentity.SessionFilePath("29960", "relative/home").Should().BeNull();
+        CallerIdentity.SessionFilePath("29960", Home).Should().NotBeNull();
     }
 }

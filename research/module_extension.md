@@ -2588,7 +2588,18 @@ modal says so in its own sentence (*Identity as reported by the caller — a lab
 nothing reads the label but that sentence and the audit line. `consent()` and `perform()` take it as
 a REQUIRED parameter — `undefined` must be written, never omitted — so every door that reaches the
 funnel says who is asking or does not compile; the `BrokerDoor.consent` hook the MCP and folder
-doors call carries the same requirement. Allow covers every later call on that token; Deny is sticky
+doors call carries the same requirement.
+
+**Whose session registry, and the rule the code round added.** The session NAME comes from
+`~/.claude/sessions/<CLAUDE_PID>.json`, which is one product's file — and `CLAUDE_PID` is inherited
+by everything Claude Code spawns, a terminal and any other vendor's CLI started inside one included.
+Reading it whenever ANY rung of the ladder answered therefore put a Claude Code session's name and
+folder onto a Codex or Gemini call, in the label a person reads before allowing a credential; two
+reviewers found it independently. `CallerIdentity.SessionSourceFrom` now returns WHICH variable
+answered, and the registry is opened only for `CLAUDE_CODE_SESSION_ID` — not even for the generic
+`CREDS_CALLER_SESSION` override, which says which id to use and nothing about whose registry to read.
+A session with no registry of its own keeps its short id and loses only the name, which is what
+§12 of the plan already predicted for Codex and Gemini. Allow covers every later call on that token; Deny is sticky
 for its life. A *dismissed* dialog refuses only that call and is deliberately not recorded — a
 mis-click must not lock an agent out until the window closes. Every call, allowed or refused, writes
 one line to the **CredsForDevs: Agent Access** output channel, with ` by <label>` between the door
