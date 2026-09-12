@@ -74,6 +74,21 @@ internal static class AgentRelay
             ? $"/tmp/creds-agent-{SafeUser(user)}.sock"
             : Path.Combine(runtimeDir, "creds-agent.sock");
 
+    /// <summary>
+    /// How long a unix socket path may be: 104 characters on macOS, 108 elsewhere.
+    /// </summary>
+    /// <remarks>
+    /// The kernel's <c>sun_path</c>, and .NET enforces it in <see cref="UnixDomainSocketEndPoint"/>'s
+    /// constructor with an <see cref="ArgumentOutOfRangeException"/> — which is neither a
+    /// <c>SocketException</c> nor an <c>IOException</c>, so it escaped both of this file's guards
+    /// and took the process with it. It is not a theoretical limit on macOS: the temporary
+    /// directory alone is about fifty characters there, which is how the 1.7.0 release found it.
+    /// </remarks>
+    internal static int MaxSocketPathLength => OperatingSystem.IsMacOS() ? 104 : 108;
+
+    /// <summary>Whether this path is longer than a domain socket may be on this platform.</summary>
+    internal static bool TooLongForSocket(string path) => path.Length > MaxSocketPathLength;
+
     internal static string SocketPathHere() =>
         Environment.GetEnvironmentVariable(SocketOverrideVariable) is { Length: > 0 } custom
             ? custom
@@ -91,7 +106,10 @@ internal static class AgentRelay
     /// </remarks>
     internal static async Task<bool> IsStaleAsync(string path)
     {
-        if (!File.Exists(path))
+        // A path nothing could ever have bound is not a corpse to remove. This method's caller
+        // DELETES what it is told about, so answering "stale" here would unlink an arbitrary file
+        // for the crime of living somewhere with a long name.
+        if (!File.Exists(path) || TooLongForSocket(path))
         {
             return false;
         }
@@ -121,6 +139,19 @@ internal static class AgentRelay
         }
 
         var path = SocketPathHere();
+        // Refused here, with the number, rather than thrown at from inside the endpoint's
+        // constructor. `CREDS_RELAY_SOCKET` and `XDG_RUNTIME_DIR` are both somebody else's strings,
+        // and an unhandled ArgumentOutOfRangeException from a binary whose whole job is to print a
+        // line for `eval` is the least useful failure it could have.
+        if (TooLongForSocket(path))
+        {
+            Console.Error.WriteLine(
+                $"[creds-for-devs] {path} is {path.Length} characters; a unix socket path may be at "
+                    + $"most {MaxSocketPathLength} on this platform. Set {SocketOverrideVariable} to "
+                    + "something shorter.");
+            return contract.Exit("usage");
+        }
+
         var claimed = await ClaimAsync(path, contract).ConfigureAwait(false);
         if (claimed != 0)
         {
@@ -138,7 +169,12 @@ internal static class AgentRelay
             // with it would mean the mask did not take.
             File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite);
         }
-        catch (Exception e) when (e is SocketException or IOException or UnauthorizedAccessException)
+        // ArgumentException as well as the three: the endpoint's constructor is the one call here
+        // that refuses a VALUE rather than failing an operation, and its refusal was escaping into
+        // an unhandled crash. The guard above catches the known case by name; this catches the next
+        // one somebody finds, with the same sentence rather than a stack trace.
+        catch (Exception e)
+            when (e is SocketException or IOException or UnauthorizedAccessException or ArgumentException)
         {
             Console.Error.WriteLine($"[creds-for-devs] could not listen on {path}: {e.Message}");
             return contract.Exit("brokerFailure");

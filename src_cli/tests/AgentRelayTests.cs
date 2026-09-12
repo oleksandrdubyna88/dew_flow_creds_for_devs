@@ -109,7 +109,16 @@ public class AgentRelayTests
     {
         // The common case after a crash: the file outlives the process. Refusing it would mean a
         // manual cleanup every time, which is how a relay becomes something people stop using.
-        var path = Path.Combine(Path.GetTempPath(), $"creds-relay-corpse-{Guid.NewGuid():N}.sock");
+        //
+        // The name is SHORT and the length is asserted, because this test is about a corpse and not
+        // about the length limit — and it used to be about both by accident. A 32-character GUID
+        // under macOS's temporary directory came to 105 characters, one over that platform's cap,
+        // so the endpoint's constructor threw before the question was ever asked. It failed on both
+        // macOS legs of the 1.7.0 release and blocked the CLI from publishing.
+        var path = Path.Combine(Path.GetTempPath(), $"creds-corpse-{Environment.ProcessId}.sock");
+        path.Length.Should().BeLessThanOrEqualTo(
+            AgentRelay.MaxSocketPathLength,
+            "this test is about a corpse, not about the path limit — see APathTooLongForASocketIsNotStale");
         await File.WriteAllTextAsync(path, string.Empty, TestContext.Current.CancellationToken);
         try
         {
@@ -119,5 +128,47 @@ public class AgentRelayTests
         {
             File.Delete(path);
         }
+    }
+    
+    /// <summary>
+    /// A path too long to BE a domain socket is answered, not thrown at.
+    /// </summary>
+    /// <remarks>
+    /// <para>macOS caps a unix socket path at 104 characters and Linux at 108, and .NET enforces
+    /// that in <c>UnixDomainSocketEndPoint</c>'s constructor with an
+    /// <c>ArgumentOutOfRangeException</c> — which is neither a <c>SocketException</c> nor an
+    /// <c>IOException</c>, so it escaped both guards in this file. On macOS the temporary directory
+    /// alone is fifty characters, which is how the release found it.</para>
+    /// <para>It answers FALSE rather than true. "Stale" means "a corpse we may remove", and this
+    /// method's caller deletes what it is told about — so a path nothing could ever have bound must
+    /// not be reported as a socket to unlink. Nothing is serving there, and nothing is ours to
+    /// delete either.</para>
+    /// </remarks>
+    [Fact]
+    public async Task APathTooLongForASocketIsNotStale()
+    {
+        var directory = Directory.CreateTempSubdirectory("creds-relay-long");
+        var path = Path.Combine(directory.FullName, new string('n', 200) + ".sock");
+        await File.WriteAllTextAsync(path, string.Empty, TestContext.Current.CancellationToken);
+        try
+        {
+            path.Length.Should().BeGreaterThan(AgentRelay.MaxSocketPathLength);
+            (await AgentRelay.IsStaleAsync(path)).Should().BeFalse();
+        }
+        finally
+        {
+            Directory.Delete(directory.FullName, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void TheLengthLimitIsThePlatformOwn()
+    {
+        // 104 on macOS, 108 elsewhere. Asserted so the constant cannot drift into "whatever number
+        // made the test pass on the machine it was written on".
+        AgentRelay.MaxSocketPathLength
+            .Should().Be(OperatingSystem.IsMacOS() ? 104 : 108);
+        AgentRelay.TooLongForSocket(new string('x', AgentRelay.MaxSocketPathLength)).Should().BeFalse();
+        AgentRelay.TooLongForSocket(new string('x', AgentRelay.MaxSocketPathLength + 1)).Should().BeTrue();
     }
 }
