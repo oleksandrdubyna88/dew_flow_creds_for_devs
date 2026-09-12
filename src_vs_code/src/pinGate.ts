@@ -121,8 +121,18 @@ function corruptReason(entryName: string, why: string): string {
  * anybody anything.</p>
  */
 export function automaticPinRefusal(stored: string | undefined, entryName: string): string {
-  return readSecret(stored).kind === 'locked'
-    ? `"${entryName}" is protected with its own PIN, so it cannot be used automatically. Open the `
-      + 'entry and enter the PIN, or remove the PIN protection from its General section.'
-    : '';
+  return readSecret(stored).kind === 'locked' ? pinRefusalFor(entryName) : '';
+}
+
+/**
+ * The sentence a protected entry earns, whatever established that it is protected.
+ *
+ * <p>Its own function because there are two ways to know. The WRAP inside a value is the truth and
+ * is asked first. The entry's own MARK catches what the wrap cannot — a value that is plaintext at
+ * this instant inside an entry that is protected — which `envApply.automaticFieldRefusal` asks
+ * about. Two ways to know, one thing to say: a second wording would be two answers to one question.</p>
+ */
+export function pinRefusalFor(entryName: string): string {
+  return `"${entryName}" is protected with its own PIN, so it cannot be used automatically. Open the `
+    + 'entry and enter the PIN, or remove the PIN protection from its General section.';
 }

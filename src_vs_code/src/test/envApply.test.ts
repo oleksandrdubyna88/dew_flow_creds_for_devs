@@ -154,6 +154,73 @@ test('a name that stops being bound is DELETED, so no secret outlives its bindin
   assert.deepEqual(env.replaced, { NEW_NAME: 'THE-PASSWORD' });
 });
 
+/**
+ * A binding that stops being readable takes its variable WITH it.
+ *
+ * <p>`staleEnvNames` covers the name that stopped being bound. This is the other half, and it is
+ * the one with a secret in it: the name is still bound, and the value behind it has become
+ * unreadable — the entry was given a PIN, its password was woven, the secret was cleared. The
+ * collection persists across reloads, so leaving the last value there hands every terminal opened
+ * afterwards a secret the policy has just refused to hand anybody, and the notice says "withheld"
+ * about a variable that is still set. Found by the automated reviewer on the pull request.</p>
+ */
+test('a binding whose value became unreadable has its variable deleted, not left at the old secret', async () => {
+  const locked = await lockSecret('THE-PASSWORD', 'acc', 'correct-horse-battery');
+  const withheldEnv = envCollection();
+
+  const refused = await envApply().applyEnvBindings(
+    withheldEnv as never,
+    storage({ password: locked }) as never,
+    'acc',
+    details({ envBindings: { password: 'PROD_PW' } }),
+  );
+
+  assert.deepEqual(withheldEnv.replaced, {}, 'nothing is written for a PIN-locked value');
+  assert.deepEqual(withheldEnv.deleted, ['PROD_PW'], 'and the variable it used to hold is removed');
+  assert.equal(refused.withheld[0]?.name, 'PROD_PW');
+
+  // The same for a value that is simply gone: a cleared password must not leave the old one set.
+  const goneEnv = envCollection();
+
+  await envApply().applyEnvBindings(
+    goneEnv as never,
+    storage({ password: undefined }) as never,
+    'acc',
+    details({ envBindings: { password: 'PROD_PW' } }),
+  );
+
+  assert.deepEqual(goneEnv.replaced, {});
+  assert.deepEqual(goneEnv.deleted, ['PROD_PW']);
+});
+
+/**
+ * A protected entry is refused on its MARK as well as on its wrap.
+ *
+ * <p>The wrap is the truth and stays the primary test — a mark can be absent from an entry whose
+ * values are locked. But the mark catches a state the wrap cannot: an entry marked protected whose
+ * stored value is, at this instant, plaintext. That state is reachable today, because the EDIT path
+ * writes a newly typed secret and never re-seals it (the automated reviewer found that separately,
+ * and it has its own plan). Without this, editing a PIN-protected entry would hand its new password
+ * to every terminal opened afterwards — the exact promise this change exists to keep. Refusing on
+ * either signal cannot under-refuse; it can only refuse something the wrap would have allowed.</p>
+ */
+test('an entry MARKED as PIN-protected is refused even while its stored value is still plaintext', async () => {
+  const env = envCollection();
+
+  const result = await envApply().applyEnvBindings(
+    env as never,
+    storage() as never, // plain values: the state an edit leaves behind before any re-seal
+    'acc',
+    details({ envBindings: { password: 'PROD_PW' }, pinProtected: true }),
+    undefined,
+    { password: 'JUST-TYPED' },
+  );
+
+  assert.deepEqual(env.replaced, {}, 'neither the stored value nor the one the form just carried');
+  assert.deepEqual(env.deleted, ['PROD_PW']);
+  assert.match(String(result.withheld[0]?.reason), /PIN/);
+});
+
 test('a name still bound is not deleted just because it was there before', async () => {
   const env = envCollection();
 
