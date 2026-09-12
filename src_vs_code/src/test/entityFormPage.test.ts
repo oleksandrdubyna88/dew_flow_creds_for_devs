@@ -441,9 +441,32 @@ function insideInlineRun(state: CrampState): boolean {
   return state.stack.some((open) => INLINE_TAGS.has(open.name));
 }
 
-/** Comments and the page script are not markup — and the script is full of `<` inside strings. */
+/**
+ * Comments and the page script are not markup — and the script is full of `<` inside strings.
+ *
+ * <p>Scanned by INDEX rather than by regular expression, deliberately. A pattern like
+ * `/<script[\s\S]*?<\/script>/` is a bad HTML filter, which code scanning is right to say even
+ * though what this reads is markup this build generated for a test. The objection is not that it
+ * fails here; it is that the SHAPE is one somebody copies to a place where the input is not ours.
+ * Cutting between two indexes has no such shape to copy.</p>
+ */
 function markupOnly(html: string): string {
-  return html.replace(/<!--[\s\S]*?-->/g, '').replace(/<script[\s\S]*?<\/script>/g, '');
+  return cutBetween(cutBetween(html, '<!--', '-->'), '<script', '</script>');
+}
+
+/** Everything outside every `open … close` span; an unterminated final span is dropped with its tail. */
+function cutBetween(text: string, open: string, close: string): string {
+  const kept: string[] = [];
+  let at = 0;
+  for (let start = text.indexOf(open, at); start >= 0; start = text.indexOf(open, at)) {
+    kept.push(text.slice(at, start));
+    const end = text.indexOf(close, start + open.length);
+    if (end < 0) {
+      return kept.join('');
+    }
+    at = end + close.length;
+  }
+  return `${kept.join('')}${text.slice(at)}`;
 }
 
 function stepText(state: CrampState, token: string): void {

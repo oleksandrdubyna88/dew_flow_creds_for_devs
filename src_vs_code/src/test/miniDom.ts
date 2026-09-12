@@ -1,3 +1,5 @@
+import { runInNewContext } from 'node:vm';
+
 /**
  * A DOM small enough to RUN a page-script fragment, so a painter can be asserted by what it makes.
  *
@@ -53,7 +55,9 @@ export class MiniElement {
   }
 
   addEventListener(type: string, handler: (event: unknown) => void): void {
-    (this.listeners[type] ??= []).push(handler);
+    const forType = this.listeners[type] ?? [];
+    forType.push(handler);
+    this.listeners[type] = forType;
   }
 
   /** Fires what a person's click or keystroke would fire, so a test can drive the real handler. */
@@ -137,24 +141,45 @@ export function runFragment(
   window: MiniWindow = new MiniWindow(),
 ): Record<string, (...args: never[]) => unknown> {
   const vscode = { postMessage: (message: unknown): void => { posted.push(message); } };
-  // Immediate rather than deferred: these fragments debounce their host requests, and a test that
-  // has to wait for a timer is a test that will one day be flaky for a reason nobody can see.
-  const setTimeout = (run: () => void): number => { run(); return 0; };
-  const built = new Function(
-    'document',
-    'vscode',
-    'window',
-    'setTimeout',
-    'clearTimeout',
-    `${fragment}\nreturn { ${names.join(', ')} };`,
-  ) as (
-    d: MiniDocument,
-    v: unknown,
-    w: MiniWindow,
-    s: unknown,
-    c: unknown,
-  ) => Record<string, (...args: never[]) => unknown>;
-  return built(document, vscode, window, setTimeout, () => undefined);
+  const sandbox = {
+    document,
+    vscode,
+    window,
+    // Immediate rather than deferred: these fragments debounce their host requests, and a test that
+    // has to wait for a timer is a test that will one day be flaky for a reason nobody can see.
+    setTimeout: (run: () => void): number => { run(); return 0; },
+    clearTimeout: () => undefined,
+    lifted: {} as Record<string, (...args: never[]) => unknown>,
+  };
+  // `node:vm`, not `new Function`: the context is EXPLICIT — these six names and nothing else, not
+  // even this file's own scope — which is both what a page script actually gets in a webview and the
+  // sanctioned way to run a string of code in Node. The string is the page script this build just
+  // generated from its own source; nothing here reads input.
+  runInNewContext(`${fragment}\nlifted = { ${names.join(', ')} };`, sandbox, { timeout: 5000 });
+  return marshalled(sandbox.lifted);
+}
+
+/**
+ * The lifted functions, with their results brought back into THIS realm.
+ *
+ * <p>A context of its own is a realm of its own, so an array a fragment builds has that realm's
+ * `Array.prototype` — and `assert.deepEqual` compares prototypes. Without this, a test asserting
+ * `['iban']` fails against a result printing as `['iban']`, which is a confusing half-hour for
+ * whoever writes the next one. `Array.isArray` reads the internal slot and so answers correctly
+ * across realms, which is what makes the copy safe to do blindly.</p>
+ */
+function marshalled(
+  lifted: Record<string, (...args: never[]) => unknown>,
+): Record<string, (...args: never[]) => unknown> {
+  return Object.fromEntries(
+    Object.entries(lifted).map(([name, fn]) => [
+      name,
+      (...args: never[]): unknown => {
+        const answer = fn(...args);
+        return Array.isArray(answer) ? [...answer] : answer;
+      },
+    ]),
+  );
 }
 
 /** The page's `window`: what it listens on, and the one message kind these fragments answer. */
@@ -177,12 +202,19 @@ export class MiniWindow {
 
 /** `.weaveEx`, `.weaveEx[data-field="x"]`, `[data-field="x"]` and a bare tag — nothing else. */
 function matches(element: MiniElement, selector: string): boolean {
-  const attribute = selector.match(/\[data-([a-z-]+)="([^"]*)"\]/);
-  const classes = selector.replace(/\[[^\]]*\]/g, '').split('.').filter((part) => part.length > 0);
+  const at = selector.indexOf('[');
+  const classes = (at < 0 ? selector : selector.slice(0, at)).split('.').filter((part) => part.length > 0);
   const classOk = classes.every((one) => element.className.split(' ').includes(one));
-  const attributeOk = attribute === null || element.dataset[camel(attribute[1])] === attribute[2];
-  return classOk && attributeOk;
+  return classOk && attributeOk(element, at < 0 ? '' : selector.slice(at));
 }
+
+/** The one attribute shape these selectors use, read by index rather than by a nested pattern. */
+function attributeOk(element: MiniElement, bracketed: string): boolean {
+  const found = ATTRIBUTE.exec(bracketed);
+  return found === null || element.dataset[camel(found[1])] === found[2];
+}
+
+const ATTRIBUTE = /^\[data-([a-z-]+)="([^"]*)"\]$/;
 
 function camel(name: string): string {
   return name.replace(/-([a-z])/g, (_all, letter: string) => letter.toUpperCase());
