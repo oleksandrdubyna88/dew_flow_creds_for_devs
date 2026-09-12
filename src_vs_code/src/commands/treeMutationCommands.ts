@@ -325,9 +325,12 @@ export function registerTreeMutationCommands(host: TreeMutationCommandsHost): vo
       undefined,
       heldEnvValues(result),
     );
+    // Immediately after the write it reports, and before the next `await`: the environment
+    // collection has already changed, so a failure in anything that follows must not decide
+    // whether the person is told about it (the reviewer's finding on the pull request).
+    showEnvNotice(envApplied);
     void warnIfTrackedCopy(result.details);
     await applyDependencyColors(storage, location.accountId, result.dependsOnColors);
-    showEnvNotice(envApplied);
     mutated();
     await announceArrival(location.accountId, id);
   });
