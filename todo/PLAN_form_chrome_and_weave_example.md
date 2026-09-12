@@ -154,6 +154,13 @@ asked (plan round, local): `folderFormPage.ts` imports `zoomButtonsScript` and `
 `data-zoom` buttons, the `uiScale` listener text and the `zoomStyle` px on `body`, so a forgotten
 import or an unpassed scale is a red test rather than a visual regression.
 
+S2's own plan round (good_enough, 3 of 3) added four things: `applyZoomDelta` ignores a non-finite
+delta, so a malformed `{type:'zoom'}` from any page can never reset the persisted scale (one guard in
+`uiScaleHost.ts` covers every page); a behavioural test of the folder panel through `vscodeStub` (a
+`zoom` message updates the setting by one step; a `uiScale` push is posted on mount); `formHeaderHtml`
+escapes exactly once — callers pass RAW values, and a heading such as `R&D <x> "q"` is asserted
+escaped once and never twice; and the chip span is rendered only when `chip` is given.
+
 The entity form's rendered markup is asserted by `entityFormPage.test.ts` (`:234`, `:253`, `:260`,
 `:263` heading and chip; `:167-195` CSP and nonce): the header builder must render the same heading
 text, the same `kindChip`, and no inline script — the tests stay green as the proof.
@@ -237,11 +244,13 @@ story's diff (`baseRef` = the previous story's last commit), every finding resol
    the page carries `data-zoom="1"`, the `uiScale` apply fragment, `.topBar`, `max-width: 1280px`,
    `font-size: …px` from `zoomStyle`, heading `Edit: ` + a `kindChip`, and the three ids. Then §2.2;
    `entityFormPage.test.ts` green unchanged, plus one case that the entity page's header has the three ids.
-3. **RED** `entityFormPage.test.ts` (new case): a structural lint over the rendered create-form HTML for
-   each kind AND over the folder page — no `<button` may immediately follow (whitespace only between)
-   a `</select>`, `</textarea>` or an `<input …>` tag unless the two are children of a `.line`,
-   `.genRow`, `.actions` or `.buttons` wrapper. Fails today on the SSH key form (Generate key pair).
-   Then §2.3.
+3. **RED** `entityFormPage.test.ts` (new case): a structural lint over the rendered create-form AND
+   edit-form HTML for each kind (an edit renders with a small sample record so the edit-only branches
+   are on the page — S2's round, gemini) and over the folder page — no `<button` may follow a
+   `</select>`, `</textarea>` or an `<input …>` tag, tolerating `</label>`, helper spans and a
+   self-closing input in between, unless the pair sits inside a `.line`, `.genRow`, `.actions` or
+   `.buttons` wrapper: the rule is about the nearest wrapper, not literal adjacency. Fails today on the
+   SSH key form (Generate key pair). Then §2.3.
 4. **RED** `wovenPasswordForm.test.ts`: the password example lands in a `.weaveEx` block — assert the
    woven script calls `exampleBlock('password'`, that the painter fragment appears exactly once in the
    composite `formPageScript` output, and that neither `cardFormScript()` nor `wovenFormScript()`
