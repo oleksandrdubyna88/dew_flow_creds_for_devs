@@ -605,3 +605,28 @@ test('accepting a generated PIN leaves the clipboard alone', { timeout: 5_000 },
     'this is the value the person is about to paste — wiping it breaks the feature',
   );
 });
+
+/**
+ * Issue #55 gave the ENTRY PIN a four-character floor. This box seals ciphertext that leaves the
+ * machine under a passphrase whose other half is often the recipient's public email, so it keeps
+ * the VAULT floor — and this test is the one that goes red if somebody hands `pinValidator` the
+ * wrong scope here, or changes the default. The test above proves "refused"; this one proves
+ * refused for the VAULT's reason, in the vault's own sentence.
+ */
+test("the transit PIN keeps the vault floor after the entry scope exists — 1234 is refused with the vault's own sentence", async () => {
+  const w = world();
+  const pending = w.chooseSharePin();
+  const box = w.box();
+
+  box.type('1234');
+  box.accept();
+  await settle();
+
+  const said = JSON.stringify(box.validationMessage ?? '');
+  assert.match(said, /at least 8 characters/, `the box said: ${said}`);
+  assert.match(said, /off your machine/, 'the vault sentence, not the entry one');
+  assert.equal(box.disposed, 0, 'and the box stays open for the fix');
+
+  box.escape();
+  assert.equal(await pending, undefined);
+});

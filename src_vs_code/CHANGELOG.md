@@ -8,6 +8,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **An entry's PIN has its own floor: at least four characters, anything you like.** The PIN that
+  protects ONE entry — the second lock, asked after the vault is open — was judged by the vault
+  PIN's rules, so `1234` was refused with a sentence about data stored off your machine, shown for
+  an entry (#55). It now needs four characters and nothing else: digits alone, a repeated
+  character, a word from the blocklist are all accepted, and no crack-time estimate is shown,
+  because that number is about an attacker this lock does not face. The vault PIN, the sync and
+  backup PINs and the share PIN that seals ciphertext in transit keep every rule they had, and a
+  test drives `1234` through the transit box and watches it refused. The recipient's PIN for an
+  imported protected entry is an entry PIN and follows the new rule.
+
+  The trade-off is recorded in `pinPolicy.ts` rather than left implicit: the wrapped envelope does
+  travel in backups and sync, so a four-character entry PIN is offline-attackable by somebody who
+  holds the file *and* has the vault open. The entry PIN is a lock against a shoulder, a screen
+  share, an agent or a colleague at an unlocked desk — and a lock nobody sets because the box
+  refuses `1234` is weaker than one that is set. The help says the rule in all five languages, and
+  a test asserts each language states the four-character floor in its own words.
+
 - **The consent modal names WHO is asking.** It used to open with *Claude Code wants to…* for every
   caller — Codex, Gemini, the `creds` CLI in a plain terminal, any other MCP client — and could not
   say which of several side-by-side Claude Code sessions had raised it, while Allow covers every later
@@ -31,6 +48,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Filled by `creds-mcp` 0.6.0 and `creds` 0.1.6 (`contract/broker-v1.json` gained an additive
   `caller` block; the wire `version` stays 1). An older binary against this window reads *An agent*;
   this window's binaries against an older extension send a field it ignores.
+
 
 ## [1.6.0] — the audit's nine findings closed, and a second code where enrolment asks for two
 

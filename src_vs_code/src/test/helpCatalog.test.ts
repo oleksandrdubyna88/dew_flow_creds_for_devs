@@ -141,3 +141,34 @@ test('every declared language carries every article', () => {
     assert.deepEqual(missing, [], `${language} is missing ${missing.length} of ${HELP_ARTICLE_IDS.length}`);
   }
 });
+
+/**
+ * Issue #55 — the entry PIN's rule is stated in every language, and it is the SAME rule.
+ *
+ * <p>A stale translation is invisible to the checks above: `bodyFor` marks a MISSING body, never one
+ * that still describes the previous rule, and the coverage test reads only the English. So the one
+ * sentence that changed is asserted per language, in that language's own words. The map is keyed by
+ * `HelpLanguage`, so adding a language without deciding how it says "four characters" does not
+ * compile — the check cannot be forgotten, only answered.</p>
+ */
+const FOUR_CHARACTER_FLOOR: Readonly<Record<HelpLanguage, RegExp>> = {
+  en: /at least four characters/i,
+  ru: /не меньше четырёх символов/i,
+  uk: /щонайменше чотири символи/i,
+  de: /mindestens vier Zeichen/i,
+  es: /al menos cuatro caracteres/i,
+};
+
+test('every language states the entry PIN’s four-character floor, in its own words', () => {
+  const article = helpArticle('entity-pin');
+  assert.ok(article !== undefined, 'the entity-pin article exists');
+  for (const language of HELP_LANGUAGES) {
+    const { body, fallback } = bodyFor(article, language);
+    assert.equal(fallback, false, `${language}: entity-pin is not translated`);
+    assert.match(
+      body.setup,
+      FOUR_CHARACTER_FLOOR[language],
+      `${language}: the setup text does not state the four-character floor`,
+    );
+  }
+});

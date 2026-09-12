@@ -1,6 +1,13 @@
 import * as assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { MIN_PIN_LENGTH, describePinStrength, pinFeedback, validatePin } from '../pinPolicy';
+import {
+  MIN_ENTRY_PIN_LENGTH,
+  MIN_PIN_LENGTH,
+  describePinStrength,
+  pinFeedback,
+  validateEntryPin,
+  validatePin,
+} from '../pinPolicy';
 
 /**
  * PIN strength. This PIN is not an online password: it wraps ciphertext that
@@ -98,4 +105,51 @@ test('a strong PIN while choosing still gets its estimate, not silence', () => {
   const feedback = pinFeedback('correct horse battery staple', 'choosing');
   assert.equal(feedback?.kind, 'advice');
   assert.match(feedback?.message ?? '', /centuries|years/);
+});
+
+// ---------------------------------------------------------------------------
+// Issue #55 — the entry PIN has its own floor. It is the SECOND lock, asked after the vault is
+// open, and it was being judged by the rules written for the first: `1234` refused with a
+// sentence about data stored off the machine, shown for an entry. The scope is a parameter,
+// and a caller that passes none gets the STRICTER vault default — the safe direction.
+// ---------------------------------------------------------------------------
+
+test('an entry PIN of four characters is accepted, whatever they are', () => {
+  assert.equal(validateEntryPin('1234'), undefined, 'four digits is the owner\'s own example');
+  assert.equal(validateEntryPin('aaaa'), undefined, 'a repeated character is not refused for an entry');
+  assert.equal(validateEntryPin('password'), undefined, 'the blocklist is the vault\'s, not this lock\'s');
+  assert.equal(MIN_ENTRY_PIN_LENGTH, 4);
+});
+
+test('an entry PIN shorter than four characters is refused, and an empty one by the same sentence', () => {
+  assert.match(validateEntryPin('123') ?? '', /at least 4/);
+  assert.match(validateEntryPin('') ?? '', /must not be empty/);
+});
+
+test('the entry scope gives no crack-time estimate — that number is about an attacker this lock does not face', () => {
+  assert.equal(pinFeedback('1234', 'choosing', 'entry'), undefined);
+  assert.equal(pinFeedback('correct horse battery staple', 'choosing', 'entry'), undefined);
+});
+
+test('the vault scope is the default: a caller that names no scope still refuses 1234', () => {
+  const feedback = pinFeedback('1234', 'choosing');
+  assert.equal(feedback?.kind, 'error');
+  assert.match(feedback?.message ?? '', /at least 8/);
+  assert.deepEqual(pinFeedback('1234', 'choosing', 'vault'), feedback, 'and naming it changes nothing');
+});
+
+test('an entry-scope refusal is a refusal in BOTH modes, exactly as the vault\'s is', () => {
+  for (const mode of ['choosing', 'entering'] as const) {
+    const feedback = pinFeedback('123', mode, 'entry');
+    assert.ok(feedback !== undefined, `mode ${mode} let a three-character entry PIN through`);
+    assert.equal(feedback.kind, 'error');
+    assert.equal(feedback.message, validateEntryPin('123'), 'the same sentence, byte for byte');
+  }
+});
+
+test('the entry scope does not touch the vault floor — the two scopes answer differently about the same PIN', () => {
+  // The M-1 finding of the 2026-08-24 security review is why the vault floor is eight; this scope
+  // must never be a way around it. `12345678` is the PIN that finding was about.
+  assert.equal(pinFeedback('12345678', 'choosing', 'vault')?.kind, 'error');
+  assert.equal(pinFeedback('12345678', 'choosing', 'entry'), undefined);
 });

@@ -112,7 +112,8 @@ async function askAndCheck(
     prompt: PROMPT,
     password: true,
     ignoreFocusOut: true,
-    validateInput: pinValidator('entering'),
+    // The entry scope (issue #55): this PIN is checked against SIBLINGS, never against the vault's floor.
+    validateInput: pinValidator('entering', 'entry'),
   });
   if (typed === undefined || typed.length === 0) {
     return { kind: 'cancelled' };
