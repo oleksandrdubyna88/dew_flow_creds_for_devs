@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import { CorpPolicyState } from '../corpPolicy';
 import { MemberListEntry, MemberSelf, OrgMembersClient, ProjectRow } from '../orgMembersClient';
 import { OrgPolicyHost, ServerSectionHost, refreshOrgPolicy } from '../orgPolicyRefresh';
-import { BackupStatus } from '../orgBackupClient';
+import { BackupRead, BackupStatus } from '../orgBackupClient';
 import { MetricsProbe, ServerRead } from '../orgRecoveryClient';
 import { ReleaseMemo } from '../githubReleases';
 import { ServerMetrics } from '../serverMetricsPage';
@@ -232,7 +232,7 @@ function serverHost(
       },
     }),
     metrics: new Map<string, ServerRead>(),
-    backup: new Map<string, BackupStatus>(),
+    backup: new Map<string, BackupRead>(),
     release: undefined,
     published: () => Promise.resolve(published),
   };
@@ -285,7 +285,7 @@ test('a reader that THROWS is an unreachable server, never an exception into the
 test('a developer is never asked, and a demotion takes the cached facts with the section', async () => {
   const h = serverHost([{ metrics: METRICS }]);
   await refreshOrgPolicy(h, account);
-  h.server.backup.set('a1', { lastResult: 'ok' } as BackupStatus);
+  h.server.backup.set('a1', { value: { lastResult: 'ok' } as BackupStatus, at: 0 });
   assert.equal(h.asked, 1);
 
   // The next cycle says this account is a plain member: the section goes, and so do its answers —
@@ -312,10 +312,39 @@ test('a repoint drops the Server section’s caches with the policy ones', async
   // server's version and backup state would survive the move and be drawn as this one's.
   const h = serverHost([{ metrics: METRICS }]);
   await refreshOrgPolicy(h, account);
-  h.server.backup.set('a1', { lastResult: 'ok' } as BackupStatus);
+  h.server.backup.set('a1', { value: { lastResult: 'ok' } as BackupStatus, at: 0 });
 
   h.orgPolicyServer.set('a1', 'https://somewhere-else.example.com');
   await refreshOrgPolicy(h, account);
 
   assert.equal(h.server.backup.has('a1'), false, 'the backup answer went with the server it came from');
+});
+
+test('a read still in flight when the account is repointed is never written down', async () => {
+  // The code round's finding. The repoint above clears the caches, but a probe that was ALREADY
+  // awaiting when it happened used to complete afterwards and write the old server's version and
+  // footprint back under the same account id — and the tree drew them as the new server's, with
+  // nothing on the row saying otherwise. The server a read was asked OF is part of what the answer
+  // is, so it is captured before the await and checked before the write.
+  let release: ((probe: MetricsProbe) => void) | undefined;
+  const waiting = new Promise<MetricsProbe>((resolve) => { release = resolve; });
+  const h = serverHost([]);
+  Object.defineProperty(h.server, 'readerFor', {
+    value: () => ({ probeMetrics: (): Promise<MetricsProbe> => waiting }),
+  });
+
+  const inFlight = refreshOrgPolicy(h, account);
+  // Let the refresh reach the probe, then repoint while it is still out.
+  for (let turn = 0; turn < 20; turn += 1) {
+    await Promise.resolve();
+  }
+  h.orgPolicyServer.set('a1', 'https://somewhere-else.example.com');
+  release?.({ metrics: METRICS });
+  await inFlight;
+
+  assert.equal(
+    h.server.metrics.has('a1'),
+    false,
+    'the old server’s facts must not be drawn as the new one’s',
+  );
 });

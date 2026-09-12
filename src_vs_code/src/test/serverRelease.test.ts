@@ -3,9 +3,11 @@ import { test } from 'node:test';
 import {
   MAX_RELEASE_PAGES,
   RELEASE_PER_PAGE,
+  RELEASE_RETRY_MS,
   RELEASE_TTL_MS,
   SERVER_TAG_PREFIX,
   latestRelease,
+  ReleaseFetch,
   newestOf,
   rememberedLatestRelease,
 } from '../githubReleases';
@@ -180,18 +182,85 @@ test('past the window it asks again', async () => {
 });
 
 test('a check that could NOT tell keeps the previous answer and does not start a six-hour silence', async () => {
-  // The alternative — remembering the failure — would mean one moment offline costs the update
-  // hint for the rest of the day. "Not knowing changes nothing", as everywhere else here.
+  // Remembering a failure as a full TTL would mean one moment offline costs the update hint for the
+  // rest of the day. Remembering NOTHING was the other extreme, and it is the one the code round
+  // caught: the next readiness tick walked every page again, and there is a tick on activation, on
+  // unlock and on lock. So a failure waits RELEASE_RETRY_MS — minutes, not hours.
   const throwing = (): Promise<Response> => Promise.reject(new Error('offline'));
   const known = { version: '0.6.0', at: 1_000 };
 
   const kept = await rememberedLatestRelease(SERVER_TAG_PREFIX, known, 1_000 + RELEASE_TTL_MS, throwing);
-  assert.deepEqual(kept, known, 'the version survives');
+  assert.equal(kept.version, '0.6.0', 'the version survives');
+  assert.equal(kept.at, known.at, 'and is not restamped as though it were fresh');
 
   const nothing = await rememberedLatestRelease(SERVER_TAG_PREFIX, undefined, 5_000, throwing);
-  assert.deepEqual(nothing, { version: '', at: 0 }, 'and with nothing to keep, it is simply unknown');
+  assert.equal(nothing.version, '', 'with nothing to keep, it is simply unknown');
 
   const { fetcher, urls } = pages([{ tag_name: 'server-v0.6.0' }]);
-  await rememberedLatestRelease(SERVER_TAG_PREFIX, nothing, 5_001, fetcher);
-  assert.equal(urls.length, 1, 'a failure must leave the next cycle free to ask');
+  await rememberedLatestRelease(SERVER_TAG_PREFIX, nothing, 5_000 + RELEASE_RETRY_MS + 1, fetcher);
+  assert.equal(urls.length, 1, 'and once the short window passes, the next cycle asks again');
+  assert.ok(RELEASE_RETRY_MS < RELEASE_TTL_MS, 'a failure waits far less than a success');
 });
+
+/**
+ * The code round's findings, each as the test that would have caught it.
+ */
+
+test('the newest release is the newest across every page, not the first page that has one', () => {
+  // GitHub pages are newest-first by PUBLICATION, which is not version order — a patch cut for an
+  // older line publishes last. The walk stopped at the first page holding any match, so a page-one
+  // backport hid a higher version on page two and the Version row called the deployment current.
+  const page1 = Array.from({ length: RELEASE_PER_PAGE }, (_unused, i) =>
+    (i === 0 ? { tag_name: 'server-v0.9.1' } : { tag_name: `extension-v1.${i}.0` }));
+  const page2 = [{ tag_name: 'server-v0.10.0' }];
+
+  return latestRelease('server-v', pagedFetcher([page1, page2])).then((found) => {
+    assert.equal(found, '0.10.0', 'the higher version is on the second page');
+  });
+});
+
+test('a check that could not tell waits before asking again, and keeps what it had', async () => {
+  // An unstamped failure made the next readiness tick walk every page again — and there is a tick
+  // on activation, on unlock and on lock. That is an anonymous quota of sixty an hour spent in a
+  // minute, after which nothing can be asked at all.
+  let calls = 0;
+  const refusing = (): Promise<Response> => {
+    calls += 1;
+    return Promise.reject(new Error('offline'));
+  };
+
+  const first = await rememberedLatestRelease('server-v', { version: '0.6.0', at: 1 }, 1 + RELEASE_TTL_MS + 1, refusing);
+  assert.equal(first.version, '0.6.0', 'the previous answer is kept');
+  assert.ok((first.failedAt ?? 0) > 0, 'and the attempt is remembered');
+
+  const second = await rememberedLatestRelease('server-v', first, (first.failedAt ?? 0) + 1, refusing);
+  assert.equal(calls, 1, 'the next tick does not ask again inside the retry window');
+  assert.equal(second.version, '0.6.0');
+
+  const later = await rememberedLatestRelease('server-v', first, (first.failedAt ?? 0) + RELEASE_RETRY_MS + 1, refusing);
+  assert.equal(calls, 2, 'and it does ask once the window has passed');
+  assert.equal(later.version, '0.6.0', 'still keeping what it had');
+});
+
+test('every release request carries a deadline, so a socket held open cannot stop the repaint', async () => {
+  const seen: (RequestInit | undefined)[] = [];
+  const noting = (_url: string, init: RequestInit): Promise<Response> => {
+    seen.push(init);
+    return Promise.resolve({ ok: true, json: () => Promise.resolve([]) } as unknown as Response);
+  };
+
+  await latestRelease('server-v', noting);
+
+  assert.equal(seen.length, 1);
+  assert.ok(seen[0]?.signal !== undefined, 'a request with no deadline can never return');
+});
+
+/** Pages handed out in order, then empty — the shape `walk` reads. */
+function pagedFetcher(pages: readonly (readonly { tag_name: string }[])[]): ReleaseFetch {
+  let at = 0;
+  return () => {
+    const page = pages[at] ?? [];
+    at += 1;
+    return Promise.resolve({ ok: true, json: () => Promise.resolve(page) } as unknown as Response);
+  };
+}

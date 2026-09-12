@@ -49,6 +49,23 @@ export const MAX_RELEASE_PAGES = 5;
 /** How long one answer about what is published is reused. */
 export const RELEASE_TTL_MS = 6 * 60 * 60 * 1000;
 
+/**
+ * How long a check that FAILED waits before it is tried again.
+ *
+ * <p>Minutes rather than the six hours a success earns: one moment offline must not cost the update
+ * hint for the rest of the day. But it must be more than nothing — an unstamped failure made the
+ * next readiness tick walk every page again, and there is a readiness tick on activation, on unlock
+ * and on lock. That is how an anonymous limit of sixty an hour is spent in a minute.</p>
+ */
+export const RELEASE_RETRY_MS = 10 * 60 * 1000;
+
+/** Each request's own deadline — omitted where `AbortSignal.timeout` is not there to give one. */
+const RELEASE_TIMEOUT_MS = 8000;
+
+function deadline(): AbortSignal | undefined {
+  return typeof AbortSignal?.timeout === 'function' ? AbortSignal.timeout(RELEASE_TIMEOUT_MS) : undefined;
+}
+
 /** The `fetch` this module calls, as an argument — the shape `corpApiClient.ts` already uses. */
 export interface ReleaseFetch {
   (url: string, init: RequestInit): Promise<Response>;
@@ -94,23 +111,43 @@ export async function latestRelease(
   }
 }
 
-/** Page until this line is found, until a short page says there are no more, or until the cap. */
+/**
+ * Every page until a short one says there are no more, or until the cap — then the newest of all.
+ *
+ * <p><b>It does not stop at the first page holding a match</b>, for the reason this module's header
+ * already gives about ordering: the list is newest-first by PUBLICATION, which is not version
+ * order. A patch cut for an older line publishes last, so a page-one `server-v0.9.1` was returned
+ * while `server-v0.10.0` sat on page two — and the Version row reported a deployment as current
+ * while an upgrade was published. `newestOf` compares numerically already; it simply has to be
+ * given everything before it can answer.</p>
+ *
+ * <p>The cost is bounded by the memo rather than by stopping early: at most `MAX_RELEASE_PAGES`
+ * requests, at most once per `RELEASE_TTL_MS`, against an anonymous limit of sixty an hour.</p>
+ */
 async function walk(tagPrefix: string, fetcher: ReleaseFetch): Promise<string | undefined> {
+  const seen: ReleaseRow[] = [];
   for (let page = 1; page <= MAX_RELEASE_PAGES; page += 1) {
     const releases = await pageOf(fetcher, page);
-    const found = newestOf(tagPrefix, releases);
-    if (found !== undefined || releases.length < RELEASE_PER_PAGE) {
-      return found;
+    seen.push(...releases);
+    if (releases.length < RELEASE_PER_PAGE) {
+      break;
     }
   }
-  return undefined;
+  return newestOf(tagPrefix, seen);
 }
 
 /** One page, or an empty one — which a refused request and the end of the list both are. */
 async function pageOf(fetcher: ReleaseFetch, page: number): Promise<readonly ReleaseRow[]> {
   const response = await fetcher(
     `${RELEASES_URL}?per_page=${RELEASE_PER_PAGE}&page=${page}`,
-    { headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'creds-for-devs' } },
+    {
+      headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'creds-for-devs' },
+      // A connection accepted and never answered is what this guards. Without a deadline the await
+      // never returns, and this runs inside the readiness cycle that repaints the tree — so a proxy
+      // holding the socket open would stop the whole section repainting rather than leaving one row
+      // unable to say what is published.
+      signal: deadline(),
+    },
   );
   if (!response.ok) {
     return [];
@@ -131,6 +168,8 @@ export interface ReleaseMemo {
   readonly version: string;
   /** When this answer was READ. `0` means it is not an answer, so the next cycle may ask. */
   readonly at: number;
+  /** When the last attempt FAILED, so a failure waits too. `0` means none has. */
+  readonly failedAt?: number;
 }
 
 /** Nothing known yet, and nothing stopping the next cycle from finding out. */
@@ -150,13 +189,38 @@ export async function rememberedLatestRelease(
   now: number,
   fetcher?: ReleaseFetch,
 ): Promise<ReleaseMemo> {
-  if (isFresh(memo, now)) {
-    return memo;
+  const held = memo ?? NOTHING_KNOWN;
+  if (waiting(held, now)) {
+    return held;
   }
   const version = await latestRelease(tagPrefix, fetcher);
-  return version === undefined ? (memo ?? NOTHING_KNOWN) : { version, at: now };
+  return version === undefined ? failed(held, now) : { version, at: now };
+}
+
+/** Either window is a reason not to ask: a fresh answer is reused, and so is a recent failure. */
+function waiting(memo: ReleaseMemo, now: number): boolean {
+  return isFresh(memo, now) || waitingAfterFailure(memo, now);
 }
 
 function isFresh(memo: ReleaseMemo | undefined, now: number): memo is ReleaseMemo {
   return memo !== undefined && memo.at > 0 && now - memo.at < RELEASE_TTL_MS;
+}
+
+/**
+ * A failed check waits too, and that is what this fixes.
+ *
+ * <p>The answer was kept and the attempt was NOT stamped, so `at` stayed where it was and the next
+ * readiness tick walked every page again. There is a tick on activation, on unlock and on lock, so
+ * a server behind a refusing proxy spent the whole anonymous quota in a minute and then could not
+ * ask at all. The previous answer is still kept — losing it would be the other defect — the
+ * attempt is merely remembered alongside it.</p>
+ */
+function waitingAfterFailure(memo: ReleaseMemo, now: number): boolean {
+  const failedAt = memo.failedAt ?? 0;
+  return failedAt > 0 && now - failedAt < RELEASE_RETRY_MS;
+}
+
+/** The answer is kept exactly as it was; only the attempt is stamped. */
+function failed(memo: ReleaseMemo, now: number): ReleaseMemo {
+  return { version: memo.version, at: memo.at, failedAt: now };
 }

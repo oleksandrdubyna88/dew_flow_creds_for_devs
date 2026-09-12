@@ -167,9 +167,12 @@ test('the rows are drawn from the provider’s own caches', () => {
     at: 1,
   });
   tree.server.backup.set('a1', {
-    configured: true, keyState: 'Ready', scheduleHourUtc: 3, retentionDays: 30,
-    lastRunAt: 0, lastResult: 'never run', lastError: '', running: false,
-    localArchiveBytes: 0, localArchiveName: '', configuredTargetKinds: ['s3'], targets: [],
+    value: {
+      configured: true, keyState: 'Ready', scheduleHourUtc: 3, retentionDays: 30,
+      lastRunAt: 0, lastResult: 'never run', lastError: '', running: false,
+      localArchiveBytes: 0, localArchiveName: '', configuredTargetKinds: ['s3'], targets: [],
+    },
+    at: 1,
   });
   tree.server.release = { version: '0.7.0', at: 1 };
 

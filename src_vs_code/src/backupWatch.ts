@@ -8,7 +8,7 @@ import {
   remember,
 } from './backupNotice';
 import { CorpPolicyState } from './corpPolicy';
-import { BackupStatus, OrgBackupClient } from './orgBackupClient';
+import { BackupRead, BackupStatus, OrgBackupClient } from './orgBackupClient';
 import { StoredAccount } from './types';
 
 /**
@@ -66,12 +66,20 @@ export interface BackupWatchHost {
   readonly remember: (next: NoticeMemory) => PromiseLike<unknown>;
   readonly show: (message: string) => void;
   /**
-   * Where a status that ARRIVED should be written down, for a caller that draws it.
+   * Where EVERY read should be written down, for a caller that draws it.
    *
    * <p>Optional, so every host built before this existed is unchanged. The tree provider fills it
    * with its own cache; nothing here decides what that cache is for.</p>
+   *
+   * <p><b>Every read, not only the ones that arrived.</b> Recording successes alone left the row
+   * drawing a green check and the old timestamp while the endpoint was unreachable — the caller
+   * could not tell "it was fine an hour ago" from "it is fine" (found by the code round). The
+   * envelope keeps the last value and names the current outcome, which is what `ServerRead` does on
+   * the metrics side for the same reason.</p>
    */
-  readonly record?: (accountId: string, status: BackupStatus) => void;
+  readonly record?: (accountId: string, read: BackupRead) => void;
+  /** What that cache already holds, so a failed read can keep the last value it found there. */
+  readonly lastRead?: (accountId: string) => BackupRead | undefined;
   readonly now: () => number;
 }
 
@@ -149,7 +157,7 @@ export async function checkBackups(
   const checked = await Promise.all(
     entries.map(([account, policy]) => checkOneBackup(host, account, policy)),
   );
-  record(host, entries, checked);
+  record(host, entries, checked, (id) => host.lastRead?.(id), host.now());
   const notices = checked.map((check) => check.notice).filter(isNotice);
   const next = settle(host, entries, checked, notices);
   if (next !== host.shown()) {
@@ -166,22 +174,30 @@ function isNotice(notice: BackupNotice | undefined): notice is BackupNotice {
 }
 
 /**
- * Hand every status that ARRIVED to whoever asked to be told, keyed by account.
+ * Hand EVERY read to whoever asked to be told, keyed by account — the ones that failed included.
  *
- * <p>The pairing is already here: `entries` and `checked` are parallel, because `settle` below
- * needs them that way. A read that said nothing records nothing — the row it feeds keeps whatever
- * it had, which is the same rule the notices follow.</p>
+ * <p>The pairing is already here: `entries` and `checked` are parallel, because `settle` below needs
+ * them that way.</p>
+ *
+ * <p><b>A read that said nothing used to record nothing</b>, so the row it feeds kept its last good
+ * status and drew it as current: a green check and yesterday's timestamp while the endpoint was
+ * unreachable. The value is still kept — a row that forgot everything on one timeout would be the
+ * other defect — but the failure travels with it now, and the row names it. Found by the code
+ * round, three reviewers independently.</p>
  */
 function record(
   host: BackupWatchHost,
   entries: readonly (readonly [StoredAccount, CorpPolicyState])[],
   checked: readonly BackupCheck[],
+  previous: (accountId: string) => BackupRead | undefined,
+  at: number,
 ): void {
-  entries.forEach(([account], at) => {
-    const status = checked[at].status;
-    if (status !== undefined) {
-      host.record?.(account.accountId, status);
-    }
+  entries.forEach(([account], index) => {
+    const status = checked[index].status;
+    const read: BackupRead = status !== undefined
+      ? { value: status, at }
+      : { value: previous(account.accountId)?.value, failed: true, at };
+    host.record?.(account.accountId, read);
   });
 }
 

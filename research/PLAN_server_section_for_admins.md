@@ -1,17 +1,44 @@
 # PLAN — a "Server" section on an administrator's account row
 
-> Status: **plan only, nothing implemented yet, 2026-09-12.** Scope: `/api/metrics` opens from officer
-> to admin (both halves + the `.http` suite), `GET /api/org/backup/status` gains the CONFIGURED target
-> kinds, and the tree grows a second corporate section beside Team — a new pure `serverItems.ts`, four
-> `TreeElement` arms, two caches, and a GitHub latest-release check extracted from `binaryInstaller.ts`.
+> Status: **IMPLEMENTED, 2026-09-12.** Three commits: the server half, the tree refactor that paid
+> for the new arm under the 800-line ceiling, and the client half. Both gate rounds run (plan:
+> good_enough, 3 of 3 reviewers — code: proceed after a revise round, 12 of 12 reviewers).
+>
+> **Deviations.** The extraction took `compareVersions` with it, into `credsInstall.ts` beside
+> `versionFromTag` — the plan named only the release lookup. And both caches hold an ENVELOPE rather
+> than a value: `ServerRead` was in the plan, `BackupRead` was not, and the code round below is why
+> it exists.
+>
+> **What the code round changed, and it is the part worth reading.** Four findings were real and
+> none of them was in the feature as designed. The GitHub walk stopped at the first PAGE holding a
+> match, and the list is newest-first by PUBLICATION rather than by version — so a backport
+> published after a higher version hid it, and the Version row would have called a deployment
+> current while an upgrade was published. A failed check stamped nothing, so the next readiness
+> tick walked every page again — and there is a tick on activation, on unlock and on lock, which is
+> an anonymous quota of sixty an hour spent in a minute. No request carried a deadline, so a proxy
+> that accepts a connection and never answers would have stopped the repaint rather than one row.
+> And the Backup row drew the last good status as the CURRENT one, because only successes reached
+> its cache: a green check and yesterday’s timestamp against a server that could not be reached.
+> That last one is the same defect shape the metrics side had already solved with an envelope, and
+> the backup cache now carries the same one.
+>
+> Two more came out of verifying those: a metrics read still in flight when the account is
+> repointed used to write the OLD server’s facts back under the same id, and a version carrying a
+> build stamp (`0.6.0+2f1c9ab`, which is what `AssemblyInformationalVersion` produces) was compared
+> as though its first segment were zero.
+>
+> Scope: `/api/metrics` opens from officer to admin (both halves + the `.http` suite),
+> `GET /api/org/backup/status` gained the CONFIGURED target kinds, and the tree grew a second
+> corporate section beside Team — `serverItems.ts`, `githubReleases.ts`, four `TreeElement` arms,
+> two caches, and the latest-release check extracted from `binaryInstaller.ts`.
 >
 > Issues: [#56 "версия сервера"](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/issues/56).
 > The owner's decisions are already taken and are recorded verbatim in §1.2.
 >
-> Related docs: [module_server.md](../research/module_server.md),
-> [module_extension.md](../research/module_extension.md),
-> [architecture.md](../research/architecture.md),
-> [PLAN_corp_backup_drives.md](PLAN_corp_backup_drives.md) (why OneDrive/Google Drive are NOT kinds this
+> Related docs: [module_server.md](module_server.md),
+> [module_extension.md](module_extension.md),
+> [architecture.md](architecture.md),
+> [PLAN_corp_backup_drives.md](../todo/PLAN_corp_backup_drives.md) (why OneDrive/Google Drive are NOT kinds this
 > section may show).
 
 ---
@@ -89,7 +116,7 @@ destinations saved. Three states, not a boolean, and the row must not collapse t
 | 6 | Right-click → Configure backup… | the EXISTING `credSshManager.orgBackup` | `commands/orgBackupCommands.ts:26-46`; menu `package.json:1703-1706` |
 
 **Not shown, deliberately:** OneDrive and Google Drive. They are an unbuilt plan
-([`todo/PLAN_corp_backup_drives.md`](PLAN_corp_backup_drives.md), status *"plan only, nothing
+([`todo/PLAN_corp_backup_drives.md`](../todo/PLAN_corp_backup_drives.md), status *"plan only, nothing
 implemented yet"*), and `TargetKinds.Known` accepts only the two (`BackupTargets.cs:27-28`). NAS is the
 LOCAL snapshot destination, not a server target — `orgBackupCommands.ts:39-42` already draws that line
 in words. The section shows the kinds the server really has and says *not configured* otherwise.

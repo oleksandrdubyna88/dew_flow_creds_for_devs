@@ -72,7 +72,8 @@ export function vscodeBackupWatch(
     show: (message) => void vscode.window.showWarningMessage(message),
     // The tree's Backup row, from the poll that already happens — no second timer, and no second
     // request to a route this loop reads once per cycle for every administrator anyway.
-    record: (accountId, status) => section.backup.set(accountId, status),
+    record: (accountId, read) => section.backup.set(accountId, read),
+    lastRead: (accountId) => section.backup.get(accountId),
     now: Date.now,
   };
 }
