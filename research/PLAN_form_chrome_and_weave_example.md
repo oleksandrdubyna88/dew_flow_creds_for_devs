@@ -1,19 +1,40 @@
 # PLAN — the entity form follows the text-size setting, the folder form shares the entity form's chrome, a button never touches a field, and the woven-password example is painted
 
-> Status: **in progress, 2026-09-12 — S1 (the zoom, §2.1) shipped in `906eb27`; S2 and S3 open.** Scope: `src_vs_code/src` —
-> `zoomControl.ts`, `entityFormScript.ts`, `formMessage.ts`, `entityFormPanel.ts`, a new
-> `pageChrome.ts`, `entityFormStyles.ts`, `entityFormPage.ts`, `folderFormPage.ts`, `folderFormPanel.ts`,
-> `wovenFormScript.ts`, `cardFormScript.ts`, a new `weaveExampleScript.ts`, `paymentFormMarkup.ts`,
-> `phraseFormMarkup.ts`, `weaveExample.ts`, and their tests. Extension only; no HTTP contract touched.
+> Status: **IMPLEMENTED, 2026-09-12.** Three stories, each reviewed and committed before the next,
+> exactly as §2.7 asked: S1 the zoom, S2 the chrome and the row primitive, S3 the one painter.
+> Three plan rounds and three code rounds, every finding resolved.
+>
+> **Deviations.** §2.4 named `exampleBlock(field, title)`; the block’s HOST differs per form, so the
+> host id is a parameter and the identical title-plus-three-columns body became `paintExample`.
+> §2.6 said `mixMarkup` moves out of `cardMarkup`; only its shared HALF did — the card’s three weave
+> boxes stay with the card fields, as the bank’s two always have. And `formWeaveScripts.ts` is new:
+> the painter’s import took `entityFormScript.ts` over its 800-line ceiling, and the rule that the
+> painter comes first and exactly once is a fact about those four fragments rather than about the
+> page hosting them.
+>
+> **What the rounds changed.** The card listener now asks POSITIVELY which fields are its own — a
+> list of the other forms’ fields to skip is a list somebody must remember to extend. The phrase
+> example is requested only while the phrase form is on screen, because every payment entity carries
+> all three fieldsets and hides two. A weave box in a fieldset the chosen form HIDES stopped being
+> counted, and the form switch now asks the controls to reconsider — without that, ticking a card box
+> and switching to bank details left the method picker up over a form with no box ticked.
+>
+> **And the tests learned to run the page script.** Issue #51 was a painting bug that every test in
+> this repository was structurally unable to see: they match strings against a page script’s
+> generated SOURCE, and the source did say `exTok first` while the picture was three grey lines.
+> `src/test/miniDom.ts` runs the fragment instead. It found two defects in itself on the way —
+> answering `undefined` where the real DOM answers `null`, which made every `!== null` guard pass
+> silently, and matching a bare tag as a class — both of which are the same failure the harness
+> exists to prevent, one level down.
 >
 > Issues: [#2](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/issues/2),
 > [#53](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/issues/53),
 > [#54](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/issues/54),
 > [#51](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/issues/51).
-> Related docs: [module_extension.md](../research/module_extension.md) §The entity form's chrome,
-> §Two groups, two columns; [PLAN_tails.md](../research/PLAN_tails.md) T28 (the ± text zoom);
-> [PLAN_woven_passwords_and_entity_pin.md](../research/PLAN_woven_passwords_and_entity_pin.md) §1;
-> [PLAN_payment_polish_and_entity_pin.md](../research/PLAN_payment_polish_and_entity_pin.md) §1.1
+> Related docs: [module_extension.md](module_extension.md) §The entity form's chrome,
+> §Two groups, two columns; [PLAN_tails.md](PLAN_tails.md) T28 (the ± text zoom);
+> [PLAN_woven_passwords_and_entity_pin.md](PLAN_woven_passwords_and_entity_pin.md) §1;
+> [PLAN_payment_polish_and_entity_pin.md](PLAN_payment_polish_and_entity_pin.md) §1.1
 > (the Form dropdown that never switched the fieldset — the same class of defect as §1.4 below).
 
 ## 1. Symptoms — four issues, one form

@@ -338,6 +338,10 @@ export function formPageScript(
   if (paymentFormSelect) {
     paymentFormSelect.addEventListener('change', updateVisibility);
     paymentFormSelect.addEventListener('change', function () {
+      // AFTER updateVisibility, which is what hides the old fieldset. A weave box ticked there
+      // stays ticked, markedFields stops counting it, and nothing asked again — so the shared
+      // controls stayed up over a bank form with no bank box ticked.
+      if (typeof refreshMix === 'function') { refreshMix(); }
       vscode.postMessage({ type: 'paymentFormChanged', form: paymentFormSelect.value });
     });
   }
