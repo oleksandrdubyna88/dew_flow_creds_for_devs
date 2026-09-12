@@ -22,7 +22,9 @@ interface HelpMessage {
 
 async function onHelpMessage(message: HelpMessage): Promise<void> {
   const handlers: Record<string, () => Promise<void>> = {
-    zoom: () => applyZoomDelta(message.delta ?? 0),
+    // `message.delta` as it arrives, never `?? 0`: zero is finite, so a default would walk a
+    // press that named no delta straight past the host's guard and write the size back for nothing.
+    zoom: () => applyZoomDelta(message.delta),
     language: () => setHelpLanguage(message.language ?? ''),
   };
   await handlers[message.type]?.();
