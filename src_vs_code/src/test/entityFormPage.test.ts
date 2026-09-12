@@ -527,6 +527,38 @@ test('no button anywhere in a form sits flush against the field above it (#54)',
   );
 });
 
+test('the cramped-button scanner still finds a button nobody wrapped', () => {
+  // The prohibition above is a control only while its scan still MATCHES things. Replace
+  // `crampedButtons` with `return []` and it passes forever, enforcing nothing and never going
+  // red to say so — the failure mode `testing.md` names in *a structural test that matches
+  // nothing passes forever*. So the scan gets a second test, over markup whose answer is known
+  // by construction: three shapes it must report, and the same three inside each spacing
+  // wrapper, which it must not.
+  const pairs = [
+    '<select></select>\n<button id="x">Generate key pair</button>',
+    '<textarea></textarea><button>Split pasted address</button>',
+    '<input id="a"> <button>Add a line</button>',
+  ];
+
+  for (const pair of pairs) {
+    const reported = crampedButtons(`<form>${pair}</form>`);
+    assert.equal(
+      reported.length,
+      1,
+      `the scan no longer sees a button flush against the field above it — it reports ${reported.length} for ${JSON.stringify(pair)}`,
+    );
+    // Derived from the wrapper list the scan itself reads, so a fourth wrapper cannot be added
+    // without this half covering it.
+    for (const wrapper of SPACING_WRAPPERS) {
+      assert.deepEqual(
+        crampedButtons(`<form><div class="${wrapper}">${pair}</div></form>`),
+        [],
+        `a pair wrapped in .${wrapper} was reported as cramped: ${JSON.stringify(pair)}`,
+      );
+    }
+  }
+});
+
 test('the shared header carries the three ids both forms bind', () => {
   // Save, Cancel and the error line are a contract, not decoration: a header that renders
   // beautifully and posts nothing on Save is the regression a builder invites.

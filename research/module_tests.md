@@ -468,6 +468,37 @@ nothing would notice was missed.
 `if` whose seam now exists, is used by both entry points, and has a real-probe test beside it. The
 day that seam proves insufficient, the job is the answer.
 
+## The folder form's text size (2026-09-12, #53 and #2)
+
+The flow: somebody presses **±** in the folder form, the press reaches the host, the host writes the
+shared `credSshManager.uiScale` setting, and every open page — the other form, the viewer, the help
+page — repaints from that one value. It is the T28 contract, and the folder form was the page that
+did none of it. It is catalogued here because `scenario-tests.md` asks for every flow a task adds,
+**including the ones no harness reaches.**
+
+Covered by `src_vs_code/src/test/folderFormPanel.test.ts` — the real `folderFormPanel` loaded
+through the `vscode` stub (`src/test/vscodeStub.ts`: `loadWithVscode`, with `configStub` recording
+every setting write and `settingsVscode` serving them back), with a fake panel standing in for the
+editor's webview. Command: `npm test`, or `node --test out/test/folderFormPanel.test.js`.
+
+| Flow | Status | What it holds down |
+|---|---|---|
+| The form opens at the stored size | covered | The rendered HTML carries `zoomStyle(offset)`, not the base size — the page used to be rendered with no scale at all |
+| An open form follows a change | covered | `pushUiScaleTo` is hooked on mount: exactly one `{type:'uiScale', px, label}` is posted, and the hook is disposed with the panel |
+| A press writes the shared setting | covered | `{type:'zoom', delta: 1}` from the page leaves one write of `uiScale`, one step up, at global scope — the press is reported, the host clamps |
+| A press is not a save | covered | The panel is not disposed and the promise does not settle. Falling through to the save or cancel branch would close a form somebody was filling in |
+| A press with no `delta`, or one that is not a finite number | covered | Writes **nothing**. The call sites passed `message.delta ?? 0`, so a malformed `{type:'zoom'}` wrote the size already stored and pushed `uiScale` to every open page for nothing |
+| The page script's own ± button and `uiScale` listener | **not covered** | No harness drives a real webview — see below |
+
+**What this does not prove.** The page half is asserted as TEXT, not executed: `folderFormPage.test.ts`
+checks that the rendered page contains the `data-zoom` buttons and the `zoomApplyScript()` fragment
+verbatim, and nothing anywhere runs that script in a browser, clicks the button, or observes
+`document.body.style.fontSize` change. A listener that is present and throws on its first message
+would pass every test named above. That is not a gap with a fix in this task — it is this document's
+own standing finding, *The editor's own UI* below: nothing here drives VS Code, every harness stubs
+`vscode` or talks to the broker underneath it, and inventing a tenth harness for one webview would be
+the wrong answer to it. The flow's one real look is by hand, on the packaged `.vsix`.
+
 ## What none of them covers
 
 Named rather than implied, because the rule asks for exactly this.
