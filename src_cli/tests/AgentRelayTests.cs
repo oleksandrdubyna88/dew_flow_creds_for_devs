@@ -213,4 +213,36 @@ public class AgentRelayTests
 
         refusal.Should().Be(BrokerContract.Current.Exit("usage"));
     }
+
+    /// <summary>
+    /// The whole refusal, through the REAL entry point: a too-long override stops the relay before
+    /// it binds anything.
+    /// </summary>
+    /// <remarks>
+    /// Not Windows, where RunAsync returns at its own guard before reaching this one — the relay
+    /// runs inside WSL by design. This is the only path through RunAsync a unit test can take,
+    /// because every other one ends at a bound socket being served.
+    /// </remarks>
+    [Fact]
+    public async Task TheRelayRefusesAnOverrideItCouldNeverBind()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+        var before = Environment.GetEnvironmentVariable(AgentRelay.SocketOverrideVariable);
+        Environment.SetEnvironmentVariable(
+            AgentRelay.SocketOverrideVariable,
+            "/tmp/" + new string('x', AgentRelay.MaxSocketPathLength) + ".sock");
+        try
+        {
+            var code = await AgentRelay.RunAsync(BrokerContract.Current);
+
+            code.Should().Be(BrokerContract.Current.Exit("usage"));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(AgentRelay.SocketOverrideVariable, before);
+        }
+    }
 }

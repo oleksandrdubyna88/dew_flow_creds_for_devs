@@ -146,7 +146,7 @@ internal static class AgentRelay
         // socket that cannot exist there.
         if (OperatingSystem.IsWindows())
         {
-            await Console.Error.WriteLineAsync(
+            Console.Error.WriteLine(
                 "[creds-for-devs] `creds relay` runs INSIDE WSL, where ssh cannot reach the "
                     + "agent's named pipe. On Windows the agent is already reachable.");
             return contract.Exit("usage");
@@ -183,7 +183,7 @@ internal static class AgentRelay
         catch (Exception e)
             when (e is SocketException or IOException or UnauthorizedAccessException or ArgumentException)
         {
-            await Console.Error.WriteLineAsync($"[creds-for-devs] could not listen on {path}: {e.Message}");
+            Console.Error.WriteLine($"[creds-for-devs] could not listen on {path}: {e.Message}");
             return contract.Exit("brokerFailure");
         }
 
@@ -195,9 +195,9 @@ internal static class AgentRelay
         };
         AppDomain.CurrentDomain.ProcessExit += (_, _) => Remove(path);
 
-        await Console.Error.WriteLineAsync($"[creds-for-devs] relay listening on {path}");
+        Console.Error.WriteLine($"[creds-for-devs] relay listening on {path}");
         // On stdout so `eval "$(creds relay &)"` is not needed and a person can simply read it.
-        await Console.Out.WriteLineAsync($"export SSH_AUTH_SOCK={path}");
+        Console.Out.WriteLine($"export SSH_AUTH_SOCK={path}");
         await AcceptLoopAsync(listener, stopping.Token).ConfigureAwait(false);
         Remove(path);
         return 0;
@@ -294,4 +294,5 @@ internal static class AgentRelay
         }
     }
 }
+
 
