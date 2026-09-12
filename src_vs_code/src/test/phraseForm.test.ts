@@ -8,6 +8,7 @@ import { horizontalCounts, layoutsFor } from '../phraseLayout';
 import { PHRASE_RANGE, SHUFFLE_CODES, methodLabel } from '../shuffle';
 import { weaveExample } from '../weaveExample';
 import { formWeaveScripts } from '../formWeaveScripts';
+import { formVisibilityScript } from '../formVisibilityScript';
 import { MiniDocument, MiniWindow, runFragment } from './miniDom';
 import { readingFor, rowOf } from '../paymentViewMessages';
 import { hasMixedField } from '../mixedFieldGuard';
@@ -303,6 +304,16 @@ test('a phrase form asks for one on mount, and again when the form becomes the c
   const shown = phrasePage(true);
   assert.equal(exampleAsks(shown.posted).length, 1, 'asked once on mount');
   assert.equal((exampleAsks(shown.posted)[0] as { code?: string }).code, 'f2', 'for the method on screen');
+
+  // The other half of that transition belongs to the page's own show/hide script, which needs the
+  // whole form's DOM to run — more than this harness may grow into. So it is PINNED rather than
+  // quietly assumed: the generated fragment is asserted to show `phraseSection` from the selector's
+  // value, and THAT is what justifies setting the display by hand on the next line. Without it the
+  // test would pass even if choosing Phrase never revealed the section at all (found by the
+  // automated reviewer on the pull request).
+  const visibility = formVisibilityScript();
+  assert.match(visibility, /show\('phraseSection'/, 'the page shows this section by id');
+  assert.match(visibility, /val\('paymentForm'\) === 'phrase'/, 'and it is the selector that decides');
 
   const hidden = phrasePage(false);
   hidden.document.getElementById('phraseSection')!.style.display = '';

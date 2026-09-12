@@ -443,3 +443,23 @@ test('a section is hidden by an INLINE display, which is what the visibility che
     'and not by a class, which neither visibility check would see',
   );
 });
+
+test('switching the form takes the old form’s controls with it', () => {
+  // The automated reviewer's finding. `markedFields` stops COUNTING a mark in a hidden fieldset,
+  // but only when something asks again — and the selector's change handler called
+  // `updateVisibility` alone. So ticking "store the number woven" on a card and switching to bank
+  // details left the method picker and its warning on screen over a bank form with no bank box
+  // ticked, about a field the save is going to drop.
+  const script = formPageScript('n', undefined);
+  // Scoped to the selector's OWN handler: refreshMix is defined further down in the composite, so a
+  // search over the whole script would pass whether or not the switch calls it.
+  const from = script.indexOf("paymentFormSelect.addEventListener('change', updateVisibility)");
+  const handler = script.slice(from, script.indexOf('paymentFormChanged', from));
+
+  assert.match(handler, /refreshMix\(\)/, 'the switch asks the controls to reconsider');
+  assert.ok(
+    handler.indexOf('refreshMix()') > handler.indexOf("addEventListener('change', updateVisibility)"),
+    'and it does so AFTER updateVisibility, which is what hides the fieldset',
+  );
+});
+

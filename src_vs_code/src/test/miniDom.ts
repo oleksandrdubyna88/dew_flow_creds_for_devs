@@ -200,12 +200,26 @@ export class MiniWindow {
   }
 }
 
-/** `.weaveEx`, `.weaveEx[data-field="x"]`, `[data-field="x"]` and a bare tag — nothing else. */
+/**
+ * `.weaveEx`, `select.mixMethodRow[data-field="x"]`, `[data-field="x"]`, a bare tag — nothing else.
+ *
+ * <p>The TAG is read separately from the classes, and that is not pedantry: a bare `'fieldset'`
+ * used to be split as a class list and compared against `className`, so it matched nothing — a
+ * `querySelector('fieldset')` answered null here while answering an element in a browser. A test
+ * written on top of that is green for the wrong reason, which is the one thing this harness must
+ * not be.</p>
+ */
 function matches(element: MiniElement, selector: string): boolean {
   const at = selector.indexOf('[');
-  const classes = (at < 0 ? selector : selector.slice(0, at)).split('.').filter((part) => part.length > 0);
-  const classOk = classes.every((one) => element.className.split(' ').includes(one));
-  return classOk && attributeOk(element, at < 0 ? '' : selector.slice(at));
+  return plainOk(element, at < 0 ? selector : selector.slice(0, at))
+    && attributeOk(element, at < 0 ? '' : selector.slice(at));
+}
+
+/** The `tag.class.class` half: an empty tag matches any element, and every class must be present. */
+function plainOk(element: MiniElement, plain: string): boolean {
+  const [tag, ...classes] = plain.split('.');
+  const worn = element.className.split(' ');
+  return (tag === '' || element.tag === tag) && classes.every((one) => worn.includes(one));
 }
 
 /** The one attribute shape these selectors use, read by index rather than by a nested pattern. */
