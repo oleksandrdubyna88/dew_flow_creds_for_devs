@@ -212,7 +212,10 @@ Reply on #48 (English, the reporter's language): the design, the two defects fix
 2. **RED** `dialogs.test.ts`: `pickEntityKind` offers every `ENTITY_KINDS` entry, marks the current,
    returns `undefined` on dismiss; `pickFolderType` still offers kinds + project + any. **RED** new
    `shareCommands.test.ts`: `createForUser` with the stub's QuickPick answering `db` calls
-   `showEntityForm` with `lockedKind: 'db'`; a dismissed pick opens no form. Then §2.2.
+   `showEntityForm` with `initialKind: 'db'`; a dismissed pick opens no form. Then §2.2.
+   (This line said `lockedKind` while §2.2 said `initialKind`: the two disagreed about whether the
+   selector stays editable, and a test written from the build order would have pinned the wrong one.
+   Caught by the automated reviewer on the pull request; what shipped is §2.2's `initialKind`.)
 3. **RED** `envApply.test.ts`: a PIN-locked reading yields `withheld: [{name, reason}]` and nothing
    written; **RED** `envApplyNotice.test.ts` (new): the two sentences. **RED** `entityFormPage.test.ts`:
    the env row carries the hint. Then §2.3.
