@@ -4,6 +4,24 @@ name: ci · clients
 # of the three ran in CI — the server workflow builds the whole solution but runs only its own tests.
 # This job runs the other three. No path filter: a required check that a pull request can skip is a
 # check that protects nothing.
+#
+# **On macOS as well as Linux, since 2026-09-12, and only for these three.** The clients are the
+# components that touch the local operating system — unix sockets, the WSL bridge, announcement
+# files — and macOS was exercised NOWHERE except the release workflow, which runs after a tag. So a
+# macOS defect could not be found by a pull request, structurally rather than by bad luck. It cost
+# exactly that: `creds` 0.1.6 failed both macOS legs of the 1.7.0 release on a unix socket path one
+# character over that platform's 104-byte `sun_path`, and the release had already shipped the other
+# three products by then.
+#
+# The server, the vault and anything with a database stay on Linux alone — they are deployed to
+# Linux containers and a macOS run would assert nothing anybody ships.
+#
+# UNCONDITIONAL rather than path-filtered, deliberately, and the reasoning is specific to this
+# repository. The runners are free here (a public repository), the whole job is under a minute, and
+# a filter would be a second thing to keep true: the directories are `src_cli`, `src_mcp` and
+# `src_broker_client`, so a filter written as `src/cli/**` matches nothing and the leg silently
+# never runs — the same shape of failure as the one above, and harder to notice because a skipped
+# job looks like a passing one.
 on:
   push:
     branches: [main]
@@ -20,8 +38,12 @@ permissions:
 
 jobs:
   build-test:
-    name: clients · build · test
-    runs-on: ubuntu-latest
+    name: clients · build · test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
     steps:
       # This job builds and RUNS code from a pull request, so the checkout must not leave the
       # token behind in the local git config where that code could reach it. `contents: read` bounds
