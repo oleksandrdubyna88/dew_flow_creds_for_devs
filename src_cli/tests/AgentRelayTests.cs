@@ -171,4 +171,25 @@ public class AgentRelayTests
         AgentRelay.TooLongForSocket(new string('x', AgentRelay.MaxSocketPathLength)).Should().BeFalse();
         AgentRelay.TooLongForSocket(new string('x', AgentRelay.MaxSocketPathLength + 1)).Should().BeTrue();
     }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    public void TheRefusalNamesThePathTheLengthTheLimitAndTheWayOut(int over)
+    {
+        // The BOUNDARY and the overflow, parameterised — 104 and 105 on macOS, 108 and 109
+        // elsewhere — rather than whatever length a runner's temporary directory happens to give.
+        // Relying on that is how this defect reached a tag: the old test inherited its input from
+        // the environment and so tested the corpse case on Linux and the length cap on macOS,
+        // without saying either.
+        var path = new string('x', AgentRelay.MaxSocketPathLength + over);
+
+        AgentRelay.TooLongForSocket(path).Should().Be(over > 0);
+
+        // And the sentence, because a refusal nobody can act on is a crash with better manners.
+        var message = AgentRelay.TooLongMessage(path);
+        message.Should().Contain(path.Length.ToString(), "the length they have");
+        message.Should().Contain(AgentRelay.MaxSocketPathLength.ToString(), "the length they may have");
+        message.Should().Contain(AgentRelay.SocketOverrideVariable, "and what to set to fix it");
+    }
 }
