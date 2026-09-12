@@ -113,10 +113,29 @@ test('the box that CHOOSES a new entry PIN accepts 1234 — the recipient of a p
   const w = recording();
   const mod = loadWithVscode<typeof import('../pinPrompt')>('../pinPrompt', w.stub);
 
-  await mod.newPin('prod-db');
+  await mod.newPin('prod-db', 'entry');
 
   assert.match(String(w.boxes[0]?.title), /A PIN for "prod-db"/);
   assertEntryScope(w.boxes[0]);
+});
+
+/**
+ * The scope is asked for, never assumed (the code round of 2026-09-12).
+ *
+ * <p>`newPin` is a general helper — two boxes and a mismatch rule — and it used to hardcode the
+ * ENTRY scope, because every caller it had was an entry PIN. A caller added later that wanted the
+ * vault's floor would have got the four-character one silently, which is the one direction a PIN
+ * policy must never drift in. The default is the STRICTER scope, so forgetting it costs a refused
+ * PIN rather than an accepted one, and each entry caller now says `'entry'` out loud.</p>
+ */
+test('newPin asked for no scope guards like the VAULT, not like an entry', async () => {
+  const w = recording();
+  const mod = loadWithVscode<typeof import('../pinPrompt')>('../pinPrompt', w.stub);
+
+  await mod.newPin('a vault');
+
+  const refusal = JSON.stringify(verdict(w.boxes[0], '1234') ?? '');
+  assert.match(refusal, /at least 8|ten options per character/, `the default scope accepted 1234: ${refusal}`);
 });
 
 test('the folder run’s "type the PIN the others use" box accepts 1234', async () => {

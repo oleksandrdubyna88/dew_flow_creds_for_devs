@@ -1272,7 +1272,22 @@ is the ONE function every road asks: the woven refusal from the entry, the PIN r
 own wrap (`pinGate.automaticPinRefusal`) — a third policy goes there, not at a call site.
 `boundReading` takes the stored reading first and lets a held value stand in only when that reading is
 not a refusal, so a held value never outranks the policy wherever it came from; the withheld name
-carries the same sentence the viewer's `ENV` button says. The `pinProtected` mark is deliberately NOT
+carries the same sentence the viewer's `ENV` button says.
+
+*Three more ways a binding used to lie, from the same round.* **An empty box is not a held value.**
+The form uses an empty field to mean "keep what is stored" — `wovenSave`'s first row keeps the
+password and its mark for an untyped one — so `heldEnvValues` carrying `''` through would out-rank
+storage and write an EMPTY variable, reported as written: editing an entity's URL would silently blank
+its bound password in every terminal opened afterwards. `carried()` drops it and storage is read for
+that field exactly as before. **A key this build does not know is said, not thrown.** `envBindings` is
+metadata and SYNCS, so a newer build's field name lands here as a key the held-value table has no
+entry for — and calling that entry threw `HELD[field] is not a function` in the middle of a save.
+**A name no shell can read is said too**: `isValidEnvName` already existed and the form has always
+used it, but a name from an older build or a hand-edited vault reached `replace` unchecked.
+`planBinding` decides both before anything is read, and each answers with a sentence naming what is
+wrong — because a binding that is on screen and does nothing, silently, is the shape of #48 itself.
+
+The `pinProtected` mark is deliberately NOT
 consulted here — the truth is inside each value (see *Agents do not see a protected entry* above), and
 `rotateAction`/`sshExecAuth` decide from the value too. What #48 called a defect was the silence, and
 that stays fixed: the person is told the PIN won. `entityEditCommands.ts` passes the old bindings (stale

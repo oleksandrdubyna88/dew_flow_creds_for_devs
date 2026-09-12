@@ -60,15 +60,29 @@ export interface EnvValues {
   readonly dbConnection?: string;
 }
 
-/** The three fields the form can carry, as `EnvValues` — an absent field stays ABSENT, so storage is read for it. */
+/**
+ * The three fields the form can carry, as `EnvValues` — an absent field stays ABSENT, so storage is
+ * read for it.
+ *
+ * <p><b>An EMPTY box is absent too</b>, and that is not a convenience: the form uses an empty field
+ * to mean "keep what is stored" — `wovenSave`'s first row keeps the password, its mark and all, for
+ * an untyped one. Carried through as a held value, `''` would out-rank storage and write an EMPTY
+ * variable, reported as written, so editing an entity's URL would silently blank its bound password
+ * in every terminal opened afterwards.</p>
+ */
 export function heldEnvValues(form: {
   readonly newPassword?: string;
   readonly newPrivateKey?: string;
   readonly newDbConnection?: string;
 }): EnvValues {
   return {
-    ...(form.newPassword === undefined ? {} : { password: form.newPassword }),
-    ...(form.newPrivateKey === undefined ? {} : { privateKey: form.newPrivateKey }),
-    ...(form.newDbConnection === undefined ? {} : { dbConnection: form.newDbConnection }),
+    ...(carried(form.newPassword) ? { password: form.newPassword } : {}),
+    ...(carried(form.newPrivateKey) ? { privateKey: form.newPrivateKey } : {}),
+    ...(carried(form.newDbConnection) ? { dbConnection: form.newDbConnection } : {}),
   };
+}
+
+/** A field the save actually carried: present, and not the empty box that means "keep what is stored". */
+function carried(value: string | undefined): value is string {
+  return value !== undefined && value.length > 0;
 }
