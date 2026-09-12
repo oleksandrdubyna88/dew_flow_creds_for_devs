@@ -1299,9 +1299,25 @@ used it, but a name from an older build or a hand-edited vault reached `replace`
 `planBinding` decides both before anything is read, and each answers with a sentence naming what is
 wrong — because a binding that is on screen and does nothing, silently, is the shape of #48 itself.
 
-The `pinProtected` mark is deliberately NOT
-consulted here — the truth is inside each value (see *Agents do not see a protected entry* above), and
-`rotateAction`/`sshExecAuth` decide from the value too. What #48 called a defect was the silence, and
+*What the automated reviewer on PR #78 added after all of that.* **A binding that stops being readable
+takes its variable with it.** `staleEnvNames` covers the name that stopped being BOUND; the other half
+is the one with a secret in it — the name is still bound and the value behind it has become unreadable,
+because the entry was given a PIN, its password was woven, or the secret was cleared. The collection
+persists across reloads, so the last value sat there being handed to every terminal opened afterwards
+while the notice said *"withheld"* about a variable that was very much still set. Anything that is not
+a `value` now deletes the name. **And the decision is per NAME, not per binding**: nothing stops two
+fields naming the same variable, so `settleReadings` collects every reading first, writes each name
+any binding can write, and deletes only a name NO binding can write — the earlier per-binding loop let
+`Object.entries` order decide whether a readable password survived an unreadable sibling that shared
+its name. **The `pinProtected` mark is consulted after all**, alongside the wrap. The wrap inside the
+value is still the truth and is still asked first; the mark catches what the wrap cannot — an entry
+marked protected whose stored value is, at this instant, plaintext, which is reachable because the EDIT
+path never re-seals ([PLAN_edit_reseals_a_protected_entry.md](../todo/PLAN_edit_reseals_a_protected_entry.md)).
+Either signal refuses, which cannot under-refuse, and both say `pinGate.pinRefusalFor`'s one sentence.
+This is defence in depth at one consumer and not the fix: the plaintext is still on disk for every
+other reader. `rotateAction`/`sshExecAuth` still decide from the value alone.
+
+What #48 called a defect was the silence, and
 that stays fixed: the person is told the PIN won. `entityEditCommands.ts` passes the old bindings (stale
 names still deleted) and the held values, so an edit writes what was just typed. The sentences are
 `envApplyNotice.ts`, pure: *"$A, $B are set for NEW integrated terminals in this window.
