@@ -141,12 +141,22 @@ const KIND_HINT: Record<EntityKind, string> = {
  * the connection string and the row for the password were indistinguishable.</p>
  */
 const ENV_ROW_LABEL: Record<BindableField, string> = {
-  password: 'Expose this secret in terminals as env variable',
-  privateKey: 'Expose the private key in terminals as env variable',
-  publicKey: 'Expose the public key in terminals as env variable',
-  dbConnection: 'Expose the connection string in terminals as env variable',
-  dbPassword: 'Expose the database password in terminals as env variable',
+  password: 'Expose this secret in new integrated terminals as env variable',
+  privateKey: 'Expose the private key in new integrated terminals as env variable',
+  publicKey: 'Expose the public key in new integrated terminals as env variable',
+  dbConnection: 'Expose the connection string in new integrated terminals as env variable',
+  dbPassword: 'Expose the database password in new integrated terminals as env variable',
 };
+
+/**
+ * Under every env row, because the label alone was read as "into my shell" (issue #48): the report
+ * that followed expected the value in `.bashrc`, which is out of design — and would put a private
+ * key into a plaintext file, the trade this product already refused for everything but
+ * `SSH_AUTH_SOCK`. The mechanism is VS Code's environment collection and nothing else, on every OS.
+ */
+const ENV_ROW_HINT =
+  'Written into every integrated terminal opened after saving, in this window only. '
+  + 'Never to a file, never to a shell outside VS Code.';
 
 /**
  * Storing a password woven with a decoy: the mark, the method, and the picture.
@@ -199,6 +209,7 @@ function envRow(field: BindableField, d: EntityMetadata | undefined): string {
            style="margin-left:8px; ${bound === undefined ? 'display:none;' : ''}"
            value="${escapeHtml(value)}" placeholder="ENV_NAME">
   </div>
+  <p class="hint">${ENV_ROW_HINT}</p>
   <hr class="fieldDivider">`;
 }
 

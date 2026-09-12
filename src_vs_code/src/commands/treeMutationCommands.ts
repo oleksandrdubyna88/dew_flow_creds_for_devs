@@ -32,7 +32,8 @@ import { withoutSecretClaims } from '../secretClaims';
 import { warnIfTrackedCopy } from '../configCommands';
 import { applyDependencyColors } from '../entityEditCommands';
 import { applyEnvBindings } from '../envApply';
-import { envCollection } from '../envCollectionRef';
+import { heldEnvValues } from '../envBinding';
+import { envCollection, showEnvNotice } from '../envCollectionRef';
 import { editNode } from '../entityEditCommands';
 import { resolveBulkTargets } from '../commandTargets';
 import { pickTargetFolder } from '../dialogs';
@@ -304,12 +305,24 @@ export function registerTreeMutationCommands(host: TreeMutationCommandsHost): vo
       undoSecrets: () => storage.forgetEntitySecrets(location.accountId, id),
     }));
     await applyRemovals(storage, location.accountId, id, result);
+    // BEFORE the seal, from the values the form holds (issue #48). This used to run after
+    // `applyCreatePin` and read the values back from storage — already locked — so an entry created
+    // with a PIN and a binding wrote nothing, and said nothing. The plaintext is in `result`; the
+    // binding is written from it, and what could not be written is said, not dropped.
+    const envApplied = await applyEnvBindings(
+      envCollection(),
+      storage,
+      location.accountId,
+      result.details,
+      undefined,
+      heldEnvValues(result),
+    );
     // After the secrets are written, because it wraps what is THERE: applied earlier it would wrap
     // nothing and leave the real values in the clear beside a mark saying otherwise.
     await applyCreatePin(createPin, storage, location.accountId, id);
     void warnIfTrackedCopy(result.details);
     await applyDependencyColors(storage, location.accountId, result.dependsOnColors);
-    await applyEnvBindings(envCollection(), storage, location.accountId, result.details);
+    showEnvNotice(envApplied);
     mutated();
     await announceArrival(location.accountId, id);
   });

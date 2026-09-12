@@ -34,6 +34,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   no folder fixed it: a wrong pick is corrected in the form, not by cancelling back through two
   other prompts.
 
+- **The env-binding checkbox says where the value goes.** Its label reads *Expose … in new
+  integrated terminals as env variable*, and a hint under every row says: written into every
+  integrated terminal opened after saving, in this window only — never to a file, never to a shell
+  outside VS Code. The mechanism is VS Code's environment collection on every OS; the report that
+  expected the value in `.bashrc` (#48) was expecting something this product deliberately does not
+  do, because it would put a private key into a plaintext file.
+
+### Fixed
+
+- **An entry created with a PIN and an env binding wrote the binding.** The create path sealed the
+  new entry under its PIN and THEN read the values back to apply the bindings — already locked — so
+  the variable was never written, and nothing said so (#48). The bindings are now applied from the
+  values the form holds, before the seal; on edit, from the values just saved, with storage read
+  only for the fields the form did not touch. A value the policy withholds — a woven password, a
+  PIN-locked field left alone — is reported with the policy's reason instead of being skipped in
+  silence.
+- **Saving an env binding says what it did.** The form wrote the variable and said nothing, so the
+  terminal that was already open showed nothing and the report read "does not work on Linux"
+  (#48). Create, edit and the viewer's `ENV` button now show one notice: `$NAME is set for NEW
+  integrated terminals in this window. Already-open terminals keep their old environment.` — and a
+  warning per name that was not written, with why.
+
 - **The consent modal names WHO is asking.** It used to open with *Claude Code wants to…* for every
   caller — Codex, Gemini, the `creds` CLI in a plain terminal, any other MCP client — and could not
   say which of several side-by-side Claude Code sessions had raised it, while Allow covers every later

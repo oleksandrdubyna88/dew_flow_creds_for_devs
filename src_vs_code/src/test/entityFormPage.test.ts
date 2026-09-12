@@ -365,3 +365,16 @@ test('a kind picked BEFORE the form opens is selected, with the selector still e
   assert.ok(both.includes('<option value="ssh" selected>'), 'a folder type outranks a pick');
   assert.ok(both.includes('<select id="entityType" disabled>'));
 });
+
+test('every env row says WHERE the value goes — new integrated terminals, this window, never a file (issue #48)', () => {
+  // The label said "in terminals" with no qualifier, and the report that followed expected the
+  // value in `.bashrc`. The mechanism is VS Code's environment collection and nothing else.
+  const html = renderHtml(options());
+
+  const rows = (html.match(/class="check envRow"/g) ?? []).length;
+  const hints = (html.match(/opened after saving, in this window only/g) ?? []).length;
+  assert.ok(rows > 0, 'the default form renders at least one env row, or this test checks nothing');
+  assert.equal(hints, rows, 'one hint under every env row');
+  assert.ok(html.includes('Expose this secret in new integrated terminals as env variable'), 'the label carries the qualifier');
+  assert.ok(html.includes('Never to a file, never to a shell outside VS Code.'), 'and the hint says what it never does');
+});

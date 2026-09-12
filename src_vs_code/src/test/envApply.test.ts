@@ -1,7 +1,8 @@
 import * as assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { loadWithVscode } from './vscodeStub';
-import { BINDABLE_FIELDS } from '../envBinding';
+import { BINDABLE_FIELDS, heldEnvValues } from '../envBinding';
+import { lockSecret } from '../secretEnvelope';
 import { EntityMetadata } from '../types';
 
 /**
@@ -94,7 +95,7 @@ test('the db password is parsed out of the connection string, not stored separat
 test('a bound field with a value is written, and the collection says who did it', async () => {
   const env = envCollection();
 
-  const written = await envApply().applyEnvBindings(
+  const { written } = await envApply().applyEnvBindings(
     env as never,
     storage() as never,
     'acc',
@@ -111,7 +112,7 @@ test('a name bound to something NOT stored writes nothing at all', async () => {
   // tests `-n "$PW"` then takes the wrong branch silently. Absent is the honest answer.
   const env = envCollection();
 
-  const written = await envApply().applyEnvBindings(
+  const { written } = await envApply().applyEnvBindings(
     env as never,
     storage({ password: undefined }) as never,
     'acc',
@@ -171,7 +172,7 @@ test('a name still bound is not deleted just because it was there before', async
 test('removing every binding deletes every name it used to write', async () => {
   const env = envCollection();
 
-  const written = await envApply().applyEnvBindings(
+  const { written } = await envApply().applyEnvBindings(
     env as never,
     storage() as never,
     'acc',
@@ -186,14 +187,14 @@ test('removing every binding deletes every name it used to write', async () => {
 test('several bindings are written together, each from its own field', async () => {
   const env = envCollection();
 
-  const written = await envApply().applyEnvBindings(
+  const { written } = await envApply().applyEnvBindings(
     env as never,
     storage() as never,
     'acc',
     details({ envBindings: { password: 'PW', dbPassword: 'DB_PW', publicKey: 'PUB' } }),
   );
 
-  assert.deepEqual(written.sort(), ['DB_PW', 'PUB', 'PW']);
+  assert.deepEqual([...written].sort(), ['DB_PW', 'PUB', 'PW']);
   assert.deepEqual(env.replaced, {
     PW: 'THE-PASSWORD',
     DB_PW: 'THE-DB-PASSWORD',
@@ -241,4 +242,100 @@ test('the value-only reader is the reading, narrowed — the two cannot disagree
     undefined,
   );
   assert.equal(await mod.bindableFieldValue(storage() as never, 'acc', details(), 'password'), 'THE-PASSWORD');
+});
+
+// ---------------------------------------------------------------------------------------------
+// Issue #48 — a withheld value is REPORTED, never dropped, and the save can hand over the values
+// it holds so a binding is applied from the plaintext BEFORE the entry is sealed under its PIN.
+// ---------------------------------------------------------------------------------------------
+
+test('a PIN-locked stored value is WITHHELD with the reason, and nothing is written', async () => {
+  // D2: the loop read through `valueOf`, which collapses `withheld` into `undefined`, and skipped
+  // it in silence — an entry created with a PIN and a binding wrote nothing and said nothing.
+  const env = envCollection();
+  const locked = await lockSecret('THE-PASSWORD', 'acc', 'correct-horse-battery');
+
+  const result = await envApply().applyEnvBindings(
+    env as never,
+    storage({ password: locked }) as never,
+    'acc',
+    details({ envBindings: { password: 'PROD_PW' } }),
+  );
+
+  assert.deepEqual(result.written, []);
+  assert.equal(result.withheld.length, 1, `withheld: ${JSON.stringify(result.withheld)}`);
+  assert.equal(result.withheld[0].name, 'PROD_PW');
+  assert.match(result.withheld[0].reason, /protected with its own PIN/);
+  assert.deepEqual(env.replaced, {});
+});
+
+test('a woven password is WITHHELD with the woven reason', async () => {
+  const env = envCollection();
+
+  const result = await envApply().applyEnvBindings(
+    env as never,
+    storage() as never,
+    'acc',
+    details({ envBindings: { password: 'PROD_PW' }, passwordWoven: true }),
+  );
+
+  assert.deepEqual(result.written, []);
+  assert.equal(result.withheld[0]?.name, 'PROD_PW');
+  assert.match(result.withheld[0]?.reason ?? '', /woven with a decoy/);
+  assert.deepEqual(env.replaced, {});
+});
+
+test('a value the save HOLDS is written even while storage holds a locked one — the create-before-seal shape', async () => {
+  // On create the plaintext is in the form's result; the seal follows. Reading storage would be
+  // reading the value the seal is about to (or already did) lock.
+  const env = envCollection();
+  const locked = await lockSecret('THE-PASSWORD', 'acc', 'correct-horse-battery');
+
+  const result = await envApply().applyEnvBindings(
+    env as never,
+    storage({ password: locked }) as never,
+    'acc',
+    details({ envBindings: { password: 'PROD_PW' } }),
+    undefined,
+    { password: 'FROM-THE-FORM' },
+  );
+
+  assert.deepEqual(result, { written: ['PROD_PW'], withheld: [] });
+  assert.deepEqual(env.replaced, { PROD_PW: 'FROM-THE-FORM' });
+});
+
+test('a held connection string feeds the db-password binding, and a held value never overrides a woven refusal', async () => {
+  const env = envCollection();
+  await envApply().applyEnvBindings(
+    env as never,
+    storage({ dbConnection: undefined }) as never,
+    'acc',
+    details({ envBindings: { dbPassword: 'DB_PW' } }),
+    undefined,
+    { dbConnection: 'postgresql://user:HELD-DB-PW@host:5432/db' },
+  );
+  assert.deepEqual(env.replaced, { DB_PW: 'HELD-DB-PW' }, 'the password is parsed out of the HELD string');
+
+  // The refusal is about the entry, not about where the value came from.
+  const wovenEnv = envCollection();
+  const woven = await envApply().applyEnvBindings(
+    wovenEnv as never,
+    storage() as never,
+    'acc',
+    details({ envBindings: { password: 'PW' }, passwordWoven: true }),
+    undefined,
+    { password: 'HELD' },
+  );
+  assert.deepEqual(wovenEnv.replaced, {});
+  assert.equal(woven.withheld[0]?.name, 'PW');
+});
+
+test('the values a save holds are the three the form can carry — and only the ones it did carry', () => {
+  // The bridge from the form's result to `applyEnvBindings`: an absent field stays absent, so
+  // storage is read for it, rather than arriving as `undefined` and reading as "nothing stored".
+  assert.deepEqual(
+    heldEnvValues({ newPassword: 'typed', newDbConnection: 'postgresql://u:p@h/db' }),
+    { password: 'typed', dbConnection: 'postgresql://u:p@h/db' },
+  );
+  assert.deepEqual(heldEnvValues({}), {});
 });
