@@ -383,6 +383,28 @@ live-stack rehearsal: no image is pulled and no server runs, so nothing yet prov
 from a live deployment restores onto a real host. That is a tracked exception rather than a silent
 gap — named in the plan, in `module_deployment.md`, and in the epic's summary.
 
+## The lock file's own version, which no tool was checking (2026-09-14)
+
+`lockfileVersion.test.ts` asserts that `src_vs_code/package-lock.json` agrees with
+`package.json` about this project's name and version — in **both** places the lock states it, its top
+level and its `packages[""]` entry.
+
+It exists because the drift was real and long. The lock said `0.98.0` while the extension shipped as
+`1.7.0`: fourteen releases, every one of them touching `package.json` and `CHANGELOG.md` and nothing
+else. Nothing complained, and that is the point — `npm ci` validates the lock's DEPENDENCIES against
+the manifest and has no opinion at all about the project's own version field, so the file installs
+perfectly while telling every reader, auditor and supply-chain scanner the wrong version.
+
+The test was watched failing against the drifted file before the fix, and its message names the
+cause rather than the mismatch: *"a release bumped one and not the other, which npm never complains
+about and every reader of the lock believes"*. The second assertion exists separately because a
+`lockfileVersion: 3` file carries the version twice, and fixing only the top one leaves half the
+drift in place.
+
+**The same drift is present in the family's other two extensions** — `connect_other_ais/src_vs_code`
+(0.31.17 against a lock saying 0.30.0) and `rag_qln/tools/vscode-extension` (0.19.0 against 0.9.0).
+Neither is fixed here; this is a note so the next person does not rediscover it.
+
 ## Account deletion, and what the gate has to make indivisible (2026-09-11, audit finding #4)
 
 `VaultTests` in the server suite. Four scenarios, three of them new, and they exist because the order
