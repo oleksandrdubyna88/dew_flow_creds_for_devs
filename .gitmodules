@@ -1,3 +1,4 @@
 [submodule ".claude/rules/shared"]
 	path = .claude/rules/shared
 	url = https://github.com/oleksandrdubyna88/dew_flow_conventions.git
+	branch = release
