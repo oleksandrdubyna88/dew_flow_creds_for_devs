@@ -43,4 +43,11 @@ test('the lock file agrees with the manifest about what this project is', () => 
       'version fields in a lockfileVersion 3 file, and fixing only the top one leaves the drift',
   );
   assert.equal(lock.name, manifest.name, 'the lock names a different project from the manifest');
+  assert.equal(
+    lock.packages['']?.name,
+    manifest.name,
+    'the lock\'s root package entry names a different project from the manifest — the name is ' +
+      'stated twice for the same reason the version is, and checking only the top one is how a ' +
+      'description comes to promise more than its test delivers',
+  );
 });
