@@ -45,15 +45,25 @@ type RowLabel = Slot['side'];
  *
  * <p>`layout` defaults to `'vertical'`, which is the password's case: a password is one pair of
  * character columns and has no layout of its own. A phrase passes the layout it was woven under.</p>
+ *
+ * <p>`displayOrder` is the order the ROWS ARE DRAWN IN, never the order the arithmetic produced
+ * them. Handing it the source order instead would invert every tag silently, which is the whole
+ * failure this parameter exists to prevent — hence the name. (Code review, S2.)</p>
  */
 export function wovenPictureTokens(
   stored: readonly string[],
   code: ShuffleCode,
-  order: RowOrder,
+  displayOrder: RowOrder,
   layout: PhraseLayout = 'vertical',
 ): readonly ExampleToken[] {
+  // Odd, or too short to be a pair: a weave always produces 2N tokens, so this cannot have come
+  // from one. Nothing is painted rather than a half-picture whose colours would be a guess — the
+  // reading itself is refused for the same reason one step earlier (`unweaveSecret`).
+  if (stored.length === 0 || stored.length % 2 !== 0) {
+    return [];
+  }
   const half = stored.length / 2;
-  const rows = displayedRows(order, half);
+  const rows = displayedRows(displayOrder, half);
   const columns = phraseColumns(rows.first, rows.second, layout);
   const sides: Readonly<Record<RowLabel, readonly RowLabel[]>> = {
     first: columns.first,
@@ -71,9 +81,9 @@ export function wovenPictureTokens(
  * <p>Under `swapped` the arithmetic's first reading is drawn SECOND, so every token that came from
  * it belongs to the second row — which is the whole of what the order means here.</p>
  */
-function displayedRows(order: RowOrder, length: number): { first: RowLabel[]; second: RowLabel[] } {
+function displayedRows(displayOrder: RowOrder, length: number): { first: RowLabel[]; second: RowLabel[] } {
   const filled = (label: RowLabel): RowLabel[] => Array.from({ length }, () => label);
-  return order === 'swapped'
+  return displayOrder === 'swapped'
     ? { first: filled('second'), second: filled('first') }
     : { first: filled('first'), second: filled('second') };
 }
