@@ -765,7 +765,14 @@ asserts both halves against a fixed draw.
 #### One painter, one picture, and controls the form that owns them can reach (2026-09-12, #51)
 
 Three forms draw the same "what this method does" picture, and two of them had their own copy of the
-painter. Every colour rule for it is scoped under `.weaveEx` (`entityFormStyles.ts`): the card's copy
+painter. Every colour rule for it is scoped under `.weaveEx` — `WEAVE_EXAMPLE_STYLES`, which lives
+beside the painter in `weaveExampleScript.ts` and is interpolated by the form's sheet and by
+`paymentCardStyles()`, so the viewer draws the same picture from the same one definition. (The rules
+were a literal block inside `entityFormStyles.ts` until the viewer became a second consumer; two
+copies of the colours is the same defect as two copies of the painter, wearing the other hat.) The
+second column's caption is the caller's — `SECOND_COLUMN_LABEL` is only the FORM's default, because
+in the viewer that column is one of two rows the build refuses to tell apart and calling it the decoy
+would answer the question the row exists not to answer. The card's copy
 created that block, the password's appended three bare columns into a container with no class — so
 the password example was three grey unboxed lines under the controls. `weaveExampleScript.ts` is the
 only painter now (`exampleBlock` / `exampleColumn` / `paintExample`), `formWeaveScripts.ts` assembles
