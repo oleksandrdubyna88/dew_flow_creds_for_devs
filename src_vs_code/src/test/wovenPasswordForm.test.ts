@@ -11,7 +11,7 @@ import {
   weaveExamplePainterScript,
 } from '../weaveExampleScript';
 import { formStyleSheet } from '../entityFormStyles';
-import { paymentCardStyles } from '../paymentViewCard';
+import { entityViewStyles } from '../entityViewStyles';
 import { MiniDocument, runFragment } from './miniDom';
 import { EntityFormOptions } from '../entityFormPanel';
 import { EntityMetadata } from '../types';
@@ -484,6 +484,34 @@ test('the second column is captioned by the caller when it says so, and as the f
 });
 
 /**
+ * An EMPTY caption is a caller saying "no heading", not a caller saying nothing.
+ *
+ * <p>Found by the code round. `||` cannot tell those apart, so a blank caption printed "The decoy it
+ * is woven with" — the exact sentence this parameter exists to keep off the viewer's screen, arriving
+ * by the one route nobody would test. Only an absent caption may fall back.</p>
+ */
+test('an empty caption leaves the column unheaded — it never falls back to the word decoy', () => {
+  const document = new MiniDocument();
+  document.place('weaveExampleHost');
+
+  painterOf(document).paintExample(
+    'weaveExampleHost' as never,
+    'password' as never,
+    'Method 1' as never,
+    answerOf() as never,
+    'First row' as never,
+    '' as never,
+  );
+
+  const block = document.querySelector('.weaveEx[data-field="password"]');
+  assert.ok(block !== null, 'the block was painted');
+  assert.ok(
+    !new RegExp(SECOND_COLUMN_LABEL).test(block.textContent),
+    'a blank caption must not be answered with the decoy sentence',
+  );
+});
+
+/**
  * One definition of the colours, reaching both sheets.
  *
  * <p>No behaviour changes here — the rules are the same bytes in the same places on screen. What
@@ -492,10 +520,14 @@ test('the second column is captioned by the caller when it says so, and as the f
  */
 test('the picture’s colours are defined once and reach both stylesheets', () => {
   const form = formStyleSheet(1);
-  const viewer = paymentCardStyles();
+  // The VIEWER'S OWN sheet, not the card fragment it happens to be assembled from. Asserting
+  // paymentCardStyles() here would keep passing on the day somebody made that inclusion
+  // conditional, and the picture would lose every colour for a woven password — which is not a
+  // payment record at all. (Code review, S1.)
+  const viewer = entityViewStyles(1);
 
   assert.ok(form.includes(WEAVE_EXAMPLE_STYLES), 'the form draws the picture with the shared rules');
-  assert.ok(viewer.includes(WEAVE_EXAMPLE_STYLES), 'and so does the viewer, through the card’s sheet');
+  assert.ok(viewer.includes(WEAVE_EXAMPLE_STYLES), 'and the viewer’s sheet carries them too');
   for (const [name, sheet] of [['form', form], ['viewer', viewer]] as const) {
     assert.equal(
       sheet.split('.weaveEx .exTok.first').length - 1,

@@ -125,7 +125,11 @@ function paintExampleScript(): string {
     head.textContent = title;
     block.appendChild(head);
     block.appendChild(exampleColumn(ownLabel || '${OWN_COLUMN_LABEL}', answer.first, 'first'));
-    block.appendChild(exampleColumn(otherLabel || '${SECOND_COLUMN_LABEL}', answer.second, 'second'));
+    // Only an ABSENT caption falls back. An empty one is a caller saying "no heading", and || would
+    // answer that by printing the word decoy over a row the viewer refuses to tell apart — which is
+    // the one sentence this parameter exists to keep off that screen. (Code review, S1.)
+    var second = otherLabel === undefined || otherLabel === null ? '${SECOND_COLUMN_LABEL}' : otherLabel;
+    block.appendChild(exampleColumn(second, answer.second, 'second'));
     block.appendChild(exampleColumn('What gets stored', answer.woven, ''));
   }`;
 }
