@@ -3,6 +3,7 @@ import { PaymentForm } from './paymentForm';
 import { MIN_SHUFFLE_TOKENS, ShuffleCode, isShuffleCode } from './shuffle';
 import { PhraseLayout, methodOrder } from './phraseLayout';
 import { Reassembled, reassemble } from './phraseReassembly';
+import { DisplayedPair } from './rowFlip';
 import { Random } from './decoyDigits';
 import { needsReveal } from './revealGate';
 import { groupDigits } from './cardNumberFormat';
@@ -221,12 +222,15 @@ function layoutFor(fields: PaymentFields, key: string): PhraseLayout {
 /**
  * One of the two rows, by the name the card's button carries.
  *
- * <p>The page says `a` and `b`; which column the arithmetic calls the real one stays on this side.
- * Anything else would write the answer into the DOM of a card whose entire design is not to have
- * one.</p>
+ * <p>The page says `a` and `b`, and so does this now: it takes the pair ALREADY in display order and
+ * hands back the row that was drawn there. It used to read `which === 'b' ? reading.decoy :
+ * reading.real`, which made row a the person's value under every correct method — the page promised
+ * the two rows were indistinguishable while the host put the answer in the same place every time.
+ * After this, nothing on the display path knows which reading is the person's; the type says so
+ * (`DisplayedPair`), so a raw arithmetic pair cannot be passed here by accident.</p>
  */
-export function rowOf(reading: Reassembled, which: string): readonly string[] {
-  return which === 'b' ? reading.decoy : reading.real;
+export function rowOf(shown: DisplayedPair<readonly string[]>, which: string): readonly string[] {
+  return which === 'b' ? shown.second : shown.first;
 }
 
 /**
@@ -236,8 +240,8 @@ export function rowOf(reading: Reassembled, which: string): readonly string[] {
  * only a string. Digits join with nothing — they were woven as characters — and a phrase with single
  * spaces, which is how every wordlist standard writes one.</p>
  */
-export function copyTextFor(reading: Reassembled, which: string, key: string): string {
-  return rowOf(reading, which).join(key === 'mixed' ? ' ' : '');
+export function copyTextFor(shown: DisplayedPair<readonly string[]>, which: string, key: string): string {
+  return rowOf(shown, which).join(key === 'mixed' ? ' ' : '');
 }
 
 /** The stored layout, defaulted the way every other unknown value in this record is: to the safe one. */

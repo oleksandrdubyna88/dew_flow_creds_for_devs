@@ -1,5 +1,6 @@
 import { ShuffleCode, isShuffleCode } from './shuffle';
 import { unweaveSecret } from './wovenSecret';
+import { DisplayedPair, RowOrderStore, displayed } from './rowFlip';
 
 /**
  * The viewer's half of a woven password: what a Show or a Copy on those two rows is answered with.
@@ -27,6 +28,14 @@ export interface WovenPasswordDeps {
   readonly read: () => Thenable<string | undefined>;
   readonly post: (message: unknown) => void;
   readonly copy: (text: string) => Promise<void>;
+  /**
+   * Which of the two readings is shown first, for this entry's password.
+   *
+   * <p>Injected rather than held here, so this module stays the set of pure functions its header
+   * promises: the state belongs to the panel, which hands the SAME store to the card's host. A Show
+   * and the Copy that follows it therefore read one order, and the order reaches no message.</p>
+   */
+  readonly orders: RowOrderStore;
 }
 
 /**
@@ -63,11 +72,17 @@ async function answer(
 ): Promise<void> {
   const code = codeIn(type, rest);
   const reading = readingOf(stored, code);
+  // The rows, decided once for this entry and read by BOTH branches below, so a Copy can never
+  // resolve `a` against a different order from the one the Show drew.
+  const shown =
+    reading === undefined
+      ? undefined
+      : displayed(reading, deps.orders.orderFor(entityId, WOVEN_PASSWORD_KEY));
   if (type === 'reassemble') {
-    deps.post(readingMessage(entityId, code, reading));
+    deps.post(readingMessage(entityId, code, shown));
     return;
   }
-  await copyRow(rest[0] ?? 'a', reading, entityId, deps);
+  await copyRow(rest[0] ?? 'a', shown, entityId, deps);
 }
 
 /** `reassemble` is sent as `password|<code>`; `copyReading` as `password|<a|b>|<code>`. */
@@ -78,14 +93,16 @@ function codeIn(type: string, rest: readonly string[]): string {
 /** Copy one of the two rows — rebuilt here, never taken from the page. */
 async function copyRow(
   which: string,
-  reading: { first: string; second: string } | undefined,
+  shown: DisplayedPair<string> | undefined,
   entityId: string,
   deps: WovenPasswordDeps,
 ): Promise<void> {
-  if (reading === undefined) {
+  if (shown === undefined) {
     return;
   }
-  await deps.copy(which === 'b' ? reading.second : reading.first);
+  // `b` is the SECOND ROW SHOWN, not the decoy. It used to be the decoy, which is how row a came to
+  // be the person's value under every correct method while the page promised otherwise.
+  await deps.copy(which === 'b' ? shown.second : shown.first);
   // The same acknowledgement every other Copy in this viewer gets: the one button whose value
   // cannot be seen in a box must not also be the one that never says it worked.
   deps.post({ type: 'copied', entityId, field: `${WOVEN_PASSWORD_KEY}|${which}` });
@@ -105,9 +122,9 @@ function readingOf(stored: string | undefined, code: string): { first: string; s
 function readingMessage(
   entityId: string,
   code: string,
-  reading: { first: string; second: string } | undefined,
+  shown: DisplayedPair<string> | undefined,
 ): unknown {
-  return reading === undefined
+  return shown === undefined
     ? { type: 'paymentReading', entityId, key: WOVEN_PASSWORD_KEY, ok: false, why: UNREADABLE }
     : {
         type: 'paymentReading',
@@ -116,8 +133,10 @@ function readingMessage(
         code,
         ok: true,
         words: false,
-        first: [...reading.first],
-        second: [...reading.second],
+        // The rows as drawn. Nothing here says which order produced them: the message has the same
+        // keys, the same lengths and the same shape either way.
+        first: [...shown.first],
+        second: [...shown.second],
         visibleMs: 0,
       };
 }
