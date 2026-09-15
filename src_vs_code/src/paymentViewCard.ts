@@ -4,6 +4,7 @@ import { PaymentCardView } from './paymentViewMessages';
 import { needsReveal } from './revealGate';
 import { WOVEN_ROW_NOTE, WOVEN_ROW_STYLES, wovenRowMarkup } from './wovenRow';
 import { BRAND_MARK_STYLES, brandMarksMarkup } from './cardBrandIcons';
+import { WEAVE_EXAMPLE_STYLES } from './weaveExampleScript';
 
 /**
  * The read-only payment card: the one surface on which a stored card, a set of bank details or a
@@ -311,10 +312,16 @@ function payListeners(): string {
 `;
 }
 
-/** The card's styles: the two rows read as one pair, and a word is a word. */
+/**
+ * The card's styles: the two rows read as one pair, and a word is a word.
+ *
+ * <p>`WEAVE_EXAMPLE_STYLES` rides here rather than in `entityViewStyles.ts` because that sheet
+ * already interpolates this function, so the viewer gets the picture's colours through the one hook
+ * it has — and there is exactly one copy of them, shared with the form's sheet.</p>
+ */
 export function paymentCardStyles(): string {
   return `
-${WOVEN_ROW_STYLES}
+${WOVEN_ROW_STYLES}${WEAVE_EXAMPLE_STYLES}
   input.gated { letter-spacing: .2em; }
   /* The assembled address: as many lines as the country's own order gives it. */
   textarea.addressBlock { flex: 1; resize: vertical; font-family: inherit; }

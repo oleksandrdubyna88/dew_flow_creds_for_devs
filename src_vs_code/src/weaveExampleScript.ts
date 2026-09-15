@@ -22,6 +22,38 @@
 export const OWN_COLUMN_LABEL = 'Your value (made up here)';
 
 /**
+ * The default label over the SECOND column — the form's, where that half really is a decoy.
+ *
+ * <p>A caller may replace it, and the viewer must. There the two columns are the two rows a person
+ * is reading back, and naming either of them the decoy would put the answer on screen beside the
+ * question — the same rule that keeps the rows' ids `a` and `b` rather than `real` and `decoy`.</p>
+ */
+export const SECOND_COLUMN_LABEL = 'The decoy it is woven with';
+
+/**
+ * Every colour rule the picture hangs on, in ONE place because two stylesheets now draw it.
+ *
+ * <p>These lived in `entityFormStyles.ts` while the form was the only surface that painted. The
+ * viewer paints the same block now, and a second copy is precisely the defect this feature has
+ * already shipped once: issue #51 was a painter whose markup no selector reached, because the
+ * colours were scoped under a class the other copy never set. One definition, interpolated by both
+ * — the `WOVEN_ROW_STYLES` arrangement (`wovenRow.ts`), for the same stated reason.</p>
+ */
+export const WEAVE_EXAMPLE_STYLES = `
+  /* The worked example under the weaving controls. Two colours and no more: one for the value, one
+     for the decoy, and the woven row painted from the same two so a person can see where each
+     token went. Both come from the editor's chart palette, so they hold in either theme. */
+  .weaveEx { margin: 8px 0 10px; padding: 8px 10px; border-radius: 4px;
+             border: 1px solid var(--vscode-widget-border, #4444); }
+  .weaveEx .exTitle { font-weight: 600; margin-bottom: 6px; }
+  .weaveEx .exName { font-size: .85em; opacity: .75; margin: 4px 0 2px; }
+  .weaveEx .exRow { display: flex; flex-wrap: wrap; gap: 2px;
+                    font-family: var(--vscode-editor-font-family, monospace); }
+  .weaveEx .exTok { padding: 1px 3px; border-radius: 2px; }
+  .weaveEx .exTok.first { color: var(--vscode-charts-green, #89d185); }
+  .weaveEx .exTok.second { color: var(--vscode-charts-orange, #d18616); }`;
+
+/**
  * `exampleBlock` / `exampleColumn` / `paintExample`, for the composite page script.
  *
  * <p>`paintExample(hostId, field, title, answer, ownLabel)` is the whole job: find the host, find
@@ -76,9 +108,15 @@ function exampleColumnScript(): string {
   }`;
 }
 
-/** The title and the three columns, which is the same three lines in all three forms. */
+/**
+ * The title and the three columns, which is the same three lines in all three forms.
+ *
+ * <p>Both column captions are the caller's to replace, and the second one HAS to be: the viewer
+ * draws this picture over two rows it refuses to tell apart, so the word "decoy" over either of
+ * them would undo the row's whole design. Defaults keep every form caller as it was.</p>
+ */
 function paintExampleScript(): string {
-  return `  function paintExample(hostId, field, title, answer, ownLabel) {
+  return `  function paintExample(hostId, field, title, answer, ownLabel, otherLabel) {
     var block = exampleBlock(hostId, field);
     if (!block) { return; }
     block.textContent = '';
@@ -87,7 +125,7 @@ function paintExampleScript(): string {
     head.textContent = title;
     block.appendChild(head);
     block.appendChild(exampleColumn(ownLabel || '${OWN_COLUMN_LABEL}', answer.first, 'first'));
-    block.appendChild(exampleColumn('The decoy it is woven with', answer.second, 'second'));
+    block.appendChild(exampleColumn(otherLabel || '${SECOND_COLUMN_LABEL}', answer.second, 'second'));
     block.appendChild(exampleColumn('What gets stored', answer.woven, ''));
   }`;
 }

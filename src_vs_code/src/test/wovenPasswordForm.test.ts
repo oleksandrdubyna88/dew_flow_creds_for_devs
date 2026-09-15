@@ -5,7 +5,13 @@ import { wovenFormScript } from '../wovenFormScript';
 import { cardFormScript } from '../cardFormScript';
 import { phraseFormScript } from '../phraseFormScript';
 import { formPageScript } from '../entityFormScript';
-import { weaveExamplePainterScript } from '../weaveExampleScript';
+import {
+  SECOND_COLUMN_LABEL,
+  WEAVE_EXAMPLE_STYLES,
+  weaveExamplePainterScript,
+} from '../weaveExampleScript';
+import { formStyleSheet } from '../entityFormStyles';
+import { paymentCardStyles } from '../paymentViewCard';
 import { MiniDocument, runFragment } from './miniDom';
 import { EntityFormOptions } from '../entityFormPanel';
 import { EntityMetadata } from '../types';
@@ -432,4 +438,69 @@ test('a host that is not on this form is silence, not a thrown page script', () 
     painterOf(document).paintExample('mixExample' as never, 'cvv' as never, 't' as never, answerOf() as never);
   });
   assert.equal(document.querySelectorAll('.weaveEx').length, 0);
+});
+
+/**
+ * The second column's caption belongs to the CALLER, because the viewer has to replace it.
+ *
+ * <p>The form's picture is drawn on two values the host made up, so "The decoy it is woven with" is
+ * true there. The viewer draws the same picture over the two rows of a real reading, which it
+ * refuses to tell apart — printing "decoy" over one of them would answer, in a caption, the one
+ * question the whole row design exists not to answer.</p>
+ */
+test('the second column is captioned by the caller when it says so, and as the form’s decoy when it does not', () => {
+  const document = new MiniDocument();
+  document.place('weaveExampleHost');
+  document.place('mixExample');
+
+  painterOf(document).paintExample(
+    'weaveExampleHost' as never,
+    'password' as never,
+    'Method 1' as never,
+    answerOf() as never,
+    'First row' as never,
+    'Second row' as never,
+  );
+  painterOf(document).paintExample(
+    'mixExample' as never,
+    'cvv' as never,
+    'Method 1' as never,
+    answerOf() as never,
+  );
+
+  const chosen = document.querySelector('.weaveEx[data-field="password"]');
+  const defaulted = document.querySelector('.weaveEx[data-field="cvv"]');
+  assert.ok(chosen !== null && defaulted !== null, 'both blocks were painted');
+  assert.match(chosen.textContent, /Second row/, 'the caller’s caption is used');
+  assert.ok(
+    !new RegExp(SECOND_COLUMN_LABEL).test(chosen.textContent),
+    'and the word decoy never appears over a row the viewer will not tell apart',
+  );
+  assert.match(
+    defaulted.textContent,
+    new RegExp(SECOND_COLUMN_LABEL),
+    'a caller that says nothing still gets the form’s sentence, unchanged',
+  );
+});
+
+/**
+ * One definition of the colours, reaching both sheets.
+ *
+ * <p>No behaviour changes here — the rules are the same bytes in the same places on screen. What
+ * changes is that there is one copy of them. Issue #51 was two painters and one set of rules; two
+ * sets of rules and one painter is the same defect wearing the other hat.</p>
+ */
+test('the picture’s colours are defined once and reach both stylesheets', () => {
+  const form = formStyleSheet(1);
+  const viewer = paymentCardStyles();
+
+  assert.ok(form.includes(WEAVE_EXAMPLE_STYLES), 'the form draws the picture with the shared rules');
+  assert.ok(viewer.includes(WEAVE_EXAMPLE_STYLES), 'and so does the viewer, through the card’s sheet');
+  for (const [name, sheet] of [['form', form], ['viewer', viewer]] as const) {
+    assert.equal(
+      sheet.split('.weaveEx .exTok.first').length - 1,
+      1,
+      `the ${name} sheet carries the token colour exactly once — twice means a copy came back`,
+    );
+  }
 });
