@@ -3,6 +3,7 @@ import { copySecret } from './secretClipboard';
 import { confirmDestructive } from './dialogs';
 import { PaymentViewHost, isPaymentMessage } from './paymentViewHost';
 import { handleWovenPassword } from './wovenPasswordHost';
+import { RowOrderStore } from './rowFlip';
 import { applyZoomDelta, currentUiScale, pushUiScaleTo } from './uiScaleHost';
 import { ViewerTab } from './viewerClicks';
 import { BINDABLE_FIELDS, BindableField } from './envBinding';
@@ -103,6 +104,11 @@ function mountEntityView(
     { enableScripts: true, localResourceRoots: [] },
   );
   const state = { options: first };
+  // ONE store for this panel, shared by the card's host and the woven password's. Which of a
+  // reading's two halves is shown first is drawn here and goes no further — it is in no message, so
+  // there is nothing in the page to inspect for it. Cleared on every render and on dispose, for
+  // EVERY kind of entry: a credential's password never passes through `payment.reset()`.
+  const orders = new RowOrderStore(Math.random);
   // The payment card's five messages, its reveal gate and the buffers an assembled phrase lives in.
   // Reading the CURRENT options rather than the ones this panel was built with is not a nicety: the
   // preview tab re-renders for another entry, and a card that answered from stale options would be
@@ -113,12 +119,16 @@ function mountEntityView(
     post: (message) => void panel.webview.postMessage(message),
     confirm: confirmDestructive,
     copy: (text) => copySecret(vscode.env.clipboard, text),
+    orders,
   });
   const show = (options: EntityViewOptions): void => {
     state.options = options;
     // Before the new page exists: a grant belongs to the entry it was given for, and an assembled
-    // phrase must not survive the card it was assembled on.
+    // phrase must not survive the card it was assembled on. The row orders go with them — another
+    // entry is another draw, and holding the last one would make the order a property of the entry
+    // rather than of the viewing.
     payment.reset();
+    orders.clear();
     panel.title = options.details.name;
     panel.webview.html = renderEntityViewHtml({ ...options, uiScale: currentUiScale() });
   };
@@ -128,6 +138,7 @@ function mountEntityView(
   panel.onDidDispose(() => {
     zoomHook.dispose();
     payment.reset();
+    orders.clear();
   });
 
   // eslint-disable-next-line complexity, max-lines-per-function
@@ -150,6 +161,7 @@ function mountEntityView(
           read: () => state.options.resolveSecret('password'),
           post: (answer) => void panel.webview.postMessage(answer),
           copy: (text) => copySecret(vscode.env.clipboard, text),
+          orders,
         });
       }
       return;

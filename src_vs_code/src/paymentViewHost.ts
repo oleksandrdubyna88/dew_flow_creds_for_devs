@@ -3,6 +3,7 @@ import { PHRASE_VISIBLE_MS, needsReveal, phraseRevealPrompt, revealPrompt } from
 import { PaymentCardView, copyTextFor, plainValues, readingFor, revealValue } from './paymentViewMessages';
 import { Reassembled } from './phraseReassembly';
 import { PhraseBuffer } from './phraseBuffer';
+import { RowOrderStore, displayed } from './rowFlip';
 
 /**
  * The payment card's host half: what a message from the card is answered with, and what is asked
@@ -36,6 +37,15 @@ export interface PaymentViewDeps {
   readonly post: (message: unknown) => void;
   readonly confirm: (text: string, actionLabel: string) => Promise<boolean>;
   readonly copy: (text: string) => Promise<void>;
+  /**
+   * Which of a reading's two halves is shown first, for this entry and this field.
+   *
+   * <p>Owned by the PANEL and shared with the woven password's half, because one entry is one page:
+   * a Show and the Copy that follows it must agree, and a credential's password never passes
+   * through this class at all. The order is read here and goes no further — it appears in no
+   * message this host posts, which is what keeps it out of the DOM.</p>
+   */
+  readonly orders: RowOrderStore;
 }
 
 /** The messages this half owns. Anything else is not its business and is left to the panel. */
@@ -210,7 +220,14 @@ export class PaymentViewHost {
     reading: Reassembled,
   ): unknown {
     const words = key === 'mixed';
-    const buffers = [PhraseBuffer.of(reading.real), PhraseBuffer.of(reading.decoy)];
+    // The ROWS, not the arithmetic's pair. Everything below is built from this one call, so the
+    // buffers, the message and any copy that follows all describe the same two rows — and which of
+    // them is the person's stops being a fact this class can state.
+    const shown = displayed(
+      { first: reading.real, second: reading.decoy },
+      this.deps.orders.orderFor(view.entityId, key),
+    );
+    const buffers = [PhraseBuffer.of(shown.first), PhraseBuffer.of(shown.second)];
     this.release(key);
     this.held.set(key, buffers);
     return {
@@ -249,7 +266,14 @@ export class PaymentViewHost {
     }
     const reading = readingFor(fields, view.form, key, code);
     if (reading !== undefined) {
-      await this.deps.copy(copyTextFor(reading, which, key));
+      // Through the SAME order the rows were drawn in. Copying from the arithmetic's pair while the
+      // rows were shown swapped would hand over the row the person did not point at, and neither
+      // the button nor the clipboard would say so.
+      const shown = displayed(
+        { first: reading.real, second: reading.decoy },
+        this.deps.orders.orderFor(view.entityId, key),
+      );
+      await this.deps.copy(copyTextFor(shown, which, key));
       // The same acknowledgement every other Copy in this viewer gets. Without it the one button
       // whose value cannot be seen in a box is also the one that never says it worked.
       this.deps.post({ type: 'copied', entityId: view.entityId, field: `${key}|${which}` });

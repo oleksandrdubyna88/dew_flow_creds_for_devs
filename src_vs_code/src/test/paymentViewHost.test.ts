@@ -5,6 +5,7 @@ import { paymentCardFor } from '../paymentViewMessages';
 import { PaymentFields } from '../paymentFields';
 import { PHRASE_VISIBLE_MS } from '../revealGate';
 import { SHUFFLE_CODES, shuffleTokens } from '../shuffle';
+import { RowOrderStore } from '../rowFlip';
 
 /**
  * The host half of the payment card: what is asked before a value is answered.
@@ -28,7 +29,27 @@ interface Harness {
   answer: boolean;
 }
 
-function harness(fields: PaymentFields, form: 'card' | 'phrase' = 'card'): Harness {
+/**
+ * The order store gets its OWN pinned random, never the card's.
+ *
+ * <p>`paymentCardFor` draws from `random` for the method order — once per method, per card — so a
+ * shared sequence would make which row order is drawn depend on how many methods happen to exist.</p>
+ */
+const orderStore = (draw: number): RowOrderStore => new RowOrderStore(() => draw);
+const AS_READ = 0.1;
+const SWAPPED = 0.9;
+
+/** Draws in sequence, repeating the last — so "before and after a clear" is two known answers. */
+const scriptedDraws = (...draws: readonly number[]) => {
+  let at = 0;
+  return (): number => draws[Math.min(at++, draws.length - 1)] ?? 0;
+};
+
+function harness(
+  fields: PaymentFields,
+  form: 'card' | 'phrase' = 'card',
+  orders: RowOrderStore = orderStore(AS_READ),
+): Harness {
   const posted: unknown[] = [];
   const copied: string[] = [];
   const asked: string[] = [];
@@ -42,6 +63,7 @@ function harness(fields: PaymentFields, form: 'card' | 'phrase' = 'card'): Harne
       asked.push(text);
       return Promise.resolve(state.answer);
     },
+    orders,
     copy: (text) => {
       copied.push(text);
       return Promise.resolve();
@@ -163,6 +185,75 @@ test('copying a rebuilt row copies the row, never what is stored', async () => {
   assert.equal(ack.field, `pin|a`);
 });
 
+/**
+ * The defect: row one was the person's value under every correct method.
+ *
+ * <p>`weaveSecret` weaves the real value as the first column, `reassemble` returns it as `real`, and
+ * the host put `real` into row a — so somebody working through the twelve methods never had to read
+ * row two, and the page's promise that neither row is marked was kept by the DOM and broken by the
+ * arithmetic. These two tests fail against that build.</p>
+ */
+test('the first row is not always the person’s value — under a swapped order the real reading is row b', async () => {
+  const h = harness({ pin: WOVEN_PIN, shuffledFields: ['pin'] }, 'card', orderStore(SWAPPED));
+
+  await h.host.handle('reassemble', `pin|${CODE}`);
+
+  const message = h.posted[0] as Record<string, unknown>;
+  assert.deepEqual(message.first, [...'9137'], 'row one holds the other reading here');
+  assert.deepEqual(message.second, [...'4821'], 'and the person’s value is row two');
+});
+
+test('a Copy of row a under a swapped order copies what row a SHOWS', async () => {
+  const h = harness({ pin: WOVEN_PIN, shuffledFields: ['pin'] }, 'card', orderStore(SWAPPED));
+
+  await h.host.handle('reassemble', `pin|${CODE}`);
+  await h.host.handle('copyReading', `pin|a|${CODE}`);
+
+  const message = h.posted[0] as Record<string, unknown>;
+  assert.deepEqual(h.copied, [(message.first as string[]).join('')], 'the clipboard is the row on screen');
+  assert.deepEqual(h.copied, ['9137'], 'which under this order is not the arithmetic’s first reading');
+});
+
+test('the order is stable across two Shows, and drawn again once the store is cleared', async () => {
+  // Pressing Show twice must not swap the rows under somebody's hands; re-opening the entry may.
+  const orders = new RowOrderStore(scriptedDraws(SWAPPED, AS_READ));
+  const h = harness({ pin: WOVEN_PIN, shuffledFields: ['pin'] }, 'card', orders);
+
+  // The SAME method twice: a second method would answer with a wrong-method reading, and this test
+  // is about the ORDER, not the arithmetic. The scripted random's second draw is the other order, so
+  // a redraw would be visible here rather than silently identical.
+  await h.host.handle('reassemble', `pin|${CODE}`);
+  await h.host.handle('reassemble', `pin|${CODE}`);
+  const first = h.posted[0] as Record<string, unknown>;
+  const again = h.posted[1] as Record<string, unknown>;
+  assert.deepEqual(first.first, [...'9137'], 'drawn swapped');
+  assert.deepEqual(again.first, [...'9137'], 'and still swapped on the second press');
+
+  orders.clear();
+  await h.host.handle('reassemble', `pin|${CODE}`);
+
+  const third = h.posted[2] as Record<string, unknown>;
+  assert.deepEqual(third.first, [...'4821'], 'a cleared store draws afresh — that is what re-opening does');
+});
+
+test('no message carries the order — the answer has the same shape either way', async () => {
+  const asRead = harness({ pin: WOVEN_PIN, shuffledFields: ['pin'] }, 'card', orderStore(AS_READ));
+  const swapped = harness({ pin: WOVEN_PIN, shuffledFields: ['pin'] }, 'card', orderStore(SWAPPED));
+
+  await asRead.host.handle('reassemble', `pin|${CODE}`);
+  await swapped.host.handle('reassemble', `pin|${CODE}`);
+
+  const one = asRead.posted[0] as Record<string, unknown>;
+  const two = swapped.posted[0] as Record<string, unknown>;
+  assert.deepEqual(Object.keys(one).sort(), Object.keys(two).sort(), 'same keys, whichever was drawn');
+  // Nothing a page could read to learn the order: no boolean beyond the two it always carries.
+  assert.deepEqual(
+    Object.entries(one).filter(([, v]) => typeof v === 'boolean').map(([k]) => k).sort(),
+    ['ok', 'words'],
+  );
+  assert.ok(!/real|decoy|swap|flip|order/i.test(JSON.stringify([one, two])));
+});
+
 test('a reading says which method it is FOR, so a late answer can be dropped', async () => {
   // Two clicks are two record reads and their answers can arrive in the other order. Without the
   // method on the message the page would show the first one's rows under a picker naming the second,
@@ -192,6 +283,7 @@ test('a post that throws holds nothing — every path out leads to the same plac
     },
     confirm: () => Promise.resolve(true),
     copy: () => Promise.resolve(),
+    orders: orderStore(AS_READ),
   });
 
   await assert.rejects(() => host.handle('reassemble', `pin|${CODE}`));
@@ -218,6 +310,7 @@ test('nothing is copied or shown for a card the panel has since replaced', async
       state.view = paymentCardFor('entity-2', 'card', fields, random);
       return Promise.resolve(true);
     },
+    orders: orderStore(AS_READ),
     copy: (text) => {
       copied.push(text);
       return Promise.resolve();

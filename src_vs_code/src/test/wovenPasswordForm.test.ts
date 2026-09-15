@@ -22,6 +22,7 @@ import { automaticRefusal } from '../envApply';
 import { wovenSave } from '../wovenPasswordSave';
 import { shareableDetails } from '../shareFormat';
 import { EntityViewOptions, renderEntityViewHtml } from '../entityViewPage';
+import { RowOrderStore } from '../rowFlip';
 
 const viewOptions = (details: Partial<EntityMetadata>): EntityViewOptions =>
   ({
@@ -154,6 +155,7 @@ test('a Show is answered with the two readings, and NEITHER is marked', async ()
     read: () => Promise.resolve(stored),
     post: (m) => posted.push(m as Record<string, unknown>),
     copy: () => Promise.resolve(),
+    orders: new RowOrderStore(() => 0.1),
   });
 
   assert.equal(posted.length, 1);
@@ -165,6 +167,60 @@ test('a Show is answered with the two readings, and NEITHER is marked', async ()
   assert.ok(!/real|decoy/i.test(JSON.stringify(answer)));
 });
 
+/**
+ * The same defect on the password's own path, which never passes through the card's host.
+ *
+ * <p>`weaveSecret` weaves the password as the first column and `unweaveSecret` gives it back as
+ * `first`, so row one was the password under every correct method. Both of these fail against that
+ * build.</p>
+ */
+test('a woven password’s first row is not always the password', async () => {
+  const posted: Record<string, unknown>[] = [];
+  const stored = weaveSecret('hunter2!', SHUFFLE_CODES[3], () => 0.37);
+  const asRead: Record<string, unknown>[] = [];
+
+  await handleWovenPassword('reassemble', `password|${SHUFFLE_CODES[3]}`, {
+    entityId: () => 'e1',
+    read: () => Promise.resolve(stored),
+    post: (m) => asRead.push(m as Record<string, unknown>),
+    copy: () => Promise.resolve(),
+    orders: new RowOrderStore(() => 0.1),
+  });
+  await handleWovenPassword('reassemble', `password|${SHUFFLE_CODES[3]}`, {
+    entityId: () => 'e1',
+    read: () => Promise.resolve(stored),
+    post: (m) => posted.push(m as Record<string, unknown>),
+    copy: () => Promise.resolve(),
+    orders: new RowOrderStore(() => 0.9),
+  });
+
+  assert.deepEqual(asRead[0].first, [...'hunter2!'], 'one order puts the password in row one');
+  assert.deepEqual(posted[0].second, [...'hunter2!'], 'and the other puts it in row two');
+  assert.notDeepEqual(asRead[0].first, posted[0].first, 'which is the whole of the change');
+});
+
+test('a Copy of a woven password’s row follows the order the rows were shown in', async () => {
+  const copied: string[] = [];
+  const posted: Record<string, unknown>[] = [];
+  const stored = weaveSecret('hunter2!', SHUFFLE_CODES[3], () => 0.37);
+  // ONE store across the Show and the Copy, which is what the panel hands both calls.
+  const orders = new RowOrderStore(() => 0.9);
+  const deps = {
+    entityId: () => 'e1',
+    read: () => Promise.resolve(stored),
+    post: (m: unknown) => posted.push(m as Record<string, unknown>),
+    copy: (t: string) => { copied.push(t); return Promise.resolve(); },
+    orders,
+  };
+
+  await handleWovenPassword('reassemble', `password|${SHUFFLE_CODES[3]}`, deps);
+  await handleWovenPassword('copyReading', `password|a|${SHUFFLE_CODES[3]}`, deps);
+
+  assert.equal(copied.length, 1);
+  assert.equal(copied[0], (posted[0].first as string[]).join(''), 'the clipboard is the row on screen');
+  assert.notEqual(copied[0], 'hunter2!', 'which under this order is not the password');
+});
+
 test('a method this build has no name for is refused, and says nothing was changed', async () => {
   const posted: Record<string, unknown>[] = [];
 
@@ -173,6 +229,7 @@ test('a method this build has no name for is refused, and says nothing was chang
     read: () => Promise.resolve('abcdef'),
     post: (m) => posted.push(m as Record<string, unknown>),
     copy: () => Promise.resolve(),
+    orders: new RowOrderStore(() => 0.1),
   });
 
   assert.equal(posted[0].ok, false);
@@ -196,6 +253,7 @@ test('the answer is stamped with the entry that ASKED, not the one on screen whe
     read: () => held,
     post: (m) => posted.push(m as Record<string, unknown>),
     copy: () => Promise.resolve(),
+    orders: new RowOrderStore(() => 0.1),
   });
   onScreen = 'b'; // the person clicked another entry while the read was in flight
   release();
@@ -218,6 +276,7 @@ test('a copy is stamped the same way, for the same reason', async () => {
     read: () => held,
     post: (m) => posted.push(m as Record<string, unknown>),
     copy: (t) => { copied.push(t); return Promise.resolve(); },
+    orders: new RowOrderStore(() => 0.1),
   });
   onScreen = 'b';
   release();
@@ -233,6 +292,7 @@ test('a message that is not the password is not this host business', async () =>
     read: () => Promise.resolve('abcd'),
     post: () => undefined,
     copy: () => Promise.resolve(),
+    orders: new RowOrderStore(() => 0.1),
   });
 
   assert.equal(taken, false, 'the payment host owns that one');
