@@ -1,7 +1,7 @@
 import { ShuffleCode, Slot, shuffleLayout } from './shuffle';
 import { PhraseLayout, phraseColumns } from './phraseLayout';
 import { ExampleToken } from './weaveExample';
-import { RowOrder } from './rowFlip';
+import { RowOrder, displayed } from './rowFlip';
 
 /**
  * The stored value, token by token, each marked with the ROW it is shown in.
@@ -76,14 +76,17 @@ export function wovenPictureTokens(
 }
 
 /**
- * The two rows' labels, in the order the arithmetic produced the readings.
+ * Which ROW each of the arithmetic's two readings ends up in, as a column of labels each.
  *
- * <p>Under `swapped` the arithmetic's first reading is drawn SECOND, so every token that came from
- * it belongs to the second row — which is the whole of what the order means here.</p>
+ * <p>The mapping is not written out a second time here: it is obtained by putting the two labels
+ * through `displayed` — the same function the hosts put the readings through. A swap is its own
+ * inverse, so asking "what is shown first" of the label pair answers "which row does the
+ * arithmetic's first reading land in", which is precisely what is needed. Writing the `swapped`
+ * branch again would be a second copy of the one rule this feature turns on, free to drift from the
+ * host's copy while both kept compiling. (Code review, S2.)</p>
  */
 function displayedRows(displayOrder: RowOrder, length: number): { first: RowLabel[]; second: RowLabel[] } {
+  const labels = displayed<RowLabel>({ first: 'first', second: 'second' }, displayOrder);
   const filled = (label: RowLabel): RowLabel[] => Array.from({ length }, () => label);
-  return displayOrder === 'swapped'
-    ? { first: filled('second'), second: filled('first') }
-    : { first: filled('first'), second: filled('second') };
+  return { first: filled(labels.first), second: filled(labels.second) };
 }

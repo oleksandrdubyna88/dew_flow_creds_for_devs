@@ -1068,8 +1068,8 @@ export, the share and the hygiene scan needed no change, and `storageManager.ts`
 | `wovenPasswordSave.ts` | the four states a save meets, and `unwovenWarning` — what to SAY when the form will not do what it appears to promise |
 | `wovenPasswordHost.ts` | the viewer's half: what a Show or a Copy on the two rows is answered with |
 | `wovenRow.ts` | the two-column row itself, serving the card and the password from one implementation |
-| `rowFlip.ts` | `RowOrderStore` / `displayed` — which reading is shown first, drawn per entry and held in the host (wired in the next story) |
-| `wovenPicture.ts` | `wovenPictureTokens` — the stored value token by token, each tagged with the ROW it is shown in (wired in the next story) |
+| `rowFlip.ts` | `RowOrderStore` / `displayed` — which of a reading's two halves is shown first, drawn once per entry and held only in the host |
+| `wovenPicture.ts` | `wovenPictureTokens` — the stored value token by token, each tagged with the ROW it is shown in, never with which is real |
 | `wovenFormScript.ts` | the form's page script — when the controls appear, and the live example |
 | `fieldReading.ts` | `value \| withheld(reason) \| absent` — see *withheld is not absent* below |
 | `entityFieldReading.ts` | every field a `creds://` reference can name, as one of those three |
