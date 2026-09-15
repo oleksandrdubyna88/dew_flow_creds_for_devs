@@ -53,6 +53,19 @@ export interface ReadingPair<T> {
   readonly second: T;
 }
 
+declare const DISPLAY_ORDERED: unique symbol;
+
+/**
+ * A pair that has ALREADY been put in display order.
+ *
+ * <p>Structurally it is the same two fields, which is exactly the problem it solves: without a
+ * distinct type, handing an already-displayed pair to something that reads `first` as the
+ * arithmetic's first reading compiles perfectly and copies the wrong secret. That is this whole
+ * story's defect wearing a different hat, so the compiler is made to see the difference. The brand
+ * is type-only — it exists in no object at run time and nothing can read it. (Code review, S2.)</p>
+ */
+export type DisplayedPair<T> = ReadingPair<T> & { readonly [DISPLAY_ORDERED]: true };
+
 /** Where the draw falls. Exported so a test can sit either side of it deliberately. */
 export const SWAP_THRESHOLD = 0.5;
 
@@ -102,6 +115,9 @@ export class RowOrderStore {
  * returns, which is what keeps them from disagreeing with each other. After this call there is no
  * function on the display path that knows which reading is the person's, and that is the point.</p>
  */
-export function displayed<T>(pair: ReadingPair<T>, order: RowOrder): ReadingPair<T> {
-  return order === 'swapped' ? { first: pair.second, second: pair.first } : pair;
+export function displayed<T>(pair: ReadingPair<T>, order: RowOrder): DisplayedPair<T> {
+  const shown = order === 'swapped' ? { first: pair.second, second: pair.first } : pair;
+  // The one assertion in this module, and it is what the brand is FOR: this is the only place a
+  // pair becomes display-ordered, so it is the only place entitled to say so.
+  return shown as DisplayedPair<T>;
 }
