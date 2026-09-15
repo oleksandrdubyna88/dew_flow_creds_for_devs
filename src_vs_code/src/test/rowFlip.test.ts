@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
 import { test } from 'node:test';
 import { RowOrderStore, SWAP_THRESHOLD, displayed } from '../rowFlip';
 
@@ -55,6 +57,32 @@ test('clear() forgets every order, and the next ask draws afresh', () => {
 test('both orders are reachable, and which one is drawn is the random’s business alone', () => {
   assert.equal(new RowOrderStore(() => below).orderFor('e', 'k'), 'as-read');
   assert.equal(new RowOrderStore(() => above).orderFor('e', 'k'), 'swapped');
+});
+
+/**
+ * The separator that is not there.
+ *
+ * <p>The store first keyed one map on the entity id joined to the field name by a NUL, and the NUL
+ * landed in the source as a real byte — git committed the module as BINARY. It is two nested maps
+ * now, so there is no separator to collide on and no control character to encode. Both halves are
+ * asserted: keys that WOULD collide under a concatenation stay apart, and the source carries none.</p>
+ */
+test('entity and field cannot be confused for one another, whatever they contain', () => {
+  // Under `entityId + SEP + key` these two pairs make the same string for SEP of '' or '|'.
+  const store = new RowOrderStore(scripted(below, above));
+
+  const left = store.orderFor('a|b', 'c');
+  const right = store.orderFor('a', 'b|c');
+
+  assert.equal(left, 'as-read');
+  assert.equal(right, 'swapped', 'the second draw happened, so the two keys did not collide');
+});
+
+test('the module’s source holds no control byte — the defect that once made it a binary file', () => {
+  const source = fs.readFileSync(path.resolve(__dirname, '..', '..', 'src', 'rowFlip.ts'), 'utf8');
+
+  assert.ok(!source.includes(String.fromCharCode(0)), 'a NUL in source is how this went binary once');
+  assert.ok(source.includes('orderFor'), 'and the scan is reading the right file');
 });
 
 test('displayed() shows the arithmetic’s first reading SECOND under a swapped order, and names neither', () => {

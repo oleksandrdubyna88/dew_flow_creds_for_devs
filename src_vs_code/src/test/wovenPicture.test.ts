@@ -111,6 +111,25 @@ test('the layout defaults to vertical, which is the password’s case', () => {
   assert.deepEqual(defaulted, explicit, 'a password passes no layout and must not have to');
 });
 
+/**
+ * A value that cannot have come from a weave paints nothing.
+ *
+ * <p>Every method produces 2N tokens, so an odd count is a record half-written by a build that
+ * crashed — `unweaveSecret` already refuses it one step earlier. Painting half a picture would put
+ * colours on screen that are a guess, and a guess here is indistinguishable from an answer.</p>
+ */
+test('a stored value that cannot be a woven pair paints nothing at all', () => {
+  const code = SHUFFLE_CODES[0] as ShuffleCode;
+
+  assert.deepEqual(wovenPictureTokens(['a', 'b', 'c'], code, 'as-read'), [], 'an odd count is not a pair');
+  assert.deepEqual(wovenPictureTokens([], code, 'as-read'), [], 'and neither is nothing');
+  assert.equal(
+    wovenPictureTokens(['a', 'b'], code, 'as-read').length,
+    2,
+    'while the shortest real pair still paints — otherwise this test would pass on a broken module',
+  );
+});
+
 test('the picture holds nothing but the stored tokens and a row tag', () => {
   const stored = shuffleTokens(MINE, OTHER, SHUFFLE_CODES[0] as ShuffleCode);
 
