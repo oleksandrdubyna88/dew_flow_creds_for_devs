@@ -403,18 +403,3 @@ async function confirmAndCreate(
   });
   door.respond(res, 200, { created: true, id: made.id, name: made.name });
 }
-
-/**
- * Is this a dialog a person actually answered, on the one door that remembers?
- *
- * <p>All three conditions, named together because each is a different guarantee. <b>`via === 'mcp'`
- * means a USE call</b>, since `perform` is reached from exactly one door — delete and create call
- * `consent` directly — so somebody who allowed a token or alias call cannot silence the MCP door on
- * the same entry, and those dialogs say different things. <b>`asked`</b> is false for a call a
- * policy settled, so a quiet call cannot slide the twelve-hour window forward, which is how "once
- * every twelve hours" would become "once, ever". And <b>the fingerprint</b> is the grant the person
- * was SHOWN, absent on every other door.</p>
- */
-export function answeredHere(via: AuditDoor, asked: boolean, rungs: string | undefined): rungs is string {
-  return via === 'mcp' && asked && rungs !== undefined;
-}

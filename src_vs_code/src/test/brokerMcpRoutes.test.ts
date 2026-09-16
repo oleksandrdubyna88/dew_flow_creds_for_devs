@@ -5,6 +5,9 @@ import { loadWithVscode } from './vscodeStub';
 import { ConsentStamps } from '../mcpConsentPolicy';
 import type { TreeNode } from '../types';
 
+/** Frozen: a test that reads the clock expires, and it expires green. */
+const FROZEN_NOW = 1_700_000_000_000;
+
 /**
  * The two routes an MCP client uses, driven over real HTTP against the real broker.
  *
@@ -547,21 +550,52 @@ test('a token call never writes the MCP stamp', async () => {
 
 test('a quiet call spends no modal slot, so a prompting one afterwards still gets its five', async () => {
   // Releasing a slot that was never taken would free ANOTHER call's, and two modals would stack.
-  const w = world({ mcpUse: 'usable', mcpPreConsented: true });
+  //
+  // The alias below must RESOLVE, and that is the whole care in this test: the throttle is checked
+  // after the name resolves, so an alias nobody enabled is refused before admission and the
+  // assertion would pass without the budget ever being consulted.
+  const w = world({
+    mcpUse: 'usable',
+    mcpPreConsented: true,
+    alias: { accountId: 'a1', entityId: 'e1', entityName: 'prod', kind: 'ssh' },
+    answers: ['Allow', 'Allow', 'Allow', 'Allow', 'Allow'],
+  });
   try {
     const { port } = await share(w);
     for (let i = 0; i < 4; i += 1) {
       await call(port, '/v1/mcp/use/exec', { body: { entry: 'e1', command: 'uptime' } });
     }
 
-    assert.equal(w.dialogs.length, 0);
-    // The budget is untouched, which the alias route can still spend: it always prompts.
-    const answer = await call(port, '/v1/alias/exec', { body: { name: 'nope', command: 'x' } });
+    assert.equal(w.dialogs.length, 0, 'the quiet calls asked');
+    // The budget is untouched, which a prompting call can still spend — and it prompts, which is
+    // the proof it reached the throttle rather than being refused before it.
+    const answer = await call(port, '/v1/alias/exec', { body: { alias: 'prod', command: 'x' } });
+    assert.equal(answer.status, 200, JSON.stringify(answer.body));
+    assert.equal(w.dialogs.length, 1, 'the prompting call never reached the modal');
     assert.notEqual(code(answer), 'too_many_requests', 'four quiet calls ate the modal budget');
   } finally {
     w.server.dispose();
   }
 });
+
+test('a lookup that carries no fingerprint is not remembered, however it was answered', async () => {
+  // The empty string is what a lookup that does not know about the field reads as, and it matches
+  // no resolved ladder — recording it would write a stamp nothing can ever match, so the person
+  // would answer once and be asked forever. Better to remember nothing and ask again next time.
+  const w = world({ mcpResolve: () => ({ kind: 'usable', target: NAMELESS }) });
+  try {
+    const { port } = await share(w);
+
+    await call(port, '/v1/mcp/use/exec', { body: { entry: 'e1', command: 'uptime' } });
+
+    assert.equal(w.dialogs.length, 1, 'it still asks');
+    assert.deepEqual(w.consents, [], 'a stamp was written under a fingerprint nothing can match');
+  } finally {
+    w.server.dispose();
+  }
+});
+
+const NAMELESS = { accountId: 'a1', entityId: 'e1', entityName: 'prod', kind: 'ssh' };
 
 test('an entry that INHERITS never-ask from its folder runs quiet through the real lookup', async () => {
   // The other tests hand the world a stubbed verdict, so they prove what the DOOR does with an
@@ -582,7 +616,7 @@ test('an entry that INHERITS never-ask from its folder runs quiet through the re
     get: () => undefined,
     update: () => Promise.resolve(),
   });
-  const w = world({ mcpResolve: (entryId: string, action: string) => hooks.mcpUseLookup(source, entryId, action, stamps, Date.now()) });
+  const w = world({ mcpResolve: (entryId: string, action: string) => hooks.mcpUseLookup(source, entryId, action, stamps, FROZEN_NOW) });
   try {
     const { port } = await share(w);
 
@@ -608,7 +642,7 @@ test('the same entry under a folder that says ask-every-time still raises a dial
     getNode: (_a: string, id: string): TreeNode | undefined => nodes.find((n) => n.id === id),
   };
   const stamps = new ConsentStamps({ get: () => undefined, update: () => Promise.resolve() });
-  const w = world({ mcpResolve: (entryId: string, action: string) => hooks.mcpUseLookup(source, entryId, action, stamps, Date.now()) });
+  const w = world({ mcpResolve: (entryId: string, action: string) => hooks.mcpUseLookup(source, entryId, action, stamps, FROZEN_NOW) });
   try {
     const { port } = await share(w);
 
