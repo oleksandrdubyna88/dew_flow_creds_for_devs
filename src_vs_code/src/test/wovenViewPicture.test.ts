@@ -5,6 +5,8 @@ import { viewWeaveScripts } from '../viewWeaveScripts';
 import { SHUFFLE_CODES } from '../shuffle';
 import { EntityViewOptions, renderEntityViewHtml } from '../entityViewPage';
 import { paymentCardFor } from '../paymentViewMessages';
+import { PaymentFields } from '../paymentFields';
+import { PaymentForm } from '../paymentForm';
 
 /**
  * The picture, RUN rather than string-matched.
@@ -107,12 +109,37 @@ test('a phrase that closes itself takes its picture with it', () => {
   assert.equal(document.getElementById(`payRows_${KEY}`)?.hidden, true, 'and the rows are hidden');
 });
 
+test('a refusal for a method the picker has moved on from touches nothing', () => {
+  // Found by a code round. A refusal carried no method, and the `ok` branch ran BEFORE the guard
+  // that drops answers for a method nobody is showing — so method A's refusal, arriving after
+  // method B had painted, wiped B's picture and wrote A's reason under B's rows.
+  const { document, window } = page();
+  window.deliver(reading());
+  assert.ok(document.querySelector('.weaveEx[data-field="pin"]') !== null, 'the current method painted');
+
+  window.deliver({
+    type: 'paymentReading',
+    entityId: 'e1',
+    key: KEY,
+    code: SHUFFLE_CODES[7],
+    ok: false,
+    why: 'cannot be read',
+  });
+
+  assert.ok(document.querySelector('.weaveEx[data-field="pin"]') !== null, 'the picture is still there');
+  assert.notEqual(
+    document.getElementById(`payNote_${KEY}`)?.textContent,
+    'cannot be read',
+    'and no reason from another method is written under it',
+  );
+});
+
 test('a refusal leaves no stale picture under it', () => {
   const { document, window } = page();
   window.deliver(reading());
   assert.ok(document.querySelector('.weaveEx[data-field="pin"]') !== null, 'painted first');
 
-  window.deliver({ type: 'paymentReading', entityId: 'e1', key: KEY, ok: false, why: 'cannot be read' });
+  window.deliver({ type: 'paymentReading', entityId: 'e1', key: KEY, code: CODE, ok: false, why: 'cannot be read' });
 
   assert.equal(document.querySelector('.weaveEx[data-field="pin"]'), null, 'and taken away');
   assert.equal(document.getElementById(`payNote_${KEY}`)?.textContent, 'cannot be read', 'the reason is said');
@@ -218,7 +245,10 @@ test('Main names a payment record’s woven fields by their LABELS, not their ke
 /** The fixture for the two tests above: a viewer page, optionally holding a payment record. */
 function viewOptions(
   details: Record<string, unknown>,
-  payment?: Record<string, unknown>,
+  // Typed rather than cast: a fixture that says `as never` stops failing the day the record's shape
+  // changes, which is the moment it most needs to. (Code review.)
+  payment?: PaymentFields,
+  form: PaymentForm = 'card',
 ): EntityViewOptions {
   return {
     details: { id: 'e1', name: 'x', kind: payment ? 'payment' : 'credential', isSshEnabled: false, ...details },
@@ -230,9 +260,7 @@ function viewOptions(
     dbHasPassword: false,
     hasAttachment: false,
     history: [],
-    payment: payment
-      ? paymentCardFor('e1', 'card', payment as never, () => 0.5)
-      : undefined,
+    payment: payment ? paymentCardFor('e1', form, payment, () => 0.5) : undefined,
     resolveSecret: async () => undefined,
     copyAllText: async () => '',
     saveVpnConfig: async () => {},
@@ -241,3 +269,20 @@ function viewOptions(
     checkEnv: () => {},
   } as unknown as EntityViewOptions;
 }
+
+test('Main names a woven seed PHRASE properly, never as an undefined label', () => {
+  // A reviewer read `PAYMENT_FIELD_LABELS[key]` and expected `mixed` to be missing, which would have
+  // put "This entry stores undefined interleaved with…" on screen. The label exists and the map is a
+  // total Record over the key type, so it cannot be missing — pinned here so it stays that way.
+  const html = renderEntityViewHtml(
+    viewOptions({ isPayment: true, paymentForm: 'phrase' }, { mixed: ['a', 'b', 'c', 'd'], layout: 'vertical' }, 'phrase'),
+  );
+
+  // Scoped to the NOTE: the page carries an unrelated script comment containing the word, and a
+  // blanket search would report it and hide the thing actually being asked about.
+  const note = html.slice(html.indexOf('<p class="hint woven">'));
+  const sentence = note.slice(0, note.indexOf('</p>'));
+  assert.match(sentence, /Woven — on/);
+  assert.match(sentence, /Woven phrase/, 'named by its label');
+  assert.ok(!/undefined/.test(sentence), 'and no hole where a label should be');
+});

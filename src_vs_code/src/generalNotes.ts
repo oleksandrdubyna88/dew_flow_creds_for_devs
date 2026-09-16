@@ -1,4 +1,5 @@
 import { EntityMetadata } from './types';
+import { escapeHtml } from './webviewHtml';
 
 /**
  * What the General section SAYS about the two protections — facts, not controls.
@@ -41,7 +42,11 @@ export function wovenViewNote(password: boolean, fields: readonly string[]): str
   if (named.length === 0) {
     return '';
   }
-  const list = named.length === 1 ? named[0] : `${named.slice(0, -1).join(', ')} and ${named.at(-1)}`;
+  // Escaped because this is a site that builds markup, not because today's labels need it. They are
+  // constants of this build; the question a boundary answers is whether it is safe WHATEVER it is
+  // handed, and a label list that one day comes from a record would arrive here unannounced.
+  const safe = named.map(escapeHtml);
+  const list = safe.length === 1 ? safe[0] : `${safe.slice(0, -1).join(', ')} and ${safe.at(-1)}`;
   return `<p class="hint woven"><b>Woven — on.</b> This entry stores ${list} interleaved with a
      second value, under a method only you know. Pick that method below and press Show: both rows
      come back, and you read the one you recognise. Nothing here can unweave the stored value — that

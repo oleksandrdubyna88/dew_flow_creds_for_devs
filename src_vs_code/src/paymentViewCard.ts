@@ -279,13 +279,16 @@ function payGateFns(): string {
 function payReadingFn(): string {
   return `    var payReading = function (msg) {
       var note = document.getElementById('payNote_' + msg.key);
+      // Two clicks are two reads, and their answers can arrive in the other order. An answer for a
+      // method the picker no longer shows is dropped rather than displayed under the wrong label.
+      // FIRST, before the refusal branch below: a refusal used to be exempt from this, so method A's
+      // "cannot be read" arriving after method B had painted wiped B's picture and wrote A's reason
+      // under B's rows. Every answer names its method now, refusals included. (Code review.)
+      var picked = payCard.querySelector('select.mixPick[data-key="' + msg.key + '"]');
+      if (picked && msg.code && picked.value !== msg.code) { return; }
       // A refusal takes the previous picture with it. Leaving it there would put one method's
       // colours under a note saying the value cannot be read.
       if (!msg.ok) { if (note) { note.textContent = msg.why; } payPicture(msg.key, null); return; }
-      // Two clicks are two reads, and their answers can arrive in the other order. An answer for a
-      // method the picker no longer shows is dropped rather than displayed under the wrong label.
-      var picked = payCard.querySelector('select.mixPick[data-key="' + msg.key + '"]');
-      if (picked && msg.code && picked.value !== msg.code) { return; }
       payRow(document.getElementById('payReading_' + msg.key + '_a'), msg.first, msg.words);
       payRow(document.getElementById('payReading_' + msg.key + '_b'), msg.second, msg.words);
       payPicture(msg.key, msg);
@@ -333,6 +336,10 @@ function payListeners(): string {
     payCard.addEventListener('change', function (event) {
       var pick = event.target;
       if (!pick || !pick.dataset || !pick.dataset.key) { return; }
+      // The METHOD picker specifically, not merely something carrying a data-key. This listener sits
+      // on the whole card, and a control that grew a data-key later would otherwise close a reading
+      // by being typed in. (Code review.)
+      if (String(pick.className || '').indexOf('mixPick') < 0) { return; }
       payClose(pick.dataset.key, false);
     });
 `;

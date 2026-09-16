@@ -141,7 +141,7 @@ function readingMessage(
   order: RowOrder,
 ): unknown {
   return shown === undefined
-    ? { type: 'paymentReading', entityId, key: WOVEN_PASSWORD_KEY, ok: false, why: UNREADABLE }
+    ? { type: 'paymentReading', entityId, key: WOVEN_PASSWORD_KEY, code, ok: false, why: UNREADABLE }
     : {
         type: 'paymentReading',
         entityId,
