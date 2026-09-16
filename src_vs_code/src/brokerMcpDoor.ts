@@ -3,6 +3,7 @@ import { CallerLabel, callerFrom } from './brokerCaller';
 import { ErrorCode } from './brokerProtocol';
 import { McpUseLookup, McpUseTarget, readMcpUse, readNamedBody } from './brokerRequests';
 import { NO_GENERATOR_OUTCOME } from './secretKinds';
+import type { Slot } from './aliasThrottle';
 import type { AuditDoor } from './agentAuditLog';
 
 /**
@@ -38,15 +39,13 @@ export interface BrokerDoor {
    * a compile error until it says whether it raises a modal, the doctrine `caller` established
    * below. The budget counts MODALS, not calls: a call that raises none takes no slot, because
    * spending one refuses a later call for a dialog nobody was ever going to see.</p>
-   */
-  admit(res: http.ServerResponse, prompts: boolean): boolean;
-  /**
-   * Give the slot back — in a `finally`, so a failed prompt does not close the route.
    *
-   * <p>Only when one was taken. Releasing for a call that took none would free ANOTHER call's
-   * in-flight slot, and two modals would stack.</p>
+   * <p>`undefined` is a refusal, already answered. Anything else is the {@link Slot} this call
+   * holds, released in a `finally` so a failed prompt does not close the route. The slot is handed
+   * BACK rather than named again, because a route that says `prompts` twice can say it differently
+   * the second time — and a slot released on the wrong ceiling frees another call's.</p>
    */
-  release(prompts: boolean): void;
+  admit(res: http.ServerResponse, prompts: boolean): Slot | undefined;
   /**
    * This entry's policy has already answered: settle the grant so no modal is raised.
    *
@@ -147,7 +146,8 @@ export async function handleMcpUse(
   // The same throttle as the alias route, and for the same reason: everything below this line
   // can make the window ask a human, and the rate of prompts is what stops a local process
   // turning that into an attack on the person's patience.
-  if (!door.admit(res, prompts)) {
+  const slot = door.admit(res, prompts);
+  if (slot === undefined) {
     return;
   }
   const caller = callerFrom(read.body);
@@ -156,7 +156,7 @@ export async function handleMcpUse(
   try {
     await door.perform(res, grant, action, read.body, caller, read.rungs);
   } finally {
-    door.release(prompts);
+    slot.release();
   }
 }
 
@@ -219,13 +219,14 @@ export async function handleMcpDelete(
     door.refuse(res, 'not_supported', 'This window cannot move entries to the Trash.');
     return;
   }
-  if (!door.admit(res, true)) {
+  const slot = door.admit(res, true);
+  if (slot === undefined) {
     return;
   }
   try {
     await confirmAndDelete(door, res, read.target, remove, callerFrom(read.body));
   } finally {
-    door.release(true);
+    slot.release();
   }
 }
 
@@ -304,13 +305,14 @@ export async function handleMcpCreate(
     refuseCreation(door, res, chosen, String(read.body.name), caller);
     return;
   }
-  if (!door.admit(res, true)) {
+  const slot = door.admit(res, true);
+  if (slot === undefined) {
     return;
   }
   try {
     await confirmAndCreate(door, res, chosen, create as McpCreateHooks, read.body, caller);
   } finally {
-    door.release(true);
+    slot.release();
   }
 }
 
