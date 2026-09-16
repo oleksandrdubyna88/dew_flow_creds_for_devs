@@ -3,6 +3,7 @@ import { ErrorCode, parseBearer, parseJsonObject } from './brokerProtocol';
 import { Grant, GrantLimits, GrantLookup } from './grantRegistry';
 import { expiredMessage } from './grantLimits';
 import { MCP_SWITCHES } from './mcpSwitches';
+import { McpRung } from './mcpAccess';
 
 /**
  * What an unauthenticated request body must contain, and what a refusal says.
@@ -71,16 +72,12 @@ export type McpUseLookup =
  * may replace the secret" is. Not every action sits on the same rung: rotating replaces a stored
  * secret and asks for <b>edit</b>, while running a command asks for <b>use</b> — so a rotation
  * cannot ride in on a permission somebody granted for a read-only query.</p>
+ *
+ * <p>The same eight words as the ladder itself, and now the same TYPE: it was written out twice,
+ * and the second copy would have gone stale the first time an eleventh rung was added — the open
+ * proposal in `todo/PLAN_tails_2.md` is exactly that. `McpRung` is named where the ladder lives.</p>
  */
-export type NeededSwitch =
-  | 'view'
-  | 'use'
-  | 'edit'
-  | 'create'
-  | 'delete'
-  | 'folderCreate'
-  | 'folderEdit'
-  | 'folderDelete';
+export type NeededSwitch = McpRung;
 
 export interface McpUseTarget {
   accountId: string;

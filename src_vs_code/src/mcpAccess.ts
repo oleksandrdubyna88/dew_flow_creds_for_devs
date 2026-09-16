@@ -16,6 +16,21 @@ import { isInTrash } from './trash';
 
 export type McpDeleteScope = 'any' | 'own';
 
+/**
+ * How often a person is asked before an agent USES this entry.
+ *
+ * <p>A different axis from the ladder above it, and the difference is the whole reason it is not a
+ * rung: the ladder says what an agent may ask for, this says how often a person is asked about it.
+ * It grants nothing, and turning it on lights no capability.</p>
+ *
+ * <p><b>`always` is a real value and absence means "ask the folder".</b> The first draft had the
+ * opposite — absence WAS "ask every time" — and it could not express the case that matters most: a
+ * child under a folder set to `never` had no way to say "ask me anyway", because saying nothing is
+ * how you say "inherit". The safe answer is kept where it belongs, at the end of the walk: when
+ * nothing at any level answers, the effective policy is `always`.</p>
+ */
+export type McpAskPolicy = 'always' | 'every12h' | 'never';
+
 export interface McpAccess {
   view?: boolean;
   use?: boolean;
@@ -36,7 +51,45 @@ export interface McpAccess {
   folderEdit?: boolean;
   /** Folders: to the Trash. `'own'` is only the ones the agent made itself. */
   folderDelete?: McpDeleteScope;
+  /** How often to ask before an agent uses this entry. Absent means "ask the folder". */
+  ask?: McpAskPolicy;
 }
+
+/**
+ * One rung of the ladder, by name.
+ *
+ * <p>`keyof McpAccess` used to say this, and it stopped being true the moment the record gained a
+ * field that is not a rung: `switchForAction` would have been allowed to answer `'ask'`, and a
+ * refusal would have named a control that grants nothing. The compiler said so on the first build,
+ * which is the argument for naming the set rather than casting past it.</p>
+ */
+export type McpRung =
+  | 'view'
+  | 'use'
+  | 'edit'
+  | 'create'
+  | 'delete'
+  | 'folderCreate'
+  | 'folderEdit'
+  | 'folderDelete';
+
+/**
+ * The eight keys that make up the LADDER half of this record.
+ *
+ * <p>Written out because the two halves are now read, stored and inherited apart, and "does this
+ * object answer the ladder" is a question with a wrong answer available: an object carrying only a
+ * policy must not be mistaken for a ladder that says no to everything.</p>
+ */
+const LADDER_KEYS: readonly McpRung[] = [
+  'view',
+  'use',
+  'edit',
+  'create',
+  'delete',
+  'folderCreate',
+  'folderEdit',
+  'folderDelete',
+];
 
 /** Nothing allowed — what an entry with no setting anywhere resolves to. */
 export const NO_MCP_ACCESS: McpAccess = {};
@@ -77,6 +130,27 @@ function deleteScope(raw: unknown): McpDeleteScope | undefined {
   return raw === 'any' || raw === 'own' ? raw : undefined;
 }
 
+const ASK_POLICIES: readonly McpAskPolicy[] = ['always', 'every12h', 'never'];
+
+/**
+ * An unknown policy word reads as "ask every time" — and it is an ANSWER, not silence.
+ *
+ * <p>The opposite of `deleteScope` above, and deliberately: there, an unrecognised word must grant
+ * nothing, so it reads as absence. Here absence means "inherit", so reading a strange word as
+ * absence would let it inherit a folder's `never` — a word this build has never seen would turn
+ * the dialog off. The safe direction is the one that asks, and it has to stop the climb to do it.</p>
+ *
+ * <p>Takes `unknown` for `deleteScope`'s reason: both callers get their word from outside this
+ * program — a synced record, or a message from a webview. `null` is separated from a strange word
+ * on purpose: it is how the form says "I am taking my answer back", which is silence.</p>
+ */
+function askPolicy(raw: unknown): McpAskPolicy | undefined {
+  if (raw === undefined || raw === null) {
+    return undefined;
+  }
+  return ASK_POLICIES.find((policy) => policy === raw) ?? 'always';
+}
+
 /**
  * The access an untrusted message claims, or `undefined` when it claims none.
  *
@@ -88,12 +162,27 @@ function deleteScope(raw: unknown): McpDeleteScope | undefined {
  * <p>Absent is not the same as empty here, and the distinction survives on purpose: no object at
  * all means "this record still has no answer of its own", while an object with everything off
  * means "decided, and the answer is nothing".</p>
+ *
+ * <p><b>Two halves, read apart.</b> The ladder and the ask policy are separate axes, so a message
+ * may carry either, both or neither, and each half is stored only when it was actually claimed.
+ * Reading them together is how a person who only changed "never ask" on a folder would have had an
+ * all-off ladder written for them — closing to agents everything beneath it that used to inherit
+ * its rights from higher up.</p>
  */
 export function readMcpAccess(raw: unknown): McpAccess | undefined {
   if (typeof raw !== 'object' || raw === null) {
     return undefined;
   }
   const r = raw as Record<string, unknown>;
+  const claimed = { ...ladderHalf(r), ...policyHalf(r) };
+  return Object.keys(claimed).length === 0 ? undefined : claimed;
+}
+
+/** The ladder a message claims, or nothing when it names no rung at all. */
+function ladderHalf(r: Record<string, unknown>): McpAccess {
+  if (!LADDER_KEYS.some((key) => key in r)) {
+    return {};
+  }
   return {
     view: r.view === true,
     use: r.use === true,
@@ -104,6 +193,19 @@ export function readMcpAccess(raw: unknown): McpAccess | undefined {
     folderEdit: r.folderEdit === true,
     folderDelete: deleteScope(r.folderDelete),
   };
+}
+
+/**
+ * The policy a message claims, or nothing.
+ *
+ * <p><b>`null` is the form taking its answer back</b>, and it has to be a value rather than an
+ * omission because `JSON.stringify` drops an `undefined` property: a page that "sent undefined"
+ * sends a key that never arrives, and a message carrying only that would be an empty object — which
+ * the ladder half above would once have read as a decision to close.</p>
+ */
+function policyHalf(r: Record<string, unknown>): McpAccess {
+  const ask = askPolicy(r.ask);
+  return ask === undefined ? {} : { ask };
 }
 
 /**
@@ -138,6 +240,9 @@ function climb(
     folderCreate,
     folderEdit,
     folderDelete: folderDel,
+    // Carried through, never climbed: no rung implies a policy and no policy lights a rung. A word
+    // an older or newer build wrote is normalised here, on the way in from sync as well as out.
+    ask: askPolicy(raw.ask),
   };
 }
 
@@ -311,7 +416,10 @@ export function describeAccess(access: McpAccess): string {
     .map((on, index) => (on ? labels[index] : ''))
     .concat(deleteLabel(access.delete))
     .filter((part) => part !== '');
-  return parts.length === 0 ? 'not available to agents' : parts.join(' · ');
+  if (parts.length === 0) {
+    return 'not available to agents';
+  }
+  return [...parts, askLabel(access.ask)].filter((part) => part !== '').join(' · ');
 }
 
 function deleteLabel(scope: McpDeleteScope | undefined): string {
@@ -319,6 +427,20 @@ function deleteLabel(scope: McpDeleteScope | undefined): string {
     return 'can delete to Trash';
   }
   return scope === 'own' ? 'can delete what it created' : '';
+}
+
+/**
+ * How often a person is asked, in the card's words — and nothing at all for the answer that asks.
+ *
+ * <p>Silence for `always` is what keeps every existing card byte for byte what it was. The two
+ * answers that spend a person's attention differently are the two worth a word, and a card that
+ * hid "never asks" would be a display that lies about the one setting that removes the dialog.</p>
+ */
+function askLabel(policy: McpAskPolicy | undefined): string {
+  if (policy === 'never') {
+    return 'never asks';
+  }
+  return policy === 'every12h' ? 'asks once every 12 hours' : '';
 }
 
 /**

@@ -1,4 +1,4 @@
-import { McpAccess, ResolvedMcpAccess, accessMask, mayDelete, resolveMcpInTree } from './mcpAccess';
+import { McpAccess, McpRung, ResolvedMcpAccess, accessMask, mayDelete, resolveMcpInTree } from './mcpAccess';
 import { EntityMetadata, TreeNode } from './types';
 import { resolveKind } from './entityKind';
 import { withoutPassword } from './dbConnString';
@@ -311,7 +311,7 @@ async function storedSecrets(
  */
 export type UsableEntry =
   | { kind: 'usable'; accountId: string; node: TreeNode }
-  | { kind: 'closed'; node: TreeNode; needed: keyof McpAccess }
+  | { kind: 'closed'; node: TreeNode; needed: McpRung }
   | undefined;
 
 /**
@@ -366,7 +366,7 @@ function lookedUp(
  * <p>An action this table does not know asks for the HIGHEST rung it could be, not the lowest.
  * A verb added to the broker and forgotten here should fail closed.</p>
  */
-export function switchForAction(action: string): keyof McpAccess {
+export function switchForAction(action: string): McpRung {
   if (action === 'rotate') {
     return 'edit';
   }
@@ -403,7 +403,7 @@ function verdictFor(
  * `mayDelete` is for, and why a plain `access.delete !== undefined` would have let an agent bin
  * a production key on a permission granted for tidying up after itself.</p>
  */
-function granted(access: McpAccess, needed: keyof McpAccess, node: TreeNode): boolean {
+function granted(access: McpAccess, needed: McpRung, node: TreeNode): boolean {
   if (needed !== 'delete') {
     return access[needed] === true;
   }
