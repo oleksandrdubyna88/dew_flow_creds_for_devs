@@ -576,6 +576,27 @@ inherited `use` rung reading false.
 | an entry INHERITING never-ask from its folder runs quiet through the REAL lookup | **broker** | the only test here that builds the answer the way production does — `mcpUseLookup` over a real tree and a real stamp store — with an ask-every-time control beside it, so it cannot pass by resolving nothing |
 | a remembered write that FAILS does not fail the call somebody allowed | **broker** | it costs one more dialog next time and says so in the journal |
 
+**The ceiling (S2.3)** — the quiet path's own limiter, since the prompt was the old one. The unit half
+is `test/aliasThrottle.test.ts` with the clock injected, so sixty calls cost under a millisecond; the
+broker half drives the ceiling for real over loopback, and the two sixty-call tests cost 863 ms and
+810 ms of a 43 s suite — measured, and judged cheap enough to keep the boundary honest at the route
+rather than only in the unit. Both halves were **watched failing first**: with the silent path admitted
+unconditionally (S2.2's shape) the sixty-first answered `actual: 200, expected: 429`; with the in-flight
+rule applied to every construction the second quiet call answered `busy` — `call 2, with 1 in flight
+and none released` — while the thirteen modal-budget tests stayed green.
+
+| flow | covered | note |
+|---|---|---|
+| the default construction is today's modal budget to the byte — five, serialized, that wording | **unit** | the literal sentence asserted, so a rewording around the number cannot pass |
+| an unserialized throttle never answers `busy`, however many calls are in flight | **unit** | the in-flight rule protects a human; this path has none |
+| it refuses the (max+1)th inside the window, admits again once the window has passed, and `release` is a no-op | **unit** | sixty admitted and sixty released is still sixty inside the minute |
+| its refusal names silent calls and sixty, not prompts and five — and the window it measured over | **unit** | `describe` became an instance method for this; a true number in a false sentence is still a false sentence |
+| `TokenlessCeilings` hands a prompting call to the modal budget and a quiet one to the ceiling, and neither sees the other | **unit** | the modal budget spent, sixty quiet calls still pass; sixty quiet calls spent, the modal budget is back a minute later |
+| the sixty-first silent call in a minute is refused as `too_many_requests`, and the refusal is audited | **broker** | 61 real calls: `429`, the silent wording, zero dialogs, sixty runs, and one journal line `via mcp` — `respondError` logs nothing without a grant, so the line is written at the ceiling itself |
+| sixty quiet calls spend no modal slot, so a prompting call afterwards still gets its five | **broker** | S2.2's four-call row, extended to the whole ceiling: five alias prompts pass, and the sixth is refused with the MODAL's wording |
+| an entry that prompts is still refused at the sixth | **broker** | the modal defence on the MCP door, intact beside the new ceiling |
+| the wire contract is unchanged | **contract** | `too_many_requests` already existed; `npm run contract` leaves `contract/broker-v1.json` with an empty diff |
+
 **What this does not prove** *(rewritten once S2.2 landed — the door reads the policy now, and the
 sentence that said it did not was the obsolete half of this section)*. Two things. The real
 `creds-mcp` binary is not driven against any of this: every row above stops at the extension's own
