@@ -544,6 +544,28 @@ the section below gives, so each half is covered where it can actually be execut
 ticks the real box and reads the real keychain. A control rendered but never wired to a listener, or
 a webview that throws on open, is caught by the page-script tests over `miniDom` and by nothing else.
 
+## The consent policy's two inheritance axes (2026-09-16, issue #95, story S1.2)
+
+`resolveMcpInTree` now walks the ladder and the ask policy separately. The unit tier covers it
+thoroughly — the regression itself (*a folder that only sets a policy does not close the branch its
+parent opened*) was **watched failing first** against the single-axis predicate, with the real
+symptom: `a consent setting closed a branch it has no business closing — false !== true`, the
+inherited `use` rung reading false.
+
+| flow | covered | note |
+|---|---|---|
+| a policy-only folder leaves the rights beneath it alone | **unit** | `mcpAccess.test.ts`; red-first observed |
+| an explicit empty object still closes a branch | **unit** | the mirror-image bug; both predicates pinned by name |
+| the two axes resolved from two different folders | **unit** | both folder names asserted |
+| a word from a newer build stops the climb instead of inheriting a `never` | **unit** | fixture is JSON, so the type system cannot sanitise the case away |
+| a stored `null` hands the answer back to the folder | **unit** | what the form sends for *Inherit* |
+| nothing in the Trash answers on either axis | **unit** | a never-ask policy surviving a delete would be the sharpest form of this bug |
+| the same, end to end through the real `creds-mcp` binary | **NOT COVERED YET** | and it cannot be, honestly: nothing can WRITE a policy until the form lands (story S3.1), and the broker ignores the field until S2.2. The harness leg is owned by story S4.2, which drives six quiet calls and one forced prompt through the real binary. Recorded here rather than left implicit, because a gap nobody wrote down is a gap nobody closes |
+
+**What this does not prove.** That the resolver's answer is the one the MCP door acts on — the door
+does not read the policy at all yet. Until S2.2 the whole axis is inert by construction, which is
+also why no shipped behaviour changed in this story.
+
 ## What none of them covers
 
 Named rather than implied, because the rule asks for exactly this.

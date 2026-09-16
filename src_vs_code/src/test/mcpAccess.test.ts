@@ -535,3 +535,44 @@ test('a cycle in the parent chain cannot hang either walk', () => {
   assert.equal(resolved.askSource, 'none');
   assert.equal(resolved.access.ask, 'always');
 });
+
+test('a policy word this build has never seen stops the climb rather than inheriting a never', () => {
+  // The fail-safe direction, observed through the resolver rather than argued about. A record
+  // written by a newer build sits under a folder that says "never ask": if the unknown word read as
+  // silence, that entry would inherit the folder's silence and an agent would use it unattended.
+  const root = folder('root', { view: true, use: true, ask: 'never' });
+  const leaf = entity('e1', 'root', synced('{"ask":"quarterly"}'));
+
+  const resolved = resolveMcpInTree(leaf, tree(root, leaf));
+
+  assert.equal(resolved.access.ask, 'always', 'an unrecognised word inherited a never');
+  assert.equal(resolved.askSource, 'entity', 'and it stopped the climb where it was written');
+  assert.equal(resolved.access.use, true, 'while the ladder still came from the folder');
+});
+
+test('a policy stored as null keeps climbing, because it is an answer taken back', () => {
+  // The other half of the same predicate. `null` is what the form sends when somebody chooses
+  // "inherit from the folder", and a reader that treated it as a value would pin the entry to
+  // whatever that value normalised to instead of handing it back to its folder.
+  const root = folder('root', { view: true, ask: 'never' });
+  const leaf = entity('e1', 'root', synced('{"ask":null}'));
+
+  const resolved = resolveMcpInTree(leaf, tree(root, leaf));
+
+  assert.equal(resolved.access.ask, 'never');
+  assert.equal(resolved.askSource, 'folder');
+  assert.equal(resolved.askFolder?.id, 'root');
+});
+
+/**
+ * A record as it arrives from SYNC — written by a build that is not this one.
+ *
+ * <p>It is JSON because that is literally what it is, which is also what makes the fixture
+ * honest without a cast: `McpAccess` describes what such a record OUGHT to carry, and two of the
+ * tests above are about words it does not. `isMcpAccess` admits them on purpose — rejecting one
+ * would drop the whole node and take a credential with it — so the resolver has to survive them,
+ * and a fixture the type system has sanitised could not put that to the test.</p>
+ */
+function synced(json: string): TreeNode['mcp'] {
+  return JSON.parse(json);
+}
