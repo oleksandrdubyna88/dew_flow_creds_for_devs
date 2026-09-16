@@ -2,7 +2,6 @@ import { answerCardValues, formOf, paymentGates, paymentRecordFor, switchNoticeF
 import { FormMessage } from './formMessage';
 import { hasMixedField } from './mixedFieldGuard';
 import { readDependsOnRows, readForwardRows } from './formRowReaders';
-import { PaymentFields } from './paymentFields';
 import { addressBlockFor, addressSplitAnswer, cardTypedAnswer } from './cardFormFields';
 import { exampleAnswer } from './weaveExample';
 import { unwovenWarning, wovenSave } from './wovenPasswordSave';
@@ -21,7 +20,6 @@ import { readPastedQr } from './qrPaste';
 import { withSteamEncoder } from './totpSteam';
 import { normalizeTags } from './sshOptions';
 import { answerGenerate, formPanelFor, mountForm, runDoorCommand } from './entityFormHost';
-import { AgentDoors } from './agentDoors';
 import { applyZoomDelta } from './uiScaleHost';
 import { isDepColorKey } from './depColors';
 import { keepsPassword } from './entityKind';
@@ -34,17 +32,16 @@ import {
 } from './configFormat';
 import { ConfigField, configFields, fieldsOutcome, withFieldValues } from './configFields';
 import { readMcpAccess } from './mcpAccess';
-import { DependencyFolderCandidate, normalizeDependsOn } from './depGraph';
+import { normalizeDependsOn } from './depGraph';
 import {
   CommandArg,
   DB_TYPES,
   DbType,
   EntityKind,
-  EntityMetadata,
   VPN_TYPES,
   VpnType,
 } from './types';
-import { EntityFields, pickFields } from './entityFields';
+import { pickFields } from './entityFields';
 
 /**
  * A single-window entity form (Webview panel). The entity KIND is chosen
@@ -58,138 +55,11 @@ import { EntityFields, pickFields } from './entityFields';
  * prefilled in edit mode so it stays a genuinely editable field.
  */
 
-export interface KeyCandidate {
-  id: string;
-  name: string;
-}
-
-export interface EntityFormOptions {
-  mode: 'create' | 'edit';
-  /** The text-zoom offset (T28), from `credSshManager.uiScale`. */
-  uiScale?: number;
-  /** The stored image as a data: URI (T27) — shown as a preview beside its metadata. */
-  imageDataUri?: string;
-  /** The other ways an agent can reach this entry, for the MCP section's footer (T24b). */
-  agentDoors?: AgentDoors;
-  /** The tree element the footer's commands act on — the same argument the context menu passes. */
-  entityTarget?: unknown;
-  entityId: string;
-  initial?: EntityMetadata;
-  hasStoredPassword: boolean;
-  hasStoredPrivateKey: boolean;
-  hasStoredAttachment: boolean;
-  hasStoredImage: boolean;
-  /** Shown read-only, so an editor can see how old the thing they are changing is. */
-  createdAt?: number;
-  updatedAt?: number;
-  hasStoredVpnConfig: boolean;
-  hasStoredDbConnection: boolean;
-  initialDbConnection?: string;
-  /** Prefilled note (its own secret now, not plaintext metadata). */
-  initialNotes?: string;
-  /** A credential's login and URL, prefilled like the notes. */
-  initialFields?: EntityFields;
-  /**
-   * Prefilled config body — a secret, and one of the two the form deliberately sends INTO the
-   * webview.
-   *
-   * <p>The empty-means-keep rule the password and the private key follow cannot apply here: a
-   * config is a document somebody opens Edit to change one line of, and a form that showed it
-   * blank would make every edit a retype from memory. The DB connection string is prefilled for
-   * exactly this reason and is the precedent. Deleting the text and saving therefore CLEARS the
-   * body, which is what an empty document should mean.</p>
-   */
-  initialConfigBody?: string;
-  /**
-   * The stored payment record, handed to the WEBVIEW by message — never rendered into the page.
-   *
-   * <p>Every other kind's stored value is written into the markup (a db connection string, a config
-   * body). For a CVV and a PIN that is one place too many: the HTML is a string that gets built,
-   * concatenated and — the moment anything goes wrong — logged. The webview asks for these once it is
-   * listening, and they go straight into the inputs.</p>
-   */
-  initialPayment?: PaymentFields;
-  /** A TOTP seed is stored. The seed is never sent to the form — only this fact and… */
-  hasStoredTotp: boolean;
-  /** …how it is configured (`GitHub · 6 digits · SHA1 · every 30 s`), so it can be compared with the app. */
-  storedTotpDescription?: string;
-  /** Set when the parent folder dictates the entity kind (selector locked). */
-  lockedKind?: EntityKind;
-  /** The kind the form OPENS on when no folder locks it (issue #57) — a suggestion: selector alive, no folder hint; `lockedKind` outranks it. Why: `dialogs.pickEntityKind`. */
-  initialKind?: EntityKind;
-  /** Other entities of the same account usable as a key source. */
-  keyCandidates: KeyCandidate[];
-  /** Other SSH entities of the same account usable as a jump host (audit D7). */
-  jumpCandidates: KeyCandidate[];
-  /** A host key is pinned for this entity, and this is its fingerprint (audit B10). */
-  hasStoredHostKey: boolean;
-  hostKeyFingerprint?: string;
-  /**
-   * This account's folders with the entities they hold, self excluded — the "pick a folder,
-   * then an entity" cascade behind the Depends-on rows.
-   *
-   * <p>Empty when authoring an entity for somebody else, the same call `jumpCandidates` already
-   * makes and for the same reason: an id addressing THIS vault means nothing in theirs.</p>
-   */
-  dependencyFolders: DependencyFolderCandidate[];
-  /**
-   * Target entity id -> the colour it already wears, for targets something currently depends
-   * on. Two jobs at once: pre-select the swatch when the person picks a target that is already
-   * in a relationship, and tell the auto-pick which colours are taken.
-   */
-  dependencyColors: Record<string, string>;
-}
-
-export interface EntityFormValues {
-  details: EntityMetadata;
-  newPassword?: string;
-  clearPassword: boolean;
-  /** Why a password the form was told to weave was stored plain instead, or `''`. */
-  wovenRefusal?: string;
-  newPrivateKey?: string;
-  clearPrivateKey: boolean;
-  newVpnConfig?: string;
-  clearVpnConfig: boolean;
-  newDbConnection?: string;
-  clearDbConnection: boolean;
-  newNotes?: string;
-  /** A credential's login/URL; `undefined` for every other kind, which DELETES — the same scrubbing a config gets. */
-  newFields?: EntityFields;
-  /**
-   * The config body as the form last held it — sent whole, not as a delta.
-   *
-   * <p>Unlike `newPassword`, an empty string here is a REAL value meaning "the document is now
-   * empty", because the form was prefilled with whatever was stored. `undefined` is what says
-   * this entity is not a config at all.</p>
-   */
-  newConfigBody?: string;
-  /**
-   * The whole payment record, or `undefined` for a kind that is not one.
-   *
-   * <p>One field for all three forms, because storage holds one JSON record under one key — the
-   * decision `entityFields.ts` already made for a credential's login and URL, and the reason a
-   * payment did not have to go through all nine secret seams a tenth time.</p>
-   */
-  newPayment?: PaymentFields;
-  newAttachment?: string;
-  clearAttachment: boolean;
-  newImage?: string;
-  clearImage: boolean;
-  /** The CANONICAL `otpauth://` URI — already parsed and normalised, ready to store. */
-  newTotp?: string;
-  clearTotp: boolean;
-  /** True when the person asked to forget the pinned host key (audit B10). */
-  clearHostKey: boolean;
-  /**
-   * Colour picks for the entities this one now depends ON — a SECOND entity's field in each
-   * case, which is why they are a sibling of `details` rather than something inside it.
-   *
-   * <p>The colour belongs to the target, and that is the whole mechanism behind "change it once
-   * and every dependent follows": there is no copy on this record to keep in step. The caller
-   * applies these onto those other entities.</p>
-   */
-  dependsOnColors: { targetId: string; color: string }[];
-}
+// The two shapes this panel is given and answers with. Moved out when the file reached its
+// line ceiling and a new field could not be added to them; re-exported so no caller had to
+// learn a second place to import from.
+export type { KeyCandidate, EntityFormOptions, EntityFormValues } from './entityFormShape';
+import type { EntityFormOptions, EntityFormValues } from './entityFormShape';
 
 /**
  * The argument rows, as the webview posts them.
