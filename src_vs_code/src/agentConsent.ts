@@ -18,6 +18,15 @@
  *       key. It exists because `git push` signs and authenticates in one breath, and two modals
  *       per push is how people learn to click without reading.</li>
  * </ul>
+ *
+ * <p><b>Not the same thing as `mcpConsentPolicy.ts`</b>, which asks a question that looks identical
+ * — may this proceed without asking again? — and is deliberately a second module. What is stored
+ * here is an absolute DEADLINE fixed at the click, because "allow for ten minutes" must mean ten
+ * minutes from that moment and changing the constant must not extend a window already granted.
+ * What is stored there is a START, because a policy is a setting read fresh at every call: flipping
+ * a folder from twelve hours to every-time has to take effect at once, and flipping it back must
+ * not retroactively authorise anything. One comparison is shared — `withinAllowWindow` below — and
+ * the two shapes stay apart until there is a third instance to learn from.</p>
  */
 
 /** The labels the dialog offers. Exported so the dialog and this decision cannot drift apart. */

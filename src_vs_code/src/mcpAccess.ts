@@ -514,6 +514,21 @@ export function accessMask(access: McpAccess): boolean[] {
   ];
 }
 
+/**
+ * The whole ladder as one string, for comparing a grant against the one somebody agreed to.
+ *
+ * <p>All eight rungs, not `maskKey`'s five bits: that one deliberately merges the two delete scopes
+ * because the tree's badge answers "can an agent delete here", and merging them here would mean a
+ * grant widened from own-only to anything reads as unchanged. The order comes from `LADDER_KEYS`,
+ * so the answer is stable however the object's own keys happen to be arranged.</p>
+ *
+ * <p>Used by `mcpConsentPolicy.ts` — a remembered consent covers the grant that was described in
+ * the dialog, and a rung turned on afterwards must ask again rather than ride in on it.</p>
+ */
+export function ladderKey(access: McpAccess): string {
+  return LADDER_KEYS.map((rung) => String(access[rung] ?? '')).join(',');
+}
+
 /** `11100` — the stable name of a combination, used for the generated icon's file name. */
 export function maskKey(access: McpAccess): string {
   return accessMask(access)

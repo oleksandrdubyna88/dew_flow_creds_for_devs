@@ -6,6 +6,7 @@ import {
   describeAccess,
   entriesUnder,
   grantsAnything,
+  ladderKey,
   maskKey,
   mayDelete,
   mayDeleteFolder,
@@ -581,3 +582,26 @@ function synced(json: string): TreeNode['mcp'] {
   assert.equal(isMcpAccess(record), true, `the vault would reject this record: ${json}`);
   return record;
 }
+
+test('the ladder key changes when any rung or scope changes, and is stable across key order', () => {
+  // A remembered consent covers the grant the dialog described. maskKey is not enough: it merges
+  // the two delete scopes for the tree's badge, so a grant widened from own-only to anything would
+  // read as unchanged — which is exactly the escalation the comparison exists to catch.
+  const base = normalizeMcpAccess({ view: true, use: true });
+  assert.equal(ladderKey(base), ladderKey(normalizeMcpAccess({ use: true, view: true })), 'key order changed it');
+
+  assert.notEqual(ladderKey(base), ladderKey(normalizeMcpAccess({ view: true, use: true, edit: true })));
+  assert.notEqual(
+    ladderKey(normalizeMcpAccess({ delete: 'own' })),
+    ladderKey(normalizeMcpAccess({ delete: 'any' })),
+    'widening the delete scope must not read as unchanged',
+  );
+  assert.equal(
+    maskKey(normalizeMcpAccess({ delete: 'own' })),
+    maskKey(normalizeMcpAccess({ delete: 'any' })),
+    'and the badge still merges them, which is why ladderKey is not maskKey',
+  );
+
+  // The policy is not part of the grant: changing how often you are asked does not re-ask.
+  assert.equal(ladderKey(normalizeMcpAccess({ view: true, ask: 'never' })), ladderKey(normalizeMcpAccess({ view: true })));
+});
