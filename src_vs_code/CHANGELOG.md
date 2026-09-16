@@ -4,6 +4,75 @@ All notable changes to **CredsForDevs** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.8.0] — a second value of your own, and an accepted share arrives whole again
+
+### Fixed
+
+- **An accepted share arrives with everything in it — password, login, URL and one-time code.**
+  An entry accepted from a colleague is given a fresh local id here, so that nobody can address an
+  entry in your vault. The record inside the entry went on pointing at the SENDER's id, and every
+  read of a secret goes through that record — so the entry arrived listing its name and its dates
+  and nothing behind it, while its values sat in the keychain under an id nothing reads. **Entries
+  already accepted are repaired when this version loads them**: they become readable again with
+  nothing to re-share.
+
+- **Accepting a whole inbox at once asks for your own PIN where the sender had one.** *Accept all*
+  imported each opened entry as it arrived, so an entry its sender had protected with a PIN landed
+  here unprotected — the instruction to ask was honoured when accepting one share and skipped when
+  accepting several. An entry you decline a PIN for now stays in *Shared with me* and is counted as
+  still pending.
+
+- **The two rows a woven value is read back through no longer put your value first every time.**
+  The row said *"nothing here can tell you which one is yours, and that is deliberate"*, and the
+  build did not keep that promise: the real value is woven as the first column, and every host put
+  the first reading into row **a** — so under the correct method row one was always yours, and
+  anyone working through the twelve methods never had to read row two. Which half is drawn first is
+  now decided per entry, from the same cryptographic source the phrase generator uses, and decided
+  again each time you open the entry. It is held in the extension and appears in no message, no id
+  and no caption. What that buys, said exactly: somebody reading your screen, a screenshot of it or a
+  backup file can no longer tell from the position which row is yours. Somebody with developer tools
+  open on this machine, while a reading is showing, still can — the picture's colours are that order
+  expressed, and the method is on the page beside them. Before this change row one was yours for
+  every reader, so nothing here is weaker; the method remains the only thing you have to remember.
+
+- **The refusal to edit a woven entry stops naming an action that does not exist.** It ended *"or
+  view it and unweave the field first"*, and there is no unweave anywhere — undoing a weave needs
+  the method, which is stored nowhere. It now names the route that does exist: open the entry, pick
+  your method, press Show, copy the row you recognise, then create a new entry and delete this one.
+
+- **The worked example is titled with the method's NAME on every form.** The card, the password and
+  the phrase each titled it `f4` while every picker on every surface said *Method 4*. The label is
+  the only route back to a woven value, so a surface naming a method differently from the picker you
+  chose it in can cost you that value.
+
+### Added
+
+- **A second value of your own, everywhere a value can be woven.** A woven field used to mean your
+  value shuffled with a decoy this build generated for you. The card number, the CVV, the card PIN,
+  the IBAN, the account number and the password now offer what the seed phrase already offered: type
+  the OTHER half yourself — two passwords, two seeds, two numbers — and it is stored encrypted like
+  any other secret **even when you do not weave**, so a second value you keep for yourself has a
+  place to live. The viewer shows a row for each one.
+
+  Three things worth knowing before you use it. **A mismatched pair is refused rather than
+  confirmed**: two halves that do not use the same character classes do not save, because a
+  generated decoy carries guarantees a typed one cannot — Luhn and the same BIN for a card, mod-97
+  and the same country for an IBAN. **A share does not carry a plain second value**, and the sender
+  is told by name which ones stayed behind; a woven field travels exactly as it did before. And a
+  second value on a record that has ANY woven field can only be changed by creating the entry again,
+  because a woven record cannot be reopened in the edit form — the rule that already protects a
+  woven value from being re-woven and destroyed.
+
+  Written up in `research/PLAN_second_values.md`, and in the help article in all five languages.
+
+- **A woven entry says so in Main, and a reading shows what the method did.** The form has said
+  *Woven — on* since woven passwords shipped; the viewer — the one place you go to READ a value —
+  said nothing. It does now, in one sentence, naming the password and any payment fields by the
+  labels you have seen. And when you pick a method and press Show, the two rows are joined by the
+  picture the form draws before you choose: your first row, your second row, and the stored value
+  with every token coloured by which of the two rows it came from. It leaves when the rows do — on a
+  refusal, when you pick another method, and when an assembled phrase closes itself.
+
 ## [1.7.0] — the forms say what they are doing, the tree says what the server is, and the dialog says who is asking
 
 ### Fixed

@@ -71,11 +71,24 @@ test('a label and a key are ESCAPED — they reach the page as text, never as ma
   assert.ok(!/data-key="a"b"/.test(html), 'and a key cannot close an attribute');
 });
 
-test('the note is the row own sentence, and it says the rows tell you nothing', () => {
+test('the note says what is now TRUE: the position tells you nothing either', () => {
   const html = wovenRowMarkup(options());
 
   assert.match(html, /id="payNote_password"/);
-  assert.match(WOVEN_ROW_NOTE, /nothing here can tell you which one is yours/);
+  // It used to claim "nothing here can tell you which one is yours" while the host put the person's
+  // value in row one every time, under every correct method. The note may not say that again
+  // unless the build has earned it.
+  assert.ok(
+    !/nothing here can tell you which one is yours/.test(WOVEN_ROW_NOTE),
+    'the sentence the build did not keep',
+  );
+  assert.match(WOVEN_ROW_NOTE, /decided again each time you open this entry/, 'what makes it true');
+  // The BOUND, not a promise. The picture's colours are that order expressed and the method is on
+  // the page beside them, so a reader with developer tools recovers it; a reader of the screen, a
+  // screenshot or a backup cannot. The note names both rather than implying the stronger one.
+  assert.match(WOVEN_ROW_NOTE, /screenshot of it or a backup file cannot tell/, 'who it protects from');
+  assert.match(WOVEN_ROW_NOTE, /developer tools open on this machine can/, 'and who it does not');
+  assert.match(WOVEN_ROW_NOTE, /stored nowhere/, 'and the method is still the one thing to remember');
   assert.ok(html.includes(WOVEN_ROW_NOTE.slice(0, 40)), 'and it is what the row renders');
 });
 

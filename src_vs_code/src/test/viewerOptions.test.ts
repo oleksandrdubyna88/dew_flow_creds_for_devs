@@ -38,6 +38,7 @@ test('the resolver maps every viewer field, including the parsed db password', a
     dbConnection: () => Promise.resolve('postgresql://u:db-secret@h:5432/db'),
     totpSeed: () => Promise.resolve(SEED),
     paymentRaw: () => Promise.resolve(undefined),
+    secondRaw: () => Promise.resolve(undefined),
   };
   const resolve = secretResolver(reader);
 
@@ -67,6 +68,7 @@ test('dbPassword resolves to nothing when there is no connection string', async 
     dbConnection: () => Promise.resolve(undefined),
     totpSeed: () => Promise.resolve(undefined),
     paymentRaw: () => Promise.resolve(undefined),
+    secondRaw: () => Promise.resolve(undefined),
   });
 
   assert.equal(await resolve('dbPassword'), undefined);
@@ -118,7 +120,7 @@ test('dbDisplay never carries the password inline, but says one exists', () => {
   assert.deepEqual(none, { dbParts: undefined, dbPortIsDefault: false, dbHasPassword: false });
 });
 
-test('snapshotForRevision captures all nine secrets of the given entity, as it is now', async () => {
+test('snapshotForRevision captures all TEN secrets of the given entity, as it is now', async () => {
   const reads: string[] = [];
   const value = (name: string) => (_a: string, id: string) => {
     reads.push(`${name}:${id}`);
@@ -134,6 +136,7 @@ test('snapshotForRevision captures all nine secrets of the given entity, as it i
     getConfigBody: value('config'),
     getFieldsRaw: value('fields'),
     getPaymentRaw: value('payment'),
+    getSecondRaw: value('second'),
   };
   const details: EntityMetadata = { id: 'e9', name: 'renamed already', isSshEnabled: false };
 
@@ -165,8 +168,9 @@ test('snapshotForRevision captures all nine secrets of the given entity, as it i
     // that returned a card without half its fields would be a worse defect than having no rollback.
     // Only a SHARE strips those two, because only a share sends the value into another person's vault.
     payment: 'payment-of-e9',
+    second: 'second-of-e9',
   });
-  assert.equal(reads.length, 9, 'every secret kind was read exactly once');
+  assert.equal(reads.length, 10, 'every secret kind was read exactly once');
 });
 
 test('the totp field resolves to the CODE, never to the seed it came from', async () => {
@@ -179,6 +183,7 @@ test('the totp field resolves to the CODE, never to the seed it came from', asyn
     dbConnection: () => Promise.resolve(undefined),
     totpSeed: () => Promise.resolve(SEED),
     paymentRaw: () => Promise.resolve(undefined),
+    secondRaw: () => Promise.resolve(undefined),
   });
 
   const code = await resolve('totp');
@@ -194,6 +199,7 @@ test('a reader with no seed resolves totp to nothing rather than throwing', asyn
     dbConnection: () => Promise.resolve(undefined),
     totpSeed: () => Promise.resolve(undefined),
     paymentRaw: () => Promise.resolve(undefined),
+    secondRaw: () => Promise.resolve(undefined),
   });
 
   assert.equal(await resolve('totp'), undefined);

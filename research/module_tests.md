@@ -16,7 +16,7 @@
 
 | Tier | Where | Count | What it proves |
 |---|---|---|---|
-| Unit, extension | `src_vs_code/src/test/*.test.ts`, node:test | 3,702 (4 skipped) | logic, in-process, `vscode` stubbed |
+| Unit, extension | `src_vs_code/src/test/*.test.ts`, node:test | 4,205 (4 skipped) | logic, in-process, `vscode` stubbed |
 | Unit, .NET | `src_minimalapi_server/tests`, `src_cli/tests`, `src_mcp/tests`, `src_broker_client/tests` — xUnit | 447 | server 300, cli 78, mcp 40, broker 29 |
 | HTTP contract | `http/http-run.mjs` over `http/*.http` | 82 requests, 9 files | the real server over HTTP, with a coverage report that refuses an unlisted route |
 | Scenario | `src_vs_code/scripts/*-itest.cjs` | 9 harnesses | a real process, a real socket, a real binary |
@@ -383,6 +383,28 @@ live-stack rehearsal: no image is pulled and no server runs, so nothing yet prov
 from a live deployment restores onto a real host. That is a tracked exception rather than a silent
 gap — named in the plan, in `module_deployment.md`, and in the epic's summary.
 
+## The lock file's own version, which no tool was checking (2026-09-14)
+
+`lockfileVersion.test.ts` asserts that `src_vs_code/package-lock.json` agrees with
+`package.json` about this project's name and version — in **both** places the lock states it, its top
+level and its `packages[""]` entry.
+
+It exists because the drift was real and long. The lock said `0.98.0` while the extension shipped as
+`1.7.0`: fourteen releases, every one of them touching `package.json` and `CHANGELOG.md` and nothing
+else. Nothing complained, and that is the point — `npm ci` validates the lock's DEPENDENCIES against
+the manifest and has no opinion at all about the project's own version field, so the file installs
+perfectly while telling every reader, auditor and supply-chain scanner the wrong version.
+
+The test was watched failing against the drifted file before the fix, and its message names the
+cause rather than the mismatch: *"a release bumped one and not the other, which npm never complains
+about and every reader of the lock believes"*. The second assertion exists separately because a
+`lockfileVersion: 3` file carries the version twice, and fixing only the top one leaves half the
+drift in place.
+
+**The same drift is present in the family's other two extensions** — `connect_other_ais/src_vs_code`
+(0.31.17 against a lock saying 0.30.0) and `rag_qln/tools/vscode-extension` (0.19.0 against 0.9.0).
+Neither is fixed here; this is a note so the next person does not rediscover it.
+
 ## Account deletion, and what the gate has to make indivisible (2026-09-11, audit finding #4)
 
 `VaultTests` in the server suite. Four scenarios, three of them new, and they exist because the order
@@ -499,6 +521,29 @@ own standing finding, *The editor's own UI* below: nothing here drives VS Code, 
 `vscode` or talks to the broker underneath it, and inventing a tenth harness for one webview would be
 the wrong answer to it. The flow's one real look is by hand, on the packaged `.vsix`.
 
+## The second value a person types (#52)
+
+Named here because the code round asked where these flows are covered, and the honest answer has a
+shape worth writing down: there is no harness that can drive this feature end to end, for the reason
+the section below gives, so each half is covered where it can actually be executed.
+
+| what | where | what it can and cannot see |
+|---|---|---|
+| The pair rule | `secondPair.test.ts` | Pure. Code points, identical halves, character classes — including the Cyrillic pair the code round found refused |
+| What the save STORES | `secondSave.test.ts` | Pure, one test per row of the plan's state table. Reads back what the save decided, never whether a decoy was generated |
+| The page's message, read | `secondFormInput.test.ts` | Pure. Both mode controls answering for their own fields, and a crafted payload's unknown keys refused |
+| The payment gate | `secondPaymentGate.test.ts` | The REAL `paymentRecordFor` behind a `vscode` stub: a good pair woven, a mismatched one refused, and the typed half absent from the record |
+| The page's half | `secondModeScript.test.ts` | RUN through `miniDom`, not matched as source: a box shown, hidden, emptied when hidden, and each control governing only its own scope |
+| The markup | `secondModeMarkup.test.ts` | Derived from the catalogue, no value in the page, and no backtick that would end the template literal it is pasted into |
+| The viewer's rows | `secondViewerRows.test.ts` | The rows drawn, the gate a second CVV inherits, and `allowCopy` — the surface the panel calls, so the copy path is covered rather than the private predicate |
+| Out of the vault | `secondShareBoundary.test.ts` | A REAL share payload built and asserted, plus the export counts. Not an allowlist unit test, because that passes for a payload a serializer picked the slot up into |
+| Sync, backup, revision | `secondSurvival.test.ts`, `storageSecond.test.ts`, `secondTravel.test.ts` | The five lists agreeing, an empty record deleting its key, and the agent surface driven with a vault that HOLDS one of every kind |
+| The five help languages | `secondHelpCoverage.test.ts` | That each language mentions the control — the one stale-translation failure that is checkable without a content-version scheme |
+
+**What none of this reaches** is the same gap the section below names: nothing opens the real form,
+ticks the real box and reads the real keychain. A control rendered but never wired to a listener, or
+a webview that throws on open, is caught by the page-script tests over `miniDom` and by nothing else.
+
 ## What none of them covers
 
 Named rather than implied, because the rule asks for exactly this.
@@ -507,6 +552,20 @@ Named rather than implied, because the rule asks for exactly this.
   tree row, no form filled in. Every harness stubs `vscode` or talks to the broker underneath it.
   So a command registered but never wired to a menu, a context value that stops matching, or a
   webview that throws on open, is caught by unit tests over the pure halves and by nothing else.
+
+  **What the viewer's woven-row flow has instead**, named here because the gap above is why it needs
+  naming. The Show → reading → Copy path spans a panel that imports `vscode`, two hosts that do not,
+  and a page script, and no harness can drive it end to end. It is covered in three places, and the
+  split is deliberate: the arithmetic and the row order in `rowFlip.test.ts` and
+  `wovenPicture.test.ts`; what each host answers, and that a Copy follows the order the rows were
+  shown in — including when a render lands mid-await — in `paymentViewHost.test.ts` and
+  `wovenPasswordForm.test.ts`; and the WIRING in `entityViewPanelWiring.test.ts`, which asserts over
+  the panel's own source that one store is constructed, handed to both hosts, and cleared at both
+  sites. **The limit is exact**: that wiring is read, not executed, so a panel that constructs
+  everything correctly and still threw on open would pass it. That is the same limit as the rest of
+  this bullet. It exists because this feature once shipped ten modules reachable from nothing but
+  their own tests — a test that asserts the CALL is the answer to that — and every scan in it
+  carries a companion proving the pattern still matches a known instance.
 - **The Marketplace artefact.** `npm run package` runs in CI, and nothing installs the resulting
   `.vsix` into a real editor and opens it. The publish step is verified by reading the release run.
 - **The server and the extension end to end.** `server-transport-itest.cjs` would do it, and it is

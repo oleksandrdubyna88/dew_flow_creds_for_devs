@@ -3,6 +3,8 @@ import { copySecret } from './secretClipboard';
 import { confirmDestructive } from './dialogs';
 import { PaymentViewHost, isPaymentMessage } from './paymentViewHost';
 import { handleWovenPassword } from './wovenPasswordHost';
+import { RowOrderStore } from './rowFlip';
+import { cryptoRandom } from './phraseGenerate';
 import { applyZoomDelta, currentUiScale, pushUiScaleTo } from './uiScaleHost';
 import { ViewerTab } from './viewerClicks';
 import { BINDABLE_FIELDS, BindableField } from './envBinding';
@@ -103,6 +105,16 @@ function mountEntityView(
     { enableScripts: true, localResourceRoots: [] },
   );
   const state = { options: first };
+  // ONE store for this panel, shared by the card's host and the woven password's. Which of a
+  // reading's two halves is shown first is drawn here and goes no further — it is in no message, so
+  // there is nothing in the page to inspect for it. Cleared when the ENTRY changes and on dispose,
+  // for EVERY kind of entry: a credential's password never passes through `payment.reset()`.
+  // Re-rendering the SAME entry keeps the order — see the note on that below.
+  //
+  // Drawn from the house CSPRNG rather than `Math.random`. One bit is all this takes, but a
+  // predictable bit is one a reader who has watched a few opens carries into the next — and the
+  // rule is already written where that source lives: a draw that merely LOOKS random is not one.
+  const orders = new RowOrderStore(cryptoRandom);
   // The payment card's five messages, its reveal gate and the buffers an assembled phrase lives in.
   // Reading the CURRENT options rather than the ones this panel was built with is not a nicety: the
   // preview tab re-renders for another entry, and a card that answered from stale options would be
@@ -110,15 +122,28 @@ function mountEntityView(
   const payment = new PaymentViewHost({
     view: () => state.options.payment,
     record: () => state.options.resolvePayment?.(),
+    seconds: () => state.options.resolveSecond?.(),
     post: (message) => void panel.webview.postMessage(message),
     confirm: confirmDestructive,
     copy: (text) => copySecret(vscode.env.clipboard, text),
+    orders,
   });
   const show = (options: EntityViewOptions): void => {
+    const arriving = options.details.id;
+    const wasShowing = state.options.details.id;
     state.options = options;
     // Before the new page exists: a grant belongs to the entry it was given for, and an assembled
     // phrase must not survive the card it was assembled on.
     payment.reset();
+    // The row orders go with them when the ENTRY changes — another entry is another draw. But only
+    // then. Clearing on every render would re-draw while the same entry is still on screen, and a
+    // Show whose keychain read is still in flight would then post rows under the old order into a
+    // page whose Copy resolves the new one: the clipboard and the display disagreeing, for the same
+    // secret, with nothing on screen saying so. Re-rendering the same entry is not a new viewing.
+    // (Code review, S3.)
+    if (arriving !== wasShowing) {
+      orders.clear();
+    }
     panel.title = options.details.name;
     panel.webview.html = renderEntityViewHtml({ ...options, uiScale: currentUiScale() });
   };
@@ -128,6 +153,7 @@ function mountEntityView(
   panel.onDidDispose(() => {
     zoomHook.dispose();
     payment.reset();
+    orders.clear();
   });
 
   // eslint-disable-next-line complexity, max-lines-per-function
@@ -150,6 +176,7 @@ function mountEntityView(
           read: () => state.options.resolveSecret('password'),
           post: (answer) => void panel.webview.postMessage(answer),
           copy: (text) => copySecret(vscode.env.clipboard, text),
+          orders,
         });
       }
       return;
@@ -214,6 +241,15 @@ function mountEntityView(
       return;
     }
     const value = await copyValueFor(options, message.field);
+    // And AGAIN, because reading the value is itself an await: `copyValueFor` goes to the keychain
+    // for a payment field, for a second value and for every ordinary secret. The guard above covers
+    // the CONFIRMATION; this one covers the READ. Without it a render landing in between puts the
+    // previous entry's secret on the clipboard and tells the new entry's page it was copied — the
+    // same shape the row-order work was bitten by twice, raised here by the automated reviewer on
+    // the pull request that added a third await to this path.
+    if (state.options !== options) {
+      return;
+    }
     if (value === undefined || value.length === 0) {
       // A paired code refuses for one reason only — the pair on screen is no longer the pair this
       // button belongs to — and calling that "empty" would send somebody hunting for a lost seed.

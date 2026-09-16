@@ -10,6 +10,7 @@ import {
   imageSecretKey,
   keyPart,
   notesSecretKey,
+  secondSecretKey,
   orgEscrowShareSecretKey,
   paymentSecretKey,
   privateKeySecretKey,
@@ -92,6 +93,7 @@ const PER_ENTITY_BUILDERS: ReadonlyArray<[string, (a: string, e: string) => stri
   ['sshPrivateKey', privateKeySecretKey],
   ['vpnConfig', vpnConfigSecretKey],
   ['notes', notesSecretKey],
+  ['second', secondSecretKey],
   ['fields', fieldsSecretKey],
   ['config', configSecretKey],
   ['payment', paymentSecretKey],
@@ -116,9 +118,9 @@ test('every per-entity builder escapes an id carrying all three reserved charact
 });
 
 test('the builder list is complete, so a new kind cannot be added without a golden string', () => {
-  // Twelve per-entity builders plus the two account-scoped ones. A thirteenth added to secretKeys.ts
+  // Thirteen per-entity builders plus the two account-scoped ones. A fourteenth added to secretKeys.ts
   // without a row here leaves the count wrong, which is the cheapest available reminder.
-  assert.equal(PER_ENTITY_BUILDERS.length, 12);
+  assert.equal(PER_ENTITY_BUILDERS.length, 13);
   const suffixes = PER_ENTITY_BUILDERS.map(([name]) => name);
   assert.equal(new Set(suffixes).size, suffixes.length, 'two builders claiming one suffix collide');
 });
@@ -182,11 +184,12 @@ test('entitySecretKeys still names every key it did before it moved modules', ()
       'acct-7_ent-42:image',
       'acct-7_ent-42:notes',
       'acct-7_ent-42:payment',
+      'acct-7_ent-42:second',
       'acct-7_ent-42:sshPrivateKey',
       'acct-7_ent-42:totp',
       'acct-7_ent-42:vpnConfig',
     ],
-    'twelve keys — eleven secret kinds plus the revision history, because past versions are secrets',
+    'thirteen keys — twelve secret kinds plus the revision history, because past versions are secrets',
   );
 });
 

@@ -122,6 +122,7 @@ test('the masker skips a protected value — the ciphertext is a string no tool 
     getVpnConfig: () => Promise.resolve(undefined),
     getDbConnection: () => Promise.resolve(undefined),
     getNotes: () => Promise.resolve(undefined),
+    getSecondRaw: () => Promise.resolve(undefined),
   } as never;
 
   assert.deepEqual(await mod.maskEntriesFor(source, ACCOUNT, 'e1'), []);
@@ -271,6 +272,8 @@ test('a share payload carries the OPENED value, never the wrap', async () => {
     getDbConnection: () => Promise.resolve(undefined),
     getConfigBody: () => Promise.resolve(undefined),
     getFieldsRaw: () => Promise.resolve(undefined),
+    getSecondRaw: () => Promise.resolve(undefined),
+    setSecondRaw: () => Promise.resolve(),
     getPaymentRaw: () => Promise.resolve(undefined),
   } as never;
   const node = { id: 'e1', name: 'prod-db', type: 'entity', details: details() } as never;
@@ -297,6 +300,8 @@ test('without a gate the payload is what is stored — an unprotected entry is u
     getDbConnection: () => Promise.resolve(undefined),
     getConfigBody: () => Promise.resolve(undefined),
     getFieldsRaw: () => Promise.resolve(undefined),
+    getSecondRaw: () => Promise.resolve(undefined),
+    setSecondRaw: () => Promise.resolve(),
     getPaymentRaw: () => Promise.resolve(undefined),
   } as never;
   const node = { id: 'e1', name: 'prod-db', type: 'entity', details: details() } as never;

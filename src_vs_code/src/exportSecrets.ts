@@ -13,6 +13,7 @@ export interface SecretReader {
   getTotp(accountId: string, id: string): Thenable<string | undefined>;
   getConfigBody(accountId: string, id: string): Thenable<string | undefined>;
   getFieldsRaw(accountId: string, id: string): Thenable<string | undefined>;
+  getSecondRaw(accountId: string, id: string): Thenable<string | undefined>;
   getPaymentRaw(accountId: string, id: string): Thenable<string | undefined>;
 }
 
@@ -46,6 +47,10 @@ entityIds: readonly string[],
     put('config', await vault.getConfigBody(accountId, id));
     // The whole record, CVV and PIN included — see ExternalSecrets.payment for why.
     put('payment', await vault.getPaymentRaw(accountId, id));
+    // The whole record of second values too. An export is a full, deliberate copy — it already
+    // carries private keys and a CVV — and one that silently left a value behind would be a restore
+    // that quietly loses half of what somebody typed.
+    put('second', await vault.getSecondRaw(accountId, id));
     const fields = parseFields(await vault.getFieldsRaw(accountId, id));
     put('login', fields.login);
     put('url', fields.url);

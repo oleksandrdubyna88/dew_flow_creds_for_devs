@@ -15,6 +15,7 @@ import {
 import { PaymentFields } from '../paymentFields';
 import { SHUFFLE_CODES, shuffleTokens } from '../shuffle';
 import { phraseColumns } from '../phraseLayout';
+import { displayed } from '../rowFlip';
 import { BRAND_MARK_STYLES } from '../cardBrandIcons';
 
 /**
@@ -128,13 +129,22 @@ test('a woven card number is rebuilt under the right method and unreadable under
   const right = readingFor(fields, 'card', 'number', code);
   const wrong = readingFor(fields, 'card', 'number', SHUFFLE_CODES[4]);
 
-  assert.equal(copyTextFor(right!, 'a', 'number'), original);
-  assert.equal(copyTextFor(right!, 'b', 'number'), decoy);
+  // `a` and `b` are the two ROWS, not the real value and the decoy. This test used to read
+  // `copyTextFor(right, 'a') === original`, and it passed because the host put the person's value
+  // in row one every time, under every correct method — the defect the row order removes. What is
+  // asserted now is that a copy returns whatever was DRAWN into the row the button names.
+  const asRead = displayed({ first: right!.real, second: right!.decoy }, 'as-read');
+  const swapped = displayed({ first: right!.real, second: right!.decoy }, 'swapped');
+  assert.equal(copyTextFor(asRead, 'a', 'number'), original, 'row a holds the real value under as-read');
+  assert.equal(copyTextFor(asRead, 'b', 'number'), decoy, 'and row b holds the other reading');
+  assert.equal(copyTextFor(swapped, 'a', 'number'), decoy, 'row a is whatever was drawn into row a');
+  assert.equal(copyTextFor(swapped, 'b', 'number'), original, 'and row b likewise');
   // The property, not the value: a wrong method answers in the SAME shape as a right one. Anything
   // that could tell them apart here is the enumeration hint the whole design withholds.
-  assert.equal(rowOf(wrong!, 'a').length, rowOf(right!, 'a').length);
-  assert.equal(rowOf(wrong!, 'b').length, rowOf(right!, 'b').length);
-  assert.notEqual(copyTextFor(wrong!, 'a', 'number'), original);
+  const wrongShown = displayed({ first: wrong!.real, second: wrong!.decoy }, 'as-read');
+  assert.equal(rowOf(wrongShown, 'a').length, rowOf(asRead, 'a').length);
+  assert.equal(rowOf(wrongShown, 'b').length, rowOf(asRead, 'b').length);
+  assert.notEqual(copyTextFor(wrongShown, 'a', 'number'), original);
 });
 
 test('a phrase woven under the horizontal layout comes back as the ORIGINAL words', () => {
@@ -151,10 +161,11 @@ test('a phrase woven under the horizontal layout comes back as the ORIGINAL word
   };
 
   const reading = readingFor(fields, 'phrase', 'mixed', code);
+  const shown = displayed({ first: reading!.real, second: reading!.decoy }, 'as-read');
 
-  assert.deepEqual(rowOf(reading!, 'a'), real);
-  assert.deepEqual(rowOf(reading!, 'b'), second);
-  assert.equal(copyTextFor(reading!, 'a', 'mixed'), real.join(' '), 'the clipboard is the one join');
+  assert.deepEqual(rowOf(shown, 'a'), real);
+  assert.deepEqual(rowOf(shown, 'b'), second);
+  assert.equal(copyTextFor(shown, 'a', 'mixed'), real.join(' '), 'the clipboard is the one join');
 });
 
 test('a record that is not a whole woven pair answers "cannot be read" instead of throwing', () => {

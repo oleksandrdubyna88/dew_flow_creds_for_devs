@@ -1,8 +1,22 @@
 import { PAYMENT_FIELD_LABELS, PaymentFieldKey, PaymentFields } from './paymentFields';
 import { PHRASE_VISIBLE_MS, needsReveal, phraseRevealPrompt, revealPrompt } from './revealGate';
-import { PaymentCardView, copyTextFor, plainValues, readingFor, revealValue } from './paymentViewMessages';
+import {
+  PaymentCardView,
+  copyTextFor,
+  plainValues,
+  readBackOf,
+  readingFor,
+  revealValue,
+  plainSeconds,
+  revealSecond,
+} from './paymentViewMessages';
+import { SecondValues, firstKeyOf, isSecondKey } from './secondValues';
 import { Reassembled } from './phraseReassembly';
 import { PhraseBuffer } from './phraseBuffer';
+import { RowOrder, RowOrderStore, displayed } from './rowFlip';
+import { wovenPictureTokens } from './wovenPicture';
+import { ShuffleCode, methodLabel } from './shuffle';
+import { PhraseLayout } from './phraseLayout';
 
 /**
  * The payment card's host half: what a message from the card is answered with, and what is asked
@@ -33,9 +47,25 @@ export interface PaymentViewDeps {
   /** The CURRENT options — the preview tab re-renders for another entry, so this is read per call. */
   readonly view: () => PaymentCardView | undefined;
   readonly record: () => Thenable<PaymentFields> | undefined;
+  /**
+   * The entry's second values (#52), read at the same moment and through the same gate.
+   *
+   * <p>Optional because an entry can hold none and because every caller written before this
+   * feature must go on working: absent reads as an empty record rather than as a failure.</p>
+   */
+  readonly seconds?: () => Thenable<SecondValues> | undefined;
   readonly post: (message: unknown) => void;
   readonly confirm: (text: string, actionLabel: string) => Promise<boolean>;
   readonly copy: (text: string) => Promise<void>;
+  /**
+   * Which of a reading's two halves is shown first, for this entry and this field.
+   *
+   * <p>Owned by the PANEL and shared with the woven password's half, because one entry is one page:
+   * a Show and the Copy that follows it must agree, and a credential's password never passes
+   * through this class at all. The order is read here and goes no further — it appears in no
+   * message this host posts, which is what keeps it out of the DOM.</p>
+   */
+  readonly orders: RowOrderStore;
 }
 
 /** The messages this half owns. Anything else is not its business and is left to the panel. */
@@ -51,9 +81,15 @@ export function isPaymentMessage(type: string): boolean {
  * <p>`mixed` is here rather than in `GATED_FIELDS` because that list is about FIELDS of a card, and
  * this is about an assembled phrase — a different question with its own words. Keeping them apart is
  * what lets `revealGate` stay the pure statement of which card fields are exceptional.</p>
+ *
+ * <p><b>A SECOND value inherits the rung of the field it belongs to</b> (#52). A second CVV is a CVV:
+ * it is one of the two values that turn a number somebody saw into a payment somebody made, and it is
+ * asked about here rather than added to `GATED_FIELDS`, because that list answers about the fields of
+ * a card and `cvv2` is not one of them. Derived rather than listed, so a seventh weave point inherits
+ * whatever its own field asks and nobody has to remember to add it.</p>
  */
 function gated(key: string): boolean {
-  return needsReveal(key) || key === 'mixed';
+  return needsReveal(key) || key === 'mixed' || (isSecondKey(key) && needsReveal(firstKeyOf(key)));
 }
 
 export class PaymentViewHost {
@@ -129,7 +165,7 @@ export class PaymentViewHost {
   ): Promise<void> {
     const key = parts[0] ?? '';
     const arms: Record<string, () => Promise<void> | void> = {
-      payment: () => this.deps.post(this.valuesMessage(view, fields)),
+      payment: async () => this.deps.post(this.valuesMessage(view, fields, await this.secondsNow())),
       reveal: () => this.reveal(key, view, fields),
       reassemble: () => this.reassemble(key, parts[1] ?? '', view, fields),
       copyReading: () => this.copyReading(key, parts[1] ?? '', parts[2] ?? '', view, fields),
@@ -139,19 +175,44 @@ export class PaymentViewHost {
   }
 
   /** What the card is filled with on load — never a gated field, never a woven one. */
-  private valuesMessage(view: PaymentCardView, fields: PaymentFields): unknown {
-    return { type: 'paymentValues', entityId: view.entityId, values: plainValues(fields, view.form) };
+  private valuesMessage(view: PaymentCardView, fields: PaymentFields, seconds: SecondValues): unknown {
+    return {
+      type: 'paymentValues',
+      entityId: view.entityId,
+      values: { ...plainValues(fields, view.form), ...plainSeconds(seconds, view.seconds) },
+    };
   }
 
   /** One gated value, once. A declined question posts nothing at all — not an empty value, nothing. */
   private async reveal(key: string, view: PaymentCardView, fields: PaymentFields): Promise<void> {
-    if (!view.present.includes(key as PaymentFieldKey) || !(await this.grant(key, view))) {
+    if (!shownHere(key, view) || !(await this.grant(key, view))) {
       return;
     }
-    const value = revealValue(fields, view.form, key);
+    const value = await this.gatedValue(key, view, fields);
     if (value !== undefined) {
       this.deps.post({ type: 'paymentValues', entityId: view.entityId, values: { [key]: value } });
     }
+  }
+
+  /** A field's value or a second value's, decided by which row asked. */
+  private async gatedValue(
+    key: string,
+    view: PaymentCardView,
+    fields: PaymentFields,
+  ): Promise<string | undefined> {
+    return (view.seconds as readonly string[]).includes(key)
+      ? revealSecond(await this.secondsNow(), view.seconds, key)
+      : revealValue(fields, view.form, key);
+  }
+
+  /**
+   * The second values, now — or none at all.
+   *
+   * <p>Read per request, exactly as the payment record is, so a value cleared while the panel is open
+   * stops being copyable here. An absent supplier is an entry with none, which is the common case.</p>
+   */
+  private async secondsNow(): Promise<SecondValues> {
+    return (await this.deps.seconds?.()) ?? {};
   }
 
   /**
@@ -167,15 +228,18 @@ export class PaymentViewHost {
     view: PaymentCardView,
     fields: PaymentFields,
   ): Promise<void> {
+    // Before the question, for the reason `copyReading` samples before its own: the modal is an
+    // await, and a render behind it clears the store.
+    const order = this.deps.orders.orderFor(view.entityId, key);
     if (!view.woven.includes(key as PaymentFieldKey) || !(await this.grant(key, view))) {
       return;
     }
-    const reading = readingFor(fields, view.form, key, code);
-    if (reading === undefined) {
-      this.deps.post({ type: 'paymentReading', entityId: view.entityId, key, ok: false, why: UNREADABLE });
+    const back = readBackOf(fields, view.form, key, code);
+    if (back === undefined) {
+      this.deps.post({ type: 'paymentReading', entityId: view.entityId, key, code, ok: false, why: UNREADABLE });
       return;
     }
-    this.postReading(key, this.readingMessage(key, code, view, reading));
+    this.postReading(key, this.readingMessage(key, code, view, back, order));
   }
 
   /**
@@ -207,10 +271,15 @@ export class PaymentViewHost {
     key: string,
     code: string,
     view: PaymentCardView,
-    reading: Reassembled,
+    back: { readonly reading: Reassembled; readonly stored: readonly string[]; readonly layout: PhraseLayout },
+    order: RowOrder,
   ): unknown {
     const words = key === 'mixed';
-    const buffers = [PhraseBuffer.of(reading.real), PhraseBuffer.of(reading.decoy)];
+    // The ROWS, not the arithmetic's pair, in the order sampled before the question. The buffers,
+    // the message and any copy that follows are all built from this one call, so they describe the
+    // same two rows — and which of them is the person's stops being a fact this class can state.
+    const shown = displayed({ first: back.reading.real, second: back.reading.decoy }, order);
+    const buffers = [PhraseBuffer.of(shown.first), PhraseBuffer.of(shown.second)];
     this.release(key);
     this.held.set(key, buffers);
     return {
@@ -226,6 +295,14 @@ export class PaymentViewHost {
       words,
       first: buffers[0].words(),
       second: buffers[1].words(),
+      // The stored value, token by token, each tagged with the ROW it is in — the picture drawn
+      // under the two rows. Built from the same `order` they were, so the colours cannot contradict
+      // them, and tagged `first`/`second` meaning the rows on screen, never real and never decoy.
+      woven: wovenPictureTokens(back.stored, code as ShuffleCode, order, back.layout),
+      // What this method is CALLED. The raw code travels only as the stale-answer guard; a picture
+      // titled `f4` while every picker on every surface says `Method 4` is the naming defect this
+      // feature already paid for once, and the label is the only route back to a woven value.
+      methodName: methodLabel(code as ShuffleCode),
       visibleMs: words ? PHRASE_VISIBLE_MS : 0,
     };
   }
@@ -244,12 +321,18 @@ export class PaymentViewHost {
     view: PaymentCardView,
     fields: PaymentFields,
   ): Promise<void> {
+    // Sampled BEFORE the question, which is the long await on this path: the panel can render
+    // another entry while the modal is on screen, and that CLEARS the store — so an order read
+    // afterwards is a fresh draw, and the clipboard holds the row the person did not point at.
+    // The password host samples before its own await for exactly this reason. (Code review, S3.)
+    const order = this.deps.orders.orderFor(view.entityId, key);
     if (!view.woven.includes(key as PaymentFieldKey) || !(await this.grant(key, view))) {
       return;
     }
     const reading = readingFor(fields, view.form, key, code);
     if (reading !== undefined) {
-      await this.deps.copy(copyTextFor(reading, which, key));
+      const shown = displayed({ first: reading.real, second: reading.decoy }, order);
+      await this.deps.copy(copyTextFor(shown, which, key));
       // The same acknowledgement every other Copy in this viewer gets. Without it the one button
       // whose value cannot be seen in a box is also the one that never says it worked.
       this.deps.post({ type: 'copied', entityId: view.entityId, field: `${key}|${which}` });
@@ -336,4 +419,15 @@ function promptFor(key: string, view: PaymentCardView): string {
   return key === 'mixed'
     ? phraseRevealPrompt(view.wordCount)
     : revealPrompt(PAYMENT_FIELD_LABELS[key as PaymentFieldKey] ?? key);
+}
+
+/**
+ * Whether this card is actually showing the row that asked — a field of it, or a second value.
+ *
+ * <p>The refusal a message must meet before anything is read: a name this entry does not show must
+ * not be able to reach a value it holds. Its own function so `reveal` stays inside the complexity
+ * ceiling, and so the two lists are asked in one place rather than at each caller.</p>
+ */
+function shownHere(key: string, view: PaymentCardView): boolean {
+  return (view.seconds as readonly string[]).includes(key) || view.present.includes(key as PaymentFieldKey);
 }

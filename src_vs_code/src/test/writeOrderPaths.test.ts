@@ -47,6 +47,9 @@ const DELETES_WHEN_EMPTY = new Set([
   // which deletes. The typed setter is what callers use, so it is the one that has to be listed here.
   'setPayment',
   'setPaymentRaw',
+  // The same pair, for the same reason: `setSecond(undefined)` serializes to nothing and deletes.
+  'setSecond',
+  'setSecondRaw',
   'setConfigBody',
   'setAttachment',
   'setImage',
@@ -85,6 +88,7 @@ function recorder(): { calls: string[]; storage: Record<string, unknown> } {
     setNotes: note('setNotes'),
     setFields: note('setFields'),
     setPayment: note('setPayment'),
+    setSecond: note('setSecond'),
     setConfigBody: note('setConfigBody'),
     setAttachment: note('setAttachment'),
     setImage: note('setImage'),
@@ -150,6 +154,7 @@ test('the removals pass deletes and never writes a value', async () => {
     // claiming the record.
     'setPayment(delete)',
     'setConfigBody(delete)',
+    'setSecond(delete)',
   ]);
 });
 

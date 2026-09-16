@@ -177,6 +177,15 @@ export interface EntityMetadata {
    */
   passwordWoven?: boolean;
   /**
+   * The woven password's second half is the person's OWN value, not a decoy this build made up.
+   *
+   * <p>Only ever true beside `passwordWoven`, and cleared with it — a mark describing a weave that no
+   * longer exists is worse than none, because this one is read where a leak is counted: a woven
+   * password whose partner half is real costs TWO secrets rather than one, and the share and the
+   * export have to be able to know that.</p>
+   */
+  passwordSecondOwn?: boolean;
+  /**
    * This entry's secrets are wrapped under a PIN of its own — a MIRROR of the wrap, not the truth
    * about it. The truth is inside each value, where `readSecret` finds it; this exists because the
    * agent surfaces answer synchronously and cannot read a keychain per entry per listing. It fails
@@ -622,3 +631,15 @@ export interface SentShare {
  * build or another person wrote. No caller had to move.</p>
  */
 export * from './typeGuards';
+
+/**
+ * And `withOwnId`, for the same reason and by the same route.
+ *
+ * <p>It is not a guard — it repairs one thing a guard cannot see, a node whose record names a
+ * different id — but it runs at the same door, on the same data another build wrote, and its
+ * callers are `storageManager` and `shareInbox`, both of which already import from here. Re-exported
+ * rather than imported directly because `storageManager.ts` is under the size ratchet
+ * (`.size-baseline.json`): an exempted file may shrink and never grow, and an import line is growth.
+ * The rationale lives at the definition, in `nodeOwnId.ts`.</p>
+ */
+export * from './nodeOwnId';

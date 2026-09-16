@@ -94,6 +94,13 @@ the workflows, and because "merged" reads like "shipped" until you check.
 
 All four are `.github/workflows/release.yml`, triggered on `tags:`.
 
+**An extension release bumps TWO files, not one.** `src_vs_code/package.json` and
+`src_vs_code/package-lock.json` both carry the version — the lock in two places, its top level and
+its `packages[""]` entry. `npm ci` checks the lock's *dependencies* against the manifest and says
+nothing about the project's own version, so bumping one and not the other installs perfectly and is
+silently wrong; it drifted for fourteen releases, 0.98.0 against a shipped 1.7.0. `lockfileVersion.test.ts`
+is now the forcing function, so forgetting costs a red suite rather than a wrong lock file.
+
 **A push to `main` publishes nothing deployable.** `ci · server` green triggers `docker image`,
 which pushes `edge` and `sha-<commit>` — useful for a probe, but the deploy takes a **version**,
 so those tags never reach the host on their own.

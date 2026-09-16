@@ -1,5 +1,5 @@
 import { DecoyKind, Random, generateDecoy } from './decoyDigits';
-import { ShuffleCode, Slot, isShuffleCode, shuffleLayout } from './shuffle';
+import { ShuffleCode, Slot, isShuffleCode, methodLabel, shuffleLayout } from './shuffle';
 import { SHUFFLEABLE_KEYS, ShuffleableKey } from './paymentFields';
 
 /**
@@ -36,7 +36,16 @@ export function exampleAnswer(field: string, code: string, random: Random): Reco
   if (!isExampleField(field) || !isShuffleCode(code)) {
     return undefined;
   }
-  return { type: 'weaveExampleResult', ...weaveExample(field, code, random) };
+  // `methodName` BESIDE `method`, not instead of it: the raw code is what the page compares against
+  // its picker to drop a stale answer, and the name is what a person is shown. The two had been one
+  // field, so every example was titled `f4` while every picker on every surface said `Method 4` —
+  // and the label is the only route back to a woven value, which is why `shuffle.ts` calls a picker
+  // that names a method by anything but its code's own label the worst defect this feature can have.
+  return {
+    type: 'weaveExampleResult',
+    ...weaveExample(field, code, random),
+    methodName: methodLabel(code),
+  };
 }
 
 /** One token of the woven row, and which half it came from — the colour the page paints it. */

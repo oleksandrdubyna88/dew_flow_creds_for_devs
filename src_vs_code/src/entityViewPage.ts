@@ -26,7 +26,11 @@ import { BINDABLE_FIELDS, BindableField } from './envBinding';
 import { TotpSnapshot } from './totp';
 import { PaymentFields } from './paymentFields';
 import { PaymentCardView } from './paymentViewMessages';
-import { paymentCardMarkup, paymentCardScript } from './paymentViewCard';
+import { SECOND_LABELS, SecondValues } from './secondValues';
+import { viewWeaveScripts } from './viewWeaveScripts';
+import { paymentCardMarkup } from './paymentViewCard';
+import { wovenViewNote } from './generalNotes';
+import { PAYMENT_FIELD_LABELS } from './paymentFields';
 import { WOVEN_ROW_NOTE, wovenRowMarkup } from './wovenRow';
 import { methodOrder } from './phraseLayout';
 import { entityViewStyles } from './entityViewStyles';
@@ -64,6 +68,8 @@ export interface EntityViewOptions {
   /** The text-zoom offset (T28), from `credSshManager.uiScale`. */
   uiScale?: number;
   hasPassword: boolean;
+  /** Whether a SECOND password is stored (#52) — the fact, never the value. */
+  hasSecondPassword?: boolean;
   hasPrivateKey: boolean;
   hasVpnConfig: boolean;
   hasDbConnection: boolean;
@@ -120,6 +126,8 @@ export interface EntityViewOptions {
   payment?: PaymentCardView;
   /** The whole payment record, host-side only. The page never receives it. */
   resolvePayment?: () => Thenable<PaymentFields>;
+  /** The entry's second values, read per request for the same reason the record is (#52). */
+  resolveSecond?: () => Thenable<SecondValues>;
   copyAllText: () => Promise<string>;
   /** Save-As flow for the VPN config (the row's button is a download). */
   saveVpnConfig: () => Promise<void>;
@@ -431,6 +439,12 @@ export function renderEntityViewHtml(options: EntityViewOptions): string {
       ? ''
       : `<div class="row"><label>Lifetime</label><div class="value">${escapeHtml(options.lifetime)}</div></div>`;
   const mainRows = [
+    // Said once, in Main, for every kind of entry — a payment record's woven fields are drawn in
+    // the Payment instrument frame, and "is this entry woven" should have one place to look.
+    wovenViewNote(
+      d.passwordWoven === true,
+      (options.payment?.woven ?? []).map((key) => PAYMENT_FIELD_LABELS[key]),
+    ),
     row('Name', 'name', d.name),
     lifetimeRow,
     row('Login', 'login', options.fields?.login),
@@ -439,6 +453,9 @@ export function renderEntityViewHtml(options: EntityViewOptions): string {
     row('User', 'user', d.user),
     row('Port', 'port', d.port !== undefined ? String(d.port) : undefined),
     d.passwordWoven === true ? wovenPasswordRow(d.id) : row('Password', 'password', options.hasPassword ? '•' : undefined, true),
+    // A second password the person typed (#52). A WOVEN one has no row: that half lives inside the
+    // woven string, and both halves come back together from the method picker above.
+    row(SECOND_LABELS.password2, 'second_password2', options.hasSecondPassword === true ? '•' : undefined, true),
     // The code is filled in by the host after load (see the `totp` message) and redrawn as
     // it expires; the seed is not in this HTML and never will be.
     ...(options.totp !== undefined
@@ -776,7 +793,7 @@ export function renderEntityViewHtml(options: EntityViewOptions): string {
     }, 250);
     askForCode();
   }
-  ${paymentCardScript()}
+  ${viewWeaveScripts()}
 </script>
 </body>
 </html>`;

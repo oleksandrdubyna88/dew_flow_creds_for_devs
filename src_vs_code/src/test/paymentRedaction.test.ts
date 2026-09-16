@@ -170,11 +170,11 @@ test('the export warning says how many FIELDS across how many RECORDS, because e
 
 test('the export note is silent when there is nothing to warn about, and precise when there is', () => {
   assert.equal(exportSensitiveNote({ records: 0, fields: 0 }), '', 'no sentence at all rather than a reassuring one');
-  assert.match(exportSensitiveNote({ records: 1, fields: 1 }), /1 CVV or PIN across 1 payment record\b/);
-  assert.match(exportSensitiveNote({ records: 2, fields: 3 }), /3 CVV\/PIN values across 2 payment records/);
+  assert.match(exportSensitiveNote({ records: 1, fields: 1 }), /1 value a share would remove, across 1 entry\b/);
+  assert.match(exportSensitiveNote({ records: 2, fields: 3 }), /3 values a share would remove, across 2 entries/);
   assert.match(
     exportSensitiveNote({ records: 1, fields: 1 }),
-    /a share removes those, an export does not/,
+    /an export keeps them/,
     'the asymmetry is the whole reason the sentence exists',
   );
 });

@@ -42,7 +42,7 @@ const PHRASE_KEYS = ['wordlistFirst', 'wordlistSecond', 'layout'] as const;
 
 /** Keys holding a list of tokens rather than one value. `mixed` is the woven phrase, kept as an
  *  ARRAY and never as a joined string — plan §5.1 keeps it out of every layer that can hold one. */
-const TOKEN_LIST_KEYS = ['mixed', 'shuffledFields'] as const;
+const TOKEN_LIST_KEYS = ['mixed', 'shuffledFields', 'ownSecond'] as const;
 
 const FLAG_KEYS = ['ownWords'] as const;
 
@@ -154,6 +154,16 @@ export interface PaymentFields {
    * it against `PAYMENT_FIELD_KEYS`.</p>
    */
   shuffledFields?: readonly string[];
+  /**
+   * Which of the woven fields were woven with the person's OWN second value rather than a decoy.
+   *
+   * <p>Always a SUBSET of `shuffledFields` — a name here for a field that is not woven describes
+   * nothing, and `pruneMarks` enforces the subset in both directions the way it already does for the
+   * parent list. It is a fact about what is STORED rather than a preference: a leak of a woven field
+   * whose partner half is real costs two secrets instead of one, so a reader of the record has to be
+   * able to learn which those are.</p>
+   */
+  ownSecond?: readonly string[];
 }
 
 /** How each field is named on screen. */
@@ -185,6 +195,7 @@ export const PAYMENT_FIELD_LABELS: Record<PaymentFieldKey, string> = {
   ownWords: 'Second column is my own words',
   mixed: 'Woven phrase',
   shuffledFields: 'Mixed fields',
+  ownSecond: 'Woven with my own second value',
 };
 
 const FORM_KEYS: Readonly<Record<PaymentForm, readonly PaymentFieldKey[]>> = {
@@ -274,6 +285,10 @@ export function pickPaymentFields(value: unknown): PaymentFields {
 function pruneMarks(out: Record<string, unknown>): void {
   const marks = out.shuffledFields;
   if (!Array.isArray(marks)) {
+    // No woven fields at all, so nothing can be woven with an own second value either. Said here
+    // rather than left to the line below, because a record carrying `ownSecond` alone would describe
+    // a field it does not have.
+    delete out.ownSecond;
     return;
   }
   const withValues = marks.filter((name) => holdsWovenValue(out[name as string]));
@@ -281,6 +296,28 @@ function pruneMarks(out: Record<string, unknown>): void {
     delete out.shuffledFields;
   } else {
     out.shuffledFields = withValues;
+  }
+  pruneOwnSecond(out, withValues);
+}
+
+/**
+ * `ownSecond` is a SUBSET of `shuffledFields`, in both directions and always.
+ *
+ * <p>A name here for a field that is not woven describes nothing — and it would describe it
+ * expensively, because this mark is what the share and the export read to know that a leak of that
+ * field costs two real secrets rather than one. The parent list is pruned against the values it
+ * names; this is pruned against the parent.</p>
+ */
+function pruneOwnSecond(out: Record<string, unknown>, woven: readonly unknown[]): void {
+  const own = out.ownSecond;
+  if (!Array.isArray(own)) {
+    return;
+  }
+  const kept = own.filter((name) => woven.includes(name));
+  if (kept.length === 0) {
+    delete out.ownSecond;
+  } else {
+    out.ownSecond = kept;
   }
 }
 
@@ -370,7 +407,7 @@ export function serializePaymentFields(fields: PaymentFields | undefined): strin
   return hasAnyValue(picked) ? JSON.stringify(picked) : undefined;
 }
 
-const META_KEYS: readonly string[] = ['shuffledFields'];
+const META_KEYS: readonly string[] = ['shuffledFields', 'ownSecond'];
 
 function hasAnyValue(picked: PaymentFields): boolean {
   return Object.keys(picked).some((key) => !META_KEYS.includes(key));

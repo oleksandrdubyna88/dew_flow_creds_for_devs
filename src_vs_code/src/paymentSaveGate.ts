@@ -4,7 +4,11 @@ import { brandFor, cardFieldsFrom, cardInputsFrom, withBrand } from './cardFormF
 import { switchWarning } from './paymentFormSwitch';
 import { validatePayment } from './paymentValidation';
 import { ShuffleCode, isShuffleCode } from './shuffle';
-import { weavePaymentFields } from './paymentWeaving';
+import { weavePaymentFields, weavingNow } from './paymentWeaving';
+import { PAYMENT_FORM, secondInputFrom, secondsForWeave } from './secondFormInput';
+import { refuseSecondPairs } from './secondSave';
+import { PAYMENT_FIELD_LABELS } from './paymentFields';
+import type { WeavePoint } from './secondValues';
 import { confirmDestructive, refuse } from './dialogs';
 import { PhraseInput, phraseInputFrom, phraseRecordFor, phraseRefusalFor } from './phraseSaveGate';
 import { phraseSaveWarning } from './phraseLayout';
@@ -119,7 +123,15 @@ export function paymentRecordFor(data: Record<string, unknown>, chosen: string):
   //
   // The brand is derived above, from the number BEFORE it is woven. That is the whole reason it is a
   // stored field: after weaving there is no number to read it from (§3a).
-  return weavePaymentFields(kept, markedFields(data), codesFor(data), Math.random);
+  return weavePaymentFields(
+    kept,
+    markedFields(data),
+    codesFor(data),
+    Math.random,
+    // The halves the person typed, for the fields whose form is on `own`. Empty for every other
+    // field, and `weaveOne` draws a decoy for those exactly as it always has.
+    secondsForWeave(secondInputFrom(data, {}, paymentWeavingNow(data, chosen), [PAYMENT_FORM])),
+  );
 }
 
 /** Which boxes the person ticked. Anything the record cannot weave is ignored by the weaver itself. */
@@ -146,6 +158,52 @@ function codesFor(data: Record<string, unknown>): Record<string, ShuffleCode> {
       return isShuffleCode(code) ? [[field, code] as const] : [];
     }),
   );
+}
+
+
+/**
+ * The payment fields this save is about to weave — marked, and not woven already.
+ *
+ * <p>The SAME function the weaver itself uses, rather than a filter written to agree with it — a
+ * reviewer's point, and the right one: a field the weaver consumed and the record kept would leave a
+ * reader the half to subtract, and two filters written to agree are two filters that can stop
+ * agreeing.</p>
+ */
+export function paymentWeavingNow(data: Record<string, unknown>, chosen: string): readonly WeavePoint[] {
+  // Through the CHOSEN form's filter first, which is what `paymentRecordFor` does before it weaves.
+  // A form switch leaves the old form's ticks in the message — `confirmFormSwitch` asks the question
+  // and changes nothing — so without this the gate could refuse a save over a field it was about to
+  // discard. A false refusal is the worse of the two failures: nothing is at risk and the person
+  // simply cannot save. Raised by the automated reviewer.
+  return weavingNow(clearForForm(cardFieldsFrom(data), formOf(chosen)), markedFields(data), codesFor(data));
+}
+
+/**
+ * The gate that judges the typed halves, BEFORE the checksums.
+ *
+ * <p>The order is the plan's and it matters: a refused pair must mean nothing was woven, rather than
+ * a card woven under a method whose partner was then rejected. A refusal costs the person nothing —
+ * the panel keeps its state, so every typed value is where they left it, and no decoy has been drawn
+ * because `paymentRecordFor` is the only thing that draws one.</p>
+ */
+export function confirmSecondPairs(data: Record<string, unknown>, chosen: string): boolean {
+  const refusal = secondPairRefusal(data, chosen);
+  if (refusal === '') {
+    return true;
+  }
+  // A refusal, not a question. A mismatched pair is the owner's decision 4 — the save does not
+  // happen — so there is nothing to confirm, and the form keeps every typed value where it was.
+  refuse(refusal);
+  return false;
+}
+
+export function secondPairRefusal(data: Record<string, unknown>, chosen: string): string {
+  if (formOf(chosen) === 'phrase') {
+    return '';
+  }
+  const typed = cardFieldsFrom(data);
+  const input = secondInputFrom(data, {}, paymentWeavingNow(data, chosen), [PAYMENT_FORM]);
+  return refuseSecondPairs(typed as Record<WeavePoint, string>, PAYMENT_FIELD_LABELS, input);
 }
 
 /** The chosen form, defaulted — the same fallback the metadata field gets. */
@@ -183,6 +241,7 @@ export async function paymentGates(
   const chosen = textOf(data.paymentForm);
   return (
     (await confirmFormSwitch(chosen, context))
+    && confirmSecondPairs(data, chosen)
     && (await confirmChecksums(data, chosen))
     && (await confirmPhrase(data, chosen))
   );

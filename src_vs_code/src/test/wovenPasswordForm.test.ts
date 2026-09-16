@@ -5,7 +5,13 @@ import { wovenFormScript } from '../wovenFormScript';
 import { cardFormScript } from '../cardFormScript';
 import { phraseFormScript } from '../phraseFormScript';
 import { formPageScript } from '../entityFormScript';
-import { weaveExamplePainterScript } from '../weaveExampleScript';
+import {
+  SECOND_COLUMN_LABEL,
+  WEAVE_EXAMPLE_STYLES,
+  weaveExamplePainterScript,
+} from '../weaveExampleScript';
+import { formStyleSheet } from '../entityFormStyles';
+import { entityViewStyles } from '../entityViewStyles';
 import { MiniDocument, runFragment } from './miniDom';
 import { EntityFormOptions } from '../entityFormPanel';
 import { EntityMetadata } from '../types';
@@ -15,7 +21,9 @@ import { weaveSecret } from '../wovenSecret';
 import { automaticRefusal } from '../envApply';
 import { wovenSave } from '../wovenPasswordSave';
 import { shareableDetails } from '../shareFormat';
+import { exampleAnswer } from '../weaveExample';
 import { EntityViewOptions, renderEntityViewHtml } from '../entityViewPage';
+import { RowOrderStore } from '../rowFlip';
 
 const viewOptions = (details: Partial<EntityMetadata>): EntityViewOptions =>
   ({
@@ -148,6 +156,7 @@ test('a Show is answered with the two readings, and NEITHER is marked', async ()
     read: () => Promise.resolve(stored),
     post: (m) => posted.push(m as Record<string, unknown>),
     copy: () => Promise.resolve(),
+    orders: new RowOrderStore(() => 0.1),
   });
 
   assert.equal(posted.length, 1);
@@ -159,6 +168,128 @@ test('a Show is answered with the two readings, and NEITHER is marked', async ()
   assert.ok(!/real|decoy/i.test(JSON.stringify(answer)));
 });
 
+/**
+ * The same defect on the password's own path, which never passes through the card's host.
+ *
+ * <p>`weaveSecret` weaves the password as the first column and `unweaveSecret` gives it back as
+ * `first`, so row one was the password under every correct method. Both of these fail against that
+ * build.</p>
+ */
+test('a woven password’s first row is not always the password', async () => {
+  const posted: Record<string, unknown>[] = [];
+  const stored = weaveSecret('hunter2!', SHUFFLE_CODES[3], () => 0.37);
+  const asRead: Record<string, unknown>[] = [];
+
+  await handleWovenPassword('reassemble', `password|${SHUFFLE_CODES[3]}`, {
+    entityId: () => 'e1',
+    read: () => Promise.resolve(stored),
+    post: (m) => asRead.push(m as Record<string, unknown>),
+    copy: () => Promise.resolve(),
+    orders: new RowOrderStore(() => 0.1),
+  });
+  await handleWovenPassword('reassemble', `password|${SHUFFLE_CODES[3]}`, {
+    entityId: () => 'e1',
+    read: () => Promise.resolve(stored),
+    post: (m) => posted.push(m as Record<string, unknown>),
+    copy: () => Promise.resolve(),
+    orders: new RowOrderStore(() => 0.9),
+  });
+
+  assert.deepEqual(asRead[0].first, [...'hunter2!'], 'one order puts the password in row one');
+  assert.deepEqual(posted[0].second, [...'hunter2!'], 'and the other puts it in row two');
+  assert.notDeepEqual(asRead[0].first, posted[0].first, 'which is the whole of the change');
+});
+
+test('a Copy of a woven password’s row follows the order the rows were shown in', async () => {
+  const copied: string[] = [];
+  const posted: Record<string, unknown>[] = [];
+  const stored = weaveSecret('hunter2!', SHUFFLE_CODES[3], () => 0.37);
+  // ONE store across the Show and the Copy, which is what the panel hands both calls.
+  const orders = new RowOrderStore(() => 0.9);
+  const deps = {
+    entityId: () => 'e1',
+    read: () => Promise.resolve(stored),
+    post: (m: unknown) => posted.push(m as Record<string, unknown>),
+    copy: (t: string) => { copied.push(t); return Promise.resolve(); },
+    orders,
+  };
+
+  await handleWovenPassword('reassemble', `password|${SHUFFLE_CODES[3]}`, deps);
+  await handleWovenPassword('copyReading', `password|a|${SHUFFLE_CODES[3]}`, deps);
+
+  assert.equal(copied.length, 1, 'exactly one copy reached the clipboard');
+  assert.equal(copied[0], (posted[0].first as string[]).join(''), 'the clipboard is the row on screen');
+  assert.notEqual(copied[0], 'hunter2!', 'which under this order is not the password');
+});
+
+/**
+ * The narrow window a code round found: the panel re-renders WHILE the keychain is answering.
+ *
+ * <p>`show()` clears the store, so an order read after the await would be a fresh draw — and the
+ * Copy would hand over the row this page is not showing. The order is sampled before the read, next
+ * to the entity id, which is sampled before the read for the very same reason.</p>
+ */
+test('a Copy that arrives as the panel re-renders still follows the order the rows were shown in', async () => {
+  const copied: string[] = [];
+  const stored = weaveSecret('hunter2!', SHUFFLE_CODES[3], () => 0.37);
+  // SCRIPTED: swapped first, as-read after the clear. A store whose random always answers the same
+  // would redraw to the same order and this test would pass against the bug it exists for.
+  const draws = [0.9, 0.1];
+  let at = 0;
+  const orders = new RowOrderStore(() => draws[Math.min(at++, draws.length - 1)] ?? 0);
+  let release = (): void => undefined;
+  const held = new Promise<string>((resolve) => {
+    release = (): void => resolve(stored);
+  });
+  const deps = (read: () => Thenable<string | undefined>) => ({
+    entityId: () => 'e1',
+    read,
+    post: () => undefined,
+    copy: (t: string) => { copied.push(t); return Promise.resolve(); },
+    orders,
+  });
+
+  // The rows are SHOWN first — that is what puts an order in the store for the copy to follow.
+  await handleWovenPassword('reassemble', `password|${SHUFFLE_CODES[3]}`, deps(() => Promise.resolve(stored)));
+  const answered = handleWovenPassword('copyReading', `password|a|${SHUFFLE_CODES[3]}`, deps(() => held));
+  // The panel loads another entry mid-read — exactly what the shared preview tab does on a click.
+  orders.clear();
+  release();
+  await answered;
+
+  assert.equal(copied.length, 1, 'exactly one copy reached the clipboard');
+  // The order in force when the rows were drawn was `swapped`, so row a held the other reading.
+  // Reading the order after the clear would have drawn `as-read` and copied the password instead —
+  // the row the person did not point at.
+  assert.notEqual(copied[0], 'hunter2!', 'the copy followed the order the rows were shown in');
+  assert.equal(at, 1, 'and exactly one draw happened: the clear did not cause a second');
+});
+
+test('a woven password’s answer carries its picture, tagged by the row each character is in', async () => {
+  const posted: Record<string, unknown>[] = [];
+  const stored = weaveSecret('hunter2!', SHUFFLE_CODES[3], () => 0.37);
+
+  await handleWovenPassword('reassemble', `password|${SHUFFLE_CODES[3]}`, {
+    entityId: () => 'e1',
+    read: () => Promise.resolve(stored),
+    post: (m) => posted.push(m as Record<string, unknown>),
+    copy: () => Promise.resolve(),
+    orders: new RowOrderStore(() => 0.9),
+  });
+
+  const answer = posted[0];
+  const rows = { first: answer.first as string[], second: answer.second as string[] };
+  const woven = answer.woven as { text: string; side: 'first' | 'second' }[];
+  assert.equal(woven.length, stored.length, 'one painted token per stored character');
+  for (const token of woven) {
+    const claimed = token.side === 'first' ? rows.first : rows.second;
+    assert.ok(claimed.includes(token.text), `${token.text} is painted as the ${token.side} row, which lacks it`);
+  }
+  assert.equal(answer.methodName, 'Method 4', 'named as a person sees it, never as f4');
+  // The existing rule, now covering the two new fields for free.
+  assert.ok(!/real|decoy/i.test(JSON.stringify(answer)));
+});
+
 test('a method this build has no name for is refused, and says nothing was changed', async () => {
   const posted: Record<string, unknown>[] = [];
 
@@ -167,6 +298,7 @@ test('a method this build has no name for is refused, and says nothing was chang
     read: () => Promise.resolve('abcdef'),
     post: (m) => posted.push(m as Record<string, unknown>),
     copy: () => Promise.resolve(),
+    orders: new RowOrderStore(() => 0.1),
   });
 
   assert.equal(posted[0].ok, false);
@@ -190,6 +322,7 @@ test('the answer is stamped with the entry that ASKED, not the one on screen whe
     read: () => held,
     post: (m) => posted.push(m as Record<string, unknown>),
     copy: () => Promise.resolve(),
+    orders: new RowOrderStore(() => 0.1),
   });
   onScreen = 'b'; // the person clicked another entry while the read was in flight
   release();
@@ -212,12 +345,13 @@ test('a copy is stamped the same way, for the same reason', async () => {
     read: () => held,
     post: (m) => posted.push(m as Record<string, unknown>),
     copy: (t) => { copied.push(t); return Promise.resolve(); },
+    orders: new RowOrderStore(() => 0.1),
   });
   onScreen = 'b';
   release();
   await answered;
 
-  assert.equal(copied.length, 1);
+  assert.equal(copied.length, 1, 'exactly one copy reached the clipboard');
   assert.equal(posted[0].entityId, 'a', 'the acknowledgement belongs to the entry that asked');
 });
 
@@ -227,6 +361,7 @@ test('a message that is not the password is not this host business', async () =>
     read: () => Promise.resolve('abcd'),
     post: () => undefined,
     copy: () => Promise.resolve(),
+    orders: new RowOrderStore(() => 0.1),
   });
 
   assert.equal(taken, false, 'the payment host owns that one');
@@ -432,4 +567,135 @@ test('a host that is not on this form is silence, not a thrown page script', () 
     painterOf(document).paintExample('mixExample' as never, 'cvv' as never, 't' as never, answerOf() as never);
   });
   assert.equal(document.querySelectorAll('.weaveEx').length, 0);
+});
+
+/**
+ * The second column's caption belongs to the CALLER, because the viewer has to replace it.
+ *
+ * <p>The form's picture is drawn on two values the host made up, so "The decoy it is woven with" is
+ * true there. The viewer draws the same picture over the two rows of a real reading, which it
+ * refuses to tell apart — printing "decoy" over one of them would answer, in a caption, the one
+ * question the whole row design exists not to answer.</p>
+ */
+test('the second column is captioned by the caller when it says so, and as the form’s decoy when it does not', () => {
+  const document = new MiniDocument();
+  document.place('weaveExampleHost');
+  document.place('mixExample');
+
+  painterOf(document).paintExample(
+    'weaveExampleHost' as never,
+    'password' as never,
+    'Method 1' as never,
+    answerOf() as never,
+    'First row' as never,
+    'Second row' as never,
+  );
+  painterOf(document).paintExample(
+    'mixExample' as never,
+    'cvv' as never,
+    'Method 1' as never,
+    answerOf() as never,
+  );
+
+  const chosen = document.querySelector('.weaveEx[data-field="password"]');
+  const defaulted = document.querySelector('.weaveEx[data-field="cvv"]');
+  assert.ok(chosen !== null && defaulted !== null, 'both blocks were painted');
+  assert.match(chosen.textContent, /Second row/, 'the caller’s caption is used');
+  assert.ok(
+    !new RegExp(SECOND_COLUMN_LABEL).test(chosen.textContent),
+    'and the word decoy never appears over a row the viewer will not tell apart',
+  );
+  assert.match(
+    defaulted.textContent,
+    new RegExp(SECOND_COLUMN_LABEL),
+    'a caller that says nothing still gets the form’s sentence, unchanged',
+  );
+});
+
+/**
+ * An EMPTY caption is a caller saying "no heading", not a caller saying nothing.
+ *
+ * <p>Found by the code round. `||` cannot tell those apart, so a blank caption printed "The decoy it
+ * is woven with" — the exact sentence this parameter exists to keep off the viewer's screen, arriving
+ * by the one route nobody would test. Only an absent caption may fall back.</p>
+ */
+test('an empty caption leaves the column unheaded — it never falls back to the word decoy', () => {
+  const document = new MiniDocument();
+  document.place('weaveExampleHost');
+
+  painterOf(document).paintExample(
+    'weaveExampleHost' as never,
+    'password' as never,
+    'Method 1' as never,
+    answerOf() as never,
+    'First row' as never,
+    '' as never,
+  );
+
+  const block = document.querySelector('.weaveEx[data-field="password"]');
+  assert.ok(block !== null, 'the block was painted');
+  assert.ok(
+    !new RegExp(SECOND_COLUMN_LABEL).test(block.textContent),
+    'a blank caption must not be answered with the decoy sentence',
+  );
+});
+
+/**
+ * One definition of the colours, reaching both sheets.
+ *
+ * <p>No behaviour changes here — the rules are the same bytes in the same places on screen. What
+ * changes is that there is one copy of them. Issue #51 was two painters and one set of rules; two
+ * sets of rules and one painter is the same defect wearing the other hat.</p>
+ */
+test('the picture’s colours are defined once and reach both stylesheets', () => {
+  const form = formStyleSheet(1);
+  // The VIEWER'S OWN sheet, not the card fragment it happens to be assembled from. Asserting
+  // paymentCardStyles() here would keep passing on the day somebody made that inclusion
+  // conditional, and the picture would lose every colour for a woven password — which is not a
+  // payment record at all. (Code review, S1.)
+  const viewer = entityViewStyles(1);
+
+  assert.ok(form.includes(WEAVE_EXAMPLE_STYLES), 'the form draws the picture with the shared rules');
+  assert.ok(viewer.includes(WEAVE_EXAMPLE_STYLES), 'and the viewer’s sheet carries them too');
+  for (const [name, sheet] of [['form', form], ['viewer', viewer]] as const) {
+    assert.equal(
+      sheet.split('.weaveEx .exTok.first').length - 1,
+      1,
+      `the ${name} sheet carries the token colour exactly once — twice means a copy came back`,
+    );
+  }
+});
+
+/**
+ * The example is titled with the method's NAME, on all THREE form surfaces.
+ *
+ * <p>The plan named two of them. There are three — the card's, the password's and the phrase's —
+ * and fixing two would have left the phrase form saying `f4` while its own picker said `Method 4`.
+ * `shuffle.ts` records why that is the worst defect this feature can carry: the label is the only
+ * route back to a woven value, so a surface that names a method differently from the picker the
+ * person chose it in can cost them the value.</p>
+ */
+test('every form titles its example with the method NAME, and none with the raw code', () => {
+  const scripts = {
+    card: cardFormScript(),
+    password: wovenFormScript(),
+    phrase: phraseFormScript(),
+  };
+
+  for (const [surface, script] of Object.entries(scripts)) {
+    assert.match(script, /answer\.methodName/, `${surface}: the title is the name`);
+    assert.ok(
+      !/' — ' \+ answer\.method\b(?!Name)/.test(script),
+      `${surface}: and never the raw code in a title`,
+    );
+    // The companion: the raw code is STILL read, because it is what the stale-answer guard compares.
+    assert.match(script, /answer\.method !==/, `${surface}: the guard still compares the code`);
+  }
+});
+
+test('the example answer carries the method’s name beside its code', () => {
+  const answer = exampleAnswer('password', SHUFFLE_CODES[3], () => 0.42) as Record<string, unknown>;
+
+  assert.equal(answer.methodName, 'Method 4', 'named as every picker names it');
+  assert.equal(answer.method, SHUFFLE_CODES[3], 'and the code is still there for the stale guard');
 });

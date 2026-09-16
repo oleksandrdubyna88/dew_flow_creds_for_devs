@@ -299,7 +299,7 @@ tombstoned, which the sweep deliberately refuses to touch: the deletion is merel
 | edit (`entityEditCommands`) | additions → node → removals | the case a single call cannot serve |
 | delete (`storageManager`) | tombstone → node → secrets | Rule B |
 | **restore / sync-apply (`importBundle`)** | **secrets → record vanishing → tree → drop-vanished → clear** | had it backwards in BOTH halves; the record is LOCAL, not a tombstone |
-| share accept (`shareInbox`) | node, then secrets — a fresh id, so nothing pre-exists to claim | |
+| share accept (`shareInbox`) | node, then secrets — a fresh id, so nothing pre-exists to claim | the fresh id must reach `details.id` too — see *An arriving entry must NAME ITSELF* |
 | **import (`importCommands`)** | **secrets → node, per entity, compensated** | inverted; every entry in a file had its own window |
 | **agent create (`mcpHooks`)** | **secret → node, compensated** | the secret may have been GENERATED here, so a lost one is a value nobody asked for |
 | **account removal (`storageManager`)** | **record intent → unlist → secrets → tree/tombstones/horizon → clear** | the record is LOCAL. See `pendingCleanup.ts` |
@@ -639,7 +639,7 @@ The same audit found a third: `shareInbox`'s "the one REMOVAL on this path" call
 `setPassword(undefined)`, which **keeps**. For as long as that line existed, a sender who deleted a
 password and re-shared as an update left the old credential on the recipient's machine.
 
-##### `secretMaps.ts` — the eleven rows, out of the class that used them
+##### `secretMaps.ts` — the twelve rows, out of the class that used them
 
 `SECRET_KINDS`, `SecretMapKey`, `SecretMaps` and `emptySecretMaps` moved out of `storageManager.ts`
 in S1.4. Five other files carry lists that must AGREE with this table (below), and a shared truth
@@ -667,6 +667,177 @@ Only one of these is caught by a test today, and it is worth copying rather than
 `syncManager.test.ts` derives its slot list from `emptySnapshot()` **at run time**, so a new slot is
 covered by construction — that test is the only reason the vault read-back was noticed, and its own
 comment says it was written for exactly this. The other three needed a reviewer.
+
+#### The twelfth kind: a second value the person typed (#52)
+
+The weave has always had two halves. Until now the other one was a DECOY this product generated, and
+the person never saw it. #52 asks for the half to be theirs — two passwords, two seed phrases, "seed
+1, seed 2, password 1, password 2" — and for a second value to be kept, encrypted, even when the
+field is NOT woven. That second half is what `secondValues.ts` stores.
+
+**One record under one key** (`secondValues.ts`, suffix `:second`), keyed `password2`, `number2`,
+`cvv2`, `pin2`, `iban2`, `accountNumber2`. Six keys and one secret kind, for the reason the payment
+record states about its own: a seventh second value one day is a key in this object rather than
+another pass through the files a secret kind touches. The keys are **derived** from the weave points
+by a template-literal type (`SecondKey = \`${WeavePoint}2\``) so the two lists cannot drift, and the
+way back is a total `Record` rather than `key.slice(0, -1)` — which works until a weave point ends in
+a digit and is then wrong silently.
+
+**What is deliberately NOT in it is the point.** A second value that was WOVEN is not here. It lives
+inside the woven string and nowhere else, because storing it beside the pair would hand any reader of
+the vault the half to subtract, and the twelve methods would stop being twelve — they would stop
+being anything. So this record holds the second values of fields kept in the CLEAR, and the save is
+what enforces it (`secondRecordFor`, PR B).
+
+**The method is still stored nowhere.** `ownSecond` and `passwordSecondOwn` are marks of the same
+kind as `shuffledFields` and `passwordWoven`: they say a field's partner was the person's own value.
+They do not say what that value was, and nothing anywhere says how it was woven.
+
+**Five lists again, and the repository caught the same omission for the fifth time.** The table row
+and the `ProfileSnapshot` field landed in one commit, as the section above insists; the vault
+read-back in `syncManager.ts` did not, and `syncManager.test.ts` — which derives its slot list from
+`emptySnapshot()` at run time — turned red for it. That comment now records five forgettings and one
+test that has caught three of them. `secondSurvival.test.ts` drives the dangerous direction that has
+no test elsewhere: the legacy side's edit WINS, so its snapshot, which has no seconds record at all,
+is the one the merge reads first. Watched failing with the guard removed: *"Cannot read properties of
+undefined (reading 'e1')"*.
+
+**The pair rule** (`secondPair.ts`) decides whether two TYPED halves can be woven: the same number of
+characters counted in CODE POINTS, not identical, and drawing on the same character classes. The
+class comparison reuses `classesUsed` from the decoy generator, which is the whole argument for it —
+a generated decoy is BUILT to match the original's class set so that neither half can be picked out
+by inspection, and a typed pair that does not match on the same terms loses that property. It is not
+a checksum demand: a typed second card number that fails Luhn is the person's business.
+
+Two review rounds shaped that rule, and both were right:
+
+- *"A password-shaped class check will refuse every card."* It does not — the comparison is between
+  the two typed values, so two card numbers are digits on both sides and nothing is refused. There is
+  a test whose only job is to keep that prediction answered.
+- *"A stranger character is its own class, so two Cyrillic passwords have two different class
+  sets."* This one was a real defect and a bad one: unless the halves were spelled with the very same
+  letters — which the identical-halves rule forbids anyway — the check refused **every pair a Russian
+  or Ukrainian speaker could type**, in a product whose help ships in five languages including both.
+  The generated decoy never hit it, because its alphabet is built from the original's own characters.
+  A stranger is now ONE class. What that gives up is a pair written in two DIFFERENT non-Latin
+  scripts, which is separable on sight; naming a script needs a table of every script there is, and
+  one always an alphabet out of date would refuse real pairs for a case nobody types by accident.
+
+**A second value is stored exactly as typed.** The record used to trim, and the woven path does not —
+so the same keystrokes made two different secrets depending on a box ticked elsewhere, and the
+altered one simply would not work. Whitespace now decides only whether there is a value at all.
+
+**The directions it travels** are the payment record's, with one change: there is no share row yet
+(PR B decides the withholding), and the agent row is stronger than "absent by construction". The
+guarantee is DRIVEN rather than scanned — `secondTravel.test.ts` hands `visibleMcpEntries` a vault
+that really holds a second value of every kind and asserts against the JSON that would cross the
+wire, because an absent getter proves nothing when a slot is registered with the generic secret maps.
+A third test runs the identical check against a payload shaped exactly as the leak would shape it, so
+the check is known to have teeth without anybody writing the leak.
+
+**The masker works the other way round.** What a tool prints is a password, never the JSON record the
+vault keeps them in, so masking the serialised record would match nothing and leave every second
+value in the clear in output an agent is about to read. Each value is masked on its own, under a
+label naming which it was (`SECOND_PASSWORD`, `SECOND_CVV`, …).
+
+**`stateKeys.ts` exists because of this kind.** `storageManager.ts` sat at exactly its ratchet
+baseline, and the ratchet lets an exempted file shrink and never grow — so a new secret kind could
+not add a line to it. That is the situation `secretKeys.ts` was extracted in, and the same move again:
+`nodesKey`, `tombstonesKey`, `horizonKey` and `siblingOrder` are pure, `vscode`-free and read nothing
+off the manager. The file went 1029 → 1001, the four accessors brought it to 1023, and the baseline
+is locked at the smaller number so it cannot grow back.
+
+##### What a person actually does with it (PR B)
+
+**One control, and it is the phrase form's.** Under the method picker sits *The other half* —
+*A decoy, generated for you* against *My own second value*. That control is `phraseSecondMode`
+widened rather than copied: the phrase form has offered exactly this choice since phrases shipped,
+and a second shape for one decision three fields away is the drift the reuse rule exists to stop.
+A plan round's reviewers asking for "an explicit toggle" were asking for the one this product
+already had; the first answer written here — the box as its own switch — was wrong for that reason
+and is recorded in the plan's deviations.
+
+**One mode per FORM, a box per field.** Whose the other half is, is decided once for what is being
+saved; which value goes opposite which field is per field. A page carries TWO of these controls —
+the password's and the payment section's — so the fragment scopes each `.secondMode` to its own
+fieldset. Taking the first one would let the password's answer decide whether a card's boxes are
+shown, and EMPTY them when it said decoy, with the person watching what they typed disappear.
+
+**Two conditions, two scripts, neither answering for the other.** A box appears when its FIELD is
+being woven (`cardFormScript.refreshSecondRows`) and when the person asked to supply the half
+(`secondModeScript`). A box under an unticked weave box is a box for nothing, whatever the mode
+says. A hidden box is also an EMPTIED box, because a value left in a field nobody can see would
+still be read by the save.
+
+###### The state table, which is the whole design
+
+| weaving | mode | the box | what is stored |
+|---|---|---|---|
+| ON, not yet woven | own | filled | Woven with THEIR value; `ownSecond` / `passwordSecondOwn` marked, and the typed half stored nowhere else |
+| ON, not yet woven | own | blank | **Refused.** They chose to supply a half and supplied none; a decoy drawn behind their back would store something they did not choose |
+| ON, not yet woven | decoy | — | A generated decoy, exactly as before |
+| ON, ALREADY woven | — | — | Nothing. `weavePaymentFields` filters a key already in `shuffledFields`, `wovenSave` keeps `wasWoven`, and neither control is read |
+| OFF | — | filled | Stored in the record, exactly as typed |
+| OFF, something stored | — | blank | **Kept** — the rule an empty password box already follows, so an unrelated edit cannot silently delete a secret |
+| any, something stored | — | *Clear* ticked | Deleted, through the `clearPassword` affordance |
+
+**The pair is judged BEFORE anything is woven**, on both sides: `weaveProblem` for the password and
+a gate ahead of the checksums for a payment. A refused pair means nothing was woven, rather than a
+value woven under a method whose partner was then rejected. And the confirm dialog takes the same
+second half as the save, because its own note says the two must never disagree about which state a
+save is in — a refusal the dialog did not mention would be a person clicking Save and getting
+something else.
+
+**There is no path from woven back to un-woven through the form.** Unticking the weave box on a
+woven entry does nothing on its own, which `weaveNotice` already says in a sentence, so no partner
+secret has to be restored or discarded.
+
+###### The viewer, and the rung a second value inherits
+
+A stored second value gets a masked row with Copy. A second CVV and a second PIN ask the same
+question the first ones do — `gated` reads `needsReveal` about the FIELD the key belongs to rather
+than adding `cvv2` to `GATED_FIELDS`, which answers about the fields of a card. **The copy path asks
+too**: copying is showing, to the clipboard, and a variant suffix cannot slip past it because the KEY
+is what is gated.
+
+A WOVEN field has no second row, and not because anything filters it: the save consumed that half
+into the woven string and stored nothing, so the record has no key. Where the person's own woven
+second value comes back is the method picker — both rows of the reading are their own real values,
+which is what "seed 1, seed 2" asked for. What does not exist, and must not, is a product that can
+hand over either row by itself.
+
+###### Out of the vault
+
+A share withholds every second value, for every kind and not only for payments: a share names one
+credential for a colleague, and a second value is something the person added for themselves. It is
+asserted at the BOUNDARY — a real payload built from a vault holding one of every kind — because an
+allowlist unit test passes for a payload a generic serializer picked the slot up into. The decided
+case is pinned beside it: a woven field still travels exactly as it does today, because a woven value
+is ONE value with its other half inside it and withholding it would mean withholding the field.
+
+The sender is told by NAME what stayed behind, once per kind however many entries a folder share
+carries. `shareWithheld.ts` holds that answer because the two withholdings have different reasons and
+belong in one sentence — and because `shareInbox.ts` was at its line ceiling.
+
+An export keeps them and says how many, and its sentence changed shape: *"3 values a share would
+remove, across 1 entry"* rather than *"3 CVV/PIN values across 1 payment record"*. A second value
+belongs to credentials as well as to cards, so the old words would have understated the file — the
+one direction a warning must never be wrong in.
+
+###### The help, and the check that it was written
+
+All five languages changed in the same commit, and a test asserts each one mentions the control.
+`bodyFor` marks a MISSING translation and never a STALE one, so a language still explaining the old
+behaviour is a complete, non-fallback body that the coverage test rewards. This is not the full
+answer — a content-version check across languages is — but it catches the failure that actually
+happens: four languages changed and the fifth forgotten.
+
+###### What this story cost in extractions, and why each is a seam
+
+`entityFormShape.ts` (the form's two interfaces, out of a file at 799 lines), `shareWithheld.ts`,
+`secondCollectorScript` and `secondRowScript` in `cardFormScript.ts`. None is line-shuffling: the
+collectors read BOTH forms' boxes because the save writes one record, and the row switch is about
+which FIELD is being woven rather than about the mode.
 
 #### The six directions, and why they have no common answer
 
@@ -765,7 +936,14 @@ asserts both halves against a fixed draw.
 #### One painter, one picture, and controls the form that owns them can reach (2026-09-12, #51)
 
 Three forms draw the same "what this method does" picture, and two of them had their own copy of the
-painter. Every colour rule for it is scoped under `.weaveEx` (`entityFormStyles.ts`): the card's copy
+painter. Every colour rule for it is scoped under `.weaveEx` — `WEAVE_EXAMPLE_STYLES`, which lives
+beside the painter in `weaveExampleScript.ts` and is interpolated by the form's sheet and by
+`paymentCardStyles()`, so the viewer draws the same picture from the same one definition. (The rules
+were a literal block inside `entityFormStyles.ts` until the viewer became a second consumer; two
+copies of the colours is the same defect as two copies of the painter, wearing the other hat.) The
+second column's caption is the caller's — `SECOND_COLUMN_LABEL` is only the FORM's default, because
+in the viewer that column is one of two rows the build refuses to tell apart and calling it the decoy
+would answer the question the row exists not to answer. The card's copy
 created that block, the password's appended three bare columns into a container with no class — so
 the password example was three grey unboxed lines under the controls. `weaveExampleScript.ts` is the
 only painter now (`exampleBlock` / `exampleColumn` / `paintExample`), `formWeaveScripts.ts` assembles
@@ -900,6 +1078,8 @@ inherited at read time.
 | `pinFolderPlan.ts` | what a folder run would do, and the sentences it says before doing it |
 | `pinOnCreate.ts` | a new entry in a folder whose entries are protected |
 | `sharePayloadBuild.ts` | the payload builder, lifted out of `shareInbox` when this pushed it over its ceiling |
+| `shareTotpQuestion.ts` | *"What travels with this share?"* — the same lift, for the same ceiling |
+| `nodeOwnId.ts` | `withOwnId`: the node's record names the node it is in, at the import and at every read |
 
 **The entry PIN has its own floor (issue #55, 2026-09-12).** `pinPolicy.ts` carries a `PinScope` —
 `'vault' | 'entry'` — and `pinFeedback` / `pinInput.pinValidator` take it as a third argument that
@@ -1061,6 +1241,9 @@ export, the share and the hygiene scan needed no change, and `storageManager.ts`
 | `wovenPasswordSave.ts` | the four states a save meets, and `unwovenWarning` — what to SAY when the form will not do what it appears to promise |
 | `wovenPasswordHost.ts` | the viewer's half: what a Show or a Copy on the two rows is answered with |
 | `wovenRow.ts` | the two-column row itself, serving the card and the password from one implementation |
+| `rowFlip.ts` | `RowOrderStore` / `displayed` / `rowIn` — which of a reading's two halves is shown first, drawn once per entry and held only in the host |
+| `wovenPicture.ts` | `wovenPictureTokens` — the stored value token by token, each tagged with the ROW it is shown in, never with which is real |
+| `viewWeaveScripts.ts` | the viewer's page script in its one legal order — painter, then the picture fragment, then the card script (the mirror of `formWeaveScripts.ts`) |
 | `wovenFormScript.ts` | the form's page script — when the controls appear, and the live example |
 | `fieldReading.ts` | `value \| withheld(reason) \| absent` — see *withheld is not absent* below |
 | `entityFieldReading.ts` | every field a `creds://` reference can name, as one of those three |
@@ -1097,6 +1280,53 @@ nothing automatic is entitled to make it; the form is where a replacement choose
 
 **A share carries the mark**, or the recipient opens an entry whose password is unreadable with
 nothing on screen explaining why.
+
+#### The first row is not always yours (2026-09-16)
+
+The row said *"nothing here can tell you which one is yours, and that is deliberate"* and the build
+did not keep it. `weaveSecret` weaves the real value as the FIRST column, `unweaveSecret` returns it
+as `first`, both hosts put `first` into row **a**, and `rowOf` mapped `b` to the decoy outright — so
+under the correct method row one was always the person's value, and twelve methods were twelve
+readings to try rather than twenty-four.
+
+**Which half is shown first is now drawn**, once per `(entityId, key)`, from the house CSPRNG
+(`cryptoRandom`). One extra bit and no more: the METHOD is still the only real secret and is still
+stored nowhere, and the note on the row now says that rather than implying more.
+
+| Where it lives | Why there |
+|---|---|
+| `RowOrderStore`, constructed by **`entityViewPanel`** | one store per panel, handed to BOTH hosts — a credential's woven password never passes through `PaymentViewHost`, and a Show and the Copy that follows it must read one order |
+| cleared when the **entry changes**, and on dispose | another entry is another draw. Clearing on every *render* was wrong: re-rendering the same entry while a keychain read is in flight would post rows under the old order into a page whose Copy resolves the new one — the clipboard and the display disagreeing about the same secret, with nothing on screen saying so |
+| the order is sampled **before every await** | the modal in `grant` and the keychain read are both awaits, and a render behind either clears the store. Sampled first, the copy follows what was on screen. The entity id is sampled there already, for the same class of reason |
+
+**The order is in no message, id, class or caption** — a `flip: true` in the reading answer would be
+the answer written down, and deriving it page-side from a nonce fails the same way, because the
+derivation is in the source. A test compares the whole message under both orders with only the two
+rows removed; comparing keys and shapes alone passes for a host that leaks the order through a
+caption or a count.
+
+**What that buys, exactly, and what it does not.** *(Found by the automated reviewer on the pull
+request, and it is worth stating rather than discovering.)* The PICTURE's colours are the order
+expressed: `woven[i].side` equals `shuffleLayout(half, code)[i].side` for every token under `as-read`
+and is its exact inverse under `swapped`, and the message carries `code` while `shuffleLayout` is a
+pure function of the shipped source. So anyone who can read the message — the developer inspector,
+on this machine, while a reading is on screen — recovers the order, and since `weaveSecret` always
+weaves the person's value as the arithmetic FIRST column, recovers which row is theirs.
+
+So the extra bit holds against the reader this feature names: a shoulder, a screen share, a
+screenshot, a backup file. It does not hold against devtools. That is not a regression — before this
+work row one was always the person's value for EVERY reader — but it is the honest bound, and the
+note on the row says it in those words rather than promising more. The only thing that would close
+it is randomising which column holds the real value at WEAVE time, which changes what is stored and
+helps nothing already saved; it is tracked as
+[PLAN_weave_time_column_choice.md](../todo/PLAN_weave_time_column_choice.md), which records the one
+fact that makes it buildable — nothing automatic unweaves, so no consumer depends on the real half
+being first — and the two owner decisions it cannot be built without.
+
+`rowOf`, `copyTextFor` and the password's copy all take a **`DisplayedPair`** — `ReadingPair` with a
+type-only brand — so an arithmetic pair cannot reach them by accident. The compiler refused four call
+sites the moment the type changed, which is the mistake this work exists to prevent, caught
+mechanically. `rowIn` is the single mapping of `a`/`b` to a row, shared by both hosts.
 
 #### Where the time goes (2026-09-03)
 
@@ -2578,6 +2808,51 @@ CONVERSATION — recipient picking, delivery and its error report, the sender ch
 round-robin, and the import into the tree (fresh local id; same-sender update recorded as a
 revision first). The `activate()` handlers only resolve what was clicked.
 `shareInbox.test.ts` drives the accept paths through the REAL seal/open crypto.
+
+### An arriving entry must NAME ITSELF, or it arrives empty
+
+`TreeNode.id` and `TreeNode.details.id` are two spellings of one fact, and nothing in the product
+reads them as two. A `TreeElement` carries `details`, so every READ of a secret is keyed on
+`details.id` — the viewer (`entityViewerCommands.ts`), the tree's copy commands
+(`commands/entityCommands.ts`), the env binder (`envApply.ts`), the agent surfaces — while every
+WRITE is keyed on `node.id`. Let the two disagree and the entry still lists, still has its name and
+its dates, and has **nothing behind it**: no password, no login, no URL, no one-time code. The values
+are on disk the whole time, under the id nobody reads.
+
+Which is exactly what an accepted share did until 2026-09-16. The import mints a FRESH local id — a
+sender must never be able to address an entry in our vault — and spread `details` unchanged beside
+it, so the arriving copy pointed at the SENDER's id forever. Reported as *"I shared a password with
+its one-time code and only the name arrived"*; the seed had travelled and been written correctly, and
+the checkbox that decides whether it travels was never involved.
+
+`nodeOwnId.ts` holds the one function, `withOwnId`, and it is applied at BOTH ends:
+
+- **`shareInbox.importShared`**, on all three branches (fresh entry, *Keep both*, *Update it*), so the
+  mismatch cannot be created. It was the third site that re-ids a node and the only one that forgot —
+  `commands/treeMutationCommands.ts` (clone) and `importFormats.ts` (file import) fix the id by hand,
+  and `idQuarantine.remapDetails` does it for restore and sync.
+- **`storageManager.nodeEntry`**, the single door every node read passes through, which makes this a
+  REPAIR and not only a guard: a vault already holding entries broken by an older build is corrected
+  as it loads, and they become readable again with nothing to re-share. Deliberately a read-time
+  normalisation rather than a migration write — rewriting every node would bump the version vectors
+  and push a sync of records whose stored bytes need no change. It is re-exported through `types.ts`
+  because `storageManager.ts` is under the size ratchet, where an import line is growth.
+
+**Why the suite could not see it.** Every existing accept test read the arriving secret back through
+`node.id` — the one id the product never uses for a secret read — so an entry that arrives empty
+passed all of them. `shareArrivalReadable.test.ts` reads the way the product reads, and its first
+assertion is that the two ids agree: the sharing harness gives sender and recipient one account, so a
+stale `details.id` still names the SENDER's entry, whose secrets answer every read and turn the test
+green against a vault the recipient cannot open.
+
+### The batch accept is the same decision, asked once per item
+
+`acceptMany` imported each opened payload RAW, so it spent no `pinAskOnImport`: an entry its sender
+had protected with a PIN of their own landed unprotected, and the instruction that travels with such
+an entry was honoured on `acceptOne` alone. Clearing an inbox in one go is the ordinary way to
+accept, so this was the common route past the protection, not a corner. Both paths now go through
+`sealedForRecipient`; a declined or failed wrap consumes nothing, and is COUNTED as still pending —
+an item neither imported nor still locked is counted nowhere and vanishes from the tally.
 
 ### The transit PIN is drawn before it is asked for, and lands on the clipboard
 

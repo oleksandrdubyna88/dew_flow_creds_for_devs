@@ -100,12 +100,17 @@ export function methodOrder(random: Random): readonly ShuffleCode[] {
  * <p>Vertical is the whole real phrase against the whole second column. Horizontal pairs the halves:
  * the first half of each, then the second half of each — which is what makes it a different set of
  * methods rather than a different picture of the same one.</p>
+ *
+ * <p>Generic in the token because the viewer's picture puts ROW LABELS through this same function
+ * rather than words: the colours of the stored column have to be split exactly the way the values
+ * were, and the only way to guarantee that is to run them through the identical code. Every
+ * existing caller passes words and infers `string`, unchanged.</p>
  */
-export function phraseColumns(
-  real: readonly string[],
-  second: readonly string[],
+export function phraseColumns<T>(
+  real: readonly T[],
+  second: readonly T[],
   layout: PhraseLayout,
-): { first: readonly string[]; secondColumn: readonly string[] } {
+): { first: readonly T[]; secondColumn: readonly T[] } {
   if (layout === 'vertical') {
     return { first: real, secondColumn: second };
   }

@@ -2,8 +2,10 @@ import { PAYMENT_FIELD_LABELS, PaymentFieldKey } from './paymentFields';
 import { COPY_ICON, escapeHtml } from './webviewHtml';
 import { PaymentCardView } from './paymentViewMessages';
 import { needsReveal } from './revealGate';
+import { SECOND_LABELS, SecondKey, firstKeyOf } from './secondValues';
 import { WOVEN_ROW_NOTE, WOVEN_ROW_STYLES, wovenRowMarkup } from './wovenRow';
 import { BRAND_MARK_STYLES, brandMarksMarkup } from './cardBrandIcons';
+import { WEAVE_EXAMPLE_STYLES } from './weaveExampleScript';
 
 /**
  * The read-only payment card: the one surface on which a stored card, a set of bank details or a
@@ -63,7 +65,37 @@ export function paymentCardMarkup(view: PaymentCardView | undefined): string {
   const woven = new Set<string>(view.woven);
   return `<div id="payCard" data-woven-host="" data-entity="${escapeHtml(view.entityId)}">
 ${view.present.map((key) => (woven.has(key) ? wovenRow(key, view) : plainRow(key))).join('\n')}
+${view.seconds.map((key) => secondValueRow(key)).join('\n')}
 </div>`;
+}
+
+
+/**
+ * A second value the entry holds in the clear — masked, with Copy, and gated where its field is.
+ *
+ * <p>Drawn after the fields rather than beside each one: a second value is a value of its own, not a
+ * property of the first, and interleaving them would suggest the pair is stored together — which is
+ * the one thing that is never true of a WOVEN pair and would teach the wrong shape.</p>
+ *
+ * <p><b>The gate is inherited.</b> A second CVV is a CVV: it is one of the two values that turn a
+ * number somebody saw into a payment somebody made, and copying is showing. So `needsReveal` is asked
+ * about the FIELD the key belongs to, and the answer is not decided a second time here — two places
+ * deciding one rung is how the two come to disagree.</p>
+ *
+ * <p>No value is interpolated, exactly as no field's is: the box is empty and is filled by message.</p>
+ */
+function secondValueRow(key: SecondKey): string {
+  const label = escapeHtml(SECOND_LABELS[key]);
+  const gated = needsReveal(firstKeyOf(key));
+  const show = gated
+    ? `<button data-field="${key}" data-action="${REVEAL_ACTION}" data-label="${label}" class="icon" aria-pressed="false" title="Show the ${label} — this asks first" aria-label="Show ${label}">Show</button>`
+    : '';
+  return `<div class="row secondValueRow" data-second="${key}">
+      <label>${label}</label>
+      <div class="line"><input readonly id="pay_${key}"${gated ? ` value="${MASK}" class="gated"` : ''}>
+        ${show}<button data-field="pay_${key}" data-action="copy" class="icon" title="Copy ${label}" aria-label="Copy ${label}">${COPY_ICON}</button>
+      </div>
+    </div>`;
 }
 
 /**
@@ -167,6 +199,7 @@ export function paymentCardScript(): string {
   var payCard = document.querySelector('[data-woven-host]');
   if (payCard) {
 ${payHelpers()}
+${payCloseFn()}
 ${payGateFns()}
 ${payReadingFn()}
 ${payListeners()}
@@ -212,7 +245,19 @@ function payHelpers(): string {
         target.appendChild(node);
       }
     };
-    var payClose = function (key, silent) {
+`;
+}
+
+/**
+ * Closing one: hidden first, emptied after, and the picture goes with it.
+ *
+ * <p>Its own fragment rather than more of `payHelpers`, which was one line under the 50 the linter
+ * allows — the rule here is extract, not suppress. And the picture's clearing belongs beside the
+ * rows' clearing rather than anywhere else: a phrase closes ITSELF after ninety seconds, and a
+ * picture of all twelve words surviving that close would defeat the measure entirely.</p>
+ */
+function payCloseFn(): string {
+  return `    var payClose = function (key, silent) {
       var rows = document.getElementById('payRows_' + key);
       if (!rows) { return; }
       // The rows are hidden FIRST and emptied after (measure 5.5), so the freshest thing the
@@ -220,6 +265,7 @@ function payHelpers(): string {
       rows.hidden = true;
       payRow(document.getElementById('payReading_' + key + '_a'), [], false);
       payRow(document.getElementById('payReading_' + key + '_b'), [], false);
+      payPicture(key, null);
       if (payTimer) { clearTimeout(payTimer); payTimer = 0; }
       if (!silent) { vscode.postMessage({ type: 'paymentClose', field: key }); }
     };
@@ -264,13 +310,19 @@ function payGateFns(): string {
 function payReadingFn(): string {
   return `    var payReading = function (msg) {
       var note = document.getElementById('payNote_' + msg.key);
-      if (!msg.ok) { if (note) { note.textContent = msg.why; } return; }
       // Two clicks are two reads, and their answers can arrive in the other order. An answer for a
       // method the picker no longer shows is dropped rather than displayed under the wrong label.
+      // FIRST, before the refusal branch below: a refusal used to be exempt from this, so method A's
+      // "cannot be read" arriving after method B had painted wiped B's picture and wrote A's reason
+      // under B's rows. Every answer names its method now, refusals included. (Code review.)
       var picked = payCard.querySelector('select.mixPick[data-key="' + msg.key + '"]');
       if (picked && msg.code && picked.value !== msg.code) { return; }
+      // A refusal takes the previous picture with it. Leaving it there would put one method's
+      // colours under a note saying the value cannot be read.
+      if (!msg.ok) { if (note) { note.textContent = msg.why; } payPicture(msg.key, null); return; }
       payRow(document.getElementById('payReading_' + msg.key + '_a'), msg.first, msg.words);
       payRow(document.getElementById('payReading_' + msg.key + '_b'), msg.second, msg.words);
+      payPicture(msg.key, msg);
       document.getElementById('payRows_' + msg.key).hidden = false;
       if (msg.visibleMs) {
         if (payTimer) { clearTimeout(payTimer); }
@@ -308,13 +360,32 @@ function payListeners(): string {
       vscode.postMessage({ type: action, field: button.dataset.field + '|' + (pick ? pick.value : '') });
       event.stopPropagation();
     }, true);
+    // Picking another method takes the previous reading off the screen. Without this the rows and
+    // the picture of Method 4 sit under a picker that now says Method 7, and a person reading the
+    // one believes it is the other. Nothing is drawn on change - a reading is what Show is for, and
+    // painting here would put a gated value on screen without its second question ever being asked.
+    payCard.addEventListener('change', function (event) {
+      var pick = event.target;
+      if (!pick || !pick.dataset || !pick.dataset.key) { return; }
+      // The METHOD picker specifically, not merely something carrying a data-key. This listener sits
+      // on the whole card, and a control that grew a data-key later would otherwise close a reading
+      // by being typed in. (Code review.)
+      if (String(pick.className || '').indexOf('mixPick') < 0) { return; }
+      payClose(pick.dataset.key, false);
+    });
 `;
 }
 
-/** The card's styles: the two rows read as one pair, and a word is a word. */
+/**
+ * The card's styles: the two rows read as one pair, and a word is a word.
+ *
+ * <p>`WEAVE_EXAMPLE_STYLES` rides here rather than in `entityViewStyles.ts` because that sheet
+ * already interpolates this function, so the viewer gets the picture's colours through the one hook
+ * it has — and there is exactly one copy of them, shared with the form's sheet.</p>
+ */
 export function paymentCardStyles(): string {
   return `
-${WOVEN_ROW_STYLES}
+${WOVEN_ROW_STYLES}${WEAVE_EXAMPLE_STYLES}
   input.gated { letter-spacing: .2em; }
   /* The assembled address: as many lines as the country's own order gives it. */
   textarea.addressBlock { flex: 1; resize: vertical; font-family: inherit; }

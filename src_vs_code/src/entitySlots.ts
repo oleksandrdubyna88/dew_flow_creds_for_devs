@@ -40,6 +40,13 @@ export const SECRET_SLOTS: readonly SecretSlot[] = [
     write: (s, a, e, v) => s.setFieldsRaw(a, e, v),
   },
   {
+    // A second value is a secret like any other here: wrapped under the entry's PIN with the rest,
+    // and every walker of this table gets it without a line written anywhere else.
+    label: 'second values',
+    read: (s, a, e) => s.getSecondRaw(a, e),
+    write: (s, a, e, v) => s.setSecondRaw(a, e, v),
+  },
+  {
     label: 'payment details',
     read: (s, a, e) => s.getPaymentRaw(a, e),
     write: (s, a, e, v) => s.setPaymentRaw(a, e, v),

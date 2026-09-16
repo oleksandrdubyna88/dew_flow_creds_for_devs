@@ -56,6 +56,10 @@ export function wovenRowMarkup(options: WovenRowOptions): string {
       <div class="readingRows" id="payRows_${key}" hidden>
         ${readingRow(key, 'a', label)}
         ${readingRow(key, 'b', label)}
+        <!-- Empty until a reading is painted into it, and INSIDE the hidden block on purpose: the
+             picture then cannot be on screen when the rows are not, which is what makes a phrase's
+             ninety-second auto-close cover it structurally rather than by remembering to. -->
+        <div class="weaveExHost" id="payExample_${key}"></div>
       </div>
     </div>`;
 }
@@ -69,10 +73,23 @@ function readingRow(key: string, which: 'a' | 'b', label: string): string {
         </div>`;
 }
 
-/** What the row says before anything is rebuilt — and what it must never say afterwards. */
+/**
+ * What the row says before anything is rebuilt — and what it must never say afterwards.
+ *
+ * <p>It used to end <i>"nothing here can tell you which one is yours, and that is deliberate"</i>,
+ * and the build did not keep that promise. The real value is woven as the FIRST column, and every
+ * host put the first reading in row one — so under the correct method row one was always yours, and
+ * somebody working through the methods never had to read row two. The order is drawn per entry now,
+ * which is what makes the sentence true; it says the size of what that buys rather than implying
+ * more, because the method is still the only thing a person has to remember.</p>
+ */
 export const WOVEN_ROW_NOTE =
-  'Pick a method and press Show. Both rows come back the same way whichever method you pick — '
-  + 'nothing here can tell you which one is yours, and that is deliberate.';
+  'Pick a method and press Show. Both rows come back the same way whichever method you pick, and '
+  + 'which of the two is drawn first is decided again each time you open this entry — so somebody '
+  + 'reading this screen, a screenshot of it or a backup file cannot tell from the position which '
+  + 'row is yours. Somebody with developer tools open on this machine can. Only you can recognise '
+  + 'your own value. The method is still the one thing that has to be remembered, and it is stored '
+  + 'nowhere.';
 
 /** The styles both consumers draw the rows with, so neither can style them differently. */
 export const WOVEN_ROW_STYLES = `
@@ -82,4 +99,6 @@ export const WOVEN_ROW_STYLES = `
              border: 1px solid var(--vscode-input-border, transparent);
              font-family: var(--vscode-editor-font-family, monospace); word-break: break-all; }
   .reading .word { display: inline-block; margin-right: .5em; }
-  .payNote { margin: 3px 0; }`;
+  .payNote { margin: 3px 0; }
+  /* Empty until a reading is painted, and an empty box is a gap nobody asked for. */
+  .weaveExHost:empty { display: none; }`;

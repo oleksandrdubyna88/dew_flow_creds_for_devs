@@ -32,6 +32,8 @@ export interface ExternalSecrets {
    * strips them — see paymentRedaction.ts.</p>
    */
   payment?: string;
+  /** An entry's SECOND values as JSON — the whole record, for the same reason payment is whole. */
+  second?: string;
   login?: string;
   url?: string;
 }

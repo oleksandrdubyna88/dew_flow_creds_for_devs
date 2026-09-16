@@ -29,25 +29,15 @@ import { CleanupPort, clearSecretsPending, isEmptyPending, markSecretsPending, p
 import { dropVanishedSecrets, readSecretMaps, secretMapsOf, storeSecretMaps } from './secretMaps';
 import { attachmentSecretKey, configSecretKey, dbConnSecretKey, entitySecretKeys, fieldsSecretKey,
   imageSecretKey, notesSecretKey, paymentSecretKey, privateKeySecretKey, secretKey, totpSecretKey,
-  vpnConfigSecretKey } from './secretKeys';
-import { BackupBundle, EntityMetadata, StoredAccount, TreeNode, isStoredAccount, isTreeNode } from './types';
+  secondSecretKey, vpnConfigSecretKey } from './secretKeys';
+import { BackupBundle, EntityMetadata, StoredAccount, TreeNode, isStoredAccount, isTreeNode, withOwnId } from './types';
 import { EntityFields, parseFields, serializeFields } from './entityFields';
+import { SecondValues, parseSecondValues, serializeSecondValues } from './secondValues';
+import { horizonKey, nodesKey, siblingOrder, tombstonesKey } from './stateKeys';
 
 const ACCOUNTS_KEY = 'credSshManager.accounts';
 /** Account ids that already received their one-time default folder set. */
 const SEEDED_KEY = 'credSshManager.defaultsSeeded';
-
-function nodesKey(accountId: string): string {
-  return `credSshManager.nodes.${accountId}`;
-}
-
-function tombstonesKey(accountId: string): string {
-  return `credSshManager.tombstones.${accountId}`;
-}
-
-function horizonKey(accountId: string): string {
-  return `credSshManager.horizon.${accountId}`;
-}
 
 /** SecretStorage slot of the device key that seals the local metadata cache (audit B8). */
 const METADATA_KEY_SLOT = 'credSshManager.metadataKey';
@@ -79,22 +69,6 @@ interface NodeCacheEntry {
    * keystroke in the filter box. The map costs one pass over a list that was just built.</p>
    */
   byId: Map<string, TreeNode>;
-}
-
-/** Folders first (manual order, then name), entities alphabetical. */
-// eslint-disable-next-line complexity
-function siblingOrder(a: TreeNode, b: TreeNode): number {
-  if (a.type !== b.type) {
-    return a.type === 'folder' ? -1 : 1;
-  }
-  if (a.type === 'folder') {
-    const ao = a.sortOrder ?? Number.MAX_SAFE_INTEGER;
-    const bo = b.sortOrder ?? Number.MAX_SAFE_INTEGER;
-    if (ao !== bo) {
-      return ao - bo;
-    }
-  }
-  return a.name.localeCompare(b.name);
 }
 
 /**
@@ -415,7 +389,7 @@ export class StorageManager implements vscode.Disposable {
       return cached;
     }
     const plain = this.openNodesSlot(accountId, raw);
-    const nodes = Object.freeze(Array.isArray(plain) ? plain.filter(isTreeNode) : []);
+    const nodes = Object.freeze(Array.isArray(plain) ? plain.filter(isTreeNode).map(withOwnId) : []);
     const entry: NodeCacheEntry = {
       raw,
       nodes,
@@ -850,6 +824,26 @@ export class StorageManager implements vscode.Disposable {
   /** Typed write: an empty record deletes, so a credential that lost both fields holds no key. */
   setFields(accountId: string, entityId: string, fields: EntityFields | undefined): Promise<void> {
     return this.setFieldsRaw(accountId, entityId, serializeFields(fields));
+  }
+
+  // ---------- second values (SecretStorage, tenant-scoped, JSON) ----------
+
+  /** The stored JSON as it is — what bundles, snapshots and revisions carry. */
+  getSecondRaw(accountId: string, entityId: string): Thenable<string | undefined> {
+    return this.secrets.get(secondSecretKey(accountId, entityId));
+  }
+
+  setSecondRaw(accountId: string, entityId: string, value: string | undefined): Promise<void> {
+    return this.putSecret(secondSecretKey(accountId, entityId), accountId, value);
+  }
+
+  async getSecond(accountId: string, entityId: string): Promise<SecondValues> {
+    return parseSecondValues(await this.getSecondRaw(accountId, entityId));
+  }
+
+  /** Typed write: an empty record deletes, so an entry whose last second value went holds no key. */
+  setSecond(accountId: string, entityId: string, values: SecondValues | undefined): Promise<void> {
+    return this.setSecondRaw(accountId, entityId, serializeSecondValues(values));
   }
 
   // ---------- payment instruments (SecretStorage, tenant-scoped, JSON) ----------

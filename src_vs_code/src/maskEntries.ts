@@ -1,4 +1,5 @@
 import { isLockedSecret } from './secretEnvelope';
+import { SecondKey, parseSecondValues } from './secondValues';
 import { parseDbConnectionString } from './dbConnString';
 import type { MaskEntry } from './secretMasker';
 import { EntityMetadata } from './types';
@@ -30,6 +31,7 @@ export interface SecretSource {
   getVpnConfig(accountId: string, entityId: string): Thenable<string | undefined>;
   getDbConnection(accountId: string, entityId: string): Thenable<string | undefined>;
   getNotes(accountId: string, entityId: string): Thenable<string | undefined>;
+  getSecondRaw(accountId: string, entityId: string): Thenable<string | undefined>;
 }
 
 /** Secret field -> the fallback label, and the env-binding key that can override it. */
@@ -40,6 +42,16 @@ const FIELDS = [
   { field: 'dbConnection', label: 'DB_CONNECTION' },
   { field: 'notes', label: 'NOTES' },
 ] as const;
+
+/** What a masked second value is called in output — never the record key nobody has seen. */
+const SECOND_MASK_LABELS: Readonly<Record<SecondKey, string>> = {
+  password2: 'SECOND_PASSWORD',
+  number2: 'SECOND_CARD_NUMBER',
+  cvv2: 'SECOND_CVV',
+  pin2: 'SECOND_PIN',
+  iban2: 'SECOND_IBAN',
+  accountNumber2: 'SECOND_ACCOUNT_NUMBER',
+};
 
 /**
  * Thrown when the entity a grant points at is not in the vault any more.
@@ -77,12 +89,18 @@ export async function maskEntriesFor(
     present(values[index]).map((value) => ({ value, label: bindings[field] ?? label })),
   );
 
+  // Every SECOND value this entry holds, masked one by one rather than as the record that carries
+  // them: what a tool prints is a password, never a JSON object, so masking the serialised record
+  // would match nothing and leave each value in the clear. The label names which one it was.
+  const seconds = Object.entries(parseSecondValues(await source.getSecondRaw(accountId, entityId)))
+    .flatMap(([key, value]) => present(value).map((one) => ({ value: one, label: SECOND_MASK_LABELS[key as SecondKey] })));
   // A DB connection string carries the password inside it; the password on its own is what a
   // tool actually prints (PGPASSWORD, a client's own error message), so it is masked as its
   // own value rather than only as part of the connection string it came from.
   const embedded = present(values[3]).flatMap((c) => present(passwordFromConnection(c)));
   return [
     ...entries,
+    ...seconds,
     ...embedded.map((value) => ({ value, label: bindings.dbPassword ?? 'DB_PASSWORD' })),
   ];
 }

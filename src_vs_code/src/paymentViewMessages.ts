@@ -3,8 +3,10 @@ import { PaymentForm } from './paymentForm';
 import { MIN_SHUFFLE_TOKENS, ShuffleCode, isShuffleCode } from './shuffle';
 import { PhraseLayout, methodOrder } from './phraseLayout';
 import { Reassembled, reassemble } from './phraseReassembly';
+import { DisplayedPair, rowIn } from './rowFlip';
 import { Random } from './decoyDigits';
 import { needsReveal } from './revealGate';
+import { SECOND_KEYS, SecondKey, SecondValues, firstKeyOf } from './secondValues';
 import { groupDigits } from './cardNumberFormat';
 
 /**
@@ -41,6 +43,14 @@ export interface PaymentCardView {
   readonly methods: readonly ShuffleCode[];
   /** How many words a woven phrase holds — for the question asked before it is assembled. */
   readonly wordCount: number;
+  /**
+   * The SECOND values this entry holds for fields of this form (#52) — their keys, never a value.
+   *
+   * <p>A woven field is never here, and not because anything filters it out: a second value that was
+   * woven is not stored, so the record simply has no key for it. That is the rule the save enforces,
+   * showing through as an absence rather than as a second rule the viewer would have to keep.</p>
+   */
+  readonly seconds: readonly SecondKey[];
 }
 
 /** The keys a record holds, restricted to the ones its form owns. Order is the form's. */
@@ -68,6 +78,7 @@ export function paymentCardFor(
   form: PaymentForm,
   fields: PaymentFields,
   random: Random,
+  seconds: SecondValues = {},
 ): PaymentCardView {
   return {
     entityId,
@@ -76,7 +87,20 @@ export function paymentCardFor(
     woven: wovenKeysOf(fields, form),
     methods: methodOrder(random),
     wordCount: (fields.mixed ?? []).length / 2,
+    seconds: secondKeysOf(seconds, form),
   };
+}
+
+/**
+ * Which second values this FORM owns — a card does not show a second IBAN.
+ *
+ * <p>The same restriction `presentKeysOf` applies to the record itself, and for the same reason: a
+ * record that still holds a key the chosen form does not own is repaired on read rather than drawn.
+ * A second value for a field the form has no row for would be a row labelled for nothing.</p>
+ */
+function secondKeysOf(seconds: SecondValues, form: PaymentForm): readonly SecondKey[] {
+  const owned = new Set<string>(keysForForm(form));
+  return SECOND_KEYS.filter((key) => seconds[key] !== undefined && owned.has(firstKeyOf(key)));
 }
 
 /**
@@ -92,6 +116,41 @@ export function plainValues(fields: PaymentFields, form: PaymentForm): Record<st
   return Object.fromEntries(
     shown.flatMap((key) => textOf(fields, key).map((value) => [key, forDisplay(key, value)])),
   );
+}
+
+
+/**
+ * The second values the card can show without asking — the ungated ones.
+ *
+ * <p>Same rule as the fields above, asked about the FIELD each key belongs to: a second CVV is a CVV
+ * and waits for the question, a second IBAN is not and does not. The gate is `revealGate`'s, read
+ * rather than restated, so the card and the host cannot come to disagree about which rows ask.</p>
+ */
+export function plainSeconds(seconds: SecondValues, shown: readonly SecondKey[]): Record<string, string> {
+  return Object.fromEntries(
+    shown.flatMap((key) => {
+      const value = seconds[key];
+      return value === undefined || needsReveal(firstKeyOf(key)) ? [] : [[key, value] as const];
+    }),
+  );
+}
+
+/**
+ * One gated second value, after the question — or nothing at all.
+ *
+ * <p>`undefined` for a key the card is not showing, which is the same refusal `revealValue` makes:
+ * a message naming a key this entry does not hold must not be able to read one it does.</p>
+ */
+export function revealSecond(
+  seconds: SecondValues,
+  shown: readonly SecondKey[],
+  key: string,
+): string | undefined {
+  const named = SECOND_KEYS.find((one) => one === key);
+  if (named === undefined || !shown.includes(named) || !needsReveal(firstKeyOf(named))) {
+    return undefined;
+  }
+  return seconds[named];
 }
 
 /**
@@ -174,10 +233,29 @@ export function readingFor(
   key: string,
   code: string,
 ): Reassembled | undefined {
-  const tokens = wovenTokensOf(fields, form, key, code);
-  return tokens === undefined
-    ? undefined
-    : reassemble(tokens, code as ShuffleCode, layoutFor(fields, key));
+  return readBackOf(fields, form, key, code)?.reading;
+}
+
+/**
+ * The reading AND what it was rebuilt from — the stored tokens and the layout.
+ *
+ * <p>The picture drawn under the two rows needs those two, and they were private here. One function
+ * rather than two exported halves, because they share the single refusal above: a caller that could
+ * obtain the tokens without the reading could paint a picture for a record the rows refused, which
+ * is a picture of nothing under a note saying it cannot be read.</p>
+ */
+export function readBackOf(
+  fields: PaymentFields,
+  form: PaymentForm,
+  key: string,
+  code: string,
+): { readonly reading: Reassembled; readonly stored: readonly string[]; readonly layout: PhraseLayout } | undefined {
+  const stored = wovenTokensOf(fields, form, key, code);
+  if (stored === undefined) {
+    return undefined;
+  }
+  const layout = layoutFor(fields, key);
+  return { reading: reassemble(stored, code as ShuffleCode, layout), stored, layout };
 }
 
 /**
@@ -221,12 +299,17 @@ function layoutFor(fields: PaymentFields, key: string): PhraseLayout {
 /**
  * One of the two rows, by the name the card's button carries.
  *
- * <p>The page says `a` and `b`; which column the arithmetic calls the real one stays on this side.
- * Anything else would write the answer into the DOM of a card whose entire design is not to have
- * one.</p>
+ * <p>The page says `a` and `b`, and so does this now: it takes the pair ALREADY in display order and
+ * hands back the row that was drawn there. It used to read `which === 'b' ? reading.decoy :
+ * reading.real`, which made row a the person's value under every correct method — the page promised
+ * the two rows were indistinguishable while the host put the answer in the same place every time.
+ * After this, nothing on the display path knows which reading is the person's; the type says so
+ * (`DisplayedPair`), so a raw arithmetic pair cannot be passed here by accident.</p>
  */
-export function rowOf(reading: Reassembled, which: string): readonly string[] {
-  return which === 'b' ? reading.decoy : reading.real;
+export function rowOf(shown: DisplayedPair<readonly string[]>, which: string): readonly string[] {
+  // The mapping itself is `rowIn`'s, shared with the password's path. Two copies of "which row does
+  // `b` mean" is two places for it to drift, and a drift there copies the row nobody pointed at.
+  return rowIn(shown, which);
 }
 
 /**
@@ -236,8 +319,8 @@ export function rowOf(reading: Reassembled, which: string): readonly string[] {
  * only a string. Digits join with nothing — they were woven as characters — and a phrase with single
  * spaces, which is how every wordlist standard writes one.</p>
  */
-export function copyTextFor(reading: Reassembled, which: string, key: string): string {
-  return rowOf(reading, which).join(key === 'mixed' ? ' ' : '');
+export function copyTextFor(shown: DisplayedPair<readonly string[]>, which: string, key: string): string {
+  return rowOf(shown, which).join(key === 'mixed' ? ' ' : '');
 }
 
 /** The stored layout, defaulted the way every other unknown value in this record is: to the safe one. */

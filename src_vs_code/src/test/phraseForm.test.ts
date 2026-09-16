@@ -10,7 +10,7 @@ import { weaveExample } from '../weaveExample';
 import { formWeaveScripts } from '../formWeaveScripts';
 import { formVisibilityScript } from '../formVisibilityScript';
 import { MiniDocument, MiniWindow, runFragment } from './miniDom';
-import { readingFor, rowOf } from '../paymentViewMessages';
+import { readingFor } from '../paymentViewMessages';
 import { hasMixedField } from '../mixedFieldGuard';
 import { wovenKeys } from '../paymentFields';
 import { loadWithVscode } from './vscodeStub';
@@ -76,8 +76,8 @@ test('a phrase saved through the form round-trips to the original words — both
 
     const reading = readingFor(record, 'phrase', 'mixed', code);
 
-    assert.deepEqual(rowOf(reading!, 'a'), REAL, `${layout}: the phrase comes back`);
-    assert.equal(rowOf(reading!, 'b').length, REAL.length, `${layout}: and so does the other column`);
+    assert.deepEqual(reading!.real, REAL, `${layout}: the phrase comes back`);
+    assert.equal(reading!.decoy.length, REAL.length, `${layout}: and so does the other column`);
   }
 });
 
@@ -86,8 +86,8 @@ test('a wrong method gives back something of the same shape, and never the phras
 
   const wrong = readingFor(record, 'phrase', 'mixed', SHUFFLE_CODES[3]);
 
-  assert.equal(rowOf(wrong!, 'a').length, REAL.length, 'identical in form — that is the requirement');
-  assert.notDeepEqual(rowOf(wrong!, 'a'), REAL);
+  assert.equal(wrong!.real.length, REAL.length, 'identical in form — that is the requirement');
+  assert.notDeepEqual(wrong!.real, REAL);
 });
 
 test('own words are used as they are, and no decoy is drawn at all', () => {
@@ -100,8 +100,8 @@ test('own words are used as they are, and no decoy is drawn at all', () => {
   const record = phraseRecordFor(input({ ownWords: true, second: OWN }), explode);
 
   const reading = readingFor(record, 'phrase', 'mixed', SHUFFLE_CODES[0]);
-  assert.deepEqual(rowOf(reading!, 'a'), REAL);
-  assert.deepEqual(rowOf(reading!, 'b'), OWN, 'the second column is the one that was typed');
+  assert.deepEqual(reading!.real, REAL);
+  assert.deepEqual(reading!.decoy, OWN, 'the second column is the one that was typed');
   assert.equal(record.ownWords, true, 'and the record says so, because it changes what a leak costs');
 });
 

@@ -2,6 +2,7 @@ import { cardFormScript } from './cardFormScript';
 import { phraseFormScript } from './phraseFormScript';
 import { wovenFormScript } from './wovenFormScript';
 import { weaveExamplePainterScript } from './weaveExampleScript';
+import { secondModeScript } from './secondModeScript';
 
 /**
  * The whole weaving story's page script, in the one order it can be assembled in.
@@ -21,5 +22,6 @@ export function formWeaveScripts(): string {
 
   ${cardFormScript()}
 ${wovenFormScript()}
-  ${phraseFormScript()}`;
+  ${phraseFormScript()}
+  ${secondModeScript()}`;
 }
