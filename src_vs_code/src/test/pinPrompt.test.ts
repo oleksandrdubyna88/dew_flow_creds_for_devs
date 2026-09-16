@@ -86,6 +86,8 @@ function vaultWith(nodes: readonly TreeNode[], passwords: Record<string, string>
     getPassword: (_a: string, id: string) => Promise.resolve(passwords[id]),
     getNotes: nothing,
     getFieldsRaw: nothing,
+    getSecondRaw: nothing,
+    setSecondRaw: () => Promise.resolve(),
     getPaymentRaw: nothing,
     getConfigBody: nothing,
     getDbConnection: nothing,

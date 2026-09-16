@@ -168,6 +168,8 @@ function memoryVault(nodes: TreeNode[], secrets: Map<string, string>): unknown {
     getConfigBody: get('configBody'),
     setConfigBody: set('configBody'),
     getFieldsRaw: get('fieldsRaw'),
+    getSecondRaw: get('secondRaw'),
+    setSecondRaw: () => Promise.resolve(),
     setFieldsRaw: set('fieldsRaw'),
     getFields: (): Promise<undefined> => Promise.resolve(undefined),
     setFields: done,
