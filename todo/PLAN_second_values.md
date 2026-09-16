@@ -178,12 +178,12 @@ requests**.
   refused; a password pair whose class sets differ is refused; **a digits pair of equal length is
   NOT refused** — the companion that stops the rule quietly rejecting every card; every refusal is
   a sentence a person can act on.
-- **S1b — what an EMPTY second means, said once.** Blank at create with the own-second option chosen
-  and weaving ON is a refusal (there is nothing to weave with, and generating a decoy behind the
-  person's back would store something they did not choose). Blank with weaving OFF stores nothing.
-  Clearing an existing second value on edit DELETES it and, where it was woven, is refused with the
-  same sentence as any other attempt to re-weave a woven field.
-  *Tests:* one per row of that paragraph.
+- **S1b — what an EMPTY second means, said once.** ~~Blank at create with the own-second option
+  chosen and weaving ON is a refusal.~~ **Dropped in PR B's plan round as unreachable** — with the
+  box as the only switch there is no "own-second chosen" state distinct from a filled box, so the
+  refusal could never fire and the rule could not be implemented from one control. What survives is
+  in S4's state table, every row of it, and a blank box never refuses. `pairRefusal` returning no
+  refusal for a blank second is asserted in PR A (`secondPair.test.ts`); the rest is S5's.
 - **S2 — the two choke points take a supplied second.** `weaveSecret(value, code, random, second?)`
   (`wovenSecret.ts:49`) and `weaveOne` (`paymentWeaving.ts:72-84`) use a typed value INSTEAD of
   calling `generateDecoy`; the record gains `ownSecond` beside `shuffledFields`, and the entry gains
@@ -208,9 +208,34 @@ requests**.
 
 ### PR B — the forms, the gates, the viewer, and the policy
 
-- **S4 — the form controls.** A second box beside each of the six fields, the phrase's
-  `secondColumn()` widened rather than copied. New modules, because `entityFormPanel.ts` (799),
-  `entityFormScript.ts` (799) and `entityFormPage.ts` (764) are at the ceiling.
+- **S4 — the form controls, and THE STATE TABLE.** A second box beside each of the six fields, the
+  phrase's `secondColumn()` widened rather than copied. New modules, because `entityFormPanel.ts`
+  (799), `entityFormScript.ts` (799) and `entityFormPage.ts` (764) are at the ceiling.
+
+  **The box IS the switch, and a blank box never refuses.** Settled in PR B's plan round, where all
+  three reviewers found the same hole: as first written, S1b needed to tell "I chose to type my own
+  and left it blank" apart from "make me a decoy", and one text box cannot carry both. Two reviewers
+  proposed a checkbox per field. That is six more controls whose only job is to distinguish two blank
+  states, and a control that can disagree with the box beside it is a new class of defect. The other
+  meaning is deleted instead: blank with weaving ON makes a decoy, which is exactly what this product
+  does today and loses nothing. The form says so where a person reads it before saving.
+
+  | weaving | the second box | what is stored |
+  |---|---|---|
+  | ON, field not yet woven | filled | Woven with THEIR value. `ownSecond` / `passwordSecondOwn` marked. The typed second is **not** written to the record — that is the sharpest rule |
+  | ON, field not yet woven | blank | Woven with a generated decoy. Today's behaviour, unchanged |
+  | ON, field ALREADY woven | anything | Nothing. `weavePaymentFields` filters a key already in `shuffledFields`, and `wovenSave` keeps `wasWoven` — the box is not read |
+  | OFF | filled | Stored in the record, exactly as typed |
+  | OFF, something stored | blank | **Kept.** The password box's own rule (`wovenSave` returns `woven: wasWoven` for an empty box), so an unrelated edit cannot silently delete a secret |
+  | OFF, nothing stored | blank | Nothing |
+  | any, something stored | *Clear* ticked | Deleted. The `clearPassword` affordance, shown only when there is something to clear |
+
+  The only refusal is a mismatched PAIR (owner decision 4), and it is `pairRefusal`'s, built in PR A.
+
+  *Tests:* one per row, and each one DRIVES the control — `input`, `change`, save — and asserts the
+  record the save wrote, rather than asserting that six inputs were rendered. Issue #51 is why: every
+  page test here matched the generated SOURCE, the source said the right thing, and the picture was
+  three grey lines. `miniDom.ts` runs the fragment.
 - **S5 — the save gates.** `refuseSecondPairs` before the checksum gate, so nothing is woven when a
   pair is refused; the password's equivalent; `secondRecordFor` drops every value a weave consumed.
   **`passwordSecondOwn` is written only beside `passwordWoven`, and cleared wherever it is cleared**
@@ -226,8 +251,21 @@ requests**.
   STORED state, not the generator. "The random was never called" proves a decoy was not drawn; it
   says nothing about whether the typed value was also written to the slot, which is the thing that
   would hand a reader the half to subtract. The test reads back what the save wrote.
+  **There is no path from woven back to un-woven through the form**, and S5 says so rather than
+  leaving it to be discovered: unticking the weave box on an already-woven entry does nothing on its
+  own (`weaveNotice` already says that sentence to the person), so no partner secret has to be
+  restored or discarded. And **an unrelated edit to a woven entry saves normally** — the second box
+  is not read for a field already woven, and no blank box refuses — which is the trap a reviewer
+  found in the plan as first written. A regression test per row of S4's table.
 - **S6 — the viewer.** A masked row with Copy per second value; `cvv2` and `pin2` inherit the reveal
-  gate of the field they belong to, because copying is showing.
+  gate of the field they belong to, because copying is showing. A WOVEN field shows no second row:
+  there is nothing stored to show, and a row promising one would be a lie about where the value is.
+  **Where the person's own woven second value actually comes back** is said on the row rather than
+  left to be worked out — a reviewer asked and the plan had no answer written down. It comes back
+  the way the first half does: pick the method, and the reading shows BOTH rows, which #58's picture
+  draws side by side in colour. With an own second value both rows are the person's own real values,
+  which is exactly what the issue asked for ("seed 1, seed 2"). What does not exist, and must not, is
+  a product that can hand over either row by itself — it does not know which is which.
 - **S7 — share and export.** The withholding above, the sender's notice by name, and the export
   warning's counts.
   *Tested at the BOUNDARY, not at the allowlist:* a share is actually built and the payload asserted
@@ -237,6 +275,11 @@ requests**.
   still travels, exactly as it does today.
 - **S8 — docs and help.** `module_extension.md`, `architecture.md`'s slot count, and the five help
   languages in one commit — a stale translation is invisible, so all five change together.
+  *And something checkable beside the discipline:* every language's help body must carry the new
+  section's marker, so a language nobody touched is RED rather than quietly English-shaped. The
+  fallback marks a MISSING translation and never a stale one, which is why the coverage test rewards
+  that failure today; a content-version check across languages is the real fix and is help
+  infrastructure rather than this feature.
 
 ## Test plan
 
