@@ -4032,6 +4032,26 @@ one folder for both would point at a page where half the setting is not. The thr
 `resolveMcpAccess` was retired in the same change: it had lost its last production caller, and a
 second resolver carrying the old single-axis semantics is how two screens come to disagree.
 
+**The policy is a setting and the stamp is evidence, and only the first one syncs.** `consentDue`
+in `mcpConsentPolicy.ts` answers *must this call raise a dialog*, and under `every12h` it consults a
+`ConsentStamp` — `{ at, rungs }` — kept in this machine's `globalState` under
+`credSshManager.mcpConsentStamps` and never anywhere else. That split is `commandTrust.ts`'s
+argument unchanged: a remembered answer stored on the entity would ride sync and a share, so whoever
+sends you the entity also sends the record saying you already agreed, and a trust flag the threat
+controls is not a check. **`rungs` is why the stamp is a record and not a timestamp** — the dialog
+grants every action of the entry's kind, so a window keyed on the entry alone would let a rung
+turned on an hour later ride in on an answer given before it existed; it is compared against the
+ladder resolved at the moment of the call. **Expiry is arithmetic, never presence**: a record still
+in the store after thirteen hours grants nothing, and one whose `at` is in the FUTURE opens no
+window at all — `globalState` is a plain file this user's processes can write, and that single
+comparison also closes both directions of clock skew, since a clock set back puts every stamp in
+the future. Writes go through one in-memory map and a `SerialQueue`, because `globalState.update`
+rewrites the whole record and two consents settling at once would otherwise lose one; the map is
+pruned expired-first and then capped at 256, so the worst case is about 30 KB. The *other window* is
+deliberately not locked — `leasedQueue.ts` exists for exactly that shape, but a lost stamp costs one
+extra dialog, and paying a file lock and a status-bar wait to be asked exactly as often as promised
+rather than once more is the wrong trade on the path that is meant to be the quiet one.
+
 **Folders became the second object in 0.85.0** (`PLAN_agent_folder_ops.md`). Four tools —
 `creds_folders`, `creds_create_folder`, `creds_edit_folder`, `creds_delete_folder` — with the
 decisions in `mcpFolders.ts` (pure: what is visible, which verb needs which switch, and whether a
@@ -4122,6 +4142,7 @@ and not the other stops the build instead of every window's startup. Record:
 | Module | What it decides |
 |---|---|
 | `mcpAccess.ts` | the ladder, inheritance from a folder **per axis**, nothing at all inside the Trash — and the ask policy a record carries beside its rungs |
+| `mcpConsentPolicy.ts` | whether a use call has to raise a dialog, and this machine's record of the ones answered on it |
 | `mcpEntries.ts` | what an agent may SEE, field by field; and which switch each action needs |
 | `mcpCreate.ts` | which folders are open to creation, and what a request becomes |
 | `secretRotation.ts` / `rotateAction.ts` | the placeholder, and the order a rotation happens in |
