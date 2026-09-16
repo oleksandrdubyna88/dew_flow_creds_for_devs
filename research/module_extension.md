@@ -4187,10 +4187,27 @@ contract copies.
 `/v1/mcp/delete` and `/v1/mcp/create` are their own routes because neither is a use of a
 credential. A test asserts no path parses as two of them.
 
-**The switch is not consent.** It says an agent *may ask*. Every call still raises the modal, goes
-through the same throttle, is masked by the same masker and written to the same audit file. An
-entry whose switch is off is refused *before anybody is asked* — a prompt raised for something the
-switches already forbid is how a person learns to click Allow without reading.
+**The switch is not consent.** It says an agent *may ask*. A call is masked by the same masker and
+written to the same audit file whatever happens at the dialog, and an entry whose switch is off is
+refused *before anybody is asked* — a prompt raised for something the switches already forbid is how
+a person learns to click Allow without reading.
+
+**Whether the modal is RAISED is the entry's own answer** (issue #95). `handleMcpUse` reads
+`preConsented` off the lookup — the one side holding both halves, this entry's synced policy and
+this machine's record of the dialogs answered on it — and when the policy has already spoken it
+settles the grant before `perform`, so `consent()`'s existing "already allowed" short-circuit skips
+the modal. Nothing after that changes: the same mask, the same audit, the same one-use burn. Three
+properties hold around it, and each is a test. **The throttle counts modals, not calls**: a quiet
+call takes no slot, because the budget is five *prompts* a minute and spending one would refuse a
+later call for a dialog nobody was going to see — and it releases none either, since releasing a
+slot never taken frees another call's. **A quiet call proves nobody was present**: `onUserPresent`
+lives inside `ask`, so the idle auto-lock is unaffected, which is the whole reason agent traffic
+never postponed it. And **a quiet call does not slide the window**: `asked` is read before the
+await, so only a dialog somebody answered is remembered — otherwise "once every twelve hours" would
+become "once, ever". The silent path writes its own line, `allowed without a prompt`, carrying
+`via: 'mcp'` so the journal can answer the first question anybody asks of this feature: which calls
+ran with nobody being asked. **Deleting and creating always ask**, on both routes and by
+construction rather than by discipline.
 
 **The gate is per action, not per call.** `switchForAction` maps `rotate` to `edit` and the use
 verbs to `use`, so a rotation cannot ride in on a permission granted for a read-only query; an

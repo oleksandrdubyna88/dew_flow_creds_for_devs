@@ -20,7 +20,7 @@ import { CallSubject, performCall } from './brokerCall';
 import { OneUseLane, burnAndMark } from './oneUseLane';
 import { ReadRouteSources, readRouteBody } from './brokerReadRoutes';
 import { describeError } from './describeError';
-import { BrokerDoor, mcpDoor } from './brokerMcpDoor';
+import { BrokerDoor, answeredHere, mcpDoor } from './brokerMcpDoor';
 import { McpFolderHooks } from './brokerFolderDoor';
 import { answerMcpRoute } from './brokerMcpRoutes';
 import { aliasTarget, grantForToken, readNamedBody } from './brokerRequests';
@@ -213,13 +213,27 @@ export class CredsAgentServer implements vscode.Disposable {
    * routes that carry no token pass through here; see `brokerRequests.ts` for what each of them
    * has to satisfy before reaching it.</p>
    */
-  private admitAliasCall(res: http.ServerResponse): boolean {
+  private admitAliasCall(res: http.ServerResponse, prompts = true): boolean {
+    // The budget counts MODALS, not calls. A call that raises none takes no slot, because spending
+    // one would refuse a later call for a dialog nobody was ever going to see — and the rate of
+    // prompts is what this throttle exists to hold (see `aliasThrottle.ts`). The default keeps the
+    // alias route, which always prompts, byte-identical.
+    if (!prompts) {
+      return true;
+    }
     const verdict = this.aliasThrottle.admit(Date.now());
     if (verdict === 'allow') {
       return true;
     }
     this.respondError(res, 'too_many_requests', AliasThrottle.describe(verdict));
     return false;
+  }
+
+  /** Give back a slot only when one was taken: releasing otherwise frees ANOTHER call's. */
+  private releaseAliasCall(prompts: boolean): void {
+    if (prompts) {
+      this.aliasThrottle.release();
+    }
   }
 
   /** The routes an MCP client posts to — the dispatch lives in `brokerMcpRoutes.ts`. */
@@ -255,12 +269,17 @@ export class CredsAgentServer implements vscode.Disposable {
     return mcpDoor({
       refuse: (res, code, message, grant, action, detail, caller) =>
         this.respondError(res, code, message, grant as Grant | undefined, action, detail, 'mcp', caller),
-      admit: (res) => this.admitAliasCall(res),
-      release: () => this.aliasThrottle.release(),
+      admit: (res, prompts) => this.admitAliasCall(res, prompts),
+      release: (prompts) => this.releaseAliasCall(prompts),
+      // The grant a policy already answered for. `consent` short-circuits on an allowed grant, so
+      // the modal is skipped by machinery that was already there rather than by a second path —
+      // and everything after it, the mask, the audit line and the one-use burn, is unchanged.
+      preConsent: (grant) => this.grants.allow((grant as Grant).secret),
       mint: (t) => this.grants.mint(t.accountId, t.entityId, t.entityName, t.kind),
       describe: (grant) => GrantRegistry.describe(grant as Grant),
       note: (entry) => this.log(entry),
-      perform: (res, grant, action, body, caller) => this.perform(res, grant as Grant, action, body, 'mcp', caller),
+      perform: (res, grant, action, body, caller, rungs) =>
+        this.perform(res, grant as Grant, action, body, 'mcp', caller, rungs),
       consent: (grant, action, verb, summary, caller) => this.consent(grant as Grant, action, verb, summary, caller),
       respond: (res, status, body) => this.respond(res, status, body),
     });
@@ -471,6 +490,11 @@ export class CredsAgentServer implements vscode.Disposable {
     // every door that reaches this funnel says who is asking, or does not compile. It is a label
     // for the modal and the audit line; nothing below decides anything with it.
     caller: CallerLabel | undefined,
+    /**
+     * The ladder this call's entry resolved to, from the MCP lookup — the fingerprint a remembered
+     * consent is recorded under. Absent on every other door, which remembers nothing.
+     */
+    rungs?: string,
   ): Promise<void> {
     const useAction = this.actions.resolve(grant.kind, action);
     if (useAction === undefined) {
@@ -484,12 +508,17 @@ export class CredsAgentServer implements vscode.Disposable {
     }
 
     const summary = useAction.summarize(body);
+    // Read BEFORE the await. A grant a policy settled at the door is already `allowed`, and a call
+    // that raised no modal must not slide this entry's quiet window forward — that is how "once
+    // every twelve hours" quietly becomes "once, ever".
+    const asked = this.grants.get(grant.secret)?.status !== 'allowed';
     const consent = await this.consent(grant, action, useAction.verb, summary, caller);
     if (consent !== 'allowed') {
       const code: ErrorCode = consent === 'timeout' ? 'consent_timeout' : 'denied';
       this.respondError(res, code, 'The human did not allow this grant.', grant, action, summary, via, caller);
       return;
     }
+    await this.remember(via, grant, asked, rungs);
 
     // Read BEFORE anything runs, and a read that will not answer refuses the call — see `tableOrFail`.
     const table = await tableOrFail(this.hooks.maskEntriesFor, grant, (why) =>
@@ -500,6 +529,24 @@ export class CredsAgentServer implements vscode.Disposable {
     }
 
     await this.runAndDeliver(res, { grant, useAction, action, body, via, caller, summary, table });
+  }
+
+  /**
+   * A person answered a dialog for an MCP use call: let the vault remember it.
+   *
+   * <p><b>`via === 'mcp'` means a use call</b>, because `perform` is reached from exactly one door —
+   * `handleMcpUse`. Delete and create call `consent` directly and never come through here, so
+   * somebody who allowed a TOKEN call cannot silence the MCP door on the same entry; the two
+   * dialogs say different things.</p>
+   *
+   * <p>Awaited rather than launched: the answer should be durable before the agent is told its call
+   * succeeded, and a rejected write would otherwise be a failure nobody observes.</p>
+   */
+  private async remember(via: AuditDoor, grant: Grant, asked: boolean, rungs: string | undefined): Promise<void> {
+    if (!answeredHere(via, asked, rungs)) {
+      return;
+    }
+    await this.hooks.rememberMcpConsent?.(grant.accountId, grant.entityId, rungs);
   }
 
   /** The sequence is `brokerCall.performCall`; this binds it to one request. */

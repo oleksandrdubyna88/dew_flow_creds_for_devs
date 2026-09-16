@@ -139,13 +139,13 @@ async function perform(
     door.refuse(res, decision.code, decision.message);
     return;
   }
-  if (!door.admit(res)) {
+  if (!door.admit(res, true)) {
     return;
   }
   try {
     await confirmAndRun(door, res, decision, hooks as McpFolderHooks, read.body, route, callerFrom(read.body));
   } finally {
-    door.release();
+    door.release(true);
   }
 }
 

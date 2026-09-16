@@ -560,7 +560,19 @@ inherited `use` rung reading false.
 | a word from a newer build stops the climb instead of inheriting a `never` | **unit** | fixture is JSON, so the type system cannot sanitise the case away |
 | a stored `null` hands the answer back to the folder | **unit** | what the form sends for *Inherit* |
 | nothing in the Trash answers on either axis | **unit** | a never-ask policy surviving a delete would be the sharpest form of this bug |
-| the same, end to end through the real `creds-mcp` binary | **NOT COVERED YET** | and it cannot be, honestly: nothing can WRITE a policy until the form lands (story S3.1), and the broker ignores the field until S2.2. The harness leg is owned by story S4.2, which drives six quiet calls and one forced prompt through the real binary. Recorded here rather than left implicit, because a gap nobody wrote down is a gap nobody closes |
+| the same, end to end through the real `creds-mcp` binary | **NOT COVERED YET** | and it cannot be, honestly: nothing can WRITE a policy until the form lands (story S3.1). The harness leg is owned by story S4.2, which drives six quiet calls and one forced prompt through the real binary. Recorded here rather than left implicit, because a gap nobody wrote down is a gap nobody closes |
+
+**The door's half (S2.2)**, driven through the real broker over loopback by
+`test/brokerMcpRoutes.test.ts`:
+
+| flow | covered | note |
+|---|---|---|
+| six quiet calls in a row all succeed and none raises a dialog | **broker** | red-first: today the sixth answered `too_many_requests` and the four before it timed out at a dialog nobody was answering |
+| a quiet call leaves nobody present, and says so in the journal | **broker** | `presence === 0`, and one line reading `allowed without a prompt` |
+| deleting and creating still ask on a pre-consented entry | **broker** | the consumer half of the guarantee; the producer half is in `mcpEntries.test.ts` |
+| an answered dialog is remembered under the ladder shown; a quiet call is not | **broker** | the window does not slide |
+| a token call never writes the MCP stamp | **broker** | the two dialogs say different things |
+| quiet calls spend no modal slot, so a prompting call still gets its five | **broker** | releasing a slot never taken would free another call's |
 
 **What this does not prove.** That the resolver's answer is the one the MCP door acts on — the door
 does not read the policy at all yet. Until S2.2 the whole axis is inert by construction, which is

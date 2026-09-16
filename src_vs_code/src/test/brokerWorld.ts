@@ -18,6 +18,9 @@ import type { McpCreateHooks } from '../brokerMcpDoor';
 
 type Broker = typeof import('../credsAgentServer');
 
+/** The ladder the stubbed lookup says it resolved — any stable string does; this one reads. */
+export const STUB_RUNGS = 'true,true,false,false,,false,false,';
+
 interface Ran {
   action: string;
   entityId: string;
@@ -38,6 +41,8 @@ interface World {
   /** Names of entries an agent created. */
   created: string[];
   presence: number;
+  /** Consents the vault was asked to remember: accountId, entityId and the ladder shown (#95). */
+  consents: { entityId: string; rungs: string }[];
   /** Called by the run stub: a rotation writing its new value into storage mid-run. */
   rotate?: () => void;
   /**
@@ -125,6 +130,7 @@ function world(options: {
     trashed: [],
     created: [],
     presence: 0,
+    consents: [],
     result: { status: 200, body: { exitCode: 0, stdout: 'ok\n', stderr: '' } },
   };
   w.mod = loadWithVscode<Broker>('../credsAgentServer', {
@@ -203,6 +209,10 @@ function hooksFor(w: World, options: Parameters<typeof world>[0]): Record<string
     resolveMcpUse: mcpUseFor(options.mcpUse, options.mcpPreConsented),
     moveToTrash: trashFor(w, options.trash),
     mcpCreate: createFor(w, options.create),
+    rememberMcpConsent: (_a: string, entityId: string, rungs: string): Promise<void> => {
+      w.consents.push({ entityId, rungs });
+      return Promise.resolve();
+    },
   };
 }
 
@@ -338,7 +348,15 @@ function mcpUseFor(
     }
     return verdict === 'closed'
       ? { kind: 'closed', entityName: 'prod', needed: action === 'rotate' ? 'edit' : 'use' }
-      : { kind: 'usable', target: { accountId: 'a1', entityId: 'e1', entityName: 'prod', kind: 'ssh' }, preConsented };
+      : {
+          kind: 'usable',
+          target: { accountId: 'a1', entityId: 'e1', entityName: 'prod', kind: 'ssh' },
+          preConsented,
+          // The ladder this verdict was reached under. A lookup that omits it reads as the empty
+          // string, which matches no resolved ladder and so refuses the write — fail-closed, and
+          // what the five `.cjs` harnesses get.
+          rungs: STUB_RUNGS,
+        };
   };
 }
 
