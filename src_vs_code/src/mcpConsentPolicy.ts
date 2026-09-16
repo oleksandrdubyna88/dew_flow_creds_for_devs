@@ -267,3 +267,16 @@ function prune(map: Record<string, ConsentStamp>, now: number): Record<string, C
 function newestFirst(entries: (readonly [string, ConsentStamp])[]): (readonly [string, ConsentStamp])[] {
   return [...entries].sort((a, b) => b[1].at - a[1].at);
 }
+
+/**
+ * Does this policy remember anything at all?
+ *
+ * <p>Only `every12h` consults a stamp, so only `every12h` is worth writing one for: an entry set to
+ * ask every time would put a record in `globalState` on every consent that nothing ever reads, and
+ * one set to never ask never reaches a dialog. Asked HERE rather than spelled at the write site,
+ * because a fourth cadence added to `consentDue` and not to that comparison would be a policy whose
+ * dialog is answered and never remembered — asked again forever, with nothing failing.</p>
+ */
+export function remembersConsent(policy: McpAskPolicy): boolean {
+  return policy === 'every12h';
+}

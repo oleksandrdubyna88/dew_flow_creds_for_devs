@@ -1,5 +1,5 @@
 import { McpAccess, McpRung, ResolvedMcpAccess, accessMask, ladderKey, mayDelete, resolveMcpInTree } from './mcpAccess';
-import { ConsentStamps, consentDue, stampKey } from './mcpConsentPolicy';
+import { ConsentStamps, consentDue, remembersConsent, stampKey } from './mcpConsentPolicy';
 import { EntityMetadata, TreeNode } from './types';
 import { resolveKind } from './entityKind';
 import { withoutPassword } from './dbConnString';
@@ -311,7 +311,10 @@ async function storedSecrets(
  * account to name — it got the id from a list that had already merged them.</p>
  */
 export type UsableEntry =
-  | { kind: 'usable'; accountId: string; node: TreeNode; access: McpAccess }
+  // `action` is carried rather than passed again: the verdict was reached FOR an action, and a
+  // caller that resolved a delete and then asked about a use would otherwise get an answer about
+  // neither. Binding them makes that mismatch unrepresentable instead of merely unlikely.
+  | { kind: 'usable'; accountId: string; node: TreeNode; access: McpAccess; action: string }
   | { kind: 'closed'; node: TreeNode; needed: McpRung }
   | undefined;
 
@@ -399,7 +402,9 @@ function verdictFor(
   // The access is carried out rather than recomputed by whoever needs it next: the consent policy
   // and the ladder fingerprint both come from this same resolve, and a second walk is a second
   // chance to resolve it differently.
-  return granted(access, needed, node) ? { kind: 'usable', accountId, node, access } : { kind: 'closed', node, needed };
+  return granted(access, needed, node)
+    ? { kind: 'usable', accountId, node, access, action }
+    : { kind: 'closed', node, needed };
 }
 
 /**
@@ -414,13 +419,8 @@ function verdictFor(
  * and for every verb it has never heard of — so a route added to the broker and forgotten in that
  * table fails closed here too, rather than inheriting a quiet path nobody meant to give it.</p>
  */
-export function preConsentedFor(
-  found: UsableEntry,
-  action: string,
-  stamps: ConsentStamps | undefined,
-  now: number,
-): boolean {
-  if (!mayBeQuiet(found, action) || stamps === undefined) {
+export function preConsentedFor(found: UsableEntry, stamps: ConsentStamps | undefined, now: number): boolean {
+  if (!mayBeQuiet(found) || stamps === undefined) {
     return false;
   }
   const key = stampKey(found.accountId, found.node.id);
@@ -428,8 +428,8 @@ export function preConsentedFor(
 }
 
 /** Is this even a call a policy may speak for? A delete — and an unknown verb — never is. */
-function mayBeQuiet(found: UsableEntry, action: string): found is UsableFound {
-  return found?.kind === 'usable' && switchForAction(action) !== 'delete';
+function mayBeQuiet(found: UsableEntry): found is UsableFound {
+  return found?.kind === 'usable' && switchForAction(found.action) !== 'delete';
 }
 
 /**
@@ -478,4 +478,45 @@ function dependencyNames(node: TreeNode, byId: (id: string) => TreeNode | undefi
     const target = byId(id);
     return target === undefined ? [] : [target.name];
   });
+}
+
+/**
+ * A person answered a dialog for this entry. Record it — but only where it will be read, and only
+ * for the grant they were actually shown.
+ *
+ * <p>Here rather than in `mcpHooks.ts` for the same reason `preConsentedFor` is, and it is the
+ * writing half of the same rule: both decide whether a later call goes quiet, and both are reached
+ * by `node:test` because this module imports no `vscode`.</p>
+ *
+ * <p>Only under a policy that remembers anything — asked through `remembersConsent` rather than
+ * compared here, so a fourth cadence added to `consentDue` cannot become one whose dialog is
+ * answered and never recorded.</p>
+ *
+ * <p><b>`expected` is the ladder the LOOKUP resolved, and a mismatch refuses the write.</b> A
+ * person can be looking at the dialog while a sync, or another window, widens that entry — and
+ * resolving again at this moment would stamp the WIDER grant, so a later call could go quiet for
+ * access nobody was ever asked about. When the two disagree the answer is simply not remembered,
+ * which costs one more dialog and is the only direction that cannot grant anything.</p>
+ *
+ * <p>Returns the write rather than dropping it: a rejected update would otherwise be an unobserved
+ * failure, and a window closing straight after the answer could lose it.</p>
+ */
+export function rememberMcpConsent(
+  source: Pick<McpVaultSource, 'getNode'>,
+  stamps: ConsentStamps,
+  accountId: string,
+  entityId: string,
+  expected: string,
+  now: number,
+): Promise<void> {
+  const access = entryAccessFor(source, accountId, entityId);
+  if (!worthRemembering(access, expected)) {
+    return Promise.resolve();
+  }
+  return stamps.remember(stampKey(accountId, entityId), expected, now);
+}
+
+/** A policy that consults a stamp, on a grant that still reads the way it did when it was shown. */
+function worthRemembering(access: McpAccess | undefined, expected: string): boolean {
+  return access !== undefined && remembersConsent(access.ask ?? 'always') && ladderKey(access) === expected;
 }

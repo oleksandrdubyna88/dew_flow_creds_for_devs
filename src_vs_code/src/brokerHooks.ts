@@ -126,7 +126,7 @@ export interface BrokerHooks {
    * remembered answer that travels is not a check. Absent means this window remembers nothing, so
    * every call asks, which is what a build with no storage should do.</p>
    */
-  readonly rememberMcpConsent?: (accountId: string, entityId: string) => void;
+  readonly rememberMcpConsent?: (accountId: string, entityId: string, rungs: string) => Promise<void>;
 
   /**
    * Move an entry to the Trash, answering whether it was still there to move.
