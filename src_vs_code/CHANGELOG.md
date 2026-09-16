@@ -4,6 +4,40 @@ All notable changes to **CredsForDevs** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased] — the viewer shows what a method did, and the first row stops always being yours
+
+### Fixed
+
+- **The two rows a woven value is read back through no longer put your value first every time.**
+  The row said *"nothing here can tell you which one is yours, and that is deliberate"*, and the
+  build did not keep that promise: the real value is woven as the first column, and every host put
+  the first reading into row **a** — so under the correct method row one was always yours, and
+  anyone working through the twelve methods never had to read row two. Which half is drawn first is
+  now decided per entry, from the same cryptographic source the phrase generator uses, and decided
+  again each time you open the entry. It is held in the extension and appears in no message, no id
+  and no caption, so there is nothing in the page to inspect for it. One extra bit: twelve readings
+  become twenty-four, and the method is still the only thing you have to remember.
+
+- **The refusal to edit a woven entry stops naming an action that does not exist.** It ended *"or
+  view it and unweave the field first"*, and there is no unweave anywhere — undoing a weave needs
+  the method, which is stored nowhere. It now names the route that does exist: open the entry, pick
+  your method, press Show, copy the row you recognise, then create a new entry and delete this one.
+
+- **The worked example is titled with the method's NAME on every form.** The card, the password and
+  the phrase each titled it `f4` while every picker on every surface said *Method 4*. The label is
+  the only route back to a woven value, so a surface naming a method differently from the picker you
+  chose it in can cost you that value.
+
+### Added
+
+- **A woven entry says so in Main, and a reading shows what the method did.** The form has said
+  *Woven — on* since woven passwords shipped; the viewer — the one place you go to READ a value —
+  said nothing. It does now, in one sentence, naming the password and any payment fields by the
+  labels you have seen. And when you pick a method and press Show, the two rows are joined by the
+  picture the form draws before you choose: your first row, your second row, and the stored value
+  with every token coloured by which of the two rows it came from. It leaves when the rows do — on a
+  refusal, when you pick another method, and when an assembled phrase closes itself.
+
 ## [1.7.0] — the forms say what they are doing, the tree says what the server is, and the dialog says who is asking
 
 ### Fixed
