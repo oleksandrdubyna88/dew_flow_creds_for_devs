@@ -2,6 +2,7 @@ import * as assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { describeMcpSource, mcpAsOfVersion, mcpFor } from '../viewerOptions';
 import type { TreeNode } from '../types';
+import type { McpAccess } from '../mcpAccess';
 
 /**
  * What the entity card says about agent access — and where it gets the answer.
@@ -97,4 +98,20 @@ test('an orphaned entry resolves to nothing rather than throwing', () => {
   const shown = mcpFor(node, lookup(node), false);
   assert.equal(shown.source, 'none');
   assert.equal(shown.folderName, undefined);
+});
+
+test('a kept version says the policy IT carried, and never borrows the one in force now', () => {
+  // A revision holds the entry's own record and nothing about the folder as it was, so the consent
+  // policy it shows can only ever be its own. The failure this guards against is the one this
+  // module already fixed once for the ladder: a card answering a question about the past with a
+  // fact about the present — and here that fact would be "an agent may use this without asking".
+  const said = (mcp: McpAccess): string => mcpAsOfVersion(mcp)?.summary ?? 'nothing at all';
+  assert.match(said({ view: true, ask: 'never' }), /never asks/);
+  assert.match(said({ view: true, ask: 'every12h' }), /once every 12 hours/);
+
+  // The same record with no policy of its own. Whatever the folder says TODAY — including never —
+  // this version inherited an answer that was not kept, so the card says nothing about consent
+  // rather than reporting today's as though it had been that version's.
+  assert.equal(said({ view: true }), 'visible');
+  assert.equal(mcpAsOfVersion(undefined), undefined);
 });
