@@ -175,10 +175,29 @@ export function readingFor(
   key: string,
   code: string,
 ): Reassembled | undefined {
-  const tokens = wovenTokensOf(fields, form, key, code);
-  return tokens === undefined
-    ? undefined
-    : reassemble(tokens, code as ShuffleCode, layoutFor(fields, key));
+  return readBackOf(fields, form, key, code)?.reading;
+}
+
+/**
+ * The reading AND what it was rebuilt from — the stored tokens and the layout.
+ *
+ * <p>The picture drawn under the two rows needs those two, and they were private here. One function
+ * rather than two exported halves, because they share the single refusal above: a caller that could
+ * obtain the tokens without the reading could paint a picture for a record the rows refused, which
+ * is a picture of nothing under a note saying it cannot be read.</p>
+ */
+export function readBackOf(
+  fields: PaymentFields,
+  form: PaymentForm,
+  key: string,
+  code: string,
+): { readonly reading: Reassembled; readonly stored: readonly string[]; readonly layout: PhraseLayout } | undefined {
+  const stored = wovenTokensOf(fields, form, key, code);
+  if (stored === undefined) {
+    return undefined;
+  }
+  const layout = layoutFor(fields, key);
+  return { reading: reassemble(stored, code as ShuffleCode, layout), stored, layout };
 }
 
 /**

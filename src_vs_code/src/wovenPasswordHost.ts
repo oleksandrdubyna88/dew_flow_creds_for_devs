@@ -1,4 +1,5 @@
-import { ShuffleCode, isShuffleCode } from './shuffle';
+import { ShuffleCode, isShuffleCode, methodLabel } from './shuffle';
+import { wovenPictureTokens } from './wovenPicture';
 import { unweaveSecret } from './wovenSecret';
 import { DisplayedPair, RowOrder, RowOrderStore, displayed, rowIn } from './rowFlip';
 
@@ -77,15 +78,24 @@ async function answer(
   deps: WovenPasswordDeps,
 ): Promise<void> {
   const code = codeIn(type, rest);
-  const reading = readingOf(stored, code);
   // The rows, in the order sampled before the read, and read by BOTH branches below — so a Copy can
   // never resolve `a` against a different order from the one the Show drew.
-  const shown = reading === undefined ? undefined : displayed(reading, order);
+  const shown = shownPair(stored, code, order);
   if (type === 'reassemble') {
-    deps.post(readingMessage(entityId, code, shown));
+    deps.post(readingMessage(entityId, code, shown, stored, order));
     return;
   }
   await copyRow(rest[0] ?? 'a', shown, entityId, deps);
+}
+
+/** The two readings in the order they will be DRAWN, or nothing when they cannot be rebuilt. */
+function shownPair(
+  stored: string | undefined,
+  code: string,
+  order: RowOrder,
+): DisplayedPair<string> | undefined {
+  const reading = readingOf(stored, code);
+  return reading === undefined ? undefined : displayed(reading, order);
 }
 
 /** `reassemble` is sent as `password|<code>`; `copyReading` as `password|<a|b>|<code>`. */
@@ -127,6 +137,8 @@ function readingMessage(
   entityId: string,
   code: string,
   shown: DisplayedPair<string> | undefined,
+  stored: string | undefined,
+  order: RowOrder,
 ): unknown {
   return shown === undefined
     ? { type: 'paymentReading', entityId, key: WOVEN_PASSWORD_KEY, ok: false, why: UNREADABLE }
@@ -141,6 +153,12 @@ function readingMessage(
         // keys, the same lengths and the same shape either way.
         first: [...shown.first],
         second: [...shown.second],
+        // The stored value character by character, each tagged with the ROW it is in — built from
+        // the SAME order the rows were, so the picture cannot contradict them. A password has no
+        // layout of its own, so the default (vertical) is the right one.
+        woven: wovenPictureTokens([...(stored ?? '')], code as ShuffleCode, order),
+        // The name, never the code: every picker on every surface says `Method 4`.
+        methodName: methodLabel(code as ShuffleCode),
         visibleMs: 0,
       };
 }

@@ -1,9 +1,19 @@
 import { PAYMENT_FIELD_LABELS, PaymentFieldKey, PaymentFields } from './paymentFields';
 import { PHRASE_VISIBLE_MS, needsReveal, phraseRevealPrompt, revealPrompt } from './revealGate';
-import { PaymentCardView, copyTextFor, plainValues, readingFor, revealValue } from './paymentViewMessages';
+import {
+  PaymentCardView,
+  copyTextFor,
+  plainValues,
+  readBackOf,
+  readingFor,
+  revealValue,
+} from './paymentViewMessages';
 import { Reassembled } from './phraseReassembly';
 import { PhraseBuffer } from './phraseBuffer';
 import { RowOrder, RowOrderStore, displayed } from './rowFlip';
+import { wovenPictureTokens } from './wovenPicture';
+import { ShuffleCode, methodLabel } from './shuffle';
+import { PhraseLayout } from './phraseLayout';
 
 /**
  * The payment card's host half: what a message from the card is answered with, and what is asked
@@ -183,12 +193,12 @@ export class PaymentViewHost {
     if (!view.woven.includes(key as PaymentFieldKey) || !(await this.grant(key, view))) {
       return;
     }
-    const reading = readingFor(fields, view.form, key, code);
-    if (reading === undefined) {
+    const back = readBackOf(fields, view.form, key, code);
+    if (back === undefined) {
       this.deps.post({ type: 'paymentReading', entityId: view.entityId, key, ok: false, why: UNREADABLE });
       return;
     }
-    this.postReading(key, this.readingMessage(key, code, view, reading, order));
+    this.postReading(key, this.readingMessage(key, code, view, back, order));
   }
 
   /**
@@ -220,14 +230,14 @@ export class PaymentViewHost {
     key: string,
     code: string,
     view: PaymentCardView,
-    reading: Reassembled,
+    back: { readonly reading: Reassembled; readonly stored: readonly string[]; readonly layout: PhraseLayout },
     order: RowOrder,
   ): unknown {
     const words = key === 'mixed';
     // The ROWS, not the arithmetic's pair, in the order sampled before the question. The buffers,
     // the message and any copy that follows are all built from this one call, so they describe the
     // same two rows — and which of them is the person's stops being a fact this class can state.
-    const shown = displayed({ first: reading.real, second: reading.decoy }, order);
+    const shown = displayed({ first: back.reading.real, second: back.reading.decoy }, order);
     const buffers = [PhraseBuffer.of(shown.first), PhraseBuffer.of(shown.second)];
     this.release(key);
     this.held.set(key, buffers);
@@ -244,6 +254,14 @@ export class PaymentViewHost {
       words,
       first: buffers[0].words(),
       second: buffers[1].words(),
+      // The stored value, token by token, each tagged with the ROW it is in — the picture drawn
+      // under the two rows. Built from the same `order` they were, so the colours cannot contradict
+      // them, and tagged `first`/`second` meaning the rows on screen, never real and never decoy.
+      woven: wovenPictureTokens(back.stored, code as ShuffleCode, order, back.layout),
+      // What this method is CALLED. The raw code travels only as the stale-answer guard; a picture
+      // titled `f4` while every picker on every surface says `Method 4` is the naming defect this
+      // feature already paid for once, and the label is the only route back to a woven value.
+      methodName: methodLabel(code as ShuffleCode),
       visibleMs: words ? PHRASE_VISIBLE_MS : 0,
     };
   }
