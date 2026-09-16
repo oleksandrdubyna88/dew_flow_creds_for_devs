@@ -12,7 +12,6 @@ import {
   McpAccess,
   normalizeMcpAccess,
   readMcpAccess,
-  resolveMcpAccess,
   resolveMcpInTree,
 } from '../mcpAccess';
 import { TreeNode } from '../types';
@@ -40,10 +39,19 @@ function entity(id: string, parentId: string | null, mcp?: TreeNode['mcp']): Tre
   };
 }
 
+/** The Trash is an ordinary node with one flag, which is how sync and restore-by-moving work. */
+function trashFolder(id: string, mcp?: TreeNode['mcp']): TreeNode {
+  return { id, name: 'Trash', type: 'folder', parentId: null, isTrash: true, mcp };
+}
+
 test('nothing is allowed until somebody says so', () => {
-  const resolved = resolveMcpAccess(entity('e1', 'f1'), folder('f1'), false);
-  assert.deepEqual(resolved.access, {});
+  const e = entity('e1', 'f1');
+  const resolved = resolveMcpInTree(e, tree(folder('f1'), e));
+  // The ladder answers nothing; the policy answers the strict value, because that is what the end
+  // of a walk that found nothing MEANS. Every answer this resolver gives carries a policy.
+  assert.deepEqual(resolved.access, { ask: 'always' });
   assert.equal(resolved.source, 'none');
+  assert.equal(resolved.askSource, 'none');
   assert.equal(grantsAnything(resolved.access), false);
 });
 
@@ -139,11 +147,13 @@ test('an unknown delete scope reads as no deleting rather than as permission', (
 test("the entry's own setting wins, and the folder is inherited when it has none", () => {
   const parent = folder('f1', { use: true });
 
-  const own = resolveMcpAccess(entity('e1', 'f1', { view: true }), parent, false);
+  const mine = entity('e1', 'f1', { view: true });
+  const own = resolveMcpInTree(mine, tree(parent, mine));
   assert.equal(own.source, 'entity');
   assert.equal(own.access.use, false);
 
-  const inherited = resolveMcpAccess(entity('e2', 'f1'), parent, false);
+  const theirs = entity('e2', 'f1');
+  const inherited = resolveMcpInTree(theirs, tree(parent, theirs));
   assert.equal(inherited.source, 'folder');
   assert.equal(inherited.access.use, true);
 });
@@ -152,19 +162,21 @@ test('an entry closed ON PURPOSE stays closed when its folder is opened up', () 
   // This is why absence and emptiness are different things. An empty object means "decided here,
   // and the answer is nothing"; removing the field would mean "ask the folder" and quietly
   // re-open the entry the next time somebody widened the folder.
-  const resolved = resolveMcpAccess(entity('e1', 'f1', {}), folder('f1', { delete: 'any' }), false);
+  const closed = entity('e1', 'f1', {});
+  const resolved = resolveMcpInTree(closed, tree(folder('f1', { delete: 'any' }), closed));
   assert.equal(resolved.source, 'entity');
   assert.equal(grantsAnything(resolved.access), false);
 });
 
-test('nothing in the trash is reachable, whatever either setting says', () => {
-  const resolved = resolveMcpAccess(
-    entity('e1', 'trash', { delete: 'any' }),
-    folder('trash', { delete: 'any' }),
-    true,
-  );
-  assert.deepEqual(resolved.access, {});
+test('nothing in the trash is reachable, and it answers nothing on EITHER axis', () => {
+  const deleted = entity('e1', 'trash', { delete: 'any', ask: 'never' });
+  const resolved = resolveMcpInTree(deleted, tree(trashFolder('trash', { delete: 'any', ask: 'never' }), deleted));
+
+  assert.deepEqual(resolved.access, { ask: 'always' });
   assert.equal(resolved.source, 'none');
+  // A never-ask policy surviving into the Trash would be the sharpest version of the bug the
+  // Trash rule exists to prevent: a deleted credential an agent may use WITHOUT anybody being asked.
+  assert.equal(resolved.askSource, 'none');
 });
 
 test('own-scoped deletion reaches only what the agent made', () => {
@@ -402,4 +414,124 @@ test('a record whose policy word this build has never seen is still admitted to 
   // newer build must not do that, which is why the safety lives in `askPolicy` instead.
   assert.equal(isMcpAccess({ view: true, ask: 'weekly' }), true);
   assert.equal(isMcpAccess({ view: true, ask: 'never' }), true);
+});
+
+/**
+ * Two axes, two walks — and the regression that made them necessary.
+ *
+ * <p>Inheritance stops at the first node with an answer, which is how a sub-folder closes a branch
+ * its parent opened. Once the consent policy rode the same record, a folder given ONLY "never ask"
+ * would have stopped the ladder walk too, and every entry beneath it that inherited its rights
+ * from higher up would have silently closed to agents: a fatigue setting causing a permission
+ * regression, wearing the face of a broken switch.</p>
+ */
+
+test('a folder that only sets a policy does not close the branch its parent opened', () => {
+  const root = folder('root', { view: true, use: true });
+  const mid = child('mid', 'root', { ask: 'never' });
+  const leaf = entity('e1', 'mid');
+
+  const resolved = resolveMcpInTree(leaf, tree(root, mid, leaf));
+
+  assert.equal(resolved.access.use, true, 'a consent setting closed a branch it has no business closing');
+  assert.equal(resolved.source, 'folder');
+  assert.equal(resolved.folder?.id, 'root', 'the ladder came from the folder that ANSWERED it');
+  assert.equal(resolved.access.ask, 'never');
+  assert.equal(resolved.askFolder?.id, 'mid', 'and the policy from the one that answered THAT');
+});
+
+test('an empty object on a folder still closes the branch', () => {
+  // The other half of the same predicate, and the reason it is not "does it name any rung": a
+  // branch closed on purpose is stored with NO keys at all, so the obvious test would read it as
+  // silence and re-open every deliberately closed branch the next time an ancestor was widened.
+  const root = folder('root', { view: true, use: true });
+  const mid = child('mid', 'root', {});
+  const leaf = entity('e1', 'mid');
+
+  const resolved = resolveMcpInTree(leaf, tree(root, mid, leaf));
+
+  assert.equal(grantsAnything(resolved.access), false, 'an explicit empty object stopped answering');
+  assert.equal(resolved.source, 'folder');
+});
+
+test('an entry with its own ladder still inherits the folder’s policy', () => {
+  const root = folder('root', { ask: 'every12h' });
+  const leaf = entity('e1', 'root', { view: true, use: true });
+
+  const resolved = resolveMcpInTree(leaf, tree(root, leaf));
+
+  assert.equal(resolved.source, 'entity');
+  assert.equal(resolved.askSource, 'folder', 'ticking a switch must not discard the folder’s policy');
+  assert.equal(resolved.access.ask, 'every12h');
+});
+
+test('a child’s ask-every-time overrides a folder’s never', () => {
+  // The case the first draft of this model could not express at all: with absence meaning "ask
+  // every time" there was no way to SAY it, because saying nothing is how you say "inherit".
+  const root = folder('root', { view: true, use: true, ask: 'never' });
+  const leaf = entity('e1', 'root', { ask: 'always' });
+
+  const resolved = resolveMcpInTree(leaf, tree(root, leaf));
+
+  assert.equal(resolved.access.ask, 'always');
+  assert.equal(resolved.askSource, 'entity');
+  assert.equal(resolved.access.use, true, 'and it kept the rights it inherited');
+});
+
+test('a child with no answer under a policy-set folder resolves to the folder’s, and names it', () => {
+  const root = folder('root', { view: true, ask: 'never' });
+  const leaf = entity('e1', 'root');
+
+  const resolved = resolveMcpInTree(leaf, tree(root, leaf));
+
+  assert.equal(resolved.access.ask, 'never');
+  assert.equal(resolved.askSource, 'folder');
+  assert.equal(resolved.askFolder?.id, 'root');
+});
+
+test('the two axes may come from two different folders, and both are named', () => {
+  // Which is exactly why one folder name would be a lie on the form: half the setting a person is
+  // subject to would be decided on a page the name does not point at.
+  const root = folder('root', { ask: 'every12h' });
+  const mid = child('mid', 'root', { view: true, use: true });
+  const leaf = entity('e1', 'mid');
+
+  const resolved = resolveMcpInTree(leaf, tree(root, mid, leaf));
+
+  assert.equal(resolved.folder?.id, 'mid');
+  assert.equal(resolved.askFolder?.id, 'root');
+  assert.equal(resolved.access.use, true);
+  assert.equal(resolved.access.ask, 'every12h');
+});
+
+test('nothing anywhere answering the policy resolves to ask-every-time, from nowhere', () => {
+  const root = folder('root', { view: true, use: true });
+  const leaf = entity('e1', 'root');
+
+  const resolved = resolveMcpInTree(leaf, tree(root, leaf));
+
+  assert.equal(resolved.access.ask, 'always', 'the safe answer belongs at the END of the walk');
+  assert.equal(resolved.askSource, 'none');
+});
+
+test('a policy-only folder does not open the agent door', () => {
+  // `anyAgentAccess` decides whether the broker's loopback listener opens at all. A consent
+  // setting grants nothing, so it must not be the thing that starts a server.
+  assert.equal(anyAgentAccess([folder('root', { ask: 'never' })]), false);
+  assert.equal(anyAgentAccess([folder('root', { ask: 'every12h' }), child('mid', 'root', {})]), false);
+  assert.equal(anyAgentAccess([folder('root', { view: true })]), true, 'a real grant still opens it');
+});
+
+test('a cycle in the parent chain cannot hang either walk', () => {
+  // `parentId` comes off a synced record, so two folders each other's parent after a bad merge is
+  // reachable. Both walks are bounded, and neither can be the one that was forgotten.
+  const a: TreeNode = { id: 'a', name: 'a', type: 'folder', parentId: 'b' };
+  const b: TreeNode = { id: 'b', name: 'b', type: 'folder', parentId: 'a' };
+  const leaf = entity('e1', 'a');
+
+  const resolved = resolveMcpInTree(leaf, tree(a, b, leaf));
+
+  assert.equal(resolved.source, 'none');
+  assert.equal(resolved.askSource, 'none');
+  assert.equal(resolved.access.ask, 'always');
 });

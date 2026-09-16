@@ -99,8 +99,16 @@ export type McpSource = 'entity' | 'folder' | 'none';
 
 export interface ResolvedMcpAccess {
   access: McpAccess;
-  /** Where the answer came from — the viewer says this out loud, see below. */
+  /** Where the LADDER came from — the viewer says this out loud, see below. */
   source: McpSource;
+  /**
+   * Where the ASK POLICY came from, which is not always the same place.
+   *
+   * <p>Two axes, two walks, two answers. An entry may hold its own switches while taking its
+   * consent policy from a folder three levels up, and a form that named one folder for both would
+   * send somebody to a page where half the setting they are subject to is not.</p>
+   */
+  askSource: McpSource;
 }
 
 /**
@@ -262,58 +270,133 @@ export function grantsAnything(access: McpAccess): boolean {
 }
 
 /**
- * The access that actually applies to this entry.
+ * The access that actually applies to this node — both axes, each found on its own.
  *
- * <p>An entry's own setting wins; otherwise the folder's is inherited. The distinction between
- * "not set" and "explicitly nothing" is carried by the PRESENCE of the field, not by its
- * contents — which is why an entry that has been deliberately closed keeps an object with
+ * <p>Three callers need it — the card, the tree row, and the broker — and each of them has only a
+ * node and a way to look ids up. It used to have a three-argument twin taking the entity, its
+ * folder and an `inTrash` boolean; that twin lost its last production caller and was retired here,
+ * because a second resolver with the older single-axis semantics is precisely the divergence that
+ * gets found a year later by somebody debugging why two screens disagree.</p>
+ *
+ * <p><b>Two walks, not one.</b> The ladder and the ask policy are separate axes and an object may
+ * answer either, both or neither, so each climbs until something answers it. Walking once would
+ * mean an `mcp` object written for one axis stopped the other — and the direction that matters is
+ * this one: a folder given only "never ask" would stop the LADDER walk, and every entry beneath it
+ * that inherited its rights from higher up would silently close to agents. A fatigue setting
+ * causing a permission regression, wearing the face of a broken switch.</p>
+ *
+ * <p>The distinction between "not set" and "explicitly nothing" is carried by the PRESENCE of an
+ * answer, not by its contents — which is why an entry deliberately closed keeps an object with
  * everything false rather than having the field removed.</p>
  *
  * <p><b>Nothing in the trash is reachable</b>, whatever either setting says. A deleted entry that
  * still answered an agent would make the word "deleted" mean nothing, and the trash is the one
  * place where the answer must not be inherited from anywhere.</p>
  */
-export function resolveMcpAccess(
-  entity: TreeNode,
-  folder: TreeNode | undefined,
-  inTrash: boolean,
-): ResolvedMcpAccess {
-  if (inTrash) {
-    return { access: NO_MCP_ACCESS, source: 'none' };
-  }
-  const own = entity.details === undefined ? undefined : entity.details.mcp;
-  return own === undefined ? inheritedFrom(folder) : { access: normalizeMcpAccess(own), source: 'entity' };
-}
-
-/**
- * The same answer, found from the tree rather than from three arguments.
- *
- * <p>Three callers need it — the card, the tree row, and (next) the broker — and each of them
- * has only a node and a way to look ids up. Assembling the three arguments at each call site is
- * where the card got it wrong: it passed `inTrash: false` because it had nothing at hand to
- * answer with, and a deleted entry's card advertised permissions the resolver would refuse.
- * Taking the lookup instead of the boolean makes that unrepresentable.</p>
- */
 export function resolveMcpInTree(
   node: TreeNode,
   byId: (id: string) => TreeNode | undefined,
-): ResolvedMcpAccess & { folder: TreeNode | undefined } {
+): ResolvedMcpAccess & { folder: TreeNode | undefined; askFolder: TreeNode | undefined } {
   const parent = parentOf(node, byId);
   if (isInTrash(node, byId)) {
-    return { access: NO_MCP_ACCESS, source: 'none', folder: parent };
+    // `ask` is answered here too, and always with the strict value: every answer this function
+    // gives carries an EFFECTIVE policy, so no consumer has to know that one branch leaves the
+    // field undefined and the rest do not. Nothing in the Trash can be used at all, so the policy
+    // decides nothing — but a shape that varied by branch is how a reader ends up with `undefined`
+    // where it expected a word.
+    return {
+      access: { ...NO_MCP_ACCESS, ask: 'always' },
+      source: 'none',
+      folder: parent,
+      askSource: 'none',
+      askFolder: parent,
+    };
   }
+  const ladder = answerFor(node, parent, byId, answersLadder);
+  const policy = answerFor(node, parent, byId, answersPolicy);
+  return {
+    access: { ...normalizeMcpAccess(ladder.mcp), ask: effectivePolicy(policy) },
+    source: ladder.source,
+    folder: answeringFolder(ladder, parent),
+    askSource: policy.source,
+    askFolder: answeringFolder(policy, parent),
+  };
+}
+
+/**
+ * The policy that actually applies.
+ *
+ * <p>The safe answer is applied HERE and nowhere else: a walk that found nothing is exactly what
+ * "ask every time" means, and putting the default anywhere earlier would make silence upstream
+ * indistinguishable from an answer — which is the distinction the whole axis rests on.</p>
+ */
+function effectivePolicy(answer: AxisAnswer): McpAskPolicy {
+  return askPolicy(answer.mcp?.ask) ?? 'always';
+}
+
+/**
+ * The folder to name for an axis: the one that ANSWERED, not the one directly above.
+ *
+ * <p>The viewer says "inherited from X" with this name, and naming a silent folder would send
+ * somebody to a form whose boxes are all clear, looking for the setting they are subject to.</p>
+ */
+function answeringFolder(answer: AxisAnswer, parent: TreeNode | undefined): TreeNode | undefined {
+  return answer.source === 'folder' ? answer.node : parent;
+}
+
+/** One axis's answer: what was found, who gave it, and whether that was the node or a folder. */
+interface AxisAnswer {
+  mcp: McpAccess | undefined;
+  node: TreeNode | undefined;
+  source: McpSource;
+}
+
+/** This node's own answer on one axis, or the nearest one above it, or nothing anywhere. */
+function answerFor(
+  node: TreeNode,
+  parent: TreeNode | undefined,
+  byId: (id: string) => TreeNode | undefined,
+  answers: (mcp: McpAccess | undefined) => boolean,
+): AxisAnswer {
   const own = ownAccess(node);
-  if (own !== undefined) {
-    return { access: normalizeMcpAccess(own), source: 'entity', folder: parent };
+  if (answers(own)) {
+    return { mcp: own, node, source: 'entity' };
   }
-  const decided = nearestAnswer(parent, byId);
-  if (decided === undefined) {
-    return { access: NO_MCP_ACCESS, source: 'none', folder: parent };
+  const decided = nearestWhere(parent, byId, answers);
+  return decided === undefined
+    ? { mcp: undefined, node: undefined, source: 'none' }
+    : { mcp: decided.mcp, node: decided, source: 'folder' };
+}
+
+/**
+ * Does this object answer the LADDER?
+ *
+ * <p><b>An empty object answers, and a policy-only object does not.</b> Both halves of that
+ * sentence are load-bearing, and the obvious predicate — "does it name any rung" — gets the first
+ * half wrong. A branch closed on purpose is stored as `{}`, with no keys at all, and this
+ * resolver's whole inheritance story rests on that being an ANSWER that stops the walk; reading it
+ * as silence would re-open every deliberately closed branch the next time an ancestor was widened.
+ * So the test is the other way round: present, and not merely carrying a consent policy.</p>
+ */
+function answersLadder(mcp: McpAccess | undefined): boolean {
+  if (mcp === undefined) {
+    return false;
   }
-  // The folder returned is the one that ANSWERED, not the one directly above: the viewer says
-  // "inherited from X" with this name, and naming a silent folder would send somebody to a form
-  // whose boxes are all clear looking for the setting they are subject to.
-  return { access: normalizeMcpAccess(decided.mcp), source: 'folder', folder: decided };
+  const keys = Object.keys(mcp);
+  return !(keys.length === 1 && keys[0] === 'ask');
+}
+
+/**
+ * Does this object answer the ASK POLICY?
+ *
+ * <p>Asked through `askPolicy` rather than of the raw field, so the two records that look like an
+ * answer and are not — a stored `null`, and a key present with nothing under it — keep climbing,
+ * while a word from a newer build stops the walk and reads as "ask every time". That asymmetry is
+ * the point: absence here means "inherit", so a value this build cannot name must not be allowed
+ * to inherit somebody else's silence.</p>
+ */
+export function answersPolicy(mcp: McpAccess | undefined): boolean {
+  return askPolicy(mcp?.ask) !== undefined;
 }
 
 /**
@@ -332,27 +415,33 @@ function parentOf(node: TreeNode, byId: (id: string) => TreeNode | undefined): T
 }
 
 /**
- * The nearest folder above that has an answer of its own.
+ * The nearest folder above that answers the axis being asked about.
  *
  * <p><b>The whole chain, not one step.</b> Resolving against the immediate parent alone meant a
  * project folder opened to agents granted nothing to the entries inside its sub-folders — which
  * is the shape everybody's vault actually has, and it made the switch look broken rather than
- * narrow. Inheritance now walks up until something answers, so opening a folder opens what is
- * under it and closing a sub-folder still closes that branch: an explicit empty object is an
- * answer, and answers stop the walk.</p>
+ * narrow. Inheritance walks up until something answers, so opening a folder opens what is under it
+ * and closing a sub-folder still closes that branch: an explicit empty object is an answer, and
+ * answers stop the walk.</p>
  *
- * <p>The step limit is not defensive dressing. `parentId` comes off a synced record, and a cycle
- * there — two folders each other's parent after a bad merge — would hang the tree renderer rather
- * than draw a wrong badge. Depth in a real vault is single digits.</p>
+ * <p>The predicate is a parameter, so that sentence is now true <i>per axis</i> rather than for the
+ * record as a whole: one function, two questions, and no second copy of the walk to keep in step
+ * with this one.</p>
+ *
+ * <p>The step limit is not defensive dressing, and it guards both walks for the same reason.
+ * `parentId` comes off a synced record, and a cycle there — two folders each other's parent after
+ * a bad merge — would hang the tree renderer rather than draw a wrong badge. Depth in a real vault
+ * is single digits.</p>
  */
-function nearestAnswer(
+function nearestWhere(
   from: TreeNode | undefined,
   byId: (id: string) => TreeNode | undefined,
-): (TreeNode & { mcp: McpAccess }) | undefined {
+  answers: (mcp: McpAccess | undefined) => boolean,
+): TreeNode | undefined {
   let current = from;
   for (let step = 0; current !== undefined && step < MAX_TREE_DEPTH; step += 1) {
-    if (current.mcp !== undefined) {
-      return current as TreeNode & { mcp: McpAccess };
+    if (answers(current.mcp)) {
+      return current;
     }
     current = parentOf(current, byId);
   }
@@ -360,14 +449,6 @@ function nearestAnswer(
 }
 
 const MAX_TREE_DEPTH = 64;
-
-function inheritedFrom(folder: TreeNode | undefined): ResolvedMcpAccess {
-  const inherited = folder === undefined ? undefined : folder.mcp;
-  if (inherited === undefined) {
-    return { access: NO_MCP_ACCESS, source: 'none' };
-  }
-  return { access: normalizeMcpAccess(inherited), source: 'folder' };
-}
 
 /** May the agent delete THIS entry — taking the own-only scope into account. */
 export function mayDelete(access: McpAccess, createdByAgent: boolean): boolean {
