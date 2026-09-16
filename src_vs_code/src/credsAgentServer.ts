@@ -213,7 +213,7 @@ export class CredsAgentServer implements vscode.Disposable {
    * routes that carry no token pass through here; see `brokerRequests.ts` for what each of them
    * has to satisfy before reaching it.</p>
    */
-  private admitAliasCall(res: http.ServerResponse, prompts = true): boolean {
+  private admitAliasCall(res: http.ServerResponse, prompts: boolean): boolean {
     // The budget counts MODALS, not calls. A call that raises none takes no slot, because spending
     // one would refuse a later call for a dialog nobody was ever going to see — and the rate of
     // prompts is what this throttle exists to hold (see `aliasThrottle.ts`). The default keeps the
@@ -322,7 +322,8 @@ export class CredsAgentServer implements vscode.Disposable {
     // The rate of prompts is this route's authorization, not a nicety — see aliasThrottle.ts.
     // Checked after the name resolves so a refusal still cannot be used to learn what exists,
     // and before minting so a refused call spends nothing.
-    if (!this.admitAliasCall(res)) {
+    // `true`: the alias route's authorisation IS the modal, so it always raises one.
+    if (!this.admitAliasCall(res, true)) {
       return;
     }
 
@@ -532,21 +533,30 @@ export class CredsAgentServer implements vscode.Disposable {
   }
 
   /**
-   * A person answered a dialog for an MCP use call: let the vault remember it.
+   * A person answered a dialog for an MCP use call: let the vault remember it. Which answers count
+   * — and why each condition is a different guarantee — is `answeredHere` in `brokerMcpDoor.ts`.
    *
-   * <p><b>`via === 'mcp'` means a use call</b>, because `perform` is reached from exactly one door —
-   * `handleMcpUse`. Delete and create call `consent` directly and never come through here, so
-   * somebody who allowed a TOKEN call cannot silence the MCP door on the same entry; the two
-   * dialogs say different things.</p>
-   *
-   * <p>Awaited rather than launched: the answer should be durable before the agent is told its call
-   * succeeded, and a rejected write would otherwise be a failure nobody observes.</p>
+   * <p>Awaited rather than launched, so the answer is durable before the agent is told its call
+   * succeeded; a rejected write is caught below rather than failing a call somebody allowed.</p>
    */
   private async remember(via: AuditDoor, grant: Grant, asked: boolean, rungs: string | undefined): Promise<void> {
     if (!answeredHere(via, asked, rungs)) {
       return;
     }
-    await this.hooks.rememberMcpConsent?.(grant.accountId, grant.entityId, rungs);
+    try {
+      await this.hooks.rememberMcpConsent?.(grant.accountId, grant.entityId, rungs);
+    } catch (error) {
+      // A write that fails costs one more dialog next time. FAILING the call would cost the person
+      // the work they just allowed — and what they answered was about the call, not about whether
+      // this machine managed to write it down. Said out loud rather than swallowed.
+      this.log({
+        grant: GrantRegistry.describe(grant),
+        entityName: grant.entityName,
+        action: 'consent',
+        outcome: 'not remembered',
+        detail: describeError(error),
+      });
+    }
   }
 
   /** The sequence is `brokerCall.performCall`; this binds it to one request. */
