@@ -1,3 +1,4 @@
+import { parseSecondValues } from './secondValues';
 import { PaymentFieldKey, parsePaymentFields, serializePaymentFields } from './paymentFields';
 
 /**
@@ -193,21 +194,34 @@ export interface ExportedSensitiveFields {
   readonly fields: number;
 }
 
-export function paymentFieldsInExport(records: Iterable<{ payment?: string }>): ExportedSensitiveFields {
+export function paymentFieldsInExport(
+  records: Iterable<{ payment?: string; second?: string }>,
+): ExportedSensitiveFields {
   let recordCount = 0;
   let fieldCount = 0;
   for (const record of records) {
-    // Short-circuit before parsing: an export of a thousand passwords and one card would otherwise
-    // parse undefined a thousand times. Raised by the review as a Minor and it costs one line.
-    if (record.payment === undefined) {
-      continue;
-    }
-    const stored = parsePaymentFields(record.payment) as Record<string, unknown>;
-    const found = WITHHELD_FROM_SHARE.filter((key) => stored[key] !== undefined).length;
+    // A record contributes when it carries a payment's withheld fields OR any second value (#52).
+    // Both are things a SHARE removes and an export keeps, which is what the sentence is about — so
+    // counting one and not the other would understate the file by exactly the new kind.
+    const found = withheldCount(record.payment) + secondCount(record.second);
     fieldCount += found;
     recordCount += found > 0 ? 1 : 0;
   }
   return { records: recordCount, fields: fieldCount };
+}
+
+/** The CVV/PIN-shaped fields a share strips. Short-circuits before parsing, for a thousand-row file. */
+function withheldCount(payment: string | undefined): number {
+  if (payment === undefined) {
+    return 0;
+  }
+  const stored = parsePaymentFields(payment) as Record<string, unknown>;
+  return WITHHELD_FROM_SHARE.filter((key) => stored[key] !== undefined).length;
+}
+
+/** How many second values the record carries — every one of them is withheld from a share. */
+function secondCount(second: string | undefined): number {
+  return second === undefined ? 0 : Object.keys(parseSecondValues(second)).length;
 }
 
 /** The warning sentence, or '' when there is nothing to warn about. */
@@ -215,9 +229,12 @@ export function exportSensitiveNote(counts: ExportedSensitiveFields): string {
   if (counts.fields === 0) {
     return '';
   }
-  const fields = counts.fields === 1 ? '1 CVV or PIN' : `${counts.fields} CVV/PIN values`;
-  const across = counts.records === 1 ? '1 payment record' : `${counts.records} payment records`;
-  return ` Includes ${fields} across ${across} — a share removes those, an export does not.`;
+  // "value" rather than "CVV or PIN": since #52 the count also carries second values, which belong to
+  // credentials as well as to cards. A sentence that named only the two card fields would be a
+  // warning that understates what is in the file — the one direction a warning must never be wrong in.
+  const fields = counts.fields === 1 ? '1 value a share would remove' : `${counts.fields} values a share would remove`;
+  const across = counts.records === 1 ? '1 entry' : `${counts.records} entries`;
+  return ` Includes ${fields}, across ${across} — an export keeps them.`;
 }
 
 /**
