@@ -1,4 +1,4 @@
-import { SECOND_LABELS, SecondKey } from './secondValues';
+import { SECOND_LABELS, SecondKey, firstKeyOf } from './secondValues';
 
 /**
  * The control that asks whose the other half is, and the box it reveals — ONE shape for three forms.
@@ -58,7 +58,11 @@ export function secondModeControl(id: string): string {
  * not ticked is not a box for anything — so it is passed in rather than guessed at.</p>
  */
 export function secondBox(key: SecondKey, hidden: boolean): string {
-  return `    <div class="secondRow" data-second="${key}" style="display:${hidden ? 'none' : ''}">
+  // The FIELD is named here rather than derived page-side by trimming the key's last character. That
+  // trim works until a weave point ends in a digit and is then wrong silently — the trap
+  // `secondValues.ts` records about its own reverse lookup — and a page script has no table to use
+  // instead. So the answer travels with the markup.
+  return `    <div class="secondRow" data-second="${key}" data-second-field="${firstKeyOf(key)}" style="display:${hidden ? 'none' : ''}">
       <label for="second_${key}">${SECOND_LABELS[key]}</label>
       <input id="second_${key}" type="password" spellcheck="false" autocomplete="off">
     </div>`;
@@ -74,7 +78,7 @@ export function secondBox(key: SecondKey, hidden: boolean): string {
  */
 export function clearSecondBox(key: SecondKey, hasStored: boolean): string {
   return hasStored
-    ? `    <div class="check"><input id="clearSecond_${key}" type="checkbox">
+    ? `    <div class="check"><input id="clearSecond_${key}" class="clearSecond" data-second="${key}" type="checkbox">
       <label for="clearSecond_${key}">Clear the stored ${SECOND_LABELS[key].toLowerCase()}</label></div>`
     : '';
 }

@@ -13,7 +13,7 @@ import type { SecondValues } from '../secondValues';
  */
 
 function input(over: Partial<SecondInput> = {}): SecondInput {
-  return { mode: 'decoy', typed: {}, cleared: [], weaving: [], stored: {}, ...over };
+  return { typed: {}, cleared: [], ownWoven: [], stored: {}, ...over };
 }
 
 const LABELS = { password: 'password', cvv: 'CVV', iban: 'IBAN' } as const;
@@ -22,8 +22,7 @@ const LABELS = { password: 'password', cvv: 'CVV', iban: 'IBAN' } as const;
 
 test('a woven field’s second value is never stored beside it', () => {
   const stored = secondRecordFor(input({
-    mode: 'own',
-    weaving: ['password'],
+    ownWoven: ['password'],
     typed: { password2: 'the other password' },
   }));
 
@@ -34,8 +33,7 @@ test('and the field NOT being woven in the same save keeps its second value', ()
   // The companion that stops the rule above being implemented as "drop everything": one card can
   // have a woven CVV and an ordinary second PIN, and the save must tell them apart per field.
   const stored = secondRecordFor(input({
-    mode: 'own',
-    weaving: ['cvv'],
+    ownWoven: ['cvv'],
     typed: { cvv2: '481', pin2: '9137' },
   }));
 
@@ -46,8 +44,7 @@ test('a decoy save stores what was typed — the box is not a weave half then', 
   // With the mode on `decoy` the weave draws its own partner, so a second value typed beside it is
   // an ordinary second value and belongs in the record.
   const stored = secondRecordFor(input({
-    mode: 'decoy',
-    weaving: ['password'],
+    ownWoven: [],
     typed: { password2: 'kept in the clear' },
   }));
 
@@ -100,8 +97,7 @@ test('weaving a field CONSUMES a value that was stored for it in the clear', () 
   // leaving it is precisely the "half to subtract" this rule exists to prevent, and it would be the
   // worst version of the defect because the record would look untouched.
   const stored = secondRecordFor(input({
-    mode: 'own',
-    weaving: ['pin'],
+    ownWoven: ['pin'],
     stored: { pin2: '9137', cvv2: '481' },
     typed: { pin2: '9137' },
   }));
@@ -115,7 +111,7 @@ test('choosing to supply the half and supplying none is refused, and says which 
   const refusal = refuseSecondPairs(
     { password: 'hunter2x' },
     LABELS,
-    input({ mode: 'own', weaving: ['password'], typed: {} }),
+    input({ ownWoven: ['password'], typed: {} }),
   );
 
   assert.match(refusal, /chose to supply the second password yourself and the box is empty/);
@@ -127,7 +123,7 @@ test('the same empty box with a DECOY chosen is not a refusal at all', () => {
   // The two meanings of blank, and the mode is what tells them apart. This is the row that could not
   // exist when the box was going to be the only control.
   assert.equal(
-    refuseSecondPairs({ password: 'hunter2x' }, LABELS, input({ mode: 'decoy', weaving: ['password'] })),
+    refuseSecondPairs({ password: 'hunter2x' }, LABELS, input({ ownWoven: [] })),
     '',
   );
 });
@@ -136,7 +132,7 @@ test('a mismatched pair is refused with the pair rule’s own sentence, not a se
   const refusal = refuseSecondPairs(
     { password: 'hunter2!' },
     LABELS,
-    input({ mode: 'own', weaving: ['password'], typed: { password2: 'hunter2x' } }),
+    input({ ownWoven: ['password'], typed: { password2: 'hunter2x' } }),
   );
 
   assert.match(refusal, /different kinds of character/);
@@ -147,7 +143,7 @@ test('a good pair refuses nothing, and neither does a field this save is not wea
     refuseSecondPairs(
       { password: 'hunter2x', cvv: '481' },
       LABELS,
-      input({ mode: 'own', weaving: ['password'], typed: { password2: 'flyfish7', cvv2: '' } }),
+      input({ ownWoven: ['password'], typed: { password2: 'flyfish7', cvv2: '' } }),
     ),
     '',
     'the CVV is not being woven, so its empty box is nobody’s business here',
@@ -158,7 +154,7 @@ test('the FIRST refusal is the one shown — a person fixes one thing at a time'
   const refusal = refuseSecondPairs(
     { password: 'hunter2x', cvv: '481' },
     LABELS,
-    input({ mode: 'own', weaving: ['password', 'cvv'], typed: { password2: '', cvv2: '' } }),
+    input({ ownWoven: ['password', 'cvv'], typed: { password2: '', cvv2: '' } }),
   );
 
   assert.match(refusal, /second password/);

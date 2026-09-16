@@ -101,3 +101,61 @@ test('a page with no control at all does not throw', () => {
 test('the fragment contains no backtick, which would end the template literal it is pasted into', () => {
   assert.ok(!secondModeScript().includes('`'));
 });
+
+/**
+ * Two controls on one page, and each governs only its own fieldset.
+ *
+ * <p>Not decoration: the entity form carries the password's control and the payment section's, and a
+ * fragment that took `querySelector('.secondMode')` would let the password's answer decide whether a
+ * card's boxes are shown — and empty them when it did not.</p>
+ */
+function twoForms(passwordMode: string, paymentMode: string): MiniDocument {
+  const document = new MiniDocument();
+  for (const [id, mode, key] of [
+    ['weaveSecondMode', passwordMode, 'password2'],
+    ['mixSecondMode', paymentMode, 'cvv2'],
+  ] as const) {
+    const set = document.place(`set_${key}`, 'fieldset');
+    const picker = document.place(id, 'select', set);
+    picker.className = 'secondMode';
+    picker.value = mode;
+    const row = document.place(`row_${key}`, 'div', set);
+    row.className = 'secondRow';
+    row.dataset.second = key;
+    document.place(`second_${key}`, 'input', row).value = '';
+  }
+  return document;
+}
+
+test('one form on OWN and one on decoy: each fieldset answers for itself', () => {
+  const document = twoForms('own', 'decoy');
+
+  runFragment(secondModeScript(), document, ['refreshSecondMode']);
+
+  assert.equal(displayOf(document, 'row_password2'), '', 'the password’s box is shown');
+  assert.equal(displayOf(document, 'row_cvv2'), 'none', 'and the card’s is not');
+});
+
+test('and the other way round, so neither is right by accident', () => {
+  const document = twoForms('decoy', 'own');
+
+  runFragment(secondModeScript(), document, ['refreshSecondMode']);
+
+  assert.equal(displayOf(document, 'row_password2'), 'none');
+  assert.equal(displayOf(document, 'row_cvv2'), '');
+});
+
+test('a value typed under one control is not emptied by the other one’s answer', () => {
+  // The sharper half of the same defect: taking the first control would EMPTY the boxes of a form
+  // whose own answer is `own`, and the person would watch what they typed disappear.
+  const document = twoForms('decoy', 'own');
+  const lifted = runFragment(secondModeScript(), document, ['refreshSecondMode']);
+  const typed = document.getElementById('second_cvv2');
+  if (typed !== null) {
+    typed.value = '481';
+  }
+
+  lifted.refreshSecondMode?.();
+
+  assert.equal(document.getElementById('second_cvv2')?.value, '481', 'still there');
+});

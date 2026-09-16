@@ -5,6 +5,10 @@ import { switchWarning } from './paymentFormSwitch';
 import { validatePayment } from './paymentValidation';
 import { ShuffleCode, isShuffleCode } from './shuffle';
 import { weavePaymentFields } from './paymentWeaving';
+import { PAYMENT_FORM, secondInputFrom, secondsForWeave } from './secondFormInput';
+import { refuseSecondPairs } from './secondSave';
+import { PAYMENT_FIELD_LABELS } from './paymentFields';
+import type { WeavePoint } from './secondValues';
 import { confirmDestructive, refuse } from './dialogs';
 import { PhraseInput, phraseInputFrom, phraseRecordFor, phraseRefusalFor } from './phraseSaveGate';
 import { phraseSaveWarning } from './phraseLayout';
@@ -119,7 +123,15 @@ export function paymentRecordFor(data: Record<string, unknown>, chosen: string):
   //
   // The brand is derived above, from the number BEFORE it is woven. That is the whole reason it is a
   // stored field: after weaving there is no number to read it from (§3a).
-  return weavePaymentFields(kept, markedFields(data), codesFor(data), Math.random);
+  return weavePaymentFields(
+    kept,
+    markedFields(data),
+    codesFor(data),
+    Math.random,
+    // The halves the person typed, for the fields whose form is on `own`. Empty for every other
+    // field, and `weaveOne` draws a decoy for those exactly as it always has.
+    secondsForWeave(secondInputFrom(data, {}, paymentWeavingNow(data), [PAYMENT_FORM])),
+  );
 }
 
 /** Which boxes the person ticked. Anything the record cannot weave is ignored by the weaver itself. */
@@ -146,6 +158,51 @@ function codesFor(data: Record<string, unknown>): Record<string, ShuffleCode> {
       return isShuffleCode(code) ? [[field, code] as const] : [];
     }),
   );
+}
+
+
+/**
+ * The payment fields this save is about to weave — marked, and not woven already.
+ *
+ * <p>`weavePaymentFields` is the authority and filters the same list; this is what the SECOND values
+ * have to agree with, and both are computed from the ticks on the page, so they cannot disagree
+ * about which fields are in play. A field ALREADY woven cannot be here: a woven record refuses to be
+ * opened for editing at all (`mixedFieldGuard`), so nothing on this page describes one.</p>
+ */
+export function paymentWeavingNow(data: Record<string, unknown>): readonly WeavePoint[] {
+  return markedFields(data).filter((field): field is WeavePoint => isWeavePoint(field));
+}
+
+function isWeavePoint(field: string): field is WeavePoint {
+  return (PAYMENT_FORM.points as readonly string[]).includes(field);
+}
+
+/**
+ * The gate that judges the typed halves, BEFORE the checksums.
+ *
+ * <p>The order is the plan's and it matters: a refused pair must mean nothing was woven, rather than
+ * a card woven under a method whose partner was then rejected. A refusal costs the person nothing —
+ * the panel keeps its state, so every typed value is where they left it, and no decoy has been drawn
+ * because `paymentRecordFor` is the only thing that draws one.</p>
+ */
+export function confirmSecondPairs(data: Record<string, unknown>, chosen: string): boolean {
+  const refusal = secondPairRefusal(data, chosen);
+  if (refusal === '') {
+    return true;
+  }
+  // A refusal, not a question. A mismatched pair is the owner's decision 4 — the save does not
+  // happen — so there is nothing to confirm, and the form keeps every typed value where it was.
+  refuse(refusal);
+  return false;
+}
+
+export function secondPairRefusal(data: Record<string, unknown>, chosen: string): string {
+  if (formOf(chosen) === 'phrase') {
+    return '';
+  }
+  const typed = cardFieldsFrom(data);
+  const input = secondInputFrom(data, {}, paymentWeavingNow(data), [PAYMENT_FORM]);
+  return refuseSecondPairs(typed as Record<WeavePoint, string>, PAYMENT_FIELD_LABELS, input);
 }
 
 /** The chosen form, defaulted — the same fallback the metadata field gets. */
@@ -183,6 +240,7 @@ export async function paymentGates(
   const chosen = textOf(data.paymentForm);
   return (
     (await confirmFormSwitch(chosen, context))
+    && confirmSecondPairs(data, chosen)
     && (await confirmChecksums(data, chosen))
     && (await confirmPhrase(data, chosen))
   );
