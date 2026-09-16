@@ -107,11 +107,12 @@ async function writeExport(
     accountId,
     picked.filter((n) => n.type === 'entity').map((n) => n.id),
   );
-  // An export carries a card's CVV and PIN; a SHARE removes them. That asymmetry is deliberate — an
-  // export is a full copy the person made once — and it is exactly the thing somebody who just
-  // watched a share leave the CVV behind would assume applies here too. So it is said, when there is
-  // something to say. Counted, never printed: a CVV must not reach a notification, which several UI
-  // layers log. The sentence lives beside the rule it describes, not here.
+  // An export carries what a SHARE removes: a card's CVV and PIN, and since #52 every second value
+  // too — which belongs to credentials as well as to cards. That asymmetry is deliberate — an export
+  // is a full copy the person made once — and it is exactly the thing somebody who just watched a
+  // share leave the CVV behind would assume applies here too. So it is said, when there is something
+  // to say. Counted, never printed: a CVV must not reach a notification, which several UI layers log.
+  // The sentence lives beside the rule it describes, not here.
   const cardNote = exportSensitiveNote(paymentFieldsInExport(Object.values(secrets)));
   const file = await chooseForm(
     buildExternalBundle(picked, secrets),

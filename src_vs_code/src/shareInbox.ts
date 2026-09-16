@@ -30,7 +30,8 @@ import {
   announceHandover,
   chooseSharePin,
 } from './transitPinPrompt';
-import { redactArrivedPayment, withheldFromShare } from './paymentRedaction';
+import { redactArrivedPayment } from './paymentRedaction';
+import { withheldNoteFor } from './shareWithheld';
 import { OwnedShare, SharePayload, TeamMember, TreeNode } from './types';
 
 /**
@@ -196,13 +197,8 @@ export class ShareInbox {
    *
    * <p>Field NAMES only. This reaches a notification, and several UI layers log those.</p>
    */
-  private async withheldNote(accountId: string, payloads: readonly SharePayload[]): Promise<string> {
-    const names = new Set<string>();
-    for (const payload of payloads.filter((p) => p.node.details?.isPayment === true)) {
-      const stored = await this.deps.storage.getPaymentRaw(accountId, payload.node.id);
-      withheldFromShare(stored).forEach((field) => names.add(field));
-    }
-    return names.size === 0 ? '' : ` Not sent, and they cannot be: ${[...names].sort().join(', ')}.`;
+  private withheldNote(accountId: string, payloads: readonly SharePayload[]): Promise<string> {
+    return withheldNoteFor(this.deps.storage, accountId, payloads);
   }
 
   deliver(

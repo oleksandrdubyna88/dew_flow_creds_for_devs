@@ -141,12 +141,12 @@ test('exporting a card tells the person its CVV and PIN are going with it', asyn
   // test caught it: the wiring was right and the expectation was wrong.
   assert.match(
     captured.quickPickTitle,
-    /2 CVV\/PIN values across 1 payment record\b/,
+    /2 values a share would remove, across 1 entry\b/,
     `the note never reached the dialog — got: ${captured.quickPickTitle}`,
   );
   assert.match(
     captured.quickPickTitle,
-    /a share removes those, an export does not/,
+    /an export keeps them/,
     'the asymmetry is the whole reason the sentence exists',
   );
   assert.equal(
@@ -166,7 +166,7 @@ test('a card with only a CVV reads in the singular', async () => {
 
   await handler(target, undefined);
 
-  assert.match(captured.quickPickTitle, /1 CVV or PIN across 1 payment record\b/);
+  assert.match(captured.quickPickTitle, /1 value a share would remove, across 1 entry\b/);
 });
 
 test('exporting something with no card says nothing about cards', async () => {
