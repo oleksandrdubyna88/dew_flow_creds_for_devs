@@ -4,6 +4,7 @@ import { confirmDestructive } from './dialogs';
 import { PaymentViewHost, isPaymentMessage } from './paymentViewHost';
 import { handleWovenPassword } from './wovenPasswordHost';
 import { RowOrderStore } from './rowFlip';
+import { cryptoRandom } from './phraseGenerate';
 import { applyZoomDelta, currentUiScale, pushUiScaleTo } from './uiScaleHost';
 import { ViewerTab } from './viewerClicks';
 import { BINDABLE_FIELDS, BindableField } from './envBinding';
@@ -108,7 +109,11 @@ function mountEntityView(
   // reading's two halves is shown first is drawn here and goes no further — it is in no message, so
   // there is nothing in the page to inspect for it. Cleared on every render and on dispose, for
   // EVERY kind of entry: a credential's password never passes through `payment.reset()`.
-  const orders = new RowOrderStore(Math.random);
+  //
+  // Drawn from the house CSPRNG rather than `Math.random`. One bit is all this takes, but a
+  // predictable bit is one a reader who has watched a few opens carries into the next — and the
+  // rule is already written where that source lives: a draw that merely LOOKS random is not one.
+  const orders = new RowOrderStore(cryptoRandom);
   // The payment card's five messages, its reveal gate and the buffers an assembled phrase lives in.
   // Reading the CURRENT options rather than the ones this panel was built with is not a nicety: the
   // preview tab re-renders for another entry, and a card that answered from stale options would be
