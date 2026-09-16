@@ -28,11 +28,12 @@ import {
  */
 
 test('every weave point has a key, and every key names its weave point back', () => {
-  assert.deepEqual(
-    [...SECOND_KEYS],
-    ['number2', 'cvv2', 'pin2', 'iban2', 'accountNumber2', 'password2'],
-    'the six weave points, each with a 2 — derived, not typed out twice',
-  );
+  // Derived from the source of truth rather than listed again here: a seventh weave point must make
+  // this test cover it, not go red for having grown. What is asserted is the RELATIONSHIP — one key
+  // per point, in the same order, spelled the one way the type spells it.
+  assert.equal(SECOND_KEYS.length, WEAVE_POINTS.length, 'one key per weave point, no more');
+  assert.deepEqual([...SECOND_KEYS], WEAVE_POINTS.map((point) => `${point}2`));
+  assert.equal(new Set(SECOND_KEYS).size, SECOND_KEYS.length, 'and no two points share a key');
   for (const point of WEAVE_POINTS) {
     assert.equal(firstKeyOf(secondKeyOf(point)), point, `${point} survives the round trip`);
   }
@@ -73,8 +74,17 @@ test('a key from a newer build — or a crafted one — does not enter the recor
   assert.equal(Object.getPrototypeOf(picked), Object.prototype);
 });
 
-test('a blank value is not a value — it is trimmed away rather than stored as emptiness', () => {
-  assert.deepEqual(pickSecondValues({ password2: '   ', cvv2: '  481  ', pin2: 7 }), { cvv2: '481' });
+/**
+ * A blank box is nothing; a value with spaces in it is that value.
+ *
+ * <p>From a review round. The record used to trim what it stored, so a second password typed as
+ * `" pass "` came back as `"pass"` — while the WOVEN path weaves the value exactly as typed. The same
+ * keystrokes would then produce two different secrets depending on a box the person ticked
+ * elsewhere, and the one that was altered would simply not work anywhere it was used.</p>
+ */
+test('a blank box is not a value, and a value is stored exactly as it was typed', () => {
+  assert.deepEqual(pickSecondValues({ password2: '   ', cvv2: '  481  ', pin2: 7 }), { cvv2: '  481  ' });
+  assert.deepEqual(pickSecondValues({ password2: '\t\n ' }), {}, 'whitespace alone is still nothing');
 });
 
 test('an empty record serializes to undefined, which is what DELETES the key', () => {

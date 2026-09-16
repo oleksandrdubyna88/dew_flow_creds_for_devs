@@ -106,8 +106,19 @@ function passwordDecoy(original: string, random: Random): string {
 function classesOf(original: string): readonly string[] {
   const used = classesUsed(original);
   const known = NAMED.filter(([name]) => used.has(name)).map(([, set]) => set);
-  const strangers = [...used].filter((name) => !NAMED.some(([named]) => named === name));
-  return [...known.flatMap((set) => [...set]), ...strangers];
+  return [...known.flatMap((set) => [...set]), ...strangersIn(original)];
+}
+
+/**
+ * The stranger CHARACTERS themselves, for the generator's alphabet rather than for the comparison.
+ *
+ * <p>Read off the value instead of out of `classesUsed`, because that function now answers with the
+ * KIND rather than with the character (see its note). The decoy's alphabet is unchanged by that: it
+ * still draws from the original's own strangers, which is what keeps a stranger from marking the half
+ * it came from.</p>
+ */
+function strangersIn(value: string): readonly string[] {
+  return [...new Set([...value].filter((one) => !NAMED.some(([, set]) => set.includes(one))))];
 }
 
 /** The four classes the generator knows, in ONE table so nothing else has to spell them out. */
@@ -127,16 +138,25 @@ const NAMED: readonly (readonly [string, string])[] = [
  * does not match on the same terms loses that property, and the save refuses. One definition, so
  * the generator and the refusal cannot come to disagree about what a class is.</p>
  *
- * <p>A stranger is its own class rather than ignored: a character no set of ours names, present in
- * one half and absent from the other, marks that half as surely as a whole class would.</p>
+ * <p>A stranger is ONE class rather than ignored and rather than a class per character: a kind no set
+ * of ours names, present in one half and absent from the other, marks that half as surely as a whole
+ * class would. Naming each stranger character separately — which this did until a review round —
+ * demanded that two halves be spelled with the very same letters, and so refused every pair a
+ * Russian or Ukrainian speaker could type, in a product whose help is published in both. What the
+ * coarser kind gives up is a pair written in two DIFFERENT non-Latin scripts; naming a script needs a
+ * table of every script there is, and one always an alphabet out of date would refuse real pairs for
+ * a case nobody types by accident.</p>
  */
 export function classesUsed(value: string): ReadonlySet<string> {
   const used = new Set<string>();
   for (const one of value) {
-    used.add(NAMED.find(([, set]) => set.includes(one))?.[0] ?? one);
+    used.add(NAMED.find(([, set]) => set.includes(one))?.[0] ?? STRANGER);
   }
   return used;
 }
+
+/** Everything the four named sets do not cover, under one name. */
+const STRANGER = 'stranger';
 
 /** Digits of the same length, and nothing else — a CVV or a PIN has no structure to imitate. */
 function digitsDecoy(original: string, random: Random): string {

@@ -60,6 +60,34 @@ test('halves drawing on different character classes are refused', () => {
 });
 
 /**
+ * The class rule is about KINDS of character, and a whole alphabet is one kind.
+ *
+ * <p>From a review round, and it was right. `classesUsed` named every character no set of ours knows
+ * as a class of its own, so two Cyrillic passwords had two different class sets unless they were
+ * spelled with the very same letters — which `sameRefusal` forbids anyway. The rule therefore refused
+ * EVERY pair a Russian or Ukrainian speaker could type, in a product whose help is published in five
+ * languages including both. The generated decoy never hit it: its alphabet is built from the
+ * original's own characters, so the sets matched by construction.</p>
+ *
+ * <p>What the coarser class still catches is what the rule was for — a kind present in one half and
+ * absent from the other. What it no longer catches is a pair written in two DIFFERENT non-Latin
+ * scripts, which is separable on sight; naming a script needs a table of every script there is, and a
+ * table always one alphabet out of date would refuse real pairs for the sake of a case nobody types
+ * by accident.</p>
+ */
+test('two passwords in a non-Latin alphabet are a pair — a stranger is a KIND, not a character', () => {
+  assert.equal(pairRefusal('пароль', 'секрет', 'password'), '', 'Cyrillic against Cyrillic');
+  assert.equal(pairRefusal('гасло', 'слово', 'password'), '', 'and Ukrainian against Russian');
+});
+
+test('and a kind in one half only is still refused, which is the whole point of the rule', () => {
+  // The property the coarser class must not lose: one half reaches for something the other never
+  // uses, so under the right method one row is all of a kind the other lacks.
+  assert.match(pairRefusal('abcd€', 'abcdx', 'password'), /different kinds of character/);
+  assert.match(pairRefusal('пароль', 'parole', 'password'), /different kinds of character/);
+});
+
+/**
  * The companion that stops the class rule from quietly refusing every card.
  *
  * <p>A review round predicted that a password-shaped check would break payment pairs. It cannot: the
@@ -106,9 +134,13 @@ test('the class question has ONE answer, shared with the decoy generator', () =>
   assert.deepEqual([...classesUsed('abc')], ['lower']);
   assert.deepEqual([...classesUsed('abc123')].sort(), ['digits', 'lower']);
   assert.deepEqual([...classesUsed('aB1!')].sort(), ['digits', 'lower', 'symbols', 'upper']);
-  // A stranger is its own class: present in one half and not the other, it marks that half.
-  assert.ok(classesUsed('abcλ').has('λ'), 'a character no set of ours names stands for itself');
+  // A stranger is ONE class: present in one half and not the other it marks that half, and two
+  // halves both written in it are alike. Changed from a class per character in a review round —
+  // see the Cyrillic test above for what that cost.
+  assert.deepEqual([...classesUsed('abcλ')].sort(), ['lower', 'stranger']);
+  assert.deepEqual([...classesUsed('λμν')], ['stranger'], 'a whole alphabet is one kind');
   assert.notEqual(pairRefusal('abcλ', 'abcd', 'password'), '', 'so a pair split by one is refused');
+  assert.equal(pairRefusal('λμν', 'ξοπ', 'password'), '', 'and a pair sharing it is not');
 });
 
 /**
