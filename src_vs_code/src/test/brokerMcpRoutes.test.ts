@@ -1,6 +1,6 @@
 import * as assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { call, code, share, world } from './brokerWorld';
+import { STUB_RUNGS, call, code, share, world } from './brokerWorld';
 
 /**
  * The two routes an MCP client uses, driven over real HTTP against the real broker.
@@ -417,6 +417,144 @@ test('a body with no name is a bad request, not a refused creation', async () =>
 
     assert.equal(code(await call(port, '/v1/mcp/create', { body: { kind: 'ssh' } })), 'invalid_request');
     assert.equal(w.dialogs.length, 0);
+  } finally {
+    w.server.dispose();
+  }
+});
+
+/**
+ * The quiet path (issue #95): a call whose dialog the person already answered.
+ *
+ * <p>The vault decides `preConsented` — that is S2.1 and its own tests — and these are about what
+ * the DOOR does with the answer. The one that matters most is the sixth call: the modal budget is
+ * five a minute, and spending a slot on a call that raises no modal refuses a later one for a
+ * dialog nobody was ever going to see.</p>
+ */
+test('six pre-consented calls in a row all succeed, and none raises a dialog', async () => {
+  const w = world({ mcpUse: 'usable', mcpPreConsented: true });
+  try {
+    const { port } = await share(w);
+
+    const answers = [];
+    for (let i = 0; i < 6; i += 1) {
+      answers.push(await call(port, '/v1/mcp/use/exec', { body: { entry: 'e1', command: 'uptime' } }));
+    }
+
+    assert.deepEqual(
+      answers.map((a) => a.status),
+      [200, 200, 200, 200, 200, 200],
+      `the sixth call was refused: ${JSON.stringify(answers[5].body)}`,
+    );
+    assert.equal(w.dialogs.length, 0, 'a call the person already answered must not ask again');
+    assert.equal(w.ran.length, 6, 'and all six must actually run');
+  } finally {
+    w.server.dispose();
+  }
+});
+
+test('a silent call leaves nobody present, and says in the journal that nobody was asked', async () => {
+  // Presence is the one thing a dialog proves. A call that raised none proves the opposite, and
+  // agent traffic deliberately does not postpone the idle auto-lock. The audit line is the other
+  // half: "which calls ran with nobody being asked" is the first question a reviewer has.
+  const w = world({ mcpUse: 'usable', mcpPreConsented: true });
+  try {
+    const { port } = await share(w);
+
+    await call(port, '/v1/mcp/use/exec', { body: { entry: 'e1', command: 'uptime' } });
+
+    assert.equal(w.presence, 0, 'a call nobody answered must not count as a person being present');
+    const quiet = w.audit.filter((line) => line.includes('allowed without a prompt'));
+    assert.equal(quiet.length, 1, `no line said the call was allowed without a prompt: ${w.audit.join(' | ')}`);
+    assert.match(quiet[0], /consent/, 'and it names the moment it stands in for');
+  } finally {
+    w.server.dispose();
+  }
+});
+
+test('a pre-consented entry is still deleted only after a dialog', async () => {
+  // D2, at the consumer: the delete route calls the same `readMcpUse` and never reads the flag.
+  const w = world({ mcpUse: 'usable', mcpPreConsented: true, trash: true });
+  try {
+    const { port } = await share(w);
+
+    const answer = await call(port, '/v1/mcp/delete', { body: { entry: 'e1' } });
+
+    assert.equal(answer.status, 200, JSON.stringify(answer.body));
+    assert.equal(w.dialogs.length, 1, 'deleting went quiet on a policy that governs use');
+    assert.deepEqual(w.trashed, ['e1']);
+  } finally {
+    w.server.dispose();
+  }
+});
+
+test('a pre-consented entry is still created only after a dialog', async () => {
+  const w = world({ mcpUse: 'usable', mcpPreConsented: true, create: 'open' });
+  try {
+    const { port } = await share(w);
+
+    await call(port, '/v1/mcp/create', { body: { name: 'new-one' } });
+
+    assert.equal(w.dialogs.length, 1, 'creating went quiet on a policy that governs use');
+  } finally {
+    w.server.dispose();
+  }
+});
+
+test('a call the person ANSWERED is remembered; a quiet one is not', async () => {
+  // The sliding window: refreshing the stamp on a call that raised no modal turns "once every
+  // twelve hours" into "once, ever".
+  const asked = world({ mcpUse: 'usable' });
+  try {
+    const { port } = await share(asked);
+    await call(port, '/v1/mcp/use/exec', { body: { entry: 'e1', command: 'uptime' } });
+    assert.deepEqual(
+      asked.consents.map((c) => c.entityId),
+      ['e1'],
+      'an answered dialog was not remembered',
+    );
+    assert.equal(asked.consents[0].rungs, STUB_RUNGS, 'and it names the ladder the person was shown');
+  } finally {
+    asked.server.dispose();
+  }
+
+  const quiet = world({ mcpUse: 'usable', mcpPreConsented: true });
+  try {
+    const { port } = await share(quiet);
+    await call(port, '/v1/mcp/use/exec', { body: { entry: 'e1', command: 'uptime' } });
+    assert.deepEqual(quiet.consents, [], 'a call nobody answered moved the window forward');
+  } finally {
+    quiet.server.dispose();
+  }
+});
+
+test('a token call never writes the MCP stamp', async () => {
+  // The two dialogs say different things, so allowing one must not silence the other.
+  const w = world({});
+  try {
+    const { port, secret } = await share(w);
+
+    await call(port, '/v1/use/exec', { token: secret, body: { command: 'uptime' } });
+
+    assert.equal(w.dialogs.length, 1, 'the token door still asks');
+    assert.deepEqual(w.consents, [], 'a token answer silenced the MCP door');
+  } finally {
+    w.server.dispose();
+  }
+});
+
+test('a quiet call spends no modal slot, so a prompting one afterwards still gets its five', async () => {
+  // Releasing a slot that was never taken would free ANOTHER call's, and two modals would stack.
+  const w = world({ mcpUse: 'usable', mcpPreConsented: true });
+  try {
+    const { port } = await share(w);
+    for (let i = 0; i < 4; i += 1) {
+      await call(port, '/v1/mcp/use/exec', { body: { entry: 'e1', command: 'uptime' } });
+    }
+
+    assert.equal(w.dialogs.length, 0);
+    // The budget is untouched, which the alias route can still spend: it always prompts.
+    const answer = await call(port, '/v1/alias/exec', { body: { name: 'nope', command: 'x' } });
+    assert.notEqual(code(answer), 'too_many_requests', 'four quiet calls ate the modal budget');
   } finally {
     w.server.dispose();
   }

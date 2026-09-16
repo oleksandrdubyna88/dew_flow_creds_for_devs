@@ -3,6 +3,7 @@ import { CallerLabel, callerFrom } from './brokerCaller';
 import { ErrorCode } from './brokerProtocol';
 import { McpUseLookup, McpUseTarget, readMcpUse, readNamedBody } from './brokerRequests';
 import { NO_GENERATOR_OUTCOME } from './secretKinds';
+import type { AuditDoor } from './agentAuditLog';
 
 /**
  * The MCP door: what happens between an agent's request and the machinery behind it.
@@ -30,10 +31,29 @@ export interface BrokerDoor {
     detail?: string,
     caller?: CallerLabel,
   ): void;
-  /** Whether this unauthenticated call may make the window ask a human. Answers its own refusal. */
-  admit(res: http.ServerResponse): boolean;
-  /** Give the slot back — in a `finally`, so a failed prompt does not close the route. */
-  release(): void;
+  /**
+   * Whether this unauthenticated call may make the window ask a human. Answers its own refusal.
+   *
+   * <p>`prompts` is REQUIRED — `true` must be written, never omitted — so a door added next year is
+   * a compile error until it says whether it raises a modal, the doctrine `caller` established
+   * below. The budget counts MODALS, not calls: a call that raises none takes no slot, because
+   * spending one refuses a later call for a dialog nobody was ever going to see.</p>
+   */
+  admit(res: http.ServerResponse, prompts: boolean): boolean;
+  /**
+   * Give the slot back — in a `finally`, so a failed prompt does not close the route.
+   *
+   * <p>Only when one was taken. Releasing for a call that took none would free ANOTHER call's
+   * in-flight slot, and two modals would stack.</p>
+   */
+  release(prompts: boolean): void;
+  /**
+   * This entry's policy has already answered: settle the grant so no modal is raised.
+   *
+   * <p>Use calls only, and only where the vault said so. It is not an override — a grant the person
+   * DENIED stays denied, because the tombstone is checked before this can matter.</p>
+   */
+  preConsent(grant: Grantish): void;
   mint(target: McpUseTarget): Grantish;
   describe(grant: Grantish): string;
   note(entry: {
@@ -42,6 +62,14 @@ export interface BrokerDoor {
     action: string;
     outcome: string;
     detail?: string;
+    /**
+     * Which door the line came in by.
+     *
+     * <p>The MCP journal filters on it, and the one line it most needs to show is the one a call
+     * that raised no dialog writes — "which calls ran with nobody being asked" is unanswerable
+     * without it.</p>
+     */
+    via?: AuditDoor;
     /** Who the body said was calling — on the line so a person can match it to a session. */
     caller?: CallerLabel;
   }): void;
@@ -51,6 +79,8 @@ export interface BrokerDoor {
     action: string,
     body: Record<string, unknown>,
     caller: CallerLabel | undefined,
+    /** The ladder the lookup resolved, so a remembered consent names the grant that was shown. */
+    rungs?: string,
   ): Promise<void>;
   /**
    * Ask the human. `caller` is REQUIRED — `undefined` must be written, never omitted — so that a
@@ -109,19 +139,55 @@ export async function handleMcpUse(
     door.refuse(res, read.code, read.message);
     return;
   }
+  // Decided at the LOOKUP, by the one side that holds both halves — this entry's synced policy and
+  // this machine's own record of the dialogs answered on it. Read BEFORE the throttle, because the
+  // throttle is a budget of modals: five quiet calls used to refuse the sixth for a dialog nobody
+  // was ever going to see.
+  const prompts = !read.preConsented;
   // The same throttle as the alias route, and for the same reason: everything below this line
   // can make the window ask a human, and the rate of prompts is what stops a local process
   // turning that into an attack on the person's patience.
-  if (!door.admit(res)) {
+  if (!door.admit(res, prompts)) {
     return;
   }
   const caller = callerFrom(read.body);
   const grant = minted(door, read.target, 'mcp', caller);
+  quietly(door, grant, read.target, caller, prompts);
   try {
-    await door.perform(res, grant, action, read.body, caller);
+    await door.perform(res, grant, action, read.body, caller, read.rungs);
   } finally {
-    door.release();
+    door.release(prompts);
   }
+}
+
+/**
+ * No modal is due: settle the grant, and say so out loud.
+ *
+ * <p>A no-op when one IS due, so the route above reads as one sequence — and only that route can
+ * reach it, which is what keeps `handleMcpDelete` and `handleMcpCreate` asking whatever any policy
+ * says. The line carries `via: 'mcp'` because the call's own audit line cannot show the one thing a
+ * person most wants to filter for: which calls ran without anybody being asked.</p>
+ */
+function quietly(
+  door: BrokerDoor,
+  grant: Grantish,
+  target: McpUseTarget,
+  caller: CallerLabel | undefined,
+  prompts: boolean,
+): void {
+  if (prompts) {
+    return;
+  }
+  door.preConsent(grant);
+  door.note({
+    grant: door.describe(grant),
+    entityName: target.entityName,
+    action: 'consent',
+    outcome: 'allowed without a prompt',
+    detail: `${target.entityName} · this entry's consent policy`,
+    via: 'mcp',
+    caller,
+  });
 }
 
 /**
@@ -153,13 +219,13 @@ export async function handleMcpDelete(
     door.refuse(res, 'not_supported', 'This window cannot move entries to the Trash.');
     return;
   }
-  if (!door.admit(res)) {
+  if (!door.admit(res, true)) {
     return;
   }
   try {
     await confirmAndDelete(door, res, read.target, remove, callerFrom(read.body));
   } finally {
-    door.release();
+    door.release(true);
   }
 }
 
@@ -238,13 +304,13 @@ export async function handleMcpCreate(
     refuseCreation(door, res, chosen, String(read.body.name), caller);
     return;
   }
-  if (!door.admit(res)) {
+  if (!door.admit(res, true)) {
     return;
   }
   try {
     await confirmAndCreate(door, res, chosen, create as McpCreateHooks, read.body, caller);
   } finally {
-    door.release();
+    door.release(true);
   }
 }
 
@@ -336,4 +402,19 @@ async function confirmAndCreate(
     caller,
   });
   door.respond(res, 200, { created: true, id: made.id, name: made.name });
+}
+
+/**
+ * Is this a dialog a person actually answered, on the one door that remembers?
+ *
+ * <p>All three conditions, named together because each is a different guarantee. <b>`via === 'mcp'`
+ * means a USE call</b>, since `perform` is reached from exactly one door — delete and create call
+ * `consent` directly — so somebody who allowed a token or alias call cannot silence the MCP door on
+ * the same entry, and those dialogs say different things. <b>`asked`</b> is false for a call a
+ * policy settled, so a quiet call cannot slide the twelve-hour window forward, which is how "once
+ * every twelve hours" would become "once, ever". And <b>the fingerprint</b> is the grant the person
+ * was SHOWN, absent on every other door.</p>
+ */
+export function answeredHere(via: AuditDoor, asked: boolean, rungs: string | undefined): rungs is string {
+  return via === 'mcp' && asked && rungs !== undefined;
 }
