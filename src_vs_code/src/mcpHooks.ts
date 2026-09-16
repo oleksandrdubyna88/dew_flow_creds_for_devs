@@ -9,7 +9,7 @@ import { creatableFolders } from './mcpCreate';
 import { chooseTarget } from './mcpCreate';
 import { summarizeCreate } from './mcpCreate';
 import { McpUseLookup } from './brokerRequests';
-import { findUsableEntry, preConsentedFor } from './mcpEntries';
+import { McpVaultSource, findUsableEntry, preConsentedFor } from './mcpEntries';
 import { ConsentStamps } from './mcpConsentPolicy';
 import { ladderKey } from './mcpAccess';
 import { resolveKind } from './entityKind';
@@ -108,7 +108,9 @@ export function chooseCreateTarget(storage: StorageManager, body: Record<string,
  * folders, the broker knows about grants, and this line is where one becomes the other.</p>
  */
 export function mcpUseLookup(
-  storage: StorageManager,
+  // Narrower than `StorageManager`: this reads accounts and nodes and nothing else, which is what
+  // lets a test drive it over a plain tree rather than a whole vault.
+  storage: Pick<McpVaultSource, 'getAccounts' | 'getNode'>,
   entryId: string,
   action: string,
   stamps?: ConsentStamps,

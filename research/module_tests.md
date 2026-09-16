@@ -573,6 +573,8 @@ inherited `use` rung reading false.
 | an answered dialog is remembered under the ladder shown; a quiet call is not | **broker** | the window does not slide |
 | a token call never writes the MCP stamp | **broker** | the two dialogs say different things |
 | quiet calls spend no modal slot, so a prompting call still gets its five | **broker** | releasing a slot never taken would free another call's |
+| an entry INHERITING never-ask from its folder runs quiet through the REAL lookup | **broker** | the only test here that builds the answer the way production does — `mcpUseLookup` over a real tree and a real stamp store — with an ask-every-time control beside it, so it cannot pass by resolving nothing |
+| a remembered write that FAILS does not fail the call somebody allowed | **broker** | it costs one more dialog next time and says so in the journal |
 
 **What this does not prove.** That the resolver's answer is the one the MCP door acts on — the door
 does not read the policy at all yet. Until S2.2 the whole axis is inert by construction, which is

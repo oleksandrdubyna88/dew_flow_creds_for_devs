@@ -96,6 +96,14 @@ function world(options: {
   /** Whether the vault says this call's dialog has already been answered (issue #95). */
   mcpPreConsented?: boolean;
   /**
+   * The REAL lookup, for a test that wants production's own answer rather than a scripted verdict.
+   *
+   * <p>Its own option rather than `hooks`, because that one is spread FIRST and then overwritten by
+   * the shaped collaborators — a raw `resolveMcpUse` passed there is silently replaced, which is a
+   * test that proves nothing while looking like it proves everything.</p>
+   */
+  mcpResolve?: (entryId: string, action: string) => McpUseLookup;
+  /**
    * Where the window stores things — and, because it is what `socketPathFor` needs, the switch
    * that makes the server open its SECOND listener (a unix socket, or a named pipe on Windows).
    *
@@ -206,7 +214,7 @@ function hooksFor(w: World, options: Parameters<typeof world>[0]): Record<string
     listAliases: options.aliasList === undefined ? undefined : () => options.aliasList ?? [],
     listMcpEntries: mcpEntriesFor(options.mcpEntries),
     visibleConfig: options.visibleConfig,
-    resolveMcpUse: mcpUseFor(options.mcpUse, options.mcpPreConsented),
+    resolveMcpUse: options.mcpResolve ?? mcpUseFor(options.mcpUse, options.mcpPreConsented),
     moveToTrash: trashFor(w, options.trash),
     mcpCreate: createFor(w, options.create),
     rememberMcpConsent: (_a: string, entityId: string, rungs: string): Promise<void> => {

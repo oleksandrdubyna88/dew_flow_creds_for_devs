@@ -1,6 +1,9 @@
 import * as assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { STUB_RUNGS, call, code, share, world } from './brokerWorld';
+import { loadWithVscode } from './vscodeStub';
+import { ConsentStamps } from '../mcpConsentPolicy';
+import type { TreeNode } from '../types';
 
 /**
  * The two routes an MCP client uses, driven over real HTTP against the real broker.
@@ -555,6 +558,63 @@ test('a quiet call spends no modal slot, so a prompting one afterwards still get
     // The budget is untouched, which the alias route can still spend: it always prompts.
     const answer = await call(port, '/v1/alias/exec', { body: { name: 'nope', command: 'x' } });
     assert.notEqual(code(answer), 'too_many_requests', 'four quiet calls ate the modal budget');
+  } finally {
+    w.server.dispose();
+  }
+});
+
+test('an entry that INHERITS never-ask from its folder runs quiet through the real lookup', async () => {
+  // The other tests hand the world a stubbed verdict, so they prove what the DOOR does with an
+  // answer. This one builds the answer the way production does — the real `mcpUseLookup` over a
+  // real tree and a real stamp store — so the folder-to-entry inheritance is exercised end to end
+  // rather than assumed. Without it, a break anywhere between the folder's policy and the door
+  // would leave every test in this file green.
+  const hooks = loadWithVscode<typeof import('../mcpHooks')>('../mcpHooks', { window: {} });
+  const nodes: TreeNode[] = [
+    { id: 'f1', name: 'Projects', type: 'folder', parentId: null, mcp: { use: true, ask: 'never' } },
+    { id: 'e1', name: 'prod', type: 'entity', parentId: 'f1', details: { id: 'e1', name: 'prod', kind: 'ssh', isSshEnabled: true } },
+  ];
+  const source = {
+    getAccounts: () => [{ accountId: 'a1' }],
+    getNode: (_a: string, id: string): TreeNode | undefined => nodes.find((n) => n.id === id),
+  };
+  const stamps = new ConsentStamps({
+    get: () => undefined,
+    update: () => Promise.resolve(),
+  });
+  const w = world({ mcpResolve: (entryId: string, action: string) => hooks.mcpUseLookup(source, entryId, action, stamps, Date.now()) });
+  try {
+    const { port } = await share(w);
+
+    const answer = await call(port, '/v1/mcp/use/exec', { body: { entry: 'e1', command: 'uptime' } });
+
+    assert.equal(answer.status, 200, JSON.stringify(answer.body));
+    assert.equal(w.dialogs.length, 0, 'a policy inherited from the folder did not reach the door');
+    assert.deepEqual(w.ran.map((r) => r.action), ['exec']);
+  } finally {
+    w.server.dispose();
+  }
+});
+
+test('the same entry under a folder that says ask-every-time still raises a dialog', async () => {
+  // The control. Without it the test above could pass because nothing was resolved at all.
+  const hooks = loadWithVscode<typeof import('../mcpHooks')>('../mcpHooks', { window: {} });
+  const nodes: TreeNode[] = [
+    { id: 'f1', name: 'Projects', type: 'folder', parentId: null, mcp: { use: true } },
+    { id: 'e1', name: 'prod', type: 'entity', parentId: 'f1', details: { id: 'e1', name: 'prod', kind: 'ssh', isSshEnabled: true } },
+  ];
+  const source = {
+    getAccounts: () => [{ accountId: 'a1' }],
+    getNode: (_a: string, id: string): TreeNode | undefined => nodes.find((n) => n.id === id),
+  };
+  const stamps = new ConsentStamps({ get: () => undefined, update: () => Promise.resolve() });
+  const w = world({ mcpResolve: (entryId: string, action: string) => hooks.mcpUseLookup(source, entryId, action, stamps, Date.now()) });
+  try {
+    const { port } = await share(w);
+
+    await call(port, '/v1/mcp/use/exec', { body: { entry: 'e1', command: 'uptime' } });
+
+    assert.equal(w.dialogs.length, 1, 'the default must still ask');
   } finally {
     w.server.dispose();
   }
