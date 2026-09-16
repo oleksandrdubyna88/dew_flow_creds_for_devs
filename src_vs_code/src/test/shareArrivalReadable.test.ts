@@ -269,3 +269,40 @@ test('declining one item’s PIN in a batch still imports the others', async () 
   assert.deepEqual(names, ['second'], 'the cancel was local to the item it was asked for');
   assert.deepEqual(w.removed.map((s) => s.item.entityName), ['second'], 'and the declined one is kept');
 });
+
+test('the Keep both branch names its copy too, and its secret is readable', async () => {
+  // The third import branch. The other two are covered above, and a regression confined to this one
+  // would leave the duplicate pointing at the sender's id while every other test stayed green.
+  const w = world();
+  ui.inputs = [PIN];
+  await w.inbox.acceptOne(sealedShare(payloadFor('prod api', 'sender-side-id'), PIN));
+  const first = arrival(w, 'sender-side-id');
+  ui.inputs = [PIN];
+  ui.warningAnswer = 'Keep both';
+
+  await w.inbox.acceptOne(sealedShare(payloadFor('prod api', 'sender-side-id'), PIN));
+
+  const kept = w.storage.getNodes(RECIPIENT.accountId).find((n) => n.id !== first.id);
+  assert.ok(kept !== undefined, 'Keep both should have made a second entry');
+  assert.equal(kept.details?.id, kept.id, 'the copy names itself');
+  assert.equal(await w.storage.getPassword(RECIPIENT.accountId, kept.details!.id), 'pw-of-prod api');
+});
+
+test('every protected item in a batch is wrapped, not only the first', async () => {
+  // The security question asked of the loop: it wraps each item, rather than wrapping one and
+  // importing the rest as they arrived. Two items, two PINs, both entries protected at the end.
+  const w = world();
+  ui.inputs = [PIN, 'pin-for-first-1111', 'pin-for-first-1111', 'pin-for-second-2222', 'pin-for-second-2222'];
+
+  await w.inbox.acceptMany([
+    sealedShare(protectedPayload('first'), PIN),
+    sealedShare(protectedPayload('second'), PIN),
+  ]);
+
+  const nodes = w.storage.getNodes(RECIPIENT.accountId);
+  assert.deepEqual(nodes.map((n) => n.name).sort(), ['first', 'second']);
+  for (const node of nodes) {
+    assert.equal(node.details?.pinProtected, true, `${node.name} arrived unprotected`);
+    assert.equal(await isProtected(w.storage, RECIPIENT.accountId, node.id), true, node.name);
+  }
+});
