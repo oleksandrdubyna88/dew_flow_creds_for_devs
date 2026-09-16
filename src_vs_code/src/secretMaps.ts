@@ -8,6 +8,7 @@ import {
   notesSecretKey,
   paymentSecretKey,
   privateKeySecretKey,
+  secondSecretKey,
   secretKey,
   totpSecretKey,
   vpnConfigSecretKey,
@@ -39,7 +40,8 @@ export type SecretMapKey =
   | 'totps'
   | 'configs'
   | 'fields'
-  | 'payments';
+  | 'payments'
+  | 'seconds';
 
 export type SecretMaps = Record<SecretMapKey, Record<string, string>>;
 
@@ -60,6 +62,12 @@ export const SECRET_KINDS: ReadonlyArray<{
   // ONE row is the whole of a new secret kind's storage — export, import, snapshot and delete all
   // walk this list, so a kind reaches four sites with no line written at any of them.
   { bundleKey: 'payments', key: (a, e) => paymentSecretKey(a, e) },
+  // And the warning the `payments` row earned the hard way, because it applies to every row after
+  // it: ONE row here is the whole of a kind's STORAGE, and not the whole of a kind. `ProfileSnapshot`
+  // in `syncMerge.ts` is hand-maintained, and a kind present here and absent there does not fail to
+  // sync — `dropAbsentKinds` DELETES it. The `seconds` field went into that interface in the same
+  // commit as this line, and the two must never again be split across stories.
+  { bundleKey: 'seconds', key: (a, e) => secondSecretKey(a, e) },
 ];
 
 /**

@@ -35,6 +35,8 @@ export interface BackupBundle {
    * it does not later read as an oversight.</p>
    */
   payments?: Record<string, string>;
+  /** entityId -> an entry's SECOND values as JSON. Absent before the `seconds` kind. */
+  seconds?: Record<string, string>;
   /**
    * nodeId -> tombstone. Since 0.22 an object `{ deletedAt, v }`; pre-0.22
    * backups carry a bare ms-epoch number, normalized in on read.
@@ -100,6 +102,7 @@ export function isBackupBundle(value: unknown): value is BackupBundle {
   }
   // NOT exhaustive: `notes`, `configs` and `fields` have no clause and are admitted unvalidated.
   if (v.payments !== undefined && !allStrings(v.payments)) { return false; }
+  if (v.seconds !== undefined && !allStrings(v.seconds)) { return false; }
   if (v.exportedAt !== undefined && typeof v.exportedAt !== 'number') {
     return false;
   }

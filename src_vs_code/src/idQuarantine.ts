@@ -142,6 +142,7 @@ function remapBundle(bundle: BackupBundle, renamed: Readonly<Record<string, stri
     // becomes an unreachable keychain orphan.
     configs: rekey(bundle.configs, renamed),
     payments: rekey(bundle.payments, renamed),
+    seconds: rekey(bundle.seconds, renamed),
     // Tombstones are keyed by node id and must follow, or a renamed entity's deletion would
     // stop applying. `horizon` is keyed by DEVICE, not by node, and deliberately does not.
     tombstones: rekey(bundle.tombstones, renamed),
