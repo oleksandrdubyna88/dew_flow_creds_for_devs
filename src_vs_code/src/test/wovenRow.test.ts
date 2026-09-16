@@ -83,7 +83,11 @@ test('the note says what is now TRUE: the position tells you nothing either', ()
     'the sentence the build did not keep',
   );
   assert.match(WOVEN_ROW_NOTE, /decided again each time you open this entry/, 'what makes it true');
-  assert.match(WOVEN_ROW_NOTE, /position tells you nothing/, 'said in the words a person reads');
+  // The BOUND, not a promise. The picture's colours are that order expressed and the method is on
+  // the page beside them, so a reader with developer tools recovers it; a reader of the screen, a
+  // screenshot or a backup cannot. The note names both rather than implying the stronger one.
+  assert.match(WOVEN_ROW_NOTE, /screenshot of it or a backup file cannot tell/, 'who it protects from');
+  assert.match(WOVEN_ROW_NOTE, /developer tools open on this machine can/, 'and who it does not');
   assert.match(WOVEN_ROW_NOTE, /stored nowhere/, 'and the method is still the one thing to remember');
   assert.ok(html.includes(WOVEN_ROW_NOTE.slice(0, 40)), 'and it is what the row renders');
 });

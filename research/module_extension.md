@@ -1070,6 +1070,7 @@ export, the share and the hygiene scan needed no change, and `storageManager.ts`
 | `wovenRow.ts` | the two-column row itself, serving the card and the password from one implementation |
 | `rowFlip.ts` | `RowOrderStore` / `displayed` / `rowIn` — which of a reading's two halves is shown first, drawn once per entry and held only in the host |
 | `wovenPicture.ts` | `wovenPictureTokens` — the stored value token by token, each tagged with the ROW it is shown in, never with which is real |
+| `viewWeaveScripts.ts` | the viewer's page script in its one legal order — painter, then the picture fragment, then the card script (the mirror of `formWeaveScripts.ts`) |
 | `wovenFormScript.ts` | the form's page script — when the controls appear, and the live example |
 | `fieldReading.ts` | `value \| withheld(reason) \| absent` — see *withheld is not absent* below |
 | `entityFieldReading.ts` | every field a `creds://` reference can name, as one of those three |
@@ -1125,11 +1126,26 @@ stored nowhere, and the note on the row now says that rather than implying more.
 | cleared when the **entry changes**, and on dispose | another entry is another draw. Clearing on every *render* was wrong: re-rendering the same entry while a keychain read is in flight would post rows under the old order into a page whose Copy resolves the new one — the clipboard and the display disagreeing about the same secret, with nothing on screen saying so |
 | the order is sampled **before every await** | the modal in `grant` and the keychain read are both awaits, and a render behind either clears the store. Sampled first, the copy follows what was on screen. The entity id is sampled there already, for the same class of reason |
 
-**The order never leaves the host** — not in a message, an id, a class or a caption. A `flip` in the
-reading answer would put the answer one inspector away from exactly the reader this defends against,
-and deriving it page-side from a nonce fails the same way, because the derivation is in the source. A
-test compares the whole message under both orders with only the two rows removed; comparing keys and
-shapes alone passes for a host that leaks the order through a caption or a count.
+**The order is in no message, id, class or caption** — a `flip: true` in the reading answer would be
+the answer written down, and deriving it page-side from a nonce fails the same way, because the
+derivation is in the source. A test compares the whole message under both orders with only the two
+rows removed; comparing keys and shapes alone passes for a host that leaks the order through a
+caption or a count.
+
+**What that buys, exactly, and what it does not.** *(Found by the automated reviewer on the pull
+request, and it is worth stating rather than discovering.)* The PICTURE's colours are the order
+expressed: `woven[i].side` equals `shuffleLayout(half, code)[i].side` for every token under `as-read`
+and is its exact inverse under `swapped`, and the message carries `code` while `shuffleLayout` is a
+pure function of the shipped source. So anyone who can read the message — the developer inspector,
+on this machine, while a reading is on screen — recovers the order, and since `weaveSecret` always
+weaves the person's value as the arithmetic FIRST column, recovers which row is theirs.
+
+So the extra bit holds against the reader this feature names: a shoulder, a screen share, a
+screenshot, a backup file. It does not hold against devtools. That is not a regression — before this
+work row one was always the person's value for EVERY reader — but it is the honest bound, and the
+note on the row says it in those words rather than promising more. The only thing that would close
+it is randomising which column holds the real value at WEAVE time, which changes what is stored and
+helps nothing already saved; it belongs in its own plan.
 
 `rowOf`, `copyTextFor` and the password's copy all take a **`DisplayedPair`** — `ReadingPair` with a
 type-only brand — so an arithmetic pair cannot reach them by accident. The compiler refused four call

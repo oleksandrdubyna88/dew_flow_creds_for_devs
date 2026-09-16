@@ -15,8 +15,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   anyone working through the twelve methods never had to read row two. Which half is drawn first is
   now decided per entry, from the same cryptographic source the phrase generator uses, and decided
   again each time you open the entry. It is held in the extension and appears in no message, no id
-  and no caption, so there is nothing in the page to inspect for it. One extra bit: twelve readings
-  become twenty-four, and the method is still the only thing you have to remember.
+  and no caption. What that buys, said exactly: somebody reading your screen, a screenshot of it or a
+  backup file can no longer tell from the position which row is yours. Somebody with developer tools
+  open on this machine, while a reading is showing, still can — the picture's colours are that order
+  expressed, and the method is on the page beside them. Before this change row one was yours for
+  every reader, so nothing here is weaker; the method remains the only thing you have to remember.
 
 - **The refusal to edit a woven entry stops naming an action that does not exist.** It ended *"or
   view it and unweave the field first"*, and there is no unweave anywhere — undoing a weave needs
