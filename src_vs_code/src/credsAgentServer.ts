@@ -215,26 +215,19 @@ export class CredsAgentServer implements vscode.Disposable {
    * has to satisfy before reaching it.</p>
    */
   private admitAliasCall(res: http.ServerResponse, prompts: boolean): boolean {
-    // Which ceiling a call answers to is whether it will ask — see `aliasThrottle.ts`. The modal
-    // budget counts MODALS, not calls: a call that raises none takes no slot there, since spending
-    // one would refuse a later call for a dialog nobody was ever going to see. But on this route the
-    // prompt was also the limiter, so a call that skips it answers to its own ceiling rather than to
-    // nothing. `true` keeps the alias route, which always prompts, byte-identical.
-    const ceiling = this.ceilings.for(prompts);
-    const verdict = ceiling.admit(Date.now());
-    if (verdict === 'allow') {
+    const refused = this.ceilings.admit(prompts, Date.now());
+    if (refused === undefined) {
       return true;
     }
-    const refusal = ceiling.describe(verdict);
-    if (!prompts) {
+    if (refused.report) {
       // `respondError` logs nothing without a grant — an unknown token is probed legitimately, and a
       // line per probe would drown the real calls — but this is no probe: it is the one sign that a
       // runaway loop, or a process working through the entries a policy opened, exists, and a rate
       // limit nobody can see having fired is one nobody can diagnose. `via: 'mcp'` is a fact, not a
       // guess: the alias route always prompts; only the MCP door has a policy to answer for a person.
-      this.log({ grant: '—', entityName: '', action: 'request', outcome: 'too_many_requests', detail: refusal, via: 'mcp' });
+      this.log({ grant: '—', entityName: '', action: 'request', outcome: 'too_many_requests', detail: refused.message, via: 'mcp' });
     }
-    this.respondError(res, 'too_many_requests', refusal);
+    this.respondError(res, 'too_many_requests', refused.message);
     return false;
   }
 

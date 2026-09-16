@@ -173,8 +173,44 @@ export class TokenlessCeilings {
    */
   private readonly silentCeiling = new AliasThrottle(SILENT_CEILING, WINDOW_MS, false);
 
+  /**
+   * When the last silent refusal was WRITTEN DOWN — not when one last happened.
+   *
+   * <p>The ceiling bounds actions and not refusals: a loop calling a thousand times a minute is
+   * refused nine hundred and forty times, and a line each would be a journal nobody can read about
+   * a machine nobody can diagnose. One line a window says everything the second one would — that
+   * this ceiling fired, and when it started — so that is what is written.</p>
+   */
+  private reportedAt: number | undefined;
+
+  /**
+   * Whether this call may proceed, and — when it may not — what to say and whether to record it.
+   *
+   * <p>`undefined` is admission. The decision lives here rather than at the server because picking
+   * the ceiling, asking it, wording its refusal and rationing the record are one rule with four
+   * parts, and a server that held them apart is a server that one day answers one ceiling's verdict
+   * with the other's sentence.</p>
+   */
+  admit(prompts: boolean, nowMs: number): { message: string; report: boolean } | undefined {
+    const ceiling = this.for(prompts);
+    const verdict = ceiling.admit(nowMs);
+    if (verdict === 'allow') {
+      return undefined;
+    }
+    return { message: ceiling.describe(verdict), report: !prompts && this.firstThisWindow(nowMs) };
+  }
+
   /** `prompts` is what the door already decided: whether this call will raise a modal. */
   for(prompts: boolean): AliasThrottle {
     return prompts ? this.modalBudget : this.silentCeiling;
+  }
+
+  /** True once per window, so a runaway loop leaves one line rather than one line per call. */
+  private firstThisWindow(nowMs: number): boolean {
+    if (this.reportedAt !== undefined && nowMs - this.reportedAt < WINDOW_MS) {
+      return false;
+    }
+    this.reportedAt = nowMs;
+    return true;
   }
 }
