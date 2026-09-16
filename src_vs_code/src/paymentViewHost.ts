@@ -3,7 +3,7 @@ import { PHRASE_VISIBLE_MS, needsReveal, phraseRevealPrompt, revealPrompt } from
 import { PaymentCardView, copyTextFor, plainValues, readingFor, revealValue } from './paymentViewMessages';
 import { Reassembled } from './phraseReassembly';
 import { PhraseBuffer } from './phraseBuffer';
-import { RowOrderStore, displayed } from './rowFlip';
+import { RowOrder, RowOrderStore, displayed } from './rowFlip';
 
 /**
  * The payment card's host half: what a message from the card is answered with, and what is asked
@@ -177,6 +177,9 @@ export class PaymentViewHost {
     view: PaymentCardView,
     fields: PaymentFields,
   ): Promise<void> {
+    // Before the question, for the reason `copyReading` samples before its own: the modal is an
+    // await, and a render behind it clears the store.
+    const order = this.deps.orders.orderFor(view.entityId, key);
     if (!view.woven.includes(key as PaymentFieldKey) || !(await this.grant(key, view))) {
       return;
     }
@@ -185,7 +188,7 @@ export class PaymentViewHost {
       this.deps.post({ type: 'paymentReading', entityId: view.entityId, key, ok: false, why: UNREADABLE });
       return;
     }
-    this.postReading(key, this.readingMessage(key, code, view, reading));
+    this.postReading(key, this.readingMessage(key, code, view, reading, order));
   }
 
   /**
@@ -218,15 +221,13 @@ export class PaymentViewHost {
     code: string,
     view: PaymentCardView,
     reading: Reassembled,
+    order: RowOrder,
   ): unknown {
     const words = key === 'mixed';
-    // The ROWS, not the arithmetic's pair. Everything below is built from this one call, so the
-    // buffers, the message and any copy that follows all describe the same two rows — and which of
-    // them is the person's stops being a fact this class can state.
-    const shown = displayed(
-      { first: reading.real, second: reading.decoy },
-      this.deps.orders.orderFor(view.entityId, key),
-    );
+    // The ROWS, not the arithmetic's pair, in the order sampled before the question. The buffers,
+    // the message and any copy that follows are all built from this one call, so they describe the
+    // same two rows — and which of them is the person's stops being a fact this class can state.
+    const shown = displayed({ first: reading.real, second: reading.decoy }, order);
     const buffers = [PhraseBuffer.of(shown.first), PhraseBuffer.of(shown.second)];
     this.release(key);
     this.held.set(key, buffers);
@@ -261,18 +262,17 @@ export class PaymentViewHost {
     view: PaymentCardView,
     fields: PaymentFields,
   ): Promise<void> {
+    // Sampled BEFORE the question, which is the long await on this path: the panel can render
+    // another entry while the modal is on screen, and that CLEARS the store — so an order read
+    // afterwards is a fresh draw, and the clipboard holds the row the person did not point at.
+    // The password host samples before its own await for exactly this reason. (Code review, S3.)
+    const order = this.deps.orders.orderFor(view.entityId, key);
     if (!view.woven.includes(key as PaymentFieldKey) || !(await this.grant(key, view))) {
       return;
     }
     const reading = readingFor(fields, view.form, key, code);
     if (reading !== undefined) {
-      // Through the SAME order the rows were drawn in. Copying from the arithmetic's pair while the
-      // rows were shown swapped would hand over the row the person did not point at, and neither
-      // the button nor the clipboard would say so.
-      const shown = displayed(
-        { first: reading.real, second: reading.decoy },
-        this.deps.orders.orderFor(view.entityId, key),
-      );
+      const shown = displayed({ first: reading.real, second: reading.decoy }, order);
       await this.deps.copy(copyTextFor(shown, which, key));
       // The same acknowledgement every other Copy in this viewer gets. Without it the one button
       // whose value cannot be seen in a box is also the one that never says it worked.

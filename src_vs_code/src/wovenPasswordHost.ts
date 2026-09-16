@@ -1,6 +1,6 @@
 import { ShuffleCode, isShuffleCode } from './shuffle';
 import { unweaveSecret } from './wovenSecret';
-import { DisplayedPair, RowOrder, RowOrderStore, displayed } from './rowFlip';
+import { DisplayedPair, RowOrder, RowOrderStore, displayed, rowIn } from './rowFlip';
 
 /**
  * The viewer's half of a woven password: what a Show or a Copy on those two rows is answered with.
@@ -104,8 +104,9 @@ async function copyRow(
     return;
   }
   // `b` is the SECOND ROW SHOWN, not the decoy. It used to be the decoy, which is how row a came to
-  // be the person's value under every correct method while the page promised otherwise.
-  await deps.copy(which === 'b' ? shown.second : shown.first);
+  // be the person's value under every correct method while the page promised otherwise. The
+  // mapping is `rowIn`'s, shared with the card's path, so the two cannot come to disagree.
+  await deps.copy(rowIn(shown, which));
   // The same acknowledgement every other Copy in this viewer gets: the one button whose value
   // cannot be seen in a box must not also be the one that never says it worked.
   deps.post({ type: 'copied', entityId, field: `${WOVEN_PASSWORD_KEY}|${which}` });

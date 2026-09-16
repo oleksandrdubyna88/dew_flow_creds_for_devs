@@ -127,13 +127,21 @@ function mountEntityView(
     orders,
   });
   const show = (options: EntityViewOptions): void => {
+    const arriving = options.details.id;
+    const wasShowing = state.options.details.id;
     state.options = options;
     // Before the new page exists: a grant belongs to the entry it was given for, and an assembled
-    // phrase must not survive the card it was assembled on. The row orders go with them — another
-    // entry is another draw, and holding the last one would make the order a property of the entry
-    // rather than of the viewing.
+    // phrase must not survive the card it was assembled on.
     payment.reset();
-    orders.clear();
+    // The row orders go with them when the ENTRY changes — another entry is another draw. But only
+    // then. Clearing on every render would re-draw while the same entry is still on screen, and a
+    // Show whose keychain read is still in flight would then post rows under the old order into a
+    // page whose Copy resolves the new one: the clipboard and the display disagreeing, for the same
+    // secret, with nothing on screen saying so. Re-rendering the same entry is not a new viewing.
+    // (Code review, S3.)
+    if (arriving !== wasShowing) {
+      orders.clear();
+    }
     panel.title = options.details.name;
     panel.webview.html = renderEntityViewHtml({ ...options, uiScale: currentUiScale() });
   };

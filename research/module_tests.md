@@ -529,6 +529,20 @@ Named rather than implied, because the rule asks for exactly this.
   tree row, no form filled in. Every harness stubs `vscode` or talks to the broker underneath it.
   So a command registered but never wired to a menu, a context value that stops matching, or a
   webview that throws on open, is caught by unit tests over the pure halves and by nothing else.
+
+  **What the viewer's woven-row flow has instead**, named here because the gap above is why it needs
+  naming. The Show → reading → Copy path spans a panel that imports `vscode`, two hosts that do not,
+  and a page script, and no harness can drive it end to end. It is covered in three places, and the
+  split is deliberate: the arithmetic and the row order in `rowFlip.test.ts` and
+  `wovenPicture.test.ts`; what each host answers, and that a Copy follows the order the rows were
+  shown in — including when a render lands mid-await — in `paymentViewHost.test.ts` and
+  `wovenPasswordForm.test.ts`; and the WIRING in `entityViewPanelWiring.test.ts`, which asserts over
+  the panel's own source that one store is constructed, handed to both hosts, and cleared at both
+  sites. **The limit is exact**: that wiring is read, not executed, so a panel that constructs
+  everything correctly and still threw on open would pass it. That is the same limit as the rest of
+  this bullet. It exists because this feature once shipped ten modules reachable from nothing but
+  their own tests — a test that asserts the CALL is the answer to that — and every scan in it
+  carries a companion proving the pattern still matches a known instance.
 - **The Marketplace artefact.** `npm run package` runs in CI, and nothing installs the resulting
   `.vsix` into a real editor and opens it. The publish step is verified by reading the release run.
 - **The server and the extension end to end.** `server-transport-itest.cjs` would do it, and it is

@@ -3,7 +3,7 @@ import { PaymentForm } from './paymentForm';
 import { MIN_SHUFFLE_TOKENS, ShuffleCode, isShuffleCode } from './shuffle';
 import { PhraseLayout, methodOrder } from './phraseLayout';
 import { Reassembled, reassemble } from './phraseReassembly';
-import { DisplayedPair } from './rowFlip';
+import { DisplayedPair, rowIn } from './rowFlip';
 import { Random } from './decoyDigits';
 import { needsReveal } from './revealGate';
 import { groupDigits } from './cardNumberFormat';
@@ -230,7 +230,9 @@ function layoutFor(fields: PaymentFields, key: string): PhraseLayout {
  * (`DisplayedPair`), so a raw arithmetic pair cannot be passed here by accident.</p>
  */
 export function rowOf(shown: DisplayedPair<readonly string[]>, which: string): readonly string[] {
-  return which === 'b' ? shown.second : shown.first;
+  // The mapping itself is `rowIn`'s, shared with the password's path. Two copies of "which row does
+  // `b` mean" is two places for it to drift, and a drift there copies the row nobody pointed at.
+  return rowIn(shown, which);
 }
 
 /**

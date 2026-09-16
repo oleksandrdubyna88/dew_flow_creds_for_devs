@@ -135,8 +135,8 @@ test('a woven card number is rebuilt under the right method and unreadable under
   // asserted now is that a copy returns whatever was DRAWN into the row the button names.
   const asRead = displayed({ first: right!.real, second: right!.decoy }, 'as-read');
   const swapped = displayed({ first: right!.real, second: right!.decoy }, 'swapped');
-  assert.equal(copyTextFor(asRead, 'a', 'number'), original);
-  assert.equal(copyTextFor(asRead, 'b', 'number'), decoy);
+  assert.equal(copyTextFor(asRead, 'a', 'number'), original, 'row a holds the real value under as-read');
+  assert.equal(copyTextFor(asRead, 'b', 'number'), decoy, 'and row b holds the other reading');
   assert.equal(copyTextFor(swapped, 'a', 'number'), decoy, 'row a is whatever was drawn into row a');
   assert.equal(copyTextFor(swapped, 'b', 'number'), original, 'and row b likewise');
   // The property, not the value: a wrong method answers in the SAME shape as a right one. Anything
