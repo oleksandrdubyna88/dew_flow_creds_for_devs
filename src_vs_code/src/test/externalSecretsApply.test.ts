@@ -43,6 +43,7 @@ function fakeStorage(): { storage: Record<string, unknown>; written: Written } {
       setTotp: record('setTotp'),
       setConfigBody: record('setConfigBody'),
       setPaymentRaw: record('setPaymentRaw'),
+      setSecondRaw: record('setSecondRaw'),
     },
     written,
   };
@@ -60,6 +61,7 @@ const EVERY_SECRET: ExternalSecrets = {
   totp: 'otpauth://totp/x?secret=JBSWY3DPEHPK3PXP',
   config: '{"a":1}',
   payment: '{"number":"4111111111111111","cvv":"123"}',
+  second: '{"password2":"other"}',
   login: 'ada',
   url: 'https://example.internal',
 };

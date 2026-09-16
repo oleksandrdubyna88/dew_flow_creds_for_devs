@@ -35,6 +35,8 @@ export interface RevisionSecrets {
   config?: string;
   /** The login/URL JSON as it was. */
   fields?: string;
+  /** The second values as they were — a rollback that returned half an entry is worse than none. */
+  second?: string;
   /**
    * A payment instrument's fields as they were — the WHOLE record, CVV and PIN included.
    *
@@ -69,7 +71,7 @@ export function revisionHead(revision: Revision): RevisionHead {
   return head;
 }
 
-const SMALL_FIELDS = ['password', 'privateKey', 'vpnConfig', 'dbConnection', 'notes', 'totp', 'config', 'fields', 'payment'] as const;
+const SMALL_FIELDS = ['password', 'privateKey', 'vpnConfig', 'dbConnection', 'notes', 'totp', 'config', 'fields', 'payment', 'second'] as const;
 
 /** A copy of the list with `revision` newest-first, capped, attachments stripped. */
 export function pushRevision(list: readonly Revision[], revision: Revision): Revision[] {

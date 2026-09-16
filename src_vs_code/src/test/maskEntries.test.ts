@@ -17,6 +17,7 @@ interface Stub extends SecretSource {
 function source(
   secrets: Partial<Record<'password' | 'privateKey' | 'vpnConfig' | 'dbConnection' | 'notes', string>>,
   details?: Partial<EntityMetadata>,
+  secondsJson?: string,
 ): Stub {
   const reads: string[] = [];
   const read = (name: keyof typeof secrets) => (accountId: string, entityId: string) => {
@@ -25,6 +26,7 @@ function source(
   };
   return {
     reads,
+    getSecondRaw: () => Promise.resolve(secondsJson),
     getNode: () => ({
       details: { id: 'e1', name: 'prod-db', isSshEnabled: false, ...details } as EntityMetadata,
     }),
@@ -142,4 +144,35 @@ test('a value that is neither a URL nor key-value simply adds nothing', async ()
   const entries = await maskEntriesFor(stub, 'a1', 'e1');
 
   assert.deepEqual(entries.map((e) => e.label), ['DB_CONNECTION']);
+});
+
+/**
+ * A second value is masked ONE BY ONE, not as the record that carries them.
+ *
+ * <p>What a tool prints is a password; it never prints the JSON object the vault stores them in. A
+ * masker that matched the serialised record would match nothing and leave every second value in the
+ * clear, in output an agent is about to read.</p>
+ */
+test('every second value is masked on its own, under a label naming which it was', async () => {
+  const stub = source({}, undefined, '{"password2":"other-secret","cvv2":"481"}');
+
+  const entries = await maskEntriesFor(stub, 'a1', 'e1');
+
+  assert.deepEqual(
+    entries.map((e) => ({ value: e.value, label: e.label })).sort((a, b) => a.label.localeCompare(b.label)),
+    [
+      { value: '481', label: 'SECOND_CVV' },
+      { value: 'other-secret', label: 'SECOND_PASSWORD' },
+    ],
+  );
+  // The companion: the JSON itself is never what gets matched, so it must not appear as an entry.
+  assert.ok(!entries.some((e) => e.value.includes('password2')), 'the record is not masked as a value');
+});
+
+test('an entry with no second values adds nothing to the mask table', async () => {
+  const stub = source({ password: 'pw' }, undefined, undefined);
+
+  const entries = await maskEntriesFor(stub, 'a1', 'e1');
+
+  assert.deepEqual(entries.map((e) => e.label), ['PASSWORD'], 'and the ordinary secret still masks');
 });

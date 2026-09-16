@@ -37,6 +37,8 @@ function vault(payment: string | undefined): Record<string, unknown> {
     getConfigBody: nothing,
     getFieldsRaw: nothing,
     getPaymentRaw: (): Promise<string | undefined> => Promise.resolve(payment),
+    getSecondRaw: (): Promise<string | undefined> => Promise.resolve(undefined),
+    setSecondRaw: (): Promise<void> => Promise.resolve(),
   };
 }
 

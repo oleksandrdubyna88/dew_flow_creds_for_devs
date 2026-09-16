@@ -122,6 +122,7 @@ test('the masker skips a protected value — the ciphertext is a string no tool 
     getVpnConfig: () => Promise.resolve(undefined),
     getDbConnection: () => Promise.resolve(undefined),
     getNotes: () => Promise.resolve(undefined),
+    getSecondRaw: () => Promise.resolve(undefined),
   } as never;
 
   assert.deepEqual(await mod.maskEntriesFor(source, ACCOUNT, 'e1'), []);
