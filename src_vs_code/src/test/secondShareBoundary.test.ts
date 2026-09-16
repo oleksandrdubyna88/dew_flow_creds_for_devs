@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { serializeSecondValues, type SecondValues } from '../secondValues';
-import { withheldNoteFor } from '../shareWithheld';
+import { withheldNoteFor, withheldSentence } from '../shareWithheld';
 import { exportSensitiveNote, paymentFieldsInExport } from '../paymentRedaction';
 import { loadWithVscode } from './vscodeStub';
 
@@ -153,4 +153,26 @@ test('an entry with ONLY second values still warns — it is not a payment at al
 test('a file with nothing to warn about produces no sentence', () => {
   assert.deepEqual(paymentFieldsInExport([{ payment: '{"number":"4111111111111111"}' }, {}]), { records: 0, fields: 0 });
   assert.equal(exportSensitiveNote({ records: 0, fields: 0 }), '');
+});
+
+/**
+ * The names read as ONE alphabetical list, not as two.
+ *
+ * <p>Raised by the static analyser (typescript:S2871) and true for a reason worth the test: a default
+ * `.sort()` orders by UTF-16 code unit, which puts every capital before every lower-case letter. The
+ * sentence then reads "Second CVV, Second IBAN, Second PIN, Second account number, Second card
+ * number, Second password" — the same six names, arranged as two lists a person has to read twice to
+ * be sure nothing is missing.</p>
+ *
+ * <p>These are labels shown to somebody, so they sort the way somebody reads.</p>
+ */
+test('the withheld names are ordered as a person reads, not by code unit', () => {
+  const sentence = withheldSentence([
+    'Second password', 'Second CVV', 'Second account number', 'Second IBAN', 'Second card number', 'Second PIN',
+  ]);
+
+  assert.match(
+    sentence,
+    /Second account number, Second card number, Second CVV, Second IBAN, Second password, Second PIN/,
+  );
 });

@@ -37,9 +37,15 @@ function secondNamesOf(held: SecondValues): readonly string[] {
  *
  * <p>Sorted and de-duplicated, because a folder share reads many entries and "cvv, cvv, pin" would be
  * a list about the number of entries rather than about what was withheld.</p>
+ *
+ * <p><b>Sorted as a person reads</b>, not by UTF-16 code unit. A default `.sort()` puts every capital
+ * before every lower-case letter, so these six names come out as "Second CVV, Second IBAN, Second
+ * PIN, Second account number, …" — one list arranged as two, which somebody has to read twice to be
+ * sure nothing is missing. These are labels shown to a person; the static analyser raised it and it
+ * is right.</p>
  */
 export function withheldSentence(names: Iterable<string>): string {
-  const unique = [...new Set(names)].sort();
+  const unique = [...new Set(names)].sort((one, other) => one.localeCompare(other));
   return unique.length === 0 ? '' : ` Not sent, and they cannot be: ${unique.join(', ')}.`;
 }
 
