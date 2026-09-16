@@ -581,6 +581,18 @@ inherited `use` rung reading false.
 | a call gives back the slot the ceiling that admitted it took, and a refused one gives back nothing | **unit** | the code round's finding: naming the ceiling twice lets the two namings disagree. Red first, with the naive refusal-release in place — `the call in flight still holds its slot` |
 | a clock that moves backward does not strand the ceiling | **unit** | red first: half an hour back and the sixty-first was still refused. Both the counts and the journal mark are measured with both bounds |
 
+**The wiring (S2.4)** — `test/mcpHooks.test.ts`, the story that makes all of the above true in a real
+window rather than only in a test. Five behavioural rows through the factory, and one scan.
+
+| flow | covered | note |
+|---|---|---|
+| a consent remembered through one hook is what the other reads | **unit** | the round trip, which is the whole point of one store; split across two it passes nothing |
+| two calls for the same state share one stamp store, and a different state gets its own | **unit** | asserted through behaviour, not object identity, and with a DIFFERENT vault object each time — the key is the `Memento` |
+| a remembered consent lands under the real key, `credSshManager.mcpConsentStamps` | **unit** | the key is every installed machine's record; a rename is a silent forget for everybody |
+| the clock the factory was given is the one BOTH halves answer to | **unit** | the write carries it and the read is measured from it, at a millisecond either side of twelve hours |
+| an entry whose folder sets no policy still asks, and no stamp is written | **unit** | every entry in every vault today, since no control can write `ask` until S3.1 — the wiring must change nothing for them |
+| the window wires BOTH hooks into the live broker, from the one factory | **scan** | there is no VS Code to activate, and the defect is a call site: a broker left on the store-less resolver keeps the whole suite green while no real window remembers anything. Both branches watched red — the old line restored, and a later `resolveMcpUse:` key shadowing the spread, which is the same trap `brokerWorld` sprang earlier in this feature |
+
 **The ceiling (S2.3)** — the quiet path's own limiter, since the prompt was the old one. The unit half
 is `test/aliasThrottle.test.ts` with the clock injected, so sixty calls cost under a millisecond; the
 broker half drives the ceiling for real over loopback, and the two sixty-call tests cost 863 ms and
