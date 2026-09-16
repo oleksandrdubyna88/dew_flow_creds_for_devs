@@ -26,7 +26,8 @@ import { BINDABLE_FIELDS, BindableField } from './envBinding';
 import { TotpSnapshot } from './totp';
 import { PaymentFields } from './paymentFields';
 import { PaymentCardView } from './paymentViewMessages';
-import { paymentCardMarkup, paymentCardScript } from './paymentViewCard';
+import { viewWeaveScripts } from './viewWeaveScripts';
+import { paymentCardMarkup } from './paymentViewCard';
 import { WOVEN_ROW_NOTE, wovenRowMarkup } from './wovenRow';
 import { methodOrder } from './phraseLayout';
 import { entityViewStyles } from './entityViewStyles';
@@ -776,7 +777,7 @@ export function renderEntityViewHtml(options: EntityViewOptions): string {
     }, 250);
     askForCode();
   }
-  ${paymentCardScript()}
+  ${viewWeaveScripts()}
 </script>
 </body>
 </html>`;
