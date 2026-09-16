@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { BINDABLE_FIELDS } from '../envBinding';
-import { exportSecretsFor } from '../exportSecrets';
+import { SecretReader, exportSecretsFor } from '../exportSecrets';
 import { McpVaultSource, visibleMcpEntries } from '../mcpEntries';
 import { readRouteBody } from '../brokerReadRoutes';
 import { pushRevision, type Revision } from '../revisionHistory';
-import { snapshotForRevision } from '../revisionSnapshot';
-import { parseSecondValues, serializeSecondValues, type SecondValues } from '../secondValues';
+import { RevisionSource, snapshotForRevision } from '../revisionSnapshot';
+import { SECOND_KEYS, parseSecondValues, serializeSecondValues, type SecondValues } from '../secondValues';
 import type { EntityMetadata, TreeNode } from '../types';
 
 /**
@@ -24,18 +24,18 @@ import type { EntityMetadata, TreeNode } from '../types';
  * for it" would pass on an empty listing and tell nobody anything.</p>
  */
 
-const SECONDS: SecondValues = {
-  password2: 'second-password-SECRET',
-  number2: '4242424242424242',
-  cvv2: '481',
-  pin2: '9137',
-  iban2: 'DE02120300000000202051',
-  accountNumber2: '12345678',
-};
+/**
+ * A value for EVERY kind, built from the catalogue rather than listed beside it.
+ *
+ * <p>The claim these tests make is "no second value of any kind comes back", and a hand-written six
+ * would go on making that claim about six after a seventh weave point arrived. Derived, it cannot:
+ * the new kind gets a value here the day it exists.</p>
+ */
+const SECONDS: SecondValues = Object.fromEntries(SECOND_KEYS.map((key) => [key, `SECOND-VALUE-OF-${key}`]));
 const RAW = serializeSecondValues(SECONDS) as string;
 
-/** Only what these two functions actually read — a hand-rolled reader, no vscode, no keychain. */
-function vault(second: string | undefined): Record<string, unknown> {
+/** Only what these two functions read, TYPED — no cast, so a reader added to either is a red build. */
+function vault(second: string | undefined): SecretReader & RevisionSource {
   const nothing = (): Promise<undefined> => Promise.resolve(undefined);
   return {
     getPassword: nothing,
@@ -53,18 +53,22 @@ function vault(second: string | undefined): Record<string, unknown> {
   };
 }
 
+test('the fixture really does hold one of every kind — otherwise the guarantees below shrink silently', () => {
+  assert.deepEqual(Object.keys(SECONDS).sort(), [...SECOND_KEYS].sort());
+});
+
 test('an external export CARRIES the whole record — a restore that lost half an entry is worse than none', async () => {
   // The decision the payment record settled first, applied to this one: an export is a full,
   // deliberate copy. It already carries passwords, private SSH keys and VPN configs; a second
   // password is not more sensitive than the first, and a special case here would be inconsistency
   // rather than defence.
-  const out = await exportSecretsFor(vault(RAW) as never, 'acc-1', ['p1']);
+  const out = await exportSecretsFor(vault(RAW), 'acc-1', ['p1']);
 
   assert.deepEqual(parseSecondValues(out.p1?.second), SECONDS);
 });
 
 test('an export of an entry with no second values carries no second key at all', async () => {
-  const out = await exportSecretsFor(vault(undefined) as never, 'acc-1', ['p1']);
+  const out = await exportSecretsFor(vault(undefined), 'acc-1', ['p1']);
 
   assert.equal('second' in (out.p1 ?? {}), false, 'absent is absent, not an empty string');
 });
@@ -72,7 +76,7 @@ test('an export of an entry with no second values carries no second key at all',
 test('the version history CARRIES the record, so a rollback restores a whole entry', async () => {
   const entity = { id: 'p1', name: 'visa', details: { id: 'p1', name: 'visa', isSshEnabled: false } as EntityMetadata };
 
-  const revision = await snapshotForRevision(vault(RAW) as never, 'acc-1', entity);
+  const revision = await snapshotForRevision(vault(RAW), 'acc-1', entity);
 
   assert.equal(revision.secrets.second, RAW);
 });
@@ -123,7 +127,7 @@ const OPEN: TreeNode = {
 const FOLDER: TreeNode = { id: 'f1', name: 'Databases', type: 'folder', parentId: null };
 
 /** A vault that HOLDS every second value — the listing is what must not disclose them. */
-function agentVault(): McpVaultSource {
+function agentVault(): McpVaultSource & { getSecondRaw(a: string, e: string): Promise<string | undefined> } {
   const nodes = [FOLDER, OPEN];
   return {
     getAccounts: () => [{ accountId: 'a1' }],
@@ -137,7 +141,7 @@ function agentVault(): McpVaultSource {
     // Not part of `McpVaultSource` — present exactly so a listing that reached for it COULD have it,
     // which is what makes the absence below evidence rather than a tautology.
     getSecondRaw: () => Promise.resolve(RAW),
-  } as McpVaultSource;
+  };
 }
 
 /** The check both agent tests make, written once so the teeth test below can run the same one. */

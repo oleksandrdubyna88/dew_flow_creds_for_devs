@@ -110,8 +110,17 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
 }
 
+/**
+ * A blank box is nothing; a value with spaces in it is that value, kept exactly as typed.
+ *
+ * <p>From a review round, and it mattered: this used to store what it had trimmed, so a second
+ * password typed as `" pass "` came back `"pass"` — while the WOVEN path weaves the value exactly as
+ * typed. The same keystrokes would then make two different secrets depending on a box the person
+ * ticked elsewhere, and the altered one would simply not work wherever it was used. Whitespace
+ * decides only whether there is a value at all.</p>
+ */
 function cleanString(value: unknown): string | undefined {
-  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined;
+  return typeof value === 'string' && value.trim().length > 0 ? value : undefined;
 }
 
 /** The JSON to store — `undefined` when there is nothing, so an empty record DELETES the key. */

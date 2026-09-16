@@ -1,6 +1,10 @@
 # PLAN — a second value of your own, everywhere a value can be woven
 
-> Status: **plan only, nothing implemented yet, 2026-09-16.** Scope: `src_vs_code/src` — a new
+> Status: **PR A implemented 2026-09-16; PR B not started.** What is built: the pair rule, the
+> two weaving choke points, and the storage slot with every seam a secret kind touches — all of it
+> invisible to the user. What is NOT built: the form controls, the save gates, the viewer rows, the
+> share/export policy and the help translations, which are PR B on a branch of its own. The plan
+> stays here until PR B lands. Scope: `src_vs_code/src` — a new
 > secret slot, the two weaving choke points, the six forms that offer weaving, the viewer, and the
 > save gates. Extension only; no HTTP contract, no server change.
 >
@@ -209,6 +213,15 @@ requests**.
   `entityFormScript.ts` (799) and `entityFormPage.ts` (764) are at the ceiling.
 - **S5 — the save gates.** `refuseSecondPairs` before the checksum gate, so nothing is woven when a
   pair is refused; the password's equivalent; `secondRecordFor` drops every value a weave consumed.
+  **`passwordSecondOwn` is written only beside `passwordWoven`, and cleared wherever it is cleared**
+  — the entity-metadata twin of the rule `pruneOwnSecond` already enforces for a payment record,
+  accepted from PR A's code review. PR A declares the field and guards its type; nothing writes it
+  yet, so it cannot go stale yet, and this is the story where it could: `entityFormPanel.ts:749`
+  clears `passwordWoven` when the password is cleared or the entry is a database, and a mark left
+  standing there would tell the share and the export that an ordinary password costs two secrets.
+  *The named test:* a record carrying the mark with no woven password is repaired on READ, not only
+  on save — a record written by an older build, or by one that forgot, is the case a save-side
+  check cannot reach.
   *The named test:* `a woven field's second value is never stored beside it` — and it asserts the
   STORED state, not the generator. "The random was never called" proves a decoy was not drawn; it
   says nothing about whether the typed value was also written to the slot, which is the thing that
@@ -230,6 +243,32 @@ requests**.
 `npm test` in `src_vs_code`, after `rm -rf out`. Every new pure module is `vscode`-free and unit
 tested; randomness is injected so a draw can be scripted; every "nothing was stored / nothing was
 sent" test carries a positive companion proving the scan still finds a known instance.
+
+## Deviations, PR A (recorded as they happened)
+
+1. **`pairRefusal` takes no `kind`.** S1 specified `pairRefusal(first, second, label, kind)` so the
+   class comparison could be the password's alone. It is uniform instead, and the argument that made
+   it uniform is the one that made it exist: a decoy is BUILT to match the original's class set so
+   that neither half can be picked out by inspection, and that property is worth exactly as much on
+   an IBAN as on a password. The prediction S1 made — that a password-shaped check would refuse every
+   card — is answered by a test rather than by a parameter: two card numbers are digits on both
+   sides, so the sets are equal and nothing is refused. A code round re-raised the parameter and was
+   rejected on this evidence.
+2. **A stranger character is ONE class, not a class per character.** Found by the code round, and it
+   was a real defect: `classesUsed` named each unknown character as its own class, so two Cyrillic
+   passwords matched only if spelled with the very same letters — which the identical-halves rule
+   forbids anyway. The rule therefore refused every pair a Russian or Ukrainian speaker could type.
+   What the coarser class gives up is a pair in two DIFFERENT non-Latin scripts; the alternative is a
+   table of every script there is, always one alphabet out of date.
+3. **A second value is stored exactly as typed.** Also from the code round. The record trimmed what
+   it stored while the woven path does not, so one set of keystrokes made two different secrets
+   depending on a box ticked elsewhere. Whitespace now decides only whether there is a value at all.
+4. **`snapshotForRevision` takes a `RevisionSource`, not a `StorageManager`.** The narrow-interface
+   shape `maskEntries.ts` and `mcpEntries.ts` already use, taken so the tests need no `as never` —
+   which is the cast that let nine storage fakes go stale without the compiler saying so.
+5. **S1b's rows are PR B's.** What a blank second means at create and at edit is a decision the SAVE
+   makes, and there is no form to make it in until S4. `pairRefusal` returns no refusal for a blank
+   second and says so in a test; the rest lands with the save gates.
 
 ## Definition of Done
 

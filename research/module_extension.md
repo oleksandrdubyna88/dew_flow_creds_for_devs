@@ -639,7 +639,7 @@ The same audit found a third: `shareInbox`'s "the one REMOVAL on this path" call
 `setPassword(undefined)`, which **keeps**. For as long as that line existed, a sender who deleted a
 password and re-shared as an update left the old credential on the recipient's machine.
 
-##### `secretMaps.ts` — the eleven rows, out of the class that used them
+##### `secretMaps.ts` — the twelve rows, out of the class that used them
 
 `SECRET_KINDS`, `SecretMapKey`, `SecretMaps` and `emptySecretMaps` moved out of `storageManager.ts`
 in S1.4. Five other files carry lists that must AGREE with this table (below), and a shared truth
@@ -667,6 +667,85 @@ Only one of these is caught by a test today, and it is worth copying rather than
 `syncManager.test.ts` derives its slot list from `emptySnapshot()` **at run time**, so a new slot is
 covered by construction — that test is the only reason the vault read-back was noticed, and its own
 comment says it was written for exactly this. The other three needed a reviewer.
+
+#### The twelfth kind: a second value the person typed (#52, PR A)
+
+The weave has always had two halves. Until now the other one was a DECOY this product generated, and
+the person never saw it. #52 asks for the half to be theirs — two passwords, two seed phrases, "seed
+1, seed 2, password 1, password 2" — and for a second value to be kept, encrypted, even when the
+field is NOT woven. That second half is what `secondValues.ts` stores.
+
+**One record under one key** (`secondValues.ts`, suffix `:second`), keyed `password2`, `number2`,
+`cvv2`, `pin2`, `iban2`, `accountNumber2`. Six keys and one secret kind, for the reason the payment
+record states about its own: a seventh second value one day is a key in this object rather than
+another pass through the files a secret kind touches. The keys are **derived** from the weave points
+by a template-literal type (`SecondKey = \`${WeavePoint}2\``) so the two lists cannot drift, and the
+way back is a total `Record` rather than `key.slice(0, -1)` — which works until a weave point ends in
+a digit and is then wrong silently.
+
+**What is deliberately NOT in it is the point.** A second value that was WOVEN is not here. It lives
+inside the woven string and nowhere else, because storing it beside the pair would hand any reader of
+the vault the half to subtract, and the twelve methods would stop being twelve — they would stop
+being anything. So this record holds the second values of fields kept in the CLEAR, and the save is
+what enforces it (`secondRecordFor`, PR B).
+
+**The method is still stored nowhere.** `ownSecond` and `passwordSecondOwn` are marks of the same
+kind as `shuffledFields` and `passwordWoven`: they say a field's partner was the person's own value.
+They do not say what that value was, and nothing anywhere says how it was woven.
+
+**Five lists again, and the repository caught the same omission for the fifth time.** The table row
+and the `ProfileSnapshot` field landed in one commit, as the section above insists; the vault
+read-back in `syncManager.ts` did not, and `syncManager.test.ts` — which derives its slot list from
+`emptySnapshot()` at run time — turned red for it. That comment now records five forgettings and one
+test that has caught three of them. `secondSurvival.test.ts` drives the dangerous direction that has
+no test elsewhere: the legacy side's edit WINS, so its snapshot, which has no seconds record at all,
+is the one the merge reads first. Watched failing with the guard removed: *"Cannot read properties of
+undefined (reading 'e1')"*.
+
+**The pair rule** (`secondPair.ts`) decides whether two TYPED halves can be woven: the same number of
+characters counted in CODE POINTS, not identical, and drawing on the same character classes. The
+class comparison reuses `classesUsed` from the decoy generator, which is the whole argument for it —
+a generated decoy is BUILT to match the original's class set so that neither half can be picked out
+by inspection, and a typed pair that does not match on the same terms loses that property. It is not
+a checksum demand: a typed second card number that fails Luhn is the person's business.
+
+Two review rounds shaped that rule, and both were right:
+
+- *"A password-shaped class check will refuse every card."* It does not — the comparison is between
+  the two typed values, so two card numbers are digits on both sides and nothing is refused. There is
+  a test whose only job is to keep that prediction answered.
+- *"A stranger character is its own class, so two Cyrillic passwords have two different class
+  sets."* This one was a real defect and a bad one: unless the halves were spelled with the very same
+  letters — which the identical-halves rule forbids anyway — the check refused **every pair a Russian
+  or Ukrainian speaker could type**, in a product whose help ships in five languages including both.
+  The generated decoy never hit it, because its alphabet is built from the original's own characters.
+  A stranger is now ONE class. What that gives up is a pair written in two DIFFERENT non-Latin
+  scripts, which is separable on sight; naming a script needs a table of every script there is, and
+  one always an alphabet out of date would refuse real pairs for a case nobody types by accident.
+
+**A second value is stored exactly as typed.** The record used to trim, and the woven path does not —
+so the same keystrokes made two different secrets depending on a box ticked elsewhere, and the
+altered one simply would not work. Whitespace now decides only whether there is a value at all.
+
+**The directions it travels** are the payment record's, with one change: there is no share row yet
+(PR B decides the withholding), and the agent row is stronger than "absent by construction". The
+guarantee is DRIVEN rather than scanned — `secondTravel.test.ts` hands `visibleMcpEntries` a vault
+that really holds a second value of every kind and asserts against the JSON that would cross the
+wire, because an absent getter proves nothing when a slot is registered with the generic secret maps.
+A third test runs the identical check against a payload shaped exactly as the leak would shape it, so
+the check is known to have teeth without anybody writing the leak.
+
+**The masker works the other way round.** What a tool prints is a password, never the JSON record the
+vault keeps them in, so masking the serialised record would match nothing and leave every second
+value in the clear in output an agent is about to read. Each value is masked on its own, under a
+label naming which it was (`SECOND_PASSWORD`, `SECOND_CVV`, …).
+
+**`stateKeys.ts` exists because of this kind.** `storageManager.ts` sat at exactly its ratchet
+baseline, and the ratchet lets an exempted file shrink and never grow — so a new secret kind could
+not add a line to it. That is the situation `secretKeys.ts` was extracted in, and the same move again:
+`nodesKey`, `tombstonesKey`, `horizonKey` and `siblingOrder` are pure, `vscode`-free and read nothing
+off the manager. The file went 1029 → 1001, the four accessors brought it to 1023, and the baseline
+is locked at the smaller number so it cannot grow back.
 
 #### The six directions, and why they have no common answer
 
