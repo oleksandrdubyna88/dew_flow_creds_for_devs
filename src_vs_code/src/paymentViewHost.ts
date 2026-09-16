@@ -195,7 +195,7 @@ export class PaymentViewHost {
     }
     const back = readBackOf(fields, view.form, key, code);
     if (back === undefined) {
-      this.deps.post({ type: 'paymentReading', entityId: view.entityId, key, ok: false, why: UNREADABLE });
+      this.deps.post({ type: 'paymentReading', entityId: view.entityId, key, code, ok: false, why: UNREADABLE });
       return;
     }
     this.postReading(key, this.readingMessage(key, code, view, back, order));
