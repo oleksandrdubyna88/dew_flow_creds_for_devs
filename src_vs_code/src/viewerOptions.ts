@@ -11,6 +11,7 @@ import {
   McpSource,
   ResolvedMcpAccess,
   accessMask,
+  answersPolicy,
   describeAccess,
   normalizeMcpAccess,
   resolveMcpInTree,
@@ -286,7 +287,11 @@ export function mcpAsOfVersion(mcp: McpAccess | undefined): ReturnType<typeof mc
   if (mcp === undefined) {
     return undefined;
   }
-  return mcpSummary({ access: normalizeMcpAccess(mcp), source: 'entity' }, undefined, true);
+  // The policy's source is asked separately for the same reason the ladder's is asserted here: a
+  // revision holds the entry's OWN record, so it can say where the policy came from only when the
+  // record answered it itself. Anything it inherited belonged to a folder this snapshot never kept.
+  const askSource: McpSource = answersPolicy(mcp) ? 'entity' : 'none';
+  return mcpSummary({ access: normalizeMcpAccess(mcp), source: 'entity', askSource }, undefined, true);
 }
 
 /** Where the answer came from, in the words the card says out loud. */

@@ -4015,6 +4015,23 @@ inherited apart: `readMcpAccess` writes the ladder only when the message names a
 only when it names one, so changing a folder's consent setting cannot write an all-off ladder that
 closes every entry beneath it.
 
+**Inheritance walks each axis on its own, and `resolveMcpInTree` is where both walks meet.** It used
+to walk once — climb until a node has an `mcp` object, because *an answer stops the walk* is how a
+sub-folder closes a branch its parent opened. With two axes on one record that single walk was a
+permission regression waiting to be filed: a folder given only *never ask* writes an `mcp` object,
+that object stops the ladder walk, and every entry beneath it that inherited its rights from higher
+up closes to agents — a fatigue setting breaking permissions, wearing the face of a broken switch.
+So the walk takes a predicate and runs twice, and each axis stops its own. The two predicates carry
+the whole subtlety: **an empty object answers the ladder** (that is how a branch is closed on
+purpose, and reading it as silence would re-open every closed branch the next time an ancestor was
+widened), while an object whose only key is `ask` does not; and the policy is asked through
+`askPolicy`, so a stored `null` keeps climbing while a word from a newer build stops the walk and
+reads as *ask every time*. The resolved answer therefore names two folders, `folder` and `askFolder`,
+because the two axes may legitimately be inherited from two different places — and a form that named
+one folder for both would point at a page where half the setting is not. The three-argument
+`resolveMcpAccess` was retired in the same change: it had lost its last production caller, and a
+second resolver carrying the old single-axis semantics is how two screens come to disagree.
+
 **Folders became the second object in 0.85.0** (`PLAN_agent_folder_ops.md`). Four tools —
 `creds_folders`, `creds_create_folder`, `creds_edit_folder`, `creds_delete_folder` — with the
 decisions in `mcpFolders.ts` (pure: what is visible, which verb needs which switch, and whether a
@@ -4104,7 +4121,7 @@ and not the other stops the build instead of every window's startup. Record:
 
 | Module | What it decides |
 |---|---|
-| `mcpAccess.ts` | the ladder, inheritance from a folder, nothing at all inside the Trash — and the ask policy a record carries beside its rungs |
+| `mcpAccess.ts` | the ladder, inheritance from a folder **per axis**, nothing at all inside the Trash — and the ask policy a record carries beside its rungs |
 | `mcpEntries.ts` | what an agent may SEE, field by field; and which switch each action needs |
 | `mcpCreate.ts` | which folders are open to creation, and what a request becomes |
 | `secretRotation.ts` / `rotateAction.ts` | the placeholder, and the order a rotation happens in |

@@ -4,7 +4,7 @@ import { FolderFormOptions, renderFolderHtml } from '../folderFormPage';
 import { MCP_SWITCHES } from '../mcpSwitches';
 import { PAGE_MAX_WIDTH_PX } from '../webviewHtml';
 import { zoomApplyScript, zoomButtonsScript, zoomStyle } from '../zoomControl';
-import { accessMask, normalizeMcpAccess, readMcpAccess, resolveMcpAccess } from '../mcpAccess';
+import { accessMask, normalizeMcpAccess, readMcpAccess, resolveMcpInTree } from '../mcpAccess';
 import type { TreeNode } from '../types';
 
 /**
@@ -115,7 +115,8 @@ test('what the form claims about the Trash is what the resolver actually does', 
     parentId: 'f',
     details: { id: 'e', name: 'prod', kind: 'credential', isSshEnabled: false, mcp: { delete: 'any' } },
   };
-  const resolved = resolveMcpAccess(entry, folder, true);
+  const byId = (id: string): TreeNode | undefined => (id === 'f' ? folder : undefined);
+  const resolved = resolveMcpInTree(entry, byId);
   assert.equal(resolved.source, 'none');
   assert.deepEqual(accessMask(resolved.access), [false, false, false, false, false]);
 });
