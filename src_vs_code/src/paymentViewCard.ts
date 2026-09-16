@@ -168,6 +168,7 @@ export function paymentCardScript(): string {
   var payCard = document.querySelector('[data-woven-host]');
   if (payCard) {
 ${payHelpers()}
+${payCloseFn()}
 ${payGateFns()}
 ${payReadingFn()}
 ${payListeners()}
@@ -213,7 +214,19 @@ function payHelpers(): string {
         target.appendChild(node);
       }
     };
-    var payClose = function (key, silent) {
+`;
+}
+
+/**
+ * Closing one: hidden first, emptied after, and the picture goes with it.
+ *
+ * <p>Its own fragment rather than more of `payHelpers`, which was one line under the 50 the linter
+ * allows — the rule here is extract, not suppress. And the picture's clearing belongs beside the
+ * rows' clearing rather than anywhere else: a phrase closes ITSELF after ninety seconds, and a
+ * picture of all twelve words surviving that close would defeat the measure entirely.</p>
+ */
+function payCloseFn(): string {
+  return `    var payClose = function (key, silent) {
       var rows = document.getElementById('payRows_' + key);
       if (!rows) { return; }
       // The rows are hidden FIRST and emptied after (measure 5.5), so the freshest thing the
@@ -221,6 +234,7 @@ function payHelpers(): string {
       rows.hidden = true;
       payRow(document.getElementById('payReading_' + key + '_a'), [], false);
       payRow(document.getElementById('payReading_' + key + '_b'), [], false);
+      payPicture(key, null);
       if (payTimer) { clearTimeout(payTimer); payTimer = 0; }
       if (!silent) { vscode.postMessage({ type: 'paymentClose', field: key }); }
     };
@@ -265,13 +279,16 @@ function payGateFns(): string {
 function payReadingFn(): string {
   return `    var payReading = function (msg) {
       var note = document.getElementById('payNote_' + msg.key);
-      if (!msg.ok) { if (note) { note.textContent = msg.why; } return; }
+      // A refusal takes the previous picture with it. Leaving it there would put one method's
+      // colours under a note saying the value cannot be read.
+      if (!msg.ok) { if (note) { note.textContent = msg.why; } payPicture(msg.key, null); return; }
       // Two clicks are two reads, and their answers can arrive in the other order. An answer for a
       // method the picker no longer shows is dropped rather than displayed under the wrong label.
       var picked = payCard.querySelector('select.mixPick[data-key="' + msg.key + '"]');
       if (picked && msg.code && picked.value !== msg.code) { return; }
       payRow(document.getElementById('payReading_' + msg.key + '_a'), msg.first, msg.words);
       payRow(document.getElementById('payReading_' + msg.key + '_b'), msg.second, msg.words);
+      payPicture(msg.key, msg);
       document.getElementById('payRows_' + msg.key).hidden = false;
       if (msg.visibleMs) {
         if (payTimer) { clearTimeout(payTimer); }
@@ -309,6 +326,15 @@ function payListeners(): string {
       vscode.postMessage({ type: action, field: button.dataset.field + '|' + (pick ? pick.value : '') });
       event.stopPropagation();
     }, true);
+    // Picking another method takes the previous reading off the screen. Without this the rows and
+    // the picture of Method 4 sit under a picker that now says Method 7, and a person reading the
+    // one believes it is the other. Nothing is drawn on change - a reading is what Show is for, and
+    // painting here would put a gated value on screen without its second question ever being asked.
+    payCard.addEventListener('change', function (event) {
+      var pick = event.target;
+      if (!pick || !pick.dataset || !pick.dataset.key) { return; }
+      payClose(pick.dataset.key, false);
+    });
 `;
 }
 

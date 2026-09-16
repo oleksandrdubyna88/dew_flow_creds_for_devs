@@ -222,13 +222,28 @@ function plainOk(element: MiniElement, plain: string): boolean {
   return (tag === '' || element.tag === tag) && classes.every((one) => worn.has(one));
 }
 
-/** The one attribute shape these selectors use, read by index rather than by a nested pattern. */
+/**
+ * The attribute half: `[data-x="v"]`, and `[data-x]` for mere presence.
+ *
+ * <p><b>A bracket this cannot parse now matches NOTHING.</b> It used to answer `true` for one, so an
+ * unsupported selector quietly matched every element: `querySelector('[data-woven-host]')` — the
+ * selector the viewer's own page script binds by — answered the FIRST element in the document. A
+ * test driving that script would have bound it to the wrong node and passed. Green for the wrong
+ * reason is the one thing this harness must not be, which is what its header says it is for.</p>
+ */
 function attributeOk(element: MiniElement, bracketed: string): boolean {
+  if (bracketed === '') {
+    return true;
+  }
   const found = ATTRIBUTE.exec(bracketed);
-  return found === null || element.dataset[camel(found[1])] === found[2];
+  if (found === null) {
+    return false;
+  }
+  const held = element.dataset[camel(found[1])];
+  return found[2] === undefined ? held !== undefined : held === found[2];
 }
 
-const ATTRIBUTE = /^\[data-([a-z-]+)="([^"]*)"\]$/;
+const ATTRIBUTE = /^\[data-([a-z-]+)(?:="([^"]*)")?\]$/;
 
 function camel(name: string): string {
   return name.replace(/-([a-z])/g, (_all, letter: string) => letter.toUpperCase());

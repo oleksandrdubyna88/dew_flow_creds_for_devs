@@ -56,6 +56,10 @@ export function wovenRowMarkup(options: WovenRowOptions): string {
       <div class="readingRows" id="payRows_${key}" hidden>
         ${readingRow(key, 'a', label)}
         ${readingRow(key, 'b', label)}
+        <!-- Empty until a reading is painted into it, and INSIDE the hidden block on purpose: the
+             picture then cannot be on screen when the rows are not, which is what makes a phrase's
+             ninety-second auto-close cover it structurally rather than by remembering to. -->
+        <div class="weaveExHost" id="payExample_${key}"></div>
       </div>
     </div>`;
 }
@@ -93,4 +97,6 @@ export const WOVEN_ROW_STYLES = `
              border: 1px solid var(--vscode-input-border, transparent);
              font-family: var(--vscode-editor-font-family, monospace); word-break: break-all; }
   .reading .word { display: inline-block; margin-right: .5em; }
-  .payNote { margin: 3px 0; }`;
+  .payNote { margin: 3px 0; }
+  /* Empty until a reading is painted, and an empty box is a gap nobody asked for. */
+  .weaveExHost:empty { display: none; }`;
