@@ -4,9 +4,23 @@ All notable changes to **CredsForDevs** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased] — the viewer shows what a method did, and the first row stops always being yours
+## [1.7.1] — an accepted share arrives whole again, and the viewer shows what a method did
 
 ### Fixed
+
+- **An accepted share arrives with everything in it — password, login, URL and one-time code.**
+  An entry accepted from a colleague is given a fresh local id here, so that nobody can address an
+  entry in your vault. The record inside the entry went on pointing at the SENDER's id, and every
+  read of a secret goes through that record — so the entry arrived listing its name and its dates
+  and nothing behind it, while its values sat in the keychain under an id nothing reads. **Entries
+  already accepted are repaired when this version loads them**: they become readable again with
+  nothing to re-share.
+
+- **Accepting a whole inbox at once asks for your own PIN where the sender had one.** *Accept all*
+  imported each opened entry as it arrived, so an entry its sender had protected with a PIN landed
+  here unprotected — the instruction to ask was honoured when accepting one share and skipped when
+  accepting several. An entry you decline a PIN for now stays in *Shared with me* and is counted as
+  still pending.
 
 - **The two rows a woven value is read back through no longer put your value first every time.**
   The row said *"nothing here can tell you which one is yours, and that is deliberate"*, and the
