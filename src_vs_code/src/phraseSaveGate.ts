@@ -1,3 +1,4 @@
+import { secondModeOf } from './secondModeMarkup';
 import { PaymentFields, pickPaymentFields } from './paymentFields';
 import { PhraseLayout, layoutRefusal, layoutsFor, phraseColumns, phraseRefusal } from './phraseLayout';
 import { ShuffleCode, isShuffleCode, SHUFFLE_CODES, shuffleTokens } from './shuffle';
@@ -49,7 +50,10 @@ export function phraseInputFrom(data: Record<string, unknown>): PhraseInput {
   return {
     words: wordsOf(text(data, 'phraseWords')),
     second: wordsOf(text(data, 'phraseSecond')),
-    ownWords: text(data, 'phraseSecondMode') === 'own',
+    // Through the shared reader, so there is ONE definition of what the answer `own` is and one
+    // place that decides what an unrecognised answer means. The phrase form keeps its own words on
+    // screen; what it must not keep is a second opinion about the value behind them.
+    ownWords: secondModeOf(data.phraseSecondMode) === 'own',
     listFirst: listOf(data, 'phraseListFirst'),
     listSecond: listOf(data, 'phraseListSecond'),
     layout: text(data, 'phraseLayout') === 'horizontal' ? 'horizontal' : 'vertical',

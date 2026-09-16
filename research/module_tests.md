@@ -521,6 +521,29 @@ own standing finding, *The editor's own UI* below: nothing here drives VS Code, 
 `vscode` or talks to the broker underneath it, and inventing a tenth harness for one webview would be
 the wrong answer to it. The flow's one real look is by hand, on the packaged `.vsix`.
 
+## The second value a person types (#52)
+
+Named here because the code round asked where these flows are covered, and the honest answer has a
+shape worth writing down: there is no harness that can drive this feature end to end, for the reason
+the section below gives, so each half is covered where it can actually be executed.
+
+| what | where | what it can and cannot see |
+|---|---|---|
+| The pair rule | `secondPair.test.ts` | Pure. Code points, identical halves, character classes — including the Cyrillic pair the code round found refused |
+| What the save STORES | `secondSave.test.ts` | Pure, one test per row of the plan's state table. Reads back what the save decided, never whether a decoy was generated |
+| The page's message, read | `secondFormInput.test.ts` | Pure. Both mode controls answering for their own fields, and a crafted payload's unknown keys refused |
+| The payment gate | `secondPaymentGate.test.ts` | The REAL `paymentRecordFor` behind a `vscode` stub: a good pair woven, a mismatched one refused, and the typed half absent from the record |
+| The page's half | `secondModeScript.test.ts` | RUN through `miniDom`, not matched as source: a box shown, hidden, emptied when hidden, and each control governing only its own scope |
+| The markup | `secondModeMarkup.test.ts` | Derived from the catalogue, no value in the page, and no backtick that would end the template literal it is pasted into |
+| The viewer's rows | `secondViewerRows.test.ts` | The rows drawn, the gate a second CVV inherits, and `allowCopy` — the surface the panel calls, so the copy path is covered rather than the private predicate |
+| Out of the vault | `secondShareBoundary.test.ts` | A REAL share payload built and asserted, plus the export counts. Not an allowlist unit test, because that passes for a payload a serializer picked the slot up into |
+| Sync, backup, revision | `secondSurvival.test.ts`, `storageSecond.test.ts`, `secondTravel.test.ts` | The five lists agreeing, an empty record deleting its key, and the agent surface driven with a vault that HOLDS one of every kind |
+| The five help languages | `secondHelpCoverage.test.ts` | That each language mentions the control — the one stale-translation failure that is checkable without a content-version scheme |
+
+**What none of this reaches** is the same gap the section below names: nothing opens the real form,
+ticks the real box and reads the real keychain. A control rendered but never wired to a listener, or
+a webview that throws on open, is caught by the page-script tests over `miniDom` and by nothing else.
+
 ## What none of them covers
 
 Named rather than implied, because the rule asks for exactly this.

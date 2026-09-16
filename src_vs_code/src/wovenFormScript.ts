@@ -25,6 +25,12 @@ export function wovenFormScript(): string {
   function refreshWeave() {
     if (!weaveWrap || !weaveBox) { return; }
     weaveWrap.style.display = weaveBox.checked ? '' : 'none';
+    // The password's second box follows the weave box: a field being woven shows one only when the
+    // person said they would supply the other half, and a field that is not being woven always
+    // shows one, because a second password can be kept without weaving anything.
+    var secondRow = document.querySelector('.secondRow[data-second="password2"]');
+    if (secondRow) { secondRow.setAttribute('data-second-woven', weaveBox.checked ? 'yes' : 'no'); }
+    if (typeof refreshSecondMode === 'function') { refreshSecondMode(); }
     askWeaveExample();
   }
 

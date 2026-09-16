@@ -28,6 +28,15 @@ import { SECOND_LABELS, SecondKey, firstKeyOf } from './secondValues';
  * <p>Pure: no `vscode`.</p>
  */
 
+/**
+ * Which control answers for which boxes. One page carries more than one.
+ *
+ * <p>A union rather than a string, so a box and a control that are meant to belong together cannot be
+ * given two spellings of the same scope and quietly stop finding each other.</p>
+ */
+export const SECOND_SCOPES = ['password', 'payment'] as const;
+export type SecondScope = (typeof SECOND_SCOPES)[number];
+
 /** The two answers. `own` is the only one that reveals a box, and the only one a pair rule judges. */
 export const SECOND_MODES = ['decoy', 'own'] as const;
 export type SecondMode = (typeof SECOND_MODES)[number];
@@ -37,10 +46,18 @@ export function secondModeOf(value: unknown): SecondMode {
   return value === 'own' ? 'own' : 'decoy';
 }
 
-/** The select. `id` differs per form so two forms on one page could not share a control by accident. */
-export function secondModeControl(id: string): string {
+/**
+ * The select, and the SCOPE it answers for.
+ *
+ * <p>Named rather than inferred from the page's shape. The first version scoped a control to its
+ * enclosing fieldset, which worked until the payment boxes moved into the card and bank fieldsets
+ * while the control stayed in the shared weaving block outside them — at which point it would have
+ * governed every row on the page, the password's included, and emptied what somebody had typed. A
+ * scope the markup states cannot be broken by moving markup.</p>
+ */
+export function secondModeControl(id: string, scope: SecondScope): string {
   return `    <label for="${id}">The other half</label>
-    <select id="${id}" class="secondMode">
+    <select id="${id}" class="secondMode" data-second-scope="${scope}">
       <option value="decoy">A decoy, generated for you</option>
       <option value="own">My own second value — a real one I choose</option>
     </select>
@@ -52,17 +69,24 @@ export function secondModeControl(id: string): string {
 }
 
 /**
- * One field's box, revealed under the mode.
+ * One field's box, and whether the field it belongs to is being WOVEN.
  *
- * <p>`hidden` is the form's business rather than this module's — a box for a field whose weave box is
- * not ticked is not a box for anything — so it is passed in rather than guessed at.</p>
+ * <p>`woven` is the form's business rather than this module's, so it is passed in. It decides two
+ * things at once: the row's starting display, and the attribute the page script reads afterwards.</p>
+ *
+ * <p><b>A field that is NOT being woven always has a box.</b> A second value can be kept without
+ * weaving anything — that is half of what #52 asked for — and the mode has nothing to decide there,
+ * because there is only one way to get a value nobody is weaving. The first version of this put every
+ * box behind the mode, and the code round found what that cost: the state table's "weaving off and
+ * the box filled" row could not be reached at all, while the storage, the save, the viewer and the
+ * share policy all supported it.</p>
  */
-export function secondBox(key: SecondKey, hidden: boolean): string {
+export function secondBox(key: SecondKey, woven: boolean, scope: SecondScope): string {
   // The FIELD is named here rather than derived page-side by trimming the key's last character. That
   // trim works until a weave point ends in a digit and is then wrong silently — the trap
   // `secondValues.ts` records about its own reverse lookup — and a page script has no table to use
   // instead. So the answer travels with the markup.
-  return `    <div class="secondRow" data-second="${key}" data-second-field="${firstKeyOf(key)}" style="display:${hidden ? 'none' : ''}">
+  return `    <div class="secondRow" data-second="${key}" data-second-field="${firstKeyOf(key)}" data-second-woven="${woven ? 'yes' : 'no'}" data-second-scope="${scope}" style="display:${woven ? 'none' : ''}">
       <label for="second_${key}">${SECOND_LABELS[key]}</label>
       <input id="second_${key}" type="password" spellcheck="false" autocomplete="off">
     </div>`;

@@ -17,14 +17,15 @@ function form(mode: string, off: readonly string[] = []): MiniDocument {
   const document = new MiniDocument();
   const picker = document.place('weaveSecondMode', 'select');
   picker.className = 'secondMode';
+  picker.dataset.secondScope = 'payment';
   picker.value = mode;
   for (const key of ['password2', 'cvv2']) {
     const row = document.place(`row_${key}`, 'div');
     row.className = 'secondRow';
     row.dataset.second = key;
-    if (off.includes(key)) {
-      row.dataset.secondOff = 'yes';
-    }
+    // Being WOVEN is the state the mode decides for; `off` marks the one row that is not.
+    row.dataset.secondWoven = off.includes(key) ? 'no' : 'yes';
+    row.dataset.secondScope = 'payment';
     const input = document.place(`second_${key}`, 'input', row);
     input.value = '';
   }
@@ -79,15 +80,15 @@ test('switching to a decoy EMPTIES the box it hides', () => {
   assert.deepEqual(rowOf(document, 'password2'), { display: 'none', value: '' }, 'hidden AND emptied');
 });
 
-test('a row switched off by the form stays hidden even in own mode', () => {
-  // `data-second-off` is the form saying "this field is not being woven, so it has no other half".
-  // The mode must not override that: a box for a field nobody is weaving is a box for nothing.
+test('a woven row on DECOY stays hidden — its other half is being made for it', () => {
+  // `data-second-woven` is the form saying "this field is being woven", which is the only case the
+  // mode has anything to decide. A field nobody is weaving always shows its box; see below.
   const document = form('own', ['cvv2']);
 
   runFragment(secondModeScript(), document, ['refreshSecondMode']);
 
-  assert.equal(rowOf(document, 'password2').display, '');
-  assert.equal(rowOf(document, 'cvv2').display, 'none');
+  assert.equal(rowOf(document, 'password2').display, '', 'not woven, so shown');
+  assert.equal(rowOf(document, 'cvv2').display, '', 'woven AND own, so shown too');
 });
 
 test('a page with no control at all does not throw', () => {
@@ -118,10 +119,13 @@ function twoForms(passwordMode: string, paymentMode: string): MiniDocument {
     const set = document.place(`set_${key}`, 'fieldset');
     const picker = document.place(id, 'select', set);
     picker.className = 'secondMode';
+    picker.dataset.secondScope = key === 'password2' ? 'password' : 'payment';
     picker.value = mode;
     const row = document.place(`row_${key}`, 'div', set);
     row.className = 'secondRow';
     row.dataset.second = key;
+    row.dataset.secondWoven = 'yes';
+    row.dataset.secondScope = key === 'password2' ? 'password' : 'payment';
     document.place(`second_${key}`, 'input', row).value = '';
   }
   return document;
@@ -158,4 +162,50 @@ test('a value typed under one control is not emptied by the other one’s answer
   lifted.refreshSecondMode?.();
 
   assert.equal(document.getElementById('second_cvv2')?.value, '481', 'still there');
+});
+
+/**
+ * A field that is NOT being woven still has a second value, and the box must be reachable.
+ *
+ * <p>Found by the code round, and it is the requirement rather than a nicety: #52 asks for a second
+ * value to be stored, encrypted, *even when weaving is not chosen*. The first version put every box
+ * behind the mode, and the mode only means anything for a weave — so the state table's "weaving OFF
+ * and the box filled" row could not be reached at all. The storage, the save, the viewer and the
+ * share policy all supported it; the form could not create one.</p>
+ *
+ * <p>So the two conditions are read in the right order: a row whose field is NOT being woven is
+ * always shown, and the MODE decides only for a row whose field is.</p>
+ */
+function rowFor(woven: boolean, mode: string): MiniDocument {
+  const document = new MiniDocument();
+  const set = document.place('set_password2', 'fieldset');
+  const picker = document.place('weaveSecondMode', 'select', set);
+  picker.className = 'secondMode';
+  picker.dataset.secondScope = 'password';
+  picker.value = mode;
+  const row = document.place('row_password2', 'div', set);
+  row.className = 'secondRow';
+  row.dataset.second = 'password2';
+  row.dataset.secondWoven = woven ? 'yes' : 'no';
+  row.dataset.secondScope = 'password';
+  document.place('second_password2', 'input', row).value = '';
+  return document;
+}
+
+test('a field that is not being woven shows its box whatever the mode says', () => {
+  const decoy = rowFor(false, 'decoy');
+  runFragment(secondModeScript(), decoy, ['refreshSecondMode']);
+  assert.equal(displayOf(decoy, 'row_password2'), '', 'on decoy');
+  const own = rowFor(false, 'own');
+  runFragment(secondModeScript(), own, ['refreshSecondMode']);
+  assert.equal(displayOf(own, 'row_password2'), '', 'and on own');
+});
+
+test('a field that IS being woven shows its box only when the person supplies the half', () => {
+  const decoy = rowFor(true, 'decoy');
+  runFragment(secondModeScript(), decoy, ['refreshSecondMode']);
+  assert.equal(displayOf(decoy, 'row_password2'), 'none', 'a decoy needs no box');
+  const own = rowFor(true, 'own');
+  runFragment(secondModeScript(), own, ['refreshSecondMode']);
+  assert.equal(displayOf(own, 'row_password2'), '');
 });

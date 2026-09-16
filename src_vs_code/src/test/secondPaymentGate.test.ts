@@ -113,3 +113,24 @@ test('a woven field’s typed half is NOT left in the record beside it', () => {
   assert.ok(!JSON.stringify(record).includes('737'), 'the half is inside the woven value and nowhere else');
   assert.deepEqual(parseSecondValues(JSON.stringify(record)), {}, 'and the record is not a second-values record');
 });
+
+/**
+ * ONE answer to "which fields is this save weaving", asked by both halves.
+ *
+ * <p>From the code round. The gate had its own filter written to agree with the weaver's; a field the
+ * weaver consumed and the record kept would leave a reader the half to subtract, and a field the
+ * record dropped and the weaver never touched would lose a value somebody typed. Two filters written
+ * to agree are two filters that can stop agreeing, so there is one function and both call it.</p>
+ */
+test('a field already woven is not woven again, and is not counted as weaving now', () => {
+  const already = page({ mixFields: ['cvv'], secondValues: { cvv2: '737' } });
+  const storedWoven = { ...already, cardCvv: '' };
+
+  // Nothing marked that is not a weave point, and nothing that the record already holds woven.
+  assert.deepEqual([...paymentWeavingNow(storedWoven)], ['cvv'], 'a fresh field is weaving now');
+  assert.deepEqual(
+    [...paymentWeavingNow(page({ mixFields: ['holder'] }))],
+    [],
+    'a holder is not a weave point, so neither half counts it',
+  );
+});

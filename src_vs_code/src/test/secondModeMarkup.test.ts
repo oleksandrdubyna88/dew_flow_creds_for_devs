@@ -26,7 +26,7 @@ test('an unknown answer is a DECOY, never the person’s own', () => {
 });
 
 test('the mode control offers exactly the two answers, and says what each one costs', () => {
-  const html = secondModeControl('weaveSecondMode');
+  const html = secondModeControl('weaveSecondMode', 'password');
 
   assert.ok(html.includes('id="weaveSecondMode"'), 'the id the form asked for');
   assert.equal((html.match(/<option /g) ?? []).length, 2);
@@ -41,7 +41,7 @@ test('every weave point can have a box, and each is named as a person would say 
   // Derived: a seventh weave point gets a box here the day it exists, rather than this test going
   // on asserting six.
   for (const key of SECOND_KEYS) {
-    const html = secondBox(key, false);
+    const html = secondBox(key, false, 'payment');
     assert.ok(html.includes(`id="second_${key}"`), `${key} has its own box`);
     assert.ok(html.includes(`data-second="${key}"`), 'and its row is findable by the script');
     assert.ok(html.includes(SECOND_LABELS[key]), 'labelled as a person says it, not as the key');
@@ -50,14 +50,14 @@ test('every weave point can have a box, and each is named as a person would say 
 });
 
 test('a box is a password box, so a shoulder does not read the second value either', () => {
-  assert.match(secondBox('password2', false), /type="password"/);
-  assert.match(secondBox('cvv2', false), /spellcheck="false"/);
-  assert.match(secondBox('cvv2', false), /autocomplete="off"/);
+  assert.match(secondBox('password2', false, 'password'), /type="password"/);
+  assert.match(secondBox('cvv2', false, 'payment'), /spellcheck="false"/);
+  assert.match(secondBox('cvv2', false, 'payment'), /autocomplete="off"/);
 });
 
 test('hidden is the FORM’s decision, and the box carries no value either way', () => {
-  const shown = secondBox('iban2', false);
-  const hidden = secondBox('iban2', true);
+  const shown = secondBox('iban2', false, 'payment');
+  const hidden = secondBox('iban2', true, 'payment');
 
   assert.match(hidden, /style="display:none"/);
   assert.match(shown, /style="display:"/);
@@ -80,8 +80,8 @@ test('no control writes a backtick into a page, which would end the template lit
   // This has broken the build three times in this repository, and every one of them was a comment
   // or a sentence rather than code. These strings are pasted into a page's template literal.
   const every = [
-    secondModeControl('x'),
-    ...SECOND_KEYS.flatMap((key) => [secondBox(key, false), clearSecondBox(key, true)]),
+    secondModeControl('x', 'password'),
+    ...SECOND_KEYS.flatMap((key) => [secondBox(key, false, 'payment'), clearSecondBox(key, true)]),
   ].join('');
 
   assert.ok(!every.includes('`'), 'no backtick');

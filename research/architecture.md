@@ -19,7 +19,7 @@ C4Container
         Container(ext, "CredsForDevs", "VS Code extension, TypeScript", "Holds every secret. Does ALL cryptography. The only component that ever sees plaintext")
         Container(cli, "creds", ".NET Native AOT", "Terminal client of the broker. Holds no secret")
         Container(mcp, "creds-mcp", ".NET Native AOT", "MCP server. Relays an agent's request to a window; gated per entry by switches that are off by default")
-        ContainerDb(secretstore, "VS Code SecretStorage", "OS keychain", "Passwords, private keys, VPN configs, notes, DB connection strings")
+        ContainerDb(secretstore, "VS Code SecretStorage", "OS keychain", "Twelve kinds: passwords, private keys, VPN configs, notes, DB connection strings, TOTP seeds, config bodies, attachments, images, login/URL, payment records, second values")
         ContainerDb(globalstate, "VS Code globalState", "JSON", "The node tree, tombstones, version vectors — metadata only")
     }
 
