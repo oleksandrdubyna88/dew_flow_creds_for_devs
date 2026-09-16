@@ -61,7 +61,7 @@ function names(body: Record<string, unknown> | undefined, field: string): body i
  * exactly the moment it is working as designed.</p>
  */
 export type McpUseLookup =
-  | { kind: 'usable'; target: McpUseTarget }
+  | { kind: 'usable'; target: McpUseTarget; preConsented?: boolean }
   | { kind: 'closed'; entityName: string; needed: NeededSwitch }
   | undefined;
 
@@ -99,21 +99,35 @@ export async function readMcpUse(
   req: http.IncomingMessage,
   resolve: ((entryId: string, action: string) => McpUseLookup) | undefined,
   action: string,
-): Promise<
-  { ok: true; body: Record<string, unknown>; target: McpUseTarget } | { ok: false; code: ErrorCode; message: string }
-> {
+): Promise<UseRead> {
   const parsed = await readNamedBody(read, req, 'entry', 'an "entry" id');
   return parsed.ok ? usable(parsed.body, resolve, action) : parsed;
 }
+
+/**
+ * What a use route knows before it does anything.
+ *
+ * <p>`preConsented` rides BESIDE the target rather than on it, and that placement is the whole of
+ * how "deleting always asks" survives a refactor. `McpUseTarget` flows through the shared `minted`
+ * helper into the delete and create routes; a pre-consent field on it would be one move away from a
+ * silent deletion. Here, only a handler that reads this result can see it — and the delete handler,
+ * which calls the same `readMcpUse`, simply never does.</p>
+ */
+export type UseRead =
+  | { ok: true; body: Record<string, unknown>; target: McpUseTarget; preConsented: boolean }
+  | { ok: false; code: ErrorCode; message: string };
 
 function usable(
   body: Record<string, unknown>,
   resolve: ((entryId: string, action: string) => McpUseLookup) | undefined,
   action: string,
-): { ok: true; body: Record<string, unknown>; target: McpUseTarget } | { ok: false; code: ErrorCode; message: string } {
+): UseRead {
   const found = resolve?.(body.entry as string, action);
   return found?.kind === 'usable'
-    ? { ok: true, body, target: found.target }
+    ? // `=== true` rather than a coalesce: a lookup that does not know about this field at all —
+      // one of the five `.cjs` harnesses, or a build older than it — reads as "ask", never as
+      // "already answered".
+      { ok: true, body, target: found.target, preConsented: found.preConsented === true }
     : { ok: false, ...refusalFor(found) };
 }
 

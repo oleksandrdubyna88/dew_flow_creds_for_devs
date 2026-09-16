@@ -120,6 +120,15 @@ export interface BrokerHooks {
   readonly resolveMcpUse?: (entryId: string, action: string) => McpUseLookup;
 
   /**
+   * A person answered a dialog for this entry: remember WHEN, on this machine only.
+   *
+   * <p>Never in the vault, never in a share, never synced — see `mcpConsentPolicy.ts` for why a
+   * remembered answer that travels is not a check. Absent means this window remembers nothing, so
+   * every call asks, which is what a build with no storage should do.</p>
+   */
+  readonly rememberMcpConsent?: (accountId: string, entityId: string) => void;
+
+  /**
    * Move an entry to the Trash, answering whether it was still there to move.
    *
    * <p>Deliberately NOT `deleteNodeRecursive`: that is the one real deletion path, and an agent
@@ -173,6 +182,7 @@ const HOOK_KINDS = {
   listMcpEntries: 'function',
   visibleConfig: 'function',
   resolveMcpUse: 'function',
+  rememberMcpConsent: 'function',
   moveToTrash: 'function',
   mcpCreate: 'object',
   configRoute: 'object',

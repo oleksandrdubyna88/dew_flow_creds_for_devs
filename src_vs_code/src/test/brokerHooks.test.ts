@@ -44,7 +44,7 @@ test('every hook the interface declares is accepted', () => {
   const everything = Object.fromEntries(BROKER_HOOK_NAMES.map((name) => [name, undefined]));
 
   assert.doesNotThrow(() => checkedHooks(everything as never));
-  assert.equal(BROKER_HOOK_NAMES.length, 12, 'eleven callbacks and the storage directory');
+  assert.equal(BROKER_HOOK_NAMES.length, 13, 'twelve callbacks and the storage directory');
 });
 
 test('nothing at all is a real build, and so is a hook set to undefined', () => {
