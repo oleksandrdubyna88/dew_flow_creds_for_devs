@@ -178,12 +178,16 @@ requests**.
   refused; a password pair whose class sets differ is refused; **a digits pair of equal length is
   NOT refused** — the companion that stops the rule quietly rejecting every card; every refusal is
   a sentence a person can act on.
-- **S1b — what an EMPTY second means, said once.** ~~Blank at create with the own-second option
-  chosen and weaving ON is a refusal.~~ **Dropped in PR B's plan round as unreachable** — with the
-  box as the only switch there is no "own-second chosen" state distinct from a filled box, so the
-  refusal could never fire and the rule could not be implemented from one control. What survives is
-  in S4's state table, every row of it, and a blank box never refuses. `pairRefusal` returning no
-  refusal for a blank second is asserted in PR A (`secondPair.test.ts`); the rest is S5's.
+- **S1b — what an EMPTY second means, said once.** Blank with the own-second mode chosen and weaving
+  ON is a refusal: there is nothing to weave with, and generating a decoy behind the person's back
+  would store something they did not choose. Blank with weaving OFF stores nothing. Clearing an
+  existing second value DELETES it, and where it was woven the attempt is refused with the same
+  sentence as any other attempt to re-weave a woven field.
+  *(The plan round briefly recorded this rule as unreachable, on the reading that one text box was
+  the only control. It is reachable, because the mode select in S4 is the state it needs — and that
+  select is the phrase form's, widened rather than invented.)*
+  *Tests:* one per row of S4's table. `pairRefusal` returning no refusal for a blank second is PR A's
+  (`secondPair.test.ts`); what blank MEANS is decided here.
 - **S2 — the two choke points take a supplied second.** `weaveSecret(value, code, random, second?)`
   (`wovenSecret.ts:49`) and `weaveOne` (`paymentWeaving.ts:72-84`) use a typed value INSTEAD of
   calling `generateDecoy`; the record gains `ownSecond` beside `shuffledFields`, and the entry gains
@@ -212,25 +216,39 @@ requests**.
   phrase's `secondColumn()` widened rather than copied. New modules, because `entityFormPanel.ts`
   (799), `entityFormScript.ts` (799) and `entityFormPage.ts` (764) are at the ceiling.
 
-  **The box IS the switch, and a blank box never refuses.** Settled in PR B's plan round, where all
-  three reviewers found the same hole: as first written, S1b needed to tell "I chose to type my own
-  and left it blank" apart from "make me a decoy", and one text box cannot carry both. Two reviewers
-  proposed a checkbox per field. That is six more controls whose only job is to distinguish two blank
-  states, and a control that can disagree with the box beside it is a new class of defect. The other
-  meaning is deleted instead: blank with weaving ON makes a decoy, which is exactly what this product
-  does today and loses nothing. The form says so where a person reads it before saving.
+  **A MODE beside the box, because this product already built this control once.** The plan round
+  found the hole — as written, S1b needed to tell "I chose to type my own and left the box blank"
+  apart from "make me a decoy", and one text box cannot carry both meanings — and two of three
+  reviewers proposed an explicit switch. The first answer written here was to delete the second
+  meaning instead and let the box be the switch. That was wrong, and what makes it wrong is in this
+  repository rather than in the argument: **the phrase form already has this exact control.**
+  `phraseSecondMode` (`phraseFormMarkup.ts:72`) is a two-option select — *"A decoy, generated for
+  you"* / *"My own words — a second real key, or a phrase I choose"* — with the own box revealed
+  under it, and `phraseSaveGate.ts:52` reads `ownWords` from it and applies the pair refusal only to
+  an own column. This story's own sentence says to WIDEN that rather than copy it; a different
+  control for the same decision three fields away is the drift the reuse rule exists to stop.
 
-  | weaving | the second box | what is stored |
-  |---|---|---|
-  | ON, field not yet woven | filled | Woven with THEIR value. `ownSecond` / `passwordSecondOwn` marked. The typed second is **not** written to the record — that is the sharpest rule |
-  | ON, field not yet woven | blank | Woven with a generated decoy. Today's behaviour, unchanged |
-  | ON, field ALREADY woven | anything | Nothing. `weavePaymentFields` filters a key already in `shuffledFields`, and `wovenSave` keeps `wasWoven` — the box is not read |
-  | OFF | filled | Stored in the record, exactly as typed |
-  | OFF, something stored | blank | **Kept.** The password box's own rule (`wovenSave` returns `woven: wasWoven` for an empty box), so an unrelated edit cannot silently delete a secret |
-  | OFF, nothing stored | blank | Nothing |
-  | any, something stored | *Clear* ticked | Deleted. The `clearPassword` affordance, shown only when there is something to clear |
+  So: one shared mode control, used by all three forms, and S1b stands as it was written.
 
-  The only refusal is a mismatched PAIR (owner decision 4), and it is `pairRefusal`'s, built in PR A.
+  | weaving | mode | the box | what is stored |
+  |---|---|---|---|
+  | ON, field not yet woven | own | filled | Woven with THEIR value. `ownSecond` / `passwordSecondOwn` marked. The typed second is **not** written to the record — that is the sharpest rule |
+  | ON, field not yet woven | own | blank | **Refused.** They chose to supply a half and supplied none; drawing a decoy behind their back would store something they did not choose. S1b's rule, now reachable |
+  | ON, field not yet woven | decoy *(default)* | — | Woven with a generated decoy. Today's behaviour, unchanged, and the box is not shown |
+  | ON, field ALREADY woven | — | — | Nothing. `weavePaymentFields` filters a key already in `shuffledFields` and `wovenSave` keeps `wasWoven`, so neither control is read |
+  | OFF | *(no mode: there is nothing to choose between)* | filled | Stored in the record, exactly as typed |
+  | OFF, something stored | — | blank | **Kept.** The password box's own rule (`wovenSave` returns `woven: wasWoven` for an empty box), so an unrelated edit cannot silently delete a secret |
+  | OFF, nothing stored | — | blank | Nothing |
+  | any, something stored | — | *Clear* ticked | Deleted. The `clearPassword` affordance, shown only when there is something to clear |
+
+  The other refusal is a mismatched PAIR (owner decision 4), and it is `pairRefusal`'s, built in PR A.
+
+  **Where the mode lives on each form.** One per form, not one per field: the entity form puts it in
+  `weaveControls`, beside the method; the payment form puts it in `mixControls`, which is already the
+  place one method governs every ticked field, with a box per ticked field under it; the phrase form
+  has it already and gives up its private copy. Per-field modes would be six switches for a choice
+  nobody makes differently per field, and the payment form's existing *"Give each field its own
+  method…"* expander is the precedent for adding that later if anybody asks.
 
   *Tests:* one per row, and each one DRIVES the control — `input`, `change`, save — and asserts the
   record the save wrote, rather than asserting that six inputs were rendered. Issue #51 is why: every
