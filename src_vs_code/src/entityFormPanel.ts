@@ -1,4 +1,4 @@
-import { answerCardValues, formOf, paymentGates, paymentRecordFor, switchNoticeFor } from './paymentSaveGate';
+import { answerCardValues, formOf, paymentGates, paymentRecordFor, paymentWeavingNow, switchNoticeFor } from './paymentSaveGate';
 import { FormMessage } from './formMessage';
 import { hasMixedField } from './mixedFieldGuard';
 import { readDependsOnRows, readForwardRows } from './formRowReaders';
@@ -6,7 +6,9 @@ import { addressBlockFor, addressSplitAnswer, cardTypedAnswer } from './cardForm
 import { exampleAnswer } from './weaveExample';
 import { unwovenWarning, wovenSave } from './wovenPasswordSave';
 import { secondModeOf } from './secondModeMarkup';
+import { secondInputFrom, secondTyped } from './secondFormInput';
 import { secondRecordFor } from './secondSave';
+import { WeavePoint } from './secondValues';
 import { cryptoRandom, generatePhraseAnswer } from './phraseGenerate';
 import * as vscode from 'vscode';
 import { applyLifetime } from './entityExpiry';
@@ -273,7 +275,7 @@ async function confirmUnwovenSave(
     // The dialog has to know about the other half too, or a refused pair would be a person
     // clicking Save and getting something the dialog never mentioned. The module's own comment:
     // one says what gets STORED, the other says what to SAY about it, and the two must not disagree.
-    { own: secondModeOf(data.weaveSecondMode) === 'own', typed: str(data, 'secondPassword') },
+    { own: secondModeOf(data.weaveSecondMode) === 'own', typed: secondTyped(data).password2 ?? '' },
   );
   if (warning === undefined) {
     return true;
@@ -511,7 +513,7 @@ export function toValues(data: Record<string, unknown>, options: EntityFormOptio
   // a partner that was then rejected.
   const secondHalf = {
     own: secondModeOf(data.weaveSecondMode) === 'own',
-    typed: str(data, 'secondPassword'),
+    typed: secondTyped(data).password2 ?? '',
   };
   const saved = wovenSave(password, bool(data, 'weavePassword'), str(data, 'weaveMethod'), options.initial?.passwordWoven === true, cryptoRandom, secondHalf);
   const privateKey = str(data, 'privateKey');
@@ -637,15 +639,7 @@ export function toValues(data: Record<string, unknown>, options: EntityFormOptio
     wovenRefusal: saved.refusal,
     // What the record should hold afterwards. A value the weave CONSUMED is not in it — that is
     // the rule the whole feature stands on, and `secondRecordFor` is where it is true.
-    newSecond: secondRecordFor({
-      mode: secondHalf.own ? 'own' : 'decoy',
-      typed: { password2: secondHalf.typed },
-      cleared: bool(data, 'clearSecondPassword') ? ['password2'] : [],
-      // Only when the weave actually happened: a refused one consumed nothing, so a value typed
-      // beside it is an ordinary second password and belongs in the record.
-      weaving: saved.woven && saved.refusal === '' ? ['password'] : [],
-      stored: options.storedSecond ?? {},
-    }),
+    newSecond: secondRecordFor(secondInputFrom(data, options.storedSecond ?? {}, weavingNow(data, saved))),
     // A config has no password slot, so a stored one is invisible and uneditable — and, until this
     // line, enough to make the entry shareable. Scrubbed on write, exactly as a TOTP seed is when
     // an entity moves to a kind that cannot hold one.
@@ -691,3 +685,16 @@ export function toValues(data: Record<string, unknown>, options: EntityFormOptio
  */
 
 export { FormMessage };
+
+/**
+ * The fields this save is ABOUT TO weave, from both forms that can.
+ *
+ * <p>Only a weave that actually happened counts: a refused one consumed nothing, so a value typed
+ * beside it is an ordinary second value and belongs in the record rather than being dropped. The
+ * payment side reports the fields it marked that were not already woven, which is the same list
+ * `weavePaymentFields` will act on.</p>
+ */
+function weavingNow(data: Record<string, unknown>, saved: { woven: boolean; refusal: string }): readonly WeavePoint[] {
+  const password: readonly WeavePoint[] = saved.woven && saved.refusal === '' ? ['password'] : [];
+  return [...password, ...paymentWeavingNow(data)];
+}

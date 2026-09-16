@@ -1,5 +1,4 @@
 import { SecondKey, SecondValues, WeavePoint, secondKeyOf } from './secondValues';
-import { SecondMode } from './secondModeMarkup';
 import { pairRefusal } from './secondPair';
 
 /**
@@ -21,19 +20,32 @@ import { pairRefusal } from './secondPair';
  * that read those as deletions would lose secrets for free. Deleting is therefore something a person
  * says — the `clearSecond_*` box, offered only when there is something to clear.</p>
  *
+ * <h3>The MODE is not here, and that is deliberate</h3>
+ *
+ * <p>"A decoy, or my own" is a control on a form, and one page carries two of them — the password's
+ * and the payment section's — governing different fields. So the rule is handed the ANSWER rather
+ * than the control: `ownWoven` names the fields being woven with the person's own half, and a form
+ * left on `decoy` contributes none. That is also what makes the refusal below total: a field in
+ * `ownWoven` must have a value and it must pair, whichever form it came from.</p>
+ *
  * <p>Pure: no `vscode`, no storage, no randomness.</p>
  */
 
-/** Everything a save knows about the second half, gathered from one form. */
+/** Everything a save knows about the second half, gathered from whatever forms are on the page. */
 export interface SecondInput {
-  /** Whose the other half is. One answer per form; only `own` reads a box. */
-  readonly mode: SecondMode;
   /** What the boxes hold, exactly as typed. A key absent is a box nobody touched. */
   readonly typed: SecondValues;
   /** Which CLEAR boxes are ticked. */
   readonly cleared: readonly SecondKey[];
-  /** The fields this save is about to weave — not the ones already woven. */
-  readonly weaving: readonly WeavePoint[];
+  /**
+   * The fields this save is about to weave WITH THE PERSON'S OWN half.
+   *
+   * <p>Not "the fields being woven": one woven with a generated decoy consumes nothing the person
+   * typed, so a value typed beside it is an ordinary second value and belongs in the record. And not
+   * "the fields already woven" either — those are not being woven again and their boxes are not read
+   * at all.</p>
+   */
+  readonly ownWoven: readonly WeavePoint[];
   /** What the record holds now, so an untouched box can keep it. */
   readonly stored: SecondValues;
 }
@@ -50,10 +62,9 @@ export function refuseSecondPairs(
   labels: Readonly<Partial<Record<WeavePoint, string>>>,
   input: SecondInput,
 ): string {
-  const judged = input.mode === 'own' ? input.weaving : [];
   // The FIRST refusal is the answer: a person fixes one thing at a time, and a paragraph listing
   // every field at once is a paragraph nobody reads to the end.
-  return judged.map((point) => onePair(
+  return input.ownWoven.map((point) => onePair(
     first[point] ?? '',
     input.typed[secondKeyOf(point)] ?? '',
     labels[point] ?? point,
@@ -65,11 +76,11 @@ export function refuseSecondPairs(
  *
  * <p>This is the one place "blank" is not "keep what is stored": the person chose to supply the other
  * half and supplied none, and the alternative — drawing a decoy behind their back — would store a
- * value they did not choose in a field they will later be asked to recognise. With the mode set to
- * `decoy` the same empty box means exactly what it says and never reaches here.</p>
+ * value they did not choose, in a field they will later be asked to recognise. A form left on `decoy`
+ * contributes nothing to `ownWoven`, so the same empty box never reaches here.</p>
  */
 function onePair(first: string, second: string, label: string): string {
-  if (second.length === 0) {
+  if (second.trim().length === 0) {
     return `You chose to supply the second ${label} yourself and the box is empty. Type it, or `
       + 'choose a decoy and one will be made for you. Nothing has been saved.';
   }
@@ -98,8 +109,7 @@ export function secondRecordFor(input: SecondInput): SecondValues {
  * untouched.</p>
  */
 function dropped(input: SecondInput): ReadonlySet<string> {
-  const consumed = (input.mode === 'own' ? input.weaving : []).map((point) => secondKeyOf(point));
-  return new Set<string>([...consumed, ...input.cleared]);
+  return new Set<string>([...input.ownWoven.map((point) => secondKeyOf(point)), ...input.cleared]);
 }
 
 /** Only boxes somebody actually typed in: a blank one is not an empty value, it is silence. */

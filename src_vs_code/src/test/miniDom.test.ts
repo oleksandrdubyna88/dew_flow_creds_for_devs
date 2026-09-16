@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { MiniDocument } from './miniDom';
+import { MiniDocument, MiniElement } from './miniDom';
 
 /**
  * The harness, tested — because a harness that is wrong makes every test written on it wrong, and
@@ -46,4 +46,19 @@ test('a value selector still distinguishes values, and presence does not imply a
   assert.equal(document.querySelector('[data-key="pin"]'), pin);
   assert.equal(document.querySelector('[data-key="cvv"]'), cvv);
   assert.equal(document.querySelectorAll('[data-key]').length, 2, 'both carry the attribute');
+});
+
+test('setAttribute writes what getAttribute answers, and ignores what it cannot', () => {
+  // The pair has to agree, or a page script that writes a mark and reads it back sees nothing and the
+  // test still passes — which is the failure mode this harness was rewritten to end.
+  const element = new MiniElement('div');
+
+  element.setAttribute('data-second-off', 'yes');
+  assert.equal(element.getAttribute('data-second-off'), 'yes');
+
+  element.setAttribute('data-second-off', 'no');
+  assert.equal(element.getAttribute('data-second-off'), 'no', 'and a second write replaces the first');
+
+  element.setAttribute('title', 'ignored');
+  assert.equal(element.getAttribute('title'), undefined, 'what it cannot answer it does not pretend to hold');
 });

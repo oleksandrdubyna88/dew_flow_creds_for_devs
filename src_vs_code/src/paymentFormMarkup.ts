@@ -1,5 +1,8 @@
 import { DEFAULT_PAYMENT_FORM, PAYMENT_FORMS, PAYMENT_FORM_LABELS } from './paymentForm';
 import { methodLabel } from './shuffle';
+import { secondBox, secondModeControl } from './secondModeMarkup';
+import { SHUFFLEABLE_KEYS } from './paymentFields';
+import { secondKeyOf } from './secondValues';
 import { CARD_BRANDS } from './cardBrand';
 import { PAYMENT_BRAND_LABELS, brandMarksMarkup } from './cardBrandIcons';
 import { methodOrder } from './phraseLayout';
@@ -221,6 +224,17 @@ function brandOptions(): string {
  * change. The name is bound to the code (`methodLabel`) so that the shuffling costs nobody the one
  * thing they have to remember.</p>
  */
+/**
+ * A box per weave point, derived from the catalogue rather than written out five times.
+ *
+ * <p>Every one starts hidden and OFF: `cardFormScript.refreshMix` turns a row on when its own weave
+ * box is ticked, and `secondModeScript` shows the ones that are on when the mode says `own`. Two
+ * conditions, each owned by the script that knows it — which is why the markup asserts neither.</p>
+ */
+function secondBoxes(): string {
+  return SHUFFLEABLE_KEYS.map((key) => secondBox(secondKeyOf(key), true)).join('\n');
+}
+
 function methodOptions(random: Random): string {
   return methodOrder(random)
     .map((code) => `<option value="${code}">${methodLabel(code)}</option>`)
@@ -264,6 +278,8 @@ function mixControlsMarkup(random: Random): string {
       <p class="hint" id="mixWarning"></p>
       <p class="hint"><b>What this does and does not do.</b> A woven field is stored as your value and a decoy shuffled together, and the method is <b>never stored</b> — not here, not in a backup, not in the sync. Nobody can unweave it but you, from memory, so a forgotten method is a lost value.<br>
       It protects against somebody <b>reading</b> an open vault: a shoulder, a screen share, a backup file on a laptop. It does <b>not</b> protect against somebody who can try every possibility — a CVV is a thousand values, and weaving costs them nothing.</p>
+      ${secondModeControl('mixSecondMode')}
+${secondBoxes()}
       <div class="actions"><button type="button" id="mixExpand">Give each field its own method…</button></div>
       <div id="mixPerField" style="display:none"></div>
       <p class="hint">What the method does, on two values made up for the picture. Your own value is never drawn here — showing it beside the decoy it is woven with, under the method that wove them, would put the answer on screen next to the question.</p>

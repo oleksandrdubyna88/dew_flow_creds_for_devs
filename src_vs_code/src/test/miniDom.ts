@@ -54,6 +54,24 @@ export class MiniElement {
     return name.startsWith('data-') ? this.dataset[camel(name.slice(5))] : undefined;
   }
 
+  /**
+   * The write half of `getAttribute`, through the same `dataset` mapping.
+   *
+   * <p>Added when a page script began SETTING a data attribute rather than only reading one: the card
+   * form marks each second-value row on or off as its weave box is ticked. Without this the fragment
+   * throws under the harness, and the behaviour can only be reviewed rather than run — which is the
+   * state issue #51 was found in.</p>
+   *
+   * <p>A non-`data-` name is ignored rather than stored, exactly as `getAttribute` answers `undefined`
+   * for one. A harness that accepted a write it could never answer would be worse than one that does
+   * neither, because a test would then pass on a value nothing can read.</p>
+   */
+  setAttribute(name: string, value: string): void {
+    if (name.startsWith('data-')) {
+      this.dataset[camel(name.slice(5))] = value;
+    }
+  }
+
   addEventListener(type: string, handler: (event: unknown) => void): void {
     const forType = this.listeners[type] ?? [];
     forType.push(handler);

@@ -159,6 +159,56 @@ function markCollectorScript(): string {
 `;
 }
 
+
+
+/**
+ * Which second boxes belong to a field that is actually being woven.
+ *
+ * <p>Two conditions decide whether a box is shown, and each belongs to the script that knows it: this
+ * one says the FIELD is being woven, and `secondModeScript` says the person asked to supply the other
+ * half. Neither may answer for the other — a box under an unticked weave box is a box for nothing,
+ * whatever the mode says.</p>
+ */
+function secondRowScript(): string {
+  return `  function refreshSecondRows(picked) {
+    var rows = document.querySelectorAll('.secondRow[data-second]');
+    for (var i = 0; i < rows.length; i++) {
+      var field = rows[i].getAttribute('data-second-field') || '';
+      rows[i].setAttribute('data-second-off', picked.indexOf(field) !== -1 ? 'no' : 'yes');
+    }
+    if (typeof refreshSecondMode === 'function') { refreshSecondMode(); }
+  }`;
+}
+
+/**
+ * The two collectors that read every second-value control on the page.
+ *
+ * <p>Its own fragment because `mixScript` sits against the fifty-line ceiling, and because these are
+ * not about the MIX: both forms' boxes are collected together, by their record key, since the save
+ * writes one record. Which of them count is decided host-side, where the fields each mode governs
+ * are written down — a page that decided it would be a second copy of that table.</p>
+ */
+function secondCollectorScript(): string {
+  return `  function collectSecondValues() {
+    var rows = document.querySelectorAll('.secondRow[data-second]');
+    var typed = {};
+    for (var i = 0; i < rows.length; i++) {
+      var box = rows[i].querySelector('input');
+      if (box) { typed[rows[i].getAttribute('data-second')] = box.value; }
+    }
+    return typed;
+  }
+
+  function collectClearSecond() {
+    var boxes = document.querySelectorAll('.clearSecond');
+    var ticked = {};
+    for (var i = 0; i < boxes.length; i++) {
+      ticked[boxes[i].getAttribute('data-second')] = boxes[i].checked === true;
+    }
+    return ticked;
+  }`;
+}
+
 /**
  * The weaving controls' own script: which fields are marked, which method each gets, and when the
  * controls are on screen at all.
@@ -173,6 +223,8 @@ function mixScript(): string {
   // memory of it.
 ${markCollectorScript()}
   function collectMixFields() { return markedFields(); }
+
+${secondCollectorScript()}
 
   function collectMixMethods() {
     var rows = document.querySelectorAll('.mixMethodRow');
@@ -204,8 +256,11 @@ ${markCollectorScript()}
       if (expand) { expand.textContent = 'Use one method for all of them'; }
     }
     if (per && per.style.display !== 'none') { renderPerField(picked); }
+    refreshSecondRows(picked);
     askExamplesSoon();
   }
+
+${secondRowScript()}
 
   ${mixRenderScript()}
 ${addressScript()}
