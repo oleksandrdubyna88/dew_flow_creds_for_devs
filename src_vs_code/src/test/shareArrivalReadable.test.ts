@@ -222,10 +222,11 @@ test('an entry repaired on read stays repaired after an ordinary edit, and keeps
 
   await w.storage.updateDetailsFields(RECIPIENT.accountId, 'local-id', { host: 'example.com' });
 
-  const after = w.storage.getNode(RECIPIENT.accountId, 'local-id');
-  assert.equal(after?.details?.id, 'local-id', 'the write did not put the stale id back');
-  assert.equal(after?.details?.host, 'example.com', 'and it is the same record, edited');
-  assert.equal(await w.storage.getPassword(RECIPIENT.accountId, after!.details!.id), 'still here');
+  const record = w.storage.getNode(RECIPIENT.accountId, 'local-id')?.details;
+  assert.ok(record !== undefined, 'the entry should still be there to read');
+  assert.equal(record.id, 'local-id', 'the write did not put the stale id back');
+  assert.equal(record.host, 'example.com', 'and it is the same record, edited');
+  assert.equal(await w.storage.getPassword(RECIPIENT.accountId, record.id), 'still here');
 });
 
 test('a repaired entry keeps its own node id — nothing mints a new one on write', async () => {
