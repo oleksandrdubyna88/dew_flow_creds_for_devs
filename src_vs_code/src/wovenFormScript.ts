@@ -43,7 +43,7 @@ export function wovenFormScript(): string {
     paintExample(
       'weaveExampleHost',
       'password',
-      'Password — ' + answer.method,
+      'Password — ' + answer.methodName,
       answer,
       'Your password (made up here)'
     );
