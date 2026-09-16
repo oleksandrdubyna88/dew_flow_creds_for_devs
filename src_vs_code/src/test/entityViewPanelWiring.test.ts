@@ -34,7 +34,10 @@ test('the panel constructs exactly ONE row-order store, and gives it the real ra
   const built = source.match(/new RowOrderStore\(/g) ?? [];
 
   assert.equal(built.length, 1, 'two stores would let a Show and its Copy disagree');
-  assert.match(source, /new RowOrderStore\(Math\.random\)/, 'and it is drawn, not pinned');
+  // The house CSPRNG, never Math.random: one bit, but a predictable bit is one a reader who has
+  // watched a few opens carries into the next.
+  assert.match(source, /new RowOrderStore\(cryptoRandom\)/, 'drawn from the crypto source');
+  assert.ok(!/RowOrderStore\(Math\.random\)/.test(source), 'and never from the one that looks random');
 });
 
 test('the SAME store reaches both hosts — the card’s and the woven password’s', () => {

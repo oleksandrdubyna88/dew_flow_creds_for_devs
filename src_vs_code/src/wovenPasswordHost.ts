@@ -1,6 +1,6 @@
 import { ShuffleCode, isShuffleCode } from './shuffle';
 import { unweaveSecret } from './wovenSecret';
-import { DisplayedPair, RowOrderStore, displayed } from './rowFlip';
+import { DisplayedPair, RowOrder, RowOrderStore, displayed } from './rowFlip';
 
 /**
  * The viewer's half of a woven password: what a Show or a Copy on those two rows is answered with.
@@ -58,8 +58,13 @@ export async function handleWovenPassword(
   // id read afterwards would stamp THIS entry's password with THAT entry's id, which is precisely
   // the stamp the page trusts. Read first, and a stale answer is one the page drops.
   const entityId = deps.entityId();
+  // Sampled BEFORE the await for the same reason the id above it is, and it is the same bug: the
+  // panel can render another entry while the keychain is answering, which CLEARS the store — and an
+  // order read afterwards would be a fresh draw, so a Copy would hand over the row this page is not
+  // showing. Read here, and the copy follows what was on screen. (Code review, S3.)
+  const order = deps.orders.orderFor(entityId, WOVEN_PASSWORD_KEY);
   const stored = await deps.read();
-  await answer(type, rest, stored, entityId, deps);
+  await answer(type, rest, stored, entityId, order, deps);
   return true;
 }
 
@@ -68,16 +73,14 @@ async function answer(
   rest: readonly string[],
   stored: string | undefined,
   entityId: string,
+  order: RowOrder,
   deps: WovenPasswordDeps,
 ): Promise<void> {
   const code = codeIn(type, rest);
   const reading = readingOf(stored, code);
-  // The rows, decided once for this entry and read by BOTH branches below, so a Copy can never
-  // resolve `a` against a different order from the one the Show drew.
-  const shown =
-    reading === undefined
-      ? undefined
-      : displayed(reading, deps.orders.orderFor(entityId, WOVEN_PASSWORD_KEY));
+  // The rows, in the order sampled before the read, and read by BOTH branches below — so a Copy can
+  // never resolve `a` against a different order from the one the Show drew.
+  const shown = reading === undefined ? undefined : displayed(reading, order);
   if (type === 'reassemble') {
     deps.post(readingMessage(entityId, code, shown));
     return;

@@ -245,12 +245,17 @@ test('no message carries the order — the answer has the same shape either way'
 
   const one = asRead.posted[0] as Record<string, unknown>;
   const two = swapped.posted[0] as Record<string, unknown>;
-  assert.deepEqual(Object.keys(one).sort(), Object.keys(two).sort(), 'same keys, whichever was drawn');
-  // Nothing a page could read to learn the order: no boolean beyond the two it always carries.
-  assert.deepEqual(
-    Object.entries(one).filter(([, v]) => typeof v === 'boolean').map(([k]) => k).sort(),
-    ['ok', 'words'],
-  );
+  // EXACT, not just the keys: every field except the two rows is identical under both orders. A
+  // looser check passes for a host that leaks the order through a class, a caption, a count or a
+  // number, and an inspector reading that would know which row is the person's without reading
+  // either. So the payload is compared whole, with only `first` and `second` taken out.
+  const withoutRows = (m: Record<string, unknown>): Record<string, unknown> => {
+    const { first: _f, second: _s, ...rest } = m;
+    return rest;
+  };
+  assert.deepEqual(withoutRows(one), withoutRows(two), 'everything but the rows is the same message');
+  assert.notDeepEqual(one.first, two.first, 'and the rows really did come out the other way round');
+  assert.deepEqual([one.first, one.second].sort(), [two.first, two.second].sort(), 'same pair, reordered');
   assert.ok(!/real|decoy|swap|flip|order/i.test(JSON.stringify([one, two])));
 });
 

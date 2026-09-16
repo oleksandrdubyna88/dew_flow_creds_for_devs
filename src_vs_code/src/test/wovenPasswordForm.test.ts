@@ -221,6 +221,49 @@ test('a Copy of a woven password’s row follows the order the rows were shown i
   assert.notEqual(copied[0], 'hunter2!', 'which under this order is not the password');
 });
 
+/**
+ * The narrow window a code round found: the panel re-renders WHILE the keychain is answering.
+ *
+ * <p>`show()` clears the store, so an order read after the await would be a fresh draw — and the
+ * Copy would hand over the row this page is not showing. The order is sampled before the read, next
+ * to the entity id, which is sampled before the read for the very same reason.</p>
+ */
+test('a Copy that arrives as the panel re-renders still follows the order the rows were shown in', async () => {
+  const copied: string[] = [];
+  const stored = weaveSecret('hunter2!', SHUFFLE_CODES[3], () => 0.37);
+  // SCRIPTED: swapped first, as-read after the clear. A store whose random always answers the same
+  // would redraw to the same order and this test would pass against the bug it exists for.
+  const draws = [0.9, 0.1];
+  let at = 0;
+  const orders = new RowOrderStore(() => draws[Math.min(at++, draws.length - 1)] ?? 0);
+  let release = (): void => undefined;
+  const held = new Promise<string>((resolve) => {
+    release = (): void => resolve(stored);
+  });
+  const deps = (read: () => Thenable<string | undefined>) => ({
+    entityId: () => 'e1',
+    read,
+    post: () => undefined,
+    copy: (t: string) => { copied.push(t); return Promise.resolve(); },
+    orders,
+  });
+
+  // The rows are SHOWN first — that is what puts an order in the store for the copy to follow.
+  await handleWovenPassword('reassemble', `password|${SHUFFLE_CODES[3]}`, deps(() => Promise.resolve(stored)));
+  const answered = handleWovenPassword('copyReading', `password|a|${SHUFFLE_CODES[3]}`, deps(() => held));
+  // The panel loads another entry mid-read — exactly what the shared preview tab does on a click.
+  orders.clear();
+  release();
+  await answered;
+
+  assert.equal(copied.length, 1);
+  // The order in force when the rows were drawn was `swapped`, so row a held the other reading.
+  // Reading the order after the clear would have drawn `as-read` and copied the password instead —
+  // the row the person did not point at.
+  assert.notEqual(copied[0], 'hunter2!', 'the copy followed the order the rows were shown in');
+  assert.equal(at, 1, 'and exactly one draw happened: the clear did not cause a second');
+});
+
 test('a method this build has no name for is refused, and says nothing was changed', async () => {
   const posted: Record<string, unknown>[] = [];
 
