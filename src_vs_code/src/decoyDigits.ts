@@ -104,11 +104,38 @@ function passwordDecoy(original: string, random: Random): string {
  * a decoy that could contain one, or that character marks its own half.</p>
  */
 function classesOf(original: string): readonly string[] {
-  const known = [LOWER, UPPER, DIGITS, SYMBOLS].filter((set) => [...original].some((one) => set.includes(one)));
-  const strangers = [...new Set([...original])].filter(
-    (one) => ![LOWER, UPPER, DIGITS, SYMBOLS].some((set) => set.includes(one)),
-  );
+  const used = classesUsed(original);
+  const known = NAMED.filter(([name]) => used.has(name)).map(([, set]) => set);
+  const strangers = [...used].filter((name) => !NAMED.some(([named]) => named === name));
   return [...known.flatMap((set) => [...set]), ...strangers];
+}
+
+/** The four classes the generator knows, in ONE table so nothing else has to spell them out. */
+const NAMED: readonly (readonly [string, string])[] = [
+  ['lower', LOWER],
+  ['upper', UPPER],
+  ['digits', DIGITS],
+  ['symbols', SYMBOLS],
+];
+
+/**
+ * WHICH classes a value draws on — the four by name, and any stranger character as itself.
+ *
+ * <p>Exported because a second value the person TYPES has to be comparable against the first on
+ * exactly the terms a generated decoy is built to satisfy. `passwordDecoy` imitates the original's
+ * class set precisely so neither half can be told from the other by inspection; a typed pair that
+ * does not match on the same terms loses that property, and the save refuses. One definition, so
+ * the generator and the refusal cannot come to disagree about what a class is.</p>
+ *
+ * <p>A stranger is its own class rather than ignored: a character no set of ours names, present in
+ * one half and absent from the other, marks that half as surely as a whole class would.</p>
+ */
+export function classesUsed(value: string): ReadonlySet<string> {
+  const used = new Set<string>();
+  for (const one of value) {
+    used.add(NAMED.find(([, set]) => set.includes(one))?.[0] ?? one);
+  }
+  return used;
 }
 
 /** Digits of the same length, and nothing else — a CVV or a PIN has no structure to imitate. */
