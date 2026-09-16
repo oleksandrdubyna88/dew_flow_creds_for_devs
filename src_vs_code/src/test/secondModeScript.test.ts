@@ -31,10 +31,15 @@ function form(mode: string, off: readonly string[] = []): MiniDocument {
   return document;
 }
 
+function displayOf(document: MiniDocument, id: string): string {
+  return document.getElementById(id)?.style.display ?? '(no such row)';
+}
+
 function rowOf(document: MiniDocument, key: string): { display: string; value: string } {
-  const row = document.getElementById(`row_${key}`);
-  const input = document.getElementById(`second_${key}`);
-  return { display: row?.style.display ?? '?', value: input?.value ?? '?' };
+  return {
+    display: displayOf(document, `row_${key}`),
+    value: document.getElementById(`second_${key}`)?.value ?? '(no such box)',
+  };
 }
 
 test('the boxes are hidden on load when the answer is a decoy', () => {
