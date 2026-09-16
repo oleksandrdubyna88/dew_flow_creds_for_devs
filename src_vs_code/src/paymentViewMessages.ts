@@ -6,6 +6,7 @@ import { Reassembled, reassemble } from './phraseReassembly';
 import { DisplayedPair, rowIn } from './rowFlip';
 import { Random } from './decoyDigits';
 import { needsReveal } from './revealGate';
+import { SECOND_KEYS, SecondKey, SecondValues, firstKeyOf } from './secondValues';
 import { groupDigits } from './cardNumberFormat';
 
 /**
@@ -42,6 +43,14 @@ export interface PaymentCardView {
   readonly methods: readonly ShuffleCode[];
   /** How many words a woven phrase holds — for the question asked before it is assembled. */
   readonly wordCount: number;
+  /**
+   * The SECOND values this entry holds for fields of this form (#52) — their keys, never a value.
+   *
+   * <p>A woven field is never here, and not because anything filters it out: a second value that was
+   * woven is not stored, so the record simply has no key for it. That is the rule the save enforces,
+   * showing through as an absence rather than as a second rule the viewer would have to keep.</p>
+   */
+  readonly seconds: readonly SecondKey[];
 }
 
 /** The keys a record holds, restricted to the ones its form owns. Order is the form's. */
@@ -69,6 +78,7 @@ export function paymentCardFor(
   form: PaymentForm,
   fields: PaymentFields,
   random: Random,
+  seconds: SecondValues = {},
 ): PaymentCardView {
   return {
     entityId,
@@ -77,7 +87,20 @@ export function paymentCardFor(
     woven: wovenKeysOf(fields, form),
     methods: methodOrder(random),
     wordCount: (fields.mixed ?? []).length / 2,
+    seconds: secondKeysOf(seconds, form),
   };
+}
+
+/**
+ * Which second values this FORM owns — a card does not show a second IBAN.
+ *
+ * <p>The same restriction `presentKeysOf` applies to the record itself, and for the same reason: a
+ * record that still holds a key the chosen form does not own is repaired on read rather than drawn.
+ * A second value for a field the form has no row for would be a row labelled for nothing.</p>
+ */
+function secondKeysOf(seconds: SecondValues, form: PaymentForm): readonly SecondKey[] {
+  const owned = new Set<string>(keysForForm(form));
+  return SECOND_KEYS.filter((key) => seconds[key] !== undefined && owned.has(firstKeyOf(key)));
 }
 
 /**
@@ -93,6 +116,41 @@ export function plainValues(fields: PaymentFields, form: PaymentForm): Record<st
   return Object.fromEntries(
     shown.flatMap((key) => textOf(fields, key).map((value) => [key, forDisplay(key, value)])),
   );
+}
+
+
+/**
+ * The second values the card can show without asking — the ungated ones.
+ *
+ * <p>Same rule as the fields above, asked about the FIELD each key belongs to: a second CVV is a CVV
+ * and waits for the question, a second IBAN is not and does not. The gate is `revealGate`'s, read
+ * rather than restated, so the card and the host cannot come to disagree about which rows ask.</p>
+ */
+export function plainSeconds(seconds: SecondValues, shown: readonly SecondKey[]): Record<string, string> {
+  return Object.fromEntries(
+    shown.flatMap((key) => {
+      const value = seconds[key];
+      return value === undefined || needsReveal(firstKeyOf(key)) ? [] : [[key, value] as const];
+    }),
+  );
+}
+
+/**
+ * One gated second value, after the question — or nothing at all.
+ *
+ * <p>`undefined` for a key the card is not showing, which is the same refusal `revealValue` makes:
+ * a message naming a key this entry does not hold must not be able to read one it does.</p>
+ */
+export function revealSecond(
+  seconds: SecondValues,
+  shown: readonly SecondKey[],
+  key: string,
+): string | undefined {
+  const named = SECOND_KEYS.find((one) => one === key);
+  if (named === undefined || !shown.includes(named) || !needsReveal(firstKeyOf(named))) {
+    return undefined;
+  }
+  return seconds[named];
 }
 
 /**

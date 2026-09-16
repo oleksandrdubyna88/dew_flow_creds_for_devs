@@ -1,3 +1,4 @@
+import { isSecondKey } from './secondValues';
 import { EntityViewOptions, cliCommandFor, portableSshCommand } from './entityViewPage';
 import { DEFAULT_SNIPPET_LANGUAGE, snippetFor } from './configSnippet';
 import { CONFIG_KEY_ENV } from './configKey';
@@ -57,6 +58,14 @@ export async function copyValueFor(
     // `pay_<key>` or `pay_<key>|<variant>`. The variant decides the SHAPE of the answer, never
     // which field is read — that is still the key, and it is still checked against the record.
     const [key, variant = ''] = field.slice('pay_'.length).split('|');
+    // A SECOND value is read from its own record (#52), and checked against the same card: a key the
+    // card is not showing must not be copyable, exactly as a field it does not hold is not.
+    if (isSecondKey(key)) {
+      const seconds = await options.resolveSecond?.();
+      return view === undefined || seconds === undefined || !view.seconds.includes(key)
+        ? undefined
+        : seconds[key];
+    }
     const value = view === undefined || fields === undefined
       ? undefined
       : copyableValue(fields, view.form, key);
@@ -96,6 +105,11 @@ export async function copyValueFor(
       fileName: configFileNameFor(d.configFileName, d.configFormat ?? 'json', d.name),
     },
     ).code;
+  }
+  // A credential's second password (#52), read from its own record at the moment the button is
+  // pressed — the same rule the first one follows, and the page holds no stored value to hand back.
+  if (field === 'second_password2') {
+    return (await options.resolveSecond?.())?.password2;
   }
   let value: string | undefined;
   switch (field) {

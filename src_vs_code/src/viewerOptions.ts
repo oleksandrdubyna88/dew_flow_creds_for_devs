@@ -4,6 +4,7 @@ import type { StorageManager } from './storageManager';
 import { DbType, TreeNode } from './types';
 import { TotpSnapshot, totpSnapshot } from './totp';
 import { PaymentFields, parsePaymentFields } from './paymentFields';
+import { SecondValues, parseSecondValues } from './secondValues';
 import { PinGate, PinOpen, openStored } from './pinGate';
 import {
   McpAccess,
@@ -46,6 +47,15 @@ export interface SecretReader {
   dbConnection(): Thenable<string | undefined>;
   /** The stored `otpauth://` seed. The viewer never gets this — only the code below. */
   totpSeed(): Thenable<string | undefined>;
+  /**
+   * The second-values record as stored JSON (#52), for the same reason `paymentRaw` is here.
+   *
+   * <p>Through this seam rather than beside it, because this is the ONE place the live viewer reads
+   * a secret — so a second value is PIN-gated, reported on a miss and answered from a revision by
+   * the same three implementations every other kind already has. A getter added anywhere else would
+   * be a second ladder, which is the defect this interface was extracted to end.</p>
+   */
+  secondRaw(): Thenable<string | undefined>;
   /**
    * The payment record as stored JSON. The page never gets this either — the card asks per field.
    *
@@ -104,6 +114,17 @@ export function paymentViewFor(read: SecretReader): () => Thenable<PaymentFields
   return () => Promise.resolve(read.paymentRaw()).then((raw) => parsePaymentFields(raw));
 }
 
+/**
+ * The second values, read the same way and at the same moment.
+ *
+ * <p>Read per request rather than once, exactly as the payment record is: a record edited while the
+ * panel is open must not be shown from a stale copy, and a value cleared elsewhere must stop being
+ * copyable here.</p>
+ */
+export function secondViewFor(read: SecretReader): () => Thenable<SecondValues> {
+  return () => Promise.resolve(read.secondRaw()).then((raw) => parseSecondValues(raw));
+}
+
 /** Live secrets: read from the keychain at the moment the Copy button is pressed. */
 export function storageSecretReader(
   storage: StorageManager,
@@ -118,6 +139,7 @@ export function storageSecretReader(
     // Read at each request rather than once: the seed can be edited while the panel is open.
     totpSeed: () => storage.getTotp(accountId, entityId),
     paymentRaw: () => storage.getPaymentRaw(accountId, entityId),
+    secondRaw: () => storage.getSecondRaw(accountId, entityId),
   };
 }
 
@@ -146,6 +168,7 @@ export function gatedSecretReader(
     dbConnection: through(inner.dbConnection),
     totpSeed: through(inner.totpSeed),
     paymentRaw: through(inner.paymentRaw),
+    secondRaw: through(inner.secondRaw),
   };
 }
 
@@ -162,7 +185,7 @@ function told(opened: PinOpen, report: (message: string) => void): string | unde
 
 /** A revision's secrets: whatever the record kept, nothing read from the keychain. */
 export function revisionSecretReader(revision: Revision): SecretReader {
-  const { password, privateKey, vpnConfig, dbConnection, totp, payment } = revision.secrets;
+  const { password, privateKey, vpnConfig, dbConnection, totp, payment, second } = revision.secrets;
   return {
     password: () => Promise.resolve(password),
     privateKey: () => Promise.resolve(privateKey),
@@ -173,6 +196,9 @@ export function revisionSecretReader(revision: Revision): SecretReader {
     // The WHOLE record as it was, CVV and PIN included: a rollback that returned a card without
     // half its fields would be a worse defect than having no rollback (revisionHistory.ts).
     paymentRaw: () => Promise.resolve(payment),
+    // Whatever the entry's second values were at that moment, for the same reason: a rollback that
+    // returned half of what somebody typed is worse than no rollback.
+    secondRaw: () => Promise.resolve(second),
   };
 }
 

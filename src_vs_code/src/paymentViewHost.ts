@@ -7,7 +7,10 @@ import {
   readBackOf,
   readingFor,
   revealValue,
+  plainSeconds,
+  revealSecond,
 } from './paymentViewMessages';
+import { SecondValues, firstKeyOf, isSecondKey } from './secondValues';
 import { Reassembled } from './phraseReassembly';
 import { PhraseBuffer } from './phraseBuffer';
 import { RowOrder, RowOrderStore, displayed } from './rowFlip';
@@ -44,6 +47,13 @@ export interface PaymentViewDeps {
   /** The CURRENT options — the preview tab re-renders for another entry, so this is read per call. */
   readonly view: () => PaymentCardView | undefined;
   readonly record: () => Thenable<PaymentFields> | undefined;
+  /**
+   * The entry's second values (#52), read at the same moment and through the same gate.
+   *
+   * <p>Optional because an entry can hold none and because every caller written before this
+   * feature must go on working: absent reads as an empty record rather than as a failure.</p>
+   */
+  readonly seconds?: () => Thenable<SecondValues> | undefined;
   readonly post: (message: unknown) => void;
   readonly confirm: (text: string, actionLabel: string) => Promise<boolean>;
   readonly copy: (text: string) => Promise<void>;
@@ -71,9 +81,15 @@ export function isPaymentMessage(type: string): boolean {
  * <p>`mixed` is here rather than in `GATED_FIELDS` because that list is about FIELDS of a card, and
  * this is about an assembled phrase — a different question with its own words. Keeping them apart is
  * what lets `revealGate` stay the pure statement of which card fields are exceptional.</p>
+ *
+ * <p><b>A SECOND value inherits the rung of the field it belongs to</b> (#52). A second CVV is a CVV:
+ * it is one of the two values that turn a number somebody saw into a payment somebody made, and it is
+ * asked about here rather than added to `GATED_FIELDS`, because that list answers about the fields of
+ * a card and `cvv2` is not one of them. Derived rather than listed, so a seventh weave point inherits
+ * whatever its own field asks and nobody has to remember to add it.</p>
  */
 function gated(key: string): boolean {
-  return needsReveal(key) || key === 'mixed';
+  return needsReveal(key) || key === 'mixed' || (isSecondKey(key) && needsReveal(firstKeyOf(key)));
 }
 
 export class PaymentViewHost {
@@ -149,7 +165,7 @@ export class PaymentViewHost {
   ): Promise<void> {
     const key = parts[0] ?? '';
     const arms: Record<string, () => Promise<void> | void> = {
-      payment: () => this.deps.post(this.valuesMessage(view, fields)),
+      payment: async () => this.deps.post(this.valuesMessage(view, fields, await this.secondsNow())),
       reveal: () => this.reveal(key, view, fields),
       reassemble: () => this.reassemble(key, parts[1] ?? '', view, fields),
       copyReading: () => this.copyReading(key, parts[1] ?? '', parts[2] ?? '', view, fields),
@@ -159,19 +175,44 @@ export class PaymentViewHost {
   }
 
   /** What the card is filled with on load — never a gated field, never a woven one. */
-  private valuesMessage(view: PaymentCardView, fields: PaymentFields): unknown {
-    return { type: 'paymentValues', entityId: view.entityId, values: plainValues(fields, view.form) };
+  private valuesMessage(view: PaymentCardView, fields: PaymentFields, seconds: SecondValues): unknown {
+    return {
+      type: 'paymentValues',
+      entityId: view.entityId,
+      values: { ...plainValues(fields, view.form), ...plainSeconds(seconds, view.seconds) },
+    };
   }
 
   /** One gated value, once. A declined question posts nothing at all — not an empty value, nothing. */
   private async reveal(key: string, view: PaymentCardView, fields: PaymentFields): Promise<void> {
-    if (!view.present.includes(key as PaymentFieldKey) || !(await this.grant(key, view))) {
+    if (!shownHere(key, view) || !(await this.grant(key, view))) {
       return;
     }
-    const value = revealValue(fields, view.form, key);
+    const value = await this.gatedValue(key, view, fields);
     if (value !== undefined) {
       this.deps.post({ type: 'paymentValues', entityId: view.entityId, values: { [key]: value } });
     }
+  }
+
+  /** A field's value or a second value's, decided by which row asked. */
+  private async gatedValue(
+    key: string,
+    view: PaymentCardView,
+    fields: PaymentFields,
+  ): Promise<string | undefined> {
+    return (view.seconds as readonly string[]).includes(key)
+      ? revealSecond(await this.secondsNow(), view.seconds, key)
+      : revealValue(fields, view.form, key);
+  }
+
+  /**
+   * The second values, now — or none at all.
+   *
+   * <p>Read per request, exactly as the payment record is, so a value cleared while the panel is open
+   * stops being copyable here. An absent supplier is an entry with none, which is the common case.</p>
+   */
+  private async secondsNow(): Promise<SecondValues> {
+    return (await this.deps.seconds?.()) ?? {};
   }
 
   /**
@@ -378,4 +419,15 @@ function promptFor(key: string, view: PaymentCardView): string {
   return key === 'mixed'
     ? phraseRevealPrompt(view.wordCount)
     : revealPrompt(PAYMENT_FIELD_LABELS[key as PaymentFieldKey] ?? key);
+}
+
+/**
+ * Whether this card is actually showing the row that asked — a field of it, or a second value.
+ *
+ * <p>The refusal a message must meet before anything is read: a name this entry does not show must
+ * not be able to reach a value it holds. Its own function so `reveal` stays inside the complexity
+ * ceiling, and so the two lists are asked in one place rather than at each caller.</p>
+ */
+function shownHere(key: string, view: PaymentCardView): boolean {
+  return (view.seconds as readonly string[]).includes(key) || view.present.includes(key as PaymentFieldKey);
 }

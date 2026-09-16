@@ -122,6 +122,7 @@ function mountEntityView(
   const payment = new PaymentViewHost({
     view: () => state.options.payment,
     record: () => state.options.resolvePayment?.(),
+    seconds: () => state.options.resolveSecond?.(),
     post: (message) => void panel.webview.postMessage(message),
     confirm: confirmDestructive,
     copy: (text) => copySecret(vscode.env.clipboard, text),

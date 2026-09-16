@@ -30,9 +30,10 @@ import { revisionSecretReader } from './viewerOptions';
 import { saveTextAs } from './saveTextAs';
 import { TreeElement } from './types';
 import { envCollection, showEnvNotice } from './envCollectionRef';
-import { paymentViewFor } from './viewerOptions';
+import { paymentViewFor, secondViewFor } from './viewerOptions';
 import { paymentCardFor } from './paymentViewMessages';
 import { parsePaymentFields } from './paymentFields';
+import { parseSecondValues } from './secondValues';
 import { formOf } from './paymentSaveGate';
 import { admit, openedText } from './pinAdmission';
 import { entryPinGate } from './pinPrompt';
@@ -63,6 +64,8 @@ export async function openEntityViewer(
     return;
   }
   const hasPassword = (await storage.getPassword(accountId, details.id)) !== undefined;
+  // The FACT, never the value: it decides whether a row is drawn, and the value is read per press.
+  const entrySeconds = await storage.getSecond(accountId, details.id);
   const hasPrivateKey = (await storage.getPrivateKey(accountId, details.id)) !== undefined;
   const hasVpnConfig = (await storage.getVpnConfig(accountId, details.id)) !== undefined;
   const dbConnection = await openedText(await storage.getDbConnection(accountId, details.id), gate);
@@ -98,13 +101,17 @@ export async function openEntityViewer(
   // again per request through `resolvePayment`, so a record edited while the panel is open is not
   // shown from a stale copy.
   const payment = details.isPayment === true ? await storage.getPayment(accountId, details.id) : undefined;
+  // The same read, for the same reason: WHICH second values exist decides which rows are drawn, and
+  // every value is read again per request through `resolveSecond`.
+  const seconds = details.isPayment === true ? await storage.getSecond(accountId, details.id) : {};
   showEntityView({
     details,
     payment:
       payment === undefined
         ? undefined
-        : paymentCardFor(details.id, formOf(details.paymentForm ?? ''), payment, Math.random),
+        : paymentCardFor(details.id, formOf(details.paymentForm ?? ''), payment, Math.random, seconds),
     resolvePayment: payment === undefined ? undefined : paymentViewFor(totpReader),
+    resolveSecond: secondViewFor(totpReader),
     cliAliases: doors.cliAliases,
     agentDoors: doors,
     mcp: mcpFor(node, (id) => storage.getNode(accountId, id), false),
@@ -113,6 +120,7 @@ export async function openEntityViewer(
     jumpHostName,
     hostKeyFingerprint: pinnedKey === undefined ? undefined : hostKeyFingerprint(pinnedKey),
     hasPassword,
+    hasSecondPassword: entrySeconds.password2 !== undefined,
     hasPrivateKey,
     hasVpnConfig,
     hasDbConnection: dbConnection !== undefined,
@@ -247,11 +255,16 @@ export function openRevisionViewer(node: TreeNode, revision: Revision): void {
             formOf(details.paymentForm ?? ''),
             parsePaymentFields(revision.secrets.payment),
             Math.random,
+            parseSecondValues(revision.secrets.second),
           ),
     resolvePayment:
       revision.secrets.payment === undefined
         ? undefined
         : paymentViewFor(revisionSecretReader(revision)),
+    resolveSecond:
+      revision.secrets.payment === undefined
+        ? undefined
+        : secondViewFor(revisionSecretReader(revision)),
     copyAllText: () => Promise.resolve(formatEntityBlock(details, password, dbConnection, notes)),
     saveVpnConfig: () =>
       vpnConfig === undefined

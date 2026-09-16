@@ -2,6 +2,7 @@ import { PAYMENT_FIELD_LABELS, PaymentFieldKey } from './paymentFields';
 import { COPY_ICON, escapeHtml } from './webviewHtml';
 import { PaymentCardView } from './paymentViewMessages';
 import { needsReveal } from './revealGate';
+import { SECOND_LABELS, SecondKey, firstKeyOf } from './secondValues';
 import { WOVEN_ROW_NOTE, WOVEN_ROW_STYLES, wovenRowMarkup } from './wovenRow';
 import { BRAND_MARK_STYLES, brandMarksMarkup } from './cardBrandIcons';
 import { WEAVE_EXAMPLE_STYLES } from './weaveExampleScript';
@@ -64,7 +65,37 @@ export function paymentCardMarkup(view: PaymentCardView | undefined): string {
   const woven = new Set<string>(view.woven);
   return `<div id="payCard" data-woven-host="" data-entity="${escapeHtml(view.entityId)}">
 ${view.present.map((key) => (woven.has(key) ? wovenRow(key, view) : plainRow(key))).join('\n')}
+${view.seconds.map((key) => secondValueRow(key)).join('\n')}
 </div>`;
+}
+
+
+/**
+ * A second value the entry holds in the clear — masked, with Copy, and gated where its field is.
+ *
+ * <p>Drawn after the fields rather than beside each one: a second value is a value of its own, not a
+ * property of the first, and interleaving them would suggest the pair is stored together — which is
+ * the one thing that is never true of a WOVEN pair and would teach the wrong shape.</p>
+ *
+ * <p><b>The gate is inherited.</b> A second CVV is a CVV: it is one of the two values that turn a
+ * number somebody saw into a payment somebody made, and copying is showing. So `needsReveal` is asked
+ * about the FIELD the key belongs to, and the answer is not decided a second time here — two places
+ * deciding one rung is how the two come to disagree.</p>
+ *
+ * <p>No value is interpolated, exactly as no field's is: the box is empty and is filled by message.</p>
+ */
+function secondValueRow(key: SecondKey): string {
+  const label = escapeHtml(SECOND_LABELS[key]);
+  const gated = needsReveal(firstKeyOf(key));
+  const show = gated
+    ? `<button data-field="${key}" data-action="${REVEAL_ACTION}" data-label="${label}" class="icon" aria-pressed="false" title="Show the ${label} — this asks first" aria-label="Show ${label}">Show</button>`
+    : '';
+  return `<div class="row secondValueRow" data-second="${key}">
+      <label>${label}</label>
+      <div class="line"><input readonly id="pay_${key}"${gated ? ` value="${MASK}" class="gated"` : ''}>
+        ${show}<button data-field="pay_${key}" data-action="copy" class="icon" title="Copy ${label}" aria-label="Copy ${label}">${COPY_ICON}</button>
+      </div>
+    </div>`;
 }
 
 /**
