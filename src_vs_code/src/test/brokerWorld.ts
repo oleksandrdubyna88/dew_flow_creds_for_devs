@@ -218,7 +218,7 @@ function hooksFor(w: World, options: Parameters<typeof world>[0]): Record<string
     moveToTrash: trashFor(w, options.trash),
     mcpCreate: createFor(w, options.create),
     rememberMcpConsent: (_a: string, entityId: string, rungs: string): Promise<void> => {
-      w.consents.push({ entityId, rungs });
+      w.consents = [...w.consents, { entityId, rungs }];
       return Promise.resolve();
     },
   };

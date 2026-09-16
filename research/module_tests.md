@@ -576,9 +576,12 @@ inherited `use` rung reading false.
 | an entry INHERITING never-ask from its folder runs quiet through the REAL lookup | **broker** | the only test here that builds the answer the way production does — `mcpUseLookup` over a real tree and a real stamp store — with an ask-every-time control beside it, so it cannot pass by resolving nothing |
 | a remembered write that FAILS does not fail the call somebody allowed | **broker** | it costs one more dialog next time and says so in the journal |
 
-**What this does not prove.** That the resolver's answer is the one the MCP door acts on — the door
-does not read the policy at all yet. Until S2.2 the whole axis is inert by construction, which is
-also why no shipped behaviour changed in this story.
+**What this does not prove** *(rewritten once S2.2 landed — the door reads the policy now, and the
+sentence that said it did not was the obsolete half of this section)*. Two things. The real
+`creds-mcp` binary is not driven against any of this: every row above stops at the extension's own
+loopback surface, and the end-to-end leg is owned by S4.2. And nothing here is reachable by a
+PERSON — no control writes a policy until the form lands in S3.1, and no window hands the lookup a
+store until S2.4 — so what is covered is the machinery, not yet the feature somebody can use.
 
 ## What none of them covers
 

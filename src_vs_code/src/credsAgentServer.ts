@@ -20,7 +20,8 @@ import { CallSubject, performCall } from './brokerCall';
 import { OneUseLane, burnAndMark } from './oneUseLane';
 import { ReadRouteSources, readRouteBody } from './brokerReadRoutes';
 import { describeError } from './describeError';
-import { BrokerDoor, answeredHere, mcpDoor } from './brokerMcpDoor';
+import { BrokerDoor, mcpDoor } from './brokerMcpDoor';
+import { recordConsent } from './brokerConsentMemory';
 import { McpFolderHooks } from './brokerFolderDoor';
 import { answerMcpRoute } from './brokerMcpRoutes';
 import { aliasTarget, grantForToken, readNamedBody } from './brokerRequests';
@@ -533,30 +534,23 @@ export class CredsAgentServer implements vscode.Disposable {
   }
 
   /**
-   * A person answered a dialog for an MCP use call: let the vault remember it. Which answers count
-   * — and why each condition is a different guarantee — is `answeredHere` in `brokerMcpDoor.ts`.
+   * A person answered a dialog for an MCP use call: let the vault remember it.
    *
-   * <p>Awaited rather than launched, so the answer is durable before the agent is told its call
-   * succeeded; a rejected write is caught below rather than failing a call somebody allowed.</p>
+   * <p>Which answers count, what a failed or slow write costs, and why neither may cost somebody
+   * their call are all in `brokerConsentMemory.ts`. This hands it the four facts only the broker
+   * holds.</p>
    */
-  private async remember(via: AuditDoor, grant: Grant, asked: boolean, rungs: string | undefined): Promise<void> {
-    if (!answeredHere(via, asked, rungs)) {
-      return;
-    }
-    try {
-      await this.hooks.rememberMcpConsent?.(grant.accountId, grant.entityId, rungs);
-    } catch (error) {
-      // A write that fails costs one more dialog next time. FAILING the call would cost the person
-      // the work they just allowed — and what they answered was about the call, not about whether
-      // this machine managed to write it down. Said out loud rather than swallowed.
-      this.log({
-        grant: GrantRegistry.describe(grant),
-        entityName: grant.entityName,
-        action: 'consent',
-        outcome: 'not remembered',
-        detail: describeError(error),
-      });
-    }
+  private remember(via: AuditDoor, grant: Grant, asked: boolean, rungs: string | undefined): Promise<void> {
+    return recordConsent({
+      remember: this.hooks.rememberMcpConsent,
+      accountId: grant.accountId,
+      entityId: grant.entityId,
+      entityName: grant.entityName,
+      via,
+      asked,
+      rungs,
+      note: (entry) => this.log({ ...entry, grant: GrantRegistry.describe(grant) }),
+    });
   }
 
   /** The sequence is `brokerCall.performCall`; this binds it to one request. */
