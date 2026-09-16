@@ -1,7 +1,8 @@
 import * as assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { STUB_RUNGS, call, code, share, world } from './brokerWorld';
+import { STUB_RUNGS, call, code, message, share, world } from './brokerWorld';
 import { loadWithVscode } from './vscodeStub';
+import { MAX_PROMPTS, SILENT_CEILING } from '../aliasThrottle';
 import { ConsentStamps } from '../mcpConsentPolicy';
 import type { TreeNode } from '../types';
 
@@ -548,8 +549,12 @@ test('a token call never writes the MCP stamp', async () => {
   }
 });
 
-test('a quiet call spends no modal slot, so a prompting one afterwards still gets its five', async () => {
+test('sixty quiet calls spend no modal slot, so a prompting one afterwards still gets its five', async () => {
   // Releasing a slot that was never taken would free ANOTHER call's, and two modals would stack.
+  // Sixty rather than S2.2's four, because sixty is the silent ceiling: a prompting call after the
+  // quiet path has spent its WHOLE budget proves the two budgets share nothing — and the sixth
+  // prompting call is refused with the MODAL's wording, which proves the budget it spent was
+  // exactly the five it always had.
   //
   // The alias below must RESOLVE, and that is the whole care in this test: the throttle is checked
   // after the name resolves, so an alias nobody enabled is refused before admission and the
@@ -562,17 +567,85 @@ test('a quiet call spends no modal slot, so a prompting one afterwards still get
   });
   try {
     const { port } = await share(w);
-    for (let i = 0; i < 4; i += 1) {
-      await call(port, '/v1/mcp/use/exec', { body: { entry: 'e1', command: 'uptime' } });
+    for (let i = 0; i < SILENT_CEILING; i += 1) {
+      const quiet = await call(port, '/v1/mcp/use/exec', { body: { entry: 'e1', command: 'uptime' } });
+      assert.equal(quiet.status, 200, `quiet call ${i + 1}: ${JSON.stringify(quiet.body)}`);
     }
-
     assert.equal(w.dialogs.length, 0, 'the quiet calls asked');
+
     // The budget is untouched, which a prompting call can still spend — and it prompts, which is
     // the proof it reached the throttle rather than being refused before it.
-    const answer = await call(port, '/v1/alias/exec', { body: { alias: 'prod', command: 'x' } });
-    assert.equal(answer.status, 200, JSON.stringify(answer.body));
-    assert.equal(w.dialogs.length, 1, 'the prompting call never reached the modal');
-    assert.notEqual(code(answer), 'too_many_requests', 'four quiet calls ate the modal budget');
+    for (let i = 0; i < MAX_PROMPTS; i += 1) {
+      const answer = await call(port, '/v1/alias/exec', { body: { alias: 'prod', command: 'x' } });
+      assert.equal(answer.status, 200, `prompting call ${i + 1}: ${JSON.stringify(answer.body)}`);
+      assert.notEqual(code(answer), 'too_many_requests', 'sixty quiet calls ate the modal budget');
+    }
+    assert.equal(w.dialogs.length, MAX_PROMPTS, 'a prompting call never reached the modal');
+
+    const sixth = await call(port, '/v1/alias/exec', { body: { alias: 'prod', command: 'x' } });
+    assert.equal(code(sixth), 'too_many_requests', 'the modal budget is still five, and still a budget');
+    assert.match(message(sixth), /prompt at most 5/, 'refused by the modal budget, not by the silent ceiling');
+    assert.equal(w.dialogs.length, MAX_PROMPTS, 'and the sixth raised none');
+  } finally {
+    w.server.dispose();
+  }
+});
+
+/**
+ * The silent ceiling (S2.3): the quiet path's own limiter, since the prompt was the old one.
+ *
+ * <p>The window itself — sixty, sliding, never `busy` — is pinned with an injected clock in
+ * `aliasThrottle.test.ts`. What these three prove is the door: that the sixty-first is refused with
+ * the right code and lands in the journal, that sixty quiet calls leave the modal budget whole, and
+ * that the modal budget is still there for a call that prompts.</p>
+ */
+test('the sixty-first silent call in a minute is refused as too_many_requests, and the refusal is audited', async () => {
+  // The prompt was this route's limiter, and a policy that removes the prompt removes it: without a
+  // ceiling of its own, a loop against a never-ask entry is bounded by nothing but concurrency. The
+  // refusal must reach the journal because `respondError` logs nothing without a grant — and a rate
+  // limit nobody can see having fired is one nobody can diagnose.
+  const w = world({ mcpUse: 'usable', mcpPreConsented: true });
+  try {
+    const { port } = await share(w);
+    for (let i = 0; i < SILENT_CEILING; i += 1) {
+      const answer = await call(port, '/v1/mcp/use/exec', { body: { entry: 'e1', command: 'uptime' } });
+      assert.equal(answer.status, 200, `call ${i + 1} of ${SILENT_CEILING}: ${JSON.stringify(answer.body)}`);
+    }
+
+    const refused = await call(port, '/v1/mcp/use/exec', { body: { entry: 'e1', command: 'uptime' } });
+
+    assert.equal(refused.status, 429, JSON.stringify(refused.body));
+    assert.equal(code(refused), 'too_many_requests');
+    assert.match(message(refused), new RegExp(`${SILENT_CEILING} silent calls`), 'the refusal names what was counted, and its ceiling');
+    assert.doesNotMatch(message(refused), /prompt at most/, 'and not the modal budget, which it never touched');
+    assert.equal(w.dialogs.length, 0, 'nobody was asked at any point');
+    assert.equal(w.ran.length, SILENT_CEILING, 'the refused call did not run');
+    const audited = w.audit.filter((line) => line.includes('→ too_many_requests'));
+    assert.equal(audited.length, 1, `the refusal left no line in the journal; the tail reads: ${w.audit.slice(-2).join(' | ')}`);
+    assert.match(audited[0], /via mcp/, 'and the line says which door');
+  } finally {
+    w.server.dispose();
+  }
+});
+
+test('an entry that prompts is still refused at the sixth — the modal defence is intact', async () => {
+  // The silent ceiling is a SECOND budget, not a replacement: an MCP call that raises a dialog still
+  // answers to five a minute, and the sixth is refused before any dialog is raised.
+  const w = world({ mcpUse: 'usable', answers: ['Allow', 'Allow', 'Allow', 'Allow', 'Allow'] });
+  try {
+    const { port } = await share(w);
+    for (let i = 0; i < MAX_PROMPTS; i += 1) {
+      const answer = await call(port, '/v1/mcp/use/exec', { body: { entry: 'e1', command: 'uptime' } });
+      assert.equal(answer.status, 200, `prompting call ${i + 1}: ${JSON.stringify(answer.body)}`);
+    }
+    assert.equal(w.dialogs.length, MAX_PROMPTS, 'each of the five asked');
+
+    const sixth = await call(port, '/v1/mcp/use/exec', { body: { entry: 'e1', command: 'uptime' } });
+
+    assert.equal(code(sixth), 'too_many_requests', JSON.stringify(sixth.body));
+    assert.match(message(sixth), /prompt at most 5/, 'refused by the modal budget');
+    assert.equal(w.dialogs.length, MAX_PROMPTS, 'the sixth raised no dialog');
+    assert.equal(w.ran.length, MAX_PROMPTS, 'and did not run');
   } finally {
     w.server.dispose();
   }

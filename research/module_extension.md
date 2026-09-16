@@ -2365,9 +2365,11 @@ be redacted. A withheld answer carries `actionRan: true`, so an agent does not r
 **The broker refuses browsers at the door** (`brokerOrigin.ts`). It is a loopback HTTP server, and a
 web page in the person's own browser is also on loopback — and nothing looked at `Origin` or `Host`.
 The **alias door needs no token** (its authorisation is a rate limit and the consent modal, by
-design), and a cross-origin `fetch` with `Content-Type: text/plain` is a *simple* request — no
-preflight, and the body is parsed as JSON whatever it claims to be — so a page the person merely
-visited could raise the consent dialog in their editor for any alias it could name. And the **read
+design — and on the MCP door, where a consent policy may stand in for the modal, a separate ceiling
+of sixty silent calls a minute stands in for the rate limit, #95), and a cross-origin `fetch` with
+`Content-Type: text/plain` is a *simple* request — no preflight, and the body is parsed as JSON
+whatever it claims to be — so a page the person merely visited could raise the consent dialog in
+their editor for any alias it could name. And the **read
 routes authenticate nothing**, so under DNS rebinding a page could read the alias and entry lists.
 
 Which check does which job is the part to keep straight, and the review gate caught the plan for this
@@ -2397,7 +2399,9 @@ before a byte of ours runs — the one real boundary the loopback port never had
 takes the default DACL, which `brokerListeners.ts` documents as a convenience rather than a
 boundary. Behind that, each route authorises as it always did: the token door requires a grant
 token; the **alias door requires none** — its authorisation is `AliasThrottle` plus the consent
-modal, and it mints its own grant — and the **read routes authenticate nothing**, which is why the
+modal, and it mints its own grant; the MCP door, the other tokenless one, answers to the same modal
+budget when it prompts and to a separate ceiling of sixty silent calls a minute when a policy has
+answered for the modal (#95) — and the **read routes authenticate nothing**, which is why the
 browser-header checks stay on this listener even though no browser can reach it. This change moved
 none of that; it removed a precondition that could never hold.
 
@@ -3421,7 +3425,10 @@ name, and names are not secret. The consent modal becomes load-bearing, which is
 opt-in per entry, why the modal names the entry and the action, and why the route **returns no
 token**: the caller gets the action, never a capability it could pass on. An unknown name and a
 name that exists but is not enabled get the same 404, so the route cannot be used to enumerate
-what a vault holds.
+what a vault holds. The modal's RATE is load-bearing for the same reason — `aliasThrottle.ts`: five
+prompts a minute, one in flight — and where the MCP door lets a consent policy answer for the modal
+(#95), the same file's second construction, a ceiling of sixty silent calls a minute with no
+in-flight rule, is what bounds the path in the modal's absence.
 
 Alias calls join the token path at `perform()` — capability check, validation, consent, masking,
 audit, one-use burn. That extraction is the point: a second copy of that tail is how consent or
@@ -4200,7 +4207,18 @@ the modal. Nothing after that changes: the same mask, the same audit, the same o
 properties hold around it, and each is a test. **The throttle counts modals, not calls**: a quiet
 call takes no slot, because the budget is five *prompts* a minute and spending one would refuse a
 later call for a dialog nobody was going to see — and it releases none either, since releasing a
-slot never taken frees another call's. **A quiet call proves nobody was present**: `onUserPresent`
+slot never taken frees another call's. **What bounds the quiet path instead is its own ceiling**
+(S2.3): sixty silent calls a minute — `SILENT_CEILING`, a second construction of the same
+`AliasThrottle` with no in-flight rule, because that rule protects a human from a stack of dialogs
+and this path has none. The two live together in `TokenlessCeilings`, and which one a call answers
+to is whether it will ask, so the pick cannot drift between `admit` and `release`. The sixty-first
+answers the existing `too_many_requests` — the wire contract is unchanged — with a refusal worded
+for what was counted (*silent calls*, *60*; never *prompt* and *5*), and it leaves a line in the
+journal (`request … via mcp → too_many_requests`), because `respondError` logs nothing without a
+grant and a rate limit nobody can see having fired is one nobody can diagnose. The two budgets are
+deliberately not one number: the modal budget protects a person's patience, the ceiling a
+credential's exposure to a loop with no thinking in it.
+**A quiet call proves nobody was present**: `onUserPresent`
 lives inside `ask`, so the idle auto-lock is unaffected, which is the whole reason agent traffic
 never postponed it. And **a quiet call does not slide the window**: `asked` is read before the
 await, so only a dialog somebody answered is remembered — otherwise "once every twelve hours" would

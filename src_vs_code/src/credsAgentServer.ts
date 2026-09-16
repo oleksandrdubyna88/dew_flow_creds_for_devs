@@ -36,7 +36,7 @@ import { BrokerAuditWriter } from './brokerAuditWriter';
 import { startLoopbackServer } from './loopbackServer';
 import { ExtraListener, socketPathFor, startExtraListener } from './brokerListeners';
 import { removeEndpoint, writeEndpoint } from './cliEndpoint';
-import { AliasThrottle } from './aliasThrottle';
+import { TokenlessCeilings } from './aliasThrottle';
 import { startOnce } from './idempotentStart';
 import { refreshFrom, tableOrFail } from './brokerResponse';
 
@@ -59,8 +59,8 @@ const CONSENT_TIMEOUT_MS = 5 * 60_000;
 
 export class CredsAgentServer implements vscode.Disposable {
   private readonly grants = new GrantRegistry();
-  /** The rate at which a caller with NO token may make this window ask a human. */
-  private readonly aliasThrottle = new AliasThrottle();
+  /** The two ceilings a caller with NO token answers to — the modal budget, and the silent one (#95). */
+  private readonly ceilings = new TokenlessCeilings();
   private readonly consenting = new Map<string, Promise<boolean>>();
   /** One call at a time for an entry that may only be used once — see `oneUseLane.ts`. */
   private readonly oneUse = new OneUseLane();
@@ -207,7 +207,7 @@ export class CredsAgentServer implements vscode.Disposable {
    * how one of them ends up missing a step.</p>
    */
   /**
-   * Whether this unauthenticated call may make the window ask a human.
+   * Whether this unauthenticated call may proceed — to ask a human, or to act without one.
    *
    * <p>Answers the refusal itself, so the caller reads as one guard rather than three lines of
    * verdict handling — and so no path can admit a call and forget to report the refusal. Both
@@ -215,26 +215,32 @@ export class CredsAgentServer implements vscode.Disposable {
    * has to satisfy before reaching it.</p>
    */
   private admitAliasCall(res: http.ServerResponse, prompts: boolean): boolean {
-    // The budget counts MODALS, not calls. A call that raises none takes no slot, because spending
-    // one would refuse a later call for a dialog nobody was ever going to see — and the rate of
-    // prompts is what this throttle exists to hold (see `aliasThrottle.ts`). The default keeps the
-    // alias route, which always prompts, byte-identical.
-    if (!prompts) {
-      return true;
-    }
-    const verdict = this.aliasThrottle.admit(Date.now());
+    // Which ceiling a call answers to is whether it will ask — see `aliasThrottle.ts`. The modal
+    // budget counts MODALS, not calls: a call that raises none takes no slot there, since spending
+    // one would refuse a later call for a dialog nobody was ever going to see. But on this route the
+    // prompt was also the limiter, so a call that skips it answers to its own ceiling rather than to
+    // nothing. `true` keeps the alias route, which always prompts, byte-identical.
+    const ceiling = this.ceilings.for(prompts);
+    const verdict = ceiling.admit(Date.now());
     if (verdict === 'allow') {
       return true;
     }
-    this.respondError(res, 'too_many_requests', AliasThrottle.describe(verdict));
+    const refusal = ceiling.describe(verdict);
+    if (!prompts) {
+      // `respondError` logs nothing without a grant — an unknown token is probed legitimately, and a
+      // line per probe would drown the real calls — but this is no probe: it is the one sign that a
+      // runaway loop, or a process working through the entries a policy opened, exists, and a rate
+      // limit nobody can see having fired is one nobody can diagnose. `via: 'mcp'` is a fact, not a
+      // guess: the alias route always prompts; only the MCP door has a policy to answer for a person.
+      this.log({ grant: '—', entityName: '', action: 'request', outcome: 'too_many_requests', detail: refusal, via: 'mcp' });
+    }
+    this.respondError(res, 'too_many_requests', refusal);
     return false;
   }
 
-  /** Give back a slot only when one was taken: releasing otherwise frees ANOTHER call's. */
+  /** Give the slot back to the ceiling that took it — the silent one took none, and `release` says so itself. */
   private releaseAliasCall(prompts: boolean): void {
-    if (prompts) {
-      this.aliasThrottle.release();
-    }
+    this.ceilings.for(prompts).release();
   }
 
   /** The routes an MCP client posts to — the dispatch lives in `brokerMcpRoutes.ts`. */
@@ -342,7 +348,7 @@ export class CredsAgentServer implements vscode.Disposable {
     } finally {
       // In a `finally`, because a prompt that timed out or threw has still been shown and the
       // slot must come back — otherwise one failed call closes this route for the session.
-      this.aliasThrottle.release();
+      this.releaseAliasCall(true);
     }
   }
 
