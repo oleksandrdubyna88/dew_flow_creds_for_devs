@@ -36,6 +36,7 @@ type SecretWriter = Pick<
   | 'setTotp'
   | 'setConfigBody'
   | 'setPaymentRaw'
+  | 'setSecondRaw'
 >;
 
 /**
@@ -56,6 +57,7 @@ export const EXTERNAL_SECRET_KEYS = [
   { field: 'totp', setter: 'setTotp' },
   { field: 'config', setter: 'setConfigBody' },
   { field: 'payment', setter: 'setPaymentRaw' },
+  { field: 'second', setter: 'setSecondRaw' },
   // The pair, named here so the coverage test counts it; applied by `applyFields` below.
   { field: 'login', setter: 'setFields' },
 ] as const satisfies ReadonlyArray<{ field: keyof ExternalSecrets; setter: keyof SecretWriter }>;
