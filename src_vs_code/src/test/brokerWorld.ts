@@ -104,6 +104,14 @@ function world(options: {
    */
   mcpResolve?: (entryId: string, action: string) => McpUseLookup;
   /**
+   * The REAL write, for the test that drives a consent from asked to remembered to quiet.
+   *
+   * <p>Its own option for the same reason as `mcpResolve`, and it runs BESIDE the recording rather
+   * than instead of it: `w.consents` stays the thing every other test reads, and this one also puts
+   * the stamp where production puts it.</p>
+   */
+  mcpRemember?: (accountId: string, entityId: string, rungs: string) => Promise<void>;
+  /**
    * Where the window stores things — and, because it is what `socketPathFor` needs, the switch
    * that makes the server open its SECOND listener (a unix socket, or a named pipe on Windows).
    *
@@ -217,9 +225,9 @@ function hooksFor(w: World, options: Parameters<typeof world>[0]): Record<string
     resolveMcpUse: options.mcpResolve ?? mcpUseFor(options.mcpUse, options.mcpPreConsented),
     moveToTrash: trashFor(w, options.trash),
     mcpCreate: createFor(w, options.create),
-    rememberMcpConsent: (_a: string, entityId: string, rungs: string): Promise<void> => {
+    rememberMcpConsent: (accountId: string, entityId: string, rungs: string): Promise<void> => {
       w.consents = [...w.consents, { entityId, rungs }];
-      return Promise.resolve();
+      return options.mcpRemember?.(accountId, entityId, rungs) ?? Promise.resolve();
     },
   };
 }
