@@ -130,7 +130,7 @@ export function paymentRecordFor(data: Record<string, unknown>, chosen: string):
     Math.random,
     // The halves the person typed, for the fields whose form is on `own`. Empty for every other
     // field, and `weaveOne` draws a decoy for those exactly as it always has.
-    secondsForWeave(secondInputFrom(data, {}, paymentWeavingNow(data), [PAYMENT_FORM])),
+    secondsForWeave(secondInputFrom(data, {}, paymentWeavingNow(data, chosen), [PAYMENT_FORM])),
   );
 }
 
@@ -169,8 +169,13 @@ function codesFor(data: Record<string, unknown>): Record<string, ShuffleCode> {
  * reader the half to subtract, and two filters written to agree are two filters that can stop
  * agreeing.</p>
  */
-export function paymentWeavingNow(data: Record<string, unknown>): readonly WeavePoint[] {
-  return weavingNow(cardFieldsFrom(data), markedFields(data));
+export function paymentWeavingNow(data: Record<string, unknown>, chosen: string): readonly WeavePoint[] {
+  // Through the CHOSEN form's filter first, which is what `paymentRecordFor` does before it weaves.
+  // A form switch leaves the old form's ticks in the message — `confirmFormSwitch` asks the question
+  // and changes nothing — so without this the gate could refuse a save over a field it was about to
+  // discard. A false refusal is the worse of the two failures: nothing is at risk and the person
+  // simply cannot save. Raised by the automated reviewer.
+  return weavingNow(clearForForm(cardFieldsFrom(data), formOf(chosen)), markedFields(data), codesFor(data));
 }
 
 /**
@@ -197,7 +202,7 @@ export function secondPairRefusal(data: Record<string, unknown>, chosen: string)
     return '';
   }
   const typed = cardFieldsFrom(data);
-  const input = secondInputFrom(data, {}, paymentWeavingNow(data), [PAYMENT_FORM]);
+  const input = secondInputFrom(data, {}, paymentWeavingNow(data, chosen), [PAYMENT_FORM]);
   return refuseSecondPairs(typed as Record<WeavePoint, string>, PAYMENT_FIELD_LABELS, input);
 }
 

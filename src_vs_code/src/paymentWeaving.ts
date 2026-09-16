@@ -48,7 +48,7 @@ export function weavePaymentFields(
   random: Random,
   seconds: Readonly<Record<string, string>> = {},
 ): PaymentFields {
-  const woven = weavingNow(fields, marked).flatMap((key) =>
+  const woven = weavingNow(fields, marked, codes).flatMap((key) =>
     weaveOne(fields, key, codes[key], random, seconds[key] ?? ''),
   );
   const already = new Set(fields.shuffledFields ?? []);
@@ -67,18 +67,31 @@ export function weavePaymentFields(
 /**
  * Which fields THIS save is about to weave — the one answer, and both halves of the feature ask it.
  *
- * <p>Marked, a weave point, and not woven already. The weaver acts on this list and the second-value
- * collection is filtered by it (`paymentSaveGate.paymentWeavingNow`), which is the whole point of it
- * being one function: a field the weaver consumed and the record kept would leave a reader the half
- * to subtract, and a field the record dropped and the weaver did not touch would lose a value the
- * person typed. Two filters written to agree are two filters that can stop agreeing.</p>
+ * <p>Every condition `weaveOne` itself applies, so the two cannot answer differently: marked, a weave
+ * point, not woven already, a method this build knows, and a value long enough to weave. The weaver
+ * acts on this list and the second-value collection is filtered by it
+ * (`paymentSaveGate.paymentWeavingNow`), which is the whole point of it being one function: a field
+ * the weaver consumed and the record kept would leave a reader the half to subtract, and a field the
+ * record dropped and the weaver did not touch would lose a value the person typed. Two filters
+ * written to agree are two filters that can stop agreeing.</p>
  */
 export function weavingNow(
   fields: PaymentFields,
   marked: readonly string[],
+  codes: Readonly<Record<string, ShuffleCode>> = {},
 ): readonly ShuffleableKey[] {
   const already = new Set(fields.shuffledFields ?? []);
-  return SHUFFLEABLE_KEYS.filter((key) => marked.includes(key) && !already.has(key));
+  return SHUFFLEABLE_KEYS.filter((key) => asked(key, marked, already) && weavable(fields[key], codes[key]));
+}
+
+/** The person's part of the answer: they ticked it, and it is not woven already. */
+function asked(key: ShuffleableKey, marked: readonly string[], already: ReadonlySet<string>): boolean {
+  return marked.includes(key) && !already.has(key);
+}
+
+/** The value's part: there is something long enough to weave, and a method this build knows. */
+function weavable(value: string | undefined, code: ShuffleCode | undefined): boolean {
+  return code !== undefined && !tooShort(value ?? '');
 }
 
 /**

@@ -241,6 +241,15 @@ function mountEntityView(
       return;
     }
     const value = await copyValueFor(options, message.field);
+    // And AGAIN, because reading the value is itself an await: `copyValueFor` goes to the keychain
+    // for a payment field, for a second value and for every ordinary secret. The guard above covers
+    // the CONFIRMATION; this one covers the READ. Without it a render landing in between puts the
+    // previous entry's secret on the clipboard and tells the new entry's page it was copied — the
+    // same shape the row-order work was bitten by twice, raised here by the automated reviewer on
+    // the pull request that added a third await to this path.
+    if (state.options !== options) {
+      return;
+    }
     if (value === undefined || value.length === 0) {
       // A paired code refuses for one reason only — the pair on screen is no longer the pair this
       // button belongs to — and calling that "empty" would send somebody hunting for a lost seed.
