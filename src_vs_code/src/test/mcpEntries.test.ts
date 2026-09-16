@@ -7,11 +7,12 @@ import {
   findUsableEntry,
   mcpEntryFor,
   preConsentedFor,
+  rememberMcpConsent,
   switchForAction,
   visibleMcpEntries,
 } from '../mcpEntries';
-import { McpAccess, ladderKey, normalizeMcpAccess, resolveMcpInTree } from '../mcpAccess';
-import { ConsentStamps, STAMPS_KEY, stampKey } from '../mcpConsentPolicy';
+import { McpAccess, McpAskPolicy, ladderKey, normalizeMcpAccess, resolveMcpInTree } from '../mcpAccess';
+import { ConsentStamp, ConsentStampStore, ConsentStamps, STAMPS_KEY, stampKey } from '../mcpConsentPolicy';
 import type { TreeNode } from '../types';
 
 /**
@@ -417,7 +418,7 @@ test('a never-ask entry is pre-consented for a use call', () => {
 
   const found = findUsableEntry(source, 'e1', 'exec');
 
-  assert.equal(preConsentedFor(found, 'exec', stampedStore(), NOW_S21), true);
+  assert.equal(preConsentedFor(found, stampedStore(), NOW_S21), true);
 });
 
 test('an ask-every-time entry is never pre-consented, whatever is stored', () => {
@@ -426,7 +427,7 @@ test('an ask-every-time entry is never pre-consented, whatever is stored', () =>
 
   const found = findUsableEntry(source, 'e1', 'exec');
 
-  assert.equal(preConsentedFor(found, 'exec', stampedStore(), NOW_S21), false);
+  assert.equal(preConsentedFor(found, stampedStore(), NOW_S21), false);
 });
 
 test('pre-consent is never COMPUTED for a delete, however the entry is set', () => {
@@ -437,7 +438,7 @@ test('pre-consent is never COMPUTED for a delete, however the entry is set', () 
   const found = findUsableEntry(source, 'e1', 'delete');
 
   assert.equal(found?.kind, 'usable', 'the fixture must actually be allowed to delete');
-  assert.equal(preConsentedFor(found, 'delete', stampedStore(), NOW_S21), false);
+  assert.equal(preConsentedFor(found, stampedStore(), NOW_S21), false);
 });
 
 test('a verb nobody has heard of is treated as a delete, and is never pre-consented', () => {
@@ -447,7 +448,7 @@ test('a verb nobody has heard of is treated as a delete, and is never pre-consen
 
   const found = findUsableEntry(source, 'e1', 'teleport');
 
-  assert.equal(preConsentedFor(found, 'teleport', stampedStore(), NOW_S21), false);
+  assert.equal(preConsentedFor(found, stampedStore(), NOW_S21), false);
 });
 
 test('an every-12h entry is pre-consented only by a live stamp whose rungs match the ladder NOW', () => {
@@ -455,10 +456,10 @@ test('an every-12h entry is pre-consented only by a live stamp whose rungs match
   const found = findUsableEntry(source, 'e1', 'exec');
   const rungsNow = ladderKey(accessOf(found));
 
-  assert.equal(preConsentedFor(found, 'exec', stampedStore(rungsNow), NOW_S21), true);
-  assert.equal(preConsentedFor(found, 'exec', stampedStore('something else'), NOW_S21), false, 'a widened grant');
+  assert.equal(preConsentedFor(found, stampedStore(rungsNow), NOW_S21), true);
+  assert.equal(preConsentedFor(found, stampedStore('something else'), NOW_S21), false, 'a widened grant');
   assert.equal(
-    preConsentedFor(found, 'exec', stampedStore(rungsNow, NOW_S21 - 13 * 60 * 60_000), NOW_S21),
+    preConsentedFor(found, stampedStore(rungsNow, NOW_S21 - 13 * 60 * 60_000), NOW_S21),
     false,
     'an expired window',
   );
@@ -469,7 +470,7 @@ test('with no store at all, nothing is pre-consented', () => {
   // every existing caller of `mcpUseLookup` gets until the wiring story hands it a store.
   const source = vault([folder('f1', 'F', { mcp: { use: true, ask: 'never' } }), entity('e1', 'prod', {})]);
 
-  assert.equal(preConsentedFor(findUsableEntry(source, 'e1', 'exec'), 'exec', undefined, NOW_S21), false);
+  assert.equal(preConsentedFor(findUsableEntry(source, 'e1', 'exec'), undefined, NOW_S21), false);
 });
 
 test('a closed entry is not pre-consented, because it is not usable at all', () => {
@@ -478,7 +479,7 @@ test('a closed entry is not pre-consented, because it is not usable at all', () 
   const found = findUsableEntry(source, 'e1', 'exec');
 
   assert.equal(found?.kind, 'closed');
-  assert.equal(preConsentedFor(found, 'exec', stampedStore(), NOW_S21), false);
+  assert.equal(preConsentedFor(found, stampedStore(), NOW_S21), false);
 });
 
 test('the access a writer resolves is the same one the reader compared against', () => {
@@ -504,6 +505,70 @@ test('creating is never pre-consented either, and it is refused three ways over'
 
   const found = findUsableEntry(source, 'e1', 'create');
 
-  assert.equal(preConsentedFor(found, 'create', stampedStore(), NOW_S21), false);
+  assert.equal(preConsentedFor(found, stampedStore(), NOW_S21), false);
   assert.equal(switchForAction('create'), 'delete', 'create must ask for the top rung, not for use');
+});
+
+/** A store a test can read back, with the counter in a closure rather than on the object. */
+function countingStore(): ConsentStampStore & { stamps: () => Record<string, ConsentStamp>; writes: () => number } {
+  let held: Record<string, unknown> = {};
+  let written = 0;
+  return {
+    get: <T,>(key: string): T | undefined => held[key] as T | undefined,
+    update: (key: string, value: unknown): Thenable<void> => {
+      written += 1;
+      held = { ...held, [key]: value };
+      return Promise.resolve();
+    },
+    stamps: () => (held[STAMPS_KEY] ?? {}) as Record<string, ConsentStamp>,
+    writes: () => written,
+  };
+}
+
+test('an every-12h consent is remembered under the ladder the person was shown', async () => {
+  const source = vault([folder('f1', 'F', { mcp: { use: true, ask: 'every12h' } }), entity('e1', 'prod', {})]);
+  const store = countingStore();
+  const expected = ladderKey(entryAccessFor(source, 'a1', 'e1') ?? {});
+
+  await rememberMcpConsent(source, new ConsentStamps(store), 'a1', 'e1', expected, NOW_S21);
+
+  assert.equal(store.stamps()[stampKey('a1', 'e1')]?.rungs, expected);
+});
+
+test('nothing is remembered for a policy that would never read it', async () => {
+  // An ask-every-time entry would otherwise write globalState on every consent for a record
+  // nothing consults; a never-ask entry never reaches a dialog to answer.
+  const policies: (McpAskPolicy | undefined)[] = ['always', 'never', undefined];
+  for (const ask of policies) {
+    const source = vault([folder('f1', 'F', { mcp: { use: true, ask } }), entity('e1', 'prod', {})]);
+    const store = countingStore();
+
+    await rememberMcpConsent(source, new ConsentStamps(store), 'a1', 'e1', ladderKey(entryAccessFor(source, 'a1', 'e1') ?? {}), NOW_S21);
+
+    assert.equal(store.writes(), 0, `a policy of ${String(ask)} wrote a record nothing reads`);
+  }
+});
+
+test('a grant that WIDENED while the person was answering is not remembered', async () => {
+  // The escalation this guard exists for. The dialog was raised for one ladder; a sync or another
+  // window widens the entry before the answer arrives. Stamping what it resolves to NOW would let
+  // a later call go quiet for access nobody was ever asked about — so the answer is simply not
+  // remembered, which costs one more dialog and cannot grant anything.
+  const narrow = vault([folder('f1', 'F', { mcp: { use: true, ask: 'every12h' } }), entity('e1', 'prod', {})]);
+  const shown = ladderKey(entryAccessFor(narrow, 'a1', 'e1') ?? {});
+  const widened = vault([folder('f1', 'F', { mcp: { delete: 'any', ask: 'every12h' } }), entity('e1', 'prod', {})]);
+  const store = countingStore();
+
+  await rememberMcpConsent(widened, new ConsentStamps(store), 'a1', 'e1', shown, NOW_S21);
+
+  assert.equal(store.writes(), 0, 'a widened grant was stamped against a dialog that never named it');
+});
+
+test('an entry that vanished between the dialog and the answer is not remembered', async () => {
+  const source = vault([folder('f1', 'F', { mcp: { use: true, ask: 'every12h' } })]);
+  const store = countingStore();
+
+  await rememberMcpConsent(source, new ConsentStamps(store), 'a1', 'gone', 'anything', NOW_S21);
+
+  assert.equal(store.writes(), 0);
 });

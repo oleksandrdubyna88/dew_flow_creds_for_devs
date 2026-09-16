@@ -4159,7 +4159,7 @@ and not the other stops the build instead of every window's startup. Record:
 |---|---|
 | `mcpAccess.ts` | the ladder, inheritance from a folder **per axis**, nothing at all inside the Trash — and the ask policy a record carries beside its rungs |
 | `mcpConsentPolicy.ts` | whether a use call has to raise a dialog, and this machine's record of the ones answered on it |
-| `mcpEntries.ts` | what an agent may SEE, field by field; which switch each action needs; and whether a use call's dialog has already been answered |
+| `mcpEntries.ts` | what an agent may SEE, field by field; which switch each action needs; and both halves of whether a use call's dialog has already been answered |
 | `mcpCreate.ts` | which folders are open to creation, and what a request becomes |
 | `secretRotation.ts` / `rotateAction.ts` | the placeholder, and the order a rotation happens in |
 | `secretKinds.ts` | what this extension can generate — and, named one at a time, what it cannot |

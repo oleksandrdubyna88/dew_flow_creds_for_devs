@@ -9,8 +9,8 @@ import { creatableFolders } from './mcpCreate';
 import { chooseTarget } from './mcpCreate';
 import { summarizeCreate } from './mcpCreate';
 import { McpUseLookup } from './brokerRequests';
-import { entryAccessFor, findUsableEntry, preConsentedFor } from './mcpEntries';
-import { ConsentStamps, stampKey } from './mcpConsentPolicy';
+import { findUsableEntry, preConsentedFor } from './mcpEntries';
+import { ConsentStamps } from './mcpConsentPolicy';
 import { ladderKey } from './mcpAccess';
 import { resolveKind } from './entityKind';
 import { CreateRequest } from './mcpCreate';
@@ -129,32 +129,13 @@ export function mcpUseLookup(
       entityName: found.node.name,
       kind: resolveKind(found.node.details),
     },
+    // The ladder this verdict was reached under, so the side that WRITES a stamp can refuse to
+    // record one for a grant that widened while the person was answering.
+    rungs: ladderKey(found.access),
     // Without a store there is nothing remembered, so every call asks — which is what a window
     // with no writable storage should do, and what every existing caller of this function gets.
-    preConsented: preConsentedFor(found, action, stamps, now),
+    preConsented: preConsentedFor(found, stamps, now),
   };
-}
-
-/**
- * A person answered a dialog for this entry. Record it — but only where it will be read.
- *
- * <p>Only under `every12h`. An entry set to ask every time would otherwise write `globalState` on
- * every single consent for a record nothing ever consults, and one set to never ask never reaches a
- * dialog at all. The ladder is resolved here rather than carried from the request, because a stamp
- * has to name the grant as it stands at the moment it is taken.</p>
- */
-export function rememberMcpConsent(
-  storage: StorageManager,
-  stamps: ConsentStamps,
-  accountId: string,
-  entityId: string,
-  now: number = Date.now(),
-): void {
-  const access = entryAccessFor(storage, accountId, entityId);
-  if (access?.ask !== 'every12h') {
-    return;
-  }
-  void stamps.remember(stampKey(accountId, entityId), ladderKey(access), now);
 }
 
 /** Everything from a webview or a broker body is untrusted, and this one crosses two processes. */
