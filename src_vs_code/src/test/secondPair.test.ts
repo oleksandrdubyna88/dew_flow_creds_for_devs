@@ -209,3 +209,33 @@ test('ownSecond is a SUBSET of shuffledFields, and never outlives it', () => {
   const orphan = pickPaymentFields({ pin: '4821', ownSecond: ['pin'] });
   assert.equal(orphan.ownSecond, undefined, 'an own mark without a weave is not a thing');
 });
+
+/**
+ * A guard that counts UTF-16 units guards the wrong thing.
+ *
+ * <p>Found by the automated reviewer on the pull request. `tooShort` asked `original.length`, while
+ * `weaveOne` hands `shuffleTokens` the CODE POINTS — so one emoji is two by the guard and one by the
+ * weave, the guard lets it through, and `shuffleTokens` throws for needing two tokens a side. An
+ * uncaught throw on save, from a field holding a single character.</p>
+ *
+ * <p>It is the same trap `lengthRefusal` already carries a note about, one function away, which is
+ * what makes it worth a test rather than a one-line fix: the rule is "count what the weave counts",
+ * and it now has an assertion at both places that count.</p>
+ */
+test('a field holding ONE astral character is not woven, and does not throw trying', () => {
+  const grinning = String.fromCodePoint(0x1f600);
+
+  const out = weavePaymentFields({ cvv: grinning }, ['cvv'], { cvv: SHUFFLE_CODES[0] }, () => 0.5);
+
+  assert.equal(out.cvv, grinning, 'stored as it was, because there is nothing to weave it with');
+  assert.equal(out.shuffledFields, undefined, 'and no mark claiming otherwise');
+});
+
+test('TWO astral characters weave normally — the guard must not refuse everything either', () => {
+  const pair = String.fromCodePoint(0x1f600, 0x1f680);
+
+  const out = weavePaymentFields({ cvv: pair }, ['cvv'], { cvv: SHUFFLE_CODES[0] }, () => 0.5);
+
+  assert.deepEqual(out.shuffledFields, ['cvv']);
+  assert.equal([...(out.cvv ?? '')].length, 4, 'two code points a side, woven into four');
+});

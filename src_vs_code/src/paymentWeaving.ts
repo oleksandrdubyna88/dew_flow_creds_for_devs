@@ -112,7 +112,16 @@ function partnerFor(key: ShuffleableKey, original: string, random: Random, typed
   return typed === '' ? generateDecoy({ kind: decoyKindFor(key), original }, random) : typed;
 }
 
-/** Too short to weave at all: `shuffleTokens` needs two tokens a side. */
+/**
+ * Too short to weave at all: `shuffleTokens` needs two tokens a side.
+ *
+ * <p>Counted in CODE POINTS, because that is what `weaveOne` hands the weave. It asked `.length`
+ * until the automated reviewer on the pull request pointed out what that guards: one emoji is TWO by
+ * `.length` and ONE token to the weave, so the guard let it through and `shuffleTokens` threw for
+ * needing two — an uncaught throw on save, from a field holding a single character. The same trap
+ * `lengthRefusal` carries a note about one module away, and the rule is the same in both places:
+ * count what the weave counts.</p>
+ */
 function tooShort(original: string): boolean {
-  return original.length < MIN_SHUFFLE_TOKENS;
+  return [...original].length < MIN_SHUFFLE_TOKENS;
 }
