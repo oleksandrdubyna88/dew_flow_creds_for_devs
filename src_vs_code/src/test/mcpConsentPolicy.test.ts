@@ -7,6 +7,7 @@ import {
   ConsentStamps,
   MAX_STAMPS,
   consentDue,
+  STAMPS_KEY,
   stampKey,
 } from '../mcpConsentPolicy';
 
@@ -21,19 +22,33 @@ const NOW = 1_700_000_000_000;
 const E1 = stampKey('a', 'e1');
 const RUNGS = 'true,true,false,false,,false,false,';
 
-/** The `Memento` subset, over a Map, with the writes counted so a test can see them happen. */
-function fakeStore(initial: Record<string, ConsentStamp> = {}): ConsentStampStore & { writes: number } {
-  let held: Record<string, ConsentStamp> = initial;
+/**
+ * The `Memento` subset, keyed for real.
+ *
+ * <p>Keyed rather than single-valued because the code now writes two keys, and a store that ignored
+ * the key would let a test assert against a record the code never wrote there — the same trap as
+ * guessing a computed name. `stamps()` reads back through the constant the code uses.</p>
+ *
+ * <p>The counter lives in the closure rather than on the returned object, so the fake answers a
+ * question without mutating itself to do it.</p>
+ */
+function fakeStore(initial: Record<string, unknown> = {}): ConsentStampStore & {
+  writes: () => number;
+  stamps: () => Record<string, ConsentStamp>;
+} {
+  const held = new Map<string, unknown>([[STAMPS_KEY, initial]]);
+  let written = 0;
   return {
-    writes: 0,
-    get(): Record<string, ConsentStamp> | undefined {
-      return held;
+    get<T>(key: string): T | undefined {
+      return held.get(key) as T | undefined;
     },
-    update(_key: string, value: Record<string, ConsentStamp>): Thenable<void> {
-      this.writes += 1;
-      held = value;
+    update(key: string, value: unknown): Thenable<void> {
+      written += 1;
+      held.set(key, value);
       return Promise.resolve();
     },
+    writes: () => written,
+    stamps: () => (held.get(STAMPS_KEY) ?? {}) as Record<string, ConsentStamp>,
   };
 }
 
@@ -101,7 +116,7 @@ test('a stored record that is not a stamp is dropped rather than half-read', () 
     [stampKey('a', 'e3')]: null,
     [stampKey('a', 'e4')]: { at: NOW, rungs: RUNGS },
   };
-  const stamps = new ConsentStamps(fakeStore(damaged as Record<string, ConsentStamp>));
+  const stamps = new ConsentStamps(fakeStore(damaged));
 
   assert.equal(stamps.get(E1, NOW), undefined, 'a time that is not a number');
   assert.equal(stamps.get(stampKey('a', 'e2'), NOW), undefined, 'no time at all');
@@ -132,7 +147,7 @@ test('a read after a write sees it without waiting for the store', async () => {
   await stamps.remember(E1, RUNGS, NOW);
 
   assert.equal(stamps.get(E1, NOW)?.rungs, RUNGS);
-  assert.equal(store.writes, 1, 'and it reached the store exactly once');
+  assert.equal(store.writes(), 1, 'and it reached the store exactly once');
 });
 
 test('the prune drops expired records before the cap drops the oldest', async () => {
@@ -140,45 +155,45 @@ test('the prune drops expired records before the cap drops the oldest', async ()
   // meaning anything hours ago kept its place.
   const old: Record<string, ConsentStamp> = {};
   for (let i = 0; i < MAX_STAMPS; i += 1) {
-    old[`a:old${i}`] = { at: NOW - 13 * 60 * 60_000, rungs: RUNGS };
+    old[stampKey('a', `old${i}`)] = { at: NOW - 13 * 60 * 60_000, rungs: RUNGS };
   }
   const stamps = new ConsentStamps(fakeStore(old));
 
-  await stamps.remember('a:fresh', RUNGS, NOW);
+  await stamps.remember(stampKey('a', 'fresh'), RUNGS, NOW);
 
-  assert.notEqual(stamps.get('a:fresh', NOW), undefined, 'the new consent was evicted by expired ones');
-  assert.equal(stamps.get('a:old0', NOW), undefined);
+  assert.notEqual(stamps.get(stampKey('a', 'fresh'), NOW), undefined, 'the new consent was evicted by expired ones');
+  assert.equal(stamps.get(stampKey('a', 'old0'), NOW), undefined);
 });
 
 test('the cap holds at 256, and the oldest is what goes', async () => {
   const many: Record<string, ConsentStamp> = {};
   for (let i = 0; i < MAX_STAMPS; i += 1) {
     // All live, and each one a millisecond older than the last.
-    many[`a:e${i}`] = { at: NOW - MAX_STAMPS + i, rungs: RUNGS };
+    many[stampKey('a', `e${i}`)] = { at: NOW - MAX_STAMPS + i, rungs: RUNGS };
   }
   const store = fakeStore(many);
   const stamps = new ConsentStamps(store);
 
-  await stamps.remember('a:newest', RUNGS, NOW);
+  await stamps.remember(stampKey('a', 'newest'), RUNGS, NOW);
 
-  assert.equal(Object.keys(store.get('k') ?? {}).length, MAX_STAMPS, 'the cap did not hold');
-  assert.notEqual(stamps.get('a:newest', NOW), undefined);
-  assert.equal(stamps.get('a:e0', NOW), undefined, 'the oldest should have been the one dropped');
-  assert.notEqual(stamps.get(`a:e${MAX_STAMPS - 1}`, NOW), undefined, 'and the newest kept');
+  assert.equal(Object.keys(store.stamps()).length, MAX_STAMPS, 'the cap did not hold');
+  assert.notEqual(stamps.get(stampKey('a', 'newest'), NOW), undefined);
+  assert.equal(stamps.get(stampKey('a', 'e0'), NOW), undefined, 'the oldest should have been the one dropped');
+  assert.notEqual(stamps.get(stampKey('a', `e${MAX_STAMPS - 1}`), NOW), undefined, 'and the newest kept');
 });
 
 test('updating a key that is already there evicts nothing', async () => {
   const many: Record<string, ConsentStamp> = {};
   for (let i = 0; i < MAX_STAMPS; i += 1) {
-    many[`a:e${i}`] = { at: NOW - MAX_STAMPS + i, rungs: RUNGS };
+    many[stampKey('a', `e${i}`)] = { at: NOW - MAX_STAMPS + i, rungs: RUNGS };
   }
   const store = fakeStore(many);
   const stamps = new ConsentStamps(store);
 
-  await stamps.remember('a:e0', RUNGS, NOW);
+  await stamps.remember(stampKey('a', 'e0'), RUNGS, NOW);
 
-  assert.equal(Object.keys(store.get('k') ?? {}).length, MAX_STAMPS, 'a replacement should not grow the map');
-  assert.notEqual(stamps.get('a:e1', NOW), undefined, 'and should evict nobody');
+  assert.equal(Object.keys(store.stamps()).length, MAX_STAMPS, 'a replacement should not grow the map');
+  assert.notEqual(stamps.get(stampKey('a', 'e1'), NOW), undefined, 'and should evict nobody');
 });
 
 test('two accounts cannot collide into one window, whatever their ids contain', () => {
@@ -194,9 +209,9 @@ test('forgetting leaves the key empty, and the next call has no window', async (
   const stamps = new ConsentStamps(store);
   await stamps.remember(E1, RUNGS, NOW);
 
-  await stamps.forgetAll();
+  await stamps.forgetAll(NOW);
 
-  assert.deepEqual(store.get('k'), {});
+  assert.deepEqual(store.stamps(), {});
   assert.equal(consentDue('every12h', stamps.get(E1, NOW), RUNGS, NOW), true);
 });
 
@@ -229,7 +244,7 @@ test('forgetting in one window is not undone by another window that was already 
   await windowA.remember(E1, RUNGS, NOW);
   assert.notEqual(windowB.get(E1, NOW), undefined, 'the fixture must start with something to forget');
 
-  await windowA.forgetAll();
+  await windowA.forgetAll(NOW);
 
   assert.equal(windowB.get(E1, NOW), undefined, 'a forgotten consent still silenced the other window');
   assert.equal(consentDue('every12h', windowB.get(E1, NOW), RUNGS, NOW), true);
@@ -237,4 +252,47 @@ test('forgetting in one window is not undone by another window that was already 
   // And B writing afterwards must not bring it back.
   await windowB.remember(stampKey('a', 'e2'), RUNGS, NOW);
   assert.equal(windowA.get(E1, NOW), undefined, 'a stale window resurrected a forgotten consent');
+});
+
+test('a window that was mid-write when Forget ran cannot put the stamp back', async () => {
+  // The race the mark exists for, and the one clearing the map does not close: the other window's
+  // READ happened before the revocation and its WRITE lands after it. Simulated by writing the map
+  // that window had already composed, which is exactly what the store sees.
+  const store = fakeStore();
+  const stamps = new ConsentStamps(store);
+  await stamps.remember(E1, RUNGS, NOW);
+  const alreadyComposed = { ...store.stamps() };
+
+  await stamps.forgetAll(NOW);
+  await store.update(STAMPS_KEY, alreadyComposed);
+
+  assert.equal(stamps.get(E1, NOW), undefined, 'a forgotten consent was resurrected');
+  assert.equal(consentDue('every12h', stamps.get(E1, NOW), RUNGS, NOW), true);
+});
+
+test('a consent given AFTER a Forget is honoured — the mark is a line, not a wall', async () => {
+  const store = fakeStore();
+  const stamps = new ConsentStamps(store);
+  await stamps.forgetAll(NOW);
+
+  await stamps.remember(E1, RUNGS, NOW + 1);
+
+  assert.notEqual(stamps.get(E1, NOW + 1), undefined, 'forgetting once must not silence the feature');
+  assert.equal(consentDue('every12h', stamps.get(E1, NOW + 1), RUNGS, NOW + 1), false);
+});
+
+test('a stamp whose time is not finite is not a stamp', async () => {
+  // typeof NaN is 'number', and the infinities pass it too. The window arithmetic downstream
+  // already refuses all three, but that is emergent; rejecting them at the read makes it structural.
+  const store = fakeStore({
+    [E1]: JSON.parse('{"at":null,"rungs":"x"}'),
+    [stampKey('a', 'e2')]: { at: Number.NaN, rungs: RUNGS },
+    [stampKey('a', 'e3')]: { at: Number.NEGATIVE_INFINITY, rungs: RUNGS },
+    [stampKey('a', 'e4')]: { at: Number.POSITIVE_INFINITY, rungs: RUNGS },
+  });
+  const stamps = new ConsentStamps(store);
+
+  for (const id of ['e1', 'e2', 'e3', 'e4']) {
+    assert.equal(stamps.get(stampKey('a', id), NOW), undefined, `${id} was read as a stamp`);
+  }
 });

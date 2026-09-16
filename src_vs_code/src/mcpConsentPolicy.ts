@@ -39,7 +39,21 @@ export const ASK_WINDOW_MS = 12 * 60 * 60_000;
  */
 export const MAX_STAMPS = 256;
 
-const KEY = 'credSshManager.mcpConsentStamps';
+/** Where the record lives. Exported so a test reads it back rather than spelling it again. */
+export const STAMPS_KEY = 'credSshManager.mcpConsentStamps';
+
+/**
+ * When Forget was last run on this machine — and the reason a second key exists.
+ *
+ * <p>Clearing the map is not enough on its own. Another window that had already READ the map before
+ * the clear can finish its own write afterwards and put the forgotten stamp back; the read is
+ * serialised within a window, and windows do not share a queue. Rather than take a cross-window
+ * file lock for a write whose only ordinary cost is one extra dialog, a revocation leaves a mark:
+ * every stamp at or before it is ignored for good, so a resurrected record answers nothing.</p>
+ *
+ * <p>Written BEFORE the map is cleared, so a crash between the two leaves the stricter half.</p>
+ */
+const FORGOTTEN_KEY = 'credSshManager.mcpConsentForgotten';
 
 /**
  * When a dialog was last answered for one entry, and what it covered.
@@ -56,8 +70,8 @@ export interface ConsentStamp {
 
 /** The subset of `Memento` this needs, so the rules test without an editor. As `TrustStore`. */
 export interface ConsentStampStore {
-  get(key: string): Record<string, ConsentStamp> | undefined;
-  update(key: string, value: Record<string, ConsentStamp>): Thenable<void>;
+  get<T>(key: string): T | undefined;
+  update(key: string, value: unknown): Thenable<void>;
 }
 
 /**
@@ -171,20 +185,27 @@ export class ConsentStamps {
       // Read INSIDE the queue. Reading outside it is how the second of two concurrent writes
       // composes onto a map taken before the first one ran, and how a window that has been open
       // for an hour writes back a record another window forgot.
-      await this.store.update(KEY, prune({ ...this.live(), [key]: { at: now, rungs } }, now));
+      await this.store.update(STAMPS_KEY, prune({ ...this.live(), [key]: { at: now, rungs } }, now));
     });
   }
 
-  /** What the Forget command clears — everything, on this machine, at once. */
-  forgetAll(): Promise<void> {
+  /**
+   * What the Forget command clears — everything, on this machine, at once.
+   *
+   * <p>All of it rather than one entry, because that is the control this offers: taking back one
+   * entry's window is what changing its policy already does, and the policy is read at every call.
+   * The mark goes down first — see `FORGOTTEN_KEY`.</p>
+   */
+  forgetAll(now: number): Promise<void> {
     return this.writes.run(async () => {
-      await this.store.update(KEY, {});
+      await this.store.update(FORGOTTEN_KEY, now);
+      await this.store.update(STAMPS_KEY, {});
     });
   }
 
   /** What is on record right now — read fresh, for the reason in the class docblock. */
   private live(): Record<string, ConsentStamp> {
-    return readStamps(this.store.get(KEY));
+    return readStamps(this.store.get(STAMPS_KEY), this.store.get(FORGOTTEN_KEY));
   }
 }
 
@@ -195,12 +216,18 @@ export class ConsentStamps {
  * so the declared type is a description of what it OUGHT to contain. A record that is not a number
  * and a string is not half-repaired, it is dropped: the consequence of dropping one is a dialog.</p>
  */
-function readStamps(raw: Record<string, ConsentStamp> | undefined): Record<string, ConsentStamp> {
-  const entries = Object.entries(raw ?? {}).flatMap(([key, value]) => {
+function readStamps(raw: unknown, forgottenAt: unknown): Record<string, ConsentStamp> {
+  const forgotten = typeof forgottenAt === 'number' && Number.isFinite(forgottenAt) ? forgottenAt : undefined;
+  const entries = Object.entries((raw ?? {}) as Record<string, unknown>).flatMap(([key, value]) => {
     const stamp = readStamp(value);
-    return stamp === undefined ? [] : [[key, stamp] as const];
+    return stamp === undefined || wasForgotten(stamp, forgotten) ? [] : [[key, stamp] as const];
   });
   return Object.fromEntries(entries);
+}
+
+/** A stamp taken at or before the last Forget was revoked, whoever writes it back afterwards. */
+function wasForgotten(stamp: ConsentStamp, forgottenAt: number | undefined): boolean {
+  return forgottenAt !== undefined && stamp.at <= forgottenAt;
 }
 
 function readStamp(raw: unknown): ConsentStamp | undefined {
@@ -210,9 +237,18 @@ function readStamp(raw: unknown): ConsentStamp | undefined {
   return stampFields(raw as Record<string, unknown>);
 }
 
-/** Both fields or neither: a stamp missing its time is not a stamp with an unknown time. */
+/**
+ * Both fields or neither: a stamp missing its time is not a stamp with an unknown time.
+ *
+ * <p>`Number.isFinite` rather than `typeof === 'number'`, which admits `NaN` and the infinities.
+ * The window arithmetic downstream already refuses all three — `NaN` fails every comparison and
+ * `-Infinity` produces a deadline already past — but that is emergent, and a guard whose
+ * correctness depends on the behaviour of a function in another module is a guard somebody will
+ * change. Rejecting the value where it is read makes it structural.</p>
+ */
 function stampFields(r: Record<string, unknown>): ConsentStamp | undefined {
-  return typeof r.at === 'number' && typeof r.rungs === 'string' ? { at: r.at, rungs: r.rungs } : undefined;
+  const { at, rungs } = r;
+  return typeof at === 'number' && Number.isFinite(at) && typeof rungs === 'string' ? { at, rungs } : undefined;
 }
 
 /**

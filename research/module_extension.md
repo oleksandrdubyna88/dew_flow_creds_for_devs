@@ -4051,9 +4051,16 @@ pruned expired-first and then capped at 256, so the worst case is about 30 KB. *
 and that is the design rather than an omission: a second window holding a stale map would both
 suppress prompts with a stamp that had been forgotten and, on its next write, restore that stamp
 over the emptied store — silent use after an explicit revocation, which is a different thing from
-being asked once too often, and the reason the Forget command means anything. The *other window* is
-still not locked — `leasedQueue.ts` exists for that shape — because the race left after the cache
-went is a read that crossed another window's write, which costs a dialog and cannot suppress one.
+being asked once too often, and the reason the Forget command means anything. **Forget also leaves a
+mark**, under its own key, and every stamp at or before it is ignored for good: clearing the map
+does not stop a window whose READ happened before the revocation from finishing its write
+afterwards, and that is the one residue a fresh read cannot remove. The mark is written before the
+map is cleared, so a crash between the two leaves the stricter half, and a consent given after it is
+honoured normally — it is a line, not a wall. The *other window* is still not locked —
+`leasedQueue.ts` exists for that shape — because what is left is a read that crossed a write, which
+costs a dialog and cannot suppress one. The honest limit to state: a Memento is cached per window by
+VS Code itself, so a revocation is immediate where it is run and reaches other windows when the
+platform propagates the state; the mark is what makes it permanent once it arrives.
 Two things are deliberately NOT done and are recorded so they are not rediscovered as bugs: there is
 no startup sweep (expiry is arithmetic, so a stale record grants nothing and the prune only bounds
 size), and reverting a policy does not invalidate a stamp — tightening an entry to every-time and
