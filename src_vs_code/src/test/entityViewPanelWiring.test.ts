@@ -71,3 +71,36 @@ test('the order reaches no message the panel posts', () => {
   // or a reference that posts nothing.
   assert.match(source, /panel\.webview\.postMessage\(/, 'the companion: the panel still posts at all');
 });
+
+/**
+ * The copy path checks it is still the same entry on BOTH sides of the read (#52).
+ *
+ * <p>Raised by the automated reviewer, and it is the shape this feature has already been bitten by
+ * twice: a guard before an await does nothing about what happens during it. `copyValueFor` goes to
+ * the keychain — for a payment field, for a second value, for every ordinary secret — so a render
+ * landing in that window would put the PREVIOUS entry's secret on the clipboard and tell the new
+ * entry's page it was copied.</p>
+ *
+ * <p>The whole SEQUENCE is pinned rather than the count, because a scan that matches a fragment
+ * survives its own break: two guards could both sit before the read and this would still pass.</p>
+ */
+test('the entry is re-checked after the value is read, not only before it', () => {
+  const copyPath = source.slice(source.indexOf("message.type !== 'copy'"));
+  const order = [...copyPath.matchAll(/state\.options !== options|await copyValueFor\(|await copySecret\(/g)]
+    .map((one) => one[0]);
+
+  assert.deepEqual(
+    order.slice(0, 4),
+    ['state.options !== options', 'await copyValueFor(', 'state.options !== options', 'await copySecret('],
+    'guard, read, guard, then the clipboard — in that order',
+  );
+});
+
+test('and the scan is still reading the copy path it thinks it is', () => {
+  // The companion every scan in this file carries: proof the slice above is the handler rather than
+  // an empty string that would make any assertion about its contents vacuously true.
+  const copyPath = source.slice(source.indexOf("message.type !== 'copy'"));
+
+  assert.ok(copyPath.length > 200, 'the slice found the handler');
+  assert.match(copyPath, /Nothing to copy/, 'and it is the one that answers an empty field');
+});

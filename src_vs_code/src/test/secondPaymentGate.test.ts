@@ -98,7 +98,7 @@ test('a phrase is judged by its own gate, not this one', () => {
 
 test('the fields being woven are the ticked ones that are weave points, and nothing else', () => {
   assert.deepEqual(
-    [...paymentWeavingNow(page({ mixFields: ['cvv', 'holder', 'pin'] }))],
+    [...paymentWeavingNow(page({ mixFields: ['cvv', 'holder', 'pin'] }), 'card')],
     ['cvv', 'pin'],
     'a holder is not a weave point, so it cannot be one here either',
   );
@@ -122,15 +122,58 @@ test('a woven field’s typed half is NOT left in the record beside it', () => {
  * record dropped and the weaver never touched would lose a value somebody typed. Two filters written
  * to agree are two filters that can stop agreeing, so there is one function and both call it.</p>
  */
-test('a field already woven is not woven again, and is not counted as weaving now', () => {
-  const already = page({ mixFields: ['cvv'], secondValues: { cvv2: '737' } });
-  const storedWoven = { ...already, cardCvv: '' };
-
-  // Nothing marked that is not a weave point, and nothing that the record already holds woven.
-  assert.deepEqual([...paymentWeavingNow(storedWoven)], ['cvv'], 'a fresh field is weaving now');
+test('the list names exactly what the weaver will consume, and nothing else', () => {
+  // Every condition `weaveOne` applies, asked once: marked, a weave point, not woven already, a
+  // method this build knows, and a value long enough to weave. A field the weaver consumed and the
+  // record kept would leave a reader the half to subtract; a field the record dropped and the weaver
+  // never touched would lose a value somebody typed.
+  assert.deepEqual([...paymentWeavingNow(page(), 'card')], ['cvv'], 'a marked field with a value');
   assert.deepEqual(
-    [...paymentWeavingNow(page({ mixFields: ['holder'] }))],
+    [...paymentWeavingNow(page({ mixFields: ['holder'] }), 'card')],
     [],
-    'a holder is not a weave point, so neither half counts it',
+    'a holder is not a weave point',
   );
+  assert.deepEqual(
+    [...paymentWeavingNow(page({ cardCvv: '' }), 'card')],
+    [],
+    'an emptied field has nothing to weave, so it consumes no second value either',
+  );
+  assert.deepEqual(
+    [...paymentWeavingNow(page({ mixMethod: 'not-a-method' }), 'card')],
+    [],
+    'and a method this build does not know weaves nothing — the typed half stays in the record',
+  );
+});
+
+/**
+ * A form switch must not refuse on a field the chosen form does not own.
+ *
+ * <p>Raised by the automated reviewer. `confirmFormSwitch` asks the question and leaves `data` as it
+ * was, so a card's ticked CVV is still in the message when somebody has switched to bank details.
+ * `paymentRecordFor` drops it afterwards through `clearForForm` — so the value is not stored either
+ * way — but the GATE ran first and could refuse a save over a field that was about to be discarded.
+ * A false refusal, which is the worse of the two failures: nothing is at risk and the person cannot
+ * save.</p>
+ */
+test('a card field left ticked does not refuse a save of bank details', () => {
+  const switched = page({
+    paymentForm: 'bank',
+    bankIban: 'DE02120300000000202051',
+    mixFields: ['cvv'],
+    secondValues: { cvv2: 'nonsense length' },
+  });
+
+  assert.equal(secondPairRefusal(switched, 'bank'), '', 'the CVV is not the bank form’s to judge');
+});
+
+test('and the same save still judges a field the chosen form DOES own', () => {
+  // The companion: a fix that made the gate ignore everything would pass the test above.
+  const switched = page({
+    paymentForm: 'bank',
+    bankIban: 'DE02120300000000202051',
+    mixFields: ['iban'],
+    secondValues: { iban2: 'too short' },
+  });
+
+  assert.match(secondPairRefusal(switched, 'bank'), /same length/);
 });

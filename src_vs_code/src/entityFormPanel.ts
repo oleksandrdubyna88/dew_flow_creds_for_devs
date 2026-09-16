@@ -639,7 +639,7 @@ export function toValues(data: Record<string, unknown>, options: EntityFormOptio
     wovenRefusal: saved.refusal,
     // What the record should hold afterwards. A value the weave CONSUMED is not in it — that is
     // the rule the whole feature stands on, and `secondRecordFor` is where it is true.
-    newSecond: secondRecordFor(secondInputFrom(data, options.storedSecond ?? {}, weavingNow(data, saved))),
+    newSecond: secondRecordFor(secondInputFrom(data, options.storedSecond ?? {}, weavingNow(data, saved, paymentForm))),
     // A config has no password slot, so a stored one is invisible and uneditable — and, until this
     // line, enough to make the entry shareable. Scrubbed on write, exactly as a TOTP seed is when
     // an entity moves to a kind that cannot hold one.
@@ -694,7 +694,11 @@ export { FormMessage };
  * payment side reports the fields it marked that were not already woven, which is the same list
  * `weavePaymentFields` will act on.</p>
  */
-function weavingNow(data: Record<string, unknown>, saved: { woven: boolean; refusal: string }): readonly WeavePoint[] {
+function weavingNow(
+  data: Record<string, unknown>,
+  saved: { woven: boolean; refusal: string },
+  chosen: string,
+): readonly WeavePoint[] {
   const password: readonly WeavePoint[] = saved.woven && saved.refusal === '' ? ['password'] : [];
-  return [...password, ...paymentWeavingNow(data)];
+  return [...password, ...paymentWeavingNow(data, chosen)];
 }

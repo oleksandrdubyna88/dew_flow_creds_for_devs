@@ -76,7 +76,7 @@ type Handler = (...args: unknown[]) => unknown;
 
 /** Register the real commands against the stub and hand back the export one. */
 function exportHandler(
-  secrets: Record<string, { payment?: string }>,
+  secrets: Record<string, { payment?: string; second?: string }>,
   node: TreeNode,
   corpPolicyOf?: (accountId: string) => unknown,
 ): Handler {
@@ -236,4 +236,36 @@ test('a personal account is not asked about a policy it does not have', async ()
   await handler(target, undefined);
 
   assert.equal(captured.secretsRead, 1);
+});
+
+/**
+ * A second value warns at the COMMAND, not only in the counter (#52).
+ *
+ * <p>Raised by the automated reviewer, and the gap it names is exact: `paymentFieldsInExport` has its
+ * own tests for `second`, and this file only ever handed the command records with `payment`. So
+ * dropping `second` on the way from the export command to the counter would have left both green,
+ * and a file would carry a secret nobody was warned about.</p>
+ *
+ * <p>The entry here is NOT a payment at all, which is the case the old counter could not see: a
+ * credential with a second password.</p>
+ */
+test('exporting a credential with a second password warns about it', async () => {
+  captured.quickPickTitle = '';
+  const credential: TreeNode = {
+    id: 'c1',
+    name: 'prod-db',
+    type: 'entity',
+    parentId: null,
+    details: { id: 'c1', name: 'prod-db', isSshEnabled: false },
+  };
+  const handler = exportHandler({ c1: { second: '{"password2":"the other one"}' } }, credential);
+
+  await handler({ kind: 'node', accountId: 'acc-1', node: credential }, undefined);
+
+  assert.match(
+    captured.quickPickTitle,
+    /1 value a share would remove, across 1 entry\b/,
+    `the note never reached the dialog — got: ${captured.quickPickTitle}`,
+  );
+  assert.ok(!captured.quickPickTitle.includes('the other one'), 'counted, never printed');
 });

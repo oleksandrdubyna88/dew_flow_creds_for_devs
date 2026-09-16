@@ -261,10 +261,12 @@ export function openRevisionViewer(node: TreeNode, revision: Revision): void {
       revision.secrets.payment === undefined
         ? undefined
         : paymentViewFor(revisionSecretReader(revision)),
-    resolveSecond:
-      revision.secrets.payment === undefined
-        ? undefined
-        : secondViewFor(revisionSecretReader(revision)),
+    // NOT gated on the payment record: a credential's revision can carry a second password with no
+    // payment at all, and gating it there made that row uncopyable — raised by the automated
+    // reviewer. A revision with no second values answers an empty record, which is the same
+    // "nothing to copy" the live viewer gives.
+    resolveSecond: secondViewFor(revisionSecretReader(revision)),
+    hasSecondPassword: parseSecondValues(revision.secrets.second).password2 !== undefined,
     copyAllText: () => Promise.resolve(formatEntityBlock(details, password, dbConnection, notes)),
     saveVpnConfig: () =>
       vpnConfig === undefined
