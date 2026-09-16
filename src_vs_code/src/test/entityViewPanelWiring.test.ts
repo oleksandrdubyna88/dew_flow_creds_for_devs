@@ -67,5 +67,7 @@ test('the order reaches no message the panel posts', () => {
   // order, a flip or a swap ever appears in a posted object, it is one inspector away from the
   // reader this defends against.
   assert.ok(!/post[A-Za-z]*\([^)]*\b(flip|swapped|asRead|rowOrder)\b/i.test(source));
-  assert.match(source, /panel\.webview\.postMessage/, 'the companion: the panel still posts at all');
+  // The CALL, not the property: `panel.webview.postMessage` alone would keep matching an assignment
+  // or a reference that posts nothing.
+  assert.match(source, /panel\.webview\.postMessage\(/, 'the companion: the panel still posts at all');
 });

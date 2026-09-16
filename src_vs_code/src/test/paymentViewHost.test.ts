@@ -259,6 +259,50 @@ test('no message carries the order — the answer has the same shape either way'
   assert.ok(!/real|decoy|swap|flip|order/i.test(JSON.stringify([one, two])));
 });
 
+/**
+ * The card's own version of the race the password host was fixed for.
+ *
+ * <p>A gated field asks before it answers, and that modal is the long await: the panel can render
+ * another entry while it is on screen, which clears the store. An order read after the question
+ * would be a fresh draw, and the clipboard would hold the row the person did not point at.</p>
+ */
+test('a Copy whose question is answered during a re-render still follows the order the rows showed', async () => {
+  const copied: string[] = [];
+  // Swapped first, as-read after the clear — so a redraw is visible rather than silently identical.
+  const draws = [SWAPPED, AS_READ];
+  let at = 0;
+  const orders = new RowOrderStore(() => draws[Math.min(at++, draws.length - 1)] ?? 0);
+  const fields: PaymentFields = { pin: WOVEN_PIN, shuffledFields: ['pin'] };
+  const view = paymentCardFor('entity-1', 'card', fields, random);
+  const host = new PaymentViewHost({
+    view: () => view,
+    record: () => Promise.resolve(fields),
+    post: () => undefined,
+    // The panel loads another entry WHILE the question is on screen, which is what the shared
+    // preview tab does on the next single click.
+    confirm: () => {
+      orders.clear();
+      return Promise.resolve(true);
+    },
+    orders,
+    copy: (text) => {
+      copied.push(text);
+      return Promise.resolve();
+    },
+  });
+
+  // The rows were SHOWN first — that is what puts an order in the store for the copy to follow.
+  // Drawn directly here rather than through a Show, because a Show also grants the field and the
+  // copy would then never reach the question this test needs it to be interrupted by.
+  orders.orderFor('entity-1', 'pin');
+
+  await host.handle('copyReading', `pin|a|${CODE}`);
+
+  assert.equal(copied.length, 1, 'the copy happened');
+  assert.deepEqual(copied, ['9137'], 'the row that was shown, not the one a fresh draw would name');
+  assert.equal(at, 1, 'and the clear did not cause a second draw for this copy');
+});
+
 test('a reading says which method it is FOR, so a late answer can be dropped', async () => {
   // Two clicks are two record reads and their answers can arrive in the other order. Without the
   // method on the message the page would show the first one's rows under a picker naming the second,

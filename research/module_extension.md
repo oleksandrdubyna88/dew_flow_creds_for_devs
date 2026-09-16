@@ -1068,7 +1068,7 @@ export, the share and the hygiene scan needed no change, and `storageManager.ts`
 | `wovenPasswordSave.ts` | the four states a save meets, and `unwovenWarning` — what to SAY when the form will not do what it appears to promise |
 | `wovenPasswordHost.ts` | the viewer's half: what a Show or a Copy on the two rows is answered with |
 | `wovenRow.ts` | the two-column row itself, serving the card and the password from one implementation |
-| `rowFlip.ts` | `RowOrderStore` / `displayed` — which of a reading's two halves is shown first, drawn once per entry and held only in the host |
+| `rowFlip.ts` | `RowOrderStore` / `displayed` / `rowIn` — which of a reading's two halves is shown first, drawn once per entry and held only in the host |
 | `wovenPicture.ts` | `wovenPictureTokens` — the stored value token by token, each tagged with the ROW it is shown in, never with which is real |
 | `wovenFormScript.ts` | the form's page script — when the controls appear, and the live example |
 | `fieldReading.ts` | `value \| withheld(reason) \| absent` — see *withheld is not absent* below |
@@ -1106,6 +1106,35 @@ nothing automatic is entitled to make it; the form is where a replacement choose
 
 **A share carries the mark**, or the recipient opens an entry whose password is unreadable with
 nothing on screen explaining why.
+
+#### The first row is not always yours (2026-09-16)
+
+The row said *"nothing here can tell you which one is yours, and that is deliberate"* and the build
+did not keep it. `weaveSecret` weaves the real value as the FIRST column, `unweaveSecret` returns it
+as `first`, both hosts put `first` into row **a**, and `rowOf` mapped `b` to the decoy outright — so
+under the correct method row one was always the person's value, and twelve methods were twelve
+readings to try rather than twenty-four.
+
+**Which half is shown first is now drawn**, once per `(entityId, key)`, from the house CSPRNG
+(`cryptoRandom`). One extra bit and no more: the METHOD is still the only real secret and is still
+stored nowhere, and the note on the row now says that rather than implying more.
+
+| Where it lives | Why there |
+|---|---|
+| `RowOrderStore`, constructed by **`entityViewPanel`** | one store per panel, handed to BOTH hosts — a credential's woven password never passes through `PaymentViewHost`, and a Show and the Copy that follows it must read one order |
+| cleared when the **entry changes**, and on dispose | another entry is another draw. Clearing on every *render* was wrong: re-rendering the same entry while a keychain read is in flight would post rows under the old order into a page whose Copy resolves the new one — the clipboard and the display disagreeing about the same secret, with nothing on screen saying so |
+| the order is sampled **before every await** | the modal in `grant` and the keychain read are both awaits, and a render behind either clears the store. Sampled first, the copy follows what was on screen. The entity id is sampled there already, for the same class of reason |
+
+**The order never leaves the host** — not in a message, an id, a class or a caption. A `flip` in the
+reading answer would put the answer one inspector away from exactly the reader this defends against,
+and deriving it page-side from a nonce fails the same way, because the derivation is in the source. A
+test compares the whole message under both orders with only the two rows removed; comparing keys and
+shapes alone passes for a host that leaks the order through a caption or a count.
+
+`rowOf`, `copyTextFor` and the password's copy all take a **`DisplayedPair`** — `ReadingPair` with a
+type-only brand — so an arithmetic pair cannot reach them by accident. The compiler refused four call
+sites the moment the type changed, which is the mistake this work exists to prevent, caught
+mechanically. `rowIn` is the single mapping of `a`/`b` to a row, shared by both hosts.
 
 #### Where the time goes (2026-09-03)
 

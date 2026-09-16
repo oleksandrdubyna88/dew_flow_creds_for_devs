@@ -115,6 +115,17 @@ export class RowOrderStore {
  * returns, which is what keeps them from disagreeing with each other. After this call there is no
  * function on the display path that knows which reading is the person's, and that is the point.</p>
  */
+/**
+ * One of the two rows, by the name the page's button carries.
+ *
+ * <p>Here rather than in either host, because both resolve `a`/`b` and a second copy of that
+ * mapping is a second place to get it wrong — and getting it wrong means copying the row the person
+ * did not point at. `b` is the SECOND ROW SHOWN; neither name means real or decoy.</p>
+ */
+export function rowIn<T>(shown: DisplayedPair<T>, which: string): T {
+  return which === 'b' ? shown.second : shown.first;
+}
+
 export function displayed<T>(pair: ReadingPair<T>, order: RowOrder): DisplayedPair<T> {
   const shown = order === 'swapped' ? { first: pair.second, second: pair.first } : pair;
   // The one assertion in this module, and it is what the brand is FOR: this is the only place a

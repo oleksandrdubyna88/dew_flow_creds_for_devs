@@ -216,7 +216,7 @@ test('a Copy of a woven password’s row follows the order the rows were shown i
   await handleWovenPassword('reassemble', `password|${SHUFFLE_CODES[3]}`, deps);
   await handleWovenPassword('copyReading', `password|a|${SHUFFLE_CODES[3]}`, deps);
 
-  assert.equal(copied.length, 1);
+  assert.equal(copied.length, 1, 'exactly one copy reached the clipboard');
   assert.equal(copied[0], (posted[0].first as string[]).join(''), 'the clipboard is the row on screen');
   assert.notEqual(copied[0], 'hunter2!', 'which under this order is not the password');
 });
@@ -256,7 +256,7 @@ test('a Copy that arrives as the panel re-renders still follows the order the ro
   release();
   await answered;
 
-  assert.equal(copied.length, 1);
+  assert.equal(copied.length, 1, 'exactly one copy reached the clipboard');
   // The order in force when the rows were drawn was `swapped`, so row a held the other reading.
   // Reading the order after the clear would have drawn `as-read` and copied the password instead —
   // the row the person did not point at.
@@ -325,7 +325,7 @@ test('a copy is stamped the same way, for the same reason', async () => {
   release();
   await answered;
 
-  assert.equal(copied.length, 1);
+  assert.equal(copied.length, 1, 'exactly one copy reached the clipboard');
   assert.equal(posted[0].entityId, 'a', 'the acknowledgement belongs to the entry that asked');
 });
 
