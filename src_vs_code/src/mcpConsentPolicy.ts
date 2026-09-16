@@ -60,9 +60,16 @@ export interface ConsentStampStore {
   update(key: string, value: Record<string, ConsentStamp>): Thenable<void>;
 }
 
-/** An entry is unique to a vault and a window holds several, so the account is part of the name. */
+/**
+ * An entry is unique to a vault and a window holds several, so the account is part of the name.
+ *
+ * <p><b>Length-prefixed rather than joined by a separator.</b> `a:b` + `c` and `a` + `b:c` produce
+ * the same joined string, and the consequence of a collision here is that consent for one account's
+ * entry silences another's. Ids are uuids today and the collision is unreachable today; an
+ * injective encoding costs one number and does not depend on that staying true.</p>
+ */
 export function stampKey(accountId: string, entityId: string): string {
-  return `${accountId}:${entityId}`;
+  return `${accountId.length}:${accountId}:${entityId}`;
 }
 
 /**
@@ -119,26 +126,38 @@ function windowEnd(stamp: ConsentStamp, now: number): number | undefined {
 /**
  * This machine's record of the dialogs answered on it.
  *
- * <p><b>One map, written through one queue.</b> `globalState.update` rewrites the whole record, so
- * two consents settling at the same moment each read the map, each add their own entry, and the
- * second write throws the first away — that entry then prompts again inside its own window. The
- * in-memory map is the source of truth and every write goes through a `SerialQueue`, so the second
- * writer composes onto the first's result rather than onto a copy it read before the first ran.</p>
+ * <p><b>Nothing is cached, and that is the design rather than an omission.</b> Every read goes to
+ * the store and every write composes onto a read taken INSIDE the queue. A cached map would be
+ * faster and would break the one control this feature offers: Forget. With a cache, a second window
+ * holding a stale map both suppresses prompts using a stamp that has been forgotten and, on its
+ * next write, restores that stamp over the emptied store — silent use after an explicit
+ * revocation, which is a different thing from being asked once too often.</p>
  *
- * <p><b>The other WINDOW is deliberately not locked.</b> `leasedQueue.ts` exists for exactly this
- * shape — operations sharing a profile's `globalState` across VS Code windows — and it is the right
- * answer where losing a write loses data. Here it loses a stamp, and a lost stamp costs one extra
- * dialog: the failure is toward ASKING. Paying a file lock, a heartbeat and a status-bar notice so
- * that somebody is asked exactly as often as promised rather than once more is the wrong trade, and
- * it would put a cross-window wait in front of a call that is meant to be the quiet one.</p>
+ * <p><b>One queue, for the window's own concurrency.</b> `globalState.update` rewrites the whole
+ * record, so two consents settling at the same moment each read the map, each add their own entry,
+ * and the second write throws the first away — that entry then prompts again inside its own window.
+ * Serialising the writes means the second one reads after the first has written.</p>
+ *
+ * <p><b>The other WINDOW is still not locked, and the residue is one dialog.</b> `leasedQueue.ts`
+ * exists for this shape and is the right answer where losing a write loses data; here the only race
+ * left is a read that crossed another window's write, which costs a prompt and cannot suppress one.
+ * Paying a file lock, a heartbeat and a status-bar wait to be asked exactly as often as promised
+ * rather than once more would put a cross-window wait in front of the call that is meant to be the
+ * quiet one.</p>
+ *
+ * <p><b>Reverting a policy does not invalidate a stamp</b>, and that is a decision. Tightening an
+ * entry to every-time and then setting `every12h` again inside the window reuses the earlier
+ * answer — which is what `every12h` says: the person was asked, less than twelve hours ago. A
+ * policy generation would have to live either on the record, where it SYNCS and a machine that
+ * never saw the tightening resurrects it anyway, or on the machine, where it drifts exactly like
+ * the stamp it was meant to fence.</p>
  */
 export class ConsentStamps {
   private readonly writes = new SerialQueue();
-  private cache: Record<string, ConsentStamp> | undefined;
 
   constructor(private readonly store: ConsentStampStore) {}
 
-  /** The stamp for one entry, or nothing. Expired records are dropped on the way past. */
+  /** The stamp for one entry, or nothing — read from the store, every time. */
   get(key: string, now: number): ConsentStamp | undefined {
     const stamp = this.live()[key];
     // Expiry is arithmetic, never presence: a record still sitting in the store after thirteen
@@ -149,24 +168,23 @@ export class ConsentStamps {
   /** Record that a person answered a dialog for this entry, covering this ladder. */
   remember(key: string, rungs: string, now: number): Promise<void> {
     return this.writes.run(async () => {
-      const next = prune({ ...this.live(), [key]: { at: now, rungs } }, now);
-      this.cache = next;
-      await this.store.update(KEY, next);
+      // Read INSIDE the queue. Reading outside it is how the second of two concurrent writes
+      // composes onto a map taken before the first one ran, and how a window that has been open
+      // for an hour writes back a record another window forgot.
+      await this.store.update(KEY, prune({ ...this.live(), [key]: { at: now, rungs } }, now));
     });
   }
 
   /** What the Forget command clears — everything, on this machine, at once. */
   forgetAll(): Promise<void> {
     return this.writes.run(async () => {
-      this.cache = {};
       await this.store.update(KEY, {});
     });
   }
 
-  /** What is on record right now, read once and then kept — see the class docblock. */
+  /** What is on record right now — read fresh, for the reason in the class docblock. */
   private live(): Record<string, ConsentStamp> {
-    this.cache ??= readStamps(this.store.get(KEY));
-    return this.cache;
+    return readStamps(this.store.get(KEY));
   }
 }
 

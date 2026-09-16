@@ -4047,10 +4047,19 @@ window at all — `globalState` is a plain file this user's processes can write,
 comparison also closes both directions of clock skew, since a clock set back puts every stamp in
 the future. Writes go through one in-memory map and a `SerialQueue`, because `globalState.update`
 rewrites the whole record and two consents settling at once would otherwise lose one; the map is
-pruned expired-first and then capped at 256, so the worst case is about 30 KB. The *other window* is
-deliberately not locked — `leasedQueue.ts` exists for exactly that shape, but a lost stamp costs one
-extra dialog, and paying a file lock and a status-bar wait to be asked exactly as often as promised
-rather than once more is the wrong trade on the path that is meant to be the quiet one.
+pruned expired-first and then capped at 256, so the worst case is about 30 KB. **Nothing is cached**,
+and that is the design rather than an omission: a second window holding a stale map would both
+suppress prompts with a stamp that had been forgotten and, on its next write, restore that stamp
+over the emptied store — silent use after an explicit revocation, which is a different thing from
+being asked once too often, and the reason the Forget command means anything. The *other window* is
+still not locked — `leasedQueue.ts` exists for that shape — because the race left after the cache
+went is a read that crossed another window's write, which costs a dialog and cannot suppress one.
+Two things are deliberately NOT done and are recorded so they are not rediscovered as bugs: there is
+no startup sweep (expiry is arithmetic, so a stale record grants nothing and the prune only bounds
+size), and reverting a policy does not invalidate a stamp — tightening an entry to every-time and
+setting `every12h` again inside the window reuses the earlier answer, which is what that policy
+says, and a policy generation would have to live either on the record, where it syncs, or on the
+machine, where it drifts exactly like the stamp it was meant to fence.
 
 **Folders became the second object in 0.85.0** (`PLAN_agent_folder_ops.md`). Four tools —
 `creds_folders`, `creds_create_folder`, `creds_edit_folder`, `creds_delete_folder` — with the
