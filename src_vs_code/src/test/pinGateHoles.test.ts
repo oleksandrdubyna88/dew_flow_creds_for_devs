@@ -120,6 +120,8 @@ function vaultOver(held: Map<string, string>): StorageManager {
     getNotes: () => get('notes'),
     setNotes: (_a: string, _e: string, v: string) => set('notes', v),
     getFieldsRaw: () => get('fields'),
+    getSecondRaw: () => get('second'),
+    setSecondRaw: () => Promise.resolve(),
     setFieldsRaw: (_a: string, _e: string, v: string) => set('fields', v),
     getPaymentRaw: () => get('payment'),
     setPaymentRaw: (_a: string, _e: string, v: string) => set('payment', v),
