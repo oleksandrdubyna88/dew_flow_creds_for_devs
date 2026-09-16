@@ -4002,6 +4002,19 @@ by **two ladders of switches over two objects** — six over an entry, four over
 by default, including for everything that existed before each feature. The extension gained no
 runtime dependency: the MCP SDK lives in the binary.
 
+**A second axis rides the same record, and it is not a rung** (issue #95). `McpAccess.ask` says how
+often a person is asked before an agent USES an entry — `always`, `every12h` or `never` — and it
+grants nothing: the ladder decides what an agent may ask for, this decides how often somebody is
+asked about it. Two consequences shape every reader. **Absence means "ask the folder"**, not "ask
+every time", because with inheritance in play a child under a folder set to `never` would otherwise
+have no way to say *ask me anyway*; the safe answer is applied at the end of the walk instead, where
+nothing answering resolves to `always`. And **an unrecognised word reads as `always` and stops the
+climb** — the opposite direction from an unknown delete scope, which reads as absence, because here
+absence is permission to inherit somebody else's silence. The two halves are read, stored and
+inherited apart: `readMcpAccess` writes the ladder only when the message names a rung and the policy
+only when it names one, so changing a folder's consent setting cannot write an all-off ladder that
+closes every entry beneath it.
+
 **Folders became the second object in 0.85.0** (`PLAN_agent_folder_ops.md`). Four tools —
 `creds_folders`, `creds_create_folder`, `creds_edit_folder`, `creds_delete_folder` — with the
 decisions in `mcpFolders.ts` (pure: what is visible, which verb needs which switch, and whether a
@@ -4091,7 +4104,7 @@ and not the other stops the build instead of every window's startup. Record:
 
 | Module | What it decides |
 |---|---|
-| `mcpAccess.ts` | the ladder, inheritance from a folder, and nothing at all inside the Trash |
+| `mcpAccess.ts` | the ladder, inheritance from a folder, nothing at all inside the Trash — and the ask policy a record carries beside its rungs |
 | `mcpEntries.ts` | what an agent may SEE, field by field; and which switch each action needs |
 | `mcpCreate.ts` | which folders are open to creation, and what a request becomes |
 | `secretRotation.ts` / `rotateAction.ts` | the placeholder, and the order a rotation happens in |

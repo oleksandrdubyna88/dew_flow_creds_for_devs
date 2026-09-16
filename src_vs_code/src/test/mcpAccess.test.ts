@@ -9,11 +9,14 @@ import {
   maskKey,
   mayDelete,
   mayDeleteFolder,
+  McpAccess,
   normalizeMcpAccess,
+  readMcpAccess,
   resolveMcpAccess,
   resolveMcpInTree,
 } from '../mcpAccess';
 import { TreeNode } from '../types';
+import { isMcpAccess } from '../typeGuards';
 
 /**
  * What an agent is allowed to do, and where the answer came from.
@@ -55,6 +58,7 @@ test('the ladder fills in everything a switch implies', () => {
     folderCreate: false,
     folderEdit: false,
     folderDelete: undefined,
+    ask: undefined,
   });
   assert.deepEqual(normalizeMcpAccess({ edit: true }), {
     view: true,
@@ -65,6 +69,7 @@ test('the ladder fills in everything a switch implies', () => {
     folderCreate: false,
     folderEdit: false,
     folderDelete: undefined,
+    ask: undefined,
   });
 });
 
@@ -81,6 +86,7 @@ test('the folder ladder fills in the same way, and stops at the rung they share'
     folderCreate: true,
     folderEdit: true,
     folderDelete: 'own',
+    ask: undefined,
   });
 });
 
@@ -120,6 +126,7 @@ test('a lone view stays a lone view — the ladder only ever fills DOWNWARDS', (
     folderCreate: false,
     folderEdit: false,
     folderDelete: undefined,
+    ask: undefined,
   });
 });
 
@@ -287,4 +294,112 @@ test('a folder that only INHERITS does not itself open the door', () => {
   // It is already covered by the folder that answered; counting it would make the door depend on
   // where in the tree you look rather than on what anybody decided.
   assert.equal(anyAgentAccess([child('mid', 'root')]), false);
+});
+
+/**
+ * The ask policy: a second axis on the same record, read and stored apart from the ladder.
+ *
+ * <p>Everything here is about the two halves not contaminating each other. The failure these
+ * pin is not hypothetical: reading them together is how a person who changed only "never ask"
+ * on a folder would have had an all-off ladder written for them, closing to agents every entry
+ * beneath it that used to inherit its rights from higher up.</p>
+ */
+
+/** Every field at a value that is not its default — the fixture the completeness test needs. */
+const EVERY_FIELD: McpAccess = {
+  view: true,
+  use: true,
+  edit: true,
+  create: true,
+  delete: 'any',
+  folderCreate: true,
+  folderEdit: true,
+  folderDelete: 'own',
+  ask: 'never',
+};
+
+test('a record with every field set keeps the same key set through both closed-world builders', () => {
+  // The only guard against the silent vanish: `readMcpAccess` and `climb` each write out their
+  // fields by hand, and TypeScript reports nothing when an OPTIONAL one is forgotten in either.
+  // A field added to `McpAccess` and to this fixture, but to neither builder, fails here.
+  const expected = Object.keys(EVERY_FIELD).sort();
+  assert.deepEqual(Object.keys(readMcpAccess(EVERY_FIELD) ?? {}).sort(), expected, 'readMcpAccess dropped a field');
+  assert.deepEqual(Object.keys(normalizeMcpAccess(EVERY_FIELD)).sort(), expected, 'climb dropped a field');
+});
+
+test('an unrecognised policy word reads as ask-every-time, never as inherit', () => {
+  // The opposite direction from an unknown delete scope, and deliberately: absence means "ask the
+  // folder", so reading a strange word as absence would let it inherit a folder's "never" — a word
+  // this build has never seen would turn the dialog off.
+  assert.equal(readMcpAccess({ ask: 'weekly' })?.ask, 'always');
+  assert.equal(normalizeMcpAccess({ ask: 'weekly' as never }).ask, 'always');
+  assert.equal(readMcpAccess({ ask: 7 })?.ask, 'always');
+});
+
+test('a missing or null policy is no answer here, so the folder still decides', () => {
+  assert.equal(readMcpAccess({ view: true })?.ask, undefined);
+  // `null` is the form taking its answer back. It has to be a VALUE rather than an omission,
+  // because JSON.stringify drops an undefined property and the reader would never see the key.
+  assert.equal(readMcpAccess({ view: true, ask: null })?.ask, undefined);
+  assert.equal(normalizeMcpAccess({ view: true }).ask, undefined);
+});
+
+/** A message that claims something, read. Keeps the assertions below free of optional chains. */
+function claimed(raw: unknown): McpAccess {
+  const access = readMcpAccess(raw);
+  assert.notEqual(access, undefined, 'this message claims something and must read as something');
+  return access ?? {};
+}
+
+test('a message claiming only a policy stores no ladder, and one claiming only a ladder stores no policy', () => {
+  const policyOnly = claimed({ ask: 'never' });
+  assert.deepEqual(Object.keys(policyOnly), ['ask'], 'a policy-only save must not write a ladder');
+  assert.equal(policyOnly.view, undefined);
+
+  const ladderOnly = claimed({ view: true, use: true });
+  assert.equal(ladderOnly.ask, undefined);
+  assert.equal(ladderOnly.view, true);
+  assert.equal(ladderOnly.folderDelete, undefined);
+});
+
+test('a message claiming neither half claims nothing at all', () => {
+  assert.equal(readMcpAccess({}), undefined);
+  assert.equal(readMcpAccess({ ask: null }), undefined);
+  assert.equal(readMcpAccess({ somethingElse: true }), undefined);
+});
+
+test('an explicit all-off ladder is still a decision, and says so by carrying its keys', () => {
+  // How an entry closed on purpose is stored, and the thing the resolver reads as an ANSWER that
+  // stops the climb. Pinned here because the half-aware reader is one wrong predicate away from
+  // turning every deliberately closed record back into "ask the folder".
+  const closed = readMcpAccess({ view: false, use: false, edit: false, create: false });
+  assert.notEqual(closed, undefined);
+  assert.equal(closed?.view, false);
+  assert.ok('view' in (closed ?? {}), 'the ladder half has to be present for the answer to be readable');
+});
+
+test('the ladder never fills the policy in, and the policy never lights a rung', () => {
+  assert.equal(normalizeMcpAccess({ delete: 'any' }).ask, undefined, 'a full ladder implies no policy');
+  const policy = normalizeMcpAccess({ ask: 'never' });
+  assert.equal(policy.view, false);
+  assert.equal(policy.use, false);
+  assert.equal(policy.delete, undefined);
+  assert.equal(policy.ask, 'never');
+});
+
+test('the viewer names the two answers that change when a person is asked, and stays silent on the third', () => {
+  assert.match(describeAccess(normalizeMcpAccess({ view: true, ask: 'never' })), /never asks/);
+  assert.match(describeAccess(normalizeMcpAccess({ view: true, ask: 'every12h' })), /once every 12 hours/);
+  // Silence for `always` is what keeps every existing card byte for byte what it was.
+  assert.equal(describeAccess(normalizeMcpAccess({ view: true, ask: 'always' })), 'visible');
+  assert.equal(describeAccess(normalizeMcpAccess({ view: true })), 'visible');
+  // A card with no rungs says one thing and keeps saying it, whatever the policy is.
+  assert.equal(describeAccess(normalizeMcpAccess({ ask: 'never' })), 'not available to agents');
+});
+
+test('a record whose policy word this build has never seen is still admitted to the vault', () => {
+  // `isMcpAccess` gates the WHOLE node: a `false` here makes the entry disappear. A word from a
+  // newer build must not do that, which is why the safety lives in `askPolicy` instead.
+  assert.equal(isMcpAccess({ view: true, ask: 'weekly' }), true);
+  assert.equal(isMcpAccess({ view: true, ask: 'never' }), true);
 });
