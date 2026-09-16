@@ -4211,7 +4211,14 @@ slot never taken frees another call's. **What bounds the quiet path instead is i
 (S2.3): sixty silent calls a minute — `SILENT_CEILING`, a second construction of the same
 `AliasThrottle` with no in-flight rule, because that rule protects a human from a stack of dialogs
 and this path has none. The two live together in `TokenlessCeilings`, and which one a call answers
-to is whether it will ask, so the pick cannot drift between `admit` and `release`. The sixty-first
+to is whether it will ask — decided **once**: `admit` hands back the slot itself (`Slot`), so a
+route cannot name a ceiling twice and name it differently the second time, which would leave the
+modal budget holding an in-flight slot for a call that ended minutes ago. A refusal hands back a
+slot that frees nothing, because a `finally` releasing whatever it was given must not free the
+in-flight slot of the call it was refused *behind*. Both windows are measured with **both** bounds:
+a stamp ahead of now means the host clock moved back, and a one-sided test reads that as recent, so
+a full window would refuse every call until the clock caught up — an outage produced by a clock
+rather than by a caller. The sixty-first
 answers the existing `too_many_requests` — the wire contract is unchanged — with a refusal worded
 for what was counted (*silent calls*, *60*; never *prompt* and *5*), and it leaves a line in the
 journal (`request … via mcp → too_many_requests`), because `respondError` logs nothing without a

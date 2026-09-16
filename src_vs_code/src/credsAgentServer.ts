@@ -36,7 +36,7 @@ import { BrokerAuditWriter } from './brokerAuditWriter';
 import { startLoopbackServer } from './loopbackServer';
 import { ExtraListener, socketPathFor, startExtraListener } from './brokerListeners';
 import { removeEndpoint, writeEndpoint } from './cliEndpoint';
-import { TokenlessCeilings } from './aliasThrottle';
+import { type Slot, TokenlessCeilings } from './aliasThrottle';
 import { startOnce } from './idempotentStart';
 import { refreshFrom, tableOrFail } from './brokerResponse';
 
@@ -214,10 +214,11 @@ export class CredsAgentServer implements vscode.Disposable {
    * routes that carry no token pass through here; see `brokerRequests.ts` for what each of them
    * has to satisfy before reaching it.</p>
    */
-  private admitAliasCall(res: http.ServerResponse, prompts: boolean): boolean {
-    const refused = this.ceilings.admit(prompts, Date.now());
+  private admitAliasCall(res: http.ServerResponse, prompts: boolean): Slot | undefined {
+    const admission = this.ceilings.admit(prompts, Date.now());
+    const refused = admission.refusal;
     if (refused === undefined) {
-      return true;
+      return admission;
     }
     if (refused.report) {
       // `respondError` logs nothing without a grant — an unknown token is probed legitimately, and a
@@ -228,12 +229,7 @@ export class CredsAgentServer implements vscode.Disposable {
       this.log({ grant: '—', entityName: '', action: 'request', outcome: 'too_many_requests', detail: refused.message, via: 'mcp' });
     }
     this.respondError(res, 'too_many_requests', refused.message);
-    return false;
-  }
-
-  /** Give the slot back to the ceiling that took it — the silent one took none, and `release` says so itself. */
-  private releaseAliasCall(prompts: boolean): void {
-    this.ceilings.for(prompts).release();
+    return undefined;
   }
 
   /** The routes an MCP client posts to — the dispatch lives in `brokerMcpRoutes.ts`. */
@@ -270,7 +266,6 @@ export class CredsAgentServer implements vscode.Disposable {
       refuse: (res, code, message, grant, action, detail, caller) =>
         this.respondError(res, code, message, grant as Grant | undefined, action, detail, 'mcp', caller),
       admit: (res, prompts) => this.admitAliasCall(res, prompts),
-      release: (prompts) => this.releaseAliasCall(prompts),
       // The grant a policy already answered for. `consent` short-circuits on an allowed grant, so
       // the modal is skipped by machinery that was already there rather than by a second path —
       // and everything after it, the mask, the audit line and the one-use burn, is unchanged.
@@ -323,7 +318,8 @@ export class CredsAgentServer implements vscode.Disposable {
     // Checked after the name resolves so a refusal still cannot be used to learn what exists,
     // and before minting so a refused call spends nothing.
     // `true`: the alias route's authorisation IS the modal, so it always raises one.
-    if (!this.admitAliasCall(res, true)) {
+    const slot = this.admitAliasCall(res, true);
+    if (slot === undefined) {
       return;
     }
 
@@ -341,7 +337,7 @@ export class CredsAgentServer implements vscode.Disposable {
     } finally {
       // In a `finally`, because a prompt that timed out or threw has still been shown and the
       // slot must come back — otherwise one failed call closes this route for the session.
-      this.releaseAliasCall(true);
+      slot.release();
     }
   }
 

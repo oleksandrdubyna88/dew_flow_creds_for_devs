@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { AliasThrottle, MAX_PROMPTS, SILENT_CEILING, TokenlessCeilings, WINDOW_MS } from '../aliasThrottle';
+import { AliasThrottle, MAX_PROMPTS, SILENT_CEILING, type Slot, TokenlessCeilings, WINDOW_MS } from '../aliasThrottle';
 
 /**
  * The rate at which a caller with no token may make a window ask a human.
@@ -179,16 +179,15 @@ test('a refusal says the window it was measured over, whatever that window is', 
 test('the ceilings hand a prompting call to the modal budget and a quiet one to the silent ceiling, and neither sees the other', () => {
   const c = new TokenlessCeilings();
   for (let i = 0; i < MAX_PROMPTS; i += 1) {
-    assert.equal(c.for(true).admit(NOW + i), 'allow', `prompt ${i + 1}`);
-    c.for(true).release();
+    admitted(c, true, NOW + i, `prompt ${i + 1}`).release();
   }
-  assert.equal(c.for(true).admit(NOW + MAX_PROMPTS), 'too-many', 'the modal budget is spent');
+  assert.notEqual(c.admit(true, NOW + MAX_PROMPTS).refusal, undefined, 'the modal budget is spent');
 
   for (let i = 0; i < SILENT_CEILING; i += 1) {
-    assert.equal(c.for(false).admit(NOW + i), 'allow', `quiet call ${i + 1}, with the modal budget spent`);
+    admitted(c, false, NOW + i, `quiet call ${i + 1}, with the modal budget spent`);
   }
-  assert.equal(c.for(false).admit(NOW + SILENT_CEILING), 'too-many', 'the silent ceiling is its own count');
-  assert.equal(c.for(true).admit(NOW + WINDOW_MS), 'allow', 'a minute later the modal budget is back, untouched by sixty quiet calls');
+  assert.notEqual(c.admit(false, NOW + SILENT_CEILING).refusal, undefined, 'the silent ceiling is its own count');
+  assert.equal(c.admit(true, NOW + WINDOW_MS).refusal, undefined, 'a minute later the modal budget is back, untouched by sixty quiet calls');
 });
 
 test('the silent ceiling is high enough for an agent and low enough to bound a loop', () => {
@@ -206,7 +205,7 @@ test('a runaway loop leaves ONE line a window, not one line a call', () => {
   // about a machine nobody can diagnose. One line says everything the second one would.
   const c = new TokenlessCeilings();
   for (let i = 0; i < SILENT_CEILING; i += 1) {
-    assert.equal(c.admit(false, NOW + i), undefined, `quiet call ${i + 1}`);
+    assert.equal(c.admit(false, NOW + i).refusal, undefined, `quiet call ${i + 1}`);
   }
 
   const first = refusal(c, NOW + SILENT_CEILING);
@@ -222,7 +221,7 @@ test('a runaway loop leaves ONE line a window, not one line a call', () => {
   // be FILLED again to be refused again, because a minute later the count has slid off.
   const next = NOW + WINDOW_MS + 1;
   for (let i = 0; i < SILENT_CEILING; i += 1) {
-    assert.equal(c.admit(false, next + i), undefined, 'a new window admits its own sixty');
+    assert.equal(c.admit(false, next + i).refusal, undefined, 'a new window admits its own sixty');
   }
 
   assert.equal(refusal(c, next + SILENT_CEILING).report, true, 'a second window of refusals is worth one line too');
@@ -230,9 +229,16 @@ test('a runaway loop leaves ONE line a window, not one line a call', () => {
 
 /** The refusal, or a failure that says the call was admitted — so no assertion reads `undefined`. */
 function refusal(c: TokenlessCeilings, at: number): { message: string; report: boolean } {
-  const answer = c.admit(false, at);
+  const answer = c.admit(false, at).refusal;
   assert.notEqual(answer, undefined, `the call at ${at - NOW}ms was admitted, not refused`);
   return answer ?? { message: '', report: false };
+}
+
+/** The slot an admitted call holds — and a failure that names the call when it was refused instead. */
+function admitted(c: TokenlessCeilings, prompts: boolean, at: number, what: string): Slot {
+  const admission = c.admit(prompts, at);
+  assert.equal(admission.refusal, undefined, `${what} was refused: ${admission.refusal?.message ?? ''}`);
+  return admission;
 }
 
 test('a refused PROMPT is answered but never written down, which is unchanged and deliberate', () => {
@@ -241,14 +247,13 @@ test('a refused PROMPT is answered but never written down, which is unchanged an
   // decision rather than a side effect of this one. Pinned so the gap is visible, not forgotten.
   const c = new TokenlessCeilings();
   for (let i = 0; i < MAX_PROMPTS; i += 1) {
-    c.admit(true, NOW);
-    c.for(true).release();
+    admitted(c, true, NOW, `prompt ${i + 1}`).release();
   }
 
-  const refused = c.admit(true, NOW);
+  const refused = c.admit(true, NOW).refusal;
 
   assert.notEqual(refused, undefined, 'the modal budget still refuses');
-  assert.equal(refused === undefined ? true : refused.report, false, 'and still says nothing to the journal');
+  assert.equal(refused?.report ?? true, false, 'and still says nothing to the journal');
 });
 
 test('the ceiling is one per WINDOW, shared by every tokenless caller — and that is the choice', () => {
@@ -262,5 +267,55 @@ test('the ceiling is one per WINDOW, shared by every tokenless caller — and th
     c.admit(false, NOW + i);
   }
 
-  assert.notEqual(c.admit(false, NOW + SILENT_CEILING), undefined, 'a second caller shares the same window');
+  assert.notEqual(c.admit(false, NOW + SILENT_CEILING).refusal, undefined, 'a second caller shares the same window');
+});
+
+test('a call gives back the slot the ceiling that admitted it took, and a refused one gives back nothing', () => {
+  // The route used to name the ceiling twice — once to be admitted, once to release — and the two
+  // can disagree: a call admitted as one that prompts and released as one that does not leaves the
+  // modal budget holding an in-flight slot forever, and every later dialog is refused `busy` by a
+  // call that ended minutes ago. The handle cannot be wrong about where it came from. The second
+  // half is the same guarantee from the other side: a `finally` that releases whatever it was given
+  // must not hand back a slot it never took, because that one belongs to the call still in flight.
+  const c = new TokenlessCeilings();
+  const held = admitted(c, true, NOW, 'the first prompting call');
+
+  const refused = c.admit(true, NOW);
+  assert.notEqual(refused.refusal, undefined, 'the one-in-flight rule refuses the second');
+  refused.release();
+
+  assert.notEqual(c.admit(true, NOW).refusal, undefined, 'the call in flight still holds its slot');
+  held.release();
+  assert.equal(c.admit(true, NOW).refusal, undefined, 'and only its own release frees it');
+});
+
+test('a clock that moves backward does not strand the ceiling', () => {
+  // A stamp AHEAD of now means the host clock was corrected backward — a resume from sleep, an NTP
+  // step. `now - at` is then negative, which a one-sided window test reads as "recent", so a full
+  // window would stay full until the clock caught up and every silent call would be refused for as
+  // long as the jump was. That is an outage produced by a clock rather than by a caller.
+  const c = new TokenlessCeilings();
+  for (let i = 0; i < SILENT_CEILING; i += 1) {
+    c.admit(false, NOW + i);
+  }
+  assert.notEqual(c.admit(false, NOW + SILENT_CEILING).refusal, undefined, 'the window is full, as it should be');
+
+  const corrected = NOW - 30 * 60_000;
+
+  assert.equal(c.admit(false, corrected).refusal, undefined, 'half an hour back, and the window is measured from the new now');
+
+  // And the same for what was written down. A `reportedAt` in the future would silence the journal
+  // for as long as the jump, so the one fact worth having about a runaway loop would never arrive.
+  for (let i = 1; i < SILENT_CEILING; i += 1) {
+    c.admit(false, corrected + i);
+  }
+  assert.equal(refusal(c, corrected + SILENT_CEILING).report, true, 'the refusal after the jump is still worth a line');
+
+  const modal = new AliasThrottle();
+  for (let i = 0; i < MAX_PROMPTS; i += 1) {
+    modal.admit(NOW + i);
+    modal.release();
+  }
+  assert.equal(modal.admit(NOW + MAX_PROMPTS), 'too-many', 'the modal budget is spent');
+  assert.equal(modal.admit(corrected), 'allow', 'and it answers to the same rule, which it had first');
 });

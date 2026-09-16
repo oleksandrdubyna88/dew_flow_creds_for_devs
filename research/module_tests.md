@@ -578,6 +578,8 @@ inherited `use` rung reading false.
 | a runaway loop leaves ONE journal line a window, not one a call | **unit** | the ceiling bounds actions, not refusals; a line each would be a journal nobody can read |
 | the ceiling is one per WINDOW, shared by every tokenless caller | **unit** | deliberate: the only caller identity this route has is a LABEL the body supplies, so keying on it would hand an attacker as many quotas as it invented |
 | a refused PROMPT is still never written down | **unit** | unchanged and pinned, so the gap stays visible — widening it is a decision, not a side effect of this story |
+| a call gives back the slot the ceiling that admitted it took, and a refused one gives back nothing | **unit** | the code round's finding: naming the ceiling twice lets the two namings disagree. Red first, with the naive refusal-release in place — `the call in flight still holds its slot` |
+| a clock that moves backward does not strand the ceiling | **unit** | red first: half an hour back and the sixty-first was still refused. Both the counts and the journal mark are measured with both bounds |
 
 **The ceiling (S2.3)** — the quiet path's own limiter, since the prompt was the old one. The unit half
 is `test/aliasThrottle.test.ts` with the clock injected, so sixty calls cost under a millisecond; the
@@ -586,7 +588,11 @@ broker half drives the ceiling for real over loopback, and the two sixty-call te
 rather than only in the unit. Both halves were **watched failing first**: with the silent path admitted
 unconditionally (S2.2's shape) the sixty-first answered `actual: 200, expected: 429`; with the in-flight
 rule applied to every construction the second quiet call answered `busy` — `call 2, with 1 in flight
-and none released` — while the thirteen modal-budget tests stayed green.
+and none released` — while the thirteen modal-budget tests stayed green. The code round added two
+more, both watched red before their fix: a refused caller releasing in a `finally` freed the
+in-flight slot of the call it had been refused *behind* (`the call in flight still holds its slot`),
+and a clock corrected half an hour backward left the window full, so every silent call was refused
+until the clock caught up.
 
 | flow | covered | note |
 |---|---|---|

@@ -62,7 +62,7 @@ S1.1 → S1.2 → S1.3 → S2.1 → S2.2 → S2.3 → S2.4 → S3.1 → S3.2 →
 | S1.2 | `answersLadder`/`answersPolicy`, `access.ask` filled with the EFFECTIVE value, `askSource`/`askFolder` on the resolved shape |
 | S1.3 | `consentDue`, `ConsentStamps`, `stampKey`, `ladderKey`, `ConsentStampStore` (the Memento subset) |
 | S2.1 | `preConsented` on `McpUseLookup.usable` and on `readMcpUse`'s result; `rememberMcpConsent` in `BrokerHooks` |
-| S2.2 | `admit(res, prompts)` / `release(prompts)` routing in `admitAliasCall`, which S2.3 branches on |
+| S2.2 | `admit(res, prompts)` routing in `admitAliasCall`, which S2.3 branches on — the paired `release(prompts)` became the `Slot` that `admit` returns (Deviations 12) |
 | S2.3 | **the ceiling must exist before any control can write a policy** — S3.1 may not land before it |
 | S2.4 | `mcpUseHooks(...)` and the memoized `consentStampsFor(state)` that S4.1's command reads |
 | S3.1 | `MCP_ASK_CHOICES`, `mcpAskHtml`, the two-flag page script — S3.2 renders the same builder |
@@ -685,6 +685,11 @@ come back; the module docs and the promoted plan carry the deviations. This stor
 11. **`resolveMcpAccess` (three arguments, `mcpAccess.ts:161-171`) is not in the plan** and has no production
     caller — only its tests and `inheritedFrom`. Left alone it would be a second resolver with the old
     single-axis semantics → retired in **S1.2**, its tests migrated to `resolveMcpInTree`.
+12. **S2.2's `release(prompts)` is gone.** Naming the ceiling twice — once to be admitted, once to release —
+    is two decisions that can disagree, and a slot released on the wrong one frees another call's. The code
+    round raised it from three reviewers at once → `door.admit` hands back a `Slot`, a refusal hands back one
+    that frees nothing, and `TokenlessCeilings.for` is private (**S2.3**). Every door reads
+    `const slot = door.admit(res, …)` now, `brokerFolderDoor.ts` included.
 
 Two more that are ordering, not correctness: the itest leg (step 13) does not depend on Epic 3 and may run
 straight after S2.4; and S3.1 must **not** precede S2.3, because a control that can write `never` before the

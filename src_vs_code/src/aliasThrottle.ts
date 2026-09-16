@@ -94,7 +94,7 @@ export class AliasThrottle {
     if (this.inFlight()) {
       return 'busy';
     }
-    this.admitted = this.admitted.filter((at) => nowMs - at < this.windowMs);
+    this.admitted = this.admitted.filter((at) => inWindow(at, nowMs, this.windowMs));
     if (this.admitted.length >= this.max) {
       return 'too-many';
     }
@@ -149,9 +149,59 @@ export class AliasThrottle {
   }
 }
 
+/**
+ * Is this timestamp inside the window that ends now? BOTH bounds, and the lower one is the story.
+ *
+ * <p>A stamp AHEAD of now means the host clock was corrected backward — a resume from sleep, an NTP
+ * step. `now - at` is then negative, and a one-sided test reads that as "recent": a full window
+ * would stay full until the clock caught up, refusing every call for as long as the jump was. That
+ * is an outage produced by a clock rather than by a caller, and it would hit hardest on the machine
+ * least able to explain it. A stamp in the future is simply not in the window, so it is dropped and
+ * the window begins again.</p>
+ *
+ * <p>The other way round is the weaker of the two failures and deliberately chosen: moving a
+ * machine's clock backward needs administrator rights here, and an attacker holding those has no
+ * need of this route at all.</p>
+ */
+function inWindow(at: number, nowMs: number, windowMs: number): boolean {
+  const since = nowMs - at;
+  return since >= 0 && since < windowMs;
+}
+
 /** The window in a refusal's words: `WINDOW_MS` is "a minute", and any other window is said exactly. */
 function over(windowMs: number): string {
   return windowMs === WINDOW_MS ? 'a minute' : `every ${windowMs / 1000} seconds`;
+}
+
+/**
+ * A slot an admitted call holds until it is finished with it.
+ *
+ * <p>Handed out by the ceiling that granted it, rather than named again at release. The difference
+ * matters because the two decisions can disagree: a call admitted as one that will prompt and
+ * released as one that will not leaves the modal budget holding an in-flight slot forever, and
+ * every later prompting call is answered `busy` by a call that ended minutes ago. Released the
+ * other way round it frees ANOTHER call's slot. A handle cannot be wrong about which ceiling it
+ * came from, so the pairing stops being something each route has to remember.</p>
+ */
+export interface Slot {
+  /** Give the slot back. Releasing twice is safe, and releasing a refusal does nothing at all. */
+  release(): void;
+}
+
+/**
+ * What a refused call gives back: nothing, because it took nothing.
+ *
+ * <p>Not the ceiling's own `release`. A route releases in a `finally` without asking what it got,
+ * so a refusal that delegated would hand back the in-flight slot of the call it was refused
+ * BEHIND — and the person would then be shown two modals at once, which is the one thing the
+ * in-flight rule exists to prevent.</p>
+ */
+const TOOK_NOTHING = (): void => undefined;
+
+/** A held slot, or — when there was none to take — the refusal to answer with. */
+export interface Admission extends Slot {
+  /** `undefined` is admission; otherwise what to tell the caller, and whether to write it down. */
+  readonly refusal?: { message: string; report: boolean };
 }
 
 /**
@@ -191,23 +241,32 @@ export class TokenlessCeilings {
    * parts, and a server that held them apart is a server that one day answers one ceiling's verdict
    * with the other's sentence.</p>
    */
-  admit(prompts: boolean, nowMs: number): { message: string; report: boolean } | undefined {
+  admit(prompts: boolean, nowMs: number): Admission {
     const ceiling = this.for(prompts);
     const verdict = ceiling.admit(nowMs);
     if (verdict === 'allow') {
-      return undefined;
+      return { release: () => ceiling.release() };
     }
-    return { message: ceiling.describe(verdict), report: !prompts && this.firstThisWindow(nowMs) };
+    return {
+      refusal: { message: ceiling.describe(verdict), report: !prompts && this.firstThisWindow(nowMs) },
+      release: TOOK_NOTHING,
+    };
   }
 
   /** `prompts` is what the door already decided: whether this call will raise a modal. */
-  for(prompts: boolean): AliasThrottle {
+  private for(prompts: boolean): AliasThrottle {
     return prompts ? this.modalBudget : this.silentCeiling;
   }
 
-  /** True once per window, so a runaway loop leaves one line rather than one line per call. */
+  /**
+   * True once per window, so a runaway loop leaves one line rather than one line per call.
+   *
+   * <p>Measured with {@link inWindow} for the same reason the counts are: a mark left in the future
+   * by a clock that has since moved back would silence the journal for the length of the jump, and
+   * the one fact worth having about a runaway loop is the one that would never arrive.</p>
+   */
   private firstThisWindow(nowMs: number): boolean {
-    if (this.reportedAt !== undefined && nowMs - this.reportedAt < WINDOW_MS) {
+    if (this.reportedAt !== undefined && inWindow(this.reportedAt, nowMs, WINDOW_MS)) {
       return false;
     }
     this.reportedAt = nowMs;
