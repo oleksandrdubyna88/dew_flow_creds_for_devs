@@ -174,7 +174,7 @@ function secondRowScript(): string {
     var rows = document.querySelectorAll('.secondRow[data-second]');
     for (var i = 0; i < rows.length; i++) {
       var field = rows[i].getAttribute('data-second-field') || '';
-      rows[i].setAttribute('data-second-off', picked.indexOf(field) !== -1 ? 'no' : 'yes');
+      rows[i].setAttribute('data-second-woven', picked.indexOf(field) !== -1 ? 'yes' : 'no');
     }
     if (typeof refreshSecondMode === 'function') { refreshSecondMode(); }
   }`;

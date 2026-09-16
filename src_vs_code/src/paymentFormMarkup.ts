@@ -1,7 +1,7 @@
 import { DEFAULT_PAYMENT_FORM, PAYMENT_FORMS, PAYMENT_FORM_LABELS } from './paymentForm';
 import { methodLabel } from './shuffle';
 import { secondBox, secondModeControl } from './secondModeMarkup';
-import { SHUFFLEABLE_KEYS } from './paymentFields';
+import { ShuffleableKey } from './paymentFields';
 import { secondKeyOf } from './secondValues';
 import { CARD_BRANDS } from './cardBrand';
 import { PAYMENT_BRAND_LABELS, brandMarksMarkup } from './cardBrandIcons';
@@ -91,6 +91,7 @@ function cardMarkup(openSection: (id: string) => string): string {
     <p class="hint">The CVV and the PIN are hidden as you type and stay hidden when you come back. They are the two values that turn a number somebody saw into a payment somebody made — which is why a share never carries them, and why an export says so out loud before it writes them to a file.</p>
 
     ${cardMixMarks()}
+${secondBoxes(['number', 'cvv', 'pin'])}
 
     ${addressMarkup()}
     <div class="row">
@@ -186,6 +187,7 @@ function bankMarkup(openSection: (id: string) => string): string {
       <label for="mixBankIban">Store the IBAN woven with a decoy</label></div>
     <div class="check"><input id="mixBankAccount" type="checkbox" class="mixMark" data-field="accountNumber">
       <label for="mixBankAccount">Store the account number woven with a decoy</label></div>
+${secondBoxes(['iban', 'accountNumber'])}
 
     <label for="bankAddress">Bank address</label>
     <textarea id="bankAddress" rows="2" spellcheck="false" autocomplete="off"></textarea>
@@ -227,12 +229,16 @@ function brandOptions(): string {
 /**
  * A box per weave point, derived from the catalogue rather than written out five times.
  *
- * <p>Every one starts hidden and OFF: `cardFormScript.refreshMix` turns a row on when its own weave
- * box is ticked, and `secondModeScript` shows the ones that are on when the mode says `own`. Two
- * conditions, each owned by the script that knows it — which is why the markup asserts neither.</p>
+ * <p>In the FIELDSET of the fields they belong to, not in the shared weaving block: that block is
+ * hidden until something is ticked, and a second value can be kept without weaving anything. Here the
+ * form's own visibility governs them, so a bank form never shows a card's boxes.</p>
+ *
+ * <p>Each starts NOT woven: `cardFormScript.refreshSecondRows` marks a row woven when its weave box
+ * is ticked, and `secondModeScript` then hides it unless the person supplies the half themselves.
+ * Two conditions, each owned by the script that knows it.</p>
  */
-function secondBoxes(): string {
-  return SHUFFLEABLE_KEYS.map((key) => secondBox(secondKeyOf(key), true)).join('\n');
+function secondBoxes(fields: readonly ShuffleableKey[]): string {
+  return fields.map((key) => secondBox(secondKeyOf(key), false, 'payment')).join('\n');
 }
 
 function methodOptions(random: Random): string {
@@ -278,8 +284,7 @@ function mixControlsMarkup(random: Random): string {
       <p class="hint" id="mixWarning"></p>
       <p class="hint"><b>What this does and does not do.</b> A woven field is stored as your value and a decoy shuffled together, and the method is <b>never stored</b> — not here, not in a backup, not in the sync. Nobody can unweave it but you, from memory, so a forgotten method is a lost value.<br>
       It protects against somebody <b>reading</b> an open vault: a shoulder, a screen share, a backup file on a laptop. It does <b>not</b> protect against somebody who can try every possibility — a CVV is a thousand values, and weaving costs them nothing.</p>
-      ${secondModeControl('mixSecondMode')}
-${secondBoxes()}
+      ${secondModeControl('mixSecondMode', 'payment')}
       <div class="actions"><button type="button" id="mixExpand">Give each field its own method…</button></div>
       <div id="mixPerField" style="display:none"></div>
       <p class="hint">What the method does, on two values made up for the picture. Your own value is never drawn here — showing it beside the decoy it is woven with, under the method that wove them, would put the answer on screen next to the question.</p>

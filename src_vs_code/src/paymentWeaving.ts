@@ -48,10 +48,10 @@ export function weavePaymentFields(
   random: Random,
   seconds: Readonly<Record<string, string>> = {},
 ): PaymentFields {
-  const already = new Set(fields.shuffledFields ?? []);
-  const woven = SHUFFLEABLE_KEYS.filter((key) => marked.includes(key) && !already.has(key)).flatMap((key) =>
+  const woven = weavingNow(fields, marked).flatMap((key) =>
     weaveOne(fields, key, codes[key], random, seconds[key] ?? ''),
   );
+  const already = new Set(fields.shuffledFields ?? []);
   if (woven.length === 0) {
     return fields;
   }
@@ -61,6 +61,24 @@ export function weavePaymentFields(
     shuffledFields: [...already, ...woven.map(({ key }) => key)],
     ...ownMark(fields, woven),
   });
+}
+
+
+/**
+ * Which fields THIS save is about to weave — the one answer, and both halves of the feature ask it.
+ *
+ * <p>Marked, a weave point, and not woven already. The weaver acts on this list and the second-value
+ * collection is filtered by it (`paymentSaveGate.paymentWeavingNow`), which is the whole point of it
+ * being one function: a field the weaver consumed and the record kept would leave a reader the half
+ * to subtract, and a field the record dropped and the weaver did not touch would lose a value the
+ * person typed. Two filters written to agree are two filters that can stop agreeing.</p>
+ */
+export function weavingNow(
+  fields: PaymentFields,
+  marked: readonly string[],
+): readonly ShuffleableKey[] {
+  const already = new Set(fields.shuffledFields ?? []);
+  return SHUFFLEABLE_KEYS.filter((key) => marked.includes(key) && !already.has(key));
 }
 
 /**

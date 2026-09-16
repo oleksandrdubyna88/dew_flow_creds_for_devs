@@ -185,12 +185,12 @@ function weaveControls(woven: boolean, hasSecond: boolean, random: Random = Math
       <b>A woven password cannot be used automatically.</b> Nothing here — this build included —
       knows which of the two halves is yours, so the terminal, the environment variable and any
       agent stop being offered it. You read it from the card and use it yourself.</p>
-      ${secondModeControl('weaveSecondMode')}
-      ${secondBox('password2', true)}
+      ${secondModeControl('weaveSecondMode', 'password')}
       <p class="hint">What the method does, on two values made up for the picture. Your own
       password is never drawn here.</p>
       <div id="weaveExampleHost"></div>
     </div>
+    ${secondBox('password2', woven, 'password')}
     ${clearSecondBox('password2', hasSecond)}`;
 }
 

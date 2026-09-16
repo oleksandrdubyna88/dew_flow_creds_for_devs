@@ -4,7 +4,7 @@ import { brandFor, cardFieldsFrom, cardInputsFrom, withBrand } from './cardFormF
 import { switchWarning } from './paymentFormSwitch';
 import { validatePayment } from './paymentValidation';
 import { ShuffleCode, isShuffleCode } from './shuffle';
-import { weavePaymentFields } from './paymentWeaving';
+import { weavePaymentFields, weavingNow } from './paymentWeaving';
 import { PAYMENT_FORM, secondInputFrom, secondsForWeave } from './secondFormInput';
 import { refuseSecondPairs } from './secondSave';
 import { PAYMENT_FIELD_LABELS } from './paymentFields';
@@ -164,17 +164,13 @@ function codesFor(data: Record<string, unknown>): Record<string, ShuffleCode> {
 /**
  * The payment fields this save is about to weave — marked, and not woven already.
  *
- * <p>`weavePaymentFields` is the authority and filters the same list; this is what the SECOND values
- * have to agree with, and both are computed from the ticks on the page, so they cannot disagree
- * about which fields are in play. A field ALREADY woven cannot be here: a woven record refuses to be
- * opened for editing at all (`mixedFieldGuard`), so nothing on this page describes one.</p>
+ * <p>The SAME function the weaver itself uses, rather than a filter written to agree with it — a
+ * reviewer's point, and the right one: a field the weaver consumed and the record kept would leave a
+ * reader the half to subtract, and two filters written to agree are two filters that can stop
+ * agreeing.</p>
  */
 export function paymentWeavingNow(data: Record<string, unknown>): readonly WeavePoint[] {
-  return markedFields(data).filter((field): field is WeavePoint => isWeavePoint(field));
-}
-
-function isWeavePoint(field: string): field is WeavePoint {
-  return (PAYMENT_FORM.points as readonly string[]).includes(field);
+  return weavingNow(cardFieldsFrom(data), markedFields(data));
 }
 
 /**
