@@ -7,6 +7,7 @@ import {
   findUsableEntry,
   mcpEntryFor,
   preConsentedFor,
+  switchForAction,
   visibleMcpEntries,
 } from '../mcpEntries';
 import { McpAccess, ladderKey, normalizeMcpAccess, resolveMcpInTree } from '../mcpAccess';
@@ -491,4 +492,18 @@ test('the access a writer resolves is the same one the reader compared against',
     ladderKey(accessOf(found)),
   );
   assert.equal(entryAccessFor(source, 'a1', 'gone'), undefined);
+});
+
+test('creating is never pre-consented either, and it is refused three ways over', () => {
+  // Two reviewers raised create independently, so it is pinned rather than argued. It is already
+  // unreachable — the create route reads a "name" body and never calls `readMcpUse`, so the flag
+  // does not exist on that path at all — but `switchForAction` also answers 'delete' for 'create',
+  // since it is neither `rotate` nor one of the known use verbs. Both halves would have to be
+  // undone before a creation could go quiet.
+  const source = vault([folder('f1', 'F', { mcp: { create: true, ask: 'never' } }), entity('e1', 'prod', {})]);
+
+  const found = findUsableEntry(source, 'e1', 'create');
+
+  assert.equal(preConsentedFor(found, 'create', stampedStore(), NOW_S21), false);
+  assert.equal(switchForAction('create'), 'delete', 'create must ask for the top rung, not for use');
 });
