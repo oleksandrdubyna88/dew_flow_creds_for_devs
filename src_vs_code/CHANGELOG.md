@@ -22,6 +22,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A payment field holding a single emoji no longer throws when you save it.** The guard that
+  refuses a value too short to weave counted UTF-16 units while weaving counts characters, so one
+  emoji looked like two to the guard and like one to the weave, and the save died with an error
+  about sequences rather than storing anything.
+
 - **An accepted share arrives with everything in it — password, login, URL and one-time code.**
   An entry accepted from a colleague is given a fresh local id here, so that nobody can address an
   entry in your vault. The record inside the entry went on pointing at the SENDER's id, and every
@@ -72,10 +77,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   confirmed**: two halves that do not use the same character classes do not save, because a
   generated decoy carries guarantees a typed one cannot — Luhn and the same BIN for a card, mod-97
   and the same country for an IBAN. **A share does not carry a plain second value**, and the sender
-  is told by name which ones stayed behind; a woven field travels exactly as it did before. And a
-  second value on a record that has ANY woven field can only be changed by creating the entry again,
-  because a woven record cannot be reopened in the edit form — the rule that already protects a
-  woven value from being re-woven and destroyed.
+  is told by name which ones stayed behind; a woven field travels exactly as it did before. And on a
+  PAYMENT record with a woven field, a second value can only be changed by creating the entry again:
+  such a record cannot be reopened in the edit form at all, which is the rule that protects a woven
+  value from being re-woven and destroyed. A credential is not affected — an entry whose PASSWORD is
+  woven opens for editing as it always has, with the weave box arriving already ticked, so its second
+  password can be replaced or cleared like any other field.
 
   Written up in `research/PLAN_second_values.md`, and in the help article in all five languages.
 
