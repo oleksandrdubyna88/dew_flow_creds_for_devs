@@ -4,7 +4,7 @@ All notable changes to **CredsForDevs** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.7.1] — an accepted share arrives whole again, and the viewer shows what a method did
+## [1.8.0] — a second value of your own, and an accepted share arrives whole again
 
 ### Fixed
 
@@ -46,6 +46,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   chose it in can cost you that value.
 
 ### Added
+
+- **A second value of your own, everywhere a value can be woven.** A woven field used to mean your
+  value shuffled with a decoy this build generated for you. The card number, the CVV, the card PIN,
+  the IBAN, the account number and the password now offer what the seed phrase already offered: type
+  the OTHER half yourself — two passwords, two seeds, two numbers — and it is stored encrypted like
+  any other secret **even when you do not weave**, so a second value you keep for yourself has a
+  place to live. The viewer shows a row for each one.
+
+  Three things worth knowing before you use it. **A mismatched pair is refused rather than
+  confirmed**: two halves that do not use the same character classes do not save, because a
+  generated decoy carries guarantees a typed one cannot — Luhn and the same BIN for a card, mod-97
+  and the same country for an IBAN. **A share does not carry a plain second value**, and the sender
+  is told by name which ones stayed behind; a woven field travels exactly as it did before. And a
+  second value on a record that has ANY woven field can only be changed by creating the entry again,
+  because a woven record cannot be reopened in the edit form — the rule that already protects a
+  woven value from being re-woven and destroyed.
+
+  Written up in `research/PLAN_second_values.md`, and in the help article in all five languages.
 
 - **A woven entry says so in Main, and a reading shows what the method did.** The form has said
   *Woven — on* since woven passwords shipped; the viewer — the one place you go to READ a value —
