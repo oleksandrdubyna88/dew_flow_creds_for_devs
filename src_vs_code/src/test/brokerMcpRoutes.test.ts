@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import { STUB_RUNGS, call, code, message, share, world } from './brokerWorld';
 import { loadWithVscode } from './vscodeStub';
 import { MAX_PROMPTS, SILENT_CEILING } from '../aliasThrottle';
-import { ConsentStamps } from '../mcpConsentPolicy';
+import { ConsentStamps, stampKey } from '../mcpConsentPolicy';
 import type { TreeNode } from '../types';
 
 /** Frozen: a test that reads the clock expires, and it expires green. */
@@ -722,6 +722,53 @@ test('the same entry under a folder that says ask-every-time still raises a dial
     await call(port, '/v1/mcp/use/exec', { body: { entry: 'e1', command: 'uptime' } });
 
     assert.equal(w.dialogs.length, 1, 'the default must still ask');
+  } finally {
+    w.server.dispose();
+  }
+});
+
+/**
+ * The whole flow, through the real server (S2.4).
+ *
+ * <p>Every other test of this story calls the factory directly, which proves its SHAPE. This one
+ * drives it: two real MCP calls over loopback, through the real door, the real consent modal, the
+ * real `recordConsent` and the real stamp store — the first asks, and the second does not. A
+ * mistake anywhere between them leaves the rest of the suite green, which is why it is here.</p>
+ */
+test('a consent answered on one real call is what the next one reads — the flow, through the server', async () => {
+  const hooks = loadWithVscode<typeof import('../mcpHooks')>('../mcpHooks', { window: {} });
+  const nodes: TreeNode[] = [
+    { id: 'f1', name: 'Projects', type: 'folder', parentId: null, mcp: { use: true, ask: 'every12h' } },
+    { id: 'e1', name: 'prod', type: 'entity', parentId: 'f1', details: { id: 'e1', name: 'prod', kind: 'ssh', isSshEnabled: true } },
+  ];
+  const source = {
+    getAccounts: () => [{ accountId: 'a1' }],
+    getNode: (_a: string, id: string): TreeNode | undefined => nodes.find((n) => n.id === id),
+  };
+  const held = new Map<string, unknown>();
+  const state = {
+    get: <T,>(key: string): T | undefined => held.get(key) as T | undefined,
+    update: (key: string, value: unknown): Thenable<void> => Promise.resolve(void held.set(key, value)),
+  };
+  const both = hooks.mcpUseHooks(source, state, () => FROZEN_NOW);
+  const w = world({ mcpResolve: both.resolveMcpUse, mcpRemember: both.rememberMcpConsent, answers: ['Allow'] });
+  try {
+    const { port } = await share(w);
+
+    const asked = await call(port, '/v1/mcp/use/exec', { body: { entry: 'e1', command: 'uptime' } });
+    assert.equal(asked.status, 200, JSON.stringify(asked.body));
+    assert.equal(w.dialogs.length, 1, 'the first call had nothing on record, so it asked');
+
+    const quiet = await call(port, '/v1/mcp/use/exec', { body: { entry: 'e1', command: 'uptime' } });
+
+    assert.equal(quiet.status, 200, JSON.stringify(quiet.body));
+    assert.equal(w.dialogs.length, 1, 'the second call read the answer back and raised no dialog');
+    assert.deepEqual(w.ran.map((r) => r.action), ['exec', 'exec'], 'and both of them ran');
+    assert.notEqual(
+      new ConsentStamps(state).get(stampKey('a1', 'e1'), FROZEN_NOW),
+      undefined,
+      'the stamp is in the store the window would have used',
+    );
   } finally {
     w.server.dispose();
   }

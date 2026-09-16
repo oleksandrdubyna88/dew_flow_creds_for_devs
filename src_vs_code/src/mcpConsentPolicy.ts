@@ -210,6 +210,46 @@ export class ConsentStamps {
 }
 
 /**
+ * The one stamp store a given `Memento` gets, for as long as anything holds that `Memento`.
+ *
+ * <p><b>The memo is not an optimisation.</b> Two `ConsentStamps` over one store are two
+ * `SerialQueue`s, and the queue above is the whole of what stops the second of two concurrent
+ * writes composing onto a map read before the first one ran. It is also how a command — Forget —
+ * reaches the same instance as the broker's hooks without a handle threaded through the window's
+ * activation, which is a file that may not grow.</p>
+ *
+ * <p><b>The key is the object's IDENTITY, not its type.</b> A `WeakMap`'s type parameter is erased
+ * at run time, and `vscode.Memento` satisfies {@link ConsentStampStore} structurally, so a window
+ * passing `context.globalState` finds exactly what it stored under it. A caller that builds a fresh
+ * object each time gets a fresh store, correctly — it IS a different store. `WeakMap` rather than
+ * `Map` so a store nothing else holds is not kept alive by this module.</p>
+ *
+ * <p>It lives HERE rather than beside the broker's hooks because it is a consent-policy question:
+ * a Forget that constructed its own `ConsentStamps` would queue against a different queue from the
+ * one that writes stamps, which is the single thing this memo exists to prevent.</p>
+ *
+ * <p><b>What no memo can do is serialise one window against another.</b> `globalState` is
+ * machine-wide, each window holds its own copy, and the last update written wins — so two windows
+ * remembering different entries in the same moment can cost one of them its stamp. That costs one
+ * more dialog, never a consent that should not have been granted, and the dangerous direction is
+ * closed elsewhere: a stale window writing its map back cannot resurrect what a Forget cleared,
+ * because `forgetAll` writes the tombstone first and `wasForgotten` drops every record taken at or
+ * before it. What remains is that a window whose own copy has not yet seen the tombstone keeps
+ * honouring its own stamps until it does.</p>
+ */
+const STAMP_STORES = new WeakMap<ConsentStampStore, ConsentStamps>();
+
+export function consentStampsFor(store: ConsentStampStore): ConsentStamps {
+  const known = STAMP_STORES.get(store);
+  if (known !== undefined) {
+    return known;
+  }
+  const made = new ConsentStamps(store);
+  STAMP_STORES.set(store, made);
+  return made;
+}
+
+/**
  * The stored map, read defensively.
  *
  * <p>`globalState` holds whatever JSON was last written to it, by a build that may not be this one,

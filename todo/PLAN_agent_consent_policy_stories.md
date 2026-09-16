@@ -695,6 +695,16 @@ Two more that are ordering, not correctness: the itest leg (step 13) does not de
 straight after S2.4; and S3.1 must **not** precede S2.3, because a control that can write `never` before the
 ceiling exists is the unbounded path the gate's finding 9 rejected.
 
+### Open tail — one stamp per key, rather than one map under one key
+
+Raised by the S2.4 code round and **deliberately not done there**. Stamps live as one map under
+`credSshManager.mcpConsentStamps`, so `globalState`'s last-writer-wins costs a stamp whenever two windows
+remember different entries in the same moment. Per-entry keys would make those writes independent. It is a
+storage-format change to a module that shipped in S1.3 — a migration for every record already stored, and
+both `MAX_STAMPS` pruning and the Forget tombstone are defined over the single map — so it is a story of its
+own, not a fix inside a wiring story. Meanwhile the cost is bounded and stated: one more dialog, never a
+consent that should not have been granted, and a stale window cannot resurrect a forgotten stamp.
+
 ## Verified against the checkout, 2026-09-16 (branch `feat/agent-consent-policy`, HEAD `7f935e3`)
 
 | claim | where |

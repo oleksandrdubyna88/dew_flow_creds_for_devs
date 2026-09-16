@@ -7,6 +7,7 @@ import {
   ConsentStamps,
   MAX_STAMPS,
   consentDue,
+  consentStampsFor,
   STAMPS_KEY,
   stampKey,
 } from '../mcpConsentPolicy';
@@ -295,4 +296,15 @@ test('a stamp whose time is not finite is not a stamp', async () => {
   for (const id of ['e1', 'e2', 'e3', 'e4']) {
     assert.equal(stamps.get(stampKey('a', id), NOW), undefined, `${id} was read as a stamp`);
   }
+});
+
+test('one store gets one ConsentStamps, and a different store gets its own', async () => {
+  // The memo exists so that the broker's hooks and the Forget command queue against the SAME queue:
+  // two instances over one store would each read the map before the other had written, and one
+  // update would throw the other away. Identity is the whole of the guarantee, so identity is what
+  // is asserted here — `mcpHooks.test.ts` proves the consequence, that a concurrent write survives.
+  const store = fakeStore();
+
+  assert.equal(consentStampsFor(store), consentStampsFor(store), 'a second caller built its own store');
+  assert.notEqual(consentStampsFor(store), consentStampsFor(fakeStore()), 'and two stores are two stores');
 });
