@@ -85,9 +85,11 @@ function readingRow(key: string, which: 'a' | 'b', label: string): string {
  */
 export const WOVEN_ROW_NOTE =
   'Pick a method and press Show. Both rows come back the same way whichever method you pick, and '
-  + 'which of the two is drawn first is decided again each time you open this entry — so the '
-  + 'position tells you nothing either. Only you can recognise your own value. The method is still '
-  + 'the one thing that has to be remembered, and it is stored nowhere.';
+  + 'which of the two is drawn first is decided again each time you open this entry — so somebody '
+  + 'reading this screen, a screenshot of it or a backup file cannot tell from the position which '
+  + 'row is yours. Somebody with developer tools open on this machine can. Only you can recognise '
+  + 'your own value. The method is still the one thing that has to be remembered, and it is stored '
+  + 'nowhere.';
 
 /** The styles both consumers draw the rows with, so neither can style them differently. */
 export const WOVEN_ROW_STYLES = `

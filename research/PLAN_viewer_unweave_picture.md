@@ -75,7 +75,9 @@ So two things ship, plus three corrections the owner decided on while this was b
 - **One sentence, in Main**, rather than one per section, even though a payment record's woven fields
   are drawn in the *Payment instrument* frame (`entityViewPage.ts:616`).
 - **The form's `f4` label is fixed in this change**, not deferred.
-- **The row order is randomised per render** (§The row order).
+- **The row order is randomised per VIEWING of an entry** (§The row order). This said "per render"
+  while it was a plan; what shipped clears on an entry CHANGE, because clearing on every render broke
+  the very thing the order is for — the first deviation above has the reasoning.
 
 ## The symptom behind item 3 — the rows are not what the page claims
 
@@ -110,9 +112,14 @@ So:
   random the first time a reading is asked for, and kept until the panel shows another entry. Injected
   because `Math.random` is already passed in for method order (`entityViewPage.ts:231`,
   `entityViewerCommands.ts:106`) precisely so a test can pin it.
-- **Per render, not per press.** Pressing `Show` twice with the same method must not swap the rows
-  under the person's hands; opening the entry again may. The flip is cleared where the card's other
-  per-entry state is cleared — `PaymentViewHost.reset()` (`paymentViewHost.ts:323-326`).
+- **Per viewing, not per press.** Pressing `Show` twice with the same method must not swap the rows
+  under the person's hands; opening a different entry and coming back may.
+  **What shipped differs from the sentence this line originally carried**, and the difference matters:
+  the store is cleared when the panel renders ANOTHER entry, not on every render. Clearing per render
+  meant that re-rendering the same entry while a keychain read was in flight posted rows under the old
+  order into a page whose Copy resolved the new one. `RowOrderStore.clear()` is called from the
+  panel's `show()` — guarded on the entry id — and from `onDidDispose`, not from
+  `PaymentViewHost.reset()`, because a credential's woven password never passes through that class.
 - One function applies it, `displayed(reading, flip)`, returning the two rows in **display** order.
   The message is built from that, and a Copy resolves `a`/`b` against the same flip. `rowOf`'s
   contract changes from *"b is the decoy"* to *"b is the second row shown"*, which is the honesty fix:
@@ -223,8 +230,9 @@ Each story leaves the repository green: `npm run typecheck`, `npm test`, `npx es
   the rewritten `WOVEN_ROW_NOTE`.
   *Tests:* with a pinned random the first row is the second reading — **this test fails on today's
   code, which is the point**; a Copy of row `a` under a flip copies the same text the row shows; the
-  flip is stable across two `Show` presses and re-minted after `reset()`; and **no message, and no
-  part of the page, carries the flip** (`JSON.stringify(answer)` has no boolean that tracks it).
+  flip is stable across two `Show` presses and re-minted once the store is cleared — which is what a
+  change of entry, or a new panel, does; and **no message, and no part of the page, carries the
+  flip** (the whole message is compared under both orders, with only the two rows removed).
 - **S5 — the answer carries the picture.** `woven` + `methodName` in both hosts.
   *Tests:* a reading answer carries one token per stored character and names none of it; the existing
   `!/real|decoy/i` assertion (`wovenPasswordForm.test.ts:159`) now guards the new fields for free.
@@ -264,18 +272,18 @@ The two that carry this change's risk, named so they cannot be quietly dropped:
 
 ## Definition of Done
 
-- [ ] `npm run typecheck`, `npm test` and `npx eslint src` are green in `src_vs_code`, and the reported
+- [x] `npm run typecheck`, `npm test` and `npx eslint src` are green in `src_vs_code`, and the reported
       test run followed a cleared `out/`.
-- [ ] S4's and S8's tests were **watched failing first** and the failure messages are in the summary.
-- [ ] No stored value is built into the page's HTML string; every value arrives by message and is set
+- [x] Every behavioural fix's test was **watched failing first** and the failure messages are in the summary.
+- [x] No stored value is built into the page's HTML string; every value arrives by message and is set
       as a DOM property.
-- [ ] No message, id, class or caption names a reading as real or decoy.
-- [ ] The picture is reachable only through a reading that passed `revealGate`, and it disappears with
+- [x] No message, id, class or caption names a reading as real or decoy.
+- [x] The picture is reachable only through a reading that passed `revealGate`, and it disappears with
       the rows.
-- [ ] `entityViewPage.ts` is still under the 800-line ceiling and no function exceeds 50 lines.
-- [ ] `research/module_extension.md` records the three new modules and the row-order change.
-- [ ] `node .claude/rules/shared/tools/plan-lifecycle.mjs` and `pin-check.mjs` pass; this plan is
+- [x] `entityViewPage.ts` is still under the 800-line ceiling and no function exceeds 50 lines.
+- [x] `research/module_extension.md` records the three new modules and the row-order change.
+- [x] `node .claude/rules/shared/tools/plan-lifecycle.mjs` and `pin-check.mjs` pass; this plan is
       promoted to `research/` with `IMPLEMENTED <date>` and its deviations in the same task.
-- [ ] The `coai` gate: a `review_plan` round reached `proceed` before implementation, a `review_code`
+- [x] The `coai` gate: a `review_plan` round reached `proceed` before implementation, a `review_code`
       round ran on the finished branch, every finding resolved with `accept` or a reasoned `reject`,
       and the summary reports the verdicts and how many reviewers answered.
