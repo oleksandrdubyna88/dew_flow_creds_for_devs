@@ -30,7 +30,7 @@ import { dropVanishedSecrets, readSecretMaps, secretMapsOf, storeSecretMaps } fr
 import { attachmentSecretKey, configSecretKey, dbConnSecretKey, entitySecretKeys, fieldsSecretKey,
   imageSecretKey, notesSecretKey, paymentSecretKey, privateKeySecretKey, secretKey, totpSecretKey,
   secondSecretKey, vpnConfigSecretKey } from './secretKeys';
-import { BackupBundle, EntityMetadata, StoredAccount, TreeNode, isStoredAccount, isTreeNode } from './types';
+import { BackupBundle, EntityMetadata, StoredAccount, TreeNode, isStoredAccount, isTreeNode, withOwnId } from './types';
 import { EntityFields, parseFields, serializeFields } from './entityFields';
 import { SecondValues, parseSecondValues, serializeSecondValues } from './secondValues';
 import { horizonKey, nodesKey, siblingOrder, tombstonesKey } from './stateKeys';
@@ -389,7 +389,7 @@ export class StorageManager implements vscode.Disposable {
       return cached;
     }
     const plain = this.openNodesSlot(accountId, raw);
-    const nodes = Object.freeze(Array.isArray(plain) ? plain.filter(isTreeNode) : []);
+    const nodes = Object.freeze(Array.isArray(plain) ? plain.filter(isTreeNode).map(withOwnId) : []);
     const entry: NodeCacheEntry = {
       raw,
       nodes,

@@ -631,3 +631,15 @@ export interface SentShare {
  * build or another person wrote. No caller had to move.</p>
  */
 export * from './typeGuards';
+
+/**
+ * And `withOwnId`, for the same reason and by the same route.
+ *
+ * <p>It is not a guard — it repairs one thing a guard cannot see, a node whose record names a
+ * different id — but it runs at the same door, on the same data another build wrote, and its
+ * callers are `storageManager` and `shareInbox`, both of which already import from here. Re-exported
+ * rather than imported directly because `storageManager.ts` is under the size ratchet
+ * (`.size-baseline.json`): an exempted file may shrink and never grow, and an import line is growth.
+ * The rationale lives at the definition, in `nodeOwnId.ts`.</p>
+ */
+export * from './nodeOwnId';
