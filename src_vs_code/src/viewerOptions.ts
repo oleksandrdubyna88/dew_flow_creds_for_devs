@@ -11,6 +11,7 @@ import {
   McpSource,
   ResolvedMcpAccess,
   accessMask,
+  answersLadder,
   answersPolicy,
   describeAccess,
   normalizeMcpAccess,
@@ -287,11 +288,29 @@ export function mcpAsOfVersion(mcp: McpAccess | undefined): ReturnType<typeof mc
   if (mcp === undefined) {
     return undefined;
   }
-  // The policy's source is asked separately for the same reason the ladder's is asserted here: a
-  // revision holds the entry's OWN record, so it can say where the policy came from only when the
-  // record answered it itself. Anything it inherited belonged to a folder this snapshot never kept.
-  const askSource: McpSource = answersPolicy(mcp) ? 'entity' : 'none';
-  return mcpSummary({ access: normalizeMcpAccess(mcp), source: 'entity', askSource }, undefined, true);
+  // Each axis is asked its own predicate, for the same reason they are resolved apart: a snapshot
+  // can name a source only where its own record answered, and anything it inherited belonged to a
+  // folder this revision never kept. Claiming `entity` for an axis the record is silent about would
+  // make the card say "set on this entry" about a setting that was somebody else's.
+  // `?? 'always'` rather than the raw field, so a snapshot carrying a word from a newer build is
+  // read the same way a live one is — the default belongs at the end of a lookup that found
+  // nothing, and this lookup has exactly one place to look.
+  const own = normalizeMcpAccess(mcp);
+  const access = { ...own, ask: own.ask ?? 'always' };
+  return mcpSummary(
+    {
+      access,
+      source: ownSource(answersLadder(mcp)),
+      askSource: ownSource(answersPolicy(mcp)),
+    },
+    undefined,
+    true,
+  );
+}
+
+/** A snapshot can claim only one source — its own — and must claim none for what it inherited. */
+function ownSource(answered: boolean): McpSource {
+  return answered ? 'entity' : 'none';
 }
 
 /** Where the answer came from, in the words the card says out loud. */

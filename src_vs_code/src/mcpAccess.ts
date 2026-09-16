@@ -107,6 +107,9 @@ export interface ResolvedMcpAccess {
    * <p>Two axes, two walks, two answers. An entry may hold its own switches while taking its
    * consent policy from a folder three levels up, and a form that named one folder for both would
    * send somebody to a page where half the setting they are subject to is not.</p>
+   *
+   * <p>`'none'` means the whole walk found nobody, which is what makes `access.ask` read
+   * `'always'`: the default belongs to the end of the walk, not to any node in it.</p>
    */
   askSource: McpSource;
 }
@@ -329,6 +332,11 @@ export function resolveMcpInTree(
  * <p>The safe answer is applied HERE and nowhere else: a walk that found nothing is exactly what
  * "ask every time" means, and putting the default anywhere earlier would make silence upstream
  * indistinguishable from an answer — which is the distinction the whole axis rests on.</p>
+ *
+ * <p>The `??` fires in exactly one case, and it is worth naming because it looks like two: a node
+ * that ANSWERED always yields a defined policy, since `answersPolicy` is itself `askPolicy(...) !==
+ * undefined`. So the only way to reach the default is `answer.mcp` being absent — nobody answered —
+ * and an unrecognised word can never fall through to it.</p>
  */
 function effectivePolicy(answer: AxisAnswer): McpAskPolicy {
   return askPolicy(answer.mcp?.ask) ?? 'always';
@@ -339,6 +347,13 @@ function effectivePolicy(answer: AxisAnswer): McpAskPolicy {
  *
  * <p>The viewer says "inherited from X" with this name, and naming a silent folder would send
  * somebody to a form whose boxes are all clear, looking for the setting they are subject to.</p>
+ *
+ * <p><b>Read it only when the matching source says `'folder'`.</b> Otherwise it falls back to the
+ * node's parent, which answers a different question — where this node SITS, not where its answer
+ * came from — and that fallback is load-bearing rather than tidy: `mcpEntries.folderNameOf` puts
+ * it on the wire as an entry's `folderName`, so an entry that decided for itself still tells an
+ * agent which folder it is in. Every consumer that means "inherited from" already guards on the
+ * source, and both axes fall back the same way so neither reads differently from the other.</p>
  */
 function answeringFolder(answer: AxisAnswer, parent: TreeNode | undefined): TreeNode | undefined {
   return answer.source === 'folder' ? answer.node : parent;
@@ -378,12 +393,16 @@ function answerFor(
  * as silence would re-open every deliberately closed branch the next time an ancestor was widened.
  * So the test is the other way round: present, and not merely carrying a consent policy.</p>
  */
-function answersLadder(mcp: McpAccess | undefined): boolean {
+export function answersLadder(mcp: McpAccess | undefined): boolean {
   if (mcp === undefined) {
     return false;
   }
   const keys = Object.keys(mcp);
-  return !(keys.length === 1 && keys[0] === 'ask');
+  // Classified by the KNOWN rungs rather than by "not the one policy key". The narrower test reads
+  // the same today and rots the first time a second policy-only field is added: a folder carrying
+  // `{ ask, window }` would stop matching the exception, stop the ladder walk, and take the
+  // inherited rights of everything beneath it with it — this bug again, one field later.
+  return keys.length === 0 || keys.some((key) => LADDER_KEYS.some((rung) => rung === key));
 }
 
 /**
@@ -394,6 +413,9 @@ function answersLadder(mcp: McpAccess | undefined): boolean {
  * while a word from a newer build stops the walk and reads as "ask every time". That asymmetry is
  * the point: absence here means "inherit", so a value this build cannot name must not be allowed
  * to inherit somebody else's silence.</p>
+ *
+ * <p>Exported for `viewerOptions.ts`, which asks it of a KEPT revision: a snapshot can name where
+ * its policy came from only when its own record answered.</p>
  */
 export function answersPolicy(mcp: McpAccess | undefined): boolean {
   return askPolicy(mcp?.ask) !== undefined;
