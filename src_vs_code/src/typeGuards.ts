@@ -353,6 +353,7 @@ function hasValidSecretMarks(v: Record<string, unknown>): boolean {
     (v.sshAgent === undefined || typeof v.sshAgent === 'boolean') &&
     (v.hasTotp === undefined || typeof v.hasTotp === 'boolean') &&
     (v.passwordWoven === undefined || typeof v.passwordWoven === 'boolean') &&
+    (v.passwordSecondOwn === undefined || typeof v.passwordSecondOwn === 'boolean') &&
     (v.pinProtected === undefined || typeof v.pinProtected === 'boolean') &&
     (v.pinAskOnImport === undefined || typeof v.pinAskOnImport === 'boolean')
   );

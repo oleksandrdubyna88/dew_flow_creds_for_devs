@@ -2,6 +2,10 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { pairRefusal } from '../secondPair';
 import { classesUsed } from '../decoyDigits';
+import { weaveSecret, unweaveSecret } from '../wovenSecret';
+import { weavePaymentFields } from '../paymentWeaving';
+import { pickPaymentFields } from '../paymentFields';
+import { SHUFFLE_CODES } from '../shuffle';
 
 /**
  * The rule that decides whether two values a person TYPED can be woven together.
@@ -105,4 +109,71 @@ test('the class question has ONE answer, shared with the decoy generator', () =>
   // A stranger is its own class: present in one half and not the other, it marks that half.
   assert.ok(classesUsed('abcλ').has('λ'), 'a character no set of ours names stands for itself');
   assert.notEqual(pairRefusal('abcλ', 'abcd', 'password'), '', 'so a pair split by one is refused');
+});
+
+/**
+ * The two choke points, where a typed second value replaces the decoy.
+ *
+ * <p>The assertion that matters is not that the pair round-trips — it is that the decoy generator is
+ * NEVER REACHED. `phraseForm.test.ts` already proves it for the phrase with a random source that
+ * throws; these do the same for the other two, because "we did not call it" is a claim only a
+ * throwing random can settle.</p>
+ */
+test('a typed second password is woven as it is, and no decoy is drawn at all', () => {
+  const explode = (): number => {
+    throw new Error('a decoy was drawn for a second value that was typed');
+  };
+
+  const stored = weaveSecret('hunter2!', SHUFFLE_CODES[3], explode, 'Passw0rd');
+
+  const back = unweaveSecret(stored, SHUFFLE_CODES[3]);
+  assert.equal(back?.first, 'hunter2!', 'the password comes back');
+  assert.equal(back?.second, 'Passw0rd', 'and so does the value the person typed');
+});
+
+test('without a typed second the generator is still what supplies the other half', () => {
+  const stored = weaveSecret('hunter2!', SHUFFLE_CODES[3], () => 0.42);
+
+  const back = unweaveSecret(stored, SHUFFLE_CODES[3]);
+  assert.equal(back?.first, 'hunter2!');
+  assert.notEqual(back?.second, 'hunter2!', 'a decoy, and never the value itself');
+});
+
+test('a typed second payment field is woven as it is, and marks itself as the person’s own', () => {
+  const explode = (): number => {
+    throw new Error('a decoy was drawn for a second value that was typed');
+  };
+
+  const woven = weavePaymentFields(
+    { pin: '4821', cvv: '737' },
+    ['pin'],
+    { pin: SHUFFLE_CODES[2] },
+    explode,
+    { pin: '9137' },
+  );
+
+  assert.deepEqual(woven.shuffledFields, ['pin'], 'it is woven');
+  assert.deepEqual(woven.ownSecond, ['pin'], 'and the record says the partner half is real');
+  assert.equal(woven.cvv, '737', 'an unmarked field is untouched');
+});
+
+test('a field woven with a DECOY is not marked as own — the two are different facts', () => {
+  const woven = weavePaymentFields({ pin: '4821' }, ['pin'], { pin: SHUFFLE_CODES[2] }, () => 0.42);
+
+  assert.deepEqual(woven.shuffledFields, ['pin']);
+  assert.equal(woven.ownSecond, undefined, 'no claim that anything real was woven in');
+});
+
+test('ownSecond is a SUBSET of shuffledFields, and never outlives it', () => {
+  // A mark for a field that is not woven describes nothing — and describes it expensively, because
+  // this mark is what a share reads to know a leak costs two real secrets rather than one.
+  const pruned = pickPaymentFields({ pin: '48219137', shuffledFields: ['pin'], ownSecond: ['pin', 'cvv'] });
+  assert.deepEqual(pruned.ownSecond, ['pin'], 'the name with no woven field is dropped');
+
+  const gone = pickPaymentFields({ shuffledFields: ['pin'], ownSecond: ['pin'] });
+  assert.equal(gone.ownSecond, undefined, 'and when the value goes, both marks go');
+  assert.equal(gone.shuffledFields, undefined);
+
+  const orphan = pickPaymentFields({ pin: '4821', ownSecond: ['pin'] });
+  assert.equal(orphan.ownSecond, undefined, 'an own mark without a weave is not a thing');
 });

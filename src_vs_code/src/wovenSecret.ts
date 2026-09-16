@@ -46,12 +46,16 @@ export function weaveRefusal(value: string): string {
  * the woven string, which is what makes the pair recoverable from the stored value alone. Nothing
  * else about it is written down anywhere.</p>
  */
-export function weaveSecret(value: string, code: ShuffleCode, random: Random): string {
+export function weaveSecret(value: string, code: ShuffleCode, random: Random, typed = ''): string {
   if (weaveRefusal(value) !== '') {
     throw new Error(weaveRefusal(value));
   }
-  const decoy = generateDecoy({ kind: 'password', original: value }, random);
-  return shuffleTokens([...value], [...decoy], code).join('');
+  // The person's OWN second password when they typed one, and a generated decoy only when they did
+  // not. The pair is judged by `pairRefusal` at the save gate, before this runs — by the time a value
+  // reaches here the original is about to stop existing, so this is far too late to be the first
+  // place a mismatched pair is met.
+  const partner = typed === '' ? generateDecoy({ kind: 'password', original: value }, random) : typed;
+  return shuffleTokens([...value], [...partner], code).join('');
 }
 
 /** The two readings a method produces, in the order the arithmetic gives them. */

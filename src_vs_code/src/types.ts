@@ -177,6 +177,15 @@ export interface EntityMetadata {
    */
   passwordWoven?: boolean;
   /**
+   * The woven password's second half is the person's OWN value, not a decoy this build made up.
+   *
+   * <p>Only ever true beside `passwordWoven`, and cleared with it — a mark describing a weave that no
+   * longer exists is worse than none, because this one is read where a leak is counted: a woven
+   * password whose partner half is real costs TWO secrets rather than one, and the share and the
+   * export have to be able to know that.</p>
+   */
+  passwordSecondOwn?: boolean;
+  /**
    * This entry's secrets are wrapped under a PIN of its own — a MIRROR of the wrap, not the truth
    * about it. The truth is inside each value, where `readSecret` finds it; this exists because the
    * agent surfaces answer synchronously and cannot read a keychain per entry per listing. It fails
